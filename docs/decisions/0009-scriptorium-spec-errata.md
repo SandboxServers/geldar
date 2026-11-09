@@ -23,7 +23,7 @@ Where the spec contradicts itself about the player kit, the kit is built as foll
 
 ## Why
 
-Each pair of passages can't both be built. In every case we picked the passage that matches the later, reviewed design (v0.7's response to review findings 2, 14 and 15 in Appendix L) over leftover wording.
+Items 1–5 and 7 are passages that can't both be built. In each case we followed the passage that matches the design the reviews settled on (Appendix L rows 2 and 15: memory through `recall`, no shell, commits as a deliberate call at bedtime) over leftover wording. Items 6 and 8 are omissions, filled the way the rest of the spec implies.
 
 ## Consequences
 

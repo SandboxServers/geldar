@@ -22,4 +22,4 @@ The spec lists Gemini CLI throughout 5.15.4 but also says Google ended subscript
 
 - `docs/clients.md` lists Antigravity CLI as not supported yet, with the date it was last checked.
 - Adding Antigravity later takes a new record, its config files, and a green malicious-book run. Nothing in v1 needs to change for it.
-- Open decision 2g is settled for Claude Code. It stays open for Codex until its current terms and MCP support are checked, before Codex is added.
+- Open decision 2g is settled for Claude Code. It stays open for Codex until its current terms and MCP support are checked, before Codex is added. Its Gemini half doesn't apply in v1.
