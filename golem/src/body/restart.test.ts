@@ -1,74 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
-import { type CheckpointEntry, parseEntry } from './checkpoint.ts';
-import { fakeId, LIFE, planFor, scriptedProgram, thought } from './executor.fakes.ts';
+import { parseEntry } from './checkpoint.ts';
+import { fakeId, LIFE, planFor, thought } from './executor.fakes.ts';
 import { nextGeneration } from './generation.ts';
-import { ProgramRegistry } from './program.ts';
-import type { MemorySink } from './records.ts';
-import { type FakeKv, fakeKv } from './restart.fakes.ts';
-import { restartBody } from './restart.ts';
-
-/** One Body life's two buckets, shared by every boot of the test. */
-function buckets(): { generations: FakeKv; checkpoints: FakeKv } {
-  return { generations: fakeKv(), checkpoints: fakeKv() };
-}
-
-/** Boots a Body over fakes through `restartBody`. `programs` collects every program instance made. */
-async function boot(
-  kv: ReturnType<typeof buckets>,
-  opts: { tick?: number; schedule?: (fire: () => void, ms: number) => () => void } = {},
-) {
-  const ticks = manualTicks();
-  const view = fakeView();
-  (view as { tick: number }).tick = opts.tick ?? 0;
-  const programs = new ProgramRegistry();
-  const made: ReturnType<typeof scriptedProgram>[] = [];
-  programs.register('fake', () => {
-    const program = scriptedProgram([{ status: 'running' }]);
-    made.push(program);
-    return program;
-  });
-  const lines: string[] = [];
-  const restarted = await restartBody({
-    lifeId: LIFE,
-    bot: fakeBot(),
-    ticks: ticks.source,
-    currentRevision: () => 5,
-    view,
-    programs,
-    kv,
-    log: (line) => lines.push(line),
-    generation: { retryDelayMs: 0 },
-    ...(opts.schedule === undefined ? {} : { schedule: opts.schedule }),
-  });
-  const records = restarted.body.records as MemorySink;
-  return { ...restarted, view, made, lines, records };
-}
-
-/** Submits a `fake` intent as the Mind would for this boot's generation. */
-async function startIntent(b: Awaited<ReturnType<typeof boot>>, n = 1) {
-  return b.body.executor.submit(
-    thought({ intent: {} }),
-    planFor(0, { n, bodyGeneration: b.generation }),
-  );
-}
-
-/** A stored entry for the life, written as another Body would have left it. */
-function entry(over: Partial<CheckpointEntry> = {}): string {
-  const intent = (thought({ intent: {} }) as { intent: CheckpointEntry['intent'] }).intent;
-  const full: CheckpointEntry = {
-    life_id: LIFE,
-    body_generation: 1,
-    intent_id: fakeId('in', 1),
-    intent,
-    program: 'fake',
-    checkpoint: { steps: 3 },
-    saved_at: '2026-01-01T00:00:00.000Z',
-    expires_tick: 1000,
-    ...over,
-  };
-  return JSON.stringify(full);
-}
+import { boot, buckets, entry, fakeKv, startIntent } from './restart.fakes.ts';
 
 describe('nextGeneration', () => {
   it('starts at 1 and counts up by one per start', async () => {
