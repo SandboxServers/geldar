@@ -12,3 +12,7 @@
 - Cold load: the first two thoughts hit the 25 s job deadline (`timeout`) while Ollama loaded the 22 GB model; the model is on the GPU 100 percent (23.5 of 24.5 GB used).
 - Warm: 2.6 s for a 2705-token prompt (80 out), a direct call 1.0 s.
 - Action: lantern-local should load and warm every pinned model before it advertises it (a one-token call with keep_alive), so the first job is warm. Small packet in the wave 5 fix round.
+
+## 20 TPS benchmark on commit 35e16c0 (clean tree, recipes discovered through play)
+
+GATE: PASS. All 18 rows 5/5. 20 TPS p50/p95 ms: wood-to-stone-tools 374/18235, food 1661/2637, shelter 561/1067, bed 668/1086, chest 8/236, blocked-path 6132/6440. Raw: `bench-results/20261109T233614Z-35e16c0.json`.
