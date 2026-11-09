@@ -1,6 +1,7 @@
 import { validateActionRecord } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it } from 'vitest';
+import { hasUnlockedDisplay, type TableTarget } from '../../src/actions/craft-table.ts';
 import { createRegistry } from '../../src/actions/index.ts';
 import { type ActionRun, runAction } from '../../src/actions/registry.ts';
 import type { TestControl } from '../../src/test-control.ts';
@@ -20,6 +21,21 @@ async function carried(ctl: TestControl, name: string, item: string): Promise<nu
  */
 async function unlockRecipes(ctl: TestControl, name: string): Promise<void> {
   await ctl.command(`recipe give ${name} *`);
+}
+
+/**
+ * Waits up to about 4 s for the server's recipe_book_add to unlock an item's crafting display, and
+ * reports whether it did. Nothing is given here: the unlock must come from the items alone.
+ */
+async function waitUnlocked(bot: Bot, name: string): Promise<boolean> {
+  const item = bot.registry.itemsByName[name];
+  if (!item) throw new Error(`${name} is not an item in the 26.1 registry`);
+  const target: TableTarget = { id: item.id, name };
+  for (let tick = 0; tick < 80; tick += 4) {
+    if (hasUnlockedDisplay(bot, target)) return true;
+    await bot.waitForTicks(4);
+  }
+  return hasUnlockedDisplay(bot, target);
 }
 
 /** Clears item entities left by an earlier case in the arena (they are not blocks). */
@@ -172,6 +188,47 @@ describe('craft on 26.1', () => {
       const run = await craft(bot, 'white_bed', 1);
       expect(run.state).toBe('completed');
       expect(await carried(ctl, 'GolemCraft', 'white_bed')).toBe(1);
+      expect(bot.currentWindow).toBeNull();
+    });
+  }, 180_000);
+
+  it('unlocks a 2x2 recipe from one log alone, and crafts oak_planks with no recipe give', async () => {
+    await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center.x, arena.center.z);
+      await ctl.clear('GolemCraft');
+      // The server keeps the book across connections, so take it back first: only the give may unlock.
+      await ctl.command('recipe take GolemCraft *');
+      await ctl.give('GolemCraft', 'oak_log', 2);
+      expect(
+        await waitUnlocked(bot, 'oak_planks'),
+        'recipe_book_add for oak_planks did not arrive after /give of oak_log',
+      ).toBe(true);
+      const run = await craft(bot, 'oak_planks', 4);
+      expect(run.result).toMatchObject({ status: 'completed' });
+      expect(run.result.detail).toMatchObject({ item: 'oak_planks', used_table: false });
+      expect(await carried(ctl, 'GolemCraft', 'oak_planks')).toBeGreaterThanOrEqual(4);
+    });
+  }, 180_000);
+
+  it('unlocks wooden_pickaxe from its ingredients alone, and crafts it at a table with no recipe give', async () => {
+    await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
+      const cx = arena.center.x;
+      const cy = arena.center.y;
+      const cz = arena.center.z;
+      await clearDrops(ctl, cx, cz);
+      await ctl.clear('GolemCraft');
+      await ctl.command('recipe take GolemCraft *');
+      await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
+      await ctl.give('GolemCraft', 'oak_planks', 3);
+      await ctl.give('GolemCraft', 'stick', 2);
+      expect(
+        await waitUnlocked(bot, 'wooden_pickaxe'),
+        'recipe_book_add for wooden_pickaxe did not arrive after /give of its ingredients',
+      ).toBe(true);
+      const run = await craft(bot, 'wooden_pickaxe', 1);
+      expect(run.result).toMatchObject({ status: 'completed' });
+      expect(run.result.detail).toMatchObject({ used_table: true });
+      expect(await carried(ctl, 'GolemCraft', 'wooden_pickaxe')).toBe(1);
       expect(bot.currentWindow).toBeNull();
     });
   }, 180_000);
