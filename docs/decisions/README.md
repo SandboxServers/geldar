@@ -42,3 +42,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0035](0035-mcp-tool-schema-shapes.md) | MCP tool schemas: write_book oneOf, and results without a root type are not published as outputSchema | Accepted |
 | [0036](0036-launcher-workspace-named-volume.md) | The launcher keeps the player workspace in a named Docker volume on every OS | Accepted |
 | [0037](0037-chest-transfers-by-explicit-clicks.md) | Chest deposits and withdrawals are an explicit, server-confirmed click sequence | Accepted |
+| [0038](0038-tick-rate-does-not-slow-a-client-driven-body.md) | `/tick rate` does not slow a Mineflayer-driven Body; the world clock has a 20-tick resolution | Accepted |
