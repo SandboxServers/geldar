@@ -18,7 +18,7 @@ const SLOT = 6;
 describe('benchmark scenarios A at 20 TPS', () => {
   const scenarios: Scenario[] = [woodToStoneTools, food, shelter];
   for (const scenario of scenarios) {
-    it(`${scenario.name} runs to a verdict`, async () => {
+    it(`${scenario.name} runs to a verdict`, { timeout: 420_000 }, async () => {
       await withLiveBot({ name: NAME, slot: SLOT }, async ({ ctl, manager }) => {
         const deps = {
           ctl,
