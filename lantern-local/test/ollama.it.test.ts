@@ -46,5 +46,6 @@ describe.skipIf(!enabled)('Ollama (live)', () => {
     const parsed: unknown = JSON.parse(result.text);
     const checked = validateThought(parsed);
     expect(checked.ok, JSON.stringify(checked)).toBe(true);
-  });
+    // A cold model load takes a minute or more; vitest's default of 5 s would end the test early.
+  }, 180_000);
 });

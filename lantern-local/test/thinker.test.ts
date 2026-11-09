@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ollamaChat } from '../src/ollama.ts';
-import { LocalThinker, type ThinkerOptions } from '../src/thinker.ts';
+import {
+  DEFAULT_BACKOFF_INITIAL_MS,
+  DEFAULT_BACKOFF_MAX_MS,
+  jitteredDelay,
+  LocalThinker,
+  type ThinkerOptions,
+} from '../src/thinker.ts';
 import { FakeMind, FakeOllama, pin, until } from './thinker.fakes.ts';
 
 let mind: FakeMind;
@@ -35,6 +41,47 @@ function launch(overrides: Partial<ThinkerOptions> = {}): LocalThinker {
   thinker.start();
   return thinker;
 }
+
+describe('reconnect backoff', () => {
+  it('starts at 250 ms and caps at 5 s by default, with jitter between half and all of each step', () => {
+    expect(DEFAULT_BACKOFF_INITIAL_MS).toBe(250);
+    expect(DEFAULT_BACKOFF_MAX_MS).toBe(5000);
+    expect(jitteredDelay(250, () => 0)).toBe(125);
+    expect(jitteredDelay(250, () => 0.999999)).toBe(249);
+    expect(jitteredDelay(5000, () => 0.5)).toBe(3750);
+  });
+
+  it('doubles each failed attempt up to the cap, and logs each with its delay', async () => {
+    launch({ wsUrl: 'ws://127.0.0.1:1/v1/thinker/stream', random: () => 1 });
+    await until(() => logs.filter((l) => l.startsWith('reconnecting')).length >= 4, 'four retries');
+    expect(logs.filter((l) => l.startsWith('reconnecting')).slice(0, 4)).toEqual([
+      'reconnecting in 30 ms',
+      'reconnecting in 60 ms',
+      'reconnecting in 120 ms',
+      'reconnecting in 120 ms',
+    ]);
+    expect(logs.some((l) => l.startsWith('connecting to ws://'))).toBe(true);
+    expect(logs.some((l) => l.startsWith('connection failed'))).toBe(true);
+  });
+
+  it('applies the jitter to the delay', async () => {
+    launch({ wsUrl: 'ws://127.0.0.1:1/v1/thinker/stream', random: () => 0 });
+    await until(() => logs.some((l) => l.startsWith('reconnecting')), 'a retry');
+    expect(logs.find((l) => l.startsWith('reconnecting'))).toBe('reconnecting in 15 ms');
+  });
+
+  it('logs the connect, the hello, the welcome and the close with its reason', async () => {
+    const t = launch();
+    await mind.next('hello');
+    await until(() => t.welcomes === 1, 'the welcome');
+    mind.push({ type: 'drain', reconnect_after_seconds: 0 });
+    await until(() => logs.some((l) => l.startsWith('closed (')), 'the close');
+    expect(logs.some((l) => l.startsWith('connecting to ws://'))).toBe(true);
+    expect(logs.some((l) => l.startsWith('connected; sending hello'))).toBe(true);
+    expect(logs.some((l) => l.startsWith('welcomed; accepted 1'))).toBe(true);
+    expect(logs.find((l) => l.startsWith('closed ('))).toMatch(/code 1000, reason 'drain'\) \(was welcomed\)/);
+  });
+});
 
 const answer = { message: { content: '{"ok":true}' }, prompt_eval_count: 12, eval_count: 5 };
 

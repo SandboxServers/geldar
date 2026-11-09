@@ -5,6 +5,15 @@ import { type ChatFn, OllamaError, type OllamaErrorCode } from './ollama.ts';
 /** The advertised `max_tokens` of every model: the schema caps a job at 32768 and the Mind asks far less. */
 export const ADVERTISED_MAX_TOKENS = 1024;
 
+/** The first reconnect delay and its cap: a hub that starts late is found within seconds. */
+export const DEFAULT_BACKOFF_INITIAL_MS = 250;
+export const DEFAULT_BACKOFF_MAX_MS = 5000;
+
+/** The delay before a reconnect: `baseMs` less up to half of it at random, so Thinkers do not step together. */
+export function jitteredDelay(baseMs: number, random: () => number): number {
+  return Math.floor(baseMs * (0.5 + 0.5 * random()));
+}
+
 export interface ThinkerOptions {
   wsUrl: string;
   models: AdvertisedModel[];
@@ -16,6 +25,8 @@ export interface ThinkerOptions {
   /** Reconnect backoff: first delay and the cap; it doubles each failed attempt. */
   backoffInitialMs?: number;
   backoffMaxMs?: number;
+  /** Source of the jitter in [0, 1); defaults to `Math.random`. */
+  random?: () => number;
   /** Receives one line per event: ids, lengths and timings only, never prompt or completion text. */
   log?: (line: string) => void;
 }
@@ -53,8 +64,9 @@ export class LocalThinker {
     this.opts = {
       heartbeatMs: 15_000,
       helloTimeoutMs: 10_000,
-      backoffInitialMs: 1000,
-      backoffMaxMs: 30_000,
+      backoffInitialMs: DEFAULT_BACKOFF_INITIAL_MS,
+      backoffMaxMs: DEFAULT_BACKOFF_MAX_MS,
+      random: Math.random,
       log: () => {},
       ...options,
     };
@@ -85,10 +97,12 @@ export class LocalThinker {
 
   private connect(): void {
     if (this.stopped) return;
+    this.opts.log(`connecting to ${this.opts.wsUrl}`);
     const socket = new WebSocket(this.opts.wsUrl);
     this.socket = socket;
     this.serving = false;
     socket.addEventListener('open', () => {
+      this.opts.log(`connected; sending hello with ${this.opts.models.length} model(s)`);
       this.send({
         type: 'hello',
         thinker_version: this.opts.version,
@@ -106,11 +120,23 @@ export class LocalThinker {
     socket.addEventListener('message', (event) => {
       if (socket === this.socket) this.onMessage(event.data);
     });
-    socket.addEventListener('error', () => {});
-    socket.addEventListener('close', () => {
-      if (socket !== this.socket) return;
+    // A refused connection raises `error` and, on Node 22, no `close`: the attempt ends on either.
+    let ended = false;
+    const end = (what: string): void => {
+      if (ended || socket !== this.socket) return;
+      ended = true;
+      this.opts.log(`${what} (${this.serving ? 'was welcomed' : 'never welcomed'})`);
       this.teardown();
       this.scheduleReconnect();
+    };
+    socket.addEventListener('error', (event) => {
+      const message = (event as { message?: unknown }).message;
+      const text = typeof message === 'string' ? message : 'unknown';
+      this.opts.log(`socket error: ${text}`);
+      if (socket.readyState !== WebSocket.OPEN) end('connection failed');
+    });
+    socket.addEventListener('close', (event) => {
+      end(`closed (code ${event.code}, reason '${event.reason}')`);
     });
   }
 
@@ -127,7 +153,7 @@ export class LocalThinker {
     let delay = this.nextDelayMs;
     this.nextDelayMs = undefined;
     if (delay === undefined) {
-      delay = this.backoffMs;
+      delay = jitteredDelay(this.backoffMs, this.opts.random);
       this.backoffMs = Math.min(this.backoffMs * 2, this.opts.backoffMaxMs);
     }
     this.opts.log(`reconnecting in ${delay} ms`);
