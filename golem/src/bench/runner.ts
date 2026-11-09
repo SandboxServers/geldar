@@ -49,6 +49,8 @@ export interface RunnerDeps {
 }
 
 const POLL_MS = 50;
+/** `bot.time.age` changes only when the server sends a time update, every 20 ticks (decision 0038). */
+export const WORLD_AGE_RESOLUTION_TICKS = 20;
 const DEFAULT_READY_MS = 10_000;
 const DEFAULT_SETTLE_MS = 10_000;
 const DEFAULT_RECONNECT_MS = 60_000;
@@ -106,7 +108,8 @@ export async function waitUntil(
     if (predicate()) return true;
     const age = worldAge(env.bot);
     if (start !== null && age !== null) {
-      if (age - start >= maxWorldTicks) return false;
+      // The age only changes every 20 ticks, so `start` can be up to 19 ticks stale: allow for it.
+      if (age - start >= maxWorldTicks + (WORLD_AGE_RESOLUTION_TICKS - 1)) return false;
     } else if (Date.now() - wallStart >= wallLimit) {
       return false;
     }

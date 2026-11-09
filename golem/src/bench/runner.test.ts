@@ -423,4 +423,23 @@ describe('waitUntil', () => {
       clearInterval(tick);
     }
   });
+
+  it('does not time out early when the age steps by 20 from a stale start', async () => {
+    let age = 0;
+    const tick = setInterval(() => {
+      age += 20;
+    }, 60);
+    try {
+      // The predicate holds at age 40; the stale start would end the wait at age 20 without the slack.
+      expect(
+        await waitUntil(
+          envOf(() => age),
+          () => age >= 40,
+          20,
+        ),
+      ).toBe(true);
+    } finally {
+      clearInterval(tick);
+    }
+  });
 });
