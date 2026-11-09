@@ -60,6 +60,9 @@ function view(world: FakeWorld): BodyView {
     inFluid: null,
     onFire: false,
     fallingDistance: 0,
+    air: 20,
+    edibleFoods: () => [],
+    dropAhead: () => 0,
   };
 }
 

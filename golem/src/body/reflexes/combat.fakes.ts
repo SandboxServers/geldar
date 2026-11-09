@@ -49,6 +49,9 @@ export function sceneView(scene: CombatScene): BodyView {
     inFluid: null,
     onFire: false,
     fallingDistance: 0,
+    air: 20,
+    edibleFoods: () => [],
+    dropAhead: () => 0,
     get ticksSinceHurt() {
       return scene.ticksSinceHurt;
     },

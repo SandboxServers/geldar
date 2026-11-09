@@ -1,9 +1,10 @@
-import type { ActionRecord, Receipt, Thought } from '@geldar/contract';
+import type { Action, ActionRecord, Thought } from '@geldar/contract';
 import { validateThought } from '@geldar/contract';
 import { errorText } from '../actions/outcome.ts';
-import { ulid } from '../ulid.ts';
+import type { ActionRun } from '../actions/registry.ts';
+import { runPlanAction } from './executor-action.ts';
 import { startIntentRun } from './executor-intent.ts';
-import type { LimitTracker } from './limits.ts';
+import { blockOperationsOf, type LimitTracker } from './limits.ts';
 import { builtinPreconditions, type PreconditionRegistry } from './preconditions.ts';
 import type { IntentProgram, ProgramCheckpoint, ProgramContext, StepResult } from './program.ts';
 import type { IntentState } from './records.ts';
@@ -189,6 +190,16 @@ export class IntentExecutor {
     this.active?.limits.addBlockOperations(count);
   }
 
+  /**
+   * Tells the executor an action ended: a completed action a program ran for the running intent
+   * counts its block operations (mine, place, uild) against the intent's limit. An action a
+   * reflex or an immediate plan action ran, while the intent is paused, is not the intent's.
+   */
+  noteAction(action: Action, run: ActionRun): void {
+    const a = this.active;
+    if (run.state !== 'completed' || !a || a.pause !== null || a.stepping === null) return;
+    a.limits.addBlockOperations(blockOperationsOf(action));
+  }
   /** Someone spoke to the Body. Wakes the Mind when the intent lists `directly_addressed`. */
   async notifyAddressed(from: string): Promise<boolean> {
     const a = this.active;
@@ -450,7 +461,7 @@ export class IntentExecutor {
   ): Promise<ActionReport> {
     const known = this.stored.get(actionId);
     if (known) return known.then((report) => ({ ...report, duplicate: true }));
-    const run = this.execute(action, actionId, sequence, plan);
+    const run = runPlanAction(this.runtime, this.now, action, actionId, sequence, plan);
     this.stored.set(actionId, run);
     while (this.stored.size > this.maxRemembered) {
       const oldest = this.stored.keys().next().value;
@@ -458,63 +469,5 @@ export class IntentExecutor {
       this.stored.delete(oldest);
     }
     return run;
-  }
-
-  private async execute(
-    action: NonNullable<Thought['actions']>[number],
-    actionId: string,
-    sequence: number,
-    plan: PlanEnvelope,
-  ): Promise<ActionReport> {
-    const sink = this.runtime.sink;
-    const record: ActionRecord = {
-      action_id: actionId,
-      intent_id: null,
-      life_id: plan.lifeId,
-      body_generation: plan.bodyGeneration,
-      sequence,
-      source_snapshot_id: plan.sourceSnapshotId,
-      snapshot_revision: plan.snapshotRevision,
-      expires_tick: plan.expiresTick,
-      kind: action.do,
-      args: { ...action },
-      state: 'accepted',
-      result: null,
-      receipt_id: null,
-    } as ActionRecord;
-    sink.actionChanged(record);
-    record.state = 'running';
-    sink.actionChanged(record);
-    let run: Awaited<ReturnType<BodyRuntime['runAction']>>;
-    try {
-      run = await this.runtime.runAction(action);
-    } catch (error) {
-      run = {
-        state: 'failed',
-        result: {
-          status: 'failed',
-          reason: 'internal',
-          message: errorText(error),
-          latency_ms: 0,
-          world_ticks: null,
-          detail: {},
-        },
-      };
-    }
-    const receipt: Receipt = {
-      receipt_id: `rc_${ulid()}`,
-      action_id: actionId,
-      life_id: plan.lifeId,
-      kind: action.do,
-      phase: run.state === 'completed' ? 'committed' : 'aborted',
-      at: this.now().toISOString(),
-      ...(run.result.message === undefined ? {} : { detail: run.result.message.slice(0, 256) }),
-    };
-    record.state = run.state;
-    record.result = { ...run.result };
-    record.receipt_id = receipt.receipt_id;
-    sink.actionChanged(record);
-    sink.receipt(receipt);
-    return { record: structuredClone(record), duplicate: false };
   }
 }
