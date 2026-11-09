@@ -35,3 +35,30 @@ export function validateSnapshot(value: unknown): ValidationResult<Snapshot> {
 // --- P0-03 records ---
 
 // --- P0-04 thinker ---
+import type { ThinkerFrame } from './generated/types.ts';
+import { validateThinkerFrame as validateThinkerFrameSchema } from './generated/validators.js';
+
+export type {
+  CancelFrame,
+  CompletionFrame,
+  DrainFrame,
+  ErrorFrame,
+  GoodbyeFrame,
+  HeartbeatFrame,
+  HelloFrame,
+  JobFrame,
+  ThinkerFrame,
+  WelcomeFrame,
+} from './generated/types.ts';
+
+/** Largest frame the Gateway accepts, in bytes (Appendix H). */
+export const MAX_FRAME_BYTES = 1_048_576;
+
+/** Largest completion text, in characters (Appendix H: 32 KiB). */
+export const MAX_COMPLETION_TEXT = 32_768;
+
+/** Checks a value against thinker-frame.schema.json. Never throws; unknown properties are rejected. */
+export function validateThinkerFrame(value: unknown): ValidationResult<ThinkerFrame> {
+  if (validateThinkerFrameSchema(value)) return { ok: true, value: value as ThinkerFrame };
+  return { ok: false, errors: (validateThinkerFrameSchema.errors ?? []).map(formatError) };
+}

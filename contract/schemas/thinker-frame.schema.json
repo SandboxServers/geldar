@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/thinker-frame.schema.json",
+  "title": "ThinkerFrame",
+  "description": "One frame on the Thinker WebSocket (Appendix H). Identity comes from the connection, never from a frame; only welcome names the Thinker, and the colo sends it.",
+  "oneOf": [
+    { "$ref": "#/$defs/HelloFrame" },
+    { "$ref": "#/$defs/HeartbeatFrame" },
+    { "$ref": "#/$defs/CompletionFrame" },
+    { "$ref": "#/$defs/ErrorFrame" },
+    { "$ref": "#/$defs/GoodbyeFrame" },
+    { "$ref": "#/$defs/WelcomeFrame" },
+    { "$ref": "#/$defs/JobFrame" },
+    { "$ref": "#/$defs/CancelFrame" },
+    { "$ref": "#/$defs/DrainFrame" }
+  ],
+  "$defs": {
+    "SemVer": {
+      "description": "A semantic version, as in 1.4.2.",
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "ModelName": {
+      "description": "A model identifier as a Thinker names it, such as qwen3-32b.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:/-]{0,127}$"
+    },
+    "ThinkerName": {
+      "description": "The Thinker's name as the colo records it, such as steven-home.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,63}$"
+    },
+    "ModelOffer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "max_concurrent", "max_tokens"],
+      "properties": {
+        "name": { "$ref": "#/$defs/ModelName" },
+        "max_concurrent": { "type": "integer", "minimum": 1, "maximum": 256 },
+        "max_tokens": { "type": "integer", "minimum": 1, "maximum": 32768 }
+      }
+    },
+    "Message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "type": "string", "enum": ["system", "user", "assistant"] },
+        "content": { "type": "string" }
+      }
+    },
+    "Usage": {
+      "description": "Token counts the Thinker reports. Logged for plausibility only; budgets use the colo's own count.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompt_tokens", "completion_tokens"],
+      "properties": {
+        "prompt_tokens": { "type": "integer", "minimum": 0 },
+        "completion_tokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "CacheHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stable_prefix_chars"],
+      "properties": {
+        "stable_prefix_chars": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "HelloFrame": {
+      "description": "Thinker to colo: the first frame on a connection. Sent once.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "thinker_version", "models"],
+      "properties": {
+        "type": { "const": "hello" },
+        "thinker_version": { "$ref": "#/$defs/SemVer" },
+        "models": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/ModelOffer" }
+        }
+      }
+    },
+    "HeartbeatFrame": {
+      "description": "Thinker to colo: current load, as a count of jobs in flight per model. Sent every 15 seconds.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "load"],
+      "properties": {
+        "type": { "const": "heartbeat" },
+        "load": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/ModelName" },
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "CompletionFrame": {
+      "description": "Thinker to colo: the text answering one job.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "job_id", "text"],
+      "properties": {
+        "type": { "const": "completion" },
+        "job_id": { "$ref": "common.schema.json#/$defs/JobId" },
+        "text": { "type": "string", "maxLength": 32768 },
+        "usage_reported": { "$ref": "#/$defs/Usage" }
+      }
+    },
+    "ErrorFrame": {
+      "description": "Thinker to colo: one job failed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "job_id", "code", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "job_id": { "$ref": "common.schema.json#/$defs/JobId" },
+        "code": { "type": "string", "enum": ["model_unavailable", "timeout", "internal"] },
+        "message": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "GoodbyeFrame": {
+      "description": "Thinker to colo: the Thinker is leaving on purpose.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason"],
+      "properties": {
+        "type": { "const": "goodbye" },
+        "reason": { "type": "string", "enum": ["schedule", "shutdown"] }
+      }
+    },
+    "WelcomeFrame": {
+      "description": "Colo to Thinker: the answer to hello. Names the Thinker and the models it accepted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "thinker", "accepted_models", "server_time"],
+      "properties": {
+        "type": { "const": "welcome" },
+        "thinker": { "$ref": "#/$defs/ThinkerName" },
+        "accepted_models": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/ModelName" }
+        },
+        "server_time": { "type": "string", "format": "date-time" }
+      }
+    },
+    "JobFrame": {
+      "description": "Colo to Thinker: one fully built prompt to run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "job_id",
+        "model",
+        "messages",
+        "max_tokens",
+        "temperature",
+        "stop",
+        "deadline"
+      ],
+      "properties": {
+        "type": { "const": "job" },
+        "job_id": { "$ref": "common.schema.json#/$defs/JobId" },
+        "model": { "$ref": "#/$defs/ModelName" },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/Message" }
+        },
+        "max_tokens": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "stop": {
+          "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+        },
+        "deadline": { "type": "string", "format": "date-time" },
+        "cache_hint": { "$ref": "#/$defs/CacheHint" }
+      }
+    },
+    "CancelFrame": {
+      "description": "Colo to Thinker: stop working on one job.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "job_id"],
+      "properties": {
+        "type": { "const": "cancel" },
+        "job_id": { "$ref": "common.schema.json#/$defs/JobId" }
+      }
+    },
+    "DrainFrame": {
+      "description": "Colo to Thinker: stop taking jobs and reconnect after the given delay.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reconnect_after_seconds"],
+      "properties": {
+        "type": { "const": "drain" },
+        "reconnect_after_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 }
+      }
+    }
+  }
+}
