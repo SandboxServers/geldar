@@ -7,6 +7,7 @@ import {
   type BlockedReport,
   createBlockedPathReflex,
   detourWaypoint,
+  isBlockedAbandoned,
   reportBlocked,
   type Walk,
 } from './blocked-path.ts';
@@ -154,5 +155,36 @@ describe('blocked path: geometry and registration', () => {
 
   it('shelterReflexes holds both reflexes under their shard names', () => {
     expect(shelterReflexes.map((r) => r.name)).toEqual(['panic_burrow', 'blocked_path']);
+  });
+});
+
+describe('blocked path: abandoned intents', () => {
+  it('marks the intent abandoned when the alternate route fails, not when it works', async () => {
+    const failing = setup(
+      scriptedWalk([{ ok: false, reason: 'blocked', message: 'no path' }]).walk,
+    );
+    reportBlocked(failing.view, REPORT);
+    await failing.reflex.run(failing.reflex.check(failing.view) ?? {}, failing.ctx);
+    expect(isBlockedAbandoned(failing.view, 'int_1')).toBe(true);
+    expect(isBlockedAbandoned(failing.view, 'int_2')).toBe(false);
+
+    const working = setup(
+      scriptedWalk([
+        { ok: true, distance: 1 },
+        { ok: true, distance: 0.5 },
+      ]).walk,
+    );
+    reportBlocked(working.view, REPORT);
+    await working.reflex.run(working.reflex.check(working.view) ?? {}, working.ctx);
+    expect(isBlockedAbandoned(working.view, 'int_1')).toBe(false);
+  });
+
+  it('marks nothing for a report that has no intent', async () => {
+    const { reflex, view, ctx } = setup(
+      scriptedWalk([{ ok: false, reason: 'blocked', message: 'no path' }]).walk,
+    );
+    reportBlocked(view, { ...REPORT, intentId: null });
+    await reflex.run(reflex.check(view) ?? {}, ctx);
+    expect(isBlockedAbandoned(view, 'int_1')).toBe(false);
   });
 });

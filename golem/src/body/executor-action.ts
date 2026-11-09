@@ -4,6 +4,26 @@ import { receiptIdFor } from './derived-id.ts';
 import type { ActionReport, PlanEnvelope } from './executor.ts';
 import type { BodyRuntime } from './runtime.ts';
 
+/** Longest wall wait (at time scale 1) for a busy reflex before a plan's action starts anyway. */
+const REFLEX_IDLE_MS = 10_000;
+
+/** Waits for a busy reflex to end, at most `REFLEX_IDLE_MS` (scaled); a stuck reflex is logged, not obeyed forever. */
+export async function waitForReflexIdle(runtime: BodyRuntime): Promise<void> {
+  const runner = runtime.reflexRunner;
+  if (!runner.busy) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = REFLEX_IDLE_MS * runtime.timeScale;
+  const expired = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(true), limit);
+  });
+  const timedOut = await Promise.race([runner.idle().then(() => false), expired]);
+  clearTimeout(timer);
+  if (timedOut)
+    console.warn(
+      `a reflex is still running after ${limit} ms; the plan's next action starts anyway`,
+    );
+}
+
 /**
  * Runs one immediate action of a plan through the runtime and records it: accepted, running,
  * then the final state with its receipt, all to the runtime's sink. Never throws; a handler that

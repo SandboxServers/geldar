@@ -5,7 +5,7 @@ import type { Block } from '../../actions/bot-types.ts';
 import { runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
-import { DIGGABLE_BLOCKS, digCell, holds } from './dig-cell.ts';
+import { DIGGABLE_BLOCKS, type DigResult, digCellWhy, holds } from './dig-cell.ts';
 
 /** Blocks the Body seals itself in with, in the order it prefers them (all common digging drops). */
 export const SEAL_BLOCKS: readonly string[] = [
@@ -57,9 +57,11 @@ function isWall(block: Block | null): boolean {
   return block !== null && block.boundingBox === 'block' && !FALLING.has(block.name);
 }
 
-/** True for a block the Body may dig out: a wall block that is diggable. */
+/** True for a block the Body may dig out: a wall block `digCell` will accept (the allowlist). */
 function isDiggable(block: Block | null): boolean {
-  return isWall(block) && block?.diggable !== false;
+  return (
+    isWall(block) && block !== null && DIGGABLE_BLOCKS.has(block.name) && block.diggable !== false
+  );
 }
 
 /**
@@ -121,6 +123,17 @@ async function stepInto(bot: Bot, cell: Vec3): Promise<boolean> {
   }
 }
 
+/** The outcome detail for a dig that failed: the step, then why. */
+function digDetail(step: string, dug: DigResult): string {
+  return dug.cause === undefined ? step : `${step}: ${dug.cause}`;
+}
+
+/** Digs `first`, then `second`; stops at the first that fails. */
+async function digBoth(ctx: ReflexContext, first: Vec3, second: Vec3): Promise<DigResult> {
+  const one = await digCellWhy(ctx, first);
+  return one.ok ? digCellWhy(ctx, second) : one;
+}
+
 /** Digs the pocket cell by cell, steps in and seals the mouth. */
 async function burrow(ctx: ReflexContext, view: BodyView): Promise<ReflexOutcome> {
   const { bot } = ctx;
@@ -133,8 +146,8 @@ async function burrow(ctx: ReflexContext, view: BodyView): Promise<ReflexOutcome
   const breached = (): boolean => !plan.closed.every((cell) => isWall(bot.blockAt(cell)));
   for (const cell of plan.pocket) {
     if (breached()) return { result: 'failed', detail: 'pocket wall breached' };
-    if (!(await digCell(ctx, cell)))
-      return { result: 'failed', detail: 'could not dig the pocket' };
+    const dug = await digCellWhy(ctx, cell);
+    if (!dug.ok) return { result: 'failed', detail: digDetail('could not dig the pocket', dug) };
   }
   if (breached()) return { result: 'failed', detail: 'pocket wall breached' };
   const [low] = plan.pocket;
@@ -156,18 +169,24 @@ async function burrow(ctx: ReflexContext, view: BodyView): Promise<ReflexOutcome
 async function leave(ctx: ReflexContext, view: BodyView, dug: Burrow): Promise<ReflexOutcome> {
   await ctx.cancelAction();
   const [lower, upper] = dug.mouth;
-  if (!(await digCell(ctx, upper)) || !(await digCell(ctx, lower))) {
-    return { result: 'failed', detail: 'could not open the seal' };
-  }
+  const opened = await digBoth(ctx, upper, lower);
+  if (!opened.ok) return { result: 'failed', detail: digDetail('could not open the seal', opened) };
   if (!(await stepInto(ctx.bot, lower))) return { result: 'failed', detail: 'could not step out' };
   burrows.delete(view);
   return { result: 'handled', detail: 'left at dawn' };
 }
 
+/** True for a water or lava block (a dug-out cell next to one would flood). */
+function isFluid(block: Block | null): boolean {
+  return block !== null && (block.name === 'water' || block.name === 'lava');
+}
+
 /**
  * The way out of a sealed cell the Body has no burrow state for (it restarted or reconnected
  * while sealed): a direction whose feet and head cells are open or a block the Body may dig, over
- * a solid floor. Returns the two cells, feet first, or null.
+ * a solid floor, with no water or lava next to either cell. A direction whose cell two steps out
+ * (feet level) is open is preferred: it leads outside instead of into a pocket in the rock.
+ * Returns the two cells, feet first, or null.
  */
 export function planBreakout(
   blockAt: (cell: Vec3) => Block | null,
@@ -176,17 +195,24 @@ export function planBreakout(
   const up = new Vec3(0, 1, 0);
   const passable = (block: Block | null): boolean =>
     block !== null && (block.boundingBox === 'empty' || DIGGABLE_BLOCKS.has(block.name));
+  const dry = (cell: Vec3): boolean =>
+    ![cell, cell.plus(up), cell.minus(up), ...DIRECTIONS.map((d) => cell.plus(d))].some((c) =>
+      isFluid(blockAt(c)),
+    );
+  let fallback: [Vec3, Vec3] | null = null;
   for (const dir of DIRECTIONS) {
     const low = feet.plus(dir);
     const high = low.plus(up);
     const floor = blockAt(low.minus(up));
     if (!passable(blockAt(low)) || !passable(blockAt(high))) continue;
     if (floor === null || floor.boundingBox !== 'block') continue;
-    return [low, high];
+    if (!dry(low) || !dry(high)) continue;
+    const beyond = blockAt(low.plus(dir));
+    if (beyond !== null && beyond.boundingBox === 'empty') return [low, high];
+    fallback ??= [low, high];
   }
-  return null;
+  return fallback;
 }
-
 /** Dawn with no burrow state but a closed cell: dig out through an adjacent diggable block. */
 async function breakOut(ctx: ReflexContext): Promise<ReflexOutcome> {
   const { bot } = ctx;
@@ -194,9 +220,8 @@ async function breakOut(ctx: ReflexContext): Promise<ReflexOutcome> {
   if (!way) return { result: 'abandoned', detail: 'no block to dig out through' };
   await ctx.cancelAction();
   const [low, high] = way;
-  if (!(await digCell(ctx, high)) || !(await digCell(ctx, low))) {
-    return { result: 'failed', detail: 'could not dig out' };
-  }
+  const dug = await digBoth(ctx, high, low);
+  if (!dug.ok) return { result: 'failed', detail: digDetail('could not dig out', dug) };
   if (!holds(bot, low) && !(await stepInto(bot, low))) {
     return { result: 'failed', detail: 'could not step out' };
   }

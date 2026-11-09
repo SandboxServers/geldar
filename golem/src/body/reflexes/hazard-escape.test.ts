@@ -100,6 +100,19 @@ describe('hazard-escape: run', () => {
     expect(Math.max(Math.abs(seen[0]?.x ?? 0), Math.abs(seen[0]?.z ?? 0))).toBe(2);
   });
 
+  it('hands the runtime time scale to the mover', async () => {
+    const { view, state, bot } = pool();
+    const { ctx } = basicContext(view, bot);
+    ctx.timeScale = 3;
+    const seen: number[] = [];
+    const mover: EscapeMover = async (walk) => {
+      seen.push(walk.timeScale);
+      state.inFluid = null;
+    };
+    await createHazardEscapeReflex({ mover }).run({ hazard: 'lava' }, ctx);
+    expect(seen).toEqual([3]);
+  });
+
   it('gives up after the time limit with a danger wake', async () => {
     const { view, state, bot } = pool();
     const { ctx, sink } = basicContext(view, bot);

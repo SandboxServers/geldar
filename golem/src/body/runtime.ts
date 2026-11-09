@@ -17,6 +17,11 @@ export type TickSource = (listener: (worldAge: number) => void) => () => void;
 /** Longest wall wait (at time scale 1) for an aborted handler to return before the next action. */
 const HANDLER_GRACE_MS = 2000;
 
+/** A usable time scale: finite and positive, else 1 (as `runAction` reads it). */
+export function sanitiseTimeScale(requested: number | undefined): number {
+  return requested !== undefined && Number.isFinite(requested) && requested > 0 ? requested : 1;
+}
+
 /** What a `BodyRuntime` is built from. */
 export interface BodyRuntimeOptions {
   /** The agent life this Body serves (`life_id`). */
@@ -68,9 +73,13 @@ export class BodyRuntime {
     controller: AbortController;
     /** The run's result. */
     done: Promise<unknown>;
-    /** Settles when the handler itself returned, which can be after `done` on an abort. */
-    handlerEnded: Promise<void>;
   } | null = null;
+  /**
+   * Settles when the handler of the last action ended, or after the grace, whichever is first. Set
+   * when an action's run settles; `cancelAction` and `runAction` wait for it, so no action starts
+   * while an old handler still drives the bot (a late `pathfinder.stop()`, a window close).
+   */
+  private winding: Promise<void> | null = null;
   private stopped = false;
 
   constructor(options: BodyRuntimeOptions) {
@@ -80,7 +89,7 @@ export class BodyRuntime {
     this.sink = options.sink;
     this.programs = options.programs ?? new ProgramRegistry();
     this.ticks = options.ticks;
-    this.timeScale = options.timeScale ?? 1;
+    this.timeScale = sanitiseTimeScale(options.timeScale);
     const tracked = options.view === undefined ? createBodyView(options.bot) : null;
     this.ownedView = tracked;
     this.view = options.view ?? (tracked as BodyView);
@@ -131,6 +140,12 @@ export class BodyRuntime {
   async runAction(action: unknown, signal?: AbortSignal): Promise<ActionRun> {
     if (this.stopped) throw new Error('body runtime stopped');
     if (this.current) throw new Error('an action is already running');
+    if (this.winding) {
+      // Only when a handler still winds down: an idle runtime fills the slot before the first await.
+      await this.winding;
+      if (this.stopped) throw new Error('body runtime stopped');
+      if (this.current) throw new Error('an action is already running');
+    }
     const controller = new AbortController();
     const forward = (): void => controller.abort();
     signal?.addEventListener('abort', forward, { once: true });
@@ -144,12 +159,13 @@ export class BodyRuntime {
         handlerEnded = ended;
       },
     });
-    this.current = { controller, done, handlerEnded };
+    this.current = { controller, done };
     try {
       return await done;
     } finally {
       signal?.removeEventListener('abort', forward);
       this.current = null;
+      this.winding = this.windDown(handlerEnded);
     }
   }
 
@@ -166,17 +182,28 @@ export class BodyRuntime {
    */
   async cancelAction(): Promise<void> {
     const running = this.current;
-    if (!running) return;
-    running.controller.abort();
-    await running.done.catch(() => undefined);
+    if (running) {
+      running.controller.abort();
+      await running.done.catch(() => undefined);
+    }
+    // After the run settled (here or earlier, by a step's own end) the handler may still run.
+    await this.winding;
+  }
+
+  /** Waits for `handlerEnded`, at most the grace; clears `winding` when it is still this wait. */
+  private windDown(handlerEnded: Promise<void>): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const grace = new Promise<void>((resolve) => {
       timer = setTimeout(resolve, HANDLER_GRACE_MS * this.timeScale);
     });
-    await Promise.race([running.handlerEnded, grace]);
-    clearTimeout(timer);
+    const wait: Promise<void> = Promise.race([handlerEnded.catch(() => undefined), grace]).then(
+      () => {
+        clearTimeout(timer);
+        if (this.winding === wait) this.winding = null;
+      },
+    );
+    return wait;
   }
-
   private reflexContext(tick: number): ReflexContext {
     return {
       bot: this.bot,

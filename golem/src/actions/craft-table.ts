@@ -1,11 +1,10 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from './bot-types.ts';
+import { dropLateTableWindow, openTable } from './craft-table-window.ts';
 import { heldCount } from './inventory-count.ts';
 import { type ActionOutcome, cancelled, errorText, failed } from './outcome.ts';
 import { pollUntil } from './poll.ts';
 import type { ActionContext } from './registry.ts';
-
-type Window = NonNullable<Bot['currentWindow']>;
 
 /** What a table craft makes: the item id the recipe results in, and its name for the outcome. */
 export interface TableTarget {
@@ -76,8 +75,6 @@ export type BookContext = ActionContext & { want?: number };
 const CRAFTING_DISPLAYS = new Set(['crafting_shaped', 'crafting_shapeless']);
 /** The crafting table's result slot: the craft is taken from here. */
 const RESULT_SLOT = 0;
-/** Wall-clock wait for the table window to open, scaled by `timeScale`. */
-const TABLE_OPEN_WAIT_MS = 5_000;
 /** Wall-clock wait for the result slot after each recipe request, scaled by `timeScale`. */
 const RESULT_WAIT_MS = 5_000;
 /**
@@ -87,6 +84,8 @@ const RESULT_WAIT_MS = 5_000;
 const ANSWER_GRACE_MS = 1_000;
 /** Wall-clock wait for the inventory to show a shift-click's items, scaled by `timeScale`. */
 const GAIN_WAIT_MS = 2_000;
+/** Crafts in a row that may gain nothing, with a want, before the craft gives up. */
+const MAX_ZERO_GAIN = 2;
 /** Wall-clock wait for the server to acknowledge a shift-click, scaled by `timeScale`. */
 const CLICK_ACK_WAIT_MS = 3_000;
 
@@ -100,8 +99,6 @@ const unlocked = new WeakMap<Bot, Map<number, Display>>();
  * on the next craft, so a display that works is not preceded by one that does not.
  */
 const workingDisplay = new WeakMap<Bot, Map<number, number>>();
-/** The late-window cleanup of the last open per bot, so the next craft can remove a stale one. */
-const lateTableWindow = new WeakMap<Bot, () => void>();
 
 /**
  * Starts recording the bot's recipe book. Call it as soon as the bot exists: the server sends the
@@ -241,6 +238,7 @@ export async function craftFromBook(
     const want = ctx.want;
     const before = heldNow(bot, item.id);
     let made = 0;
+    let zeroGain = 0;
     const crafts = want === undefined ? times : want;
     for (let i = 0; i < crafts && (want === undefined || made < want); i++) {
       // Read per craft: the display that worked last craft is first now.
@@ -259,7 +257,17 @@ export async function craftFromBook(
       await pollUntil(bot, ctx.signal, () => heldNow(bot, item.id) - before > made, {
         wallMs: GAIN_WAIT_MS * ctx.timeScale,
       });
-      made = Math.max(made, heldNow(bot, item.id) - before);
+      const now = Math.max(made, heldNow(bot, item.id) - before);
+      zeroGain = now > made ? 0 : zeroGain + 1;
+      made = now;
+      // Crafts that deliver nothing (a full inventory leaves the result in the slot) would repeat to the end.
+      if (zeroGain >= MAX_ZERO_GAIN) {
+        return failed(
+          'not_possible',
+          `crafting ${item.name} gained nothing ${MAX_ZERO_GAIN} times in a row: the inventory may be full`,
+          { item: item.name, made },
+        );
+      }
     }
     clean = true;
     return null;
@@ -438,81 +446,4 @@ function awaitResult(
 /** Whether a slot's item is a stack with at least one item. */
 function isStack(item: SetSlot['item']): boolean {
   return item != null && (item.present === true || (item.itemCount ?? 0) > 0);
-}
-
-/** The open window, or the outcome of the open that failed. */
-type Opened = { window: Window } | { outcome: ActionOutcome };
-
-/**
- * Activates the table and waits for its window, bounded and abortable. Mineflayer's own open waits
- * with no timeout. A window that opens after the wait gave up is closed at once.
- */
-async function openTable(ctx: ActionContext, table: Block): Promise<Opened> {
-  const { bot, signal, timeScale } = ctx;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let onOpen: ((window: Window) => void) | undefined;
-  let onAbort: (() => void) | undefined;
-  const opened = new Promise<Opened>((resolve) => {
-    const settle = (result: Opened): void => resolve(result);
-    onOpen = (window: Window) => {
-      if (isCraftingWindow(window)) {
-        settle({ window });
-      } else {
-        settle({
-          outcome: failed('blocked', `opened ${String(window.type)}, not a crafting table`),
-        });
-      }
-    };
-    onAbort = () => settle({ outcome: cancelled() });
-    bot.on('windowOpen', onOpen);
-    signal.addEventListener('abort', onAbort, { once: true });
-    timer = setTimeout(
-      () => settle({ outcome: failed('timeout', 'crafting table did not open') }),
-      TABLE_OPEN_WAIT_MS * timeScale,
-    );
-    bot.activateBlock(table).catch((error: unknown) => {
-      settle({ outcome: failed('blocked', `crafting table did not open: ${errorText(error)}`) });
-    });
-  });
-  try {
-    const result = await opened;
-    if ('outcome' in result) closeLateWindow(bot, TABLE_OPEN_WAIT_MS * timeScale);
-    return result;
-  } finally {
-    clearTimeout(timer);
-    if (onOpen) bot.off('windowOpen', onOpen);
-    if (onAbort) signal.removeEventListener('abort', onAbort);
-  }
-}
-
-/** Whether a window is a crafting table's: its 26.1 type name starts with `minecraft:crafting`. */
-function isCraftingWindow(window: Window): boolean {
-  return typeof window.type === 'string' && window.type.startsWith('minecraft:crafting');
-}
-
-/** Closes a table window that opens after its wait gave up. The listener goes after one more wait. */
-function closeLateWindow(bot: Bot, waitMs: number): void {
-  dropLateTableWindow(bot);
-  const late = (window: Window): void => {
-    // Only a crafting window is closed: any other window that opens next belongs to another action.
-    if (!isCraftingWindow(window)) return;
-    dropLateTableWindow(bot);
-    bot.closeWindow(window).catch((error: unknown) => {
-      console.warn(`late crafting table window did not close: ${errorText(error)}`);
-    });
-  };
-  const timer = setTimeout(() => dropLateTableWindow(bot), waitMs);
-  // Unref'd: the late-window grace alone must not keep the process alive.
-  timer.unref();
-  bot.on('windowOpen', late);
-  lateTableWindow.set(bot, () => {
-    clearTimeout(timer);
-    bot.off('windowOpen', late);
-  });
-}
-
-/** Removes the bot's late-window listener and its timer, if one is armed. */
-function dropLateTableWindow(bot: Bot): void {
-  lateTableWindow.get(bot)?.();
-  lateTableWindow.delete(bot);
 }

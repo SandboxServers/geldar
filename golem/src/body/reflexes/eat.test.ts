@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { completed } from '../../actions/outcome.ts';
+import { ActionRegistry } from '../../actions/registry.ts';
 import { MemorySink } from '../records.ts';
 import { ReflexRunner } from '../reflex.ts';
 import { allReflexesOn } from '../reflex-config.ts';
@@ -112,5 +114,25 @@ describe('eat reflex: one per Body', () => {
     const [y] = createBasicReflexes().filter((r) => r.name === 'eat');
     expect(x).toBeDefined();
     expect(x).not.toBe(y);
+  });
+});
+
+describe('eat reflex: time scale', () => {
+  it('runs the eat action at the runtime time scale', async () => {
+    const { view } = basicView({ hunger: 10, foods: ['bread'] });
+    const seen: number[] = [];
+    const registry = new ActionRegistry();
+    registry.register({
+      kind: 'eat',
+      timeoutMs: 1000,
+      run: async (actx) => {
+        seen.push(actx.timeScale);
+        return completed({ item: 'bread' });
+      },
+    });
+    const { ctx } = basicContext(view, gridBot({}).bot, registry);
+    ctx.timeScale = 4;
+    await createEatReflex().run({ hunger: 10, foods: 1 }, ctx);
+    expect(seen).toEqual([4]);
   });
 });

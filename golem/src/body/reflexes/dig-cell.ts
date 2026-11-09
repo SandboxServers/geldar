@@ -42,31 +42,56 @@ async function equipBest(bot: Bot, block: NonNullable<ReturnType<Bot['blockAt']>
   }
 }
 
+/** What `digCellWhy` reports: whether the cell is open afterwards, and why not when it is not. */
+export interface DigResult {
+  ok: boolean;
+  /** A short cause when `ok` is false; goes into the reflex outcome's detail. */
+  cause?: string;
+}
+
 /**
  * Digs exactly the block in `cell` with `bot.dig`, never "the nearest block of that name". Returns
- * true when the cell is open afterwards (also when it already was). It refuses a block outside
- * `allow`, an undiggable block, and a cell out of reach, and returns false without digging.
+ * `ok` when the cell is open afterwards (also when it already was), else the cause. It refuses a
+ * cell that is not loaded (it could be anything), a block outside `allow`, an undiggable block, and
+ * a cell out of reach, and returns without digging.
  */
+export async function digCellWhy(
+  ctx: ReflexContext,
+  cell: Vec3,
+  allow: ReadonlySet<string> = DIGGABLE_BLOCKS,
+): Promise<DigResult> {
+  const { bot } = ctx;
+  const block = bot.blockAt(cell);
+  if (!block) return { ok: false, cause: 'cell not loaded' };
+  if (block.boundingBox === 'empty') return { ok: true };
+  if (ctx.signal.aborted) return { ok: false, cause: 'aborted' };
+  if (!allow.has(block.name) || block.diggable === false) {
+    return { ok: false, cause: `${block.name} is not diggable` };
+  }
+  const eye = bot.entity.position.offset(0, bot.entity.height ?? 1.62, 0);
+  if (eye.distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH)
+    return { ok: false, cause: 'out of reach' };
+  await equipBest(bot, block);
+  const stop = (): void => bot.stopDigging();
+  ctx.signal.addEventListener('abort', stop, { once: true });
+  let thrown: string | undefined;
+  try {
+    await bot.dig(block, true);
+  } catch (error) {
+    // A dig rejected or interrupted: the cell tells whether it opened, the cause says why not.
+    thrown = error instanceof Error ? error.message : String(error);
+  } finally {
+    ctx.signal.removeEventListener('abort', stop);
+  }
+  if (!holds(bot, cell)) return { ok: true };
+  return { ok: false, cause: thrown === undefined ? 'the block stayed' : `dig failed: ${thrown}` };
+}
+
+/** `digCellWhy` without the cause: true when the cell is open afterwards. */
 export async function digCell(
   ctx: ReflexContext,
   cell: Vec3,
   allow: ReadonlySet<string> = DIGGABLE_BLOCKS,
 ): Promise<boolean> {
-  const { bot } = ctx;
-  const block = bot.blockAt(cell);
-  if (!block || block.boundingBox === 'empty') return true;
-  if (ctx.signal.aborted || !allow.has(block.name) || block.diggable === false) return false;
-  const eye = bot.entity.position.offset(0, bot.entity.height ?? 1.62, 0);
-  if (eye.distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) return false;
-  await equipBest(bot, block);
-  const stop = (): void => bot.stopDigging();
-  ctx.signal.addEventListener('abort', stop, { once: true });
-  try {
-    await bot.dig(block, true);
-  } catch {
-    // A dig rejected or interrupted: the cell tells whether it opened.
-  } finally {
-    ctx.signal.removeEventListener('abort', stop);
-  }
-  return !holds(bot, cell);
+  return (await digCellWhy(ctx, cell, allow)).ok;
 }

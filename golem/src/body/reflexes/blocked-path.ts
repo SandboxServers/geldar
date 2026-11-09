@@ -58,6 +58,21 @@ export function hasBlockedReport(view: BodyView): boolean {
   return liveReport(view) !== null;
 }
 
+/** The intents whose reports the reflex gave up on, by view: their programs must fail, not walk on. */
+const abandoned = new WeakMap<BodyView, Set<string>>();
+
+/** Records that the reflex gave up on a report of `intentId` (no route, or the detour was cancelled). */
+export function markBlockedAbandoned(view: BodyView, intentId: string): void {
+  const ids = abandoned.get(view) ?? new Set<string>();
+  ids.add(intentId);
+  abandoned.set(view, ids);
+}
+
+/** True once the reflex has given up on a blocked walk of `intentId`. */
+export function isBlockedAbandoned(view: BodyView, intentId: string): boolean {
+  return abandoned.get(view)?.has(intentId) === true;
+}
+
 /** Drops the waiting report when it was made for `intentId`: that intent has ended. */
 export function dropBlockedReport(view: BodyView, intentId: string): void {
   if (pending.get(view)?.report.intentId === intentId) pending.delete(view);
@@ -69,7 +84,9 @@ export function dropBlockedReport(view: BodyView, intentId: string): void {
  * only while it is fresh (`REPORT_TTL_TICKS`) and its intent is still running. The alternate is a
  * detour through a waypoint to the side of the line to the goal, then a walk to the goal with a
  * wider radius. If it fails the original action's `failed(blocked)` stands and the reflex raises
- * an `action_failed` wake whose detail says `blocked`, so the intent hears about it.
+ * an `action_failed` wake whose detail says `blocked`, so the intent hears about it. Whenever the
+ * reflex gives up on a report it marks that intent abandoned (`isBlockedAbandoned`): the intent's
+ * program then fails `blocked` on its next step, with a wake, instead of walking again.
  */
 export function createBlockedPathReflex(walk: Walk = moveNear): Reflex {
   return {
@@ -92,7 +109,12 @@ export function createBlockedPathReflex(walk: Walk = moveNear): Reflex {
       pending.delete(ctx.view);
       if (!report) return { result: 'abandoned', detail: 'nothing blocked' };
       await ctx.cancelAction();
-      return alternateRoute(walk, ctx, report);
+      const outcome = await alternateRoute(walk, ctx, report);
+      // The walk is still blocked: the intent's program fails on its next step instead of re-walking.
+      if (outcome.result === 'abandoned' && report.intentId !== null) {
+        markBlockedAbandoned(ctx.view, report.intentId);
+      }
+      return outcome;
     },
   };
 }

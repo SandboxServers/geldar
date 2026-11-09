@@ -102,6 +102,38 @@ describe('view: hostiles', () => {
   });
 });
 
+describe('view: hostiles on the z axis', () => {
+  /** A zombie at (0.5, 64, z) whose body faces `yaw`; the Body stands at (0.5, 64, 0.5). */
+  function zombieAt(raw: Record<string, unknown>, z: number, yaw: number): void {
+    (raw.entities as Record<string, unknown>).z = {
+      type: 'hostile',
+      name: 'zombie',
+      position: new Vec3(0.5, 64, z),
+      yaw,
+    };
+  }
+  const attacking = (z: number, yaw: number): boolean | undefined => {
+    const { bot, raw } = viewBot();
+    zombieAt(raw, z, yaw);
+    return createBodyView(bot).nearbyHostiles()[0]?.attacking;
+  };
+
+  it('a mob south of the Body attacks when it faces north, not when it faces south', () => {
+    expect(attacking(3.5, 0)).toBe(true);
+    expect(attacking(3.5, Math.PI)).toBe(false);
+  });
+
+  it('a mob north of the Body attacks when it faces south, not when it faces north', () => {
+    expect(attacking(-2.5, Math.PI)).toBe(true);
+    expect(attacking(-2.5, 0)).toBe(false);
+  });
+
+  it('counts a skeleton-range mob at 4 blocks, not one at 5', () => {
+    expect(attacking(4.5, 0)).toBe(true);
+    expect(attacking(5.5, 0)).toBe(false);
+  });
+});
+
 describe('view: pathfinding', () => {
   it('is true while the pathfinder holds a goal', () => {
     const { bot, raw } = viewBot();

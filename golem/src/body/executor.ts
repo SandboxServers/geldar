@@ -2,8 +2,8 @@ import type { Action, Thought } from '@geldar/contract';
 import { validateThought } from '@geldar/contract';
 import { errorText } from '../actions/outcome.ts';
 import type { ActionRun } from '../actions/registry.ts';
-import { runPlanAction } from './executor-action.ts';
-import { type IntentStartMode, startIntentRun } from './executor-intent.ts';
+import { runPlanAction, waitForReflexIdle } from './executor-action.ts';
+import { ABANDONED_KEY, type IntentStartMode, startIntentRun } from './executor-intent.ts';
 import {
   type ActionReport,
   type ActiveIntent,
@@ -20,7 +20,7 @@ import { blockOperationsDone } from './limits.ts';
 import { builtinPreconditions, type PreconditionRegistry } from './preconditions.ts';
 import type { ProgramCheckpoint, StepResult } from './program.ts';
 import type { IntentState } from './records.ts';
-import { dropBlockedReport } from './reflexes/blocked-path.ts';
+import { dropBlockedReport, isBlockedAbandoned } from './reflexes/blocked-path.ts';
 import type { BodyRuntime, TickSource } from './runtime.ts';
 import {
   checkValidity,
@@ -97,7 +97,23 @@ export class IntentExecutor {
 
   /** The running program's checkpoint, or null when none runs or it has nothing to save. */
   checkpoint(): ProgramCheckpoint | null {
-    return this.active?.program.checkpoint() ?? null;
+    return this.active ? this.savedCheckpoint(this.active) : null;
+  }
+
+  /** True when the running intent's program ran the action (a plan action or a reflex's is not its own). */
+  ranByProgram(action: Action): boolean {
+    return this.active?.ownActions.has(action) === true;
+  }
+
+  /** The program's checkpoint plus the abandoned flag when the blocked-path reflex gave up on this intent. */
+  private savedCheckpoint(a: ActiveIntent): ProgramCheckpoint | null {
+    const own = a.program.checkpoint();
+    if (!this.abandoned(a)) return own;
+    return { ...own, [ABANDONED_KEY]: true };
+  }
+
+  private abandoned(a: ActiveIntent): boolean {
+    return a.resumedAbandoned || isBlockedAbandoned(this.runtime.view, a.id);
   }
 
   /** Subscribes to world ticks. A second call is a no-op. */
@@ -172,7 +188,7 @@ export class IntentExecutor {
     let failedAt: number | null = null;
     let rejection: Rejection | null = null;
     // A reflex that is busy has the Body: the plan's actions wait for it to end.
-    if (actions.length > 0) await this.runtime.reflexRunner.idle();
+    if (actions.length > 0) await waitForReflexIdle(this.runtime);
     const paused = actions.length > 0 ? await this.pauseForActions() : null;
     try {
       for (const [index, action] of actions.entries()) {
@@ -181,6 +197,8 @@ export class IntentExecutor {
           rejection = this.validate(plan);
           if (rejection) break;
         }
+        // A reflex may have started since the last action ended; it drives the bot, so wait again.
+        if (index > 0) await waitForReflexIdle(this.runtime);
         const report = await this.runOne(action, id, index, plan);
         reports.push(report);
         if (report.record.state !== 'completed') {
@@ -357,6 +375,11 @@ export class IntentExecutor {
   }
 
   private async runStep(a: ActiveIntent): Promise<void> {
+    if (this.abandoned(a)) {
+      // The reflex gave up on a blocked walk of this intent: end it, do not walk the same way again.
+      await this.end(a, 'failed', 'blocked: no way round the obstacle', 'action_failed', true);
+      return;
+    }
     const controller = new AbortController();
     const forward = (): void => controller.abort();
     a.controller.signal.addEventListener('abort', forward, { once: true });
@@ -391,7 +414,7 @@ export class IntentExecutor {
     return {
       intentId: a.id,
       intent: a.intent,
-      checkpoint: a.program.checkpoint(),
+      checkpoint: this.savedCheckpoint(a),
       blockOperationsUsed: a.limits.blockOperationsUsed,
       expiresTick: a.expiresTick,
     };
