@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/intent-event.schema.json",
+  "title": "IntentEventPayload",
+  "description": "Payload of a WorldEvent of type `intent`: one state change of an intent, published by the Body (spec 5.3, section 7). The sink projects it into the Postgres `intents` table, moving only forward: accepted, then running, then completed, failed or cancelled. paused and interrupted are events only, because the table does not store them. source_event_id derives from (intent_id, state), so a retry dedups.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent_id", "life_id", "body_generation", "state", "tick"],
+  "properties": {
+    "intent_id": { "$ref": "common.schema.json#/$defs/IntentId" },
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "body_generation": { "type": "integer", "minimum": 0 },
+    "state": {
+      "type": "string",
+      "enum": ["accepted", "running", "paused", "completed", "failed", "cancelled", "interrupted"]
+    },
+    "tick": {
+      "description": "World age of the change.",
+      "$ref": "common.schema.json#/$defs/WorldTick"
+    },
+    "detail": {
+      "description": "Why, in plain text, for example the failure message.",
+      "type": "string",
+      "maxLength": 256
+    }
+  }
+}
