@@ -2,21 +2,17 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** the scaffold PR (GitHub #2: repo setup, agent setup, CI, this campaign folder) is merged to `main`. Already done in repo settings: `main` is protected (PR required, required check `ci gate`, no force-push or deletion; admins can bypass), Dependabot alerts and security updates are on. No packet has been dispatched.
+**State (2026-11-08):** wave 1 is complete on `phase0/wave1`: P0-00 to P0-06 all `ship`, wave review fixes merged (branch `phase0/wave1-fix`), `./geldar.ps1 check` passes (167 tests). The wave 1 PR to `main` is open; the orchestrator does not merge it. `main` is protected (PR, required check `ci gate`).
 
-**Current wave:** 1, the contract and a healthy stack (ships as the wave 1 PR).
+**Next actions:**
 
-**In flight:** nothing.
+1. Wait for `ci gate` on the wave 1 PR (`gh pr checks <PR> --watch`). Likely first-run risks: the `compose` job needs `corepack` on the runner for `geldar.ps1`; the `sql` job relies on `psql`/`pg_isready` on the runner.
+2. Owner reviews and merges the PR (decisions 0023 to 0028 are in it).
+3. Then: remove packet worktrees `p0-00` to `p0-06`, `wave1`, `wave1-fix` (not `scriptorium-decisions`); copy useful `.claude/reports/` files to `worknotes/` first.
+4. Write wave 2 packets (P0-07 to P0-10: Golem skeleton, body actions A and B, body benchmark) from main after the merge; the ledger rows say "written at wave 1 close". Open the bench host questions with the owner before P0-10.
 
-**Next action:**
+**Known low findings carried forward (not blocking):** P0-01 commit 8f17621 has a Haiku 5.5 trailer. P0-03: `credits`/`count`/`world_day` have no upper bound (SQL INT), `thinker_id` is a free string. P0-04: invented limits (job `max_tokens` 32768, semver pattern), missing tests for `ModelName` length, `welcome.accepted_models` uniqueItems, `MAX_FRAME_BYTES`. P0-02: no tests for `attack.target` bad characters, `skill_id` 64-char boundary, offset -257, `propose.rule` 257 chars; `use_skill.args`, `Intent.arguments`, `Intent.checkpoint`, `propose.value` unbounded (backstop `MAX_FRAME_BYTES`). P0-06: paper-entrypoint `sed` rewrites every `secret:` line (one exists today). Port check rejects `extends`/`include`/interpolation (fail closed).
 
-1. Owner decisions are settled: Minecraft 26.1 (D-P0-07, decision 0022) and Velocity from Phase 0 (D-P0-08, decision 0021).
-2. Create `phase0/wave1` from `main` and push it. Packet worktrees branch from it (work-packets.md, wave 1 intro).
-3. Dispatch in parallel: P0-00 (threat model, Sonnet), P0-01 (contract), P0-05 (sql).
-4. When P0-01 has `ship`, merge it into `phase0/wave1`, then dispatch P0-02, P0-03, P0-04 in parallel from there. Resolve their `contract/src/index.ts` and generated-file conflicts at merge as work-packets.md § Contract says.
-5. When P0-05 has `ship`, dispatch P0-06 with the Ollama model tags filled in (versions are in its packet).
-6. Wave review, then one PR from `phase0/wave1` to `main`.
+**Settled in records:** 0023 to 0028 (skill FKs, gamerules, revision fields, one DB per shard, final-receipt constraints, Ollama tags). `docs/spec.md` is not edited.
 
-**Open owner decisions:** none.
-
-**Worktrees:** none.
+**Open owner items:** infra repo questions (spec section 13 items 2, 2a to 2d) are Phase 2; `docs/ideas.md` note for them not written (owner hasn't said yes).

@@ -37,13 +37,13 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 
 | Packet | Wave | Title | Implementer | Status | Depends on | PR |
 |---|---|---|---|---|---|---|
-| P0-00 | 1 | Threat model (`docs/threat-model.md`) | Sonnet (general-purpose) | Ready | — | |
-| P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Ready | — | |
-| P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | BlockedDependency | P0-01 | |
-| P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | BlockedDependency | P0-01 | |
-| P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | BlockedDependency | P0-01 | |
-| P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Ready | — | |
-| P0-06 | 1 | `compose/phase0.yml` (Paper behind Velocity, Postgres, NATS) and `shards/phase0.yaml`, healthy stack | packet-coder | BlockedDependency | P0-05 | |
+| P0-00 | 1 | Threat model (`docs/threat-model.md`) | Sonnet (general-purpose) | Done | — | |
+| P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Done | — | |
+| P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | Done | P0-01 | |
+| P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | Done | P0-01 | |
+| P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | Done | P0-01 | |
+| P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Done | — | |
+| P0-06 | 1 | `compose/phase0.yml` (Paper behind Velocity, Postgres, NATS) and `shards/phase0.yaml`, healthy stack | packet-coder | Done | P0-05 | |
 | P0-07 | 2 | `golem/` skeleton: connect, reconnect, RCON test control | written at wave 1 close | BlockedDependency | P0-06 | |
 | P0-08 | 2 | Body actions A: goto, gather, craft, with action results | written at wave 1 close | BlockedDependency | P0-07 | |
 | P0-09 | 2 | Body actions B: place, eat, sleep, chest open/deposit/withdraw | written at wave 1 close | BlockedDependency | P0-07 | |
@@ -58,3 +58,7 @@ Later waves, sliced when wave 2 closes (spec section 10 "Build" line):
 - **Wave 4, the Body lives:** reflexes (spec 5.2 table), the intent executor with preconditions, wake conditions, limits and checkpoints, action records and receipts, Body restart resuming from checkpoint.
 - **Wave 5, the Mind:** `lantern-local/` (Appendix H over a local WebSocket to Ollama), `animus/` thinking loop (5.3.4), attention controller (5.3.2), memory and sleep reflection (5.4), first versioned prompts in `prompts/` (Appendix B).
 - **Wave 6, watch and run Adam:** `glass/` Thought Stream v0, then the Adam runs on Qwen3 32B and 8B against the exit criteria above, and the campaign review.
+
+## Cross-packet notes (wave 1 review)
+
+- **Spec gaps settled in records:** [0023](../../decisions/0023-skill-foreign-keys.md) composite skill FKs, [0024](../../decisions/0024-gamerules-26-1.md) snake_case gamerules, [0025](../../decisions/0025-snapshot-revision.md) revision fields, [0026](../../decisions/0026-one-database-per-shard.md) one database per shard, [0027](../../decisions/0027-final-receipt-constraints.md) final-receipt constraints, [0028](../../decisions/0028-model-names.md) Ollama tags as model names.

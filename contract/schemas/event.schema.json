@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/event.schema.json",
+  "title": "WorldEvent",
+  "description": "An event in the world, as published on NATS and written to Postgres `events` by the sink (spec section 7, Appendix D). Subject rule: each event is published on NATS subject geldar.<shard>.<type> (Appendix F). source_event_id is assigned at the producer and makes JetStream redelivery idempotent. Event types from spec section 7: thought, speech, action, damage, death, birth, trade, book_written, book_read, skill_defined, offering, proposal, vote, law, sleep, reflection, server_tps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_event_id", "at", "shard", "world_day", "world_tick", "type", "payload"],
+  "properties": {
+    "source_event_id": { "$ref": "common.schema.json#/$defs/EventId" },
+    "at": { "type": "string", "format": "date-time" },
+    "shard": { "$ref": "common.schema.json#/$defs/ShardName" },
+    "world_day": { "type": "integer", "minimum": 0 },
+    "world_tick": { "$ref": "common.schema.json#/$defs/WorldTick" },
+    "type": {
+      "description": "The event type, also the last NATS subject segment. One of the section 7 types listed above.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,47}$"
+    },
+    "agent_id": {
+      "description": "The life the event concerns, when there is one.",
+      "$ref": "common.schema.json#/$defs/LifeId"
+    },
+    "thinker_id": {
+      "description": "The Thinker that produced the event, when there is one.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "payload": {
+      "description": "Event-specific fields. Free-form, so this object does not set additionalProperties.",
+      "type": "object"
+    }
+  }
+}

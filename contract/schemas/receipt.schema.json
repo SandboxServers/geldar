@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/receipt.schema.json",
+  "title": "Receipt",
+  "description": "A durable record of an action's effect (spec section 7; decision 0020, D-P0-10). Every action ends with exactly one final receipt, phase committed (it took effect) or aborted (it didn't). Economic actions (offer, give, write_book, read_book) first write a prepared receipt (intent to consume), then the final one. The Mind credits only on a committed receipt. Each receipt is its own row with its own receipt_id; (action_id, phase) is unique, so a repeated action writes no second receipt for the same phase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["receipt_id", "action_id", "life_id", "kind", "phase", "at"],
+  "properties": {
+    "receipt_id": { "$ref": "common.schema.json#/$defs/ReceiptId" },
+    "action_id": { "$ref": "common.schema.json#/$defs/ActionId" },
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "kind": {
+      "description": "The action's `do` verb, the same value as ActionRecord.kind.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,47}$"
+    },
+    "phase": {
+      "description": "prepared is the intent to consume; committed and aborted are the final phases.",
+      "type": "string",
+      "enum": ["prepared", "committed", "aborted"]
+    },
+    "at": { "type": "string", "format": "date-time" },
+    "item": {
+      "description": "The item consumed or moved, when the action has one.",
+      "$ref": "common.schema.json#/$defs/ItemName"
+    },
+    "count": {
+      "description": "How many of item.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "credits": {
+      "description": "Credits granted. The Mind credits only on a committed receipt.",
+      "type": "integer"
+    },
+    "detail": {
+      "description": "What happened, for example why an action aborted.",
+      "type": "string",
+      "maxLength": 256
+    }
+  }
+}

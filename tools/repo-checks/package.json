@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
   }
 }

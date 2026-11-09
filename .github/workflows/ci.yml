@@ -1,7 +1,8 @@
 # Runs on every PR and on main. `main` requires one check, `ci gate`, which
 # passes only when every job below passed. A job whose part of the repo does
 # not exist yet (plugin/, compose/) says so and passes; the packet that creates
-# that part makes the job do real work. Mirrors `./geldar.ps1 check`.
+# that part makes the job do real work. Mirrors `./geldar.ps1 check`, except
+# the `sql` job, which has no local `check` counterpart.
 name: ci
 
 on:
@@ -70,6 +71,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: shard secrets (phase0)
+        shell: bash
+        run: pwsh -NoProfile -File ./geldar.ps1 shard secrets phase0
       - name: docker compose config
         shell: bash
         run: |
@@ -89,10 +93,54 @@ jobs:
             echo "::endgroup::"
           done
 
+  sql:
+    name: sql
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: wait for postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::postgres did not become ready"
+          exit 1
+      - name: apply migrations in name order
+        env:
+          PGPASSWORD: ci
+        run: |
+          shopt -s nullglob
+          files=(sql/[0-9]*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no sql/[0-9]*.sql migrations found"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$f"
+            echo "::endgroup::"
+          done
+      - name: check schema (Appendix D tables and pgvector)
+        env:
+          PGPASSWORD: ci
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql
+
   gate:
     name: ci gate
     if: always()
-    needs: [typescript, plugin, compose]
+    needs: [typescript, plugin, compose, sql]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
