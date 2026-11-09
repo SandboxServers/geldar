@@ -2,18 +2,17 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** scaffold PR #2 merged. `main` is protected (PR, required check `ci gate`). Owner decisions settled (Minecraft 26.1, Velocity from Phase 0). Branch `phase0/wave1` on origin; `.claude/state/active-campaign` = phase0. Ollama has `qwen3:32b` and `qwen3:8b`.
-
-**Current wave:** 1 (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
-
-**Merged into `phase0/wave1`:** P0-00 to P0-06, all with `ship`. No agents in flight.
+**State (2026-11-08):** wave 1 is complete on `phase0/wave1`: P0-00 to P0-06 all `ship`, wave review fixes merged (branch `phase0/wave1-fix`), `./geldar.ps1 check` passes (167 tests). The wave 1 PR to `main` is open; the orchestrator does not merge it. `main` is protected (PR, required check `ci gate`).
 
 **Next actions:**
 
-1. Wave review pass 1 returned `fix` (docs and one small SQL constraint). A packet-coder in `.claude/worktrees/wave1-fix` (branch `phase0/wave1-fix`) applies it; then merge into `phase0/wave1`. Re-review only if the diff touches more than docs, SQL constraint and check-schema.
-2. `./geldar.ps1 check` on `phase0/wave1`; open the PR to `main` (`.github/pull_request_template.md`); wait for `ci gate` (`gh pr checks <PR> --watch`). Don't merge; tell the owner.
-3. After the PR is open: copy useful `.claude/reports/` files from packet worktrees into `worknotes/`, then remove the packet worktrees (`p0-00` to `p0-06`; not `scriptorium-decisions`).
+1. Wait for `ci gate` on the wave 1 PR (`gh pr checks <PR> --watch`). Likely first-run risks: the `compose` job needs `corepack` on the runner for `geldar.ps1`; the `sql` job relies on `psql`/`pg_isready` on the runner.
+2. Owner reviews and merges the PR (decisions 0023 to 0028 are in it).
+3. Then: remove packet worktrees `p0-00` to `p0-06`, `wave1`, `wave1-fix` (not `scriptorium-decisions`); copy useful `.claude/reports/` files to `worknotes/` first.
+4. Write wave 2 packets (P0-07 to P0-10: Golem skeleton, body actions A and B, body benchmark) from main after the merge; the ledger rows say "written at wave 1 close". Open the bench host questions with the owner before P0-10.
 
-**Notes for the wave review:** P0-01 commit 8f17621 has a Haiku 5.5 trailer (accepted). P0-03: `credits`/`count`/`world_day` have no upper bound (SQL columns INT), `thinker_id` is a free string. P0-04: invented limits (job `max_tokens` 32768, semver pattern); `generator.ts` now exports a per-frame validator for `$defs` with `properties.type.const` (worknotes/p0-04.md); missing tests for `ModelName` length, `welcome.accepted_models` uniqueItems, `MAX_FRAME_BYTES`. P0-02: no tests for `attack.target` bad characters, `skill_id` 64-char boundary, offset -257, `propose.rule` 257 chars; `use_skill.args`, `Intent.arguments`, `Intent.checkpoint` unbounded (backstop `MAX_FRAME_BYTES`). P0-06: see worknotes/p0-06.md; the paper-entrypoint `sed` rewrites every `secret:` line (only one exists today); the CI `compose` job relies on corepack on the runner.
+**Known low findings carried forward (not blocking):** P0-01 commit 8f17621 has a Haiku 5.5 trailer. P0-03: `credits`/`count`/`world_day` have no upper bound (SQL INT), `thinker_id` is a free string. P0-04: invented limits (job `max_tokens` 32768, semver pattern), missing tests for `ModelName` length, `welcome.accepted_models` uniqueItems, `MAX_FRAME_BYTES`. P0-02: no tests for `attack.target` bad characters, `skill_id` 64-char boundary, offset -257, `propose.rule` 257 chars; `use_skill.args`, `Intent.arguments`, `Intent.checkpoint`, `propose.value` unbounded (backstop `MAX_FRAME_BYTES`). P0-06: paper-entrypoint `sed` rewrites every `secret:` line (one exists today). Port check rejects `extends`/`include`/interpolation (fail closed).
 
-**Decisions written for the spec gaps (owner asked the orchestrator to write them, 2026-11-08):** [0023](../../decisions/0023-skill-foreign-keys.md) to [0028](../../decisions/0028-model-names.md). `docs/spec.md` itself is not edited; the records are the corrections. Name them in the wave PR description.
+**Settled in records:** 0023 to 0028 (skill FKs, gamerules, revision fields, one DB per shard, final-receipt constraints, Ollama tags). `docs/spec.md` is not edited.
+
+**Open owner items:** infra repo questions (spec section 13 items 2, 2a to 2d) are Phase 2; `docs/ideas.md` note for them not written (owner hasn't said yes).
