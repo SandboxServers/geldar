@@ -72,6 +72,8 @@ export class FakeMemoryStore implements MemoryStore, Journal {
   readonly agents = new Map<string, AgentRow>();
   readonly thoughts: ThoughtRow[] = [];
   readonly suppressed: SuppressedWakeup[] = [];
+  /** The `intents` rows by id, with their `thought_id` (undefined key: no row yet). */
+  private readonly intentRows = new Map<string, string | null>();
   private readonly memories: StoredMemory[] = [];
   private readonly relationships = new Map<string, RelationshipRow>();
   private readonly goals = new Map<string, GoalRow[]>();
@@ -226,6 +228,24 @@ export class FakeMemoryStore implements MemoryStore, Journal {
 
   async recordSuppressed(row: SuppressedWakeup): Promise<void> {
     this.suppressed.push(row);
+  }
+
+  /** Adds an `intents` row as the event sink would; `thoughtId` null means the column is empty. */
+  addIntentRow(intentId: string, thoughtId: string | null = null): void {
+    this.intentRows.set(intentId, thoughtId);
+  }
+
+  /** The `thought_id` of an `intents` row: undefined when there is no row. */
+  intentThought(intentId: string): string | null | undefined {
+    return this.intentRows.get(intentId);
+  }
+
+  async linkIntent(intentId: string, thoughtId: string): Promise<boolean> {
+    const linked = this.intentRows.get(intentId);
+    if (linked === thoughtId) return true;
+    if (linked !== null) return false;
+    this.intentRows.set(intentId, thoughtId);
+    return true;
   }
 
   async journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]> {

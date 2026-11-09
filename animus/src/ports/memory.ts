@@ -209,6 +209,12 @@ export interface Journal {
   /** Stores one suppressed wake. */
   recordSuppressed(row: SuppressedWakeup): Promise<void>;
   /**
+   * Sets `thought_id` on the intent row `intentId` when that column is still null; returns whether
+   * a row changed. The event sink writes the intent row, so it may not exist yet: false then, and
+   * the caller tries again.
+   */
+  linkIntent(intentId: string, thoughtId: string): Promise<boolean>;
+  /**
    * The life's thoughts with `worldTick` at or after `tick`, oldest first. With `limit`, only
    * the newest `limit` of them (still oldest first).
    */

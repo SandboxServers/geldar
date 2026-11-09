@@ -48,6 +48,7 @@ import {
   jobShape,
 } from './effort.ts';
 import { continueInterrupted, IntentLedger } from './fallback.ts';
+import { IntentLinker } from './intent-link.ts';
 import { buildThoughtRow, type LoopVersions } from './journal-row.ts';
 import { buildPlan } from './plan.ts';
 
@@ -193,12 +194,24 @@ export class ThinkingLoop {
   private readonly now: () => number;
   private readonly abort = new AbortController();
   private previousReason: string | null = null;
+  private readonly links: IntentLinker;
 
   constructor(deps: LoopDeps, options: LoopOptions) {
     this.deps = deps;
     this.options = options;
     this.ledger = deps.ledger ?? new IntentLedger();
     this.now = deps.now ?? Date.now;
+    this.links = new IntentLinker({
+      journal: deps.journal,
+      lifeId: options.lifeId,
+      sleep: deps.sleep ?? sleepFor,
+      log: (line) => this.log(line),
+    });
+  }
+
+  /** Resolves once the intent links started so far have ended: linked, given up or stopped. */
+  async settleLinks(): Promise<void> {
+    await this.links.settled();
   }
 
   /** Feeds a Body event to the intent ledger (the effort signals and the fallback read it). */
@@ -596,6 +609,10 @@ export class ThinkingLoop {
       },
     };
     if (cycle.thinkerId !== undefined) event.thinker_id = cycle.thinkerId;
+    // The Body accepted the plan, so its intent exists or is about to: link it to this thought.
+    if (plan?.intent_id !== undefined && ack?.accepted) {
+      this.links.link(plan.intent_id, thoughtId, this.abort.signal);
+    }
     this.log({
       event: 'thought_outcome',
       life_id: this.options.lifeId,

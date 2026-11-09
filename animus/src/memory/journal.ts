@@ -68,6 +68,16 @@ export class PgJournal implements Journal {
     );
   }
 
+  async linkIntent(intentId: string, thoughtId: string): Promise<boolean> {
+    // One statement: set the link when empty; true also when it already names this thought.
+    const result = await this.db.query(
+      `UPDATE intents SET thought_id = COALESCE(thought_id, $1)
+       WHERE intent_id = $2 AND (thought_id IS NULL OR thought_id = $1)`,
+      [thoughtId, intentId],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]> {
     // The newest $3 rows (all of them when $3 is null), returned oldest first.
     const result = await this.db.query(
