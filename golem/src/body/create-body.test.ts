@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ActionRun } from '../actions/registry.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody, enabledReflexes } from './create-body.ts';
@@ -138,57 +138,36 @@ describe('blocked walks', () => {
 });
 
 describe('block operation counting', () => {
-  async function runningIntent(ops: number) {
+  it('tells the executor about every action the registry finishes', () => {
     const b = body();
-    const program = scriptedProgram([{ status: 'running' }], { hold: true });
-    b.runtime.programs.register('fake', () => program);
-    await b.executor.submit(thought({ intent: { limits: { ops } } }), planFor(0));
-    const tick = b.executor.onTick(1);
-    await Promise.resolve();
-    return { b, program, tick };
-  }
-
-  it('counts a completed mine a program ran against the intent limit', async () => {
-    const { b, program, tick } = await runningIntent(5);
-    b.runtime.actions.notifyFinished({ do: 'mine', block: 'oak_log', count: 5 }, completedRun);
-    program.releaseStep();
-    await tick;
-    await b.executor.onTick(2);
-    expect((b.records as MemorySink).intents.at(-1)?.detail).toBe('max_block_operations reached');
+    const noted = vi.spyOn(b.executor, 'noteAction');
+    const mine = { do: 'mine', block: 'oak_log', count: 5 };
+    b.runtime.actions.notifyFinished(mine, completedRun);
+    b.runtime.actions.notifyFinished('nonsense', completedRun);
+    expect(noted).toHaveBeenCalledTimes(1);
+    expect(noted).toHaveBeenCalledWith(mine, completedRun);
   });
+});
 
-  it('counts a place as one and ignores a failed or non-block action', async () => {
-    const { b, program, tick } = await runningIntent(2);
-    const place = (z: number) => ({ do: 'place', block: 'dirt', at: { x: 1, y: 2, z } });
-    b.runtime.actions.notifyFinished(
-      { do: 'mine', block: 'oak_log', count: 5 },
-      {
-        ...completedRun,
-        state: 'failed',
-      },
+describe('blocked walks with the reflex off', () => {
+  it('does not report a blocked goto when blocked_path is off, so no program waits for it', () => {
+    const ticks = manualTicks();
+    const view = fakeView();
+    const reflexConfig = allReflexesOn();
+    reflexConfig.flags.blocked_path = false;
+    const made = createBody({
+      lifeId: LIFE,
+      bodyGeneration: 3,
+      bot: fakeBot(),
+      ticks: ticks.source,
+      currentRevision: () => 5,
+      view,
+      reflexConfig,
+    });
+    made.runtime.actions.notifyFinished(
+      { do: 'goto', target: { x: 10, y: 64, z: -4 } },
+      failedBlocked,
     );
-    b.runtime.actions.notifyFinished({ do: 'wait', seconds: 1 }, completedRun);
-    b.runtime.actions.notifyFinished(place(3), completedRun);
-    program.releaseStep();
-    await tick;
-
-    // One operation of two so far: the next tick still steps the program.
-    const second = b.executor.onTick(2);
-    await Promise.resolve();
-    expect(b.executor.intentState).toBe('running');
-    b.runtime.actions.notifyFinished(place(4), completedRun);
-    program.releaseStep();
-    await second;
-    await b.executor.onTick(3);
-    expect((b.records as MemorySink).intents.at(-1)?.detail).toBe('max_block_operations reached');
-  });
-
-  it('does not count an action that ends while no program step runs', async () => {
-    const b = body();
-    b.runtime.programs.register('fake', () => scriptedProgram([{ status: 'running' }]));
-    await b.executor.submit(thought({ intent: { limits: { ops: 1 } } }), planFor(0));
-    b.runtime.actions.notifyFinished({ do: 'mine', block: 'oak_log', count: 9 }, completedRun);
-    await b.executor.onTick(1);
-    expect(b.executor.intentState).toBe('running');
+    expect(hasBlockedReport(view)).toBe(false);
   });
 });

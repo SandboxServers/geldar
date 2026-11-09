@@ -26,26 +26,47 @@ const ALTERNATE_STALL_TICKS = 200;
 /** A walk like `moveNear`; tests pass a fake. */
 export type Walk = typeof moveNear;
 
-/** The reports waiting for the reflex, by view (one view per Body). */
-const pending = new WeakMap<BodyView, BlockedReport>();
+/** A report goes stale after this many world ticks without the reflex taking it (5 s at 20 TPS). */
+export const REPORT_TTL_TICKS = 100;
+
+/** The reports waiting for the reflex, by view (one view per Body), with the tick they came in. */
+const pending = new WeakMap<BodyView, { report: BlockedReport; tick: number }>();
 
 /**
- * Tells the reflex that a walk ended `blocked`. The executor calls this when a `goto` (or a program
- * built on it) fails with `blocked`; the reflex fires on the next tick. A second report before the
- * first is handled replaces it.
+ * Tells the reflex that a walk ended `blocked`. The createBody hook calls this when a `goto` fails
+ * with `blocked`; the reflex fires on the next tick. A program that sees a report waiting stays
+ * `running` instead of failing, so the detour can help it. A second report before the first is
+ * handled replaces it.
  */
 export function reportBlocked(view: BodyView, report: BlockedReport): void {
-  pending.set(view, report);
+  pending.set(view, { report, tick: view.tick ?? 0 });
 }
 
-/** True when a report waits for this view. */
+/** The live report for this view: a stale one (past `REPORT_TTL_TICKS`) is dropped and not returned. */
+function liveReport(view: BodyView): BlockedReport | null {
+  const entry = pending.get(view);
+  if (!entry) return null;
+  if ((view.tick ?? 0) - entry.tick > REPORT_TTL_TICKS) {
+    pending.delete(view);
+    return null;
+  }
+  return entry.report;
+}
+
+/** True when a live report waits for this view. */
 export function hasBlockedReport(view: BodyView): boolean {
-  return pending.has(view);
+  return liveReport(view) !== null;
+}
+
+/** Drops the waiting report when it was made for `intentId`: that intent has ended. */
+export function dropBlockedReport(view: BodyView, intentId: string): void {
+  if (pending.get(view)?.report.intentId === intentId) pending.delete(view);
 }
 
 /**
  * Blocked path (spec 5.2): the stall watchdog in `moveNear` has already ended the walk after 30 s
- * without movement; the reflex gets one alternate route and otherwise gives up. The alternate is a
+ * without movement; the reflex gets one alternate route and otherwise gives up. A report is used
+ * only while it is fresh (`REPORT_TTL_TICKS`) and its intent is still running. The alternate is a
  * detour through a waypoint to the side of the line to the goal, then a walk to the goal with a
  * wider radius. If it fails the original action's `failed(blocked)` stands and the reflex raises
  * an `action_failed` wake whose detail says `blocked`, so the intent hears about it.
@@ -56,7 +77,7 @@ export function createBlockedPathReflex(walk: Walk = moveNear): Reflex {
     priority: 20,
     cooldownTicks: 100,
     check(view): Trigger | null {
-      const report = pending.get(view);
+      const report = liveReport(view);
       if (!report) return null;
       return {
         x: report.goal.x,
@@ -67,7 +88,7 @@ export function createBlockedPathReflex(walk: Walk = moveNear): Reflex {
       };
     },
     async run(_trigger, ctx) {
-      const report = pending.get(ctx.view);
+      const report = liveReport(ctx.view);
       pending.delete(ctx.view);
       if (!report) return { result: 'abandoned', detail: 'nothing blocked' };
       await ctx.cancelAction();
@@ -100,7 +121,7 @@ async function alternateRoute(
   ctx: ReflexContext,
   report: BlockedReport,
 ): Promise<ReflexOutcome> {
-  const opts = { signal: ctx.signal, timeScale: 1, stallTicks: ALTERNATE_STALL_TICKS };
+  const opts = { signal: ctx.signal, timeScale: ctx.timeScale, stallTicks: ALTERNATE_STALL_TICKS };
   const here = ctx.bot.entity.position;
   const waypoint = detourWaypoint(here, report.goal);
   let move: MoveResult = await walk(ctx.bot, waypoint, WAYPOINT_RANGE, opts);
