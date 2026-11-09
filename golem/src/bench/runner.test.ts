@@ -261,6 +261,34 @@ describe('runCell', () => {
     expect(timing?.achievedTps).toBeLessThan(100 / 0.04);
   });
 
+  it('fails the run as disconnected when the connection drops during the reset', async () => {
+    const { server, manager, deps } = setup();
+    // The fake server drops the connection while the reset commands run.
+    const original = deps.ctl;
+    const source: CommandSource = {
+      async command(cmd) {
+        if (cmd.startsWith('clear ')) {
+          manager.state = 'backoff';
+          manager.emit('disconnect', {});
+        }
+        return original.command(cmd);
+      },
+    };
+    let ran = false;
+    const scenario = scenarioOf({
+      async run() {
+        ran = true;
+        return { passed: true, note: '' };
+      },
+    });
+    const cell = await runCell(scenario, 20, 1, { ...deps, ctl: new TestControl(source) });
+    expect(ran).toBe(false);
+    expect(cell.passed).toBe(0);
+    expect(cell.failures[0]?.note).toBe('disconnected');
+    expect(manager.listenerCount('disconnect')).toBe(0);
+    expect(server.commands.length).toBeGreaterThan(0);
+  });
+
   it('records the remaining runs as failed when the bot never returns', async () => {
     const { manager, deps } = setup({ reconnectWaitMs: 100 });
     const scenario = scenarioOf({

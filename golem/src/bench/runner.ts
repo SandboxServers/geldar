@@ -228,21 +228,32 @@ async function playRun(
   let died = false;
   let abortNote: string | null = null;
   const doRun = deps.runAction ?? runAction;
-  const arena = await resetBench(deps);
-  const ageStart = worldAge(bot);
-  const ageWallStart = Date.now();
-
   const onDisconnect = (): void => {
     disconnects++;
     abortNote ??= 'disconnected';
     controller.abort();
   };
+  // Listen before the reset: a disconnect during the RCON round trips must not go unseen.
+  deps.manager.on('disconnect', onDisconnect);
+  let arena: Awaited<ReturnType<typeof resetBench>>;
+  try {
+    arena = await resetBench(deps);
+  } catch (error) {
+    deps.manager.off('disconnect', onDisconnect);
+    throw error;
+  }
+  if (disconnects > 0 || deps.manager.state !== 'online' || deps.manager.bot !== bot) {
+    deps.manager.off('disconnect', onDisconnect);
+    throw new Error('disconnected');
+  }
+  const ageStart = worldAge(bot);
+  const ageWallStart = Date.now();
+
   const onDeath = (): void => {
     died = true;
     abortNote ??= 'bot died';
     controller.abort();
   };
-  deps.manager.on('disconnect', onDisconnect);
   bot.once('death', onDeath);
 
   const env: BenchEnv = {
