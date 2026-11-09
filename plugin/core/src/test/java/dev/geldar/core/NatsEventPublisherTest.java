@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class NatsEventPublisherTest {
     private static EventEnvelope event() {
@@ -129,6 +130,7 @@ class NatsEventPublisherTest {
     }
 
     @Test
+    @Timeout(30)
     void theSendLoopThrowsAfterTheMaxFailuresInARowSoTheWorkerReconnects() {
         NatsEventPublisher publisher = idle();
         try {
