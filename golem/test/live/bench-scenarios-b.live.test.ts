@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRegistry } from '../../src/actions/index.ts';
 import { runCell } from '../../src/bench/runner.ts';
-import { bed } from '../../src/bench/scenarios/bed.ts';
+import { bed, bedClear } from '../../src/bench/scenarios/bed.ts';
 import { blockedPath, resetBlockedPathRuns } from '../../src/bench/scenarios/blocked-path.ts';
 import { chest } from '../../src/bench/scenarios/chest.ts';
 import { gotoSmoke } from '../../src/bench/scenarios/goto-smoke.ts';
@@ -9,7 +9,7 @@ import type { Scenario } from '../../src/bench/types.ts';
 import { withLiveBot } from './fixture.ts';
 
 /**
- * The bed, chest and blocked-path scenarios once each at 20 TPS through the real runner
+ * The bed, hidden bed-clear, chest and blocked-path scenarios once each at 20 TPS through the real runner
  * (blocked-path twice: one `detour` run, one `sealed` run). A failing verdict traced to an action
  * is a Body finding; a `timeout` outcome of blocked-path is a pathfinder-watchdog finding.
  */
@@ -37,6 +37,7 @@ describe('bench scenarios B at 20 TPS', () => {
       };
       resetBlockedPathRuns();
       await play(bed, 1);
+      await play(bedClear, 1);
       await play(chest, 1);
       await play(blockedPath, 2);
       for (const [name, verdict] of Object.entries(verdicts)) {
