@@ -31,6 +31,8 @@ Thumbs.db
 bench-results/
 compose/secrets/
 .data/
+# Pid files and logs of the host processes of ./geldar.ps1 adam
+.geldar/
 
 # Token files for the MCP mock: keep real ones outside the repo
 *tokens*.json

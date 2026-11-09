@@ -52,6 +52,9 @@ mind:
   plan:
     expires_after_ticks: 1200    # a plan is refused by the Body this many world ticks after its snapshot
   run_tier: strong               # models.* tier for this run; the 8B run is a separate life (decision 0051)
+  # The life id of each tier. `./geldar.ps1 adam up --model strong|fast` reads this table and sets
+  # mind.agent.username, mind.agent.tier and mind.run_tier to match; the loaders ignore this key.
+  lives: { strong: ag_adam_01, fast: ag_adam_02 }
 
 # Pinned models (decision 0051). A model whose digest differs from the Ollama one is not advertised.
 # The digests are recorded from `ollama list` at dispatch; until then they hold the literal
