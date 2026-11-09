@@ -15,9 +15,9 @@ const character = z.strictObject({
   inventory: z
     .array(
       z.strictObject({
-        item: z.string().min(1).max(64),
-        count: z.int().min(1),
-        book_id: z.string().optional(),
+        item: z.string().regex(/^[a-z0-9_]{1,64}$/, 'must match ^[a-z0-9_]{1,64}$'),
+        count: z.int().min(1).max(64),
+        book_id: z.string().min(1).max(64).optional(),
       }),
     )
     .default([]),
@@ -30,7 +30,7 @@ const book = z.strictObject({
   title: z.string().max(32),
   kind: z.enum(['text', 'skill']),
   text: z.string().max(8192),
-  skill_id: z.string().optional(),
+  skill_id: z.string().min(1).max(64).optional(),
 });
 
 const event = z.discriminatedUnion('type', [
@@ -90,7 +90,7 @@ const scenarioSchema = z.strictObject({
     .prefault({}),
   shard_rules: z.strictObject({ chat_radius: z.int().min(1).default(32) }).prefault({}),
   laws: z
-    .array(z.strictObject({ rule: z.string(), value: z.string() }))
+    .array(z.strictObject({ rule: z.string().min(1).max(256), value: z.string() }))
     .max(20)
     .default([]),
 });

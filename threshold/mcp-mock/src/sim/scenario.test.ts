@@ -90,6 +90,40 @@ describe('parseScenario', () => {
   });
 });
 
+describe('parseScenario contract limits', () => {
+  const inv = (patch: Record<string, unknown>): string =>
+    withCharacter({ inventory: [{ item: 'oak_log', count: 1, ...patch }] });
+
+  it('holds inventory items to the contract', () => {
+    expect(() => parseScenario(inv({}))).not.toThrow();
+    expect(() => parseScenario(inv({ count: 64 }))).not.toThrow();
+    expect(() => parseScenario(inv({ item: 'Oak Log' }))).toThrow(
+      'scenario: character.inventory.0.item',
+    );
+    expect(() => parseScenario(inv({ count: 65 }))).toThrow(
+      'scenario: character.inventory.0.count',
+    );
+    expect(() => parseScenario(inv({ book_id: 'b'.repeat(65) }))).toThrow(
+      'scenario: character.inventory.0.book_id',
+    );
+    expect(() => parseScenario(inv({ book_id: '' }))).toThrow('book_id');
+  });
+
+  it('bounds skill_id and law rules', () => {
+    const book = (skill_id: string): string =>
+      JSON.stringify({
+        ...base(),
+        books: [{ id: 'bk_a', title: 'A', kind: 'skill', text: 't', skill_id }],
+      });
+    expect(() => parseScenario(book('s'.repeat(64)))).not.toThrow();
+    expect(() => parseScenario(book('s'.repeat(65)))).toThrow('books.0.skill_id');
+    const law = (rule: string): string =>
+      JSON.stringify({ ...base(), laws: [{ rule, value: 'x' }] });
+    expect(() => parseScenario(law('r'.repeat(256)))).not.toThrow();
+    expect(() => parseScenario(law('r'.repeat(257)))).toThrow('laws.0.rule');
+    expect(() => parseScenario(law(''))).toThrow('laws.0.rule');
+  });
+});
 describe('applyOverrides', () => {
   it('lets flags beat the file and the file beat the defaults', () => {
     const s = parseScenario(
