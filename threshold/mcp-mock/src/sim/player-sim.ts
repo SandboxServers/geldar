@@ -27,7 +27,12 @@ function nextMultiple(after: number, step: number): number {
   return (Math.floor(after / step) + 1) * step;
 }
 
-/** One player's world: the event log, the running intent, food, facts, driven by `syncTo`. No model. */
+/**
+ * One player's world: the event log, the running intent, food, facts, driven by `syncTo`. No model.
+ * Past `MAX_CATCHUP_STEPS` steps in one `syncTo` the quiet stretch is skipped, so the result
+ * depends on call chunking: one big sync skips (no eating, no dusk or dawn events), many small
+ * ones do not.
+ */
 export class PlayerSim {
   readonly scenario: Scenario;
   readonly startMs: number;
@@ -120,11 +125,14 @@ export class PlayerSim {
    * Plays the world forward to `nowMs`, one step per due moment in tick order. Never goes back; a
    * non-finite `nowMs` is ignored.
    *
-   * With a very short day a long jump holds billions of steps. After `MAX_CATCHUP_STEPS` steps
-   * without reaching a scenario event or an intent end, the run skips ahead to that moment (or to
-   * the target). The skipped stretch is quiet and deterministic: no `day_night` events, no eating,
+   * With a very short day a long jump holds billions of steps. After `MAX_CATCHUP_STEPS` steps in
+   * one call, the run skips ahead to just before the next scenario event or intent end (or to the
+   * target). The skipped stretch is quiet and deterministic: no `day_night` events, no eating,
    * and food falls by the hunger steps it holds (never below 0). Scenario events and intent ends
    * are never skipped.
+   *
+   * The skip depends on how calls are chunked: one big `syncTo` past the cap skips quietly, while
+   * many small ones each stay under it, so they eat, emit dusk and dawn events and keep food up.
    */
   syncTo(nowMs: number): void {
     if (!Number.isFinite(nowMs)) return;
