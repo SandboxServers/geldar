@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import type { Receipt } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.ts';
+import { watchWorldTicks } from '../world-clock.ts';
 import {
   fakeBot,
   fakeReflex,
@@ -256,5 +257,81 @@ describe('createBodyView', () => {
     bot.emit('physicsTick');
     expect(view.fallingDistance).toBe(0);
     view.dispose();
+  });
+});
+
+describe('BodyRuntime on the physics tick', () => {
+  function physicsRuntime(reflex: Reflex) {
+    const bot = fakeBot();
+    const runtime = new BodyRuntime({
+      lifeId: 'ag_test_01',
+      bodyGeneration: 1,
+      bot,
+      ticks: (listener) => watchWorldTicks(bot, listener),
+      sink: new MemorySink(),
+      reflexes: [reflex],
+      view: fakeView(),
+    });
+    const time = (age: number): void => {
+      (bot as unknown as { time: { age: number } }).time.age = age;
+      bot.emit('time' as never);
+    };
+    const physics = async (n = 1): Promise<void> => {
+      for (let i = 0; i < n; i++) {
+        bot.emit('physicsTick' as never);
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+    };
+    return { runtime, bot, time, physics };
+  }
+
+  it('fires a reflex within one physics tick, not one time packet', async () => {
+    const lava = fakeReflex('retreat', { priority: 1 });
+    const { runtime, time, physics } = physicsRuntime(lava);
+    time(100);
+    runtime.start();
+    await physics();
+    expect(lava.log).toEqual(['run@101']);
+    await runtime.stop();
+  });
+
+  it('counts the cooldown in world ticks across physics ticks and time packets', async () => {
+    const eat = fakeReflex('eat', { priority: 1, cooldownTicks: 5 });
+    const { runtime, time, physics } = physicsRuntime(eat);
+    time(100);
+    runtime.start();
+    await physics(10);
+    expect(eat.log).toEqual(['run@101', 'run@106']);
+    // A time packet that agrees with the estimate neither double-fires nor skips ticks.
+    time(110);
+    await physics(2);
+    expect(eat.log).toEqual(['run@101', 'run@106', 'run@111']);
+    await runtime.stop();
+  });
+
+  it('never fires twice in one physics tick and ignores a time packet on its own', async () => {
+    const eat = fakeReflex('eat', { priority: 1 });
+    const { runtime, time, physics } = physicsRuntime(eat);
+    time(100);
+    runtime.start();
+    time(120);
+    time(140);
+    expect(eat.log).toEqual([]);
+    await physics();
+    expect(eat.log).toEqual(['run@141']);
+    await runtime.stop();
+  });
+
+  it('stops firing after stop()', async () => {
+    const eat = fakeReflex('eat', { priority: 1 });
+    const { runtime, bot, time, physics } = physicsRuntime(eat);
+    time(100);
+    runtime.start();
+    await runtime.stop();
+    await physics(3);
+    expect(eat.log).toEqual([]);
+    expect(bot.listenerCount('physicsTick' as never)).toBe(0);
+    expect(bot.listenerCount('time' as never)).toBe(0);
   });
 });

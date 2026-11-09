@@ -1,5 +1,9 @@
 // The Body runtime's public interface: what the reflex, executor, program and record packets
 // build on. Import from here, not from the individual files.
+//
+// Ticks: `TickSource` and `ConnectionManager.onWorldTick` keep their shape (a listener that gets a
+// world tick), but fire at the client's 20 Hz physics tick, not at the ~1 Hz time packet. The value is
+// still in world ticks (`watchWorldTicks` in `world-clock.ts`), so cooldowns stay in world ticks.
 export type { ActionRun } from '../actions/registry.ts';
 export {
   type IntentProgram,

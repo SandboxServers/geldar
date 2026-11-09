@@ -8,7 +8,9 @@ import { type BodyView, createBodyView } from './view.ts';
 
 /**
  * Where world ticks come from: subscribe a listener, get back the function that unsubscribes. The
- * listener receives the world age. `ConnectionManager.onWorldTick` is the production source.
+ * listener receives the world tick: the world age, advanced by one per client physics tick (20 Hz)
+ * between time packets (`watchWorldTicks`), so it is an estimate between packets and strictly increasing.
+ * `ConnectionManager.onWorldTick` is the production source.
  */
 export type TickSource = (listener: (worldAge: number) => void) => () => void;
 

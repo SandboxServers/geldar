@@ -1,6 +1,7 @@
+import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
-import { sleep, worldAge } from './world-clock.ts';
+import { sleep, watchWorldTicks, worldAge } from './world-clock.ts';
 
 const botAt = (age: unknown) => ({ time: { age } }) as unknown as Bot;
 
@@ -34,5 +35,53 @@ describe('sleep', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('watchWorldTicks', () => {
+  function emitterBot(age: number | undefined) {
+    const bot = new EventEmitter() as unknown as Bot;
+    bot.time = { age } as never;
+    return bot;
+  }
+
+  it('emits nothing before the first time packet', () => {
+    const bot = emitterBot(undefined);
+    const seen: number[] = [];
+    watchWorldTicks(bot, (t) => seen.push(t));
+    bot.emit('physicsTick' as never);
+    expect(seen).toEqual([]);
+  });
+
+  it('advances one per physics tick and re-bases on a later time packet', () => {
+    const bot = emitterBot(40);
+    const seen: number[] = [];
+    watchWorldTicks(bot, (t) => seen.push(t));
+    bot.emit('physicsTick' as never);
+    bot.emit('physicsTick' as never);
+    (bot.time as { age?: number }).age = 60;
+    bot.emit('time' as never);
+    bot.emit('physicsTick' as never);
+    expect(seen).toEqual([41, 42, 61]);
+  });
+
+  it('never goes backwards when a time packet is behind the estimate', () => {
+    const bot = emitterBot(40);
+    const seen: number[] = [];
+    watchWorldTicks(bot, (t) => seen.push(t));
+    for (let i = 0; i < 22; i++) bot.emit('physicsTick' as never);
+    (bot.time as { age?: number }).age = 60;
+    bot.emit('time' as never);
+    bot.emit('physicsTick' as never);
+    expect(seen.at(-2)).toBe(62);
+    expect(seen.at(-1)).toBe(63);
+  });
+
+  it('unsubscribes both listeners', () => {
+    const bot = emitterBot(40);
+    const off = watchWorldTicks(bot, () => undefined);
+    off();
+    expect(bot.listenerCount('physicsTick' as never)).toBe(0);
+    expect(bot.listenerCount('time' as never)).toBe(0);
   });
 });
