@@ -44,24 +44,51 @@ async function loadSchemas(): Promise<LoadedSchema[]> {
   );
 }
 
+/**
+ * A $defs entry that fixes its `type` property to a constant, such as HelloFrame with "hello":
+ * one member of a union that is told apart by `type`.
+ */
+function isUnionMember(definition: Record<string, unknown>): boolean {
+  const properties = definition.properties as Record<string, Record<string, unknown>> | undefined;
+  return properties?.type?.const !== undefined;
+}
+
+/**
+ * The validators to export, keyed by export name. Each schema with a title gets one named after
+ * the title, and each union member in its $defs gets one named after the definition, pointing at
+ * that definition by fragment so Ajv compiles it within the schema.
+ */
+function validatorExports(schemas: LoadedSchema[]): Map<string, string> {
+  const exported = new Map<string, string>();
+  for (const { schema } of schemas) {
+    if (schema.title === undefined) continue;
+    exported.set(`validate${schema.title}`, schema.$id);
+    const defs = (schema.$defs ?? {}) as Record<string, Record<string, unknown>>;
+    for (const [name, definition] of Object.entries(defs)) {
+      if (!isUnionMember(definition)) continue;
+      const exportName = `validate${name}`;
+      if (exported.has(exportName)) throw new Error(`duplicate validator export ${exportName}`);
+      exported.set(exportName, `${schema.$id}#/$defs/${name}`);
+    }
+  }
+  return exported;
+}
+
 /** Ajv's standalone validators, as ESM. Schemas are added before compiling so $refs stay local. */
 async function buildValidators(schemas: LoadedSchema[]): Promise<string> {
   const ajv = new Ajv2020({ strict: true, allErrors: true, code: { source: true, esm: true } });
   addFormats(ajv);
   for (const { schema } of schemas) ajv.addSchema(schema);
 
-  const exported: Record<string, string> = {};
-  for (const { schema } of schemas) {
-    if (schema.title !== undefined) exported[`validate${schema.title}`] = schema.$id;
-  }
+  const exported = Object.fromEntries(validatorExports(schemas));
   return banner + esmRequirePrelude + standaloneCode(ajv, exported);
 }
 
-/** Declarations for validators.js, one per schema with a title. */
+/** Declarations for validators.js, one per export of validatorExports. */
 function buildValidatorDeclarations(schemas: LoadedSchema[]): string {
-  const lines = schemas
-    .filter(({ schema }) => schema.title !== undefined)
-    .map(({ schema }) => `export declare const validate${schema.title}: ValidateFunction;`);
+  const lines = [...validatorExports(schemas).keys()].map(
+    (name) => `export declare const ${name}: ValidateFunction;`,
+  );
   return `${banner}import type { ValidateFunction } from 'ajv';\n\n${lines.join('\n')}\n`;
 }
 

@@ -21,14 +21,16 @@
       "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
     },
     "ModelName": {
-      "description": "A model identifier as a Thinker names it, such as qwen3-32b.",
+      "description": "A model identifier as a Thinker names it, such as qwen3-32b or qwen3:32b-q4_K_M.",
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._:/-]{0,127}$"
+      "minLength": 1,
+      "maxLength": 128
     },
     "ThinkerName": {
       "description": "The Thinker's name as the colo records it, such as steven-home.",
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{1,63}$"
+      "minLength": 1,
+      "maxLength": 64
     },
     "ModelOffer": {
       "type": "object",

@@ -3,3 +3,12 @@ import type { ValidateFunction } from 'ajv';
 
 export declare const validateSnapshot: ValidateFunction;
 export declare const validateThinkerFrame: ValidateFunction;
+export declare const validateHelloFrame: ValidateFunction;
+export declare const validateHeartbeatFrame: ValidateFunction;
+export declare const validateCompletionFrame: ValidateFunction;
+export declare const validateErrorFrame: ValidateFunction;
+export declare const validateGoodbyeFrame: ValidateFunction;
+export declare const validateWelcomeFrame: ValidateFunction;
+export declare const validateJobFrame: ValidateFunction;
+export declare const validateCancelFrame: ValidateFunction;
+export declare const validateDrainFrame: ValidateFunction;
