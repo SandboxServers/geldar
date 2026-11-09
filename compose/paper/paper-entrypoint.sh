@@ -8,16 +8,28 @@ set -eu
 secret_file=/run/secrets/velocity-forwarding
 config=/data/config/paper-global.yml
 
+secret=$(cat "$secret_file")
+if [ -z "$secret" ]; then
+  echo "paper-entrypoint: $secret_file is empty; run ./geldar.ps1 shard secrets phase0" >&2
+  exit 1
+fi
+
 mkdir -p /data/config
-{
-  echo 'proxies:'
-  echo '  velocity:'
-  echo '    enabled: true'
-  echo '    online-mode: false'
-  printf "    secret: '%s'\n" "$(cat "$secret_file")"
-} > "$config"
-# The image runs the server as its own user; keep the directory and file owned as /data is,
-# so Paper can write its own config files next to this one.
-chown --reference=/data /data/config "$config"
+if [ ! -e "$config" ]; then
+  {
+    echo 'proxies:'
+    echo '  velocity:'
+    echo '    enabled: true'
+    echo '    online-mode: false'
+    printf "    secret: '%s'\n" "$secret"
+  } > "$config"
+  # The image runs the server as its own user; keep the directory and file owned as /data is,
+  # so Paper can write its own config files next to this one.
+  chown --reference=/data /data/config "$config"
+else
+  # Paper may have rewritten the file on an earlier start: change only the secret line.
+  sed -i "s|^\( *\)secret: .*|\1secret: '$secret'|" "$config"
+fi
+chmod 600 "$config"
 
 exec /image/scripts/start "$@"

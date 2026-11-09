@@ -77,7 +77,9 @@ services:
       ENABLE_RCON: "TRUE"
       RCON_PASSWORD_FILE: /run/secrets/rcon
       # 5.1 world border (diameter 3000 = radius 1500) and gamerules, run once the server is up.
-      RCON_CMDS_STARTUP: "worldborder set 3000,gamerule keepInventory false,gamerule doImmediateRespawn false,gamerule announceAdvancements false,gamerule sendCommandFeedback false,gamerule spectatorsGenerateChunks false"
+      # The image splits this value on newlines, one RCON command per line. Gamerule names are
+      # the 26.1 ones: the camelCase names from spec 5.1 are rejected ("Incorrect argument").
+      RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
     secrets: [rcon, velocity-forwarding]
     volumes:
       - paper-data:/data

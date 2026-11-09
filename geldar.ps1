@@ -83,11 +83,27 @@ function Initialize-ShardSecrets([string] $Shard) {
   $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
   foreach ($name in 'postgres', 'rcon', 'velocity-forwarding') {
     $path = Join-Path $dir "$name.txt"
-    if (Test-Path $path) { continue }
+    if (Test-Path $path) {
+      # An empty file is what a crash between create and write leaves behind; refuse to guess.
+      if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
+      continue
+    }
     # 64 symbols and 256 byte values: the modulo is unbiased.
     $bytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
     $secret = -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
-    [IO.File]::WriteAllText($path, $secret)
+    # CreateNew is atomic: if another writer created the file first, this fails and nothing is overwritten.
+    try {
+      $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+    } catch [IO.IOException] {
+      if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
+      continue
+    }
+    try {
+      $data = [Text.Encoding]::ASCII.GetBytes($secret)
+      $stream.Write($data, 0, $data.Length)
+    } finally {
+      $stream.Dispose()
+    }
     Write-Host "created compose/secrets/$name.txt"
   }
 }
