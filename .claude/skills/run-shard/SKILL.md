@@ -5,7 +5,7 @@ description: Bring a Geldar shard's Docker Compose stack up (Paper, Postgres wit
 
 # Run a shard
 
-Usable once packet P0-06 has added `compose/phase0.yml`; until then `./geldar.ps1 shard up` says the file does not exist. Phase 0 runs everything on this one PC (`docs/decisions/0002-phase0-host-and-models.md`); Ollama runs on the host, not in compose, so it can use the GPU.
+Usable once packet P0-06 has added `compose/phase0.yml`; until then `./geldar.ps1 shard up` says the file does not exist. Phase 0 runs everything on this one PC (`docs/decisions/0002-phase0-host-and-models.md`); Ollama runs on the host, not in compose, so it can use the GPU. The connection path matches production (`docs/decisions/0021-velocity-from-phase0.md`): bots join through the Velocity bot ingress on `127.0.0.1:25565`, Paper accepts only forwarded connections, and secrets are files in `compose/secrets/` that `shard up` generates when missing.
 
 ## Start
 
@@ -31,6 +31,8 @@ function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
 | Migrations | `dc exec postgres psql -U geldar -d geldar -tAc "select count(*) from information_schema.tables where table_schema='public'"` | the table count from `sql/` |
 | NATS JetStream | `curl -fsS http://localhost:8222/healthz?js-enabled-only=true` | `{"status":"ok"}` |
 | Paper | compose healthcheck (the image's `mc-health`) | `healthy` in `shard status` |
+| Paper is behind the proxy | `dc port paper 25565` | prints nothing: Paper has no published game port |
+| Velocity bot ingress | compose healthcheck, and `Test-NetConnection 127.0.0.1 -Port 25565` | `healthy`, and the port answers |
 | Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
 
 Ports, users and database names come from `compose/phase0.yml` and its `.env.example`; if they differ from the table, the compose file wins. Update this table in the same PR.
@@ -50,4 +52,4 @@ Never fix a problem by acting inside the world (teleporting a bot, giving items,
 ./geldar.ps1 shard down phase0     # keeps volumes: the world and the database survive
 ```
 
-Deleting volumes destroys the world and the record. Ask the owner before `docker compose down -v` or removing a volume.
+Deleting volumes destroys the world and the record. Deleting `compose/secrets/` makes the next `shard up` generate new secrets, which an existing Postgres volume won't accept. Ask the owner before `docker compose down -v` or removing a volume.

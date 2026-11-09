@@ -27,4 +27,5 @@ Thumbs.db
 
 # Benchmark and shard runtime output (results we keep are copied into docs/)
 bench-results/
+compose/secrets/
 .data/
