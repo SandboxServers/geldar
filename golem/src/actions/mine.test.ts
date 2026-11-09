@@ -78,7 +78,9 @@ function fakeBot(blocks: FakeBlock[], inventory: ItemStack[] = []) {
     },
     equip: vi.fn(async () => undefined),
     stopDigging: vi.fn(),
-    waitForTicks: vi.fn(async () => undefined),
+    waitForTicks: vi.fn(async (_ticks: number) => undefined),
+    lookAt: vi.fn(),
+    setControlState: vi.fn(),
     dig: vi.fn(async (target: FakeBlock) => {
       target.type = 0;
       for (const id of target.drops) inventory.push({ name: names[id] ?? '?', count: 1 });
@@ -336,6 +338,51 @@ describe('mineAction', () => {
     bot.entities[1] = { name: 'item', position: new Vec3(3.2, 63.2, 0.5) };
     expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
     expect(vi.mocked(moveNear).mock.calls[0]?.[1]).toEqual(new Vec3(3, 63, 0));
+  });
+
+  it('walks onto the cell of a drop that landed outside the pickup box', async () => {
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      { ...block(0, new Vec3(2, 63, 0), []), boundingBox: 'empty' },
+    ]);
+    bot.canDigBlock.mockReturnValue(true);
+    // The item landed 4.2 blocks east: 2.8 from the bot, out of reach of the walk to the drop cell.
+    bot.entities[1] = { name: 'item', position: new Vec3(4.2, 63, 0.5) };
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    expect(vi.mocked(moveNear).mock.calls[1]?.[1]).toEqual(new Vec3(4, 63, 0));
+  });
+
+  it('neither walks nor nudges when the drop is already inside the pickup box', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
+    bot.canDigBlock.mockReturnValue(true);
+    // 1.2 blocks east of the bot, at its height: the item box meets the grown player box.
+    bot.entities[1] = { name: 'item', position: new Vec3(1.2, 64, 0.5) };
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    expect(vi.mocked(moveNear)).toHaveBeenCalledTimes(1);
+    expect(bot.setControlState).not.toHaveBeenCalled();
+  });
+
+  it('walks straight at a drop the path cannot reach, until it is inside the pickup box', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
+    bot.canDigBlock.mockReturnValue(true);
+    // 2.0 blocks east of the bot: out of the box. Each forward tick moves the bot 0.25 east, so
+    // the five nudge ticks bring it to 1.25, 0.75 blocks from the item.
+    bot.entities[1] = { name: 'item', position: new Vec3(2, 64, 0.5) };
+    let forward = false;
+    bot.setControlState.mockImplementation((control: string, on: boolean) => {
+      if (control === 'forward') forward = on;
+    });
+    bot.waitForTicks.mockImplementation(async (ticks: number) => {
+      if (forward) bot.entity.position = bot.entity.position.offset(0.25 * ticks, 0, 0);
+    });
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    expect(bot.lookAt).toHaveBeenCalledWith(new Vec3(2, 64, 0.5));
+    expect(bot.setControlState.mock.calls).toEqual([
+      ['forward', true],
+      ['forward', false],
+    ]);
+    // The initial walk, then the walk to the item's cell; the second round finds the box reached.
+    expect(vi.mocked(moveNear)).toHaveBeenCalledTimes(2);
   });
 
   it('calls dig once and cancels when the signal aborts between two blocks', async () => {

@@ -28,6 +28,21 @@ const DROP_ENTITY_RANGE = 2;
 const FALL_CELLS = 16;
 /** Pickup polls at one world tick each, before timeScale. A drop waits about 10 server ticks. */
 const DROP_POLLS = 60;
+/** How far from the broken block a drop entity is looked for, in blocks. */
+const DROP_REACH = 3;
+/** Player box half-width and height, in blocks. */
+const PLAYER_HALF_WIDTH = 0.3;
+const PLAYER_HEIGHT = 1.8;
+/** The vanilla pickup box grows the player box by 1.0 across and 0.5 up and down. */
+const PICKUP_GROW_XZ = 1.0;
+const PICKUP_GROW_Y = 0.5;
+/** Item entity size, in blocks. */
+const ITEM_HALF_WIDTH = 0.125;
+const ITEM_HEIGHT = 0.25;
+/** Walk-and-nudge rounds for a drop that is still outside the pickup box. */
+const PICKUP_ATTEMPTS = 3;
+/** Ticks the bot walks straight at a drop it could not reach by path. */
+const NUDGE_TICKS = 5;
 
 /** The per-name gain between two inventory snapshots. Only positive differences are kept. */
 export function inventoryDelta(before: ItemStack[], after: ItemStack[]): Record<string, number> {
@@ -123,6 +138,8 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // the drop arrived.
     const pickup = await walkToDrop(ctx, bot, dropSpot(bot, at));
     if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
+    await reachDrop(ctx, bot, at);
+    if (signal.aborted) return abort(bot, mined);
     await waitForDrop(ctx, bot, block, start, mined);
     if (signal.aborted) return abort(bot, mined);
   }
@@ -243,6 +260,63 @@ async function walkToDrop(ctx: ActionContext, bot: Bot, spot: Vec3): Promise<Mov
     if (result.ok || result.reason === 'cancelled') break;
   }
   return result;
+}
+
+/**
+ * Brings the bot into the pickup box of the drop that the block at `at` left, when the walks did
+ * not. The item can land a cell away from the cell the walk aimed at, so it is looked up again in
+ * each round. A round walks onto the item's cell (the walk can fail when a block is above that
+ * cell), then walks straight at the item for a few ticks. Ends when the item is gone or in the box,
+ * or after `PICKUP_ATTEMPTS` rounds. Whether the item arrived is for `waitForDrop` and the inventory.
+ */
+async function reachDrop(ctx: ActionContext, bot: Bot, at: Vec3): Promise<void> {
+  const { signal } = ctx;
+  for (let round = 0; round < PICKUP_ATTEMPTS; round++) {
+    const drop = nearestDrop(bot, at);
+    if (!drop || inPickupBox(bot.entity.position, drop.position) || signal.aborted) return;
+    const cell = drop.position.floored();
+    if (!bot.entity.position.floored().equals(cell)) {
+      const walk = await moveNear(bot, cell, PICKUP_RANGE, { signal, timeScale: ctx.timeScale });
+      if (!walk.ok && walk.reason === 'cancelled') return;
+    }
+    const latest = nearestDrop(bot, at);
+    if (!latest || inPickupBox(bot.entity.position, latest.position)) continue;
+    bot.lookAt(latest.position);
+    bot.setControlState('forward', true);
+    try {
+      await bot.waitForTicks(Math.ceil(NUDGE_TICKS * ctx.timeScale));
+    } finally {
+      bot.setControlState('forward', false);
+    }
+  }
+}
+
+/** The item entity nearest the block at `at` within `DROP_REACH`, if any. */
+function nearestDrop(bot: Bot, at: Vec3): { position: Vec3 } | undefined {
+  let best: { position: Vec3 } | undefined;
+  let bestDistance = DROP_REACH;
+  for (const entity of Object.values(bot.entities)) {
+    if (entity.name !== 'item') continue;
+    const distance = entity.position.distanceTo(at);
+    if (distance < bestDistance) {
+      best = entity;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * Whether the player at `player` (feet position) can pick up an item at `item`: the item's box must
+ * meet the player's box grown by the pickup inflation. An item 1.43 blocks from the centre of the
+ * player's cell is out of reach, though the cell is next to it.
+ */
+function inPickupBox(player: Vec3, item: Vec3): boolean {
+  const reach = PLAYER_HALF_WIDTH + PICKUP_GROW_XZ + ITEM_HALF_WIDTH;
+  if (Math.abs(player.x - item.x) > reach || Math.abs(player.z - item.z) > reach) return false;
+  const low = player.y - PICKUP_GROW_Y;
+  const high = player.y + PLAYER_HEIGHT + PICKUP_GROW_Y;
+  return item.y + ITEM_HEIGHT >= low && item.y <= high;
 }
 
 /**
