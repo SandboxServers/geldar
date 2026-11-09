@@ -24,7 +24,7 @@ describe('arenaFor', () => {
     expect(arenaFor(2).center).toEqual({ x: 928, y: 200, z: 800 });
   });
 
-  it('spans the 31 by 31 platform from stone at y 199 to air at y 220', () => {
+  it('spans the 31 by 31 platform from stone_bricks at y 199 to air at y 220', () => {
     const arena = arenaFor(0);
     expect(arena.min).toEqual({ x: 785, y: 199, z: 785 });
     expect(arena.max).toEqual({ x: 815, y: 220, z: 815 });

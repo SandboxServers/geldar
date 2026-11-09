@@ -1,14 +1,14 @@
 import type { Pos, TestControl } from './test-control.ts';
 
 /**
- * A live-test arena: a 31 by 31 stone platform at y = 199 with air above it, far from spawn.
+ * A live-test arena: a 31 by 31 stone_bricks platform at y = 199 with air above it, far from spawn.
  * Slot n is centered on x = 800 + 64 * n, z = 800, so arenas never overlap.
  */
 export interface Arena {
   slot: number;
   /** The platform center on y = 200 (the first air block). */
   center: Pos;
-  /** Lowest corner: the platform's stone layer. */
+  /** Lowest corner: the platform's stone_bricks layer. */
   min: Pos;
   /** Highest corner: the top of the air volume. */
   max: Pos;
@@ -66,7 +66,7 @@ export async function buildArena(ctl: TestControl, slot: number): Promise<Arena>
     const stone = await ctl.fill(
       { x: min.x, y: STONE_Y, z: min.z },
       { x: max.x, y: STONE_Y, z: max.z },
-      'stone',
+      'stone_bricks',
     );
     const air = await ctl.fill(
       { x: min.x, y: AIR_BOTTOM_Y, z: min.z },
