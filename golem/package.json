@@ -18,5 +18,9 @@
     "mineflayer-pathfinder": "2.4.5",
     "vec3": "0.1.10",
     "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "pg": "8.23.1"
   }
 }
