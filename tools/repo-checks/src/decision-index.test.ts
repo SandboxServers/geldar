@@ -79,6 +79,38 @@ describe('checkDecisionIndex', () => {
     expect(checkDecisionIndex(decisionFiles(['0001-contract.md'], readme))).toEqual([]);
   });
 
+  it('accepts a bold first cell as a listed record', () => {
+    const readme = [
+      '| # | Decision | Status |',
+      '|---|---|---|',
+      '| **[0001](0001-contract.md)** | The contract | Accepted |',
+      '',
+    ].join('\n');
+    expect(checkDecisionIndex(decisionFiles(['0001-contract.md'], readme))).toEqual([]);
+  });
+
+  it('does not read a link in a later cell as the row link', () => {
+    const readme = [
+      '| # | Decision | Status |',
+      '|---|---|---|',
+      '| 0007 | see [0007](0007-a.md) | Accepted |',
+      '',
+    ].join('\n');
+    const problems = checkDecisionIndex(decisionFiles(['0007-a.md'], readme));
+    expect(problems).toEqual([`${README} does not list 0007-a.md (add its row to the table)`]);
+  });
+
+  it('skips a first-cell spec or external link without reporting it as a dead record', () => {
+    const readme = [
+      '| # | Decision | Status |',
+      '|---|---|---|',
+      '| [spec](../spec.md#13) | The spec | Accepted |',
+      '| [ext](https://example.com/x) | External | Accepted |',
+      '',
+    ].join('\n');
+    expect(checkDecisionIndex(decisionFiles([], readme))).toEqual([]);
+  });
+
   it('reports a record whose only mention is another row status cell', () => {
     const readme = [
       '| # | Decision | Status |',

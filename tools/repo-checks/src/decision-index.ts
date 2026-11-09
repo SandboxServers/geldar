@@ -10,7 +10,8 @@
 const DECISIONS_DIR = 'docs/decisions/';
 const README = `${DECISIONS_DIR}README.md`;
 const RECORD = /^\d{4}-[^/]+\.md$/;
-const ROW_LINK = /^\|\s*\[[^\]]*\]\(([^)\s]+)\)/;
+// The row's first cell may be bold (`**[NNNN](NNNN-slug.md)**`) and must start with the link.
+const ROW_LINK = /^\|\s*(?:\*\*)?\[[^\]]*\]\(([^)\s]+)\)/;
 
 /**
  * Returns one message per record missing from the README table, per dead row

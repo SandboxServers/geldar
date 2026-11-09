@@ -70,7 +70,7 @@ Scope: <packet id, wave N or campaign>; commit range <base>..<head>
 Spec: docs/analysis/<campaign>/work-packets.md, section "### <packet id>" (or docs/spec.md sections <list>)
 Pass: <N> of 3
 Integration branch: <origin/phase0/wave<N>, for the merge-tree check>
-Report: <worktree>\.claude\reports\<campaign>\review-<scope>-<N>.md (three sections: Findings, Fix notes, Verdict)
+Report: <worktree>\.claude\reports\<campaign>\<scope>-review-<N>.md (three sections: Findings, Fix notes, Verdict)
 Return one line: <scope> verdict=<ship|fix|decision> <report-path>
 ```
 
