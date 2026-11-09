@@ -61,12 +61,12 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-10c | 2 | Scenarios `bed`, `chest`, `blocked-path` | packet-coder | Shipped (batch review 2 rounds, merged to wave2) | P0-08a, P0-08b, P0-09a, P0-09b, P0-10a | |
 | W1-process | 2 | Apply the wave 1 retro actions to agents, skills and repo checks | packet-coder | Shipped (review 3, merged to wave2) | — | |
 | W2-process | 2 | Apply the wave 2 retro actions to agents, skills, `CLAUDE.md` and `AGENTS.md` | packet-coder | Shipped (review 2, merged to wave2) | wave 2 code | |
-| P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Ready | P0-06 | |
-| P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Ready | P0-03, P0-05 | |
-| P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | BlockedDependency | P0-11 | |
-| P0-13b | 3 | Golem registers its bot username before connecting | packet-coder | BlockedDependency | P0-13a | |
+| P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Shipped (batch review 1, wave review fixes in flight) | P0-06 | |
+| P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Shipped (batch review 1, wave review fixes in flight) | P0-03, P0-05 | |
+| P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | Shipped (wave review fixes in flight) | P0-11 | |
+| P0-13b | 3 | Golem registers its bot username before connecting | packet-coder | Shipped (wave review fixes in flight) | P0-13a | |
 
-Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md` is written at the wave 2 close (wave close step 4).
+Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md` is written (wave close step 2).
 
 **Wave 2 additions** (merged outside the packet rows above): the P0-10a follow-up (read-only run queries `blockIs` and `isSleeping`, an injected scenario list; eeb44fd); the record helper (`golem/test/live/record.ts`; 7f8c46e); the corner-cutting `moveNear` fix ([0039](../../decisions/0039-pathing-forbids-corner-cutting.md)); the hidden `bed-clear` control scenario; the arena `stone_bricks` floor (46962cc); the table-craft and chest rework ([0032](../../decisions/0032-table-crafting-and-recipe-book.md), [0037](../../decisions/0037-chest-transfers-by-explicit-clicks.md)).
 
