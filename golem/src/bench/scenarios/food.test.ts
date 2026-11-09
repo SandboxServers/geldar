@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BenchEnv, RunEnv } from '../types.ts';
 import { food, foodRose } from './food.ts';
+import { findScenario } from './index.ts';
 
 const CENTER = { x: 800, y: 200, z: 800 };
 
@@ -85,5 +86,11 @@ describe('food run', () => {
   it('never moves the bot or gives items from run', () => {
     const source = food.run.toString();
     for (const banned of ['.tp(', '.give(', '.setblock(']) expect(source).not.toContain(banned);
+  });
+});
+
+describe('food registration', () => {
+  it('is registered', () => {
+    expect(findScenario('food')).toBe(food);
   });
 });

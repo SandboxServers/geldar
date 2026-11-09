@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BenchEnv, RunEnv } from '../types.ts';
+import { findScenario } from './index.ts';
 import { isEnclosed, type Offset, SHELTER_OFFSETS, shelter } from './shelter.ts';
 
 const BASE = { x: 800, y: 200, z: 800 };
@@ -130,5 +131,11 @@ describe('shelter run', () => {
     for (const banned of ['.tp(', '.give(', '.setblock(', "do: 'goto'"]) {
       expect(source).not.toContain(banned);
     }
+  });
+});
+
+describe('shelter registration', () => {
+  it('is registered', () => {
+    expect(findScenario('shelter')).toBe(shelter);
   });
 });

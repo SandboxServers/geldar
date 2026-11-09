@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BenchEnv, RunEnv } from '../types.ts';
+import { findScenario } from './index.ts';
 import { failedStepNote, holdsStonePickaxe, woodToStoneTools } from './wood-to-stone-tools.ts';
 
 const CENTER = { x: 800, y: 200, z: 800 };
@@ -112,5 +113,11 @@ describe('wood-to-stone-tools run', () => {
   it('never moves the bot or gives items from run', () => {
     const source = woodToStoneTools.run.toString();
     for (const banned of ['.tp(', '.give(', '.setblock(']) expect(source).not.toContain(banned);
+  });
+});
+
+describe('wood-to-stone-tools registration', () => {
+  it('is registered', () => {
+    expect(findScenario('wood-to-stone-tools')).toBe(woodToStoneTools);
   });
 });
