@@ -364,6 +364,31 @@ describe('mineAction', () => {
     expect(bot.waitForTicks).toHaveBeenCalledTimes(3);
   });
 
+  it('does not end the wait for block 3 on a drop that lands during it from an earlier block', async () => {
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      block(OAK_LOG, new Vec3(3, 64, 0), [OAK_LOG]),
+      block(OAK_LOG, new Vec3(4, 64, 0), [OAK_LOG]),
+    ]);
+    // Digging clears each block and gives nothing; the only drop is block 1's, which lands on
+    // the 121st wait: after block 2's waits, during block 3's first poll window.
+    bot.dig.mockImplementation(async (target: FakeBlock) => {
+      target.type = 0;
+    });
+    bot.waitForTicks.mockImplementation(async () => {
+      if (bot.waitForTicks.mock.calls.length === 121) {
+        bot.inventory.items().push({ name: 'oak_log', count: 1 });
+      }
+    });
+    const outcome = await mine(bot, 3);
+    expect(outcome).toEqual({
+      status: 'completed',
+      detail: { mined: 3, collected: { oak_log: 1 } },
+    });
+    // Each of the three waits runs its full 60 polls: one late drop is not three drops.
+    expect(bot.waitForTicks).toHaveBeenCalledTimes(180);
+  });
+
   it.each([
     ['Digging aborted', 'interrupted'],
     ['Infinity', 'not_possible'],

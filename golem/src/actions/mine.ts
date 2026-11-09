@@ -96,7 +96,6 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (tool) await bot.equip(tool, 'hand');
     if (signal.aborted) return abort(bot, mined);
 
-    const before = snapshot(bot);
     let error = await digOnce(bot, block, signal);
     // `canDigBlock` is a distance test only: a block in reach can still be occluded. One walk
     // toward it, then one more dig, is the fix for "not in view".
@@ -123,29 +122,32 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
       timeScale: ctx.timeScale,
     });
     if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
-    await waitForDrop(ctx, bot, block, before);
+    await waitForDrop(ctx, bot, block, start, mined);
     if (signal.aborted) return abort(bot, mined);
   }
   return completed({ mined, collected: inventoryDelta(start, snapshot(bot)) });
 }
 
 /**
- * Waits for a drop to reach the inventory. Polls once per world tick (`waitForTicks(1)`), at most
- * `60 * timeScale` times, and stops at once when a dropped item name has gained a count.
+ * Waits for the drops of `mined` blocks to reach the inventory. Polls once per world tick
+ * (`waitForTicks(1)`), at most `60 * timeScale` times, and stops at once when a dropped item name
+ * has gained at least `mined` since the start of the action. The count is cumulative: a drop of an
+ * earlier block that arrives late cannot end the wait for this one.
  */
 async function waitForDrop(
   ctx: ActionContext,
   bot: Bot,
   block: Block,
-  before: ItemStack[],
+  start: ItemStack[],
+  mined: number,
 ): Promise<void> {
   const names = dropNames(bot, block);
   await pollUntil(
     bot,
     ctx.signal,
     () => {
-      const gained = inventoryDelta(before, snapshot(bot));
-      return names.some((name) => (gained[name] ?? 0) > 0);
+      const gained = inventoryDelta(start, snapshot(bot));
+      return names.some((name) => (gained[name] ?? 0) >= mined);
     },
     { polls: Math.ceil(DROP_POLLS * ctx.timeScale) },
   );
