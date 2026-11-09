@@ -9,7 +9,7 @@ import { ActionRegistry, type AnyActionHandler } from './registry.ts';
 // (imports for this block go here)
 
 // --- P0-08b craft ---
-// (imports for this block go here)
+import { craftAction } from './craft.ts';
 
 // --- P0-09a place, eat, sleep ---
 // (imports for this block go here)
@@ -23,7 +23,7 @@ export const allActions: AnyActionHandler[] = [
   // (handlers for P0-08a go here)
   // --- end P0-08a ---
   // --- P0-08b craft ---
-  // (handlers for P0-08b go here)
+  craftAction,
   // --- end P0-08b ---
   // --- P0-09a place, eat, sleep ---
   // (handlers for P0-09a go here)
