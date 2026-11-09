@@ -1,5 +1,5 @@
 import { Vec3 } from 'vec3';
-import type { BenchEnv, Scenario } from '../types.ts';
+import type { RunEnv, Scenario } from '../types.ts';
 
 /** Offset of the chest from the arena center. */
 const CHEST_DX = 3;
@@ -41,7 +41,7 @@ export const chest: Scenario = {
       .reduce((n, i) => (i.name === 'cobblestone' ? n + i.count : n), 0);
     return block?.name === 'chest' && held === GIVEN;
   },
-  async run(env: BenchEnv) {
+  async run(env: RunEnv) {
     const { center } = env.arena;
     const at = { x: center.x + CHEST_DX, y: center.y, z: center.z };
     const steps: Array<[string, unknown]> = [

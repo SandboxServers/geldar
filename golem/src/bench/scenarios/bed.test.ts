@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TestControl } from '../../test-control.ts';
-import type { BenchEnv } from '../types.ts';
+import type { BenchEnv, RunEnv } from '../types.ts';
 import { bed, bedVerdict } from './bed.ts';
 import { findScenario } from './index.ts';
 
@@ -51,10 +51,45 @@ describe('bed', () => {
     expect(bed.ready(fakeEnv({ table: true, wool: 3, planks: 3 }).env)).toBe(true);
   });
 
-  it('passes only when sleep completed and the client is in the bed', () => {
-    expect(bedVerdict('completed', true)).toBe(true);
-    expect(bedVerdict('completed', false)).toBe(false);
-    expect(bedVerdict('failed', true)).toBe(false);
+  it('passes only when sleep completed and client and server both say in bed', () => {
+    expect(bedVerdict('completed', true, true)).toBe(true);
+    expect(bedVerdict('completed', false, true)).toBe(false);
+    expect(bedVerdict('completed', true, false)).toBe(false);
+    expect(bedVerdict('failed', true, true)).toBe(false);
+  });
+
+  it('run asks the server and names a disagreement in the note', async () => {
+    const run = async (server: boolean) => {
+      const asked: string[] = [];
+      const ctl = {
+        timeSet: async () => undefined,
+        isSleeping: async (name: string) => {
+          asked.push(name);
+          return server;
+        },
+      };
+      const bot = {
+        username: 'GolemBenchB',
+        isSleeping: true,
+        time: { timeOfDay: 14_000 },
+        wake: async () => undefined,
+      };
+      const env = {
+        bot,
+        ctl,
+        arena: { center: CENTER },
+        run: async () => ({ result: { status: 'completed' } }),
+        signal: new AbortController().signal,
+      } as unknown as RunEnv;
+      return { out: await bed.run(env), asked };
+    };
+    const agree = await run(true);
+    expect(agree.asked).toEqual(['GolemBenchB']);
+    expect(agree.out.passed).toBe(true);
+    expect(agree.out.note).not.toContain('disagree');
+    const split = await run(false);
+    expect(split.out.passed).toBe(false);
+    expect(split.out.note).toContain('client and server disagree');
   });
 
   it('is registered', () => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { TestControl } from '../../test-control.ts';
-import type { BenchEnv } from '../types.ts';
+import type { BenchEnv, RunEnv } from '../types.ts';
 import { blockedPath, blockedVerdict, resetBlockedPathRuns } from './blocked-path.ts';
 import { findScenario } from './index.ts';
 
@@ -28,7 +28,7 @@ function fakeEnv(opts: { gotoResult: { status: string; reason?: string }; beside
     async run() {
       return { state: 'x', result: { latency_ms: 7, world_ticks: 1, ...opts.gotoResult } };
     },
-  } as unknown as BenchEnv;
+  } as unknown as BenchEnv & RunEnv;
   return { env, commands };
 }
 

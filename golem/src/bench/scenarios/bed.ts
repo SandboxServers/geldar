@@ -19,15 +19,19 @@ function holds(env: BenchEnv, name: string, count: number): boolean {
   );
 }
 
-/** Pure verdict: `sleep` completed and the client is lying in the bed. */
-export function bedVerdict(sleepStatus: string, isSleeping: boolean): boolean {
-  return sleepStatus === 'completed' && isSleeping;
+/** Pure verdict: `sleep` completed and the client and the server both say the player is in bed. */
+export function bedVerdict(
+  sleepStatus: string,
+  clientSleeping: boolean,
+  serverSleeping: boolean,
+): boolean {
+  return sleepStatus === 'completed' && clientSleeping && serverSleeping;
 }
 
 /**
  * Craft a bed from wool and planks at a table, place it, wait for the client to see night, sleep.
- * The server-side check of the sleeping state (`data get entity`) needs `ctl.command`, which a
- * scenario's `run` may not call, so the verdict rests on the client's `isSleeping`.
+ * The client's `isSleeping` and the server's (`ctl.isSleeping`) must agree; a disagreement is
+ * named in the note.
  */
 export const bed: Scenario = {
   name: 'bed',
@@ -74,8 +78,11 @@ export const bed: Scenario = {
       const seen = await waitUntil(env, () => bot.time.timeOfDay >= NIGHT_TICKS, NIGHT_WAIT_TICKS);
       if (!seen) return { passed: false, note: 'client never saw night' };
       const { result } = await env.run({ do: 'sleep' });
-      const passed = bedVerdict(result.status, bot.isSleeping);
-      const note = `sleep ${result.status} (${result.reason ?? '-'}), isSleeping ${bot.isSleeping}; server check: not available to run`;
+      const client = bot.isSleeping;
+      const server = await ctl.isSleeping(bot.username);
+      const passed = bedVerdict(result.status, client, server);
+      const mismatch = client === server ? '' : '; client and server disagree';
+      const note = `sleep ${result.status} (${result.reason ?? '-'}), client isSleeping ${client}, server ${server}${mismatch}`;
       return { passed, note };
     } finally {
       if (bot.isSleeping) await bot.wake().catch(() => undefined);
