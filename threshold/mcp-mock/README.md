@@ -16,7 +16,12 @@ docker run --rm -p 127.0.0.1:8787:8787 -v "$HOME/.config/geldar/mcp-tokens.json:
 
 ## Tokens file
 
-A JSON object of player id to token: `{ "alice": "<token>" }`. Generate a token with `node -e "console.log(require('crypto').randomBytes(16).toString('hex'))"`. See `tokens.example.json` (fake values). Inside the container the file must be readable by uid 1000 (`chmod 644`, or a matching owner).
+A JSON object of player id to token: `{ "alice": "<token>" }`. A player id matches `^[a-z][a-z0-9-]{1,38}$`; a token is 16 to 200 characters of `A-Za-z0-9._~+/=-`. See `tokens.example.json` (fake values). Keep a real file outside the repo; inside the container it must be readable by uid 1000 (`chmod 644`, or a matching owner):
+
+```
+mkdir -p ~/.config/geldar
+node -e "console.log(JSON.stringify({ alice: require('crypto').randomBytes(16).toString('hex') }))" > ~/.config/geldar/mcp-tokens.json && chmod 644 ~/.config/geldar/mcp-tokens.json
+```
 
 ## Scenario file keys
 
