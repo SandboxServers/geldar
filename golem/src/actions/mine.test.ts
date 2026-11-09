@@ -465,6 +465,30 @@ describe('mineAction', () => {
     expect(bot.waitForTicks).toHaveBeenCalledTimes(180);
   });
 
+  it('waits for the second block of a multi-drop kind until its own drop arrives', async () => {
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      block(OAK_LOG, new Vec3(3, 64, 0), [OAK_LOG]),
+    ]);
+    // Digging clears the block and gives nothing. Block 1 drops 4 on the first poll; block 2 drops
+    // 4 on its third poll. Block 2's wait must not end on block 1's 4 (4 >= mined 2).
+    bot.dig.mockImplementation(async (target: FakeBlock) => {
+      target.type = 0;
+    });
+    bot.waitForTicks.mockImplementation(async () => {
+      const calls = bot.waitForTicks.mock.calls.length;
+      if (calls === 1 || calls === 4) {
+        for (let i = 0; i < 4; i++) bot.inventory.items().push({ name: 'oak_log', count: 1 });
+      }
+    });
+    const outcome = await mine(bot, 2);
+    expect(outcome).toEqual({
+      status: 'completed',
+      detail: { mined: 2, collected: { oak_log: 8 } },
+    });
+    expect(bot.waitForTicks).toHaveBeenCalledTimes(4);
+  });
+
   it.each([
     ['Digging aborted', 'interrupted'],
     ['Infinity', 'not_possible'],

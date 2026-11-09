@@ -115,6 +115,8 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (tool) await bot.equip(tool, 'hand');
     if (signal.aborted) return abort(bot, mined);
 
+    // What the inventory had gained when this block broke: its own drop must add to it.
+    const baseline = inventoryDelta(start, snapshot(bot));
     let error = await digOnce(bot, block, signal);
     // `canDigBlock` is a distance test only: a block in reach can still be occluded. One walk
     // toward it, then one more dig, is the fix for "not in view".
@@ -140,7 +142,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
     await reachDrop(ctx, bot, at);
     if (signal.aborted) return abort(bot, mined);
-    await waitForDrop(ctx, bot, block, start, mined);
+    await waitForDrop(ctx, bot, block, start, mined, baseline);
     if (signal.aborted) return abort(bot, mined);
   }
   return completed({ mined, collected: inventoryDelta(start, snapshot(bot)) });
@@ -149,8 +151,9 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
 /**
  * Waits for the drops of `mined` blocks to reach the inventory. Polls once per world tick
  * (`waitForTicks(1)`), at most `60 * timeScale` times, and stops at once when a dropped item name
- * has gained at least `mined` since the start of the action. The count is cumulative: a drop of an
- * earlier block that arrives late cannot end the wait for this one.
+ * has gained at least `mined` since the start of the action and at least one more than at the
+ * block's break (`baseline`, for blocks that drop several items). The count is cumulative: a drop
+ * of an earlier block that arrives late cannot end the wait for this one.
  */
 async function waitForDrop(
   ctx: ActionContext,
@@ -158,6 +161,7 @@ async function waitForDrop(
   block: Block,
   start: ItemStack[],
   mined: number,
+  baseline: Record<string, number>,
 ): Promise<void> {
   const names = dropNames(bot, block);
   await pollUntil(
@@ -165,7 +169,10 @@ async function waitForDrop(
     ctx.signal,
     () => {
       const gained = inventoryDelta(start, snapshot(bot));
-      return names.some((name) => (gained[name] ?? 0) >= mined);
+      // A block that drops several items must add at least one beyond what was there at its break.
+      return names.some(
+        (name) => (gained[name] ?? 0) >= Math.max(mined, (baseline[name] ?? 0) + 1),
+      );
     },
     { polls: Math.ceil(DROP_POLLS * ctx.timeScale) },
   );
