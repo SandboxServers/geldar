@@ -12,3 +12,8 @@ packages:
 
 # Exact versions only: `pnpm add foo` writes "1.2.3", never "^1.2.3".
 saveExact: true
+
+overrides:
+  # Transitives newer than the two-week floor (decision 0005): pin the newest older release.
+  semver: 7.8.5
+  tslib: 2.8.1
