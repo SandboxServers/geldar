@@ -22,7 +22,15 @@ const EVENT: WorldEvent = {
 };
 
 /** Records every call in order so tests can assert ack-after-commit. */
-function harness(options: { dbFails?: boolean; dlqFails?: boolean; rejectIds?: string[] } = {}) {
+function harness(
+  options: {
+    dbFails?: boolean;
+    dlqFails?: boolean;
+    rejectIds?: string[];
+    /** Events whose single-row insert fails with a connection error (a batch with them still gets the permanent error). */
+    flakyIds?: string[];
+  } = {},
+) {
   const log: string[] = [];
   const written: string[] = [];
   const logged: string[] = [];
@@ -32,6 +40,9 @@ function harness(options: { dbFails?: boolean; dlqFails?: boolean; rejectIds?: s
       if (options.dbFails) throw new Error('connection refused');
       if (events.some((e) => options.rejectIds?.includes(e.source_event_id))) {
         throw Object.assign(new Error('unsupported Unicode escape sequence'), { code: '22P05' });
+      }
+      if (events.length === 1 && options.flakyIds?.includes(events[0]?.source_event_id ?? '')) {
+        throw new Error('connection reset');
       }
       for (const e of events) written.push(e.source_event_id);
       log.push('commit');
@@ -146,6 +157,40 @@ describe('handleBatch', () => {
     expect(h.log.filter((l) => l.startsWith('nak'))).toHaveLength(0);
     expect(h.log.filter((l) => l.startsWith('ack'))).toHaveLength(2);
     expect(h.logged.join(' ')).toContain('dead letter');
+  });
+
+  describe('a transient failure while retrying row by row', () => {
+    const bad = { ...EVENT, source_event_id: 'ev_01HBBBBBBBBBBBBBBBBBBBBBBB' };
+    const flaky = { ...EVENT, source_event_id: 'ev_01HFFFFFFFFFFFFFFFFFFFFFFF' };
+    const options = { rejectIds: [bad.source_event_id], flakyIds: [flaky.source_event_id] };
+
+    it('naks the flaky row before the delivery cap and dead-letters only the rejected one', async () => {
+      const h = harness(options);
+      await handleBatch(
+        [
+          h.message('geldar.phase0.damage', flaky, MAX_DELIVER - 1),
+          h.message('geldar.phase0.damage', bad),
+        ],
+        h.deps,
+      );
+      expect(h.dlq).toHaveLength(1);
+      expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain('22P05');
+      expect(h.log.filter((l) => l.startsWith('nak'))).toEqual(['nak geldar.phase0.damage 30000']);
+    });
+
+    it('dead-letters the flaky row on the last delivery instead of losing it', async () => {
+      const h = harness(options);
+      await handleBatch(
+        [
+          h.message('geldar.phase0.damage', flaky, MAX_DELIVER),
+          h.message('geldar.phase0.damage', bad),
+        ],
+        h.deps,
+      );
+      expect(h.dlq).toHaveLength(2);
+      expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain('database unavailable after 20 deliveries');
+      expect(h.log.filter((l) => l.startsWith('nak'))).toHaveLength(0);
+    });
   });
 
   it('truncates a huge body in the dead letter and records its length', async () => {
