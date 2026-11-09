@@ -47,6 +47,7 @@ describe('craft on 26.1', () => {
       await ctl.give('GolemCraft', 'oak_log', 2);
       await bot.waitForTicks(10);
       const run = await craft(bot, 'oak_planks', 8);
+      expect(run.result).toMatchObject({ status: 'completed' });
       expect(run.state).toBe('completed');
       expect(run.result.detail).toMatchObject({ item: 'oak_planks', used_table: false });
       expect(Number(run.result.detail.crafted)).toBeGreaterThanOrEqual(8);
