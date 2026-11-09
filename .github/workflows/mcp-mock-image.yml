@@ -89,7 +89,8 @@ jobs:
           docker push "$REPO:main"
           docker push "$REPO:sha-$SHA"
           ref=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REPO:main" | grep -F "$REPO@" | head -n 1)
-          echo "digest=${ref#*@}" >> "$GITHUB_OUTPUT"      - name: write the digest to the step summary
+          echo "digest=${ref#*@}" >> "$GITHUB_OUTPUT"
+      - name: write the digest to the step summary
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
