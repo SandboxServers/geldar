@@ -1,6 +1,7 @@
+import type { Bot } from 'mineflayer';
 import { expect } from 'vitest';
 import { completed, type FailReason, failed } from '../../actions/outcome.ts';
-import { type ActionHandler, ActionRegistry } from '../../actions/registry.ts';
+import { type ActionHandler, ActionRegistry, runAction } from '../../actions/registry.ts';
 import { fakeBot } from '../body.fakes.ts';
 import type { IntentProgram, ProgramContext, StepResult } from '../program.ts';
 import { MemorySink } from '../records.ts';
@@ -19,6 +20,8 @@ export interface FakeWorld {
   failing: Partial<Record<string, FailReason>>;
   /** What a block drops when it is not the block's own name. */
   drops: Record<string, string>;
+  /** How far the nearest block of a kind is, by block name (see withBlockRegistry). */
+  nearest: Record<string, number>;
   /** When true, goto completes without moving the Body. */
   pinned: boolean;
   /** The hostiles lose the Body once it has made this many gotos; null keeps them near. */
@@ -35,6 +38,7 @@ export function newWorld(overrides: Partial<FakeWorld> = {}): FakeWorld {
     log: [],
     failing: {},
     drops: { stone: 'cobblestone' },
+    nearest: {},
     pinned: false,
     escapeAfterGotos: null,
     ...overrides,
@@ -117,18 +121,55 @@ export function fakeRegistry(world: FakeWorld): ActionRegistry {
   return registry;
 }
 
+/**
+ * Gives the bot the registry parts `gather` reads: a block entry (with its `drops`) for every
+ * block in `world.drops` and `world.nearest`, and a `findBlock` that finds a block within its
+ * distance in `world.nearest` (a block not listed there is found at any range).
+ */
+function withBlockRegistry(bot: Bot, world: FakeWorld): void {
+  const blocksByName: Record<string, { id: number; drops: number[] }> = {};
+  const items: Record<number, { name: string }> = {};
+  let next = 1;
+  const itemId = (name: string): number => {
+    const known = Object.entries(items).find(([, item]) => item.name === name);
+    if (known) return Number(known[0]);
+    items[next] = { name };
+    return next++;
+  };
+  for (const block of new Set([...Object.keys(world.drops), ...Object.keys(world.nearest)])) {
+    const drop = world.drops[block];
+    blocksByName[block] = { id: 1000 + next, drops: drop === undefined ? [] : [itemId(drop)] };
+    next += 1;
+  }
+  Object.assign(bot, {
+    registry: { blocksByName, items },
+    findBlock: (options: { matching: number; maxDistance: number }) => {
+      const name = Object.keys(blocksByName).find(
+        (key) => blocksByName[key]?.id === options.matching,
+      );
+      const distance = name === undefined ? undefined : world.nearest[name];
+      return distance === undefined || distance <= options.maxDistance ? {} : null;
+    },
+  });
+}
+
 /** A program context over the fake world. */
 export function contextFor(
   world: FakeWorld,
   signal = new AbortController().signal,
 ): ProgramContext {
+  const bot = fakeBot();
+  withBlockRegistry(bot, world);
+  const registry = fakeRegistry(world);
   return {
-    bot: fakeBot(),
+    bot,
     view: view(world),
-    registry: fakeRegistry(world),
+    registry,
     sink: new MemorySink(),
     lifeId: 'life-1',
     bodyGeneration: 1,
+    timeScale: 1,
+    runAction: (action, stepSignal) => runAction(registry, bot, action, { signal: stepSignal }),
     signal,
   };
 }

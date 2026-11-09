@@ -22,9 +22,49 @@ describe('gather', () => {
   });
 
   it('fails when mining adds nothing to the inventory', async () => {
-    // Without `item`, stone is counted as `stone` but drops cobblestone.
-    const run = await drive(make, { block: 'stone', count: 2 }, newWorld());
+    // The asked item is dirt, but stone drops cobblestone.
+    const run = await drive(make, { block: 'stone', item: 'dirt', count: 2 }, newWorld());
     expect(run.last.status).toBe('failed');
+  });
+
+  it('takes the item from the registry drops when item is left out', async () => {
+    const run = await drive(make, { block: 'stone', count: 5 }, newWorld());
+    expect(run.last).toEqual({ status: 'completed', detail: { item: 'cobblestone', have: 5 } });
+    expect(run.world.inventory).toEqual({ cobblestone: 5 });
+  });
+
+  it('accepts radius as a search bound and checkpoints it', async () => {
+    const near = await drive(
+      make,
+      { block: 'oak_log', count: 2, radius: 10 },
+      newWorld({ nearest: { oak_log: 6 } }),
+    );
+    expect(near.last.status).toBe('completed');
+    const far = await drive(
+      make,
+      { block: 'oak_log', count: 2, radius: 10 },
+      newWorld({ nearest: { oak_log: 40 } }),
+    );
+    expect(far.last).toEqual({ status: 'failed', message: 'not_found: no oak_log within 10' });
+    const program = make();
+    await program.start({ block: 'oak_log', count: 2, radius: 10 }, contextFor(newWorld()));
+    expect(program.checkpoint()).toEqual({
+      block: 'oak_log',
+      item: 'oak_log',
+      goal: 2,
+      radius: 10,
+    });
+  });
+
+  it('completes in the step that mines the last block', async () => {
+    const world = newWorld();
+    const ctx = contextFor(world);
+    const program = make();
+    await program.start({ block: 'oak_log', count: 3 }, ctx);
+    expect(await program.step(ctx)).toEqual({
+      status: 'completed',
+      detail: { item: 'oak_log', have: 3 },
+    });
   });
 
   it('fails with the action reason, or wakes the Mind for a missing tool', async () => {
