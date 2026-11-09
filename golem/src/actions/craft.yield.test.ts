@@ -18,7 +18,7 @@ import { watchRecipeBook } from './craft-table.ts';
 // planks display (4 sticks), and the server accepts only the planks one.
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn(async () => ({ ok: true, distance: 1 })) }));
 
-/** A bot whose inventory grows by the stack of each shift-clicked result, as the server's would. */
+/** A bot whose inventory grows by the yield of each shift-clicked result, as the server's would. */
 function stickBot(table: boolean) {
   const fake = fakeGame(table ? openWithWindowState : undefined);
   watchRecipeBook(fake.bot);
@@ -29,13 +29,14 @@ function stickBot(table: boolean) {
       [PLANKS_STICK, 'crafting_shaped', STICK.id, 4],
     ]),
   );
-  answerRequests(fake.client, table ? 1 : 0, [PLANKS_STICK], { [PLANKS_STICK]: 4 }, STICK.id);
-  const answer = fake.client.write.getMockImplementation() as (n: string, p: object) => void;
-  let sticks = 0;
-  fake.client.write.mockImplementation((name: string, params: object) => {
-    answer(name, params);
-    if (name === 'window_click') sticks += 4;
-  });
+  answerRequests(
+    fake.client,
+    table ? 1 : 0,
+    [PLANKS_STICK],
+    { [PLANKS_STICK]: 4 },
+    STICK.id,
+    fake.stock,
+  );
   const recipe = {
     result: { id: STICK.id, count: 4 },
     delta: [{ id: 5, count: -2, metadata: null }],
@@ -47,7 +48,7 @@ function stickBot(table: boolean) {
       items: { 5: { name: 'oak_planks' }, [STICK.id]: STICK },
       blocksByName: { crafting_table: { id: 58 } },
     },
-    inventory: { count: (id: number) => (id === STICK.id ? sticks : 100) },
+    inventory: { count: (id: number) => (id === STICK.id ? (fake.stock.get(id) ?? 0) : 100) },
     findBlock: () => (table ? TABLE : null),
     recipesFor: (_id: number, _m: unknown, _n: unknown, station: unknown) =>
       table && !station ? [] : [recipe],

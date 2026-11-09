@@ -13,7 +13,17 @@ export const TABLE = { position: { x: 1, y: 200, z: 3 } } as unknown as Block;
 /** The item the table tests craft: a white bed, made from the shaped recipe or a dye recolour. */
 export const BED = { id: 900, name: 'white_bed' };
 /** The table window's id: the id a crafting table window gets in the vanilla open. */
-export const WINDOW = { id: 1, type: 'minecraft:crafting' };
+export const WINDOW = {
+  id: 1,
+  type: 'minecraft:crafting',
+  inventoryStart: 10,
+  // The open table window holds the items in its own inventory slots, from slot 10 on.
+  get slots(): unknown[] {
+    return [...Array(10).fill(null), ...[...gameStock].map(([type, count]) => ({ type, count }))];
+  },
+};
+/** The stock of the game made last: the window above reads it, as a window reads its own bot's slots. */
+let gameStock = new Map<number, number>();
 /** A chest window, as another action opens; the table path must never close it. */
 export const CHEST = { id: 2, type: 'minecraft:generic_9x3' };
 /** The recipe display of the shaped bed, and the dye recolour that shares its result. */
@@ -47,10 +57,17 @@ export function bookAdd(entries: [number, string, number, number?][], replace = 
  */
 export function fakeGame(onOpen?: (client: EventEmitter) => void) {
   const client = Object.assign(new EventEmitter(), { write: vi.fn() });
+  // What the bot holds, by item id: a shift-click adds to it (see `answerRequests`).
+  const stock = new Map<number, number>();
+  // As in Mineflayer, `bot.inventory` is stale while a table window is open: it catches up on close.
+  let snapshot = new Map<number, number>();
+  gameStock = stock;
   const raw = Object.assign(new EventEmitter(), {
     _client: client,
+    inventory: { count: (id: number) => (raw.currentWindow ? snapshot : stock).get(id) ?? 0 },
     currentWindow: null as object | null,
     activateBlock: vi.fn(async () => {
+      snapshot = new Map(stock);
       raw.currentWindow = WINDOW;
       raw.emit('windowOpen', WINDOW);
       onOpen?.(client);
@@ -61,7 +78,7 @@ export function fakeGame(onOpen?: (client: EventEmitter) => void) {
     // A real 1 ms tick, so a timer the server sets (an ack) can fire between the polls.
     waitForTicks: vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 1))),
   });
-  return { bot: raw as unknown as Bot, client, raw };
+  return { bot: raw as unknown as Bot, client, raw, stock };
 }
 
 /** The window's own packets at open: its stateId is 5, and window 0 (the player) is at 9. */
@@ -72,8 +89,9 @@ export function openWithWindowState(client: EventEmitter): void {
 
 /**
  * A server that fills the result slot of `windowId` after each recipe request, with stateIds 6, 7, ...
- * A request for a display not in `displayIds` gets no answer, as a wrong display does. `yields`
- * gives the stack size a display's result slot shows (default 1) and `itemId` its item.
+ * A request for a display not in `displayIds` gets no answer, as a wrong display does. The result
+ * slot always shows a stack of 1, as the live 26.1 server does whatever a craft makes. `yields`
+ * gives the count a shift-click of a display really delivers to `stock` (default 1) and `itemId` its item.
  */
 export function answerRequests(
   client: { write: ReturnType<typeof vi.fn> } & EventEmitter,
@@ -81,17 +99,23 @@ export function answerRequests(
   displayIds?: number[],
   yields: Record<number, number> = {},
   itemId = BED.id,
+  stock?: Map<number, number>,
 ): void {
   let next = 6;
+  let requested = 0;
   client.write.mockImplementation((name: string, params: Record<string, unknown>) => {
+    if (name === 'window_click' && stock) {
+      stock.set(itemId, (stock.get(itemId) ?? 0) + (yields[requested] ?? 1));
+    }
     if (name !== 'craft_recipe_request') return;
     const displayId = params.recipeId as number;
     if (displayIds && !displayIds.includes(displayId)) return;
+    requested = displayId;
     client.emit('set_slot', {
       windowId,
       stateId: next++,
       slot: 0,
-      item: { present: true, itemId, itemCount: yields[displayId] ?? 1 },
+      item: { present: true, itemId, itemCount: 1 },
     });
   });
 }

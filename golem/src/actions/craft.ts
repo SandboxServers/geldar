@@ -79,8 +79,8 @@ async function runCraft(
       // table rejects it. A 2x2 recipe with no unlocked display falls back to bot.craft.
       // The book makes its display's yield per craft, which can differ from the picked recipe's and
       // from the first display's (a stick from planks makes 4, from bamboo 1, and the server takes
-      // either). So the yield is not guessed: `want` makes the book stop when the result slots have
-      // shown the count asked, and the guess is only the cap it is handed. The crafted count is
+      // either). So the yield is not guessed: `want` makes the book stop when the inventory has
+      // gained the count asked, and the guess is only the cap it is handed. The crafted count is
       // judged against what was asked.
       const yieldPer = bookYield(bot, item) || recipe.result.count;
       stop = await craftFromBook(
