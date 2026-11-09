@@ -214,7 +214,9 @@ describe('a record that can never be sent does not block the queue', () => {
     sink.receipt(RECEIPT);
     await sink.flush();
     expect(sent.map((e) => e.type)).toEqual(['action', 'receipt']);
-    expect(sent[0]?.payload).toMatchObject({ result: { truncated: true } });
+    expect(sent[0]?.payload).toMatchObject({
+      result: { truncated: true, original_event_bytes: expect.any(Number) },
+    });
     expect(logs.some((line) => line.includes('result cut'))).toBe(true);
     expect(sink.auditDropped).toBe(0);
   });
@@ -244,5 +246,27 @@ describe('a record that can never be sent does not block the queue', () => {
     expect(sink.auditDropped).toBe(1);
     expect(logs[0]).toContain('ERROR dropped audit action');
     expect(logs[0]).toContain('not valid');
+  });
+
+  it('drops an oversize or invalid final intent event as a durable loss and keeps the queue moving', async () => {
+    const { publisher, state, sent } = switchable();
+    state.down = false;
+    const big = sinkWith(publisher, { maxEventBytes: 100 });
+    big.sink.intentChanged(change('completed'));
+    await big.sink.flush();
+    expect(sent).toEqual([]);
+    expect(big.sink.auditDropped).toBe(1);
+    expect(big.logs[0]).toContain('ERROR dropped audit intent');
+    expect(big.logs[0]).toContain('over 100');
+
+    const bad = sinkWith(publisher);
+    bad.sink.intentChanged(change('not_a_state'));
+    bad.sink.receipt(RECEIPT);
+    await bad.sink.flush();
+    expect(sent.map((e) => e.type)).toEqual(['receipt']);
+    expect(bad.sink.auditDropped).toBe(1);
+    expect(bad.sink.dropped).toBe(1);
+    expect(bad.logs[0]).toContain('ERROR dropped audit intent');
+    expect(bad.logs[0]).toContain('not valid');
   });
 });

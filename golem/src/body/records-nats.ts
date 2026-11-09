@@ -125,7 +125,10 @@ export class NatsRecordSink implements RecordSink {
     this.opts = options;
   }
 
-  /** Records dropped so far for any reason after they were valid (queue pressure or give-up). */
+  /**
+   * Records dropped so far for any reason: queue pressure, giving up after retries, or a record
+   * refused as invalid or too large.
+   */
   get dropped(): number {
     return this.dropCount;
   }
@@ -299,7 +302,7 @@ export class NatsRecordSink implements RecordSink {
     if (size <= limit) return true;
     const record = payload as { result?: unknown };
     if (type === 'action' && record.result !== null && record.result !== undefined) {
-      const cut = { truncated: true, original_bytes: size };
+      const cut = { truncated: true, original_event_bytes: size };
       const smaller = { ...event, payload: { ...payload, result: cut } as WorldEvent['payload'] };
       if (check(smaller.payload).ok && Buffer.byteLength(JSON.stringify(smaller)) <= limit) {
         this.log(
