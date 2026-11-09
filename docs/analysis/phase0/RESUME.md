@@ -8,10 +8,10 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 
 | Packet | Worktree / branch | Stage |
 |---|---|---|
-| P0-07a golem base | `p0-07a` / `phase0/p0-07a-golem-base` | review 1 = fix; fix-1 coder running (decision 0029 written); then review pass 2 |
-| W1-process | `w1-process` / `phase0/w1-process` | review 3 = ship; merged into `phase0/wave2` (clean up the worktree at wave close) |
+| P0-07c actions base | `p0-07c` / `phase0/p0-07c-golem-actions-base` | committed 5280bb5; review pass 1 running |
+| Pre-dispatch spec reviews | wave2 `.claude/reports/phase0/` | `packets-08a-09b-review.md`, `packets-10abc-review.md` running; apply their edits before dispatching 08a-09b |
 
-`wave2` is the orchestrator's checkout of `phase0/wave2`. The live stack may be running from `p0-07a` (`./geldar.ps1 shard down phase0` when done). Do not touch `scriptorium-decisions`.
+Shipped and merged into `phase0/wave2`: W1-process, P0-07a, P0-07b (decisions 0029, 0030 written). The live stack is up, started from the `p0-07b` worktree (its `compose/secrets` hold the RCON secret; live tests need `GELDAR_RCON_PASSWORD_FILE` pointed there; do not remove `p0-07b` while the stack runs). Worktrees `p0-07a`, `p0-07b`, `w1-process` are cleaned up at wave close. Do not touch `scriptorium-decisions`. Carry into P0-09b: capture a live non-empty chest reply (parseItems format unverified).
 
 **Next actions:**
 
