@@ -220,7 +220,7 @@ async function playRun(
   bot: Bot,
 ): Promise<RunReport> {
   const timeScale = 20 / tps;
-  const started = Date.now();
+  const resetStarted = Date.now();
   const controller = new AbortController();
   const actions: ActionRecordLite[] = [];
   let lastRun: ActionRun | null = null;
@@ -248,7 +248,9 @@ async function playRun(
     throw new Error('disconnected');
   }
   const ageStart = worldAge(bot);
+  // The run's clock starts after the reset: RCON waits on server ticks, so the reset grows as TPS drops.
   const ageWallStart = Date.now();
+  const resetMs = ageWallStart - resetStarted;
 
   const onDeath = (): void => {
     died = true;
@@ -364,6 +366,7 @@ async function playRun(
     targetMspt: null,
     timeOfDay: null,
     reconnects: disconnects,
+    resetMs,
     ageStart,
     ageEnd: worldAge(bot),
     achievedTps: null,
@@ -381,7 +384,7 @@ async function playRun(
   }
   const timeOfDay: unknown = bot.time?.timeOfDay;
   timing.timeOfDay = typeof timeOfDay === 'number' ? timeOfDay : null;
-  return { passed, note, wallMs: Date.now() - started, timing, actions, stuck };
+  return { passed, note, wallMs: Date.now() - ageWallStart, timing, actions, stuck };
 }
 
 /** The per-kind counts of a cell's actions. */
@@ -438,6 +441,7 @@ export async function runCell(
         targetMspt: null,
         timeOfDay: null,
         reconnects: 0,
+        resetMs: null,
         ageStart: null,
         ageEnd: null,
         achievedTps: null,

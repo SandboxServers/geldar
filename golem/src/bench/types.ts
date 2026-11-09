@@ -64,6 +64,8 @@ export interface RunTiming {
   targetMspt: number | null;
   timeOfDay: number | null;
   reconnects: number;
+  /** Wall ms the pre-run reset took; not part of `runWallMs`. */
+  resetMs: number | null;
   /** `bot.time.age` when the run started, or null without a time packet. */
   ageStart: number | null;
   /** `bot.time.age` when the run ended. */

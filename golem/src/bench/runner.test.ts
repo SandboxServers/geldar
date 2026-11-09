@@ -291,6 +291,23 @@ describe('runCell', () => {
     expect(server.commands.length).toBeGreaterThan(0);
   });
 
+  it('keeps the reset out of runWallMs and records it as resetMs', async () => {
+    const { deps } = setup();
+    const original = deps.ctl;
+    const source: CommandSource = {
+      async command(cmd) {
+        if (cmd.startsWith('clear ')) await new Promise((r) => setTimeout(r, 120));
+        return original.command(cmd);
+      },
+    };
+    const cell = await runCell(scenarioOf({ run: pass }), 20, 1, {
+      ...deps,
+      ctl: new TestControl(source),
+    });
+    expect(cell.runWallMs[0]).toBeLessThan(100);
+    expect(cell.perRun[0]?.resetMs).toBeGreaterThanOrEqual(110);
+  });
+
   it('records the remaining runs as failed when the bot never returns', async () => {
     const { manager, deps } = setup({ reconnectWaitMs: 100 });
     const scenario = scenarioOf({
