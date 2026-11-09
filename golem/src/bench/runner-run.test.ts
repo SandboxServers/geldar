@@ -148,3 +148,45 @@ describe('runCell after the run is closed', () => {
     expect(secondError).toBe('run aborted');
   });
 });
+
+describe('runCell logging and tallies', () => {
+  it('logs a warm-up that ran and failed, not only one that threw', async () => {
+    const { deps } = setup();
+    const lines: string[] = [];
+    const warmup = scenarioOf({
+      name: 'warm',
+      async run() {
+        return { passed: false, note: 'goto blocked' };
+      },
+    });
+    await runCell(scenarioOf({ run: pass }), 20, 1, {
+      ...deps,
+      warmup,
+      log: (l) => lines.push(l),
+    });
+    expect(lines).toContain('warm-up failed: goto blocked');
+  });
+
+  it('counts a cancelled action as failed with the reason cancelled', async () => {
+    const cancelled = async (): Promise<ActionRun> => ({
+      state: 'cancelled',
+      result: { status: 'cancelled', latency_ms: 1, world_ticks: 0, detail: {} },
+    });
+    const { deps } = setup({ runAction: cancelled as NonNullable<RunnerDeps['runAction']> });
+    const cell = await runCell(
+      scenarioOf({
+        async run(env) {
+          await env.run(GOTO);
+          await env.run(GOTO);
+          return { passed: true, note: '' };
+        },
+      }),
+      20,
+      1,
+      deps,
+    );
+    expect(cell.actionStats).toEqual({
+      goto: { total: 2, completed: 0, failed: { cancelled: 2 } },
+    });
+  });
+});

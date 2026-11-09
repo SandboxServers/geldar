@@ -381,8 +381,9 @@ function tally(actions: ActionRecordLite[]): Record<string, ActionStats> {
     stats[action.kind] = entry;
     entry.total++;
     if (action.status === 'completed') entry.completed++;
-    else if (action.status === 'failed') {
-      const reason = action.reason ?? 'unknown';
+    else {
+      // A cancelled action did not complete: it counts as failed, so total = completed + failed.
+      const reason = action.status === 'cancelled' ? 'cancelled' : (action.reason ?? 'unknown');
       entry.failed[reason] = (entry.failed[reason] ?? 0) + 1;
     }
   }
@@ -449,7 +450,8 @@ export async function runCell(
     if (deps.warmup) {
       try {
         const bot = await prepareBot();
-        if (bot) await playRun(deps.warmup, tps, deps, bot);
+        const warm = bot ? await playRun(deps.warmup, tps, deps, bot) : null;
+        if (warm && !warm.passed) log(`warm-up failed: ${warm.note}`);
       } catch (error) {
         log(`warm-up failed: ${error instanceof Error ? error.message : String(error)}`);
       }
