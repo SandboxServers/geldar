@@ -145,7 +145,16 @@ const FRAME_VALIDATORS = new Map<string, ValidateFunction>([
  * A value whose type is missing or not one of the nine reports the single error naming them.
  */
 export function validateThinkerFrame(value: unknown): ValidationResult<ThinkerFrame> {
-  if (validateThinkerFrameSchema(value)) return { ok: true, value: value as ThinkerFrame };
+  if (validateThinkerFrameSchema(value)) {
+    const format = (value as { response_format?: unknown }).response_format;
+    if (format !== undefined && JSON.stringify(format).length > MAX_RESPONSE_FORMAT_BYTES) {
+      return {
+        ok: false,
+        errors: [`/response_format must serialize to at most ${MAX_RESPONSE_FORMAT_BYTES} bytes`],
+      };
+    }
+    return { ok: true, value: value as ThinkerFrame };
+  }
   const type =
     typeof value === 'object' && value !== null ? (value as { type?: unknown }).type : undefined;
   const frameValidator = typeof type === 'string' ? FRAME_VALIDATORS.get(type) : undefined;
@@ -155,4 +164,84 @@ export function validateThinkerFrame(value: unknown): ValidationResult<ThinkerFr
   }
   if (frameValidator(value)) return { ok: true, value: value as ThinkerFrame };
   return { ok: false, errors: (frameValidator.errors ?? []).map(formatError) };
+}
+
+// --- P0-20 Mind channel ---
+import type {
+  PlanAck,
+  PlanMessage,
+  PlanResultPayload,
+  Reflection,
+  SnapshotRequest,
+  SpeechPayload,
+  ThoughtEventPayload,
+} from './generated/types.ts';
+import {
+  validatePlanAck as validatePlanAckSchema,
+  validatePlanMessage as validatePlanMessageSchema,
+  validatePlanResultPayload as validatePlanResultPayloadSchema,
+  validateReflection as validateReflectionSchema,
+  validateSnapshotRequest as validateSnapshotRequestSchema,
+  validateSpeechPayload as validateSpeechPayloadSchema,
+  validateThoughtEventPayload as validateThoughtEventPayloadSchema,
+} from './generated/validators.js';
+
+export type {
+  PlanAck,
+  PlanMessage,
+  PlanResultPayload,
+  Reflection,
+  SnapshotRequest,
+  SpeechPayload,
+  ThoughtEventPayload,
+} from './generated/types.ts';
+export { planSubject, snapshotSubject } from './subjects.ts';
+
+/** Largest serialized `response_format.schema` of a job frame, in bytes (decision 0049: 64 KiB). */
+export const MAX_RESPONSE_FORMAT_BYTES = 65_536;
+
+/** Checks a value against reflection.schema.json (the sleep reflection output). Never throws. */
+export function validateReflection(value: unknown): ValidationResult<Reflection> {
+  if (validateReflectionSchema(value)) return { ok: true, value: value as Reflection };
+  return { ok: false, errors: (validateReflectionSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against snapshot-request.schema.json. Never throws. */
+export function validateSnapshotRequest(value: unknown): ValidationResult<SnapshotRequest> {
+  if (validateSnapshotRequestSchema(value)) return { ok: true, value: value as SnapshotRequest };
+  return { ok: false, errors: (validateSnapshotRequestSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against plan.schema.json (the Mind's plan message, thought included). Never throws. */
+export function validatePlanMessage(value: unknown): ValidationResult<PlanMessage> {
+  if (validatePlanMessageSchema(value)) return { ok: true, value: value as PlanMessage };
+  return { ok: false, errors: (validatePlanMessageSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against plan-ack.schema.json (the Body's quick reply to a plan). Never throws. */
+export function validatePlanAck(value: unknown): ValidationResult<PlanAck> {
+  if (validatePlanAckSchema(value)) return { ok: true, value: value as PlanAck };
+  return { ok: false, errors: (validatePlanAckSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against plan-result-event.schema.json (the payload of a `plan_result` event). Never throws. */
+export function validatePlanResultPayload(value: unknown): ValidationResult<PlanResultPayload> {
+  if (validatePlanResultPayloadSchema(value)) {
+    return { ok: true, value: value as PlanResultPayload };
+  }
+  return { ok: false, errors: (validatePlanResultPayloadSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against speech-event.schema.json (the payload of a `speech` event). Never throws. */
+export function validateSpeechPayload(value: unknown): ValidationResult<SpeechPayload> {
+  if (validateSpeechPayloadSchema(value)) return { ok: true, value: value as SpeechPayload };
+  return { ok: false, errors: (validateSpeechPayloadSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against thought-event.schema.json (the payload of a `thought` event). Never throws. */
+export function validateThoughtEventPayload(value: unknown): ValidationResult<ThoughtEventPayload> {
+  if (validateThoughtEventPayloadSchema(value)) {
+    return { ok: true, value: value as ThoughtEventPayload };
+  }
+  return { ok: false, errors: (validateThoughtEventPayloadSchema.errors ?? []).map(formatError) };
 }

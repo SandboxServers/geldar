@@ -179,7 +179,22 @@
           "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
         },
         "deadline": { "type": "string", "format": "date-time" },
-        "cache_hint": { "$ref": "#/$defs/CacheHint" }
+        "cache_hint": { "$ref": "#/$defs/CacheHint" },
+        "response_format": {
+          "description": "Constrained output (decision 0049). The serialized schema is at most 64 KiB (MAX_RESPONSE_FORMAT_BYTES, checked by validateThinkerFrame). A Thinker that does not support it ignores it; the Mind validates the output regardless.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "schema"],
+          "properties": {
+            "type": { "const": "json_schema" },
+            "schema": { "type": "object", "additionalProperties": true }
+          }
+        },
+        "reasoning": {
+          "description": "Whether the model may think before answering (decision 0049). A Thinker without the switch ignores it.",
+          "type": "string",
+          "enum": ["off", "on"]
+        }
       }
     },
     "CancelFrame": {

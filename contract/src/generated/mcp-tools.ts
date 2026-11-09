@@ -1061,6 +1061,11 @@ export const mcpToolSchemas: Record<
               "type": "integer",
               "minimum": 0
             },
+            "body_generation": {
+              "description": "The Body's generation (restart counter) the snapshot was built in. Optional so older Bodies and the mock stay valid.",
+              "type": "integer",
+              "minimum": 0
+            },
             "world_time": {
               "type": "object",
               "additionalProperties": false,
@@ -1161,6 +1166,15 @@ export const mcpToolSchemas: Record<
                 "days_since_sleep": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "unlocked_recipes": {
+                  "description": "Item names the agent can craft because it has unlocked their recipes (spec 5.2, decision 0048). Optional: a Body without recipe knowledge omits it.",
+                  "type": "array",
+                  "maxItems": 1500,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/ItemName"
+                  }
                 }
               }
             },
@@ -2386,6 +2400,11 @@ export const mcpToolSchemas: Record<
               "type": "integer",
               "minimum": 0
             },
+            "body_generation": {
+              "description": "The Body's generation (restart counter) the snapshot was built in. Optional so older Bodies and the mock stay valid.",
+              "type": "integer",
+              "minimum": 0
+            },
             "world_time": {
               "type": "object",
               "additionalProperties": false,
@@ -2486,6 +2505,15 @@ export const mcpToolSchemas: Record<
                 "days_since_sleep": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "unlocked_recipes": {
+                  "description": "Item names the agent can craft because it has unlocked their recipes (spec 5.2, decision 0048). Optional: a Body without recipe knowledge omits it.",
+                  "type": "array",
+                  "maxItems": 1500,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/ItemName"
+                  }
                 }
               }
             },
