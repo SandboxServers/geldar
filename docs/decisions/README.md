@@ -41,3 +41,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0034](0034-mock-result-shapes-and-untrusted-text.md) | Mock result shapes: untrusted-text wrapper, and the waking event is never trimmed | Accepted |
 | [0035](0035-mcp-tool-schema-shapes.md) | MCP tool schemas: write_book oneOf, and results without a root type are not published as outputSchema | Accepted |
 | [0036](0036-launcher-workspace-named-volume.md) | The launcher keeps the player workspace in a named Docker volume on every OS | Accepted |
+| [0037](0037-chest-transfers-by-explicit-clicks.md) | Chest deposits and withdrawals are an explicit, server-confirmed click sequence | Accepted |

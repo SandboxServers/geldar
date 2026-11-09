@@ -47,11 +47,11 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | P0-07a | 2 | `golem/` package, RCON test control, arena, live-test lane | packet-coder | Shipped (review 3, merged to wave2) | — | |
 | P0-07b | 2 | Connection with reconnect and backoff, snapshot builder, live fixture, smoke test and protocol verdict | packet-coder | Shipped (review 2, merged to wave2) | P0-07a | |
 | P0-07c | 2 | Action outcome shape, registry, run wrapper with timeouts, `moveNear` | packet-coder | Shipped (review 2, merged to wave2) | P0-07b | |
-| P0-08a | 2 | Body actions: `goto`, `mine` | packet-coder | BlockedDependency | P0-07c | |
-| P0-08b | 2 | Body action: `craft` | packet-coder | BlockedDependency | P0-07c | |
-| P0-09a | 2 | Body actions: `place`, `eat`, `sleep` | packet-coder | BlockedDependency | P0-07c | |
-| P0-09b | 2 | Body actions: `open`, `deposit`, `withdraw` | packet-coder | BlockedDependency | P0-07c | |
-| P0-10a | 2 | Benchmark harness, TPS control, results writer, `./geldar.ps1 bench` | packet-coder | BlockedDependency | P0-08a | |
+| P0-08a | 2 | Body actions: `goto`, `mine` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
+| P0-08b | 2 | Body action: `craft` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
+| P0-09a | 2 | Body actions: `place`, `eat`, `sleep` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
+| P0-09b | 2 | Body actions: `open`, `deposit`, `withdraw` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
+| P0-10a | 2 | Benchmark harness, TPS control, results writer, `./geldar.ps1 bench` | packet-coder | Ready | P0-08a | |
 | P0-10b | 2 | Scenarios `wood-to-stone-tools`, `food`, `shelter` | packet-coder | BlockedDependency | P0-08a, P0-08b, P0-09a, P0-10a | |
 | P0-10c | 2 | Scenarios `bed`, `chest`, `blocked-path` | packet-coder | BlockedDependency | P0-08a, P0-08b, P0-09a, P0-09b, P0-10a | |
 | W1-process | 2 | Apply the wave 1 retro actions to agents, skills and repo checks | packet-coder | Shipped (review 3, merged to wave2) | — | |
