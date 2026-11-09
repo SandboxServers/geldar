@@ -321,6 +321,21 @@ describe('mock http', () => {
     await retry.text();
     expect(http.sessionCount('aa')).toBe(1);
   }, 30_000);
+  it('forgets a session whose connect throws', async () => {
+    connectGate = Promise.resolve();
+    const res = await call('/p/aa', {
+      method: 'POST',
+      headers: bearer(TOKEN_A, {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      }),
+      body: JSON.stringify(INIT),
+    });
+    expect(res.status).toBe(500);
+    expect(http.sessionCount('aa')).toBe(0);
+    expect(signals.aa?.[0]?.aborted).toBe(true);
+  }, 30_000);
+
   it('aborts the old signal before waiting for in-flight handlers', async () => {
     const first = await connect('aa', TOKEN_A);
     const started = new Promise<void>((resolve) => {

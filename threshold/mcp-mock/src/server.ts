@@ -182,7 +182,13 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       controller.abort();
       forget(session);
     };
-    await session.mcp.connect(session.transport);
+    try {
+      await session.mcp.connect(session.transport);
+    } catch (error) {
+      // Do not leave a half-registered session behind for the player's next initialize.
+      await endSession(session);
+      throw error;
+    }
     return session;
   }
 
