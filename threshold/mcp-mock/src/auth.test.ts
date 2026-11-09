@@ -51,9 +51,21 @@ describe('loadTokens', () => {
       expect(message).not.toContain(TOKEN_A);
       expect(message).not.toContain(TOKEN_B);
     }
-    expect(loadError(JSON.stringify({ a1: TOKEN_A, b2: TOKEN_A }))).toContain('b2');
-    expect(loadError(JSON.stringify({ a1: 'short' }))).toContain('a1');
+    expect(loadError(JSON.stringify({ a1: TOKEN_A, b2: TOKEN_A }))).toContain('entries 1 and 2');
+    expect(loadError(JSON.stringify({ a1: 'short' }))).toContain('entry 1');
   }, 30_000);
+
+  it('does not echo a key that is really a token', () => {
+    const message = loadError(JSON.stringify({ [TOKEN_A]: 'x' }));
+    expect(message).not.toContain(TOKEN_A);
+    expect(message).not.toContain(TOKEN_A.slice(0, 10));
+    expect(message).toContain('entry 1');
+  });
+
+  it('accepts a file that starts with a UTF-8 BOM', () => {
+    const table = loadTokens(tokensFile(`﻿${JSON.stringify({ a1: TOKEN_A })}`));
+    expect([...table.keys()]).toEqual(['a1']);
+  });
 });
 
 describe('checkBearer', () => {

@@ -4,6 +4,10 @@ import { readFileSync } from 'node:fs';
 /** player_id -> sha256 digest of that player's bearer token. */
 export type TokenTable = ReadonlyMap<string, Buffer>;
 
+/**
+ * Outcome of a bearer check: `ok` (token matches the URL's player), `unauthorized`
+ * (missing, malformed or unknown token, or unknown player) or `forbidden` (a valid token for another player).
+ */
 export type AuthResult = 'ok' | 'unauthorized' | 'forbidden';
 
 const PLAYER_ID = /^[a-z][a-z0-9-]{1,38}$/;
@@ -20,7 +24,8 @@ function digest(token: string): Buffer {
 export function loadTokens(path: string): TokenTable {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
+    // Windows editors often write a BOM, which JSON.parse rejects.
+    parsed = JSON.parse(readFileSync(path, 'utf8').replace(/^﻿/, ''));
   } catch (error) {
     // Parser messages can quote file content, so report only the error class.
     const kind = error instanceof SyntaxError ? 'invalid JSON' : 'cannot read the file';
@@ -33,20 +38,23 @@ export function loadTokens(path: string): TokenTable {
   if (entries.length === 0) throw new Error('tokens file: no players listed');
 
   const table = new Map<string, Buffer>();
-  const owners = new Map<string, string>();
-  for (const [playerId, token] of entries) {
+  const owners = new Map<string, number>();
+  for (const [index, [playerId, token]] of entries.entries()) {
     if (!PLAYER_ID.test(playerId)) {
-      throw new Error(`tokens file: invalid player id "${playerId.slice(0, 60)}"`);
+      // The key may be a token written the wrong way round, so never echo it.
+      throw new Error(
+        `tokens file: invalid player id in entry ${index + 1} (length ${playerId.length})`,
+      );
     }
     if (typeof token !== 'string' || !TOKEN.test(token)) {
-      throw new Error(`tokens file: invalid token for player "${playerId}"`);
+      throw new Error(`tokens file: invalid token in entry ${index + 1} (player id length ${playerId.length})`);
     }
     const hex = digest(token).toString('hex');
     const other = owners.get(hex);
     if (other !== undefined) {
-      throw new Error(`tokens file: players "${other}" and "${playerId}" share a token`);
+      throw new Error(`tokens file: entries ${other} and ${index + 1} share a token`);
     }
-    owners.set(hex, playerId);
+    owners.set(hex, index + 1);
     table.set(playerId, digest(token));
   }
   return table;
