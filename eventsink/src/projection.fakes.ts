@@ -53,7 +53,13 @@ export function eventOf(type: string, payload: object, n = 1): WorldEvent {
   };
 }
 
-export function intentEvent(state: string, tick: number, detail?: string): WorldEvent {
+/** An intent event; `extra` adds payload fields such as the `accepted` event's goal and program. */
+export function intentEvent(
+  state: string,
+  tick: number,
+  detail?: string,
+  extra: object = {},
+): WorldEvent {
   return eventOf('intent', {
     intent_id: INTENT_ID,
     life_id: 'ag_kestrel_01',
@@ -61,8 +67,19 @@ export function intentEvent(state: string, tick: number, detail?: string): World
     state,
     tick,
     ...(detail === undefined ? {} : { detail }),
+    ...extra,
   });
 }
+
+/** The fields an `accepted` intent event carries besides its state. */
+export const INTENT_FIELDS = {
+  goal: 'get_wood',
+  program: 'gather',
+  arguments: { item: 'oak_log' },
+  preconditions: ['has_pickaxe'],
+  wake_on: ['goal_completed'],
+  limits: { max_world_ticks: 6000, max_block_operations: 40 },
+};
 
 export function actionEvent(state: string, receiptId: string | null = null): WorldEvent {
   return eventOf('action', {

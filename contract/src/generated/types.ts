@@ -133,6 +133,24 @@ export interface IntentEventPayload {
    * Why, in plain text, for example the failure message.
    */
   detail?: string;
+  goal?: string;
+  /**
+   * A built-in program, or the name of a skill.
+   */
+  program?: ("travel" | "gather" | "craft" | "build" | "rest" | "flee" | "follow" | "trade_wait") | string;
+  arguments?: Arguments;
+  preconditions?: string[];
+  wake_on?: string[];
+  limits?: Limits;
+}
+
+export interface Arguments {
+  [k: string]: unknown;
+}
+
+export interface Limits {
+  max_world_ticks: number;
+  max_block_operations: number;
 }
 
 export type McpCursor = string;

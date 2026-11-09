@@ -5,6 +5,7 @@ import {
   ACTION_ID,
   actionEvent,
   eventOf,
+  INTENT_FIELDS,
   INTENT_ID,
   intentEvent,
   MemoryProjectionStore,
@@ -71,10 +72,51 @@ describe('intents', () => {
     });
   });
 
-  it('leaves paused and interrupted to the events table', async () => {
+  it('leaves paused to the events table', async () => {
     const store = new MemoryProjectionStore();
-    await project(store, [intentEvent('paused', 5), intentEvent('interrupted', 6)]);
+    await project(store, [intentEvent('paused', 5)]);
     expect(store.intents.size).toBe(0);
+  });
+
+  it('stores an interrupted intent as cancelled with an interrupted: end reason', async () => {
+    const store = new MemoryProjectionStore();
+    await project(store, [
+      intentEvent('accepted', 4),
+      intentEvent('running', 5),
+      intentEvent('interrupted', 6, 'woke the Mind'),
+    ]);
+    expect(store.intents.get(INTENT_ID)).toMatchObject({
+      state: 'cancelled',
+      ended_tick: 6,
+      end_reason: 'interrupted: woke the Mind',
+    });
+    // With no detail the reason is still marked, and a later final state does not replace it.
+    const bare = new MemoryProjectionStore();
+    await project(bare, [intentEvent('interrupted', 6), intentEvent('completed', 9)]);
+    expect(bare.intents.get(INTENT_ID)).toMatchObject({
+      state: 'cancelled',
+      end_reason: 'interrupted:',
+    });
+  });
+
+  it('fills the intent columns from the accepted event, also when it arrives late', async () => {
+    const inOrder = new MemoryProjectionStore();
+    await project(inOrder, [
+      intentEvent('accepted', 4, undefined, INTENT_FIELDS),
+      intentEvent('running', 5),
+      intentEvent('completed', 9, 'done'),
+    ]);
+    expect(inOrder.intents.get(INTENT_ID)).toMatchObject({
+      ...INTENT_FIELDS,
+      checkpoint: null,
+      thought_id: null,
+    });
+    const late = new MemoryProjectionStore();
+    await project(late, [
+      intentEvent('completed', 9, 'done'),
+      intentEvent('accepted', 4, undefined, INTENT_FIELDS),
+    ]);
+    expect(late.intents.get(INTENT_ID)).toEqual(inOrder.intents.get(INTENT_ID));
   });
 });
 
@@ -109,6 +151,15 @@ describe('receipts', () => {
       receiptEvent(RECEIPT_A, 'committed'),
       receiptEvent(RECEIPT_A, 'committed'),
     ]);
+    expect(store.receipts).toHaveLength(1);
+  });
+
+  it('does not take a same-id receipt of another phase for a redelivery', async () => {
+    const store = new MemoryProjectionStore();
+    await project(store, [receiptEvent(RECEIPT_A, 'prepared')]);
+    const error = await projectEvent(receiptEvent(RECEIPT_A, 'committed'), store).catch((e) => e);
+    expect(error).toBeInstanceOf(ProjectionRejectedError);
+    expect(error.message).toContain('already stored as a prepared receipt');
     expect(store.receipts).toHaveLength(1);
   });
 

@@ -1,4 +1,4 @@
-import type { ActionRecord, Receipt } from '@geldar/contract';
+import type { ActionRecord, Receipt, Thought } from '@geldar/contract';
 import type { ReflexOutcome } from './reflex.ts';
 import type { WakeRequest } from './wake.ts';
 
@@ -22,6 +22,11 @@ export interface IntentChange {
   tick: number;
   /** Why, in plain text (for example the failure message). */
   detail?: string;
+  /**
+   * The intent as accepted: set on the `accepted` change, so the record can show what the intent
+   * was (goal, program, arguments, preconditions, wake_on, limits). Absent on the other changes.
+   */
+  intent?: NonNullable<Thought['intent']>;
 }
 
 /**

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   type ActionRecord,
   type Receipt,
@@ -11,8 +10,11 @@ import {
   type WorldEvent,
 } from '@geldar/contract';
 import type { JetStreamClient } from '@nats-io/jetstream';
+import { eventIdFor } from './derived-id.ts';
 import type { IntentChange, RecordSink, ReflexFiredRecord } from './records.ts';
 import type { WakeRequest } from './wake.ts';
+
+export { eventIdFor };
 
 /** Where encoded events go. The real one is JetStream; tests pass a fake. */
 export interface EventPublisher {
@@ -42,10 +44,14 @@ export interface NatsSinkOptions {
   now?: () => Date;
   /** Where publish failures and dropped records are reported; default `console.error`. */
   log?: (line: string) => void;
-  /** Publish attempts per event before it is dropped and logged; default 5. */
+  /** Publish attempts per reflex or wake record before it is dropped and logged; default 5. */
   attempts?: number;
-  /** First retry delay in ms, doubling each time; default 200. */
+  /** First retry delay in ms, doubling each time up to maxRetryDelayMs; default 200. */
   retryDelayMs?: number;
+  /** Longest wait between two attempts in ms; default 5000. */
+  maxRetryDelayMs?: number;
+  /** Records waiting to go out before the queue sheds load; default 10,000. */
+  maxPending?: number;
 }
 
 /** Minecraft ticks in one world day. */
@@ -54,31 +60,16 @@ const TICKS_PER_DAY = 24_000;
 /** Longest `detail` in a payload (the schemas' maxLength). */
 const DETAIL_LIMIT = 256;
 
-/** Events waiting to go out; past this, new ones are dropped and logged rather than growing memory. */
+/** Records waiting to go out; past this the queue sheds records rather than growing memory. */
 const MAX_PENDING = 10_000;
 
-/** Crockford base32, the alphabet of the contract's ids. */
-const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/** Record types the sink never gives up on: the audit record of decision 0020 (action and receipt). */
+const AUDIT_TYPES: ReadonlySet<string> = new Set(['action', 'receipt']);
 
-/**
- * A deterministic `ev_` id: the first 130 bits of the SHA-256 of `key`, in Crockford base32.
- * The same record always gets the same id, which is what makes a retry or a replay dedup.
- */
-export function eventIdFor(key: string): string {
-  const digest = createHash('sha256').update(key).digest();
-  let bits = 0;
-  let acc = 0;
-  let out = '';
-  for (const byte of digest) {
-    acc = (acc << 8) | byte;
-    bits += 8;
-    while (bits >= 5 && out.length < 26) {
-      bits -= 5;
-      out += CROCKFORD[(acc >> bits) & 31];
-    }
-    acc &= (1 << bits) - 1;
-  }
-  return `ev_${out}`;
+/** One queued event; `audit` ones are retried until they are sent. */
+interface Queued {
+  event: WorldEvent;
+  audit: boolean;
 }
 
 function clip(text: string | undefined): string | undefined {
@@ -88,20 +79,38 @@ function clip(text: string | undefined): string | undefined {
 /**
  * A `RecordSink` that publishes each record as a `WorldEvent` of type `intent`, `action`,
  * `receipt`, `reflex_fired` or `wake` on `geldar.<shard>.<type>`. The sink's methods return at
- * once and never throw: events leave in order through one queue, each retried with backoff, and
- * one that cannot be sent is logged and dropped. `source_event_id` comes from the record (for an
- * action, its `action_id` and `state`), so a retry or a replay is one event to the sink.
+ * once and never throw: events leave in order through one queue, each retried with capped
+ * backoff. `action` and `receipt` records (the audit record, decision 0020) are retried until they
+ * are sent; the others give up after `attempts`. When the queue is full the oldest waiting
+ * `reflex_fired`, `wake` or `intent` record is dropped first, and an audit record is dropped only
+ * when the whole queue is audit records, which is logged as an error and counted in
+ * `auditDropped`. `source_event_id` comes from the record (for an action, its `action_id` and
+ * `state`), so a retry or a replay is one event to the sink.
  */
 export class NatsRecordSink implements RecordSink {
   private readonly opts: NatsSinkOptions;
-  private tail: Promise<void> = Promise.resolve();
-  private pending = 0;
+  private readonly queue: Queued[] = [];
+  private inflight = false;
+  private draining: Promise<void> | null = null;
+  private dropCount = 0;
+  private auditDropCount = 0;
 
   constructor(options: NatsSinkOptions) {
     this.opts = options;
   }
 
+  /** Records dropped so far for any reason after they were valid (queue pressure or give-up). */
+  get dropped(): number {
+    return this.dropCount;
+  }
+
+  /** Audit (`action`, `receipt`) records dropped because the queue was full of audit records. */
+  get auditDropped(): number {
+    return this.auditDropCount;
+  }
+
   intentChanged(change: IntentChange): void {
+    const intent = change.intent;
     this.emit(
       'intent',
       `intent:${change.intentId}:${change.state}:${change.tick}`,
@@ -113,6 +122,16 @@ export class NatsRecordSink implements RecordSink {
         state: change.state,
         tick: change.tick,
         ...(change.detail === undefined ? {} : { detail: clip(change.detail) }),
+        ...(intent === undefined
+          ? {}
+          : {
+              goal: intent.goal,
+              program: intent.program,
+              arguments: structuredClone(intent.arguments),
+              preconditions: [...(intent.preconditions ?? [])],
+              wake_on: [...intent.wake_on],
+              limits: { ...intent.limits },
+            }),
       },
       validateIntentEventPayload,
     );
@@ -173,9 +192,12 @@ export class NatsRecordSink implements RecordSink {
     );
   }
 
-  /** Resolves once every event queued so far has been published or dropped. */
-  flush(): Promise<void> {
-    return this.tail;
+  /**
+   * Resolves once every event queued so far has been published or dropped. With NATS down an
+   * audit record is retried without end, so a caller that must not hang races this with a timer.
+   */
+  async flush(): Promise<void> {
+    while (this.draining) await this.draining;
   }
 
   private tickNow(): number {
@@ -212,39 +234,84 @@ export class NatsRecordSink implements RecordSink {
         this.log(`records: dropped ${type} record, not valid: ${errors.join('; ')}`);
         return;
       }
-      if (this.pending >= MAX_PENDING) {
-        this.log(`records: dropped ${type} record, ${MAX_PENDING} events are waiting to send`);
-        return;
-      }
-      this.pending++;
-      const send = this.tail.then(() => this.send(event));
-      this.tail = send.finally(() => {
-        this.pending--;
-      });
+      const item: Queued = { event, audit: AUDIT_TYPES.has(type) };
+      if (!this.makeRoom(item)) return;
+      this.queue.push(item);
+      this.draining ??= this.drain();
     } catch (error) {
       this.log(`records: dropped ${type} record: ${String(error)}`);
     }
   }
 
-  /** Publishes with backoff; logs and gives up after the last attempt. Never rejects. */
-  private async send(event: WorldEvent): Promise<void> {
-    const attempts = this.opts.attempts ?? 5;
+  /** Makes room for `incoming` when the queue is full; false when `incoming` itself is the one dropped. */
+  private makeRoom(incoming: Queued): boolean {
+    const limit = this.opts.maxPending ?? MAX_PENDING;
+    if (this.queue.length + (this.inflight ? 1 : 0) < limit) return true;
+    const victim = this.queue.findIndex((q) => !q.audit);
+    if (victim >= 0) {
+      this.shed(this.queue.splice(victim, 1)[0] as Queued);
+      return true;
+    }
+    if (!incoming.audit) {
+      this.shed(incoming);
+      return false;
+    }
+    const oldest = this.queue.shift();
+    if (oldest) this.shed(oldest);
+    return true;
+  }
+
+  private shed(dropped: Queued): void {
+    this.dropCount++;
+    const { type, source_event_id: id } = dropped.event;
+    if (dropped.audit) {
+      this.auditDropCount++;
+      this.log(
+        `records: ERROR dropped audit ${type} ${id}: the queue is full of audit records (${this.auditDropCount} lost so far)`,
+      );
+    } else {
+      this.log(`records: dropped ${type} record, the queue is full of records waiting to send`);
+    }
+  }
+
+  /** Sends the queue in order, one event at a time. Never rejects. */
+  private async drain(): Promise<void> {
+    try {
+      for (let item = this.queue.shift(); item; item = this.queue.shift()) {
+        this.inflight = true;
+        await this.send(item);
+        this.inflight = false;
+      }
+    } finally {
+      this.inflight = false;
+      this.draining = null;
+    }
+  }
+
+  /**
+   * Publishes with capped backoff. An audit record is retried until it is sent; any other gives
+   * up (logged) after `attempts`. Never rejects.
+   */
+  private async send({ event, audit }: Queued): Promise<void> {
+    const attempts = audit ? Number.POSITIVE_INFINITY : (this.opts.attempts ?? 5);
+    const cap = this.opts.maxRetryDelayMs ?? 5_000;
     let delay = this.opts.retryDelayMs ?? 200;
     const subject = `geldar.${event.shard}.${event.type}`;
     const body = JSON.stringify(event);
-    for (let attempt = 1; attempt <= attempts; attempt++) {
+    for (let attempt = 1; ; attempt++) {
       try {
         await this.opts.publisher.publish(subject, body, event.source_event_id);
         return;
       } catch (error) {
-        if (attempt === attempts) {
+        if (attempt >= attempts) {
+          this.dropCount++;
           this.log(
             `records: dropped ${event.type} ${event.source_event_id} after ${attempts} attempts: ${String(error)}`,
           );
           return;
         }
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        delay *= 2;
+        await new Promise((resolve) => setTimeout(resolve, delay).unref());
+        delay = Math.min(delay * 2, cap);
       }
     }
   }

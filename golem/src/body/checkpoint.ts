@@ -68,15 +68,29 @@ export interface CheckpointStoreOptions {
   now?: () => Date;
   /** Where failed writes are reported; default `console.warn`. */
   log?: (line: string) => void;
+  /** Tries per delete and per `load`; default 4. */
+  attempts?: number;
+  /** First wait between tries in ms, doubling each time; default 100. */
+  retryDelayMs?: number;
 }
 
-type Write = { kind: 'put'; value: string } | { kind: 'delete' };
+/** A write waiting its turn; a put carries the content it would store, minus the save time. */
+type Write = { kind: 'put'; value: string; content: string } | { kind: 'delete' };
+
+/** The stored checkpoint could not be read after the retries (the bucket failed, not "no entry"). */
+export class CheckpointUnreadable extends Error {}
+
+/** Of a run of failed writes, one in this many is logged (the first always is). */
+const LOG_EVERY_FAILURE = 30;
 
 /**
  * Saves the running intent's checkpoint after each program step and deletes it when the intent
  * ends. Writes never block or throw into the step loop: they go out one at a time in the
- * background, a newer write replaces one still waiting, and a failure is logged and left for the
- * next step to redo. A Body that stops keeps its checkpoint (the executor does not report that end).
+ * background, a newer write replaces one still waiting, and a failed put is logged (the first of a
+ * run, then one in 30) and left for the next step to redo. A step whose entry equals the last one
+ * stored is not written again. A failed delete is retried with backoff, since a stale entry would
+ * be resumed after the next restart. A Body that stops keeps its checkpoint (the executor does not
+ * report that end).
  */
 export class CheckpointStore implements IntentObserver {
   private readonly kv: BodyKv;
@@ -84,8 +98,13 @@ export class CheckpointStore implements IntentObserver {
   private readonly generation: number;
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
+  private readonly attempts: number;
+  private readonly retryDelayMs: number;
   private waiting: Write | null = null;
   private draining: Promise<void> | null = null;
+  /** Content of the newest put handed over and not known to have failed; null after a delete. */
+  private lastContent: string | null = null;
+  private failures = 0;
 
   constructor(options: CheckpointStoreOptions) {
     this.kv = options.kv;
@@ -93,9 +112,11 @@ export class CheckpointStore implements IntentObserver {
     this.generation = options.bodyGeneration;
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? ((line) => console.warn(line));
+    this.attempts = options.attempts ?? 4;
+    this.retryDelayMs = options.retryDelayMs ?? 100;
   }
 
-  /** Saves the state after a step. Returns at once. */
+  /** Saves the state after a step, unless it is what is already stored. Returns at once. */
   stepped(step: StepSnapshot): void {
     try {
       const entry: CheckpointEntry = {
@@ -105,10 +126,14 @@ export class CheckpointStore implements IntentObserver {
         intent: step.intent,
         program: step.intent.program,
         checkpoint: step.checkpoint,
-        saved_at: this.now().toISOString(),
+        saved_at: '',
         expires_tick: step.expiresTick,
       };
-      this.submit({ kind: 'put', value: JSON.stringify(entry) });
+      const content = JSON.stringify(entry);
+      if (content === this.lastContent) return;
+      this.lastContent = content;
+      entry.saved_at = this.now().toISOString();
+      this.submit({ kind: 'put', value: JSON.stringify(entry), content });
     } catch (error) {
       this.log(`checkpoint for ${this.lifeId} not saved: ${errorText(error)}`);
     }
@@ -116,6 +141,7 @@ export class CheckpointStore implements IntentObserver {
 
   /** Deletes the checkpoint: the intent ended. Returns at once. */
   ended(_intentId: string): void {
+    this.lastContent = null;
     this.submit({ kind: 'delete' });
   }
 
@@ -125,16 +151,29 @@ export class CheckpointStore implements IntentObserver {
   }
 
   /**
-   * The stored entry for this life, or null when there is none or it cannot be read. A value
-   * that does not parse as an entry is logged and treated as absent.
+   * The stored entry for this life, or null when there is none. A value that does not parse as an
+   * entry is logged and treated as absent. A bucket that fails is tried `attempts` times, then
+   * throws `CheckpointUnreadable`: an unreadable bucket is not an empty one.
    */
   async load(): Promise<CheckpointEntry | null> {
-    let record: KvRecord | null;
-    try {
-      record = await this.kv.get(this.lifeId);
-    } catch (error) {
-      this.log(`checkpoint for ${this.lifeId} not read: ${errorText(error)}`);
-      return null;
+    let record: KvRecord | null = null;
+    let last: unknown = null;
+    let delay = this.retryDelayMs;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        record = await this.kv.get(this.lifeId);
+        break;
+      } catch (error) {
+        last = error;
+        this.log(`checkpoint for ${this.lifeId} not read (try ${attempt}): ${errorText(error)}`);
+        if (attempt >= this.attempts) {
+          throw new CheckpointUnreadable(
+            `checkpoint for ${this.lifeId} unreadable after ${attempt} tries: ${errorText(last)}`,
+          );
+        }
+        await sleep(delay);
+        delay *= 2;
+      }
     }
     if (record === null) return null;
     const entry = parseEntry(record.value);
@@ -160,17 +199,50 @@ export class CheckpointStore implements IntentObserver {
     while (this.waiting) {
       const write = this.waiting;
       this.waiting = null;
-      try {
-        if (write.kind === 'put') await this.kv.put(this.lifeId, write.value);
-        else await this.kv.delete(this.lifeId);
-      } catch (error) {
-        this.log(`checkpoint for ${this.lifeId} not written: ${errorText(error)}`);
-      }
+      if (write.kind === 'put') await this.put(write);
+      else await this.remove();
     }
     this.draining = null;
   }
+
+  private async put(write: Extract<Write, { kind: 'put' }>): Promise<void> {
+    try {
+      await this.kv.put(this.lifeId, write.value);
+      this.failures = 0;
+    } catch (error) {
+      // Not stored: the next step must write it again even if its content is the same.
+      if (this.lastContent === write.content) this.lastContent = null;
+      if (this.failures++ % LOG_EVERY_FAILURE === 0) {
+        this.log(`checkpoint for ${this.lifeId} not written: ${errorText(error)}`);
+      }
+    }
+  }
+
+  /** Deletes with backoff; a newer write that arrives meanwhile makes the retry pointless. */
+  private async remove(): Promise<void> {
+    let delay = this.retryDelayMs;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.kv.delete(this.lifeId);
+        return;
+      } catch (error) {
+        if (attempt >= this.attempts) {
+          this.log(
+            `checkpoint for ${this.lifeId} not deleted after ${attempt} tries, a stale entry stays: ${errorText(error)}`,
+          );
+          return;
+        }
+        if (this.waiting) return;
+        await sleep(delay);
+        delay *= 2;
+      }
+    }
+  }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 /** Parses a stored value; null when it is not JSON or lacks a field `resume` relies on. */
 export function parseEntry(text: string): CheckpointEntry | null {
   let raw: unknown;

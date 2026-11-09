@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/wake-event.schema.json",
   "title": "WakePayload",
-  "description": "Payload of a WorldEvent of type `wake`: the Body decided to wake the Mind (spec 5.3, Appendix C wake_on, plus reflex_danger, action_failed and limit_reached). Events only, no table. source_event_id derives from (life, tick, reason, intent), so a retry dedups.",
+  "description": "Payload of a WorldEvent of type `wake`: the Body decided to wake the Mind (spec 5.3, Appendix C wake_on, plus reflex_danger, action_failed, limit_reached and no_plan, which a restarted Body with nothing to resume raises when no plan arrived in 45 s, with a null intent_id). Events only, no table. source_event_id derives from (life, tick, reason, intent), so a retry dedups.",
   "type": "object",
   "additionalProperties": false,
   "required": ["reason", "tick", "intent_id"],
