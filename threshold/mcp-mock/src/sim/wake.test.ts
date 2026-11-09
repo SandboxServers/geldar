@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateWake, type WakeEvent, type WakeInput } from './wake.ts';
+import { evaluateWake, type WakeEvent, type WakeInput, type WakeReason } from './wake.ts';
 
 const ALL = [
   'directly_addressed',
@@ -150,4 +150,71 @@ describe('evaluateWake', () => {
     const addressed = run([ev({ kind: 'speech', addressed: true })], opts);
     expect(addressed.wake).toBeNull();
   });
-});
+
+  it('14: the distance threshold is inclusive and the widest matching entry counts', () => {
+    const at = (distance: number, wakeOn: string[]) =>
+      run([ev({ kind: 'agent_approached', distance, wakeOn })], { intentStartedMs: 90_000 });
+    expect(at(8, RUN).wake?.reason).toBe('new_agent_nearby');
+    const nine = at(9, RUN);
+    expect(nine.wake).toBeNull();
+    expect(nine.suppressed.map((s) => s.reason)).toEqual(['not_in_wake_on']);
+    const both = ['new_agent_within_4', 'new_agent_within_8'];
+    expect(at(6, both).wake?.reason).toBe('new_agent_nearby');
+    expect(at(9, both).wake).toBeNull();
+  });
+
+  const ORDER: Array<[WakeReason, WakeEvent]> = [
+    ['precondition_failed', ev({ kind: 'intent_finished', outcome: 'failed' })],
+    ['goal_completed', ev({ kind: 'intent_finished', outcome: 'completed' })],
+    ['unexpected_damage', ev({ kind: 'damage' })],
+    ['intent_run_too_long', ev({ kind: 'intent_finished', outcome: 'limit_reached' })],
+    ['new_agent_nearby', ev({ kind: 'agent_approached', distance: 1 })],
+    ['proposal', ev({ kind: 'proposal' })],
+    ['day_night', ev({ kind: 'day_night' })],
+  ];
+  for (let k = 0; k + 1 < ORDER.length; k++) {
+    const [high, highEv] = ORDER[k] as [WakeReason, WakeEvent];
+    const [low, lowEv] = ORDER[k + 1] as [WakeReason, WakeEvent];
+    it(`15: ${high} beats ${low} in either order`, () => {
+      const a = { ...highEv, seq: 1 };
+      const b = { ...lowEv, seq: 2 };
+      expect(run([a, b]).wake?.reason).toBe(high);
+      expect(run([b, a]).wake?.reason).toBe(high);
+    });
+  }
+
+  it('16: damage, proposal and day_night obey wake_on', () => {
+    const intent = { intentStartedMs: 90_000 };
+    const kinds: Array<[WakeEvent['kind'], WakeReason]> = [
+      ['damage', 'unexpected_damage'],
+      ['proposal', 'proposal'],
+      ['day_night', 'day_night'],
+    ];
+    for (const [kind, reason] of kinds) {
+      expect(run([ev({ kind })], intent).wake?.reason).toBe(reason);
+      const held = run([ev({ kind, wakeOn: ['directly_addressed'] })], intent);
+      expect(held.wake).toBeNull();
+      expect(held.suppressed.map((s) => s.reason)).toEqual(['not_in_wake_on']);
+    }
+    const dmg = run([ev({ kind: 'damage', wakeOn: ['unexpected_damage'] })], intent);
+    expect(dmg.wake?.reason).toBe('unexpected_damage');
+  });
+
+  it('17: recheckAtMs is the earlier of the spacing release and the fallback', () => {
+    const d = run([ev({ seq: 3, kind: 'speech', addressed: true })], {
+      lastWakeMs: 95_000,
+      intentStartedMs: 90_000,
+      config: { minSpacingMs: 20_000, intentRunTooLongMs: 15_000 },
+    });
+    expect(d.wake).toBeNull();
+    expect(d.recheckAtMs).toBe(110_000);
+  });
+
+  it('18: intent_finished needs no running intent, and failed needs no failure field', () => {
+    const done = run([ev({ kind: 'intent_finished', outcome: 'completed' })], {
+      intentStartedMs: null,
+    });
+    expect(done.wake?.reason).toBe('goal_completed');
+    const failed = run([ev({ kind: 'intent_finished', outcome: 'failed' })]);
+    expect(failed.wake?.reason).toBe('precondition_failed');
+  });});
