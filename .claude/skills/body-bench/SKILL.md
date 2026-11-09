@@ -9,7 +9,7 @@ The spec runs this before any model is attached: it is "the floor everything sta
 
 ## Before you run
 
-1. The shard is up and every health row passes (`run-shard` skill).
+1. The shard is up and every health row passes (`run-shard` skill), with both plugin jars built first (`cd plugin; ./gradlew build`). The Velocity identity gate admits only registered names: the bench registers its bots in NATS itself and defaults `GELDAR_NATS_URL` to `nats://127.0.0.1:4222` when unset (see `golem/README.md`).
 2. Nothing else is connected to the shard: no Adam run, no second benchmark, no live test run and no other agent.
 3. The tree is clean and committed, so the result can name the commit it measured (`--record` refuses a dirty tree unless you pass `--allow-dirty`, which adds a `+dirty` suffix to the commit).
 

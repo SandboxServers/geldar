@@ -11,11 +11,12 @@ The repo follows spec section 6.6, created one directory at a time as Phase 0 ne
 | Path | What |
 |---|---|
 | `contract/` | JSON Schemas for every cross-component message, with generated types and validators |
-| `plugin/` | Geldar-Core, the Paper plugin (Java, Gradle) |
-| `golem/` | The Body: Mineflayer bot, reflexes, actions, and the body benchmark |
+| `plugin/` | Java, Gradle multi-project: `core` (Geldar-Core, the Paper plugin: event export to JetStream) and `velocity-identity` (the bot-ingress gate) |
+| `golem/` | The Body: Mineflayer bot, reflexes, actions, the body benchmark, and the registrar of the NATS life registry the gate reads |
 | `animus/` | The Mind: intents, attention controller, memory, reflection |
 | `lantern-local/` | Phase 0 local Thinker: plain WebSocket to Ollama |
-| `eventsink/`, `glass/` | NATS → Postgres, and the Thought Stream |
+| `eventsink/` | NATS JetStream → Postgres `events`, with dead letters |
+| `glass/` | The Thought Stream |
 | `sql/`, `compose/`, `shards/`, `prompts/` | Schema migrations, compose stacks, shard configs, versioned prompts |
 | `docs/` | The spec, decisions, ideas, campaign ledgers |
 | `threshold/` | The Threshold gateway area; today `threshold/mcp-mock`, a mock MCP server |
@@ -29,6 +30,8 @@ Needs Node 22 (`.nvmrc`), PowerShell 7, Docker, and for later packets Java and O
 ./geldar.ps1 setup             # pnpm install, using the pnpm version pinned in package.json
 ./geldar.ps1 check             # everything CI runs
 ```
+
+To run the shard, build the plugin jars first (`cd plugin; ./gradlew build`), then `./geldar.ps1 shard up phase0`.
 
 pnpm doesn't need to be installed: `geldar.ps1` gets the pinned version through corepack, and `./geldar.ps1 pnpm <args>` runs any pnpm command with it. For a plain `pnpm` command, run `corepack enable pnpm` as admin, or without admin `corepack enable pnpm --install-directory <a folder on your PATH>`.
 
