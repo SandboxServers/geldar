@@ -2,17 +2,25 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-09):** wave 1 merged (PR #4). Wave 2 packets written (P0-07a..c, P0-08a/b, P0-09a/b, P0-10a..c). Integration branch `phase0/wave2`.
+**State (2026-11-09):** wave 1 merged (PR #4, `a6fbf99`); retro at [retro/wave-1.md](retro/wave-1.md). Wave 2 is in progress on integration branch `phase0/wave2` (pushed; packets in work-packets.md, ledger rows in README.md). The owner authorised the orchestrator to merge a green PR that meets the exit criteria and to keep going to the end of the campaign, and to write decision records. Each wave now closes with docs sweep, retro and a `W<N>-process` packet ([work-packets.md](work-packets.md) § Wave close).
+
+**In flight (background agents, worktrees under `.claude/worktrees/`):**
+
+| Packet | Worktree / branch | Stage |
+|---|---|---|
+| P0-07a golem base | `p0-07a` / `phase0/p0-07a-golem-base` | committed 726d581; review pass 1 running (report p0-07a-review-1.md in the worktree) |
+| W1-process | `w1-process` / `phase0/w1-process` | review fix pass 2 running (HEAD 0214469; fix-2 report to come); then review pass 3 |
+
+`wave2` is the orchestrator's checkout of `phase0/wave2`. The live stack may be running from `p0-07a` (`./geldar.ps1 shard down phase0` when done). Do not touch `scriptorium-decisions`.
 
 **Next actions:**
 
-1. Wait for `ci gate` on the wave 1 PR (`gh pr checks <PR> --watch`). Likely first-run risks: the `compose` job needs `corepack` on the runner for `geldar.ps1`; the `sql` job relies on `psql`/`pg_isready` on the runner.
-2. Owner reviews and merges the PR (decisions 0023 to 0028 are in it).
-3. Then: remove packet worktrees `p0-00` to `p0-06`, `wave1`, `wave1-fix` (not `scriptorium-decisions`); copy useful `.claude/reports/` files to `worknotes/` first.
-4. Write wave 2 packets (P0-07 to P0-10: Golem skeleton, body actions A and B, body benchmark) from main after the merge; the ledger rows say "written at wave 1 close". Open the bench host questions with the owner before P0-10.
+1. Review loops per work-packets.md; `fix` after pass 3 or `decision`: ask the owner (AskUserQuestion). Merge shipped branches into `phase0/wave2` with `--no-ff` and push; update ledger rows.
+2. Wave 2 order: 07a, then 07b, then 07c; then 08a, 08b, 09a, 09b in parallel; then 10a (needs 08a), 10b and 10c. Write the interface-conflict resolution per the registry-file blocks (`golem/src/actions/index.ts`, `golem/src/bench/scenarios/index.ts`).
+3. P0-07b decides whether Mineflayer 4.39.0 speaks Minecraft 26.1 (protocol 775); if not, stop and ask the owner. P0-07b also flags the `world_time.ticks` meaning (world age vs time of day): write a decision record.
+4. Wave 2 close: wave review over `origin/main..phase0/wave2`, docs sweep, `retro/wave-2.md`, `W2-process` packet, `./geldar.ps1 check`, open the PR, wait for `ci gate`, merge if green and the exit criteria are met, remove worktrees, then write wave 3 packets (P0-11 to P0-13).
+5. Waves 3 to 6 per README.md; wave 6 has the 24 h run and 5-day survival; report to the owner at each wave boundary.
 
-**Known low findings carried forward (not blocking):** P0-01 commit 8f17621 has a Haiku 5.5 trailer. P0-03: `credits`/`count`/`world_day` have no upper bound (SQL INT), `thinker_id` is a free string. P0-04: invented limits (job `max_tokens` 32768, semver pattern), missing tests for `ModelName` length, `welcome.accepted_models` uniqueItems, `MAX_FRAME_BYTES`. P0-02: no tests for `attack.target` bad characters, `skill_id` 64-char boundary, offset -257, `propose.rule` 257 chars; `use_skill.args`, `Intent.arguments`, `Intent.checkpoint`, `propose.value` unbounded (backstop `MAX_FRAME_BYTES`). P0-06: paper-entrypoint `sed` rewrites every `secret:` line (one exists today). Port check rejects `extends`/`include`/interpolation (fail closed).
+**Orchestrator rules that bit in wave 1:** commit early; always `</dev/null` on scripted git; no `python -` heredocs; absolute paths for `git worktree add`; reviewers now may write their one report file; copy reports into `worknotes/reports/` before removing a worktree.
 
-**Settled in records:** 0023 to 0028 (skill FKs, gamerules, revision fields, one DB per shard, final-receipt constraints, Ollama tags). `docs/spec.md` is not edited.
-
-**Open owner items:** infra repo questions (spec section 13 items 2, 2a to 2d) are Phase 2; `docs/ideas.md` note for them not written (owner hasn't said yes).
+**Open owner items:** infra repo questions (spec section 13 items 2, 2a to 2d) are Phase 2 and no packet exists; `docs/ideas.md` note not written (owner hasn't said yes). Wave 2 owner questions: none blocking (no minimum success rate in the spec; bench `--runs` default 5 is the planner's pick).
