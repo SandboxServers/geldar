@@ -51,3 +51,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0044](0044-malicious-book-corpus-world-side.md) | The malicious-book corpus: world side in the mock, hostile text stays untrusted, the model half is local | Accepted |
 | [0045](0045-live-malicious-book-check-is-local-only.md) | The live malicious-book check is local only; CI proves the deterministic half (D-SC-01) | Accepted |
 | [0046](0046-scripted-stub-cli-stands-in-for-the-vendor-cli-in-ci.md) | A scripted stub CLI stands in for the vendor CLI in CI (D-SC-10) | Accepted |
+| [0047](0047-thinking-time-comes-from-intents-and-waits-not-dilation.md) | Adam's thinking time comes from intents, waits and reflexes; time dilation is not a Phase 0 mechanism | Accepted (owner) |
+| [0048](0048-recipe-discovery-is-part-of-the-game.md) | Recipe discovery is part of the game; the plugin stops granting the recipe book | Accepted (owner) |
