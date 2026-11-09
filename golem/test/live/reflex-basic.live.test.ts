@@ -64,7 +64,7 @@ describe('basic reflexes against a real server', () => {
       const { x: cx, z: cz } = arena.center;
       // A 3 by 3 pool, two deep, on the arena platform; the Body is dropped into its middle.
       await ctl.fill({ x: cx + 4, y: 200, z: cz }, { x: cx + 6, y: 201, z: cz + 2 }, 'lava');
-      await ctl.tp(BOT, cx + 5.5, 200, cz + 1.5);
+      await ctl.tp(BOT, cx + 5, 200, cz + 1);
       const { body, sink } = startBody(live);
       try {
         const left = await waitFor(live, () => {
@@ -86,7 +86,7 @@ describe('basic reflexes against a real server', () => {
       const { x: cx, z: cz } = arena.center;
       // A raised stone pad at y 210, ten blocks above the arena platform; the Body walks +x off it.
       await ctl.fill({ x: cx - 3, y: 210, z: cz - 3 }, { x: cx + 3, y: 210, z: cz + 3 }, 'stone');
-      await ctl.tp(BOT, cx - 2.5, 211, cz + 0.5);
+      await ctl.tp(BOT, cx - 2, 211, cz);
       await bot.waitForTicks(10);
       const { body, sink } = startBody(live);
       try {
