@@ -1,0 +1,58 @@
+/**
+ * Admission (spec 5.3.4, 5.7; orchestrator ruling Q4): a rolling-hour counter against
+ * `mind.admission.max_thoughts_per_real_hour`. A thought costs 1, a reflection 2. Over the cap the
+ * caller gets a "tired" result and makes no model call. The clock is injected; the counter never
+ * reads the wall clock itself.
+ */
+
+/** The cost of a thought in credits. */
+export const THOUGHT_COST = 1;
+/** The cost of a sleep reflection in credits. */
+export const REFLECTION_COST = 2;
+
+const HOUR_MS = 3_600_000;
+
+/** A reservation handed out by `Admission.reserve`. */
+export interface Reservation {
+  /** Credits held. */
+  readonly cost: number;
+  /** Gives the credits back (the call produced nothing). Safe to call twice. */
+  release(): void;
+}
+
+/** One counter per life, shared by the thinking loop and the reflection. */
+export class Admission {
+  private readonly cap: number;
+  private readonly now: () => number;
+  private readonly spent: { at: number; cost: number; released: boolean }[] = [];
+
+  constructor(maxThoughtsPerRealHour: number, now: () => number = Date.now) {
+    this.cap = maxThoughtsPerRealHour;
+    this.now = now;
+  }
+
+  /** Credits left in the rolling hour, never below zero. */
+  remaining(): number {
+    return Math.max(0, this.cap - this.used());
+  }
+
+  /** Reserves `cost` credits, or returns null when they would take the hour over the cap. */
+  reserve(cost: number): Reservation | null {
+    if (this.used() + cost > this.cap) return null;
+    const entry = { at: this.now(), cost, released: false };
+    this.spent.push(entry);
+    return {
+      cost,
+      release: () => {
+        entry.released = true;
+      },
+    };
+  }
+
+  /** Credits spent in the last hour; drops older entries. */
+  private used(): number {
+    const cutoff = this.now() - HOUR_MS;
+    while (this.spent.length > 0 && (this.spent[0]?.at ?? 0) <= cutoff) this.spent.shift();
+    return this.spent.reduce((sum, e) => sum + (e.released ? 0 : e.cost), 0);
+  }
+}
