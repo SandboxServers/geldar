@@ -110,7 +110,7 @@ export async function waitTool(
     cursor: encodeCursor(sim.log.lastSeq()),
     wake_reason: reason,
     dropped_events: since.dropped,
-    untrusted_world_text: worldText(since.events),
+    untrusted_world_text: worldText(since.events, { wakingSeqs }),
     note: WORLD_TEXT_NOTE,
   };
   return fitResult(result, maxBytes, wakingSeqs);

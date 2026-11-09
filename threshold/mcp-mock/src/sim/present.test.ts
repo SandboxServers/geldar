@@ -290,6 +290,31 @@ describe('fitResult', () => {
     expect(fitted.dropped_events).toBe(50);
   });
 
+  it('keeps a waking addressed line when 45 later lines follow it', () => {
+    const lines = [
+      speech(1, { addressed: true, to: 'Kestrel', text: 'wake' }),
+      ...Array.from({ length: 45 }, (_, i) => speech(i + 2, { text: `n${i}` })),
+    ];
+    const wrapped = worldText(lines, { wakingSeqs: [1] });
+    expect(wrapped.speech).toHaveLength(40);
+    expect(wrapped.speech?.[0]?.text).toBe('wake');
+    expect(wrapped.speech?.at(-1)?.text).toBe('n44');
+    const plain = worldText(lines);
+    expect(plain.speech).toHaveLength(40);
+    expect(plain.speech?.[0]?.text).toBe('n5');
+  });
+
+  it('keeps the newest 40 waking lines when waking lines alone pass 40', () => {
+    const lines = Array.from({ length: 50 }, (_, i) => speech(i + 1, { text: `w${i}` }));
+    const wrapped = worldText(
+      lines,
+      { wakingSeqs: lines.map((e) => e.seq) },
+    );
+    expect(wrapped.speech).toHaveLength(40);
+    expect(wrapped.speech?.[0]?.text).toBe('w10');
+    expect(wrapped.speech?.at(-1)?.text).toBe('w49');
+  });
+
   it('gives the same output for the same input', () => {
     const build = (): WaitResult =>
       waitResult(8, [speech(1, { text: 'bbbb' }), speech(2, { text: 'aaaa' })], 'y'.repeat(300));

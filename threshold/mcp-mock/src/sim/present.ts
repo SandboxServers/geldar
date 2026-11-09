@@ -76,15 +76,28 @@ function intentText(e: SimEvent): string {
 const speechSeqs = new WeakMap<object, number[]>();
 
 /**
- * The wrapper for text other agents wrote: the last 40 speech lines (`from` clipped to 32,
- * `text` to 512), plus signs and a book when given.
+ * The wrapper for text other agents wrote: at most 40 speech lines (`from` clipped to 32,
+ * `text` to 512), plus signs and a book when given. Past 40, the lines of `wakingSeqs` are kept
+ * first (the newest 40 of them if they alone pass 40), then the newest of the rest.
  */
 export function worldText(
   speechEvents: SimEvent[],
-  extra: { signs?: string[]; book?: { title: string; text: string } } = {},
+  extra: {
+    signs?: string[];
+    book?: { title: string; text: string };
+    wakingSeqs?: readonly number[];
+  } = {},
 ): UntrustedWorldText {
   const text: UntrustedWorldText = {};
-  const lines = speechEvents.filter((e) => e.kind === 'speech').slice(-SPEECH_LINES);
+  let lines = speechEvents.filter((e) => e.kind === 'speech');
+  if (lines.length > SPEECH_LINES) {
+    const waking = new Set(extra.wakingSeqs ?? []);
+    const owned = lines.filter((e) => waking.has(e.seq)).slice(-SPEECH_LINES);
+    const room = SPEECH_LINES - owned.length;
+    const others = room > 0 ? lines.filter((e) => !waking.has(e.seq)).slice(-room) : [];
+    const keep = new Set([...owned, ...others]);
+    lines = lines.filter((e) => keep.has(e));
+  }
   if (lines.length > 0) {
     text.speech = lines.map((e) => ({
       from: (e.from ?? '').slice(0, SPEECH_FROM_LIMIT),
