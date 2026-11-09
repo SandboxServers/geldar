@@ -242,6 +242,40 @@ describe('PlayerSim', () => {
     expect(fin[0]).toMatchObject({ outcome: 'completed', tick: 24_000_000 });
   });
 
+  it('gives the same log, food and inventory for one big sync and fifty small ones', () => {
+    for (const hunger of [5, 7]) {
+      const make = (): PlayerSim => {
+        const sim = build({
+          character: {
+            name: 'Aldric',
+            life_id: 'ag_aldric_01',
+            position: { x: 0, y: 64, z: 0 },
+            facts: ['has_axe'],
+            food: 20,
+            inventory: [{ item: 'bread', count: 40 }],
+          },
+          reflex: { hunger_interval_ticks: hunger, eat_below: 14 },
+          events: [
+            { type: 'speech', at_tick: 300, from: 'Bram', to: 'Aldric', text: 'hi' },
+            { type: 'damage', at_tick: 1201, amount: 2 },
+            { type: 'clear_fact', at_tick: 2000, fact: 'has_axe' },
+          ],
+        });
+        sim.startIntent(intent(1500), 0);
+        return sim;
+      };
+      const big = make();
+      big.syncTo(3000);
+      const small = make();
+      for (let i = 1; i <= 50; i++) small.syncTo(i * 60);
+      expect(small.log.since(0).events).toEqual(big.log.since(0).events);
+      expect(small.food).toBe(big.food);
+      expect(small.inventory).toEqual(big.inventory);
+      expect(small.tick).toBe(big.tick);
+      expect(big.log.lastSeq()).toBeGreaterThan(3);
+    }
+  });
+
   it('is deterministic when it skips', () => {
     const make = (): PlayerSim =>
       build({
