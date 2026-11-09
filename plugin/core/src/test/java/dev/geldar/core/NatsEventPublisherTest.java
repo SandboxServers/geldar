@@ -127,4 +127,24 @@ class NatsEventPublisherTest {
             publisher.close();
         }
     }
+
+    @Test
+    void theSendLoopThrowsAfterTheMaxFailuresInARowSoTheWorkerReconnects() {
+        NatsEventPublisher publisher = idle();
+        try {
+            publisher.publish(event());
+            int[] calls = {0};
+            NatsEventPublisher.Sender counting = (subject, headers, body) -> {
+                calls[0]++;
+                throw new IOException("stream gone");
+            };
+            IOException error = org.junit.jupiter.api.Assertions.assertThrows(
+                    IOException.class, () -> publisher.sendWhileConnected(() -> true, counting, 0));
+            assertEquals(NatsEventPublisher.MAX_CONSECUTIVE_FAILURES, calls[0]);
+            assertTrue(error.getMessage().contains("in a row"));
+            assertEquals(1, publisher.queued(), "the failed event is still queued");
+        } finally {
+            publisher.close();
+        }
+    }
 }

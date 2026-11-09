@@ -1,5 +1,6 @@
 package dev.geldar.identity;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 class LoginGateTest {
     private static final byte[] VALID = "{\"life_id\":\"life_1\",\"registered_at\":\"2026-11-09T00:00:00Z\"}".getBytes(StandardCharsets.UTF_8);
+
+    private static final byte[] OTHER = "{\"life_id\":\"life_2\",\"registered_at\":\"2026-11-09T00:00:00Z\"}".getBytes(StandardCharsets.UTF_8);
 
     private final LifeRegistry registry = new LifeRegistry();
     private final LoginGate gate = new LoginGate(registry);
@@ -56,7 +59,9 @@ class LoginGateTest {
         registry.put("alice", VALID);
         registry.remove("ALICE");
         registry.put("ALICE", "garbage".getBytes(StandardCharsets.UTF_8));
+        registry.put("Alice", OTHER);
         assertTrue(gate.admits("alice"));
+        assertEquals("life_1", registry.find("alice").orElseThrow().lifeId(), "a mixed-case key must not replace the entry");
     }
 
     @Test

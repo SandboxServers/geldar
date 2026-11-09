@@ -138,7 +138,16 @@ public final class NatsEventPublisher implements EventPublisher {
 
     private void drain(Connection nc, JetStream js) throws InterruptedException, IOException {
         Sender sender = (subject, headers, body) -> js.publish(subject, headers, body);
-        while (running && nc.getStatus() == Connection.Status.CONNECTED) {
+        sendWhileConnected(() -> nc.getStatus() == Connection.Status.CONNECTED, sender, FAILURE_PAUSE_MS);
+        flushOnClose(nc, sender);
+    }
+
+    /**
+     * Sends queued events while {@code connected} holds; throws after {@link #MAX_CONSECUTIVE_FAILURES} failed
+     * sends in a row so that the worker reconnects, pausing {@code pauseMs} after each failure.
+     */
+    void sendWhileConnected(BooleanSupplier connected, Sender sender, long pauseMs) throws InterruptedException, IOException {
+        while (running && connected.getAsBoolean()) {
             logDrops();
             EventEnvelope event = queue.poll(500, TimeUnit.MILLISECONDS);
             if (event == null) {
@@ -149,10 +158,9 @@ public final class NatsEventPublisher implements EventPublisher {
                     // The connection can look fine while the stream is gone; reconnecting re-runs ensureStream.
                     throw new IOException("publishing failed " + consecutiveFailures + " times in a row");
                 }
-                Thread.sleep(FAILURE_PAUSE_MS);
+                Thread.sleep(pauseMs);
             }
         }
-        flushOnClose(nc, sender);
     }
 
     /** Sends one event; a failed event goes back to the head of the queue and counts toward a reconnect. */
@@ -213,6 +221,7 @@ public final class NatsEventPublisher implements EventPublisher {
     int queued() {
         return queue.size();
     }
+
     /** Logs the drop count when it changed, at most once a minute. */
     private void logDrops() {
         long now = System.nanoTime();

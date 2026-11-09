@@ -22,4 +22,24 @@ class GeldarCoreTest {
         assertTrue(listeners.stream().anyMatch(l -> l instanceof RecipeGrantListener));
         assertTrue(listeners.stream().anyMatch(l -> l instanceof CommandBlockListener));
     }
+
+    @Test
+    void aFailedEnableReleasesWhatItStartedThenStopsTheServer() {
+        List<String> calls = new java.util.ArrayList<>();
+        GeldarCore.enableOrStop(
+                () -> {
+                    throw new IllegalStateException("bad config");
+                },
+                () -> calls.add("disable"),
+                () -> calls.add("shutdown"),
+                Logger.getLogger("test"));
+        assertEquals(List.of("disable", "shutdown"), calls);
+    }
+
+    @Test
+    void aSuccessfulEnableLeavesTheServerRunning() {
+        List<String> calls = new java.util.ArrayList<>();
+        GeldarCore.enableOrStop(() -> calls.add("enable"), () -> calls.add("disable"), () -> calls.add("shutdown"), Logger.getLogger("test"));
+        assertEquals(List.of("enable"), calls);
+    }
 }

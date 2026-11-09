@@ -20,13 +20,20 @@ public final class GeldarCore extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        enableOrStop(this::enable, this::onDisable, () -> getServer().shutdown(), getLogger());
+    }
+
+    /**
+     * Runs {@code enable}; when it fails, releases what it started and stops the server. A server that runs
+     * on without the command block and the export is worse than one that stops.
+     */
+    static void enableOrStop(Runnable enable, Runnable disable, Runnable shutdown, Logger log) {
         try {
-            enable();
+            enable.run();
         } catch (RuntimeException e) {
-            // A server that runs on without the command block and the export is worse than one that stops.
-            getLogger().log(Level.SEVERE, "Geldar-Core failed to enable; stopping the server", e);
-            onDisable();
-            getServer().shutdown();
+            log.log(Level.SEVERE, "Geldar-Core failed to enable; stopping the server", e);
+            disable.run();
+            shutdown.run();
         }
     }
 

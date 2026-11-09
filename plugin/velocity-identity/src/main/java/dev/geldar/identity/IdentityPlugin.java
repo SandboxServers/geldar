@@ -37,18 +37,18 @@ public final class IdentityPlugin {
     private final Logger log;
     private final LifeRegistry registry = new LifeRegistry();
     private final LoginGate gate = new LoginGate(registry);
+    private final DenialLimiter denials;
     private static final int MAX_LOGGED_DENIALS = 10;
     private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
 
     private RegistryClient client;
-    private long denyWindowStart = System.nanoTime();
-    private int loggedDenials;
-    private int suppressedDenials;
 
     @Inject
     public IdentityPlugin(ProxyServer proxy, Logger log) {
         this.proxy = proxy;
         this.log = log;
+        this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
+                count -> log.info("{} more denials were not logged in the last window", count));
     }
 
     @Subscribe
@@ -63,6 +63,8 @@ public final class IdentityPlugin {
         }
         client = new RegistryClient(url, registry, log);
         client.start();
+        // Summarises a burst of denials that stopped, which no later denial would trigger.
+        proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
     }
 
     @Subscribe
@@ -81,28 +83,9 @@ public final class IdentityPlugin {
             return;
         }
         event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
-        if (allowDenyLog()) {
+        if (denials.allow()) {
             log.info("Denied {}", printable(player.getUsername()));
         }
-    }
-
-    /** Denials come from anyone who can reach the port: log at most 10 per 10 s and count the rest. */
-    private synchronized boolean allowDenyLog() {
-        long now = System.nanoTime();
-        if (now - denyWindowStart >= DENY_WINDOW_NANOS) {
-            if (suppressedDenials > 0) {
-                log.info("{} more denials were not logged in the last window", suppressedDenials);
-            }
-            denyWindowStart = now;
-            loggedDenials = 0;
-            suppressedDenials = 0;
-        }
-        if (loggedDenials >= MAX_LOGGED_DENIALS) {
-            suppressedDenials++;
-            return false;
-        }
-        loggedDenials++;
-        return true;
     }
 
     @Subscribe
