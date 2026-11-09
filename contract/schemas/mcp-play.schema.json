@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-play.schema.json",
+  "$defs": {
+    "LookInput": {
+      "type": "object",
+      "description": "Look around: returns a snapshot of your surroundings and the text written nearby.",
+      "additionalProperties": false
+    },
+    "LookResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot", "untrusted_world_text", "note"],
+      "properties": {
+        "snapshot": { "$ref": "mcp-common.schema.json#/$defs/PlaySnapshot" },
+        "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
+        "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
+      }
+    },
+    "WaitInput": {
+      "type": "object",
+      "description": "Wait until something worth a decision happens, or max_seconds pass. Pass the cursor from the last result to see events you have not seen.",
+      "additionalProperties": false,
+      "required": ["max_seconds"],
+      "properties": {
+        "cursor": { "$ref": "mcp-common.schema.json#/$defs/McpCursor" },
+        "interests": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 6,
+          "description": "Event kinds that may end the wait. Default: all of them.",
+          "items": { "$ref": "mcp-common.schema.json#/$defs/McpInterest" }
+        },
+        "max_seconds": { "type": "integer", "minimum": 5, "maximum": 240 }
+      }
+    },
+    "WaitResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "snapshot",
+        "events",
+        "cursor",
+        "wake_reason",
+        "dropped_events",
+        "untrusted_world_text",
+        "note"
+      ],
+      "properties": {
+        "snapshot": { "$ref": "mcp-common.schema.json#/$defs/PlaySnapshot" },
+        "events": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "mcp-common.schema.json#/$defs/McpPlayerEvent" }
+        },
+        "cursor": { "$ref": "mcp-common.schema.json#/$defs/McpCursor" },
+        "wake_reason": { "$ref": "mcp-common.schema.json#/$defs/McpWakeReason" },
+        "dropped_events": { "type": "integer", "minimum": 0 },
+        "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
+        "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
+      }
+    },
+    "ActInput": {
+      "type": "object",
+      "description": "Act: say something, run up to six immediate actions in order, and start or replace your intent. Give at least one of intent, actions or say.",
+      "properties": {
+        "reasoning": {
+          "type": "string",
+          "maxLength": 600,
+          "description": "Private reasoning, <= 80 words. Never shown to other agents."
+        },
+        "say": {
+          "description": "What to say aloud, or null.",
+          "anyOf": [{ "type": "string", "maxLength": 256 }, { "type": "null" }]
+        },
+        "intent": {
+          "$ref": "thought.schema.json#/$defs/Intent",
+          "description": "The durable thing to pursue. Replaces the current intent."
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 6,
+          "description": "Immediate steps, at most 6, executed in order.",
+          "items": { "$ref": "thought.schema.json#/$defs/Action" }
+        }
+      },
+      "anyOf": [
+        { "required": ["intent"], "properties": { "intent": {} } },
+        { "required": ["actions"], "properties": { "actions": {} } },
+        { "required": ["say"], "properties": { "say": { "type": "string" } } }
+      ],
+      "additionalProperties": false
+    },
+    "ActResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "rejected", "budget_remaining_thoughts"],
+      "properties": {
+        "accepted": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "rejected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "reason"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 0 },
+              "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+            }
+          }
+        },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SayInput": {
+      "type": "object",
+      "description": "Say something aloud to those nearby.",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "SayResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spoken", "budget_remaining_thoughts"],
+      "properties": {
+        "spoken": { "type": "boolean" },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 },
+        "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+      }
+    }
+  }
+}
