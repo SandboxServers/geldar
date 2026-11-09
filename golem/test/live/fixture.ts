@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { watchRecipeBook } from '../../src/actions/craft-table.ts';
 import { type Arena, buildArena, quietWorld, restoreWorld } from '../../src/arena.ts';
-import { loadConfig, readRconPassword } from '../../src/config.ts';
+import { loadStackConfig, readRconPassword } from '../../src/config.ts';
 import { ConnectionManager } from '../../src/connection.ts';
 import { RconClient } from '../../src/rcon.ts';
 import { registryFromConfig } from '../../src/registry.ts';
@@ -24,7 +24,7 @@ export async function withLiveBot(
   opts: { name: string; slot: number },
   fn: (ctx: LiveContext) => Promise<void>,
 ): Promise<void> {
-  const cfg = loadConfig();
+  const cfg = loadStackConfig();
   const password = await readRconPassword(cfg);
   const rcon = await RconClient.connect({ host: cfg.rconHost, port: cfg.rconPort, password });
   const manager = new ConnectionManager({

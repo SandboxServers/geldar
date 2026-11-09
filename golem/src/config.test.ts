@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadConfig, readRconPassword, repoRoot } from './config.ts';
+import { loadConfig, loadStackConfig, readRconPassword, repoRoot } from './config.ts';
 
 describe('loadConfig', () => {
   it('defaults to the loopback Velocity ingress and the RCON port', () => {
@@ -93,5 +93,22 @@ describe('readRconPassword', () => {
         rconPasswordFile: file,
       }),
     ).rejects.toThrow(`${file} does not exist: run ./geldar.ps1 shard secrets phase0`);
+  });
+});
+
+describe('loadStackConfig', () => {
+  it('turns the life registry on at the loopback NATS port when the URL is unset', () => {
+    expect(loadStackConfig({}).natsUrl).toBe('nats://127.0.0.1:4222');
+  });
+
+  it('keeps an explicit URL and an explicit empty value (registry off)', () => {
+    expect(loadStackConfig({ GELDAR_NATS_URL: 'nats://localhost:4333' }).natsUrl).toBe(
+      'nats://localhost:4333',
+    );
+    expect(loadStackConfig({ GELDAR_NATS_URL: '' }).natsUrl).toBeUndefined();
+  });
+
+  it('still refuses a host that is not loopback', () => {
+    expect(() => loadStackConfig({ GELDAR_MC_HOST: 'example.org' })).toThrow(/GELDAR_MC_HOST/);
   });
 });

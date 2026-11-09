@@ -51,6 +51,11 @@ const DEFAULT_VERSION = '26.1';
 const DEFAULT_STABLE_MS = 10_000;
 /** A kick for a permanent refusal: retrying cannot succeed, so the connection goes fatal. */
 const PERMANENT_REFUSAL = /whitelist|banned/i;
+/** The kick the Velocity identity plugin sends to a username that is not in the life registry. */
+const NOT_ADMITTED = /This connection is not admitted\./;
+const NOT_ADMITTED_HINT =
+  'the proxy did not admit this bot: its username is not in the life registry. Set ' +
+  'GELDAR_NATS_URL (nats://127.0.0.1:4222 on the Phase 0 stack) so Golem registers it before connecting';
 
 /**
  * Resolves after `ms`, or at once when `signal` aborts. Either way the timer and the abort
@@ -166,6 +171,14 @@ export class ConnectionManager extends EventEmitter {
       this.emit('disconnect', { reason: end.reason });
       if (end.kicked && PERMANENT_REFUSAL.test(end.reason)) {
         this.fail(end.reason);
+        return;
+      }
+      if (end.kicked && NOT_ADMITTED.test(end.reason)) {
+        this.fail(
+          this.registry === undefined
+            ? NOT_ADMITTED_HINT
+            : `${NOT_ADMITTED_HINT} (the registry is on, so check the registry entry and the plugin log)`,
+        );
         return;
       }
       // A session that stayed up long enough counts as healthy: the next failure starts over.
