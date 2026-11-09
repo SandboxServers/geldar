@@ -2,12 +2,14 @@
 import type { WorldEvent } from '@geldar/contract';
 import {
   AckPolicy,
+  jetstream,
+  jetstreamManager,
   type JetStreamManager,
   type JsMsg,
-  type NatsConnection,
   RetentionPolicy,
   StorageType,
-} from 'nats';
+} from '@nats-io/jetstream';
+import type { NatsConnection } from '@nats-io/transport-node';
 import { CONSUMER_NAME, STREAM_CONFIG } from './config.ts';
 import { DLQ_TYPE, shardOfSubject, validateMessage } from './validate.ts';
 import type { EventWriter } from './writer.ts';
@@ -132,7 +134,7 @@ export async function startConsumer(
   writer: EventWriter,
   options: { batchSize: number; fetchWaitMs: number },
 ): Promise<RunningConsumer> {
-  const jsm = await nc.jetstreamManager();
+  const jsm = await jetstreamManager(nc);
   await ensureStream(jsm);
   await jsm.consumers.info(STREAM_CONFIG.name, CONSUMER_NAME).catch(() =>
     jsm.consumers.add(STREAM_CONFIG.name, {
@@ -142,7 +144,7 @@ export async function startConsumer(
       ack_wait: 30 * 1_000_000_000,
     }),
   );
-  const js = nc.jetstream();
+  const js = jetstream(nc);
   const consumer = await js.consumers.get(STREAM_CONFIG.name, CONSUMER_NAME);
   const deps: BatchDeps = {
     writer,

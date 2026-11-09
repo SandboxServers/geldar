@@ -1,5 +1,5 @@
 /** Entry point: connect to Postgres and NATS, run the consumer, drain on SIGINT/SIGTERM. */
-import { connect } from 'nats';
+import { connect } from '@nats-io/transport-node';
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';

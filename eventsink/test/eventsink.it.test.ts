@@ -4,7 +4,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { connect } from 'nats';
+import { jetstream, jetstreamManager } from '@nats-io/jetstream';
+import { connect } from '@nats-io/transport-node';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
 
@@ -26,7 +27,7 @@ describe.skipIf(!enabled)('eventsink against the live stack', () => {
     ).trim();
     const pool = new pg.Pool({ host: '127.0.0.1', user: 'geldar', database: 'geldar', password });
     const nc = await connect({ servers: 'nats://127.0.0.1:4222' });
-    const js = nc.jetstream();
+    const js = jetstream(nc);
     const id = freshId();
     const event = {
       source_event_id: id,
@@ -38,7 +39,7 @@ describe.skipIf(!enabled)('eventsink against the live stack', () => {
       payload: { amount: 1 },
     };
     try {
-      const dlq = await nc.jetstreamManager();
+      const dlq = await jetstreamManager(nc);
       const before = (await dlq.streams.info('GELDAR_EVENTS')).state.messages;
       // Same body twice, without a JetStream message id, so the sink (not the stream) must dedupe.
       await js.publish('geldar.phaseit.damage', JSON.stringify(event));
@@ -67,7 +68,7 @@ describe.skipIf(!enabled)('eventsink against the live stack', () => {
       const last = await dlq.streams.getMessage('GELDAR_EVENTS', {
         last_by_subj: 'geldar.phaseit.dlq',
       });
-      expect(JSON.parse(new TextDecoder().decode(last.data)).reason).toBeTruthy();
+      expect(JSON.parse(new TextDecoder().decode(last?.data)).reason).toBeTruthy();
     } finally {
       await pool.query('DELETE FROM events WHERE source_event_id = $1', [id]);
       await pool.end();
