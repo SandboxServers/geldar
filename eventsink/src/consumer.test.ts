@@ -119,7 +119,8 @@ describe('handleBatch', () => {
     expect(h.log).toEqual(['nak geldar.phase0.damage 30000']);
   });
 
-  it('naks instead of acking when the DLQ publish fails', async () => {    const h = harness({ dlqFails: true });
+  it('naks instead of acking when the DLQ publish fails', async () => {
+    const h = harness({ dlqFails: true });
     await handleBatch([h.message('geldar.phase0.damage', 'junk')], h.deps);
     expect(h.log).toEqual(['nak geldar.phase0.damage 1000']);
   });

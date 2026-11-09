@@ -124,9 +124,15 @@ describe('startConsumer', () => {
     vi.restoreAllMocks();
   });
 
+  /** A fetched batch of messages. */
+  const batchOf = (items: unknown[]): AsyncIterable<unknown> =>
+    (async function* () {
+      yield* items;
+    })();
+
   /** An empty batch that arrives after the 1 s fetch wait, as a real idle fetch does. */
   const idleBatch = (): Promise<AsyncIterable<unknown>> =>
-    new Promise((resolve) => setTimeout(() => resolve([]), 1000));
+    new Promise((resolve) => setTimeout(() => resolve(batchOf([])), 1000));
 
   it('re-ensures the stream and consumer after 5 failed fetches in a row, then recovers', async () => {
     fetch = async (n) => {
@@ -174,7 +180,7 @@ describe('startConsumer', () => {
       ack,
       nak,
     };
-    fetch = async (n) => (n === 1 ? [message] : idleBatch());
+    fetch = async (n) => (n === 1 ? batchOf([message]) : idleBatch());
     const running = await startConsumer({} as NatsConnection, writer, {
       batchSize: 10,
       fetchWaitMs: 1000,

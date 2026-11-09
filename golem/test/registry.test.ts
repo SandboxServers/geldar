@@ -182,17 +182,19 @@ describe('LifeRegistration', () => {
 
 describe('openRegistryBucket', () => {
   it('names only host and port when NATS is unreachable, not credentials', async () => {
-    const error = await openRegistryBucket('nats://someuser:s3cret@127.0.0.1:1').catch(
-      (e: unknown) => e as Error,
+    const error = await openRegistryBucket('nats://someuser:s3cret@127.0.0.1:1').then(
+      () => new Error('connected'),
+      (e: Error) => e,
     );
-    expect(error).toBeInstanceOf(Error);
+    expect(error.message).not.toBe('connected');
     expect(error.message).toContain('127.0.0.1:1');
     expect(error.message).not.toContain('s3cret');
     expect(error.message).not.toContain('someuser');
   });
 });
 
-describe('registryFromConfig and GELDAR_NATS_URL', () => {  it('is off unless GELDAR_NATS_URL is set', () => {
+describe('registryFromConfig and GELDAR_NATS_URL', () => {
+  it('is off unless GELDAR_NATS_URL is set', () => {
     expect(registryFromConfig(loadConfig({}))).toBeUndefined();
     expect(registryFromConfig(loadConfig({ GELDAR_NATS_URL: '' }))).toBeUndefined();
     expect(
@@ -376,7 +378,9 @@ describe('ConnectionManager with a registry', () => {
     manager.start().catch(() => {});
     await manager.stop();
     release();
-    await vi.waitFor(() => expect(log.filter((l) => l === 'unregister GolemBench')).toHaveLength(2));
+    await vi.waitFor(() =>
+      expect(log.filter((l) => l === 'unregister GolemBench')).toHaveLength(2),
+    );
     expect(log).not.toContain('connect');
   });
 });
