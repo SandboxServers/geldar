@@ -5,6 +5,7 @@ import { type ActionRegistry, type ActionRun, runAction } from '../actions/regis
 import { buildArena, quietWorld } from '../arena.ts';
 import type { TestControl } from '../test-control.ts';
 import { ulid } from '../ulid.ts';
+import { limitedControl } from './limited-control.ts';
 import { parseMspt, parseTargetMspt, parseTargetRate, setTps, withTps } from './tps.ts';
 import type {
   ActionRecordLite,
@@ -54,35 +55,12 @@ export const WORLD_AGE_RESOLUTION_TICKS = 20;
 const DEFAULT_READY_MS = 10_000;
 const DEFAULT_SETTLE_MS = 10_000;
 const DEFAULT_RECONNECT_MS = 60_000;
-/** The only `ctl` methods a scenario may call while it runs. */
-const RUN_PHASE_CONTROL = new Set(['effect', 'effectClear', 'timeSet', 'fill', 'chestItems']);
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * A view of `ctl` for a scenario's `run`: effect, effectClear, timeSet, fill, chestItems and
- * gamerule queries (no value). Anything else throws, so a scenario cannot give itself items.
- */
-export function limitedControl(ctl: TestControl): TestControl {
-  return new Proxy(ctl, {
-    get(target, prop, receiver) {
-      if (prop === 'gamerule') {
-        return (name: string, value?: boolean | number) => {
-          if (value !== undefined)
-            throw new Error('ctl.gamerule can only query while a scenario runs');
-          return target.gamerule(name);
-        };
-      }
-      if (typeof prop === 'string' && !RUN_PHASE_CONTROL.has(prop)) {
-        throw new Error(`ctl.${prop} is not available while a scenario runs`);
-      }
-      const value: unknown = Reflect.get(target, prop, receiver);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
-}
+export { limitedControl };
 
 /** World age of the bot, or null before the first time packet. */
 function worldAge(bot: Bot): number | null {
@@ -287,6 +265,7 @@ async function playRun(
 
   let passed = false;
   let note = '';
+  let preparePromise: Promise<unknown> | null = null;
   let scenarioPromise: Promise<unknown> | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -315,7 +294,8 @@ async function playRun(
         clearTimeout(timer);
       }
     };
-    await guarded(Promise.resolve().then(() => scenario.prepare(env)));
+    preparePromise = Promise.resolve().then(() => scenario.prepare(env));
+    await guarded(preparePromise);
     const readyBy = Date.now() + (deps.readyWaitMs ?? DEFAULT_READY_MS);
     while (!scenario.ready(env)) {
       if (Date.now() >= readyBy) throw new Error('fixture not ready within the wait');
@@ -347,11 +327,17 @@ async function playRun(
 
   // Stop whatever the scenario is still doing, then give it a moment to notice.
   let stuck = false;
-  if (scenarioPromise) {
-    const settled = scenarioPromise.then(
-      () => true,
-      () => true,
-    );
+  // A prepare that never returns counts as stuck too: it may still be writing to the server.
+  const started = [preparePromise, scenarioPromise].filter((p) => p !== null);
+  if (started.length > 0) {
+    const settled = Promise.all(
+      started.map((p) =>
+        p.then(
+          () => true,
+          () => true,
+        ),
+      ),
+    ).then(() => true);
     const waitMs = deps.settleWaitMs ?? DEFAULT_SETTLE_MS;
     controller.abort();
     stuck = !(await Promise.race([settled, sleep(waitMs).then(() => false)]));
