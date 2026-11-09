@@ -69,7 +69,7 @@ export async function callTool(
   log: (m: string) => void = () => {},
 ): Promise<ToolResponse> {
   if (!(MCP_TOOL_NAMES as readonly string[]).includes(name)) {
-    log(`unknown_tool: ${name}`);
+    log(`unknown_tool: ${JSON.stringify(name.slice(0, 80))}`);
     return failure(`unknown_tool: ${name}`);
   }
   const tool = name as McpToolName;

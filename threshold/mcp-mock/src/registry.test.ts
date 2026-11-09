@@ -163,6 +163,9 @@ describe('callTool', () => {
     expect(logged[0]).toContain('boom');
     await callTool(createFakeHandlers(), 'dance', {}, ctx, log);
     expect(logged[1]).toContain('unknown_tool');
+    await callTool(createFakeHandlers(), `bad\n${'x'.repeat(5000)}`, {}, ctx, log);
+    expect(logged[2]).not.toContain('\n');
+    expect(logged[2]?.length).toBeLessThan(120);
     const base = (await createFakeHandlers().wait({}, ctx)) as Record<string, unknown>;
     const events = Array.from({ length: 100 }, (_, i) => ({
       seq: i + 1,
@@ -177,8 +180,8 @@ describe('callTool', () => {
       ctx,
       log,
     );
-    expect(logged[2]).toContain('result_too_large');
-    expect(logged.length).toBe(3);
+    expect(logged[3]).toContain('result_too_large');
+    expect(logged.length).toBe(4);
   });
 
   it('passes the validated input and the context to the handler', async () => {
