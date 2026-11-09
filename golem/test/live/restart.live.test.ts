@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BodyKv } from '../../src/body/checkpoint.ts';
+import { derivedId } from '../../src/body/derived-id.ts';
 import type { MemorySink } from '../../src/body/records.ts';
 import { fakeKv } from '../../src/body/restart.fakes.ts';
 import { openRestartKv, type RestartBodyOptions, restartBody } from '../../src/body/restart.ts';
@@ -9,19 +10,14 @@ import { type LiveContext, withLiveBot } from './fixture.ts';
 const NAME = 'GolemRestart';
 const SLOT = 2;
 /**
- * The life id. With a real NATS it is unique per run, so a checkpoint or generation left by an
- * earlier run cannot be mistaken for this run's; the memory buckets start empty anyway.
+ * The life id and the intent id, unique per run: a checkpoint or generation left in a real NATS
+ * by an earlier run cannot be mistaken for this run's. The keys are deleted when the test ends.
  */
-const LIFE = process.env.GELDAR_NATS_URL
-  ? `ag_restart_${Date.now().toString(36)}`
-  : 'ag_restart_01';
+const RUN = Date.now().toString(36);
+const LIFE = `ag_restart_${RUN}`;
+const INTENT = derivedId('in', `restart-live:${RUN}`);
 const LOGS = 10;
 const POLL_LIMIT = 4000;
-
-/** An `in_` id: the prefix and 26 Crockford characters, derived from `n`. */
-function intentId(n: number): string {
-  return `in_${String(n).padStart(26, '0')}`;
-}
 
 /** The count `clear <name> <item> 0` reports; it removes nothing. */
 function foundCount(reply: string): number {
@@ -29,15 +25,44 @@ function foundCount(reply: string): number {
   return match ? Number(match[1]) : 0;
 }
 
-/** The two buckets: the shard's NATS when `GELDAR_NATS_URL` is set, memory otherwise. */
-async function buckets(): Promise<{ kv: RestartBodyOptions['kv']; close(): Promise<void> }> {
+/**
+ * The two buckets: the shard's NATS when `GELDAR_NATS_URL` is set, memory otherwise. `puts` counts
+ * the checkpoint writes so the test can wait for the first one; `close` deletes this run's keys.
+ */
+async function buckets(): Promise<{
+  kv: RestartBodyOptions['kv'];
+  puts(): number;
+  close(): Promise<void>;
+}> {
   const url = process.env.GELDAR_NATS_URL;
-  if (url) return openRestartKv(url);
-  const memory: { generations: BodyKv; checkpoints: BodyKv } = {
-    generations: fakeKv(),
-    checkpoints: fakeKv(),
+  const open = url
+    ? await openRestartKv(url)
+    : {
+        kv: { generations: fakeKv(), checkpoints: fakeKv() } as {
+          generations: BodyKv;
+          checkpoints: BodyKv;
+        },
+        close: async () => undefined,
+      };
+  let puts = 0;
+  const checkpoints: BodyKv = {
+    ...open.kv.checkpoints,
+    async put(key, value) {
+      const revision = await open.kv.checkpoints.put(key, value);
+      puts += 1;
+      return revision;
+    },
   };
-  return { kv: memory, close: async () => undefined };
+  return {
+    kv: { generations: open.kv.generations, checkpoints },
+    puts: () => puts,
+    async close() {
+      for (const bucket of [open.kv.checkpoints, open.kv.generations]) {
+        await bucket.delete(LIFE).catch(() => undefined);
+      }
+      await open.close();
+    },
+  };
 }
 
 /** Starts a Body for the life on the live bot, as the supervisor does after a crash. */
@@ -78,7 +103,7 @@ describe('a Body restart on a live server', () => {
           snapshotRevision: 1,
           expiresTick: bot.time.age + 100_000,
           sourceSnapshotId: `sn_${'1'.padStart(26, '0')}`,
-          intentId: intentId(1),
+          intentId: INTENT,
           actionIds: [],
         });
         expect(accepted.intent).toBe('started');
@@ -88,13 +113,16 @@ describe('a Body restart on a live server', () => {
           bot.inventory.items().find((i) => i.name === 'oak_log')?.count ?? 0;
         for (let i = 0; i < POLL_LIMIT && held() < 3; i++) await bot.waitForTicks(1);
         expect(held()).toBeGreaterThanOrEqual(3);
+        // A teardown before the first checkpoint put would leave nothing to resume from.
+        for (let i = 0; i < POLL_LIMIT && open.puts() < 1; i++) await bot.waitForTicks(1);
+        expect(open.puts()).toBeGreaterThanOrEqual(1);
         await first.stop();
         const partial = held();
         expect(partial).toBeLessThan(LOGS);
 
         const second = await startBody(live, open.kv);
         expect(second.generation).toBe(first.generation + 1);
-        expect(second.outcome).toEqual({ kind: 'resumed', intentId: intentId(1) });
+        expect(second.outcome).toEqual({ kind: 'resumed', intentId: INTENT });
         for (let i = 0; i < POLL_LIMIT && second.body.executor.intentId !== null; i++) {
           await bot.waitForTicks(1);
         }
@@ -104,7 +132,7 @@ describe('a Body restart on a live server', () => {
         const generations = new Set(records.flatMap((r) => r.intents.map((c) => c.bodyGeneration)));
         expect([...generations].sort()).toEqual([first.generation, second.generation]);
         expect(records[1]?.intents.at(-1)).toMatchObject({
-          intentId: intentId(1),
+          intentId: INTENT,
           state: 'completed',
         });
         expect(foundCount(await ctl.command(`clear ${NAME} oak_log 0`))).toBeGreaterThanOrEqual(
