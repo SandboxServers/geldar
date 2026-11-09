@@ -279,6 +279,24 @@ describe('transferItems', () => {
     expect(r.emitter.listenerCount('close_window')).toBe(0);
   });
 
+  it('releases the listener and the timer at once when the sync write throws', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const r = rig([{ type: 1, count: 10 }]);
+      const client = r.bot._client as unknown as { write: () => void };
+      client.write = () => {
+        throw new Error('socket closed');
+      };
+      const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+      expect(end).toEqual({ error: 'server did not confirm the window', aborted: false });
+      expect(r.emitter.listenerCount('window_items')).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not write a click once the bot has no window open', async () => {
     const holder: { gone?: () => void } = {};
     const r = rig([{ type: 1, count: 10 }], { onClick: () => holder.gone?.() });

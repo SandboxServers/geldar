@@ -190,15 +190,21 @@ function barrier(s: Session): Promise<boolean> {
       console.warn(`[container-transfer] barrier timed out (window ${windowId}, owed ${s.owed})`);
       resolve(false);
     }, BARRIER_WAIT_MS * s.ctx.timeScale);
-    client.write('window_click', {
-      windowId,
-      stateId: -1,
-      slot: -999,
-      mouseButton: 2,
-      mode: 5,
-      changedSlots: [],
-      cursorItem: hashed(s.model.cursor),
-    });
+    try {
+      client.write('window_click', {
+        windowId,
+        stateId: -1,
+        slot: -999,
+        mouseButton: 2,
+        mode: 5,
+        changedSlots: [],
+        cursorItem: hashed(s.model.cursor),
+      });
+    } catch (caught) {
+      // A client that cannot write: release the listener and the timer at once, nothing is owed.
+      console.warn('[container-transfer] the sync click could not be written', caught);
+      finish(false);
+    }
   });
 }
 
@@ -261,6 +267,7 @@ async function click(s: Session, slot: number, button: 0 | 1): Promise<boolean> 
   s.model = actual;
   return false;
 }
+
 /** True when a slot can take the cursor's stack whole. */
 function takesCursor(s: Session, slot: number): boolean {
   const cursor = s.model.cursor;
