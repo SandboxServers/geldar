@@ -8,26 +8,27 @@ import type { ActionContext } from './registry.ts';
 
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 // The click protocol is covered by container-transfer.test.ts; here the fake container moves the items.
-vi.mock('./container-transfer.ts', () => ({
-  transferItems: async (
-    _ctx: unknown,
-    container: {
-      withdraw(id: number, meta: null, count: number): Promise<void>;
-      deposit(id: number, meta: null, count: number): Promise<void>;
-    },
-    direction: 'withdraw' | 'deposit',
-    id: number,
-    count: number,
-  ) => {
-    try {
-      await container[direction](id, null, count);
-      return { error: null, aborted: false };
-    } catch (caught) {
-      return { error: caught instanceof Error ? caught.message : String(caught), aborted: false };
-    }
-  },
-}));
+const transfer = vi.hoisted(() => vi.fn());
+vi.mock('./container-transfer.ts', () => ({ transferItems: transfer }));
 
+/** The stand-in transfer: the fake container moves the items, as the click sequence would. */
+async function moveLikeLibrary(
+  _ctx: unknown,
+  container: {
+    withdraw(id: number, meta: null, count: number): Promise<void>;
+    deposit(id: number, meta: null, count: number): Promise<void>;
+  },
+  direction: 'withdraw' | 'deposit',
+  id: number,
+  count: number,
+): Promise<{ error: string | null; aborted: boolean }> {
+  try {
+    await container[direction](id, null, count);
+    return { error: null, aborted: false };
+  } catch (caught) {
+    return { error: caught instanceof Error ? caught.message : String(caught), aborted: false };
+  }
+}
 /** Item ids the fake registry knows, and their names. */
 const NAMES: Record<number, string> = { 1: 'cobblestone', 2: 'stick' };
 /** Simulated stacks: item id to count. */
@@ -129,6 +130,8 @@ function ctxFor(bot: Bot, timeScale = 1): ActionContext {
 }
 
 beforeEach(() => {
+  transfer.mockReset();
+  transfer.mockImplementation(moveLikeLibrary);
   vi.mocked(moveNear).mockReset();
   vi.mocked(moveNear).mockResolvedValue({ ok: true, distance: 0 });
 });
@@ -254,6 +257,7 @@ describe('deposit', () => {
       detail: { moved: 10, container: { cobblestone: 10 } },
     });
     expect(h.inv.get(1)).toBe(0);
+    expect(transfer).toHaveBeenCalledExactlyOnceWith(expect.anything(), h.container, 'deposit', 1, 10);
     expect(h.container.close).toHaveBeenCalledOnce();
   });
 
@@ -344,6 +348,59 @@ describe('withdraw', () => {
       detail: { moved: 4, container: { cobblestone: 2 } },
     });
     expect(h.inv.get(1)).toBe(14);
+    expect(transfer).toHaveBeenCalledExactlyOnceWith(expect.anything(), h.container, 'withdraw', 1, 4);
+  });
+
+  it('reports cancelled with the moved count when the transfer was aborted', async () => {
+    const h = harness();
+    h.chest.set(1, 6);
+    transfer.mockImplementationOnce(async () => {
+      h.chest.set(1, 4);
+      h.inv.set(1, 12);
+      return { error: null, aborted: true };
+    });
+    const outcome = await withdrawAction.run(ctxFor(h.bot), {
+      do: 'withdraw',
+      at: AT,
+      item: 'cobblestone',
+      count: 5,
+    });
+    expect(outcome).toEqual({ status: 'cancelled', detail: { moved: 2 } });
+  });
+
+  it('fails internal with the error and the moved count on a transfer fault', async () => {
+    const h = harness();
+    h.chest.set(1, 6);
+    transfer.mockImplementationOnce(async () => {
+      h.chest.set(1, 5);
+      h.inv.set(1, 11);
+      return { error: 'window differs at slot 3', aborted: false };
+    });
+    const outcome = await withdrawAction.run(ctxFor(h.bot), {
+      do: 'withdraw',
+      at: AT,
+      item: 'cobblestone',
+      count: 5,
+    });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'internal',
+      message: 'window differs at slot 3',
+      detail: { moved: 1 },
+    });
+  });
+
+  it('reports the real moved count when the server does not confirm after the transfer', async () => {
+    const h = harness();
+    h.chest.set(1, 6);
+    h.sync.mockImplementationOnce(() => new Promise(() => {}));
+    const outcome = await withdrawAction.run(ctxFor(h.bot, 0.01), {
+      do: 'withdraw',
+      at: AT,
+      item: 'cobblestone',
+      count: 4,
+    });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'internal', detail: { moved: 4 } });
   });
 
   it('fails not_found without withdrawing when the container holds less', async () => {

@@ -212,10 +212,9 @@ async function withdraw(
   const end = await transferItems(ctx, container, 'withdraw', itemId, count);
   const error = end.error;
   // The window is the truth: the transfer moves what fits, then may stop. The server confirms it first.
-  if (!(await settle(ctx, container))) {
-    return failed('internal', 'server did not confirm the withdraw', { moved: 0 });
-  }
-  const moved = inventoryCount(container, itemId) - before;
+  const confirmed = await settle(ctx, container);
+  const moved = Math.max(0, inventoryCount(container, itemId) - before);
+  if (!confirmed) return failed('internal', 'server did not confirm the withdraw', { moved });
   if (end.aborted) return cancelled({ moved });
   if (error !== null && !INVENTORY_FULL.test(error)) {
     return failed('internal', error, { moved });
@@ -240,10 +239,9 @@ async function deposit(
   const end = await transferItems(ctx, container, 'deposit', itemId, count);
   const error = end.error;
   // The window is the truth: the transfer moves what fits, then may stop. The server confirms it first.
-  if (!(await settle(ctx, container))) {
-    return failed('internal', 'server did not confirm the deposit', { moved: 0 });
-  }
-  const moved = held - inventoryCount(container, itemId);
+  const confirmed = await settle(ctx, container);
+  const moved = Math.max(0, held - inventoryCount(container, itemId));
+  if (!confirmed) return failed('internal', 'server did not confirm the deposit', { moved });
   if (end.aborted) return cancelled({ moved });
   if (error !== null && !CONTAINER_FULL.test(error)) {
     return failed('internal', error, { moved });
