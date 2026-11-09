@@ -139,6 +139,14 @@ function unlockedDisplays(bot: Bot, resultId: number): { displayId: number; coun
   return found;
 }
 
+/**
+ * How many items one craft of this item makes, by the display the craft uses: the working display
+ * when one is known, else the first unlocked one. Zero when the book has none.
+ */
+export function bookYield(bot: Bot, item: TableTarget): number {
+  return unlockedDisplays(bot, item.id)[0]?.count ?? 0;
+}
+
 /** Records the display that crafted this item for this bot, so it is tried first next time. */
 function rememberWorking(bot: Bot, itemId: number, displayId: number): void {
   let byItem = workingDisplay.get(bot);

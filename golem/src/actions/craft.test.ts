@@ -2,7 +2,8 @@ import type { Bot } from 'mineflayer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
 import { craftAction, diagnoseCraft } from './craft.ts';
-import { craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
+import { bookYield, craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
+import { cancelled, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 
 // The moves are the pathfinder's; a fake bot has none, so the tests only check the arguments.
@@ -12,6 +13,7 @@ vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 vi.mock('./craft-table.ts', () => ({
   craftFromBook: vi.fn(async () => null),
   hasUnlockedDisplay: vi.fn(() => false),
+  bookYield: vi.fn(() => 1),
 }));
 
 const DEFS = [
@@ -164,6 +166,44 @@ describe('craftAction', () => {
     );
     expect(fake.craft).not.toHaveBeenCalled();
     expect(out).toMatchObject({ status: 'completed', detail: { used_table: false, crafted: 4 } });
+  });
+
+  it('expects the display result count, not the recipe count, when the book crafts', async () => {
+    // The recipe says 4 per craft, the display makes 2: one craft's 2 is the whole expectation.
+    const planks = recipe(5, 4, { 6: 1 });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 1 } });
+    vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(bookYield).mockReturnValueOnce(2);
+    vi.mocked(craftFromBook).mockImplementationOnce(async () => {
+      fake.give(5, 2);
+      return null;
+    });
+    const out = await run(fake.bot, 'oak_planks', 4);
+    expect(out).toMatchObject({ status: 'completed', detail: { crafted: 2 } });
+  });
+
+  it('keeps the crafted count when a recipe-book craft is cancelled', async () => {
+    const planks = recipe(5, 4, { 6: 1 });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 2 } });
+    vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(craftFromBook).mockImplementationOnce(async () => {
+      fake.give(5, 4);
+      return cancelled();
+    });
+    const out = await run(fake.bot, 'oak_planks', 8);
+    expect(out).toMatchObject({ status: 'cancelled', detail: { item: 'oak_planks', crafted: 4 } });
+  });
+
+  it('keeps the crafted count when a recipe-book craft times out', async () => {
+    const planks = recipe(5, 4, { 6: 1 });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 2 } });
+    vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(craftFromBook).mockImplementationOnce(async () => {
+      fake.give(5, 4);
+      return failed('timeout', 'the crafting table did not produce oak_planks');
+    });
+    const out = await run(fake.bot, 'oak_planks', 8);
+    expect(out).toMatchObject({ status: 'failed', reason: 'timeout', detail: { crafted: 4 } });
   });
 
   it('prefers the cobblestone variant when two variants tie, whatever their index', async () => {

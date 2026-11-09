@@ -1,7 +1,7 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Block, Recipe } from './bot-types.ts';
-import { craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
+import { bookYield, craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
 import { heldCount } from './inventory-count.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -70,12 +70,15 @@ async function runCraft(
   if (!recipe) return failed('not_possible', 'not craftable');
   const times = Math.ceil(action.count / recipe.result.count);
   const before = heldCount(bot, item.id);
+  // What the crafts are expected to make: the recipe's count, or the display's when the book crafts.
+  let expected = times * recipe.result.count;
+  let stop: ActionOutcome | null = null;
   try {
     if (usedTable || hasUnlockedDisplay(bot, item)) {
       // Recipe-book crafts skip bot.craft: its stateId is shared by every window, and on 26.1 the
       // table rejects it. A 2x2 recipe with no unlocked display falls back to bot.craft.
-      const stop = await craftFromBook(ctx, item, times, usedTable);
-      if (stop) return stop;
+      stop = await craftFromBook(ctx, item, times, usedTable);
+      if (!stop) expected = times * bookYield(bot, item);
     } else {
       for (let i = 0; i < times; i++) {
         if (signal.aborted) break;
@@ -95,12 +98,12 @@ async function runCraft(
       });
     }
   }
+  if (stop) return withCrafted(stop, item.name, heldCount(bot, item.id) - before);
   if (signal.aborted) {
     return cancelled({ item: item.name, crafted: heldCount(bot, item.id) - before });
   }
 
   // Success is judged by the inventory, not by the clicks: wait, bounded, for the product to show.
-  const expected = times * recipe.result.count;
   await pollUntil(bot, signal, () => heldCount(bot, item.id) - before >= expected, {
     wallMs: SETTLE_WALL_MS * timeScale,
   });
@@ -113,6 +116,18 @@ async function runCraft(
     });
   }
   return completed({ item: item.name, crafted, used_table: usedTable !== null });
+}
+
+/**
+ * A recipe-book stop after some crafts: a cancel or a timeout keeps the count made so far, as the
+ * `bot.craft` path does. Other stops (not unlocked, a blocked open) pass through unchanged.
+ */
+function withCrafted(stop: ActionOutcome, item: string, crafted: number): ActionOutcome {
+  if (stop.status === 'cancelled') return cancelled({ ...stop.detail, item, crafted });
+  if (stop.status === 'failed' && stop.reason === 'timeout') {
+    return failed('timeout', stop.message, { ...stop.detail, crafted });
+  }
+  return stop;
 }
 
 /** The nearest crafting table within range, or null when there is none (or no such block). */
