@@ -15,7 +15,7 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 
 **Next actions:**
 
-1. Review loops per work-packets.md; `fix` after pass 3 or `decision`: ask the owner (AskUserQuestion). Merge shipped branches into `phase0/wave2` with `--no-ff` and push; update ledger rows.
+1. Review loops per work-packets.md (rule 11: parallel batches 08a/08b/09a/09b and 10a/10b/10c get ONE batch review, up to 5 rounds); `fix` after the last round or `decision`: ask the owner (AskUserQuestion). Merge shipped branches into `phase0/wave2` with `--no-ff` and push; update ledger rows.
 2. Wave 2 order: 07a, then 07b, then 07c; then 08a, 08b, 09a, 09b in parallel; then 10a (needs 08a), 10b and 10c. Write the interface-conflict resolution per the registry-file blocks (`golem/src/actions/index.ts`, `golem/src/bench/scenarios/index.ts`).
 3. P0-07b decides whether Mineflayer 4.39.0 speaks Minecraft 26.1 (protocol 775); if not, stop and ask the owner. P0-07b also flags the `world_time.ticks` meaning (world age vs time of day): write a decision record.
 4. Wave 2 close: wave review over `origin/main..phase0/wave2`, docs sweep, `retro/wave-2.md`, `W2-process` packet, `./geldar.ps1 check`, open the PR, wait for `ci gate`, merge if green and the exit criteria are met, remove worktrees, then write wave 3 packets (P0-11 to P0-13).

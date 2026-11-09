@@ -16,6 +16,7 @@ Each packet is self-contained: the coder skips CLAUDE.md, so these rules travel 
 8. Commit as soon as checks pass, with the message in your brief; WIP commits are squashed into one (see packet-coder.md). Never `git stash`, `git push`, `gh pr` or `git worktree prune`.
 9. Report to the path in your brief; return one line: `<packet> <done|blocked|failed> <commit-sha|-> <report-path>`.
 10. Budget: the packet should fit about 40k tokens, but wave 1 coders used 60k to 95k and three ran out of context before committing. Read each file once, pipe long output through `Select-Object -Last 20`, and commit as soon as `./geldar.ps1 check` passes; write a short progress note to the report path after the first working step, so a continuation coder starts from facts. Use the exact commit message and trailer lines in the brief, unchanged.
+11. Batch review (owner ruling, wave 2): packets that run in parallel (P0-08a, 08b, 09a, 09b; then P0-10a, 10b, 10c) are not reviewed one by one. When all coders in the batch have committed, merge them into a temporary review branch `phase0/wave2-batch-<name>` off `phase0/wave2` and run ONE full, thorough review over the combined diff (cross-packet collisions, registry blocks, shared arena and world state, live-test interference, plus each packet against its spec). Fix passes go to fresh coders per packet or one coder for the batch; re-review the batch up to 5 rounds (not 3) before asking the owner. Single packets keep the 3-pass loop.
 
 ## Wave close (every wave)
 
