@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p . --noEmit",
+    "bench": "node src/bench/cli.ts",
     "test:live": "vitest run --config vitest.live.config.ts"
   },
   "dependencies": {
