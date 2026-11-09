@@ -3,8 +3,9 @@ import { readFileSync } from 'node:fs';
 
 /**
  * The JetStream stream the Geldar-Core plugin publishes into and the sink reads from.
- * The same definition is created by the plugin (P0-11); both READMEs document it, and whichever
- * starts first creates it. Change it in all three places or not at all.
+ * The plugin (P0-11, NatsEventPublisher.java) creates the same stream, and whichever starts first
+ * wins. stream-config.test.ts fails if the plugin source, plugin/README.md or the eventsink
+ * README stops matching this constant, so change them together.
  */
 export const STREAM_CONFIG = {
   name: 'GELDAR_EVENTS',

@@ -19,6 +19,16 @@ SELECT * FROM unnest(
 )
 ON CONFLICT (source_event_id) DO NOTHING`;
 
+/**
+ * True for a Postgres error that retrying cannot fix: SQLSTATE class 22 (data exception, such as a
+ * NUL in jsonb or an out-of-range integer) or 23 (integrity constraint). Connection and timeout
+ * errors are not permanent.
+ */
+export function isPermanentDbError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^(22|23)/.test(code);
+}
+
 /** The Postgres-backed writer. A single INSERT is atomic, so the batch is all or nothing. */
 export function pgEventWriter(pool: Pool): EventWriter {
   return {

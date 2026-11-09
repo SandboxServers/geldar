@@ -1,14 +1,29 @@
 /** Entry point: connect to Postgres and NATS, run the consumer, drain on SIGINT/SIGTERM. */
-import { connect } from 'nats';
+import { connect } from '@nats-io/transport-node';
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';
 import { pgEventWriter } from './writer.ts';
 
 const config = loadConfig();
-const pool = new pg.Pool({ ...config.pg, max: 2 });
+const pool = new pg.Pool({
+  ...config.pg,
+  max: 2,
+  connectionTimeoutMillis: 10_000,
+  query_timeout: 30_000,
+  statement_timeout: 30_000,
+  idleTimeoutMillis: 60_000,
+});
+// An idle client dropping must not crash the process; the next query reconnects.
+pool.on('error', (error) => console.error('eventsink: idle postgres client error', error));
 const nc = await connect({ servers: config.natsUrl, name: 'eventsink', maxReconnectAttempts: -1 });
-const consumer = await startConsumer(nc, pgEventWriter(pool), config);
+const consumer = await startConsumer(nc, pgEventWriter(pool), {
+  ...config,
+  onFatal: (error) => {
+    console.error('eventsink: giving up after repeated failures, exiting for a restart', error);
+    process.exit(1);
+  },
+});
 console.log('eventsink: consuming GELDAR_EVENTS');
 
 let shuttingDown = false;
