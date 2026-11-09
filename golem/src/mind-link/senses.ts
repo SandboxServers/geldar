@@ -41,6 +41,8 @@ export type SayRefusal =
   | 'empty'
   /** The text is longer than 256 characters (the speech cap). */
   | 'too_long'
+  /** The text starts with `/`: a command, never sent as chat. */
+  | 'command'
   /** The Body's speech rate limit is not met yet. */
   | 'rate_limited'
   /** The bot is not connected to the world. */

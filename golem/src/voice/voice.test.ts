@@ -136,7 +136,7 @@ describe('say', () => {
 
   it('maps its refusals onto the shared Voice outcome', async () => {
     const t = setup();
-    expect(await t.voice.say('/stop')).toEqual({ status: 'refused', reason: 'empty' });
+    expect(await t.voice.say('/stop')).toEqual({ status: 'refused', reason: 'command' });
     expect(await t.voice.say('   ')).toEqual({ status: 'refused', reason: 'empty' });
     expect(await t.voice.say('hello')).toEqual({ status: 'said', text: 'hello' });
     expect(await t.voice.say('again')).toEqual({ status: 'refused', reason: 'rate_limited' });

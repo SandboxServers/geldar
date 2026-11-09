@@ -70,8 +70,10 @@ export interface NewMemory {
 }
 
 /**
- * Row of `relationships`. `otherId` is the other party's name or life id exactly as the Mind
- * saw it; see the P0-21 report about the SQL foreign key on `other_id`.
+ * Row of `relationships`. `otherId` is the other party's resolved agent id (the SQL foreign key on
+ * `other_id` allows nothing else; a Body's game username equals its life id, decisions 0040 and
+ * 0051). A reflection's update for a name that resolves to no agent is kept as a semantic memory
+ * with the subject `relationship:<name>`, not as a row (overnight decision 40, `PgMemoryStore`).
  */
 export interface RelationshipRow {
   agentId: string;

@@ -46,8 +46,7 @@ export class BotVoice implements Voice {
   async say(text: string): Promise<SayOutcome> {
     const result = await this.sayChecked(text);
     if (result.status === 'said') return result;
-    // The shared `SayRefusal` has no command case; `empty` is the nearest: nothing was sent.
-    const mapped = { refused_rate: 'rate_limited', refused_command: 'empty' } as const;
+    const mapped = { refused_rate: 'rate_limited', refused_command: 'command' } as const;
     const reason =
       result.reason === 'refused_rate' || result.reason === 'refused_command'
         ? mapped[result.reason]
