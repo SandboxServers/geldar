@@ -2,6 +2,7 @@ import type { Intent } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../registry.ts';
 import { actTool, sayTool } from './act.ts';
+import { defineSkillTool, readBookTool, writeBookTool } from './books.ts';
 import { FakeClock } from './clock.ts';
 import { SimHub } from './hub.ts';
 import { parseScenario } from './scenario.ts';
@@ -142,6 +143,24 @@ describe('actTool', () => {
     expect(r.accepted).toEqual([3]);
     expect(r.budget_remaining_thoughts).toBe(99);
     expect(sim.budget).toBe(99);
+  }, 30_000);
+
+  it('keeps the say spacing, books and skills of two players apart', () => {
+    const { hub, sim: one } = setup();
+    const ctx2: ToolContext = { playerId: 'p2', signal: ctx.signal };
+    const two = hub.player('p2');
+    expect(act(hub, { say: 'one' }).accepted).toEqual([0]);
+    expect(actTool(hub, ctx2, { say: 'two' }).accepted).toEqual([0]);
+    defineSkillTool(hub, ctx, { name: 'dig', code: 'noop', tests: [] } as never);
+    const { book_id } = writeBookTool(hub, ctx, { title: 'T', text: 'mine' } as never);
+    expect(readBookTool(hub, ctx).book_id).toBe(book_id);
+    // p2 holds the same book id, but it is not on p2's shelf.
+    two.inventory = [{ item: 'written_book', count: 1, book_id }];
+    expect(() => readBookTool(hub, ctx2)).toThrow(expect.objectContaining({ code: 'no_book' }));
+    const r = actTool(hub, ctx2, { actions: [{ do: 'write_book', title: 'S', skill_id: 'dig' }] });
+    expect(r.rejected).toEqual([{ index: 0, reason: 'unknown_skill' }]);
+    expect(two.budget).toBe(99);
+    expect(one.budget).toBe(97);
   }, 30_000);
 
   it('accepts an intent-only call and the sim then runs it', async () => {
