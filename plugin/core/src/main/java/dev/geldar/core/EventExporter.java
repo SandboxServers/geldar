@@ -25,6 +25,7 @@ public final class EventExporter implements Listener {
     private final Supplier<Instant> clock;
     private final Logger log;
 
+    /** Creates the exporter; {@code worldTick} and {@code clock} are injected so tests need no server. */
     public EventExporter(
             EventPublisher publisher, String shard, LongSupplier worldTick, Supplier<Instant> clock, Logger log) {
         this.publisher = publisher;
@@ -47,14 +48,20 @@ public final class EventExporter implements Listener {
         }
     }
 
-    /** Called by the scheduler every 20 s with the one-minute-window TPS figure. */
+    /**
+     * Called by the scheduler every 20 s with the one-minute-window TPS figure. The payload also tells
+     * how many events the publisher has dropped and whether it is connected, so a silent outage shows.
+     */
     public void exportTps(double tps, int players) {
         JsonObject p = new JsonObject();
         p.addProperty("tps", tps);
         p.addProperty("players", players);
+        p.addProperty("dropped", publisher.dropped());
+        p.addProperty("connected", publisher.connected());
         emit("server_tps", null, p);
     }
 
+    /** Exports damage a player took, once all other plugins have settled the event. */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDamage(EntityDamageEvent event) {
         if (!(event.getEntity() instanceof Player player)) {
@@ -66,6 +73,7 @@ public final class EventExporter implements Listener {
         emit("damage", player.getName(), p);
     }
 
+    /** Exports a player death with the last damage cause. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
@@ -75,6 +83,7 @@ public final class EventExporter implements Listener {
         emit("death", player.getName(), p);
     }
 
+    /** Exports a player getting into a bed; refused attempts (monsters near, wrong time) are not sleep. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onSleep(PlayerBedEnterEvent event) {
         if (event.getBedEnterResult() != PlayerBedEnterEvent.BedEnterResult.OK) {
