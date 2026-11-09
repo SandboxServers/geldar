@@ -1,7 +1,8 @@
 /**
  * Repo hygiene gate: fails on files over the hard line cap, on CRLF in the
- * index, or on a compose port that does not bind to loopback. Line caps cover untracked, not-ignored files too, so a new file fails
- * locally before it is staged. Untracked CRLF needs no check: `.gitattributes`
+ * index, or on a compose port that does not bind to loopback. Line caps cover
+ * untracked, not-ignored files too, so a new file fails locally before it is
+ * staged. Untracked CRLF needs no check: `.gitattributes`
  * (`text=auto eol=lf`) converts it to LF when the file is added.
  */
 import { execFileSync } from 'node:child_process';
@@ -50,7 +51,7 @@ for (const path of findCrlfInIndex(git(['ls-files', '--eol']))) {
 for (const file of [...tracked, ...untracked].filter((f) => isComposeFile(f.path))) {
   for (const port of findPublicPorts(file.path, file.text)) {
     console.log(
-      `error: ${port.path}:${port.line} publishes ${port.entry}; compose ports must start with 127.0.0.1: (docs/threat-model.md section 1)`,
+      `error: ${port.path} service ${port.service}: ${port.reason} (docs/threat-model.md section 1)`,
     );
     failed = true;
   }

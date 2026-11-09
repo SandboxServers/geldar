@@ -40,7 +40,7 @@ CREATE TABLE actions (
   result JSONB, receipt_id TEXT
 );
 CREATE TABLE receipts (                -- two-phase records for economic operations
-  receipt_id TEXT PRIMARY KEY, action_id TEXT, life_id TEXT, kind TEXT,
+  receipt_id TEXT PRIMARY KEY, action_id TEXT NOT NULL, life_id TEXT, kind TEXT,  -- differs from spec Appendix D: a receipt always names its action, so the one-final-receipt index cannot be bypassed by a NULL action_id
   phase TEXT CHECK (phase IN ('prepared','committed','aborted')), item TEXT, count INT, credits INT, at TIMESTAMPTZ,  -- differs from spec Appendix D: phase is limited to the contract's three receipt phases
   detail TEXT,                         -- differs from spec Appendix D: why an action aborted or what happened (at most 256 characters, decision 0020)
   UNIQUE (action_id, phase)            -- differs from spec Appendix D: one row per phase, so prepared and committed can both exist (decision 0020)
