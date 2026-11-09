@@ -26,11 +26,11 @@ Read `docs/analysis/<campaign>/RESUME.md`, then the ledger `README.md`. Open a p
 - `RESUME.md`: at most 40 lines. Current wave, packets in flight with their worktrees, the next action, open decisions.
 - `worknotes/`: leftovers from finished packets and ruling notes.
 
-Owner decisions are never guessed. Mark them `BlockedDecision` and ask the owner (AskUserQuestion) before dispatching what depends on them. A settled decision gets a record in `docs/decisions/` and its ledger row links it. A spec gap found by a coder or reviewer gets its record in the same wave: the orchestrator writes records only when the owner has said so; otherwise it queues them in `RESUME.md` and asks at the next boundary, so they do not pile up.
+Owner decisions are never guessed. Mark them `BlockedDecision` and ask the owner (AskUserQuestion) before dispatching what depends on them. A settled decision gets a record in `docs/decisions/` and its ledger row links it. A spec gap found by a coder or reviewer gets its record in the same wave: the owner has authorised the orchestrator to write `docs/decisions/` records (and their ledger rows) in the same wave, which is the one exception to "never edits outside `docs/analysis/phase0/`"; a decision that needs the owner's choice is queued in `RESUME.md` and asked at the next boundary.
 
 ## 2. Packets are prescriptive and self-contained
 
-Size: aim for packets a packet-coder (Haiku) finishes in under **40k working tokens** (the same figure as `work-packets.md` dispatch rule 10); split a packet whose estimate is higher. The coder skips CLAUDE.md, so each packet **inlines** the rules it needs. Each packet names:
+Size: aim for packets a packet-coder (Haiku) finishes in under **40k working tokens** (the same figure as `work-packets.md` dispatch rule 10); split a packet whose estimate is higher. Observed in wave 2: almost every first coder attempt hit about 90k tokens with nothing committed (about a quarter of agent runs were continuations), so a brief asks for a progress file. The coder skips CLAUDE.md, so each packet **inlines** the rules it needs. Each packet names:
 
 - the exact files to create or change, with code shapes for anything non-obvious and the spec sections it implements;
 - the test to add and why it fails when the change is reverted;
@@ -54,11 +54,14 @@ Coder brief template (fill the angle-bracket fields; copy the rest unchanged):
 Worktree: <absolute path to the worktree>
 Packet: docs/analysis/<campaign>/work-packets.md, section "### <packet id>" (read it; do not paste it)
 Report: <worktree>\.claude\reports\<campaign>\<packet>-<role>.md (role coder, review-<N>, fix-<N>); write it before you return
+Live lane: <none | you are the only live user>
 Commit message (exact, with trailers; do not alter the trailer lines):
   <subject>
   <attribution trailer lines, verbatim>
 Return one line: <packet> <done|blocked|failed> <commit-sha|-> <report-path>
 ```
+
+Live lane: the default is `none` (the coder writes `live: pending`); name `you are the only live user` only for the one coder the orchestrator lets use the live lane.
 
 Trailer lines: copy the attribution text from the session's attribution instruction; never retype it from memory.
 
@@ -68,15 +71,18 @@ Reviewer brief template (a fresh `packet-reviewer`, read-only):
 Worktree: <absolute path to the worktree>
 Scope: <packet id, wave N or campaign>; commit range <base>..<head>
 Spec: docs/analysis/<campaign>/work-packets.md, section "### <packet id>" (or docs/spec.md sections <list>)
-Pass: <N> of 3
+Pass: <N> of <L> (L = 3 for a single packet, 5 for a batch)
+Area: <docs | code, CI and security> (wave reviews only)
 Integration branch: <origin/phase0/wave<N>, for the merge-tree check>
 Report: <worktree>\.claude\reports\<campaign>\<scope>-review-<N>.md (three sections: Findings, Fix notes, Verdict)
 Return one line: <scope> verdict=<ship|fix|decision> <report-path>
 ```
 
-Fix coder brief ("review fix, pass N of 3"): the worktree, the packet section, the input report path (the reviewer's report; it applies only its `## Fix notes`), the commit message and the coder return line above. Continuation coder brief ("continuation N of 3"): the same fields, plus the input report path (the coder's own report, which records the base sha).
+Fix coder brief ("Review fix, pass N of <L>"): the worktree, the packet section, the input report path (the reviewer's report; it applies only its `## Fix notes`), the commit message and the coder return line above. Continuation coder brief ("continuation N of 3"): the same fields, plus the input report path (the coder's own report, which records the base sha).
 
 A continuation coder ("continuation N of 3") first commits any uncommitted work in the worktree (a WIP commit, squashed into the final commit as the packet-coder rules say), then continues from its report.
+
+Brief template additions: never weaken an assertion or change a fixture to make a test pass (report a Body finding); probes against the server use read-only verbs only; check every parser or fixture of a server reply against a captured real reply; no live lane or Docker unless the brief names the coder as the only live user. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
 
 Never keep an agent alive with messages or resume a finished one: follow-ups go to a fresh agent with the report as input.
 
@@ -88,11 +94,11 @@ Never keep an agent alive with messages or resume a finished one: follow-ups go 
 | Wave | when every packet of the wave has `ship` (waves of two or more) | the wave together: contract drift between packets, duplicated code, two packets editing one file |
 | Campaign | after the last wave merges | everything the campaign merged: docs that no longer match, decisions with nothing behind them |
 
-Each pass is a fresh `packet-reviewer`. `ship` ends the loop. `fix` on pass 1 or 2 goes to a fresh `packet-coder` ("review fix, pass N of 3", the report path; it applies only the `## Fix notes`), then a fresh reviewer for pass N+1. `fix` on pass 3, or `decision` on any pass, goes to a ruling: the main session (Opus) decides re-spec, re-slice, accept with a follow-up packet, or ask the owner, and writes it to `worknotes/<packet>.md`. Opus rules; it does not implement packets.
+A single packet gets up to 3 passes. Parallel packets can be reviewed as one **batch** (dispatch rule 11): merge them into a temporary branch `phase0/wave<N>-batch-<name>`, review that, and allow up to 5 rounds, then a `decision` ruling. A wave review is split by area (docs; code, CI and security), one reviewer each. Each pass is a fresh `packet-reviewer`. `ship` ends the loop. `fix` before pass L goes to a fresh `packet-coder` ("Review fix, pass N of <L>", the report path; it applies only the `## Fix notes`), then a fresh reviewer for pass N+1. `fix` on pass L, or `decision` on any pass, goes to a ruling: the main session (Opus) decides re-spec, re-slice, accept with a follow-up packet, or ask the owner, and writes it to `worknotes/<packet>.md`. Opus rules; it does not implement packets.
 
 A coder that stops on context gets a fresh coder that continues from its report ("continuation N of 3"). After 3 sessions, re-slice the packet.
 
-Then ship with the `ship-pr` skill and update the ledger rows.
+Then ship with the `ship-pr` skill (§ 8 for the wave PR) and update the ledger rows.
 
 ## 5. State on disk
 
@@ -100,4 +106,4 @@ At every wave boundary rewrite `RESUME.md` and the ledger rows. The transcript i
 
 ## 6. Wave close
 
-Every wave ends with the wave close in `work-packets.md` § Wave close: (1) a docs sweep by a fresh `packet-coder`, from a list the wave reviewer writes; (2) the retro, `retro/wave-<N>.md`, with numbered Actions, each with an owner and a size; (3) a `W<N>-process` packet that applies the Actions that change the process or the agent and skill scaffolding, reviewed like any packet and merged into the wave branch; (4) the ledger: `README.md` records the retro and the process packet, and `RESUME.md` names the next wave.
+Every wave ends with the wave close in `work-packets.md` § Wave close: (1) a docs sweep by a fresh `packet-coder`, from a list the wave reviewer writes; (2) the retro, `retro/wave-<N>.md`, with numbered Actions, each with an owner and a size; (3) a `W<N>-process` packet that applies the Actions that change the process or the agent and skill scaffolding, reviewed like any packet and merged into the wave branch; (4) the ledger: `README.md` records the retro and the process packet, and `RESUME.md` names the next wave; (5) remove the packet worktrees after copying useful reports to `worknotes/` (`ship-pr` § 7).

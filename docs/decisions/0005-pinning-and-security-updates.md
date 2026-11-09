@@ -18,3 +18,4 @@ The spec requires pinning the whole tested combination (Paper, Java, Mineflayer,
 
 - An upgrade PR names what it upgrades and why, and reruns `./geldar.ps1 bench` when it touches the body stack.
 - When a packet adds a new ecosystem (Gradle in `plugin/`, Docker images in `compose/`), it adds a matching security-only entry to `.github/dependabot.yml`.
+- Transitive dependencies younger than two weeks are pinned to the newest older release with `overrides` in `pnpm-workspace.yaml` (semver and tslib on 2026-11-09).
