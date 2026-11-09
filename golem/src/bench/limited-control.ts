@@ -54,7 +54,9 @@ async function isSleeping(ctl: TestControl, name: string): Promise<boolean> {
   }
   const reply = (await ctl.command(`data get entity ${name} sleeping_pos`)).trim();
   // A sleeping player has the tag; an awake one answers that the tag does not exist.
-  if (new RegExp(`^${name} has the following entity data: \\[.*\\]$`).test(reply)) return true;
+  // The name lookup ignores case and the reply echoes the server's display name, which a team can decorate.
+  const asleep = new RegExp(`^.*\\b${name}\\b[^:]* has the following entity data: \\[.*\\]$`, 'i');
+  if (asleep.test(reply)) return true;
   if (reply === "Can't get sleeping_pos; tag doesn't exist") return false;
   throw new Error(`data get entity sleeping_pos got an unexpected reply: ${reply}`);
 }

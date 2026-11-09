@@ -65,6 +65,18 @@ describe('limitedControl.isSleeping', () => {
     expect(await ctlReplying(NO_TAG).ctl.isSleeping('GolemBench')).toBe(false);
   });
 
+  it('matches the name case-insensitively and through a team decoration', async () => {
+    expect(await ctlReplying(ASLEEP).ctl.isSleeping('golembench')).toBe(true);
+    expect(await ctlReplying(ASLEEP).ctl.isSleeping('GOLEMBENCH')).toBe(true);
+    for (const shown of ['[Red] GolemBench', 'GolemBench [Red]', '[Red] GolemBench the Bold']) {
+      const reply = `${shown} has the following entity data: [I; 16, 70, 80]`;
+      expect(await ctlReplying(reply).ctl.isSleeping('golembench')).toBe(true);
+    }
+    // A longer name that merely contains the asked name is somebody else.
+    const other = 'XGolemBench has the following entity data: [I; 16, 70, 80]';
+    await expect(ctlReplying(other).ctl.isSleeping('GolemBench')).rejects.toThrow(/unexpected/);
+  });
+
   it('throws on an unparsable reply, including an offline player', async () => {
     for (const reply of [
       NO_ENTITY,
