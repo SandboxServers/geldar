@@ -19,6 +19,10 @@ The template's source lives in `geldar-scriptorium/template/`, next to the image
 
 ## Consequences
 
-- `geldar-player-template` is a published output, like a package registry. Its README says so and links the source.
-- A kit release is one tag in `geldar-scriptorium` that names three things together: the template commit, the image digest and the launcher version.
+- `geldar-player-template` is a published output, like a package registry. That's stated in the repo's GitHub description, not in a file, because every player inherits the template's files and its README is for the Patron.
+- A kit release is one tag in `geldar-scriptorium`. Its release carries a manifest naming the template commit (made by the release job after the tag), the image digest and the launcher version.
+- This record amends 0008 and 0012:
+  - `geldar-scriptorium` also holds the template source, its developer setup and the Scriptorium campaign, not only the image and launcher;
+  - a kit version spans three things, not two;
+  - section 6.6's line becomes `SandboxServers/geldar-scriptorium — Scriptorium's source: the template, the kit image and the launcher`.
 - Player repos are created from the published template (0015) and customized per player. Kit updates reach existing players as deliberate PRs (0008), never as template syncs.

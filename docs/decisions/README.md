@@ -36,6 +36,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0013](0013-public-player-repos.md) | Living player repos may be public; the agent is confined to its own repo, enforced and tested | Changes | Accepted |
 | [0014](0014-template-source-in-geldar-scriptorium.md) | The template is player-facing only; it's developed in `geldar-scriptorium` and published from there | Changes | Accepted |
 | [0015](0015-player-birth-and-setup-session.md) | Until the Allocator exists, a player is born through the launcher and a one-time setup session | Changes | Accepted |
+| [0016](0016-claude-code-settings-errata.md) | Appendix J's Claude Code settings, corrected against Claude Code 2.1 | Fixes | Accepted |
 | [0020](0020-receipts.md) | Every action gets a receipt; economic actions get two | Fixes | Accepted |
 | [0021](0021-velocity-from-phase0.md) | Velocity bot ingress from Phase 0, matching production | Changes | Accepted |
 | [0022](0022-minecraft-26-1.md) | Minecraft 26.1 and the pinned body stack | Settles | Accepted |

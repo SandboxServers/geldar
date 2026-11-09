@@ -22,9 +22,17 @@ The human's clone of the player repo stays on their machine and is never mounted
    - It accepts the result only if all of these hold:
      - the result is a fast-forward from `START`;
      - it has no merge commits;
-     - every changed path is a plain file under `memory/` or `skills/` that matches the kit's path rule.
-   - Then it fast-forwards the host branch and pushes to `origin`.
-   - The workspace and bundle are deleted only after a successful push. Any failure (a rejected check, or a remote that moved during the session) leaves the host branch untouched, keeps both for inspection, and tells the human why.
+     - every path on both sides of every change passes the **kit's path rule**. That covers additions, edits, deletions, and both ends of a rename, with rename detection off.
+   - The path rule:
+     - only plain files (mode `100644`) under `memory/` or `skills/`, with a short allowed extension;
+     - no path component may start with a dot, which rules out `.gitattributes` and `.gitmodules` anywhere;
+     - names Windows can't safely hold are rejected: reserved device names, alternate data streams, trailing dots or spaces.
+   - Modes:
+     - in a **play** session, `memory/identity.md` must be unchanged;
+     - in the one **setup** session (0015), it may be written once; the rule is otherwise the same.
+   - The host then pushes the verified commit to `origin` straight from the private ref. Only after the push succeeds does it fast-forward the human's branch. Git materializes the files with hooks, filter drivers and attribute lookups turned off.
+   - The workspace and bundle are deleted only after both steps succeed. On any failure, the human's branch stays exactly where it was, the bundle is kept, and the launcher says why. Failures include a rejected check, or a push refused because the remote moved during the session.
+   - **While a bundle is held, the launcher won't start another session for that player.** The human resolves it with `geldar-play resolve <player>`, which pulls and retries the push, or discards the held session with an explicit `--discard`.
 
 The exact commands and rules are a checklist in the Scriptorium campaign. Each item has a hostile-session test in the malicious-book CI, and a kit release ships only when all of them pass.
 
