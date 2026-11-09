@@ -58,14 +58,18 @@ describe('animus config', () => {
   });
 
   it('refuses the placeholders unless allowed', () => {
-    expect(() => parseAnimusConfig(shardDoc(), { env: {} })).toThrow('personality_seed');
-    const seedOnly = shardDoc();
+    const draft = shardDoc();
+    for (const pin of Object.values<Doc>(draft.model_pins)) pin.digest = 'sha256:RECORD_AT_DISPATCH';
+    draft.embedding.digest = 'sha256:RECORD_AT_DISPATCH';
+    draft.mind.agent.personality_seed = 'DRAFT_PENDING_OWNER_APPROVAL';
+    expect(() => parseAnimusConfig(draft, { env: {} })).toThrow('personality_seed');
+    const seedOnly = structuredClone(draft);
     seedOnly.mind.agent.personality_seed = 'approved seed';
     expect(() => parseAnimusConfig(seedOnly, { env: {} })).toThrow('digest is the placeholder');
     const embeddingOnly = approvedDoc();
     embeddingOnly.embedding.digest = 'sha256:RECORD_AT_DISPATCH';
     expect(() => parseAnimusConfig(embeddingOnly, { env: {} })).toThrow('embedding.digest');
-    expect(() => parseAnimusConfig(shardDoc(), { env: {}, allowPlaceholders: true })).not.toThrow();
+    expect(() => parseAnimusConfig(draft, { env: {}, allowPlaceholders: true })).not.toThrow();
   });
 
   it('refuses a malformed digest even when placeholders are allowed', () => {

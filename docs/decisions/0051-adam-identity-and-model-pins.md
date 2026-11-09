@@ -1,6 +1,6 @@
 # 0051. Adam's identity and the Phase 0 model pins
 
-- Status: Accepted (owner, 2026-11-09, wave 5 planning questions Q3 and Q14); the personality seed is drafted by the orchestrator and needs the owner's approval before the first run
+- Status: Accepted (owner, 2026-11-09, wave 5 planning questions Q3 and Q14); the owner approved the personality seed on 2026-11-09
 - Date: 2026-11-09
 - Spec: 5.3.3 (model fixed for life), 5.9 (life ids), Appendix D, Appendix E; decisions 0002, 0040, 0050
 
@@ -13,4 +13,4 @@
 ## Consequences
 
 - P0-20 adds the `mind.agent` and `model_pins` blocks; P0-22's `lantern-local` refuses a digest mismatch; P0-28 pins the embedding model.
-- The first Adam run waits for the owner's approval of the personality seed.
+- The owner approved the personality seed on 2026-11-09; it is recorded in `shards/phase0.yaml`.

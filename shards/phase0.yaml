@@ -30,9 +30,9 @@ mind:
     name: Adam                   # display name in prompts and addressed-speech detection (decision 0051)
     username: ag_adam_01         # the game account username, equal to the life id (decision 0040, 0051)
     tier: strong                 # which models.* tier the life runs on; fixed for the life (spec 5.3.3)
-    # Placeholder: the orchestrator drafts 3 to 5 traits and one quirk and the owner approves them
-    # before the first run (decision 0051 item 2). The Mind refuses to start on this value.
-    personality_seed: DRAFT_PENDING_OWNER_APPROVAL
+    # Approved by the owner on 2026-11-09 (decision 0051 item 2). The Mind refuses to start if this
+    # is empty or the draft placeholder.
+    personality_seed: "Curious and patient; careful after dark; likes making things last and counting what he has; generous with neighbours but remembers who helped him; dry, understated humour. Quirk: he names the places he finds (the Long Ford, the Bent Oak) and uses those names later."
   thinker:
     host: 127.0.0.1              # the Mind's Thinker socket, loopback only
     port: 7410
