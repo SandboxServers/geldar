@@ -1,0 +1,1 @@
+SC-61c: MB-06 to MB-09 scenarios written; corpus.json file names for MB-06 and MB-09 aligned to the card. Corpus tests 27 pass/26 skipped (other entries); revert check failed MB-07 as expected; ./geldar.ps1 check passed. Record needed: none.
