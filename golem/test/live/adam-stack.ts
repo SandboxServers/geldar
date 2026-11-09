@@ -430,10 +430,12 @@ export function auditWorldText(modelInput: unknown, markers: string[]): string[]
       const hit = needles.find((m) => line.toLowerCase().includes(m));
       if (hit !== undefined) {
         if (!inside) problems.push(`'${hit}' outside the quoted section: ${line.slice(0, 80)}`);
-        else if (!line.startsWith('- heard {')) {
-          problems.push(`'${hit}' on a line that is not a heard line: ${line.slice(0, 80)}`);
-        } else if (!heardLineParses(line)) {
-          problems.push(`'${hit}' on a heard line that is not JSON: ${line.slice(0, 80)}`);
+        else if (!QUOTED_LINE.test(line)) {
+          problems.push(
+            `'${hit}' on a line that is not a heard or wake_speech line: ${line.slice(0, 80)}`,
+          );
+        } else if (!quotedLineParses(line)) {
+          problems.push(`'${hit}' on a quoted line that is not JSON: ${line.slice(0, 80)}`);
         }
       }
       if (line === WORLD_TEXT_CLOSE) inside = false;
@@ -442,10 +444,13 @@ export function auditWorldText(modelInput: unknown, markers: string[]): string[]
   return problems;
 }
 
-/** Whether `- heard {json}` carries a JSON object. */
-function heardLineParses(line: string): boolean {
+/** World text appears only as `- heard {json}` or `- wake_speech {json}` lines. */
+const QUOTED_LINE = /^- (heard|wake_speech) \{/;
+
+/** Whether the quoted line carries a JSON object. */
+function quotedLineParses(line: string): boolean {
   try {
-    const value: unknown = JSON.parse(line.slice('- heard '.length));
+    const value: unknown = JSON.parse(line.replace(/^- \w+ /, ''));
     return typeof value === 'object' && value !== null;
   } catch {
     return false;
