@@ -46,3 +46,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0039](0039-pathing-forbids-corner-cutting.md) | The Body's pathing forbids diagonal moves that cut a block corner | Accepted |
 | [0040](0040-bot-ingress-registry-in-nats-kv.md) | The bot-ingress gate reads a NATS KV registry, fails closed, and Golem registers before it connects | Accepted |
 | [0041](0041-event-export-stream-and-sink.md) | Events go to one JetStream stream with dedup headers, and the sink dead-letters what it cannot store | Accepted |
+| [0042](0042-path-rule-case-folded-identity-prefix.md) | The session path rule never allows `memory/identity.md/` as a prefix, case-folded | Accepted |
