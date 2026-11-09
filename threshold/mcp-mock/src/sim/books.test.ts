@@ -80,10 +80,75 @@ describe('read_book and write_book', () => {
     const read = readBookTool(hub, ctx);
     expect(read.book_id).toBe(written.book_id);
     expect(read.untrusted_world_text.book).toEqual({ title: 'Notes', text: 'seeds in rows' });
-    expect(() => writeBookTool(hub, ctx, { title: 'Bad', skill_id: 'nope' })).toThrow(/skill/);
+    try {
+      writeBookTool(hub, ctx, { title: 'Bad', skill_id: 'nope' });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as ToolError).code).toBe('unknown_skill');
+    }
     defineSkillTool(hub, ctx, { name: 'chop', description: 'chops', code: 'return 1;' });
     const skillBook = writeBookTool(hub, ctx, { title: 'Chop', skill_id: 'chop' });
     expect(skillBook.budget_remaining_thoughts).toBe(97);
+  });
+
+  it('reads a skill book with its skill id and the code as text', () => {
+    const hub = setup();
+    defineSkillTool(hub, ctx, { name: 'chop', description: 'chops', code: 'return 1;' });
+    const { book_id } = writeBookTool(hub, ctx, { title: 'Chop', skill_id: 'chop' });
+    const read = readBookTool(hub, ctx);
+    expect(validateToolResult('read_book', read).ok).toBe(true);
+    expect(read).toMatchObject({ book_id, kind: 'skill', skill_id: 'chop' });
+    expect(read.untrusted_world_text.book).toEqual({ title: 'Chop', text: 'return 1;' });
+  });
+});
+
+describe('with no budget left', () => {
+  const broke = () =>
+    setup({
+      character: {
+        name: 'Kestrel',
+        life_id: 'ag_kestrel_01',
+        position: { x: 0, y: 64, z: 0 },
+        inventory: [{ item: 'bread', count: 2 }],
+        budget: 0,
+      },
+    });
+  const exhausted = { accepted: false, reason: 'budget_exhausted', budget_remaining_thoughts: 0 };
+
+  it('refuses write_book and define_skill with budget_exhausted and changes nothing', () => {
+    const hub = broke();
+    const sim = hub.player('p1');
+    for (const call of [
+      () => writeBookTool(hub, ctx, { title: 'T', text: 'x' }),
+      () => defineSkillTool(hub, ctx, { name: 'dig', description: 'd', code: 'c' }),
+    ]) {
+      try {
+        call();
+        expect.unreachable();
+      } catch (err) {
+        expect((err as ToolError).code).toBe('budget_exhausted');
+      }
+    }
+    expect(sim.inventory).toEqual([{ item: 'bread', count: 2 }]);
+    expect(sim.budget).toBe(0);
+  });
+
+  it('refuses use_skill, offer and vote without applying them', () => {
+    const hub = broke();
+    expect(useSkillTool(hub, ctx, { name: 'dig', args: {} })).toEqual(exhausted);
+    expect(offerTool(hub, ctx, { item: 'bread', count: 1 })).toEqual(exhausted);
+    expect(voteTool(hub, ctx, { proposal_id: 'pr_known', vote: 'yes' })).toEqual(exhausted);
+    expect(hub.player('p1').inventory).toEqual([{ item: 'bread', count: 2 }]);
+  });
+
+  it('refuses propose with the pr_none sentinel', () => {
+    const r = proposeTool(broke(), ctx, { rule: 'r', value: 1, reason: 'why' });
+    expect(r).toEqual({
+      accepted: false,
+      reason: 'budget_exhausted',
+      proposal_id: 'pr_none',
+      budget_remaining_thoughts: 0,
+    });
   });
 });
 

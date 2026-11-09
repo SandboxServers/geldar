@@ -163,6 +163,17 @@ describe('actTool', () => {
     expect(one.budget).toBe(97);
   }, 30_000);
 
+  it('rejects a say with no budget left and does not start the spacing clock', () => {
+    const { hub, sim } = setup({ budget: 0 });
+    expect(act(hub, { say: 'hi' }).rejected).toEqual([{ index: 0, reason: 'budget_exhausted' }]);
+    expect(sayTool(hub, ctx, { text: 'hi' })).toEqual({
+      spoken: false,
+      reason: 'budget_exhausted',
+      budget_remaining_thoughts: 0,
+    });
+    expect(sim.receipts).toEqual([]);
+  }, 30_000);
+
   it('accepts an intent-only call and the sim then runs it', async () => {
     const { clock, hub, sim } = setup();
     expect(act(hub, { intent: intentOf() }).accepted).toEqual([0]);
