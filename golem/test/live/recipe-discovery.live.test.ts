@@ -113,11 +113,9 @@ describe('recipe discovery through play', () => {
         ).toBe('completed');
         expect(await carried(ctl, name, 'oak_planks')).toBe(12);
 
-        // Holding planks unlocks the table and the sticks.
-        expect(
-          await unlockedAfter(bot, 'crafting_table', recipes, 'holding planks'),
-          `crafting_table was not unlocked by holding planks: ${await here()}`,
-        ).toBe(true);
+        // The table recipe's advancement has an `unlock_right_away` tick criterion, so it unlocks on the
+        // first tick after the reset, before any planks are held: no unlock event is asserted for it.
+        // Holding planks unlocks the sticks.
         const table = await craft(bot, 'crafting_table', 1);
         expect(
           table.state,
@@ -168,11 +166,29 @@ describe('recipe discovery through play', () => {
       const restore = await resetBot(bot, ctl, { recipes: true });
       try {
         await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
+        const items = ['stick', 'cobblestone', 'stone_pickaxe'];
+
+        // Without the ingredients the answer is missing_materials: gathering them unlocks the recipe.
         await ctl.give(name, 'stick', 2);
         await bot.waitForTicks(40);
-        // No cobblestone has been held, so stone_pickaxe is still locked.
+        const lacking = await craft(bot, 'stone_pickaxe', 1);
+        const seenLacking = await state(bot, ctl, recipes, items);
+        expect(
+          lacking.state,
+          `craft stone_pickaxe ${JSON.stringify(lacking.result)}: ${seenLacking}`,
+        ).toBe('failed');
+        expect(lacking.result, seenLacking).toMatchObject({
+          status: 'failed',
+          reason: 'missing_materials',
+        });
+
+        // With the ingredients held but the recipe taken away, the answer is not_possible, unlocked false.
+        await ctl.give(name, 'cobblestone', 3);
+        await bot.waitForTicks(20);
+        await ctl.recipeTakeOne(name, 'stone_pickaxe');
+        await bot.waitForTicks(20);
         const run = await craft(bot, 'stone_pickaxe', 1);
-        const seen = await state(bot, ctl, recipes, ['stick', 'cobblestone', 'stone_pickaxe']);
+        const seen = await state(bot, ctl, recipes, items);
         expect(run.state, `craft stone_pickaxe ${JSON.stringify(run.result)}: ${seen}`).toBe(
           'failed',
         );
