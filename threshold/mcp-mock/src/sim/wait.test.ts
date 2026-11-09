@@ -326,4 +326,48 @@ describe('waitTool', () => {
     const checked = validateToolResult('wait', r);
     expect(checked.ok).toBe(true);
   }, 30_000);
+
+  it('keeps the waking speech event and its words when the byte cap forces a trim', async () => {
+    const events = [
+      { type: 'damage', at_tick: 100, amount: 1 },
+      say(200, null, 'chatter'),
+      say(300, 'Kestrel', 'hi'),
+    ];
+    const run = async (evs: unknown[], maxBytes?: number) => {
+      const { clock, hub } = setup({ events: evs });
+      const p = waitTool(
+        hub,
+        ctx(),
+        { max_seconds: 60, interests: ['directly_addressed'] },
+        maxBytes,
+      );
+      await clock.advance(1000);
+      return p;
+    };
+    const full = await run(events);
+    expect(full.events).toHaveLength(3);
+    const lone = await run([events[2]]);
+    const cap = Buffer.byteLength(JSON.stringify(lone)) + 20;
+    const r = await run(events, cap);
+    expect(r.wake_reason).toBe('directly_addressed');
+    expect(r.events.map((e) => e.type)).toEqual(['speech_to_me']);
+    expect(r.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['hi']);
+    expect(r.dropped_events).toBe(2);
+    expect(validateToolResult('wait', r).ok).toBe(true);
+  }, 30_000);
+
+  it('keeps the waking speech line in the world text past the 40-line cap', async () => {
+    const events = [
+      say(100, 'Kestrel', 'wake'),
+      ...Array.from({ length: 45 }, (_, i) => say(100, null, `chatter ${i}`)),
+    ];
+    const { clock, hub } = setup({ events });
+    const p = waitTool(hub, ctx(), { max_seconds: 60, interests: ['directly_addressed'] });
+    await clock.advance(1000);
+    const r = await p;
+    const speech = r.untrusted_world_text.speech ?? [];
+    expect(speech[0]?.text).toBe('wake');
+    expect(speech).toHaveLength(40);
+    expect(validateToolResult('wait', r).ok).toBe(true);
+  }, 30_000);
 });
