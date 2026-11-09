@@ -29,14 +29,19 @@ async function unlockRecipes(ctl: TestControl, name: string): Promise<void> {
  * reports whether it did.
  */
 async function waitUnlocked(bot: Bot, name: string): Promise<boolean> {
-  const item = bot.registry.itemsByName[name];
-  if (!item) throw new Error(`${name} is not an item in the 26.1 registry`);
-  const target: TableTarget = { id: item.id, name };
+  const target = targetOf(bot, name);
   for (let tick = 0; tick < 80; tick += 4) {
     if (hasUnlockedDisplay(bot, target)) return true;
     await bot.waitForTicks(4);
   }
   return hasUnlockedDisplay(bot, target);
+}
+
+/** The craft target for an item name, from the 26.1 registry. */
+function targetOf(bot: Bot, name: string): TableTarget {
+  const item = bot.registry.itemsByName[name];
+  if (!item) throw new Error(`${name} is not an item in the 26.1 registry`);
+  return { id: item.id, name };
 }
 
 /** Clears item entities left by an earlier case in the arena (they are not blocks). */
@@ -62,6 +67,11 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_log', 2);
+      await unlockRecipes(ctl, 'GolemCraft');
+      expect(
+        await waitUnlocked(bot, 'oak_planks'),
+        'recipe_book_add for oak_planks did not arrive after recipe give',
+      ).toBe(true);
       await bot.waitForTicks(10);
       const run = await craft(bot, 'oak_planks', 8);
       expect(run.result).toMatchObject({ status: 'completed' });
@@ -78,6 +88,11 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_planks', 2);
+      await unlockRecipes(ctl, 'GolemCraft');
+      expect(
+        await waitUnlocked(bot, 'stick'),
+        'recipe_book_add for stick did not arrive after recipe give',
+      ).toBe(true);
       await bot.waitForTicks(10);
       const run = await craft(bot, 'stick', 4);
       expect(run.state).toBe('completed');
@@ -90,10 +105,32 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_planks', 4);
+      await unlockRecipes(ctl, 'GolemCraft');
+      expect(
+        await waitUnlocked(bot, 'crafting_table'),
+        'recipe_book_add for crafting_table did not arrive after recipe give',
+      ).toBe(true);
       await bot.waitForTicks(10);
       const run = await craft(bot, 'crafting_table', 1);
       expect(run.state).toBe('completed');
       expect(await carried(ctl, 'GolemCraft', 'crafting_table')).toBe(1);
+    });
+  }, 180_000);
+
+  it('falls back to bot.craft for planks once the recipe book has no planks display', async () => {
+    await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center.x, arena.center.z);
+      await ctl.clear('GolemCraft');
+      // The server keeps the book across connections: take the recipes back so the book path cannot run.
+      await ctl.command('recipe take GolemCraft *');
+      await ctl.give('GolemCraft', 'oak_log', 2);
+      await bot.waitForTicks(40);
+      expect(hasUnlockedDisplay(bot, targetOf(bot, 'oak_planks'))).toBe(false);
+      const run = await craft(bot, 'oak_planks', 4);
+      expect(run.state).toBe('completed');
+      expect(run.result.detail).toMatchObject({ item: 'oak_planks', used_table: false });
+      expect(await carried(ctl, 'GolemCraft', 'oak_planks')).toBeGreaterThanOrEqual(4);
+      expect(bot.currentWindow).toBeNull();
     });
   }, 180_000);
 
