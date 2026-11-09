@@ -13,11 +13,11 @@ Build both plugin jars first; compose bind-mounts them and does not run the buil
 
 ```powershell
 cd plugin; ./gradlew build; cd ..   # writes core/build/libs/geldar-core.jar and velocity-identity/build/libs/geldar-velocity-identity.jar
-./geldar.ps1 shard up phase0       # docker compose up -d --wait: returns when every healthcheck passes
+./geldar.ps1 shard up phase0       # docker compose build, then up -d --wait: returns when every healthcheck passes
 ./geldar.ps1 shard status phase0
 ```
 
-`shard up` stops before starting when either jar is not a file (Docker would create a directory at that path and the server would boot without the plugin; delete that directory and build). After `--wait` it also reads the Paper and Velocity logs and fails unless they hold `Geldar-Core enabled` and `Geldar identity enabled`, because a healthy container alone does not prove the plugin loaded (the Velocity gate would admit anyone). The Paper and Velocity healthchecks check the same lines.
+`shard up` first runs `docker compose build`, so the images built from this repo (the eventsink) are rebuilt from the layer cache: a stale image never runs after a source change, and when nothing changed every layer is a cache hit and the step takes a few seconds (the build context is sent each time). Plain `docker compose up` does not rebuild. `shard up` stops before starting when either jar is not a file (Docker would create a directory at that path and the server would boot without the plugin; delete that directory and build). After `--wait` it also reads the Paper and Velocity logs and fails unless they hold `Geldar-Core enabled` and `Geldar identity enabled`, because a healthy container alone does not prove the plugin loaded (the Velocity gate would admit anyone). The Paper and Velocity healthchecks check the same lines.
 
 `--wait` fails if a container is unhealthy after its start period. Paper's first start generates the world and can take minutes; don't treat a slow start as a failure until its healthcheck's start period has passed. The `eventsink` service has no healthcheck: `shard status` shows it running, and the events rows below show it works.
 
