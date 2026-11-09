@@ -53,6 +53,8 @@ const DEFAULT_STABLE_MS = 10_000;
 const PERMANENT_REFUSAL = /whitelist|banned/i;
 /** The kick the Velocity identity plugin sends to a username that is not in the life registry. */
 const NOT_ADMITTED = /This connection is not admitted\./;
+/** With the registry on, this many not-admitted kicks in a row (about 15 s of backoff) go fatal. */
+const MAX_NOT_ADMITTED = 5;
 const NOT_ADMITTED_HINT =
   'the proxy did not admit this bot: its username is not in the life registry. Set ' +
   'GELDAR_NATS_URL (nats://127.0.0.1:4222 on the Phase 0 stack) so Golem registers it before connecting';
@@ -117,6 +119,8 @@ export class ConnectionManager extends EventEmitter {
   private readonly log: (line: Record<string, unknown>) => void;
   private readonly registry: BotRegistry | undefined;
   private registered = false;
+  /** Consecutive not-admitted kicks; any other session end resets it. */
+  private notAdmitted = 0;
   /** Aborted by stop() so a pending backoff sleep ends at once. */
   private readonly stopController = new AbortController();
   private pending: { resolve: (bot: Bot) => void; reject: (err: Error) => void } | null = null;
@@ -174,12 +178,21 @@ export class ConnectionManager extends EventEmitter {
         return;
       }
       if (end.kicked && NOT_ADMITTED.test(end.reason)) {
-        this.fail(
-          this.registry === undefined
-            ? NOT_ADMITTED_HINT
-            : `${NOT_ADMITTED_HINT} (the registry is on, so check the registry entry and the plugin log)`,
-        );
-        return;
+        // Without a registry nothing can ever admit the bot. With one, the proxy's gate can be
+        // closed for seconds (cold stack, NATS blip, resync): retry, and give up after a run.
+        this.notAdmitted += 1;
+        if (this.registry === undefined) {
+          this.fail(NOT_ADMITTED_HINT);
+          return;
+        }
+        if (this.notAdmitted >= MAX_NOT_ADMITTED) {
+          this.fail(
+            `${NOT_ADMITTED_HINT} (the registry is on and ${this.notAdmitted} kicks in a row, so check the registry entry and the plugin log)`,
+          );
+          return;
+        }
+      } else {
+        this.notAdmitted = 0;
       }
       // A session that stayed up long enough counts as healthy: the next failure starts over.
       if (end.spawnedAt !== null && this.now() - end.spawnedAt >= this.stableMs) this.attempt = 0;
