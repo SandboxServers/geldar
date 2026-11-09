@@ -164,6 +164,7 @@ describe('evaluateWake', () => {
   });
 
   const ORDER: Array<[WakeReason, WakeEvent]> = [
+    ['directly_addressed', ev({ kind: 'speech', addressed: true })],
     ['precondition_failed', ev({ kind: 'intent_finished', outcome: 'failed' })],
     ['goal_completed', ev({ kind: 'intent_finished', outcome: 'completed' })],
     ['unexpected_damage', ev({ kind: 'damage' })],
