@@ -447,6 +447,8 @@ function closeLateWindow(bot: Bot, waitMs: number): void {
     });
   };
   const timer = setTimeout(() => dropLateTableWindow(bot), waitMs);
+  // Unref'd: the late-window grace alone must not keep the process alive.
+  timer.unref();
   bot.on('windowOpen', late);
   lateTableWindow.set(bot, () => {
     clearTimeout(timer);

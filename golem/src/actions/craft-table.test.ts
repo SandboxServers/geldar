@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ackClicksLater,
   answerRequests,
@@ -249,6 +249,30 @@ describe('craftFromBook', () => {
     expect(fake.raw.closeWindow).not.toHaveBeenCalledWith(CHEST);
     fake.raw.emit('windowOpen', WINDOW);
     expect(fake.raw.closeWindow).toHaveBeenCalledWith(WINDOW);
+  });
+
+  it('leaves the late-window timer unref\'d, so it never keeps the process alive', async () => {
+    const fake = fakeGame();
+    fake.raw.activateBlock.mockImplementationOnce(async () => {});
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    // Record the timers the craft creates: the open wait's timer is cleared at once, so the
+    // last one made is the late-window timer.
+    const real = globalThis.setTimeout;
+    const made: NodeJS.Timeout[] = [];
+    const spy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation(((handler: () => void, ms?: number) => {
+        const timer = real(handler, ms);
+        made.push(timer);
+        return timer;
+      }) as unknown as typeof setTimeout);
+    try {
+      expect(await run(fake.bot, 1)).toMatchObject({ status: 'failed', reason: 'timeout' });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(made.at(-1)?.hasRef()).toBe(false);
   });
 
   it('drops the late-window listener when the next craft starts', async () => {
