@@ -138,9 +138,10 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // The drop falls to the lowest air cell under the block. A walk there can fail (a high block
     // has no standing cell); that is not a failed action: the wait and the inventory say whether
     // the drop arrived.
-    const pickup = await walkToDrop(ctx, bot, dropSpot(bot, at));
+    const spot = dropSpot(bot, at);
+    const pickup = await walkToDrop(ctx, bot, spot);
     if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
-    await reachDrop(ctx, bot, at);
+    await reachDrop(ctx, bot, spot.offset(0.5, 0.5, 0.5));
     if (signal.aborted) return abort(bot, mined);
     await waitForDrop(ctx, bot, block, start, mined, baseline);
     if (signal.aborted) return abort(bot, mined);
@@ -270,7 +271,8 @@ async function walkToDrop(ctx: ActionContext, bot: Bot, spot: Vec3): Promise<Mov
 }
 
 /**
- * Brings the bot into the pickup box of the drop that the block at `at` left, when the walks did
+ * Brings the bot into the pickup box of the drop near `at` (the centre of the cell the drop falls
+ * to), when the walks did
  * not. The item can land a cell away from the cell the walk aimed at, so it is looked up again in
  * each round. A round walks onto the item's cell (the walk can fail when a block is above that
  * cell), then walks straight at the item for a few ticks. Ends when the item is gone or in the box,
@@ -288,7 +290,7 @@ async function reachDrop(ctx: ActionContext, bot: Bot, at: Vec3): Promise<void> 
     }
     const latest = nearestDrop(bot, at);
     if (!latest || inPickupBox(bot.entity.position, latest.position)) continue;
-    bot.lookAt(latest.position);
+    void bot.lookAt(latest.position).catch(() => undefined);
     bot.setControlState('forward', true);
     try {
       await bot.waitForTicks(Math.ceil(NUDGE_TICKS * ctx.timeScale));
@@ -298,7 +300,7 @@ async function reachDrop(ctx: ActionContext, bot: Bot, at: Vec3): Promise<void> 
   }
 }
 
-/** The item entity nearest the block at `at` within `DROP_REACH`, if any. */
+/** The item entity nearest the point `at` within `DROP_REACH`, if any. */
 function nearestDrop(bot: Bot, at: Vec3): { position: Vec3 } | undefined {
   let best: { position: Vec3 } | undefined;
   let bestDistance = DROP_REACH;

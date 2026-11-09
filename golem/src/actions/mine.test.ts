@@ -79,7 +79,7 @@ function fakeBot(blocks: FakeBlock[], inventory: ItemStack[] = []) {
     equip: vi.fn(async () => undefined),
     stopDigging: vi.fn(),
     waitForTicks: vi.fn(async (_ticks: number) => undefined),
-    lookAt: vi.fn(),
+    lookAt: vi.fn(async (_at: Vec3) => undefined),
     setControlState: vi.fn(),
     dig: vi.fn(async (target: FakeBlock) => {
       target.type = 0;
@@ -350,6 +350,19 @@ describe('mineAction', () => {
     bot.entities[1] = { name: 'item', position: new Vec3(4.2, 63, 0.5) };
     expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
     expect(vi.mocked(moveNear).mock.calls[1]?.[1]).toEqual(new Vec3(4, 63, 0));
+  });
+
+  it('finds a drop that fell five cells below the broken block', async () => {
+    const air = [63, 62, 61, 60, 59].map((y) => ({
+      ...block(0, new Vec3(2, y, 0), []),
+      boundingBox: 'empty' as const,
+    }));
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]), ...air]);
+    bot.canDigBlock.mockReturnValue(true);
+    // 4.5 blocks from the broken block's corner, but in the cell the drop falls to.
+    bot.entities[1] = { name: 'item', position: new Vec3(2.5, 59.5, 0.5) };
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    expect(vi.mocked(moveNear).mock.calls[1]?.[1]).toEqual(new Vec3(2, 59, 0));
   });
 
   it('neither walks nor nudges when the drop is already inside the pickup box', async () => {
