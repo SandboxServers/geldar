@@ -61,6 +61,9 @@ export const chest: Scenario = {
     const inChest = await env.ctl.chestItems(at.x, at.y, at.z);
     const passed = chestVerdict(inChest, env.bot.inventory.items());
     const held = JSON.stringify(Object.fromEntries(inChest));
-    return { passed, note: `chest ${held}; receipts: not checked (the bench bypasses the executor)` };
+    return {
+      passed,
+      note: `chest ${held}; receipts: not checked (the bench bypasses the executor)`,
+    };
   },
 };
