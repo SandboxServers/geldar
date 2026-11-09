@@ -159,6 +159,25 @@ describe('PlayerSim', () => {
     expect([...sim.suppressedSeqs]).toEqual([3, 1000]);
   });
 
+  it('does not burn an id on a rejected start', () => {
+    const sim = build();
+    const bad = { ...intent(100), preconditions: ['missing_fact'] } as Intent;
+    expect(sim.startIntent(bad, 10).ok).toBe(false);
+    expect(sim.receipts).toHaveLength(0);
+    expect(sim.startIntent(intent(100), 20).ok).toBe(true);
+    expect(sim.receipts).toEqual([makeId('in', 1)]);
+    expect(sim.intent()?.id).toBe(makeId('in', 1));
+  });
+
+  it('cancelIntent after syncTo logs the finished intent first', () => {
+    const sim = build();
+    sim.startIntent(intent(100), 0);
+    sim.syncTo(500);
+    sim.cancelIntent();
+    expect(sim.log.since(0).events.map((e) => e.kind)).toEqual(['intent_finished']);
+    expect(sim.intent()).toBeNull();
+  });
+
   it('ignores a non-finite time', () => {
     const sim = build();
     sim.syncTo(500);

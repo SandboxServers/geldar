@@ -73,9 +73,11 @@ export class PlayerSim {
   /** Starts an intent at the current time (after syncing to it); replaces a running one. */
   startIntent(spec: Intent, nowMs: number): ReturnType<typeof startIntent> {
     this.syncTo(nowMs);
-    const id = this.nextId('in');
-    const r = startIntent(spec, this.tick, this.scenario.intent.default_ticks, this.facts, id);
+    const r = startIntent(spec, this.tick, this.scenario.intent.default_ticks, this.facts);
     if (r.ok) {
+      // The id is made only now, so a rejected start burns none.
+      const id = this.nextId('in');
+      r.state.id = id;
       this.current = r.state;
       this.intentStartedMs = nowMs;
       this.receipts.push(id);
@@ -85,7 +87,10 @@ export class PlayerSim {
     return r;
   }
 
-  /** Drops the running intent without an event. */
+  /**
+   * Drops the running intent without an event. It does not sync: call `syncTo(now)` first, or an
+   * intent that already ended before now is dropped silently instead of logging its end.
+   */
   cancelIntent(): void {
     this.current = null;
     this.intentStartedMs = null;
