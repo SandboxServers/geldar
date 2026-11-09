@@ -127,6 +127,16 @@ export function watchRecipeBook(bot: Bot): void {
   });
 }
 
+/** The names of the items the unlocked crafting displays make: sorted and unique (decision 0048). */
+export function unlockedResultItems(bot: Bot): string[] {
+  const names = new Set<string>();
+  for (const { itemId } of unlocked.get(bot)?.values() ?? []) {
+    const name = bot.registry?.items[itemId]?.name;
+    if (name) names.add(name);
+  }
+  return [...names].sort();
+}
+
 /**
  * What a recipe's result display makes, and how many per craft. Null when the display is not an item
  * (a tag or a composite), which a craft cannot read a count from.
