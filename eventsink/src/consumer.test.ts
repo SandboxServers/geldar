@@ -188,7 +188,9 @@ describe('handleBatch', () => {
         h.deps,
       );
       expect(h.dlq).toHaveLength(2);
-      expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain('database unavailable after 20 deliveries');
+      expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain(
+        'database unavailable after 20 deliveries',
+      );
       expect(h.log.filter((l) => l.startsWith('nak'))).toHaveLength(0);
     });
   });

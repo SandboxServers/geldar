@@ -263,6 +263,7 @@ describe('ConnectionManager', () => {
     expect(h.manager.state).not.toBe('fatal');
     await h.manager.stop();
   });
+
   it('a respawn in the same session neither restarts the stability clock nor spawns again', async () => {
     const h = harness();
     const spawns: unknown[] = [];

@@ -50,6 +50,7 @@ export function lifeIdFor(username: string): string {
   const hash = createHash('sha256').update(username).digest('hex').slice(0, 8);
   return `ag_${stem === '' ? 'bot' : stem}${hash}_01`;
 }
+
 /** The registry key for a username: lowercase, as the plugin looks it up. */
 export function registryKey(username: string): string {
   return username.toLowerCase();

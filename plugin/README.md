@@ -29,6 +29,11 @@ To refresh the dependency locks after changing a version: `./gradlew build --wri
 
 Settings are in `plugins/GeldarCore/config.yml`; `GELDAR_NATS_URL` and `GELDAR_SHARD` in the environment override the file. Phase 0 runs one open NATS on the compose network, so there is no credential; per-service accounts arrive later (spec 6.5).
 
+## Velocity identity: known limits
+
+- **Case and duplicate logins.** The registry key is the lowercase username, so `Alice` and `alice` are the same life. Velocity treats the two names as different players, so a second login that differs from a connected one only in case is not a CONFLICTING_LOGIN: both are admitted, and the identity plugin does not tell them apart. Accepted for Phase 0 (one bot per life, and Paper's own name handling decides who stays).
+- **Stale cache window.** A bucket deleted or recreated on a live connection is noticed by a probe every 30 s, not at once (see `docs/threat-model.md`).
+
 ## Tests
 
 JUnit 6 tests need no server. Envelopes are validated against `../contract/schemas/event.schema.json` (with `networknt` json-schema-validator). MockBukkit has no release for Paper 26.1, so the listener tests use hand-written `Player` and `Server` doubles (`ListenerDoubles`).

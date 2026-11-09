@@ -124,7 +124,7 @@ services:
         condition: service_healthy
     healthcheck:
       # Port open AND the identity plugin enabled: without the plugin the proxy would admit anyone.
-      # Velocity logs to /server/logs/latest.log (not verified without Docker; `shard up` re-checks the log).
+      # Velocity logs to /server/logs/latest.log (verified on the live stack; `shard up` re-checks the log).
       test: ["CMD", "bash", "-c", "grep -q 'Geldar identity enabled' /server/logs/latest.log && exec 3<>/dev/tcp/127.0.0.1/25565"]
       interval: 10s
       timeout: 5s
