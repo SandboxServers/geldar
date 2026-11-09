@@ -157,7 +157,13 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
       await body.executor.stop();
       await body.runtime.stop();
       await body.checkpoints?.flush();
-      await flushSink(body.records, options.flushTimeoutMs ?? FLUSH_TIMEOUT_MS);
+      const timeoutMs = options.flushTimeoutMs ?? FLUSH_TIMEOUT_MS;
+      if (!(await flushSink(body.records, timeoutMs))) {
+        // The records still queued (the interrupted event among them) are lost with this process.
+        (log ?? ((line: string) => console.error(line)))(
+          `restart: the record sink did not flush within ${timeoutMs} ms; its queued records, the interrupted event included, may be lost`,
+        );
+      }
     },
   };
 }
@@ -208,16 +214,20 @@ async function waitForTick(body: Body, waitMs: number): Promise<number | null> {
   }
 }
 
-/** Waits for a sink that can flush to send what it holds, but not longer than `timeoutMs`. */
-async function flushSink(sink: Body['records'], timeoutMs: number): Promise<void> {
+/**
+ * Waits for a sink that can flush to send what it holds, but not longer than `timeoutMs`. False
+ * when the wait timed out; true when the sink flushed or cannot flush.
+ */
+async function flushSink(sink: Body['records'], timeoutMs: number): Promise<boolean> {
   const flushable = sink as Body['records'] & { flush?: () => Promise<void> };
-  if (typeof flushable.flush !== 'function') return;
+  if (typeof flushable.flush !== 'function') return true;
   let cancel: () => void = () => undefined;
-  const timeout = new Promise<void>((resolve) => {
-    cancel = afterMs(resolve, timeoutMs);
+  const timeout = new Promise<boolean>((resolve) => {
+    cancel = afterMs(() => resolve(false), timeoutMs);
   });
-  await Promise.race([flushable.flush(), timeout]);
+  const flushed = await Promise.race([flushable.flush().then(() => true), timeout]);
   cancel();
+  return flushed;
 }
 
 /**

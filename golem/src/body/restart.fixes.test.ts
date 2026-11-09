@@ -85,6 +85,16 @@ describe('stopping a restarted Body', () => {
     const started = Date.now();
     await b.stop();
     expect(Date.now() - started).toBeLessThan(2000);
+    // The lost flush is logged, not silent.
+    expect(b.lines.filter((line) => line.includes('did not flush within 30 ms'))).toHaveLength(1);
+  });
+
+  it('logs nothing about the flush when the sink sends in time', async () => {
+    const b = await boot(buckets(), { restart: { flushTimeoutMs: 500 } });
+    const sink = b.body.records as unknown as { flush?: () => Promise<void> };
+    sink.flush = async () => undefined;
+    await b.stop();
+    expect(b.lines.filter((line) => line.includes('did not flush'))).toEqual([]);
   });
 
   it('is fine with a sink that has no flush', async () => {
