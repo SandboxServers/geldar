@@ -10,9 +10,9 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 
 | Packet | Worktree | Branch | Stage |
 |---|---|---|---|
-| P0-00 | `.claude/worktrees/p0-00` | `phase0/p0-00-threat-model` | writing (Sonnet general-purpose) |
-| P0-01 | `.claude/worktrees/p0-01` | `phase0/p0-01-contract` | writing |
-| P0-05 | `.claude/worktrees/p0-05` | `phase0/p0-05-sql` | writing |
+| P0-00 | `phase0/p0-00-threat-model` | shipped, merged into wave1 |
+| P0-01 | `.claude/worktrees/p0-01` | continuation 2 of 3 (first coder hit context before commit) |
+| P0-05 | `.claude/worktrees/p0-05` | review fix pass 1 (owner: composite FK with edition; spec Appendix D needs correction, owner to record) |
 
 `.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.
 
