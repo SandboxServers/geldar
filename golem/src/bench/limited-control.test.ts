@@ -15,14 +15,17 @@ function ctlReplying(reply: string) {
   return { ctl: limitedControl(new TestControl(source)), commands };
 }
 
-// Replies captured from the live Paper 26.1.2 server (RCON, `execute if dimension` is the same
-// `execute if` family as `execute if block`) and from its en_us.json for the data reply keys.
+// Replies captured over RCON from the live Paper 26.1.2 server by golem/test/live/limited-probe.live.test.ts:
+// `execute if block` on the arena floor (stone_bricks) answers "Test passed" for stone_bricks and
+// "Test failed" for stone and bedrock; `data get entity GolemProbe sleeping_pos` answers NO_TAG while
+// the bot is awake and ASLEEP in bed, and the lowercase name gets the same reply with the display name.
 const PASSED = 'Test passed';
 const FAILED = 'Test failed';
 const UNLOADED = 'That position is not loaded';
 const NO_ENTITY = 'No entity was found';
-const NO_TAG = "Can't get sleeping_pos; tag doesn't exist";
-const ASLEEP = 'GolemBench has the following entity data: [I; 16, 70, 80]';
+const NO_TAG = 'Found no elements matching sleeping_pos';
+const ASLEEP = 'GolemBench has the following entity data: [I; 1315, 200, 800]';
+const ASLEEP_LIVE = 'GolemProbe has the following entity data: [I; 1315, 200, 800]';
 
 describe('limitedControl.blockIs', () => {
   it('sends exactly the execute-if command and parses the reply', async () => {
@@ -63,6 +66,17 @@ describe('limitedControl.isSleeping', () => {
     expect(await asleep.ctl.isSleeping('GolemBench')).toBe(true);
     expect(asleep.commands).toEqual(['data get entity GolemBench sleeping_pos']);
     expect(await ctlReplying(NO_TAG).ctl.isSleeping('GolemBench')).toBe(false);
+  });
+
+  it('parses the replies captured live, for the exact and the lowercase name', async () => {
+    for (const name of ['GolemProbe', 'golemprobe']) {
+      expect(await ctlReplying(ASLEEP_LIVE).ctl.isSleeping(name)).toBe(true);
+      expect(await ctlReplying(NO_TAG).ctl.isSleeping(name)).toBe(false);
+    }
+    // The wording the vanilla language file suggests is not what this server sends: stay strict.
+    await expect(
+      ctlReplying("Can't get sleeping_pos; tag doesn't exist").ctl.isSleeping('GolemBench'),
+    ).rejects.toThrow(/unexpected/);
   });
 
   it('matches the name case-insensitively and through a team decoration', async () => {

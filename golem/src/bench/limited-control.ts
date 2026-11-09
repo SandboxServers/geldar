@@ -57,7 +57,7 @@ async function isSleeping(ctl: TestControl, name: string): Promise<boolean> {
   // The name lookup ignores case and the reply echoes the server's display name, which a team can decorate.
   const asleep = new RegExp(`^.*\\b${name}\\b[^:]* has the following entity data: \\[.*\\]$`, 'i');
   if (asleep.test(reply)) return true;
-  if (reply === "Can't get sleeping_pos; tag doesn't exist") return false;
+  if (reply === 'Found no elements matching sleeping_pos') return false;
   throw new Error(`data get entity sleeping_pos got an unexpected reply: ${reply}`);
 }
 
