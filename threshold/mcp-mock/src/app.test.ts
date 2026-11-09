@@ -127,7 +127,7 @@ describe('createApp', () => {
       expect(read.contents).toHaveLength(1);
     }
     const self = await client.readResource({ uri: 'geldar://player/self' });
-    expect(JSON.parse(String(self.contents[0]?.text))).toEqual({
+    expect(JSON.parse(String((self.contents[0] as { text?: string }).text))).toEqual({
       name: 'aa',
       seed: 'mock-seed-0001',
       born_day: 0,

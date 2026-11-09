@@ -56,5 +56,5 @@ export function readResource(
   if (uri === 'geldar://player/self') text = JSON.stringify(world.readSelf(playerId));
   else if (uri === 'geldar://player/journal/recent') text = world.readJournalRecent(playerId);
   else text = JSON.stringify(world.readShardRules(playerId));
-  return { contents: [{ uri, mimeType: listing.mimeType, text }] };
+  return { contents: [{ uri, mimeType: listing?.mimeType ?? 'application/json', text }] };
 }

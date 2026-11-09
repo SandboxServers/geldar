@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
+  type CallToolResult,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
@@ -38,16 +39,20 @@ export function createApp(opts: {
         { capabilities: { tools: {}, resources: {}, prompts: {} } },
       );
       mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listTools() }));
-      mcp.server.setRequestHandler(CallToolRequestSchema, (request, extra) => {
-        const signal = AbortSignal.any([sessionSignal, extra.signal]);
-        return callTool(
-          world.tools,
-          request.params.name,
-          request.params.arguments,
-          { playerId, signal },
-          (m) => opts.log?.({ event: 'tool_log', player_id: playerId, message: m.slice(0, 300) }),
-        );
-      });
+      mcp.server.setRequestHandler(
+        CallToolRequestSchema,
+        async (request, extra): Promise<CallToolResult> => {
+          const signal = AbortSignal.any([sessionSignal, extra.signal]);
+          const response = await callTool(
+            world.tools,
+            request.params.name,
+            request.params.arguments,
+            { playerId, signal },
+            (m) => opts.log?.({ event: 'tool_log', player_id: playerId, message: m.slice(0, 300) }),
+          );
+          return { ...response };
+        },
+      );
       mcp.server.setRequestHandler(ListResourcesRequestSchema, () => ({
         resources: listResources(),
       }));
