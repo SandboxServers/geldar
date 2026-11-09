@@ -167,6 +167,18 @@ describe('the command line', () => {
     );
     expect(scenario.character.name).toBe('Kestrel');
     expect(scenario.neighbours.map((n) => n.name)).toEqual(['Pike', 'Wren']);
+    expect(scenario.character.inventory.find((s) => s.item === 'bread')?.count).toBe(2);
+    expect(scenario.books.map((b) => b.kind).sort()).toEqual(['skill', 'text']);
+    expect([...scenario.character.facts].sort()).toEqual(['field_is_known', 'seeds_available']);
+    const speech = scenario.events.filter((e) => e.type === 'speech');
+    expect(speech.filter((e) => e.to === null)).toHaveLength(3);
+    expect(speech.filter((e) => e.to === 'Kestrel')).toHaveLength(1);
+    for (const type of ['damage', 'agent_approaches', 'proposal']) {
+      expect(
+        scenario.events.filter((e) => e.type === type),
+        type,
+      ).toHaveLength(1);
+    }
   });
 
   it('starts with --scenario and serves a snapshot for Kestrel', async () => {
