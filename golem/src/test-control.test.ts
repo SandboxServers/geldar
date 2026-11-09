@@ -5,11 +5,22 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseItems, TestControl } from './test-control.ts';
 
-/** The files this guard keeps out of src/actions, by absolute path. */
+/** The RCON layer: only the bench, the arena and the live fixtures may reach it. */
 const FORBIDDEN = [
   join(import.meta.dirname, 'rcon.ts'),
   join(import.meta.dirname, 'test-control.ts'),
 ];
+
+/** Files and directories under src that are allowed to reach the RCON layer. */
+const CONTROL_USERS = ['bench', 'arena.ts', 'rcon.ts', 'test-control.ts'].map((name) =>
+  join(import.meta.dirname, name),
+);
+
+/** What actions must not reach: the RCON layer, the arena builder and the bench. */
+async function forbiddenForActions(): Promise<string[]> {
+  const bench = await tsFilesUnder(join(import.meta.dirname, 'bench'));
+  return [...FORBIDDEN, join(import.meta.dirname, 'arena.ts'), ...bench];
+}
 
 /** Every .ts file under a directory, at any depth. A missing directory has no files. */
 async function tsFilesUnder(dir: string): Promise<string[]> {
@@ -64,12 +75,15 @@ async function relativeImports(file: string): Promise<string[]> {
 }
 
 /** Follows imports from `start` through any file reached, and returns the first forbidden one. */
-async function reachesForbidden(start: string): Promise<string | undefined> {
+async function reachesForbidden(
+  start: string,
+  forbidden: string[] = FORBIDDEN,
+): Promise<string | undefined> {
   const seen = new Set<string>([start]);
   const queue = [start];
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
     for (const next of await relativeImports(file)) {
-      if (FORBIDDEN.includes(next)) return next;
+      if (forbidden.includes(next)) return next;
       if (!seen.has(next)) {
         seen.add(next);
         queue.push(next);
@@ -260,13 +274,53 @@ describe('TestControl', () => {
     expect(sent).toEqual(['gamerule advance_time true']);
   });
 
-  it('keeps RCON and test control out of src/actions, directly or through any import', async () => {
-    const actions = await tsFilesUnder(join(import.meta.dirname, 'actions'));
-    for (const file of actions) {
+  it('keeps RCON and test control out of every src file except the bench, arena and control files', async () => {
+    const files = (await tsFilesUnder(import.meta.dirname)).filter(
+      (file) =>
+        !file.endsWith('.test.ts') &&
+        !CONTROL_USERS.some((user) => file === user || file.startsWith(user + sep)),
+    );
+    expect(files.length).toBeGreaterThan(10);
+    for (const file of files) {
       expect(await reachesForbidden(file), file).toBeUndefined();
     }
   });
 
+  it('keeps the arena and the bench out of src/actions as well', async () => {
+    const forbidden = await forbiddenForActions();
+    const actions = await tsFilesUnder(join(import.meta.dirname, 'actions'));
+    for (const file of actions.filter((f) => !f.endsWith('.test.ts'))) {
+      expect(await reachesForbidden(file, forbidden), file).toBeUndefined();
+    }
+  });
+
+  it('catches a file that imports the RCON layer, directly, dynamically or transitively', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'guard-'));
+    try {
+      const control = relative(dir, join(import.meta.dirname, 'test-control'))
+        .split(sep)
+        .join('/');
+      const arena = relative(dir, join(import.meta.dirname, 'arena'))
+        .split(sep)
+        .join('/');
+      await writeFile(join(dir, 'direct.ts'), `import { TestControl } from '${control}';\n`);
+      await writeFile(join(dir, 'dynamic.ts'), `const m = await import('${control}');\n`);
+      await writeFile(join(dir, 'middle.ts'), "export * from './direct';\n");
+      await writeFile(join(dir, 'transitive.ts'), "import './middle';\n");
+      for (const name of ['direct', 'dynamic', 'transitive']) {
+        expect(await reachesForbidden(join(dir, `${name}.ts`)), name).toBe(
+          join(import.meta.dirname, 'test-control.ts'),
+        );
+      }
+      // Actions may not reach the arena either (it imports the control itself).
+      await writeFile(join(dir, 'arena-user.ts'), `import '${arena}';\n`);
+      expect(await reachesForbidden(join(dir, 'arena-user.ts'), await forbiddenForActions())).toBe(
+        join(import.meta.dirname, 'arena.ts'),
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
   it('resolves directory, .js and extensionless import specifiers without a file-system error', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'guard-'));
     try {
