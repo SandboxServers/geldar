@@ -5,3 +5,4 @@ export declare const validateActionRecord: ValidateFunction;
 export declare const validateWorldEvent: ValidateFunction;
 export declare const validateReceipt: ValidateFunction;
 export declare const validateSnapshot: ValidateFunction;
+export declare const validateThought: ValidateFunction;

@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/thought.schema.json",
+  "title": "Thought",
+  "description": "One thought output by the Mind (Appendix C, spec 5.3.1). At least one of intent, actions or a non-null say must be present. Actions run in order before the intent (re)starts.",
+  "type": "object",
+  "properties": {
+    "reasoning": {
+      "type": "string",
+      "maxLength": 600,
+      "description": "Private reasoning, <= 80 words. Never shown to other agents."
+    },
+    "say": {
+      "description": "What to say aloud, or null.",
+      "anyOf": [{ "type": "string", "maxLength": 256 }, { "type": "null" }]
+    },
+    "intent": {
+      "$ref": "#/$defs/Intent",
+      "description": "The durable thing to pursue. Replaces the current intent."
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 6,
+      "description": "Immediate steps, at most 6, executed in order.",
+      "items": { "$ref": "#/$defs/Action" }
+    }
+  },
+  "required": ["reasoning"],
+  "anyOf": [
+    { "required": ["intent"], "properties": { "intent": {} } },
+    { "required": ["actions"], "properties": { "actions": {} } },
+    { "required": ["say"], "properties": { "say": { "type": "string" } } }
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "Intent": {
+      "type": "object",
+      "description": "A durable intent: a goal pursued by a program until it completes, fails or a wake_on condition fires.",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "program": {
+          "description": "A built-in program, or the name of a skill.",
+          "anyOf": [
+            {
+              "enum": ["travel", "gather", "craft", "build", "rest", "flee", "follow", "trade_wait"]
+            },
+            { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$" }
+          ]
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Program arguments. The shape depends on the program, so it is not typed here."
+        },
+        "preconditions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+        },
+        "wake_on": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "anyOf": [
+              {
+                "enum": [
+                  "directly_addressed",
+                  "precondition_failed",
+                  "unexpected_damage",
+                  "goal_completed"
+                ]
+              },
+              { "type": "string", "pattern": "^new_agent_within_[0-9]{1,2}$" }
+            ]
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_world_ticks", "max_block_operations"],
+          "properties": {
+            "max_world_ticks": { "type": "integer", "minimum": 1, "maximum": 240000 },
+            "max_block_operations": { "type": "integer", "minimum": 1, "maximum": 10000 }
+          }
+        },
+        "checkpoint": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Program state saved so the intent can resume. The shape depends on the program."
+        }
+      },
+      "required": ["goal", "program", "arguments", "wake_on", "limits"],
+      "additionalProperties": false
+    },
+    "Action": {
+      "description": "One immediate action. The do field selects the verb, and only that verb's fields are allowed.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "goto" },
+            "target": {
+              "description": "A position, or the name of an agent.",
+              "anyOf": [
+                { "$ref": "common.schema.json#/$defs/Position" },
+                { "type": "string", "pattern": "^[A-Za-z0-9_]{3,16}$" }
+              ]
+            }
+          },
+          "required": ["do", "target"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "mine" },
+            "block": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 256 }
+          },
+          "required": ["do", "block", "count"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "craft" },
+            "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+          },
+          "required": ["do", "item", "count"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "place" },
+            "block": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "at": {
+              "description": "A position, or feet for the block under the agent.",
+              "anyOf": [{ "$ref": "common.schema.json#/$defs/Position" }, { "const": "feet" }]
+            }
+          },
+          "required": ["do", "block", "at"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "build" },
+            "blueprint": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "blocks"],
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+                "blocks": {
+                  "type": "array",
+                  "maxItems": 512,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["block", "dx", "dy", "dz"],
+                    "properties": {
+                      "block": { "$ref": "common.schema.json#/$defs/ItemName" },
+                      "dx": { "type": "integer", "minimum": -256, "maximum": 256 },
+                      "dy": { "type": "integer", "minimum": -256, "maximum": 256 },
+                      "dz": { "type": "integer", "minimum": -256, "maximum": 256 }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": ["do", "blueprint"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "attack" },
+            "target": { "type": "string", "pattern": "^[A-Za-z0-9_:]{1,64}$" }
+          },
+          "required": ["do", "target"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "do": { "const": "eat" } },
+          "required": ["do"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "do": { "const": "sleep" } },
+          "required": ["do"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "give" },
+            "to": { "type": "string", "pattern": "^[A-Za-z0-9_]{3,16}$" },
+            "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+          },
+          "required": ["do", "to", "item", "count"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "write_sign" },
+            "text": { "type": "string", "maxLength": 60 }
+          },
+          "required": ["do", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "write_book" },
+            "title": { "type": "string", "maxLength": 32 },
+            "skill_id": { "type": "string", "maxLength": 64 },
+            "text": { "type": "string", "maxLength": 8192 }
+          },
+          "required": ["do", "title"],
+          "oneOf": [
+            { "required": ["skill_id"], "properties": { "skill_id": {} } },
+            { "required": ["text"], "properties": { "text": {} } }
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "do": { "const": "read_book" } },
+          "required": ["do"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "use_skill" },
+            "name": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$" },
+            "args": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "Skill arguments. The shape depends on the skill."
+            }
+          },
+          "required": ["do", "name", "args"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "define_skill" },
+            "name": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$" },
+            "description": { "type": "string", "maxLength": 256 },
+            "code": { "type": "string", "maxLength": 8192 }
+          },
+          "required": ["do", "name", "description", "code"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "offer" },
+            "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+          },
+          "required": ["do", "item", "count"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "propose" },
+            "rule": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "value": {
+              "description": "The proposed value. Any JSON value; the rule decides what is valid.",
+              "anyOf": [
+                { "type": "object" },
+                { "type": "array" },
+                { "type": "string" },
+                { "type": "number" },
+                { "type": "boolean" },
+                { "type": "null" }
+              ]
+            },
+            "reason": { "type": "string", "maxLength": 256 }
+          },
+          "required": ["do", "rule", "value", "reason"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "vote" },
+            "proposal_id": { "type": "string", "pattern": "^pr_" },
+            "vote": { "enum": ["yes", "no"] }
+          },
+          "required": ["do", "proposal_id", "vote"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "note" },
+            "text": { "type": "string", "maxLength": 512 }
+          },
+          "required": ["do", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "wait" },
+            "seconds": { "type": "integer", "minimum": 1, "maximum": 600 }
+          },
+          "required": ["do", "seconds"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "open" },
+            "at": { "$ref": "common.schema.json#/$defs/Position" }
+          },
+          "required": ["do", "at"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "deposit" },
+            "at": { "$ref": "common.schema.json#/$defs/Position" },
+            "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+          },
+          "required": ["do", "at", "item", "count"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "withdraw" },
+            "at": { "$ref": "common.schema.json#/$defs/Position" },
+            "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+          },
+          "required": ["do", "at", "item", "count"],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

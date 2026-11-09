@@ -31,6 +31,16 @@ export function validateSnapshot(value: unknown): ValidationResult<Snapshot> {
 }
 
 // --- P0-02 thought ---
+import type { Thought } from './generated/types.ts';
+import { validateThought as validateThoughtSchema } from './generated/validators.js';
+
+export type { Action, Intent, Thought } from './generated/types.ts';
+
+/** Checks a value against thought.schema.json. Never throws; unknown properties are rejected. */
+export function validateThought(value: unknown): ValidationResult<Thought> {
+  if (validateThoughtSchema(value)) return { ok: true, value: value as Thought };
+  return { ok: false, errors: (validateThoughtSchema.errors ?? []).map(formatError) };
+}
 
 // --- P0-03 records ---
 import type { ActionRecord, Receipt, WorldEvent } from './generated/types.ts';

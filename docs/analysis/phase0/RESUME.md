@@ -6,14 +6,14 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 
 **Current wave:** 1, the contract and a healthy stack (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
 
-**Merged into `phase0/wave1`:** P0-00, P0-01, P0-03, P0-05.
+**Merged into `phase0/wave1`:** P0-00, P0-01, P0-02, P0-03, P0-05.
 
 **In flight (background agents):**
 
 | Packet | Worktree | Stage |
 |---|---|---|
-| P0-02 | `.claude/worktrees/p0-02` | fix 1 committed (477de1b); review pass 2 running |
-| P0-04 | `.claude/worktrees/p0-04` | review fix pass 1 running |
+
+| P0-04 | `.claude/worktrees/p0-04` | fix 1 continuation (generator change allowed, worknotes/p0-04.md); then review pass 2 |
 | P0-06 | `.claude/worktrees/p0-06` | coder writing (tags `qwen3:32b`, `qwen3:8b`) |
 
 `.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.

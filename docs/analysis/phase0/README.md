@@ -39,7 +39,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 |---|---|---|---|---|---|---|
 | P0-00 | 1 | Threat model (`docs/threat-model.md`) | Sonnet (general-purpose) | Done | — | |
 | P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Done | — | |
-| P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | Review (fix 1) | P0-01 | |
+| P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | Done | P0-01 | |
 | P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | Done | P0-01 | |
 | P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | Review (fix 1) | P0-01 | |
 | P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Done | — | |
