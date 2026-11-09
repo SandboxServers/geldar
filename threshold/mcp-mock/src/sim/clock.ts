@@ -58,7 +58,7 @@ export class FakeClock implements Clock {
     return this.pending.length;
   }
 
-  /** Waits until dvance passes ms from now; an abort removes the sleep and rejects. */
+  /** Waits until advance passes ms from now; an abort removes the sleep and rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return Promise.reject(signal.reason);
     return new Promise<void>((resolve, reject) => {

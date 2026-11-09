@@ -1,6 +1,6 @@
 /** The wake policy (spec 5.3.2): pure and deterministic, no clock, no I/O, no model. */
 
-/** Why the agent was woken. 	imeout is for the caller's own idle wake; evaluateWake never returns it. */
+/** Why the agent was woken. timeout is for the caller's own idle wake; evaluateWake never returns it. */
 export type WakeReason =
   | 'directly_addressed'
   | 'goal_completed'
@@ -29,7 +29,7 @@ export interface WakeEvent {
     | 'reflex';
   /** For speech: was the agent addressed directly? */
   addressed?: boolean;
-  /** For gent_approached: how far away the other agent is. */
+  /** For agent_approached: how far away the other agent is. */
   distance?: number;
   /** For intent_finished: how the intent ended; an absent value counts as completed. */
   outcome?: 'completed' | 'failed' | 'limit_reached';
@@ -55,7 +55,7 @@ export interface SuppressedWake {
   kind: string;
   /** Why it was held back. */
   reason: 'overheard_chatter' | 'not_in_wake_on' | 'not_in_interests' | 'min_spacing' | 'reflex';
-  /** The event's tMs. */
+  /** The event's atMs. */
   atMs: number;
 }
 
