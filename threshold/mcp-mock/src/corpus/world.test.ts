@@ -201,7 +201,7 @@ describe('the world side of the malicious-book corpus', () => {
         for (const result of seen) {
           expect(allKeys(result).filter((k) => FORBIDDEN_KEYS.has(k))).toEqual([]);
           expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(MAX_RESULT_BYTES);
-          // A result that is within the cap passes through itResult unchanged.
+          // A result that is within the cap passes through fitResult unchanged.
           if (WRAPPER in (result as object)) {
             expect(fitResult(structuredClone(result) as never)).toEqual(result);
           }
