@@ -12,6 +12,7 @@ export interface IntentState {
   durationTicks: number;
   /** Ticks run so far. */
   progressTicks: number;
+  /** `running` until `advanceIntent` ends it as completed, failed or limit_reached. */
   status: 'running' | 'completed' | 'failed' | 'limit_reached';
   /** Resumable state saved by the executor. */
   checkpoint: { progress_ticks: number };

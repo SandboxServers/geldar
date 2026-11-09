@@ -34,12 +34,13 @@ export class PlayerSim {
   readonly nextId: (prefix: IdPrefix) => string;
   /** The events so far. */
   readonly log: EventLog = new EventLog();
-  /** The facts that hold now. */
+  /** The facts that hold now; scenario `set_fact` and `clear_fact` events change them. */
   readonly facts: Set<string>;
   /** Food level, 0 to 20. */
   food: number;
+  /** What the player carries; the eat reflex takes from it and replaces the list. */
   inventory: ReflexStack[];
-  /** Thoughts left. */
+  /** Thoughts left. Held for later tools; the sim never spends it. */
   budget: number;
   /** When the model last woke, or null. */
   lastWakeMs: number | null = null;
@@ -54,6 +55,7 @@ export class PlayerSim {
   private current: IntentState | null = null;
   private nextScenarioEvent = 0;
 
+  /** Builds the world at tick 0 from the scenario's character: facts, food, inventory, budget. */
   constructor(init: PlayerSimInit) {
     this.scenario = init.scenario;
     this.startMs = init.startMs;

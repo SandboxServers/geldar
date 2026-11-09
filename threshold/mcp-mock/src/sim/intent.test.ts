@@ -21,6 +21,14 @@ function start(s: Intent, facts: string[] = [], defaultTicks = 600) {
 }
 
 describe('startIntent', () => {
+  it.each([[0], [1.5], ['300'], [-5], [Number.NaN]])(
+    'falls back to default_ticks for mock_ticks %j',
+    (mock) => {
+      const r = startIntent(spec({}, { mock_ticks: mock }), 1000, 600, new Set());
+      expect(r.ok && r.state.durationTicks).toBe(600);
+    },
+  );
+
   it('refuses a missing precondition', () => {
     const r = startIntent(
       spec({ preconditions: ['has_axe'] } as Partial<Intent>),
@@ -57,6 +65,15 @@ describe('advanceIntent', () => {
     const r = advanceIntent(state, 2000, new Set());
     expect(r.finished).toBe('limit_reached');
     expect(r.state.progressTicks).toBe(50);
+  });
+
+  it('completes when max_world_ticks equals the length', () => {
+    const state = start(
+      spec({ limits: { max_world_ticks: 300, max_block_operations: 1 } }, { mock_ticks: 300 }),
+    );
+    const r = advanceIntent(state, 2000, new Set());
+    expect(r.finished).toBe('completed');
+    expect(r.state.progressTicks).toBe(300);
   });
 
   it('fails when a precondition is cleared', () => {

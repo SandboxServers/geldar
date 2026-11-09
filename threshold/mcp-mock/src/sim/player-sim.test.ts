@@ -83,6 +83,20 @@ describe('PlayerSim', () => {
     expect(sim.facts.has('has_axe')).toBe(false);
   });
 
+  it('keeps the order of two scenario events on the same tick', () => {
+    const sim = build({
+      events: [
+        { type: 'speech', at_tick: 400, from: 'Bram', to: null, text: 'first' },
+        { type: 'damage', at_tick: 400, amount: 2 },
+        { type: 'proposal', at_tick: 400, id: 'pr_1', rule: 'third' },
+      ],
+    });
+    sim.syncTo(500);
+    const events = sim.log.since(0).events;
+    expect(events.map((e) => e.kind)).toEqual(['speech', 'damage', 'proposal']);
+    expect(events.map((e) => e.seq)).toEqual([1, 2, 3]);
+  });
+
   it('logs a damage event on the tick the intent ends with wakeOn null', () => {
     const sim = build({ events: [{ type: 'damage', at_tick: 1200, amount: 3 }] });
     sim.syncTo(1000);

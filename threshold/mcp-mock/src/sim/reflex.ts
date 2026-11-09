@@ -18,7 +18,10 @@ export interface ReflexState {
   inventory: ReflexStack[];
 }
 
-/** The food level at `tick`: starts at `food0`, falls 1 per interval, never below 0. */
+/** The food level at `tick`: starts at `food0`, falls 1 per interval, never below 0.
+ * The sim steps food one interval at a time; this closed form is for tests and for tools that need
+ * the level at a tick without playing the world.
+ */
 export function hungerAt(
   tick: number,
   cfg: { hunger_interval_ticks: number },
