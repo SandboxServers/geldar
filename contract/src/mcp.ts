@@ -11,6 +11,10 @@ export { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from './generated/mc
 
 import type { ActionOutcome } from './generated/types.ts';
 
+/**
+ * The generated `WriteBookInput` is a union of one-key branches and is not usable directly;
+ * consumers cast to `{ title: string; skill_id?: string; text?: string }` after validating.
+ */
 export type {
   ActInput,
   ActionOutcome,
@@ -45,9 +49,15 @@ export type {
   WriteBookResult,
 } from './generated/types.ts';
 
-/** The three tools whose result is just the outcome share its type (the schema $refs it). */
+/**
+ * The three tools whose result is just the outcome share its type (the schema $refs it).
+ * The bundled results have no root `type`, so do not publish them as an MCP outputSchema.
+ */
+/** Result of `use_skill`: the outcome of running the skill. */
 export type UseSkillResult = ActionOutcome;
+/** Result of `offer`: the outcome of the shrine offering. */
 export type OfferResult = ActionOutcome;
+/** Result of `vote`: the outcome of casting the vote. */
 export type VoteResult = ActionOutcome;
 
 const validators = generatedValidators as unknown as Record<string, ValidateFunction | undefined>;
