@@ -12,7 +12,6 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 
 | Packet | Worktree | Stage |
 |---|---|---|
-
 | P0-04 | `.claude/worktrees/p0-04` | fix 1 continuation (generator change allowed, worknotes/p0-04.md); then review pass 2 |
 | P0-06 | `.claude/worktrees/p0-06` | coder writing (tags `qwen3:32b`, `qwen3:8b`) |
 
