@@ -162,9 +162,12 @@ describe('real-time end to end', () => {
 
 describe('the command line', () => {
   it('parses the dawn scenario file', () => {
-    const scenario = parseScenario(
-      readFileSync(join(PACKAGE_DIR, 'scenarios', 'dawn.scenario.json'), 'utf8'),
-    );
+    const raw = readFileSync(join(PACKAGE_DIR, 'scenarios', 'dawn.scenario.json'), 'utf8');
+    const scenario = parseScenario(raw);
+    // The file leaves the timings to the defaults, and every event lands within one default day.
+    const keys = Object.keys(JSON.parse(raw) as Record<string, unknown>);
+    for (const key of ['wake', 'reflex', 'intent']) expect(keys, key).not.toContain(key);
+    expect(Math.max(...scenario.events.map((e) => e.at_tick))).toBeLessThanOrEqual(10000);
     expect(scenario.character.name).toBe('Kestrel');
     expect(scenario.neighbours.map((n) => n.name)).toEqual(['Pike', 'Wren']);
     expect(scenario.character.inventory.find((s) => s.item === 'bread')?.count).toBe(2);
