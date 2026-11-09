@@ -74,17 +74,20 @@ function Invoke-Check {
   } finally { Pop-Location }
 }
 
-# Compose bind-mounts the plugin jar; Docker creates a missing bind source as a directory, and Paper then
-# boots without the plugin. Refuse to start unless the jar is a real file.
+# Compose bind-mounts the plugin jars; Docker creates a missing bind source as a directory, and the server then
+# boots without the plugin. Refuse to start unless every jar the compose file mounts is a real file.
 function Assert-PluginJar([string] $Shard) {
   $file = Get-ComposeFile $Shard
-  if (-not (Select-String -Path $file -SimpleMatch 'geldar-core.jar' -Quiet)) { return }
-  $jar = Join-Path $Root 'plugin/core/build/libs/geldar-core.jar'
-  if (Test-Path -PathType Leaf $jar) { return }
-  $why = if (Test-Path -PathType Container $jar) {
-    'it is a directory (a previous start without the jar made Docker create one); delete that directory'
-  } else { 'it does not exist' }
-  throw "plugin/core/build/libs/geldar-core.jar is not a file: $why, then run: cd plugin; ./gradlew build"
+  $jars = 'plugin/core/build/libs/geldar-core.jar', 'plugin/velocity-identity/build/libs/geldar-velocity-identity.jar'
+  foreach ($rel in $jars) {
+    if (-not (Select-String -Path $file -SimpleMatch (Split-Path -Leaf $rel) -Quiet)) { continue }
+    $jar = Join-Path $Root $rel
+    if (Test-Path -PathType Leaf $jar) { continue }
+    $why = if (Test-Path -PathType Container $jar) {
+      'it is a directory (a previous start without the jar made Docker create one); delete that directory'
+    } else { 'it does not exist' }
+    throw "$rel is not a file: $why, then run: cd plugin; ./gradlew build"
+  }
 }
 
 # Writes the shard's Docker secret files (spec 6.7) when they are missing. Each holds

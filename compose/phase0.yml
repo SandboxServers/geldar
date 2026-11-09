@@ -104,15 +104,21 @@ services:
       VELOCITY_VERSION: "3.5.1"
       VELOCITY_BUILD_ID: "615"
       MEMORY: 512M
+      # Geldar identity plugin (plugin/velocity-identity): admits only usernames in the NATS life registry.
+      GELDAR_NATS_URL: nats://nats:4222
     secrets: [velocity-forwarding]
     volumes:
       - ./velocity/velocity.toml:/config/velocity.toml:ro
       - velocity-data:/server
+      # itzg/mc-proxy copies /plugins into /server/plugins on start (not verified without Docker). Build the jar first: cd plugin; ./gradlew build
+      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
     ports:
       # The bot ingress. Phase 0 stands in for production's internal VLAN (decision 0021).
       - "127.0.0.1:25565:25565"
     depends_on:
       paper:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/25565"]

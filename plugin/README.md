@@ -4,7 +4,8 @@ A Gradle multi-project. Java 25 (see `.java-version`), Paper API 26.1.2 build 74
 
 | Subproject | What it is |
 |---|---|
-| `core` | Geldar-Core, the Paper plugin (spec Appendix F). `velocity-identity` follows in a later packet. |
+| `core` | Geldar-Core, the Paper plugin (spec Appendix F). |
+| `velocity-identity` | The Velocity bot-ingress identity plugin (spec Appendix F, 8.4): on `LoginEvent` it admits only usernames in the JetStream KV bucket `geldar-life-registry` (key: lowercase username, value `{life_id, registered_at}`; a deleted key revokes). A local cache fed by a watcher answers the check; the gate fails closed until the first sync and while the bucket is absent (Golem creates it). One fixed deny message. Drops `geldar:cmd` messages from connections that were not admitted. Velocity API 3.5.1; its `velocity-brigadier` 1.0.0-SNAPSHOT dependency is excluded (no release exists, and it would make the locks float). Output `velocity-identity/build/libs/geldar-velocity-identity.jar`; reads `GELDAR_NATS_URL`. |
 
 ## Build
 
