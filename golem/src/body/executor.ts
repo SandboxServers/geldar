@@ -30,6 +30,9 @@ import {
 } from './validity.ts';
 import type { WakeReason } from './wake.ts';
 
+/** Longest wall wait (at time scale 1) for a busy reflex before a plan's action starts anyway. */
+const REFLEX_IDLE_MS = 10_000;
+
 export * from './executor-types.ts';
 
 /**
@@ -172,7 +175,7 @@ export class IntentExecutor {
     let failedAt: number | null = null;
     let rejection: Rejection | null = null;
     // A reflex that is busy has the Body: the plan's actions wait for it to end.
-    if (actions.length > 0) await this.runtime.reflexRunner.idle();
+    if (actions.length > 0) await this.reflexIdle();
     const paused = actions.length > 0 ? await this.pauseForActions() : null;
     try {
       for (const [index, action] of actions.entries()) {
@@ -181,6 +184,8 @@ export class IntentExecutor {
           rejection = this.validate(plan);
           if (rejection) break;
         }
+        // A reflex may have started since the last action ended; it drives the bot, so wait again.
+        if (index > 0) await this.reflexIdle();
         const report = await this.runOne(action, id, index, plan);
         reports.push(report);
         if (report.record.state !== 'completed') {
@@ -335,6 +340,23 @@ export class IntentExecutor {
     }
     a.stepController?.abort();
     await a.stepping;
+  }
+
+  /** Waits for a busy reflex to end, at most REFLEX_IDLE_MS (scaled); a stuck reflex is logged, not obeyed forever. */
+  private async reflexIdle(): Promise<void> {
+    const runner = this.runtime.reflexRunner;
+    if (!runner.busy) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = REFLEX_IDLE_MS * this.runtime.timeScale;
+    const expired = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => resolve(true), limit);
+    });
+    const timedOut = await Promise.race([runner.idle().then(() => false), expired]);
+    clearTimeout(timer);
+    if (timedOut)
+      console.warn(
+        `a reflex is still running after ${limit} ms; the plan's next action starts anyway`,
+      );
   }
 
   /** Pauses the running intent, if any, so the immediate actions have the Body to themselves. */
