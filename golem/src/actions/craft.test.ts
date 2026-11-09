@@ -153,6 +153,7 @@ describe('craftAction', () => {
     const planks = recipe(5, 4, { 6: 1 });
     const fake = fakeBot({ recipes: [planks], inventory: { 6: 1 } });
     vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(bookYield).mockReturnValueOnce(4);
     vi.mocked(craftFromBook).mockImplementationOnce(async () => {
       fake.give(5, 4);
       return null;
@@ -168,18 +169,39 @@ describe('craftAction', () => {
     expect(out).toMatchObject({ status: 'completed', detail: { used_table: false, crafted: 4 } });
   });
 
-  it('expects the display result count, not the recipe count, when the book crafts', async () => {
-    // The recipe says 4 per craft, the display makes 2: one craft's 2 is the whole expectation.
+  it('sizes the book crafts by the display yield, and completes only when the count asked is made', async () => {
+    // The recipe says 4 per craft, the display makes 2: two crafts of 2 make the 4 asked.
     const planks = recipe(5, 4, { 6: 1 });
-    const fake = fakeBot({ recipes: [planks], inventory: { 6: 1 } });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 2 } });
     vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
     vi.mocked(bookYield).mockReturnValueOnce(2);
     vi.mocked(craftFromBook).mockImplementationOnce(async () => {
-      fake.give(5, 2);
+      fake.give(5, 4);
       return null;
     });
     const out = await run(fake.bot, 'oak_planks', 4);
-    expect(out).toMatchObject({ status: 'completed', detail: { crafted: 2 } });
+    expect(craftFromBook).toHaveBeenCalledWith(expect.anything(), expect.anything(), 2, null);
+    expect(out).toMatchObject({ status: 'completed', detail: { crafted: 4 } });
+  });
+
+  it('fails internal, not completed, when a book craft makes less than the count asked', async () => {
+    // A stick from planks is 4 per craft, but a bamboo display makes 1: four crafts are needed.
+    const sticks = recipe(7, 4, { 5: 2 });
+    const fake = fakeBot({ recipes: [sticks], inventory: { 5: 2 } });
+    vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(bookYield).mockReturnValueOnce(1);
+    vi.mocked(craftFromBook).mockImplementationOnce(async () => {
+      // One craft of the four ran, and made its 1.
+      fake.give(7, 1);
+      return null;
+    });
+    const out = await run(fake.bot, 'stick', 4);
+    expect(craftFromBook).toHaveBeenCalledWith(expect.anything(), expect.anything(), 4, null);
+    expect(out).toMatchObject({
+      status: 'failed',
+      reason: 'internal',
+      detail: { item: 'stick', crafted: 1 },
+    });
   });
 
   it('keeps the crafted count when a recipe-book craft is cancelled', async () => {

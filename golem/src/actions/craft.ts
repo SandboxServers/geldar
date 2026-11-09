@@ -70,15 +70,19 @@ async function runCraft(
   if (!recipe) return failed('not_possible', 'not craftable');
   const times = Math.ceil(action.count / recipe.result.count);
   const before = heldCount(bot, item.id);
-  // What the crafts are expected to make: the recipe's count, or the display's when the book crafts.
+  // What the library crafts are expected to make: the recipe's count per craft.
   let expected = times * recipe.result.count;
   let stop: ActionOutcome | null = null;
   try {
     if (usedTable || hasUnlockedDisplay(bot, item)) {
       // Recipe-book crafts skip bot.craft: its stateId is shared by every window, and on 26.1 the
       // table rejects it. A 2x2 recipe with no unlocked display falls back to bot.craft.
-      stop = await craftFromBook(ctx, item, times, usedTable);
-      if (!stop) expected = times * bookYield(bot, item);
+      // The book makes its display's yield per craft, which can be less than the picked recipe's (a
+      // stick from planks makes 4, from bamboo 1), so the craft count comes from that yield. The
+      // crafted count is judged against what was asked.
+      const yieldPer = bookYield(bot, item) || recipe.result.count;
+      stop = await craftFromBook(ctx, item, Math.ceil(action.count / yieldPer), usedTable);
+      expected = action.count;
     } else {
       for (let i = 0; i < times; i++) {
         if (signal.aborted) break;
