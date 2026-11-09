@@ -11,10 +11,10 @@ A Gradle multi-project. Java 25 (see `.java-version`), Paper API 26.1.2 build 74
 
 ```powershell
 cd plugin
-./gradlew build          # compiles, runs the JUnit tests, writes core/build/libs/geldar-core.jar
+./gradlew build          # compiles, runs the JUnit tests, writes core/build/libs/geldar-core.jar and velocity-identity/build/libs/geldar-velocity-identity.jar
 ```
 
-The jar carries `jnats`; Paper supplies the API. Compose mounts the jar read-only into Paper's plugins directory (`compose/phase0.yml`), so build before `./geldar.ps1 shard up phase0`. Compose does not run the build; `shard up` stops with a message when the jar is not a file (Docker would otherwise create a directory at that path and Paper would boot without the plugin).
+The jars carry `jnats`; Paper and Velocity supply their APIs. Compose mounts each jar read-only into the server's plugins directory (`compose/phase0.yml`), so build before `./geldar.ps1 shard up phase0`. Compose does not run the build; `shard up` stops with a message when either jar is not a file (Docker would otherwise create a directory at that path and the server would boot without the plugin). After the stack is healthy, `shard up` also checks the logs for `Geldar-Core enabled` and `Geldar identity enabled`, and the Paper and Velocity healthchecks require the same lines, so a plugin that failed to load is never reported as healthy. Decisions: [0040](../docs/decisions/0040-bot-ingress-registry-in-nats-kv.md) (the gate) and [0041](../docs/decisions/0041-event-export-stream-and-sink.md) (the export).
 
 To refresh the dependency locks after changing a version: `./gradlew build --write-locks`.
 
@@ -33,6 +33,7 @@ Settings are in `plugins/GeldarCore/config.yml`; `GELDAR_NATS_URL` and `GELDAR_S
 
 - **Case and duplicate logins (unverified edge).** The registry key is the lowercase username, so `Alice` and `alice` are the same life. Whether Velocity 3.5.1 folds case when it detects a duplicate login (CONFLICTING_LOGIN) was not verified: the API jar does not contain the proxy's connection map. Offline-mode UUIDs are derived from the exact name, so two logins that differ only in case hold different UUIDs. If Velocity folds case and rejects the second as CONFLICTING_LOGIN, the plugin skips that release and the second UUID's admission is never released; if it does not fold case, both are admitted. Neither outcome is handled in code. Accepted for Phase 0 (one bot per life); to be settled against the proxy source or a live test.
 - **Stale cache window.** A bucket deleted or recreated on a live connection is noticed by a probe every 30 s, not at once (see `docs/threat-model.md`).
+- **Consumer deleted alone.** A watch consumer deleted on a live bucket is not detected: jnats 2.26.4 exposes no consumer info. Unit-tested only, like a bot's command being cancelled, `death` events reaching Postgres and a NATS outage while the gate runs (`docs/analysis/phase0/retro/wave-3.md`, open items).
 
 ## Tests
 

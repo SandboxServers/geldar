@@ -1,6 +1,6 @@
 # eventsink
 
-Copies world events from NATS JetStream into Postgres `events` (spec section 7, Appendix D).
+Copies world events from NATS JetStream into Postgres `events` (spec section 7, Appendix D; [decision 0041](../docs/decisions/0041-event-export-stream-and-sink.md)). It runs as the `eventsink` service in `compose/phase0.yml` (built from `eventsink/Dockerfile`, started after healthy Postgres and NATS, restarted by compose). It uses `@nats-io/transport-node` and `@nats-io/jetstream` 3.4.0 and `pg`.
 
 ## Behaviour
 
