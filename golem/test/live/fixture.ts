@@ -90,7 +90,7 @@ export interface ResetOptions {
 export async function healBot(bot: Bot, ctl: TestControl): Promise<void> {
   const name = bot.username;
   await ctl.effectClear(name);
-  const reply = await ctl.effect(name, 'minecraft:instant_health', 1, 10);
+  const reply = await ctl.effect(name, 'instant_health', 1, 10);
   for (let i = 0; i < 600 && bot.health < 20; i++) await bot.waitForTicks(1);
   if (bot.health < 20) {
     throw new Error(
