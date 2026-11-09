@@ -1,0 +1,1 @@
+w3-gradle: regenerated plugin/gradle/verification-metadata.xml on an empty GRADLE_USER_HOME (106 lines added, trust settings unchanged). Proof: clean build with fresh homes 2 and 3 passed; geldar.ps1 check passed.
