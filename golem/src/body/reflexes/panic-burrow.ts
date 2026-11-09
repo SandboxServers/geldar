@@ -57,9 +57,11 @@ function isWall(block: Block | null): boolean {
   return block !== null && block.boundingBox === 'block' && !FALLING.has(block.name);
 }
 
-/** True for a block the Body may dig out: a wall block that is diggable. */
+/** True for a block the Body may dig out: a wall block digCell will accept (the allowlist). */
 function isDiggable(block: Block | null): boolean {
-  return isWall(block) && block?.diggable !== false;
+  return (
+    isWall(block) && block !== null && DIGGABLE_BLOCKS.has(block.name) && block.diggable !== false
+  );
 }
 
 /**
@@ -164,10 +166,17 @@ async function leave(ctx: ReflexContext, view: BodyView, dug: Burrow): Promise<R
   return { result: 'handled', detail: 'left at dawn' };
 }
 
+/** True for a water or lava block (a dug-out cell next to one would flood). */
+function isFluid(block: Block | null): boolean {
+  return block !== null && (block.name === 'water' || block.name === 'lava');
+}
+
 /**
  * The way out of a sealed cell the Body has no burrow state for (it restarted or reconnected
  * while sealed): a direction whose feet and head cells are open or a block the Body may dig, over
- * a solid floor. Returns the two cells, feet first, or null.
+ * a solid floor, with no water or lava next to either cell. A direction whose cell two steps out
+ * (feet level) is open is preferred: it leads outside instead of into a pocket in the rock.
+ * Returns the two cells, feet first, or null.
  */
 export function planBreakout(
   blockAt: (cell: Vec3) => Block | null,
@@ -176,17 +185,24 @@ export function planBreakout(
   const up = new Vec3(0, 1, 0);
   const passable = (block: Block | null): boolean =>
     block !== null && (block.boundingBox === 'empty' || DIGGABLE_BLOCKS.has(block.name));
+  const dry = (cell: Vec3): boolean =>
+    ![cell, cell.plus(up), cell.minus(up), ...DIRECTIONS.map((d) => cell.plus(d))].some((c) =>
+      isFluid(blockAt(c)),
+    );
+  let fallback: [Vec3, Vec3] | null = null;
   for (const dir of DIRECTIONS) {
     const low = feet.plus(dir);
     const high = low.plus(up);
     const floor = blockAt(low.minus(up));
     if (!passable(blockAt(low)) || !passable(blockAt(high))) continue;
     if (floor === null || floor.boundingBox !== 'block') continue;
-    return [low, high];
+    if (!dry(low) || !dry(high)) continue;
+    const beyond = blockAt(low.plus(dir));
+    if (beyond !== null && beyond.boundingBox === 'empty') return [low, high];
+    fallback ??= [low, high];
   }
-  return null;
+  return fallback;
 }
-
 /** Dawn with no burrow state but a closed cell: dig out through an adjacent diggable block. */
 async function breakOut(ctx: ReflexContext): Promise<ReflexOutcome> {
   const { bot } = ctx;

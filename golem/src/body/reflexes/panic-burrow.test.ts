@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ActionRegistry } from '../../actions/registry.ts';
 import { allReflexesOn, ReflexRunner } from '../index.ts';
 import { MemorySink } from '../records.ts';
-import { panicBurrowReflex, pickSeal, planBurrow } from './panic-burrow.ts';
+import { panicBurrowReflex, pickSeal, planBreakout, planBurrow } from './panic-burrow.ts';
 import {
   GridWorld,
   gridBot,
@@ -186,8 +186,54 @@ describe('panic burrow: run', () => {
     world.set(new Vec3(1, 64, 0), 'diamond_ore');
     const { ctx } = setup(world);
     const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
-    expect(outcome).toEqual({ result: 'failed', detail: 'could not dig the pocket' });
+    // The plan refuses before the intent's action is cancelled: nothing to dig, nothing lost.
+    expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block' });
+    expect(ctx.cancels).toBe(0);
     expect(world.name(new Vec3(1, 64, 0))).toBe('diamond_ore');
+  });
+
+  it('refuses a sandstone wall at the plan, without cancelling the action', async () => {
+    const world = wallWorld();
+    world.fill(new Vec3(1, 64, -3), new Vec3(5, 67, 3), 'sandstone');
+    expect(planBurrow((cell) => world.blockAt(cell) as never, FEET)).toBeNull();
+    const { ctx } = setup(world);
+    const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
+    expect(outcome).toMatchObject({ result: 'abandoned' });
+    expect(ctx.cancels).toBe(0);
+  });
+
+  it('digs out toward the side that opens to the outside, not the first rock side', async () => {
+    const world = new GridWorld();
+    world.fill(new Vec3(-5, 62, -5), new Vec3(5, 67, 5), 'stone');
+    world.set(new Vec3(0, 64, 0), null);
+    world.set(new Vec3(0, 65, 0), null);
+    // Outside lies beyond the west side only: the cells two steps west are open.
+    world.set(new Vec3(-2, 64, 0), null);
+    world.set(new Vec3(-2, 65, 0), null);
+    const way = planBreakout((cell) => world.blockAt(cell) as never, FEET);
+    expect(way?.map((c) => c.toString())).toEqual(['(-1, 64, 0)', '(-1, 65, 0)']);
+    const { view, ctx } = setup(world);
+    view.enclosed = true;
+    view.isNight = false;
+    const outcome = await panicBurrowReflex.run({ phase: 'dawn', orphan: true }, ctx);
+    expect(outcome).toMatchObject({ result: 'handled' });
+    expect(world.name(new Vec3(-1, 64, 0))).toBe('air');
+    expect(world.name(new Vec3(1, 64, 0))).toBe('stone');
+  });
+
+  it('refuses a breakout cell that has water or lava next to it', () => {
+    const world = new GridWorld();
+    world.fill(new Vec3(-5, 62, -5), new Vec3(5, 67, 5), 'stone');
+    world.set(new Vec3(0, 64, 0), null);
+    world.set(new Vec3(0, 65, 0), null);
+    // Open outside beyond east, but lava sits behind it: east is refused, west is taken.
+    world.set(new Vec3(2, 64, 0), 'lava');
+    const way = planBreakout((cell) => world.blockAt(cell) as never, FEET);
+    expect(way?.[0].toString()).toBe('(-1, 64, 0)');
+    for (const cell of [new Vec3(-2, 64, 0), new Vec3(0, 64, 2), new Vec3(0, 64, -2)]) {
+      world.set(cell, 'water');
+    }
+    expect(planBreakout((cell) => world.blockAt(cell) as never, FEET)).toBeNull();
   });
 
   it('digs out at dawn when it is closed in and remembers no burrow', async () => {
