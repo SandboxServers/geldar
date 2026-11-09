@@ -34,6 +34,8 @@ export interface CreateBodyOptions {
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
    */
   nats?: Omit<NatsSinkOptions, 'lifeId' | 'worldTick'>;
+  /** Wraps the record sink under the tap (Adam's `RecentEvents` digest); `Body.records` stays the inner sink. */
+  wrapRecords?: (inner: RecordSink) => RecordSink;
   /**
    * Given, the running intent's checkpoint is saved to this bucket after each step and deleted
    * when the intent ends (`restart.ts` reads it back). Left out, nothing is saved.
@@ -91,7 +93,8 @@ export function createBody(options: CreateBodyOptions): Body {
           lifeId: options.lifeId,
           worldTick: () => runtime?.view.tick ?? 0,
         });
-  const tap = new WakeTap(records);
+  // The wrapper sees every record on its way to `records`; `records` stays the flushable sink.
+  const tap = new WakeTap(options.wrapRecords?.(records) ?? records);
   const checkpoints =
     options.checkpoints === undefined
       ? null
