@@ -87,6 +87,7 @@ export function sceneContext(
     lifeId: 'life-1',
     bodyGeneration: 1,
     tick: 100,
+    timeScale: 1,
     signal: new AbortController().signal,
     cancelAction: async () => {
       cancels += 1;

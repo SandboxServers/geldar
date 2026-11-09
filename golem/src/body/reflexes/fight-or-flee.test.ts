@@ -154,3 +154,61 @@ describe('fight_or_flee run', () => {
     expect(ctx.sink.wakes).toHaveLength(1);
   });
 });
+
+describe('fight_or_flee: who is blamed', () => {
+  it('ignores neutral mobs, and a spider by day', () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    for (const name of ['enderman', 'zombified_piglin']) {
+      scene.hostiles = [zombieAt(2, name)];
+      expect(fightOrFleeReflex.check(sceneView(scene))).toBeNull();
+    }
+    scene.hostiles = [zombieAt(2, 'spider')];
+    expect(fightOrFleeReflex.check(sceneView(scene))).not.toBeNull();
+    const day = sceneView(scene);
+    Object.defineProperty(day, 'isNight', { value: false });
+    expect(fightOrFleeReflex.check(day)).toBeNull();
+  });
+
+  it('needs the mob to be hitting the Body: in reach and facing', () => {
+    const scene = attackedScene();
+    scene.hostiles = [{ ...zombieAt(3), attacking: false }];
+    expect(fightOrFleeReflex.check(sceneView(scene))).toBeNull();
+    scene.hostiles = [
+      { ...zombieAt(3), attacking: false },
+      { ...zombieAt(3.5), attacking: true },
+    ];
+    expect(fightOrFleeReflex.check(sceneView(scene))).toMatchObject({ distance: 3.5 });
+  });
+
+  it('never fights a creeper, even armed: it runs', () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    scene.hostiles = [zombieAt(2, 'creeper')];
+    expect(fightOrFleeReflex.check(sceneView(scene))).toMatchObject({ armed: false });
+  });
+});
+
+describe('fight_or_flee: time scale', () => {
+  it('passes the runtime time scale to the attack action and to the flight', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    const seen: number[] = [];
+    const handler: ActionHandler<'attack'> = {
+      kind: 'attack',
+      timeoutMs: 1000,
+      run: async (actx) => {
+        seen.push(actx.timeScale);
+        return completed({ killed: true });
+      },
+    };
+    const ctx = sceneContext(scene, { timeScale: 3 });
+    ctx.registry.register(handler);
+    await fightOrFleeReflex.run(fire(scene), ctx);
+    expect(seen).toEqual([3]);
+
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    await fightOrFleeReflex.run(
+      fire(attackedScene()),
+      sceneContext(attackedScene(), { timeScale: 3 }),
+    );
+    expect(walk.mock.calls[0]?.[3]).toMatchObject({ timeScale: 3 });
+  });
+});

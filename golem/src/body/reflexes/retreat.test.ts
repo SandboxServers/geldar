@@ -81,3 +81,14 @@ describe('retreat run', () => {
     expect(ctx.sink.wakes).toHaveLength(1);
   });
 });
+
+describe('retreat: who counts as a danger', () => {
+  it('ignores a neutral mob close by', () => {
+    const scene = calmScene();
+    scene.health = 4;
+    scene.hostiles = [zombieAt(2, 'enderman')];
+    expect(retreatReflex.check(sceneView(scene))).toBeNull();
+    scene.hostiles = [zombieAt(2, 'enderman'), zombieAt(4)];
+    expect(retreatReflex.check(sceneView(scene))).toMatchObject({ hostile: 'zombie' });
+  });
+});

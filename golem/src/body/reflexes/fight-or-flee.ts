@@ -4,6 +4,7 @@ import { ActionRegistry, runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView, HostileView } from '../view.ts';
 import { deadline } from './deadline.ts';
+import { attackerOf, isSuicideMob } from './threats.ts';
 
 /** A hostile this close (blocks) that hurt the Body just now is the attacker. */
 const ATTACKER_RADIUS = 4;
@@ -30,8 +31,9 @@ function isArmed(view: BodyView): boolean {
 }
 
 /**
- * Fight or flee: a hostile hurts the Body (health dropped within the last second, the hostile within
- * 4 blocks). Armed (a sword or axe carried) with health above 6, it cancels what it was doing and
+ * Fight or flee: a hostile hurts the Body (health dropped within the last second, and a hostile
+ * that is not neutral stands within 4 blocks, in melee reach and facing the Body). Armed (a sword
+ * or axe carried) with health above 6, it cancels what it was doing and
  * fights that hostile with the `attack` action until it is gone or health falls to 6; otherwise it
  * runs from it. A flight, and a fight that ends on low health, raise a `reflex_danger` wake.
  */
@@ -42,13 +44,14 @@ export const fightOrFleeReflex: Reflex = {
   check(view: BodyView): Trigger | null {
     const hurt = view.ticksSinceHurt;
     if (hurt === null || hurt === undefined || hurt > HURT_WINDOW_TICKS) return null;
-    const hostile = view.nearbyHostiles(ATTACKER_RADIUS)[0];
+    const hostile = attackerOf(view, ATTACKER_RADIUS);
     if (!hostile) return null;
     return {
       health: view.health,
       hostile: hostile.name,
       distance: Math.round(hostile.distance * 10) / 10,
-      armed: isArmed(view),
+      // A creeper is never meleed: the Body runs from it.
+      armed: isArmed(view) && !isSuicideMob(hostile.name),
     };
   },
   async run(trigger: Trigger, ctx: ReflexContext): Promise<ReflexOutcome> {
@@ -69,7 +72,7 @@ async function fightHostile(
   ctx: ReflexContext,
   name: string,
 ): Promise<{ outcome: ReflexOutcome; lowHealth: boolean }> {
-  const limit = deadline(ctx.signal, FIGHT_LIMIT_MS);
+  const limit = deadline(ctx.signal, FIGHT_LIMIT_MS * ctx.timeScale);
   const own = new AbortController();
   let lowHealth = false;
   const forward = (): void => own.abort();
@@ -85,9 +88,7 @@ async function fightHostile(
       attackRegistry(ctx),
       ctx.bot,
       { do: 'attack', target: name },
-      {
-        signal: own.signal,
-      },
+      { signal: own.signal, timeScale: ctx.timeScale },
     );
     if (run.state === 'completed')
       return { outcome: { result: 'handled', detail: `killed ${name}` }, lowHealth };
@@ -115,7 +116,7 @@ async function flee(ctx: ReflexContext, name: string, why: string): Promise<Refl
   let outcome: ReflexOutcome = { result: 'failed', detail: `${why}: no way to run` };
   if (hostile) {
     const away = Math.atan2(here.z - hostile.position.z, here.x - hostile.position.x);
-    const limit = deadline(ctx.signal, FLIGHT_LIMIT_MS);
+    const limit = deadline(ctx.signal, FLIGHT_LIMIT_MS * ctx.timeScale);
     try {
       for (const turn of FLEE_TURNS) {
         if (limit.signal.aborted) break;
@@ -126,7 +127,7 @@ async function flee(ctx: ReflexContext, name: string, why: string): Promise<Refl
         };
         const move = await moveNear(ctx.bot, goal, FLEE_RANGE, {
           signal: limit.signal,
-          timeScale: 1,
+          timeScale: ctx.timeScale,
         });
         if (move.ok) {
           outcome = { result: 'handled', detail: `${why}: fled from ${name}` };

@@ -2,6 +2,7 @@ import { moveNear } from '../../actions/pathing.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { deadline } from './deadline.ts';
+import { dangers } from './threats.ts';
 
 /** Health at or below this, with a hostile close, starts the retreat (spec 5.2 row 2). */
 const RETREAT_HEALTH = 6;
@@ -24,7 +25,7 @@ export const retreatReflex: Reflex = {
   cooldownTicks: 200,
   check(view: BodyView): Trigger | null {
     if (view.health > RETREAT_HEALTH) return null;
-    const hostile = view.nearbyHostiles(HOSTILE_RADIUS)[0];
+    const hostile = dangers(view, HOSTILE_RADIUS)[0];
     if (!hostile) return null;
     return {
       health: view.health,
@@ -40,12 +41,12 @@ export const retreatReflex: Reflex = {
     if (spot === null) {
       outcome = { result: 'abandoned', detail: 'no safe spot known' };
     } else {
-      const limit = deadline(ctx.signal, RETREAT_LIMIT_MS);
+      const limit = deadline(ctx.signal, RETREAT_LIMIT_MS * ctx.timeScale);
       try {
         const aim = { x: spot.position.x + 0.5, y: spot.position.y, z: spot.position.z + 0.5 };
         const move = await moveNear(ctx.bot, aim, ARRIVE_RANGE, {
           signal: limit.signal,
-          timeScale: 1,
+          timeScale: ctx.timeScale,
         });
         if (move.ok) {
           outcome = { result: 'handled', detail: `reached the ${spot.kind}` };
