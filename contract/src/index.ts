@@ -8,15 +8,18 @@ import { validateSnapshot as validateSnapshotSchema } from './generated/validato
 
 export type { Snapshot } from './generated/types.ts';
 
-export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: string[] }; // "<instancePath> <message>", e.g. "/self/health must be <= 20"
+/**
+ * Validation outcome. Errors are "<instancePath> <message>", e.g. "/self/health must be <= 20".
+ */
+export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
 
 /** Formats one Ajv error; the property name of additionalProperties/required is appended when the message omits it. */
 function formatError(error: ErrorObject): string {
   const where = error.instancePath === '' ? '""' : error.instancePath;
   const params = error.params as Record<string, unknown>;
   const name = params.additionalProperty ?? params.missingProperty;
-  const suffix =
-    typeof name === 'string' && !(error.message ?? '').includes(name) ? ` '${name}'` : '';
+  const quoted = typeof name === 'string' ? `'${name}'` : '';
+  const suffix = quoted !== '' && !(error.message ?? '').includes(quoted) ? ` ${quoted}` : '';
   return `${where} ${error.message ?? 'is invalid'}${suffix}`;
 }
 

@@ -87,6 +87,15 @@ describe('validateSnapshot', () => {
     expect(result.errors.some((error) => error.includes('agent_id'))).toBe(true);
   });
 
+  it('rejects a missing revision and names it', () => {
+    const value = mutable();
+    delete value.revision;
+    const result = validateSnapshot(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes("'revision'"))).toBe(true);
+  });
+
   it('rejects an unknown top-level property and names it', () => {
     const value = mutable();
     value.foo = 'bar';
@@ -94,6 +103,15 @@ describe('validateSnapshot', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.some((error) => error.includes('foo'))).toBe(true);
+  });
+
+  it('names a short unknown property even though the Ajv message omits it', () => {
+    const value = mutable();
+    value.a = 1;
+    const result = validateSnapshot(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes("'a'"))).toBe(true);
   });
 });
 
