@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Block, Container, Position } from './bot-types.ts';
+import { transferItems } from './container-transfer.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -208,17 +209,14 @@ async function withdraw(
   }
   if (ctx.signal.aborted) return cancelled({ moved: 0 });
   const before = inventoryCount(container, itemId);
-  let error: string | null = null;
-  try {
-    await container.withdraw(itemId, null, count);
-  } catch (caught) {
-    error = errorText(caught);
-  }
-  // The window is the truth: the library moves what fits, then may throw. The server confirms it first.
+  const end = await transferItems(ctx, container, 'withdraw', itemId, count);
+  const error = end.error;
+  // The window is the truth: the transfer moves what fits, then may stop. The server confirms it first.
   if (!(await settle(ctx, container))) {
     return failed('internal', 'server did not confirm the withdraw', { moved: 0 });
   }
   const moved = inventoryCount(container, itemId) - before;
+  if (end.aborted) return cancelled({ moved });
   if (error !== null && !INVENTORY_FULL.test(error)) {
     return failed('internal', error, { moved });
   }
@@ -239,17 +237,14 @@ async function deposit(
     return failed('missing_materials', `inventory has only ${held} ${item}`, { moved: 0 });
   }
   if (ctx.signal.aborted) return cancelled({ moved: 0 });
-  let error: string | null = null;
-  try {
-    await container.deposit(itemId, null, count);
-  } catch (caught) {
-    error = errorText(caught);
-  }
-  // The window is the truth: the library moves what fits, then may throw. The server confirms it first.
+  const end = await transferItems(ctx, container, 'deposit', itemId, count);
+  const error = end.error;
+  // The window is the truth: the transfer moves what fits, then may stop. The server confirms it first.
   if (!(await settle(ctx, container))) {
     return failed('internal', 'server did not confirm the deposit', { moved: 0 });
   }
   const moved = held - inventoryCount(container, itemId);
+  if (end.aborted) return cancelled({ moved });
   if (error !== null && !CONTAINER_FULL.test(error)) {
     return failed('internal', error, { moved });
   }

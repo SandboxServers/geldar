@@ -109,7 +109,10 @@ describe('open, deposit and withdraw on 26.1', () => {
       expect(held(bot, 'cobblestone')).toBe(4);
 
       const short = await act(bot, { do: 'withdraw', at, item: 'cobblestone', count: 20 });
-      expect(short.result, JSON.stringify(short.result)).toMatchObject({ status: 'failed', reason: 'not_found' });
+      expect(short.result, JSON.stringify(short.result)).toMatchObject({
+        status: 'failed',
+        reason: 'not_found',
+      });
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 6]]));
       expect(held(bot, 'cobblestone')).toBe(4);
     });
@@ -124,7 +127,10 @@ describe('open, deposit and withdraw on 26.1', () => {
         'chest',
       );
       const run = await act(bot, { do: 'deposit', at, item: 'stick', count: 1 });
-      expect(run.result, JSON.stringify(run.result)).toMatchObject({ status: 'failed', reason: 'missing_materials' });
+      expect(run.result, JSON.stringify(run.result)).toMatchObject({
+        status: 'failed',
+        reason: 'missing_materials',
+      });
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map());
     });
   }, 180_000);
@@ -140,7 +146,10 @@ describe('open, deposit and withdraw on 26.1', () => {
       await ctl.give(BOT, 'cobblestone', 1);
       await bot.waitForTicks(10);
       const run = await act(bot, { do: 'deposit', at, item: 'cobblestone', count: 1 });
-      expect(run.result, JSON.stringify(run.result)).toMatchObject({ status: 'failed', reason: 'not_found' });
+      expect(run.result, JSON.stringify(run.result)).toMatchObject({
+        status: 'failed',
+        reason: 'not_found',
+      });
       expect(held(bot, 'cobblestone')).toBe(1);
     });
   }, 180_000);

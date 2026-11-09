@@ -7,6 +7,26 @@ import { moveNear } from './pathing.ts';
 import type { ActionContext } from './registry.ts';
 
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
+// The click protocol is covered by container-transfer.test.ts; here the fake container moves the items.
+vi.mock('./container-transfer.ts', () => ({
+  transferItems: async (
+    _ctx: unknown,
+    container: {
+      withdraw(id: number, meta: null, count: number): Promise<void>;
+      deposit(id: number, meta: null, count: number): Promise<void>;
+    },
+    direction: 'withdraw' | 'deposit',
+    id: number,
+    count: number,
+  ) => {
+    try {
+      await container[direction](id, null, count);
+      return { error: null, aborted: false };
+    } catch (caught) {
+      return { error: caught instanceof Error ? caught.message : String(caught), aborted: false };
+    }
+  },
+}));
 
 /** Item ids the fake registry knows, and their names. */
 const NAMES: Record<number, string> = { 1: 'cobblestone', 2: 'stick' };
