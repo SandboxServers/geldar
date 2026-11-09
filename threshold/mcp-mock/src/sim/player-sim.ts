@@ -85,21 +85,22 @@ export class PlayerSim {
     this.intentStartedMs = null;
   }
 
-  /** The clock time of the next scenario event, day/night boundary, hunger step or intent end. */
+  /**
+   * The clock time of the next scenario event, day/night boundary, hunger step or intent end. The
+   * half-day boundary and the hunger step always count, so a wait on `day_night` wakes at dusk even
+   * with no event or intent pending. Null only if the scenario yields no finite moment.
+   */
   nextScheduledMs(): number | null {
     const dayLen = this.scenario.day_length_seconds;
-    const ticks: number[] = [];
+    const ticks: number[] = [
+      nextMultiple(this.tick, HALF_DAY),
+      nextMultiple(this.tick, this.scenario.reflex.hunger_interval_ticks),
+    ];
     const ev = this.scenario.events[this.nextScenarioEvent];
     if (ev) ticks.push(ev.at_tick);
     if (this.current) ticks.push(intentEndTick(this.current));
-    // Dawn, dusk and hunger only matter while something else is live.
-    if (ticks.length > 0) {
-      ticks.push(nextMultiple(this.tick, HALF_DAY));
-      if (this.food > 0)
-        ticks.push(nextMultiple(this.tick, this.scenario.reflex.hunger_interval_ticks));
-    }
-    if (ticks.length === 0) return null;
-    return this.startMs + msAt(Math.min(...ticks), dayLen);
+    const ms = this.startMs + msAt(Math.min(...ticks), dayLen);
+    return Number.isFinite(ms) ? ms : null;
   }
 
   /** Plays the world forward to `nowMs`, one step per due moment in tick order. Never goes back. */

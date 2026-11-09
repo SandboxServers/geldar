@@ -146,9 +146,18 @@ describe('PlayerSim', () => {
 
   it('reports the next scheduled moment', () => {
     const sim = build();
-    expect(sim.nextScheduledMs()).toBeNull();
+    // No event and no intent: the next half-day boundary (dusk at 12000), not null.
+    expect(sim.nextScheduledMs()).toBe(12000);
     sim.syncTo(1000);
     sim.startIntent(intent(300), 1000);
     expect(sim.nextScheduledMs()).toBe(1300);
+  });
+
+  it('wakes at the next hunger step when it comes before dusk and nothing else is pending', () => {
+    const sim = build({ reflex: { hunger_interval_ticks: 5000, eat_below: 14 } });
+    sim.syncTo(1000);
+    expect(sim.nextScheduledMs()).toBe(5000);
+    sim.syncTo(13000);
+    expect(sim.nextScheduledMs()).toBe(15000);
   });
 });
