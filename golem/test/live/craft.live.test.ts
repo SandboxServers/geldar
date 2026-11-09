@@ -28,6 +28,52 @@ async function waitUnlocked(bot: Bot, name: string): Promise<boolean> {
   return hasUnlockedDisplay(bot, target);
 }
 
+/** Counts the recipes the server has unlocked for the bot since this call, from its recipe book packets. */
+function countRecipes(bot: Bot): () => number {
+  const known = new Set<number>();
+  const client = bot._client as unknown as {
+    on(event: string, fn: (packet: unknown) => void): void;
+  };
+  client.on('recipe_book_add', (packet) => {
+    const { replace, entries } = packet as {
+      replace: boolean;
+      entries: { recipe: { displayId?: number } }[];
+    };
+    if (replace) known.clear();
+    for (const { recipe } of entries) {
+      if (typeof recipe.displayId === 'number') known.add(recipe.displayId);
+    }
+  });
+  client.on('recipe_book_remove', (packet) => {
+    for (const id of (packet as { recipeIds?: number[] }).recipeIds ?? []) known.delete(id);
+  });
+  return () => known.size;
+}
+
+/**
+ * Sets up "this one recipe is not in the book while its ingredients are held". The ingredients come
+ * first because vanilla unlocks a recipe as soon as they are held; only then is that recipe taken.
+ * Asserts the precondition, naming the unlocked count and the held items on failure.
+ */
+async function lockRecipeAfterGive(
+  bot: Bot,
+  ctl: TestControl,
+  recipes: () => number,
+  gives: [item: string, count: number][],
+  recipe: string,
+): Promise<void> {
+  for (const [item, count] of gives) await ctl.give('GolemCraft', item, count);
+  await bot.waitForTicks(40);
+  await ctl.recipeTakeOne('GolemCraft', recipe);
+  await bot.waitForTicks(20);
+  const held: string[] = [];
+  for (const [item] of gives) held.push(`${item} x${await carried(ctl, 'GolemCraft', item)}`);
+  expect(
+    hasUnlockedDisplay(bot, targetOf(bot, recipe)),
+    `${recipe} still in the book after recipe take: ${recipes()} recipes unlocked; holds ${held.join(', ')}`,
+  ).toBe(false);
+}
+
 /** The craft target for an item name, from the 26.1 registry. */
 function targetOf(bot: Bot, name: string): TableTarget {
   const item = bot.registry.itemsByName[name];
@@ -112,11 +158,9 @@ describe('craft on 26.1', () => {
     await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
-      // The server keeps the book across connections: take the recipes back so the book path cannot run.
-      await ctl.recipeReset('GolemCraft');
-      await ctl.give('GolemCraft', 'oak_log', 2);
-      await bot.waitForTicks(40);
-      expect(hasUnlockedDisplay(bot, targetOf(bot, 'oak_planks'))).toBe(false);
+      // Holding logs unlocks planks in vanilla, so take just that recipe after the give.
+      const recipes = countRecipes(bot);
+      await lockRecipeAfterGive(bot, ctl, recipes, [['oak_log', 2]], 'oak_planks');
       const run = await craft(bot, 'oak_planks', 4);
       expect(run.state).toBe('completed');
       expect(run.result.detail).toMatchObject({ item: 'oak_planks', used_table: false });
@@ -230,12 +274,19 @@ describe('craft on 26.1', () => {
       const cz = arena.center.z;
       await clearDrops(ctl, cx, cz);
       await ctl.clear('GolemCraft');
-      // The server keeps the book across connections, so reset it first.
-      await ctl.recipeReset('GolemCraft');
+      const recipes = countRecipes(bot);
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
-      await ctl.give('GolemCraft', 'oak_planks', 3);
-      await ctl.give('GolemCraft', 'stick', 2);
-      await bot.waitForTicks(40);
+      // Holding the ingredients unlocks the recipe in vanilla, so take just that recipe after the give.
+      await lockRecipeAfterGive(
+        bot,
+        ctl,
+        recipes,
+        [
+          ['oak_planks', 3],
+          ['stick', 2],
+        ],
+        'wooden_pickaxe',
+      );
       const run = await craft(bot, 'wooden_pickaxe', 1);
       expect(run.state).toBe('failed');
       expect(run.result).toMatchObject({ status: 'failed', reason: 'not_possible' });
