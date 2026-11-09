@@ -143,4 +143,30 @@ describe('applyOverrides', () => {
     expect(o.wake.intent_run_too_long_seconds).toBe(9);
     expect(s.day_length_seconds).toBe(100);
   });
-});
+
+  it('rejects out-of-range overrides', () => {
+    const s = parseScenario(JSON.stringify(base()));
+    for (const bad of [0, Number.NaN, -5, Number.POSITIVE_INFINITY]) {
+      expect(() => applyOverrides(s, { dayLengthSeconds: bad })).toThrow(
+        'scenario: day_length_seconds: must be > 0',
+      );
+      expect(() => applyOverrides(s, { intentRunTooLongSeconds: bad })).toThrow(
+        'scenario: wake.intent_run_too_long_seconds: must be > 0',
+      );
+    }
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => applyOverrides(s, { minWakeSpacingSeconds: bad })).toThrow(
+        'scenario: wake.min_spacing_seconds: must be >= 0',
+      );
+    }
+    expect(applyOverrides(s, { minWakeSpacingSeconds: 0 }).wake.min_spacing_seconds).toBe(0);
+  });
+
+  it('the schema also rejects a zero or tiny day length', () => {
+    expect(() => parseScenario(JSON.stringify({ ...base(), day_length_seconds: 0 }))).toThrow(
+      'scenario: day_length_seconds',
+    );
+    expect(() => parseScenario(JSON.stringify({ ...base(), day_length_seconds: 0.0001 }))).toThrow(
+      'scenario: day_length_seconds',
+    );
+  });});

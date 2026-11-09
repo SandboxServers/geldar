@@ -4,6 +4,9 @@ import { z } from 'zod';
 const identifier = z.string().regex(/^[A-Za-z0-9_]{3,16}$/, 'must match ^[A-Za-z0-9_]{3,16}$');
 const position = z.strictObject({ x: z.int(), y: z.int(), z: z.int() });
 const atTick = z.int().min(1);
+/** Bounds for every duration in seconds, shared by the schema and the command-line overrides. */
+const MIN_SECONDS = 0.001;
+const MAX_SECONDS = 10_000_000;
 
 const character = z.strictObject({
   name: identifier,
@@ -60,7 +63,7 @@ const event = z.discriminatedUnion('type', [
 
 const scenarioSchema = z.strictObject({
   name: z.string(),
-  day_length_seconds: z.number().gt(0).default(2400),
+  day_length_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(2400),
   character,
   neighbours: z.array(z.strictObject({ name: identifier, position })).default([]),
   books: z.array(book).default([]),
@@ -77,8 +80,8 @@ const scenarioSchema = z.strictObject({
     }),
   wake: z
     .strictObject({
-      min_spacing_seconds: z.number().min(0).default(20),
-      intent_run_too_long_seconds: z.number().gt(0).default(300),
+      min_spacing_seconds: z.number().min(0).max(MAX_SECONDS).default(20),
+      intent_run_too_long_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(300),
     })
     .prefault({}),
   intent: z.strictObject({ default_ticks: z.int().min(1).default(600) }).prefault({}),
@@ -120,14 +123,25 @@ export interface ScenarioOverrides {
   intentRunTooLongSeconds?: number;
 }
 
-/** Returns a copy of `s` with the given overrides applied. */
+function checkSeconds(name: string, value: number | undefined, min: number): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isFinite(value) || value < min || value > MAX_SECONDS) {
+    const lower = min > 0 ? '> 0' : '>= 0';
+    throw new Error(`scenario: ${name}: must be ${lower} and finite, at most ${MAX_SECONDS}`);
+  }
+  return value;
+}
+
+/** Returns a deep copy of `s` with the given overrides applied; throws on an out-of-range override. */
 export function applyOverrides(s: Scenario, o: ScenarioOverrides): Scenario {
-  return {
-    ...s,
-    day_length_seconds: o.dayLengthSeconds ?? s.day_length_seconds,
-    wake: {
-      min_spacing_seconds: o.minWakeSpacingSeconds ?? s.wake.min_spacing_seconds,
-      intent_run_too_long_seconds: o.intentRunTooLongSeconds ?? s.wake.intent_run_too_long_seconds,
-    },
-  };
+  const copy = structuredClone(s);
+  copy.day_length_seconds =
+    checkSeconds('day_length_seconds', o.dayLengthSeconds, MIN_SECONDS) ?? copy.day_length_seconds;
+  copy.wake.min_spacing_seconds =
+    checkSeconds('wake.min_spacing_seconds', o.minWakeSpacingSeconds, 0) ??
+    copy.wake.min_spacing_seconds;
+  copy.wake.intent_run_too_long_seconds =
+    checkSeconds('wake.intent_run_too_long_seconds', o.intentRunTooLongSeconds, MIN_SECONDS) ??
+    copy.wake.intent_run_too_long_seconds;
+  return copy;
 }
