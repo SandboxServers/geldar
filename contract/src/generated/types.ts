@@ -292,9 +292,15 @@ export type Action =
       /**
        * The proposed value. Any JSON value; the rule decides what is valid.
        */
-      value: {
-        [k: string]: unknown;
-      };
+      value:
+        | {
+            [k: string]: unknown;
+          }
+        | unknown[]
+        | string
+        | number
+        | boolean
+        | null;
       reason: string;
     }
   | {

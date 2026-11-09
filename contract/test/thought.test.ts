@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateThought } from '../src/index.ts';
+import { type Action, validateThought } from '../src/index.ts';
 
 /** The Appendix C intent, with a valid skill-style program name. */
 const intent = {
@@ -145,6 +145,99 @@ describe('validateThought', () => {
     const result = validateThought(
       withActions([{ do: 'write_book', title: 'Both', skill_id: 'sk_farm_01', text: 'Text.' }]),
     );
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a write_book with neither skill_id nor text', () => {
+    const result = validateThought(withActions([{ do: 'write_book', title: 'Neither' }]));
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a write_book skill_id longer than 64 characters', () => {
+    const result = validateThought(
+      withActions([{ do: 'write_book', title: 'Long', skill_id: 'k'.repeat(65) }]),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('accepts a build of 512 blocks, the maximum', () => {
+    const blocks = Array.from({ length: 512 }, (_, i) => ({
+      block: 'oak_planks',
+      dx: i % 16,
+      dy: 0,
+      dz: Math.floor(i / 16),
+    }));
+    const result = validateThought(
+      withActions([{ do: 'build', blueprint: { name: 'big_shelter', blocks } }]),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a build of 513 blocks', () => {
+    const blocks = Array.from({ length: 513 }, () => ({
+      block: 'oak_planks',
+      dx: 0,
+      dy: 0,
+      dz: 0,
+    }));
+    const result = validateThought(
+      withActions([{ do: 'build', blueprint: { name: 'too_big', blocks } }]),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a build offset outside -256..256', () => {
+    const result = validateThought(
+      withActions([
+        {
+          do: 'build',
+          blueprint: { name: 'far_wall', blocks: [{ block: 'oak_planks', dx: 257, dy: 0, dz: 0 }] },
+        },
+      ]),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('accepts a propose with a dotted rule name', () => {
+    const result = validateThought(
+      withActions([
+        { do: 'propose', rule: 'gamerule.mobGriefing', value: true, reason: 'Protect the field.' },
+      ]),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('accepts a propose with a free-text rule', () => {
+    const result = validateThought(
+      withActions([
+        {
+          do: 'propose',
+          rule: 'no stealing from chests near spawn',
+          value: 'enforce',
+          reason: 'Trust.',
+        },
+      ]),
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  it('types propose.value so a boolean is accepted at compile time', () => {
+    const a: Action = { do: 'propose', rule: 'x', value: false, reason: 'y' };
+    const result = validateThought(withActions([a]));
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a thought with an extra top-level property', () => {
+    const result = validateThought({ reasoning: 'Extra.', say: 'Hi.', mood: 'happy' });
+    expect(result.ok).toBe(false);
+  });
+
+  it.each([
+    ['open', { do: 'open', at: { x: 1, y: 64, z: 2 }, item: 'wheat' }],
+    ['deposit', { do: 'deposit', at: { x: 1, y: 64, z: 2 }, item: 'wheat', count: 1, slot: 3 }],
+    ['withdraw', { do: 'withdraw', at: { x: 1, y: 64, z: 2 }, item: 'wheat', count: 1, slot: 3 }],
+  ])('rejects a %s action with an extra field', (_verb, action) => {
+    const result = validateThought(withActions([action]));
     expect(result.ok).toBe(false);
   });
 });
