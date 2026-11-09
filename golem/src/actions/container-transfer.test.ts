@@ -25,6 +25,8 @@ interface Options {
   closeAtClick?: number;
   /** From this 1-based click on, the server silently ignores every click. */
   ignoreFrom?: number;
+  /** The action context's time scale; the barrier waits 3000 ms times this. Default 0.01. */
+  timeScale?: number;
   /** A stack the server already has on the cursor when the window opens. */
   startCursor?: Cell;
   /** Runs after each non-sync click is written (the number of clicks so far). */
@@ -148,7 +150,7 @@ function rig(chest: Cell[], opts: Options = {}) {
     registry: { items: { 1: { stackSize: STACK } } },
   } as unknown as Bot & { currentWindow?: unknown };
   const controller = new AbortController();
-  const ctx: ActionContext = { bot, signal: controller.signal, timeScale: 0.01 };
+  const ctx: ActionContext = { bot, signal: controller.signal, timeScale: opts.timeScale ?? 0.01 };
   return {
     ctx,
     bot,
@@ -242,9 +244,12 @@ describe('transferItems', () => {
   });
 
   it('survives a late sync answer: the owed answer is swallowed, not taken for the next barrier', async () => {
-    const r = rig([{ type: 1, count: 10 }], { lateSync: { n: 2, ms: 40 } });
+    // The barrier waits 120 ms; the answer comes at 200 ms, inside the retry barrier's window (240 ms).
+    const r = rig([{ type: 1, count: 10 }], { lateSync: { n: 2, ms: 200 }, timeScale: 0.04 });
     const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
     expect(end).toEqual({ error: null, aborted: false });
+    // The opening sync, six clicks and one retry: a late answer must not cost another barrier.
+    expect(r.log.filter((l) => l === 'sync').length).toBe(8);
     expect(r.server[0]).toEqual({ type: 1, count: 6 });
     expect(total(r.server, CHEST, SIZE)).toBe(4);
     expect(r.cursor()).toBeNull();
