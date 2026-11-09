@@ -170,13 +170,20 @@ function defaultManager(
  * With `requestedRuns`, a 20 TPS cell that played fewer runs (the time limit hit) is truncated: it
  * cannot pass the gate, and a failure among the runs it did play still shows as FAIL.
  */
-export function gateLine(cells: CellResult[], requestedRuns = 0): string {
+export function gateLine(
+  cells: CellResult[],
+  requestedRuns = 0,
+  scenarios: string[] = [],
+  requested20 = false,
+): string {
   const at20 = cells.filter((c) => c.tps === 20);
-  if (at20.length === 0) return 'GATE: n/a (no 20 TPS cell ran)';
+  if (at20.length === 0 && !requested20) return 'GATE: n/a (no 20 TPS cell ran)';
   const failing = at20.filter((c) => c.runs > 0 && c.passed < c.runs).map((c) => c.scenario);
   if (failing.length > 0) return `GATE: FAIL (${failing.join(', ')})`;
+  // A requested scenario whose 20 TPS cell never started cannot pass: the time limit cut it off.
+  const missing = requested20 && scenarios.some((s) => !at20.some((c) => c.scenario === s));
   const cutOff = at20.some((c) => c.runs === 0 || c.runs < requestedRuns);
-  return cutOff ? 'GATE: INCOMPLETE (truncated)' : 'GATE: PASS';
+  return missing || cutOff ? 'GATE: INCOMPLETE (truncated)' : 'GATE: PASS';
 }
 
 /** One table line per cell, with a warning when the average tick time is over 110% of target. */
@@ -341,7 +348,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     if (truncated) out('truncated: true (stopped before every run started)');
     out(`results: ${written.file}`);
     if (written.recordedFile) out(`recorded: ${written.recordedFile}`);
-    out(gateLine(cells, options.runs));
+    out(gateLine(cells, options.runs, options.scenarios, options.tps.includes(20)));
     return 0;
   } catch (error) {
     err(error instanceof Error ? (error.stack ?? error.message) : String(error));

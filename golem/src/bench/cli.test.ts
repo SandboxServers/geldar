@@ -88,6 +88,14 @@ describe('gateLine', () => {
     );
   });
 
+  it('is incomplete when a requested scenario has no 20 TPS cell', () => {
+    const cells = [cellOf({ scenario: 'food', runs: 2, passed: 2 })];
+    expect(gateLine(cells, 2, ['food', 'bed'], true)).toBe('GATE: INCOMPLETE (truncated)');
+    expect(gateLine([], 2, ['food'], true)).toBe('GATE: INCOMPLETE (truncated)');
+    const both = [...cells, cellOf({ scenario: 'bed', runs: 2, passed: 2 })];
+    expect(gateLine(both, 2, ['food', 'bed'], true)).toBe('GATE: PASS');
+  });
+
   it('is n/a without a 20 TPS cell', () => {
     expect(gateLine([cellOf({ tps: 5 })])).toMatch(/n\/a/);
   });
