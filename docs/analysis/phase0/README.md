@@ -24,10 +24,10 @@ Packets: [work-packets.md](work-packets.md). Resume card: [RESUME.md](RESUME.md)
 | D-P0-05 | Exact pins, two-week minimum, security-only Dependabot | Accepted | — | [0005](../../decisions/0005-pinning-and-security-updates.md) |
 | D-P0-06 | Toolchain: pnpm, TypeScript 7, Biome, Vitest | Accepted | — | [0006](../../decisions/0006-typescript-toolchain.md) |
 | D-P0-07 | **Minecraft version and the pinned body stack.** Mineflayer 4.39.0 is tested up to 26.1, but `mineflayer-pathfinder` (2.4.5) hasn't released since 2023. Candidates: 26.1 (newest Mineflayer tests) or 1.21.11 (longer plugin track record). Proposal: P0-07 smoke-tests 26.1 with the pinned plugins; fall back to 1.21.11 if digging, pathing or eating misbehave. | **Owner** | P0-06, wave 2 | — |
-| D-P0-08 | **Does Phase 0 run Velocity?** Spec section 10 says Velocity "doesn't exist yet" in Phase 0, but the same paragraph builds "the bot ingress", which Appendix F defines as a Velocity plugin. Proposal: Phase 0 connects the Body straight to Paper (offline mode, bound to localhost) and the bot-ingress identity check moves to Phase 1. | **Owner** | wave 3 | — |
-| D-P0-09 | Generator tools: `json-schema-to-typescript` for types, Ajv standalone for precompiled validators | Proposed (orchestrator) | P0-01 | — |
-| D-P0-10 | Receipts: every action writes one; economic actions write two phases (`prepared`, then `committed` or `aborted`), the rest write one final receipt | Proposed (orchestrator) | P0-03 | — |
-| D-P0-11 | Migrations: numbered SQL files in `sql/`, applied by Postgres init on a fresh volume in Phase 0; a migration runner when the first schema change hits a live database | Proposed (orchestrator) | P0-05 | — |
+| D-P0-08 | **Does Phase 0 run Velocity?** Spec section 10 says Velocity "doesn't exist yet" in Phase 0, but the same paragraph builds "the bot ingress", which Appendix F defines as a Velocity plugin. Proposal: Phase 0 connects the Body straight to Paper (offline mode, bound to localhost) and the bot-ingress identity check moves to Phase 1. | **Owner** | P0-06 | — |
+| D-P0-09 | Generator tools: `json-schema-to-typescript` for types, Ajv standalone for precompiled validators | Accepted (orchestrator) | P0-01 | work-packets.md § Contract |
+| D-P0-10 | Receipts: every action writes one; economic actions write two phases (`prepared`, then `committed` or `aborted`), the rest write one final receipt; `(action_id, phase)` unique, which changes Appendix D | Accepted | P0-03, P0-05 | [0011](../../decisions/0011-receipts.md) |
+| D-P0-11 | Migrations: numbered SQL files in `sql/`, applied by Postgres init on a fresh volume in Phase 0; a migration runner when the first schema change hits a live database | Accepted (orchestrator) | P0-05 | `sql/README.md` (P0-05) |
 | D-P0-12 | Embedding model for `memories.embedding vector(768)`: `nomic-embed-text` through Ollama (768 dimensions) | Open | wave 5 | — |
 | D-P0-13 | Observatory edge (spec 13, 2a, "decide before Phase 0"): deferred to Phase 2, since Phase 0 exposes nothing | Proposed (orchestrator) | Phase 2 | — |
 
@@ -38,12 +38,12 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | Packet | Wave | Title | Implementer | Status | Depends on | PR |
 |---|---|---|---|---|---|---|
 | P0-00 | 1 | Threat model (`docs/threat-model.md`) | Sonnet (general-purpose) | Ready | — | |
-| P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Ready | D-P0-09 | |
+| P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Ready | — | |
 | P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | BlockedDependency | P0-01 | |
-| P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | BlockedDependency | P0-01, D-P0-10 | |
+| P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | BlockedDependency | P0-01 | |
 | P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | BlockedDependency | P0-01 | |
-| P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Ready | D-P0-11 | |
-| P0-06 | 1 | `compose/phase0.yml` and `shards/phase0.yaml`, healthy stack | packet-coder | BlockedDecision | P0-05, D-P0-07 | |
+| P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Ready | — | |
+| P0-06 | 1 | `compose/phase0.yml` and `shards/phase0.yaml`, healthy stack | packet-coder | BlockedDecision | P0-05, D-P0-07, D-P0-08 | |
 | P0-07 | 2 | `golem/` skeleton: connect, reconnect, RCON test control | written at wave 1 close | BlockedDependency | P0-06 | |
 | P0-08 | 2 | Body actions A: goto, gather, craft, with action results | written at wave 1 close | BlockedDependency | P0-07 | |
 | P0-09 | 2 | Body actions B: place, eat, sleep, chest open/deposit/withdraw | written at wave 1 close | BlockedDependency | P0-07 | |

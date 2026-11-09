@@ -25,11 +25,11 @@ The repo follows spec section 6.6, created one directory at a time as Phase 0 ne
 Needs Node 22 (`.nvmrc`), PowerShell 7, Docker, and for later packets Java and Ollama.
 
 ```powershell
-corepack pnpm install          # pnpm's version is pinned in package.json
+./geldar.ps1 setup             # pnpm install, using the pnpm version pinned in package.json
 ./geldar.ps1 check             # everything CI runs
 ```
 
-To get a plain `pnpm` command, run `corepack enable pnpm` as admin, or without admin `corepack enable pnpm --install-directory <a folder on your PATH>`.
+pnpm doesn't need to be installed: `geldar.ps1` gets the pinned version through corepack, and `./geldar.ps1 pnpm <args>` runs any pnpm command with it. For a plain `pnpm` command, run `corepack enable pnpm` as admin, or without admin `corepack enable pnpm --install-directory <a folder on your PATH>`.
 
 ## Working here
 

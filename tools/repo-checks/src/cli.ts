@@ -1,4 +1,9 @@
-/** Repo hygiene gate: fails on files over the hard line cap or CRLF in the index. */
+/**
+ * Repo hygiene gate: fails on files over the hard line cap or on CRLF in the
+ * index. Line caps cover untracked, not-ignored files too, so a new file fails
+ * locally before it is staged. Untracked CRLF needs no check: `.gitattributes`
+ * (`text=auto eol=lf`) converts it to LF when the file is added.
+ */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
@@ -8,21 +13,28 @@ function git(args: string[]): string {
   return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
-const tracked = git(['ls-files', '-z'])
-  .split('\0')
-  .filter((path) => path !== '');
+function listFiles(args: string[]): string[] {
+  return git(['ls-files', '-z', ...args])
+    .split('\0')
+    .filter((path) => path !== '');
+}
 
-const files = tracked.flatMap((path) => {
-  try {
-    return [{ path, text: readFileSync(path, 'utf8') }];
-  } catch {
-    return []; // deleted in the working tree but still in the index
-  }
-});
+function readFiles(paths: string[]): { path: string; text: string }[] {
+  return paths.flatMap((path) => {
+    try {
+      return [{ path, text: readFileSync(path, 'utf8') }];
+    } catch {
+      return []; // deleted in the working tree but still in the index
+    }
+  });
+}
+
+const tracked = readFiles(listFiles(['--cached']));
+const untracked = readFiles(listFiles(['--others', '--exclude-standard']));
 
 let failed = false;
 
-for (const finding of checkFileCaps(files)) {
+for (const finding of checkFileCaps([...tracked, ...untracked])) {
   const cap = finding.level === 'hard' ? HARD_CAP : SOFT_CAP;
   const tag = finding.level === 'hard' ? 'error' : 'warning';
   console.log(`${tag}: ${finding.path} has ${finding.lines} lines (cap ${cap})`);

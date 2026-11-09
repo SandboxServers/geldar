@@ -15,7 +15,7 @@ Review adversarially:
 - Spec drift: anything the packet or `docs/spec.md` required that is missing, and anything changed that was not asked for (scope creep belongs in `docs/ideas.md`).
 - Tests: does each test fail if the change is reverted? A test that would pass either way is theatre: say so. Missing tests the packet listed.
 - Contract: schema changes made in `contract/` and regenerated, never hand-edited generated code; the generated output matches the schema.
-- Repo rules: exact version pins (npm, Gradle, images by digest, actions by SHA); prompt changes in `prompts/` with a version bump; files under 700 lines; no `utils.ts`/`helpers.ts`; LF endings; no secrets, IPs or account names; nothing that lets a human act inside the world (spec Principle 1).
+- Repo rules: exact version pins (npm, Gradle, images by digest, actions by SHA); prompt changes in `prompts/` with a version bump; files under 700 lines; no `utils.ts`/`helpers.ts`; LF endings; no secrets, account names, or non-loopback IPs; nothing that lets a human act inside the world (spec Principle 1).
 - Interaction with code outside the diff: callers, other components that consume the same contract or NATS subject, existing tests the change silently invalidates.
 
 Use `git -C <worktree> diff <range>` and `git -C <worktree> show` (PowerShell) and Read/Grep. You may run read-only commands such as `pnpm test` or `pnpm typecheck` to confirm a finding. Verify each finding against the code before reporting it; drop anything you cannot point to.

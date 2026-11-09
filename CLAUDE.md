@@ -11,12 +11,14 @@ The design is [docs/spec.md](docs/spec.md). Current work is Phase 0 ("Adam", spe
 - **A behavior change needs a test that fails when the change is reverted.** Check that it does before you call it done.
 - **Files: soft cap 500 lines, hard cap 700** (code and config; Markdown and generated code are exempt). Split along natural seams; no `utils.ts` or `helpers.ts` dumping grounds. `pnpm check:repo` enforces the hard cap.
 - **LF line endings everywhere** (`.gitattributes`), except `*.bat`/`*.cmd`.
-- **No secrets, IPs or account names in the repo.** It is public. `.env` files are gitignored; commit a `.env.example`.
+- **No secrets, account names, or public or private-network IPs in the repo** (`127.0.0.1` is fine). It is public. `.env` files are gitignored; commit a `.env.example`.
 - **Principle 1 holds in code too:** nothing we build lets a human act inside the world (spec section 2).
 
 ## Commands
 
 ```powershell
+./geldar.ps1 setup                 # pnpm install with the pinned pnpm
+./geldar.ps1 pnpm <args>           # pnpm with the pinned version on PATH, when pnpm isn't installed
 ./geldar.ps1 check                 # everything CI runs: biome, typecheck, vitest, repo checks, contract drift, compose config, gradle
 ./geldar.ps1 shard up phase0       # the spec's `make shard ... up`
 ./geldar.ps1 bench                 # body benchmark

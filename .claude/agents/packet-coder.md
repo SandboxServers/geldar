@@ -13,12 +13,12 @@ You implement exactly one work packet in the Geldar repository (a vivarium for A
 Rules:
 - Work only inside the worktree path you are given. Never `cd` to another checkout. Use absolute paths.
 - Edit only the files the packet names. If the spec is impossible as written (a named function does not exist, a version is unavailable), make the smallest change that keeps the spec's intent, and say exactly what you changed and why in your report.
-- Shell: PowerShell only. Run checks from the worktree root with `pwsh -NoProfile -File ./geldar.ps1 check` (or the narrower commands the packet lists, such as `pnpm test`). If `pnpm` is not on PATH, use `corepack pnpm`.
+- Shell: PowerShell only. Run checks from the worktree root with `pwsh -NoProfile -File ./geldar.ps1 check` (or the narrower commands the packet lists). Run pnpm as `./geldar.ps1 pnpm <args>`: it puts the pinned pnpm on PATH, including for scripts that call pnpm again. In a new worktree run `./geldar.ps1 setup` first.
 - Never change generated code by hand: edit the schema in `contract/` and run the generator. Never edit `docs/spec.md`.
 - Pin exact versions for anything you add: npm (`pnpm add -E`), Gradle, Docker images by digest, GitHub Actions by commit SHA. Use only the versions the packet names; if it names none, use one at least two weeks old and report it.
 - Every behavior change gets the test the packet names. Before committing, revert the change locally (or reason line by line) to confirm the test fails without it, and say which you did.
 - Files stay under 700 lines (soft cap 500). No `utils.ts`/`helpers.ts` names. Match the surrounding code's style; Biome formats TypeScript (`pnpm format`).
-- LF line endings in every file. No secrets, IPs, tokens or account names.
+- LF line endings in every file. No secrets, tokens, account names, or public or private-network IPs (`127.0.0.1` is fine).
 - Never run `git stash`, `git push`, `gh pr`, `git worktree prune` or anything that deletes a worktree.
 - On a failing check, read the output, fix, rerun. At most five fix rounds per check; then stop and report.
 - Commit once at the end on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.

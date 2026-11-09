@@ -2,19 +2,20 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** PR 1 (repo scaffolding, agent setup, CI, this campaign folder) is open. No packet has been dispatched.
+**State (2026-11-08):** the scaffold PR (GitHub #2: repo setup, agent setup, CI, this campaign folder) is open. Already done in repo settings: `main` is protected (PR required, required check `ci gate`, no force-push or deletion; admins can bypass), Dependabot alerts and security updates are on. No packet has been dispatched.
 
-**Current wave:** 1, the contract and a healthy stack (ships as PR 2).
+**Current wave:** 1, the contract and a healthy stack (ships as the wave 1 PR).
 
 **In flight:** nothing.
 
-**Next action, after PR 1 merges:**
+**Next action, after the scaffold PR merges:**
 
-1. Ask the owner D-P0-07 (Minecraft version) and D-P0-08 (Velocity in Phase 0). Settle D-P0-09, D-P0-10, D-P0-11 as proposed unless the owner objects.
-2. Dispatch in parallel: P0-00 (threat model, Sonnet), P0-01 (contract), P0-05 (sql).
-3. When P0-01 has `ship`, dispatch P0-02, P0-03, P0-04 in parallel on top of it.
-4. When P0-05 has `ship` and D-P0-07 is settled, dispatch P0-06 with the version, Paper build and Ollama model tags filled in.
-5. Wave review, then ship wave 1 as one PR from an integration branch `phase0/wave1`.
+1. Ask the owner D-P0-07 (Minecraft version) and D-P0-08 (Velocity in Phase 0).
+2. Create `phase0/wave1` from `main` and push it. Packet worktrees branch from it (work-packets.md, wave 1 intro).
+3. Dispatch in parallel: P0-00 (threat model, Sonnet), P0-01 (contract), P0-05 (sql).
+4. When P0-01 has `ship`, merge it into `phase0/wave1`, then dispatch P0-02, P0-03, P0-04 in parallel from there. Resolve their `contract/src/index.ts` and generated-file conflicts at merge as work-packets.md § Contract says.
+5. When P0-05 has `ship` and D-P0-07 and D-P0-08 are settled, dispatch P0-06 with the version, Paper build and Ollama model tags filled in.
+6. Wave review, then one PR from `phase0/wave1` to `main`.
 
 **Open owner decisions:** D-P0-07, D-P0-08.
 

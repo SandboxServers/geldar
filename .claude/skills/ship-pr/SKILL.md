@@ -11,9 +11,11 @@ Ported from Cimmeria's `ship-pr`, without its build lane and merge queue: Geldar
 
 ```powershell
 git fetch origin
-git worktree add .claude/worktrees/<name> -b <branch> origin/main   # e.g. phase0/p0-01-contract p0-01
-cd .claude/worktrees/<name>; pnpm install --frozen-lockfile
+git worktree add .claude/worktrees/<name> -b <branch> origin/main   # e.g. fix/caps-message caps-fix
+cd .claude/worktrees/<name>; ./geldar.ps1 setup                    # pnpm install with the pinned pnpm
 ```
+
+A campaign packet branches from its wave's integration branch instead of `origin/main` (for example `origin/phase0/wave1`), as its packet section says. Run pnpm as `./geldar.ps1 pnpm <args>` when `pnpm` isn't on PATH.
 
 One worktree per worker; never two implementers in one checkout. Branch names: `phase0/<packet>-<slug>` for campaign packets, `feat/`, `fix/`, `docs/`, `chore/` otherwise. Never commit to `main` directly: it is protected.
 

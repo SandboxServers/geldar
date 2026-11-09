@@ -15,10 +15,6 @@ describe('isCapped', () => {
     expect(isCapped('contract/generated/types.ts')).toBe(false);
     expect(isCapped('pnpm-lock.yaml')).toBe(false);
   });
-
-  it('ignores dots in directory names', () => {
-    expect(isCapped('.github/CODEOWNERS')).toBe(false);
-  });
 });
 
 describe('countLines', () => {

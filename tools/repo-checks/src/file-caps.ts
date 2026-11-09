@@ -36,7 +36,6 @@ export interface CapFinding {
 export function isCapped(path: string): boolean {
   if (EXEMPT_PATTERNS.some((pattern) => pattern.test(path))) return false;
   const dot = path.lastIndexOf('.');
-  if (dot <= path.lastIndexOf('/')) return false;
   return CAPPED_EXTENSIONS.has(path.slice(dot).toLowerCase());
 }
 

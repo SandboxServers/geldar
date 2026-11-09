@@ -7,6 +7,8 @@ Geldar task runner: local checks, shard lifecycle and the body benchmark.
 The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
 `./geldar.ps1 shard up baseline`. Runs on PowerShell 7 on Windows and Linux.
 
+  ./geldar.ps1 setup                 Install workspace dependencies (frozen lockfile)
+  ./geldar.ps1 pnpm <args...>        Run pnpm with the pinned version on PATH, nested calls included
   ./geldar.ps1 check                 Every check CI runs, in CI's order
   ./geldar.ps1 shard up <name>       Start compose/<name>.yml and wait until healthy
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
@@ -30,9 +32,10 @@ $Root = $PSScriptRoot
 # under node_modules/, which is gitignored.
 if (-not (Get-Command pnpm -CommandType Application -ErrorAction SilentlyContinue)) {
   $shimDir = Join-Path $Root 'node_modules/.corepack-bin'
-  if (-not (Test-Path $shimDir)) {
+  if (-not (Get-ChildItem -Path $shimDir -Filter 'pnpm*' -ErrorAction SilentlyContinue)) {
     New-Item -ItemType Directory -Force $shimDir | Out-Null
     corepack enable pnpm --install-directory $shimDir
+    if ($LASTEXITCODE -ne 0) { throw "corepack could not create a pnpm shim in $shimDir" }
   }
   $env:PATH = $shimDir + [IO.Path]::PathSeparator + $env:PATH
 }
@@ -93,6 +96,8 @@ function Invoke-Bench([string[]] $BenchArgs) {
 }
 
 switch ($Command) {
+  'setup' { Push-Location $Root; try { Invoke-Step 'pnpm install' { pnpm install --frozen-lockfile } } finally { Pop-Location } }
+  'pnpm' { Push-Location $Root; try { pnpm @Rest; exit $LASTEXITCODE } finally { Pop-Location } }
   'check' { Invoke-Check }
   'shard' { Invoke-Shard $Rest }
   'bench' { Invoke-Bench $Rest }

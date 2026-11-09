@@ -42,7 +42,7 @@ Waves hold about four to six packets that one reviewer can hold at once. A wave 
 
 ## 3. Dispatch a wave
 
-1. Create one worktree per packet (`ship-pr` skill § 1).
+1. Create the wave's integration branch from `main` (`phase0/wave<N>`) and push it. Create one worktree per packet from that branch (`ship-pr` skill § 1, with `origin/phase0/wave<N>` as the start point). Merge each packet branch into the wave branch with `git merge --no-ff` once its review says `ship`; packets that build on another branch from the wave branch after that merge.
 2. Dispatch every independent packet of the wave in one message, in the background. Each brief stays under about 25 lines: the worktree path; the packet section (file and heading, not its text); the report path `<worktree>/.claude/reports/<campaign>/<packet>-<role>.md` (role `coder`, `review-<N>`, `fix-<N>`); the commit message with attribution lines; and the one-line return `<packet> <done|blocked|failed> <commit-sha|-> <report-path>`.
 3. On each return, update the ledger row. Open the report only on `blocked`, `failed` or a `decision` verdict.
 

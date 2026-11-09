@@ -24,3 +24,4 @@ Name records `NNNN-short-slug.md`, numbered in order. A record is never rewritte
 | [0004](0004-phase0-repo-layout.md) | Phase 0 code lives in this one repo | Accepted |
 | [0005](0005-pinning-and-security-updates.md) | Exact pins, two-week minimum age, Dependabot security updates only | Accepted |
 | [0006](0006-typescript-toolchain.md) | pnpm, TypeScript 7, Biome and Vitest | Accepted |
+| [0011](0011-receipts.md) | Every action gets a receipt; economic actions get two | Accepted |

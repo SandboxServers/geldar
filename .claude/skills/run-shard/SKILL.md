@@ -18,15 +18,19 @@ Usable once packet P0-06 has added `compose/phase0.yml`; until then `./geldar.ps
 
 ## Health: what "healthy" means
 
-Every row must pass before a benchmark or an Adam run. Report each one, not just "it's up".
+Every row must pass before a benchmark or an Adam run. Report each one, not just "it's up". The `dc` commands below assume, in the repo root:
+
+```powershell
+function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
+```
 
 | Part | Check | Healthy when |
 |---|---|---|
-| Postgres 16 | `docker compose -p geldar-phase0 exec postgres pg_isready` | exits 0 |
-| pgvector | `... exec postgres psql -U geldar -d geldar -tAc "select extversion from pg_extension where extname='vector'"` | prints a version |
-| Migrations | `... exec postgres psql -U geldar -d geldar -tAc "select count(*) from information_schema.tables where table_schema='public'"` | the table count from `sql/` |
+| Postgres 16 | `dc exec postgres pg_isready -h 127.0.0.1 -U geldar -d geldar` | exits 0 (TCP, so it fails until init scripts have run) |
+| pgvector | `dc exec postgres psql -U geldar -d geldar -tAc "select extversion from pg_extension where extname='vector'"` | prints a version |
+| Migrations | `dc exec postgres psql -U geldar -d geldar -tAc "select count(*) from information_schema.tables where table_schema='public'"` | the table count from `sql/` |
 | NATS JetStream | `curl -fsS http://localhost:8222/healthz?js-enabled-only=true` | `{"status":"ok"}` |
-| Paper | compose healthcheck (RCON `list` answers) | `healthy` in `shard status` |
+| Paper | compose healthcheck (the image's `mc-health`) | `healthy` in `shard status` |
 | Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
 
 Ports, users and database names come from `compose/phase0.yml` and its `.env.example`; if they differ from the table, the compose file wins. Update this table in the same PR.
@@ -35,7 +39,7 @@ Ports, users and database names come from `compose/phase0.yml` and its `.env.exa
 
 ```powershell
 ./geldar.ps1 shard logs phase0 paper
-docker compose -p geldar-phase0 restart paper
+docker compose -f compose/phase0.yml -p geldar-phase0 restart paper
 ```
 
 Never fix a problem by acting inside the world (teleporting a bot, giving items, running a command as an agent). Fix the infrastructure (spec Principle 1 and section 11).

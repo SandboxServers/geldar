@@ -40,6 +40,8 @@ jobs:
         run: pnpm check:repo
       - name: generated code is up to date (contract drift)
         run: pnpm check:generated
+      - name: geldar.ps1 runs on Linux
+        run: pwsh -NoProfile -File ./geldar.ps1 pnpm --version
 
   plugin:
     name: plugin
@@ -76,6 +78,10 @@ jobs:
           if [ ${#files[@]} -eq 0 ]; then
             echo "No compose/*.yml yet; nothing to validate."
             exit 0
+          fi
+          # .env is gitignored; validate against the committed defaults.
+          if [ -f compose/.env.example ] && [ ! -f compose/.env ]; then
+            cp compose/.env.example compose/.env
           fi
           for f in "${files[@]}"; do
             echo "::group::$f"
