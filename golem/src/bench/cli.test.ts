@@ -71,6 +71,13 @@ describe('parseCli', () => {
 });
 
 describe('gateLine', () => {
+  it('says truncated for a 20 TPS cell with fewer runs than asked, FAIL still wins', () => {
+    expect(gateLine([cellOf({ runs: 1, passed: 1 })], 2)).toBe('GATE: INCOMPLETE (truncated)');
+    expect(gateLine([cellOf({ runs: 0, passed: 0 })], 2)).toBe('GATE: INCOMPLETE (truncated)');
+    expect(gateLine([cellOf({ runs: 1, passed: 0 })], 2)).toBe('GATE: FAIL (goto-smoke)');
+    expect(gateLine([cellOf({ runs: 2, passed: 2 })], 2)).toBe('GATE: PASS');
+  });
+
   it('passes when every 20 TPS cell passed all runs', () => {
     expect(gateLine([cellOf({}), cellOf({ tps: 5, passed: 0 })])).toBe('GATE: PASS');
   });
@@ -211,6 +218,48 @@ describe('main', () => {
     );
     expect(other.err.join('\n')).toContain('Someone');
     expect(other.log).not.toContain('connect bot');
+  });
+
+  it('refuses when the list counts players but names none', async () => {
+    const h = harness({ list: 'There are 2 of a max of 400 players online: ' });
+    expect(await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '1'], h.deps)).toBe(1);
+    expect(h.err.join('\n')).toMatch(/other players are online/);
+    expect(h.log).not.toContain('connect bot');
+    expect(h.log).not.toContain('kick GolemBench');
+  });
+
+  it('stops at --max-minutes: truncated, no cell is started late, the gate says truncated', async () => {
+    const h = harness();
+    let clock = 0;
+    h.deps.now = () => clock;
+    let written: Parameters<NonNullable<CliDeps['write']>>[0] | undefined;
+    h.deps.write = async (input) => {
+      written = input;
+      return { file: 'f.json', recordedFile: null, summary: [] };
+    };
+    h.deps.cell = async (scenario, tps, runs) => {
+      clock += 61_000;
+      return cellOf({ scenario: scenario.name, tps, runs, passed: runs });
+    };
+    await main(
+      ['--scenario', 'goto-smoke', '--tps', '20,10', '--runs', '2', '--max-minutes', '1'],
+      h.deps,
+    );
+    expect(written?.truncated).toBe(true);
+    expect(written?.cells.map((c) => c.tps)).toEqual([20]);
+    expect(h.out.some((l) => l.startsWith('truncated: true'))).toBe(true);
+    expect(h.out.at(-1)).toBe('GATE: PASS');
+  });
+
+  it('marks a 20 TPS cell cut to fewer runs, or to none, as truncated and not as a pass', async () => {
+    for (const played of [1, 0]) {
+      const h = harness();
+      h.deps.cell = async (scenario, tps) =>
+        cellOf({ scenario: scenario.name, tps, runs: played, passed: played });
+      await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '2'], h.deps);
+      expect(h.out.some((l) => l.startsWith('truncated: true'))).toBe(true);
+      expect(h.out.at(-1)).toBe('GATE: INCOMPLETE (truncated)');
+    }
   });
 
   it('exits 1 when the player list cannot be read', async () => {

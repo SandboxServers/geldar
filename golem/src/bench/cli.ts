@@ -165,12 +165,18 @@ function defaultManager(
   });
 }
 
-/** `GATE: PASS` or `GATE: FAIL (<scenarios>)` over the 20 TPS cells. */
-export function gateLine(cells: CellResult[]): string {
+/**
+ * `GATE: PASS`, `GATE: FAIL (<scenarios>)` or `GATE: INCOMPLETE (truncated)` over the 20 TPS cells.
+ * With `requestedRuns`, a 20 TPS cell that played fewer runs (the time limit hit) is truncated: it
+ * cannot pass the gate, and a failure among the runs it did play still shows as FAIL.
+ */
+export function gateLine(cells: CellResult[], requestedRuns = 0): string {
   const at20 = cells.filter((c) => c.tps === 20);
   if (at20.length === 0) return 'GATE: n/a (no 20 TPS cell ran)';
-  const failing = at20.filter((c) => c.runs === 0 || c.passed < c.runs).map((c) => c.scenario);
-  return failing.length === 0 ? 'GATE: PASS' : `GATE: FAIL (${failing.join(', ')})`;
+  const failing = at20.filter((c) => c.runs > 0 && c.passed < c.runs).map((c) => c.scenario);
+  if (failing.length > 0) return `GATE: FAIL (${failing.join(', ')})`;
+  const cutOff = at20.some((c) => c.runs === 0 || c.runs < requestedRuns);
+  return cutOff ? 'GATE: INCOMPLETE (truncated)' : 'GATE: PASS';
 }
 
 /** One table line per cell, with a warning when the average tick time is over 110% of target. */
@@ -268,15 +274,19 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       return 1;
     }
     const names = playerNames(listing);
-    if (names.length > 0) {
-      if (names.length === 1 && names[0] === BENCH_NAME) {
+    // The count decides: a reply that counts players but names none still refuses the run.
+    const online = Number(LIST_PATTERN.exec(listing)?.[1]);
+    if (online > 0) {
+      if (online === 1 && names.length === 1 && names[0] === BENCH_NAME) {
         await ctl.command(`kick ${BENCH_NAME}`);
         if (!(await waitForEmpty(ctl, KICK_WAIT_MS, { now, sleep }))) {
           err(`${BENCH_NAME} did not leave within 15 s`);
           return 1;
         }
       } else {
-        err(`other players are online: ${names.join(', ')}`);
+        err(
+          `other players are online: ${names.length > 0 ? names.join(', ') : `${online} (names not listed)`}`,
+        );
         return 1;
       }
     }
@@ -331,7 +341,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     if (truncated) out('truncated: true (stopped before every run started)');
     out(`results: ${written.file}`);
     if (written.recordedFile) out(`recorded: ${written.recordedFile}`);
-    out(gateLine(cells));
+    out(gateLine(cells, options.runs));
     return 0;
   } catch (error) {
     err(error instanceof Error ? (error.stack ?? error.message) : String(error));
