@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyOverrides, parseScenario } from './scenario.ts';
+import { applyOverrides, parseScenario, readScenarioFile } from './scenario.ts';
 
 function base(): Record<string, unknown> {
   return {
@@ -324,5 +327,23 @@ describe('applyOverrides', () => {
     expect(s.character.position.x).toBe(0);
     expect(s.events).toHaveLength(0);
     expect(s.day_length_seconds).toBe(2400);
+  });
+});
+
+describe('readScenarioFile', () => {
+  it('refuses a file over 1 MiB from its size, without reading it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'scenario-'));
+    try {
+      const file = join(dir, 'big.json');
+      writeFileSync(file, ' '.repeat(1024 * 1024 + 1));
+      const read = () => {
+        throw new Error('read was called');
+      };
+      expect(() => readScenarioFile(file, read)).toThrow('scenario: (file): too large');
+      writeFileSync(file, '{}');
+      expect(readScenarioFile(file)).toBe('{}');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

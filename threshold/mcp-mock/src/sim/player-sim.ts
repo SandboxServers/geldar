@@ -77,6 +77,13 @@ export class PlayerSim {
     return this.current;
   }
 
+  /** Records a receipt id; the ledger keeps the newest RECEIPT_LIMIT and drops the oldest. */
+  pushReceipt(id: string): void {
+    this.receipts.push(id);
+    if (this.receipts.length > RECEIPT_LIMIT)
+      this.receipts.splice(0, this.receipts.length - RECEIPT_LIMIT);
+  }
+
   /** Starts an intent at the current time (after syncing to it); replaces a running one. */
   startIntent(spec: Intent, nowMs: number): ReturnType<typeof startIntent> {
     this.syncTo(nowMs);
@@ -87,9 +94,7 @@ export class PlayerSim {
       r.state.id = id;
       this.current = r.state;
       this.intentStartedMs = nowMs;
-      this.receipts.push(id);
-      if (this.receipts.length > RECEIPT_LIMIT)
-        this.receipts.splice(0, this.receipts.length - RECEIPT_LIMIT);
+      this.pushReceipt(id);
     }
     return r;
   }

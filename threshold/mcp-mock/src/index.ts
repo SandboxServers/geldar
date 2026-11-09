@@ -13,5 +13,6 @@ export * from './sim/intent.ts';
 export * from './sim/player-sim.ts';
 export * from './sim/reflex.ts';
 export * from './sim/scenario.ts';
+export * from './sim/sim-world.ts';
 export * from './sim/wake.ts';
 export * from './snapshot.ts';

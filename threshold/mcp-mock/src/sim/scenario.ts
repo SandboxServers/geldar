@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from 'node:fs';
 import { z } from 'zod';
 
 /** A name that lands in a typed field: an identifier, never prose. */
@@ -222,4 +223,13 @@ export function applyOverrides(s: Scenario, o: ScenarioOverrides): Scenario {
     checkSeconds('wake.intent_run_too_long_seconds', o.intentRunTooLongSeconds, MIN_SECONDS) ??
     copy.wake.intent_run_too_long_seconds;
   return copy;
+}
+
+/** Reads a scenario file as text; a file over 1 MiB is refused from its size, before it is read. */
+export function readScenarioFile(
+  path: string,
+  read: (path: string, encoding: 'utf8') => string = readFileSync,
+): string {
+  if (statSync(path).size > MAX_TEXT_BYTES) throw new Error('scenario: (file): too large');
+  return read(path, 'utf8');
 }

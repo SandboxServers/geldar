@@ -1,0 +1,75 @@
+{
+  "name": "dawn",
+  "character": {
+    "name": "Kestrel",
+    "life_id": "ag_kestrel_01",
+    "born_day": 0,
+    "seed": "mock-seed-0001",
+    "position": { "x": 0, "y": 64, "z": 0 },
+    "food": 20,
+    "inventory": [
+      { "item": "bread", "count": 2 },
+      { "item": "written_book", "count": 1, "book_id": "bk_field_notes" },
+      { "item": "written_book", "count": 1, "book_id": "bk_planting" }
+    ],
+    "facts": ["field_is_known", "seeds_available"],
+    "budget": 100
+  },
+  "neighbours": [
+    { "name": "Pike", "position": { "x": 6, "y": 64, "z": 2 } },
+    { "name": "Wren", "position": { "x": -9, "y": 64, "z": 4 } }
+  ],
+  "books": [
+    {
+      "id": "bk_field_notes",
+      "title": "Field notes",
+      "kind": "text",
+      "text": "The east field is flat and the soil is dark. Water lies two days north."
+    },
+    {
+      "id": "bk_planting",
+      "title": "Planting",
+      "kind": "skill",
+      "skill_id": "plant_rows",
+      "text": "Plant seeds in rows, one block apart, then wait for the first light."
+    }
+  ],
+  "events": [
+    {
+      "type": "speech",
+      "at_tick": 800,
+      "from": "Pike",
+      "to": null,
+      "text": "Fine morning for it."
+    },
+    { "type": "agent_approaches", "at_tick": 1800, "name": "Wren", "distance": 8 },
+    {
+      "type": "speech",
+      "at_tick": 2600,
+      "from": "Wren",
+      "to": "Kestrel",
+      "text": "Is the east field yours?"
+    },
+    { "type": "damage", "at_tick": 4200, "amount": 2 },
+    {
+      "type": "speech",
+      "at_tick": 5200,
+      "from": "Pike",
+      "to": null,
+      "text": "Anyone seen the seed sack?"
+    },
+    {
+      "type": "proposal",
+      "at_tick": 7000,
+      "id": "pr_market_day",
+      "rule": "market_day_every_third_day"
+    },
+    {
+      "type": "speech",
+      "at_tick": 8600,
+      "from": "Wren",
+      "to": null,
+      "text": "Rain by dusk, I think."
+    }
+  ]
+}

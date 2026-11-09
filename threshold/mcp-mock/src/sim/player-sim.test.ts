@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { Intent } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { makeId } from '../ids.ts';
@@ -317,5 +318,13 @@ describe('PlayerSim', () => {
     expect(sim.nextScheduledMs()).toBe(5000);
     sim.syncTo(13000);
     expect(sim.nextScheduledMs()).toBe(15000);
+  });
+});
+
+describe('PlayerSim doc comments', () => {
+  it('keeps the startIntent doc comment directly on startIntent', () => {
+    const src = readFileSync(new URL('./player-sim.ts', import.meta.url), 'utf8');
+    expect(src).toMatch(/\/\*\* Starts an intent[^\n]*\*\/\n {2}startIntent\(/);
+    expect(src).toMatch(/\/\*\* Records a receipt id[^\n]*\*\/\n {2}pushReceipt\(/);
   });
 });
