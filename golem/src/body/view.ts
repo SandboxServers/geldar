@@ -82,7 +82,7 @@ export interface TrackedBodyView extends BodyView {
 
 const DEFAULT_HOSTILE_RADIUS = 16;
 /** A mob within this many blocks can melee the Body. */
-const MELEE_REACH = 3.5;
+const MELEE_REACH = 4;
 /** Cosine of the half-angle (60 degrees) within which a mob counts as facing the Body. */
 const FACING_COS = 0.5;
 /** World ticks a bed read stays valid: the bed scan walks a 32 block radius. */
@@ -117,7 +117,8 @@ function isFacing(entity: { position: Vec3; yaw?: number }, target: Vec3): boole
   const length = Math.hypot(dx, dz);
   if (length < 0.01) return true;
   const yaw = entity.yaw ?? 0;
-  return (-Math.sin(yaw) * dx + Math.cos(yaw) * dz) / length >= FACING_COS;
+  // mineflayer's forward vector for a yaw is (-sin yaw, -cos yaw): yaw 0 faces north (-z).
+  return (-Math.sin(yaw) * dx - Math.cos(yaw) * dz) / length >= FACING_COS;
 }
 
 /**
