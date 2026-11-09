@@ -21,7 +21,10 @@ Rules:
 - LF line endings in every file. No secrets, tokens, account names, or public or private-network IPs (`127.0.0.1` is fine).
 - Never run `git stash`, `git push`, `gh pr`, `git worktree prune` or anything that deletes a worktree.
 - On a failing check, read the output, fix, rerun. At most five fix rounds per check; then stop and report.
-- Commit once at the end on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.
+- Commit as soon as the checks pass, on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.
+- Progress first: after your first working step, write a short progress note to the report path (facts only), so a continuation starts from it.
+- WIP commits on the packet branch are allowed. The final state is one commit with the brief's message: squash your own WIP commits with `git reset --soft <base>` and `git commit`, where `<base>` is the commit the worktree branched from. Say in the report that you squashed.
+- Copy the brief's commit message and trailer lines exactly. The trailer text is fixed: do not substitute a model name you think you are.
 - Your context limit is 95k tokens. Read only the line ranges you need. Past about 90k, stop, commit nothing half-done, and write what is done and what is left to the report.
 
 Write the report to the report path: files changed, each check's final result, the commit hash, how you confirmed the test fails without the change, and any deviation from the spec with its reason. Return one line: `<packet> <done|blocked|failed> <commit-sha|-> <report-path>`.
