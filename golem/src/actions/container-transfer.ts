@@ -67,6 +67,10 @@ interface Session {
   model: Model;
   /** The slot the stack on the cursor came from. */
   origin: number;
+  /** Set when the server closed the window: nothing more can be clicked or restored. */
+  closed: boolean;
+  /** Ends the barrier being waited on, when the window closes. */
+  wake: (() => void) | null;
   /** Answers still owed by barriers that timed out. */
   owed: number;
   /** Set when the window stopped matching the prediction. */
@@ -138,6 +142,13 @@ function applyClick(s: Session, slot: number, button: 0 | 1): void {
   s.model.cursor = cursor.count - put > 0 ? { type: cursor.type, count: cursor.count - put } : null;
 }
 
+/** True when the server closed the window, or the bot no longer has a window open. */
+function windowGone(s: Session): boolean {
+  const open = (s.ctx.bot as unknown as { currentWindow?: unknown }).currentWindow;
+  if (open === null) s.closed = true;
+  return s.closed;
+}
+
 /**
  * Writes the sync click and waits for the window's full answer. Returns false when the answer did not
  * come within the bounded wait. The listener is armed before the write: a reply may be synchronous.
@@ -147,20 +158,30 @@ function applyClick(s: Session, slot: number, button: 0 | 1): void {
 function barrier(s: Session): Promise<boolean> {
   return new Promise((resolve) => {
     const { client, windowId } = s;
+    if (windowGone(s)) {
+      resolve(false);
+      return;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (answered: boolean): void => {
+      clearTimeout(timer);
+      client.removeListener('window_items', onItems);
+      s.wake = null;
+      resolve(answered);
+    };
     const onItems = (packet: unknown): void => {
       if ((packet as WindowPacket).windowId !== windowId) return;
       if (s.owed > 0) {
         s.owed -= 1;
         return;
       }
-      clearTimeout(timer);
-      client.removeListener('window_items', onItems);
-      resolve(true);
+      finish(true);
     };
     client.on('window_items', onItems);
+    s.wake = () => finish(false);
     timer = setTimeout(() => {
       client.removeListener('window_items', onItems);
+      s.wake = null;
       s.owed += 1;
       console.warn(`[container-transfer] barrier timed out (window ${windowId}, owed ${s.owed})`);
       resolve(false);
@@ -180,6 +201,13 @@ function barrier(s: Session): Promise<boolean> {
 /** The fault text for the first difference between the prediction and the window. */
 function describeMismatch(index: number): string {
   return index === -2 ? 'window differs at the cursor' : `window differs at slot ${index}`;
+}
+
+/** Ends a click because the window is gone: the cursor cannot be put back. */
+function failClosed(s: Session): false {
+  s.fault = 'the server closed the window';
+  console.warn('[container-transfer] the window was closed during a transfer');
+  return false;
 }
 
 /**
@@ -211,9 +239,11 @@ async function click(s: Session, slot: number, button: 0 | 1): Promise<boolean> 
     cursorItem: hashed(s.model.cursor),
   });
   let answered = await barrier(s);
+  if (s.closed) return failClosed(s);
   let diff = answered ? firstMismatch(s.model, readModel(s.container)) : -1;
   if (!answered || diff !== -1) {
     answered = await barrier(s);
+    if (s.closed) return failClosed(s);
     diff = answered ? firstMismatch(s.model, readModel(s.container)) : diff;
   }
   if (answered && diff === -1) return true;
@@ -332,6 +362,8 @@ export async function transferItems(
     stateId: -1,
     model: readModel(container),
     origin: 0,
+    closed: false,
+    wake: null,
     owed: 0,
     fault: null,
     restoring: false,
@@ -342,6 +374,12 @@ export async function transferItems(
   };
   client.on('window_items', track);
   client.on('set_slot', track);
+  const onClose = (packet: unknown): void => {
+    if ((packet as WindowPacket).windowId !== s.windowId) return;
+    s.closed = true;
+    s.wake?.();
+  };
+  client.on('close_window', onClose);
   try {
     // The window's stateId is only known from a packet: learn it before the first click.
     if (!(await barrier(s))) return { error: 'server did not confirm the window', aborted: false };
@@ -352,6 +390,7 @@ export async function transferItems(
     const ended = s.model.cursor
       ? 'cursor not empty'
       : await moveStacks(s, itemId, count, from, to);
+    if (s.closed) return { error: 'the server closed the window', aborted: false };
     await restoreCursor(s);
     if (s.model.cursor) return { error: 'could not put the cursor stack back', aborted: false };
     if (ended === 'aborted') return { error: null, aborted: true };
@@ -359,5 +398,6 @@ export async function transferItems(
   } finally {
     client.removeListener('window_items', track);
     client.removeListener('set_slot', track);
+    client.removeListener('close_window', onClose);
   }
 }

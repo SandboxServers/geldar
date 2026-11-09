@@ -21,6 +21,8 @@ interface Options {
   lateSync?: { n: number; ms: number };
   /** 1-based index of a click that finds the server's stateId bumped (the client view is stale). */
   bumpAtClick?: number;
+  /** 1-based index of a click after which the server closes the window. */
+  closeAtClick?: number;
   /** Runs after each non-sync click is written (the number of clicks so far). */
   onClick?: (n: number) => void;
 }
@@ -115,17 +117,21 @@ function rig(chest: Cell[], opts: Options = {}) {
       // Vanilla still runs a stale click, then sends the full window on top of the sync's answer.
       if (clicks !== opts.ignoreClick) apply(p.slot as number, p.mouseButton as number);
       if (stale) deliver();
+      if (clicks === opts.closeAtClick) {
+        setTimeout(() => emitter.emit('close_window', { windowId: 7 }), 5);
+      }
       opts.onClick?.(clicks);
     },
   };
   const bot = {
     _client: client,
     registry: { items: { 1: { stackSize: STACK } } },
-  } as unknown as Bot;
+  } as unknown as Bot & { currentWindow?: unknown };
   const controller = new AbortController();
   const ctx: ActionContext = { bot, signal: controller.signal, timeScale: 0.01 };
   return {
     ctx,
+    bot,
     controller,
     container: container as unknown as Container,
     server,
@@ -231,6 +237,30 @@ describe('transferItems', () => {
     expect(total(r.server, CHEST, SIZE)).toBe(4);
     expect(r.cursor()).toBeNull();
     expect(r.emitter.listenerCount('window_items')).toBe(0);
+  });
+
+  it('fails at once when the server closes the window, without restore waits', async () => {
+    const r = rig([{ type: 1, count: 10 }], { muteAfterSyncs: 1, closeAtClick: 1 });
+    const started = Date.now();
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+    expect(end).toEqual({ error: 'the server closed the window', aborted: false });
+    // The opening sync and the pickup's sync only: no second barrier, no restore click.
+    expect(r.log.filter((l) => l === 'sync').length).toBe(2);
+    expect(r.log.filter((l) => l.startsWith('click')).length).toBe(1);
+    expect(Date.now() - started).toBeLessThan(25);
+    expect(r.emitter.listenerCount('window_items')).toBe(0);
+    expect(r.emitter.listenerCount('close_window')).toBe(0);
+  });
+
+  it('does not write a click once the bot has no window open', async () => {
+    const holder: { gone?: () => void } = {};
+    const r = rig([{ type: 1, count: 10 }], { onClick: () => holder.gone?.() });
+    holder.gone = () => {
+      r.bot.currentWindow = null;
+    };
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+    expect(end.error).toBe('the server closed the window');
+    expect(r.log.filter((l) => l.startsWith('click')).length).toBe(1);
   });
 
   it('reports failure when the server stops answering', async () => {
