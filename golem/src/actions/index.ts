@@ -13,7 +13,9 @@ import { mineAction } from './mine.ts';
 import { craftAction } from './craft.ts';
 
 // --- P0-09a place, eat, sleep ---
-// (imports for this block go here)
+import { eatHandler } from './eat.ts';
+import { placeHandler } from './place.ts';
+import { sleepHandler } from './sleep.ts';
 
 // --- P0-09b open, deposit, withdraw ---
 // (imports for this block go here)
@@ -28,7 +30,9 @@ export const allActions: AnyActionHandler[] = [
   craftAction,
   // --- end P0-08b ---
   // --- P0-09a place, eat, sleep ---
-  // (handlers for P0-09a go here)
+  placeHandler,
+  eatHandler,
+  sleepHandler,
   // --- end P0-09a ---
   // --- P0-09b open, deposit, withdraw ---
   // (handlers for P0-09b go here)
