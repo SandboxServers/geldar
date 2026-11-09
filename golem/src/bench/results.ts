@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { RunMeta } from './meta.ts';
 import { percentile } from './stats.ts';
 import type { CellResult } from './types.ts';
+import { MIN_TPS_SPAN_TICKS } from './world-age.ts';
 
 /** p50 and p95 of one list, `null` when it is empty. */
 export interface Percentiles {
@@ -25,6 +26,12 @@ export interface Row {
   byKind: Record<string, Percentiles & { total: number; completed: number }>;
   actionsOk: number;
   actionsTotal: number;
+  /**
+   * World ticks per wall second over the cell: the sum of the age deltas over the sum of the wall
+   * seconds of the runs. One run's delta is quantised to 20 ticks (decision 0038), so only the sum
+   * is a measurement; null under 100 ticks in total.
+   */
+  achievedTps: number | null;
 }
 
 /** What `writeResults` needs besides the cells. */
@@ -49,6 +56,19 @@ function percentiles(values: number[]): Percentiles {
   return { p50: pct(values, 50), p95: pct(values, 95) };
 }
 
+/** Ticks over wall seconds across the runs of a cell, null when the total is under 5 age steps. */
+export function cellAchievedTps(cell: CellResult): number | null {
+  let ticks = 0;
+  let seconds = 0;
+  cell.perRun.forEach((run, i) => {
+    const wallMs = cell.runWallMs[i] ?? 0;
+    if (run.ageStart === null || run.ageEnd === null || wallMs <= 0) return;
+    ticks += run.ageEnd - run.ageStart;
+    seconds += wallMs / 1000;
+  });
+  return seconds > 0 && ticks >= MIN_TPS_SPAN_TICKS ? ticks / seconds : null;
+}
+
 /** Builds the summary rows from the cells. Latency counts completed actions only. */
 export function summarize(cells: CellResult[]): Row[] {
   return cells.map((cell) => {
@@ -70,6 +90,7 @@ export function summarize(cells: CellResult[]): Row[] {
       byKind,
       actionsOk: done.length,
       actionsTotal: cell.actions.length,
+      achievedTps: cellAchievedTps(cell),
     };
   });
 }

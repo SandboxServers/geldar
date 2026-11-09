@@ -6,6 +6,7 @@ import type { RunMeta } from './meta.ts';
 import { collectMeta, commitLabel, parseVersionReply, timeStamp } from './meta.ts';
 import {
   appendRows,
+  cellAchievedTps,
   findingsOf,
   markdownRow,
   resultFileName,
@@ -151,6 +152,34 @@ describe('meta', () => {
     expect(meta).toMatchObject({ date: '2026-11-09', commit: 'abc1234', paperBuild: '58' });
     expect(meta.host.cores).toBeGreaterThan(0);
     expect(JSON.stringify(meta.host)).not.toMatch(/hostname/);
+  });
+});
+
+describe('cellAchievedTps', () => {
+  const timing = (ageStart: number | null, ageEnd: number | null) => ({
+    mspt: null,
+    targetMspt: null,
+    timeOfDay: null,
+    reconnects: 0,
+    resetMs: null,
+    ageStart,
+    ageEnd,
+    achievedTps: null,
+  });
+
+  it('is the sum of ticks over the sum of wall seconds across the runs', () => {
+    const cell = cellOf({
+      runWallMs: [3_000, 1_000],
+      perRun: [timing(0, 100), timing(100, 120)],
+    });
+    expect(cellAchievedTps(cell)).toBe(30);
+    expect(summarize([cell])[0]?.achievedTps).toBe(30);
+  });
+
+  it('is null under 100 ticks in total, without ages and without wall time', () => {
+    expect(cellAchievedTps(cellOf({ runWallMs: [1_000], perRun: [timing(0, 80)] }))).toBeNull();
+    expect(cellAchievedTps(cellOf({ runWallMs: [5_000], perRun: [timing(null, 200)] }))).toBeNull();
+    expect(cellAchievedTps(cellOf({ runWallMs: [0], perRun: [timing(0, 200)] }))).toBeNull();
   });
 });
 

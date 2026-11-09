@@ -23,6 +23,21 @@ describe('runCell run bookkeeping', () => {
     expect(timing?.achievedTps).toBeLessThan(100 / 0.04);
   });
 
+  it('leaves achievedTps null when the age moved by under 100 ticks', async () => {
+    const { bot, deps } = setup();
+    const scenario = scenarioOf({
+      timeoutMs: 400,
+      async run() {
+        await new Promise((r) => setTimeout(r, 40));
+        (bot.time as { age: number }).age = 80;
+        return { passed: true, note: '' };
+      },
+    });
+    const cell = await runCell(scenario, 20, 1, deps);
+    expect(cell.perRun[0]?.ageEnd).toBe(80);
+    expect(cell.perRun[0]?.achievedTps).toBeNull();
+  });
+
   it('fails the run as disconnected when the connection drops during the reset', async () => {
     const { server, manager, deps } = setup();
     // The fake server drops the connection while the reset commands run.

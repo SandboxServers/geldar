@@ -72,7 +72,9 @@ export interface RunTiming {
   ageEnd: number | null;
   /**
    * Ticks per second the world really ran at: (`ageEnd` - `ageStart`) over the wall seconds
-   * between the two samples. Whole-run figure with a total error of up to 20 ticks.
+   * between the two samples. `bot.time.age` moves in steps of 20 ticks (decision 0038), so a delta
+   * of under 100 ticks (5 steps) is not a measurement: the figure is null then. The per-cell
+   * `achievedTps` of the summary (sum of ticks over sum of wall seconds) is the one to quote.
    */
   achievedTps: number | null;
 }
