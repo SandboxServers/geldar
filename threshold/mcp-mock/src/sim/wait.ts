@@ -1,4 +1,4 @@
-import type { WaitInput, WaitResult } from '@geldar/contract';
+import type { McpInterest, WaitInput, WaitResult } from '@geldar/contract';
 import { type ToolContext, ToolError } from '../registry.ts';
 import { decodeCursor, encodeCursor } from './events.ts';
 import type { SimHub } from './hub.ts';
@@ -12,7 +12,7 @@ import {
 } from './present.ts';
 import { evaluateWake, type WakeReason } from './wake.ts';
 
-const ALL_INTERESTS = [
+const ALL_INTERESTS: readonly McpInterest[] = [
   'directly_addressed',
   'intent_finished',
   'damage',

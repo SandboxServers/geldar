@@ -177,9 +177,79 @@ describe('waitTool', () => {
     for (let i = 0; i < 1100; i++) {
       log.append({ kind: 'damage', amount: 1, tick: i, atMs: 0, wakeOn: null });
     }
-    await clock.advance(2000);
     const r = await waitTool(hub, ctx(), { cursor: 'c_0', max_seconds: 5 });
-    expect(r.dropped_events).toBeGreaterThanOrEqual(100);
+    // The log kept 1000 of 1100 (100 dropped there); the 200 cap drops the rest of the kept ones.
+    expect(r.events).toHaveLength(200);
+    expect(r.dropped_events).toBe(100 + (1000 - r.events.length));
+  }, 30_000);
+
+  it('wakes at dusk to the millisecond even between polls', async () => {
+    // 25 s days: dusk is at 12.5 s, between the 1 s polls.
+    const { clock, hub } = setup({}, 25);
+    const p = waitTool(hub, ctx(), { max_seconds: 20 });
+    const t = track(p);
+    await clock.advance(12499);
+    expect(t.done()).toBe(false);
+    await clock.advance(1);
+    const r = await p;
+    expect(r.wake_reason).toBe('day_night');
+    expect(r.events.some((e) => e.type === 'day_night')).toBe(true);
+  }, 30_000);
+
+  it('does not skip hunger steps that fall between polls in one wait', async () => {
+    const { clock, hub } = setup({
+      character: {
+        name: 'Kestrel',
+        life_id: 'ag_kestrel_01',
+        position: { x: 0, y: 64, z: 0 },
+        food: 20,
+        inventory: [{ item: 'bread', count: 5 }],
+      },
+      reflex: { hunger_interval_ticks: 2500, eat_below: 20 },
+    });
+    const p = waitTool(hub, ctx(), { max_seconds: 9 });
+    await clock.advance(9000);
+    const r = await p;
+    expect(r.wake_reason).toBe('timeout');
+    // Steps at 2.5 s, 5 s and 7.5 s each eat once.
+    expect(r.events.filter((e) => e.type === 'reflex')).toHaveLength(3);
+  }, 30_000);
+
+  it('applies the interests argument to the wake policy', async () => {
+    const { clock, hub } = setup({ events: [say(3000, 'Kestrel')] });
+    const p = waitTool(hub, ctx(), { max_seconds: 10, interests: ['damage'] });
+    await clock.advance(10000);
+    expect((await p).wake_reason).toBe('timeout');
+    expect(hub.suppressed(PLAYER).map((s) => s.reason)).toContain('not_in_interests');
+  }, 30_000);
+
+  it('leaves no pending sleep after a return, a timeout, an abort or a pre-aborted signal', async () => {
+    const { clock, hub } = setup({ events: [say(2000, 'Kestrel')] });
+    const woke = waitTool(hub, ctx(), { max_seconds: 60 });
+    await clock.advance(2000);
+    expect((await woke).wake_reason).toBe('directly_addressed');
+    expect(clock.pendingCount).toBe(0);
+
+    const timed = waitTool(hub, ctx(), { max_seconds: 3 });
+    await clock.advance(3000);
+    expect((await timed).wake_reason).toBe('timeout');
+    expect(clock.pendingCount).toBe(0);
+
+    const controller = new AbortController();
+    const aborted = waitTool(hub, ctx(controller), { max_seconds: 60 });
+    const check = expect(aborted).rejects.toMatchObject({ code: 'session_superseded' });
+    await clock.advance(500);
+    expect(clock.pendingCount).toBe(1);
+    controller.abort();
+    await check;
+    expect(clock.pendingCount).toBe(0);
+
+    const pre = new AbortController();
+    pre.abort();
+    await expect(waitTool(hub, ctx(pre), { max_seconds: 60 })).rejects.toMatchObject({
+      code: 'session_superseded',
+    });
+    expect(clock.pendingCount).toBe(0);
   }, 30_000);
 
   it('the eat reflex is reported but does not wake', async () => {
