@@ -144,7 +144,7 @@ describe('fitResult', () => {
   const bytes = (r: unknown): number => Buffer.byteLength(JSON.stringify(r));
 
   it('drops other events oldest-first before any speech line', () => {
-    const result = waitResult(5, [speech(1, { text: 'x'.repeat(500) }), speech(2)]);
+    const result = waitResult(5, [speech(101, { text: 'x'.repeat(500) }), speech(102)]);
     const fitted = fitResult(result, bytes(result) - 1, [5]);
     expect(fitted.events.map((e) => e.seq)).toEqual([2, 3, 4, 5]);
     expect(fitted.dropped_events).toBe(1);
@@ -152,7 +152,7 @@ describe('fitResult', () => {
   });
 
   it('keeps the waking event and wake_reason when the result is too large', () => {
-    const result = waitResult(5, [speech(1), speech(2)]);
+    const result = waitResult(5, [speech(101), speech(102)]);
     const fitted = fitResult(result, bytes(result) - 1, [1]);
     expect(fitted.events.map((e) => e.seq)).toContain(1);
     expect(fitted.events.map((e) => e.seq)).toEqual([1, 3, 4, 5]);
@@ -187,7 +187,7 @@ describe('fitResult', () => {
     expect(fitted.dropped_events).toBe(3);
     expect(fitted.untrusted_world_text.speech ?? []).toHaveLength(0);
     expect(validateToolResult('wait', fitted).ok).toBe(true);
-    const partial = waitResult(4, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const partial = waitResult(4, [speech(101, { text: 'a' }), speech(102, { text: 'b' })]);
     const keepOne = fitResult(partial, bytes(partial) - 1, [4]);
     expect(keepOne.events.map((e) => e.seq)).toEqual([2, 3, 4]);
     const lines = waitResult(1, [speech(5, { text: 'a' }), speech(6, { text: 'b' })]);
@@ -208,7 +208,7 @@ describe('fitResult', () => {
   });
 
   it('protects every speech line when the speech array was not built by worldText', () => {
-    const built = waitResult(1, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const built = waitResult(1, [speech(1, { text: 'a' }), speech(102, { text: 'b' })]);
     const result = structuredClone(built);
     const fitted = fitResult(result, bytes(result) - 1, [1]);
     expect(fitted.untrusted_world_text.speech).toHaveLength(2);
@@ -237,6 +237,7 @@ describe('fitResult', () => {
     expect(fitted.events[0]?.text).toBe('hit');
     expect(fitted.untrusted_world_text.speech?.[0]?.text).toBe('z'.repeat(412));
     expect(bytes(fitted)).toBeLessThanOrEqual(cap);
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
   it('keeps several waking events, including seqs that are not adjacent', () => {
@@ -245,16 +246,18 @@ describe('fitResult', () => {
     expect(fitted.events.map((e) => e.seq)).toEqual([1, 3]);
     expect(fitted.dropped_events).toBe(3);
     expect(fitted.wake_reason).toBe('unexpected_damage');
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
   it.each(['timeout', 'intent_run_too_long'] as const)(
-    'drops every event when none woke the agent (%s) and leaves the wake_reason',
+    'characterisation: with no waking seqs, a result over the cap loses every event (%s) and keeps the wake_reason',
     (reason) => {
       const result = waitResult(5, [], 'hit', reason);
       const fitted = fitResult(result, bytes(shrunk(result, [], 5)), []);
       expect(fitted.events).toEqual([]);
       expect(fitted.dropped_events).toBe(5);
       expect(fitted.wake_reason).toBe(reason);
+      expect(validateToolResult('wait', fitted).ok).toBe(true);
     },
   );
 
@@ -269,6 +272,7 @@ describe('fitResult', () => {
     expect(fitted.events[0]?.seq).toBe(51);
     expect(fitted.events.at(-1)?.seq).toBe(250);
     expect(fitted.dropped_events).toBe(50);
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
   it('lets the speech line of a waking event dropped over the 200 cap be dropped too', () => {
@@ -306,10 +310,7 @@ describe('fitResult', () => {
 
   it('keeps the newest 40 waking lines when waking lines alone pass 40', () => {
     const lines = Array.from({ length: 50 }, (_, i) => speech(i + 1, { text: `w${i}` }));
-    const wrapped = worldText(
-      lines,
-      { wakingSeqs: lines.map((e) => e.seq) },
-    );
+    const wrapped = worldText(lines, { wakingSeqs: lines.map((e) => e.seq) });
     expect(wrapped.speech).toHaveLength(40);
     expect(wrapped.speech?.[0]?.text).toBe('w10');
     expect(wrapped.speech?.at(-1)?.text).toBe('w49');
@@ -320,8 +321,13 @@ describe('fitResult', () => {
       waitResult(8, [speech(1, { text: 'bbbb' }), speech(2, { text: 'aaaa' })], 'y'.repeat(300));
     const a = build();
     const b = build();
-    const cap = bytes(a) - 1500;
-    expect(fitResult(a, cap, [1, 4])).toEqual(fitResult(b, cap, [1, 4]));
+    const cap = bytes(shrunk(a, [1, 4], 6, [0]));
+    const first = fitResult(a, cap, [1, 4]);
+    expect(first).toEqual(fitResult(b, cap, [1, 4]));
+    // The waking events and the waking speech line survive; the other speech line goes.
+    expect(first.events.map((e) => e.seq)).toEqual([1, 4]);
+    expect(first.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['bbbb']);
+    expect(first.dropped_events).toBe(6);
   });
 
   it('fits a look with 40 long speech lines under the cap', () => {
