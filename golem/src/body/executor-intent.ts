@@ -9,6 +9,18 @@ import type { BodyRuntime } from './runtime.ts';
 import type { WakeReason } from './wake.ts';
 import { WakeConditions } from './wake-conditions.ts';
 
+/** The key under which the executor saves the blocked-path `abandoned` flag in a program checkpoint. */
+export const ABANDONED_KEY = 'blocked_abandoned';
+
+/** A saved checkpoint split into the program's own part and the executor's `abandoned` flag. */
+function splitCheckpoint(
+  saved: unknown,
+): { program: ProgramCheckpoint | null; abandoned: boolean } | null {
+  if (typeof saved !== 'object' || saved === null || Array.isArray(saved)) return null;
+  const { [ABANDONED_KEY]: flag, ...rest } = saved as ProgramCheckpoint;
+  return { program: Object.keys(rest).length > 0 ? rest : null, abandoned: flag === true };
+}
+
 /** What starting an intent needs from the executor. */
 export interface IntentStartDeps {
   runtime: BodyRuntime;
@@ -89,6 +101,7 @@ export async function startIntentRun(
     interrupted: false,
     reflexWoke: false,
     ownActions: new WeakSet(),
+    resumedAbandoned: false,
   };
   a.limits.addBlockOperations(mode.usedBlockOperations ?? 0);
   deps.setState(a, 'accepted');
@@ -107,8 +120,9 @@ export async function startIntentRun(
   a.program = program;
   try {
     const ctx = { ...a.base, signal: controller.signal };
-    if (mode.resumed && intent.checkpoint)
-      await program.resume(intent.checkpoint as ProgramCheckpoint, ctx);
+    const saved = mode.resumed ? splitCheckpoint(intent.checkpoint) : null;
+    if (saved) a.resumedAbandoned = saved.abandoned;
+    if (saved?.program) await program.resume(saved.program, ctx);
     else await program.start(intent.arguments, ctx);
   } catch (error) {
     await deps.end(a, 'failed', errorText(error));

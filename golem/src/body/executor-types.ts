@@ -127,4 +127,6 @@ export interface ActiveIntent {
   reflexWoke: boolean;
   /** The actions the program ran (through `ProgramContext.runAction`): only these count as its work. */
   ownActions: WeakSet<object>;
+  /** The saved checkpoint of a resumed intent said the blocked-path reflex had given up on it. */
+  resumedAbandoned: boolean;
 }

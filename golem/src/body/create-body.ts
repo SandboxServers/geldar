@@ -128,7 +128,8 @@ export function createBody(options: CreateBodyOptions): Body {
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
     // With the reflex off nothing would take the report, so a program must not wait for one.
-    if (isReflexEnabled(reflexConfig, 'blocked_path'))
+    // Only a walk the intent's program ran: a plan's own goto is the Mind's to handle.
+    if (isReflexEnabled(reflexConfig, 'blocked_path') && executor.ranByProgram(action))
       reportBlockedWalk(built, executor, action, run);
     executor.noteAction(action, run);
   });

@@ -102,8 +102,9 @@ describe('createBody composition', () => {
 });
 
 describe('blocked walks', () => {
-  it('reports a goto that ends failed(blocked) to the blocked-path reflex', () => {
+  it('reports a goto the program ran that ends failed(blocked) to the blocked-path reflex', () => {
     const b = body();
+    vi.spyOn(b.executor, 'ranByProgram').mockReturnValue(true);
     b.runtime.actions.notifyFinished(
       { do: 'goto', target: { x: 10, y: 64, z: -4 } },
       failedBlocked,
@@ -111,17 +112,28 @@ describe('blocked walks', () => {
     expect(hasBlockedReport(b.view)).toBe(true);
   });
 
+  it('does not report a blocked goto the program did not run (a plan action)', () => {
+    const b = body();
+    b.runtime.actions.notifyFinished(
+      { do: 'goto', target: { x: 10, y: 64, z: -4 } },
+      failedBlocked,
+    );
+    expect(hasBlockedReport(b.view)).toBe(false);
+  });
+
   it('reports a goto to a player at the player position', () => {
     const bot = Object.assign(fakeBot(), {
       players: { Steve: { entity: { position: { x: 5, y: 70, z: 6 } } } },
     }) as unknown as Bot;
     const b = body({ bot });
+    vi.spyOn(b.executor, 'ranByProgram').mockReturnValue(true);
     b.runtime.actions.notifyFinished({ do: 'goto', target: 'Steve' }, failedBlocked);
     expect(hasBlockedReport(b.view)).toBe(true);
   });
 
   it('does not report other failures, other verbs or completed walks', () => {
     const b = body();
+    vi.spyOn(b.executor, 'ranByProgram').mockReturnValue(true);
     const goto = { do: 'goto', target: { x: 1, y: 2, z: 3 } };
     b.runtime.actions.notifyFinished(goto, completedRun);
     b.runtime.actions.notifyFinished(goto, {
