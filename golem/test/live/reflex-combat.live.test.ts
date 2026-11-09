@@ -43,6 +43,31 @@ function nearby(bot: Bot): string {
   return `nothing fired; time ${bot.time.timeOfDay}, health ${bot.health}, near: ${seen.join('; ') || 'nothing'}`;
 }
 
+/** The zombies the bot sees, with their distance, for an assertion message. */
+function zombies(bot: Bot): string {
+  const list = Object.values(bot.entities)
+    .filter((e) => e.name === 'zombie')
+    .map(
+      (e) => `${e.position.floored()} at ${e.position.distanceTo(bot.entity.position).toFixed(1)}`,
+    );
+  return `bot at ${bot.entity.position.floored()}, health ${bot.health}, zombies: ${list.join('; ') || 'none'}`;
+}
+
+/**
+ * Turns natural regeneration off (the rule is named differently across server versions) and
+ * returns the call that turns it back on.
+ */
+async function stopRegeneration(ctl: Control): Promise<() => Promise<void>> {
+  for (const rule of ['naturalRegeneration', 'natural_health_regeneration']) {
+    const reply = await ctl.gamerule(rule, false);
+    if (/unknown|incorrect|expected/i.test(reply)) continue;
+    return async () => {
+      await ctl.gamerule(rule, true);
+    };
+  }
+  throw new Error('no natural regeneration game rule found to switch off');
+}
+
 /** Waits until `done` holds or the poll limit runs out; returns whether it held. */
 async function waitFor(bot: Bot, done: () => boolean): Promise<boolean> {
   for (let i = 0; i < POLL_LIMIT && !done(); i++) await bot.waitForTicks(1);
@@ -132,15 +157,21 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
         reflexes: combatReflexes,
       });
       runtime.start();
+      // Test setup only: natural regeneration would heal the bot back within ticks of the damage.
+      const regen = await stopRegeneration(ctl);
       try {
-        await ctl.command(`damage ${BOT} 16 minecraft:generic`);
-        await waitFor(bot, () => bot.health <= 6);
+        await ctl.effectClear(BOT);
+        const reply = await ctl.command(`damage ${BOT} 16 minecraft:generic`);
+        const low = await waitFor(bot, () => bot.health <= 6);
+        expect(low, `damage did not take: reply '${reply}'; ${nearby(bot)}`).toBe(true);
+        expect(bot.health).toBeLessThanOrEqual(6);
         await summonZombie(ctl, cx + 3, cz);
         const fired = await waitFor(bot, () => sink.reflexes.some((r) => r.name === 'retreat'));
-        expect(fired, nearby(bot)).toBe(true);
+        expect(fired, `${nearby(bot)}; ${zombies(bot)}`).toBe(true);
         expect(sink.wakes.some((w) => w.reason === 'reflex_danger')).toBe(true);
       } finally {
         await runtime.stop();
+        await regen();
         await restoreTime();
       }
     });
