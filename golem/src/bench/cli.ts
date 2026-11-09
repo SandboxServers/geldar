@@ -12,7 +12,7 @@ import { collectMeta, isDirty, runGit } from './meta.ts';
 import { writeResults } from './results.ts';
 import { type ManagerLike, runCell } from './runner.ts';
 import { gotoSmoke } from './scenarios/goto-smoke.ts';
-import { scenarios as registered } from './scenarios/index.ts';
+import { findScenario, scenarios as registered, visibleScenarios } from './scenarios/index.ts';
 import { installTpsRestore, parseTargetRate } from './tps.ts';
 import type { CellResult, Scenario } from './types.ts';
 
@@ -105,9 +105,9 @@ export function parseCli(
 
   let picked: Scenario[];
   if (scenario === 'all') {
-    picked = registry.filter((s) => !s.hidden);
+    picked = visibleScenarios(registry);
   } else {
-    const found = registry.find((s) => s.name === scenario);
+    const found = findScenario(scenario, registry);
     if (!found) throw new UsageError(`unknown scenario '${scenario}'`);
     picked = [found];
   }
@@ -258,7 +258,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 2;
   }
   if (options.list) {
-    for (const scenario of registry) if (!scenario.hidden) out(scenario.name);
+    for (const scenario of visibleScenarios(registry)) out(scenario.name);
     return 0;
   }
   if (options.dryRun) {
@@ -326,7 +326,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     const cells: CellResult[] = [];
     let truncated = false;
     for (const name of options.scenarios) {
-      const scenario = registry.find((s) => s.name === name) as Scenario;
+      const scenario = findScenario(name, registry) as Scenario;
       for (const tps of options.tps) {
         if (shouldStop()) {
           truncated = true;

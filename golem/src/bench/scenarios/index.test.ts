@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEnv } from '../types.ts';
 import { gotoSmoke } from './goto-smoke.ts';
+import type { Scenario } from '../types.ts';
 import { findScenario, scenarios, visibleScenarios } from './index.ts';
 
 describe('scenario registry', () => {
@@ -19,6 +20,13 @@ describe('scenario registry', () => {
   it('finds a scenario by name', () => {
     expect(findScenario('goto-smoke')?.name).toBe('goto-smoke');
     expect(findScenario('nope')).toBeUndefined();
+  });
+
+  it('works on an injected list, as the cli does', () => {
+    const list = [{ name: 'a' }, { name: 'b', hidden: true }] as unknown as Scenario[];
+    expect(visibleScenarios(list).map((s) => s.name)).toEqual(['a']);
+    expect(findScenario('b', list)?.name).toBe('b');
+    expect(findScenario('goto-smoke', list)).toBeUndefined();
   });
 });
 
