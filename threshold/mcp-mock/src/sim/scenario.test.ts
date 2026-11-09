@@ -124,6 +124,66 @@ describe('parseScenario contract limits', () => {
     expect(() => parseScenario(law(''))).toThrow('laws.0.rule');
   });
 });
+describe('parseScenario size limits', () => {
+  const many = (n: number, make: (i: number) => unknown): unknown[] =>
+    Array.from({ length: n }, (_, i) => make(i));
+  const pos = { x: 0, y: 0, z: 0 };
+
+  it('caps list lengths at 1000', () => {
+    const lists: Array<[string, (n: number) => string]> = [
+      ['events', (n) => withEvents(many(n, () => ({ type: 'damage', at_tick: 1, amount: 1 })))],
+      [
+        'books',
+        (n) =>
+          JSON.stringify({
+            ...base(),
+            books: many(n, (i) => ({ id: `bk_${i}`, title: 't', kind: 'text', text: 't' })),
+          }),
+      ],
+      [
+        'neighbours',
+        (n) =>
+          JSON.stringify({
+            ...base(),
+            neighbours: many(n, (i) => ({ name: `N${i}xx`, position: pos })),
+          }),
+      ],
+      [
+        'character.inventory',
+        (n) => withCharacter({ inventory: many(n, () => ({ item: 'oak_log', count: 1 })) }),
+      ],
+      ['character.facts', (n) => withCharacter({ facts: many(n, () => 'f') })],
+    ];
+    for (const [path, make] of lists) {
+      expect(() => parseScenario(make(1000)), path).not.toThrow();
+      expect(() => parseScenario(make(1001)), path).toThrow(`scenario: ${path}`);
+    }
+  });
+
+  it('caps string lengths', () => {
+    const at = (type: string, extra: Record<string, unknown>): string =>
+      withEvents([{ type, at_tick: 1, ...extra }]);
+    const speech = (from: string): string => at('speech', { from, to: null, text: 'hi' });
+    expect(() => parseScenario(speech('f'.repeat(64)))).not.toThrow();
+    expect(() => parseScenario(speech('f'.repeat(65)))).toThrow('events.0.from');
+    const long = 'x'.repeat(257);
+    expect(() => parseScenario(at('proposal', { id: 'pr_1', rule: long }))).toThrow(
+      'events.0.rule',
+    );
+    expect(() => parseScenario(at('set_fact', { fact: long }))).toThrow('events.0.fact');
+    expect(() => parseScenario(at('clear_fact', { fact: long }))).toThrow('events.0.fact');
+    expect(() => parseScenario(withCharacter({ facts: [long] }))).toThrow('character.facts.0');
+    expect(() => parseScenario(JSON.stringify({ ...base(), name: 'n'.repeat(65) }))).toThrow(
+      'scenario: name',
+    );
+    expect(() => parseScenario(JSON.stringify({ ...base(), name: 'n'.repeat(64) }))).not.toThrow();
+  });
+
+  it('rejects text over 1 MiB', () => {
+    const big = `${JSON.stringify(base())}${' '.repeat(1024 * 1024)}`;
+    expect(() => parseScenario(big)).toThrow('scenario: (file): too large');
+  });
+});
 describe('law values', () => {
   const law = (value: unknown): string =>
     JSON.stringify({ ...base(), laws: [{ rule: 'chat', value }] });

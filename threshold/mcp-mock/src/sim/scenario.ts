@@ -7,6 +7,10 @@ const atTick = z.int().min(1);
 /** Bounds for every duration in seconds, shared by the schema and the command-line overrides. */
 const MIN_SECONDS = 0.001;
 const MAX_SECONDS = 10_000_000;
+/** The most entries any scenario list may hold. */
+const MAX_ITEMS = 1000;
+/** The largest scenario text parseScenario reads, in bytes. */
+const MAX_TEXT_BYTES = 1024 * 1024;
 
 /** Nesting depth of a JSON value: scalars are 0, each array or object level adds one. */
 function jsonDepth(v: unknown): number {
@@ -47,8 +51,9 @@ const character = z.strictObject({
         book_id: z.string().min(1).max(64).optional(),
       }),
     )
+    .max(MAX_ITEMS)
     .default([]),
-  facts: z.array(z.string()).default([]),
+  facts: z.array(z.string().max(256)).max(MAX_ITEMS).default([]),
   budget: z.int().min(0).default(100),
 });
 
@@ -64,7 +69,7 @@ const event = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('speech'),
     at_tick: atTick,
-    from: z.string(),
+    from: z.string().max(64),
     to: z.string().nullable(),
     text: z.string().max(512),
   }),
@@ -79,20 +84,21 @@ const event = z.discriminatedUnion('type', [
     type: z.literal('proposal'),
     at_tick: atTick,
     id: z.string().regex(/^pr_/),
-    rule: z.string(),
+    rule: z.string().max(256),
   }),
-  z.strictObject({ type: z.literal('set_fact'), at_tick: atTick, fact: z.string() }),
-  z.strictObject({ type: z.literal('clear_fact'), at_tick: atTick, fact: z.string() }),
+  z.strictObject({ type: z.literal('set_fact'), at_tick: atTick, fact: z.string().max(256) }),
+  z.strictObject({ type: z.literal('clear_fact'), at_tick: atTick, fact: z.string().max(256) }),
 ]);
 
 const scenarioSchema = z.strictObject({
-  name: z.string(),
+  name: z.string().max(64),
   day_length_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(2400),
   character,
-  neighbours: z.array(z.strictObject({ name: identifier, position })).default([]),
-  books: z.array(book).default([]),
+  neighbours: z.array(z.strictObject({ name: identifier, position })).max(MAX_ITEMS).default([]),
+  books: z.array(book).max(MAX_ITEMS).default([]),
   events: z
     .array(event)
+    .max(MAX_ITEMS)
     .default([])
     .superRefine((events, ctx) => {
       for (let i = 1; i < events.length; i++) {
@@ -127,6 +133,7 @@ export type Scenario = z.output<typeof scenarioSchema>;
 
 /** Parses scenario JSON text; throws `scenario: <path>: <message>` for the first problem. */
 export function parseScenario(text: string): Scenario {
+  if (Buffer.byteLength(text) > MAX_TEXT_BYTES) throw new Error('scenario: (file): too large');
   let raw: unknown;
   try {
     raw = JSON.parse(text.replace(/^\uFEFF/, ''));
