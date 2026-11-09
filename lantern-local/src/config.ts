@@ -23,6 +23,8 @@ export interface LanternConfig {
   wsUrl: string;
   ollamaUrl: string;
   heartbeatMs: number;
+  /** How long one pinned model may take to load in its warm-up before it is left unadvertised. */
+  warmTimeoutMs: number;
   pins: ModelPin[];
 }
 
@@ -120,12 +122,14 @@ export function loadConfig(options: LoadOptions = {}): LanternConfig {
   const host = str(thinker.host, 'mind.thinker.host');
   const port = int(thinker.port, 'mind.thinker.port', 1);
   const heartbeatS = int(thinker.heartbeat_s, 'mind.thinker.heartbeat_s', 1);
+  const warmS = int(thinker.warm_timeout_s, 'mind.thinker.warm_timeout_s', 1);
   const wsUrl = env.GELDAR_MIND_WS_URL ?? `ws://${host}:${port}/v1/thinker/stream`;
   const ollamaUrl = env.OLLAMA_URL ?? 'http://127.0.0.1:11434';
   return {
     wsUrl: requireLoopback(wsUrl, ['ws:'], 'GELDAR_MIND_WS_URL'),
     ollamaUrl: requireLoopback(ollamaUrl, ['http:'], 'OLLAMA_URL'),
     heartbeatMs: heartbeatS * 1000,
+    warmTimeoutMs: warmS * 1000,
     pins: parsePins(doc.model_pins, options.allowPlaceholders === true),
   };
 }

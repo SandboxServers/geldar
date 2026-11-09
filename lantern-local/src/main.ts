@@ -1,6 +1,6 @@
 import { loadConfig, thinkerVersion } from './config.ts';
 import { discoverModels } from './models.ts';
-import { ollamaChat } from './ollama.ts';
+import { ollamaChat, ollamaWarm } from './ollama.ts';
 import { LocalThinker } from './thinker.ts';
 
 const log = (line: string): void => {
@@ -19,8 +19,10 @@ async function main(): Promise<number> {
     wsUrl: config.wsUrl,
     models: advertised,
     chat: ollamaChat(config.ollamaUrl),
+    warm: ollamaWarm(config.ollamaUrl),
     version: thinkerVersion(),
     heartbeatMs: config.heartbeatMs,
+    warmTimeoutMs: config.warmTimeoutMs,
     log,
   });
   const shutdown = (): void => {

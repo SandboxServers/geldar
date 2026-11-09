@@ -33,6 +33,9 @@ export interface ChatResult {
 /** Runs one chat call; the Thinker takes it as a dependency so tests can swap it. */
 export type ChatFn = (request: ChatRequest, signal: AbortSignal) => Promise<ChatResult>;
 
+/** Loads one pinned model into memory before it is advertised; resolves once Ollama has answered. */
+export type WarmFn = (pin: ModelPin, signal: AbortSignal) => Promise<void>;
+
 interface ChatResponse {
   message?: { content?: string };
   prompt_eval_count?: number;
@@ -57,6 +60,27 @@ export function buildChatBody(request: ChatRequest): Record<string, unknown> {
   };
   if (request.schema !== undefined) body.format = request.schema;
   return body;
+}
+
+/**
+ * Makes a {@link WarmFn} for the Ollama at `baseUrl`: a one-token chat call that carries the pin's own
+ * `num_ctx` and `keep_alive`, so the model is resident with the configuration it will be served with.
+ */
+export function ollamaWarm(baseUrl: string): WarmFn {
+  const chat = ollamaChat(baseUrl);
+  return async (pin, signal) => {
+    await chat(
+      {
+        pin,
+        messages: [{ role: 'user', content: 'Reply with one word.' }],
+        maxTokens: 1,
+        temperature: 0,
+        stop: null,
+        think: false,
+      },
+      signal,
+    );
+  };
 }
 
 /** Makes a {@link ChatFn} that talks to the Ollama at `baseUrl`. */

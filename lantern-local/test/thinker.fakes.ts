@@ -30,6 +30,8 @@ export type OllamaHandler = (req: RecordedRequest, res: ServerResponse) => void;
 export class FakeOllama {
   readonly requests: RecordedRequest[] = [];
   handler: OllamaHandler = (_req, res) => this.reply(res, {});
+  /** Answers the thinker's one-token warm-up calls (num_predict 1), so a test can fail or hang them alone. */
+  warmHandler: OllamaHandler = (_req, res) => this.reply(res, { message: { content: '' } });
   private readonly server: Server;
   url = '';
 
@@ -65,7 +67,9 @@ export class FakeOllama {
       if (!res.writableEnded) recorded.aborted = true;
     });
     this.requests.push(recorded);
-    this.handler(recorded, res);
+    const options = recorded.body.options as { num_predict?: number } | undefined;
+    if (options?.num_predict === 1) this.warmHandler(recorded, res);
+    else this.handler(recorded, res);
   }
 }
 

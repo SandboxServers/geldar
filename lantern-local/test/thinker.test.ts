@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ollamaChat } from '../src/ollama.ts';
+import { ollamaChat, ollamaWarm } from '../src/ollama.ts';
 import {
   DEFAULT_BACKOFF_INITIAL_MS,
   DEFAULT_BACKOFF_MAX_MS,
@@ -87,6 +87,10 @@ describe('reconnect backoff', () => {
 
 const answer = { message: { content: '{"ok":true}' }, prompt_eval_count: 12, eval_count: 5 };
 
+function launchWarm(overrides: Partial<ThinkerOptions> = {}): LocalThinker {
+  return launch({ warm: ollamaWarm(ollama.url), ...overrides });
+}
+
 describe('connection', () => {
   it('sends hello with the advertised models, then serves after welcome and heartbeats', async () => {
     launch({ heartbeatMs: 40 });
@@ -153,6 +157,78 @@ describe('connection', () => {
     await until(() => t.droppedFrames === 3, 'three dropped frames');
     mind.push(mind.job());
     expect((await mind.next('completion')).text).toBe('{"ok":true}');
+  });
+});
+
+describe('warm-up', () => {
+  it('loads each pinned model, one at a time, before it sends hello', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    ollama.warmHandler = async (_r, res) => {
+      await gate;
+      ollama.reply(res, { message: { content: '' } });
+    };
+    launchWarm({ models: [pin('qwen3:8b'), pin('qwen3:32b')] });
+    await until(() => ollama.requests.length === 1, 'the first warm-up');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(ollama.requests).toHaveLength(1);
+    expect(mind.frames).toHaveLength(0);
+    release();
+    const hello = await mind.next('hello');
+    expect(ollama.requests.map((r) => r.body.model)).toEqual(['qwen3:8b', 'qwen3:32b']);
+    expect(ollama.requests[0]?.body).toMatchObject({
+      keep_alive: '30m',
+      think: false,
+      options: { num_ctx: 8192, num_predict: 1, temperature: 0 },
+    });
+    expect((hello.models as { name: string }[]).map((m) => m.name)).toEqual([
+      'qwen3:8b',
+      'qwen3:32b',
+    ]);
+    expect(logs).toEqual(
+      expect.arrayContaining([
+        'warming qwen3:8b',
+        expect.stringMatching(/^warm qwen3:8b in \d+ ms$/),
+        'warming qwen3:32b',
+        expect.stringMatching(/^warm qwen3:32b in \d+ ms$/),
+      ]),
+    );
+  });
+
+  it('does not advertise a model whose warm-up fails, and says why', async () => {
+    ollama.warmHandler = (req, res) => {
+      if (req.body.model === 'qwen3:32b') ollama.reply(res, { error: 'no memory' }, 500);
+      else ollama.reply(res, { message: { content: '' } });
+    };
+    launchWarm({ models: [pin('qwen3:8b'), pin('qwen3:32b')] });
+    const hello = await mind.next('hello');
+    expect((hello.models as { name: string }[]).map((m) => m.name)).toEqual(['qwen3:8b']);
+    expect(logs).toContain('warm failed qwen3:32b: Ollama answered 500');
+  });
+
+  it('advertises nothing while no model is warm, and retries the warm-up with backoff', async () => {
+    let attempts = 0;
+    ollama.warmHandler = (_r, res) => {
+      attempts += 1;
+      if (attempts === 1) ollama.reply(res, { error: 'loading' }, 503);
+      else ollama.reply(res, { message: { content: '' } });
+    };
+    launchWarm();
+    const hello = await mind.next('hello');
+    expect(attempts).toBe(2);
+    expect(hello.models).toEqual([{ name: 'qwen3:8b', max_concurrent: 1, max_tokens: 1024 }]);
+    expect(logs).toContain('no pinned model warmed; advertising nothing and retrying');
+    expect(logs.some((l) => l.startsWith('reconnecting in'))).toBe(true);
+  });
+
+  it('gives up on a warm-up that outlives the warm timeout, and sends no hello', async () => {
+    ollama.warmHandler = () => {};
+    launchWarm({ warmTimeoutMs: 80 });
+    await until(
+      () => logs.includes('warm failed qwen3:8b: no answer within 80 ms'),
+      'the warm timeout',
+    );
+    expect(mind.frames).toHaveLength(0);
   });
 });
 

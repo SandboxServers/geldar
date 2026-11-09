@@ -38,6 +38,7 @@ mind:
     port: 7410
     name: local                  # the Thinker name in the welcome frame
     heartbeat_s: 15              # seconds between heartbeat frames
+    warm_timeout_s: 180          # seconds one pinned model may take to load before its warm-up fails (lantern-local)
   snapshot_retry_s: 60           # the Mind retries a snapshot request for this long while the Body is not up
   thinker_wait_s: 20             # a thought waits this long for a Thinker to connect, then retries once
   thought:

@@ -6,13 +6,13 @@ import { loadConfig, PLACEHOLDER_DIGEST } from '../src/config.ts';
 import { discoverModels, selectModels } from '../src/models.ts';
 import { FakeOllama, GOOD_DIGEST, pin } from './thinker.fakes.ts';
 
-function shardFile(digest: string): string {
+function shardFile(digest: string, warmTimeoutS: number | string = 180): string {
   const file = join(mkdtempSync(join(tmpdir(), 'lantern-')), 'shard.yaml');
   writeFileSync(
     file,
     [
       'mind:',
-      '  thinker: { host: 127.0.0.1, port: 7410, name: local, heartbeat_s: 15 }',
+      `  thinker: { host: 127.0.0.1, port: 7410, name: local, heartbeat_s: 15, warm_timeout_s: ${warmTimeoutS} }`,
       'model_pins:',
       '  "qwen3:8b":',
       `    digest: "${digest}"`,
@@ -31,12 +31,24 @@ describe('loadConfig', () => {
     expect(config.wsUrl).toBe('ws://127.0.0.1:7410/v1/thinker/stream');
     expect(config.ollamaUrl).toBe('http://127.0.0.1:11434');
     expect(config.heartbeatMs).toBe(15_000);
+    expect(config.warmTimeoutMs).toBe(180_000);
     expect(config.pins).toEqual([pin('qwen3:8b')]);
+  });
+
+  it('reads the warm-up timeout and refuses one that is not a whole number of seconds of at least 1', () => {
+    expect(loadConfig({ file: shardFile(GOOD_DIGEST, 90), env: {} }).warmTimeoutMs).toBe(90_000);
+    expect(() => loadConfig({ file: shardFile(GOOD_DIGEST, 0), env: {} })).toThrow(
+      /warm_timeout_s must be an integer of at least 1/,
+    );
+    expect(() => loadConfig({ file: shardFile(GOOD_DIGEST, 'soon'), env: {} })).toThrow(
+      /warm_timeout_s/,
+    );
   });
 
   it('reads the real shard file with placeholders allowed', () => {
     const config = loadConfig({ env: {}, allowPlaceholders: true });
     expect(config.pins.map((p) => p.name)).toEqual(['qwen3:32b', 'qwen3:8b']);
+    expect(config.warmTimeoutMs).toBe(180_000);
   });
 
   it('refuses the placeholder digest unless tests allow it', () => {

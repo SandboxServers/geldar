@@ -1,6 +1,6 @@
 import { MAX_COMPLETION_TEXT, MAX_FRAME_BYTES, validateThinkerFrame } from '@geldar/contract';
 import type { AdvertisedModel } from './models.ts';
-import { type ChatFn, OllamaError, type OllamaErrorCode } from './ollama.ts';
+import { type ChatFn, OllamaError, type OllamaErrorCode, type WarmFn } from './ollama.ts';
 
 /** The advertised `max_tokens` of every model: the schema caps a job at 32768 and the Mind asks far less. */
 export const ADVERTISED_MAX_TOKENS = 1024;
@@ -8,6 +8,9 @@ export const ADVERTISED_MAX_TOKENS = 1024;
 /** The first reconnect delay and its cap: a hub that starts late is found within seconds. */
 export const DEFAULT_BACKOFF_INITIAL_MS = 250;
 export const DEFAULT_BACKOFF_MAX_MS = 5000;
+
+/** The time one pinned model may take to load in its warm-up; a cold 32B load from disk takes minutes. */
+export const DEFAULT_WARM_TIMEOUT_MS = 180_000;
 
 /** The delay before a reconnect: `baseMs` less up to half of it at random, so Thinkers do not step together. */
 export function jitteredDelay(baseMs: number, random: () => number): number {
@@ -18,10 +21,17 @@ export interface ThinkerOptions {
   wsUrl: string;
   models: AdvertisedModel[];
   chat: ChatFn;
+  /**
+   * Loads each pinned model before `hello`, one at a time. Without it no warm-up runs and every
+   * pinned model is advertised at once.
+   */
+  warm?: WarmFn;
   version: string;
   heartbeatMs?: number;
   /** How long to wait for `welcome` after `hello`. Appendix H and the card say 10 s. */
   helloTimeoutMs?: number;
+  /** How long each pinned model's warm-up call may take before the model is left unadvertised. */
+  warmTimeoutMs?: number;
   /** Reconnect backoff: first delay and the cap; it doubles each failed attempt. */
   backoffInitialMs?: number;
   backoffMaxMs?: number;
@@ -47,13 +57,19 @@ export class LocalThinker {
   /** How many `welcome` frames this Thinker has accepted, across reconnects. */
   welcomes = 0;
 
-  private readonly opts: Required<Omit<ThinkerOptions, 'log'>> & { log: (line: string) => void };
+  private readonly opts: Required<Omit<ThinkerOptions, 'log' | 'warm'>> & {
+    log: (line: string) => void;
+    warm?: WarmFn;
+  };
   private readonly byName = new Map<string, AdvertisedModel>();
   private readonly inFlight = new Map<string, InFlight>();
+  /** The models that answered their warm-up on the latest attempt: the ones `hello` advertises. */
+  private advertised: AdvertisedModel[] = [];
   private socket: WebSocket | null = null;
   private serving = false;
   private accepted = new Set<string>();
   private stopped = false;
+  private warmAbort: AbortController | undefined;
   private backoffMs: number;
   private helloTimer: NodeJS.Timeout | undefined;
   private heartbeatTimer: NodeJS.Timeout | undefined;
@@ -64,6 +80,7 @@ export class LocalThinker {
     this.opts = {
       heartbeatMs: 15_000,
       helloTimeoutMs: 10_000,
+      warmTimeoutMs: DEFAULT_WARM_TIMEOUT_MS,
       backoffInitialMs: DEFAULT_BACKOFF_INITIAL_MS,
       backoffMaxMs: DEFAULT_BACKOFF_MAX_MS,
       random: Math.random,
@@ -76,13 +93,14 @@ export class LocalThinker {
 
   /** Starts the connection loop; it keeps reconnecting until {@link stop}. */
   start(): void {
-    this.connect();
+    void this.connect();
   }
 
   /** Sends `goodbye{shutdown}` if connected, then closes and stops reconnecting. */
   async stop(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.reconnectTimer);
+    this.warmAbort?.abort();
     const socket = this.socket;
     if (socket !== null && socket.readyState === WebSocket.OPEN) {
       this.send({ type: 'goodbye', reason: 'shutdown' });
@@ -95,18 +113,66 @@ export class LocalThinker {
     this.teardown();
   }
 
-  private connect(): void {
+  /**
+   * One connection attempt: warms the pinned models, then dials the Mind with the ones that answered.
+   * With none warm it advertises nothing and retries after the backoff.
+   */
+  private async connect(): Promise<void> {
+    if (this.stopped) return;
+    const warmed = await this.warmModels();
+    if (this.stopped) return;
+    if (warmed.length === 0) {
+      this.opts.log('no pinned model warmed; advertising nothing and retrying');
+      this.scheduleReconnect();
+      return;
+    }
+    this.advertised = warmed;
+    this.dial();
+  }
+
+  /** Loads each pinned model in turn with a one-token call; returns the ones that answered in time. */
+  private async warmModels(): Promise<AdvertisedModel[]> {
+    const warm = this.opts.warm;
+    if (warm === undefined) return [...this.opts.models];
+    const warmed: AdvertisedModel[] = [];
+    for (const pin of this.opts.models) {
+      if (this.stopped) break;
+      this.opts.log(`warming ${pin.name}`);
+      const started = Date.now();
+      const controller = new AbortController();
+      this.warmAbort = controller;
+      const timer = setTimeout(() => controller.abort(), this.opts.warmTimeoutMs);
+      try {
+        await warm(pin, controller.signal);
+        this.opts.log(`warm ${pin.name} in ${Date.now() - started} ms`);
+        warmed.push(pin);
+      } catch (err) {
+        let reason = 'unexpected failure';
+        if (this.stopped) reason = 'stopped';
+        else if (controller.signal.aborted) {
+          reason = `no answer within ${this.opts.warmTimeoutMs} ms`;
+        } else if (err instanceof OllamaError) reason = err.message;
+        this.opts.log(`warm failed ${pin.name}: ${reason}`);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    this.warmAbort = undefined;
+    return warmed;
+  }
+
+  private dial(): void {
     if (this.stopped) return;
     this.opts.log(`connecting to ${this.opts.wsUrl}`);
     const socket = new WebSocket(this.opts.wsUrl);
     this.socket = socket;
     this.serving = false;
     socket.addEventListener('open', () => {
-      this.opts.log(`connected; sending hello with ${this.opts.models.length} model(s)`);
+      this.opts.log(`connected; sending hello with ${this.advertised.length} model(s)`);
       this.send({
         type: 'hello',
         thinker_version: this.opts.version,
-        models: this.opts.models.map((m) => ({
+        models: this.advertised.map((m) => ({
           name: m.name,
           max_concurrent: m.maxConcurrent,
           max_tokens: ADVERTISED_MAX_TOKENS,
@@ -157,7 +223,7 @@ export class LocalThinker {
       this.backoffMs = Math.min(this.backoffMs * 2, this.opts.backoffMaxMs);
     }
     this.opts.log(`reconnecting in ${delay} ms`);
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    this.reconnectTimer = setTimeout(() => void this.connect(), delay);
   }
 
   private onMessage(data: unknown): void {
@@ -218,7 +284,7 @@ export class LocalThinker {
 
   private sendLoad(): void {
     const load: Record<string, number> = {};
-    for (const model of this.opts.models) load[model.name] = 0;
+    for (const model of this.advertised) load[model.name] = 0;
     for (const job of this.inFlight.values()) load[job.model] = (load[job.model] ?? 0) + 1;
     this.send({ type: 'heartbeat', load });
   }
