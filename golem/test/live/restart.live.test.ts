@@ -8,7 +8,13 @@ import { type LiveContext, withLiveBot } from './fixture.ts';
 /** Slot 2 of the arena (no other file uses it) and the bot that plays it. */
 const NAME = 'GolemRestart';
 const SLOT = 2;
-const LIFE = 'ag_restart_01';
+/**
+ * The life id. With a real NATS it is unique per run, so a checkpoint or generation left by an
+ * earlier run cannot be mistaken for this run's; the memory buckets start empty anyway.
+ */
+const LIFE = process.env.GELDAR_NATS_URL
+  ? `ag_restart_${Date.now().toString(36)}`
+  : 'ag_restart_01';
 const LOGS = 10;
 const POLL_LIMIT = 4000;
 
