@@ -4,6 +4,7 @@ import { type Arena, buildArena, quietWorld, restoreWorld } from '../../src/aren
 import { loadConfig, readRconPassword } from '../../src/config.ts';
 import { ConnectionManager } from '../../src/connection.ts';
 import { RconClient } from '../../src/rcon.ts';
+import { registryFromConfig } from '../../src/registry.ts';
 import { TestControl } from '../../src/test-control.ts';
 
 /** What a live test gets: the joined bot, the RCON control, the arena and the connection manager. */
@@ -31,6 +32,7 @@ export async function withLiveBot(
     port: cfg.mcPort,
     username: opts.name,
     onBot: watchRecipeBook,
+    registry: registryFromConfig(cfg),
   });
   await runWithBot({ ctl: new TestControl(rcon), manager, close: () => rcon.close() }, opts, fn);
 }

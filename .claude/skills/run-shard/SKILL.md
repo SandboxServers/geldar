@@ -55,6 +55,8 @@ Never fix a problem by acting inside the world (teleporting a bot, giving items,
 
 Golem reads these from the environment (`golem/src/config.ts`): `GELDAR_MC_HOST` (must be `127.0.0.1` or `localhost`), `GELDAR_MC_PORT` (default 25565), `GELDAR_RCON_PORT` (default 25575) and `GELDAR_RCON_PASSWORD_FILE` (default `compose/secrets/rcon.txt` under the repo root). Secrets live in the starting worktree's `compose/secrets/`: if another checkout started the stack, point `GELDAR_RCON_PASSWORD_FILE` at that checkout's file.
 
+The Phase 0 stack now runs the Velocity identity gate: a bot is admitted only if Golem registered its username in NATS first. Set `GELDAR_NATS_URL=nats://127.0.0.1:4222` before the live lane or a benchmark run; unset, Golem skips the registry and the gate denies it. See `golem/README.md`.
+
 ## Stop
 
 ```powershell

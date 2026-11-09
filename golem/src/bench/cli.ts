@@ -7,6 +7,7 @@ import { restoreWorld } from '../arena.ts';
 import { type GolemConfig, loadConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { RconClient } from '../rcon.ts';
+import { registryFromConfig } from '../registry.ts';
 import { TestControl } from '../test-control.ts';
 import { sleep as wallSleep } from '../world-clock.ts';
 import { collectMeta, isDirty, runGit } from './meta.ts';
@@ -173,6 +174,7 @@ function defaultManager(
     port: cfg.mcPort,
     username: BENCH_NAME,
     onBot: watchRecipeBook,
+    registry: registryFromConfig(cfg),
     log: () => undefined,
   });
 }

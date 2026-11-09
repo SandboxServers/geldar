@@ -9,6 +9,8 @@ export interface GolemConfig {
   rconHost: string;
   rconPort: number;
   rconPasswordFile: string;
+  /** The NATS server for the life registry; unset means the registry is off. */
+  natsUrl?: string;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
@@ -21,6 +23,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (!LOOPBACK_HOSTS.has(mcHost)) {
     throw new Error(`GELDAR_MC_HOST must be 127.0.0.1 or localhost, got '${mcHost}'`);
   }
+  const natsUrl = parseNatsUrl(env.GELDAR_NATS_URL);
   return {
     mcHost,
     mcPort: parsePort('GELDAR_MC_PORT', env.GELDAR_MC_PORT, 25565),
@@ -28,6 +31,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     rconPort: parsePort('GELDAR_RCON_PORT', env.GELDAR_RCON_PORT, 25575),
     rconPasswordFile:
       env.GELDAR_RCON_PASSWORD_FILE ?? join(repoRoot(), 'compose', 'secrets', 'rcon.txt'),
+    ...(natsUrl === undefined ? {} : { natsUrl }),
   };
 }
 
@@ -72,4 +76,22 @@ function parsePort(name: string, raw: string | undefined, fallback: number): num
     throw new Error(`${name} must be a port from 1 to 65535, got '${raw}'`);
   }
   return port;
+}
+
+/** Unset or empty means the life registry is off; otherwise a `nats://` URL on a loopback host. */
+function parseNatsUrl(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`GELDAR_NATS_URL must be a nats:// URL, got '${raw}'`);
+  }
+  if (url.protocol !== 'nats:') {
+    throw new Error(`GELDAR_NATS_URL must be a nats:// URL, got '${raw}'`);
+  }
+  if (!LOOPBACK_HOSTS.has(url.hostname)) {
+    throw new Error(`GELDAR_NATS_URL must point at 127.0.0.1 or localhost, got '${raw}'`);
+  }
+  return raw;
 }
