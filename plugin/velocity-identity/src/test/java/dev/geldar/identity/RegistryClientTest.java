@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -81,11 +82,12 @@ class RegistryClientTest {
     void theWatchLoopBeginsAReplayAndSyncsFromTheWatch() throws Exception {
         FakeBucket bucket = new FakeBucket();
         bucket.replays.add(List.of("alice"));
-        AtomicInteger watching = new AtomicInteger();
-        CompletableFuture<Void> loop = runLoop(bucket, watching::incrementAndGet);
+        CountDownLatch watching = new CountDownLatch(1);
+        CompletableFuture<Void> loop = runLoop(bucket, watching::countDown);
         // Without beginReplay the end of data would not open the gate.
         await(() -> gate.admits("alice"));
-        assertEquals(1, watching.get());
+        // The gate opens inside watchAll, before the watching hook runs: wait for the hook, do not assume it.
+        assertTrue(watching.await(10, TimeUnit.SECONDS), "the watching hook ran");
         status.set(Connection.Status.CLOSED);
         loop.get(10, TimeUnit.SECONDS);
         assertFalse(registry.isSynced(), "the gate closes when the watch ends");
@@ -145,8 +147,14 @@ class RegistryClientTest {
         FakeBucket bucket = new FakeBucket();
         bucket.replays.add(List.of("alice"));
         client.backoffMs = 4_000;
-        CompletableFuture<Void> loop = runLoop(bucket, client::resetBackoff);
+        CountDownLatch reset = new CountDownLatch(1);
+        CompletableFuture<Void> loop = runLoop(bucket, () -> {
+            client.resetBackoff();
+            reset.countDown();
+        });
         await(() -> gate.admits("alice"));
+        // The reset runs after watchAll returns, which is after the gate opened; the latch publishes it.
+        assertTrue(reset.await(10, TimeUnit.SECONDS), "the watch started");
         assertEquals(500, client.backoffMs);
         status.set(Connection.Status.CLOSED);
         loop.get(10, TimeUnit.SECONDS);

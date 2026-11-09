@@ -117,6 +117,42 @@ export interface WorldEvent {
   };
 }
 
+export interface IntentEventPayload {
+  intent_id: string;
+  /**
+   * Permanent identity of one agent life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  body_generation: number;
+  state: "accepted" | "running" | "paused" | "completed" | "failed" | "cancelled" | "interrupted";
+  /**
+   * World age of the change.
+   */
+  tick: number;
+  /**
+   * Why, in plain text, for example the failure message.
+   */
+  detail?: string;
+  goal?: string;
+  /**
+   * A built-in program, or the name of a skill.
+   */
+  program?: ("travel" | "gather" | "craft" | "build" | "rest" | "flee" | "follow" | "trade_wait") | string;
+  arguments?: Arguments;
+  preconditions?: string[];
+  wake_on?: string[];
+  limits?: Limits;
+}
+
+export interface Arguments {
+  [k: string]: unknown;
+}
+
+export interface Limits {
+  max_world_ticks: number;
+  max_block_operations: number;
+}
+
 export type McpCursor = string;
 
 export type McpInterest =
@@ -590,6 +626,32 @@ export interface Receipt {
    * What happened, for example why an action aborted.
    */
   detail?: string;
+}
+
+export interface ReflexFiredPayload {
+  /**
+   * The reflex name, for example eat or hazard_escape.
+   */
+  name: string;
+  /**
+   * Permanent identity of one agent life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  body_generation: number;
+  /**
+   * World age when the reflex fired.
+   */
+  tick: number;
+  /**
+   * The values the reflex's check returned.
+   */
+  trigger: {
+    [k: string]: string | number | boolean | null;
+  };
+  outcome: {
+    result: "handled" | "failed" | "abandoned";
+    detail?: string;
+  };
 }
 
 export interface Snapshot {
@@ -1354,4 +1416,17 @@ export interface Intent {
   checkpoint?: {
     [k: string]: unknown;
   };
+}
+
+export interface WakePayload {
+  reason: string;
+  /**
+   * World age when the wake was decided.
+   */
+  tick: number;
+  /**
+   * The intent the wake concerns, or null.
+   */
+  intent_id: string | null;
+  detail?: string;
 }

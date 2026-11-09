@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/wake-event.schema.json",
+  "title": "WakePayload",
+  "description": "Payload of a WorldEvent of type `wake`: the Body decided to wake the Mind (spec 5.3, Appendix C wake_on, plus reflex_danger, action_failed, limit_reached and no_plan, which a restarted Body with nothing to resume raises when no plan arrived in 45 s, with a null intent_id). Events only, no table. source_event_id derives from (life, tick, reason, intent), so a retry dedups.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reason", "tick", "intent_id"],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "pattern": "^(directly_addressed|precondition_failed|unexpected_damage|goal_completed|new_agent_within_[0-9]{1,4}|reflex_danger|action_failed|limit_reached|no_plan)$"
+    },
+    "tick": {
+      "description": "World age when the wake was decided.",
+      "$ref": "common.schema.json#/$defs/WorldTick"
+    },
+    "intent_id": {
+      "description": "The intent the wake concerns, or null.",
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/IntentId" }, { "type": "null" }]
+    },
+    "detail": { "type": "string", "maxLength": 256 }
+  }
+}

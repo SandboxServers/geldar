@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/intent-event.schema.json",
+  "title": "IntentEventPayload",
+  "description": "Payload of a WorldEvent of type `intent`: one state change of an intent, published by the Body (spec 5.3, section 7). The sink projects it into the Postgres `intents` table, moving only forward: accepted, then running, then completed, failed or cancelled. An `interrupted` event is projected as `cancelled` with an end_reason that starts `interrupted:`; `paused` is events only, because the table has no such state. The `accepted` event also carries goal, program, arguments, preconditions, wake_on and limits, which the sink stores in the same row. source_event_id derives from (intent_id, state, tick), so a retry dedups. intent_id is the id the Mind put in the plan (an `in_` id); the Body does not derive it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intent_id", "life_id", "body_generation", "state", "tick"],
+  "properties": {
+    "intent_id": { "$ref": "common.schema.json#/$defs/IntentId" },
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "body_generation": { "type": "integer", "minimum": 0 },
+    "state": {
+      "type": "string",
+      "enum": ["accepted", "running", "paused", "completed", "failed", "cancelled", "interrupted"]
+    },
+    "tick": {
+      "description": "World age of the change.",
+      "$ref": "common.schema.json#/$defs/WorldTick"
+    },
+    "detail": {
+      "description": "Why, in plain text, for example the failure message.",
+      "type": "string",
+      "maxLength": 256
+    },
+    "goal": { "$ref": "thought.schema.json#/$defs/Intent/properties/goal" },
+    "program": { "$ref": "thought.schema.json#/$defs/Intent/properties/program" },
+    "arguments": { "$ref": "thought.schema.json#/$defs/Intent/properties/arguments" },
+    "preconditions": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+    "wake_on": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+    "limits": { "$ref": "thought.schema.json#/$defs/Intent/properties/limits" }
+  }
+}

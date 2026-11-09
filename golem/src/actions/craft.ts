@@ -77,11 +77,18 @@ async function runCraft(
     if (usedTable || hasUnlockedDisplay(bot, item)) {
       // Recipe-book crafts skip bot.craft: its stateId is shared by every window, and on 26.1 the
       // table rejects it. A 2x2 recipe with no unlocked display falls back to bot.craft.
-      // The book makes its display's yield per craft, which can be less than the picked recipe's (a
-      // stick from planks makes 4, from bamboo 1), so the craft count comes from that yield. The
-      // crafted count is judged against what was asked.
+      // The book makes its display's yield per craft, which can differ from the picked recipe's and
+      // from the first display's (a stick from planks makes 4, from bamboo 1, and the server takes
+      // either). So the yield is not guessed: `want` makes the book stop when the inventory has
+      // gained the count asked, and the guess is only the cap it is handed. The crafted count is
+      // judged against what was asked.
       const yieldPer = bookYield(bot, item) || recipe.result.count;
-      stop = await craftFromBook(ctx, item, Math.ceil(action.count / yieldPer), usedTable);
+      stop = await craftFromBook(
+        { ...ctx, want: action.count },
+        item,
+        Math.ceil(action.count / yieldPer),
+        usedTable,
+      );
       expected = action.count;
       // With no table, a display that never fills means this item has no 2x2 recipe the book can make.
       // bot.craft makes the rest, so the craft does not fail on a display that was never the right one.

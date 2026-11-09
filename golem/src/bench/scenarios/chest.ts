@@ -15,7 +15,7 @@ export interface StackLite {
 
 /**
  * Pure verdict: the chest holds exactly 6 cobblestone and nothing else, and the bot holds exactly
- * 4 cobblestone. No receipt check: receipts are built with the executor in wave 4.
+ * 4 cobblestone. No receipt check: the bench runs actions on the registry, not through the executor that writes receipts.
  */
 export function chestVerdict(chest: Map<string, number>, inventory: StackLite[]): boolean {
   if (chest.size !== 1 || chest.get('cobblestone') !== DEPOSITED - WITHDRAWN) return false;
@@ -61,6 +61,9 @@ export const chest: Scenario = {
     const inChest = await env.ctl.chestItems(at.x, at.y, at.z);
     const passed = chestVerdict(inChest, env.bot.inventory.items());
     const held = JSON.stringify(Object.fromEntries(inChest));
-    return { passed, note: `chest ${held}; receipts: not built yet (wave 4)` };
+    return {
+      passed,
+      note: `chest ${held}; receipts: not checked (the bench bypasses the executor)`,
+    };
   },
 };

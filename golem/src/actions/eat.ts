@@ -6,7 +6,7 @@ import type { ActionContext, ActionHandler } from './registry.ts';
  * Foods the Body never picks: raw or harmful ones, and ones whose effects it does not handle. Wave 4
  * refines this list.
  */
-const BANNED_FOODS = [
+export const BANNED_FOODS = [
   'rotten_flesh',
   'spider_eye',
   'poisonous_potato',

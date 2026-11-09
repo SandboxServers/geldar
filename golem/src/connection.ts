@@ -3,6 +3,7 @@ import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { nextDelayMs } from './backoff.ts';
 import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
+import { watchWorldTicks } from './world-clock.ts';
 
 /** Where a bot connects and how it reconnects. Production passes host and port from `loadConfig` only. */
 export interface ConnectionOptions {
@@ -140,6 +141,17 @@ export class ConnectionManager extends EventEmitter {
     this.log = options.log ?? defaultLog;
     this.registry = options.registry;
   }
+
+  /**
+   * Calls `listener` with the world age on every physics tick (20 Hz) of the current and later bots, as an estimated world tick, and
+   * returns the function that unsubscribes. This is the `TickSource` of `BodyRuntime`.
+   */
+  onWorldTick = (listener: (worldAge: number) => void): (() => void) => {
+    this.on('worldTick', listener);
+    return () => {
+      this.off('worldTick', listener);
+    };
+  };
 
   /** Joins and resolves on the first spawn. Rejects if the connection goes fatal before that. */
   start(): Promise<Bot> {
@@ -290,6 +302,8 @@ export class ConnectionManager extends EventEmitter {
         this.pending?.resolve(bot);
         this.pending = null;
       });
+      // One world tick per client physics tick (20 Hz), not per time packet (about 1 Hz).
+      watchWorldTicks(bot, (tick) => this.emit('worldTick', tick));
       bot.on('kicked', (reason: unknown) => finish(reasonText(reason), true));
       bot.on('end', (reason?: string) => finish(reason ?? 'end', false));
       // Protocol errors are logged, not thrown: an unhandled 'error' event would crash the process.

@@ -1,6 +1,7 @@
 /** Writes events to Postgres, idempotently. */
 import type { WorldEvent } from '@geldar/contract';
 import type { Pool } from 'pg';
+import { isProjected, pgProjectionStore, projectEvent } from './projection.ts';
 
 /** What the consumer needs from the database; tests substitute a fake. */
 export interface EventWriter {
@@ -29,21 +30,50 @@ export function isPermanentDbError(error: unknown): boolean {
   return typeof code === 'string' && /^(22|23)/.test(code);
 }
 
-/** The Postgres-backed writer. A single INSERT is atomic, so the batch is all or nothing. */
+/** Binds the event columns of a batch for INSERT_SQL. */
+function insertParams(events: readonly WorldEvent[]): unknown[] {
+  return [
+    events.map((e) => e.source_event_id),
+    events.map((e) => e.at),
+    events.map((e) => e.world_day),
+    events.map((e) => String(e.world_tick)),
+    events.map((e) => e.type),
+    events.map((e) => e.agent_id ?? null),
+    events.map((e) => e.thinker_id ?? null),
+    events.map((e) => JSON.stringify(e.payload)),
+  ];
+}
+
+/**
+ * The Postgres-backed writer. A single INSERT is atomic, so the batch is all or nothing. A batch
+ * holding `intent`, `action` or `receipt` events runs in one transaction: the INSERT, then the
+ * projection of those events into their tables (see projection.ts), in batch order.
+ */
 export function pgEventWriter(pool: Pool): EventWriter {
   return {
     async insertBatch(events) {
       if (events.length === 0) return;
-      await pool.query(INSERT_SQL, [
-        events.map((e) => e.source_event_id),
-        events.map((e) => e.at),
-        events.map((e) => e.world_day),
-        events.map((e) => String(e.world_tick)),
-        events.map((e) => e.type),
-        events.map((e) => e.agent_id ?? null),
-        events.map((e) => e.thinker_id ?? null),
-        events.map((e) => JSON.stringify(e.payload)),
-      ]);
+      if (!events.some(isProjected)) {
+        await pool.query(INSERT_SQL, insertParams(events));
+        return;
+      }
+      const client = await pool.connect();
+      // A client whose ROLLBACK failed may still hold the open transaction: destroy it, not pool it.
+      let broken = false;
+      try {
+        await client.query('BEGIN');
+        await client.query(INSERT_SQL, insertParams(events));
+        const store = pgProjectionStore(client);
+        for (const event of events) await projectEvent(event, store);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {
+          broken = true;
+        });
+        throw error;
+      } finally {
+        client.release(broken);
+      }
     },
   };
 }

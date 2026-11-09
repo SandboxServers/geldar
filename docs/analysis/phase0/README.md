@@ -28,8 +28,8 @@ Packets: [work-packets.md](work-packets.md). Resume card: [RESUME.md](RESUME.md)
 | D-P0-09 | Generator tools: `json-schema-to-typescript` for types, Ajv standalone for precompiled validators | Accepted (orchestrator) | P0-01 | work-packets.md § Contract |
 | D-P0-10 | Receipts: every action writes one; economic actions write two phases (`prepared`, then `committed` or `aborted`), the rest write one final receipt; `(action_id, phase)` unique, which changes Appendix D | Accepted | P0-03, P0-05 | [0020](../../decisions/0020-receipts.md) |
 | D-P0-11 | Migrations: numbered SQL files in `sql/`, applied by Postgres init on a fresh volume in Phase 0; a migration runner when the first schema change hits a live database | Accepted (orchestrator) | P0-05 | `sql/README.md` (P0-05) |
-| D-P0-12 | Embedding model for `memories.embedding vector(768)`: `nomic-embed-text` through Ollama (768 dimensions) | Open | wave 5 | — |
-| D-P0-14 | Recipe-book grant: the Geldar-Core plugin grants all recipes on join so table crafts work ([0032](../../decisions/0032-table-crafting-and-recipe-book.md)); an Adam design question for owner review | Proposed (owner review) | P0-11 | [0032](../../decisions/0032-table-crafting-and-recipe-book.md) |
+| D-P0-12 | Embedding model for `memories.embedding vector(768)`: `nomic-embed-text` through Ollama (768 dimensions) | Accepted (owner, 2026-11-09) | wave 5 | — |
+| D-P0-14 | Recipe-book grant replaced by recipe discovery (owner, 2026-11-09): the plugin no longer grants recipes; P0-19 makes unlocking work | Accepted (owner), supersedes 0032 item 2 | P0-11, P0-19 | [0048](../../decisions/0048-recipe-discovery-is-part-of-the-game.md) |
 | D-P0-15 | Chest transfers as explicit server-confirmed click sequences, not `container.deposit`/`withdraw` | Accepted (owner review of the click sequences) | wave 4 | [0037](../../decisions/0037-chest-transfers-by-explicit-clicks.md) |
 | D-P0-16 | Tick rate does not slow a client-driven Body; this affects spec 5.14, and the owner must read it before waves 4 and 5 | Proposed (owner must read) | wave 4, wave 5 | [0038](../../decisions/0038-tick-rate-does-not-slow-a-client-driven-body.md) |
 | D-P0-17 | Benchmark pass bar: 100% at 20 TPS; the 10 and 5 TPS rows are findings only | Accepted (owner ruling) | wave 4 | [0038](../../decisions/0038-tick-rate-does-not-slow-a-client-driven-body.md) |
@@ -62,12 +62,22 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | W1-process | 2 | Apply the wave 1 retro actions to agents, skills and repo checks | packet-coder | Shipped (review 3, merged to wave2) | — | |
 | W2-process | 2 | Apply the wave 2 retro actions to agents, skills, `CLAUDE.md` and `AGENTS.md` | packet-coder | Shipped (review 2, merged to wave2) | wave 2 code | |
 | W3-process | 3 | Apply the wave 3 retro actions to agents, skills and repo checks | packet-coder | Shipped (merged to wave3; no separate review: owner ruling, reviews at wave end) | wave 3 code | |
+| P0-14 | 4 | Body runtime skeleton (reflex runner, program and record interfaces): the unblocker | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | wave 3 | |
+| P0-15a | 4 | Reflexes: eat, fall-stop, hazard escape | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
+| P0-15b | 4 | Reflexes: retreat, fight or flee, `attack` action | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
+| P0-15c | 4 | Reflexes: panic burrow, blocked-path | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
+| P0-16a | 4 | Intent executor: validity, preconditions, limits, wake conditions | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
+| P0-16b | 4 | Built-in programs (travel, gather, craft, rest, flee) with checkpoints | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
+| P0-17 | 4 | Intent, action and receipt records to NATS and Postgres | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
+| P0-18 | 4 | Body restart resumes from its checkpoint | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-16a, P0-16b, P0-17 | |
+| W4-process | 4 | Apply the wave 4 retro actions | packet-coder | Writing (after the benchmark re-record) | wave 4 test, review and retro | |
+| P0-19 | 5 | Recipe discovery: find why vanilla recipe unlocking did not fire, make unlocking work (or a plugin unlock), remove the grant, scenarios without `recipe give` (decision 0048) | packet-coder | Ready (first packet after wave 4) | wave 4 | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-06 | |
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-03, P0-05 | |
 | P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-11 | |
 | P0-13b | 3 | Golem registers its bot username before connecting | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-13a | |
 
-Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md` and [retro/wave-3.md](retro/wave-3.md) are written.
+Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md`, [retro/wave-3.md](retro/wave-3.md) and [retro/wave-4.md](retro/wave-4.md) are written.
 
 **Wave 2 additions** (merged outside the packet rows above): the P0-10a follow-up (read-only run queries `blockIs` and `isSleeping`, an injected scenario list; eeb44fd); the record helper (`golem/test/live/record.ts`; 7f8c46e); the corner-cutting `moveNear` fix ([0039](../../decisions/0039-pathing-forbids-corner-cutting.md)); the hidden `bed-clear` control scenario; the arena `stone_bricks` floor (46962cc); the table-craft and chest rework ([0032](../../decisions/0032-table-crafting-and-recipe-book.md), [0037](../../decisions/0037-chest-transfers-by-explicit-clicks.md)).
 

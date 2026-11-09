@@ -13,13 +13,22 @@ Build both plugin jars first; compose bind-mounts them and does not run the buil
 
 ```powershell
 cd plugin; ./gradlew build; cd ..   # writes core/build/libs/geldar-core.jar and velocity-identity/build/libs/geldar-velocity-identity.jar
-./geldar.ps1 shard up phase0       # docker compose up -d --wait: returns when every healthcheck passes
+./geldar.ps1 shard up phase0       # docker compose build, then up -d --wait: returns when every healthcheck passes
 ./geldar.ps1 shard status phase0
 ```
 
-`shard up` stops before starting when either jar is not a file (Docker would create a directory at that path and the server would boot without the plugin; delete that directory and build). After `--wait` it also reads the Paper and Velocity logs and fails unless they hold `Geldar-Core enabled` and `Geldar identity enabled`, because a healthy container alone does not prove the plugin loaded (the Velocity gate would admit anyone). The Paper and Velocity healthchecks check the same lines.
+`shard up` first runs `docker compose build`, so the images built from this repo (the eventsink) are rebuilt from the layer cache: a stale image never runs after a source change, and when nothing changed every layer is a cache hit and the step takes a few seconds (the build context is sent each time). Plain `docker compose up` does not rebuild. An offline `shard up` fails on a build whose layers are not all in the cache, even when an older image of that service exists. `shard up` stops before starting when either jar is not a file (Docker would create a directory at that path and the server would boot without the plugin; delete that directory and build). After `--wait` it also reads the Paper and Velocity logs and fails unless they hold `Geldar-Core enabled` and `Geldar identity enabled`, because a healthy container alone does not prove the plugin loaded (the Velocity gate would admit anyone). The Paper and Velocity healthchecks check the same lines.
 
 `--wait` fails if a container is unhealthy after its start period. Paper's first start generates the world and can take minutes; don't treat a slow start as a failure until its healthcheck's start period has passed. The `eventsink` service has no healthcheck: `shard status` shows it running, and the events rows below show it works.
+
+## Wave test procedure
+
+Run this once per wave, after the wave branch is merged and checked, on the code you want measured:
+
+1. `./geldar.ps1 shard up phase0` (rebuilds the repo images, so the stack runs the current eventsink) and walk the health rows below.
+2. Start the live lane in the background: `./geldar.ps1 pnpm --filter @geldar/golem test:live` takes about 11 minutes, longer than a foreground shell call allows. Read its output file when it finishes; do not poll in a loop.
+3. Run the eventsink integration tests against the rebuilt image, with the stack idle (no live lane running): `$env:GELDAR_IT = '1'; ./geldar.ps1 pnpm test eventsink` (add `--no-file-parallelism` if the two `.it` files collide on the shared `geldar.phaseit.*` subject).
+4. Then the benchmark (`body-bench` skill). The live lane, the integration tests and the benchmark use the one shard: run them one at a time.
 
 ## Health: what "healthy" means
 
@@ -43,6 +52,7 @@ function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
 | Identity plugin loaded, unregistered name denied | `docker logs geldar-phase0-velocity-1 2>&1 \| Select-String "Geldar identity enabled\|Watching the life registry\|Denied"` | prints `Geldar identity enabled` and `Watching the life registry` (the jar is built first: `cd plugin; ./gradlew build`; until Golem creates the `geldar-life-registry` bucket the plugin logs "Life registry unavailable" and denies everyone); a login with an unregistered username is refused at the proxy and logs `Denied <name>` |
 | Events flowing | `curl -fsS "http://localhost:8222/jsz?streams=true"` | stream `GELDAR_EVENTS` exists (under `account_details[].stream_detail[]`) and its `state.messages` count grows (a `server_tps` event arrives every 20 s) |
 | Events reach Postgres (eventsink) | `dc exec postgres psql -U geldar -d geldar -tAc "select type, count(*) from events group by type"` | has a `server_tps` row whose count grows (one per 20 s); `dc logs --tail 50 eventsink` shows no repeated errors or dead letters (the sink writes failed events to the `geldar.<shard>.dlq` subject) |
+| Body records projected (eventsink) | `dc exec postgres psql -U geldar -d geldar -tAc "select 'intents', state, count(*) from intents group by state union all select 'actions', state, count(*) from actions group by state union all select 'receipts', phase, count(*) from receipts group by phase"` | after a Body has run (a bench or live test with the records sink on), `intents` (an interrupted intent shows as `cancelled` with an `end_reason` starting `interrupted:`), `actions` and `receipts` have rows, and every finished action has exactly one `committed` or `aborted` receipt; empty tables are normal while no Body has published. A second final receipt appears only as a dead letter, never as a row |
 | Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
 
 Ports, users and database names come from `compose/phase0.yml` and its `.env.example`; if they differ from the table, the compose file wins. Update this table in the same PR.

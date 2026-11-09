@@ -31,14 +31,33 @@ export function holdsStonePickaxe(
   return inventory.some((item) => item.name === 'stone_pickaxe' && item.count > 0);
 }
 
-/** The note for a step that did not complete, naming the step and the action result. */
+/** Longest action detail, in characters, a failure note carries. */
+const DETAIL_LIMIT = 300;
+
+/** What the bot holds, as `name xN` pairs; `empty` when nothing. */
+export function inventoryNote(inventory: ReadonlyArray<{ name: string; count: number }>): string {
+  return inventory.length === 0
+    ? 'empty'
+    : inventory.map((item) => `${item.name} x${item.count}`).join(', ');
+}
+
+/**
+ * The note for a step that did not complete, naming the step and the action result. With the
+ * bot's inventory it also lists what the bot held and the result's detail, so a failure like
+ * `missing_materials` can be told apart from a lost drop; the verdict is not affected.
+ */
 export function failedStepNote(
   index: number,
   label: string,
-  result: { status: string; reason?: string; message?: string },
+  result: { status: string; reason?: string; message?: string; detail?: unknown },
+  inventory?: ReadonlyArray<{ name: string; count: number }>,
 ): string {
   const why = [result.reason, result.message].filter(Boolean).join(': ');
-  return `step ${index + 1} (${label}) ${result.status}${why ? ` (${why})` : ''}`;
+  const base = `step ${index + 1} (${label}) ${result.status}${why ? ` (${why})` : ''}`;
+  if (inventory === undefined) return base;
+  const json = JSON.stringify(result.detail ?? null) ?? 'null';
+  const detail = json.length > DETAIL_LIMIT ? `${json.slice(0, DETAIL_LIMIT)}...` : json;
+  return `${base}; inventory: ${inventoryNote(inventory)}; detail: ${detail}`;
 }
 
 function blockName(env: BenchEnv, dx: number, dy: number, dz: number): string | null {
@@ -97,7 +116,10 @@ export const woodToStoneTools: Scenario = {
       const action = step.label === 'place crafting_table' ? { ...step.action, at } : step.action;
       const { result } = await env.run(action);
       if (result.status !== 'completed') {
-        return { passed: false, note: failedStepNote(index, step.label, result) };
+        const held = env.bot.inventory
+          .items()
+          .map((item) => ({ name: item.name, count: item.count }));
+        return { passed: false, note: failedStepNote(index, step.label, result, held) };
       }
     }
     const passed = holdsStonePickaxe(

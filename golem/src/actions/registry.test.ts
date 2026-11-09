@@ -249,3 +249,41 @@ describe('runAction', () => {
     expect(out.result.world_ticks).toBeNull();
   });
 });
+
+describe('ActionRegistry.onFinished', () => {
+  it('tells listeners the action and run of every runAction until removed', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => completed()));
+    const seen: Array<{ action: unknown; state: string }> = [];
+    const remove = registry.onFinished((action, run) => seen.push({ action, state: run.state }));
+    const { bot } = fakeBot();
+
+    await runAction(registry, bot, validMine);
+    await runAction(registry, bot, { do: 'mine', block: 'oak_log', count: 0 });
+    remove();
+    await runAction(registry, bot, validMine);
+
+    expect(seen).toEqual([
+      { action: validMine, state: 'completed' },
+      { action: { do: 'mine', block: 'oak_log', count: 0 }, state: 'failed' },
+    ]);
+  });
+
+  it('keeps going when a listener throws', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => completed()));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const second = vi.fn();
+    registry.onFinished(() => {
+      throw new Error('boom');
+    });
+    registry.onFinished(second);
+    const { bot } = fakeBot();
+
+    const out = await runAction(registry, bot, validMine);
+
+    expect(out.state).toBe('completed');
+    expect(second).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+});

@@ -1,0 +1,3006 @@
+{
+  "meta": {
+    "date": "2026-11-09",
+    "stamp": "20261109T181829Z",
+    "commit": "93d6640",
+    "minecraft": "26.1.2",
+    "paperBuild": "74",
+    "mineflayer": "4.39.0",
+    "pathfinder": "2.4.5",
+    "host": {
+      "platform": "win32",
+      "release": "10.0.26300",
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KF",
+      "cores": 32,
+      "totalMem": 68424024064,
+      "node": "v22.23.2"
+    },
+    "worldAgeResolutionTicks": 20,
+    "findings": [
+      "age-step: 1 observed, not the assumed 20"
+    ]
+  },
+  "truncated": false,
+  "note": "wave 4 gate run, 20 TPS, Body reflexes and executor merged, shared desktop RTX 4090 host",
+  "cells": [
+    {
+      "scenario": "wood-to-stone-tools",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "actions": [
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 22665,
+          "worldTicks": 440
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 344,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 234,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 500,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1028,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 188,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7857,
+          "worldTicks": 160
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1673,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 23101,
+          "worldTicks": 460
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 373,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 249,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 750,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 59,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 178,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7920,
+          "worldTicks": 160
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1689,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 18218,
+          "worldTicks": 360
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 379,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 218,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 548,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 61,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 181,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7813,
+          "worldTicks": 140
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1660,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 18238,
+          "worldTicks": 360
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 379,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 234,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 563,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 60,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 186,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7848,
+          "worldTicks": 140
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1723,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 18204,
+          "worldTicks": 360
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 340,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 215,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 562,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 58,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 186,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7807,
+          "worldTicks": 160
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1644,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 23140,
+          "worldTicks": 440
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 376,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 218,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 669,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 59,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 186,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7863,
+          "worldTicks": 140
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1685,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 23090,
+          "worldTicks": 460
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 369,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 232,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1097,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 58,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 188,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7885,
+          "worldTicks": 140
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1754,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 18240,
+          "worldTicks": 360
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 343,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 203,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 562,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 60,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 185,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7785,
+          "worldTicks": 160
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1650,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 23186,
+          "worldTicks": 460
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 385,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 231,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 723,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 59,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 185,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7733,
+          "worldTicks": 160
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1777,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 18195,
+          "worldTicks": 340
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 374,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 235,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 562,
+          "worldTicks": 20
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 60,
+          "worldTicks": 0
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 178,
+          "worldTicks": 0
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7787,
+          "worldTicks": 140
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1669,
+          "worldTicks": 40
+        }
+      ],
+      "actionStats": {
+        "mine": {
+          "total": 20,
+          "completed": 20,
+          "failed": {}
+        },
+        "craft": {
+          "total": 50,
+          "completed": 50,
+          "failed": {}
+        },
+        "place": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        }
+      },
+      "runWallMs": [
+        35035,
+        34870,
+        29625,
+        29778,
+        29565,
+        34744,
+        35222,
+        29576,
+        34824,
+        29608
+      ],
+      "failures": [],
+      "perRun": [
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1729,
+          "ageStart": 1060653,
+          "ageEnd": 1061333,
+          "achievedTps": 19.409162266305124
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1743,
+          "ageStart": 1061373,
+          "ageEnd": 1062033,
+          "achievedTps": 18.927444794952685
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1743,
+          "ageStart": 1062073,
+          "ageEnd": 1062653,
+          "achievedTps": 19.578059071729957
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1741,
+          "ageStart": 1062693,
+          "ageEnd": 1063273,
+          "achievedTps": 19.477466586070253
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1739,
+          "ageStart": 1063313,
+          "ageEnd": 1063873,
+          "achievedTps": 18.941315744968712
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1748,
+          "ageStart": 1063913,
+          "ageEnd": 1064593,
+          "achievedTps": 19.571724614321898
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1064633,
+          "ageEnd": 1065313,
+          "achievedTps": 19.30611549599682
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1065353,
+          "ageEnd": 1065933,
+          "achievedTps": 19.610494995942656
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1741,
+          "ageStart": 1065953,
+          "ageEnd": 1066633,
+          "achievedTps": 19.526763151849302
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1744,
+          "ageStart": 1066673,
+          "ageEnd": 1067253,
+          "achievedTps": 19.589300189138072
+        }
+      ],
+      "notes": [
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory",
+        "stone_pickaxe in inventory"
+      ]
+    },
+    {
+      "scenario": "food",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "actions": [
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2670,
+          "worldTicks": 40
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1636,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2695,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1614,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2614,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1639,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2648,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1604,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2573,
+          "worldTicks": 40
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1643,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2599,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1603,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2600,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1636,
+          "worldTicks": 20
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2574,
+          "worldTicks": 40
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1622,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2554,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1625,
+          "worldTicks": 40
+        },
+        {
+          "kind": "mine",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 2635,
+          "worldTicks": 60
+        },
+        {
+          "kind": "eat",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1631,
+          "worldTicks": 20
+        }
+      ],
+      "actionStats": {
+        "mine": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        },
+        "eat": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        }
+      },
+      "runWallMs": [
+        9127,
+        9243,
+        9188,
+        9143,
+        9087,
+        9163,
+        9144,
+        9146,
+        9104,
+        9199
+      ],
+      "failures": [],
+      "perRun": [
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1741,
+          "ageStart": 1067373,
+          "ageEnd": 1067553,
+          "achievedTps": 19.721704831817682
+        },
+        {
+          "mspt": 0.6,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1746,
+          "ageStart": 1067593,
+          "ageEnd": 1067773,
+          "achievedTps": 19.474196689386563
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1749,
+          "ageStart": 1067793,
+          "ageEnd": 1067973,
+          "achievedTps": 19.590770570309097
+        },
+        {
+          "mspt": 0.5,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1068013,
+          "ageEnd": 1068193,
+          "achievedTps": 19.687192387618943
+        },
+        {
+          "mspt": 0.5,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1743,
+          "ageStart": 1068233,
+          "ageEnd": 1068413,
+          "achievedTps": 19.808517662594916
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1739,
+          "ageStart": 1068453,
+          "ageEnd": 1068613,
+          "achievedTps": 17.461530066572085
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1743,
+          "ageStart": 1068653,
+          "ageEnd": 1068833,
+          "achievedTps": 19.68503937007874
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1068873,
+          "ageEnd": 1069053,
+          "achievedTps": 19.68073474743057
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1737,
+          "ageStart": 1069093,
+          "ageEnd": 1069273,
+          "achievedTps": 19.771528998242534
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1743,
+          "ageStart": 1069293,
+          "ageEnd": 1069473,
+          "achievedTps": 19.5673442765518
+        }
+      ],
+      "notes": [
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14",
+        "food_before 12, food_after 14"
+      ]
+    },
+    {
+      "scenario": "shelter",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "actions": [
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 18,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1066,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 546,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1061,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1057,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 545,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1058,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 546,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 62,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 49,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1057,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 563,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1046,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1057,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 562,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1060,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 559,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 60,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 17,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1046,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1043,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 548,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1059,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1061,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 560,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 62,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 62,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1067,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 546,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1049,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 556,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1028,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 538,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1093,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 556,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 62,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 49,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1060,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 544,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1041,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 591,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1058,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1042,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 558,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 49,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 68,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1062,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 556,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1053,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 550,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1045,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 558,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1026,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 591,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 62,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 49,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1042,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 562,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1056,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1041,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 531,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1060,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 559,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 65,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 19,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1053,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 545,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1059,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 556,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1030,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 543,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1061,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 554,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 49,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 32,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1030,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 609,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1057,
+          "worldTicks": 40
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 563,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1073,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 512,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1057,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 546,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 63,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 19,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1054,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1058,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1041,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 557,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1056,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 561,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 62,
+          "worldTicks": 0
+        }
+      ],
+      "actionStats": {
+        "place": {
+          "total": 100,
+          "completed": 100,
+          "failed": {}
+        }
+      },
+      "runWallMs": [
+        7939,
+        7990,
+        7938,
+        7964,
+        7967,
+        7994,
+        7939,
+        7883,
+        7957,
+        7946
+      ],
+      "failures": [],
+      "perRun": [
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1739,
+          "ageStart": 1069593,
+          "ageEnd": 1069753,
+          "achievedTps": 20.15367174707142
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1740,
+          "ageStart": 1069793,
+          "ageEnd": 1069953,
+          "achievedTps": 20.02503128911139
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1746,
+          "ageStart": 1069973,
+          "ageEnd": 1070133,
+          "achievedTps": 20.15621063240111
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1741,
+          "ageStart": 1070173,
+          "ageEnd": 1070333,
+          "achievedTps": 20.09040683073832
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1070353,
+          "ageEnd": 1070513,
+          "achievedTps": 20.08284172210368
+        },
+        {
+          "mspt": 0.3,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1070553,
+          "ageEnd": 1070713,
+          "achievedTps": 20.015011258443835
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1070753,
+          "ageEnd": 1070893,
+          "achievedTps": 17.634462778687492
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1740,
+          "ageStart": 1070933,
+          "ageEnd": 1071093,
+          "achievedTps": 20.296841304072053
+        },
+        {
+          "mspt": 0.6,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1735,
+          "ageStart": 1071133,
+          "ageEnd": 1071273,
+          "achievedTps": 17.59457081814754
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1768,
+          "ageStart": 1071313,
+          "ageEnd": 1071473,
+          "achievedTps": 20.135917442738485
+        }
+      ],
+      "notes": [
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees",
+        "enclosed, server agrees"
+      ]
+    },
+    {
+      "scenario": "bed",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "actions": [
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1106,
+          "worldTicks": 20
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 313,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1080,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 115,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 305,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1028,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 173,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 310,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1030,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 155,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 312,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1033,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 124,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 315,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1085,
+          "worldTicks": 18
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 178,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 307,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1025,
+          "worldTicks": 16
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 156,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 310,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1028,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 173,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 312,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1034,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 173,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 312,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1133,
+          "worldTicks": 17
+        },
+        {
+          "kind": "craft",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 166,
+          "worldTicks": 0
+        },
+        {
+          "kind": "place",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 304,
+          "worldTicks": 20
+        },
+        {
+          "kind": "sleep",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 1029,
+          "worldTicks": 15
+        }
+      ],
+      "actionStats": {
+        "craft": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        },
+        "place": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        },
+        "sleep": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        }
+      },
+      "runWallMs": [
+        3252,
+        2213,
+        2275,
+        2247,
+        2271,
+        2276,
+        2255,
+        2262,
+        2385,
+        2258
+      ],
+      "failures": [],
+      "perRun": [
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1725,
+          "ageStart": 1071593,
+          "ageEnd": 1071662,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1071693,
+          "ageEnd": 1071741,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1728,
+          "ageStart": 1071773,
+          "ageEnd": 1071821,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1071853,
+          "ageEnd": 1071901,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1738,
+          "ageStart": 1071933,
+          "ageEnd": 1071981,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1741,
+          "ageStart": 1072013,
+          "ageEnd": 1072061,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1741,
+          "ageStart": 1072093,
+          "ageEnd": 1072141,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1733,
+          "ageStart": 1072173,
+          "ageEnd": 1072221,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1748,
+          "ageStart": 1072253,
+          "ageEnd": 1072303,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 1000,
+          "reconnects": 0,
+          "resetMs": 1739,
+          "ageStart": 1072333,
+          "ageEnd": 1072383,
+          "achievedTps": null
+        }
+      ],
+      "notes": [
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true",
+        "sleep completed (-: ), client isSleeping true, server true"
+      ]
+    },
+    {
+      "scenario": "chest",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "actions": [
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 49,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 9,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 454,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 15,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 19,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 391,
+          "worldTicks": 20
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 5,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 9,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 443,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 10,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 425,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 5,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 8,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 376,
+          "worldTicks": 20
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 5,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 8,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 495,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 10,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 452,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 5,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 423,
+          "worldTicks": 20
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 4,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6,
+          "worldTicks": 0
+        },
+        {
+          "kind": "open",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 404,
+          "worldTicks": 0
+        },
+        {
+          "kind": "deposit",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 4,
+          "worldTicks": 0
+        },
+        {
+          "kind": "withdraw",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 7,
+          "worldTicks": 0
+        }
+      ],
+      "actionStats": {
+        "open": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        },
+        "deposit": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        },
+        "withdraw": {
+          "total": 10,
+          "completed": 10,
+          "failed": {}
+        }
+      },
+      "runWallMs": [
+        494,
+        919,
+        841,
+        890,
+        873,
+        824,
+        940,
+        899,
+        871,
+        854
+      ],
+      "failures": [],
+      "perRun": [
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1732,
+          "ageStart": 1072493,
+          "ageEnd": 1072513,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.9,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1072533,
+          "ageEnd": 1072553,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.9,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1736,
+          "ageStart": 1072593,
+          "ageEnd": 1072613,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1746,
+          "ageStart": 1072653,
+          "ageEnd": 1072673,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1072693,
+          "ageEnd": 1072713,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1744,
+          "ageStart": 1072753,
+          "ageEnd": 1072773,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1727,
+          "ageStart": 1072813,
+          "ageEnd": 1072813,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1723,
+          "ageStart": 1072853,
+          "ageEnd": 1072873,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1072913,
+          "ageEnd": 1072933,
+          "achievedTps": null
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1072973,
+          "ageEnd": 1072973,
+          "achievedTps": null
+        }
+      ],
+      "notes": [
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)",
+        "chest {\"cobblestone\":6}; receipts: not built yet (wave 4)"
+      ]
+    },
+    {
+      "scenario": "blocked-path",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "actions": [
+        {
+          "kind": "goto",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6247,
+          "worldTicks": 120
+        },
+        {
+          "kind": "goto",
+          "status": "failed",
+          "reason": "blocked",
+          "latencyMs": 5514,
+          "worldTicks": 120
+        },
+        {
+          "kind": "goto",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6238,
+          "worldTicks": 120
+        },
+        {
+          "kind": "goto",
+          "status": "failed",
+          "reason": "blocked",
+          "latencyMs": 5450,
+          "worldTicks": 100
+        },
+        {
+          "kind": "goto",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6343,
+          "worldTicks": 120
+        },
+        {
+          "kind": "goto",
+          "status": "failed",
+          "reason": "blocked",
+          "latencyMs": 5490,
+          "worldTicks": 100
+        },
+        {
+          "kind": "goto",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6175,
+          "worldTicks": 120
+        },
+        {
+          "kind": "goto",
+          "status": "failed",
+          "reason": "blocked",
+          "latencyMs": 5417,
+          "worldTicks": 100
+        },
+        {
+          "kind": "goto",
+          "status": "completed",
+          "reason": null,
+          "latencyMs": 6330,
+          "worldTicks": 120
+        },
+        {
+          "kind": "goto",
+          "status": "failed",
+          "reason": "blocked",
+          "latencyMs": 5515,
+          "worldTicks": 120
+        }
+      ],
+      "actionStats": {
+        "goto": {
+          "total": 10,
+          "completed": 5,
+          "failed": {
+            "blocked": 5
+          }
+        }
+      },
+      "runWallMs": [
+        6358,
+        5624,
+        6349,
+        5555,
+        6459,
+        5599,
+        6282,
+        5527,
+        6441,
+        5624
+      ],
+      "failures": [],
+      "perRun": [
+        {
+          "mspt": 0.3,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1747,
+          "ageStart": 1073093,
+          "ageEnd": 1073233,
+          "achievedTps": 22.019502988361122
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1737,
+          "ageStart": 1073253,
+          "ageEnd": 1073373,
+          "achievedTps": 21.337126600284495
+        },
+        {
+          "mspt": 0.3,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1073413,
+          "ageEnd": 1073533,
+          "achievedTps": 18.900614269963775
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1731,
+          "ageStart": 1073573,
+          "ageEnd": 1073673,
+          "achievedTps": 18.001800180018
+        },
+        {
+          "mspt": 0.3,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1739,
+          "ageStart": 1073713,
+          "ageEnd": 1073833,
+          "achievedTps": 18.578727357176035
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1727,
+          "ageStart": 1073873,
+          "ageEnd": 1073973,
+          "achievedTps": 17.86033220217896
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1742,
+          "ageStart": 1074013,
+          "ageEnd": 1074133,
+          "achievedTps": 19.10219675262655
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1737,
+          "ageStart": 1074173,
+          "ageEnd": 1074273,
+          "achievedTps": 18.09299800977022
+        },
+        {
+          "mspt": 0.3,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1743,
+          "ageStart": 1074313,
+          "ageEnd": 1074433,
+          "achievedTps": 18.63064741499767
+        },
+        {
+          "mspt": 0.4,
+          "targetMspt": 50,
+          "timeOfDay": 6000,
+          "reconnects": 0,
+          "resetMs": 1769,
+          "ageStart": 1074473,
+          "ageEnd": 1074593,
+          "achievedTps": 21.337126600284495
+        }
+      ],
+      "notes": [
+        "detour: goto completed in 6247 ms -> detoured",
+        "sealed: goto failed (blocked) in 5514 ms -> abandoned",
+        "detour: goto completed in 6238 ms -> detoured",
+        "sealed: goto failed (blocked) in 5450 ms -> abandoned",
+        "detour: goto completed in 6343 ms -> detoured",
+        "sealed: goto failed (blocked) in 5490 ms -> abandoned",
+        "detour: goto completed in 6175 ms -> detoured",
+        "sealed: goto failed (blocked) in 5417 ms -> abandoned",
+        "detour: goto completed in 6330 ms -> detoured",
+        "sealed: goto failed (blocked) in 5515 ms -> abandoned"
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "scenario": "wood-to-stone-tools",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "successPct": 100,
+      "latencyMs": {
+        "p50": 500,
+        "p95": 22665
+      },
+      "worldTicks": {
+        "p50": 20,
+        "p95": 440
+      },
+      "byKind": {
+        "mine": {
+          "total": 20,
+          "completed": 20,
+          "p50": 7920,
+          "p95": 23140
+        },
+        "craft": {
+          "total": 50,
+          "completed": 50,
+          "p50": 232,
+          "p95": 1723
+        },
+        "place": {
+          "total": 10,
+          "completed": 10,
+          "p50": 562,
+          "p95": 1097
+        }
+      },
+      "actionsOk": 80,
+      "actionsTotal": 80,
+      "achievedTps": 19.389989685516667
+    },
+    {
+      "scenario": "food",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "successPct": 100,
+      "latencyMs": {
+        "p50": 1643,
+        "p95": 2670
+      },
+      "worldTicks": {
+        "p50": 40,
+        "p95": 60
+      },
+      "byKind": {
+        "mine": {
+          "total": 10,
+          "completed": 10,
+          "p50": 2600,
+          "p95": 2695
+        },
+        "eat": {
+          "total": 10,
+          "completed": 10,
+          "p50": 1625,
+          "p95": 1643
+        }
+      },
+      "actionsOk": 20,
+      "actionsTotal": 20,
+      "achievedTps": 19.44420169535961
+    },
+    {
+      "scenario": "shelter",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "successPct": 100,
+      "latencyMs": {
+        "p50": 561,
+        "p95": 1061
+      },
+      "worldTicks": {
+        "p50": 20,
+        "p95": 20
+      },
+      "byKind": {
+        "place": {
+          "total": 100,
+          "completed": 100,
+          "p50": 561,
+          "p95": 1061
+        }
+      },
+      "actionsOk": 100,
+      "actionsTotal": 100,
+      "achievedTps": 19.618446369958626
+    },
+    {
+      "scenario": "bed",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "successPct": 100,
+      "latencyMs": {
+        "p50": 312,
+        "p95": 1106
+      },
+      "worldTicks": {
+        "p50": 17,
+        "p95": 20
+      },
+      "byKind": {
+        "craft": {
+          "total": 10,
+          "completed": 10,
+          "p50": 166,
+          "p95": 1106
+        },
+        "place": {
+          "total": 10,
+          "completed": 10,
+          "p50": 310,
+          "p95": 315
+        },
+        "sleep": {
+          "total": 10,
+          "completed": 10,
+          "p50": 1030,
+          "p95": 1133
+        }
+      },
+      "actionsOk": 30,
+      "actionsTotal": 30,
+      "achievedTps": 21.313412678315185
+    },
+    {
+      "scenario": "chest",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "successPct": 100,
+      "latencyMs": {
+        "p50": 9,
+        "p95": 454
+      },
+      "worldTicks": {
+        "p50": 0,
+        "p95": 20
+      },
+      "byKind": {
+        "open": {
+          "total": 10,
+          "completed": 10,
+          "p50": 423,
+          "p95": 495
+        },
+        "deposit": {
+          "total": 10,
+          "completed": 10,
+          "p50": 5,
+          "p95": 15
+        },
+        "withdraw": {
+          "total": 10,
+          "completed": 10,
+          "p50": 8,
+          "p95": 19
+        }
+      },
+      "actionsOk": 30,
+      "actionsTotal": 30,
+      "achievedTps": 19.03628792385485
+    },
+    {
+      "scenario": "blocked-path",
+      "tps": 20,
+      "runs": 10,
+      "passed": 10,
+      "successPct": 100,
+      "latencyMs": {
+        "p50": 6247,
+        "p95": 6343
+      },
+      "worldTicks": {
+        "p50": 120,
+        "p95": 120
+      },
+      "byKind": {
+        "goto": {
+          "total": 10,
+          "completed": 5,
+          "p50": 6247,
+          "p95": 6343
+        }
+      },
+      "actionsOk": 5,
+      "actionsTotal": 10,
+      "achievedTps": 19.392156207161722
+    }
+  ]
+}

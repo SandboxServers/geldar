@@ -589,6 +589,76 @@ Packets: P0-11 (plugin skeleton, event export, recipe grant) and P0-12 (`eventsi
 - **Tests:** unit with a fake KV (registered before connect, deleted on stop, NATS down means no connect attempt). Live (orchestrator): the full live lane and a short benchmark pass still work through the gate.
 - **Checks:** `./geldar.ps1 check`; the live lane by the orchestrator.
 
+## Wave 4 — the Body lives (ships as the wave 4 PR)
+
+Plan under the packet planning rule: ONE small unblocking packet (P0-14, interfaces and a runner loop, no behaviour), then a fan-out of six independent packets that each own their own files (P0-15a, 15b, 15c reflexes; P0-16a executor; P0-16b programs; P0-17 records), then P0-18 (restart and checkpoint) which needs 16a, 16b and 17. Memory on the desktop is tight: dispatch at most three coders at a time from the fan-out. No per-packet or per-batch review and no live runs between packets (owner ruling); the wave test (full live lane, the benchmark at 20 TPS which must stay 100%, the reflex and restart live cases) and ONE wave review (split by area, up to 5 rounds) run after P0-18; then docs sweep, retro, `W4-process`, PR.
+
+**Wave 4 conventions.**
+- New code lives in `golem/src/body/` (runtime, reflexes, executor, programs, records). Each reflex, program and sink is one file plus its test and fakes; no file over 500 lines.
+- Contract first: any new event payload or record shape is a schema in `contract/` (regenerate, never hand-edit). Spec refs: 5.2 (Body API and reflexes), 5.3 (intents, wake conditions, limits), section 7 (identity, validity, states, receipts), Appendix C, Appendix D, decisions 0020 (receipts) and D-P0-10.
+- Reflexes are configurable per shard (`shards/phase0.yaml` `reflexes`); a disabled reflex never runs. Every reflex firing emits a `reflex_fired` record (name, trigger values, outcome) so the Mind and the Historian see what the Body did on its own.
+- Live behaviour of reflexes is proven by live cases written in the packet (`golem/test/live/`, run by the orchestrator at the wave end) and by the benchmark staying green.
+
+### P0-14 — Body runtime skeleton (the unblocker; keep it small)
+
+- **Depends on** wave 3 merged. Branch `phase0/p0-14-runtime`, worktree `p0-14`. Commit: `feat(golem): add the Body runtime skeleton for reflexes, programs and records`.
+- **Create** (interfaces, a loop and fakes only, no game behaviour): `golem/src/body/runtime.ts` (`BodyRuntime`: `life_id`, `body_generation`, tick source, owns the one `ActionRegistry`, starts and stops the loop), `reflex.ts` (`Reflex { name, priority, cooldownTicks, check(view): Trigger | null, run(trigger, ctx): Promise<ReflexOutcome> }`, `ReflexRunner`: runs enabled reflexes by priority on each world tick, one at a time, a reflex may pre-empt a running action by cancelling it, honours cooldown and the shard config), `program.ts` (`IntentProgram { name, start(args, ctx), step(ctx), checkpoint(), resume(checkpoint) }` and `ProgramRegistry`, empty), `records.ts` (`RecordSink { intentChanged, actionChanged, receipt, reflexFired, wake }` with an in-memory implementation `MemorySink`), `wake.ts` (the `WakeReason` union from Appendix C `wake_on` plus `reflex_danger`, `action_failed`, `limit_reached`), `view.ts` (a read-only `BodyView` over the bot: health, hunger, position, nearby hostiles, inventory counts, in-fluid, falling distance; built on `snapshot.ts` and the `limited-control` pattern), `body.test.ts`, `body.fakes.ts`.
+- **Change:** `golem/src/connection.ts` only to expose what `BodyRuntime` needs (the live `bot`, a world-age tick callback); `shards/phase0.yaml` reflex flags (one boolean per reflex name in the spec 5.2 table) with the contract/config loader reading them.
+- **Test:** the runner honours priority, cooldown and disabling; a reflex pre-empts a running fake action; `MemorySink` records every transition once. Revert-checks per rule 7.
+- **Checks:** `./geldar.ps1 check`.
+- **Unblocks:** everything below.
+
+### P0-15a — Reflexes: eat, stop a fall, escape hazards
+
+- **Depends on** P0-14. Branch `phase0/p0-15a-reflexes-basic`. Commit: `feat(golem): add the eat, fall-stop and hazard-escape reflexes`.
+- **Spec:** 5.2 reflex table rows 1, 3, 4. **Create:** `golem/src/body/reflexes/{eat,fall-stop,hazard-escape}.ts` with tests and fakes, `golem/test/live/reflex-basic.live.test.ts`.
+- **Behaviour:** `eat`: hunger at or below 14 of 20 and food in inventory runs the existing `eat` action, not while another eat is running. `hazard-escape`: standing in lava or fire, or drowning (air below a threshold in water), runs an escape path to the nearest safe block (not lava, fire or water over a drop; uses the existing pathing with the `forbidCornerCutting` fix), gives up with a `danger` record after a time limit. `fall-stop`: when a fall of more than 4 blocks is imminent and a safe action exists (place a block below, or stop moving forward at an edge), take it; document in the report what is achievable on 26.1.
+- **Live cases** (written, run later): hunger reflex fires and eats; a bot in a lava pool (arena fixture) leaves it; a bot walking toward a 10-block drop stops (only if achievable, else a documented finding).
+
+### P0-15b — Reflexes: retreat and fight back or flee
+
+- **Depends on** P0-14. Branch `phase0/p0-15b-reflexes-combat`. Commit: `feat(golem): add the retreat and fight-or-flee reflexes`.
+- **Spec:** 5.2 reflex table rows 2 and 5, and the `danger` event. **Create:** `golem/src/body/reflexes/{retreat,fight-or-flee}.ts`, `golem/src/actions/attack.ts` (the `attack` Body API verb, registered, with outcome shape like the others) with tests, `golem/test/live/reflex-combat.live.test.ts`.
+- **Behaviour:** `retreat`: health at or below 6 with a hostile within 5 blocks: path toward the last known safe spot (bed or world spawn; the Body remembers both from its snapshots), then emit a `danger` wake. `fight-or-flee`: a hostile attacks while the agent is idle: armed (a sword or axe in inventory) fights back until the hostile is dead or health is low, else flees. Respect the Body-only rule: no RCON or server help in code.
+- **Live cases:** summon a zombie next to a bot in the arena (test setup via RCON): an armed bot kills it, an unarmed one flees; a bot at 4 health retreats.
+
+### P0-15c — Reflexes: panic burrow and blocked-path
+
+- **Depends on** P0-14. Branch `phase0/p0-15c-reflexes-shelter`. Commit: `feat(golem): add the panic burrow and blocked-path reflexes`.
+- **Spec:** 5.2 reflex table rows 6 and 7. **Create:** `golem/src/body/reflexes/{panic-burrow,blocked-path}.ts`, tests, `golem/test/live/reflex-shelter.live.test.ts`.
+- **Behaviour:** `panic-burrow`: night, no bed and no shelter: dig a 1x2 hole (using the existing `mine`, `place`) and seal it; leave at dawn; refuses if there is no suitable block. `blocked-path`: when `goto`/`moveNear` reports `blocked` (the stall watchdog exists), try an alternate route once (a different goal-near radius or a detour), else abandon the action with `failed(blocked)` and surface a `blocked` wake to the intent. This reflex wraps the existing watchdog; it must not change the benchmark's `blocked-path` scenario verdicts.
+- **Live cases:** at night with no shelter the bot ends up sealed in; a sealed target ends `blocked` and a detour target reaches it (reuse the bench arena geometry).
+
+### P0-16a — Intent executor
+
+- **Depends on** P0-14. Branch `phase0/p0-16a-executor`. Commit: `feat(golem): add the intent executor with validity checks, preconditions, limits and wake conditions`.
+- **Spec:** 5.3, section 7 (identity, validity, states), Appendix C. **Create:** `golem/src/body/executor.ts` (accept a thought's `intent` and `actions`; assign states through the `RecordSink`), `validity.ts` (reject an action or intent whose `life_id` is not the Body's, whose `body_generation` is stale, whose `snapshot_revision` is older than the allowed window, or whose `expires_tick` has passed; reasons are typed), `preconditions.ts` (a registry of named preconditions from the contract's `preconditions` strings: `field_is_known`, `seeds_available` style names evaluated on `BodyView`; unknown name fails closed), `limits.ts` (`max_world_ticks` and `max_block_operations` enforced with a `limit_reached` wake), `wake.ts` evaluation of `wake_on` (`directly_addressed`, `precondition_failed`, `unexpected_damage`, `goal_completed`, `new_agent_within_N`), tests.
+- **Behaviour:** actions run in order before the intent (re)starts, max 6, the first failure stops the list and raises `action_failed`; a new intent replaces the current one (the old one ends `cancelled`); a reflex firing pauses the intent and resumes it unless the reflex raised a wake; every transition goes to the sink; a Body never runs an action twice for the same `action_id` (duplicate delivery is a no-op that returns the stored result).
+- **Test:** table-driven validity cases (stale generation, dead life, expired, old snapshot revision), duplicate `action_id`, limits, wake conditions; revert-check each.
+
+### P0-16b — Built-in programs
+
+- **Depends on** P0-14. Branch `phase0/p0-16b-programs`. Commit: `feat(golem): add the travel, gather, craft, rest and flee intent programs`.
+- **Spec:** Appendix C `program` list. **Create:** `golem/src/body/programs/{travel,gather,craft,rest,flee,index}.ts` with tests (`follow`, `build`, `trade_wait` are out of Phase 0 scope: the registry rejects them with `unsupported`), each program built on the existing actions and the `IntentProgram` interface: `step` runs one bounded unit of work, `checkpoint()` returns a small JSON state (for example the remaining count, the target, the last position), `resume(checkpoint)` continues from it (never repeats completed work, e.g. `gather` resumes with the remaining count from the current inventory).
+- **Test:** each program against fakes: completes, fails with a typed reason, resumes from a checkpoint at every step boundary and produces the same end state as an uninterrupted run; revert-check.
+
+### P0-17 — Records and receipts to NATS and Postgres
+
+- **Depends on** P0-14 (the `RecordSink` interface). Branch `phase0/p0-17-records`. Commit: `feat: publish intent, action and receipt records and project them into Postgres`.
+- **Spec:** section 7 (states, receipts), Appendix D (`intents`, `actions`, `receipts`, `suppressed_wakeups`), decisions 0020, 0041. **Create:** contract schemas for the event payloads of `intent`, `action` (record), `receipt` and `reflex_fired` (extend `event.schema.json` descriptions and add payload schemas; regenerate), `golem/src/body/records-nats.ts` (a `RecordSink` that publishes `WorldEvent`s to `geldar.<shard>.<type>` with `source_event_id` derived deterministically from the record: `(action_id, state)` for an action, `(intent_id, state, tick)` for an intent, `(receipt_id, phase)` for a receipt, so a retry dedups; also `wake` events, which are events only), `golem/src/body/derived-id.ts` (`receiptIdFor(action_id, phase)`), `eventsink/src/projection.ts` (project `intent`, `action` and `receipt` events into the `intents`, `actions` and `receipts` tables: upsert by primary key moving only forward in state, one final receipt per action enforced by the existing unique index, idempotent under redelivery and out-of-order), tests, an integration test (`GELDAR_IT=1`).
+- **Rule:** every action ends with exactly one `committed` or `aborted` receipt (decision 0020); economic kinds do not exist in Phase 0 so the receipt for a body action is a plain final receipt. As built (decision 0043): the sink never drops `action` or `receipt` records (ordered retry with capped backoff; a full queue drops the oldest `reflex_fired`, `wake` or `intent` record first, and an audit record only when the queue holds nothing else, with an error log and a counter); `receipt_id` is derived from `(action_id, phase)`; an `interrupted` intent is projected as `cancelled` with an end reason that starts `interrupted:`, `paused` is events only; the `accepted` intent event carries goal, program, arguments, preconditions, wake_on and limits and the projection fills those columns (`thought_id` and `checkpoint` stay null: no event carries them, and checkpoints live in NATS KV).
+- **Test:** projection is idempotent and never moves a state backwards; a duplicate and a reordered pair converge; a second final receipt is rejected into the dead letters; revert-check.
+
+### P0-18 — Body restart resumes from its checkpoint
+
+- **Depends on** P0-16a, P0-16b, P0-17. Branch `phase0/p0-18-restart`. Commit: `feat(golem): resume the running intent after a Body restart`.
+- **Spec:** 5.2 process model ("a crashed Body reconnects and asks its Mind what it was doing; if no plan arrives within 45 s it ..." read the full text), section 7. **Create:** `golem/src/body/checkpoint.ts` (persist the running intent's `checkpoint()` after each step to the NATS KV bucket `geldar-checkpoints`, key `<life_id>`, value including `body_generation`, intent id and program state; delete on intent end), `golem/src/body/restart.ts` (on start: increment `body_generation` (KV `geldar-body-generation`, key `<life_id>`, compare-and-swap), load the checkpoint, resume the program if the checkpoint's life matches and it is not expired, else start idle and emit a `wake` with reason `no_plan`), wiring in `create-body.ts` (the checkpoint store is the executor's observer) and `restart.ts` (`restartBody` builds the Body, takes the generation and recovers; `openRestartKv` opens the buckets), tests, `golem/test/live/restart.live.test.ts`. As built: the checkpoint is written when the intent is installed and after each step (an unchanged entry is not rewritten), a failed delete is retried, an unreadable bucket gives the idle reason `checkpoint_unreadable`, an unknown world tick gives `tick_unknown` and leaves the entry, the resumed tick budget never exceeds the intent's own limit, `stop()` also waits (bounded) for the record sink. The spec says durable state is in Postgres; Phase 0 keeps the checkpoint and the generation in NATS KV (decision 0043).
+- **Test:** unit: a restart mid-program resumes with the saved state, a stale-generation plan is rejected, a checkpoint of a dead life is ignored, the generation increments once per start even under a race. Live (orchestrator): start a `gather` intent, wait for the first checkpoint write, tear the Body down mid-run (the test stops the Body and its runtime inside one process; it does not kill a process), start a new Body for the same life, the intent finishes with the right total and the records show two generations. The test uses a life id and intent id unique to the run and deletes its keys.
+
+### Wave 4 close (orchestrator)
+
+Wave test: `./geldar.ps1 check`, plugin build on a clean Gradle home, shard up, the full live lane (existing 60 plus the new reflex and restart cases), the benchmark at 20 TPS (the gate must stay PASS; record the run with `--record`), the sink integration test. Then ONE wave review split by area (A: reflexes and executor correctness and safety, B: records, projection, restart and docs), up to 5 rounds with fix rounds; docs sweep; retro `retro/wave-4.md`; `W4-process`; PR; merge when green.
+
 ## Process packets (one per wave close)
 
 ### W1-process — apply the wave 1 retro actions

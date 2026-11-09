@@ -40,6 +40,7 @@ export type AnyActionHandler = { [K in ActionKind]: ActionHandler<K> }[ActionKin
 /** Maps each verb to its one handler. */
 export class ActionRegistry {
   private readonly handlers = new Map<string, AnyActionHandler>();
+  private readonly finishListeners = new Set<(action: unknown, run: ActionRun) => void>();
 
   /** Adds a handler. Throws if its kind already has one. */
   register(handler: AnyActionHandler): void {
@@ -57,6 +58,26 @@ export class ActionRegistry {
   /** The registered verbs, in registration order. */
   kinds(): string[] {
     return [...this.handlers.keys()];
+  }
+
+  /**
+   * Calls listener with the action and its run each time runAction ends one on this registry,
+   * whoever started it. The action is as passed in, so it may not be valid. Returns the remover.
+   */
+  onFinished(listener: (action: unknown, run: ActionRun) => void): () => void {
+    this.finishListeners.add(listener);
+    return () => this.finishListeners.delete(listener);
+  }
+
+  /** Tells the onFinished listeners; one that throws does not stop the others. */
+  notifyFinished(action: unknown, run: ActionRun): void {
+    for (const listener of [...this.finishListeners]) {
+      try {
+        listener(action, run);
+      } catch (error) {
+        console.warn(`action listener failed: ${error instanceof Error ? error.message : error}`);
+      }
+    }
   }
 }
 
@@ -80,7 +101,32 @@ export async function runAction(
   registry: ActionRegistry,
   bot: Bot,
   action: unknown,
-  opts: { timeScale?: number; signal?: AbortSignal; now?: () => number } = {},
+  opts: ActionRunOptions = {},
+): Promise<ActionRun> {
+  const run = await runUnobserved(registry, bot, action, opts);
+  registry.notifyFinished(action, run);
+  return run;
+}
+
+/** What `runAction` takes besides the action. */
+export interface ActionRunOptions {
+  timeScale?: number;
+  signal?: AbortSignal;
+  now?: () => number;
+  /**
+   * Called once, before the first await, with a promise that settles when the handler itself has
+   * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
+   * must know the handler is done before it starts the next action waits on this.
+   */
+  onHandler?: (ended: Promise<void>) => void;
+}
+
+/** runAction without the onFinished notification. */
+async function runUnobserved(
+  registry: ActionRegistry,
+  bot: Bot,
+  action: unknown,
+  opts: ActionRunOptions,
 ): Promise<ActionRun> {
   const verdict = validateThought({ reasoning: 'x', actions: [action] });
   if (!verdict.ok) {
@@ -130,6 +176,7 @@ export async function runAction(
     return failed('internal', truncate(message));
   });
 
+  opts.onHandler?.(ran.then(() => undefined));
   let outcome: ActionOutcome;
   try {
     outcome = await Promise.race([ran, timedOut, externallyAborted]);

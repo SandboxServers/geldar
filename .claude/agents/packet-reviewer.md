@@ -20,6 +20,8 @@ Review adversarially:
 
 Checklist (do each; report the result, not an inference):
 - Mutate each new test: revert the change it guards (edit one line with `Set-Content`, or revert one hunk), run the test, and confirm it fails. Restore each mutated file with `git -C <worktree> checkout -- <path>` (never through `git show | Set-Content`, which can change line endings), then confirm `git -C <worktree> status --short` is empty. Never leave the tree changed; if a mutation cannot be restored, say so on the first line of your return.
+- Geometry and angles: code that works with headings, directions, offsets or angles needs tests on every axis and sign (all four headings, both signs on each axis); a test that uses one axis only is a finding. Check that a sign or axis swap in the code fails a test.
+- Attempt limits: a retry cap, quota or resource count needs a test for the first allowed attempt and one for the last allowed attempt, and one for the attempt past the cap.
 - Fails open: for every security or gating component the diff adds or relies on (a plugin, a filter, a check), find the startup proof that it loaded; if the component can be missing and the system still starts and admits everything, that is a finding.
 - Fix side effects: for every fix, ask whether it adds a race, a retry-forever or an unbounded queue; a retry or requeue needs a cap, a stated outcome at the cap and a test for the last allowed attempt.
 - Config and YAML edits: parse them with a real parser; do not judge them by slicing strings or regexes.

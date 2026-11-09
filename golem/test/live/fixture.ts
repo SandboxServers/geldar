@@ -74,3 +74,73 @@ export async function runWithBot(
     }
   }
 }
+
+/** Named times `resetBot` can set. */
+export type ResetTime = 'day' | 'noon' | 'night' | 'midnight';
+
+/** What `resetBot` puts the world and the bot in; every field has a default. */
+export interface ResetOptions {
+  /** Time of day to set and wait for; default `noon`, so a case never depends on the clock. */
+  time?: ResetTime;
+  /** Gamerules to set for the case; each previous value is put back by the restore call. */
+  gamerules?: Record<string, boolean>;
+}
+
+/** Heals the bot to full health, failing with the server's reply and the bot's state. */
+export async function healBot(bot: Bot, ctl: TestControl): Promise<void> {
+  const name = bot.username;
+  await ctl.effectClear(name);
+  const reply = await ctl.effect(name, 'instant_health', 1, 10);
+  for (let i = 0; i < 600 && bot.health < 20; i++) await bot.waitForTicks(1);
+  if (bot.health < 20) {
+    throw new Error(
+      `bot did not heal to full: reply '${reply}'; health ${bot.health}, at ${bot.entity.position.floored()}`,
+    );
+  }
+}
+
+/** Reads a boolean gamerule back from the server's reply, or throws with the reply. */
+async function readRule(ctl: TestControl, name: string): Promise<boolean> {
+  const reply = await ctl.gamerule(name);
+  const value = /(true|false)/.exec(reply)?.[1];
+  if (value === undefined) throw new Error(`gamerule ${name} query replied: ${reply}`);
+  return value === 'true';
+}
+
+/**
+ * The standard start of a live case that depends on world state: the bot persists between runs, so
+ * heal it, clear its effects, set the time (and wait until the bot sees it) and the weather, and
+ * apply the case's gamerules. Returns the call that puts the time back to noon and the gamerules
+ * back to what they were; call it in `finally`. A set or restore the server did not take throws.
+ */
+export async function resetBot(
+  bot: Bot,
+  ctl: TestControl,
+  opts: ResetOptions = {},
+): Promise<() => Promise<void>> {
+  const time = opts.time ?? 'noon';
+  const previous = new Map<string, boolean>();
+  await healBot(bot, ctl);
+  await ctl.timeSet(time);
+  await ctl.command('weather clear');
+  const wanted = { day: 1000, noon: 6000, night: 13_000, midnight: 18_000 }[time];
+  for (let i = 0; i < 100 && Math.abs(bot.time.timeOfDay - wanted) > 1000; i++) {
+    await bot.waitForTicks(1);
+  }
+  for (const [rule, value] of Object.entries(opts.gamerules ?? {})) {
+    previous.set(rule, await readRule(ctl, rule));
+    await ctl.gamerule(rule, value);
+    if ((await readRule(ctl, rule)) !== value) {
+      throw new Error(`could not set gamerule ${rule} to ${value}`);
+    }
+  }
+  return async () => {
+    await ctl.timeSet('noon');
+    for (const [rule, value] of previous) {
+      await ctl.gamerule(rule, value);
+      if ((await readRule(ctl, rule)) !== value) {
+        throw new Error(`could not restore gamerule ${rule} to ${value}`);
+      }
+    }
+  };
+}
