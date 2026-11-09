@@ -154,7 +154,7 @@ Packet worktrees branch from the integration branch `phase0/wave1` (created from
 
 ### P0-06 — `compose/phase0.yml` and `shards/phase0.yaml`
 
-- **BlockedDecision** on D-P0-07 (Minecraft version and Paper build). At dispatch the orchestrator fills in: `MC_VERSION`, `PAPER_BUILD`, the Paper and Velocity image tags, the Velocity version, the Java version and the Ollama model tags.
+- **Versions** (decision 0022): Minecraft/Paper `26.1.2`, Paper build `74`, Java `25`, Velocity `3.5.1` build `615`. Use the newest `itzg/minecraft-server` and `itzg/mc-proxy` tags at least two weeks old that run them (Java 25 variant), pinned by digest. Confirm in the report that Velocity 3.5.1 forwards protocol 775; if not, stop and report. At dispatch the orchestrator fills in the Ollama model tags (decision 0002: Qwen3 32B and 8B; check `ollama list` on the host).
 - **Depends on** P0-05. Branch `phase0/p0-06-compose`, worktree `p0-06`. Commit: `feat(compose): add the Phase 0 stack behind Velocity with health checks`.
 - **Spec:** 5.1 (`server.properties`, gamerules, connection paths), 6.5 (the production compose files this mirrors), 6.7 (secrets), Appendix E, section 10 Phase 0; decisions 0002 and 0021 (Velocity from Phase 0, matching production).
 - **Shape, matching production (decision 0021):** bots reach the world only through the bot-ingress Velocity proxy. Paper accepts only Velocity modern-forwarded connections, publishes no game port, and is reachable only on the compose network. Secrets are Docker secrets read from files, never environment values or compose text (spec 6.7).
@@ -173,7 +173,7 @@ Packet worktrees branch from the integration branch `phase0/wave1` (created from
 
 ## Wave 2 — Golem and the body benchmark (ships as the wave 2 PR)
 
-Written in full when wave 1 closes, once D-P0-07 has fixed the Minecraft version and Mineflayer stack. Outline:
+Written in full when wave 1 closes. The Mineflayer stack is fixed by decision 0022. Outline:
 
 - **P0-07** `golem/` package (`@geldar/golem`): connect one bot through the Velocity bot ingress (`127.0.0.1:25565`, offline mode, never to Paper directly), whitelisting it over RCON first as the production supervisor would, reconnect with backoff, an RCON client for test control (tick rate, clearing the test area, giving nothing to a bot outside a benchmark), and a smoke test that joins, reports position and leaves. Records the pinned Mineflayer stack and prints `testedVersions` at start.
 - **P0-08** body actions A: `goto`, `gather`/`mine`, `craft`, each returning `{ status: completed|failed|blocked, latency_ms, detail }`, with per-action timeouts.
