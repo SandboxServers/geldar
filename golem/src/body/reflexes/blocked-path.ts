@@ -73,6 +73,11 @@ export function isBlockedAbandoned(view: BodyView, intentId: string): boolean {
   return abandoned.get(view)?.has(intentId) === true;
 }
 
+/** The intent ids recorded as abandoned for this view, in the order they were marked (a test probe). */
+export function blockedAbandonedIds(view: BodyView): string[] {
+  return [...(abandoned.get(view) ?? [])];
+}
+
 /** Drops the waiting report when it was made for `intentId`: that intent has ended. */
 export function dropBlockedReport(view: BodyView, intentId: string): void {
   if (pending.get(view)?.report.intentId === intentId) pending.delete(view);
@@ -111,7 +116,8 @@ export function createBlockedPathReflex(walk: Walk = moveNear): Reflex {
       await ctx.cancelAction();
       const outcome = await alternateRoute(walk, ctx, report);
       // The walk is still blocked: the intent's program fails on its next step instead of re-walking.
-      if (outcome.result === 'abandoned' && report.intentId !== null) {
+      // A graceful stop (the signal aborted) says nothing about the route, so it marks nothing.
+      if (outcome.result === 'abandoned' && report.intentId !== null && !ctx.signal.aborted) {
         markBlockedAbandoned(ctx.view, report.intentId);
       }
       return outcome;

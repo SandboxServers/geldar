@@ -5,6 +5,7 @@ import { fakeBot } from '../body.fakes.ts';
 import { allReflexesOn, MemorySink, ReflexRunner } from '../index.ts';
 import {
   type BlockedReport,
+  blockedAbandonedIds,
   createBlockedPathReflex,
   detourWaypoint,
   isBlockedAbandoned,
@@ -185,6 +186,19 @@ describe('blocked path: abandoned intents', () => {
     );
     reportBlocked(view, { ...REPORT, intentId: null });
     await reflex.run(reflex.check(view) ?? {}, ctx);
+    expect(blockedAbandonedIds(view)).toEqual([]);
+  });
+
+  it('marks nothing when the walk ended because the signal aborted (a graceful stop)', async () => {
+    const { reflex, view, ctx } = setup(
+      scriptedWalk([{ ok: false, reason: 'cancelled', message: 'move cancelled' }]).walk,
+    );
+    const stop = new AbortController();
+    stop.abort();
+    reportBlocked(view, REPORT);
+    const outcome = await reflex.run(reflex.check(view) ?? {}, { ...ctx, signal: stop.signal });
+    expect(outcome.result).toBe('abandoned');
+    expect(blockedAbandonedIds(view)).toEqual([]);
     expect(isBlockedAbandoned(view, 'int_1')).toBe(false);
   });
 });
