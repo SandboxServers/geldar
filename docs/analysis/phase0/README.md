@@ -72,7 +72,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-18 | 4 | Body restart resumes from its checkpoint | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-16a, P0-16b, P0-17 | |
 | W4-process | 4 | Apply the wave 4 retro actions | packet-coder | Writing (after the benchmark re-record) | wave 4 test, review and retro | |
 | P0-19 | 5 | Recipe discovery: find why vanilla recipe unlocking did not fire, make unlocking work (or a plugin unlock), remove the grant, scenarios without `recipe give` (decision 0048) | packet-coder | Ready (first packet after wave 4) | wave 4 | |
-| P0-20 | 5 | Mind contract and Body sense interfaces (unblocker 1) | packet-coder | Ready (after owner answers Q1 to Q3, Q14) | wave 4 | |
+| P0-20 | 5 | Mind contract and Body sense interfaces (unblocker 1) | packet-coder | Ready | wave 4 | |
 | P0-21 | 5 | `animus/` skeleton: ports, config, ids, fakes (unblocker 2) | packet-coder | BlockedDependency | P0-20 | |
 | P0-22 | 5 | `lantern-local/`: local Thinker (Appendix H to Ollama) | packet-coder | BlockedDependency | P0-20 | |
 | P0-23 | 5 | Body perception: authorized surroundings and unlocked recipes | packet-coder | BlockedDependency | P0-20 | |
