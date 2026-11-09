@@ -213,6 +213,7 @@ export function planBreakout(
   }
   return fallback;
 }
+
 /** Dawn with no burrow state but a closed cell: dig out through an adjacent diggable block. */
 async function breakOut(ctx: ReflexContext): Promise<ReflexOutcome> {
   const { bot } = ctx;
