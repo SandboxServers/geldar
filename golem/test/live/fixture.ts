@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { type Arena, buildArena, quietWorld, restoreWorld } from '../../src/arena.ts';
-import { ConnectionManager } from '../../src/connection.ts';
 import { loadConfig, readRconPassword } from '../../src/config.ts';
+import { ConnectionManager } from '../../src/connection.ts';
 import { RconClient } from '../../src/rcon.ts';
 import { TestControl } from '../../src/test-control.ts';
 
@@ -26,7 +26,11 @@ export async function withLiveBot(
   const password = await readRconPassword(cfg);
   const rcon = await RconClient.connect({ host: cfg.rconHost, port: cfg.rconPort, password });
   const ctl = new TestControl(rcon);
-  const manager = new ConnectionManager({ host: cfg.mcHost, port: cfg.mcPort, username: opts.name });
+  const manager = new ConnectionManager({
+    host: cfg.mcHost,
+    port: cfg.mcPort,
+    username: opts.name,
+  });
   try {
     await quietWorld(ctl);
     const arena = await buildArena(ctl, opts.slot);

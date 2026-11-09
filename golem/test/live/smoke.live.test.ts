@@ -62,7 +62,11 @@ describe('smoke: one bot through the Velocity ingress', () => {
         throw err;
       }
       const distance = bot.entity.position.distanceTo(new Vec3(goalX, arena.center.y, goalZ));
-      verdict.pathfinder = { ok: distance <= 2, ms: Date.now() - started, distance: Number(distance.toFixed(2)) };
+      verdict.pathfinder = {
+        ok: distance <= 2,
+        ms: Date.now() - started,
+        distance: Number(distance.toFixed(2)),
+      };
       expect(distance).toBeLessThanOrEqual(2);
 
       // (4) Reconnect: a kick brings a disconnect, then a fresh spawn within 60 s.

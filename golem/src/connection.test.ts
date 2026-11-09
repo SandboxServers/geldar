@@ -33,7 +33,8 @@ function harness(stableMs?: number) {
     ...(stableMs === undefined ? {} : { stableMs }),
   });
   /** Waits until the manager has created at least `n` bots. */
-  const waitForBots = (n: number) => vi.waitFor(() => expect(bots.length).toBeGreaterThanOrEqual(n));
+  const waitForBots = (n: number) =>
+    vi.waitFor(() => expect(bots.length).toBeGreaterThanOrEqual(n));
   return { bots, sleeps, clock, createBot, manager, waitForBots };
 }
 

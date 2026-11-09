@@ -37,6 +37,20 @@ function weatherName(bot: Bot): Snapshot['world_time']['weather'] {
   return 'clear';
 }
 
+/** The contract's biome id: a bare lowercase name such as `plains`. */
+const BIOME_ID = /^[a-z_]{1,64}$/;
+
+/**
+ * The bare biome id for the snapshot, or `undefined` when there is no name or the name does not
+ * match the contract. The namespaced `minecraft:plains` becomes `plains`. Mineflayer on 26.1 can
+ * report an empty name, so an unusable name leaves `biome` out rather than guessing one.
+ */
+function biomeId(name: string | undefined): string | undefined {
+  if (name === undefined) return undefined;
+  const bare = name.replace(/^minecraft:/, '');
+  return BIOME_ID.test(bare) ? bare : undefined;
+}
+
 /** Effect names from the entity's active effects; ids the registry does not know are dropped. */
 function effectNames(bot: Bot): string[] {
   const names: string[] = [];
@@ -63,10 +77,8 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
     y: Math.floor(feet.y),
     z: Math.floor(feet.z),
   };
-  const biome = block?.biome?.name;
-  console.log('DEBUG-BIOME', JSON.stringify(block?.biome));
-  // The contract wants the bare id (`plains`), not the namespaced one (`minecraft:plains`).
-  if (biome !== undefined) position.biome = biome.replace(/^minecraft:/, '');
+  const biome = biomeId(block?.biome?.name);
+  if (biome !== undefined) position.biome = biome;
 
   const snapshot = {
     snapshot_id: `sn_${ulid()}`,
@@ -101,6 +113,7 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
   };
 
   const checked = validateSnapshot(snapshot);
-  if (!checked.ok) throw new Error(`snapshot rejected by the contract: ${checked.errors.join('; ')}`);
+  if (!checked.ok)
+    throw new Error(`snapshot rejected by the contract: ${checked.errors.join('; ')}`);
   return checked.value;
 }

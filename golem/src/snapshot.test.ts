@@ -49,17 +49,35 @@ describe('buildSnapshot', () => {
 
   it('reports the biome only when the block at the feet has one', () => {
     const withBiome = fakeBot({ blockAt: () => ({ biome: { name: 'plains' } }) });
-    expect(buildSnapshot(withBiome, opts).self.position).toEqual({ x: 10, y: 64, z: -4, biome: 'plains' });
+    expect(buildSnapshot(withBiome, opts).self.position).toEqual({
+      x: 10,
+      y: 64,
+      z: -4,
+      biome: 'plains',
+    });
     expect(buildSnapshot(fakeBot(), opts).self.position).not.toHaveProperty('biome');
     const namespaced = fakeBot({ blockAt: () => ({ biome: { name: 'minecraft:dark_forest' } }) });
     expect(buildSnapshot(namespaced, opts).self.position.biome).toBe('dark_forest');
+  });
+
+  it('omits a biome name the contract pattern rejects (26.1 reports an empty name)', () => {
+    // Live on 26.1 the block biome came back as { name: '', id: 9 }; the snapshot must still pass.
+    for (const name of ['', 'Plains', '9', 'minecraft:']) {
+      const bot = fakeBot({ blockAt: () => ({ biome: { name } }) });
+      const snap = buildSnapshot(bot, opts);
+      expect(snap.self.position).not.toHaveProperty('biome');
+      expect(validateSnapshot(snap).ok).toBe(true);
+    }
   });
 
   it('lists inventory stacks, the held item and effect names', () => {
     const bot = fakeBot({
       heldItem: { name: 'stone_pickaxe' },
       inventory: { items: () => [{ name: 'cobblestone', count: 10 }] },
-      entity: { position: { x: 0, y: 64, z: 0 }, effects: { 1: { id: 1, amplifier: 0, duration: 100 } } },
+      entity: {
+        position: { x: 0, y: 64, z: 0 },
+        effects: { 1: { id: 1, amplifier: 0, duration: 100 } },
+      },
       registry: { effects: { 1: { name: 'speed' } } },
     });
     const snap = buildSnapshot(bot, { ...opts, budgetRemainingThoughts: 7 });
@@ -70,6 +88,8 @@ describe('buildSnapshot', () => {
   });
 
   it('throws when the contract rejects the result (health above 20)', () => {
-    expect(() => buildSnapshot(fakeBot({ health: 25 }), opts)).toThrow(/snapshot rejected by the contract/);
+    expect(() => buildSnapshot(fakeBot({ health: 25 }), opts)).toThrow(
+      /snapshot rejected by the contract/,
+    );
   });
 });
