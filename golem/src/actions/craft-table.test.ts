@@ -251,7 +251,7 @@ describe('craftFromBook', () => {
     expect(fake.raw.closeWindow).toHaveBeenCalledWith(WINDOW);
   });
 
-  it('leaves the late-window timer unref\'d, so it never keeps the process alive', async () => {
+  it('leaves the late-window timer unref, so it never keeps the process alive', async () => {
     const fake = fakeGame();
     fake.raw.activateBlock.mockImplementationOnce(async () => {});
     watchRecipeBook(fake.bot);
@@ -260,13 +260,14 @@ describe('craftFromBook', () => {
     // last one made is the late-window timer.
     const real = globalThis.setTimeout;
     const made: NodeJS.Timeout[] = [];
-    const spy = vi
-      .spyOn(globalThis, 'setTimeout')
-      .mockImplementation(((handler: () => void, ms?: number) => {
-        const timer = real(handler, ms);
-        made.push(timer);
-        return timer;
-      }) as unknown as typeof setTimeout);
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      handler: () => void,
+      ms?: number,
+    ) => {
+      const timer = real(handler, ms);
+      made.push(timer);
+      return timer;
+    }) as unknown as typeof setTimeout);
     try {
       expect(await run(fake.bot, 1)).toMatchObject({ status: 'failed', reason: 'timeout' });
     } finally {
