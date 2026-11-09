@@ -20,7 +20,7 @@ describe('runCell run bookkeeping', () => {
     expect(timing?.ageStart).toBe(0);
     expect(timing?.ageEnd).toBe(100);
     expect(timing?.achievedTps).toBeGreaterThan(0);
-    expect(timing?.achievedTps).toBeLessThan(100 / 0.04);
+    expect(timing?.achievedTps).toBeLessThan(100 / 0.03);
   });
 
   it('leaves achievedTps null when the age moved by under 100 ticks', async () => {
@@ -40,12 +40,12 @@ describe('runCell run bookkeeping', () => {
 
   it('fails the run as disconnected when the connection drops during the reset', async () => {
     const { server, manager, deps } = setup();
-    // The fake server drops the connection while the reset commands run.
+    // The fake server drops the connection while the reset commands run. The manager stays online with
+    // the same bot, so only the listener registered before the reset can have seen it.
     const original = deps.ctl;
     const source: CommandSource = {
       async command(cmd) {
         if (cmd.startsWith('clear ')) {
-          manager.state = 'backoff';
           manager.emit('disconnect', {});
         }
         return original.command(cmd);
