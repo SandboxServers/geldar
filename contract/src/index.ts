@@ -57,6 +57,38 @@ export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent>
   return { ok: false, errors: (validateWorldEventSchema.errors ?? []).map(formatError) };
 }
 
+// --- P0-17 record events ---
+import type { IntentEventPayload, ReflexFiredPayload, WakePayload } from './generated/types.ts';
+import {
+  validateIntentEventPayload as validateIntentEventPayloadSchema,
+  validateReflexFiredPayload as validateReflexFiredPayloadSchema,
+  validateWakePayload as validateWakePayloadSchema,
+} from './generated/validators.js';
+
+export type { IntentEventPayload, ReflexFiredPayload, WakePayload } from './generated/types.ts';
+
+/** Checks a value against intent-event.schema.json (the payload of an `intent` event). Never throws. */
+export function validateIntentEventPayload(value: unknown): ValidationResult<IntentEventPayload> {
+  if (validateIntentEventPayloadSchema(value)) {
+    return { ok: true, value: value as IntentEventPayload };
+  }
+  return { ok: false, errors: (validateIntentEventPayloadSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against reflex-fired-event.schema.json (the payload of a `reflex_fired` event). Never throws. */
+export function validateReflexFiredPayload(value: unknown): ValidationResult<ReflexFiredPayload> {
+  if (validateReflexFiredPayloadSchema(value)) {
+    return { ok: true, value: value as ReflexFiredPayload };
+  }
+  return { ok: false, errors: (validateReflexFiredPayloadSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against wake-event.schema.json (the payload of a `wake` event). Never throws. */
+export function validateWakePayload(value: unknown): ValidationResult<WakePayload> {
+  if (validateWakePayloadSchema(value)) return { ok: true, value: value as WakePayload };
+  return { ok: false, errors: (validateWakePayloadSchema.errors ?? []).map(formatError) };
+}
+
 // --- SC-30a mcp ---
 export * from './mcp.ts';
 
