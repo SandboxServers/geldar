@@ -44,7 +44,7 @@ async function sampleAge(bot: Bot, ms: number) {
 
 describe('bench harness on 26.1', () => {
   it('measures the world clock, then runs goto-smoke at 20 and 5 TPS through the runner', async () => {
-    await withLiveBot({ name: NAME, slot: 9 }, async ({ bot, ctl, manager }) => {
+    await withLiveBot({ name: NAME, slot: 5 }, async ({ bot, ctl, manager }) => {
       // The clock first: does `age` advance one tick at a time, and at what rate per TPS?
       await setTps(ctl, 20);
       const at20 = await sampleAge(bot, 5_000);
@@ -73,7 +73,7 @@ describe('bench harness on 26.1', () => {
         manager,
         registry: createRegistry(),
         botName: NAME,
-        slot: 9,
+        slot: 5,
         warmup: gotoSmoke,
         log: (line: string) => console.log(line),
       };

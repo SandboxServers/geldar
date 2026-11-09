@@ -174,6 +174,17 @@ describe('main', () => {
     expect(h.log.lastIndexOf('stop bot')).toBeLessThan(h.log.lastIndexOf('tick rate 20'));
   });
 
+  it('plays every cell in arena slot 5', async () => {
+    const h = harness();
+    const slots: number[] = [];
+    h.deps.cell = async (scenario, tps, _runs, cellDeps) => {
+      slots.push(cellDeps.slot);
+      return cellOf({ scenario: scenario.name, tps, passed: 0 });
+    };
+    await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '1'], h.deps);
+    expect(slots).toEqual([5]);
+  });
+
   it('kicks a leftover GolemBench and refuses other players', async () => {
     const mine = harness({ list: 'There are 1 of a max of 400 players online: GolemBench' });
     let polls = 0;

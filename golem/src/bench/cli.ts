@@ -18,8 +18,8 @@ import type { CellResult, Scenario } from './types.ts';
 
 /** The bench bot's player name. */
 export const BENCH_NAME = 'GolemBench';
-/** The arena slot every bench run uses. */
-const BENCH_SLOT = 9;
+/** The arena slot every bench run uses: 5 for P0-10a (10b uses 6, 10c uses 7). */
+const BENCH_SLOT = 5;
 const DEFAULT_TPS = [20, 10, 5];
 const NOTE_PATTERN = /^[A-Za-z0-9 ,.:_()/+-]{0,200}$/;
 const LIST_PATTERN = /There are (\d+) of a max of (\d+) players online/;
