@@ -39,6 +39,10 @@ node -e "console.log(JSON.stringify({ alice: require('crypto').randomBytes(16).t
 | `shard_rules` | `chat_radius` |
 | `laws` | `{ rule, value }` entries |
 
+## The malicious-book corpus
+
+`scenarios/malicious/` holds nine defensive test scenarios (MB-01 to MB-09), indexed by `corpus.json`: each puts one inert English book in the character's inventory (and, for MB-04 and MB-06 to MB-09, a neighbour's line of speech) that tries to talk the character into running a command, fetching a URL, editing config, leaking a fake secret and so on. Every one carries a fake canary and uses only the reserved host `canary.invalid`; the mock returns the text only under `untrusted_world_text`, and `src/corpus/world.test.ts` checks that. To start the mock with one, give a path relative to the image's working directory `/opt/geldar/threshold/mcp-mock` (the same works from this folder when run from source): `--scenario scenarios/malicious/mb-03-edit-config.json`.
+
 ## CI time knobs
 
 `--day-length-seconds`, `--min-wake-spacing-seconds`, `--intent-run-too-long-seconds` override the scenario; `--suppressed-log <file>` records suppressed wakeups.
