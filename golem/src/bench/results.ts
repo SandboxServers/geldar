@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { RunMeta } from './meta.ts';
 import { percentile } from './stats.ts';
 import type { CellResult } from './types.ts';
-import { MIN_TPS_SPAN_TICKS } from './world-age.ts';
+import { MIN_TPS_SPAN_TICKS, WORLD_AGE_RESOLUTION_TICKS } from './world-age.ts';
 
 /** p50 and p95 of one list, `null` when it is empty. */
 export interface Percentiles {
@@ -102,27 +102,50 @@ export function meanLatencyMs(cell: CellResult): number | null {
   return done.reduce((sum, a) => sum + a.latencyMs, 0) / done.length;
 }
 
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
 /**
- * The standing findings of decision 0038 that travel with every run: the world age moves in steps
- * of 20 ticks, and, per scenario with both a 20 TPS cell and a slower one, how much the wall time
- * of its actions grew (a ratio near 1 means the slowed server did not slow the Body).
+ * The age-step finding: what the run's own age deltas show. Two ages of one run differ by a whole
+ * number of server time updates, so the gcd of the deltas is the step (or a multiple of it). With
+ * no delta there is nothing measured and the 20 of decision 0038 is only a standing assumption.
+ */
+function ageStepFinding(cells: CellResult[]): string {
+  const deltas = cells.flatMap((c) =>
+    c.perRun.flatMap((r) =>
+      r.ageStart !== null && r.ageEnd !== null && r.ageEnd > r.ageStart
+        ? [r.ageEnd - r.ageStart]
+        : [],
+    ),
+  );
+  const step = WORLD_AGE_RESOLUTION_TICKS;
+  if (deltas.length === 0) return `age-step: ${step} (standing assumption, not measured)`;
+  const seen = deltas.reduce(gcd);
+  if (seen % step === 0) return `age-step: ${step} (every observed age delta is a multiple of it)`;
+  return `age-step: ${seen} observed, not the assumed ${step}`;
+}
+
+/**
+ * The findings that travel with every run: the age step (measured or assumed) and, per scenario
+ * with both a 20 TPS cell and a slower one, the ratio of the mean action wall time (decision 0038).
+ * The lines state the measured ratio and what dilation would give; they draw no conclusion.
  */
 export function findingsOf(cells: CellResult[]): string[] {
-  const findings = ['age-step: 20'];
+  const findings = [ageStepFinding(cells)];
   for (const slow of cells.filter((c) => c.tps < 20)) {
     const fast = cells.find((c) => c.scenario === slow.scenario && c.tps === 20);
     const base = fast ? meanLatencyMs(fast) : null;
     const slowed = meanLatencyMs(slow);
     if (base === null || slowed === null || base <= 0) continue;
     findings.push(
-      `non-dilation: ${slow.scenario} mean action wall time ${Math.round(base)} ms at 20 TPS, ` +
+      `wall-ratio: ${slow.scenario} mean action wall time ${Math.round(base)} ms at 20 TPS, ` +
         `${Math.round(slowed)} ms at ${slow.tps} TPS (ratio ${(slowed / base).toFixed(2)}, ` +
         `dilation would give ${(20 / slow.tps).toFixed(1)})`,
     );
   }
   return findings;
 }
-
 /** `YYYYMMDDTHHmmssZ-<commit>.json`: no colons, which NTFS rejects. */
 export function resultFileName(meta: Pick<RunMeta, 'stamp' | 'commit'>): string {
   return `${meta.stamp}-${meta.commit}.json`;
@@ -207,7 +230,11 @@ export async function writeResults(input: ResultInput, opts: WriteOptions): Prom
   const summary = summarize(input.cells);
   const body = `${JSON.stringify(
     {
-      meta: { ...input.meta, worldAgeResolutionTicks: 20, findings: findingsOf(input.cells) },
+      meta: {
+        ...input.meta,
+        worldAgeResolutionTicks: WORLD_AGE_RESOLUTION_TICKS,
+        findings: findingsOf(input.cells),
+      },
       truncated: input.truncated,
       note: input.note,
       cells: input.cells,

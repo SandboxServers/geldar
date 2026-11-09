@@ -155,18 +155,17 @@ describe('meta', () => {
   });
 });
 
+const timing = (ageStart: number | null, ageEnd: number | null) => ({
+  mspt: null,
+  targetMspt: null,
+  timeOfDay: null,
+  reconnects: 0,
+  resetMs: null,
+  ageStart,
+  ageEnd,
+  achievedTps: null,
+});
 describe('cellAchievedTps', () => {
-  const timing = (ageStart: number | null, ageEnd: number | null) => ({
-    mspt: null,
-    targetMspt: null,
-    timeOfDay: null,
-    reconnects: 0,
-    resetMs: null,
-    ageStart,
-    ageEnd,
-    achievedTps: null,
-  });
-
   it('is the sum of ticks over the sum of wall seconds across the runs', () => {
     const cell = cellOf({
       runWallMs: [3_000, 1_000],
@@ -183,24 +182,42 @@ describe('cellAchievedTps', () => {
   });
 });
 
+describe('findingsOf age step', () => {
+  it('reports the step as observed when the age deltas are multiples of 20', () => {
+    const cell = cellOf({ perRun: [timing(7, 107), timing(127, 167)] });
+    expect(findingsOf([cell])[0]).toBe(
+      'age-step: 20 (every observed age delta is a multiple of it)',
+    );
+  });
+
+  it('reports a different observed step instead of the assumed 20', () => {
+    const cell = cellOf({ perRun: [timing(0, 30), timing(30, 90)] });
+    expect(findingsOf([cell])[0]).toBe('age-step: 30 observed, not the assumed 20');
+  });
+});
+
 describe('findingsOf', () => {
-  it('always states the 20-tick age step and adds a non-dilation line per slower cell', () => {
+  it('states the age step as assumed or observed and adds a wall-ratio line per slower cell', () => {
     const slow = cellOf({
       tps: 5,
       actions: [
         { kind: 'goto', status: 'completed', reason: null, latencyMs: 400, worldTicks: 20 },
       ],
     });
-    expect(findingsOf([cellOf()])).toEqual(['age-step: 20']);
+    expect(findingsOf([cellOf()])).toEqual(['age-step: 20 (standing assumption, not measured)']);
     expect(findingsOf([cellOf(), slow])).toEqual([
-      'age-step: 20',
-      'non-dilation: goto-smoke mean action wall time 200 ms at 20 TPS, 400 ms at 5 TPS (ratio 2.00, dilation would give 4.0)',
+      'age-step: 20 (standing assumption, not measured)',
+      'wall-ratio: goto-smoke mean action wall time 200 ms at 20 TPS, 400 ms at 5 TPS (ratio 2.00, dilation would give 4.0)',
     ]);
   });
 
   it('skips a slower cell without a completed action or without a 20 TPS partner', () => {
-    expect(findingsOf([cellOf({ tps: 5 })])).toEqual(['age-step: 20']);
-    expect(findingsOf([cellOf(), cellOf({ tps: 5, actions: [] })])).toEqual(['age-step: 20']);
+    expect(findingsOf([cellOf({ tps: 5 })])).toEqual([
+      'age-step: 20 (standing assumption, not measured)',
+    ]);
+    expect(findingsOf([cellOf(), cellOf({ tps: 5, actions: [] })])).toEqual([
+      'age-step: 20 (standing assumption, not measured)',
+    ]);
   });
 });
 
@@ -222,7 +239,9 @@ describe('writeResults', () => {
     expect(copy.endsWith('}\n')).toBe(true);
     expect(JSON.parse(copy).summary).toHaveLength(1);
     expect(JSON.parse(copy).meta.worldAgeResolutionTicks).toBe(20);
-    expect(JSON.parse(copy).meta.findings).toEqual(['age-step: 20']);
+    expect(JSON.parse(copy).meta.findings).toEqual([
+      'age-step: 20 (standing assumption, not measured)',
+    ]);
     const table = await readFile(join(doc, 'bench-results.md'), 'utf8');
     expect(table.split('\n')).toHaveLength(4);
     expect(table.startsWith(HEAD)).toBe(true);

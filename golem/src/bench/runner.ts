@@ -6,7 +6,6 @@ import { buildArena, quietWorld } from '../arena.ts';
 import type { TestControl } from '../test-control.ts';
 import { ulid } from '../ulid.ts';
 import { limitedControl } from './limited-control.ts';
-import { MIN_TPS_SPAN_TICKS, waitUntil, worldAge } from './world-age.ts';
 import { parseMspt, parseTargetMspt, parseTargetRate, setTps, withTps } from './tps.ts';
 import type {
   ActionRecordLite,
@@ -16,6 +15,7 @@ import type {
   RunTiming,
   Scenario,
 } from './types.ts';
+import { MIN_TPS_SPAN_TICKS, waitUntil, worldAge } from './world-age.ts';
 
 export type { CellResult } from './types.ts';
 export { waitUntil };
