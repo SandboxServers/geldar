@@ -119,6 +119,33 @@ describe('validateActionRecord', () => {
     value.body_generation = -1;
     expect(validateActionRecord(value).ok).toBe(false);
   });
+
+  it('rejects an intent_id without the in_ prefix and names the path', () => {
+    const value = mutable(runningExample);
+    value.intent_id = 'xx_01HZX3V9Q4M2K8R7T6Y5W4E3D5';
+    const result = validateActionRecord(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes('/intent_id'))).toBe(true);
+  });
+
+  it('rejects a receipt_id without the rc_ prefix and names the path', () => {
+    const value = mutable(actionExample);
+    value.receipt_id = 'xx_01HZX3V9Q4M2K8R7T6Y5W4E3D3';
+    const result = validateActionRecord(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes('/receipt_id'))).toBe(true);
+  });
+
+  it('rejects an unknown top-level property and names it', () => {
+    const value = mutable(actionExample);
+    value.priority = 5;
+    const result = validateActionRecord(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes('priority'))).toBe(true);
+  });
 });
 
 describe('validateReceipt', () => {
@@ -139,6 +166,15 @@ describe('validateReceipt', () => {
     const value = mutable(abortedReceipt);
     value.detail = 'x'.repeat(257);
     expect(validateReceipt(value).ok).toBe(false);
+  });
+
+  it('rejects an unknown top-level property and names it', () => {
+    const value = mutable(committedReceipt);
+    value.memo = 'thanks';
+    const result = validateReceipt(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes('memo'))).toBe(true);
   });
 });
 

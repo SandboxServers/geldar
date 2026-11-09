@@ -42,7 +42,7 @@ export interface ActionRecord {
     [k: string]: unknown;
   } | null;
   /**
-   * The final receipt for economic kinds, or null.
+   * The final (committed or aborted) receipt, or null until the action ends.
    */
   receipt_id: string | null;
 }

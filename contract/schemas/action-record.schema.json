@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/action-record.schema.json",
   "title": "ActionRecord",
-  "description": "One action in the distributed action protocol (spec section 7, Appendix D `actions`). The Body rejects an action whose life_id is dead, whose body_generation is stale, whose snapshot_revision is older than the allowed window, or whose expires_tick has passed. state moves accepted -> running -> completed | failed | cancelled, each a durable record. Economic kinds (offer, give, write_book, read_book) also carry a receipt: see receipt.schema.json and decision 0020.",
+  "description": "One action in the distributed action protocol (spec section 7, Appendix D `actions`). The Body rejects an action whose life_id is dead, whose body_generation is stale, whose snapshot_revision is older than the allowed window, or whose expires_tick has passed. state moves accepted -> running -> completed | failed | cancelled, each a durable record. Every action ends with one final receipt (committed or aborted); economic kinds (offer, give, write_book, read_book) first write a prepared receipt. See receipt.schema.json and decision 0020.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -62,7 +62,7 @@
       "type": ["object", "null"]
     },
     "receipt_id": {
-      "description": "The final receipt for economic kinds, or null.",
+      "description": "The final (committed or aborted) receipt, or null until the action ends.",
       "anyOf": [{ "$ref": "common.schema.json#/$defs/ReceiptId" }, { "type": "null" }]
     }
   }
