@@ -32,6 +32,7 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
     const js = jetstream(nc);
     const jsm = await jetstreamManager(nc);
     const intentId = freshId('in');
+    const interruptedId = freshId('in');
     const actionId = freshId('ac');
     const receiptA = freshId('rc');
     const receiptB = freshId('rc');
@@ -53,14 +54,30 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
         }),
       );
     };
-    const intent = (state: string, tick: number) =>
+    const intent = (
+      state: string,
+      tick: number,
+      extra: object = {},
+      id = intentId,
+      detail?: string,
+    ) =>
       publish('intent', {
-        intent_id: intentId,
+        intent_id: id,
         life_id: 'ag_kestrel_01',
         body_generation: 1,
         state,
         tick,
+        ...(detail === undefined ? {} : { detail }),
+        ...extra,
       });
+    const fields = {
+      goal: 'get_wood',
+      program: 'gather',
+      arguments: { item: 'oak_log' },
+      preconditions: ['has_pickaxe'],
+      wake_on: ['goal_completed'],
+      limits: { max_world_ticks: 6000, max_block_operations: 40 },
+    };
     const action = (state: string, receiptId: string | null) =>
       publish('action', {
         action_id: actionId,
@@ -92,9 +109,11 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       const startSeq = await lastSeq();
       // Final state first, then the earlier ones, then a repeat of the final one.
       await intent('completed', 30);
-      await intent('accepted', 10);
+      await intent('accepted', 10, fields);
       await intent('running', 12);
       await intent('completed', 30);
+      await intent('accepted', 5, {}, interruptedId);
+      await intent('interrupted', 8, {}, interruptedId, 'woke the Mind');
       await action('completed', receiptA);
       await action('accepted', null);
       await action('running', null);
@@ -122,6 +141,16 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
         state: 'completed',
         started_tick: '10',
         ended_tick: '30',
+        ...fields,
+        checkpoint: null,
+        thought_id: null,
+      });
+      const cut = (await pool.query('SELECT * FROM intents WHERE intent_id = $1', [interruptedId]))
+        .rows;
+      expect(cut[0]).toMatchObject({
+        state: 'cancelled',
+        ended_tick: '8',
+        end_reason: 'interrupted: woke the Mind',
       });
       const actions = (await pool.query('SELECT * FROM actions WHERE action_id = $1', [actionId]))
         .rows;
@@ -145,7 +174,9 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
     } finally {
       await pool.query('DELETE FROM receipts WHERE action_id = $1', [actionId]);
       await pool.query('DELETE FROM actions WHERE action_id = $1', [actionId]);
-      await pool.query('DELETE FROM intents WHERE intent_id = $1', [intentId]);
+      await pool.query('DELETE FROM intents WHERE intent_id = ANY($1)', [
+        [intentId, interruptedId],
+      ]);
       await pool.query('DELETE FROM events WHERE source_event_id = ANY($1)', [sourceIds]);
       await pool.end();
       await nc.drain();
