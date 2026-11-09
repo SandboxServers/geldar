@@ -29,7 +29,7 @@ export interface ModelJob {
   responseSchema?: Record<string, unknown>;
   /**
    * The effort level the loop chose (minimal or high). For the records only: the Thinker still
-   * receives just easoning and maxTokens, which the effort sets.
+   * receives just reasoning and maxTokens, which the effort sets.
    */
   effort?: string;
   /** Whether the model may think before answering (decision 0049). Absent means the Thinker's default. */
