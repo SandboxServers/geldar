@@ -219,7 +219,7 @@ function dropSpot(bot: Bot, at: Vec3): Vec3 {
   let spot = at;
   for (let step = 0; step < FALL_CELLS; step++) {
     const below = bot.blockAt(spot.offset(0, -1, 0));
-    if (!below || below.boundingBox !== 'empty') break;
+    if (below?.boundingBox !== 'empty') break;
     spot = spot.offset(0, -1, 0);
   }
   return spot;
