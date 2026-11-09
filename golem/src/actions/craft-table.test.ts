@@ -338,14 +338,14 @@ describe('craftFromBook', () => {
 
     expect(out).toMatchObject({
       status: 'failed',
-      reason: 'missing_materials',
+      reason: 'not_possible',
       detail: { unlocked: false },
     });
     expect(fake.raw.activateBlock).not.toHaveBeenCalled();
     expect(writesOf(fake.client, 'craft_recipe_request')).toEqual([]);
   });
 
-  it('fails missing_materials with a not-unlocked detail, and never opens the table, when the book has no display', async () => {
+  it('fails not_possible with a not-unlocked detail, and never opens the table, when the book has no display', async () => {
     const fake = fakeGame(openWithWindowState);
     watchRecipeBook(fake.bot);
 
@@ -353,7 +353,7 @@ describe('craftFromBook', () => {
 
     expect(out).toMatchObject({
       status: 'failed',
-      reason: 'missing_materials',
+      reason: 'not_possible',
       message: expect.stringMatching(/not unlocked/),
       detail: { item: 'white_bed', unlocked: false },
     });

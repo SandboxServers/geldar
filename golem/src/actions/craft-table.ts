@@ -194,8 +194,9 @@ export async function craftFromBook(
   const { bot } = ctx;
   dropLateTableWindow(bot);
   if (!hasUnlockedDisplay(bot, item)) {
+    // Not missing_materials: the Mind holds the ingredients and must not go gathering them.
     return failed(
-      'missing_materials',
+      'not_possible',
       `${item.name} is not unlocked: its recipe is not in the recipe book`,
       { item: item.name, unlocked: false },
     );
