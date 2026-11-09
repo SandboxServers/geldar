@@ -23,9 +23,14 @@ function cellOf(partial: Partial<CellResult>): CellResult {
 }
 
 describe('parseCli', () => {
-  it('has the defaults: all scenarios, 20,10,5 TPS, 5 runs', () => {
-    const o = parseCli([], clean);
-    expect(o).toMatchObject({ scenario: 'all', tps: [20, 10, 5], runs: 5, maxMinutes: null });
+  it('has the defaults: 20,10,5 TPS, 5 runs', () => {
+    const o = parseCli(['--scenario', 'goto-smoke'], clean);
+    expect(o).toMatchObject({
+      scenario: 'goto-smoke',
+      tps: [20, 10, 5],
+      runs: 5,
+      maxMinutes: null,
+    });
     expect(o.record).toBe(false);
   });
 
@@ -34,11 +39,13 @@ describe('parseCli', () => {
   });
 
   it('takes repeated --tps, removes duplicates, runs them descending', () => {
-    expect(parseCli(['--tps', '5', '--tps', '20', '--tps', '5'], clean).tps).toEqual([20, 5]);
+    expect(
+      parseCli(['--scenario', 'goto-smoke', '--tps', '5', '--tps', '20', '--tps', '5'], clean).tps,
+    ).toEqual([20, 5]);
   });
 
   it('accepts a note with spaces', () => {
-    expect(parseCli(['--note', 'a b'], clean).note).toBe('a b');
+    expect(parseCli(['--scenario', 'goto-smoke', '--note', 'a b'], clean).note).toBe('a b');
   });
 
   it.each([
@@ -62,11 +69,20 @@ describe('parseCli', () => {
     ).toThrow(/hidden/);
   });
 
+  it('refuses the default all while no scenario is visible, except for --list and --restore', () => {
+    expect(() => parseCli([], clean)).toThrow(/no visible scenario/);
+    expect(() => parseCli(['--list'], clean)).not.toThrow();
+    expect(() => parseCli(['--restore'], clean)).not.toThrow();
+  });
+
   it('refuses --record on a dirty tree unless --allow-dirty', () => {
     // `all` has no visible scenarios yet in P0-10a, so a named hidden one is not usable here:
     // the dirty check must still apply before anything else is recorded.
     expect(() => parseCli(['--record'], () => true)).toThrow(/dirty/);
-    expect(() => parseCli(['--record', '--allow-dirty'], () => true)).not.toThrow();
+    // Past the dirty check the empty default list is the next refusal.
+    expect(() => parseCli(['--record', '--allow-dirty'], () => true)).toThrow(
+      /no visible scenario/,
+    );
   });
 });
 
@@ -98,6 +114,10 @@ describe('gateLine', () => {
 
   it('is n/a without a 20 TPS cell', () => {
     expect(gateLine([cellOf({ tps: 5 })])).toMatch(/n\/a/);
+  });
+
+  it('is n/a, not PASS, when no scenario ran at all', () => {
+    expect(gateLine([], 5, [], true)).toBe('GATE: n/a (no 20 TPS cell ran)');
   });
 });
 
@@ -215,6 +235,39 @@ describe('main', () => {
       expect(h.err.join('\n')).not.toMatch(/restoreWorld failed/);
     },
   );
+
+  it('exits 2 for --scenario all while no scenario is visible', async () => {
+    const h = harness();
+    expect(await main(['--tps', '20'], h.deps)).toBe(2);
+    expect(h.err.join('\n')).toMatch(/no visible scenario/);
+    expect(h.log).toEqual([]);
+  });
+
+  it('does not close the control when a signal arrives during the final restore', async () => {
+    const h = harness();
+    let stopping = false;
+    let closed = 0;
+    const connect = h.deps.connectRcon as NonNullable<CliDeps['connectRcon']>;
+    h.deps.connectRcon = async (cfg) => {
+      const rcon = await connect(cfg);
+      const tickRate = rcon.ctl.tickRate.bind(rcon.ctl);
+      // The signal lands while restoreWorld is awaiting the server.
+      rcon.ctl.tickRate = async (n: number) => {
+        stopping = true;
+        return tickRate(n);
+      };
+      return {
+        ctl: rcon.ctl,
+        close: async () => {
+          closed++;
+        },
+      };
+    };
+    h.deps.installRestore = () => Object.assign(() => undefined, { isStopping: () => stopping });
+    await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '1'], h.deps);
+    expect(stopping).toBe(true);
+    expect(closed).toBe(0);
+  });
 
   it('plays every cell in arena slot 5', async () => {
     const h = harness();

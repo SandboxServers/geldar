@@ -100,8 +100,9 @@ export function parseCli(argv: string[], dirty: () => boolean = () => isDirty(ru
   const allowDirty = values['allow-dirty'] === true;
 
   let picked: Scenario[];
-  if (scenario === 'all') picked = visibleScenarios();
-  else {
+  if (scenario === 'all') {
+    picked = visibleScenarios();
+  } else {
     const found = findScenario(scenario);
     if (!found) throw new UsageError(`unknown scenario '${scenario}'`);
     picked = [found];
@@ -111,6 +112,10 @@ export function parseCli(argv: string[], dirty: () => boolean = () => isDirty(ru
   }
   if (record && !allowDirty && dirty()) {
     throw new UsageError('--record on a dirty tree: commit first or pass --allow-dirty');
+  }
+  // --list and --restore need no scenario, so an empty list only fails a real run.
+  if (picked.length === 0 && values.list !== true && values.restore !== true) {
+    throw new UsageError('no visible scenario');
   }
   return {
     scenario,
@@ -177,7 +182,9 @@ export function gateLine(
   requested20 = false,
 ): string {
   const at20 = cells.filter((c) => c.tps === 20);
-  if (at20.length === 0 && !requested20) return 'GATE: n/a (no 20 TPS cell ran)';
+  if (at20.length === 0 && (!requested20 || scenarios.length === 0)) {
+    return 'GATE: n/a (no 20 TPS cell ran)';
+  }
   const failing = at20.filter((c) => c.runs > 0 && c.passed < c.runs).map((c) => c.scenario);
   if (failing.length > 0) return `GATE: FAIL (${failing.join(', ')})`;
   // A requested scenario whose 20 TPS cell never started cannot pass: the time limit cut it off.
@@ -370,8 +377,11 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
           err(`restoreWorld failed: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
-      removeRestore?.();
-      await rcon.close().catch(() => undefined);
+      // A signal that arrived during the restore above hands the close to the handler too.
+      if (removeRestore?.isStopping?.() !== true) {
+        removeRestore?.();
+        await rcon.close().catch(() => undefined);
+      }
     }
   }
 }
