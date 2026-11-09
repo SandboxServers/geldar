@@ -169,10 +169,28 @@ describe('jobs', () => {
   });
 
   it('answers timeout without calling Ollama when the deadline already passed', async () => {
-    await ready();
+    let calls = 0;
+    await ready({
+      chat: async () => {
+        calls += 1;
+        return { text: '{}', promptTokens: 1, completionTokens: 1 };
+      },
+    });
     mind.push(mind.job({ deadline: new Date(Date.now() - 1000).toISOString() }));
     expect((await mind.next('error')).code).toBe('timeout');
+    expect(calls).toBe(0);
     expect(ollama.requests).toHaveLength(0);
+  });
+
+  it('counts the 32 KiB cap in bytes, not characters', async () => {
+    ollama.handler = (_r, res) =>
+      ollama.reply(res, { ...answer, message: { content: 'é'.repeat(20_000) } });
+    await ready();
+    mind.push(mind.job());
+    expect(await mind.next('error')).toMatchObject({
+      code: 'internal',
+      message: 'output too large',
+    });
   });
 
   it('aborts the Ollama call on cancel and sends nothing for that job', async () => {

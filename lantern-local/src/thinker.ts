@@ -246,10 +246,8 @@ export class LocalThinker {
       this.opts.log(
         `job ${id} done in ${Date.now() - started} ms: ${result.promptTokens} in, ${result.completionTokens} out, ${result.text.length} chars`,
       );
-      if (
-        result.text.length > MAX_COMPLETION_TEXT ||
-        encoder.encode(result.text).length > MAX_COMPLETION_TEXT
-      ) {
+      // 32 KiB of UTF-8 bytes (Appendix H); the contract caps characters, which is looser.
+      if (encoder.encode(result.text).length > MAX_COMPLETION_TEXT) {
         this.fail(id, 'internal', 'output too large', socket);
       } else {
         this.send(
