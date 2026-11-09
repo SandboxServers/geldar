@@ -39,11 +39,15 @@ export interface AdamCase {
   intents(): Promise<IntentRow[]>;
   /** The state seen so far, for the message of every failed assertion. */
   state(): Promise<string>;
-  /** Polls `probe` once a second until it gives a value; a timeout prints the state seen. */
+  /**
+   * Polls `probe` every `intervalMs` (a second by default) until it gives a value; a timeout prints
+   * the state seen.
+   */
   waitFor<T>(
     what: string,
     timeoutMs: number,
     probe: () => Promise<T | null | undefined | false>,
+    intervalMs?: number,
   ): Promise<T>;
 }
 
@@ -99,7 +103,7 @@ export async function withAdamCase(
         thoughts: (withInput = false) => thoughtsSince(db, ADAM_LIFE_ID, since, withInput),
         intents: async () =>
           (await intentsOf(db, ADAM_LIFE_ID)).filter((i) => !older.has(i.intent_id)),
-        waitFor: (what, timeoutMs, probe) => {
+        waitFor: (what, timeoutMs, probe, intervalMs = 1_000) => {
           let seen = '(not polled yet)';
           return pollUntil(
             async () => {
@@ -107,7 +111,7 @@ export async function withAdamCase(
               if (value === null || value === undefined || value === false) seen = await ac.state();
               return value;
             },
-            { what, timeoutMs, intervalMs: 1_000, seen: () => seen },
+            { what, timeoutMs, intervalMs, seen: () => seen },
           );
         },
         state: async () =>
