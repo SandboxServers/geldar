@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
-import { watchRecipeBook } from './actions/craft-table.ts';
 import { nextDelayMs } from './backoff.ts';
 import { stackVersions } from './versions.ts';
 
@@ -13,6 +12,11 @@ export interface ConnectionOptions {
   version?: string;
   /** Injectable for tests; the default is `mineflayer.createBot`. */
   createBot?: (o: BotOptions) => Bot;
+  /**
+   * Called with each bot right after it is created, before any packet is read. The server sends
+   * the recipe book during the join, so a listener for it must be attached here. Default: none.
+   */
+  onBot?: (bot: Bot) => void;
   /**
    * Waits `ms` before a reconnect. The signal aborts on `stop()`, and a sleep that honours it ends
    * at once. Default: a timer that is cleared on abort.
@@ -94,6 +98,7 @@ export class ConnectionManager extends EventEmitter {
   private readonly username: string;
   private readonly version: string;
   private readonly createBot: (o: BotOptions) => Bot;
+  private readonly onBot: ((bot: Bot) => void) | undefined;
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly now: () => number;
   private readonly rng: () => number;
@@ -110,6 +115,7 @@ export class ConnectionManager extends EventEmitter {
     this.username = options.username;
     this.version = options.version ?? DEFAULT_VERSION;
     this.createBot = options.createBot ?? ((o) => mineflayer.createBot(o));
+    this.onBot = options.onBot;
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
     this.rng = options.rng ?? Math.random;
@@ -176,8 +182,7 @@ export class ConnectionManager extends EventEmitter {
       hideErrors: false,
     });
     this.bot = bot;
-    // Before any packet: the server sends the recipe book during the join.
-    watchRecipeBook(bot);
+    this.onBot?.(bot);
     this.state = 'connecting';
     return new Promise((resolve) => {
       let spawnedAt: number | null = null;

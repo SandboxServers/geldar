@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer';
+import { watchRecipeBook } from '../../src/actions/craft-table.ts';
 import { type Arena, buildArena, quietWorld, restoreWorld } from '../../src/arena.ts';
 import { loadConfig, readRconPassword } from '../../src/config.ts';
 import { ConnectionManager } from '../../src/connection.ts';
@@ -30,6 +31,7 @@ export async function withLiveBot(
     host: cfg.mcHost,
     port: cfg.mcPort,
     username: opts.name,
+    onBot: watchRecipeBook,
   });
   try {
     await quietWorld(ctl);

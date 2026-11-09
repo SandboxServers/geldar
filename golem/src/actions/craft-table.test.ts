@@ -154,6 +154,20 @@ describe('craftFromBook', () => {
     expect(hasUnlockedDisplay(fake.bot, BED)).toBe(true);
   });
 
+  it('drops a display the server takes back with recipe_book_remove', () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    fake.client.emit('recipe_book_remove', { recipeIds: [SHAPED_BED] });
+    expect(hasUnlockedDisplay(fake.bot, BED)).toBe(false);
+  });
+
+  it('watches nothing and does not throw for a bot without a protocol client', () => {
+    const bot = {} as unknown as Bot;
+    expect(() => watchRecipeBook(bot)).not.toThrow();
+    expect(hasUnlockedDisplay(bot, BED)).toBe(false);
+  });
+
   it('reads a result of type item, a bare item id, as the item it makes', () => {
     const fake = fakeGame();
     watchRecipeBook(fake.bot);

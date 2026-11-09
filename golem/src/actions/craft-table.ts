@@ -42,6 +42,11 @@ interface RecipeBookAdd {
   }[];
 }
 
+/** The `recipe_book_remove` fields read here: the display ids the server has taken back. */
+interface RecipeBookRemove {
+  recipeIds: number[];
+}
+
 /** The fields every window-state packet carries: the window and the stateId it is at. */
 interface WindowState {
   windowId: number;
@@ -95,9 +100,11 @@ const lateTableWindow = new WeakMap<Bot, () => void>();
  */
 export function watchRecipeBook(bot: Bot): void {
   if (unlocked.has(bot)) return;
+  // A bot without a protocol client (a test double) sends and receives no packets: nothing to record.
+  const client = bot._client as unknown as RecipeClient | undefined;
+  if (!client) return;
   const displays = new Map<number, Display>();
   unlocked.set(bot, displays);
-  const client = bot._client as unknown as RecipeClient;
   client.on('recipe_book_add', (packet: unknown) => {
     const { replace, entries } = packet as RecipeBookAdd;
     if (replace) displays.clear();
@@ -107,6 +114,10 @@ export function watchRecipeBook(bot: Bot): void {
         displays.set(recipe.displayId, result);
       }
     }
+  });
+  client.on('recipe_book_remove', (packet: unknown) => {
+    const { recipeIds } = packet as RecipeBookRemove;
+    for (const id of recipeIds) displays.delete(id);
   });
 }
 
