@@ -58,3 +58,8 @@ Later waves, sliced when wave 2 closes (spec section 10 "Build" line):
 - **Wave 4, the Body lives:** reflexes (spec 5.2 table), the intent executor with preconditions, wake conditions, limits and checkpoints, action records and receipts, Body restart resuming from checkpoint.
 - **Wave 5, the Mind:** `lantern-local/` (Appendix H over a local WebSocket to Ollama), `animus/` thinking loop (5.3.4), attention controller (5.3.2), memory and sleep reflection (5.4), first versioned prompts in `prompts/` (Appendix B).
 - **Wave 6, watch and run Adam:** `glass/` Thought Stream v0, then the Adam runs on Qwen3 32B and 8B against the exit criteria above, and the campaign review.
+
+## Cross-packet notes (wave 1 review)
+
+- **Model names.** Ollama tags (`qwen3:32b`, `qwen3:8b`) are what `shards/phase0.yaml` and the local Thinker use end to end in Phase 0. Appendix E and H write `qwen3-32b`; the spec form is an illustration. The Thinker advertises the Ollama tag in `hello.models[].name` and the Mind routes by that exact string. Mapping between naming schemes, if ever needed, belongs to the Thinker, decided when the Gateway exists (Phase 2).
+- **Spec departures that need an owner edit or record:** `Snapshot.revision` (Appendix A), `actions.snapshot_revision` and `receipts.detail` (Appendix D; 0020 covers the receipts change), composite skill FKs (Appendix D), snake_case gamerules (5.1).
