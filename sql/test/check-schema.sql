@@ -1,7 +1,9 @@
 -- Fails with RAISE EXCEPTION unless every table of spec Appendix D exists in
 -- public, the pgvector extension is installed, and the changes that differ
 -- from Appendix D are in place: receipts has a unique key over exactly
--- (action_id, phase) and none over action_id alone, receipts.detail and
+-- (action_id, phase) and none over action_id alone, receipts has a partial
+-- unique index allowing one final (committed or aborted) receipt per action,
+-- receipts.phase and actions.state have CHECKs, receipts.detail and
 -- actions.snapshot_revision exist, schema archive exists, and books and
 -- skill_library have the composite foreign keys to skills (skill_id, edition).
 -- CI runs it after the migrations; a missing CREATE TABLE or a reverted
@@ -43,6 +45,7 @@ BEGIN
     JOIN pg_namespace n ON n.oid = t.relnamespace
     JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
     WHERE n.nspname = 'public' AND t.relname = 'receipts' AND i.indisunique
+      AND i.indpred IS NULL  -- partial indexes are checked separately below
     GROUP BY i.indexrelid
   );
   IF NOT ('action_id,phase' = ANY(unique_sets)) THEN
@@ -50,6 +53,46 @@ BEGIN
   END IF;
   IF 'action_id' = ANY(unique_sets) THEN
     problems := array_append(problems, 'receipts must not have a unique key over action_id alone');
+  END IF;
+
+  -- One final receipt per action: a partial unique index on action_id alone,
+  -- whose predicate covers committed and aborted.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_index i
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]
+    WHERE n.nspname = 'public' AND t.relname = 'receipts' AND i.indisunique
+      AND i.indnkeyatts = 1 AND a.attname = 'action_id'
+      AND i.indpred IS NOT NULL
+      AND pg_get_expr(i.indpred, i.indrelid) LIKE '%committed%'
+      AND pg_get_expr(i.indpred, i.indrelid) LIKE '%aborted%'
+  ) THEN
+    problems := array_append(problems, 'receipts needs a partial unique index on (action_id) WHERE phase IN (committed, aborted)');
+  END IF;
+
+  -- CHECK constraints that limit phase and state to the contract's values.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'receipts' AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) LIKE '%prepared%committed%aborted%'
+  ) THEN
+    problems := array_append(problems, 'receipts.phase needs a CHECK limited to prepared, committed and aborted');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'actions' AND c.contype = 'c'
+      AND pg_get_constraintdef(c.oid) LIKE '%accepted%running%completed%failed%cancelled%'
+  ) THEN
+    problems := array_append(problems, 'actions.state needs a CHECK limited to the contract action states');
   END IF;
 
   IF NOT EXISTS (

@@ -5,7 +5,7 @@ description: Bring a Geldar shard's Docker Compose stack up (Paper, Postgres wit
 
 # Run a shard
 
-Usable once packet P0-06 has added `compose/phase0.yml`; until then `./geldar.ps1 shard up` says the file does not exist. Phase 0 runs everything on this one PC (`docs/decisions/0002-phase0-host-and-models.md`); Ollama runs on the host, not in compose, so it can use the GPU. The connection path matches production (`docs/decisions/0021-velocity-from-phase0.md`): bots join through the Velocity bot ingress on `127.0.0.1:25565`, Paper accepts only forwarded connections, and secrets are files in `compose/secrets/` that `shard up` generates when missing.
+Phase 0 runs everything on this one PC (`docs/decisions/0002-phase0-host-and-models.md`); Ollama runs on the host, not in compose, so it can use the GPU. The connection path matches production (`docs/decisions/0021-velocity-from-phase0.md`): bots join through the Velocity bot ingress on `127.0.0.1:25565`, Paper accepts only forwarded connections, and secrets are files in `compose/secrets/` that `shard up` generates when missing.
 
 ## Start
 

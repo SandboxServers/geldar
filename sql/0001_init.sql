@@ -36,13 +36,16 @@ CREATE TABLE actions (
   action_id TEXT PRIMARY KEY, intent_id TEXT, life_id TEXT, body_generation INT, sequence INT,
   source_snapshot_id TEXT, expires_tick BIGINT, kind TEXT, args JSONB,
   snapshot_revision BIGINT,     -- differs from spec Appendix D: the Body rejects a plan made from an older snapshot revision (spec 5.3.2, section 7)
-  state TEXT, result JSONB, receipt_id TEXT
+  state TEXT CHECK (state IN ('accepted','running','completed','failed','cancelled')),  -- differs from spec Appendix D: state is limited to the contract's action states
+  result JSONB, receipt_id TEXT
 );
 CREATE TABLE receipts (                -- two-phase records for economic operations
-  receipt_id TEXT PRIMARY KEY, action_id TEXT, life_id TEXT, kind TEXT, phase TEXT, item TEXT, count INT, credits INT, at TIMESTAMPTZ,
+  receipt_id TEXT PRIMARY KEY, action_id TEXT, life_id TEXT, kind TEXT,
+  phase TEXT CHECK (phase IN ('prepared','committed','aborted')), item TEXT, count INT, credits INT, at TIMESTAMPTZ,  -- differs from spec Appendix D: phase is limited to the contract's three receipt phases
   detail TEXT,                         -- differs from spec Appendix D: why an action aborted or what happened (at most 256 characters, decision 0020)
   UNIQUE (action_id, phase)            -- differs from spec Appendix D: one row per phase, so prepared and committed can both exist (decision 0020)
 );
+CREATE UNIQUE INDEX receipts_one_final_per_action ON receipts (action_id) WHERE phase IN ('committed','aborted');  -- differs from spec Appendix D: exactly one final receipt per action (decision 0020); a prepared row may precede it
 CREATE TABLE suppressed_wakeups (     -- the attention controller's record of what it chose not to escalate
   id BIGSERIAL PRIMARY KEY, life_id TEXT, at TIMESTAMPTZ, event_types TEXT[], reason TEXT, intent_id TEXT
 );
