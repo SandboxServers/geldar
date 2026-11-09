@@ -20,11 +20,13 @@ Each packet is self-contained: the coder skips CLAUDE.md, so these rules travel 
 
 ## Wave close (every wave)
 
-A wave is not done when its last packet ships. Before the wave PR is merged, and as part of that PR, the orchestrator runs the wave close:
+A wave is not done when its last feature packet ships. Before the wave PR is merged, and as part of that PR, the orchestrator runs the wave close in this order (owner rulings, wave 3: reviews and tests run once, at the end of the wave; the process packet comes after them so its retro sees the whole wave):
+
+0. **Wave test and review.** One live pass and ONE thorough wave review (split by area, up to 5 rounds), both after the last feature packet and before steps 1 to 4. No per-packet or per-batch reviews or live runs earlier.
 
 1. **Docs.** A docs sweep: the files that describe what the wave changed (README, `sql/README.md`, skills such as `run-shard` and `body-bench`, the threat model, `docs/decisions/` records for anything that departs from the spec) match the code. A fresh `packet-coder` does it from a list the wave reviewer writes (the wave review already checks "docs that no longer match"); the orchestrator never edits outside `docs/analysis/phase0/`, `docs/decisions/` records (owner-authorised), `.claude/state/` and branch state.
 2. **Retro.** The orchestrator writes `docs/analysis/phase0/retro/wave-<N>.md`: what shipped, what cost the most agent passes and why (read the reviewer verdicts), what the reviews caught that tests did not, what went wrong in the process (agents out of context, tool limits, Windows quirks, brief mistakes), what to keep, and numbered **Actions**, each with an owner (a packet, a skill edit, an agent edit, a CI check) and a size.
-3. **Process packet.** A `W<N>-process` packet applies the Actions that change the development process or AI SDLC scaffolding: `.claude/skills/`, `.claude/agents/`, `CLAUDE.md`, `AGENTS.md`, `tools/repo-checks`, CI, packet and brief templates. It is written like any packet (files, tests or checks, commit subject), goes through the same review loop, and merges into the wave branch. Actions that need an owner decision are asked, not guessed.
+3. **Process packet (after the wave test, review and retro).** A `W<N>-process` packet applies the Actions that change the development process or AI SDLC scaffolding: `.claude/skills/`, `.claude/agents/`, `CLAUDE.md`, `AGENTS.md`, `tools/repo-checks`, CI, packet and brief templates. It is written like any packet (files, tests or checks, commit subject), goes through the same review loop, and merges into the wave branch. Actions that need an owner decision are asked, not guessed.
 4. **Ledger.** `README.md` records the retro and the process packet; `RESUME.md` names the next wave.
 
 The retro Actions must be small and checkable. A process change that does not make the next wave cheaper or safer is dropped, not kept.
