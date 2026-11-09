@@ -18,6 +18,12 @@ export interface SnapshotOptions {
   events?: Snapshot['events_since_last_thought'];
   currentPlan?: Snapshot['current_plan'];
   stuck?: Snapshot['stuck'];
+  /** Authorized surroundings from the perception module; empty when absent. */
+  surroundings?: Snapshot['surroundings'];
+  /** Item names the agent has unlocked recipes for; `self.unlocked_recipes` is left out when absent. */
+  unlockedRecipes?: string[];
+  /** The Body's generation; `body_generation` is left out when absent. */
+  bodyGeneration?: number;
 }
 
 /**
@@ -118,9 +124,16 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
       effects: effectNames(bot),
       budget_remaining_thoughts: opts.budgetRemainingThoughts ?? 0,
       days_since_sleep: opts.daysSinceSleep ?? 0,
+      ...(opts.unlockedRecipes !== undefined ? { unlocked_recipes: opts.unlockedRecipes } : {}),
     },
-    // Empty until authorized perception (spec 5.2) lands in wave 4.
-    surroundings: { blocks_summary: '', notable_blocks: [], entities: [], agents: [] },
+    // Empty unless the caller passes the perception module's authorized surroundings (spec 5.2).
+    surroundings: opts.surroundings ?? {
+      blocks_summary: '',
+      notable_blocks: [],
+      entities: [],
+      agents: [],
+    },
+    ...(opts.bodyGeneration !== undefined ? { body_generation: opts.bodyGeneration } : {}),
     heard: opts.heard ?? [],
     events_since_last_thought: opts.events ?? [],
     ...(opts.currentPlan !== undefined ? { current_plan: opts.currentPlan } : {}),
