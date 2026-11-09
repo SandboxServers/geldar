@@ -7,7 +7,8 @@ export const FALL_STOP_DROP = 4;
 const SETTLE_TICKS = 3;
 /** Horizontal speed (blocks per tick) below which the Body counts as stopped. */
 const STOPPED_SPEED = 0.03;
-const COOLDOWN_TICKS = 5;
+/** Ticks before it may fire again: a planned parkour or a descent beside a cliff is not retried at once. */
+const COOLDOWN_TICKS = 20;
 
 const MOVE_CONTROLS = ['forward', 'back', 'left', 'right', 'sprint', 'jump'] as const;
 
@@ -24,7 +25,8 @@ function stopPathfinder(bot: Bot): void {
  * decides its own movement, so before the Body steps off it can cancel the running action, halt
  * the pathfinder and release every movement key. Once it is in the air nothing a bot can do
  * lands it (a placed block needs a solid face to rest on), so the reflex only acts on the ground,
- * looking one block ahead of the motion. A drop that ends in water is not counted.
+ * looking one block ahead of the motion. A drop that ends in water is not counted. It stays quiet
+ * while the pathfinder holds a goal, and for 20 ticks after a firing.
  */
 export function createFallStopReflex(): Reflex {
   return {
@@ -34,6 +36,8 @@ export function createFallStopReflex(): Reflex {
     check(view) {
       // `fallingDistance` is above 0 for a moment after a jump; only a real fall is out of reach.
       if (view.fallingDistance > 1) return null;
+      // A route the pathfinder planned already counts the drop; only stray motion is stopped.
+      if (view.pathfinding === true) return null;
       const drop = view.dropAhead();
       return drop > FALL_STOP_DROP ? { drop } : null;
     },

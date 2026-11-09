@@ -160,6 +160,7 @@ export class BodyRuntime {
       lifeId: this.lifeId,
       bodyGeneration: this.bodyGeneration,
       tick,
+      timeScale: this.timeScale,
       signal: this.stopController.signal,
       cancelAction: () => this.cancelAction(),
     };

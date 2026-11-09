@@ -94,3 +94,17 @@ describe('BodyView.dropAhead', () => {
     expect(view.dropAhead()).toBe(10);
   });
 });
+
+describe('fall-stop: planned routes and backoff', () => {
+  it('stays quiet while the pathfinder holds a goal', () => {
+    const { view } = basicView({ drop: 10 });
+    const reflex = createFallStopReflex();
+    expect(reflex.check(view)).toEqual({ drop: 10 });
+    const walking = Object.create(view, { pathfinding: { value: true } }) as typeof view;
+    expect(reflex.check(walking)).toBeNull();
+  });
+
+  it('backs off 20 ticks after a firing', () => {
+    expect(createFallStopReflex().cooldownTicks).toBe(20);
+  });
+});

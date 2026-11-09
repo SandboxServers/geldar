@@ -3,6 +3,7 @@ import { MemorySink } from '../records.ts';
 import { ReflexRunner } from '../reflex.ts';
 import { allReflexesOn } from '../reflex-config.ts';
 import { basicContext, basicView, eatRegistry, gridBot } from './basic.fakes.ts';
+import { createBasicReflexes } from './basic.ts';
 import { createEatReflex } from './eat.ts';
 
 describe('eat reflex: check', () => {
@@ -88,5 +89,28 @@ describe('eat reflex: under the runner', () => {
     expect(sink.reflexes[0]).toMatchObject({ name: 'eat', outcome: { result: 'handled' } });
     await runner.onTick(300);
     expect(runs()).toBe(2);
+  });
+});
+
+describe('eat reflex: one per Body', () => {
+  it('two Bodies eat at the same time: the flag is not shared', async () => {
+    const one = basicView({ hunger: 10, foods: ['bread'] });
+    const two = basicView({ hunger: 10, foods: ['bread'] });
+    const a = eatRegistry('completed');
+    const b = eatRegistry('completed');
+    const ctxA = basicContext(one.view, gridBot({}).bot, a.registry).ctx;
+    const ctxB = basicContext(two.view, gridBot({}).bot, b.registry).ctx;
+    const [first, second] = await Promise.all([
+      createEatReflex().run({}, ctxA),
+      createEatReflex().run({}, ctxB),
+    ]);
+    expect([first.result, second.result]).toEqual(['handled', 'handled']);
+  });
+
+  it('createBasicReflexes builds fresh instances on every call', () => {
+    const [x] = createBasicReflexes().filter((r) => r.name === 'eat');
+    const [y] = createBasicReflexes().filter((r) => r.name === 'eat');
+    expect(x).toBeDefined();
+    expect(x).not.toBe(y);
   });
 });

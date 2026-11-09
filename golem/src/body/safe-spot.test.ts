@@ -75,3 +75,15 @@ describe('BodyView hurt and safe-spot fields', () => {
     view.dispose();
   });
 });
+
+describe('trackSafeSpot: a forgotten bed stays forgotten', () => {
+  it('does not bring the bed back when a bed block appears there again', () => {
+    const blocks: Record<string, string | null> = { '10,64,-4': 'air' };
+    const { bot: b, events } = bot(blocks);
+    const memory = trackSafeSpot(b);
+    events.emit('sleep');
+    expect(memory.current()?.kind).toBe('spawn');
+    blocks['10,64,-4'] = 'red_bed';
+    expect(memory.current()?.kind).toBe('spawn');
+  });
+});

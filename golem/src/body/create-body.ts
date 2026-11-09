@@ -11,7 +11,7 @@ import { MemorySink, type RecordSink } from './records.ts';
 import { NatsRecordSink, type NatsSinkOptions } from './records-nats.ts';
 import type { Reflex } from './reflex.ts';
 import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-config.ts';
-import { basicReflexes } from './reflexes/basic.ts';
+import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
 import { combatReflexes } from './reflexes/combat.ts';
 import { shelterReflexes } from './reflexes/shelter.ts';
@@ -65,7 +65,7 @@ export interface Body {
 
 /** The reflexes a shard config leaves on, from every reflex group. */
 export function enabledReflexes(config: ReflexConfig): Reflex[] {
-  return [...basicReflexes, ...combatReflexes, ...shelterReflexes].filter((reflex) =>
+  return [...createBasicReflexes(), ...combatReflexes, ...shelterReflexes].filter((reflex) =>
     isReflexEnabled(config, reflex.name),
   );
 }

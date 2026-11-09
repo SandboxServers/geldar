@@ -36,7 +36,12 @@ export function createEatReflex(): Reflex {
       try {
         // Eating swaps the held item, which would clash with a running mine or place.
         await ctx.cancelAction();
-        const run = await runAction(ctx.registry, ctx.bot, { do: 'eat' }, { signal: ctx.signal });
+        const run = await runAction(
+          ctx.registry,
+          ctx.bot,
+          { do: 'eat' },
+          { signal: ctx.signal, timeScale: ctx.timeScale },
+        );
         if (run.state === 'completed') return { result: 'handled', detail: 'ate' };
         return { result: 'failed', detail: run.result.reason ?? run.result.status };
       } finally {

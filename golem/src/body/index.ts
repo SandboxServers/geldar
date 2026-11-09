@@ -83,7 +83,7 @@ export {
   type ReflexConfig,
   type ReflexName,
 } from './reflex-config.ts';
-export { basicReflexes } from './reflexes/basic.ts';
+export { createBasicReflexes } from './reflexes/basic.ts';
 export { type BlockedReport, hasBlockedReport, reportBlocked } from './reflexes/blocked-path.ts';
 export { combatReflexes } from './reflexes/combat.ts';
 export { shelterReflexes } from './reflexes/shelter.ts';

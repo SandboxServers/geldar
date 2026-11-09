@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { eatAction } from '../../src/actions/eat.ts';
 import { MemorySink } from '../../src/body/records.ts';
-import { basicReflexes } from '../../src/body/reflexes/basic.ts';
+import { createBasicReflexes } from '../../src/body/reflexes/basic.ts';
 import { BodyRuntime } from '../../src/body/runtime.ts';
 import { type LiveContext, withLiveBot } from './fixture.ts';
 
@@ -21,7 +21,7 @@ function startBody(live: LiveContext): { body: BodyRuntime; sink: MemorySink } {
     bot: live.bot,
     ticks: live.manager.onWorldTick,
     sink,
-    reflexes: basicReflexes,
+    reflexes: createBasicReflexes(),
   });
   body.actions.register(eatAction);
   body.start();

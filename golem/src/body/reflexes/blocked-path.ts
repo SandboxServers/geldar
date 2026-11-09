@@ -100,7 +100,7 @@ async function alternateRoute(
   ctx: ReflexContext,
   report: BlockedReport,
 ): Promise<ReflexOutcome> {
-  const opts = { signal: ctx.signal, timeScale: 1, stallTicks: ALTERNATE_STALL_TICKS };
+  const opts = { signal: ctx.signal, timeScale: ctx.timeScale, stallTicks: ALTERNATE_STALL_TICKS };
   const here = ctx.bot.entity.position;
   const waypoint = detourWaypoint(here, report.goal);
   let move: MoveResult = await walk(ctx.bot, waypoint, WAYPOINT_RANGE, opts);

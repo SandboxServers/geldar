@@ -13,6 +13,36 @@ const BOT = 'GolemCombat';
 /** Polls of one tick each before a wait gives up. */
 const POLL_LIMIT = 600;
 
+/** The test control's command surface, as the fixture hands it out. */
+type Control = Parameters<Parameters<typeof withLiveBot>[1]>[0]['ctl'];
+
+/**
+ * Sets the world to midnight and waits until the bot sees it, so a summoned zombie does not burn
+ * in daylight and never attacks. Returns the call that puts the time back to noon.
+ */
+async function midnight(bot: Bot, ctl: Control): Promise<() => Promise<void>> {
+  await ctl.timeSet('midnight');
+  for (let i = 0; i < 100 && bot.time.timeOfDay < 13_000; i++) await bot.waitForTicks(1);
+  return async () => {
+    await ctl.timeSet('noon');
+  };
+}
+
+/** Summons a zombie in a helmet (test setup only: the Body uses no RCON), so the sun cannot burn it. */
+async function summonZombie(ctl: Control, x: number, z: number): Promise<void> {
+  await ctl.command(
+    `summon zombie ${x} 200 ${z} {equipment:{head:{id:"minecraft:iron_helmet",count:1}}}`,
+  );
+}
+
+/** What the bot sees around it, for an assertion message. */
+function nearby(bot: Bot): string {
+  const seen = Object.values(bot.entities)
+    .filter((e) => e !== bot.entity && e.position.distanceTo(bot.entity.position) < 24)
+    .map((e) => `${e.name ?? e.type} at ${e.position.floored()}`);
+  return `nothing fired; time ${bot.time.timeOfDay}, health ${bot.health}, near: ${seen.join('; ') || 'nothing'}`;
+}
+
 /** Waits until `done` holds or the poll limit runs out; returns whether it held. */
 async function waitFor(bot: Bot, done: () => boolean): Promise<boolean> {
   for (let i = 0; i < POLL_LIMIT && !done(); i++) await bot.waitForTicks(1);
@@ -23,7 +53,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('an armed bot kills a zombie that attacks it', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena, manager }) => {
       const { x: cx, z: cz } = arena.center;
-      await ctl.timeSet('night');
+      const restoreTime = await midnight(bot, ctl);
       await ctl.give(BOT, 'iron_sword', 1);
       const sink = new MemorySink();
       const runtime = new BodyRuntime({
@@ -37,11 +67,11 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
       runtime.start();
       try {
         // Test setup only: the Body itself uses no RCON.
-        await ctl.command(`summon zombie ${cx + 2} 200 ${cz}`);
+        await summonZombie(ctl, cx + 2, cz);
         const fired = await waitFor(bot, () =>
           sink.reflexes.some((r) => r.name === 'fight_or_flee'),
         );
-        expect(fired).toBe(true);
+        expect(fired, nearby(bot)).toBe(true);
         const gone = await waitFor(
           bot,
           () => !Object.values(bot.entities).some((e) => e.name === 'zombie'),
@@ -52,6 +82,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
         });
       } finally {
         await runtime.stop();
+        await restoreTime();
       }
     });
   });
@@ -59,7 +90,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('an unarmed bot flees a zombie that attacks it', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena, manager }) => {
       const { x: cx, z: cz } = arena.center;
-      await ctl.timeSet('night');
+      const restoreTime = await midnight(bot, ctl);
       await ctl.clear(BOT);
       const sink = new MemorySink();
       const runtime = new BodyRuntime({
@@ -72,16 +103,17 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
       });
       runtime.start();
       try {
-        await ctl.command(`summon zombie ${cx + 1} 200 ${cz}`);
+        await summonZombie(ctl, cx + 1, cz);
         const fired = await waitFor(bot, () =>
           sink.reflexes.some((r) => r.name === 'fight_or_flee'),
         );
-        expect(fired).toBe(true);
+        expect(fired, nearby(bot)).toBe(true);
         const record = sink.reflexes.find((r) => r.name === 'fight_or_flee');
         expect(record?.trigger).toMatchObject({ armed: false });
         expect(sink.wakes.some((w) => w.reason === 'reflex_danger')).toBe(true);
       } finally {
         await runtime.stop();
+        await restoreTime();
       }
     });
   });
@@ -89,7 +121,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('a bot at 4 health retreats toward the world spawn and raises a danger wake', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena, manager }) => {
       const { x: cx, z: cz } = arena.center;
-      await ctl.timeSet('night');
+      const restoreTime = await midnight(bot, ctl);
       const sink = new MemorySink();
       const runtime = new BodyRuntime({
         lifeId: 'live-combat',
@@ -103,12 +135,13 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
       try {
         await ctl.command(`damage ${BOT} 16 minecraft:generic`);
         await waitFor(bot, () => bot.health <= 6);
-        await ctl.command(`summon zombie ${cx + 3} 200 ${cz}`);
+        await summonZombie(ctl, cx + 3, cz);
         const fired = await waitFor(bot, () => sink.reflexes.some((r) => r.name === 'retreat'));
-        expect(fired).toBe(true);
+        expect(fired, nearby(bot)).toBe(true);
         expect(sink.wakes.some((w) => w.reason === 'reflex_danger')).toBe(true);
       } finally {
         await runtime.stop();
+        await restoreTime();
       }
     });
   });
@@ -116,13 +149,17 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('the attack action kills a loaded zombie through the registry', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
       const { x: cx, z: cz } = arena.center;
-      await ctl.timeSet('night');
+      const restoreTime = await midnight(bot, ctl);
       await ctl.give(BOT, 'iron_sword', 1);
-      await ctl.command(`summon zombie ${cx + 4} 200 ${cz}`);
-      await bot.waitForTicks(10);
-      const run = await runAction(createRegistry(), bot, { do: 'attack', target: 'zombie' });
-      expect(run.result).toMatchObject({ status: 'completed' });
-      expect(run.result.detail).toMatchObject({ killed: true });
+      try {
+        await summonZombie(ctl, cx + 4, cz);
+        await bot.waitForTicks(10);
+        const run = await runAction(createRegistry(), bot, { do: 'attack', target: 'zombie' });
+        expect(run.result, nearby(bot)).toMatchObject({ status: 'completed' });
+        expect(run.result.detail).toMatchObject({ killed: true });
+      } finally {
+        await restoreTime();
+      }
     });
   });
 });

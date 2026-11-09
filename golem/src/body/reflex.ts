@@ -24,6 +24,8 @@ export interface ReflexContext {
   bodyGeneration: number;
   /** World age of the tick that fired this reflex. */
   tick: number;
+  /** The runtime's time scale: pass it to every action and scale fixed wall-clock limits by it. */
+  timeScale: number;
   /** Aborted when the runtime stops; a reflex should end its work promptly then. */
   signal: AbortSignal;
   /**
