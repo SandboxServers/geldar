@@ -37,6 +37,23 @@ describe('record event payloads', () => {
     ).toBe(true);
   });
 
+  it('accepts the intent fields on an accepted event and rejects bad ones', () => {
+    const accepted = {
+      ...intent,
+      state: 'accepted',
+      goal: 'get_wood',
+      program: 'gather',
+      arguments: { item: 'oak_log' },
+      preconditions: ['has_pickaxe'],
+      wake_on: ['goal_completed'],
+      limits: { max_world_ticks: 6000, max_block_operations: 40 },
+    };
+    expect(validateIntentEventPayload(accepted).ok).toBe(true);
+    expect(validateIntentEventPayload({ ...accepted, goal: 'Not A Goal' }).ok).toBe(false);
+    expect(validateIntentEventPayload({ ...accepted, limits: { max_world_ticks: 0 } }).ok).toBe(
+      false,
+    );
+  });
   it.each([
     ['an unknown intent state', () => validateIntentEventPayload({ ...intent, state: 'done' })],
     ['an intent with no life', () => validateIntentEventPayload({ ...intent, life_id: undefined })],

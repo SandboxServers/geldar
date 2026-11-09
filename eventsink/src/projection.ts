@@ -6,7 +6,16 @@
  * Rules: an upsert by primary key that only moves forward (accepted, then running, then one of
  * completed, failed or cancelled; the first final state stays), so redelivery and reordering
  * converge; at most one final receipt per action (a second one is rejected with a permanent
- * error, which the consumer dead-letters with the reason). Other event types are not projected.
+ * error, which the consumer dead-letters with the reason). An `interrupted` intent event is stored
+ * as `cancelled` with an end reason that starts `interrupted:` (the table has no such state);
+ * `paused` is not stored. The `accepted` event's goal, program, arguments, preconditions, wake_on
+ * and limits fill the matching columns. `thought_id` and `checkpoint` stay null: no event carries
+ * a thought id, and the running checkpoint lives in NATS KV (decision 0043). Other event types are
+ * not projected.
+ *
+ * Latent: two sink replicas that each see the first event of a new intent or action can both find
+ * no row (`FOR UPDATE` has no row to lock) and race on the insert; the loser fails on the primary
+ * key and the redelivery then merges. Compose runs one sink, so this is documented, not handled.
  */
 import {
   type ActionRecord,
@@ -27,6 +36,16 @@ export interface IntentRow {
   started_tick: number | null;
   ended_tick: number | null;
   end_reason: string | null;
+  goal: string | null;
+  program: string | null;
+  arguments: unknown;
+  preconditions: unknown;
+  wake_on: unknown;
+  limits: unknown;
+  /** Always null today: see the module comment. */
+  checkpoint: unknown;
+  /** Always null today: see the module comment. */
+  thought_id: string | null;
 }
 
 /** What the projection reads and writes; Postgres in production, a map in the unit tests. */
@@ -71,7 +90,14 @@ const STATE_RANK: Readonly<Record<string, number>> = {
   completed: 2,
   failed: 2,
   cancelled: 2,
+  interrupted: 2,
 };
+
+/** The row state an event state is stored as; undefined for a state the table does not hold. */
+function rowState(state: string): string | undefined {
+  if (state === 'interrupted') return 'cancelled';
+  return state === 'paused' ? undefined : state;
+}
 
 function rejectInvalid(type: string, errors: readonly string[]): never {
   throw new ProjectionRejectedError(
@@ -85,26 +111,48 @@ function mergeIntent(
   existing: IntentRow | undefined,
   change: IntentEventPayload,
 ): IntentRow | undefined {
+  const stored = rowState(change.state);
   const rank = STATE_RANK[change.state];
-  if (rank === undefined) return undefined; // paused and interrupted: the table does not hold them
+  if (stored === undefined || rank === undefined) return undefined; // paused: events only
   const final = rank === 2;
+  const endReason =
+    change.state === 'interrupted'
+      ? `interrupted:${change.detail === undefined ? '' : ` ${change.detail}`}`
+      : (change.detail ?? null);
+  const fields = {
+    goal: change.goal ?? null,
+    program: change.program ?? null,
+    arguments: change.arguments ?? null,
+    preconditions: change.preconditions ?? null,
+    wake_on: change.wake_on ?? null,
+    limits: change.limits ?? null,
+  };
   if (existing === undefined) {
     return {
       intent_id: change.intent_id,
       life_id: change.life_id,
       body_generation: change.body_generation,
-      state: change.state,
+      state: stored,
       started_tick: final ? null : change.tick,
       ended_tick: final ? change.tick : null,
-      end_reason: final ? (change.detail ?? null) : null,
+      end_reason: final ? endReason : null,
+      ...fields,
+      checkpoint: null,
+      thought_id: null,
     };
   }
   const next = { ...existing };
   if (rank > (STATE_RANK[existing.state] ?? -1)) {
-    next.state = change.state;
+    next.state = stored;
     if (final) {
       next.ended_tick = change.tick;
-      next.end_reason = change.detail ?? null;
+      next.end_reason = endReason;
+    }
+  }
+  // The intent's own fields come with the accepted event, which can arrive after a later one.
+  for (const [name, value] of Object.entries(fields)) {
+    if (value !== null && next[name as keyof typeof fields] === null) {
+      (next as Record<string, unknown>)[name] = value;
     }
   }
   // An earlier non-final change that arrives late still tells when the intent started.
@@ -141,7 +189,15 @@ async function projectReceipt(event: WorldEvent, store: ProjectionStore): Promis
   if (!parsed.ok) rejectInvalid('receipt', parsed.errors);
   const receipt = parsed.value;
   const stored = await store.getReceipts(receipt.action_id);
-  if (stored.some((row) => row.receipt_id === receipt.receipt_id)) return; // redelivery
+  const same = stored.find((row) => row.receipt_id === receipt.receipt_id);
+  if (same?.phase === receipt.phase) return; // redelivery
+  if (same !== undefined) {
+    throw new ProjectionRejectedError(
+      '23505',
+      `receipt id ${receipt.receipt_id} is already stored as a ${same.phase} receipt of action ` +
+        `${receipt.action_id}; the ${receipt.phase} receipt with the same id is rejected`,
+    );
+  }
   const clash = stored.find((row) =>
     receipt.phase === 'prepared' ? row.phase === 'prepared' : row.phase !== 'prepared',
   );
@@ -167,12 +223,17 @@ export interface Queryable {
   query(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
 }
 
+function jsonOrNull(value: unknown): string | null {
+  return value === null || value === undefined ? null : JSON.stringify(value);
+}
+
 /** The store over one open transaction. Reads of intents and actions lock the row they find. */
 export function pgProjectionStore(db: Queryable): ProjectionStore {
   return {
     async getIntent(intentId) {
       const { rows } = await db.query(
-        `SELECT intent_id, life_id, body_generation, state, started_tick, ended_tick, end_reason
+        `SELECT intent_id, life_id, body_generation, state, started_tick, ended_tick, end_reason,
+                goal, program, arguments, preconditions, wake_on, limits, checkpoint, thought_id
            FROM intents WHERE intent_id = $1 FOR UPDATE`,
         [intentId],
       );
@@ -186,12 +247,16 @@ export function pgProjectionStore(db: Queryable): ProjectionStore {
     },
     async saveIntent(row) {
       await db.query(
-        `INSERT INTO intents (intent_id, life_id, body_generation, state, started_tick, ended_tick, end_reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO intents (intent_id, life_id, body_generation, state, started_tick, ended_tick, end_reason,
+           goal, program, arguments, preconditions, wake_on, limits, checkpoint, thought_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15)
          ON CONFLICT (intent_id) DO UPDATE SET life_id = EXCLUDED.life_id,
            body_generation = EXCLUDED.body_generation, state = EXCLUDED.state,
            started_tick = EXCLUDED.started_tick, ended_tick = EXCLUDED.ended_tick,
-           end_reason = EXCLUDED.end_reason`,
+           end_reason = EXCLUDED.end_reason, goal = EXCLUDED.goal, program = EXCLUDED.program,
+           arguments = EXCLUDED.arguments, preconditions = EXCLUDED.preconditions,
+           wake_on = EXCLUDED.wake_on, limits = EXCLUDED.limits, checkpoint = EXCLUDED.checkpoint,
+           thought_id = EXCLUDED.thought_id`,
         [
           row.intent_id,
           row.life_id,
@@ -200,6 +265,14 @@ export function pgProjectionStore(db: Queryable): ProjectionStore {
           row.started_tick,
           row.ended_tick,
           row.end_reason,
+          row.goal,
+          row.program,
+          jsonOrNull(row.arguments),
+          jsonOrNull(row.preconditions),
+          jsonOrNull(row.wake_on),
+          jsonOrNull(row.limits),
+          jsonOrNull(row.checkpoint),
+          row.thought_id,
         ],
       );
     },

@@ -49,6 +49,29 @@ describe('pgEventWriter projection', () => {
     expect(released()).toBe(1);
   });
 
+  it('destroys the client when the rollback itself fails, and keeps it when it works', async () => {
+    const releases: unknown[] = [];
+    const client = {
+      query: async (text: string) => {
+        if (/INSERT INTO receipts/.test(text))
+          throw Object.assign(new Error('boom'), { code: '23505' });
+        if (text === 'ROLLBACK') throw new Error('connection lost');
+        return { rows: [] };
+      },
+      release: (destroy?: boolean) => void releases.push(destroy),
+    };
+    const pool = { connect: async () => client } as unknown as Pool;
+    await expect(
+      pgEventWriter(pool).insertBatch([receiptEvent(RECEIPT_A, 'committed')]),
+    ).rejects.toMatchObject({ code: '23505' });
+    expect(releases).toEqual([true]);
+    const ok = fakePool(/INSERT INTO receipts/);
+    await pgEventWriter(ok.pool)
+      .insertBatch([receiptEvent(RECEIPT_A, 'committed')])
+      .catch(() => undefined);
+    expect(ok.released()).toBe(1);
+  });
+
   it('keeps a batch with no projected type on the single INSERT path', async () => {
     const calls: string[] = [];
     const pool = {

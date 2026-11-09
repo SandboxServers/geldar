@@ -58,6 +58,8 @@ export function pgEventWriter(pool: Pool): EventWriter {
         return;
       }
       const client = await pool.connect();
+      // A client whose ROLLBACK failed may still hold the open transaction: destroy it, not pool it.
+      let broken = false;
       try {
         await client.query('BEGIN');
         await client.query(INSERT_SQL, insertParams(events));
@@ -65,10 +67,12 @@ export function pgEventWriter(pool: Pool): EventWriter {
         for (const event of events) await projectEvent(event, store);
         await client.query('COMMIT');
       } catch (error) {
-        await client.query('ROLLBACK').catch(() => undefined);
+        await client.query('ROLLBACK').catch(() => {
+          broken = true;
+        });
         throw error;
       } finally {
-        client.release();
+        client.release(broken);
       }
     },
   };
