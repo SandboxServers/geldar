@@ -28,6 +28,12 @@ The floor everything stands on (spec section 10, Phase 0). Rows are appended by 
 | 2026-11-09 | 93d6640 | 26.1.2 | 74 | 4.39.0 | 20 | bed | 10 | 10/10 (100%) | 312 | 1106 | wave 4 gate run, 20 TPS, Body reflexes and executor merged, shared desktop RTX 4090 host; actions 30/30; bench-runs/20261109T181829Z-93d6640.json |
 | 2026-11-09 | 93d6640 | 26.1.2 | 74 | 4.39.0 | 20 | chest | 10 | 10/10 (100%) | 9 | 454 | wave 4 gate run, 20 TPS, Body reflexes and executor merged, shared desktop RTX 4090 host; actions 30/30; bench-runs/20261109T181829Z-93d6640.json |
 | 2026-11-09 | 93d6640 | 26.1.2 | 74 | 4.39.0 | 20 | blocked-path | 10 | 10/10 (100%) | 6247 | 6343 | wave 4 gate run, 20 TPS, Body reflexes and executor merged, shared desktop RTX 4090 host; actions 5/10; bench-runs/20261109T181829Z-93d6640.json |
+| 2026-11-09 | 251ff8d | 26.1.2 | 74 | 4.39.0 | 20 | wood-to-stone-tools | 10 | 10/10 (100%) | 499 | 23162 | wave 4 gate run on the final commit, 20 TPS, shared desktop RTX 4090 host; actions 80/80; bench-runs/20261109T195841Z-251ff8d.json |
+| 2026-11-09 | 251ff8d | 26.1.2 | 74 | 4.39.0 | 20 | food | 10 | 10/10 (100%) | 1646 | 2668 | wave 4 gate run on the final commit, 20 TPS, shared desktop RTX 4090 host; actions 20/20; bench-runs/20261109T195841Z-251ff8d.json |
+| 2026-11-09 | 251ff8d | 26.1.2 | 74 | 4.39.0 | 20 | shelter | 10 | 10/10 (100%) | 563 | 1063 | wave 4 gate run on the final commit, 20 TPS, shared desktop RTX 4090 host; actions 100/100; bench-runs/20261109T195841Z-251ff8d.json |
+| 2026-11-09 | 251ff8d | 26.1.2 | 74 | 4.39.0 | 20 | bed | 10 | 10/10 (100%) | 312 | 1103 | wave 4 gate run on the final commit, 20 TPS, shared desktop RTX 4090 host; actions 30/30; bench-runs/20261109T195841Z-251ff8d.json |
+| 2026-11-09 | 251ff8d | 26.1.2 | 74 | 4.39.0 | 20 | chest | 10 | 10/10 (100%) | 9 | 437 | wave 4 gate run on the final commit, 20 TPS, shared desktop RTX 4090 host; actions 30/30; bench-runs/20261109T195841Z-251ff8d.json |
+| 2026-11-09 | 251ff8d | 26.1.2 | 74 | 4.39.0 | 20 | blocked-path | 10 | 10/10 (100%) | 6200 | 6445 | wave 4 gate run on the final commit, 20 TPS, shared desktop RTX 4090 host; actions 5/10; bench-runs/20261109T195841Z-251ff8d.json |
 
 ## How to read the rows
 
