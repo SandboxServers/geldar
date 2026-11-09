@@ -29,7 +29,7 @@ let containerId: string | undefined;
 let client: Client | undefined;
 
 /** Start the image detached on a random loopback port and return the port once it answers. */
-async function start(options: { mountTokens: boolean; command: string[] }): Promise<number> {
+async function start(options: { mountTokens: boolean; command?: string[] }): Promise<number> {
   dir = mkdtempSync(join(tmpdir(), 'mcp-mock-'));
   chmodSync(dir, 0o755);
   const file = join(dir, 'tokens.json');
@@ -39,7 +39,8 @@ async function start(options: { mountTokens: boolean; command: string[] }): Prom
   if (options.mountTokens) {
     args.push('--mount', `type=bind,source=${file},target=/run/secrets/mcp-tokens.json,readonly`);
   }
-  args.push(tag, ...options.command);
+  // Without a command the image's own CMD runs, which the first case relies on.
+  args.push(tag, ...(options.command ?? []));
   const started = run(args, { timeoutMs: 60_000 });
   expect(started.status, started.stderr).toBe(0);
   containerId = started.stdout.trim();
@@ -92,7 +93,7 @@ describe.skipIf(!ready)('mcp-mock image', () => {
   }, 30_000);
 
   it('starts and serves', async () => {
-    const port = await start({ mountTokens: true, command: DEFAULT_COMMAND });
+    const port = await start({ mountTokens: true });
     const c = await connect(port);
     const tools = await c.listTools();
     expect(tools.tools).toHaveLength(14);
