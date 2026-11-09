@@ -2,29 +2,20 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** scaffold PR #2 merged. `main` is protected (PR, required check `ci gate`). Owner decisions settled (Minecraft 26.1, Velocity from Phase 0). Branch `phase0/wave1` on origin; `.claude/state/active-campaign` = phase0. Ollama has `qwen3:32b` and `qwen3:8b` (pulled by the orchestrator at the owner's request).
+**State (2026-11-08):** scaffold PR #2 merged. `main` is protected (PR, required check `ci gate`). Owner decisions settled (Minecraft 26.1, Velocity from Phase 0). Branch `phase0/wave1` on origin; `.claude/state/active-campaign` = phase0. Ollama has `qwen3:32b` and `qwen3:8b`.
 
-**Current wave:** 1, the contract and a healthy stack (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
+**Current wave:** 1 (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
 
-**Merged into `phase0/wave1`:** P0-00 to P0-05 (all but P0-06).
-
-**In flight (background agents):**
-
-| Packet | Worktree | Stage |
-|---|---|---|
-| P0-06 | `.claude/worktrees/p0-06` | coder continuation 2 of 3 (first coder hit context; files uncommitted) |
-
-`.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.
+**Merged into `phase0/wave1`:** P0-00 to P0-06, all with `ship`. No agents in flight.
 
 **Next actions:**
 
-1. Review loop per packet: fresh `packet-reviewer`, `fix` goes to a fresh `packet-coder`, up to 3 passes. `decision` or `fix` after pass 3: ask the owner. Reviewers may lack a write tool; then pass their inline findings in the fix brief.
-2. On `ship`, `git merge --no-ff` into `phase0/wave1`. P0-02/P0-03/P0-04 conflicts in `contract/src/index.ts` and `contract/src/generated/*`: keep every block, regenerate (`./geldar.ps1 pnpm --filter @geldar/contract generate`), commit (work-packets.md § Contract). P0-03 is merged already, so P0-02 and P0-04 will conflict.
-3. All seven shipped: wave review over `origin/main..phase0/wave1`, then `./geldar.ps1 check`, open the PR, wait for `ci gate`, tell the owner. Don't merge.
-4. Before removing packet worktrees (only after the PR is open), copy useful `.claude/reports/` files into `worknotes/`.
+1. Wave review: one fresh `packet-reviewer` over `origin/main..phase0/wave1` with work-packets.md and the ledger as the spec (contract drift between packets, duplicated code, two packets editing one file, docs that no longer match). Apply `fix` verdicts via fresh packet-coders in a worktree from `phase0/wave1`.
+2. `./geldar.ps1 check` on `phase0/wave1`; open the PR to `main` (`.github/pull_request_template.md`); wait for `ci gate` (`gh pr checks <PR> --watch`). Don't merge; tell the owner.
+3. After the PR is open: copy useful `.claude/reports/` files from packet worktrees into `worknotes/`, then remove the packet worktrees (`p0-00` to `p0-06`; not `scriptorium-decisions`).
 
-**Notes for the wave review:** P0-01 commit 8f17621 has a Haiku 5.5 co-author trailer (accepted). P0-03 left `credits`/`count`/`world_day` without upper bounds (SQL columns are INT) and `thinker_id` as a free string. P0-04 adds invented limits (job `max_tokens` cap, semver pattern) listed in its fix report.
+**Notes for the wave review:** P0-01 commit 8f17621 has a Haiku 5.5 trailer (accepted). P0-03: `credits`/`count`/`world_day` have no upper bound (SQL columns INT), `thinker_id` is a free string. P0-04: invented limits (job `max_tokens` 32768, semver pattern); `generator.ts` now exports a per-frame validator for `$defs` with `properties.type.const` (worknotes/p0-04.md); missing tests for `ModelName` length, `welcome.accepted_models` uniqueItems, `MAX_FRAME_BYTES`. P0-02: no tests for `attack.target` bad characters, `skill_id` 64-char boundary, offset -257, `propose.rule` 257 chars; `use_skill.args`, `Intent.arguments`, `Intent.checkpoint` unbounded (backstop `MAX_FRAME_BYTES`). P0-06: see worknotes/p0-06.md; the paper-entrypoint `sed` rewrites every `secret:` line (only one exists today); the CI `compose` job relies on corepack on the runner.
 
-**Open owner decisions:** `docs/spec.md` Appendix D needs the composite skill FK correction `(skill_id, edition)` on `books` and `skill_library` (owner chose it at P0-05 review; owner to record).
-
-**P0-04 follow-ups for the wave review (non-blocking):** add `ModelName` length-bound tests and a `welcome.accepted_models` uniqueItems test; `MAX_FRAME_BYTES` value untested. P0-02 review-2 low findings: no tests for `attack.target` bad characters, the `skill_id` 64-char boundary, offset -257, `propose.rule` at 257 chars; `use_skill.args`, `Intent.arguments` and `Intent.checkpoint` are unbounded in size (backstop is `MAX_FRAME_BYTES`). `generator.ts` now exports a validator per `$defs` frame with `properties.type.const` (worknotes/p0-04.md).
+**Owner edits needed (the orchestrator may not edit the spec or create decision records):**
+- `docs/spec.md` Appendix D: composite `(skill_id, edition)` FK on `books` and `skill_library` (chosen at P0-05 review).
+- `docs/spec.md` 5.1: gamerule names are snake_case on 26.1.2 (`keep_inventory`, `immediate_respawn`, `show_advancement_messages`, `send_command_feedback`, `spectators_generate_chunks`).
