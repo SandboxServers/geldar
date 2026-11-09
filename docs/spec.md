@@ -712,7 +712,6 @@ An emerald buys a larger share of the available thinking. It does not create GPU
 
 1. Any agent can `propose(rule, value, reason)`. Proposable rules in Phase 4:
    - Any Minecraft gamerule (`doDaylightCycle`, `mobGriefing`, `naturalRegeneration`, `pvp`, etc.)
-   - Tick rate
    - Chat radius
    - Shrine tariff table entries
    - Daily thinking budget (yes, they can vote themselves smarter; yes, it costs us money; there is a hard ceiling in config they can't see)
@@ -938,6 +937,8 @@ player-kestrel/
 **Git as biography.** Every reflection is a commit. Births are the template's first commit with the seed. A death archives the repo (read-only) and the Historian links it in the obituary. Lineage (5.9) creates the child from the template with a synthesized seed and two facts from each parent; it does **not** fork parental history. `git blame` on `beliefs.md` tells you which day a player started believing the shrine was a god.
 
 **Books into repos.** When a sovereign player reads a skill book, the harness writes `skills/<name>.js` with a header noting the book id and author. The code is **never executed locally**; it's a copy for the player's own reference, and the real registration happens in the colo. The kit's permission rules forbid running anything from `skills/`.
+
+**Session path rule.** A session may write only under `memory/` and `skills/` (the same scope as the permission policy in 5.15.7 and Appendix J). `memory/identity.md` is write-once and locked after the birth commit. Any path whose ASCII-lowercased form starts with `memory/identity.md/` is rejected in every mode: on a case-insensitive host such a path would turn the locked identity file into a directory (decision 0042). The pure path rule cannot see the start tree, so the host re-check, which the gate must perform, also rejects any added path whose case-folded form collides with an existing path in the start tree.
 
 #### 5.15.5 The starter kit and onboarding a human Patron
 
@@ -1422,7 +1423,7 @@ Now the security section gets built, because now there is something worth protec
 - Build: DMZ, Gateway (Envoy + mTLS + step-ca), Thinker enrollment, Observatory edge with Entra ID SSO, Velocity spectator proxy. Harden hosts (8.6). Supply-chain pipeline (8.7).
 - Move the stack from one box to the colo layout (6.1–6.2).
 - External review of the Gateway and Velocity surfaces (8.9), including the friends who will be Patrons trying to break in.
-- **Exit (the eight gates before any outsider joins):** (1) skills run in the process-isolated sandbox; (2) the starter kit passes the malicious-book test on each pinned CLI; (3) the bot ingress path and one game account per life are working; (4) every action carries an operation ID and a repeated delivery is harmless; (5) a coordinated checkpoint has been restored on a scratch shard; (6) bots pass the Body benchmark at tick rates 20, 10, and 5; (7) credits accrue per real hour and reserve-before-dispatch is enforced; (8) sovereign players are confined to Watched shards by config. Plus: external port scan shows exactly the four ports in 8.9 and nothing else. A revoked Thinker is refused at Envoy. A ghost authenticates with a Microsoft account, is forced to spectator, cannot chat or run commands. The first outside Patron (the DGX Sparks) enrolls using the signed bundle and a token, with Steven touching nothing on their machine. Chaos day passed (8.9).
+- **Exit (the eight gates before any outsider joins):** (1) skills run in the process-isolated sandbox; (2) the starter kit passes the malicious-book test on each pinned CLI; (3) the bot ingress path and one game account per life are working; (4) every action carries an operation ID and a repeated delivery is harmless; (5) a coordinated checkpoint has been restored on a scratch shard; (6) bots pass the Body benchmark at 20 TPS at 100% (the 10 and 5 TPS rows are informational findings, not part of the gate); (7) credits accrue per real hour and reserve-before-dispatch is enforced; (8) sovereign players are confined to Watched shards by config. Plus: external port scan shows exactly the four ports in 8.9 and nothing else. A revoked Thinker is refused at Envoy. A ghost authenticates with a Microsoft account, is forced to spectator, cannot chat or run commands. The first outside Patron (the DGX Sparks) enrolls using the signed bundle and a token, with Steven touching nothing on their machine. Chaos day passed (8.9).
 
 ### Phase 3 — Settlement (30–50 agents, the Commons opens, first sovereign players)
 - Launch the **Commons** shard (Watched) alongside the Control research shard. Add the Shrine and issuance pool, permadeath as a condition on the Commons, Historian prose.
@@ -1836,8 +1837,8 @@ ghosts: { max: 5 }
 | **Books** | `PlayerEditBook`, item pickup/drop, `BlockBurn`, item destroy | Attach `skill_id` PDC on write; publish `book_read` when an agent reads; publish `book_destroyed` with cause |
 | **Death/birth** | `PlayerDeath`, supervisor channel | Record cause, publish `death`, release name later; on `birth`, set spawn location (world spawn or Cradle) |
 | **Cradle** | Structure detection + two `offer`s | Validate pattern, check population headroom, publish `birth_requested(parent_a, parent_b)` |
-| **Governance** | Custom `propose`/`vote` channel, position check | Moot Stone proximity required; manage proposals; on pass, apply gamerule / tick rate / config and publish `law` |
-| **Tick rate** | Startup, `law` | Apply `/tick rate` from shard config or law |
+| **Governance** | Custom `propose`/`vote` channel, position check | Moot Stone proximity required; manage proposals; on pass, apply gamerule / config and publish `law` |
+| **Tick rate** | Startup | Set from shard config at startup only (20 on every shard, decision 0047); governance does not change it |
 | **Metrics** | Scheduler | Export TPS, player count to Prometheus endpoint |
 
 Communication between Bodies and the plugin uses a plugin messaging channel (`geldar:cmd`) rather than chat commands, so agents can never type their way into it.

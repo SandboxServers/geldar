@@ -9,7 +9,7 @@
 1. Shards run at 20 TPS. Adam does not get extra thinking time from `/tick rate`: the Mineflayer client's physics runs on its own 50 ms timer, so a slowed server does not slow the Body (decision 0038).
 2. Thinking time comes from the Body's structure: the Mind plans while a long-running intent executes in the Body, the Body keeps itself safe with reflexes (spec 5.2), and `wait` and wake conditions let an intent run without a pending thought.
 3. Time dilation is no longer a Phase 0 (or planned) mechanism for giving agents time to think. `/tick rate` may still be used for non-Body purposes (server load experiments), clearly labelled as such.
-4. The benchmark's 10 and 5 TPS rows stay available as an option but are dropped from the default benchmark and from the exit criteria: they measure an unslowed client against a slowed server, which no longer matches a design question.
+4. The benchmark's 10 and 5 TPS rows stay in the benchmark as informational findings and are not exit criteria (the gate is the Body benchmark at 20 TPS at 100%): they measure an unslowed client against a slowed server, which no longer matches a design question.
 
 ## Consequences
 

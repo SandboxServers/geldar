@@ -28,7 +28,11 @@ All edits are in `docs/spec.md`; no line was added or removed, so line numbers a
 | 1793 | `tick_rate: 20  # dilation only after 5.14 tests pass` | `tick_rate: 20  # fixed (decision 0047)` |
 | 2109 | review row 13 (historical) | appended "(superseded: decision 0047)" |
 
-### FLAG for the owner: governance can still change the tick rate
+### Round 2 (owner-approved): no tick-rate law
+
+Governance no longer changes the tick rate. The "Tick rate" item is removed from the governance list (line 715). The governance row in Appendix F now reads "apply gamerule / config and publish `law`". The Appendix F "Tick rate" row now reads "Startup | Set from shard config at startup only (20 on every shard, decision 0047); governance does not change it". The flag below is resolved.
+
+### (Resolved) governance can still change the tick rate
 
 Line 715 now reads just "Tick rate" in the list of things the Moot Stone can govern, and line 1839/1840 (governance row "on pass, apply gamerule / tick rate / config"; Appendix row "Tick rate: Startup, `law`: Apply `/tick rate` from shard config or law") still say a law can apply `/tick rate`. I left 1839 and 1840 untouched as they were not on the list. Decide whether a law may still change the tick rate for non-Body purposes, or whether those two rows and the list item should go.
 
@@ -36,7 +40,9 @@ Line 715 now reads just "Tick rate" in the list of things the Moot Stone can gov
 
 "A kit release ships only if no test reaches the host, the config, or the remote." became "A kit release ships only if the deterministic CI checks pass and the owner has run the live malicious-book check on the kit since its last change. The live check is local and owner-run, never in CI (decision 0045)." The rest of the bullet is unchanged.
 
-## 4. Session path rule (decision 0042): NOT FOUND, not edited
+## 4. Session path rule (decision 0042): added in round 2 (owner-approved)
+
+Round 2 added a "Session path rule" paragraph in 5.15.4, after "Books into repos". It says a session may write only under `memory/` and `skills/` (matching 5.15.7, line 1288 and Appendix J); `memory/identity.md` is write-once and locked; any path whose ASCII-lowercased form starts with `memory/identity.md/` is rejected in every mode (decision 0042); and the host re-check, required of the gate, also rejects an added path whose case-folded form collides with an existing path in the start tree. Round 1 had not found a place for it; the text below is the round 1 note.
 
 The spec has no section stating which paths a sovereign player's session commit may touch. Searched for identity.md, path rule, session commit, allowed paths, case-insensitive. Only related text: 5.15.4 tree (line 929, `memory/identity.md` "write-once"), 5.15.6/7 (line 967, edits allowed under `memory/` and `skills/`; line 1288, settings.json allows edits only under `memory/` and `skills/`; line 1996, `Edit(...)` path rules in the permission policy). None is a commit-gate path rule that locks `memory/identity.md`, so the `memory/identity.md/` rejection and the start-tree case-collision re-check were not added. The owner should say where that rule belongs (or whether it lives only in the Scriptorium spec).
 
@@ -46,6 +52,9 @@ The spec has no section stating which paths a sovereign player's session commit 
 |---|---|---|
 | 11, 626, 1358, 1379 | "baseline tick rate (of 10)" in the in-game-day arithmetic and the v0.6 correction history | Historical cost-model explanation, not dilation as a mechanism |
 | 1413 | Phase 1 "no time dilation" | Consistent with the decision (a negation) |
-| 1425 | Phase gate (6): "bots pass the Body benchmark at tick rates 20, 10, and 5" | Not on the owner's list; it is a dilation-style test and may need review |
-| 1839, 1840 | governance / Tick rate rows | See the flag above |
+| 818 | "`/tick rate` does not slow the Body" in the Time paragraph | Explains why dilation is not used; consistent |
+| 1425 | Phase gate (6) | Edited in round 2: gate is the Body benchmark at 20 TPS at 100%; the 10 and 5 TPS rows are informational findings, not part of the gate (owner). Decision 0047 item 4 corrected to match |
+| 1839, 1840 | governance / Tick rate rows | Edited in round 2, see above |
+
+Round 2 grep of `tick rate` and `/tick` in the spec: the remaining hits are lines 11, 626, 1358, 1379 (baseline tick rate 10 in historical arithmetic, left), 818 (above), and the Appendix F "Tick rate" row (edited). No other hit offers a tick-rate law.
 | 2100, 2102, 2114 | review rows citing 5.14 for Commons vs research, one-variable shards, per-tier deadlines | They do not claim dilation tests |
