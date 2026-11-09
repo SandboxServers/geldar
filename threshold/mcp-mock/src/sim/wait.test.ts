@@ -355,4 +355,19 @@ describe('waitTool', () => {
     expect(r.dropped_events).toBe(2);
     expect(validateToolResult('wait', r).ok).toBe(true);
   }, 30_000);
+
+  it('keeps the waking speech line in the world text past the 40-line cap', async () => {
+    const events = [
+      say(100, 'Kestrel', 'wake'),
+      ...Array.from({ length: 45 }, (_, i) => say(100, null, `chatter ${i}`)),
+    ];
+    const { clock, hub } = setup({ events });
+    const p = waitTool(hub, ctx(), { max_seconds: 60, interests: ['directly_addressed'] });
+    await clock.advance(1000);
+    const r = await p;
+    const speech = r.untrusted_world_text.speech ?? [];
+    expect(speech[0]?.text).toBe('wake');
+    expect(speech).toHaveLength(40);
+    expect(validateToolResult('wait', r).ok).toBe(true);
+  }, 30_000);
 });
