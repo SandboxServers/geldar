@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/book-request.schema.json",
+  "title": "BookRequest",
+  "description": "MCP to Body, a request on geldar.<shard>.body.<life_id>.book (spec 5.15.2, WM-07): read the written book the ranger holds, the held one first, else the first carried one. The reply is BookReply (book-reply.schema.json). The subject is built by bookSubject in subjects.ts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" }
+  }
+}

@@ -245,3 +245,62 @@ export function validateThoughtEventPayload(value: unknown): ValidationResult<Th
   }
   return { ok: false, errors: (validateThoughtEventPayloadSchema.errors ?? []).map(formatError) };
 }
+
+// --- WM-01 sovereign ---
+import type {
+  BookReply,
+  BookRequest,
+  DayNightPayload,
+  PresenceRecord,
+  SovereignCallPayload,
+} from './generated/types.ts';
+import {
+  validateBookReply as validateBookReplySchema,
+  validateBookRequest as validateBookRequestSchema,
+  validateDayNightPayload as validateDayNightPayloadSchema,
+  validatePresenceRecord as validatePresenceRecordSchema,
+  validateSovereignCallPayload as validateSovereignCallPayloadSchema,
+} from './generated/validators.js';
+
+export type {
+  BookReply,
+  BookRequest,
+  DayNightPayload,
+  PresenceRecord,
+  SovereignCallPayload,
+} from './generated/types.ts';
+export { bookSubject, PRESENCE_BUCKET } from './subjects.ts';
+
+/** Checks a value against sovereign-call-event.schema.json (the payload of a `sovereign_call` event). Never throws. */
+export function validateSovereignCallPayload(
+  value: unknown,
+): ValidationResult<SovereignCallPayload> {
+  if (validateSovereignCallPayloadSchema(value)) {
+    return { ok: true, value: value as SovereignCallPayload };
+  }
+  return { ok: false, errors: (validateSovereignCallPayloadSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against book-request.schema.json. Never throws; unknown properties are rejected. */
+export function validateBookRequest(value: unknown): ValidationResult<BookRequest> {
+  if (validateBookRequestSchema(value)) return { ok: true, value: value as BookRequest };
+  return { ok: false, errors: (validateBookRequestSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against book-reply.schema.json. Never throws; unknown properties are rejected. */
+export function validateBookReply(value: unknown): ValidationResult<BookReply> {
+  if (validateBookReplySchema(value)) return { ok: true, value: value as BookReply };
+  return { ok: false, errors: (validateBookReplySchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against presence-record.schema.json. Never throws; unknown properties are rejected. */
+export function validatePresenceRecord(value: unknown): ValidationResult<PresenceRecord> {
+  if (validatePresenceRecordSchema(value)) return { ok: true, value: value as PresenceRecord };
+  return { ok: false, errors: (validatePresenceRecordSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against day-night-event.schema.json (the payload of a `day_night` event). Never throws. */
+export function validateDayNightPayload(value: unknown): ValidationResult<DayNightPayload> {
+  if (validateDayNightPayloadSchema(value)) return { ok: true, value: value as DayNightPayload };
+  return { ok: false, errors: (validateDayNightPayloadSchema.errors ?? []).map(formatError) };
+}
