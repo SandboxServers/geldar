@@ -129,10 +129,15 @@ function Invoke-Shard([string[]] $ShardArgs) {
 
 function Invoke-Bench([string[]] $BenchArgs) {
   if (-not (Test-Path (Join-Path $Root 'golem/package.json'))) {
-    throw 'The body benchmark lives in golem/, which does not exist yet.'
+    throw 'golem/package.json is missing: the body benchmark lives in golem/.'
   }
   Push-Location $Root
-  try { Invoke-Step 'body benchmark' { pnpm --filter '@geldar/golem' run bench -- @BenchArgs } }
+  try {
+    # Not Invoke-Step: it throws on any non-zero exit, and a CLI exit 2 (bad usage) is not a stack trace.
+    # --dir (not --filter) keeps the CLI's own exit code: a filtered run turns every failure into 1.
+    pnpm --dir (Join-Path $Root 'golem') run bench @BenchArgs
+    exit $LASTEXITCODE
+  }
   finally { Pop-Location }
 }
 

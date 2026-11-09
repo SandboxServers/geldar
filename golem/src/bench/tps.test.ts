@@ -1,0 +1,177 @@
+import { describe, expect, it } from 'vitest';
+import type { TestControl } from '../test-control.ts';
+import {
+  installTpsRestore,
+  type ProcessLike,
+  parseMspt,
+  parseTargetMspt,
+  parseTargetRate,
+  setTps,
+  withTps,
+} from './tps.ts';
+
+/** Real replies from the running 26.1.2 server (RCON strips the colour codes). */
+const QUERY_20 =
+  'The game is running normallyTarget tick rate: 20.0 per second.\nAverage time per tick: 0.1ms (Target: 50.0ms)Percentiles: P50: 0.1ms P95: 0.2ms P99: 0.3ms. Sample: 100';
+const QUERY_5 =
+  'The game is running normallyTarget tick rate: 5.0 per second.\nAverage time per tick: 0.1ms (Target: 200.0ms)Percentiles: P50: 0.1ms P95: 0.2ms P99: 0.3ms. Sample: 100';
+const SET_5 = 'Set the target tick rate to 5.0 per second';
+
+/** A tick control that records `tickRate` calls and answers `tickQuery` with the last rate set. */
+function fakeTick(replies: Record<number, string> = { 5: QUERY_5, 20: QUERY_20 }) {
+  const rates: number[] = [];
+  return {
+    rates,
+    async tickRate(n: number) {
+      rates.push(n);
+      return SET_5;
+    },
+    async tickQuery() {
+      return replies[rates.at(-1) ?? 20] ?? QUERY_20;
+    },
+  };
+}
+
+describe('tick reply parsing', () => {
+  it('reads the target rate, average and target mspt', () => {
+    expect(parseTargetRate(QUERY_5)).toBe(5);
+    expect(parseTargetRate(QUERY_20)).toBe(20);
+    expect(parseMspt(QUERY_5)).toBe(0.1);
+    expect(parseTargetMspt(QUERY_5)).toBe(200);
+    expect(parseTargetRate('no rate here')).toBeNull();
+    expect(parseMspt('no rate here')).toBeNull();
+  });
+
+  it('does not match a rate that only appears as a substring', () => {
+    expect(parseTargetRate('Target tick rate: 5.0 per second')).toBeNull();
+    expect(parseTargetRate('xTarget tick rate: 5 per second. 20')).toBe(5);
+  });
+});
+
+describe('setTps', () => {
+  it('passes when the reply names the target, 5 equal to 5.0', async () => {
+    await expect(setTps(fakeTick(), 5)).resolves.toBeUndefined();
+  });
+
+  it('throws when the server still reports 20 TPS and the target is 5', async () => {
+    const ctl = fakeTick();
+    ctl.tickQuery = async () => QUERY_20;
+    await expect(setTps(ctl, 5)).rejects.toThrow(/not 5/);
+  });
+
+  it('throws when the reply cannot be parsed', async () => {
+    const ctl = fakeTick({ 5: 'something else' });
+    await expect(setTps(ctl, 5)).rejects.toThrow(/not 5/);
+  });
+});
+
+describe('withTps', () => {
+  it('restores 20 when fn throws', async () => {
+    const ctl = fakeTick();
+    await expect(
+      withTps(ctl, 5, async () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(ctl.rates).toEqual([5, 20]);
+  });
+
+  it('returns the value of fn and restores 20', async () => {
+    const ctl = fakeTick();
+    await expect(withTps(ctl, 5, async () => 7)).resolves.toBe(7);
+    expect(ctl.rates).toEqual([5, 20]);
+  });
+});
+
+/** A process stand-in that lets a test fire events. */
+function fakeProcess() {
+  const handlers = new Map<string, (arg?: unknown) => void>();
+  const proc: ProcessLike = {
+    on(event, handler) {
+      handlers.set(event, handler);
+    },
+    off(event) {
+      handlers.delete(event);
+    },
+  };
+  return { proc, handlers };
+}
+
+describe('installTpsRestore', () => {
+  const events = [
+    'SIGINT',
+    'SIGTERM',
+    'SIGBREAK',
+    'SIGHUP',
+    'uncaughtException',
+    'unhandledRejection',
+  ];
+
+  it.each(events)('%s restores once and a second event does not restore again', async (event) => {
+    const commands: string[] = [];
+    const ctl = {
+      async command(cmd: string) {
+        commands.push(cmd);
+        return '';
+      },
+      async gamerule() {
+        commands.push('gamerule');
+        return '';
+      },
+      async tickRate(n: number) {
+        commands.push(`tick rate ${n}`);
+        return '';
+      },
+    } as unknown as TestControl;
+    const { proc, handlers } = fakeProcess();
+    const exits: number[] = [];
+    const done = new Promise<void>((resolve) => {
+      installTpsRestore(ctl, {
+        proc,
+        exit: (code) => {
+          exits.push(code);
+          resolve();
+        },
+        log: () => undefined,
+      });
+    });
+    const quiet = console.error;
+    console.error = () => undefined;
+    try {
+      handlers.get(event)?.(new Error('x'));
+      handlers.get(event)?.(new Error('y'));
+      handlers.get('SIGINT')?.();
+      await done;
+    } finally {
+      console.error = quiet;
+    }
+    expect(commands.filter((c) => c === 'tick rate 20')).toHaveLength(1);
+    expect(exits).toEqual([event.startsWith('SIG') ? 130 : 1]);
+  });
+
+  it('retries on a fresh connection and prints the hint when all fail', async () => {
+    const bad = {
+      async gamerule() {
+        throw new Error('down');
+      },
+    } as unknown as TestControl;
+    const logs: string[] = [];
+    let opened = 0;
+    const { proc, handlers } = fakeProcess();
+    const done = new Promise<void>((resolve) => {
+      installTpsRestore(bad, {
+        proc,
+        exit: () => resolve(),
+        log: (line) => logs.push(line),
+        openFresh: async () => {
+          opened++;
+          throw new Error('no rcon');
+        },
+      });
+    });
+    handlers.get('SIGINT')?.();
+    await done;
+    expect(opened).toBe(3);
+    expect(logs[0]).toMatch(/SERVER LEFT AT \d+ TPS: run \.\/geldar\.ps1 bench --restore/);
+  });
+});
