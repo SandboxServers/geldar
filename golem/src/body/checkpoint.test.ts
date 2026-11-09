@@ -54,7 +54,7 @@ describe('deleting a checkpoint', () => {
   });
 
   it('stops retrying once a newer write is waiting', async () => {
-    const { kv, store: s } = store();
+    const { kv, store: s, lines } = store();
     s.stepped(step(1));
     await s.flush();
     kv.failDeletes(100);
@@ -62,6 +62,9 @@ describe('deleting a checkpoint', () => {
     s.stepped(step(2));
     await s.flush();
     expect(parseEntry(kv.peek(LIFE) ?? '')?.checkpoint).toEqual({ steps: 2 });
+    // One delete was tried; the retry loop did not go on, so no stale-entry line was logged.
+    expect(kv.deletes).toBe(1);
+    expect(lines.some((l) => l.includes('a stale entry stays'))).toBe(false);
   });
 });
 

@@ -45,7 +45,10 @@ function switchable() {
   return { publisher, state, sent };
 }
 
-function sinkWith(publisher: EventPublisher, extra: { maxPending?: number } = {}) {
+function sinkWith(
+  publisher: EventPublisher,
+  extra: { maxPending?: number; maxEventBytes?: number; retryLogEvery?: number } = {},
+) {
   const logs: string[] = [];
   const sink = new NatsRecordSink({
     publisher,
@@ -62,6 +65,16 @@ function sinkWith(publisher: EventPublisher, extra: { maxPending?: number } = {}
   return { sink, logs };
 }
 
+/** An intent change in the given state. */
+const change = (state: string): Parameters<NatsRecordSink['intentChanged']>[0] =>
+  ({
+    intentId: INTENT,
+    lifeId: LIFE,
+    bodyGeneration: 1,
+    state,
+    tick: 40,
+  }) as Parameters<NatsRecordSink['intentChanged']>[0];
+
 const wake = (tick: number) =>
   ({ reason: 'goal_completed', tick, intentId: INTENT }) as Parameters<NatsRecordSink['wake']>[0];
 
@@ -75,8 +88,61 @@ describe('audit records survive a long outage', () => {
     state.down = false;
     await sink.flush();
     expect(sent.map((e) => e.type)).toEqual(['action', 'receipt']);
-    expect(logs).toEqual([]);
     expect(sink.dropped).toBe(0);
+    // The outage is logged: the first failure of each record, with its attempt, queue depth and id.
+    expect(logs.length).toBeGreaterThan(0);
+    expect(logs[0]).toContain('action');
+    expect(logs[0]).toContain('attempt 1');
+    expect(logs[0]).toContain('1 more queued');
+    expect(logs[0]).toContain('nats down');
+    expect(logs[0]).toMatch(/ev_[0-9A-Za-z]+/);
+    expect(logs.every((line) => !line.includes('dropped'))).toBe(true);
+  });
+
+  it('logs the first failure and then one attempt in retryLogEvery, not every one', async () => {
+    const { publisher, state } = switchable();
+    const { sink, logs } = sinkWith(publisher, { retryLogEvery: 4 });
+    sink.actionChanged(ACTION);
+    while (state.calls < 10) await new Promise((resolve) => setTimeout(resolve, 2));
+    const seen = logs.length;
+    state.down = false;
+    await sink.flush();
+    expect(logs[0]).toContain('attempt 1,');
+    expect(logs[1]).toContain('attempt 4,');
+    expect(logs[2]).toContain('attempt 8,');
+    expect(seen).toBeLessThan(state.calls); // far fewer lines than failures
+    expect(logs.filter((line) => line.includes('attempt 2,'))).toEqual([]);
+  });
+
+  it('retries an accepted and a final intent event until NATS is back, like an audit record', async () => {
+    const { publisher, state, sent } = switchable();
+    const { sink } = sinkWith(publisher);
+    for (const intentState of ['accepted', 'completed', 'failed', 'cancelled', 'interrupted']) {
+      sink.intentChanged(change(intentState));
+    }
+    while (state.calls < 12) await new Promise((resolve) => setTimeout(resolve, 2));
+    state.down = false;
+    await sink.flush();
+    expect(sent.map((e) => (e.payload as { state: string }).state)).toEqual([
+      'accepted',
+      'completed',
+      'failed',
+      'cancelled',
+      'interrupted',
+    ]);
+    expect(sink.dropped).toBe(0);
+  });
+
+  it('still gives up on a running or paused intent heartbeat after its attempts', async () => {
+    for (const intentState of ['running', 'paused']) {
+      const { publisher, state, sent } = switchable();
+      const { sink, logs } = sinkWith(publisher);
+      sink.intentChanged(change(intentState));
+      await sink.flush();
+      expect(state.calls).toBe(3);
+      expect(sent).toEqual([]);
+      expect(logs[0]).toContain('after 3 attempts');
+    }
   });
 
   it('still gives up on a wake record after its attempts', async () => {
@@ -136,5 +202,47 @@ describe('a full queue', () => {
     await sink.flush();
     expect(sent.map((e) => e.type)).toEqual(['action', 'action', 'receipt']);
     expect(sent[1]?.payload).toMatchObject({ state: 'running' });
+  });
+});
+
+describe('a record that can never be sent does not block the queue', () => {
+  it('cuts an oversize action result to a marker and publishes the record', async () => {
+    const { publisher, state, sent } = switchable();
+    state.down = false;
+    const { sink, logs } = sinkWith(publisher, { maxEventBytes: 2000 });
+    sink.actionChanged({ ...ACTION, state: 'completed', result: { blob: 'x'.repeat(5000) } });
+    sink.receipt(RECEIPT);
+    await sink.flush();
+    expect(sent.map((e) => e.type)).toEqual(['action', 'receipt']);
+    expect(sent[0]?.payload).toMatchObject({ result: { truncated: true } });
+    expect(logs.some((line) => line.includes('result cut'))).toBe(true);
+    expect(sink.auditDropped).toBe(0);
+  });
+
+  it('drops an audit record that is still too large, as an error, and sends the next one', async () => {
+    const { publisher, state, sent } = switchable();
+    state.down = false;
+    const { sink, logs } = sinkWith(publisher, { maxEventBytes: 100 });
+    sink.actionChanged(ACTION);
+    sink.wake(wake(3));
+    await sink.flush();
+    expect(sent).toEqual([]);
+    expect(sink.auditDropped).toBe(1);
+    expect(logs.some((line) => line.includes('ERROR dropped audit action'))).toBe(true);
+    expect(logs.some((line) => line.includes('dropped wake record'))).toBe(true);
+    expect(sink.dropped).toBe(2);
+  });
+
+  it('counts an audit record that fails validation and keeps the queue moving', async () => {
+    const { publisher, state, sent } = switchable();
+    state.down = false;
+    const { sink, logs } = sinkWith(publisher);
+    sink.actionChanged({ ...ACTION, kind: '' } as ActionRecord);
+    sink.receipt(RECEIPT);
+    await sink.flush();
+    expect(sent.map((e) => e.type)).toEqual(['receipt']);
+    expect(sink.auditDropped).toBe(1);
+    expect(logs[0]).toContain('ERROR dropped audit action');
+    expect(logs[0]).toContain('not valid');
   });
 });

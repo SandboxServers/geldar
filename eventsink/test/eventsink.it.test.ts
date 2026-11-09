@@ -2,7 +2,7 @@
  * Integration test against the live phase0 stack (postgres and nats up, eventsink running).
  * Skipped unless GELDAR_IT=1. Reads the Postgres password from compose/secrets/postgres.txt.
  * This is also the only test that runs the real INSERT (unnest, jsonb[], ON CONFLICT): the unit
- * tests use fakes. It counts only the geldar.phaseit.> subjects, because the live plugin publishes
+ * tests use fakes. It counts only the geldar.phaseitsink.> subjects, because the live plugin publishes
  * into the same stream.
  */
 import { readFileSync } from 'node:fs';
@@ -38,7 +38,7 @@ describe.skipIf(!enabled)('eventsink against the live stack', () => {
     const event = (sourceId: string) => ({
       source_event_id: sourceId,
       at: new Date().toISOString(),
-      shard: 'phaseit',
+      shard: 'phaseitsink',
       world_day: 0,
       world_tick: 1,
       type: 'damage',
@@ -50,34 +50,34 @@ describe.skipIf(!enabled)('eventsink against the live stack', () => {
           sourceId,
         ])
       ).rows[0].n;
-    /** Messages in the stream on the phaseit subjects only (the live plugin uses other shards). */
-    const phaseitMessages = async (): Promise<number> =>
+    /** Messages in the stream on the phaseitsink subjects only (the live plugin uses other shards). */
+    const phaseitsinkMessages = async (): Promise<number> =>
       Object.values(
-        (await jsm.streams.info('GELDAR_EVENTS', { subjects_filter: 'geldar.phaseit.>' })).state
+        (await jsm.streams.info('GELDAR_EVENTS', { subjects_filter: 'geldar.phaseitsink.>' })).state
           .subjects ?? {},
       ).reduce((sum, n) => sum + n, 0);
     try {
-      const before = await phaseitMessages();
+      const before = await phaseitsinkMessages();
       // The same body twice, without a JetStream message id, so the sink (not the stream) must
       // dedupe; a second event next to it makes the batch several rows through the real unnest.
-      await js.publish('geldar.phaseit.damage', JSON.stringify(event(id)));
-      await js.publish('geldar.phaseit.damage', JSON.stringify(event(id)));
-      await js.publish('geldar.phaseit.damage', JSON.stringify(event(otherId)));
-      await js.publish('geldar.phaseit.damage', JSON.stringify({ not: 'an event', marker }));
+      await js.publish('geldar.phaseitsink.damage', JSON.stringify(event(id)));
+      await js.publish('geldar.phaseitsink.damage', JSON.stringify(event(id)));
+      await js.publish('geldar.phaseitsink.damage', JSON.stringify(event(otherId)));
+      await js.publish('geldar.phaseitsink.damage', JSON.stringify({ not: 'an event', marker }));
 
       for (let i = 0; i < 40 && (await count(id)) < 1; i++) await sleep(500);
       await sleep(2000); // let the duplicate and the malformed message be processed
       expect(await count(id)).toBe(1);
       expect(await count(otherId)).toBe(1);
 
-      // 4 published + 1 dead letter the sink wrote back, on phaseit subjects only.
-      expect((await phaseitMessages()) - before).toBe(5);
+      // 4 published + 1 dead letter the sink wrote back, on phaseitsink subjects only.
+      expect((await phaseitsinkMessages()) - before).toBe(5);
       // Find this run's dead letter by its marker, not just the newest one on the subject.
       const lastSeq = (await jsm.streams.info('GELDAR_EVENTS')).state.last_seq;
       let found: { reason?: string } | undefined;
       for (let seq = lastSeq; seq > Math.max(0, lastSeq - 200) && !found; seq--) {
         const m = await jsm.streams.getMessage('GELDAR_EVENTS', { seq }).catch(() => null);
-        if (m === null || m.subject !== 'geldar.phaseit.dlq') continue;
+        if (m === null || m.subject !== 'geldar.phaseitsink.dlq') continue;
         const body = JSON.parse(new TextDecoder().decode(m.data));
         if (typeof body.data === 'string' && body.data.includes(marker)) found = body;
       }

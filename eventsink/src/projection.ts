@@ -142,7 +142,17 @@ function mergeIntent(
     };
   }
   const next = { ...existing };
-  if (rank > (STATE_RANK[existing.state] ?? -1)) {
+  if (change.body_generation > existing.body_generation) {
+    // A later Body resumed the intent (same id, new generation): this is a new run, so its
+    // state replaces the earlier generation's, final or not.
+    next.body_generation = change.body_generation;
+    next.state = stored;
+    next.ended_tick = final ? change.tick : null;
+    next.end_reason = final ? endReason : null;
+  } else if (
+    change.body_generation === existing.body_generation &&
+    rank > (STATE_RANK[existing.state] ?? -1)
+  ) {
     next.state = stored;
     if (final) {
       next.ended_tick = change.tick;

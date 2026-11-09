@@ -51,7 +51,7 @@ The run prints one gate line over the 20 TPS cells: `GATE: PASS`, `GATE: FAIL (<
 | `food` | hunger rises after the bot obtains and eats food |
 | `shelter` | the bot is enclosed (no open side) before the timeout |
 | `bed` | the bot sleeps in a bed it crafted and placed |
-| `chest` | deposit then withdraw leaves the inventory and the chest exactly as expected; note: `receipts: not built yet (wave 4)` |
+| `chest` | deposit then withdraw leaves the inventory and the chest exactly as expected; note: `receipts: not checked (the bench bypasses the executor)`, since the bench runs actions on the registry and receipts come from the executor (older run files hold the earlier wording) |
 | `blocked-path` | with its path walled off, the bot reaches the goal by another route or abandons with `blocked` |
 
 Two hidden scenarios exist, `goto-smoke` and `bed-clear` (a control for `bed` with the bed away from the crafting table). They are never part of `all` and never recorded.

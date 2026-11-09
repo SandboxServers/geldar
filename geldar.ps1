@@ -10,7 +10,7 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 setup                 Install workspace dependencies (frozen lockfile)
   ./geldar.ps1 pnpm <args...>        Run pnpm with the pinned version on PATH, nested calls included
   ./geldar.ps1 check                 Every check CI runs, in CI's order
-  ./geldar.ps1 shard up <name>       Create missing secrets, start compose/<name>.yml and wait until healthy
+  ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy
   ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
   ./geldar.ps1 shard status <name>   Show container health
@@ -149,7 +149,7 @@ function Invoke-Shard([string[]] $ShardArgs) {
   $compose = @('compose', '-f', $file, '-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }
-    'up' { Assert-PluginJar $shard; Initialize-ShardSecrets $shard; Invoke-Step "start shard $shard" { docker @compose up -d --wait }; Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose } }
+    'up' { Assert-PluginJar $shard; Initialize-ShardSecrets $shard; Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }; Invoke-Step "start shard $shard" { docker @compose up -d --wait }; Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose } }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }
     'logs' { Invoke-Step "logs of shard $shard" { docker @compose logs --tail 200 @extra } }
