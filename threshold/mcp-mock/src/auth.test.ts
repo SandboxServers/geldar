@@ -69,7 +69,7 @@ describe('loadTokens', () => {
   });
 
   it('accepts a file that starts with a UTF-8 BOM', () => {
-    const table = loadTokens(tokensFile(`﻿${JSON.stringify({ a1: TOKEN_A })}`));
+    const table = loadTokens(tokensFile(`\uFEFF${JSON.stringify({ a1: TOKEN_A })}`));
     expect([...table.keys()]).toEqual(['a1']);
   });
 });

@@ -25,7 +25,7 @@ export function loadTokens(path: string): TokenTable {
   let parsed: unknown;
   try {
     // Windows editors often write a BOM, which JSON.parse rejects.
-    parsed = JSON.parse(readFileSync(path, 'utf8').replace(/^﻿/, ''));
+    parsed = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
   } catch (error) {
     // Parser messages can quote file content, so report only the error class.
     const kind = error instanceof SyntaxError ? 'invalid JSON' : 'cannot read the file';
