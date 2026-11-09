@@ -134,10 +134,59 @@ class RegistryClientTest {
                 return "stream-1";
             }
         };
-        AtomicInteger watching = new AtomicInteger();
-        assertThrows(java.io.IOException.class, () -> client.watchWhileConnected(status::get, failing, watching::incrementAndGet, 5, 20));
-        assertEquals(0, watching.get());
+        client.backoffMs = 4_000;
+        assertThrows(java.io.IOException.class, () -> client.watchWhileConnected(status::get, failing, client::resetBackoff, 5, 20));
+        assertEquals(4_000, client.backoffMs);
         assertFalse(registry.isSynced());
+    }
+
+    @Test
+    void theBackoffIsResetOnceTheWatchHasStarted() throws Exception {
+        FakeBucket bucket = new FakeBucket();
+        bucket.replays.add(List.of("alice"));
+        client.backoffMs = 4_000;
+        CompletableFuture<Void> loop = runLoop(bucket, client::resetBackoff);
+        await(() -> gate.admits("alice"));
+        assertEquals(500, client.backoffMs);
+        status.set(Connection.Status.CLOSED);
+        loop.get(10, TimeUnit.SECONDS);
+    }
+
+    /** A registry that reports a disconnect from inside beginReplay, as the connection thread could. */
+    private static final class DisconnectingRegistry extends LifeRegistry {
+        Runnable onBeginReplay = () -> {};
+
+        @Override
+        public synchronized void beginReplay() {
+            onBeginReplay.run();
+            super.beginReplay();
+        }
+    }
+
+    @Test
+    void aDisconnectDuringTheReplayStartIsNotOverwrittenSoTheWatchIsRebuilt() throws Exception {
+        DisconnectingRegistry racing = new DisconnectingRegistry();
+        RegistryClient racer = new RegistryClient("nats://127.0.0.1:4222", racing, NOPLogger.NOP_LOGGER);
+        AtomicInteger begins = new AtomicInteger();
+        // Only the first replay start is interrupted by a disconnect.
+        racing.onBeginReplay = () -> {
+            if (begins.getAndIncrement() == 0) {
+                racer.onConnectionEvent(null, io.nats.client.ConnectionListener.Events.DISCONNECTED);
+            }
+        };
+        FakeBucket bucket = new FakeBucket();
+        bucket.replays.add(List.of("alice"));
+        CompletableFuture<Void> loop = CompletableFuture.runAsync(() -> {
+            try {
+                racer.watchWhileConnected(status::get, bucket, () -> {}, 5, 20);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+        // Without the order fix the disconnect is lost and the first watch is never rebuilt.
+        await(() -> bucket.watches.get() >= 2);
+        status.set(Connection.Status.CLOSED);
+        loop.get(10, TimeUnit.SECONDS);
     }
 
     @Test

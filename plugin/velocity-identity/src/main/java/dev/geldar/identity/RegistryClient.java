@@ -9,7 +9,6 @@ import io.nats.client.Options;
 import io.nats.client.api.KeyValueEntry;
 import io.nats.client.api.KeyValueOperation;
 import io.nats.client.api.KeyValueWatcher;
-import io.nats.client.impl.NatsKeyValueWatchSubscription;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
@@ -40,7 +39,7 @@ public final class RegistryClient implements AutoCloseable {
     /** Set when the connection dropped: the watch may have missed changes and is rebuilt. */
     private final AtomicBoolean disrupted = new AtomicBoolean();
     /** The reconnect delay; touched only by the worker thread. */
-    private long backoffMs = INITIAL_BACKOFF_MS;
+    long backoffMs = INITIAL_BACKOFF_MS;
 
     public RegistryClient(String url, LifeRegistry registry, Logger log) {
         this.url = url;
@@ -67,7 +66,7 @@ public final class RegistryClient implements AutoCloseable {
                     .build();
             try (Connection nc = Nats.connect(options)) {
                 KeyValue kv = nc.keyValue(BUCKET);
-                watchWhileConnected(nc::getStatus, bucketOf(kv), () -> backoffMs = INITIAL_BACKOFF_MS, POLL_MS, BUCKET_CHECK_MS);
+                watchWhileConnected(nc::getStatus, bucketOf(kv), this::resetBackoff, POLL_MS, BUCKET_CHECK_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -91,6 +90,11 @@ public final class RegistryClient implements AutoCloseable {
             }
             backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
         }
+    }
+
+    /** Runs once a watch has started: the next failure backs off from the start again. */
+    void resetBackoff() {
+        backoffMs = INITIAL_BACKOFF_MS;
     }
 
     /** What a bucket watch reports: each change, then the end of the initial replay. */
@@ -143,8 +147,9 @@ public final class RegistryClient implements AutoCloseable {
     void watchWhileConnected(Supplier<Connection.Status> status, Bucket bucket, Runnable watching, long pollMs, long checkMs)
             throws Exception {
         while (running && status.get() != Connection.Status.CLOSED) {
-            registry.beginReplay();
+            // Cleared first: a disconnect between the two calls must survive, or the gate would stay closed for good.
             disrupted.set(false);
+            registry.beginReplay();
             Object identity = bucket.identity();
             AutoCloseable sub = bucket.watchAll(new RegistryWatch());
             watching.run();
@@ -175,7 +180,7 @@ public final class RegistryClient implements AutoCloseable {
         }
     }
 
-    private void onConnectionEvent(Connection connection, ConnectionListener.Events event) {
+    void onConnectionEvent(Connection connection, ConnectionListener.Events event) {
         if (event == ConnectionListener.Events.DISCONNECTED || event == ConnectionListener.Events.CLOSED) {
             registry.markUnsynced();
             disrupted.set(true);
