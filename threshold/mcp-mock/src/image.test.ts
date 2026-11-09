@@ -131,15 +131,7 @@ describe.skipIf(!ready)('mcp-mock image', () => {
 
   it('bakes in no tests, tokens or env files', () => {
     const found = run(
-      [
-        'run',
-        '--rm',
-        '--entrypoint',
-        'sh',
-        tag,
-        '-c',
-        `find /opt/geldar ${FIND_SHIPPED}`,
-      ],
+      ['run', '--rm', '--entrypoint', 'sh', tag, '-c', `find /opt/geldar ${FIND_SHIPPED}`],
       { timeoutMs: 60_000 },
     );
     expect(found.status, found.stderr).toBe(0);
@@ -154,9 +146,12 @@ describe.skipIf(!ready)('mcp-mock image', () => {
       timeoutMs: 60_000,
     });
     expect(found.status, found.stderr).toBe(0);
-    expect(found.stdout.split('\n').filter((l) => l !== '').sort()).toEqual(
-      names.map((n) => `/tmp/probe/${n}`).sort(),
-    );
+    expect(
+      found.stdout
+        .split('\n')
+        .filter((l) => l !== '')
+        .sort(),
+    ).toEqual(names.map((n) => `/tmp/probe/${n}`).sort());
   }, 120_000);
   it('runs the scenario in the container', async () => {
     const port = await start({
