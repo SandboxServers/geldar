@@ -8,6 +8,30 @@ const atTick = z.int().min(1);
 const MIN_SECONDS = 0.001;
 const MAX_SECONDS = 10_000_000;
 
+/** Nesting depth of a JSON value: scalars are 0, each array or object level adds one. */
+function jsonDepth(v: unknown): number {
+  if (typeof v !== 'object' || v === null) return 0;
+  const kids: unknown[] = Array.isArray(v) ? v : Object.values(v);
+  return 1 + Math.max(0, ...kids.map(jsonDepth));
+}
+
+/** True if any string in the value (keys excluded) is longer than `max` characters. */
+function hasLongString(v: unknown, max: number): boolean {
+  if (typeof v === 'string') return v.length > max;
+  if (typeof v !== 'object' || v === null) return false;
+  const kids: unknown[] = Array.isArray(v) ? v : Object.values(v);
+  return kids.some((k) => hasLongString(k, max));
+}
+
+/** A law value: any JSON value (contract ProposeInput.value), at most depth 4 and 1 KiB serialised. */
+const lawValue = z.json().superRefine((v, ctx) => {
+  if (jsonDepth(v) > 4) ctx.addIssue({ code: 'custom', message: 'must nest at most 4 deep' });
+  else if (JSON.stringify(v).length > 1024)
+    ctx.addIssue({ code: 'custom', message: 'must serialise to at most 1024 characters' });
+  else if (hasLongString(v, 256))
+    ctx.addIssue({ code: 'custom', message: 'strings must be at most 256 characters' });
+});
+
 const character = z.strictObject({
   name: identifier,
   life_id: z.string().regex(/^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/, 'must match the LifeId pattern'),
@@ -93,7 +117,7 @@ const scenarioSchema = z.strictObject({
     .prefault({}),
   shard_rules: z.strictObject({ chat_radius: z.int().min(1).default(32) }).prefault({}),
   laws: z
-    .array(z.strictObject({ rule: z.string().min(1).max(256), value: z.string() }))
+    .array(z.strictObject({ rule: z.string().min(1).max(256), value: lawValue }))
     .max(20)
     .default([]),
 });

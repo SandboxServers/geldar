@@ -124,6 +124,26 @@ describe('parseScenario contract limits', () => {
     expect(() => parseScenario(law(''))).toThrow('laws.0.rule');
   });
 });
+describe('law values', () => {
+  const law = (value: unknown): string =>
+    JSON.stringify({ ...base(), laws: [{ rule: 'chat', value }] });
+
+  it('accepts any bounded JSON value', () => {
+    for (const v of [5, 'quiet', true, null, [1, 2], { a: { b: { c: 1 } } }]) {
+      expect(parseScenario(law(v)).laws[0]?.value).toEqual(v);
+    }
+  });
+
+  it('rejects deep, large and long-string values', () => {
+    expect(() => parseScenario(law({ a: { b: { c: { d: { e: 1 } } } } }))).toThrow('laws.0.value');
+    expect(() => parseScenario(law(Array.from({ length: 400 }, () => 1234)))).toThrow(
+      'laws.0.value',
+    );
+    expect(() => parseScenario(law('v'.repeat(257)))).toThrow('laws.0.value');
+    expect(() => parseScenario(law(['v'.repeat(257)]))).toThrow('laws.0.value');
+    expect(() => parseScenario(law('v'.repeat(256)))).not.toThrow();
+  });
+});
 describe('applyOverrides', () => {
   it('lets flags beat the file and the file beat the defaults', () => {
     const s = parseScenario(
