@@ -28,8 +28,9 @@ export interface Row {
   actionsTotal: number;
   /**
    * World ticks per wall second over the cell: the sum of the age deltas over the sum of the wall
-   * seconds of the runs. One run's delta is quantised to 20 ticks (decision 0038), so only the sum
-   * is a measurement; null under 100 ticks in total.
+   * seconds of the runs. One run's delta is quantised to 20 ticks (decision 0038); the summed error
+   * shrinks only with the square root of the run count, so a sum of 100 ticks or more from many short
+   * runs is a weaker measurement than the same sum from a few long ones. Null under 100 ticks.
    */
   achievedTps: number | null;
 }
@@ -146,6 +147,7 @@ export function findingsOf(cells: CellResult[]): string[] {
   }
   return findings;
 }
+
 /** `YYYYMMDDTHHmmssZ-<commit>.json`: no colons, which NTFS rejects. */
 export function resultFileName(meta: Pick<RunMeta, 'stamp' | 'commit'>): string {
   return `${meta.stamp}-${meta.commit}.json`;
