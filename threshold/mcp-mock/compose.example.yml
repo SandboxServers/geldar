@@ -1,0 +1,30 @@
+# Example only. Keep the tokens file outside the repo (it is git-ignored here, but do not rely on that).
+# Create the tokens file first (see README): the short volume syntax makes a root-owned directory when the source is missing,
+# so the mounts below use the long syntax with create_host_path: false, which errors instead.
+# Pin the image by digest in real use: ghcr.io/sandboxservers/geldar-mcp-mock@sha256:<digest>
+services:
+  geldar-mcp-mock:
+    image: ghcr.io/sandboxservers/geldar-mcp-mock:main
+    ports: ["127.0.0.1:8787:8787"]
+    volumes:
+      - type: bind
+        source: ~/.config/geldar/mcp-tokens.json
+        target: /run/secrets/mcp-tokens.json
+        read_only: true
+        bind: { create_host_path: false }
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+# A custom scenario, mounted at /scenarios/custom.json, with a shorter day:
+#
+#  geldar-mcp-mock:
+#    image: ghcr.io/sandboxservers/geldar-mcp-mock:main
+#    ports: ["127.0.0.1:8787:8787"]
+#    volumes:
+#      - "~/.config/geldar/mcp-tokens.json:/run/secrets/mcp-tokens.json:ro"
+#      - "./custom.scenario.json:/scenarios/custom.json:ro"
+#    command: ["--tokens", "/run/secrets/mcp-tokens.json", "--scenario", "/scenarios/custom.json", "--host", "0.0.0.0", "--day-length-seconds", "24"]
+#    read_only: true
+#    cap_drop: [ALL]
+#    security_opt: ["no-new-privileges:true"]

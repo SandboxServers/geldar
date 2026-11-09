@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-world.schema.json",
+  "$defs": {
+    "ActionOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "budget_remaining_thoughts"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "ReadBookInput": {
+      "type": "object",
+      "description": "Read the book you are holding.",
+      "additionalProperties": false
+    },
+    "ReadBookResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["book_id", "kind", "untrusted_world_text", "note"],
+      "properties": {
+        "book_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "kind": { "enum": ["text", "skill"] },
+        "skill_id": { "type": "string", "maxLength": 64 },
+        "untrusted_world_text": {
+          "type": "object",
+          "allOf": [{ "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" }],
+          "required": ["book"]
+        },
+        "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
+      }
+    },
+    "WriteBookInput": {
+      "type": "object",
+      "description": "Write a book: either plain text, or an existing skill whose code becomes the book. Give skill_id or text, not both.",
+      "additionalProperties": false,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string", "maxLength": 32 },
+        "skill_id": { "type": "string", "maxLength": 64 },
+        "text": { "type": "string", "maxLength": 8192 }
+      },
+      "oneOf": [
+        { "required": ["skill_id"], "properties": { "skill_id": {} } },
+        { "required": ["text"], "properties": { "text": {} } }
+      ]
+    },
+    "WriteBookResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["book_id", "budget_remaining_thoughts"],
+      "properties": {
+        "book_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "DefineSkillInput": {
+      "type": "object",
+      "description": "Create a Body skill from code that runs in the colo sandbox. Returns the test result.",
+      "additionalProperties": false,
+      "required": ["name", "description", "code"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$" },
+        "description": { "type": "string", "maxLength": 256 },
+        "code": { "type": "string", "maxLength": 8192 }
+      }
+    },
+    "DefineSkillResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill_id", "ok", "tests_passed", "tests_failed", "budget_remaining_thoughts"],
+      "properties": {
+        "skill_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "ok": { "type": "boolean" },
+        "tests_passed": { "type": "integer", "minimum": 0 },
+        "tests_failed": { "type": "integer", "minimum": 0 },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "UseSkillInput": {
+      "type": "object",
+      "description": "Run a skill you know, with arguments.",
+      "additionalProperties": false,
+      "required": ["name", "args"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$" },
+        "args": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Skill arguments. The shape depends on the skill."
+        }
+      }
+    },
+    "UseSkillResult": { "$ref": "#/$defs/ActionOutcome" },
+    "OfferInput": {
+      "type": "object",
+      "description": "Offer items from your inventory at the shrine.",
+      "additionalProperties": false,
+      "required": ["item", "count"],
+      "properties": {
+        "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 64 }
+      }
+    },
+    "OfferResult": { "$ref": "#/$defs/ActionOutcome" },
+    "ProposeInput": {
+      "type": "object",
+      "description": "Propose a new value for a community rule. Others vote on it.",
+      "additionalProperties": false,
+      "required": ["rule", "value", "reason"],
+      "properties": {
+        "rule": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "value": {
+          "description": "The proposed value. Any JSON value; the rule decides what is valid.",
+          "anyOf": [
+            { "type": "object" },
+            { "type": "array" },
+            { "type": "string" },
+            { "type": "number" },
+            { "type": "boolean" },
+            { "type": "null" }
+          ]
+        },
+        "reason": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "ProposeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accepted", "budget_remaining_thoughts", "proposal_id"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+        "proposal_id": { "type": "string", "pattern": "^pr_" },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "VoteInput": {
+      "type": "object",
+      "description": "Vote yes or no on an open proposal.",
+      "additionalProperties": false,
+      "required": ["proposal_id", "vote"],
+      "properties": {
+        "proposal_id": { "type": "string", "pattern": "^pr_" },
+        "vote": { "enum": ["yes", "no"] }
+      }
+    },
+    "VoteResult": { "$ref": "#/$defs/ActionOutcome" },
+    "SleepInput": {
+      "type": "object",
+      "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
+      "additionalProperties": false
+    },
+    "SleepResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "day",
+        "days_since_sleep",
+        "events",
+        "event_counts",
+        "untrusted_world_text",
+        "note"
+      ],
+      "properties": {
+        "day": { "type": "integer", "minimum": 0 },
+        "days_since_sleep": { "type": "integer", "minimum": 0 },
+        "events": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "mcp-common.schema.json#/$defs/McpPlayerEvent" }
+        },
+        "event_counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "untrusted_world_text": {
+          "type": "object",
+          "allOf": [{ "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" }],
+          "required": ["book"]
+        },
+        "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
+      }
+    },
+    "JournalInput": {
+      "type": "object",
+      "description": "Append an entry to the colo's mirror of this player's journal.",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "JournalResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "mirrored_chars"],
+      "properties": {
+        "ok": { "const": true },
+        "mirrored_chars": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "StatusInput": {
+      "type": "object",
+      "description": "Check your budget remaining, days alive, days since sleep and the laws in force.",
+      "additionalProperties": false
+    },
+    "StatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "budget_remaining_thoughts",
+        "days_alive",
+        "days_since_sleep",
+        "untrusted_world_text",
+        "note"
+      ],
+      "properties": {
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 },
+        "days_alive": { "type": "integer", "minimum": 0 },
+        "days_since_sleep": { "type": "integer", "minimum": 0 },
+        "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
+        "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
+      }
+    }
+  }
+}
