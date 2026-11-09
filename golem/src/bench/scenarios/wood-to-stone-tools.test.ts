@@ -105,6 +105,13 @@ describe('wood-to-stone-tools run', () => {
     expect(actions).toHaveLength(6);
   });
 
+  it('puts the inventory and the result detail in the failure note', async () => {
+    const { env } = runEnv(6, ['oak_log', 'stick']);
+    const { note } = await woodToStoneTools.run(env);
+    expect(note).toContain('inventory: oak_log x1, stick x1');
+    expect(note).toContain('detail: {}');
+  });
+
   it('fails when every step completes but there is no stone pickaxe', async () => {
     const { env } = runEnv(null, ['wooden_pickaxe']);
     expect((await woodToStoneTools.run(env)).passed).toBe(false);
