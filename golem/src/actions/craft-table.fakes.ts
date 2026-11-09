@@ -20,16 +20,21 @@ export const CHEST = { id: 2, type: 'minecraft:generic_9x3' };
 export const SHAPED_BED = 1454;
 export const DYE_BED = 499;
 
-/** A `recipe_book_add` packet with one entry per `[displayId, type, resultId]`. */
-export function bookAdd(entries: [number, string, number][], replace = false) {
+/** The stick the yield tests craft: a planks display makes 4, a bamboo display makes 1. */
+export const STICK = { id: 901, name: 'stick' };
+export const PLANKS_STICK = 2001;
+export const BAMBOO_STICK = 2002;
+
+/** A `recipe_book_add` packet with one entry per `[displayId, type, resultId, yield = 1]`. */
+export function bookAdd(entries: [number, string, number, number?][], replace = false) {
   return {
     replace,
-    entries: entries.map(([displayId, type, resultId]) => ({
+    entries: entries.map(([displayId, type, resultId, yieldPer = 1]) => ({
       recipe: {
         displayId,
         display: {
           type,
-          data: { result: { type: 'item_stack', data: { itemId: resultId, itemCount: 1 } } },
+          data: { result: { type: 'item_stack', data: { itemId: resultId, itemCount: yieldPer } } },
         },
       },
     })),
@@ -67,22 +72,26 @@ export function openWithWindowState(client: EventEmitter): void {
 
 /**
  * A server that fills the result slot of `windowId` after each recipe request, with stateIds 6, 7, ...
- * A request for a display not in `displayIds` gets no answer, as a wrong display does.
+ * A request for a display not in `displayIds` gets no answer, as a wrong display does. `yields`
+ * gives the stack size a display's result slot shows (default 1) and `itemId` its item.
  */
 export function answerRequests(
   client: { write: ReturnType<typeof vi.fn> } & EventEmitter,
   windowId = WINDOW.id,
   displayIds?: number[],
+  yields: Record<number, number> = {},
+  itemId = BED.id,
 ): void {
   let next = 6;
   client.write.mockImplementation((name: string, params: Record<string, unknown>) => {
     if (name !== 'craft_recipe_request') return;
-    if (displayIds && !displayIds.includes(params.recipeId as number)) return;
+    const displayId = params.recipeId as number;
+    if (displayIds && !displayIds.includes(displayId)) return;
     client.emit('set_slot', {
       windowId,
       stateId: next++,
       slot: 0,
-      item: { present: true, itemId: BED.id, itemCount: 1 },
+      item: { present: true, itemId, itemCount: yields[displayId] ?? 1 },
     });
   });
 }
