@@ -125,8 +125,13 @@ async function main(): Promise<void> {
       const logFile = values['suppressed-log'];
       if (logFile !== undefined) {
         // Open for append: unlike appendFileSync with no data, this fails on a directory everywhere.
-        closeSync(openSync(logFile, 'a'));
-        if (!statSync(logFile).isFile()) throw new Error('suppressed log: not a file');
+        // Only a directory is refused: /dev/null and named pipes are fine log targets.
+        const fd = openSync(logFile, 'a');
+        try {
+          if (statSync(logFile).isDirectory()) throw new Error('suppressed log: is a directory');
+        } finally {
+          closeSync(fd);
+        }
       }
       world = createSimWorld({
         scenario,

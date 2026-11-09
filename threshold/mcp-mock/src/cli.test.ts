@@ -1,6 +1,6 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { devNull, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -228,12 +228,51 @@ describe('cli', () => {
     const { child: proc } = run([
       '--tokens',
       tokens,
+      '--port',
+      '0',
       '--scenario',
       scenario,
       '--suppressed-log',
       dir,
     ]);
     expect(await exited(proc)).toBe(1);
+  }, 30_000);
+
+  it('accepts a regular file as the --suppressed-log', async () => {
+    const tokens = join(dir, 'tokens.json');
+    writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
+    const scenario = join(dir, 'a.scenario.json');
+    writeFileSync(scenario, scenarioJson());
+    const { stderr } = run([
+      '--tokens',
+      tokens,
+      '--port',
+      '0',
+      '--scenario',
+      scenario,
+      '--suppressed-log',
+      join(dir, 'log.jsonl'),
+    ]);
+    expect(await listeningPort(stderr)).toBeGreaterThan(0);
+  }, 30_000);
+
+  // The null device is not a regular file, yet it is a valid place to throw the log away.
+  it('accepts the null device as the --suppressed-log', async () => {
+    const tokens = join(dir, 'tokens.json');
+    writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
+    const scenario = join(dir, 'a.scenario.json');
+    writeFileSync(scenario, scenarioJson());
+    const { stderr } = run([
+      '--tokens',
+      tokens,
+      '--port',
+      '0',
+      '--scenario',
+      scenario,
+      '--suppressed-log',
+      devNull,
+    ]);
+    expect(await listeningPort(stderr)).toBeGreaterThan(0);
   }, 30_000);
 
   it('exits 2 on an empty --suppressed-log without --scenario', async () => {
