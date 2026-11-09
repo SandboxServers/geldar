@@ -72,6 +72,34 @@ export function summarize(cells: CellResult[]): Row[] {
   });
 }
 
+/** Mean wall latency in ms of the completed actions of a cell, or null when there are none. */
+export function meanLatencyMs(cell: CellResult): number | null {
+  const done = cell.actions.filter((a) => a.status === 'completed');
+  if (done.length === 0) return null;
+  return done.reduce((sum, a) => sum + a.latencyMs, 0) / done.length;
+}
+
+/**
+ * The standing findings of decision 0038 that travel with every run: the world age moves in steps
+ * of 20 ticks, and, per scenario with both a 20 TPS cell and a slower one, how much the wall time
+ * of its actions grew (a ratio near 1 means the slowed server did not slow the Body).
+ */
+export function findingsOf(cells: CellResult[]): string[] {
+  const findings = ['age-step: 20'];
+  for (const slow of cells.filter((c) => c.tps < 20)) {
+    const fast = cells.find((c) => c.scenario === slow.scenario && c.tps === 20);
+    const base = fast ? meanLatencyMs(fast) : null;
+    const slowed = meanLatencyMs(slow);
+    if (base === null || slowed === null || base <= 0) continue;
+    findings.push(
+      `non-dilation: ${slow.scenario} mean action wall time ${Math.round(base)} ms at 20 TPS, ` +
+        `${Math.round(slowed)} ms at ${slow.tps} TPS (ratio ${(slowed / base).toFixed(2)}, ` +
+        `dilation would give ${(20 / slow.tps).toFixed(1)})`,
+    );
+  }
+  return findings;
+}
+
 /** `YYYYMMDDTHHmmssZ-<commit>.json`: no colons, which NTFS rejects. */
 export function resultFileName(meta: Pick<RunMeta, 'stamp' | 'commit'>): string {
   return `${meta.stamp}-${meta.commit}.json`;
@@ -154,7 +182,7 @@ export async function writeResults(input: ResultInput, opts: WriteOptions): Prom
   const summary = summarize(input.cells);
   const body = `${JSON.stringify(
     {
-      meta: { ...input.meta, worldAgeResolutionTicks: 20 },
+      meta: { ...input.meta, worldAgeResolutionTicks: 20, findings: findingsOf(input.cells) },
       truncated: input.truncated,
       note: input.note,
       cells: input.cells,

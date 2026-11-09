@@ -4,7 +4,14 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { RunMeta } from './meta.ts';
 import { collectMeta, commitLabel, parseVersionReply, timeStamp } from './meta.ts';
-import { appendRows, markdownRow, resultFileName, summarize, writeResults } from './results.ts';
+import {
+  appendRows,
+  findingsOf,
+  markdownRow,
+  resultFileName,
+  summarize,
+  writeResults,
+} from './results.ts';
 import type { CellResult } from './types.ts';
 
 const META: RunMeta = {
@@ -138,6 +145,25 @@ describe('meta', () => {
   });
 });
 
+describe('findingsOf', () => {
+  it('always states the 20-tick age step and adds a non-dilation line per slower cell', () => {
+    const slow = cellOf({
+      tps: 5,
+      actions: [{ kind: 'goto', status: 'completed', reason: null, latencyMs: 400, worldTicks: 20 }],
+    });
+    expect(findingsOf([cellOf()])).toEqual(['age-step: 20']);
+    expect(findingsOf([cellOf(), slow])).toEqual([
+      'age-step: 20',
+      'non-dilation: goto-smoke mean action wall time 200 ms at 20 TPS, 400 ms at 5 TPS (ratio 2.00, dilation would give 4.0)',
+    ]);
+  });
+
+  it('skips a slower cell without a completed action or without a 20 TPS partner', () => {
+    expect(findingsOf([cellOf({ tps: 5 })])).toEqual(['age-step: 20']);
+    expect(findingsOf([cellOf(), cellOf({ tps: 5, actions: [] })])).toEqual(['age-step: 20']);
+  });
+});
+
 describe('writeResults', () => {
   it('writes the JSON and, with record, copies it and appends rows', async () => {
     const root = await mkdtemp(join(tmpdir(), 'bench-'));
@@ -156,6 +182,7 @@ describe('writeResults', () => {
     expect(copy.endsWith('}\n')).toBe(true);
     expect(JSON.parse(copy).summary).toHaveLength(1);
     expect(JSON.parse(copy).meta.worldAgeResolutionTicks).toBe(20);
+    expect(JSON.parse(copy).meta.findings).toEqual(['age-step: 20']);
     const table = await readFile(join(doc, 'bench-results.md'), 'utf8');
     expect(table.split('\n')).toHaveLength(4);
     expect(table).toContain('bench-runs/20261109T031500Z-abc1234.json');

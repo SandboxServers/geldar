@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it } from 'vitest';
 import { createRegistry } from '../../src/actions/index.ts';
+import { findingsOf, meanLatencyMs } from '../../src/bench/results.ts';
 import { runCell } from '../../src/bench/runner.ts';
 import { gotoSmoke } from '../../src/bench/scenarios/goto-smoke.ts';
 import { parseTargetRate, setTps } from '../../src/bench/tps.ts';
@@ -52,9 +53,10 @@ describe('bench harness on 26.1', () => {
       await ctl.tickRate(20);
       console.log(`bot.time.age at 20 TPS: ${JSON.stringify(at20)}`);
       console.log(`bot.time.age at 5 TPS: ${JSON.stringify(at5)}`);
-      // Steps above 1 mean the clock arrives in coarse packets (the server sends time every 20 ticks):
-      // that is a finding for the report, not a failure of the harness.
-      if (at20.minStep > 1) console.warn(`FINDING: bot.time.age moves in steps of ${at20.minStep}`);
+      // Characterisation of decision 0038: the server sends time every 20 ticks, so the age moves in
+      // steps of 20. If this fails the premise of 0038 changed: report to the orchestrator.
+      console.log(`FINDING: age-step: ${at20.minStep}`);
+      expect([at20.minStep, at20.maxStep], 'age step (decision 0038)').toEqual([20, 20]);
 
       // The probe is goto-smoke plus the server's tick reply in its note; it reads the full ctl.
       const probe: Scenario = {
@@ -82,22 +84,20 @@ describe('bench harness on 26.1', () => {
 
       // A 20 TPS failure of goto-smoke is blocked (a goto defect); a 5 TPS failure is a finding.
       expect(fast.passed, `goto at 20 TPS: ${JSON.stringify(fast.failures)}`).toBe(2);
-      const gotoMs20 = fast.actions.map((a) => a.latencyMs);
-      const mean20 = gotoMs20.reduce((a, b) => a + b, 0) / gotoMs20.length;
       expect(slow.notes[0]).toMatch(/Target tick rate: 5\.0 per second/);
-      if (slow.passed === 1) {
-        const ms5 = slow.actions[0]?.latencyMs ?? 0;
-        console.log(`goto wall ms: ${Math.round(mean20)} at 20 TPS, ${ms5} at 5 TPS`);
-        // Mineflayer's physics runs on its own 50 ms step, so the walk may not dilate with the server:
-        // a ratio under 3 is a finding about the 5 TPS evidence, not a harness failure.
-        if (ms5 < 3 * mean20) {
-          console.warn(
-            `FINDING: the same 12-block goto took ${ms5} ms at 5 TPS vs ${Math.round(mean20)} ms at 20 TPS (under 3x)`,
-          );
-        }
-      } else {
+      // These lines are what the results JSON carries as meta.findings.
+      for (const finding of findingsOf([fast, slow])) console.log(`FINDING: ${finding}`);
+      if (slow.passed !== 1) {
         console.warn(`FINDING: goto-smoke failed at 5 TPS: ${JSON.stringify(slow.failures)}`);
       }
+      // Characterisation of decision 0038: Mineflayer's physics runs on its own 50 ms timer, so the
+      // same walk takes about as long at 5 TPS as at 20 (dilation would be 4x). If this fails the
+      // premise of 0038 changed: report to the orchestrator.
+      const mean20 = meanLatencyMs(fast);
+      const mean5 = meanLatencyMs(slow);
+      expect(mean20, 'goto actions at 20 TPS').not.toBeNull();
+      expect(mean5, 'goto actions at 5 TPS').not.toBeNull();
+      expect((mean5 as number) / (mean20 as number), 'wall-time ratio 5 vs 20 TPS').toBeLessThan(3);
       expect(parseTargetRate(await ctl.tickQuery())).toBe(20);
 
       // The reset heals: run 1 damages the bot, run 2 must start at full health.
