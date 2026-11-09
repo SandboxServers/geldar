@@ -47,14 +47,26 @@ export function readResource(
   world: ResourceWorld,
   playerId: string,
   uri: string,
+  log?: (line: Record<string, unknown>) => void,
 ): { contents: { uri: string; mimeType: string; text: string }[] } {
   const listing = RESOURCE_LISTINGS.find((r) => r.uri === uri);
   if (listing === undefined) {
     throw new McpError(ErrorCode.InvalidParams, `unknown resource: ${uri.slice(0, 80)}`);
   }
   let text: string;
-  if (uri === 'geldar://player/self') text = JSON.stringify(world.readSelf(playerId));
-  else if (uri === 'geldar://player/journal/recent') text = world.readJournalRecent(playerId);
-  else text = JSON.stringify(world.readShardRules(playerId));
-  return { contents: [{ uri, mimeType: listing?.mimeType ?? 'application/json', text }] };
+  try {
+    if (uri === 'geldar://player/self') text = JSON.stringify(world.readSelf(playerId));
+    else if (uri === 'geldar://player/journal/recent') text = world.readJournalRecent(playerId);
+    else text = JSON.stringify(world.readShardRules(playerId));
+  } catch (error) {
+    // The real error stays in the log; the client only learns that the mock failed.
+    log?.({
+      event: 'resource_error',
+      player_id: playerId,
+      uri,
+      message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+    });
+    throw new McpError(ErrorCode.InternalError, 'the mock failed');
+  }
+  return { contents: [{ uri, mimeType: listing.mimeType, text }] };
 }

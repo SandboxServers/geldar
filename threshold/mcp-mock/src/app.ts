@@ -57,7 +57,7 @@ export function createApp(opts: {
         resources: listResources(),
       }));
       mcp.server.setRequestHandler(ReadResourceRequestSchema, (request) =>
-        readResource(world, playerId, request.params.uri),
+        readResource(world, playerId, request.params.uri, opts.log),
       );
       mcp.server.setRequestHandler(ListPromptsRequestSchema, () => ({ prompts: listPrompts() }));
       mcp.server.setRequestHandler(GetPromptRequestSchema, (request) =>

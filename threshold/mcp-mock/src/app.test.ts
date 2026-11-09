@@ -71,6 +71,10 @@ function textOf(result: unknown): string {
   return content[0]?.text ?? '';
 }
 
+function promptText(messages: { content: unknown }[]): string {
+  return (messages[0]?.content as { text?: string } | undefined)?.text ?? '';
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'mcp-app-'));
   lines = [];
@@ -82,7 +86,7 @@ afterEach(async () => {
   await http?.close();
   http = undefined;
   rmSync(dir, { recursive: true, force: true });
-});
+}, 10_000);
 
 describe('createApp', () => {
   it('lists the 14 tools with the contract input schemas', async () => {
@@ -132,7 +136,44 @@ describe('createApp', () => {
       seed: 'mock-seed-0001',
       born_day: 0,
     });
-    await expect(client.readResource({ uri: 'geldar://shard/laws' })).rejects.toThrow();
+    const journal = await client.readResource({ uri: 'geldar://player/journal/recent' });
+    expect(journal.contents[0]).toMatchObject({
+      mimeType: 'text/plain',
+      text: 'Nothing written yet.',
+    });
+    const rules = await client.readResource({ uri: 'geldar://shard/rules' });
+    expect(rules.contents[0]).toMatchObject({
+      mimeType: 'application/json',
+      text: JSON.stringify({ chat_radius: 32 }),
+    });
+    await expect(client.readResource({ uri: 'geldar://shard/laws' })).rejects.toThrow(
+      /unknown resource/,
+    );
+  }, 30_000);
+
+  it('hides a failing world read behind a generic error and logs the real one', async () => {
+    const world = fakeWorld();
+    world.readSelf = () => {
+      throw new Error('secret-internal-detail');
+    };
+    world.readJournalRecent = () => {
+      throw new Error('secret-internal-detail');
+    };
+    world.readShardRules = () => {
+      throw new Error('secret-internal-detail');
+    };
+    await start(world);
+    const client = await connect('aa');
+    for (const uri of [
+      'geldar://player/self',
+      'geldar://player/journal/recent',
+      'geldar://shard/rules',
+    ]) {
+      const failure: unknown = await client.readResource({ uri }).catch((e: unknown) => e);
+      expect(String(failure)).toContain('the mock failed');
+      expect(String(failure)).not.toContain('secret-internal-detail');
+    }
+    expect(JSON.stringify(lines)).toContain('secret-internal-detail');
   }, 30_000);
 
   it('serves the three prompts', async () => {
@@ -147,6 +188,16 @@ describe('createApp', () => {
     const prompt = await client.getPrompt({ name: 'geldar:play' });
     expect(prompt.messages).toHaveLength(1);
     expect(prompt.messages[0]?.role).toBe('user');
+    for (const { name } of prompts) {
+      const { messages } = await client.getPrompt({ name });
+      const text = promptText(messages);
+      expect(text.endsWith('stand-in text.'), name).toBe(true);
+      expect(text.split(/(?<=[.!?])\s+/).length, name).toBeLessThanOrEqual(4);
+    }
+    const reflect = await client.getPrompt({ name: 'geldar:reflect' });
+    const reflectText = promptText(reflect.messages);
+    for (const tool of ['look', 'wait', 'act', 'sleep']) expect(reflectText).toContain(tool);
+    await expect(client.getPrompt({ name: 'geldar:nope' })).rejects.toThrow(/unknown prompt/);
   }, 30_000);
 
   it('reports invalid input as an error result', async () => {

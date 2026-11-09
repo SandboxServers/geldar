@@ -17,7 +17,7 @@ const PROMPTS: readonly PromptDef[] = [
   {
     name: 'geldar:reflect',
     description: 'Reflect before sleeping.',
-    text: `Before you sleep, look back at the day and write what you learned in your journal. Then sleep. ${STAND_IN}`,
+    text: `Before you sleep, look at the world once more, wait for what is left to happen, and act on it. Then sleep. ${STAND_IN}`,
   },
   {
     name: 'geldar:newborn',
