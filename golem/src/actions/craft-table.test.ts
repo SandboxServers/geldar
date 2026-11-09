@@ -273,4 +273,54 @@ describe('craftFromBook', () => {
     expect(closedAtOpen).toBe(0);
     expect(fake.raw.closeWindow).toHaveBeenCalledTimes(1);
   });
+
+  it('closes window 0 when a grid craft times out, so the ingredients return to the inventory', async () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    const ctx: ActionContext = {
+      bot: fake.bot,
+      signal: new AbortController().signal,
+      timeScale: 0.01,
+    };
+    // The server stays silent: the request is never answered, so the grid holds what it moved in.
+
+    expect(await craftFromBook(ctx, BED, 1, null)).toMatchObject({
+      status: 'failed',
+      reason: 'timeout',
+    });
+
+    expect(writesOf(fake.client, 'close_window')).toEqual([{ windowId: 0 }]);
+    expect(fake.raw.closeWindow).not.toHaveBeenCalled();
+  });
+
+  it('closes window 0 when a grid craft is aborted between the request and the click', async () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    const controller = new AbortController();
+    fake.client.write.mockImplementation(() => controller.abort());
+    const ctx: ActionContext = { bot: fake.bot, signal: controller.signal, timeScale: 0.01 };
+
+    expect(await craftFromBook(ctx, BED, 1, null)).toMatchObject({ status: 'cancelled' });
+
+    expect(writesOf(fake.client, 'window_click')).toEqual([]);
+    expect(writesOf(fake.client, 'close_window')).toEqual([{ windowId: 0 }]);
+  });
+
+  it('does not close window 0 after a grid craft that ran to the end', async () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    answerRequests(fake.client, 0);
+    const ctx: ActionContext = {
+      bot: fake.bot,
+      signal: new AbortController().signal,
+      timeScale: 0.01,
+    };
+
+    expect(await craftFromBook(ctx, BED, 1, null)).toBeNull();
+
+    expect(writesOf(fake.client, 'close_window')).toEqual([]);
+  });
 });

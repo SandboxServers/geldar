@@ -211,6 +211,8 @@ export async function craftFromBook(
   };
   client.on('window_items', trackState);
   client.on('set_slot', trackState);
+  // Set once every craft ran. Until then a grid may still hold the ingredients of a craft that stopped.
+  let clean = false;
   try {
     let windowId = PLAYER_WINDOW_ID;
     if (table) {
@@ -231,6 +233,7 @@ export async function craftFromBook(
       if ('outcome' in crafted) return crafted.outcome;
       rememberWorking(bot, item.id, crafted.displayId);
     }
+    clean = true;
     return null;
   } finally {
     client.removeListener('window_items', trackState);
@@ -240,7 +243,21 @@ export async function craftFromBook(
       await bot.closeWindow(bot.currentWindow).catch((error: unknown) => {
         console.warn(`crafting table window did not close: ${errorText(error)}`);
       });
+    } else if (!table && !clean) {
+      closePlayerGrid(client);
     }
+  }
+}
+
+/**
+ * Closes the player's 2x2 grid (window 0) after a stopped craft. The server then returns the ingredients
+ * a request moved into the grid to the inventory. A failed write is logged, not thrown over the outcome.
+ */
+function closePlayerGrid(client: RecipeClient): void {
+  try {
+    client.write('close_window', { windowId: PLAYER_WINDOW_ID });
+  } catch (error) {
+    console.warn(`player grid did not close: ${errorText(error)}`);
   }
 }
 
