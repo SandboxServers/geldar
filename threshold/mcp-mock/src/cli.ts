@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFileSync, closeSync, openSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, openSync, statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { MCP_TOOL_NAMES } from '@geldar/contract';
 import { createApp, type McpWorld } from './app.ts';
@@ -7,7 +7,12 @@ import { loadTokens } from './auth.ts';
 import { createFakeHandlers } from './fake-world.ts';
 import type { ToolHandlers } from './registry.ts';
 import { createShutdown } from './shutdown.ts';
-import { applyOverrides, parseScenario, type ScenarioOverrides } from './sim/scenario.ts';
+import {
+  applyOverrides,
+  parseScenario,
+  readScenarioFile,
+  type ScenarioOverrides,
+} from './sim/scenario.ts';
 import { createSimWorld } from './sim/sim-world.ts';
 
 /** A fixed fake world; each player gets its own handler set, built on first use (the set holds a counter). */
@@ -116,10 +121,7 @@ async function main(): Promise<void> {
     world = createFixedWorld();
   } else {
     try {
-      const scenario = applyOverrides(
-        parseScenario(readFileSync(values.scenario, 'utf8')),
-        overrides,
-      );
+      const scenario = applyOverrides(parseScenario(readScenarioFile(values.scenario)), overrides);
       const logFile = values['suppressed-log'];
       if (logFile !== undefined) {
         // Open for append: unlike appendFileSync with no data, this fails on a directory everywhere.
