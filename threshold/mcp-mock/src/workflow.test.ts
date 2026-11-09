@@ -39,11 +39,16 @@ describe('mcp-mock-image workflow', () => {
   });
 
   it('rebuilds when the workspace manifests change', () => {
-    for (const trigger of ['pull_request', 'push']) {
-      const start = workflow.indexOf(`  ${trigger}:`);
-      const block = workflow.slice(start, workflow.indexOf('paths:', start) + 400);
-      expect(block, trigger).toContain('- package.json');
-      expect(block, trigger).toContain('- pnpm-workspace.yaml');
+    // Each block ends at the next trigger key, so a neighbour's paths cannot satisfy it.
+    const next = { pull_request: '\n  push:', push: '\n  workflow_dispatch:' };
+    for (const [trigger, end] of Object.entries(next)) {
+      const start = workflow.indexOf(`\n  ${trigger}:`);
+      expect(start, trigger).toBeGreaterThan(-1);
+      const stop = workflow.indexOf(end, start);
+      expect(stop, `${trigger} end`).toBeGreaterThan(start);
+      const block = workflow.slice(start, stop);
+      expect(block, trigger).toContain('\n      - package.json\n');
+      expect(block, trigger).toContain('\n      - pnpm-workspace.yaml\n');
     }
   });
 
