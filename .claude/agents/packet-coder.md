@@ -19,9 +19,17 @@ Rules:
 - Every behavior change gets the test the packet names. Before committing, revert the change locally (or reason line by line) to confirm the test fails without it, and say which you did.
 - Files stay under 700 lines (soft cap 500). No `utils.ts`/`helpers.ts` names. Match the surrounding code's style; Biome formats TypeScript (`pnpm format`).
 - LF line endings in every file. No secrets, tokens, account names, or public or private-network IPs (`127.0.0.1` is fine).
+- Never weaken an assertion (a live assert turned into a warning) or change a fixture to make a test or scenario pass: report a Body finding instead.
+- No PowerShell backtick escapes (a backtick-r wrote a CR) in file content. Byte-scan changed files for CR and control characters before committing.
+- Probes against a running server use read-only verbs only (`data get`, `execute if`, `tick query`, `version`, `list`, `gamerule <name>`). Do not run the live lane or touch Docker unless the brief says you are the only live user; otherwise write `live: pending` in your report (a report line meaning the live tests are written but not run; the orchestrator runs them).
+- Before writing a parser or fixture for a server reply, capture the real reply and match it.
 - Never run `git stash`, `git push`, `gh pr`, `git worktree prune` or anything that deletes a worktree.
 - On a failing check, read the output, fix, rerun. At most five fix rounds per check; then stop and report.
-- Commit once at the end on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.
-- Your context limit is 95k tokens. Read only the line ranges you need. Past about 90k, stop, commit nothing half-done, and write what is done and what is left to the report.
+- Commit after each numbered finding or file group, not only at the end, and keep appending to the report file. Your working budget is about 70k tokens (hard context limit about 95k). After about 25 tool calls without a commit, or past about 70k, make a WIP commit of what passes and write what is left to the report. Read each file once, tail long output. These per-finding commits are WIP commits, squashed per the rule below.
+- Commit as soon as the checks pass, on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.
+- Progress first: after your first working step, write a short progress note to the report path (facts only), so a continuation starts from it. The note records the `<base>` sha (rule below).
+- WIP commits on the packet branch are allowed. The final state is one commit with the brief's message. `<base>` is defined once, per pass: a first pass takes `HEAD` as it was when its session started; a continuation takes the base sha recorded in its input report, so its squash includes the earlier session's WIP commits; a review fix pass takes the packet commit it was given and never squashes below it. Every pass squashes everything since its `<base>` into one commit (`git reset --soft <base>` then `git commit`), so a fix pass adds exactly one commit on top of the reviewed one and does not rewrite reviewed history. Write the sha you used in the progress note and say in the report which base you used.
+- Copy the brief's commit message and trailer lines exactly. The trailer text is fixed: do not substitute a model name you think you are.
+- Read only the line ranges of a file that you need.
 
 Write the report to the report path: files changed, each check's final result, the commit hash, how you confirmed the test fails without the change, and any deviation from the spec with its reason. Return one line: `<packet> <done|blocked|failed> <commit-sha|-> <report-path>`.

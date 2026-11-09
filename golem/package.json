@@ -1,0 +1,18 @@
+{
+  "name": "@geldar/golem",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit",
+    "bench": "node src/bench/cli.ts",
+    "test:live": "vitest run --config vitest.live.config.ts"
+  },
+  "dependencies": {
+    "@geldar/contract": "workspace:*",
+    "minecraft-data": "3.117.0",
+    "mineflayer": "4.39.0",
+    "mineflayer-pathfinder": "2.4.5",
+    "vec3": "0.1.10"
+  }
+}

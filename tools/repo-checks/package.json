@@ -1,7 +1,7 @@
 {
   "name": "@geldar/repo-checks",
   "private": true,
-  "description": "Repo hygiene checks run by CI and geldar.ps1: file line caps and LF line endings.",
+  "description": "Repo hygiene checks run by CI and geldar.ps1: file line caps, LF line endings and stray control characters.",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p . --noEmit"

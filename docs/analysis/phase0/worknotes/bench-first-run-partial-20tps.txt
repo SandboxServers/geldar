@@ -1,0 +1,52 @@
+$ node src/bench/cli.ts --scenario all --tps 20 --runs 10 --max-minutes 240 --record --note 'wave 2 first recorded run, 20 TPS, shared desktop RTX 4090 host'
+wood-to-stone-tools 20TPS run 1/10 pass 34238ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 2/10 pass 34417ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 3/10 pass 34426ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 4/10 pass 34913ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 5/10 pass 34466ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 6/10 pass 34755ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 7/10 pass 34554ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 8/10 pass 34538ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 9/10 pass 34613ms stone_pickaxe in inventory
+wood-to-stone-tools 20TPS run 10/10 pass 29633ms stone_pickaxe in inventory
+food 20TPS run 1/10 pass 8957ms food_before 12, food_after 14
+food 20TPS run 2/10 pass 8984ms food_before 12, food_after 14
+food 20TPS run 3/10 pass 9000ms food_before 12, food_after 14
+food 20TPS run 4/10 pass 8986ms food_before 12, food_after 14
+food 20TPS run 5/10 pass 8908ms food_before 12, food_after 14
+food 20TPS run 6/10 pass 9089ms food_before 12, food_after 14
+food 20TPS run 7/10 pass 9000ms food_before 12, food_after 14
+food 20TPS run 8/10 pass 9022ms food_before 12, food_after 14
+food 20TPS run 9/10 pass 8944ms food_before 12, food_after 14
+food 20TPS run 10/10 pass 9133ms food_before 12, food_after 14
+shelter 20TPS run 1/10 pass 7919ms enclosed, server agrees
+shelter 20TPS run 2/10 pass 7982ms enclosed, server agrees
+shelter 20TPS run 3/10 pass 7918ms enclosed, server agrees
+shelter 20TPS run 4/10 pass 8063ms enclosed, server agrees
+shelter 20TPS run 5/10 pass 7890ms enclosed, server agrees
+shelter 20TPS run 6/10 pass 8042ms enclosed, server agrees
+shelter 20TPS run 7/10 pass 7996ms enclosed, server agrees
+shelter 20TPS run 8/10 pass 7980ms enclosed, server agrees
+shelter 20TPS run 9/10 pass 7949ms enclosed, server agrees
+shelter 20TPS run 10/10 pass 8023ms enclosed, server agrees
+bed 20TPS run 1/10 pass 2389ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 2/10 pass 2292ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 3/10 pass 2236ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 4/10 pass 2199ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 5/10 pass 2290ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 6/10 pass 2262ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 7/10 pass 2285ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 8/10 pass 2300ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 9/10 pass 2309ms sleep completed (-: ), client isSleeping true, server true
+bed 20TPS run 10/10 pass 2249ms sleep completed (-: ), client isSleeping true, server true
+chest 20TPS run 1/10 pass 523ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 2/10 pass 897ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 3/10 pass 870ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 4/10 pass 906ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 5/10 pass 873ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 6/10 pass 880ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 7/10 pass 934ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 8/10 pass 939ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 9/10 pass 898ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+chest 20TPS run 10/10 pass 849ms chest {"cobblestone":6}; receipts: not built yet (wave 4)
+blocked-path 20TPS run 1/10 pass 6445ms detour: goto completed in 6333 ms -> detoured

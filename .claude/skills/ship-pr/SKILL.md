@@ -11,7 +11,7 @@ Ported from Cimmeria's `ship-pr`, without its build lane and merge queue: Geldar
 
 ```powershell
 git fetch origin
-git worktree add .claude/worktrees/<name> -b <branch> origin/main   # e.g. fix/caps-message caps-fix
+git worktree add <absolute path to the repo>\.claude\worktrees\<name> -b <branch> origin/main   # e.g. fix/caps-message caps-fix
 cd .claude/worktrees/<name>; ./geldar.ps1 setup                    # pnpm install with the pinned pnpm
 ```
 
@@ -62,12 +62,25 @@ gh pr merge <PR> --merge --delete-branch
 
 Never use `--admin` to merge around a red or missing check.
 
-## 7. Remove the worktree the same day
+## 7. Remove the worktree after merge
 
 ```powershell
 cd <repo root>
-git worktree remove .claude/worktrees/<name>
+git worktree remove --force .claude/worktrees/<name>
 git branch -D <branch>      # only after the PR merged
 ```
 
-Never run `git worktree prune`, and never remove a worktree a running agent is still using. Copy anything worth keeping from `.claude/reports/` in that worktree to the campaign's `worknotes/` first.
+Never run `git worktree prune`, and never remove a worktree a running agent is still using. `--force` discards uncommitted and untracked work, which the plain command refuses to do: run `git -C <worktree> status --short` first, and commit or copy whatever it lists. Copy anything worth keeping from `.claude/reports/` in that worktree to the campaign's `worknotes/` first.
+
+## 8. Wave PR (integration branch to main)
+
+1. Merge `origin/main` into the wave branch first. Never hand-merge `pnpm-lock.yaml`: take either side, run `./geldar.ps1 pnpm install` and commit the regenerated lockfile.
+2. Push, open the PR with base `main`, and wait for `ci gate` (§ 4).
+3. Merge only if the wave's exit criteria are met and the owner has authorised it (§ 6).
+
+## 9. Windows notes
+
+- `git worktree remove --force` deregisters a worktree, but a `node_modules` lock can leave its directory behind. Delete a leftover directory by hand only after `git worktree list` no longer shows it.
+- A bare `--` before a path breaks `geldar.ps1` parameter binding (ten runs failed silently): pass the path without it.
+- Always pass `git worktree add` an absolute path. From inside a worktree, a `cd ../..` can put the next worktree in the wrong parent.
+- Scripted git calls must not wait on stdin. From Bash add `</dev/null`; from PowerShell, where `<` redirection does not exist, pipe an empty string (`'' | git ...`).

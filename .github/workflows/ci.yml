@@ -37,7 +37,7 @@ jobs:
         run: pnpm typecheck
       - name: test (vitest)
         run: pnpm test
-      - name: repo checks (line caps, LF line endings)
+      - name: repo checks (line caps, line endings, control characters)
         run: pnpm check:repo
       - name: generated code is up to date (contract drift)
         run: pnpm check:generated
