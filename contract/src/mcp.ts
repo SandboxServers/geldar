@@ -1,6 +1,6 @@
 /**
  * The MCP tool surface: bundled tool definitions and validators looked up by tool name.
- * SC-30b adds the types of the other ten tools.
+ * The types cover all fourteen tools.
  */
 import type { ValidateFunction } from 'ajv';
 import { MCP_TOOL_NAMES } from './generated/mcp-tools.ts';
@@ -8,20 +8,65 @@ import * as generatedValidators from './generated/validators.js';
 import { formatError, type ValidationResult } from './validation.ts';
 
 export { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from './generated/mcp-tools.ts';
+
+import type { ActionOutcome } from './generated/types.ts';
+
+/**
+ * The shape of a validated `write_book` input. The generated `WriteBookInput` is a union of
+ * one-key branches and is not usable directly; consumers cast to this after validating.
+ */
+export type WriteBookInputArgs = { title: string; skill_id?: string; text?: string };
+
+/** Generated types; see `WriteBookInputArgs` for the usable `WriteBookInput` shape. */
 export type {
   ActInput,
+  ActionOutcome,
   ActResult,
+  DefineSkillInput,
+  DefineSkillResult,
+  JournalInput,
+  JournalResult,
+  LookInput,
   LookResult,
   McpCursor,
   McpInterest,
   McpPlayerEvent,
   McpWakeReason,
+  OfferInput,
+  ProposeInput,
+  ProposeResult,
+  ReadBookInput,
+  ReadBookResult,
   SayInput,
   SayResult,
+  SleepInput,
+  SleepResult,
+  StatusInput,
+  StatusResult,
   UntrustedWorldText,
+  UseSkillInput,
+  VoteInput,
   WaitInput,
   WaitResult,
+  WriteBookInput,
+  WriteBookResult,
 } from './generated/types.ts';
+
+/**
+ * Result of `use_skill`: the outcome of running the skill (shares the outcome type via $ref).
+ * Do not publish `result` as an MCP outputSchema (no root type).
+ */
+export type UseSkillResult = ActionOutcome;
+/**
+ * Result of `offer`: the outcome of the shrine offering (shares the outcome type via $ref).
+ * Do not publish `result` as an MCP outputSchema (no root type).
+ */
+export type OfferResult = ActionOutcome;
+/**
+ * Result of `vote`: the outcome of casting the vote (shares the outcome type via $ref).
+ * Do not publish `result` as an MCP outputSchema (no root type).
+ */
+export type VoteResult = ActionOutcome;
 
 const validators = generatedValidators as unknown as Record<string, ValidateFunction | undefined>;
 
