@@ -1,6 +1,6 @@
 /**
  * Shared pieces of the Mind live cases (P0-33b): start and stop the three host processes of
- * decision 0050 (lantern-local, animus, Adam's Body), poll Postgres for what the Mind recorded, and
+ * decision 0050 (Adam's Body, animus, lantern-local), poll Postgres for what the Mind recorded, and
  * the pure checks the cases use. Nothing here needs Ollama: the unit test runs it with fakes and a
  * trivial child process.
  */
@@ -27,22 +27,25 @@ export interface ProcessSpec {
   env: NodeJS.ProcessEnv;
   /** The log line that says the process is ready. */
   ready: RegExp;
+  /** After this process is ready, wait for a line in another process's log (by its name). */
+  then?: { process: string; pattern: RegExp };
 }
 
 /**
- * The three process specs, in start order. They get the environment `./geldar.ps1 adam up` gives
- * them: the shard name and the loopback defaults the processes read themselves; secrets are read by
- * the processes from `compose/secrets/*.txt`, never passed here.
+ * The three process specs, in the start order of `./geldar.ps1 adam up`: the Body, animus, then
+ * lantern-local, after which the stack waits for animus to log `thinker_connected`. They get the
+ * environment `adam up` gives them: the shard name and the loopback defaults the processes read
+ * themselves; secrets are read by the processes from `compose/secrets/*.txt`, never passed here.
  */
 export function adamProcessSpecs(root: string, base: NodeJS.ProcessEnv): ProcessSpec[] {
   const env = { ...base, GELDAR_SHARD: base.GELDAR_SHARD ?? 'phase0' };
   return [
     {
-      name: 'lantern-local',
-      script: join(root, 'lantern-local', 'src', 'main.ts'),
+      name: 'adam-body',
+      script: join(root, 'golem', 'src', 'adam', 'main.ts'),
       cwd: root,
       env,
-      ready: /serving /,
+      ready: /"event":"body_started"/,
     },
     {
       name: 'animus',
@@ -52,11 +55,12 @@ export function adamProcessSpecs(root: string, base: NodeJS.ProcessEnv): Process
       ready: /"event":"mind_started"/,
     },
     {
-      name: 'adam-body',
-      script: join(root, 'golem', 'src', 'adam', 'main.ts'),
+      name: 'lantern-local',
+      script: join(root, 'lantern-local', 'src', 'main.ts'),
       cwd: root,
       env,
-      ready: /"event":"body_started"/,
+      ready: /serving /,
+      then: { process: 'animus', pattern: /"event":"thinker_connected"/ },
     },
   ];
 }
@@ -194,13 +198,20 @@ export class AdamStack {
     this.specs = specs;
   }
 
-  /** Starts each process and waits for its ready line, in order; stops what it started on failure. */
+  /**
+   * Starts each process and waits for its ready line, in order, and for the lines a spec says to
+   * wait for in another process (animus's `thinker_connected`); stops what it started on failure.
+   */
   async start(readyTimeoutMs = 120_000): Promise<void> {
     try {
       for (const spec of this.specs) {
         const proc = new HostProcess(spec);
         this.processes.push(proc);
         await proc.waitForLog(spec.ready, readyTimeoutMs);
+        if (spec.then !== undefined) {
+          const other = this.processes.find((p) => p.spec.name === spec.then?.process);
+          await other?.waitForLog(spec.then.pattern, readyTimeoutMs);
+        }
       }
     } catch (error) {
       await this.stop().catch(() => undefined);
@@ -208,7 +219,7 @@ export class AdamStack {
     }
   }
 
-  /** The Body process (the last one started). */
+  /** The Body process (the first one started). */
   get body(): HostProcess {
     const body = this.processes.find((p) => p.spec.name === 'adam-body');
     if (body === undefined) throw new Error('the Body process was not started');
