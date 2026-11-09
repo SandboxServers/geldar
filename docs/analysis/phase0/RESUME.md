@@ -2,7 +2,7 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** wave 1 is complete on `phase0/wave1`: P0-00 to P0-06 all `ship`, wave review fixes merged (branch `phase0/wave1-fix`), `./geldar.ps1 check` passes (167 tests). The wave 1 PR to `main` is open; the orchestrator does not merge it. `main` is protected (PR, required check `ci gate`).
+**State (2026-11-09):** wave 1 merged (PR #4). Wave 2 packets written (P0-07a..c, P0-08a/b, P0-09a/b, P0-10a..c). Integration branch `phase0/wave2`.
 
 **Next actions:**
 

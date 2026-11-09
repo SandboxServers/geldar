@@ -44,10 +44,16 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | Done | P0-01 | |
 | P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Done | — | |
 | P0-06 | 1 | `compose/phase0.yml` (Paper behind Velocity, Postgres, NATS) and `shards/phase0.yaml`, healthy stack | packet-coder | Done | P0-05 | |
-| P0-07 | 2 | `golem/` skeleton: connect, reconnect, RCON test control | written at wave 1 close | BlockedDependency | P0-06 | |
-| P0-08 | 2 | Body actions A: goto, gather, craft, with action results | written at wave 1 close | BlockedDependency | P0-07 | |
-| P0-09 | 2 | Body actions B: place, eat, sleep, chest open/deposit/withdraw | written at wave 1 close | BlockedDependency | P0-07 | |
-| P0-10 | 2 | Body benchmark harness, six scenarios, 20/10/5 TPS, `bench-results.md` | written at wave 1 close | BlockedDependency | P0-08, P0-09 | |
+| P0-07a | 2 | `golem/` package, RCON test control, arena, live-test lane | packet-coder | Ready | — | |
+| P0-07b | 2 | Connection with reconnect and backoff, snapshot builder, live fixture, smoke test and protocol verdict | packet-coder | BlockedDependency | P0-07a | |
+| P0-07c | 2 | Action outcome shape, registry, run wrapper with timeouts, `moveNear` | packet-coder | BlockedDependency | P0-07b | |
+| P0-08a | 2 | Body actions: `goto`, `mine` | packet-coder | BlockedDependency | P0-07c | |
+| P0-08b | 2 | Body action: `craft` | packet-coder | BlockedDependency | P0-07c | |
+| P0-09a | 2 | Body actions: `place`, `eat`, `sleep` | packet-coder | BlockedDependency | P0-07c | |
+| P0-09b | 2 | Body actions: `open`, `deposit`, `withdraw` | packet-coder | BlockedDependency | P0-07c | |
+| P0-10a | 2 | Benchmark harness, TPS control, results writer, `./geldar.ps1 bench` | packet-coder | BlockedDependency | P0-08a | |
+| P0-10b | 2 | Scenarios `wood-to-stone-tools`, `food`, `shelter` | packet-coder | BlockedDependency | P0-08a, P0-08b, P0-09a, P0-10a | |
+| P0-10c | 2 | Scenarios `bed`, `chest`, `blocked-path` | packet-coder | BlockedDependency | P0-08a, P0-09a, P0-09b, P0-10a | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | written at wave 2 close | BlockedDependency | P0-06 | |
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | written at wave 2 close | BlockedDependency | P0-03, P0-05 | |
 | P0-13 | 3 | Bot-ingress identity plugin for Velocity: admit only usernames registered for a living life ID | written at wave 2 close | BlockedDependency | P0-06 | |
