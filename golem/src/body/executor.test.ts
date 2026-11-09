@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { receiptIdFor } from './derived-id.ts';
 import {
   executorHarness,
   fakeId,
@@ -112,6 +113,18 @@ describe('submit: actions', () => {
     expect(last?.intent_id).toBeNull();
   });
 
+  it('derives each receipt id from its action and phase', async () => {
+    const h = executorHarness();
+    const actions = [{ do: 'wait', seconds: 1 }, { do: 'eat' }];
+    await h.executor.submit(thought({ actions, intent: {} }), planFor(2));
+    const ids = h.sink.actions.filter((a) => a.state !== 'accepted' && a.state !== 'running');
+    expect(ids.map((a) => a.receipt_id)).toEqual([
+      receiptIdFor(ids[0]?.action_id ?? '', 'committed'),
+      receiptIdFor(ids[1]?.action_id ?? '', 'aborted'),
+    ]);
+    expect(h.sink.receipts.map((r) => r.receipt_id)).toEqual(ids.map((a) => a.receipt_id));
+  });
+
   it('stops at the first failure, aborts its receipt, wakes with action_failed, skips the intent', async () => {
     const h = executorHarness();
     const actions = [{ do: 'wait', seconds: 1 }, { do: 'eat' }, { do: 'wait', seconds: 2 }];
@@ -189,6 +202,17 @@ describe('submit: actions', () => {
 });
 
 describe('submit: intents', () => {
+  it('carries the intent on the accepted change only', async () => {
+    const h = executorHarness();
+    const sent = thought({ actions: waits(1), intent: {} });
+    await h.executor.submit(sent, planFor(1));
+    const [accepted, running] = h.sink.intents;
+    expect(accepted?.state).toBe('accepted');
+    expect(accepted?.intent).toEqual((sent as { intent: unknown }).intent);
+    expect(accepted?.intent).toBeDefined();
+    expect(running?.intent).toBeUndefined();
+  });
+
   it('starts the intent after its actions, running the program with the arguments', async () => {
     const h = executorHarness();
     const result = await h.executor.submit(thought({ actions: waits(1), intent: {} }), planFor(1));

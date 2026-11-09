@@ -57,6 +57,8 @@ export interface CheckpointEntry {
   saved_at: string;
   /** World tick from which the intent is past its `max_world_ticks`. */
   expires_tick: number;
+  /** Block operations spent so far, so a resumed intent keeps its used budget. */
+  block_operations_used: number;
 }
 
 /** What a `CheckpointStore` is built from. */
@@ -128,6 +130,7 @@ export class CheckpointStore implements IntentObserver {
         checkpoint: step.checkpoint,
         saved_at: '',
         expires_tick: step.expiresTick,
+        block_operations_used: step.blockOperationsUsed,
       };
       const content = JSON.stringify(entry);
       if (content === this.lastContent) return;
@@ -266,5 +269,11 @@ export function parseEntry(text: string): CheckpointEntry | null {
     intent !== null &&
     typeof intent.program === 'string' &&
     (e.checkpoint === null || (typeof e.checkpoint === 'object' && !Array.isArray(e.checkpoint)));
-  return sound ? (raw as CheckpointEntry) : null;
+  if (!sound) return null;
+  // An entry saved before the budget was kept resumes with none used.
+  const used = e.block_operations_used;
+  const entry = raw as CheckpointEntry;
+  entry.block_operations_used =
+    typeof used === 'number' && Number.isFinite(used) && used > 0 ? used : 0;
+  return entry;
 }

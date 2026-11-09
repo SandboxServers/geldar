@@ -188,7 +188,11 @@ async function recover(body: Body, lifeId: string, tickWaitMs: number): Promise<
     await store.discard();
     return { kind: 'idle', reason: 'unknown_program' };
   }
-  const disposition = await body.executor.resume(resumedIntent(entry, tick), entry.intent_id);
+  const disposition = await body.executor.resume(
+    resumedIntent(entry, tick),
+    entry.intent_id,
+    entry.block_operations_used,
+  );
   return disposition === 'started'
     ? { kind: 'resumed', intentId: entry.intent_id }
     : { kind: 'idle', reason: 'resume_failed' };

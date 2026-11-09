@@ -140,6 +140,17 @@ describe('restartBody', () => {
     await second.stop();
   });
 
+  it('keeps the used block budget of a resumed intent', async () => {
+    const kv = buckets();
+    kv.checkpoints.seed(LIFE, entry({ block_operations_used: 7 }));
+    const b = await boot(kv, { tick: 10 });
+    expect(b.outcome.kind).toBe('resumed');
+    await b.body.executor.onTick(11);
+    await b.body.checkpoints?.flush();
+    expect(parseEntry(kv.checkpoints.peek(LIFE) ?? '')?.block_operations_used).toBe(7);
+    await b.stop();
+  });
+
   it('refuses a plan made for the generation before the restart', async () => {
     const kv = buckets();
     const first = await boot(kv);

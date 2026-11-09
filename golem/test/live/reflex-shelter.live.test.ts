@@ -44,7 +44,6 @@ function runnerFor(ctx: LiveContext, view: TrackedBodyView, sink: MemorySink): R
         sink,
         lifeId: 'ag_live_shelter',
         bodyGeneration: 1,
-        timeScale: 1,
         tick: now,
         timeScale: 1,
         signal: new AbortController().signal,

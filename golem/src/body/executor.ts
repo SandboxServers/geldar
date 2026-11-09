@@ -283,6 +283,7 @@ export class IntentExecutor {
       state,
       tick: this.tick(),
       ...(detail === undefined ? {} : { detail }),
+      ...(state === 'accepted' ? { intent: a.intent } : {}),
     });
   }
 

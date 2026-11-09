@@ -23,6 +23,7 @@ const step = (steps: number) => ({
   intentId: fakeId('in', 1),
   intent,
   checkpoint: { steps },
+  blockOperationsUsed: 0,
   expiresTick: 1000,
 });
 
@@ -65,6 +66,20 @@ describe('deleting a checkpoint', () => {
 });
 
 describe('writing a checkpoint', () => {
+  it('writes the first snapshot, and a later step only when it differs', async () => {
+    const { kv, store: s } = store();
+    s.stepped(step(1));
+    await s.flush();
+    expect(kv.puts).toBe(1);
+    s.stepped(step(1));
+    await s.flush();
+    expect(kv.puts).toBe(1);
+    s.stepped({ ...step(1), blockOperationsUsed: 3 });
+    await s.flush();
+    expect(kv.puts).toBe(2);
+    expect(parseEntry(kv.peek(LIFE) ?? '')?.block_operations_used).toBe(3);
+  });
+
   it('skips a step whose entry equals the one already stored', async () => {
     const { kv, store: s } = store();
     s.stepped(step(1));

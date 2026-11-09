@@ -161,6 +161,7 @@ export function entry(over: Partial<CheckpointEntry> = {}): string {
     checkpoint: { steps: 3 },
     saved_at: '2026-01-01T00:00:00.000Z',
     expires_tick: 1000,
+    block_operations_used: 0,
     ...over,
   };
   return JSON.stringify(full);

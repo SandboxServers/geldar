@@ -37,7 +37,7 @@ function nearby(ctx: ProgramContext, block: string, radius: number): boolean {
 interface GatherState {
   block: string;
   item: string;
-  /** Search bound in blocks (the spec's adius), or null for the mine action's own bound. */
+  /** Search bound in blocks (the spec's radius), or null for the mine action's own bound. */
   radius: number | null;
   /** The inventory count of `item` that ends the run: the count at start plus the asked amount. */
   goal: number;

@@ -1,6 +1,6 @@
 import type { ActionRecord, Receipt, Thought } from '@geldar/contract';
 import { errorText } from '../actions/outcome.ts';
-import { ulid } from '../ulid.ts';
+import { receiptIdFor } from './derived-id.ts';
 import type { ActionReport, PlanEnvelope } from './executor.ts';
 import type { BodyRuntime } from './runtime.ts';
 
@@ -52,12 +52,13 @@ export async function runPlanAction(
       },
     };
   }
+  const phase = run.state === 'completed' ? 'committed' : 'aborted';
   const receipt: Receipt = {
-    receipt_id: `rc_${ulid()}`,
+    receipt_id: receiptIdFor(actionId, phase),
     action_id: actionId,
     life_id: plan.lifeId,
     kind: action.do,
-    phase: run.state === 'completed' ? 'committed' : 'aborted',
+    phase,
     at: now().toISOString(),
     ...(run.result.message === undefined ? {} : { detail: run.result.message.slice(0, 256) }),
   };
