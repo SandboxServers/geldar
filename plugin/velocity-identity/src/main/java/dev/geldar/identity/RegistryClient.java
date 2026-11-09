@@ -12,6 +12,7 @@ import io.nats.client.api.KeyValueWatcher;
 import io.nats.client.impl.NatsKeyValueWatchSubscription;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 
 /**
@@ -24,8 +25,12 @@ public final class RegistryClient implements AutoCloseable {
 
     /** Short, so a first denial caused by a slow start does not last long. */
     private static final long MAX_BACKOFF_MS = 5_000;
+    private static final long INITIAL_BACKOFF_MS = 500;
     /** JetStream API error code for "stream not found": the bucket does not exist yet. */
     private static final int STREAM_NOT_FOUND = 10059;
+    /** How often the watch loop checks that the bucket is still the one it is watching. */
+    private static final long BUCKET_CHECK_MS = 30_000;
+    private static final long POLL_MS = 500;
 
     private final String url;
     private final LifeRegistry registry;
@@ -34,6 +39,8 @@ public final class RegistryClient implements AutoCloseable {
     private volatile boolean running = true;
     /** Set when the connection dropped: the watch may have missed changes and is rebuilt. */
     private final AtomicBoolean disrupted = new AtomicBoolean();
+    /** The reconnect delay; touched only by the worker thread. */
+    private long backoffMs = INITIAL_BACKOFF_MS;
 
     public RegistryClient(String url, LifeRegistry registry, Logger log) {
         this.url = url;
@@ -49,7 +56,6 @@ public final class RegistryClient implements AutoCloseable {
     }
 
     private void run() {
-        long backoffMs = 500;
         while (running) {
             registry.markUnsynced();
             disrupted.set(false);
@@ -61,8 +67,7 @@ public final class RegistryClient implements AutoCloseable {
                     .build();
             try (Connection nc = Nats.connect(options)) {
                 KeyValue kv = nc.keyValue(BUCKET);
-                backoffMs = 500;
-                watchWhileConnected(nc, kv);
+                watchWhileConnected(nc::getStatus, bucketOf(kv), () -> backoffMs = INITIAL_BACKOFF_MS, POLL_MS, BUCKET_CHECK_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return;
@@ -88,30 +93,84 @@ public final class RegistryClient implements AutoCloseable {
         }
     }
 
+    /** What a bucket watch reports: each change, then the end of the initial replay. */
+    interface Watch {
+        void change(KeyValueOperation operation, String key, byte[] value);
+
+        void endOfData();
+    }
+
+    /** The slice of the KV bucket the watch loop uses (a fake in tests). */
+    interface Bucket {
+        /** Starts the watch; the handle closes it. Throws when the bucket is absent. */
+        AutoCloseable watchAll(Watch watch) throws Exception;
+
+        /** A value that differs once the bucket is deleted and recreated; throws when it is absent. */
+        Object identity() throws Exception;
+    }
+
+    static Bucket bucketOf(KeyValue kv) {
+        return new Bucket() {
+            @Override
+            public AutoCloseable watchAll(Watch watch) throws Exception {
+                return kv.watchAll(new KeyValueWatcher() {
+                    @Override
+                    public void watch(KeyValueEntry entry) {
+                        watch.change(entry.getOperation(), entry.getKey(), entry.getValue());
+                    }
+
+                    @Override
+                    public void endOfData() {
+                        watch.endOfData();
+                    }
+                });
+            }
+
+            @Override
+            public Object identity() throws Exception {
+                return kv.getStatus().getBackingStreamInfo().getCreateTime();
+            }
+        };
+    }
+
     /**
      * Watches the bucket until the connection closes. A disconnect or a dead watch closes the gate; once the
      * connection is back the bucket is replayed into a fresh map, so a revocation made meanwhile is applied.
+     * Every {@code checkMs} the bucket is probed: if it is gone or was recreated (its stream has a new identity),
+     * the gate closes and the loop ends or re-watches, since a live connection would not notice either.
+     * {@code watching} runs once a watch has started.
      */
-    private void watchWhileConnected(Connection nc, KeyValue kv) throws Exception {
-        while (running && nc.getStatus() != Connection.Status.CLOSED) {
+    void watchWhileConnected(Supplier<Connection.Status> status, Bucket bucket, Runnable watching, long pollMs, long checkMs)
+            throws Exception {
+        while (running && status.get() != Connection.Status.CLOSED) {
             registry.beginReplay();
             disrupted.set(false);
-            NatsKeyValueWatchSubscription sub = kv.watchAll(new Watcher());
+            Object identity = bucket.identity();
+            AutoCloseable sub = bucket.watchAll(new RegistryWatch());
+            watching.run();
             log.info("Watching the life registry");
             try {
-                while (running && nc.getStatus() != Connection.Status.CLOSED && !disrupted.get()) {
-                    Thread.sleep(500);
+                long nextCheck = System.nanoTime() + checkMs * 1_000_000;
+                while (running && status.get() != Connection.Status.CLOSED && !disrupted.get()) {
+                    Thread.sleep(pollMs);
+                    if (System.nanoTime() - nextCheck >= 0) {
+                        nextCheck = System.nanoTime() + checkMs * 1_000_000;
+                        if (!identity.equals(bucket.identity())) {
+                            log.warn("The life registry bucket was recreated, watching it again");
+                            break;
+                        }
+                    }
                 }
             } finally {
                 registry.markUnsynced();
                 try {
                     sub.close();
-                } catch (RuntimeException e) {
+                } catch (Exception e) {
                     log.debug("Closing the registry watch failed ({})", e.getClass().getSimpleName());
                 }
             }
-            while (running && nc.getStatus() != Connection.Status.CLOSED && nc.getStatus() != Connection.Status.CONNECTED) {
-                Thread.sleep(500);
+            while (running && status.get() != Connection.Status.CLOSED && status.get() != Connection.Status.CONNECTED) {
+                Thread.sleep(pollMs);
             }
         }
     }
@@ -143,10 +202,10 @@ public final class RegistryClient implements AutoCloseable {
     }
 
     /** Feeds bucket changes into the registry; the end of the replay opens the gate. */
-    private final class Watcher implements KeyValueWatcher {
+    private final class RegistryWatch implements Watch {
         @Override
-        public void watch(KeyValueEntry entry) {
-            apply(registry, entry.getOperation(), entry.getKey(), entry.getValue());
+        public void change(KeyValueOperation operation, String key, byte[] value) {
+            apply(registry, operation, key, value);
         }
 
         @Override
