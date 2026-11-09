@@ -9,6 +9,7 @@ import {
   openWithWindowState,
   run,
   SHAPED_BED,
+  TABLE,
   WINDOW,
   writesOf,
 } from './craft-table.fakes.ts';
@@ -90,8 +91,14 @@ describe('craftFromBook', () => {
       log.push('close');
       fake.raw.currentWindow = null;
     });
+    // timeScale 0.1 makes the ack bound 300 ms, so a loop stall cannot turn the 5 ms ack into a timeout.
+    const ctx: ActionContext = {
+      bot: fake.bot,
+      signal: new AbortController().signal,
+      timeScale: 0.1,
+    };
 
-    expect(await run(fake.bot, 2)).toBeNull();
+    expect(await craftFromBook(ctx, BED, 2, TABLE)).toBeNull();
 
     // Without the wait, the window closes and the second request goes out before any ack.
     expect(log).toEqual([
