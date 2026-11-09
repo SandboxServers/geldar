@@ -9,7 +9,7 @@
 
 The `geldar-play` launcher lives in `SandboxServers/geldar-scriptorium`, the repo 0008 creates for the companion servers. Section 5.15.6 puts it "in the kit", which 2a places in `geldar-player-template`; this record moves it and adds a PowerShell version. That repo now has two outputs:
 
-1. **The kit container image**, holding `geldar-memory`, `geldar-git` and the pinned vendor CLIs. Player repos pin it by digest in `player.json` (0008).
+1. **The kit container image**, holding `geldar-memory`, `geldar-git`, the pinned vendor CLIs and the egress proxy with its allowlist (0013). Player repos pin it by digest in `player.json` (0008).
 2. **The launcher**, two scripts, `geldar-play.ps1` (PowerShell 7, Windows) and `geldar-play` (bash, macOS and Linux), published as signed assets on the repo's GitHub releases. The human installs it once per machine, not once per player.
 
 The launcher does what 0011 assigns it: pull, build a throwaway workspace, start the container and the vendor CLI with `/play`, then check the returned bundle and push. It defines the container itself, from its own release and the pinned digest, and never reads container settings (such as `devcontainer.json` commands) from the player repo. Given several player names, it starts one session per player (tmux windows in bash, Windows Terminal tabs or separate windows in PowerShell).

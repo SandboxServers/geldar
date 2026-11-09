@@ -33,7 +33,9 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0010](0010-player-kit-harnesses-v1.md) | The player kit supports Claude Code, then Codex CLI; no Google harness in v1 | Changes | Accepted |
 | [0011](0011-player-repo-push-from-host.md) | Player memory is pushed from the human's machine; the container never sees the real repo | Changes | Accepted |
 | [0012](0012-launcher-in-geldar-scriptorium.md) | The `geldar-play` launcher lives in `geldar-scriptorium` and is installed once per machine | Changes | Accepted |
-| [0013](0013-public-player-repos.md) | Living player repos may be public; the agent is confined to its own repo by construction | Changes | Accepted |
+| [0013](0013-public-player-repos.md) | Living player repos may be public; the agent is confined to its own repo, enforced and tested | Changes | Accepted |
+| [0014](0014-template-source-in-geldar-scriptorium.md) | The template is player-facing only; it's developed in `geldar-scriptorium` and published from there | Changes | Accepted |
+| [0015](0015-player-birth-and-setup-session.md) | Until the Allocator exists, a player is born through the launcher and a one-time setup session | Changes | Accepted |
 | [0020](0020-receipts.md) | Every action gets a receipt; economic actions get two | Fixes | Accepted |
 | [0021](0021-velocity-from-phase0.md) | Velocity bot ingress from Phase 0, matching production | Changes | Accepted |
 | [0022](0022-minecraft-26-1.md) | Minecraft 26.1 and the pinned body stack | Settles | Accepted |

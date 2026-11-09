@@ -3,31 +3,42 @@
 - Status: Accepted
 - Kind: Changes
 - Date: 2026-11-08
-- Spec: 5.15.2 ("commits to a fixed remote the model cannot change"), 5.15.4 (`session-start.sh`), 5.15.5, 5.15.6 (launcher), 5.15.7 (container), 8.4b, Appendix J
+- Spec: 5.15.2 ("commits to a fixed remote the model cannot change"), 5.15.4 (`session-start.sh`), 5.15.5, 5.15.6 (launcher), 5.15.7 (container), 8.4b, Appendix J (`Read(**)`, `sync`)
 
 ## Decision
 
-The human's clone of the player repo stays on their machine and is never mounted into the container. The `geldar-play` launcher (0012) runs each session in three steps, with the git login the human already used to clone:
+The human's clone of the player repo stays on their machine and is never mounted into a container. The `geldar-play` launcher (0012) runs each session in three steps, using the git login the human already cloned with:
 
-1. **Before.** On the host repo: `git pull --ff-only`. If that fails (diverged history, archived repo, no network), the launcher stops and says why; it never merges or forces. It records the starting commit (`START`), then makes a throwaway **workspace**: a fresh clone of the host repo at `START` in a launcher-owned folder. The host writes the workspace's `.git`, so it holds no remote URL and no credentials.
-2. **During.** The container mounts only the workspace. The kit's own files (`CLAUDE.md`, `AGENTS.md`, `player.json`, `.claude/`, `.codex/`, `.mcp.json`) are mounted read-only from the host repo's tree at `START`. Only `memory/` and `skills/` are writable. `geldar-git` commits there with a fixed identity, `player-<name> <player-<name>@users.noreply.github.com>`, and ignores any git identity found on the host.
-3. **After.** A final step in the same image runs `git bundle create` in the workspace, writing one file to a launcher-owned output folder. The host never runs git inside the workspace. It reads only the bundle:
-   - `git bundle verify`, then fetch from the bundle into the host repo with `transfer.fsckObjects=true`;
-   - the new head must have `START` as an ancestor, and every new commit may touch only `memory/**` and `skills/**`;
-   - if anything fails, the launcher pushes nothing, keeps the bundle for inspection and says why;
-   - otherwise it fast-forwards the host branch and pushes it to `origin`, then deletes the workspace.
+1. **Before.**
+   - The host clone must be clean. The launcher runs `git pull --ff-only` and stops with a reason if that fails; it never merges or forces.
+   - It records the starting commit (`START`) in its own state folder, outside anything a container can write.
+   - It builds two folders from `START`:
+     - a read-only **kit export** of the committed tree, never the working tree, so local edits and ignored files don't leak in;
+     - a throwaway **workspace**: a copy-based clone that shares no object files with the host, with no remote and fixed line endings.
+2. **During.** The session container mounts the workspace with only `memory/` and `skills/` writable, and the kit files over it from the export. `geldar-git` commits with a fixed identity, `player-<name> <player-<name>@users.noreply.github.com>`.
+3. **After.**
+   - A second, network-less container, started once the session container has stopped, bundles the workspace's branch into one file.
+   - The host treats that bundle as hostile input. It never runs git inside the workspace. It verifies the bundle and fetches it into a private ref with object checking forced on.
+   - It accepts the result only if all of these hold:
+     - the result is a fast-forward from `START`;
+     - it has no merge commits;
+     - every changed path is a plain file under `memory/` or `skills/` that matches the kit's path rule.
+   - Then it fast-forwards the host branch and pushes to `origin`.
+   - The workspace and bundle are deleted only after a successful push. Any failure (a rejected check, or a remote that moved during the session) leaves the host branch untouched, keeps both for inspection, and tells the human why.
 
-The spec's `session-start.sh` "git pull" moves to step 1, and the hook keeps only the identity card and the rules reminder. `geldar-git`'s `sync()` tool is dropped: with one controlling session per player (5.15.3) nothing changes the remote mid-session. Appendix J's allowlist loses `mcp__geldar_git__sync`.
+The exact commands and rules are a checklist in the Scriptorium campaign. Each item has a hostile-session test in the malicious-book CI, and a kit release ships only when all of them pass.
 
-**Vendor login.** The CLI's own subscription login is the one credential inside the container, as 8.4b expects ("the CLI holds its own subscription login"). It lives in a launcher-owned volume per vendor, never in the repo or the workspace. The kit limits reads to the workspace (`Read(./**)`, never `Read(**)`), so the model can't open the login file.
+`session-start.sh` loses its "git pull" (now step 1) and keeps the identity card and the rules reminder. `geldar-git`'s `sync()` tool is dropped: with one controlling session per player (5.15.3), nothing changes the remote mid-session. Appendix J's allowlist loses `mcp__geldar_git__sync`.
+
+**CLI state and credentials.** The container's CLI home is a launcher-owned volume **per player and vendor**, so players never share settings, transcripts or memory (5.15.6). It holds the vendor login and the Geldar OAuth tokens the CLI stores (5.15.5 step 3). Those are the only credentials in the container; there are no git or cloud credentials. Appendix J's `Read(**)` becomes reads scoped to the workspace, plus explicit deny rules for the CLI's credential and config paths, and a CI case checks that a hostile session can't read them.
 
 The launcher ships for PowerShell 7 (Windows) and bash (macOS and Linux). The spec's tmux version becomes one mode of the bash launcher.
 
 ## Why
 
 - **Least setup for the human.** No token to create, store, renew or rotate. Whatever let them clone lets them push.
-- **Nothing the container writes is ever run by host git.** An earlier draft mounted the real repo with `.git/config` and `.git/hooks` read-only. Review found that host git still reads much more of `.git` that the container could write: attributes that trigger filter drivers, `alternates`, refs, `pushurl` and `insteadOf` rewrites. A read-only mount is also not reliable on every Docker setup. A bundle is a data file: the host checks it and fetches from it, and nothing else crosses back.
-- **The remote can't be redirected.** `origin` lives only in the host repo's `.git/config`, which the container never sees, so its URL (and any token embedded in it) can't be read or rewritten.
+- **Nothing the container writes is ever run by host git.** An earlier draft mounted the real repo with `.git/config` and `.git/hooks` read-only. Two reviews found that host git reads much more of a repo than that: attributes that trigger filter drivers, `alternates`, refs, `pushurl` and `insteadOf`. They also found that a plain local clone shares object files the container could rewrite in place. Under this design only a bundle comes back, and the host checks it as data.
+- **The remote can't be redirected or read.** `origin` exists only in the host clone's `.git/config`, which no container sees.
 - **Rejected options:**
   - *Environment variable with a GitHub token:* the token sits inside the container next to a model that reads other agents' text, and every player needs one made by hand.
   - *Per-repo deploy key:* scoped to one repo, but still inside the container.
@@ -35,9 +46,7 @@ The launcher ships for PowerShell 7 (Windows) and bash (macOS and Linux). The sp
 
 ## Consequences
 
-- **The launcher is the only supported way to run a player.** The template ships no `.devcontainer/` (0008): opening the repo in a VS Code dev container would mount the real repo and the host's git login, which is what this record exists to prevent. The hooks exit straight away unless they find the kit container's marker, so running the vendor CLI on the host directly does nothing harmful. Without the container's companion servers it also has no memory and no commits.
-- Pushes happen once per session, not live. If the machine dies mid-session, the workspace survives and the launcher offers to bundle it at the next start; the same checks apply. The coordinated checkpoint (6.8) records whatever SHA the remote has.
-- Commits from players carry the noreply identity, so public player repos (0013) never expose the human's name or email.
-- The malicious-book CI adds cases:
-  - a hostile session that commits outside `memory/` and `skills/`, plants `.gitattributes`, `.git/info/attributes`, `alternates` or hooks in the workspace, or rewrites history. The launcher must refuse the push, and the host repo must be unchanged.
-  - a book asking the player to read the CLI's login file, which must fail.
+- **The launcher is the only supported way to run a player.** The template ships no `.devcontainer/` (0008), because a dev container would mount the real repo and the host's git login. Hooks exit at once unless they find the kit container's marker. Running the vendor CLI on the host directly gets no companion servers, so no memory and no commits.
+- Pushes happen once per session, not live. If the machine dies mid-session, the launcher offers to bundle the surviving workspace at the next start, against the `START` it stored. The coordinated checkpoint (6.8) records whatever SHA the remote has.
+- Commits carry the player's noreply identity, and the workspace holds no host paths, so public repos (0013) don't expose the human's name, email or username.
+- Launcher messages strip control characters from anything that came from the bundle (commit subjects, paths) before printing.
