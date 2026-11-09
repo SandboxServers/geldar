@@ -23,24 +23,34 @@ const WALK_WAIT_TICKS = 600;
 /** Terrain beside the platform is checked this far out. */
 const BESIDE_DZ = 16;
 
-/** The variant of the next run. Even runs detour, odd runs are sealed. */
-let runs = 0;
+/** Runs prepared so far, by tick rate: every cell starts at `detour`, whatever ran before it. */
+const runsByTps = new Map<number, number>();
+/** The variant of the run in progress. Even runs detour, odd runs are sealed. */
 let current: Variant = 'detour';
 
 /** Restarts the even/odd alternation (the live test and unit tests start from `detour`). */
 export function resetBlockedPathRuns(): void {
-  runs = 0;
+  runsByTps.clear();
 }
 
-/** Pure verdict of one run from the `goto` result. */
+/** Range `goto` uses for a block target, and the slack the client position may add to it. */
+const GOAL_RANGE = 1;
+const RANGE_SLACK = 1;
+
+/**
+ * Pure verdict of one run from the `goto` result and the client's distance to the goal. A detour
+ * counts only when the bot stands within the goal range plus one, whatever the action reported.
+ */
 export function blockedVerdict(
   variant: Variant,
   result: { status: string; reason?: string | null },
+  goalDistance: number,
 ): { passed: boolean; outcome: Outcome } {
   if (result.status === 'completed') {
-    return variant === 'detour'
+    if (variant === 'sealed') return { passed: false, outcome: 'wall_failed' };
+    return goalDistance <= GOAL_RANGE + RANGE_SLACK
       ? { passed: true, outcome: 'detoured' }
-      : { passed: false, outcome: 'wall_failed' };
+      : { passed: false, outcome: 'bad' };
   }
   if (result.status === 'failed' && result.reason === 'blocked') {
     return { passed: true, outcome: 'abandoned' };
@@ -57,10 +67,11 @@ export const blockedPath: Scenario = {
   description:
     'a wall rises across the path to the goal: detour through a gap, or give up as blocked',
   timeoutMs: 150_000,
-  async prepare() {
+  async prepare(env) {
     // Nothing is built yet: the wall goes up while the bot is on its way. The fixture is the empty arena.
+    const runs = runsByTps.get(env.tps) ?? 0;
     current = runs % 2 === 0 ? 'detour' : 'sealed';
-    runs++;
+    runsByTps.set(env.tps, runs + 1);
   },
   ready: () => true,
   async run(env) {
@@ -104,7 +115,9 @@ export const blockedPath: Scenario = {
       ),
     );
     const { result } = await walk;
-    const { passed, outcome } = blockedVerdict(variant, result);
+    const at = bot.entity.position;
+    const goalDistance = Math.hypot(at.x - (goal.x + 0.5), at.y - goal.y, at.z - (goal.z + 0.5));
+    const { passed, outcome } = blockedVerdict(variant, result, goalDistance);
     const text = `${variant}: goto ${result.status}${result.reason ? ` (${result.reason})` : ''} in ${result.latency_ms} ms -> ${outcome}`;
     if (solidBeside) {
       return {

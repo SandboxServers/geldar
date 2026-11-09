@@ -6,7 +6,13 @@ import { findScenario } from './index.ts';
 
 const CENTER = { x: 1312, y: 200, z: 800 };
 
-function fakeEnv(opts: { gotoResult: { status: string; reason?: string }; beside?: boolean }) {
+function fakeEnv(opts: {
+  gotoResult: { status: string; reason?: string };
+  beside?: boolean;
+  tps?: number;
+  /** Client x offset from the arena center after the walk; the goal is at +14. */
+  endDx?: number;
+}) {
   const commands: string[] = [];
   const ctl = new TestControl({
     async command(cmd) {
@@ -15,13 +21,14 @@ function fakeEnv(opts: { gotoResult: { status: string; reason?: string }; beside
     },
   });
   const bot = {
-    entity: { position: { x: CENTER.x + 5 } },
+    entity: { position: { x: CENTER.x + (opts.endDx ?? 14), y: CENTER.y, z: CENTER.z } },
     blockAt: () => (opts.beside ? { boundingBox: 'block' } : { boundingBox: 'empty' }),
     time: { age: 0 },
   };
   const env = {
     bot,
     ctl,
+    tps: opts.tps ?? 20,
     arena: { center: CENTER },
     timeScale: 1,
     signal: new AbortController().signal,
@@ -36,33 +43,39 @@ beforeEach(() => resetBlockedPathRuns());
 
 describe('blockedVerdict', () => {
   it('detour passes on completed and on blocked, fails on the rest', () => {
-    expect(blockedVerdict('detour', { status: 'completed' })).toEqual({
+    expect(blockedVerdict('detour', { status: 'completed' }, 0)).toEqual({
       passed: true,
       outcome: 'detoured',
     });
-    expect(blockedVerdict('detour', { status: 'failed', reason: 'blocked' })).toEqual({
+    expect(blockedVerdict('detour', { status: 'failed', reason: 'blocked' }, 9)).toEqual({
       passed: true,
       outcome: 'abandoned',
     });
     for (const reason of ['timeout', 'internal', 'interrupted', 'not_found']) {
-      expect(blockedVerdict('detour', { status: 'failed', reason })).toEqual({
+      expect(blockedVerdict('detour', { status: 'failed', reason }, 0)).toEqual({
         passed: false,
         outcome: 'bad',
       });
     }
-    expect(blockedVerdict('detour', { status: 'cancelled' }).passed).toBe(false);
+    expect(blockedVerdict('detour', { status: 'cancelled' }, 0).passed).toBe(false);
+  });
+
+  it('a detour needs the bot within the goal range plus one, whatever goto said', () => {
+    const done = { status: 'completed' };
+    expect(blockedVerdict('detour', done, 2)).toEqual({ passed: true, outcome: 'detoured' });
+    expect(blockedVerdict('detour', done, 2.5)).toEqual({ passed: false, outcome: 'bad' });
   });
 
   it('sealed passes only on blocked; completed means the wall failed', () => {
-    expect(blockedVerdict('sealed', { status: 'failed', reason: 'blocked' })).toEqual({
+    expect(blockedVerdict('sealed', { status: 'failed', reason: 'blocked' }, 9)).toEqual({
       passed: true,
       outcome: 'abandoned',
     });
-    expect(blockedVerdict('sealed', { status: 'completed' })).toEqual({
+    expect(blockedVerdict('sealed', { status: 'completed' }, 0)).toEqual({
       passed: false,
       outcome: 'wall_failed',
     });
-    expect(blockedVerdict('sealed', { status: 'failed', reason: 'timeout' })).toEqual({
+    expect(blockedVerdict('sealed', { status: 'failed', reason: 'timeout' }, 0)).toEqual({
       passed: false,
       outcome: 'bad',
     });
@@ -92,6 +105,24 @@ describe('blocked-path', () => {
     expect(second.passed).toBe(false);
     expect(second.note).toContain('sealed');
     expect(second.note).toContain('the wall did not hold');
+  });
+
+  it('starts every tick rate at detour and alternates within it', async () => {
+    const variants: string[] = [];
+    for (const tps of [20, 20, 20, 5, 5, 5]) {
+      const { env } = fakeEnv({ gotoResult: { status: 'completed' }, tps });
+      await blockedPath.prepare(env);
+      variants.push((await blockedPath.run(env)).note.split(':')[0] ?? '');
+    }
+    expect(variants).toEqual(['detour', 'sealed', 'detour', 'detour', 'sealed', 'detour']);
+  });
+
+  it('fails a detour whose goto completed far from the goal', async () => {
+    const { env } = fakeEnv({ gotoResult: { status: 'completed' }, endDx: 6 });
+    await blockedPath.prepare(env);
+    const out = await blockedPath.run(env);
+    expect(out.passed).toBe(false);
+    expect(out.note).toContain('bad');
   });
 
   it('marks the run invalid when terrain beside the platform is solid', async () => {
