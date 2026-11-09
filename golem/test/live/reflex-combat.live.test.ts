@@ -53,19 +53,32 @@ function zombies(bot: Bot): string {
   return `bot at ${bot.entity.position.floored()}, health ${bot.health}, zombies: ${list.join('; ') || 'none'}`;
 }
 
+/** The 26.1 natural regeneration gamerule. */
+const REGEN_RULE = 'natural_health_regeneration';
+
+/** Reads a boolean gamerule back from the server's reply, or throws with the reply. */
+async function ruleValue(ctl: Control, name: string): Promise<boolean> {
+  const reply = await ctl.gamerule(name);
+  const value = /(true|false)/.exec(reply)?.[1];
+  if (value === undefined) throw new Error(`gamerule ${name} query replied: ${reply}`);
+  return value === 'true';
+}
+
 /**
- * Turns natural regeneration off (the rule is named differently across server versions) and
- * returns the call that turns it back on.
+ * Turns natural regeneration off and returns the call that puts the previous value back. A set
+ * or restore that the server did not take throws, with the rule name and the server's reply.
  */
 async function stopRegeneration(ctl: Control): Promise<() => Promise<void>> {
-  for (const rule of ['naturalRegeneration', 'natural_health_regeneration']) {
-    const reply = await ctl.gamerule(rule, false);
-    if (/unknown|incorrect|expected/i.test(reply)) continue;
-    return async () => {
-      await ctl.gamerule(rule, true);
-    };
-  }
-  throw new Error('no natural regeneration game rule found to switch off');
+  const previous = await ruleValue(ctl, REGEN_RULE);
+  await ctl.gamerule(REGEN_RULE, false);
+  const now = await ruleValue(ctl, REGEN_RULE);
+  if (now) throw new Error(`could not switch gamerule ${REGEN_RULE} off: it still reads true`);
+  return async () => {
+    await ctl.gamerule(REGEN_RULE, previous);
+    if ((await ruleValue(ctl, REGEN_RULE)) !== previous) {
+      throw new Error(`could not restore gamerule ${REGEN_RULE} to ${previous}`);
+    }
+  };
 }
 
 /** Waits until `done` holds or the poll limit runs out; returns whether it held. */
@@ -171,8 +184,8 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
         expect(sink.wakes.some((w) => w.reason === 'reflex_danger')).toBe(true);
       } finally {
         await runtime.stop();
-        await regen();
         await restoreTime();
+        await regen();
       }
     });
   });
