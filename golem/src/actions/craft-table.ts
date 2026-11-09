@@ -65,6 +65,12 @@ interface Display {
   count: number;
 }
 
+/**
+ * The context a book craft runs in. `want` is the number of items still needed: when set, the craft
+ * stops once the result slots have shown that many, and `times` is only the caller's guess.
+ */
+export type BookContext = ActionContext & { want?: number };
+
 /** The recipe displays the table can craft from. Other types are special recipes (dye, banners). */
 const CRAFTING_DISPLAYS = new Set(['crafting_shaped', 'crafting_shapeless']);
 /** The crafting table's result slot: the craft is taken from here. */
@@ -186,7 +192,7 @@ export function hasUnlockedDisplay(bot: Bot, item: TableTarget): boolean {
  * else the outcome that stopped it.
  */
 export async function craftFromBook(
-  ctx: ActionContext,
+  ctx: BookContext,
   item: TableTarget,
   times: number,
   table: Block | null,
@@ -226,7 +232,12 @@ export async function craftFromBook(
       if ('outcome' in opened) return opened.outcome;
       windowId = opened.window.id;
     }
-    for (let i = 0; i < times; i++) {
+    // With a target, the yield is what the server's result slot showed, not a guess: one craft per
+    // loop until the target is met, and a craft makes at least one, so the target bounds the loop.
+    const want = ctx.want;
+    let made = 0;
+    const crafts = want === undefined ? times : want;
+    for (let i = 0; i < crafts && (want === undefined || made < want); i++) {
       // Read per craft: the display that worked last craft is first now.
       const crafted = await craftOnce(
         ctx,
@@ -238,6 +249,7 @@ export async function craftFromBook(
       );
       if ('outcome' in crafted) return crafted.outcome;
       rememberWorking(bot, item.id, crafted.displayId);
+      made += crafted.count;
     }
     clean = true;
     return null;
@@ -280,16 +292,18 @@ async function craftOnce(
   candidates: { displayId: number }[],
   states: Map<number, number>,
   name: string,
-): Promise<{ displayId: number } | { outcome: ActionOutcome }> {
+): Promise<{ displayId: number; count: number } | { outcome: ActionOutcome }> {
   for (const { displayId } of candidates) {
     if (ctx.signal.aborted) return { outcome: cancelled() };
     const write = (): void =>
       client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
-    const result = await awaitResult(ctx, client, windowId, write);
+    const slot = { count: 0 };
+    const result = await awaitResult(ctx, client, windowId, write, slot);
     if (result === 'aborted') return { outcome: cancelled() };
     if (result === 'filled') {
       await shiftClick(ctx, client, windowId, states);
-      return { displayId };
+      // The result slot's stack is what the shift-click takes: the real yield of this display.
+      return { displayId, count: slot.count };
     }
   }
   // With no table the craft is the player's grid: the message does not name a table it never used.
@@ -359,6 +373,7 @@ function awaitResult(
   client: RecipeClient,
   windowId: number,
   send: () => void,
+  filled: { count: number } = { count: 0 },
 ): Promise<ResultWait> {
   const { signal, timeScale } = ctx;
   return new Promise((resolve, reject) => {
@@ -376,6 +391,7 @@ function awaitResult(
     const onSlot = (packet: unknown): void => {
       const set = packet as SetSlot;
       if (set.windowId === windowId && set.slot === RESULT_SLOT && isStack(set.item)) {
+        filled.count = set.item?.itemCount ?? 1;
         finish('filled');
       }
     };
