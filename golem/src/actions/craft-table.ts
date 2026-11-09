@@ -84,6 +84,8 @@ const RESULT_WAIT_MS = 5_000;
 const ANSWER_GRACE_MS = 1_000;
 /** Wall-clock wait for the inventory to show a shift-click's items, scaled by `timeScale`. */
 const GAIN_WAIT_MS = 2_000;
+/** Crafts in a row that may gain nothing, with a want, before the craft gives up. */
+const MAX_ZERO_GAIN = 2;
 /** Wall-clock wait for the server to acknowledge a shift-click, scaled by `timeScale`. */
 const CLICK_ACK_WAIT_MS = 3_000;
 
@@ -236,6 +238,7 @@ export async function craftFromBook(
     const want = ctx.want;
     const before = heldNow(bot, item.id);
     let made = 0;
+    let zeroGain = 0;
     const crafts = want === undefined ? times : want;
     for (let i = 0; i < crafts && (want === undefined || made < want); i++) {
       // Read per craft: the display that worked last craft is first now.
@@ -254,7 +257,17 @@ export async function craftFromBook(
       await pollUntil(bot, ctx.signal, () => heldNow(bot, item.id) - before > made, {
         wallMs: GAIN_WAIT_MS * ctx.timeScale,
       });
-      made = Math.max(made, heldNow(bot, item.id) - before);
+      const now = Math.max(made, heldNow(bot, item.id) - before);
+      zeroGain = now > made ? 0 : zeroGain + 1;
+      made = now;
+      // Crafts that deliver nothing (a full inventory leaves the result in the slot) would repeat to the end.
+      if (zeroGain >= MAX_ZERO_GAIN) {
+        return failed(
+          'not_possible',
+          `crafting ${item.name} gained nothing ${MAX_ZERO_GAIN} times in a row: the inventory may be full`,
+          { item: item.name, made },
+        );
+      }
     }
     clean = true;
     return null;
