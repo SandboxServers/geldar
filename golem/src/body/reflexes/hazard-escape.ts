@@ -82,6 +82,8 @@ export interface EscapeWalk {
   bot: Bot;
   target: { x: number; y: number; z: number };
   signal: AbortSignal;
+  /** The runtime's time scale, for the pathfinder walk. */
+  timeScale: number;
   /** True once the time limit has passed. */
   expired(): boolean;
   /** True once the Body stands out of the hazard. */
@@ -106,11 +108,13 @@ export const walkOutOfHazard: EscapeMover = async (walk) => {
   try {
     await moveNear(bot, target, 1, {
       signal: controller.signal,
-      timeScale: 1,
+      timeScale: walk.timeScale,
       stallTicks: 40,
     }).catch(() => undefined);
     const centre = new Vec3(target.x + 0.5, target.y, target.z + 0.5);
     while (!walk.signal.aborted && !walk.expired() && !walk.reached()) {
+      // Straight steering ignores the map: stop at a wall or at lava the Body is not already in.
+      if (steerBlocked(bot, centre)) break;
       await bot.lookAt(centre, true);
       bot.setControlState('forward', true);
       bot.setControlState('jump', true);
@@ -124,10 +128,45 @@ export const walkOutOfHazard: EscapeMover = async (walk) => {
   }
 };
 
+/** Cells the steering fallback will not walk into unless the Body is already in lava. */
+const STEER_AVOID = new Set(['lava', 'fire', 'soul_fire', 'magma_block']);
+
+/** True when one step straight toward `to` runs into a wall at head height or into lava or fire. */
+export function steerBlocked(bot: Bot, to: Vec3): boolean {
+  const here = bot.entity.position;
+  const dx = to.x - here.x;
+  const dz = to.z - here.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 0.01) return false;
+  const ahead = here.offset(dx / length, 0, dz / length);
+  if (bot.blockAt(ahead.offset(0, 1, 0))?.boundingBox === 'block') return true;
+  if ((bot.entity as unknown as Record<string, unknown>).isInLava === true) return false;
+  const feet = bot.blockAt(ahead);
+  return feet !== null && STEER_AVOID.has(feet.name);
+}
+
+/**
+ * Swims straight up with jump held until the Body has air or is out of the water; the way out of
+ * deep water with no stand block within range. The target of the walk is not used.
+ */
+export const swimUp: EscapeMover = async (walk) => {
+  const { bot } = walk;
+  try {
+    bot.setControlState('jump', true);
+    while (!walk.signal.aborted && !walk.expired() && !walk.reached()) {
+      await bot.waitForTicks(1);
+    }
+  } finally {
+    bot.setControlState('jump', false);
+  }
+};
+
 /** Settings a test may change. */
 export interface HazardEscapeOptions {
   limitTicks?: number;
   mover?: EscapeMover;
+  /** Used when the Body is drowning and no stand block is in range. */
+  swimmer?: EscapeMover;
 }
 
 /**
@@ -138,6 +177,7 @@ export interface HazardEscapeOptions {
 export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Reflex {
   const limitTicks = options.limitTicks ?? ESCAPE_LIMIT_TICKS;
   const mover = options.mover ?? walkOutOfHazard;
+  const swimmer = options.swimmer ?? swimUp;
   return {
     name: 'hazard_escape',
     priority: 90,
@@ -164,14 +204,25 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
         return { result: 'abandoned', detail };
       };
 
-      await ctx.cancelAction();
+      // Decide first; the running action is cancelled only once the reflex is about to act.
       if (standing() && trigger.hazard === 'fire') {
         return { result: 'abandoned', detail: 'burning, but not standing in a hazard block' };
       }
       const target = findSafeBlock(read, view.position);
-      if (!target) return giveUp(`no safe block within ${SCAN_RADIUS} blocks`);
-      await mover({ bot, target, signal: ctx.signal, expired, reached: standing });
-      if (standing()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };
+      const surfacing = !target && trigger.hazard === 'drowning';
+      if (!target && !surfacing) return giveUp(`no safe block within ${SCAN_RADIUS} blocks`);
+      await ctx.cancelAction();
+      const reached = surfacing ? (): boolean => standing() || view.air > DROWNING_AIR : standing;
+      const walk = {
+        bot,
+        signal: ctx.signal,
+        timeScale: ctx.timeScale,
+        expired,
+        reached,
+      };
+      if (target) await mover({ ...walk, target });
+      else await swimmer({ ...walk, target: view.position });
+      if (reached()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };
       return giveUp(`still in ${String(trigger.hazard)} after ${limitTicks} ticks`);
     },
   };

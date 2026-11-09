@@ -1,3 +1,5 @@
+import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { basicContext, basicView, floor, gridBot, gridReader } from './basic.fakes.ts';
 import {
@@ -5,6 +7,7 @@ import {
   DROWNING_AIR,
   type EscapeMover,
   findSafeBlock,
+  steerBlocked,
 } from './hazard-escape.ts';
 
 describe('hazard-escape: check', () => {
@@ -121,7 +124,7 @@ describe('hazard-escape: run', () => {
     const grid: Record<string, string> = {};
     for (let x = -10; x <= 10; x++) for (let z = -10; z <= 10; z++) grid[`${x},64,${z}`] = 'lava';
     const { view } = basicView({ inFluid: 'lava', position: { x: 0, y: 64, z: 0 } });
-    const { ctx, sink } = basicContext(view, gridBot(grid).bot);
+    const { ctx, sink, cancels } = basicContext(view, gridBot(grid).bot);
     let moved = false;
     const mover: EscapeMover = async () => {
       moved = true;
@@ -129,15 +132,86 @@ describe('hazard-escape: run', () => {
     const outcome = await createHazardEscapeReflex({ mover }).run({ hazard: 'lava' }, ctx);
     expect(outcome.result).toBe('abandoned');
     expect(moved).toBe(false);
+    // Nothing to try, so the running action is left alone.
+    expect(cancels()).toBe(0);
     expect(sink.wakes).toHaveLength(1);
   });
 
   it('leaves a burning Body alone when it is not in a hazard block', async () => {
     const grid = floor({}, 63, -3, 3);
     const { view } = basicView({ onFire: true, position: { x: 0, y: 64, z: 0 } });
-    const { ctx, sink } = basicContext(view, gridBot(grid).bot);
+    const { ctx, sink, cancels } = basicContext(view, gridBot(grid).bot);
     const outcome = await createHazardEscapeReflex().run({ hazard: 'fire' }, ctx);
     expect(outcome.result).toBe('abandoned');
+    expect(cancels()).toBe(0);
     expect(sink.wakes).toHaveLength(0);
+  });
+
+  it('swims up when drowning and no stand block is in range', async () => {
+    const grid: Record<string, string> = {};
+    for (let x = -10; x <= 10; x++) {
+      for (let z = -10; z <= 10; z++) {
+        for (let y = 60; y <= 66; y++) grid[`${x},${y},${z}`] = 'water';
+      }
+    }
+    const { view, state } = basicView({
+      inFluid: 'water',
+      air: 2,
+      position: { x: 0, y: 64, z: 0 },
+    });
+    const { ctx, cancels } = basicContext(view, gridBot(grid).bot);
+    let swam = false;
+    let walked = false;
+    const swimmer: EscapeMover = async () => {
+      swam = true;
+      state.air = 20;
+    };
+    const mover: EscapeMover = async () => {
+      walked = true;
+    };
+    const outcome = await createHazardEscapeReflex({ mover, swimmer }).run(
+      { hazard: 'drowning', air: 2 },
+      ctx,
+    );
+    expect(outcome).toEqual({ result: 'handled', detail: 'left drowning' });
+    expect(swam).toBe(true);
+    expect(walked).toBe(false);
+    expect(cancels()).toBe(1);
+  });
+
+  it('does not swim up for lava with no safe block: it gives up', async () => {
+    const grid: Record<string, string> = {};
+    for (let x = -10; x <= 10; x++) for (let z = -10; z <= 10; z++) grid[`${x},64,${z}`] = 'lava';
+    const { view } = basicView({ inFluid: 'lava', position: { x: 0, y: 64, z: 0 } });
+    const { ctx } = basicContext(view, gridBot(grid).bot);
+    let swam = false;
+    const swimmer: EscapeMover = async () => {
+      swam = true;
+    };
+    const outcome = await createHazardEscapeReflex({ swimmer }).run({ hazard: 'lava' }, ctx);
+    expect(outcome.result).toBe('abandoned');
+    expect(swam).toBe(false);
+  });
+});
+
+describe('hazard-escape: steering', () => {
+  /** A bot at (0.5, 64, 0.5) over a grid, with the in-lava flag set as given. */
+  function steerBot(grid: Record<string, string>, inLava: boolean) {
+    const read = gridReader(grid);
+    return {
+      entity: { position: new Vec3(0.5, 64, 0.5), isInLava: inLava },
+      blockAt: (at: Vec3) => read(Math.floor(at.x), Math.floor(at.y), Math.floor(at.z)),
+    } as unknown as Bot;
+  }
+  const east = new Vec3(5.5, 64, 0.5);
+
+  it('stops at a wall at head height', () => {
+    expect(steerBlocked(steerBot({ '1,65,0': 'stone' }, false), east)).toBe(true);
+    expect(steerBlocked(steerBot({}, false), east)).toBe(false);
+  });
+
+  it('stops at lava unless the Body is already in lava', () => {
+    expect(steerBlocked(steerBot({ '1,64,0': 'lava' }, false), east)).toBe(true);
+    expect(steerBlocked(steerBot({ '1,64,0': 'lava' }, true), east)).toBe(false);
   });
 });

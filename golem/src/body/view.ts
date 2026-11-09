@@ -11,6 +11,11 @@ export interface HostileView {
   /** Straight-line distance from the Body in blocks. */
   distance: number;
   position: { x: number; y: number; z: number };
+  /**
+   * True when the mob is within melee reach and faces the Body, so it is the one hitting it.
+   * Optional so a hand-built view may leave it out; a reflex reads a missing value as true.
+   */
+  attacking?: boolean;
 }
 
 /**
@@ -59,6 +64,8 @@ export interface BodyView {
    * can omit it; a reflex reads a missing value as false.
    */
   readonly isNight?: boolean;
+  /** True while the pathfinder holds a goal (the Body is walking a planned route). Optional like isNight. */
+  readonly pathfinding?: boolean;
   /** True when a bed stands within 32 blocks. Optional like isNight. */
   readonly bedNearby?: boolean;
   /** True when solid blocks close the Body's cell on every side, above and below. Optional like isNight. */
@@ -74,6 +81,14 @@ export interface TrackedBodyView extends BodyView {
 }
 
 const DEFAULT_HOSTILE_RADIUS = 16;
+/** A mob within this many blocks can melee the Body. */
+const MELEE_REACH = 3.5;
+/** Cosine of the half-angle (60 degrees) within which a mob counts as facing the Body. */
+const FACING_COS = 0.5;
+/** World ticks a bed read stays valid: the bed scan walks a 32 block radius. */
+const BED_CACHE_TICKS = 20;
+/** Plants that grow in water: a Body in them is in water though the cell is not named water. */
+const WATER_PLANTS = new Set(['seagrass', 'tall_seagrass', 'kelp', 'kelp_plant', 'bubble_column']);
 /** How far a bed counts as near, in blocks (the range sleep searches). */
 const BED_RADIUS = 32;
 /** The cells that must be solid for the Body to count as enclosed: four at feet and head level, above, below. */
@@ -89,6 +104,21 @@ const ENCLOSURE: readonly Vec3[] = [
   new Vec3(0, 2, 0),
   new Vec3(0, -1, 0),
 ];
+
+/** One of the physics plugin's boolean flags on the bot's entity (the typings omit them). */
+function entityFlag(bot: Bot, flag: 'isInWater' | 'isInLava'): boolean {
+  return (bot.entity as unknown as Record<string, unknown>)[flag] === true;
+}
+
+/** True when the entity's body yaw points at `target` within the facing cone (horizontal only). */
+function isFacing(entity: { position: Vec3; yaw?: number }, target: Vec3): boolean {
+  const dx = target.x - entity.position.x;
+  const dz = target.z - entity.position.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 0.01) return true;
+  const yaw = entity.yaw ?? 0;
+  return (-Math.sin(yaw) * dx + Math.cos(yaw) * dz) / length >= FACING_COS;
+}
 
 /**
  * Builds the read-only view of a bot. The fall distance needs a sample every physics tick, so the
@@ -110,6 +140,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
   };
   bot.on('health', onHealth);
   const safeSpots = trackSafeSpot(bot);
+  let bedRead: { tick: number; near: boolean } | null = null;
 
   return {
     get tick() {
@@ -133,7 +164,12 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         const distance = entity.position.distanceTo(here);
         if (distance > radius) continue;
         const { x, y, z } = entity.position;
-        found.push({ name: entity.name ?? 'unknown', distance, position: { x, y, z } });
+        found.push({
+          name: entity.name ?? 'unknown',
+          distance,
+          position: { x, y, z },
+          attacking: distance <= MELEE_REACH && isFacing(entity, here),
+        });
       }
       return found.sort((a, b) => a.distance - b.distance);
     },
@@ -145,8 +181,9 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get inFluid() {
       const block = bot.blockAt(bot.entity.position);
-      if (block?.name === 'lava') return 'lava';
-      if (block?.name === 'water') return 'water';
+      if (entityFlag(bot, 'isInLava') || block?.name === 'lava') return 'lava';
+      if (entityFlag(bot, 'isInWater') || block?.name === 'water') return 'water';
+      if (block !== null && WATER_PLANTS.has(block.name)) return 'water';
       return null;
     },
     get onFire() {
@@ -193,16 +230,30 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     get safeSpot() {
       return safeSpots.current();
     },
+    get pathfinding() {
+      const loaded: unknown = (bot as { pathfinder?: unknown }).pathfinder;
+      return loaded ? bot.pathfinder.goal !== null && bot.pathfinder.goal !== undefined : false;
+    },
     get isNight() {
       return isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0);
     },
     get bedNearby() {
-      return (
+      const tick = worldAge(bot);
+      if (
+        tick !== null &&
+        bedRead !== null &&
+        tick - bedRead.tick < BED_CACHE_TICKS &&
+        tick >= bedRead.tick
+      ) {
+        return bedRead.near;
+      }
+      const near =
         bot.findBlock({
           matching: (block) => block.name.endsWith('_bed'),
           maxDistance: BED_RADIUS,
-        }) !== null
-      );
+        }) !== null;
+      bedRead = tick === null ? null : { tick, near };
+      return near;
     },
     get enclosed() {
       const feet = bot.entity.position.floored();
