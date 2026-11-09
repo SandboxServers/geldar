@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { dockerReady, run } from '../test-support/docker.ts';
 
 // The image suite is opt-in: a 15-minute build must not run in every default test run.
@@ -27,6 +27,10 @@ const DEFAULT_COMMAND = [
 // Names that must not ship (test-support and tests, token files, env files) plus the one scenario that must.
 const FIND_SHIPPED =
   '-name node_modules -prune -o \\( -name "*.test.ts" -o -name "*tokens*.json" -o -name "docker.ts" -o -name ".env*" -o -name "dawn.scenario.json" \\) -print';
+
+// A decoy tokens file in the build context: the build itself must leave it out of the image.
+const decoy = join(repoRoot, 'threshold', 'mcp-mock', 'mcp-tokens.json');
+let decoyCreated = false;
 
 let dir: string | undefined;
 let containerId: string | undefined;
@@ -93,11 +97,21 @@ async function connect(port: number): Promise<Client> {
 describe.skipIf(!ready)('mcp-mock image', () => {
   beforeAll(() => {
     if (prebuilt !== undefined) return;
+    if (!existsSync(decoy)) {
+      writeFileSync(decoy, JSON.stringify({ decoy: 'decoy-token-0123456789' }));
+      decoyCreated = true;
+    }
     const built = run(['build', '-f', 'threshold/mcp-mock/Dockerfile', '-t', tag, repoRoot], {
       timeoutMs: 900_000,
     });
+    if (decoyCreated) rmSync(decoy, { force: true });
+    decoyCreated = false;
     expect(built.status, built.stderr.slice(-2_000)).toBe(0);
   }, 900_000);
+
+  afterAll(() => {
+    if (decoyCreated) rmSync(decoy, { force: true });
+  });
 
   afterEach(async () => {
     await client?.close().catch(() => undefined);
