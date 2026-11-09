@@ -3,7 +3,7 @@ import { HORIZONTAL_LIMIT, MAX_Y, MIN_Y, PLAYER_NAME, type TestControl } from '.
 /** The only `ctl` methods a scenario may call while it runs. */
 const RUN_PHASE_CONTROL = new Set(['effect', 'effectClear', 'timeSet', 'fill', 'chestItems']);
 
-/** The status effects a scenario's un may give: harmful ones a scenario actually needs. */
+/** The status effects a scenario's `run` may give: harmful ones a scenario actually needs. */
 const RUN_PHASE_EFFECTS = new Set(['hunger']);
 
 const BLOCK_ID = /^[a-z0-9_:]{1,64}$/;
