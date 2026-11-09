@@ -37,3 +37,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0030](0030-world-time-ticks.md) | `world_time.ticks` is the world age; an unnamed biome is omitted | Accepted |
 | [0031](0031-place-at-feet.md) | `place ... at: "feet"` is the cell the bot's feet are in | Accepted |
 | [0032](0032-table-crafting-and-recipe-book.md) | Crafting on 26.1 goes through the recipe book, and the shard unlocks recipes | Accepted |
+| [0033](0033-mock-wake-and-interest-vocabulary.md) | The mock's wake and interest vocabulary is provisional; the character is woken only by wake_on and long-poll events | Accepted |
+| [0034](0034-mock-result-shapes-and-untrusted-text.md) | Mock result shapes: untrusted-text wrapper, and the waking event is never trimmed | Accepted |
+| [0035](0035-mcp-tool-schema-shapes.md) | MCP tool schemas: write_book oneOf, and results without a root type are not published as outputSchema | Accepted |
+| [0036](0036-launcher-workspace-named-volume.md) | The launcher keeps the player workspace in a named Docker volume on every OS | Accepted |
