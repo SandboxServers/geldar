@@ -17,7 +17,8 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 shard logs <name> [service]
   ./geldar.ps1 bench [args...]       Run the body benchmark (golem/), passing args through
   ./geldar.ps1 adam up [--model strong|fast]   Check the shard and the pinned models, then start Adam's host processes
-  ./geldar.ps1 adam down|status      Stop them (the Body last) or show their state and the last thought's latency
+  ./geldar.ps1 adam select --model strong|fast  Rewrite the life lines of the shard file (no checks, starts nothing)
+  ./geldar.ps1 adam down|status     Stop them (the Body last) or show their state and the last thought's latency
   ./geldar.ps1 adam logs [service] [--follow]  Tail body, animus or lantern-local under .geldar/adam/
   ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
 #>

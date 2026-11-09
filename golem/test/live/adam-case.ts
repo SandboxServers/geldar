@@ -63,7 +63,7 @@ export async function checkEightBillionLife(config: AdamConfig): Promise<void> {
   if (problems.length > 0) {
     throw new Error(
       `shards/phase0.yaml is not set for the 8B run (decision 0051): ${problems.join('; ')}. ` +
-        `Use the life ${ADAM_LIFE_ID} with the fast tier (qwen3:8b) on a fresh world volume.`,
+        `Run \`./geldar.ps1 adam select --model fast\` (life ${ADAM_LIFE_ID}, fast tier, qwen3:8b) on a fresh world volume.`,
     );
   }
 }

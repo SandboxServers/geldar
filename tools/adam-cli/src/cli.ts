@@ -1,5 +1,5 @@
 /**
- * The command line behind `./geldar.ps1 adam`: `up [--model strong|fast]`, `down`, `status`,
+ * The command line behind `./geldar.ps1 adam`: `up [--model strong|fast]`, `select --model ...`, `down`, `status`,
  * `logs [service] [--follow]` and `models [--record]`. Run with `node tools/adam-cli/src/cli.ts`.
  * Exit codes: 0 done, 1 a refusal or failure with the reason printed, 2 bad usage.
  */
@@ -33,7 +33,7 @@ import {
 import { recordDigests, selectLife } from './yaml-edit.ts';
 
 const USAGE =
-  'usage: ./geldar.ps1 adam up [--model strong|fast] | down | status | logs [body|animus|lantern-local] [--follow] | models [--record]';
+  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast | down | status | logs [body|animus|lantern-local] [--follow] | models [--record]';
 
 class Refusal extends Error {}
 
@@ -76,6 +76,32 @@ function argValue(args: string[], flag: string): string | undefined {
   return at >= 0 ? args[at + 1] : undefined;
 }
 
+/** Rewrites the life lines of the shard file for a tier (shared by `up --model` and `select`). */
+function applyLife(file: string, source: string, tier: Tier, life: string): void {
+  const updated = selectLife(source, tier, life);
+  if (updated !== source) {
+    writeFileSync(file, updated);
+    console.log(`${file}: life set to ${life} (${tier})`);
+  }
+}
+
+/** `select --model strong|fast`: only the rewrite; checks nothing and starts nothing. */
+function select(args: string[]): void {
+  const wanted = argValue(args, '--model');
+  if (wanted !== 'strong' && wanted !== 'fast')
+    throw new Refusal('select needs --model strong|fast');
+  selectInFile(shardFile(runEnv()), wanted);
+}
+
+/** Points the shard file at a tier's life, from its `mind.lives` table; returns the life id. */
+export function selectInFile(file: string, tier: Tier): string {
+  const source = readFileSync(file, 'utf8');
+  const life = readLives(parse(source))[tier];
+  applyLife(file, source, tier, life);
+  console.log(`selected: life ${life} (${tier})`);
+  return life;
+}
+
 async function up(args: string[]): Promise<void> {
   const running = readRows().filter((r) => r.state === 'running');
   if (running.length > 0) {
@@ -109,13 +135,7 @@ async function up(args: string[]): Promise<void> {
   const problems = preflightProblems(rows, readTierTags(doc, tier), readSeed(doc));
   if (problems.length > 0) throw new Refusal(`refusing to start:\n${problems.join('\n')}`);
   const life = lives[tier];
-  if (wanted !== undefined) {
-    const updated = selectLife(source, tier, life);
-    if (updated !== source) {
-      writeFileSync(file, updated);
-      console.log(`${file}: life set to ${life} (${tier})`);
-    }
-  }
+  if (wanted !== undefined) applyLife(file, source, tier, life);
   if (tier === 'fast') {
     console.log(`${life} is the 8B life: it needs a fresh world volume (decision 0051)`);
   }
@@ -224,6 +244,9 @@ export async function run(argv: string[]): Promise<number> {
     switch (command) {
       case 'up':
         await up(args);
+        return 0;
+      case 'select':
+        select(args);
         return 0;
       case 'down':
         await stopAll();
