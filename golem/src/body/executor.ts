@@ -18,7 +18,7 @@ import {
 import type { WakeReason } from './wake.ts';
 import type { WakeConditions, WakeTap } from './wake-conditions.ts';
 
-type Intent = NonNullable<Thought['intent']>;
+export type Intent = NonNullable<Thought['intent']>;
 
 /** Most actions a thought may carry (the contract's `maxItems`). */
 export const MAX_ACTIONS = 6;
@@ -66,7 +66,29 @@ export interface SubmitResult {
   intent: IntentDisposition;
 }
 
-/** What an `IntentExecutor` is built from. */
+/** What the executor tells an observer after a program step: the running intent and its state. */
+export interface StepSnapshot {
+  intentId: string;
+  /** The intent as accepted (or as resumed). */
+  intent: Intent;
+  /** The program's `checkpoint()`, null when it has nothing to save. */
+  checkpoint: ProgramCheckpoint | null;
+  /** World tick from which the intent is past `max_world_ticks`. */
+  expiresTick: number;
+}
+
+/**
+ * Watches the running intent so its state can outlive the process (the `CheckpointStore`). Calls
+ * must return at once and not throw; the executor ignores a throw all the same.
+ */
+export interface IntentObserver {
+  /** A step returned `running`. */
+  stepped(step: StepSnapshot): void;
+  /** The intent ended for good. Not called when `stop()` ends it: that is a restart, not an end. */
+  ended(intentId: string): void;
+}
+
+/** What an ``IntentExecutor`` is built from. */
 export interface ExecutorOptions {
   runtime: BodyRuntime;
   /** Drives the intent: the same world ticks the runtime uses. */
@@ -84,11 +106,17 @@ export interface ExecutorOptions {
   now?: () => Date;
   /** How many action ids to remember for duplicate delivery. Default 4096; the oldest is dropped. */
   maxRememberedActions?: number;
+  /** Told about each step and each end of the intent. Default: none. */
+  observer?: IntentObserver;
 }
 
 /** One running intent. `executor-intent.ts` builds it; the executor drives it. */
 export interface ActiveIntent {
   id: string;
+  /** The intent as accepted. */
+  intent: Intent;
+  /** World tick from which the intent is past max_world_ticks. */
+  expiresTick: number;
   program: IntentProgram;
   base: Omit<ProgramContext, 'signal'>;
   /** Aborted when the intent ends. */
@@ -127,7 +155,10 @@ export class IntentExecutor {
   private readonly maxRemembered: number;
   private readonly stored = new Map<string, Promise<ActionReport>>();
   private readonly seenIntents = new Set<string>();
+  private readonly observer: IntentObserver | null;
   private active: ActiveIntent | null = null;
+  private stopping = false;
+  private plans = 0;
   private unsubscribe: (() => void) | null = null;
   private readonly taps: Array<() => void> = [];
 
@@ -140,6 +171,7 @@ export class IntentExecutor {
     this.agents = options.nearbyAgents ?? (() => []);
     this.now = options.now ?? (() => new Date());
     this.maxRemembered = options.maxRememberedActions ?? DEFAULT_REMEMBERED_ACTIONS;
+    this.observer = options.observer ?? null;
     if (options.wakeTap) {
       this.taps.push(
         options.wakeTap.onWake((request) => {
@@ -155,6 +187,11 @@ export class IntentExecutor {
   /** The running intent's id, or null. */
   get intentId(): string | null {
     return this.active?.id ?? null;
+  }
+
+  /** How many thoughts submit has received: a restarted Body waits for the first. */
+  get plansReceived(): number {
+    return this.plans;
   }
 
   /** The running intent's state, or null. */
@@ -181,6 +218,7 @@ export class IntentExecutor {
   async stop(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.stopping = true;
     for (const remove of this.taps.splice(0)) remove();
     if (this.active) await this.end(this.active, 'interrupted', 'body stopped');
   }
@@ -192,7 +230,7 @@ export class IntentExecutor {
 
   /**
    * Tells the executor an action ended: a completed action a program ran for the running intent
-   * counts its block operations (mine, place, uild) against the intent's limit. An action a
+   * counts its block operations (mine, place, build) against the intent's limit. An action a
    * reflex or an immediate plan action ran, while the intent is paused, is not the intent's.
    */
   noteAction(action: Action, run: ActionRun): void {
@@ -210,6 +248,7 @@ export class IntentExecutor {
 
   /** Accepts one thought: its actions, then its intent. Never throws for a bad plan. */
   async submit(thought: unknown, plan: PlanEnvelope): Promise<SubmitResult> {
+    this.plans += 1;
     const verdict = validateThought(thought);
     const refuse = (detail: string): SubmitResult => ({
       rejection: { reason: 'invalid_plan', detail },
@@ -262,7 +301,8 @@ export class IntentExecutor {
       });
     }
     let disposition: IntentDisposition = 'none';
-    if (intent) disposition = stopped ? 'skipped' : await this.startIntent(intent, plan);
+    if (intent)
+      disposition = stopped ? 'skipped' : await this.startIntent(intent, plan.intentId as string);
     return { rejection, actions: reports, failedAt, intent: disposition };
   }
 
@@ -354,6 +394,7 @@ export class IntentExecutor {
     // A step that ends its own intent is the step in flight: waiting for it would wait forever.
     if (!fromStep) await a.stepping;
     this.setState(a, state, detail);
+    if (!this.stopping) this.tellObserver((o) => o.ended(a.id));
     if (wake) {
       this.runtime.sink.wake({ reason: wake, tick: this.tick(), intentId: a.id, detail });
     }
@@ -420,7 +461,17 @@ export class IntentExecutor {
     }
     if (a.ended) return;
     if (result.status === 'failed' && (a.interrupted || controller.signal.aborted)) return;
-    if (result.status === 'running') return;
+    if (result.status === 'running') {
+      this.tellObserver((o) =>
+        o.stepped({
+          intentId: a.id,
+          intent: a.intent,
+          checkpoint: a.program.checkpoint(),
+          expiresTick: a.expiresTick,
+        }),
+      );
+      return;
+    }
     if (result.status === 'completed') {
       const wake = a.wake.wants('goal_completed') ? 'goal_completed' : undefined;
       await this.end(a, 'completed', 'goal completed', wake, true);
@@ -431,8 +482,25 @@ export class IntentExecutor {
     }
   }
 
-  private startIntent(intent: Intent, plan: PlanEnvelope): Promise<IntentDisposition> {
-    const id = plan.intentId as string;
+  /** Calls the observer; what it throws never reaches the step loop. */
+  private tellObserver(call: (observer: IntentObserver) => void): void {
+    if (!this.observer) return;
+    try {
+      call(this.observer);
+    } catch (error) {
+      console.warn(`intent observer failed: ${errorText(error)}`);
+    }
+  }
+
+  /**
+   * Starts `intent` again after a Body restart, from its saved `checkpoint` when it has one. It
+   * is not a new plan: no validity check, no actions. Returns how the start went.
+   */
+  resume(intent: Intent, intentId: string): Promise<IntentDisposition> {
+    return this.startIntent(intent, intentId);
+  }
+
+  private startIntent(intent: Intent, id: string): Promise<IntentDisposition> {
     if (this.seenIntents.has(id)) return Promise.resolve('duplicate');
     this.seenIntents.add(id);
     return startIntentRun(

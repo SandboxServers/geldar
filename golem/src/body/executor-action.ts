@@ -5,7 +5,7 @@ import type { ActionReport, PlanEnvelope } from './executor.ts';
 import type { BodyRuntime } from './runtime.ts';
 
 /**
- * Runs one immediate action of a plan through the runtime and records it: ccepted, unning,
+ * Runs one immediate action of a plan through the runtime and records it: accepted, running,
  * then the final state with its receipt, all to the runtime's sink. Never throws; a handler that
  * throws becomes a failed action.
  */

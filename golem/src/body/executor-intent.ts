@@ -40,6 +40,8 @@ export async function startIntentRun(
   const view = runtime.view;
   const a: ActiveIntent = {
     id,
+    intent,
+    expiresTick: deps.tick() + intent.limits.max_world_ticks,
     // Replaced below; the intent is not visible to the executor until it is installed.
     program: undefined as never,
     base: {

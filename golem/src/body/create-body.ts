@@ -3,7 +3,9 @@ import type { Bot } from 'mineflayer';
 import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
+import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
+import type { ProgramRegistry } from './program.ts';
 import { createProgramRegistry } from './programs/index.ts';
 import { MemorySink, type RecordSink } from './records.ts';
 import { NatsRecordSink, type NatsSinkOptions } from './records-nats.ts';
@@ -32,6 +34,13 @@ export interface CreateBodyOptions {
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
    */
   nats?: Omit<NatsSinkOptions, 'lifeId' | 'worldTick'>;
+  /**
+   * Given, the running intent's checkpoint is saved to this bucket after each step and deleted
+   * when the intent ends (`restart.ts` reads it back). Left out, nothing is saved.
+   */
+  checkpoints?: { kv: BodyKv; log?: (line: string) => void };
+  /** The programs the executor may start. Default: `createProgramRegistry()`. */
+  programs?: ProgramRegistry;
   /** Default: one built from the bot. */
   view?: BodyView;
   /** `20 / target TPS`. Default 1. */
@@ -50,6 +59,8 @@ export interface Body {
   tap: WakeTap;
   /** The sink under the tap: a `NatsRecordSink` or a `MemorySink`. */
   records: RecordSink;
+  /** The checkpoint writer, when checkpoints was given. */
+  checkpoints: CheckpointStore | null;
 }
 
 /** The reflexes a shard config leaves on, from every reflex group. */
@@ -80,6 +91,16 @@ export function createBody(options: CreateBodyOptions): Body {
           worldTick: () => runtime?.view.tick ?? 0,
         });
   const tap = new WakeTap(records);
+  const checkpoints =
+    options.checkpoints === undefined
+      ? null
+      : new CheckpointStore({
+          kv: options.checkpoints.kv,
+          lifeId: options.lifeId,
+          bodyGeneration: options.bodyGeneration,
+          ...(options.checkpoints.log === undefined ? {} : { log: options.checkpoints.log }),
+          ...(options.now === undefined ? {} : { now: options.now }),
+        });
   const built = new BodyRuntime({
     lifeId: options.lifeId,
     bodyGeneration: options.bodyGeneration,
@@ -88,7 +109,7 @@ export function createBody(options: CreateBodyOptions): Body {
     sink: tap,
     reflexes: enabledReflexes(reflexConfig),
     reflexConfig,
-    programs: createProgramRegistry(),
+    programs: options.programs ?? createProgramRegistry(),
     ...(options.view === undefined ? {} : { view: options.view }),
     ...(options.timeScale === undefined ? {} : { timeScale: options.timeScale }),
   });
@@ -99,6 +120,7 @@ export function createBody(options: CreateBodyOptions): Body {
     ticks: options.ticks,
     currentRevision: options.currentRevision,
     wakeTap: tap,
+    ...(checkpoints === null ? {} : { observer: checkpoints }),
     ...(options.snapshotWindow === undefined ? {} : { snapshotWindow: options.snapshotWindow }),
     ...(options.nearbyAgents === undefined ? {} : { nearbyAgents: options.nearbyAgents }),
     ...(options.now === undefined ? {} : { now: options.now }),
@@ -108,7 +130,7 @@ export function createBody(options: CreateBodyOptions): Body {
     reportBlockedWalk(built, executor, action, run);
     executor.noteAction(action, run);
   });
-  return { runtime: built, executor, tap, records };
+  return { runtime: built, executor, tap, records, checkpoints };
 }
 
 /** True for a value that names a verb; `runAction` also reports actions that failed validation. */

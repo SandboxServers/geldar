@@ -5,6 +5,13 @@
 // world tick), but fire at the client's 20 Hz physics tick, not at the ~1 Hz time packet. The value is
 // still in world ticks (`watchWorldTicks` in `world-clock.ts`), so cooldowns stay in world ticks.
 export type { ActionRun } from '../actions/registry.ts';
+export {
+  type BodyKv,
+  CHECKPOINT_BUCKET,
+  type CheckpointEntry,
+  CheckpointStore,
+  natsBodyKv,
+} from './checkpoint.ts';
 export { type Body, type CreateBodyOptions, createBody, enabledReflexes } from './create-body.ts';
 export {
   type ActionReport,
@@ -12,10 +19,13 @@ export {
   type ExecutorOptions,
   type IntentDisposition,
   IntentExecutor,
+  type IntentObserver,
   MAX_ACTIONS,
   type PlanEnvelope,
+  type StepSnapshot,
   type SubmitResult,
 } from './executor.ts';
+export { GENERATION_BUCKET, nextGeneration } from './generation.ts';
 export { blockOperationsOf, type IntentLimits, type LimitKind, LimitTracker } from './limits.ts';
 export {
   builtinPreconditions,
@@ -77,6 +87,14 @@ export { basicReflexes } from './reflexes/basic.ts';
 export { type BlockedReport, hasBlockedReport, reportBlocked } from './reflexes/blocked-path.ts';
 export { combatReflexes } from './reflexes/combat.ts';
 export { shelterReflexes } from './reflexes/shelter.ts';
+export {
+  NO_PLAN_WAIT_MS,
+  openRestartKv,
+  type RestartBodyOptions,
+  type RestartedBody,
+  type RestartOutcome,
+  restartBody,
+} from './restart.ts';
 export { BodyRuntime, type BodyRuntimeOptions, type TickSource } from './runtime.ts';
 export {
   type BodyIdentity,

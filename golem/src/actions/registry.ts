@@ -61,8 +61,8 @@ export class ActionRegistry {
   }
 
   /**
-   * Calls listener with the action and its run each time unAction ends one on this registry,
-   * whoever started it. ction is as passed in, so it may not be valid. Returns the remover.
+   * Calls listener with the action and its run each time runAction ends one on this registry,
+   * whoever started it. The action is as passed in, so it may not be valid. Returns the remover.
    */
   onFinished(listener: (action: unknown, run: ActionRun) => void): () => void {
     this.finishListeners.add(listener);
@@ -108,7 +108,7 @@ export async function runAction(
   return run;
 }
 
-/** unAction without the onFinished notification. */
+/** runAction without the onFinished notification. */
 async function runUnobserved(
   registry: ActionRegistry,
   bot: Bot,

@@ -9,7 +9,7 @@
   "properties": {
     "reason": {
       "type": "string",
-      "pattern": "^(directly_addressed|precondition_failed|unexpected_damage|goal_completed|new_agent_within_[0-9]{1,4}|reflex_danger|action_failed|limit_reached)$"
+      "pattern": "^(directly_addressed|precondition_failed|unexpected_damage|goal_completed|new_agent_within_[0-9]{1,4}|reflex_danger|action_failed|limit_reached|no_plan)$"
     },
     "tick": {
       "description": "World age when the wake was decided.",
