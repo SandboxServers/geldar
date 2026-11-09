@@ -14,7 +14,7 @@ import { shelter } from './shelter.ts';
 import { woodToStoneTools } from './wood-to-stone-tools.ts';
 
 // --- P0-10c bed, chest, blocked-path ---
-import { bed } from './bed.ts';
+import { bed, bedClear } from './bed.ts';
 import { blockedPath } from './blocked-path.ts';
 import { chest } from './chest.ts';
 
@@ -32,6 +32,7 @@ export const scenarios: Scenario[] = [
 
   // --- P0-10c bed, chest, blocked-path ---
   bed,
+  bedClear,
   chest,
   blockedPath,
   // --- end P0-10c ---

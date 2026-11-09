@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { TestControl } from '../../test-control.ts';
 import type { BenchEnv, RunEnv } from '../types.ts';
-import { bed, bedVerdict } from './bed.ts';
-import { findScenario } from './index.ts';
+import { bed, bedClear, bedVerdict } from './bed.ts';
+import { findScenario, scenarios, visibleScenarios } from './index.ts';
 
 const CENTER = { x: 1312, y: 200, z: 800 };
 
@@ -92,6 +92,67 @@ describe('bed', () => {
     expect(split.out.note).toContain('client and server disagree');
   });
 
+  it('places the bed at the arena center plus the scenario offset', async () => {
+    for (const [scenario, dx] of [
+      [bed, 2],
+      [bedClear, -2],
+    ] as const) {
+      const actions: unknown[] = [];
+      const env = {
+        bot: { username: 'GolemBenchB', isSleeping: false, time: { timeOfDay: 14_000 } },
+        ctl: { timeSet: async () => undefined, isSleeping: async () => true },
+        arena: { center: CENTER },
+        run: async (action: unknown) => {
+          actions.push(action);
+          return { result: { status: 'completed' } };
+        },
+        signal: new AbortController().signal,
+      } as unknown as RunEnv;
+      await scenario.run(env);
+      expect(actions[1]).toEqual({
+        do: 'place',
+        block: 'white_bed',
+        at: { x: CENTER.x + dx, y: CENTER.y, z: CENTER.z + 2 },
+      });
+    }
+  });
+
+  it('wakes the bot and sets day after a run, and fails when the client never saw night', async () => {
+    const calls: string[] = [];
+    const env = {
+      bot: {
+        username: 'GolemBenchB',
+        isSleeping: true,
+        time: { timeOfDay: 1000 },
+        wake: async () => {
+          calls.push('wake');
+        },
+      },
+      ctl: {
+        timeSet: async (t: string) => {
+          calls.push(`time ${t}`);
+        },
+        isSleeping: async () => true,
+      },
+      arena: { center: CENTER },
+      tps: 20,
+      timeScale: 0.001,
+      run: async () => ({ result: { status: 'completed' } }),
+      signal: new AbortController().signal,
+    } as unknown as RunEnv;
+    const out = await bed.run(env);
+    expect(out.passed).toBe(false);
+    expect(out.note).toBe('client never saw night');
+    expect(calls).toEqual(['time night', 'wake', 'time day']);
+  });
+
+  it('registers bed visible and bed-clear hidden', () => {
+    expect(findScenario('bed-clear')).toBe(bedClear);
+    expect(bedClear.hidden).toBe(true);
+    expect(bed.hidden).toBeUndefined();
+    expect(scenarios).toContain(bedClear);
+    expect(visibleScenarios()).not.toContain(bedClear);
+  });
   it('is registered', () => {
     expect(findScenario('bed')).toBe(bed);
   });
