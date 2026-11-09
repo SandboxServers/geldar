@@ -1,7 +1,8 @@
 # Runs on every PR and on main. `main` requires one check, `ci gate`, which
 # passes only when every job below passed. A job whose part of the repo does
 # not exist yet (plugin/, compose/) says so and passes; the packet that creates
-# that part makes the job do real work. Mirrors `./geldar.ps1 check`.
+# that part makes the job do real work. Mirrors `./geldar.ps1 check`, except
+# the `sql` job, which has no local `check` counterpart.
 name: ci
 
 on:

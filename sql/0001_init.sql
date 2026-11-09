@@ -1,5 +1,5 @@
--- Phase 0 schema. Source: spec Appendix D (abridged), with the three changes
--- below that match decision 0020 and the action record in the contract (P0-03).
+-- Phase 0 schema. Source: spec Appendix D (abridged), with the changes below
+-- that match decision 0020 and the action record in the contract (P0-03).
 -- Each change is marked "differs from spec Appendix D".
 
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -75,11 +75,17 @@ CREATE TABLE skill_runs (              -- observed behavior, separate from the a
   id BIGSERIAL PRIMARY KEY, skill_id TEXT, edition INT, life_id TEXT, intent_id TEXT, outcome TEXT, cpu_ms INT, world_ticks BIGINT, model_calls_during INT
 );
 CREATE TABLE skill_library (          -- who knows what
-  agent_id TEXT REFERENCES agents, skill_id TEXT,  -- differs from spec Appendix D: no REFERENCES skills, because skills' key is (skill_id, edition) and a foreign key needs a unique target on skill_id alone
-  learned_day INT, learned_from_book TEXT, PRIMARY KEY (agent_id, skill_id)
+  agent_id TEXT REFERENCES agents, skill_id TEXT,
+  edition INT,                       -- differs from spec Appendix D: a library entry names one edition of a skill, so the key below can point at skills (skill_id, edition)
+  learned_day INT, learned_from_book TEXT,
+  PRIMARY KEY (agent_id, skill_id, edition),  -- differs from spec Appendix D: edition joins the key (was (agent_id, skill_id))
+  FOREIGN KEY (skill_id, edition) REFERENCES skills (skill_id, edition)  -- differs from spec Appendix D: composite foreign key replaces the single-column reference, which skills cannot satisfy (its key is (skill_id, edition))
 );
 CREATE TABLE books (
-  book_id TEXT PRIMARY KEY, title TEXT, skill_id TEXT,  -- differs from spec Appendix D: no REFERENCES skills, for the same reason as skill_library
+  book_id TEXT PRIMARY KEY, title TEXT, skill_id TEXT,
+  edition INT,                         -- differs from spec Appendix D: the edition of the skill the book teaches, null only when skill_id is null
+  CHECK ((skill_id IS NULL) = (edition IS NULL)),  -- differs from spec Appendix D: a book cannot name a skill without an edition, which would skip the foreign key below
+  FOREIGN KEY (skill_id, edition) REFERENCES skills (skill_id, edition),  -- differs from spec Appendix D: composite foreign key replaces the single-column reference, which skills cannot satisfy (its key is (skill_id, edition))
   text TEXT,
   author TEXT REFERENCES agents, written_day INT, destroyed_day INT, destroyed_how TEXT
 );

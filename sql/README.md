@@ -8,3 +8,5 @@ The Postgres schema for a shard lives here as numbered migrations:
 - `test/check-schema.sql` is not a migration. CI applies every `[0-9]*.sql` file with `psql -v ON_ERROR_STOP=1`, then runs it to check that every table of spec Appendix D exists and that pgvector is installed.
 
 The schema follows spec Appendix D. Where a migration differs from Appendix D, it says so in a comment that starts with `differs from spec Appendix D`.
+
+Appendix D needs this correction (spec.md is not edited here): `books` and `skill_library` have no `REFERENCES skills` on `skill_id` alone, because `skills` is keyed by `(skill_id, edition)`. Both tables instead carry `edition INT` and a composite `FOREIGN KEY (skill_id, edition) REFERENCES skills (skill_id, edition)`, and the `skill_library` primary key is `(agent_id, skill_id, edition)`.
