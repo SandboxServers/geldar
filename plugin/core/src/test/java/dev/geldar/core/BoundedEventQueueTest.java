@@ -23,6 +23,28 @@ class BoundedEventQueueTest {
     }
 
     @Test
+    void offerFirstRestoresHeadWithoutCountingADrop() throws InterruptedException {
+        BoundedEventQueue<Integer> q = new BoundedEventQueue<>(3);
+        q.offer(1);
+        q.offer(2);
+        int head = q.poll(1, TimeUnit.MILLISECONDS);
+        q.offerFirst(head);
+        assertEquals(0, q.dropped());
+        assertEquals(1, q.poll(1, TimeUnit.MILLISECONDS));
+        assertEquals(2, q.poll(1, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    void offerFirstOnAFullQueueDiscardsTheRequeuedOldest() throws InterruptedException {
+        BoundedEventQueue<Integer> q = new BoundedEventQueue<>(2);
+        q.offer(2);
+        q.offer(3);
+        q.offerFirst(1);
+        assertEquals(1, q.dropped());
+        assertEquals(2, q.poll(1, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
     void rejectsZeroCapacity() {
         assertThrows(IllegalArgumentException.class, () -> new BoundedEventQueue<>(0));
     }
