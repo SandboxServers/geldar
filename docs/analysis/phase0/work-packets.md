@@ -534,6 +534,55 @@ export interface Scenario {
 
 `./geldar.ps1 bench --record --runs 10 --note "first run, <commit>"` on a clean tree (merged into `phase0/wave2`, before the wave PR opens) with the shard up and nothing else connected, then commit `docs/analysis/phase0/bench-results.md` with the rows and the `docs/analysis/phase0/bench-runs/<name>.json` file the rows name, plus the amendments listed in P0-10a's Checks. Failures are findings: do not rerun until green. The owner reads the 10 and 5 TPS rows before wave 4 builds reflexes on top of the actions.
 
+## Wave 3 — the world to the record (ships as the wave 3 PR)
+
+Packets: P0-11 (plugin skeleton, event export, recipe grant) and P0-12 (`eventsink/`) run in parallel and are reviewed as ONE batch (rule 11, up to 5 rounds). P0-13a (Velocity identity plugin) needs P0-11's Gradle skeleton, so it runs after P0-11 merges into the wave branch; P0-13b (Golem registration, compose wiring, live proof) runs after P0-13a. 13a and 13b are reviewed together as a second batch. Live runs against the shard are the orchestrator's (serial). Pins to settle at dispatch and record in the report: Java and Gradle versions (Java 25 matches the image), Paper API 26.1.2 build 74 and Velocity API 3.5.1 (decision 0022), the `jnats`, `nats` and `pg` versions (each at least two weeks old).
+
+**Wave 3 conventions.**
+- `plugin/` is a Gradle multi-project (`settings.gradle.kts`, committed wrapper, `.java-version`, version catalog `gradle/libs.versions.toml` with exact pins, dependency locking on). CI's `plugin` job already runs `./gradlew build --no-daemon` once `plugin/build.gradle.kts` exists. Subprojects: `core` (Paper, Geldar-Core) and later `velocity-identity`.
+- Java code has JUnit tests that run in `./gradlew build` and need no server. Each test is revert-checked as in rule 7.
+- Every event the plugin builds is validated in a Gradle test against `contract/schemas/event.schema.json` (read from `../contract/schemas`).
+- Secrets and connection strings come from environment or Docker secret files, never source. Phase 0 has one open NATS on the compose network (per-service accounts arrive later, spec 6.5); say so in the report.
+
+### P0-11 — Geldar-Core plugin skeleton, event export, recipe grant
+
+- **Depends on** P0-06. Branch `phase0/p0-11-core`, worktree `p0-11`. Commit: `feat(plugin): add the Geldar-Core Paper plugin with NATS event export and recipe grant`.
+- **Spec:** Appendix F (event export, command block), 5.1 plugin table, section 7 event bus, decisions 0032 and 0022.
+- **Create:** the `plugin/` root files above, `plugin/core/**` (`GeldarCore` main class, `EventExporter`, `EventPublisher` interface with a NATS and an in-memory implementation, `EventEnvelope` builder, `RecipeGrant` listener, `CoreConfig` reading `plugins/GeldarCore/config.yml`), `plugin/README.md`. **Change:** `compose/phase0.yml` (mount the built jar into Paper's plugins directory read-only; pass `GELDAR_NATS_URL` and `GELDAR_SHARD`; the build is documented, not run by compose), `.gitignore` for `plugin/**/build`, the `run-shard` health table (plugin loaded, events flowing).
+- **Behaviour:**
+  1. On enable, connect to NATS off the main thread with backoff; the server never blocks on NATS. A bounded queue drops the oldest event when full and counts drops.
+  2. Export the Phase 0 event types: `server_tps` every 20 s, `damage`, `death`, `sleep`. Each event has `source_event_id` (`ev_` plus a ULID), `at`, `shard`, `world_day`, `world_tick`, `type`, optional `agent_id`. Publish on `geldar.<shard>.<type>` into JetStream stream `GELDAR_EVENTS` (created if missing: subjects `geldar.*.*`, file storage, 30-day retention), with the message id header set to `source_event_id` so JetStream de-duplicates.
+  3. On `PlayerJoinEvent`, grant all recipes (`Player.discoverRecipes` over every registered recipe) so table crafts work without RCON (decision 0032).
+  4. `PlayerCommandPreprocessEvent` from a player is cancelled and logged (Appendix F); console and RCON are untouched.
+  5. Ghosts are out of scope (no ghosts in Phase 0): a README note only.
+- **Tests:** JUnit: envelopes are schema-valid with unique ids and the right subject; queue overflow drops oldest and counts; a publisher failure never throws into the server thread; the recipe listener discovers every recipe (MockBukkit or a test double, pinned). Live (orchestrator): a Golem bot joins and `craft` of `crafting_table` and `stone_pickaxe` works with no `recipe give`; a `server_tps` event arrives on `geldar.phase0.server_tps`; a command typed by the bot is cancelled.
+- **Checks:** `cd plugin; ./gradlew build`, then `./geldar.ps1 check`.
+
+### P0-12 — `eventsink/`: NATS to Postgres
+
+- **Depends on** P0-03, P0-05. Branch `phase0/p0-12-eventsink`, worktree `p0-12`. Commit: `feat(eventsink): sink NATS events to Postgres idempotently`.
+- **Spec:** section 7 event bus, Appendix D `events`, decision D-P0-10.
+- **Create:** `eventsink/package.json` (`@geldar/eventsink`), `tsconfig.json`, `src/{config,consumer,writer,validate,main}.ts`, tests, `eventsink/Dockerfile`, `eventsink/README.md`. **Change:** `compose/phase0.yml` (an `eventsink` service built from `./eventsink`, after healthy postgres and nats, secrets as Docker secret files), `ci.yml` only if the image build needs it.
+- **Behaviour:** a durable pull consumer on `GELDAR_EVENTS` (create the stream with the same config as P0-11 if missing; the config is one documented constant in both READMEs); validate each message with the generated `contract` validator; `INSERT ... ON CONFLICT (source_event_id) DO NOTHING` in small batches; ack only after commit; a message that fails validation goes to the dead-letter subject `geldar.<shard>.dlq` with the reason and is acked (never lost, never retried forever); transient DB errors nak with backoff; shutdown drains.
+- **Tests:** unit with fakes (duplicate delivery inserts once, invalid message to DLQ, nak on DB error, ack only after commit). Integration test (skipped unless `GELDAR_IT=1`): against the live stack, publish the same event twice and a malformed one; the table has one row and the DLQ one message. Revert-check each.
+- **Checks:** `./geldar.ps1 check`; the integration test is run by the orchestrator.
+
+### P0-13a — Velocity bot-ingress identity plugin
+
+- **Depends on** P0-11 (Gradle skeleton). Branch `phase0/p0-13a-identity`, worktree `p0-13a`. Commit: `feat(plugin): add the Velocity bot-ingress identity plugin`.
+- **Spec:** Appendix F (bot ingress identity), 8.4, 5.1, decision 0021.
+- **Create:** `plugin/velocity-identity/**` (`IdentityPlugin`, `LoginGate`, `RegistryClient` over the NATS JetStream KV bucket `geldar-life-registry`: key is the lowercase username, value JSON `{life_id, registered_at}`; a watcher keeps a local cache; the gate fails CLOSED until the cache has synced once), tests. **Change:** `plugin/settings.gradle.kts`, `compose/phase0.yml` (mount the jar, pass `GELDAR_NATS_URL`), `compose/velocity/velocity.toml` only if needed, `docs/threat-model.md` (the ingress gate).
+- **Behaviour:** on `LoginEvent`, deny with one fixed message any username not in the registry, or revoked (key deleted), or with a malformed entry; admit otherwise; log admit and deny with no secrets and no hint of which check failed. The Paper whitelist stays enforced (two checks); Golem keeps whitelisting its bots over RCON.
+- **Tests:** JUnit for the gate (unknown, known, revoked, never synced = deny, case-insensitivity, malformed entry = deny). Live after P0-13b (orchestrator): an unregistered username is denied at the proxy, a registered one reaches Paper.
+- **Checks:** `cd plugin; ./gradlew build`, then `./geldar.ps1 check`.
+
+### P0-13b — Golem registers its bot before connecting
+
+- **Depends on** P0-13a. Branch `phase0/p0-13b-registration`, worktree `p0-13b`. Commit: `feat(golem): register the bot username in the life registry before connecting`.
+- **Create:** `golem/src/registry.ts` (open the KV bucket, put `{life_id, registered_at}` for the bot's username, delete on shutdown), `golem/test/registry.test.ts`, a live case. **Change:** `golem/src/connection.ts` (register before the first connect and before each reconnect; fail with a clear error if NATS is unreachable), `golem/src/config.ts` (`GELDAR_NATS_URL`), the live fixture.
+- **Tests:** unit with a fake KV (registered before connect, deleted on stop, NATS down means no connect attempt). Live (orchestrator): the full live lane and a short benchmark pass still work through the gate.
+- **Checks:** `./geldar.ps1 check`; the live lane by the orchestrator.
+
 ## Process packets (one per wave close)
 
 ### W1-process — apply the wave 1 retro actions
