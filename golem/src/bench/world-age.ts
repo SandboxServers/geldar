@@ -1,4 +1,4 @@
-import type { Bot } from 'mineflayer';
+import { sleep, worldAge } from '../world-clock.ts';
 import type { BenchEnv } from './types.ts';
 
 const POLL_MS = 50;
@@ -13,16 +13,6 @@ export const WORLD_AGE_RESOLUTION_TICKS = 20;
  * it the 20-tick quantisation is a quarter or more of the measurement (decision 0038).
  */
 export const MIN_TPS_SPAN_TICKS = 5 * WORLD_AGE_RESOLUTION_TICKS;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** World age of the bot, or null before the first time packet. */
-export function worldAge(bot: Bot): number | null {
-  const age: unknown = bot.time?.age;
-  return typeof age === 'number' && Number.isFinite(age) ? age : null;
-}
 
 /**
  * The polling helper for scenarios: true as soon as `predicate` holds; false when `maxWorldTicks`

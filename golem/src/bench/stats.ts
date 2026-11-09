@@ -9,9 +9,3 @@ export function percentile(values: number[], p: number): number {
   const index = Math.max(0, Math.ceil((p / 100) * sorted.length) - 1);
   return sorted[index] as number;
 }
-
-/** Passed over runs as a fraction from 0 to 1, or `n/a` when there were no runs. */
-export function successRate(passed: number, runs: number): number | 'n/a' {
-  if (runs <= 0) return 'n/a';
-  return passed / runs;
-}

@@ -8,6 +8,7 @@ import { type GolemConfig, loadConfig, readRconPassword, repoRoot } from '../con
 import { ConnectionManager } from '../connection.ts';
 import { RconClient } from '../rcon.ts';
 import { TestControl } from '../test-control.ts';
+import { sleep as wallSleep } from '../world-clock.ts';
 import { collectMeta, isDirty, runGit } from './meta.ts';
 import { writeResults } from './results.ts';
 import { type ManagerLike, runCell } from './runner.ts';
@@ -247,7 +248,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   const err = deps.err ?? ((line: string) => console.error(line));
   const now = deps.now ?? Date.now;
   const registry = deps.scenarios ?? registered;
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = deps.sleep ?? wallSleep;
   let options: Options;
   try {
     options = parseCli(argv, deps.dirty, registry);

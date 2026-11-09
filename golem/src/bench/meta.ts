@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { repoRoot } from '../config.ts';
 import { stackVersions } from '../versions.ts';
+import { sleep as wallSleep } from '../world-clock.ts';
 
 /** What a result file records about the run, apart from the cells. */
 export interface RunMeta {
@@ -75,7 +76,7 @@ export async function collectMeta(
   deps: MetaDeps = {},
 ): Promise<RunMeta> {
   const git = deps.git ?? runGit;
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = deps.sleep ?? wallSleep;
   const when = (deps.now ?? (() => new Date()))();
   let reply = '';
   for (let i = 0; i < VERSION_TRIES; i++) {

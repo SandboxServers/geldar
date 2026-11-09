@@ -1,5 +1,6 @@
 import { type Action, validateThought } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { worldAge } from '../world-clock.ts';
 import {
   type ActionOutcome,
   type ActionResult,
@@ -145,12 +146,6 @@ export async function runAction(
 /** Builds the run from an outcome, the latency and the world ticks. */
 function finish(outcome: ActionOutcome, latencyMs: number, worldTicks: number | null): ActionRun {
   return { state: recordState(outcome), result: toResult(outcome, latencyMs, worldTicks) };
-}
-
-/** `bot.time.age` when it is a finite number, else null. */
-function worldAge(bot: Bot): number | null {
-  const age: unknown = bot.time?.age;
-  return typeof age === 'number' && Number.isFinite(age) ? age : null;
 }
 
 /** Cuts an error text to the message limit. */

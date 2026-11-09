@@ -5,6 +5,7 @@ import { type ActionRegistry, type ActionRun, runAction } from '../actions/regis
 import { buildArena, quietWorld } from '../arena.ts';
 import type { TestControl } from '../test-control.ts';
 import { ulid } from '../ulid.ts';
+import { sleep, worldAge } from '../world-clock.ts';
 import { limitedControl } from './limited-control.ts';
 import { parseMspt, parseTargetMspt, parseTargetRate, setTps, withTps } from './tps.ts';
 import type {
@@ -15,7 +16,7 @@ import type {
   RunTiming,
   Scenario,
 } from './types.ts';
-import { MIN_TPS_SPAN_TICKS, waitUntil, worldAge } from './world-age.ts';
+import { MIN_TPS_SPAN_TICKS, waitUntil } from './world-age.ts';
 
 export type { CellResult } from './types.ts';
 export { waitUntil };
@@ -55,10 +56,6 @@ const POLL_MS = 50;
 const DEFAULT_READY_MS = 10_000;
 const DEFAULT_SETTLE_MS = 10_000;
 const DEFAULT_RECONNECT_MS = 60_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export { limitedControl };
 

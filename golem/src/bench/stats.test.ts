@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { percentile, successRate } from './stats.ts';
+import { percentile } from './stats.ts';
 
 const oneToTwenty = Array.from({ length: 20 }, (_, i) => i + 1);
 
@@ -25,15 +25,5 @@ describe('percentile', () => {
     const input = [3, 1, 2];
     expect(percentile(input, 50)).toBe(2);
     expect(input).toEqual([3, 1, 2]);
-  });
-});
-
-describe('successRate', () => {
-  it('is n/a for zero runs', () => {
-    expect(successRate(0, 0)).toBe('n/a');
-  });
-
-  it('is the fraction passed', () => {
-    expect(successRate(3, 4)).toBe(0.75);
   });
 });
