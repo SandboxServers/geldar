@@ -33,6 +33,7 @@ function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
 | Paper | compose healthcheck (the image's `mc-health`) | `healthy` in `shard status` |
 | Paper is behind the proxy | `dc port paper 25565`, run only while paper is running (`docker inspect -f '{{.State.Running}}' geldar-phase0-paper-1` prints `true`) | fails with `no port 25565/tcp` (exit 1): Paper has no published game port. A stopped paper also fails this command, so the check is meaningless unless the inspect line shows `true` first |
 | Velocity bot ingress | compose healthcheck, and `Test-NetConnection 127.0.0.1 -Port 25565` | `healthy`, and the port answers |
+| RCON (test control) | `Test-NetConnection 127.0.0.1 -Port 25575` (published at `127.0.0.1:25575`, `compose/phase0.yml:89`) | the port answers; Paper enforces the whitelist, so any bot that joins (Golem whitelists its own over RCON) must be whitelisted first. Check this row before `test:live` |
 | Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
 
 Ports, users and database names come from `compose/phase0.yml` and its `.env.example`; if they differ from the table, the compose file wins. Update this table in the same PR.
@@ -44,7 +45,11 @@ Ports, users and database names come from `compose/phase0.yml` and its `.env.exa
 docker compose -f compose/phase0.yml -p geldar-phase0 restart paper
 ```
 
-Never fix a problem by acting inside the world (teleporting a bot, giving items, running a command as an agent). Fix the infrastructure (spec Principle 1 and section 11).
+Never fix a problem by acting inside the world (teleporting a bot, giving items, running a command as an agent). Fix the infrastructure (spec Principle 1 and section 11). The carve-out: RCON test control is for test fixtures and ops tooling only (decision 0029, spec 5.1), never a fix for a running Adam.
+
+## Golem connection settings
+
+Golem reads these from the environment (`golem/src/config.ts`): `GELDAR_MC_HOST` (must be `127.0.0.1` or `localhost`), `GELDAR_MC_PORT` (default 25565), `GELDAR_RCON_PORT` (default 25575) and `GELDAR_RCON_PASSWORD_FILE` (default `compose/secrets/rcon.txt` under the repo root). Secrets live in the starting worktree's `compose/secrets/`: if another checkout started the stack, point `GELDAR_RCON_PASSWORD_FILE` at that checkout's file.
 
 ## Stop
 
