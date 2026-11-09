@@ -128,15 +128,20 @@ describe('open, deposit and withdraw on 26.1', () => {
       );
       await ctl.give(BOT, 'cobblestone', 100);
       await bot.waitForTicks(10);
-      const put = await act(bot, { do: 'deposit', at, item: 'cobblestone', count: 100 });
-      expect(put.result, JSON.stringify(put.result)).toMatchObject({ status: 'completed' });
-      expect(Number(put.result.detail.moved)).toBe(100);
+      // The contract caps one action at 64, so 100 and 70 each take two actions.
+      for (const count of [64, 36]) {
+        const put = await act(bot, { do: 'deposit', at, item: 'cobblestone', count });
+        expect(put.result, JSON.stringify(put.result)).toMatchObject({ status: 'completed' });
+        expect(Number(put.result.detail.moved)).toBe(count);
+      }
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 100]]));
       expect(held(bot, 'cobblestone')).toBe(0);
 
-      const taken = await act(bot, { do: 'withdraw', at, item: 'cobblestone', count: 70 });
-      expect(taken.result, JSON.stringify(taken.result)).toMatchObject({ status: 'completed' });
-      expect(Number(taken.result.detail.moved)).toBe(70);
+      for (const count of [64, 6]) {
+        const taken = await act(bot, { do: 'withdraw', at, item: 'cobblestone', count });
+        expect(taken.result, JSON.stringify(taken.result)).toMatchObject({ status: 'completed' });
+        expect(Number(taken.result.detail.moved)).toBe(count);
+      }
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 30]]));
       expect(held(bot, 'cobblestone')).toBe(70);
     });
