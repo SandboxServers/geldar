@@ -62,6 +62,15 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | W1-process | 2 | Apply the wave 1 retro actions to agents, skills and repo checks | packet-coder | Shipped (review 3, merged to wave2) | — | |
 | W2-process | 2 | Apply the wave 2 retro actions to agents, skills, `CLAUDE.md` and `AGENTS.md` | packet-coder | Shipped (review 2, merged to wave2) | wave 2 code | |
 | W3-process | 3 | Apply the wave 3 retro actions to agents, skills and repo checks | packet-coder | Shipped (merged to wave3; no separate review: owner ruling, reviews at wave end) | wave 3 code | |
+| P0-14 | 4 | Body runtime skeleton (reflex runner, program and record interfaces): the unblocker | packet-coder | Ready | wave 3 | |
+| P0-15a | 4 | Reflexes: eat, fall-stop, hazard escape | packet-coder | BlockedDependency | P0-14 | |
+| P0-15b | 4 | Reflexes: retreat, fight or flee, `attack` action | packet-coder | BlockedDependency | P0-14 | |
+| P0-15c | 4 | Reflexes: panic burrow, blocked-path | packet-coder | BlockedDependency | P0-14 | |
+| P0-16a | 4 | Intent executor: validity, preconditions, limits, wake conditions | packet-coder | BlockedDependency | P0-14 | |
+| P0-16b | 4 | Built-in programs (travel, gather, craft, rest, flee) with checkpoints | packet-coder | BlockedDependency | P0-14 | |
+| P0-17 | 4 | Intent, action and receipt records to NATS and Postgres | packet-coder | BlockedDependency | P0-14 | |
+| P0-18 | 4 | Body restart resumes from its checkpoint | packet-coder | BlockedDependency | P0-16a, P0-16b, P0-17 | |
+| W4-process | 4 | Apply the wave 4 retro actions | packet-coder | BlockedDependency | wave 4 test, review and retro | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-06 | |
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-03, P0-05 | |
 | P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-11 | |
