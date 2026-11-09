@@ -1,4 +1,4 @@
-# 0011. Every action gets a receipt; economic actions get two
+# 0020. Every action gets a receipt; economic actions get two
 
 - Status: Accepted
 - Date: 2026-11-08
