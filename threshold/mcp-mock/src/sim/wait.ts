@@ -28,12 +28,14 @@ function superseded(): ToolError {
 /**
  * The long poll. Holds the call until the wake policy fires or `max_seconds` pass, syncing the sim
  * in small steps (never past the next scheduled moment) so dusk, dawn and hunger always happen.
- * Events are never consumed: the same cursor returns the same events and speech.
+ * Events are never consumed: the same cursor returns the same events and speech. `maxBytes` is a
+ * test seam for the result size cap (default: the `fitResult` default).
  */
 export async function waitTool(
   hub: SimHub,
   ctx: ToolContext,
   input: WaitInput & { max_seconds: number },
+  maxBytes?: number,
 ): Promise<WaitResult> {
   const clock = hub.clock;
   const sim = hub.player(ctx.playerId);
@@ -49,6 +51,7 @@ export async function waitTool(
   const deadline = clock.nowMs() + input.max_seconds * 1000;
 
   let reason: WakeReason;
+  let wakingSeqs: number[] = [];
   let now: number;
   for (;;) {
     if (ctx.signal.aborted) throw superseded();
@@ -79,6 +82,7 @@ export async function waitTool(
     }
     if (decision.wake) {
       reason = decision.wake.reason;
+      wakingSeqs = decision.wake.seqs;
       break;
     }
     if (now >= deadline) {
@@ -106,8 +110,8 @@ export async function waitTool(
     cursor: encodeCursor(sim.log.lastSeq()),
     wake_reason: reason,
     dropped_events: since.dropped,
-    untrusted_world_text: worldText(since.events),
+    untrusted_world_text: worldText(since.events, { wakingSeqs }),
     note: WORLD_TEXT_NOTE,
   };
-  return fitResult(result);
+  return fitResult(result, maxBytes, wakingSeqs);
 }
