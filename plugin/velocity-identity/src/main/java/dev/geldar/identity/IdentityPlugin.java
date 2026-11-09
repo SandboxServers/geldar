@@ -13,7 +13,9 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
+import com.velocitypowered.api.scheduler.ScheduledTask;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
@@ -41,12 +43,20 @@ public final class IdentityPlugin {
     private static final int MAX_LOGGED_DENIALS = 10;
     private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
 
+    private final Supplier<String> natsUrl;
     private RegistryClient client;
+    private ScheduledTask denialSummary;
 
     @Inject
     public IdentityPlugin(ProxyServer proxy, Logger log) {
+        this(proxy, log, () -> System.getenv("GELDAR_NATS_URL"));
+    }
+
+    /** Takes the NATS URL source, so a test can leave it unset without touching the environment. */
+    IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl) {
         this.proxy = proxy;
         this.log = log;
+        this.natsUrl = natsUrl;
         this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
                 count -> log.info("{} more denials were not logged in the last window", count));
     }
@@ -56,19 +66,22 @@ public final class IdentityPlugin {
         // Velocity only raises PluginMessageEvent for registered channels; others pass straight through.
         proxy.getChannelRegistrar().register(COMMAND_CHANNEL);
         log.info("Geldar identity enabled");
-        String url = System.getenv("GELDAR_NATS_URL");
+        // Scheduled before the URL check: a missing URL denies every login, which is when the summary matters most.
+        denialSummary = proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
+        String url = natsUrl.get();
         if (url == null || url.isBlank()) {
             log.error("GELDAR_NATS_URL is not set; every login will be denied");
             return;
         }
         client = new RegistryClient(url, registry, log);
         client.start();
-        // Summarises a burst of denials that stopped, which no later denial would trigger.
-        proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
     }
 
     @Subscribe
     public void onProxyShutdown(ProxyShutdownEvent event) {
+        if (denialSummary != null) {
+            denialSummary.cancel();
+        }
         if (client != null) {
             client.close();
         }

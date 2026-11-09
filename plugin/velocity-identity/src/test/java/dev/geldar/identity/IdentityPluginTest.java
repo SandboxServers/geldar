@@ -10,10 +10,19 @@ import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
+import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
+import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
+import com.velocitypowered.api.proxy.messages.ChannelRegistrar;
+import com.velocitypowered.api.scheduler.ScheduledTask;
+import com.velocitypowered.api.scheduler.Scheduler;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.slf4j.helpers.NOPLogger;
 
@@ -120,4 +129,56 @@ class IdentityPluginTest {
         assertEquals("a?b", IdentityPlugin.printable("a\nb"));
         assertEquals(32, IdentityPlugin.printable("x".repeat(100)).length());
     }
-}
+
+    /** A proxy double that records the scheduler calls the plugin makes. */
+    private static final class SchedulerLog {
+        final List<String> built = new ArrayList<>();
+        final AtomicInteger scheduled = new AtomicInteger();
+        final AtomicInteger cancelled = new AtomicInteger();
+
+        private static <T> T stub(Class<T> type, java.lang.reflect.InvocationHandler handler) {
+            return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, handler));
+        }
+
+        ProxyServer proxy() {
+            ScheduledTask task = stub(ScheduledTask.class, (p, m, a) -> {
+                if (m.getName().equals("cancel")) {
+                    cancelled.incrementAndGet();
+                }
+                return null;
+            });
+            Object[] builder = new Object[1];
+            builder[0] = stub(Scheduler.TaskBuilder.class, (p, m, a) -> switch (m.getName()) {
+                case "repeat" -> builder[0];
+                case "schedule" -> {
+                    scheduled.incrementAndGet();
+                    yield task;
+                }
+                default -> throw new UnsupportedOperationException(m.getName());
+            });
+            Scheduler scheduler = stub(Scheduler.class, (p, m, a) -> {
+                if (m.getName().equals("buildTask")) {
+                    built.add("task");
+                    return builder[0];
+                }
+                throw new UnsupportedOperationException(m.getName());
+            });
+            ChannelRegistrar registrar = stub(ChannelRegistrar.class, (p, m, a) -> null);
+            return stub(ProxyServer.class, (p, m, a) -> switch (m.getName()) {
+                case "getScheduler" -> scheduler;
+                case "getChannelRegistrar" -> registrar;
+                default -> throw new UnsupportedOperationException(m.getName());
+            });
+        }
+    }
+
+    @Test
+    void theDenialSummaryIsScheduledEvenWhenTheNatsUrlIsMissing() {
+        SchedulerLog schedules = new SchedulerLog();
+        IdentityPlugin bare = new IdentityPlugin(schedules.proxy(), NOPLogger.NOP_LOGGER, () -> null);
+        bare.onProxyInitialization(new ProxyInitializeEvent());
+        assertEquals(1, schedules.built.size());
+        assertEquals(1, schedules.scheduled.get());
+        bare.onProxyShutdown(new ProxyShutdownEvent());
+        assertEquals(1, schedules.cancelled.get(), "shutdown cancels the summary task");
+    }}
