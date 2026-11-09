@@ -54,6 +54,14 @@ describe('callTool', () => {
     }
   });
 
+  it('returns the journal under the lowercase title from sleep', async () => {
+    const res = await callTool(createFakeHandlers(), 'sleep', {}, ctx);
+    const body = JSON.parse(res.content[0]?.text ?? '') as {
+      untrusted_world_text: { book: { title: string } };
+    };
+    expect(body.untrusted_world_text.book.title).toBe('journal');
+  });
+
   it('treats missing arguments as an empty object', async () => {
     for (const name of ['look', 'sleep', 'status', 'read_book'] as const) {
       const res = await callTool(createFakeHandlers(), name, undefined, ctx);

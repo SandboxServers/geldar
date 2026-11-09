@@ -77,7 +77,7 @@ export function createFakeHandlers(): ToolHandlers {
       days_since_sleep: 0,
       events: [],
       event_counts: {},
-      untrusted_world_text: { book: { title: 'Journal', text: 'Nothing written yet.' } },
+      untrusted_world_text: { book: { title: 'journal', text: 'Nothing written yet.' } },
       note: NOTE,
     }),
     journal: (input) => ({ ok: true, mirrored_chars: (input as { text: string }).text.length }),
