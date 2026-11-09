@@ -171,3 +171,27 @@ describe('limitedControl allow-list', () => {
     expect(source.match(/\.command\(/g)).toHaveLength(2);
   });
 });
+
+describe('limitedControl.effect', () => {
+  it('gives hunger', async () => {
+    const h = ctlReplying('Applied effect');
+    await h.ctl.effect('GolemBench', 'hunger', 30, 255);
+    expect(h.commands).toHaveLength(1);
+    expect(h.commands[0]).toContain('hunger');
+  });
+
+  it.each([
+    'saturation',
+    'instant_health',
+    'regeneration',
+    'resistance',
+    'minecraft:saturation',
+    'hunger_x',
+    'minecraft:minecraft:hunger',
+    '',
+  ])('refuses %j and sends nothing', (id) => {
+    const h = ctlReplying('Applied effect');
+    expect(() => h.ctl.effect('GolemBench', id, 1, 1)).toThrow(/may only give/);
+    expect(h.commands).toEqual([]);
+  });
+});

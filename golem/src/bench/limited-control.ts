@@ -3,6 +3,9 @@ import { HORIZONTAL_LIMIT, MAX_Y, MIN_Y, PLAYER_NAME, type TestControl } from '.
 /** The only `ctl` methods a scenario may call while it runs. */
 const RUN_PHASE_CONTROL = new Set(['effect', 'effectClear', 'timeSet', 'fill', 'chestItems']);
 
+/** The status effects a scenario's un may give: harmful ones a scenario actually needs. */
+const RUN_PHASE_EFFECTS = new Set(['hunger']);
+
 const BLOCK_ID = /^[a-z0-9_:]{1,64}$/;
 
 /** Server-side reads a scenario may make while it runs. Both are strictly read-only. */
@@ -62,7 +65,7 @@ async function isSleeping(ctl: TestControl, name: string): Promise<boolean> {
 }
 
 /**
- * A view of `ctl` for a scenario's `run`: effect, effectClear, timeSet, fill, chestItems and
+ * A view of `ctl` for a scenario's `run`: effect (hunger only), effectClear, timeSet, fill, chestItems and
  * gamerule queries (no value), plus the read-only `blockIs` and `isSleeping`. Anything else
  * throws, so a scenario cannot give itself items.
  */
@@ -74,6 +77,16 @@ export function limitedControl(ctl: TestControl): RunControl {
           if (value !== undefined)
             throw new Error('ctl.gamerule can only query while a scenario runs');
           return target.gamerule(name);
+        };
+      }
+      if (prop === 'effect') {
+        return (name: string, effectId: string, seconds: number, amplifier: number) => {
+          if (typeof effectId !== 'string' || !RUN_PHASE_EFFECTS.has(effectId)) {
+            throw new RangeError(
+              `ctl.effect may only give ${[...RUN_PHASE_EFFECTS].join(', ')} while a scenario runs`,
+            );
+          }
+          return target.effect(name, effectId, seconds, amplifier);
         };
       }
       if (prop === 'blockIs') {
