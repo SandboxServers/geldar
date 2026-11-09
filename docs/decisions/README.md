@@ -35,3 +35,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0028](0028-model-names.md) | Phase 0 names models by their Ollama tag | Accepted |
 | [0029](0029-rcon-reply-framing.md) | RCON replies end on a quiet period, not an empty packet | Accepted |
 | [0030](0030-world-time-ticks.md) | `world_time.ticks` is the world age; an unnamed biome is omitted | Accepted |
+| [0031](0031-place-at-feet.md) | `place ... at: "feet"` is the cell the bot's feet are in | Accepted |
