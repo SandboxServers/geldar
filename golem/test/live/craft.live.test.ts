@@ -14,6 +14,14 @@ async function carried(ctl: TestControl, name: string, item: string): Promise<nu
   return match ? Number(match[1]) : 0;
 }
 
+/**
+ * Unlocks every recipe for the bot so a table craft can find its recipe display. Test setup only:
+ * the Body never uses RCON, and a real bot unlocks recipes by holding the ingredients.
+ */
+async function unlockRecipes(ctl: TestControl, name: string): Promise<void> {
+  await ctl.command(`recipe give ${name} *`);
+}
+
 /** Clears item entities left by an earlier case in the arena (they are not blocks). */
 async function clearDrops(ctl: TestControl, cx: number, cz: number): Promise<void> {
   await ctl.command(`kill @e[type=item,x=${cx},y=200,z=${cz},distance=..40]`);
@@ -98,6 +106,7 @@ describe('craft on 26.1', () => {
       // The table is 20 blocks east of the bot, so the walk alone takes longer than 60 ticks.
       await ctl.setblock(cx + 10, cy, cz, 'crafting_table');
       await ctl.tp('GolemCraft', cx - 10, cy + 1, cz);
+      await unlockRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'wooden_pickaxe', 1);
       expect(run.state).toBe('completed');
@@ -116,6 +125,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, cx, cz);
       await ctl.clear('GolemCraft');
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
+      await unlockRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'stone_pickaxe', 1);
       expect(run.state).toBe('failed');
@@ -156,6 +166,7 @@ describe('craft on 26.1', () => {
       await ctl.give('GolemCraft', 'white_wool', 3);
       await ctl.give('GolemCraft', 'oak_planks', 3);
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
+      await unlockRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'white_bed', 1);
       expect(run.state).toBe('completed');
