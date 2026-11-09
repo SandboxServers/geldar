@@ -10,7 +10,8 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 setup                 Install workspace dependencies (frozen lockfile)
   ./geldar.ps1 pnpm <args...>        Run pnpm with the pinned version on PATH, nested calls included
   ./geldar.ps1 check                 Every check CI runs, in CI's order
-  ./geldar.ps1 shard up <name>       Start compose/<name>.yml and wait until healthy
+  ./geldar.ps1 shard up <name>       Create missing secrets, start compose/<name>.yml and wait until healthy
+  ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
   ./geldar.ps1 shard status <name>   Show container health
   ./geldar.ps1 shard logs <name> [service]
@@ -73,16 +74,35 @@ function Invoke-Check {
   } finally { Pop-Location }
 }
 
+# Writes the shard's Docker secret files (spec 6.7) when they are missing. Each holds
+# 32 random URL-safe characters with no newline. Existing files are never overwritten.
+function Initialize-ShardSecrets([string] $Shard) {
+  Get-ComposeFile $Shard | Out-Null
+  $dir = Join-Path $Root 'compose/secrets'
+  New-Item -ItemType Directory -Force $dir | Out-Null
+  $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+  foreach ($name in 'postgres', 'rcon', 'velocity-forwarding') {
+    $path = Join-Path $dir "$name.txt"
+    if (Test-Path $path) { continue }
+    # 64 symbols and 256 byte values: the modulo is unbiased.
+    $bytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+    $secret = -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
+    [IO.File]::WriteAllText($path, $secret)
+    Write-Host "created compose/secrets/$name.txt"
+  }
+}
+
 function Invoke-Shard([string[]] $ShardArgs) {
   $action, $shard, $extra = $ShardArgs
   $file = Get-ComposeFile $shard
   $compose = @('compose', '-f', $file, '-p', "geldar-$shard")
   switch ($action) {
-    'up' { Invoke-Step "start shard $shard" { docker @compose up -d --wait } }
+    'secrets' { Initialize-ShardSecrets $shard }
+    'up' { Initialize-ShardSecrets $shard; Invoke-Step "start shard $shard" { docker @compose up -d --wait } }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }
     'logs' { Invoke-Step "logs of shard $shard" { docker @compose logs --tail 200 @extra } }
-    default { throw "Unknown shard action '$action'. Use up, down, status or logs." }
+    default { throw "Unknown shard action '$action'. Use up, down, status, logs or secrets." }
   }
 }
 

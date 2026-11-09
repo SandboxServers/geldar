@@ -31,7 +31,7 @@ function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
 | Migrations | `dc exec postgres psql -U geldar -d geldar -tAc "select count(*) from information_schema.tables where table_schema='public'"` | the table count from `sql/` |
 | NATS JetStream | `curl -fsS http://localhost:8222/healthz?js-enabled-only=true` | `{"status":"ok"}` |
 | Paper | compose healthcheck (the image's `mc-health`) | `healthy` in `shard status` |
-| Paper is behind the proxy | `dc port paper 25565` | prints nothing: Paper has no published game port |
+| Paper is behind the proxy | `dc port paper 25565` | fails with `no port 25565/tcp` (exit 1): Paper has no published game port |
 | Velocity bot ingress | compose healthcheck, and `Test-NetConnection 127.0.0.1 -Port 25565` | `healthy`, and the port answers |
 | Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
 
