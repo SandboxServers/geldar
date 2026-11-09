@@ -271,6 +271,25 @@ describe('fitResult', () => {
     expect(fitted.dropped_events).toBe(50);
   });
 
+  it('lets the speech line of a waking event dropped over the 200 cap be dropped too', () => {
+    const lines = [speech(1, { text: 'a'.repeat(100) }), speech(250, { text: 'b'.repeat(100) })];
+    const result = waitResult(250, lines);
+    const cap = bytes({
+      ...result,
+      events: result.events.slice(50),
+      dropped_events: 50,
+      untrusted_world_text: { speech: [result.untrusted_world_text.speech![1]!] },
+    });
+    const fitted = fitResult(
+      result,
+      cap,
+      result.events.map((e) => e.seq),
+    );
+    expect(fitted.events).toHaveLength(200);
+    expect(fitted.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['b'.repeat(100)]);
+    expect(fitted.dropped_events).toBe(50);
+  });
+
   it('gives the same output for the same input', () => {
     const build = (): WaitResult =>
       waitResult(8, [speech(1, { text: 'bbbb' }), speech(2, { text: 'aaaa' })], 'y'.repeat(300));

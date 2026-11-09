@@ -209,7 +209,8 @@ export function fitResult<T extends Fittable>(
   }
   if (events && events.length > MAX_WAIT_EVENTS) {
     const extra = events.length - MAX_WAIT_EVENTS;
-    events.splice(0, extra);
+    // Their speech lines no longer owe protection to an event that is gone.
+    for (const gone of events.splice(0, extra)) waking.delete(gone.seq);
     drop(extra);
   }
   while (size(result) > maxBytes && dropOther()) {
