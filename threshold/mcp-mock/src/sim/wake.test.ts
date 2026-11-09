@@ -217,4 +217,5 @@ describe('evaluateWake', () => {
     expect(done.wake?.reason).toBe('goal_completed');
     const failed = run([ev({ kind: 'intent_finished', outcome: 'failed' })]);
     expect(failed.wake?.reason).toBe('precondition_failed');
-  });});
+  });
+});

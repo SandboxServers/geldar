@@ -1,5 +1,6 @@
 /** The wake policy (spec 5.3.2): pure and deterministic, no clock, no I/O, no model. */
 
+/** Why the agent was woken. 	imeout is for the caller's own idle wake; evaluateWake never returns it. */
 export type WakeReason =
   | 'directly_addressed'
   | 'goal_completed'
@@ -11,9 +12,13 @@ export type WakeReason =
   | 'intent_run_too_long'
   | 'timeout';
 
+/** One thing that happened to the agent, as the wake policy sees it. */
 export interface WakeEvent {
+  /** Unique, increasing id of the event. */
   seq: number;
+  /** When it happened, in clock milliseconds. */
   atMs: number;
+  /** What happened. */
   kind:
     | 'speech'
     | 'damage'
@@ -22,39 +27,63 @@ export interface WakeEvent {
     | 'day_night'
     | 'intent_finished'
     | 'reflex';
+  /** For speech: was the agent addressed directly? */
   addressed?: boolean;
+  /** For gent_approached: how far away the other agent is. */
   distance?: number;
+  /** For intent_finished: how the intent ended; an absent value counts as completed. */
   outcome?: 'completed' | 'failed' | 'limit_reached';
+  /** For a failed intent. Not read: outcome: 'failed' alone gives precondition_failed. */
   failure?: 'precondition_failed';
   /** The running intent's `wake_on` when the event happened; null if no intent was running. */
   wakeOn: string[] | null;
 }
 
+/** Timing settings of the wake policy. */
 export interface WakeConfig {
+  /** The least gap between two wakes; intent_finished events ignore it. */
   minSpacingMs: number;
+  /** How long an intent may run, counted from the later of its start and the last wake. */
   intentRunTooLongMs: number;
 }
 
+/** An event that did not wake the agent, kept for the record. */
 export interface SuppressedWake {
+  /** The event's seq. */
   seq: number;
+  /** The event's kind. */
   kind: string;
+  /** Why it was held back. */
   reason: 'overheard_chatter' | 'not_in_wake_on' | 'not_in_interests' | 'min_spacing' | 'reflex';
+  /** The event's tMs. */
   atMs: number;
 }
 
+/** The result of one evaluation. */
 export interface WakeDecision {
+  /** The wake to deliver now, or null. */
   wake: { reason: WakeReason; seqs: number[] } | null;
+  /** Events newly held back by this evaluation. */
   suppressed: SuppressedWake[];
+  /** The earliest time worth evaluating again, or null if nothing is waiting. */
   recheckAtMs: number | null;
 }
 
+/** Everything evaluateWake reads. */
 export interface WakeInput {
+  /** Events since the last wake. */
   events: WakeEvent[];
+  /** When the running intent started, or null if none runs. */
   intentStartedMs: number | null;
+  /** The event kinds the agent asked for. */
   interests: readonly string[];
+  /** The current time. */
   nowMs: number;
+  /** When the agent last woke, or null. */
   lastWakeMs: number | null;
+  /** Timing settings. */
   config: WakeConfig;
+  /** Seqs already recorded as suppressed, so they are not recorded twice. */
   alreadySuppressed: ReadonlySet<number>;
 }
 
@@ -123,7 +152,10 @@ const INTEREST_OF: Record<string, string> = {
   day_night: 'day_night',
 };
 
-/** Decides whether the agent wakes now, what was suppressed and when to look again. */
+/**
+ * Decides whether the agent wakes now, what was suppressed and when to look again.
+ * The intent_run_too_long fallback is exempt from the spacing window: it fires as soon as it is due.
+ */
 export function evaluateWake(i: WakeInput): WakeDecision {
   const suppressed: SuppressedWake[] = [];
   const note = (e: WakeEvent, reason: SuppressedWake['reason']): void => {
@@ -156,6 +188,7 @@ export function evaluateWake(i: WakeInput): WakeDecision {
       recheckAtMs = i.lastWakeMs + i.config.minSpacingMs;
     } else {
       const reasons = new Set(survivors.map((c) => c.reason));
+      // Every candidate reason is in PRIORITY, so the fallback only satisfies the type checker.
       const reason = PRIORITY.find((r) => reasons.has(r)) ?? 'timeout';
       return {
         wake: { reason, seqs: survivors.map((c) => c.event.seq) },

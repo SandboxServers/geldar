@@ -90,43 +90,78 @@ const event = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('clear_fact'), at_tick: atTick, fact: z.string().max(256) }),
 ]);
 
-const scenarioSchema = z.strictObject({
-  name: z.string().max(64),
-  day_length_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(2400),
-  character,
-  neighbours: z.array(z.strictObject({ name: identifier, position })).max(MAX_ITEMS).default([]),
-  books: z.array(book).max(MAX_ITEMS).default([]),
-  events: z
-    .array(event)
-    .max(MAX_ITEMS)
-    .default([])
-    .superRefine((events, ctx) => {
-      for (let i = 1; i < events.length; i++) {
-        if ((events[i]?.at_tick ?? 0) < (events[i - 1]?.at_tick ?? 0)) {
-          ctx.addIssue({ code: 'custom', path: [i], message: 'events must be sorted by at_tick' });
-          return;
+const scenarioSchema = z
+  .strictObject({
+    name: z.string().max(64),
+    day_length_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(2400),
+    character,
+    neighbours: z
+      .array(z.strictObject({ name: identifier, position }))
+      .max(MAX_ITEMS)
+      .default([]),
+    books: z.array(book).max(MAX_ITEMS).default([]),
+    events: z
+      .array(event)
+      .max(MAX_ITEMS)
+      .default([])
+      .superRefine((events, ctx) => {
+        for (let i = 1; i < events.length; i++) {
+          if ((events[i]?.at_tick ?? 0) < (events[i - 1]?.at_tick ?? 0)) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [i],
+              message: 'events must be sorted by at_tick',
+            });
+            return;
+          }
         }
-      }
-    }),
-  wake: z
-    .strictObject({
-      min_spacing_seconds: z.number().min(0).max(MAX_SECONDS).default(20),
-      intent_run_too_long_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(300),
-    })
-    .prefault({}),
-  intent: z.strictObject({ default_ticks: z.int().min(1).default(600) }).prefault({}),
-  reflex: z
-    .strictObject({
-      hunger_interval_ticks: z.int().min(1).default(1200),
-      eat_below: z.int().min(0).max(20).default(14),
-    })
-    .prefault({}),
-  shard_rules: z.strictObject({ chat_radius: z.int().min(1).default(32) }).prefault({}),
-  laws: z
-    .array(z.strictObject({ rule: z.string().min(1).max(256), value: lawValue }))
-    .max(20)
-    .default([]),
-});
+      }),
+    wake: z
+      .strictObject({
+        min_spacing_seconds: z.number().min(0).max(MAX_SECONDS).default(20),
+        intent_run_too_long_seconds: z.number().min(MIN_SECONDS).max(MAX_SECONDS).default(300),
+      })
+      .prefault({}),
+    intent: z.strictObject({ default_ticks: z.int().min(1).default(600) }).prefault({}),
+    reflex: z
+      .strictObject({
+        hunger_interval_ticks: z.int().min(1).default(1200),
+        eat_below: z.int().min(0).max(20).default(14),
+      })
+      .prefault({}),
+    shard_rules: z.strictObject({ chat_radius: z.int().min(1).default(32) }).prefault({}),
+    laws: z
+      .array(z.strictObject({ rule: z.string().min(1).max(256), value: lawValue }))
+      .max(20)
+      .default([]),
+  })
+  .superRefine((s, ctx) => {
+    const bookIds = new Set<string>();
+    s.books.forEach((b, i) => {
+      if (bookIds.has(b.id))
+        ctx.addIssue({ code: 'custom', path: ['books', i, 'id'], message: 'duplicate book id' });
+      bookIds.add(b.id);
+    });
+    s.character.inventory.forEach((entry, i) => {
+      if (entry.book_id !== undefined && !bookIds.has(entry.book_id))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['character', 'inventory', i, 'book_id'],
+          message: 'no book with this id',
+        });
+    });
+    const names = new Set<string>([s.character.name]);
+    s.neighbours.forEach((n, i) => {
+      if (names.has(n.name))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['neighbours', i, 'name'],
+          message:
+            n.name === s.character.name ? "is the character's own name" : 'duplicate neighbour',
+        });
+      names.add(n.name);
+    });
+  });
 
 /** A parsed scenario file with every default filled in. */
 export type Scenario = z.output<typeof scenarioSchema>;

@@ -184,6 +184,35 @@ describe('parseScenario size limits', () => {
     expect(() => parseScenario(big)).toThrow('scenario: (file): too large');
   });
 });
+describe('parseScenario cross-checks', () => {
+  const book = (id: string): unknown => ({ id, title: 't', kind: 'text', text: 't' });
+  const near = (name: string): unknown => ({ name, position: { x: 0, y: 0, z: 0 } });
+
+  it('rejects a duplicate book id at the second occurrence', () => {
+    const text = JSON.stringify({ ...base(), books: [book('bk_a'), book('bk_b'), book('bk_a')] });
+    expect(() => parseScenario(text)).toThrow('scenario: books.2.id');
+  });
+
+  it('rejects an inventory book without a matching book', () => {
+    const inv = (book_id: string): string =>
+      JSON.stringify({
+        ...JSON.parse(withCharacter({ inventory: [{ item: 'book', count: 1, book_id }] })),
+        books: [book('bk_a')],
+      });
+    expect(() => parseScenario(inv('bk_a'))).not.toThrow();
+    expect(() => parseScenario(inv('bk_zzz'))).toThrow('scenario: character.inventory.0.book_id');
+  });
+
+  it('rejects duplicate neighbours and the character name', () => {
+    const text = JSON.stringify({
+      ...base(),
+      neighbours: [near('Bryn'), near('Cael'), near('Bryn')],
+    });
+    expect(() => parseScenario(text)).toThrow('scenario: neighbours.2.name');
+    const own = JSON.stringify({ ...base(), neighbours: [near('Bryn'), near('Aelfric')] });
+    expect(() => parseScenario(own)).toThrow('scenario: neighbours.1.name');
+  });
+});
 describe('law values', () => {
   const law = (value: unknown): string =>
     JSON.stringify({ ...base(), laws: [{ rule: 'chat', value }] });
