@@ -12,6 +12,34 @@ describe('tryEat', () => {
     expect(r.state.food).toBe(20);
   });
 
+  it('adds a meal of 6 food', () => {
+    expect(tryEat({ food: 5, inventory: bread(1) }, 14).state.food).toBe(11);
+  });
+
+  it('caps food at 20', () => {
+    expect(tryEat({ food: 19, inventory: bread(1) }, 19).state.food).toBe(20);
+  });
+
+  it('eats from a custom edible list only', () => {
+    const inventory = [
+      { item: 'bread', count: 1 },
+      { item: 'carrot', count: 1 },
+    ];
+    const r = tryEat({ food: 3, inventory }, 14, ['carrot']);
+    expect(r.item).toBe('carrot');
+    expect(r.state.inventory).toEqual([{ item: 'bread', count: 1 }]);
+  });
+
+  it('eats from the first edible stack and leaves the others', () => {
+    const inventory = [
+      { item: 'apple', count: 1 },
+      { item: 'bread', count: 3 },
+    ];
+    const r = tryEat({ food: 3, inventory }, 14);
+    expect(r.item).toBe('apple');
+    expect(r.state.inventory).toEqual([{ item: 'bread', count: 3 }]);
+  });
+
   it('does not eat above eat_below', () => {
     const r = tryEat({ food: 15, inventory: bread(2) }, 14);
     expect(r.ate).toBe(false);
