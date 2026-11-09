@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { appendFileSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { MCP_TOOL_NAMES } from '@geldar/contract';
 import { createApp, type McpWorld } from './app.ts';
@@ -6,6 +7,8 @@ import { loadTokens } from './auth.ts';
 import { createFakeHandlers } from './fake-world.ts';
 import type { ToolHandlers } from './registry.ts';
 import { createShutdown } from './shutdown.ts';
+import { applyOverrides, parseScenario, type ScenarioOverrides } from './sim/scenario.ts';
+import { createSimWorld } from './sim/sim-world.ts';
 
 /** A fixed fake world; each player gets its own handler set, built on first use (the set holds a counter). */
 function createFixedWorld(): McpWorld {
@@ -38,13 +41,27 @@ function fail(code: number, message: string): never {
 }
 
 async function main(): Promise<void> {
-  let values: { tokens?: string | undefined; port?: string | undefined; host?: string | undefined };
+  let values: {
+    tokens?: string | undefined;
+    port?: string | undefined;
+    host?: string | undefined;
+    scenario?: string | undefined;
+    'day-length-seconds'?: string | undefined;
+    'min-wake-spacing-seconds'?: string | undefined;
+    'intent-run-too-long-seconds'?: string | undefined;
+    'suppressed-log'?: string | undefined;
+  };
   try {
     values = parseArgs({
       options: {
         tokens: { type: 'string' },
         port: { type: 'string' },
         host: { type: 'string' },
+        scenario: { type: 'string' },
+        'day-length-seconds': { type: 'string' },
+        'min-wake-spacing-seconds': { type: 'string' },
+        'intent-run-too-long-seconds': { type: 'string' },
+        'suppressed-log': { type: 'string' },
       },
       strict: true,
     }).values;
@@ -52,7 +69,28 @@ async function main(): Promise<void> {
     return fail(2, error instanceof Error ? error.message : 'bad arguments');
   }
   if (values.tokens === undefined) {
-    return fail(2, 'usage: cli.ts --tokens <file> [--port <n>] [--host <addr>]');
+    return fail(
+      2,
+      'usage: cli.ts --tokens <file> [--port <n>] [--host <addr>] [--scenario <file>] [--day-length-seconds <n>] [--min-wake-spacing-seconds <n>] [--intent-run-too-long-seconds <n>] [--suppressed-log <file>]',
+    );
+  }
+  const overrides: ScenarioOverrides = {};
+  const seconds: [string, keyof ScenarioOverrides][] = [
+    ['day-length-seconds', 'dayLengthSeconds'],
+    ['min-wake-spacing-seconds', 'minWakeSpacingSeconds'],
+    ['intent-run-too-long-seconds', 'intentRunTooLongSeconds'],
+  ];
+  for (const [flag, key] of seconds) {
+    const raw = values[flag as keyof typeof values];
+    if (raw === undefined) continue;
+    if (raw.trim() === '' || !Number.isFinite(Number(raw))) return fail(2, `invalid --${flag}`);
+    overrides[key] = Number(raw);
+  }
+  if (
+    values.scenario === undefined &&
+    (Object.keys(overrides).length > 0 || values['suppressed-log'])
+  ) {
+    return fail(2, 'the timing flags and --suppressed-log need --scenario');
   }
   if (values.port !== undefined && !/^[0-9]{1,5}$/.test(values.port)) {
     return fail(2, 'invalid --port');
@@ -73,7 +111,36 @@ async function main(): Promise<void> {
   const log = (line: Record<string, unknown>): void => {
     process.stderr.write(`${JSON.stringify(line)}\n`);
   };
-  const app = createApp({ tokens, world: createFixedWorld(), log });
+  let world: McpWorld;
+  if (values.scenario === undefined) {
+    world = createFixedWorld();
+  } else {
+    try {
+      const scenario = applyOverrides(
+        parseScenario(readFileSync(values.scenario, 'utf8')),
+        overrides,
+      );
+      const logFile = values['suppressed-log'];
+      if (logFile !== undefined) appendFileSync(logFile, '');
+      world = createSimWorld({
+        scenario,
+        ...(logFile !== undefined
+          ? {
+              onSuppressed: (record) => {
+                try {
+                  appendFileSync(logFile, `${JSON.stringify(record)}\n`);
+                } catch {
+                  log({ event: 'suppressed_log_error' });
+                }
+              },
+            }
+          : {}),
+      });
+    } catch (error) {
+      return fail(1, error instanceof Error ? error.message : 'cannot load the scenario');
+    }
+  }
+  const app = createApp({ tokens, world, log });
   const stop = createShutdown({
     close: () => app.close(),
     log,
