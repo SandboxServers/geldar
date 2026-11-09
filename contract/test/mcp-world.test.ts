@@ -346,7 +346,8 @@ describe('mcp world tools: coverage', () => {
   for (const tool of COVERED_ELSEWHERE) {
     it(`mcp-play.test.ts covers ${tool}`, () => {
       const play = readFileSync(new URL('./mcp-play.test.ts', import.meta.url), 'utf8');
-      expect(play).toContain(tool);
+      expect(play).toContain(`validateToolInput('${tool}'`);
+      expect(play).toContain(`validateToolResult('${tool}'`);
     });
   }
 
