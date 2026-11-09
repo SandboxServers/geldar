@@ -156,6 +156,55 @@ describe('findPublicPorts: bypass cases fail', () => {
     ).toEqual(['paper: network_mode: host shares the host network and is rejected']);
   });
 
+  it('fails a network_mode that is interpolated, not a string, or could resolve to host', () => {
+    expect(problems('services:\n  paper:\n    network_mode: $' + '{NM:-bridge}')).toEqual([
+      'paper: network_mode "$' + '{NM:-bridge}" uses interpolation, which is rejected',
+    ]);
+    expect(problems('services:\n  paper:\n    network_mode: $' + '{NM}')).toEqual([
+      'paper: network_mode "$' + '{NM}" uses interpolation, which is rejected',
+    ]);
+    expect(problems('services:\n  paper:\n    network_mode: [host]')).toEqual([
+      'paper: network_mode ["host"] must be a string',
+    ]);
+  });
+
+  it('accepts a plain bridge or service:<name> network_mode', () => {
+    expect(problems('services:\n  paper:\n    network_mode: bridge')).toEqual([]);
+    expect(problems('services:\n  paper:\n    network_mode: service:foo')).toEqual([]);
+  });
+
+  it('fails host networking written as a plain host string', () => {
+    expect(problems('services:\n  paper:\n    network_mode: host')).toEqual([
+      'paper: network_mode: host shares the host network and is rejected',
+    ]);
+  });
+
+  it('fails extends on a service and include at the top level, which are not followed', () => {
+    expect(
+      problems('services:\n  paper:\n    extends:\n      file: other.yml\n      service: base'),
+    ).toEqual(['paper: extends is not followed, so it is rejected']);
+    expect(problems('include:\n  - other.yml\nservices:\n  db:\n    image: postgres:17')).toEqual([
+      '(file): include is not followed, so it is rejected',
+    ]);
+  });
+
+  it('passes a normal file with bridge networking and loopback ports', () => {
+    const text = [
+      'services:',
+      '  postgres:',
+      '    image: postgres:17',
+      '    network_mode: bridge',
+      '    ports:',
+      '      - "127.0.0.1:5432:5432"',
+      '  paper:',
+      '    image: itzg/minecraft-server:2026.1',
+      '    network_mode: service:postgres',
+      '    expose:',
+      '      - "25565"',
+    ].join('\n');
+    expect(problems(text)).toEqual([]);
+  });
+
   it('fails a long-form mapping without host_ip, naming the service and mapping', () => {
     const text = [
       'services:',

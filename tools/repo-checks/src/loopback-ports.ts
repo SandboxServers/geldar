@@ -26,6 +26,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Why one `network_mode:` value is rejected, or null when it is accepted.
+ * Only a plain string that is not `host` passes. Anything else (a list, a number,
+ * null, or a `$` interpolation that could resolve to `host`) fails closed.
+ */
+function networkModeProblem(mode: unknown): string | null {
+  const shown = JSON.stringify(mode);
+  if (typeof mode !== 'string') return `network_mode ${shown} must be a string`;
+  if (mode.includes('$')) return `network_mode ${shown} uses interpolation, which is rejected`;
+  if (mode === 'host') return 'network_mode: host shares the host network and is rejected';
+  return null;
+}
+
+/**
  * Why one `ports:` entry is not loopback-only, or null when it is.
  * Short syntax must start with `127.0.0.1:`; long syntax needs `host_ip: 127.0.0.1`.
  * Any `$` (compose interpolation, `${VAR}`) is rejected, because the value that
@@ -71,17 +84,26 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
   }
   if (!isRecord(root)) return [finding('(file)', 'is not a YAML mapping')];
 
+  // `include:` pulls in another file that this check does not read, so it is rejected outright.
+  const findings: PortFinding[] = [];
+  if ('include' in root)
+    findings.push(finding('(file)', 'include is not followed, so it is rejected'));
+
   const services = root.services ?? {};
   if (!isRecord(services)) return [finding('(file)', 'services is not a mapping')];
 
-  const findings: PortFinding[] = [];
   for (const [service, definition] of Object.entries(services)) {
     if (!isRecord(definition)) {
       findings.push(finding(service, 'service is not a mapping'));
       continue;
     }
-    if (definition.network_mode === 'host') {
-      findings.push(finding(service, 'network_mode: host shares the host network and is rejected'));
+    // `extends:` pulls in another service definition that this check does not read.
+    if ('extends' in definition) {
+      findings.push(finding(service, 'extends is not followed, so it is rejected'));
+    }
+    if ('network_mode' in definition) {
+      const mode = networkModeProblem(definition.network_mode);
+      if (mode !== null) findings.push(finding(service, mode));
     }
     if (!('ports' in definition)) continue;
     if (!Array.isArray(definition.ports)) {
