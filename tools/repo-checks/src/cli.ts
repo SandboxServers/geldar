@@ -1,12 +1,14 @@
 /**
  * Repo hygiene gate: fails on files over the hard line cap, on CRLF in the
- * index, or on a compose port that does not bind to loopback. Line caps cover
+ * index, on a compose port that does not bind to loopback, or on a decision
+ * record that `docs/decisions/README.md` does not index. Line caps cover
  * untracked, not-ignored files too, so a new file fails locally before it is
  * staged. Untracked CRLF needs no check: `.gitattributes`
  * (`text=auto eol=lf`) converts it to LF when the file is added.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { checkDecisionIndex } from './decision-index.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
@@ -55,6 +57,11 @@ for (const file of [...tracked, ...untracked].filter((f) => isComposeFile(f.path
     );
     failed = true;
   }
+}
+
+for (const problem of checkDecisionIndex([...tracked, ...untracked])) {
+  console.log(`error: ${problem}`);
+  failed = true;
 }
 
 console.log(failed ? 'repo checks: failed' : 'repo checks: ok');

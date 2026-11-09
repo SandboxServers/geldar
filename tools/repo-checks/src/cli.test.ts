@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
@@ -15,14 +15,22 @@ function realComposeText(): string {
 
 /**
  * Runs the repo-checks CLI, the same way `pnpm check:repo` does, inside a fresh
- * git repo whose only compose file is `compose/phase0.yml` with this text.
+ * git repo whose only compose file is `compose/phase0.yml` with this text, plus
+ * any `extra` files (path to text).
  */
-function runCli(compose: string): { status: number; output: string } {
+function runCli(
+  compose: string,
+  extra: Record<string, string> = {},
+): { status: number; output: string } {
   const dir = mkdtempSync(join(tmpdir(), 'repo-checks-'));
   try {
     execFileSync('git', ['init', '-q'], { cwd: dir });
     mkdirSync(join(dir, 'compose'));
     writeFileSync(join(dir, 'compose', 'phase0.yml'), compose);
+    for (const [path, text] of Object.entries(extra)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
     execFileSync('git', ['-c', 'core.autocrlf=false', 'add', '-A'], { cwd: dir });
     try {
       const output = execFileSync(process.execPath, [cliPath], { cwd: dir, encoding: 'utf8' });
@@ -59,5 +67,16 @@ describe('repo-checks CLI, compose port wiring', () => {
     const result = runCli(mutated);
     expect(result.status).toBe(1);
     expect(result.output).toContain('service nats');
+  });
+});
+
+describe('repo-checks CLI, decision index wiring', () => {
+  it('fails a decision record that docs/decisions/README.md does not list', () => {
+    const result = runCli(realComposeText(), {
+      'docs/decisions/0001-contract.md': '# 0001. Contract\n',
+      'docs/decisions/README.md': '# Decisions\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('does not list 0001-contract.md');
   });
 });

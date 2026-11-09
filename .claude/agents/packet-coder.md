@@ -21,7 +21,10 @@ Rules:
 - LF line endings in every file. No secrets, tokens, account names, or public or private-network IPs (`127.0.0.1` is fine).
 - Never run `git stash`, `git push`, `gh pr`, `git worktree prune` or anything that deletes a worktree.
 - On a failing check, read the output, fix, rerun. At most five fix rounds per check; then stop and report.
-- Commit once at the end on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.
-- Your context limit is 95k tokens. Read only the line ranges you need. Past about 90k, stop, commit nothing half-done, and write what is done and what is left to the report.
+- Commit as soon as the checks pass, on the worktree's current branch: `git add` only the packet's files, then `git commit` with the message from the brief (it includes the attribution lines). Do not amend other commits.
+- Progress first: after your first working step, write a short progress note to the report path (facts only), so a continuation starts from it. The note records the `<base>` sha (rule below).
+- WIP commits on the packet branch are allowed. The final state is one commit with the brief's message. `<base>` is defined once, per pass: a first pass takes `HEAD` as it was when its session started; a continuation takes the base sha recorded in its input report, so its squash includes the earlier session's WIP commits; a review fix pass takes the packet commit it was given and never squashes below it. Every pass squashes everything since its `<base>` into one commit (`git reset --soft <base>` then `git commit`), so a fix pass adds exactly one commit on top of the reviewed one and does not rewrite reviewed history. Write the sha you used in the progress note and say in the report which base you used.
+- Copy the brief's commit message and trailer lines exactly. The trailer text is fixed: do not substitute a model name you think you are.
+- Your context limit is 95k tokens. Read only the line ranges you need. Past about 90k, stop, make a WIP commit of what passes, and write what is done and what is left to the report.
 
 Write the report to the report path: files changed, each check's final result, the commit hash, how you confirmed the test fails without the change, and any deviation from the spec with its reason. Return one line: `<packet> <done|blocked|failed> <commit-sha|-> <report-path>`.
