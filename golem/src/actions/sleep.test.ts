@@ -33,7 +33,8 @@ function fakeBot(options: FakeOptions = {}): Bot {
     get isSleeping() {
       return sleeping;
     },
-    findBlock: ({ matching }: { matching: (block: FakeBlock) => boolean }) => blocks.find(matching) ?? null,
+    findBlock: ({ matching }: { matching: (block: FakeBlock) => boolean }) =>
+      blocks.find(matching) ?? null,
     blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
     sleep: vi.fn(async (_bed: FakeBlock) => {
       const error = errors.shift();
@@ -46,7 +47,10 @@ function fakeBot(options: FakeOptions = {}): Bot {
 
 /** Runs the `sleep` handler with a fresh abort signal. */
 function sleep(bot: Bot) {
-  return sleepHandler.run({ bot, signal: new AbortController().signal, timeScale: 1 }, { do: 'sleep' });
+  return sleepHandler.run(
+    { bot, signal: new AbortController().signal, timeScale: 1 },
+    { do: 'sleep' },
+  );
 }
 
 const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
@@ -77,7 +81,7 @@ describe('classifySleepError', () => {
     expect(classifySleepError('Not a bed')).toBe('not_found');
     expect(classifySleepError('only half bed')).toBe('not_found');
     expect(classifySleepError('not sleeping')).toBe('blocked');
-    expect(classifySleepError("cant click that")).toBe('blocked');
+    expect(classifySleepError('cant click that')).toBe('blocked');
     expect(classifySleepError('not night')).toBe('not_possible');
     expect(classifySleepError('something else')).toBe('internal');
   });
@@ -100,12 +104,21 @@ describe('sleep', () => {
     const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }] });
     const outcome = await sleep(bot);
     expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 5, y: 64, z: 0 } } });
-    expect(moveNear).toHaveBeenCalledWith(bot, BED.position, 1, expect.objectContaining({ timeScale: 1 }));
+    expect(moveNear).toHaveBeenCalledWith(
+      bot,
+      BED.position,
+      1,
+      expect.objectContaining({ timeScale: 1 }),
+    );
     expect(bot.isSleeping).toBe(true);
   });
 
   it('retries on the other half of the bed after out_of_reach', async () => {
-    const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }, { ...OTHER_HALF }], sleepErrors: ['You are too far away'] });
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED }, { ...OTHER_HALF }],
+      sleepErrors: ['You are too far away'],
+    });
     const outcome = await sleep(bot);
     expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 6, y: 64, z: 0 } } });
     expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
@@ -113,17 +126,33 @@ describe('sleep', () => {
   });
 
   it('maps a monster-nearby rejection to not_possible', async () => {
-    const outcome = await sleep(fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }], sleepErrors: ['There are monsters nearby'] }));
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'not_possible', message: 'There are monsters nearby' });
+    const outcome = await sleep(
+      fakeBot({
+        timeOfDay: 13_000,
+        blocks: [{ ...BED }],
+        sleepErrors: ['There are monsters nearby'],
+      }),
+    );
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'There are monsters nearby',
+    });
   });
 
   it('maps an occupied bed to blocked', async () => {
-    const outcome = await sleep(fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }], sleepErrors: ['Bed is occupied'] }));
+    const outcome = await sleep(
+      fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }], sleepErrors: ['Bed is occupied'] }),
+    );
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
   });
 
   it('is cancelled when the walk is cancelled', async () => {
-    vi.mocked(moveNear).mockResolvedValueOnce({ ok: false, reason: 'cancelled', message: 'stopped' });
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: false,
+      reason: 'cancelled',
+      message: 'stopped',
+    });
     const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }] });
     const outcome = await sleep(bot);
     expect(outcome.status).toBe('cancelled');

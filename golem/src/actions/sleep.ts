@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { type ActionOutcome, cancelled, completed, failed, type FailReason } from './outcome.ts';
+import { type ActionOutcome, cancelled, completed, type FailReason, failed } from './outcome.ts';
 import { type MoveResult, moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 

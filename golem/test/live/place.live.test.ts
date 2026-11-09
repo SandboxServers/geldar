@@ -84,7 +84,9 @@ describe('place: the place action against a real server', () => {
       const run = await runAction(registry, bot, { do: 'place', block: 'torch', at: 'feet' });
       expect(run.state).toBe('completed');
       const feet = bot.entity.position;
-      const cell = bot.blockAt(new Vec3(Math.floor(feet.x), Math.floor(feet.y), Math.floor(feet.z)));
+      const cell = bot.blockAt(
+        new Vec3(Math.floor(feet.x), Math.floor(feet.y), Math.floor(feet.z)),
+      );
       expect(cell?.name).toBe('torch');
     });
   });

@@ -1,5 +1,4 @@
 import { Vec3 } from 'vec3';
-import type { Bot } from 'mineflayer';
 import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
 import { type MoveResult, moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
@@ -83,7 +82,9 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
 
   // At `feet` the reference is the block below; otherwise the first solid neighbor in order.
   const candidates =
-    at === 'feet' ? [target.offset(0, -1, 0)] : NEIGHBOR_OFFSETS.map((o) => target.offset(o.x, o.y, o.z));
+    at === 'feet'
+      ? [target.offset(0, -1, 0)]
+      : NEIGHBOR_OFFSETS.map((o) => target.offset(o.x, o.y, o.z));
   const cells = candidates.map((position) => bot.blockAt(position));
   const index = pickReference(cells.map((cell) => cell?.boundingBox === 'block'));
   const reference = index === null ? undefined : cells[index];
@@ -95,7 +96,11 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
     if (ctx.signal.aborted) return cancelled();
   }
 
-  const face = new Vec3(target.x - referencePos.x, target.y - referencePos.y, target.z - referencePos.z);
+  const face = new Vec3(
+    target.x - referencePos.x,
+    target.y - referencePos.y,
+    target.z - referencePos.z,
+  );
   try {
     await bot.placeBlock(reference, face);
   } catch (error) {

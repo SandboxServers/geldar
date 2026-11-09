@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
-import { bestFood, type FoodInfo, eatHandler } from './eat.ts';
+import { bestFood, eatHandler, type FoodInfo } from './eat.ts';
 
 /** Food numbers for the fake registry; `chorus_fruit` would win on points but is banned. */
 const FOODS: Record<string, FoodInfo> = {
@@ -57,8 +57,12 @@ describe('bestFood', () => {
   });
 
   it('skips banned foods even when they rank highest', () => {
-    expect(bestFood(['rotten_flesh', 'chorus_fruit', 'apple'], FOODS, ['rotten_flesh', 'chorus_fruit'])).toBe('apple');
-    expect(bestFood(['rotten_flesh', 'chorus_fruit'], FOODS, ['rotten_flesh', 'chorus_fruit'])).toBeNull();
+    expect(
+      bestFood(['rotten_flesh', 'chorus_fruit', 'apple'], FOODS, ['rotten_flesh', 'chorus_fruit']),
+    ).toBe('apple');
+    expect(
+      bestFood(['rotten_flesh', 'chorus_fruit'], FOODS, ['rotten_flesh', 'chorus_fruit']),
+    ).toBeNull();
   });
 
   it('breaks a tie on points by saturation, then by name', () => {
@@ -67,7 +71,10 @@ describe('bestFood', () => {
       cooked_porkchop: { foodPoints: 8, saturation: 12.8 },
     };
     expect(bestFood(['bread', 'cooked_porkchop'], foods, [])).toBe('cooked_porkchop');
-    const even = { bread: { foodPoints: 8, saturation: 6 }, carrot: { foodPoints: 8, saturation: 6 } };
+    const even = {
+      bread: { foodPoints: 8, saturation: 6 },
+      carrot: { foodPoints: 8, saturation: 6 },
+    };
     expect(bestFood(['bread', 'carrot'], even, [])).toBe('bread');
   });
 
@@ -80,7 +87,11 @@ describe('bestFood', () => {
 describe('eat', () => {
   it('fails with not_possible when the bot is full', async () => {
     const outcome = await eat(fakeBot({ food: 20, items: ['apple'] }));
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'not_possible', message: 'not hungry' });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'not hungry',
+    });
   });
 
   it('fails with missing_materials when there is no food', async () => {
