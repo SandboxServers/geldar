@@ -21,3 +21,55 @@ lifecycle: { permadeath: false }
 models:
   strong: ["qwen3:32b"]          # Ollama on the host (decision 0002)
   fast: ["qwen3:8b"]
+
+# The Mind (animus), the local Thinker and Adam's Body run as host processes (decision 0050); every
+# address is loopback. Only the loaders of the packets that own a block read it; the reflex loader
+# reads `reflexes` alone and ignores the rest.
+mind:
+  agent:
+    name: Adam                   # display name in prompts and addressed-speech detection (decision 0051)
+    username: ag_adam_01         # the game account username, equal to the life id (decision 0040, 0051)
+    tier: strong                 # which models.* tier the life runs on; fixed for the life (spec 5.3.3)
+    # Placeholder: the orchestrator drafts 3 to 5 traits and one quirk and the owner approves them
+    # before the first run (decision 0051 item 2). The Mind refuses to start on this value.
+    personality_seed: DRAFT_PENDING_OWNER_APPROVAL
+  thinker:
+    host: 127.0.0.1              # the Mind's Thinker socket, loopback only
+    port: 7410
+    name: local                  # the Thinker name in the welcome frame
+    heartbeat_s: 15              # seconds between heartbeat frames
+  thought:
+    max_tokens: 600              # output cap of a standard thought
+    temperature: 0.7
+    deadline_s: 25               # job deadline, seconds after dispatch
+    reasoning: "off"             # the job's reasoning switch (decision 0049)
+  reflection:
+    max_tokens: 1200             # sleep reflection (spec 5.4)
+    deadline_s: 180
+    reasoning: "on"
+  admission:
+    max_thoughts_per_real_hour: 120   # local admission cap on thought jobs (wave 5 Q4)
+  plan:
+    expires_after_ticks: 1200    # a plan is refused by the Body this many world ticks after its snapshot
+  run_tier: strong               # models.* tier for this run; the 8B run is a separate life (decision 0051)
+
+# Pinned models (decision 0051). A model whose digest differs from the Ollama one is not advertised.
+# The digests are recorded from `ollama list` at dispatch; until then they hold the literal
+# placeholder below, which the config loader (a later packet) must refuse outside tests.
+model_pins:
+  "qwen3:32b":
+    digest: "sha256:RECORD_AT_DISPATCH"   # placeholder: record at dispatch
+    num_ctx: 8192                # context window sent as an Ollama option
+    keep_alive: 30m              # how long Ollama keeps the model loaded
+    max_concurrent: 1            # one job at a time per model
+  "qwen3:8b":
+    digest: "sha256:RECORD_AT_DISPATCH"   # placeholder: record at dispatch
+    num_ctx: 8192
+    keep_alive: 30m
+    max_concurrent: 1
+
+embedding:
+  model: nomic-embed-text        # decision D-P0-12
+  digest: "sha256:RECORD_AT_DISPATCH"     # placeholder: record at dispatch
+  dims: 768
+  on_cpu: true                   # num_gpu 0, so it does not compete for the 24 GB card

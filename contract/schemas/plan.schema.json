@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/plan.schema.json",
+  "title": "PlanMessage",
+  "description": "Mind to Body, on geldar.<shard>.body.<life_id>.plan: one validated thought as a plan. The Body checks life_id, body_generation, source_snapshot_id/snapshot_revision and expires_tick (decision 0025) and answers with a PlanAck. action_ids carry one pre-assigned ac_ id per entry of thought.actions, in order, so a redelivery dedups; intent_id is set when thought.intent is present.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "thought_id",
+    "life_id",
+    "body_generation",
+    "source_snapshot_id",
+    "snapshot_revision",
+    "expires_tick",
+    "action_ids",
+    "thought"
+  ],
+  "properties": {
+    "thought_id": { "$ref": "common.schema.json#/$defs/ThoughtId" },
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "body_generation": { "type": "integer", "minimum": 0 },
+    "source_snapshot_id": { "$ref": "common.schema.json#/$defs/SnapshotId" },
+    "snapshot_revision": { "type": "integer", "minimum": 0 },
+    "expires_tick": {
+      "description": "World age after which the Body refuses the plan.",
+      "$ref": "common.schema.json#/$defs/WorldTick"
+    },
+    "intent_id": { "$ref": "common.schema.json#/$defs/IntentId" },
+    "action_ids": {
+      "type": "array",
+      "maxItems": 6,
+      "items": { "$ref": "common.schema.json#/$defs/ActionId" }
+    },
+    "thought": { "$ref": "thought.schema.json" }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/thought-event.schema.json",
+  "title": "ThoughtEventPayload",
+  "description": "Payload of a WorldEvent of type `thought`: the record of one thinking cycle (spec section 7). The Mind publishes it whether or not a plan resulted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "thought_id",
+    "wake_reason",
+    "outcome",
+    "latency_ms",
+    "model_config",
+    "effort",
+    "intent_id"
+  ],
+  "properties": {
+    "thought_id": { "$ref": "common.schema.json#/$defs/ThoughtId" },
+    "wake_reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "fallback_continue",
+        "fallback_hold",
+        "tired",
+        "model_error",
+        "invalid_output"
+      ]
+    },
+    "latency_ms": { "type": "integer", "minimum": 0 },
+    "model_config": {
+      "description": "The pinned model configuration the thought ran on (weights, quantisation, sampling, runtime).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "effort": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "intent_id": {
+      "description": "The intent the thought started, or null.",
+      "anyOf": [{ "$ref": "common.schema.json#/$defs/IntentId" }, { "type": "null" }]
+    }
+  }
+}

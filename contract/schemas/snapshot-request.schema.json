@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/snapshot-request.schema.json",
+  "title": "SnapshotRequest",
+  "description": "Mind to Body, on the plan-channel's sibling subject geldar.<shard>.body.<life_id>.snapshot: asks the Body for a fresh Snapshot for the life. The Body answers on the NATS reply subject with a Snapshot (snapshot.schema.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "reason"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "reason": {
+      "description": "Why the Mind wants a snapshot, for the logs, for example wake or sleep.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  }
+}

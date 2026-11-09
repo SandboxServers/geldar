@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/plan-result-event.schema.json",
+  "title": "PlanResultPayload",
+  "description": "Payload of a WorldEvent of type `plan_result`: what became of a plan the Body accepted, once its actions ended. intent is the executor's disposition of the thought's intent (golem/src/body/executor-types.ts IntentDisposition). Events only, no table.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["thought_id", "intent", "failed_at", "actions", "said"],
+  "properties": {
+    "thought_id": { "$ref": "common.schema.json#/$defs/ThoughtId" },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "none",
+        "started",
+        "duplicate",
+        "skipped",
+        "unsupported_program",
+        "precondition_failed",
+        "invalid_arguments"
+      ]
+    },
+    "failed_at": {
+      "description": "Index of the first action that did not complete, or null.",
+      "anyOf": [{ "type": "integer", "minimum": 0, "maximum": 5 }, { "type": "null" }]
+    },
+    "actions": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action_id", "state"],
+        "properties": {
+          "action_id": { "$ref": "common.schema.json#/$defs/ActionId" },
+          "state": {
+            "type": "string",
+            "enum": ["accepted", "running", "completed", "failed", "cancelled"]
+          },
+          "reason": { "type": "string", "maxLength": 256 }
+        }
+      }
+    },
+    "said": {
+      "description": "True when the thought's say text was spoken.",
+      "type": "boolean"
+    }
+  }
+}

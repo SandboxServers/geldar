@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/speech-event.schema.json",
+  "title": "SpeechPayload",
+  "description": "Payload of a WorldEvent of type `speech`: one line of chat the Body heard or said. The text is untrusted world text (decision 0034). own is true for the agent's own speech, where distance is null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["from", "text", "distance", "own"],
+  "properties": {
+    "from": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "text": { "type": "string", "maxLength": 256 },
+    "distance": {
+      "description": "Blocks between speaker and listener, or null when unknown.",
+      "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }]
+    },
+    "own": { "type": "boolean" }
+  }
+}
