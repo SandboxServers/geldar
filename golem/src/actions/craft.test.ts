@@ -2,10 +2,13 @@ import type { Bot } from 'mineflayer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
 import { craftAction, diagnoseCraft } from './craft.ts';
+import { craftAtTable } from './craft-table.ts';
 import { moveNear } from './pathing.ts';
 
 // The moves are the pathfinder's; a fake bot has none, so the tests only check the arguments.
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
+// The table path talks to the protocol client, which a fake bot does not have. Its own tests cover it.
+vi.mock('./craft-table.ts', () => ({ craftAtTable: vi.fn(async () => null) }));
 
 const DEFS = [
   { id: 1, name: 'wooden_pickaxe' },
@@ -110,16 +113,26 @@ describe('craftAction', () => {
     });
   });
 
-  it('walks to the table and crafts with it when the recipe needs one', async () => {
+  it('walks to the table and hands a table recipe to the table path, not bot.craft', async () => {
     const pickaxe = recipe(1, 1, { 10: 3, 7: 2 }, true);
     const fake = fakeBot({
       recipes: [pickaxe],
       inventory: { 10: 3, 7: 2 },
       table: TABLE,
     });
+    vi.mocked(craftAtTable).mockImplementationOnce(async () => {
+      await fake.craft(pickaxe);
+      return null;
+    });
     const out = await run(fake.bot, 'wooden_pickaxe', 1);
     expect(moveNear).toHaveBeenCalledWith(fake.bot, TABLE.position, 3, expect.anything());
-    expect(fake.craft).toHaveBeenCalledWith(pickaxe, 1, TABLE);
+    expect(craftAtTable).toHaveBeenCalledWith(
+      expect.anything(),
+      TABLE,
+      { id: 1, name: 'wooden_pickaxe' },
+      1,
+    );
+    expect(fake.craft).toHaveBeenCalledTimes(1);
     expect(out).toMatchObject({
       status: 'completed',
       detail: { item: 'wooden_pickaxe', crafted: 1, used_table: true },

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
+import { watchRecipeBook } from './actions/craft-table.ts';
 import { nextDelayMs } from './backoff.ts';
 import { stackVersions } from './versions.ts';
 
@@ -175,6 +176,8 @@ export class ConnectionManager extends EventEmitter {
       hideErrors: false,
     });
     this.bot = bot;
+    // Before any packet: the server sends the recipe book during the join.
+    watchRecipeBook(bot);
     this.state = 'connecting';
     return new Promise((resolve) => {
       let spawnedAt: number | null = null;

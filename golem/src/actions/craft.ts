@@ -1,6 +1,7 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Block, Recipe } from './bot-types.ts';
+import { craftAtTable } from './craft-table.ts';
 import { heldCount } from './inventory-count.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -66,9 +67,15 @@ async function runCraft(
   const times = Math.ceil(action.count / recipe.result.count);
   const before = heldCount(bot, item.id);
   try {
-    for (let i = 0; i < times; i++) {
-      if (signal.aborted) break;
-      await bot.craft(recipe, 1, usedTable ?? undefined);
+    if (usedTable) {
+      // Table recipes skip bot.craft: its stateId is shared by every window and the table rejects it.
+      const stop = await craftAtTable(ctx, usedTable, item, times);
+      if (stop) return stop;
+    } else {
+      for (let i = 0; i < times; i++) {
+        if (signal.aborted) break;
+        await bot.craft(recipe, 1);
+      }
     }
   } catch (error) {
     const message = errorText(error);

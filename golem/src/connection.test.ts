@@ -7,6 +7,8 @@ import { stackVersions } from './versions.ts';
 /** A bot stand-in: an emitter with a `quit` spy, so tests drive the lifecycle by hand. */
 class FakeBot extends EventEmitter {
   quit = vi.fn();
+  // The recipe-book watch listens on the protocol client, which the manager's fake has as an emitter.
+  _client = new EventEmitter();
 }
 
 /** Wires a manager to fake bots, a recorded sleep and a fake clock. */
