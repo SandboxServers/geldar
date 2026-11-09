@@ -8,6 +8,7 @@ export * from './resources.ts';
 export * from './server.ts';
 export * from './sim/clock.ts';
 export * from './sim/events.ts';
+export * from './sim/hub.ts';
 export * from './sim/intent.ts';
 export * from './sim/player-sim.ts';
 export * from './sim/reflex.ts';
