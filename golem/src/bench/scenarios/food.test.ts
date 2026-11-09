@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BenchEnv } from '../types.ts';
+import type { BenchEnv, RunEnv } from '../types.ts';
 import { food, foodRose } from './food.ts';
 
 const CENTER = { x: 800, y: 200, z: 800 };
@@ -38,7 +38,7 @@ function runEnv(opts: { gain: number; failStep?: string; startFood?: number }) {
       }
       return { state: 'completed', result: { status: 'completed', detail: {} } };
     },
-  } as unknown as BenchEnv;
+  } as unknown as RunEnv;
   return { env, calls };
 }
 

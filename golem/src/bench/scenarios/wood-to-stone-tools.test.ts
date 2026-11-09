@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BenchEnv } from '../types.ts';
+import type { BenchEnv, RunEnv } from '../types.ts';
 import { failedStepNote, holdsStonePickaxe, woodToStoneTools } from './wood-to-stone-tools.ts';
 
 const CENTER = { x: 800, y: 200, z: 800 };
@@ -75,7 +75,7 @@ describe('wood-to-stone-tools run', () => {
             : { status: 'completed', detail: {} },
         };
       },
-    } as unknown as BenchEnv;
+    } as unknown as RunEnv;
     return { env, actions };
   };
 

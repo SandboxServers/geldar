@@ -10,6 +10,7 @@ import { gotoSmoke } from './goto-smoke.ts';
 
 // --- P0-10b wood-to-stone-tools, food, shelter ---
 import { food } from './food.ts';
+import { shelter } from './shelter.ts';
 import { woodToStoneTools } from './wood-to-stone-tools.ts';
 
 // --- P0-10c bed, chest, blocked-path ---
@@ -23,6 +24,7 @@ export const scenarios: Scenario[] = [
   // --- P0-10b wood-to-stone-tools, food, shelter ---
   woodToStoneTools,
   food,
+  shelter,
   // --- end P0-10b ---
 
   // --- P0-10c bed, chest, blocked-path ---
