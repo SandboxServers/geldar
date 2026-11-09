@@ -89,7 +89,10 @@ const scenarioSchema = z.strictObject({
     })
     .prefault({}),
   shard_rules: z.strictObject({ chat_radius: z.int().min(1).default(32) }).prefault({}),
-  laws: z.array(z.strictObject({ rule: z.string(), value: z.string() })).max(20).default([]),
+  laws: z
+    .array(z.strictObject({ rule: z.string(), value: z.string() }))
+    .max(20)
+    .default([]),
 });
 
 /** A parsed scenario file with every default filled in. */

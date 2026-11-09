@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FakeClock, msAt, RealClock, tickAt, TICKS_PER_DAY, ticksPerSecond } from './clock.ts';
+import { FakeClock, msAt, RealClock, TICKS_PER_DAY, tickAt, ticksPerSecond } from './clock.ts';
 
 describe('tick arithmetic', () => {
   it('ticksPerSecond divides a day by its length', () => {

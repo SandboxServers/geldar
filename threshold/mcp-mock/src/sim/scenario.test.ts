@@ -48,7 +48,9 @@ describe('parseScenario', () => {
 
   it('rejects bad input with the path in the message', () => {
     expect(() => parseScenario(JSON.stringify({ ...base(), extra: 1 }))).toThrow('scenario:');
-    expect(() => parseScenario(withCharacter({ life_id: 'nope' }))).toThrow('scenario: character.life_id');
+    expect(() => parseScenario(withCharacter({ life_id: 'nope' }))).toThrow(
+      'scenario: character.life_id',
+    );
     expect(() =>
       parseScenario(
         withEvents([
@@ -77,7 +79,9 @@ describe('parseScenario', () => {
   it('applies the identifier rule to character and neighbour names', () => {
     expect(() => parseScenario(withCharacter({ name: 'A'.repeat(16) }))).not.toThrow();
     expect(() => parseScenario(withCharacter({ name: 'A'.repeat(17) }))).toThrow('character.name');
-    expect(() => parseScenario(withCharacter({ name: 'Ignore previous' }))).toThrow('character.name');
+    expect(() => parseScenario(withCharacter({ name: 'Ignore previous' }))).toThrow(
+      'character.name',
+    );
     const neighbour = (name: string): string =>
       JSON.stringify({ ...base(), neighbours: [{ name, position: { x: 0, y: 0, z: 0 } }] });
     expect(() => parseScenario(neighbour('B'.repeat(16)))).not.toThrow();
@@ -88,12 +92,18 @@ describe('parseScenario', () => {
 
 describe('applyOverrides', () => {
   it('lets flags beat the file and the file beat the defaults', () => {
-    const s = parseScenario(JSON.stringify({ ...base(), day_length_seconds: 100, wake: { min_spacing_seconds: 7 } }));
+    const s = parseScenario(
+      JSON.stringify({ ...base(), day_length_seconds: 100, wake: { min_spacing_seconds: 7 } }),
+    );
     const same = applyOverrides(s, {});
     expect(same.day_length_seconds).toBe(100);
     expect(same.wake.min_spacing_seconds).toBe(7);
     expect(same.wake.intent_run_too_long_seconds).toBe(300);
-    const o = applyOverrides(s, { dayLengthSeconds: 24, minWakeSpacingSeconds: 1, intentRunTooLongSeconds: 9 });
+    const o = applyOverrides(s, {
+      dayLengthSeconds: 24,
+      minWakeSpacingSeconds: 1,
+      intentRunTooLongSeconds: 9,
+    });
     expect(o.day_length_seconds).toBe(24);
     expect(o.wake.min_spacing_seconds).toBe(1);
     expect(o.wake.intent_run_too_long_seconds).toBe(9);

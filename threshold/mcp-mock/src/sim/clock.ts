@@ -72,7 +72,8 @@ export class FakeClock implements Clock {
       let next: PendingSleep | undefined;
       for (const p of this.pending) {
         if (p.dueMs > target) continue;
-        if (!next || p.dueMs < next.dueMs || (p.dueMs === next.dueMs && p.order < next.order)) next = p;
+        if (!next || p.dueMs < next.dueMs || (p.dueMs === next.dueMs && p.order < next.order))
+          next = p;
       }
       if (!next) break;
       this.pending = this.pending.filter((p) => p !== next);
