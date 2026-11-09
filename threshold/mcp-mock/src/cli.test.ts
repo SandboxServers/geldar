@@ -328,29 +328,43 @@ describe('cli', () => {
     expect(await listeningPort(stderr)).toBeGreaterThan(0);
   }, 30_000);
 
+  // An empty --suppressed-log exits 2 (a usage error) without --scenario, and 1 (a load failure) with it.
   it('exits 2 on an empty --suppressed-log without --scenario', async () => {
     const tokens = join(dir, 'tokens.json');
     writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
-    const { child: proc, stderr } = run(['--tokens', tokens, '--suppressed-log', '']);
+    const { child: proc, stderr } = run([
+      '--tokens',
+      tokens,
+      '--port',
+      '0',
+      '--suppressed-log',
+      '',
+    ]);
     expect(await exited(proc)).toBe(2);
     expect(stderr()).toContain('--suppressed-log');
   }, 30_000);
 
-  it('exits 1 on an empty --suppressed-log with --scenario', async () => {
+  // Characterisation: the empty path fails to open, so the scenario load fails with exit 1, never 2.
+  it('characterisation: an empty --suppressed-log with --scenario fails to load, exit 1', async () => {
     const tokens = join(dir, 'tokens.json');
     writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
     const scenario = join(dir, 'a.scenario.json');
     writeFileSync(scenario, scenarioJson());
-    const { child: proc } = run([
+    const { child: proc, stderr } = run([
       '--tokens',
       tokens,
+      '--port',
+      '0',
       '--scenario',
       scenario,
       '--suppressed-log',
       '',
     ]);
     expect(await exited(proc)).toBe(1);
+    expect(stderr()).not.toContain('need --scenario');
+    expect(stderr()).not.toContain('"event":"listening"');
   }, 30_000);
+
   it.skipIf(process.platform === 'win32')(
     'stops with exit 0 on SIGTERM',
     async () => {
