@@ -195,6 +195,15 @@ describe('craftAction', () => {
     await run(fake.bot, 'oak_planks', 4);
     expect(fake.closeWindow).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps the completed outcome when closing the window fails', async () => {
+    const log = recipe(5, 4, { 6: 1 });
+    const fake = fakeBot({ recipes: [log], inventory: { 6: 1 } });
+    fake.state.currentWindow = {};
+    fake.closeWindow.mockRejectedValueOnce(new Error('connection gone'));
+    const out = await run(fake.bot, 'oak_planks', 4);
+    expect(out).toMatchObject({ status: 'completed', detail: { crafted: 4 } });
+  });
 });
 
 describe('diagnoseCraft', () => {

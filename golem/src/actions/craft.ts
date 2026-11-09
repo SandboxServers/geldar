@@ -77,9 +77,16 @@ async function runCraft(
     if (/ingredient/i.test(message)) return failed('missing_materials', message.slice(0, 200));
     throw error;
   } finally {
-    if (bot.currentWindow) await bot.closeWindow(bot.currentWindow);
+    // A close error must not replace the outcome that the loop produced.
+    if (bot.currentWindow) {
+      await bot.closeWindow(bot.currentWindow).catch((error: unknown) => {
+        console.warn(`crafting window did not close: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
   }
-  if (signal.aborted) return cancelled({ item: item.name });
+  if (signal.aborted) {
+    return cancelled({ item: item.name, crafted: bot.inventory.count(item.id, null) - before });
+  }
 
   // Mineflayer's own clock is not the server's: wait for the inventory correction to arrive.
   await bot.waitForTicks(SETTLE_TICKS);
