@@ -122,6 +122,23 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  eventsink:
+    # NATS GELDAR_EVENTS to Postgres `events`, idempotently (spec 7). Context is the repo root:
+    # the image needs the workspace's contract package.
+    build:
+      context: ..
+      dockerfile: eventsink/Dockerfile
+    environment:
+      GELDAR_NATS_URL: nats://nats:4222
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+    secrets: [postgres]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
 secrets:
   postgres:
     file: ./secrets/postgres.txt
