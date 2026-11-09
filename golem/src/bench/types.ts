@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { ActionRun } from '../actions/registry.ts';
 import type { Arena } from '../arena.ts';
 import type { TestControl } from '../test-control.ts';
+import type { RunControl } from './limited-control.ts';
 
 /** What a scenario gets: the bot, server control, its arena, the cell's tick rate and an abort signal. */
 export interface BenchEnv {
@@ -33,9 +34,15 @@ export interface Scenario {
   prepare(env: BenchEnv): Promise<void>;
   /** The fixture is visible to the bot (`bot.blockAt`, `bot.inventory`). */
   ready(env: BenchEnv): boolean;
-  /** Plays the scenario. `env.ctl` is limited here to effect, effectClear, timeSet, fill, chestItems and gamerule queries. */
-  run(env: BenchEnv): Promise<{ passed: boolean; note: string }>;
+  /**
+   * Plays the scenario. `env.ctl` is limited here to effect, effectClear, timeSet, fill,
+   * chestItems and gamerule queries, plus the read-only `blockIs` and `isSleeping`.
+   */
+  run(env: RunEnv): Promise<{ passed: boolean; note: string }>;
 }
+
+/** The env a scenario's `run` gets: `ctl` is the limited control with the read-only queries. */
+export type RunEnv = BenchEnv & { ctl: RunControl };
 
 /** One finished action as the benchmark keeps it. */
 export interface ActionRecordLite {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BenchEnv } from '../types.ts';
+import type { RunEnv } from '../types.ts';
 import { gotoSmoke } from './goto-smoke.ts';
 import { findScenario, scenarios, visibleScenarios } from './index.ts';
 
@@ -35,7 +35,7 @@ describe('goto-smoke', () => {
           result: { status: state, latency_ms: 5, world_ticks: 3, detail: {}, reason: 'blocked' },
         };
       },
-    } as unknown as BenchEnv;
+    } as unknown as RunEnv;
     return { env, calls };
   };
 
