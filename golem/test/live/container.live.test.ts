@@ -70,6 +70,7 @@ describe('open, deposit and withdraw on 26.1', () => {
       await bot.waitForTicks(10);
       const run = await act(bot, { do: 'deposit', at, item: 'cobblestone', count: 10 });
       expect(run.state).toBe('completed');
+      expect(Number(run.result.detail.moved)).toBe(10);
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 10]]));
       expect(held(bot, 'cobblestone')).toBe(0);
     });
@@ -88,6 +89,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
       const taken = await act(bot, { do: 'withdraw', at, item: 'cobblestone', count: 4 });
       expect(taken.state).toBe('completed');
+      expect(Number(taken.result.detail.moved)).toBe(4);
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 6]]));
       expect(held(bot, 'cobblestone')).toBe(4);
 
@@ -140,6 +142,7 @@ describe('open, deposit and withdraw on 26.1', () => {
       await bot.waitForTicks(10);
       const run = await act(bot, { do: 'deposit', at, item: 'cobblestone', count: 2 });
       expect(run.state).toBe('completed');
+      expect(Number(run.result.detail.moved)).toBe(2);
       expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 2]]));
     });
   }, 180_000);

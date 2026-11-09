@@ -34,14 +34,14 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** How many of an item the bot holds in its main inventory and hotbar. */
-function inventoryCount(bot: Bot, itemId: number): number {
-  let total = 0;
-  // `items()` covers the main inventory and the hotbar only, not armor or the off-hand.
-  for (const item of bot.inventory.items()) {
-    if (item.type === itemId) total += item.count;
-  }
-  return total;
+/**
+ * How many of an item the bot holds in its main inventory and hotbar, read from the open window.
+ * While a container is open, mineflayer applies the clicks to the window; `bot.inventory` only
+ * catches up when the window closes, so it is stale during `fn`.
+ */
+function inventoryCount(container: Container, itemId: number): number {
+  // `count` covers the window's player region: main inventory and hotbar, not armor or off-hand.
+  return container.count(itemId, null);
 }
 
 /** The container's stacks summed per item name. */
@@ -145,15 +145,15 @@ async function withdraw(
     return failed('not_found', `container has only ${have} ${item}`, { moved: 0 });
   }
   if (ctx.signal.aborted) return cancelled({ moved: 0 });
-  const before = inventoryCount(ctx.bot, itemId);
+  const before = inventoryCount(container, itemId);
   let error: string | null = null;
   try {
     await container.withdraw(itemId, null, count);
   } catch (caught) {
     error = errorMessage(caught);
   }
-  // The inventory is the truth: the library moves what fits, then may throw.
-  const moved = inventoryCount(ctx.bot, itemId) - before;
+  // The window is the truth: the library moves what fits, then may throw.
+  const moved = inventoryCount(container, itemId) - before;
   if (error !== null && !INVENTORY_FULL.test(error)) {
     return failed('internal', error, { moved });
   }
@@ -169,7 +169,7 @@ async function deposit(
   count: number,
   item: string,
 ): Promise<ActionOutcome> {
-  const held = inventoryCount(ctx.bot, itemId);
+  const held = inventoryCount(container, itemId);
   if (held < count) {
     return failed('missing_materials', `inventory has only ${held} ${item}`, { moved: 0 });
   }
@@ -180,8 +180,8 @@ async function deposit(
   } catch (caught) {
     error = errorMessage(caught);
   }
-  // The inventory is the truth: the library moves what fits, then may throw.
-  const moved = held - inventoryCount(ctx.bot, itemId);
+  // The window is the truth: the library moves what fits, then may throw.
+  const moved = held - inventoryCount(container, itemId);
   if (error !== null && !CONTAINER_FULL.test(error)) {
     return failed('internal', error, { moved });
   }

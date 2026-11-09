@@ -27,12 +27,16 @@ interface FakeOptions {
 /** A position 3.6 blocks from the bot: inside reach, so `moveNear` is not called. */
 const AT = { x: 3, y: 200, z: 0 };
 
-/** A fake chest over the given stacks. */
-function fakeContainer(inv: Stacks, chest: Stacks, opts: FakeOptions) {
+/**
+ * A fake chest over the given stacks. `inv` is the open window's player region: clicks move
+ * items there, and `count` reads it. `onClose` runs when the window closes.
+ */
+function fakeContainer(inv: Stacks, chest: Stacks, opts: FakeOptions, onClose: () => void) {
   const limit = opts.moveLimit ?? Number.POSITIVE_INFINITY;
   return {
     containerItems: () => [...chest].map(([id, count]) => ({ name: NAMES[id] ?? '', count })),
     containerCount: vi.fn((id: number) => chest.get(id) ?? 0),
+    count: vi.fn((id: number) => inv.get(id) ?? 0),
     deposit: vi.fn(async (id: number, _meta: number | null, count: number | null) => {
       const n = Math.min(count ?? 0, limit, inv.get(id) ?? 0);
       inv.set(id, (inv.get(id) ?? 0) - n);
@@ -44,15 +48,24 @@ function fakeContainer(inv: Stacks, chest: Stacks, opts: FakeOptions) {
       chest.set(id, (chest.get(id) ?? 0) - n);
       inv.set(id, (inv.get(id) ?? 0) + n);
     }),
-    close: vi.fn(async () => undefined),
+    close: vi.fn(async () => {
+      onClose();
+    }),
   };
 }
 
-/** A fake bot with a container at `AT`, an inventory and an event emitter for `windowOpen`. */
+/**
+ * A fake bot with a container at `AT`, an inventory and an event emitter for `windowOpen`.
+ * As in mineflayer, `bot.inventory` is a snapshot: it is stale while the window is open and
+ * catches up only when the window closes.
+ */
 function harness(opts: FakeOptions = {}) {
   const inv: Stacks = new Map([[1, 10]]);
   const chest: Stacks = new Map();
-  const container = fakeContainer(inv, chest, opts);
+  let synced: [number, number][] = [...inv];
+  const container = fakeContainer(inv, chest, opts, () => {
+    synced = [...inv];
+  });
   const emitter = new EventEmitter();
   const bot = Object.assign(emitter, {
     registry: {
@@ -63,7 +76,7 @@ function harness(opts: FakeOptions = {}) {
     },
     entity: { position: new Vec3(0, 200, 0) },
     inventory: {
-      items: () => [...inv].map(([type, count]) => ({ type, name: NAMES[type], count, slot: 9 })),
+      items: () => synced.map(([type, count]) => ({ type, name: NAMES[type], count, slot: 9 })),
     },
     blockAt: () => ({ name: opts.blockName ?? 'chest', position: new Vec3(AT.x, AT.y, AT.z) }),
     openContainer: vi.fn(async () => {
