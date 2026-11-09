@@ -40,6 +40,9 @@ class IdentityPluginTest {
         var field = IdentityPlugin.class.getDeclaredField("registry");
         field.setAccessible(true);
         LifeRegistry registry = (LifeRegistry) field.get(plugin);
+        if (!registry.isSynced()) {
+            registry.beginReplay();
+        }
         registry.put(name, "{\"life_id\":\"l\",\"registered_at\":\"t\"}".getBytes(StandardCharsets.UTF_8));
         registry.markSynced();
     }

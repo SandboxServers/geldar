@@ -72,12 +72,17 @@ public final class LifeRegistry {
         (replay != null ? replay : entries).remove(key);
     }
 
-    /** Marks the replay of the bucket as complete: the fresh map replaces the old one and the gate may open. */
+    /**
+     * Marks the replay of the bucket as complete: the fresh map replaces the old one and the gate may open.
+     * Does nothing when no replay is in progress: a lost watch clears it, and the tail of that old watch
+     * must not reopen the gate.
+     */
     public synchronized void markSynced() {
-        if (replay != null) {
-            entries = replay;
-            replay = null;
+        if (replay == null) {
+            return;
         }
+        entries = replay;
+        replay = null;
         synced = true;
     }
 

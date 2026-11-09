@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.nats.client.api.KeyValueOperation;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class LoginGateTest {
@@ -13,6 +14,12 @@ class LoginGateTest {
 
     private final LifeRegistry registry = new LifeRegistry();
     private final LoginGate gate = new LoginGate(registry);
+
+    /** Every test starts a replay, as the registry client does before it watches the bucket. */
+    @BeforeEach
+    void beginReplay() {
+        registry.beginReplay();
+    }
 
     @Test
     void deniesEveryoneUntilTheFirstSync() {
@@ -80,6 +87,17 @@ class LoginGateTest {
         registry.markSynced();
         assertTrue(gate.admits("alice"));
         assertFalse(gate.admits("bob"), "a key deleted while the watch was down is gone");
+    }
+
+    @Test
+    void theTailOfALostWatchDoesNotReopenTheGate() {
+        registry.put("alice", VALID);
+        registry.markSynced();
+        registry.markUnsynced();
+        // The old watch still delivers its end of data after the disconnect cleared the replay.
+        registry.markSynced();
+        assertFalse(registry.isSynced());
+        assertFalse(gate.admits("alice"));
     }
 
     @Test
