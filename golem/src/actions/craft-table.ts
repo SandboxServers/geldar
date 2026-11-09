@@ -286,8 +286,10 @@ async function craftOnce(
       return { displayId };
     }
   }
+  // With no table the craft is the player's grid: the message does not name a table it never used.
+  const source = windowId === PLAYER_WINDOW_ID ? 'the recipe' : 'the crafting table';
   return {
-    outcome: failed('timeout', `the crafting table did not produce ${name}`, { item: name }),
+    outcome: failed('timeout', `${source} did not produce ${name}`, { item: name }),
   };
 }
 

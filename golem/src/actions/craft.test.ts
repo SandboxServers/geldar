@@ -216,10 +216,22 @@ describe('craftAction', () => {
     expect(out).toMatchObject({ status: 'cancelled', detail: { item: 'oak_planks', crafted: 4 } });
   });
 
-  it('keeps the crafted count when a recipe-book craft times out', async () => {
+  it('falls back to bot.craft at window 0 when no 2x2 display fills, rather than timing out', async () => {
     const planks = recipe(5, 4, { 6: 1 });
-    const fake = fakeBot({ recipes: [planks], inventory: { 6: 2 } });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 1 } });
     vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(craftFromBook).mockImplementationOnce(async () =>
+      failed('timeout', 'the recipe did not produce oak_planks', { item: 'oak_planks' }),
+    );
+    const out = await run(fake.bot, 'oak_planks', 4);
+    expect(fake.craft).toHaveBeenCalledTimes(1);
+    expect(out).toMatchObject({ status: 'completed', detail: { crafted: 4, used_table: false } });
+  });
+
+  it('keeps the crafted count when a recipe-book craft times out at a table', async () => {
+    // A table-only recipe, so the craft walks to the table and the book path runs with it.
+    const planks = recipe(5, 4, { 6: 1 }, true);
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 2 }, table: TABLE });
     vi.mocked(craftFromBook).mockImplementationOnce(async () => {
       fake.give(5, 4);
       return failed('timeout', 'the crafting table did not produce oak_planks');

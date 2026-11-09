@@ -83,11 +83,17 @@ async function runCraft(
       const yieldPer = bookYield(bot, item) || recipe.result.count;
       stop = await craftFromBook(ctx, item, Math.ceil(action.count / yieldPer), usedTable);
       expected = action.count;
-    } else {
-      for (let i = 0; i < times; i++) {
-        if (signal.aborted) break;
-        await bot.craft(recipe, 1);
+      // With no table, a display that never fills means this item has no 2x2 recipe the book can make.
+      // bot.craft makes the rest, so the craft does not fail on a display that was never the right one.
+      if (!usedTable && stop?.status === 'failed' && stop.reason === 'timeout') {
+        stop = null;
+        const left = Math.ceil(
+          (action.count - (heldCount(bot, item.id) - before)) / recipe.result.count,
+        );
+        await craftByLibrary(ctx, recipe, left);
       }
+    } else {
+      await craftByLibrary(ctx, recipe, times);
     }
   } catch (error) {
     const message = errorText(error);
@@ -120,6 +126,14 @@ async function runCraft(
     });
   }
   return completed({ item: item.name, crafted, used_table: usedTable !== null });
+}
+
+/** Crafts `times` of a recipe with the library's craft, one batch at a time, checking the signal between them. */
+async function craftByLibrary(ctx: ActionContext, recipe: Recipe, times: number): Promise<void> {
+  for (let i = 0; i < times; i++) {
+    if (ctx.signal.aborted) break;
+    await ctx.bot.craft(recipe, 1);
+  }
 }
 
 /**

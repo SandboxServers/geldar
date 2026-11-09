@@ -288,6 +288,7 @@ describe('craftFromBook', () => {
     expect(await craftFromBook(ctx, BED, 1, null)).toMatchObject({
       status: 'failed',
       reason: 'timeout',
+      message: 'the recipe did not produce white_bed',
     });
 
     expect(writesOf(fake.client, 'close_window')).toEqual([{ windowId: 0 }]);
