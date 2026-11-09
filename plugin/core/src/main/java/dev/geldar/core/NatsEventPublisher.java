@@ -6,11 +6,11 @@ import io.nats.client.JetStreamApiException;
 import io.nats.client.JetStreamManagement;
 import io.nats.client.Nats;
 import io.nats.client.Options;
-import io.nats.client.PublishOptions;
 import io.nats.client.api.RetentionPolicy;
 import io.nats.client.api.StorageType;
 import io.nats.client.api.StreamConfiguration;
 import io.nats.client.impl.Headers;
+import io.nats.client.support.NatsJetStreamConstants;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -19,7 +19,8 @@ import java.util.logging.Logger;
 
 /**
  * Publishes into JetStream stream {@code GELDAR_EVENTS}. {@link #publish} only enqueues; a daemon
- * thread connects (with backoff), creates the stream if missing, and drains the queue.
+ * thread connects (with backoff), creates the stream if missing, and drains the queue. A failed
+ * publish goes back to the head of the queue; the {@code Nats-Msg-Id} header makes a retry idempotent.
  */
 public final class NatsEventPublisher implements EventPublisher {
     public static final String STREAM = "GELDAR_EVENTS";
@@ -30,6 +31,12 @@ public final class NatsEventPublisher implements EventPublisher {
     private final Thread worker;
     private final AtomicLong published = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
+    private static final long FAILURE_PAUSE_MS = 250;
+    private static final long DROP_LOG_INTERVAL_MS = 60_000;
+    private static final long CLOSE_FLUSH_MS = 2_000;
+
+    private long loggedDrops;
+    private long lastDropLogNanos = System.nanoTime();
     private volatile boolean running = true;
     private volatile boolean connected;
 
@@ -47,20 +54,31 @@ public final class NatsEventPublisher implements EventPublisher {
         queue.offer(event);
     }
 
+    /** How many events were discarded because the queue was full. */
+    @Override
     public long dropped() {
         return queue.dropped();
     }
 
+    /** How many events JetStream has acknowledged. */
     public long published() {
         return published.get();
     }
 
+    /** How many publish attempts failed (each failed event is retried). */
     public long failed() {
         return failed.get();
     }
 
+    /** True while the worker holds a live connection with the stream in place. */
+    @Override
     public boolean connected() {
         return connected;
+    }
+
+    /** The headers sent with an event: {@code Nats-Msg-Id} is the {@code source_event_id}, for de-duplication. */
+    static Headers headers(EventEnvelope event) {
+        return new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
     }
 
     private void run() {
@@ -81,6 +99,7 @@ public final class NatsEventPublisher implements EventPublisher {
             } finally {
                 connected = false;
             }
+            logDrops();
             if (!running) {
                 return;
             }
@@ -114,24 +133,68 @@ public final class NatsEventPublisher implements EventPublisher {
 
     private void drain(Connection nc, JetStream js) throws InterruptedException {
         while (running && nc.getStatus() == Connection.Status.CONNECTED) {
+            logDrops();
             EventEnvelope event = queue.poll(500, TimeUnit.MILLISECONDS);
             if (event == null) {
                 continue;
             }
-            try {
-                PublishOptions opts = PublishOptions.builder().messageId(event.sourceEventId()).build();
-                js.publish(event.subject(), new Headers(), event.toBytes(), opts);
-                published.incrementAndGet();
-            } catch (Exception e) {
-                failed.incrementAndGet();
-                log.warning("Publish of " + event.sourceEventId() + " failed: " + e.getMessage());
+            if (!send(js, event)) {
+                queue.offerFirst(event);
+                Thread.sleep(FAILURE_PAUSE_MS);
+            }
+        }
+        flushOnClose(nc, js);
+    }
+
+    /** On shutdown, sends what is still queued (a final death must not be lost), for a bounded time. */
+    private void flushOnClose(Connection nc, JetStream js) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(CLOSE_FLUSH_MS);
+        while (nc.getStatus() == Connection.Status.CONNECTED && System.nanoTime() < deadline) {
+            EventEnvelope event = queue.poll(0, TimeUnit.MILLISECONDS);
+            if (event == null || !send(js, event)) {
+                if (event != null) {
+                    queue.offerFirst(event);
+                }
+                return;
             }
         }
     }
 
+    private boolean send(JetStream js, EventEnvelope event) {
+        try {
+            js.publish(event.subject(), headers(event), event.toBytes());
+            published.incrementAndGet();
+            return true;
+        } catch (Exception e) {
+            failed.incrementAndGet();
+            log.warning("Publish of " + event.sourceEventId() + " failed, will retry: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Logs the drop count when it changed, at most once a minute. */
+    private void logDrops() {
+        long now = System.nanoTime();
+        long dropped = queue.dropped();
+        if (dropped != loggedDrops && now - lastDropLogNanos >= TimeUnit.MILLISECONDS.toNanos(DROP_LOG_INTERVAL_MS)) {
+            log.warning("Event queue full: " + dropped + " events dropped so far (" + (dropped - loggedDrops) + " since the last report)");
+            loggedDrops = dropped;
+            lastDropLogNanos = now;
+        }
+    }
+
+    /** Stops delivery after sending what is queued (up to two seconds), then releases the connection. */
     @Override
     public void close() {
         running = false;
+        if (!connected) {
+            worker.interrupt();
+        }
+        try {
+            worker.join(CLOSE_FLUSH_MS + 1_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         worker.interrupt();
     }
 }

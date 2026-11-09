@@ -74,6 +74,19 @@ function Invoke-Check {
   } finally { Pop-Location }
 }
 
+# Compose bind-mounts the plugin jar; Docker creates a missing bind source as a directory, and Paper then
+# boots without the plugin. Refuse to start unless the jar is a real file.
+function Assert-PluginJar([string] $Shard) {
+  $file = Get-ComposeFile $Shard
+  if (-not (Select-String -Path $file -SimpleMatch 'geldar-core.jar' -Quiet)) { return }
+  $jar = Join-Path $Root 'plugin/core/build/libs/geldar-core.jar'
+  if (Test-Path -PathType Leaf $jar) { return }
+  $why = if (Test-Path -PathType Container $jar) {
+    'it is a directory (a previous start without the jar made Docker create one); delete that directory'
+  } else { 'it does not exist' }
+  throw "plugin/core/build/libs/geldar-core.jar is not a file: $why, then run: cd plugin; ./gradlew build"
+}
+
 # Writes the shard's Docker secret files (spec 6.7) when they are missing. Each holds
 # 32 random URL-safe characters with no newline. Existing files are never overwritten.
 function Initialize-ShardSecrets([string] $Shard) {
@@ -119,7 +132,7 @@ function Invoke-Shard([string[]] $ShardArgs) {
   $compose = @('compose', '-f', $file, '-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }
-    'up' { Initialize-ShardSecrets $shard; Invoke-Step "start shard $shard" { docker @compose up -d --wait } }
+    'up' { Assert-PluginJar $shard; Initialize-ShardSecrets $shard; Invoke-Step "start shard $shard" { docker @compose up -d --wait } }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }
     'logs' { Invoke-Step "logs of shard $shard" { docker @compose logs --tail 200 @extra } }

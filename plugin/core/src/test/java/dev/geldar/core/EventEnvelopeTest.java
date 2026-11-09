@@ -48,4 +48,10 @@ class EventEnvelopeTest {
         assertNull(e.toJson().get("agent_id"));
         assertEquals("ag_kestrel_01", make("sleep", "ag_kestrel_01").toJson().get("agent_id").getAsString());
     }
+
+    @Test
+    void schemaCheckAssertsFormats() {
+        String json = make("sleep", null).toJson().toString().replace("2026-11-09T10:15:30.123Z", "yesterday");
+        assertFalse(EventSchemaCheck.errors(json).isEmpty(), "a non date-time 'at' must be rejected");
+    }
 }

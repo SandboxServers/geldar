@@ -8,7 +8,8 @@ import java.util.regex.Pattern;
 /**
  * One world event in the shape of contract/schemas/event.schema.json.
  *
- * <p>{@code agentId} is null when the event does not concern an agent life.
+ * <p>{@code agentId} is null when the event does not concern an agent life. The type {@code dlq} is
+ * reserved for the event sink's dead-letter bodies and is rejected here.
  */
 public record EventEnvelope(
         String sourceEventId,
@@ -20,7 +21,16 @@ public record EventEnvelope(
         String agentId,
         JsonObject payload) {
 
+    /** The event type the sink uses for its dead-letter messages; a world event must never carry it. */
+    public static final String RESERVED_TYPE = "dlq";
+
     private static final Pattern LIFE_ID = Pattern.compile("^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$");
+
+    public EventEnvelope {
+        if (RESERVED_TYPE.equals(type)) {
+            throw new IllegalArgumentException("event type \"" + RESERVED_TYPE + "\" is reserved for the sink");
+        }
+    }
 
     /** True when the name is a life id such as {@code ag_kestrel_01}. */
     public static boolean isLifeId(String name) {

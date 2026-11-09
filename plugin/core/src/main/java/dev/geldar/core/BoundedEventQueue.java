@@ -27,6 +27,19 @@ public final class BoundedEventQueue<T> {
         notifyAll();
     }
 
+    /**
+     * Puts a previously polled element back at the head. It is the oldest, so when the queue is full
+     * it is the one discarded (and counted), the same policy as {@link #offer}.
+     */
+    public synchronized void offerFirst(T item) {
+        if (items.size() >= capacity) {
+            dropped.incrementAndGet();
+            return;
+        }
+        items.addFirst(item);
+        notifyAll();
+    }
+
     /** Removes the oldest element, waiting up to the timeout; null when none arrived. */
     public synchronized T poll(long timeout, TimeUnit unit) throws InterruptedException {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
