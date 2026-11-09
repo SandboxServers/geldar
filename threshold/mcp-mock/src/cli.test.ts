@@ -50,6 +50,13 @@ async function listeningPort(stderr: () => string): Promise<number> {
   throw new Error('no listening line');
 }
 
+function scenarioJson(): string {
+  return JSON.stringify({
+    name: 'small',
+    day_length_seconds: 24,
+    character: { name: 'Kestrel', life_id: 'ag_kestrel_01', position: { x: 0, y: 64, z: 0 } },
+  });
+}
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'mcp-cli-'));
 });
@@ -213,6 +220,45 @@ describe('cli', () => {
     expect(records.some((r) => r.reason === 'min_spacing')).toBe(false);
     expect(lines.join('\n')).not.toContain('secret chatter');
   }, 60_000);
+  it('exits 1 when --suppressed-log is a directory', async () => {
+    const tokens = join(dir, 'tokens.json');
+    writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
+    const scenario = join(dir, 'a.scenario.json');
+    writeFileSync(scenario, scenarioJson());
+    const { child: proc } = run([
+      '--tokens',
+      tokens,
+      '--scenario',
+      scenario,
+      '--suppressed-log',
+      dir,
+    ]);
+    expect(await exited(proc)).toBe(1);
+  }, 30_000);
+
+  it('exits 2 on an empty --suppressed-log without --scenario', async () => {
+    const tokens = join(dir, 'tokens.json');
+    writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
+    const { child: proc, stderr } = run(['--tokens', tokens, '--suppressed-log', '']);
+    expect(await exited(proc)).toBe(2);
+    expect(stderr()).toContain('--suppressed-log');
+  }, 30_000);
+
+  it('exits 1 on an empty --suppressed-log with --scenario', async () => {
+    const tokens = join(dir, 'tokens.json');
+    writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
+    const scenario = join(dir, 'a.scenario.json');
+    writeFileSync(scenario, scenarioJson());
+    const { child: proc } = run([
+      '--tokens',
+      tokens,
+      '--scenario',
+      scenario,
+      '--suppressed-log',
+      '',
+    ]);
+    expect(await exited(proc)).toBe(1);
+  }, 30_000);
   it.skipIf(process.platform === 'win32')(
     'stops with exit 0 on SIGTERM',
     async () => {

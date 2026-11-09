@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, closeSync, openSync, readFileSync, statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { MCP_TOOL_NAMES } from '@geldar/contract';
 import { createApp, type McpWorld } from './app.ts';
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   }
   if (
     values.scenario === undefined &&
-    (Object.keys(overrides).length > 0 || values['suppressed-log'])
+    (Object.keys(overrides).length > 0 || values['suppressed-log'] !== undefined)
   ) {
     return fail(2, 'the timing flags and --suppressed-log need --scenario');
   }
@@ -121,7 +121,11 @@ async function main(): Promise<void> {
         overrides,
       );
       const logFile = values['suppressed-log'];
-      if (logFile !== undefined) appendFileSync(logFile, '');
+      if (logFile !== undefined) {
+        // Open for append: unlike appendFileSync with no data, this fails on a directory everywhere.
+        closeSync(openSync(logFile, 'a'));
+        if (!statSync(logFile).isFile()) throw new Error('suppressed log: not a file');
+      }
       world = createSimWorld({
         scenario,
         ...(logFile !== undefined
