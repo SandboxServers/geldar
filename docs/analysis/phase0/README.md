@@ -84,7 +84,8 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-29 | 5 | Prompts v1, renderer, output validators | packet-coder | BlockedDependency | P0-21 | |
 | P0-30 | 5 | Thinking loop (5.3.4) | packet-coder | BlockedDependency | P0-21 | |
 | P0-31 | 5 | Sleep reflection (5.4) | packet-coder | BlockedDependency | P0-21 | |
-| P0-32 | 5 | Integration: Mind process, Adam Body process, e2e with fakes | packet-coder | BlockedDependency | P0-19, P0-22 to P0-31 | |
+| P0-32a | 5 | Integration A: merge fan-out B, apply interface requests, Mind composition, body-api cross-check | packet-coder | Ready | P0-19, P0-22 to P0-31 | |
+| P0-32b | 5 | Integration B: Mind main, Adam Body process and supervision, in-process e2e | packet-coder | BlockedDependency | P0-32a | |
 | P0-33 | 5 | `./geldar.ps1 adam` and the Mind live cases | packet-coder | BlockedDependency | P0-32 | |
 | W5-process | 5 | Apply the wave 5 retro actions | packet-coder | BlockedDependency | wave 5 test, review and retro | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-06 | |
