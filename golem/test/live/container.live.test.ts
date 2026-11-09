@@ -28,9 +28,13 @@ function held(bot: Bot, name: string): number {
  * Runs one action through the real registry and checks that its record passes the contract. The
  * bot must have no open window afterwards.
  */
-async function act(bot: Bot, action: Record<string, JsonValue>): Promise<RunOutcome> {
+async function act(
+  bot: Bot,
+  action: { do: string } & Record<string, JsonValue>,
+): Promise<RunOutcome> {
+  const { do: kind, ...args } = action;
   const run = await runAction(createRegistry(), bot, action);
-  expect(validateActionRecord(recordFor(String(action.do), action, run)).ok).toBe(true);
+  expect(validateActionRecord(recordFor(kind, args, run)).ok).toBe(true);
   expect(bot.currentWindow).toBeNull();
   return run;
 }
@@ -45,9 +49,18 @@ async function place(
   return at;
 }
 
+/** Clears item entities left by an earlier case in the arena (they are not blocks). */
+async function clearDrops(
+  ctl: { command(line: string): Promise<string> },
+  center: Pos,
+): Promise<void> {
+  await ctl.command(`kill @e[type=item,x=${center.x},y=200,z=${center.z},distance=..40]`);
+}
+
 describe('open, deposit and withdraw on 26.1', () => {
   it('open on an empty chest completes with no contents', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
@@ -61,6 +74,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
   it('deposit moves 10 cobblestone into the chest and the bot keeps none', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
@@ -78,6 +92,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
   it('withdraw 4 leaves 6 in the chest and 4 on the bot; 20 more is not_found and moves nothing', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
@@ -103,6 +118,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
   it('deposit of a stick the bot does not hold is missing_materials', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
@@ -117,6 +133,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
   it('deposit at a stone block is not_found', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
@@ -133,6 +150,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
   it('reaches a chest 12 blocks away by moving first', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 12, y: arena.center.y, z: arena.center.z },
@@ -149,6 +167,7 @@ describe('open, deposit and withdraw on 26.1', () => {
 
   it('parses the real reply of a non-empty chest', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
       const at = await place(
         ctl,
         { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
