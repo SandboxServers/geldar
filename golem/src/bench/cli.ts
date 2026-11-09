@@ -12,7 +12,7 @@ import { collectMeta, isDirty, runGit } from './meta.ts';
 import { writeResults } from './results.ts';
 import { type ManagerLike, runCell } from './runner.ts';
 import { gotoSmoke } from './scenarios/goto-smoke.ts';
-import { findScenario, visibleScenarios } from './scenarios/index.ts';
+import { findScenario, scenarios as registered, visibleScenarios } from './scenarios/index.ts';
 import { installTpsRestore, parseTargetRate } from './tps.ts';
 import type { CellResult, Scenario } from './types.ts';
 
@@ -60,7 +60,11 @@ function integerIn(name: string, raw: string, min: number, max: number): number 
  * Throws `UsageError` for any invalid value, an unknown scenario, `--record` with a hidden
  * scenario, or `--record` on a dirty tree without `--allow-dirty`.
  */
-export function parseCli(argv: string[], dirty: () => boolean = () => isDirty(runGit)): Options {
+export function parseCli(
+  argv: string[],
+  dirty: () => boolean = () => isDirty(runGit),
+  registry: Scenario[] = registered,
+): Options {
   const args = argv[0] === '--' ? argv.slice(1) : argv;
   let values: ReturnType<typeof parseArgs>['values'];
   try {
@@ -101,9 +105,9 @@ export function parseCli(argv: string[], dirty: () => boolean = () => isDirty(ru
 
   let picked: Scenario[];
   if (scenario === 'all') {
-    picked = visibleScenarios();
+    picked = visibleScenarios(registry);
   } else {
-    const found = findScenario(scenario);
+    const found = findScenario(scenario, registry);
     if (!found) throw new UsageError(`unknown scenario '${scenario}'`);
     picked = [found];
   }
@@ -143,6 +147,8 @@ export interface CliDeps {
   meta?: typeof collectMeta;
   write?: typeof writeResults;
   dirty?: () => boolean;
+  /** The scenario list; defaults to the registry. */
+  scenarios?: Scenario[];
   installRestore?: (ctl: TestControl) => (() => void) & { isStopping?: () => boolean };
   out?: (line: string) => void;
   err?: (line: string) => void;
@@ -240,10 +246,11 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   const out = deps.out ?? ((line: string) => console.log(line));
   const err = deps.err ?? ((line: string) => console.error(line));
   const now = deps.now ?? Date.now;
+  const registry = deps.scenarios ?? registered;
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let options: Options;
   try {
-    options = parseCli(argv, deps.dirty);
+    options = parseCli(argv, deps.dirty, registry);
   } catch (error) {
     if (!(error instanceof UsageError)) throw error;
     err(error.message);
@@ -251,7 +258,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 2;
   }
   if (options.list) {
-    for (const scenario of visibleScenarios()) out(scenario.name);
+    for (const scenario of visibleScenarios(registry)) out(scenario.name);
     return 0;
   }
   if (options.dryRun) {
@@ -319,7 +326,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     const cells: CellResult[] = [];
     let truncated = false;
     for (const name of options.scenarios) {
-      const scenario = findScenario(name) as Scenario;
+      const scenario = findScenario(name, registry) as Scenario;
       for (const tps of options.tps) {
         if (shouldStop()) {
           truncated = true;

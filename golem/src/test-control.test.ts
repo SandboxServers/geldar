@@ -115,7 +115,9 @@ describe('TestControl', () => {
 
   it('rejects coordinates out of range', () => {
     const { control } = fakeControl();
-    expect(() => control.setblock(0, 321, 0, 'stone')).toThrow(RangeError);
+    expect(() => control.setblock(0, 320, 0, 'stone')).toThrow(RangeError);
+    expect(() => control.setblock(0, -65, 0, 'stone')).toThrow(RangeError);
+    expect(() => control.setblock(0, 319, 0, 'stone')).not.toThrow();
     expect(() => control.setblock(30_000_001, 0, 0, 'stone')).toThrow(RangeError);
     expect(() => control.setblock(0, 0, 0.5, 'stone')).toThrow(RangeError);
   });

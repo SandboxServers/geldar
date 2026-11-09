@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BenchEnv } from '../types.ts';
+import type { RunEnv, Scenario } from '../types.ts';
 import { gotoSmoke } from './goto-smoke.ts';
 import { findScenario, scenarios, visibleScenarios } from './index.ts';
 
@@ -20,6 +20,13 @@ describe('scenario registry', () => {
     expect(findScenario('goto-smoke')?.name).toBe('goto-smoke');
     expect(findScenario('nope')).toBeUndefined();
   });
+
+  it('works on an injected list, as the cli does', () => {
+    const list = [{ name: 'a' }, { name: 'b', hidden: true }] as unknown as Scenario[];
+    expect(visibleScenarios(list).map((s) => s.name)).toEqual(['a']);
+    expect(findScenario('b', list)?.name).toBe('b');
+    expect(findScenario('goto-smoke', list)).toBeUndefined();
+  });
 });
 
 describe('goto-smoke', () => {
@@ -35,7 +42,7 @@ describe('goto-smoke', () => {
           result: { status: state, latency_ms: 5, world_ticks: 3, detail: {}, reason: 'blocked' },
         };
       },
-    } as unknown as BenchEnv;
+    } as unknown as RunEnv;
     return { env, calls };
   };
 
