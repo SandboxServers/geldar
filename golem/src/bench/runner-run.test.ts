@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { ActionRun } from '../actions/registry.ts';
 import { type CommandSource, TestControl } from '../test-control.ts';
-import { runCell } from './runner.ts';
-import { fakeBot, pass, scenarioOf, setup } from './runner-fixtures.ts';
+import { type RunnerDeps, runCell } from './runner.ts';
+import { fakeBot, GOTO, pass, scenarioOf, setup } from './runner-fixtures.ts';
 
 describe('runCell run bookkeeping', () => {
   it('records the world age at the start and end of a run and the achieved TPS', async () => {
@@ -65,5 +66,85 @@ describe('runCell run bookkeeping', () => {
     });
     expect(cell.runWallMs[0]).toBeLessThan(100);
     expect(cell.perRun[0]?.resetMs).toBeGreaterThanOrEqual(110);
+  });
+});
+
+describe('runCell cleanup between runs', () => {
+  it('closes an open window and wakes a sleeping bot, and survives a step that throws', async () => {
+    const { bot, deps } = setup();
+    const calls: string[] = [];
+    Object.assign(bot, {
+      currentWindow: { id: 3 },
+      isSleeping: true,
+      closeWindow() {
+        calls.push('closeWindow');
+        throw new Error('window already gone');
+      },
+      async wake() {
+        calls.push('wake');
+      },
+    });
+    const cell = await runCell(scenarioOf({ run: pass }), 20, 1, deps);
+    expect(calls).toEqual(['closeWindow', 'wake']);
+    expect(cell.passed).toBe(1);
+  });
+
+  it('leaves a closed window and an awake bot alone', async () => {
+    const { bot, deps } = setup();
+    const calls: string[] = [];
+    Object.assign(bot, {
+      closeWindow: () => calls.push('closeWindow'),
+      wake: async () => calls.push('wake'),
+    });
+    await runCell(scenarioOf({ run: pass }), 20, 1, deps);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('runCell after the run is closed', () => {
+  it('drops a late result and refuses a new call even when the scenario brings its own signal', async () => {
+    let registryCalls = 0;
+    const slowRun = async (): Promise<ActionRun> => {
+      registryCalls++;
+      await new Promise((r) => setTimeout(r, 60));
+      return {
+        state: 'completed',
+        result: { status: 'completed', latency_ms: 1, world_ticks: 1, detail: {} },
+      };
+    };
+    const base = setup();
+    // The timing query after the close is slow, so the late result lands before the cell is read.
+    let queries = 0;
+    const source: CommandSource = {
+      async command(cmd) {
+        if (cmd === 'tick query' && ++queries >= 3) await new Promise((r) => setTimeout(r, 100));
+        return base.deps.ctl.command(cmd);
+      },
+    };
+    const deps: RunnerDeps = {
+      ...base.deps,
+      ctl: new TestControl(source),
+      runAction: slowRun as NonNullable<RunnerDeps['runAction']>,
+      settleWaitMs: 20,
+    };
+    const own = new AbortController();
+    let secondError = '';
+    const scenario = scenarioOf({
+      timeoutMs: 5,
+      async run(env) {
+        await env.run(GOTO, { signal: own.signal }).catch(() => undefined);
+        // The run was closed while the first call was in flight: this one must not start.
+        await env.run(GOTO, { signal: own.signal }).catch((e: Error) => {
+          secondError = e.message;
+        });
+        return { passed: true, note: 'late' };
+      },
+    });
+    const cell = await runCell(scenario, 20, 1, deps);
+    await new Promise((r) => setTimeout(r, 150));
+    expect(cell.passed).toBe(0);
+    expect(cell.actions).toEqual([]);
+    expect(registryCalls).toBe(1);
+    expect(secondError).toBe('run aborted');
   });
 });

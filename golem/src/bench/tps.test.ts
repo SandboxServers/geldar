@@ -12,9 +12,9 @@ import {
 
 /** Real replies from the running 26.1.2 server (RCON strips the colour codes). */
 const QUERY_20 =
-  'The game is running normallyTarget tick rate: 20.0 per second.\nAverage time per tick: 0.1ms (Target: 50.0ms)Percentiles: P50: 0.1ms P95: 0.2ms P99: 0.3ms. Sample: 100';
+  'The game is running normallyTarget tick rate: 20.0 per second.\nAverage time per tick: 0.2ms (Target: 50.0ms)Percentiles: P50: 0.2ms P95: 0.2ms P99: 0.3ms. Sample: 100';
 const QUERY_5 =
-  'The game is running normallyTarget tick rate: 5.0 per second.\nAverage time per tick: 0.1ms (Target: 200.0ms)Percentiles: P50: 0.1ms P95: 0.2ms P99: 0.3ms. Sample: 100';
+  'The game is running normallyTarget tick rate: 5.0 per second.\nAverage time per tick: 0.2ms (Target: 200.0ms)Percentiles: P50: 0.2ms P95: 0.2ms P99: 0.3ms. Sample: 100';
 const SET_5 = 'Set the target tick rate to 5.0 per second';
 
 /** A tick control that records `tickRate` calls and answers `tickQuery` with the last rate set. */
@@ -36,7 +36,7 @@ describe('tick reply parsing', () => {
   it('reads the target rate, average and target mspt', () => {
     expect(parseTargetRate(QUERY_5)).toBe(5);
     expect(parseTargetRate(QUERY_20)).toBe(20);
-    expect(parseMspt(QUERY_5)).toBe(0.1);
+    expect(parseMspt(QUERY_5)).toBe(0.2);
     expect(parseTargetMspt(QUERY_5)).toBe(200);
     expect(parseTargetRate('no rate here')).toBeNull();
     expect(parseMspt('no rate here')).toBeNull();

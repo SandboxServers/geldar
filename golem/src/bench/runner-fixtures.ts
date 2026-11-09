@@ -9,7 +9,7 @@ import type { Scenario } from './types.ts';
 
 const QUERY = (rate: number): string =>
   `The game is running normallyTarget tick rate: ${rate.toFixed(1)} per second.
-Average time per tick: 0.1ms (Target: ${(1000 / rate).toFixed(1)}ms)Percentiles: P50: 0.1ms P95: 0.2ms P99: 0.3ms. Sample: 100`;
+Average time per tick: 0.2ms (Target: ${(1000 / rate).toFixed(1)}ms)Percentiles: P50: 0.2ms P95: 0.2ms P99: 0.3ms. Sample: 100`;
 
 /** A control over a fake server: records every command and answers `tick query` for the set rate. */
 export function fakeServer(opts: { queryRate?: () => number | null } = {}) {
