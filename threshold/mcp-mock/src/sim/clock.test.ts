@@ -68,6 +68,8 @@ describe('FakeClock details', () => {
       for (let n = 0; n < 3; n++) {
         await clock.sleep(100);
         seen.push(clock.nowMs());
+        // Several microtask ticks before the next sleep: advance() must wait longer than one.
+        for (let tick = 0; tick < 5; tick++) await Promise.resolve();
       }
     })();
     await clock.advance(300);
