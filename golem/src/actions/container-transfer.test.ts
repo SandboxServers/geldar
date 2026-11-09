@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Container } from './bot-types.ts';
 import { transferItems } from './container-transfer.ts';
 import type { ActionContext } from './registry.ts';
@@ -23,11 +23,25 @@ interface Options {
   bumpAtClick?: number;
   /** 1-based index of a click after which the server closes the window. */
   closeAtClick?: number;
+  /** From this 1-based click on, the server silently ignores every click. */
+  ignoreFrom?: number;
   /** A stack the server already has on the cursor when the window opens. */
   startCursor?: Cell;
   /** Runs after each non-sync click is written (the number of clicks so far). */
   onClick?: (n: number) => void;
 }
+
+/** Every emitter a test rig made: no transfer may leave a listener behind. */
+const emitters: EventEmitter[] = [];
+
+afterEach(() => {
+  for (const e of emitters) {
+    for (const event of ['window_items', 'set_slot', 'close_window']) {
+      expect(e.listenerCount(event), event).toBe(0);
+    }
+  }
+  emitters.length = 0;
+});
 
 /**
  * A fake server and client. The server runs accepted clicks silently, answers a stale stateId and
@@ -41,6 +55,8 @@ function rig(chest: Cell[], opts: Options = {}) {
   let syncs = 0;
   const log: string[] = [];
   const emitter = new EventEmitter();
+  emitters.push(emitter);
+  const writes: Record<string, unknown>[] = [];
   const container = {
     id: 7,
     slots: Array.from({ length: SIZE }, () => null) as Cell[],
@@ -105,6 +121,7 @@ function rig(chest: Cell[], opts: Options = {}) {
     removeListener: (event: string, fn: (p: unknown) => void) => emitter.removeListener(event, fn),
     write: (name: string, p: Record<string, unknown>) => {
       expect(name).toBe('window_click');
+      writes.push(p);
       if (p.mode === 5) {
         log.push('sync');
         syncs += 1;
@@ -117,7 +134,8 @@ function rig(chest: Cell[], opts: Options = {}) {
       log.push(`click:${p.slot}:${p.mouseButton}:${p.stateId}`);
       const stale = p.stateId !== serverState;
       // Vanilla still runs a stale click, then sends the full window on top of the sync's answer.
-      if (clicks !== opts.ignoreClick) apply(p.slot as number, p.mouseButton as number);
+      const ignored = clicks === opts.ignoreClick || clicks >= (opts.ignoreFrom ?? Infinity);
+      if (!ignored) apply(p.slot as number, p.mouseButton as number);
       if (stale) deliver();
       if (clicks === opts.closeAtClick) {
         setTimeout(() => emitter.emit('close_window', { windowId: 7 }), 5);
@@ -138,6 +156,7 @@ function rig(chest: Cell[], opts: Options = {}) {
     container: container as unknown as Container,
     server,
     log,
+    writes,
     emitter,
     cursor: () => cursor,
   };
@@ -286,6 +305,80 @@ describe('transferItems', () => {
     expect(r.server[0]).toBeNull();
     // Pick up, fill the stack of 32, put the other 32 in an empty slot.
     expect(r.log.filter((l) => l.startsWith('click')).length).toBe(3);
+  });
+
+  it('writes the click and sync packets in the pc/26.1 wire shape', async () => {
+    const r = rig([{ type: 1, count: 10 }]);
+    await transferItems(r.ctx, r.container, 'withdraw', 1, 10);
+    const stack = (n: number) => ({ itemId: 1, itemCount: n, components: [], removeComponents: [] });
+    const clicks = r.writes.filter((w) => w.mode === 0);
+    expect(clicks[0]).toEqual({
+      windowId: 7,
+      stateId: 6,
+      slot: 0,
+      mouseButton: 0,
+      mode: 0,
+      changedSlots: [{ location: 0, item: null }],
+      cursorItem: stack(10),
+    });
+    expect(clicks[1]).toMatchObject({
+      slot: CHEST,
+      changedSlots: [{ location: CHEST, item: stack(10) }],
+      cursorItem: null,
+    });
+    const syncs = r.writes.filter((w) => w.mode === 5);
+    expect(syncs[0]).toEqual({
+      windowId: 7,
+      stateId: -1,
+      slot: -999,
+      mouseButton: 2,
+      mode: 5,
+      changedSlots: [],
+      cursorItem: null,
+    });
+    expect(syncs[1]?.cursorItem).toEqual(stack(10));
+  });
+
+  it('reports it when the cursor stack cannot be put back', async () => {
+    const r = rig([{ type: 1, count: 10 }], { ignoreFrom: 2 });
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+    expect(end).toEqual({ error: 'could not put the cursor stack back', aborted: false });
+    expect(r.cursor()).toEqual({ type: 1, count: 10 });
+  });
+
+  it('tops up a partial same-type stack in the destination before an empty slot', async () => {
+    const cells: Cell[] = Array.from({ length: SIZE }, () => null);
+    cells[0] = { type: 1, count: 20 };
+    cells[CHEST] = { type: 1, count: 60 };
+    const r = rig(cells);
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 20);
+    expect(end.error).toBeNull();
+    expect(r.server[CHEST]).toEqual({ type: 1, count: 64 });
+    expect(r.server[CHEST + 1]).toEqual({ type: 1, count: 16 });
+    expect(r.server[0]).toBeNull();
+    expect(r.cursor()).toBeNull();
+  });
+
+  it('never swaps with a different-type stack in the destination', async () => {
+    const cells: Cell[] = Array.from({ length: SIZE }, () => null);
+    cells[0] = { type: 1, count: 5 };
+    cells[CHEST] = { type: 2, count: 9 };
+    const r = rig(cells);
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 5);
+    expect(end.error).toBeNull();
+    expect(r.server[CHEST]).toEqual({ type: 2, count: 9 });
+    expect(r.server[CHEST + 1]).toEqual({ type: 1, count: 5 });
+  });
+
+  it('takes only the asked amount from a bigger source stack on a deposit', async () => {
+    const cells: Cell[] = Array.from({ length: SIZE }, () => null);
+    cells[CHEST + 4] = { type: 1, count: 50 };
+    const r = rig(cells);
+    const end = await transferItems(r.ctx, r.container, 'deposit', 1, 7);
+    expect(end.error).toBeNull();
+    expect(r.server[CHEST + 4]).toEqual({ type: 1, count: 43 });
+    expect(r.server[0]).toEqual({ type: 1, count: 7 });
+    expect(r.cursor()).toBeNull();
   });
 
   it('reports failure when the server stops answering', async () => {

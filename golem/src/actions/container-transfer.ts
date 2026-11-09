@@ -11,6 +11,10 @@ import type { ActionContext } from './registry.ts';
  * window: that answer is the barrier. The click is predicted on a model of the slots and the cursor,
  * and the window after the barrier must equal the model, else the transfer stops and puts the cursor
  * back. An accepted click gets no reply of its own, so waiting for a per-click packet would hang.
+ *
+ * Item components (damage, names, enchantments) are NOT modelled: a stack is sent in its hashed form with
+ * components: [], so the model compares type and count only. The server is authoritative: if it does
+ * not accept the predicted result, the barrier shows a different window and the transfer stops.
  */
 
 /** A stack in a slot or on the cursor. */
@@ -393,7 +397,10 @@ export async function transferItems(
     const ended = await moveStacks(s, itemId, count, from, to);
     if (s.closed) return { error: 'the server closed the window', aborted: false };
     await restoreCursor(s);
-    if (s.model.cursor) return { error: 'could not put the cursor stack back', aborted: false };
+    if (s.model.cursor) {
+      console.warn('[container-transfer] could not put the cursor stack back');
+      return { error: 'could not put the cursor stack back', aborted: false };
+    }
     if (ended === 'aborted') return { error: null, aborted: true };
     return { error: ended, aborted: false };
   } finally {
