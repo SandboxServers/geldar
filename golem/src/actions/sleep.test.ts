@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import { classifySleepError, isNightOrStorm, sleepHandler } from './sleep.ts';
+import { classifySleepError, isNightOrStorm, sleepAction } from './sleep.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
@@ -47,7 +47,7 @@ function fakeBot(options: FakeOptions = {}): Bot {
 
 /** Runs the `sleep` handler with a fresh abort signal. */
 function sleep(bot: Bot) {
-  return sleepHandler.run(
+  return sleepAction.run(
     { bot, signal: new AbortController().signal, timeScale: 1 },
     { do: 'sleep' },
   );

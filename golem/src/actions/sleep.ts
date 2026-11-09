@@ -14,7 +14,7 @@ const HORIZONTAL = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), ne
 type Block = NonNullable<ReturnType<Bot['findBlock']>>;
 
 /** Sleeps in the nearest bed. The action does not wait for morning and does not wake the bot. */
-export const sleepHandler: ActionHandler<'sleep'> = {
+export const sleepAction: ActionHandler<'sleep'> = {
   kind: 'sleep',
   timeoutMs: 40_000,
   run: (ctx) => sleep(ctx),

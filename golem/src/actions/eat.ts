@@ -50,7 +50,7 @@ function beats(food: FoodInfo, name: string, best: FoodInfo, bestName: string): 
 }
 
 /** Eats the best food the bot holds or carries, and waits until its food level rises. */
-export const eatHandler: ActionHandler<'eat'> = {
+export const eatAction: ActionHandler<'eat'> = {
   kind: 'eat',
   timeoutMs: 20_000,
   run: (ctx) => eat(ctx),

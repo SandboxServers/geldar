@@ -32,7 +32,7 @@ const NEIGHBOR_OFFSETS: readonly Vec3[] = [
 type Spot = { x: number; y: number; z: number } | 'feet';
 
 /** Places a block from the inventory, held in the hand, at a position or at the bot's feet. */
-export const placeHandler: ActionHandler<'place'> = {
+export const placeAction: ActionHandler<'place'> = {
   kind: 'place',
   timeoutMs: 30_000,
   run: (ctx, action) => place(ctx, action.block, action.at),

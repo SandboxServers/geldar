@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import { confirmsPlacement, pickReference, placeHandler } from './place.ts';
+import { confirmsPlacement, pickReference, placeAction } from './place.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
@@ -73,7 +73,7 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
 
 /** Runs the `place` handler with a fresh abort signal. */
 function place(fake: FakeBot, block: string, at: { x: number; y: number; z: number } | 'feet') {
-  return placeHandler.run(
+  return placeAction.run(
     { bot: fake.bot, signal: new AbortController().signal, timeScale: 1 },
     { do: 'place', block, at },
   );

@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
-import { bestFood, eatHandler, type FoodInfo } from './eat.ts';
+import { bestFood, eatAction, type FoodInfo } from './eat.ts';
 
 /** Food numbers for the fake registry; `chorus_fruit` would win on points but is banned. */
 const FOODS: Record<string, FoodInfo> = {
@@ -48,7 +48,7 @@ function fakeBot(options: FakeOptions = {}): Bot {
 
 /** Runs the `eat` handler with a fresh abort signal. */
 function eat(bot: Bot, timeScale = 1) {
-  return eatHandler.run({ bot, signal: new AbortController().signal, timeScale }, { do: 'eat' });
+  return eatAction.run({ bot, signal: new AbortController().signal, timeScale }, { do: 'eat' });
 }
 
 describe('bestFood', () => {
