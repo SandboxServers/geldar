@@ -21,6 +21,8 @@ export interface FakeWorld {
   drops: Record<string, string>;
   /** When true, goto completes without moving the Body. */
   pinned: boolean;
+  /** The hostiles lose the Body once it has made this many gotos; null keeps them near. */
+  escapeAfterGotos: number | null;
 }
 
 export function newWorld(overrides: Partial<FakeWorld> = {}): FakeWorld {
@@ -34,6 +36,7 @@ export function newWorld(overrides: Partial<FakeWorld> = {}): FakeWorld {
     failing: {},
     drops: { stone: 'cobblestone' },
     pinned: false,
+    escapeAfterGotos: null,
     ...overrides,
   };
 }
@@ -48,7 +51,11 @@ function view(world: FakeWorld): BodyView {
     get position() {
       return { ...world.position };
     },
-    nearbyHostiles: (radius = 16) => world.hostiles.filter((mob) => mob.distance <= radius),
+    nearbyHostiles: (radius = 16) => {
+      const gotos = world.log.filter((line) => line.startsWith('goto:')).length;
+      if (world.escapeAfterGotos !== null && gotos >= world.escapeAfterGotos) return [];
+      return world.hostiles.filter((mob) => mob.distance <= radius);
+    },
     inventoryCount: (item) => world.inventory[item] ?? 0,
     inFluid: null,
     onFire: false,
