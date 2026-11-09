@@ -216,8 +216,10 @@ export function fitResult<T extends Fittable>(
     // oldest non-waking event first
   }
   const speech = result.untrusted_world_text.speech;
-  const seqs = speech ? [...(speechSeqs.get(speech) ?? [])] : [];
-  while (speech && size(result) > maxBytes) {
+  // A speech array `worldText` did not build (a clone, say) has no seqs: protect every line.
+  const mapped = speech ? speechSeqs.get(speech) : undefined;
+  const seqs = mapped ? [...mapped] : [];
+  while (speech && mapped && size(result) > maxBytes) {
     const at = speech.findIndex((_, i) => !waking.has(seqs[i] ?? -1));
     if (at < 0) break;
     speech.splice(at, 1);

@@ -207,6 +207,14 @@ describe('fitResult', () => {
     expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
+  it('protects every speech line when the speech array was not built by worldText', () => {
+    const built = waitResult(1, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const result = structuredClone(built);
+    const fitted = fitResult(result, bytes(result) - 1, [1]);
+    expect(fitted.untrusted_world_text.speech).toHaveLength(2);
+    expect(fitted.events.map((e) => e.seq)).toEqual([1]);
+  });
+
   it('truncates the waking event text when it alone exceeds the byte cap', () => {
     const result = waitResult(3, [], 'y'.repeat(2000));
     const cap = bytes({
