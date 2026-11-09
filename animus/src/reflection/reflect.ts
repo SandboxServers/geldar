@@ -19,15 +19,13 @@ import {
   type OutputError,
   type OutputValidator,
   type PromptLibrary,
+  REFLECTION_COST,
   type ReflectionDue,
   type ReflectionPromptVars,
   type ThoughtRow,
 } from '../ports/index.ts';
 import { type ApplyResult, applyReflection } from './apply.ts';
 import { buildDigest, type InventoryReading } from './digest.ts';
-
-/** Credits a reflection costs against admission (spec 5.7). */
-export const REFLECTION_COST = 2;
 
 /** The versions every thought records (wave 5 conventions). */
 export interface ThoughtStamp {
@@ -148,6 +146,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
           deadline: new Date(deps.now().getTime() + deps.settings.deadlineS * 1000),
           responseSchema: render.responseSchema,
           reasoning: deps.settings.reasoning,
+          effort: deps.stamp.effort,
           stablePrefixChars: render.stablePrefixChars,
         },
         signal,

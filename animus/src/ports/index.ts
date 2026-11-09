@@ -1,4 +1,6 @@
 /** The Mind's ports: every interface the wave 5 packets build against (P0-21). */
+export type { AdmissionReservation, ReflectionAdmission } from './admission.ts';
+export { REFLECTION_COST, THOUGHT_COST } from './admission.ts';
 export type {
   AttentionController,
   BodyWakeReason,

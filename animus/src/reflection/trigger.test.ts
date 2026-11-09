@@ -50,7 +50,7 @@ describe('ReflectionTrigger', () => {
       lifeId: LIFE,
       store: w.store,
       attention: w.attention,
-      admission: { reserve: () => ({ settle() {}, release() {} }) },
+      admission: { reserve: (cost) => ({ cost, settle() {}, release() {} }) },
       run: async () => {
         throw new Error('must not run yet');
       },

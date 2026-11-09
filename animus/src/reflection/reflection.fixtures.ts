@@ -6,6 +6,7 @@ import { FakeEmbedder, FakeMemoryStore } from '../fakes/memory.fakes.ts';
 import { FakeModelClient } from '../fakes/model.fakes.ts';
 import { FakeOutputValidator, FakePromptLibrary } from '../fakes/prompts.fakes.ts';
 import type {
+  AdmissionReservation,
   AgentRow,
   AttentionController,
   MindEvent,
@@ -14,7 +15,7 @@ import type {
 } from '../ports/index.ts';
 import type { ReflectDeps } from './reflect.ts';
 import { reflectOnce } from './reflect.ts';
-import { type AdmissionReservation, ReflectionTrigger } from './trigger.ts';
+import { ReflectionTrigger } from './trigger.ts';
 
 export const LIFE = 'ag_adam_01';
 
@@ -152,6 +153,7 @@ export async function world(
         admission.asked.push(cost);
         if (!admission.grant) return null;
         return {
+          cost,
           settle: () => void admission.settled++,
           release: () => void admission.released++,
         };

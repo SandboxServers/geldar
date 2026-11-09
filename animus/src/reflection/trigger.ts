@@ -4,29 +4,18 @@
  * single in-flight slot (R13), which it takes through the attention controller. It also keeps the
  * events and inventory readings seen since the last reflection, which the digest is built from.
  */
-import type {
-  AttentionController,
-  MemoryStore,
-  MindEvent,
-  ReflectionDue,
-  ThoughtOutcome,
+import {
+  type AdmissionReservation,
+  type AttentionController,
+  type MemoryStore,
+  type MindEvent,
+  REFLECTION_COST,
+  type ReflectionAdmission,
+  type ReflectionDue,
+  type ThoughtOutcome,
 } from '../ports/index.ts';
 import type { InventoryReading } from './digest.ts';
-import { REFLECTION_COST, type ReflectInput, type ReflectResult } from './reflect.ts';
-
-/** A granted reservation of credits. Exactly one of `settle` and `release` is called. */
-export interface AdmissionReservation {
-  /** The call ran: charge the reserved cost. */
-  settle(): void;
-  /** The call never ran: give the reservation back. */
-  release(): void;
-}
-
-/** The admission scheduler as the reflection sees it (spec 5.7). No P0-21 port exists yet. */
-export interface ReflectionAdmission {
-  /** Reserves `cost` credits, or returns null when the agent cannot afford them or has no capacity. */
-  reserve(cost: number): AdmissionReservation | null;
-}
+import type { ReflectInput, ReflectResult } from './reflect.ts';
 
 /** Why a due reflection did not run. */
 export type SkipReason = 'already_slept' | 'busy' | 'not_admitted' | 'other_life';

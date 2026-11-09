@@ -287,7 +287,7 @@ export class ThinkingLoop {
     let last = first;
     if (first.kind === 'invalid') {
       const retryId = newId('th');
-      const messages = [...render.messages, this.deps.validator.correctiveMessage(first.errors)];
+      const messages = [...render.messages, this.deps.validator.correctiveMessage(first.errors, first.completion.text)];
       last = await this.attempt(cycle, retryId, CORRECTIVE_RETRY, messages);
       if (last.kind === 'ok') finalId = retryId;
     }
@@ -349,6 +349,7 @@ export class ThinkingLoop {
           deadline: new Date(this.now() + shape.deadlineS * 1000),
           responseSchema: cycle.render.responseSchema,
           reasoning: shape.reasoning,
+          effort: cycle.effort.level,
           stablePrefixChars: cycle.render.stablePrefixChars,
         },
         this.abort.signal,
@@ -358,6 +359,7 @@ export class ThinkingLoop {
       await this.record(cycle, thoughtId, wakeReason, messages, null, null, THOUGHT_COST, 0);
       return { kind: 'error', code: error instanceof ModelError ? error.code : 'internal' };
     }
+    reservation.settle();
     cycle.latencyMs += completion.latencyMs;
     cycle.thinkerId = completion.thinkerId;
     const parsed = this.deps.validator.parseThought(completion.text);

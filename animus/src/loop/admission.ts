@@ -5,26 +5,26 @@
  * reads the wall clock itself.
  */
 
-/** The cost of a thought in credits. */
-export const THOUGHT_COST = 1;
-/** The cost of a sleep reflection in credits. */
-export const REFLECTION_COST = 2;
+import {
+  type AdmissionReservation,
+  REFLECTION_COST,
+  type ReflectionAdmission,
+  THOUGHT_COST,
+} from '../ports/index.ts';
+
+export { REFLECTION_COST, THOUGHT_COST };
+
+/** The reservation type, as the port names it. */
+export type Reservation = AdmissionReservation;
 
 const HOUR_MS = 3_600_000;
 
-/** A reservation handed out by `Admission.reserve`. */
-export interface Reservation {
-  /** Credits held. */
-  readonly cost: number;
-  /** Gives the credits back (the call produced nothing). Safe to call twice. */
-  release(): void;
-}
-
-/** One counter per life, shared by the thinking loop and the reflection. */
-export class Admission {
+/** One counter per life: the thinking loop and the reflection share this one instance. */
+export class Admission implements ReflectionAdmission {
   private readonly cap: number;
   private readonly now: () => number;
-  private readonly spent: { at: number; cost: number; released: boolean }[] = [];
+  private readonly spent: { at: number; cost: number; released: boolean; settled: boolean }[] =
+    [];
 
   constructor(maxThoughtsPerRealHour: number, now: () => number = Date.now) {
     this.cap = maxThoughtsPerRealHour;
@@ -39,12 +39,15 @@ export class Admission {
   /** Reserves `cost` credits, or returns null when they would take the hour over the cap. */
   reserve(cost: number): Reservation | null {
     if (this.used() + cost > this.cap) return null;
-    const entry = { at: this.now(), cost, released: false };
+    const entry = { at: this.now(), cost, released: false, settled: false };
     this.spent.push(entry);
     return {
       cost,
+      settle: () => {
+        entry.settled = true;
+      },
       release: () => {
-        entry.released = true;
+        if (!entry.settled) entry.released = true;
       },
     };
   }

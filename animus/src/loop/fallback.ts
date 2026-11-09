@@ -7,15 +7,7 @@
  */
 import { type Intent, type Thought, validateThought } from '@geldar/contract';
 import type { MindEvent } from '../ports/index.ts';
-
-/** The programs Phase 0 allows (the same list as the output validator's allow-list). */
-export const PHASE0_PROGRAMS: ReadonlySet<string> = new Set([
-  'travel',
-  'gather',
-  'craft',
-  'rest',
-  'flee',
-]);
+import { PHASE0_PROGRAMS } from '../validate/index.ts';
 
 /** What a plan_result `intent` disposition says about an intent that never ran. */
 const FAILED_DISPOSITIONS: ReadonlySet<string> = new Set([
@@ -153,7 +145,7 @@ export interface Continuation {
 export function continueInterrupted(ledger: IntentLedger): Continuation | null {
   const t = ledger.lastInterrupted();
   if (t === null || t.acceptedTick === null) return null;
-  if (t.program === undefined || !PHASE0_PROGRAMS.has(t.program)) return null;
+  if (t.program === undefined || !PHASE0_PROGRAMS.includes(t.program)) return null;
   if (t.goal === undefined || t.arguments === undefined || t.limits === undefined) return null;
   const remaining = t.limits.max_world_ticks - Math.max(0, t.lastTick - t.acceptedTick);
   if (remaining < 1) return null;
