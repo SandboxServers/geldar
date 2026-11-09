@@ -149,7 +149,7 @@ describe('cli', () => {
   it('applies the timing overrides and writes suppressed wakeups as JSONL without text', async () => {
     const tokens = join(dir, 'tokens.json');
     writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
-    // Left alone, 100 ticks a second would put the chatter at 8 s and the spacing at 60 s.
+    // Left alone, 10 ticks a second (a 2400 s day) would put the chatter at 80 s and the spacing at 60 s.
     const scenario = join(dir, 'slow.scenario.json');
     writeFileSync(
       scenario,

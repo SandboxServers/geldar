@@ -324,7 +324,7 @@ describe('PlayerSim', () => {
 describe('PlayerSim doc comments', () => {
   it('keeps the startIntent doc comment directly on startIntent', () => {
     const src = readFileSync(new URL('./player-sim.ts', import.meta.url), 'utf8');
-    expect(src).toMatch(/\/\*\* Starts an intent[^\n]*\*\/\n  startIntent\(/);
-    expect(src).toMatch(/\/\*\* Records a receipt id[^\n]*\*\/\n  pushReceipt\(/);
+    expect(src).toMatch(/\/\*\* Starts an intent[^\n]*\*\/\n {2}startIntent\(/);
+    expect(src).toMatch(/\/\*\* Records a receipt id[^\n]*\*\/\n {2}pushReceipt\(/);
   });
 });

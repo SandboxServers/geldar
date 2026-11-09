@@ -197,7 +197,7 @@ describe('source rules', () => {
     { name: 'eval word', pattern: /\beval\b/ },
   ];
 
-  // ile is the path under the src root; allowedIn matches it exactly, not by suffix.
+  // The file argument is the path under the src root; allowedIn matches it exactly, not by suffix.
   function violations(code: string, file: string): string[] {
     const rel = file.split(sep).join('/');
     return FORBIDDEN.filter(
@@ -224,7 +224,10 @@ describe('source rules', () => {
     const files = sources(SRC_DIR);
     expect(files.length).toBeGreaterThan(20);
     for (const file of files) {
-      expect(violations(stripComments(readFileSync(file, 'utf8')), relative(SRC_DIR, file)), file).toEqual([]);
+      expect(
+        violations(stripComments(readFileSync(file, 'utf8')), relative(SRC_DIR, file)),
+        file,
+      ).toEqual([]);
     }
   });
 

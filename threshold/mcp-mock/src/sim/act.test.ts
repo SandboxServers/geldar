@@ -174,7 +174,10 @@ describe('actTool', () => {
     expect(sim.receipts).toEqual([]);
     // Same instant, so a spacing clock started by a refused say would now rate-limit this one.
     sim.budget = 5;
-    expect(sayTool(hub, ctx, { text: 'hi' })).toEqual({ spoken: true, budget_remaining_thoughts: 4 });
+    expect(sayTool(hub, ctx, { text: 'hi' })).toEqual({
+      spoken: true,
+      budget_remaining_thoughts: 4,
+    });
   }, 30_000);
 
   it('keeps only the newest 1000 receipt ids', () => {

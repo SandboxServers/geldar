@@ -329,6 +329,7 @@ describe('applyOverrides', () => {
     expect(s.day_length_seconds).toBe(2400);
   });
 });
+
 describe('readScenarioFile', () => {
   it('refuses a file over 1 MiB from its size, without reading it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'scenario-'));
