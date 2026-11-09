@@ -5,6 +5,7 @@ import {
   type WorldEvent,
 } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
+import { receiptIdFor } from './derived-id.ts';
 import { type EventPublisher, eventIdFor, NatsRecordSink } from './records-nats.ts';
 
 const LIFE = 'ag_kestrel_01';
@@ -78,6 +79,15 @@ describe('eventIdFor', () => {
   });
 });
 
+describe('receiptIdFor', () => {
+  it('is the same for a replayed action and phase and differs per phase and action', () => {
+    expect(receiptIdFor('ac_a', 'committed')).toBe(receiptIdFor('ac_a', 'committed'));
+    expect(receiptIdFor('ac_a', 'committed')).not.toBe(receiptIdFor('ac_a', 'aborted'));
+    expect(receiptIdFor('ac_a', 'committed')).not.toBe(receiptIdFor('ac_b', 'committed'));
+    expect(receiptIdFor('ac_a', 'committed')).toMatch(/^rc_[0-9A-HJKMNP-TV-Z]{26}$/);
+  });
+});
+
 describe('NatsRecordSink', () => {
   it('publishes every record kind as a valid event on geldar.<shard>.<type>', async () => {
     const { publisher, sent } = fakePublisher();
@@ -117,6 +127,36 @@ describe('NatsRecordSink', () => {
     expect(sent[1]?.event.payload).toEqual(ACTION);
   });
 
+  it('puts the intent fields on an accepted event and nothing extra on the others', async () => {
+    const { publisher, sent } = fakePublisher();
+    const { sink } = sinkWith(publisher);
+    const base = { intentId: INTENT, lifeId: LIFE, bodyGeneration: 1, tick: 48_100 };
+    sink.intentChanged({
+      ...base,
+      state: 'accepted',
+      intent: {
+        goal: 'get_wood',
+        program: 'gather',
+        arguments: { item: 'oak_log' },
+        wake_on: ['goal_completed'],
+        limits: { max_world_ticks: 6000, max_block_operations: 40 },
+        checkpoint: { steps: 3 },
+      },
+    });
+    sink.intentChanged({ ...base, state: 'running' });
+    await sink.flush();
+    expect(sent[0]?.event.payload).toMatchObject({
+      goal: 'get_wood',
+      program: 'gather',
+      arguments: { item: 'oak_log' },
+      preconditions: [],
+      wake_on: ['goal_completed'],
+      limits: { max_world_ticks: 6000, max_block_operations: 40 },
+    });
+    expect(sent[0]?.event.payload).not.toHaveProperty('checkpoint');
+    expect(sent[1]?.event.payload).not.toHaveProperty('goal');
+  });
+
   it('gives the same record the same source_event_id and a new state a new one', async () => {
     const { publisher, sent } = fakePublisher();
     const { sink } = sinkWith(publisher);
@@ -141,10 +181,10 @@ describe('NatsRecordSink', () => {
     expect(logs).toEqual([]);
   });
 
-  it('logs and drops an event after the last attempt, and carries on', async () => {
+  it('logs and drops a wake record after the last attempt, and carries on', async () => {
     const { publisher, sent, calls } = fakePublisher(2);
     const { sink, logs } = sinkWith(publisher, { attempts: 2 });
-    sink.actionChanged(ACTION);
+    sink.wake({ reason: 'goal_completed', tick: 10, intentId: INTENT });
     sink.receipt(RECEIPT);
     await sink.flush();
     expect(calls()).toBe(3);
