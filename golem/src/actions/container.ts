@@ -14,6 +14,8 @@ const REACH = 4.5;
 const OPEN_WAIT_MS = 5_000;
 /** How long a lost open's late-window listener stays armed, scaled by `timeScale`. */
 const LATE_WINDOW_WAIT_MS = 3 * OPEN_WAIT_MS;
+/** Wall-clock wait for the server to confirm the window after a transfer, scaled by `timeScale`. */
+const SETTLE_WAIT_MS = 5_000;
 /** The late-window cleanup of the last open per bot, so the next open can remove a stale one. */
 const lateWindowDrop = new WeakMap<Bot, () => void>();
 /**
@@ -48,6 +50,34 @@ function containerAt(bot: Bot, at: Position): Block | null {
 function inventoryCount(container: Container, itemId: number): number {
   // `count` covers the window's player region: main inventory and hotbar, not armor or off-hand.
   return container.count(itemId, null);
+}
+
+/** Mineflayer's internal window sync: a click the server ignores, answered with the full window. */
+type SyncableBot = Bot & { _syncWindow?: (window: Container) => Promise<void> };
+
+/**
+ * Waits until the server has run every click sent so far, then reports whether it did in time.
+ * Mineflayer waits on the server only for player and crafting windows, so a chest click returns
+ * while the server may not have run it yet: the client view is ahead of the chest. The sync is
+ * answered after those clicks, so the counts read after it are the chest's. A bot without the sync
+ * (an older protocol, which waits per click) has nothing to settle.
+ */
+async function settle(ctx: ActionContext, container: Container): Promise<boolean> {
+  const sync = (ctx.bot as SyncableBot)._syncWindow;
+  if (!sync) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), SETTLE_WAIT_MS * ctx.timeScale);
+  });
+  const synced = sync.call(ctx.bot, container).then(
+    () => true,
+    () => false,
+  );
+  try {
+    return await Promise.race([synced, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The container's stacks summed per item name. */
@@ -184,7 +214,10 @@ async function withdraw(
   } catch (caught) {
     error = errorText(caught);
   }
-  // The window is the truth: the library moves what fits, then may throw.
+  // The window is the truth: the library moves what fits, then may throw. The server confirms it first.
+  if (!(await settle(ctx, container))) {
+    return failed('internal', 'server did not confirm the withdraw', { moved: 0 });
+  }
   const moved = inventoryCount(container, itemId) - before;
   if (error !== null && !INVENTORY_FULL.test(error)) {
     return failed('internal', error, { moved });
@@ -212,7 +245,10 @@ async function deposit(
   } catch (caught) {
     error = errorText(caught);
   }
-  // The window is the truth: the library moves what fits, then may throw.
+  // The window is the truth: the library moves what fits, then may throw. The server confirms it first.
+  if (!(await settle(ctx, container))) {
+    return failed('internal', 'server did not confirm the deposit', { moved: 0 });
+  }
   const moved = held - inventoryCount(container, itemId);
   if (error !== null && !CONTAINER_FULL.test(error)) {
     return failed('internal', error, { moved });

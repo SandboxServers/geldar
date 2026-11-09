@@ -64,6 +64,12 @@ function fakeContainer(inv: Stacks, chest: Stacks, opts: FakeOptions, onClose: (
 function harness(opts: FakeOptions = {}) {
   const inv: Stacks = new Map([[1, 10]]);
   const chest: Stacks = new Map();
+  // The server's chest. Clicks reach the client view at once; the server has them only after a sync.
+  const serverChest: Stacks = new Map();
+  const sync = vi.fn(async () => {
+    serverChest.clear();
+    for (const [id, count] of chest) serverChest.set(id, count);
+  });
   let synced: [number, number][] = [...inv];
   const container = fakeContainer(inv, chest, opts, () => {
     synced = [...inv];
@@ -91,9 +97,11 @@ function harness(opts: FakeOptions = {}) {
       });
     }),
     closeWindow: vi.fn(async () => undefined),
+    // As in mineflayer 1.17.1+: the sync resolves once the server has the window's clicks.
+    _syncWindow: sync,
     currentWindow: null,
   });
-  return { bot: bot as unknown as Bot, inv, chest, container, emitter };
+  return { bot: bot as unknown as Bot, inv, chest, serverChest, sync, container, emitter };
 }
 
 function ctxFor(bot: Bot, timeScale = 1): ActionContext {
@@ -226,6 +234,32 @@ describe('deposit', () => {
       detail: { moved: 10, container: { cobblestone: 10 } },
     });
     expect(h.inv.get(1)).toBe(0);
+    expect(h.container.close).toHaveBeenCalledOnce();
+  });
+
+  it('returns only after the server has the chest contents, not just the client view', async () => {
+    const h = harness();
+    const outcome = await depositAction.run(ctxFor(h.bot), {
+      do: 'deposit',
+      at: AT,
+      item: 'cobblestone',
+      count: 10,
+    });
+    expect(outcome.status).toBe('completed');
+    expect(h.sync).toHaveBeenCalledOnce();
+    expect(h.serverChest.get(1)).toBe(10);
+  });
+
+  it('fails internal when the server does not confirm the window in time', async () => {
+    const h = harness();
+    h.sync.mockImplementationOnce(() => new Promise(() => {}));
+    const outcome = await depositAction.run(ctxFor(h.bot, 0.01), {
+      do: 'deposit',
+      at: AT,
+      item: 'cobblestone',
+      count: 10,
+    });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'internal' });
     expect(h.container.close).toHaveBeenCalledOnce();
   });
 
