@@ -119,21 +119,22 @@ describe('bundled tool schemas', () => {
   });
 
   it('agrees with the generated validators', () => {
-    const cases: [string, 'input' | 'result', unknown][] = [
-      ['act', 'input', { say: 'hello', actions: [{ do: 'eat' }] }],
-      ['act', 'input', { say: 'hello', actions: [{ do: 'fly' }] }],
-      ['wait', 'input', { max_seconds: 30, cursor: 'c_3' }],
-      ['wait', 'input', { max_seconds: 300 }],
-      ['wait', 'result', WAIT_RESULT],
-      ['wait', 'result', withHeard],
-      ['wait', 'result', withSignText],
+    const cases: [string, 'input' | 'result', unknown, boolean][] = [
+      ['act', 'input', { say: 'hello', actions: [{ do: 'eat' }] }, true],
+      ['act', 'input', { say: 'hello', actions: [{ do: 'fly' }] }, false],
+      ['wait', 'input', { max_seconds: 30, cursor: 'c_3' }, true],
+      ['wait', 'input', { max_seconds: 300 }, false],
+      ['wait', 'result', WAIT_RESULT, true],
+      ['wait', 'result', withHeard, false],
+      ['wait', 'result', withSignText, false],
     ];
-    for (const [tool, kind, value] of cases) {
+    for (const [tool, kind, value, expected] of cases) {
       const ajv = new Ajv2020({ strict: true });
       addFormats(ajv);
       const bundle = mcpToolSchemas[tool as keyof typeof mcpToolSchemas][kind];
       const fresh = ajv.compile(bundle)(value);
       const generated = (kind === 'input' ? validateToolInput : validateToolResult)(tool, value).ok;
+      expect(fresh, tool).toBe(expected);
       expect(fresh, tool).toBe(generated);
     }
     expect(validateToolInput('act', { say: 'hello' }).ok).toBe(true);

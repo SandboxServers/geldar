@@ -202,6 +202,8 @@ describe('look, say and act results', () => {
       { index: 0.5, reason: 'x' },
       { index: 1, reason: 'Bad' },
       { index: 1, reason: 'x', extra: 1 },
+      { index: -1, reason: 'x' },
+      { index: 1 },
     ]) {
       expect(validateToolResult('act', { ...ok, rejected: [bad] }).ok, JSON.stringify(bad)).toBe(
         false,
