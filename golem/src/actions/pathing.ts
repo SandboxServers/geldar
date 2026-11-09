@@ -30,7 +30,29 @@ export function ensurePathfinder(bot: Bot): void {
   movements.allow1by1towers = false;
   // The library spells this property `scafoldingBlocks` (2.4.5).
   movements.scafoldingBlocks = [];
+  forbidCornerCutting(movements);
   bot.pathfinder.setMovements(movements);
+}
+
+/** The parts of a pathfinder `Movements` that the corner rule reads and wraps. */
+interface DiagonalMovements {
+  getBlock(node: unknown, dx: number, dy: number, dz: number): { physical?: boolean };
+  getMoveDiagonal(node: unknown, dir: { x: number; z: number }, neighbors: unknown[]): void;
+}
+
+/**
+ * Allows a diagonal step only when both orthogonal side cells are free at foot level. The library
+ * accepts a diagonal when one side is free, so the bot cuts a corner, presses against the block and
+ * Paper rejects its position every tick (live: the bed walk past the crafting table rubber-banded
+ * until the 600-tick stall rule fired). With both sides free the bot never touches a corner.
+ */
+export function forbidCornerCutting(movements: unknown): void {
+  const m = movements as DiagonalMovements;
+  const original = m.getMoveDiagonal.bind(m);
+  m.getMoveDiagonal = (node, dir, neighbors) => {
+    if (m.getBlock(node, dir.x, 0, 0).physical || m.getBlock(node, 0, 0, dir.z).physical) return;
+    original(node, dir, neighbors);
+  };
 }
 
 /**
