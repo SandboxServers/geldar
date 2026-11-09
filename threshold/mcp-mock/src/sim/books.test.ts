@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateToolResult } from '@geldar/contract';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -173,7 +173,7 @@ describe('define_skill', () => {
 
 describe('source rules', () => {
   // The mock never executes model code or reaches the network. Docker test helpers live outside src.
-  // server.ts alone may import node:http and node:net: it is the mock's own listener.
+  // server.ts at the src root alone may import node:http and node:net: it is the mock's own listener.
   const FORBIDDEN: { name: string; pattern: RegExp; allowedIn?: string }[] = [
     { name: 'eval', pattern: /\beval\s*\(/ },
     { name: 'new Function', pattern: /\bnew\s+Function\b/ },
@@ -188,11 +188,20 @@ describe('source rules', () => {
       allowedIn: 'server.ts',
     },
     { name: 'fetch', pattern: /\bfetch\s*\(/ },
+    {
+      name: 'dynamic import of a forbidden module',
+      pattern: /\bimport\s*\(\s*['"](node:)?(vm|child_process|worker_threads|net|https?)['"]/,
+    },
+    { name: 'require', pattern: /\brequire\s*\(/ },
+    { name: 'http request', pattern: /\bhttps?\.request\s*\(/ },
+    { name: 'eval word', pattern: /\beval\b/ },
   ];
 
+  // ile is the path under the src root; allowedIn matches it exactly, not by suffix.
   function violations(code: string, file: string): string[] {
+    const rel = file.split(sep).join('/');
     return FORBIDDEN.filter(
-      (f) => f.pattern.test(code) && (f.allowedIn === undefined || !file.endsWith(f.allowedIn)),
+      (f) => f.pattern.test(code) && (f.allowedIn === undefined || rel !== f.allowedIn),
     ).map((f) => f.name);
   }
   function sources(dir: string): string[] {
@@ -215,7 +224,7 @@ describe('source rules', () => {
     const files = sources(SRC_DIR);
     expect(files.length).toBeGreaterThan(20);
     for (const file of files) {
-      expect(violations(stripComments(readFileSync(file, 'utf8')), file), file).toEqual([]);
+      expect(violations(stripComments(readFileSync(file, 'utf8')), relative(SRC_DIR, file)), file).toEqual([]);
     }
   });
 
@@ -230,6 +239,11 @@ describe('source rules', () => {
       ['net or http import', "import https from 'https';"],
       ['vm, child process or worker import', "import { Worker } from 'worker_threads';"],
       ['fetch', 'await fetch ("http://x");'],
+      ['dynamic import of a forbidden module', "const m = await import ('node:vm');"],
+      ['dynamic import of a forbidden module', 'await import("child_process");'],
+      ['require', "const fs = require ('fs');"],
+      ['http request', "https.request ({ host: 'x' });"],
+      ['eval word', 'const e = eval;'],
     ];
     for (const [name, code] of controls) {
       expect(violations(code, 'sim/x.ts'), code).toContain(name);
@@ -241,10 +255,23 @@ describe('source rules', () => {
 
   it('allows node:http and node:net only in server.ts', () => {
     const code = "import { createServer } from 'node:http';";
-    expect(violations(code, 'src/sim/x.ts')).not.toEqual([]);
-    expect(violations(code, 'src/server.ts')).toEqual([]);
+    expect(violations(code, 'sim/x.ts')).not.toEqual([]);
+    expect(violations(code, 'server.ts')).toEqual([]);
+  });
+
+  it('does not allow a file that merely ends in server.ts', () => {
+    const code = "import { createServer } from 'node:http';";
+    expect(violations(code, 'fake-server.ts')).not.toEqual([]);
+    expect(violations(code, 'sim/server.ts')).not.toEqual([]);
+    expect(violations(code, 'sim\\server.ts')).not.toEqual([]);
+  });
+
+  it('ignores a forbidden word that sits in a comment', () => {
+    expect(violations(stripComments('// never eval(x)'), 'sim/x.ts')).toEqual([]);
+    expect(violations(stripComments('/* never eval(x) */ const a = 1;'), 'sim/x.ts')).toEqual([]);
   });
 });
+
 describe('offer and vote', () => {
   it('offer of an item not held is refused and free', () => {
     const hub = setup();
