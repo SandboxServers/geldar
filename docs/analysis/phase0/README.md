@@ -51,9 +51,9 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | P0-08b | 2 | Body action: `craft` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
 | P0-09a | 2 | Body actions: `place`, `eat`, `sleep` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
 | P0-09b | 2 | Body actions: `open`, `deposit`, `withdraw` | packet-coder | Shipped (batch review 5 rounds, merged to wave2) | P0-07c | |
-| P0-10a | 2 | Benchmark harness, TPS control, results writer, `./geldar.ps1 bench` | packet-coder | Ready | P0-08a | |
-| P0-10b | 2 | Scenarios `wood-to-stone-tools`, `food`, `shelter` | packet-coder | BlockedDependency | P0-08a, P0-08b, P0-09a, P0-10a | |
-| P0-10c | 2 | Scenarios `bed`, `chest`, `blocked-path` | packet-coder | BlockedDependency | P0-08a, P0-08b, P0-09a, P0-09b, P0-10a | |
+| P0-10a | 2 | Benchmark harness, TPS control, results writer, `./geldar.ps1 bench` | packet-coder | Shipped (review 3, merged to wave2) | P0-08a | |
+| P0-10b | 2 | Scenarios `wood-to-stone-tools`, `food`, `shelter` | packet-coder | Ready | P0-08a, P0-08b, P0-09a, P0-10a | |
+| P0-10c | 2 | Scenarios `bed`, `chest`, `blocked-path` | packet-coder | Ready | P0-08a, P0-08b, P0-09a, P0-09b, P0-10a | |
 | W1-process | 2 | Apply the wave 1 retro actions to agents, skills and repo checks | packet-coder | Shipped (review 3, merged to wave2) | — | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | written at wave 2 close | BlockedDependency | P0-06 | |
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | written at wave 2 close | BlockedDependency | P0-03, P0-05 | |
