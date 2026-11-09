@@ -34,6 +34,8 @@ function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
 | Paper is behind the proxy | `dc port paper 25565`, run only while paper is running (`docker inspect -f '{{.State.Running}}' geldar-phase0-paper-1` prints `true`) | fails with `no port 25565/tcp` (exit 1): Paper has no published game port. A stopped paper also fails this command, so the check is meaningless unless the inspect line shows `true` first |
 | Velocity bot ingress | compose healthcheck, and `Test-NetConnection 127.0.0.1 -Port 25565` | `healthy`, and the port answers |
 | RCON (test control) | `Test-NetConnection 127.0.0.1 -Port 25575` (published at `127.0.0.1:25575`, `compose/phase0.yml:89`) | the port answers; Paper enforces the whitelist, so any bot that joins (Golem whitelists its own over RCON) must be whitelisted first. Check this row before `test:live` |
+| Geldar-Core plugin loaded | `docker logs geldar-phase0-paper-1 2>&1 \| Select-String "Geldar-Core enabled"` | prints the line `Geldar-Core enabled for shard phase0` (the jar is built first: `cd plugin; ./gradlew build`) |
+| Events flowing | `curl -fsS "http://localhost:8222/jsz?streams=true"` | stream `GELDAR_EVENTS` exists and its `messages` count grows (a `server_tps` event arrives every 20 s) |
 | Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
 
 Ports, users and database names come from `compose/phase0.yml` and its `.env.example`; if they differ from the table, the compose file wins. Update this table in the same PR.

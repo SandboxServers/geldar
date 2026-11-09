@@ -33,3 +33,7 @@ compose/secrets/
 # Token files for the MCP mock: keep real ones outside the repo
 *tokens*.json
 !tokens.example.json
+
+# Gradle output for the Paper plugin
+plugin/**/build/
+plugin/.gradle/

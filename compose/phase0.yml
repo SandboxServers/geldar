@@ -76,6 +76,9 @@ services:
       MOTD: "Geldar - no humans"
       ENABLE_RCON: "TRUE"
       RCON_PASSWORD_FILE: /run/secrets/rcon
+      # Geldar-Core (plugin/core). Phase 0 NATS is open on the compose network; accounts come later (spec 6.5).
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_SHARD: phase0
       # 5.1 world border (diameter 3000 = radius 1500) and gamerules, run once the server is up.
       # The image splits this value on newlines, one RCON command per line. Gamerule names are
       # the 26.1 ones: the camelCase names from spec 5.1 are rejected ("Incorrect argument").
@@ -84,6 +87,8 @@ services:
     volumes:
       - paper-data:/data
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
+      # The image copies /plugins into /data/plugins on start. Build the jar first: cd plugin; ./gradlew build
+      - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
     ports:
       # Ops and the benchmark only. The game port (25565) is deliberately not published.
       - "127.0.0.1:25575:25575"
