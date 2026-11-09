@@ -135,11 +135,16 @@ describe('gateLine', () => {
 });
 
 /** A control over a scripted server, recording every command in `log`. */
-function harness(opts: { list?: string; tick?: string } = {}) {
+function harness(opts: { list?: string; tick?: string; removeFails?: boolean } = {}) {
   const log: string[] = [];
   const ctl = {
     async whitelistAdd(name: string) {
       log.push(`whitelist add ${name}`);
+    },
+    async whitelistRemove(name: string) {
+      log.push(`whitelist remove ${name}`);
+      if (opts.removeFails) throw new Error('rcon closed');
+      return '';
     },
     async command(cmd: string) {
       log.push(cmd);
@@ -220,6 +225,29 @@ describe('main', () => {
     expect(h.out).toContain('GATE: FAIL (goto-smoke)');
     // restoreWorld ran in the final finally, after the bot stopped.
     expect(h.log.lastIndexOf('stop bot')).toBeLessThan(h.log.lastIndexOf('tick rate 20'));
+  });
+
+  it('removes GolemBench from the whitelist after the bot stops, even when the run fails', async () => {
+    const h = harness();
+    h.deps.cell = async () => {
+      throw new Error('cell blew up');
+    };
+    expect(await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '1'], h.deps)).toBe(1);
+    const remove = h.log.indexOf('whitelist remove GolemBench');
+    expect(remove).toBeGreaterThan(h.log.indexOf('connect bot'));
+    expect(remove).toBeGreaterThan(h.log.indexOf('stop bot'));
+  });
+
+  it('ignores a failing whitelist removal', async () => {
+    const h = harness({ removeFails: true });
+    expect(await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '1'], h.deps)).toBe(0);
+    expect(h.log).toContain('whitelist remove GolemBench');
+  });
+
+  it('never touches the whitelist for --restore', async () => {
+    const h = harness();
+    expect(await main(['--restore'], h.deps)).toBe(0);
+    expect(h.log.some((l) => l.startsWith('whitelist'))).toBe(false);
   });
 
   it.each([

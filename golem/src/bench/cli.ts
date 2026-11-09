@@ -277,6 +277,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
   const { ctl } = rcon;
   let removeRestore: ((() => void) & { isStopping?: () => boolean }) | undefined;
   let manager: ReturnType<NonNullable<CliDeps['createManager']>> | undefined;
+  let whitelisted = false;
   try {
     if (options.restore) {
       await restoreWorld(ctl);
@@ -289,6 +290,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       await ctl.tickRate(20);
     }
     await ctl.whitelistAdd(BENCH_NAME);
+    whitelisted = true;
     const listing = await ctl.command('list');
     if (!LIST_PATTERN.test(listing)) {
       err(`cannot read the player list: ${listing.trim()}`);
@@ -373,6 +375,10 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
       await manager?.stop();
     } catch {
       // Stopping is best effort.
+    }
+    if (whitelisted && removeRestore?.isStopping?.() !== true) {
+      // The bot name must not stay whitelisted after the run; a failed removal changes nothing.
+      await ctl.whitelistRemove(BENCH_NAME).catch(() => undefined);
     }
     // After a signal the restore handler owns the control: it restores, closes and exits the process.
     // Running restoreWorld here would only throw 'bench is stopping', and closing would cut it off.

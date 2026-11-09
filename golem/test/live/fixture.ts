@@ -26,13 +26,31 @@ export async function withLiveBot(
   const cfg = loadConfig();
   const password = await readRconPassword(cfg);
   const rcon = await RconClient.connect({ host: cfg.rconHost, port: cfg.rconPort, password });
-  const ctl = new TestControl(rcon);
   const manager = new ConnectionManager({
     host: cfg.mcHost,
     port: cfg.mcPort,
     username: opts.name,
     onBot: watchRecipeBook,
   });
+  await runWithBot({ ctl: new TestControl(rcon), manager, close: () => rcon.close() }, opts, fn);
+}
+
+/** The parts `runWithBot` needs; tests pass fakes. */
+export interface LiveParts {
+  ctl: TestControl;
+  manager: ConnectionManager;
+  close(): Promise<void>;
+}
+
+/**
+ * The body of `withLiveBot` over injected parts. The bot name is whitelisted before it connects
+ * and removed again in `finally`; a failed removal is ignored.
+ */
+export async function runWithBot(
+  { ctl, manager, close }: LiveParts,
+  opts: { name: string; slot: number },
+  fn: (ctx: LiveContext) => Promise<void>,
+): Promise<void> {
   try {
     await quietWorld(ctl);
     const arena = await buildArena(ctl, opts.slot);
@@ -49,7 +67,8 @@ export async function withLiveBot(
       await manager.stop();
       await restoreWorld(ctl);
     } finally {
-      await rcon.close();
+      await ctl.whitelistRemove(opts.name).catch(() => undefined);
+      await close();
     }
   }
 }
