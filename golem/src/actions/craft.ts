@@ -84,6 +84,14 @@ async function runCraft(
   // Mineflayer's own clock is not the server's: wait for the inventory correction to arrive.
   await bot.waitForTicks(SETTLE_TICKS);
   const crafted = bot.inventory.count(item.id, null) - before;
+  const expected = times * recipe.result.count;
+  // Completed means produced: a result the server did not give back is an internal failure.
+  if (crafted < expected) {
+    return failed('internal', `server produced ${crafted} of ${expected} ${item.name}`, {
+      item: item.name,
+      crafted,
+    });
+  }
   return completed({ item: item.name, crafted, used_table: usedTable !== null });
 }
 

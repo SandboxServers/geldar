@@ -174,6 +174,18 @@ describe('craftAction', () => {
     expect(out.status).toBe('cancelled');
   });
 
+  it('fails internal, not completed, when the server gave back nothing', async () => {
+    const planks = recipe(5, 4, { 6: 1 });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 2 } });
+    fake.craft.mockImplementationOnce(async () => undefined);
+    const out = await run(fake.bot, 'oak_planks', 4);
+    expect(out).toMatchObject({
+      status: 'failed',
+      reason: 'internal',
+      detail: { item: 'oak_planks', crafted: 0 },
+    });
+  });
+
   it('closes a window left open after a completed craft too', async () => {
     const log = recipe(5, 4, { 6: 1 });
     const fake = fakeBot({ recipes: [log], inventory: { 6: 1 } });
