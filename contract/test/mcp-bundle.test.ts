@@ -127,6 +127,14 @@ describe('bundled tool schemas', () => {
       ['wait', 'result', WAIT_RESULT, true],
       ['wait', 'result', withHeard, false],
       ['wait', 'result', withSignText, false],
+      ['write_book', 'input', { title: 'T', text: 'hello' }, true],
+      ['write_book', 'input', { title: 'T', skill_id: 'sk_1', text: 'hello' }, false],
+      [
+        'read_book',
+        'result',
+        { book_id: 'bk_1', kind: 'text', untrusted_world_text: {}, note: 'n' },
+        false,
+      ],
     ];
     for (const [tool, kind, value, expected] of cases) {
       const ajv = new Ajv2020({ strict: true });
