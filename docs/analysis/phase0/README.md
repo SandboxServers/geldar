@@ -46,7 +46,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | P0-06 | 1 | `compose/phase0.yml` (Paper behind Velocity, Postgres, NATS) and `shards/phase0.yaml`, healthy stack | packet-coder | Done | P0-05 | |
 | P0-07a | 2 | `golem/` package, RCON test control, arena, live-test lane | packet-coder | Shipped (review 3, merged to wave2) | — | |
 | P0-07b | 2 | Connection with reconnect and backoff, snapshot builder, live fixture, smoke test and protocol verdict | packet-coder | Shipped (review 2, merged to wave2) | P0-07a | |
-| P0-07c | 2 | Action outcome shape, registry, run wrapper with timeouts, `moveNear` | packet-coder | Ready | P0-07b | |
+| P0-07c | 2 | Action outcome shape, registry, run wrapper with timeouts, `moveNear` | packet-coder | Shipped (review 2, merged to wave2) | P0-07b | |
 | P0-08a | 2 | Body actions: `goto`, `mine` | packet-coder | BlockedDependency | P0-07c | |
 | P0-08b | 2 | Body action: `craft` | packet-coder | BlockedDependency | P0-07c | |
 | P0-09a | 2 | Body actions: `place`, `eat`, `sleep` | packet-coder | BlockedDependency | P0-07c | |
