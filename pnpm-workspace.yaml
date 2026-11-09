@@ -1,0 +1,13 @@
+# Workspace packages. Directories that don't exist yet are ignored; each Phase 0
+# packet that creates one is already listed here (spec section 6.6).
+packages:
+  - contract
+  - golem
+  - animus
+  - lantern-local
+  - eventsink
+  - glass
+  - tools/*
+
+# Exact versions only: `pnpm add foo` writes "1.2.3", never "^1.2.3".
+saveExact: true

@@ -1,0 +1,31 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+# Gradle / Java
+.gradle/
+build/
+!**/src/**/build/
+*.class
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Agent working state (worktrees, reports and the active-campaign pointer stay local)
+.claude/worktrees/
+.claude/reports/
+.claude/state/
+.claude/settings.local.json
+
+# Benchmark and shard runtime output (results we keep are copied into docs/)
+bench-results/
+compose/secrets/
+.data/
