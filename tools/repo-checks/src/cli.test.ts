@@ -137,6 +137,80 @@ describe('repo-checks CLI, control character wiring', () => {
     }
   });
 
+  describe('working tree', () => {
+    /** Runs the CLI in a repo with `note.md` committed clean, after `setup` changed it. */
+    function runTree(setup: (dir: string) => void): { status: number; output: string } {
+      const dir = mkdtempSync(join(tmpdir(), 'repo-checks-tree-'));
+      try {
+        execFileSync('git', ['init', '-q'], { cwd: dir });
+        writeFileSync(join(dir, 'note.md'), 'one\ntwo\n');
+        execFileSync('git', ['add', '-A'], { cwd: dir });
+        execFileSync(
+          'git',
+          ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init'],
+          { cwd: dir },
+        );
+        setup(dir);
+        try {
+          return {
+            status: 0,
+            output: execFileSync(process.execPath, [cliPath], { cwd: dir, encoding: 'utf8' }),
+          };
+        } catch (error) {
+          const failed = error as { status: number; stdout: string };
+          return { status: failed.status, output: failed.stdout };
+        }
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+
+    it('passes a clean tree', () => {
+      const result = runTree(() => {});
+      expect(result.output).toContain('repo checks: ok');
+      expect(result.status).toBe(0);
+    });
+
+    it('fails a staged defect once, as an index finding', () => {
+      const result = runTree((dir) => {
+        writeFileSync(join(dir, 'note.md'), 'one\ntwo\u0007\n');
+        execFileSync('git', ['add', 'note.md'], { cwd: dir });
+      });
+      expect(result.status).toBe(1);
+      expect(result.output).toContain('note.md:2 has a control character (0x07);');
+      expect(result.output).not.toContain('in the working tree');
+    });
+
+    it('fails an unstaged defect in a tracked file', () => {
+      const result = runTree((dir) => writeFileSync(join(dir, 'note.md'), 'one\rtwo\n'));
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(
+        'note.md:1 has a control character (0x0d) in the working tree',
+      );
+    });
+
+    it('fails a defect in an untracked file', () => {
+      const result = runTree((dir) => writeFileSync(join(dir, 'new.md'), 'a\nb\u000c\n'));
+      expect(result.status).toBe(1);
+      expect(result.output).toContain(
+        'new.md:2 has a control character (0x0c) in the working tree',
+      );
+    });
+
+    it('ignores a defect in an ignored untracked file', () => {
+      const result = runTree((dir) => {
+        writeFileSync(join(dir, '.gitignore'), 'scratch.md\n');
+        writeFileSync(join(dir, 'scratch.md'), 'a\u0007\n');
+      });
+      expect(result.output).toContain('repo checks: ok');
+    });
+
+    it('lets git convert CRLF pairs in the working tree', () => {
+      const result = runTree((dir) => writeFileSync(join(dir, 'new.md'), 'a\r\nb\r\n'));
+      expect(result.output).toContain('repo checks: ok');
+    });
+  });
+
   it('judges the index, not a working tree that autocrlf made CRLF', () => {
     const dir = mkdtempSync(join(tmpdir(), 'repo-checks-eol-'));
     try {

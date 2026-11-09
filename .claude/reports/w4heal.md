@@ -1,0 +1,1 @@
+healBot: passed 'instant_health' (bare id) to ctl.effect, since RESOURCE_ID rejects the namespace prefix; regex untouched. Other minecraft: ids in live tests are raw commands or blockIs on a separate probe, left alone. No other clear defects in resetBot/healBot; no unit test covers healBot.

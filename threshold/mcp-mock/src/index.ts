@@ -1,5 +1,6 @@
 export * from './app.ts';
 export * from './auth.ts';
+export * from './corpus/corpus.ts';
 export * from './fake-world.ts';
 export * from './ids.ts';
 export * from './prompts.ts';

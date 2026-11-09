@@ -21,7 +21,11 @@ Rules:
 - Files stay under 700 lines (soft cap 500). No `utils.ts`/`helpers.ts` names. Match the surrounding code's style; Biome formats TypeScript (`pnpm format`).
 - LF line endings in every file. No secrets, tokens, account names, or public or private-network IPs (`127.0.0.1` is fine).
 - Never weaken an assertion (a live assert turned into a warning) or change a fixture to make a test or scenario pass: report a Body finding instead.
-- No PowerShell backtick escapes (a backtick-r wrote a CR) in file content. Byte-scan changed files for CR and control characters before committing.
+- Run `pwd` first and check every path you write against the worktree path in the brief; a write outside it lands in another checkout and is lost work.
+- Write file content with the Edit or Write tool. Never put PowerShell backtick escapes (backtick-a, backtick-f, backtick-t, backtick-r: they write BEL, FF, TAB, CR) in a string that writes file content. Byte-scan changed files for CR and control characters before committing.
+- Before the final commit run `git diff --check` and `pnpm check:repo` (via `./geldar.ps1 pnpm check:repo`), which scans the working tree as well as the index for control characters; fix what it reports before committing.
+- A brief of more than about 12 items is the orchestrator's to split. If you reach 80 turns, stop: commit what is done, and write the remaining items to the report (and say so in the one-line return).
+- A progress file named `w*.md` directly in `.claude/reports/` is not ignored: `git add` it with the packet. Reports in a subfolder or with another name stay local; do not `git add -f` them.
 - Probes against a running server use read-only verbs only (`data get`, `execute if`, `tick query`, `version`, `list`, `gamerule <name>`). Do not run the live lane or touch Docker unless the brief says you are the only live user; otherwise write `live: pending` in your report (a report line meaning the live tests are written but not run; the orchestrator runs them).
 - Before writing a parser or fixture for a server reply, capture the real reply and match it.
 - Never run `git stash`, `git push`, `gh pr`, `git worktree prune` or anything that deletes a worktree.

@@ -10,7 +10,7 @@ import {
 } from '../../src/body/index.ts';
 import { reportBlocked } from '../../src/body/reflexes/blocked-path.ts';
 import { shelterReflexes } from '../../src/body/reflexes/shelter.ts';
-import { type LiveContext, withLiveBot } from './fixture.ts';
+import { type LiveContext, resetBot, withLiveBot } from './fixture.ts';
 
 /**
  * The shelter reflexes on 26.1. The burrow case runs in slot 3 (GolemPlace), the path cases in
@@ -79,7 +79,7 @@ describe('panic burrow on 26.1', () => {
       // A dirt bank beside the bot is the wall the pocket is dug into.
       await ctl.fill({ x: cx + 1, y: cy, z: cz - 3 }, { x: cx + 5, y: cy + 3, z: cz + 3 }, 'dirt');
       await ctl.give(BURROW_BOT, 'dirt', 4);
-      await ctl.timeSet('midnight');
+      const restoreTime = await resetBot(bot, ctl, { time: 'midnight' });
       await bot.waitForTicks(SETTLE_TICKS);
 
       const view = createBodyView(bot);
@@ -99,13 +99,14 @@ describe('panic burrow on 26.1', () => {
         expect(view.enclosed).toBe(true);
       } finally {
         view.dispose();
+        await restoreTime();
       }
     });
   }, 180_000);
 
   it('refuses on open ground', async () => {
     await withLiveBot({ name: BURROW_BOT, slot: BURROW_SLOT }, async (ctx) => {
-      await ctx.ctl.timeSet('midnight');
+      const restoreTime = await resetBot(ctx.bot, ctx.ctl, { time: 'midnight' });
       await ctx.bot.waitForTicks(SETTLE_TICKS);
       const view = createBodyView(ctx.bot);
       const sink = new MemorySink();
@@ -118,6 +119,7 @@ describe('panic burrow on 26.1', () => {
         expect(view.enclosed).toBe(false);
       } finally {
         view.dispose();
+        await restoreTime();
       }
     });
   }, 180_000);
