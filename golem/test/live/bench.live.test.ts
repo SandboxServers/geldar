@@ -99,6 +99,25 @@ describe('bench harness on 26.1', () => {
         console.warn(`FINDING: goto-smoke failed at 5 TPS: ${JSON.stringify(slow.failures)}`);
       }
       expect(parseTargetRate(await ctl.tickQuery())).toBe(20);
+
+      // The reset heals: run 1 damages the bot, run 2 must start at full health.
+      let healthRuns = 0;
+      const healthProbe: Scenario = {
+        ...gotoSmoke,
+        name: 'health-probe',
+        async run(env) {
+          healthRuns++;
+          if (healthRuns === 1) {
+            await ctl.command(`damage ${NAME} 10`);
+            await new Promise((r) => setTimeout(r, 1_000));
+            return { passed: env.bot.health < 20, note: `damaged to ${env.bot.health}` };
+          }
+          await new Promise((r) => setTimeout(r, 1_000));
+          return { passed: env.bot.health === 20, note: `health ${env.bot.health}` };
+        },
+      };
+      const healed = await runCell(healthProbe, 20, 2, deps);
+      expect(healed.passed, `reset health: ${JSON.stringify(healed.notes)}`).toBe(2);
     });
 
     // A fresh connection: the fixture's finally has restored the world by now.

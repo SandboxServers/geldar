@@ -183,7 +183,8 @@ async function resetBench(deps: RunnerDeps): Promise<ReturnType<typeof buildAren
   // Clear first: the effect commands below must not be wiped before they act.
   await ctl.effectClear(botName);
   await ctl.effect(botName, 'saturation', 1, 255);
-  await ctl.effect(botName, 'instant_health', 1, 255);
+  // Amplifier 4 heals 64 HP; 255 would heal 4 << 255 = 0 in Java's int arithmetic, i.e. nothing.
+  await ctl.effect(botName, 'instant_health', 1, 4);
   return arena;
 }
 

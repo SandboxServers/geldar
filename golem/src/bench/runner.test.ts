@@ -158,6 +158,8 @@ describe('runCell', () => {
     expect(text).toContain('kill @e[type=minecraft:item,x=800,y=200,z=800,distance=..40]');
     expect(text).toContain('kill @e[type=minecraft:experience_orb');
     expect(text).toContain('effect give GolemBench saturation');
+    // Amplifier 255 heals nothing (4 << 255 is 0 in Java ints): a small one heals 64 HP.
+    expect(text).toMatch(/^effect give GolemBench (minecraft:)?instant_health 1 4$/m);
     expect(text).toContain('effect clear GolemBench');
     expect(text).toContain('clear GolemBench');
     expect(text).not.toMatch(/gamerule \S+ true/);
