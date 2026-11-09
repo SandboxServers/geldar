@@ -2,12 +2,15 @@
 
 One short record per decision as it is settled: an open decision from spec section 13, a gap the spec leaves, or a place where we chose differently from the spec. The spec stays the design. A record says what we decided, why, and what it changes. A decision that is still open lives in the Decisions table of the campaign ledger that needs it (for Phase 0, [docs/analysis/phase0/README.md](../analysis/phase0/README.md)), not here.
 
+The spec is frozen at v0.8 and never edited (0007). **Kind** says what a record does to it: `Changes` departs from the plan, `Fixes` corrects an error or contradiction in it, `Settles` fills a gap or closes an open decision, `Process` is about how we work. Filter the index for `Changes` and `Fixes` to see everything that differs from the original plan.
+
 Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parallel may each pick numbers well apart to avoid collisions; gaps in the sequence are fine. A record is never rewritten to say something else: a later record supersedes it, and the old one's status says `Superseded by NNNN`.
 
 ```markdown
 # NNNN. Title
 
 - Status: Accepted | Superseded by NNNN
+- Kind: Changes | Fixes | Settles | Process
 - Date: YYYY-MM-DD
 - Spec: section or open-decision number this settles
 
@@ -16,14 +19,21 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 ## Consequences
 ```
 
-| # | Decision | Status |
-|---|---|---|
-| [0001](0001-contract-json-schema.md) | The contract is JSON Schema with code generation | Accepted |
-| [0002](0002-phase0-host-and-models.md) | Phase 0 runs on the owner's Windows PC with Ollama, Qwen3 32B and 8B | Accepted |
-| [0003](0003-task-runner.md) | `geldar.ps1` is the task runner, not `make` | Accepted |
-| [0004](0004-phase0-repo-layout.md) | Phase 0 code lives in this one repo | Accepted |
-| [0005](0005-pinning-and-security-updates.md) | Exact pins, two-week minimum age, Dependabot security updates only | Accepted |
-| [0006](0006-typescript-toolchain.md) | pnpm, TypeScript 7, Biome and Vitest | Accepted |
-| [0020](0020-receipts.md) | Every action gets a receipt; economic actions get two | Accepted |
-| [0021](0021-velocity-from-phase0.md) | Velocity bot ingress from Phase 0, matching production | Accepted |
-| [0022](0022-minecraft-26-1.md) | Minecraft 26.1 and the pinned body stack | Accepted |
+| # | Decision | Kind | Status |
+|---|---|---|---|
+| [0001](0001-contract-json-schema.md) | The contract is JSON Schema with code generation | Settles | Accepted |
+| [0002](0002-phase0-host-and-models.md) | Phase 0 runs on the owner's Windows PC with Ollama, Qwen3 32B and 8B | Settles | Accepted |
+| [0003](0003-task-runner.md) | `geldar.ps1` is the task runner, not `make` | Changes | Accepted |
+| [0004](0004-phase0-repo-layout.md) | Phase 0 code lives in this one repo | Changes | Accepted |
+| [0005](0005-pinning-and-security-updates.md) | Exact pins, two-week minimum age, Dependabot security updates only | Settles | Accepted |
+| [0006](0006-typescript-toolchain.md) | pnpm, TypeScript 7, Biome and Vitest | Settles | Accepted |
+| [0007](0007-spec-frozen-at-v0.8.md) | The spec is frozen at v0.8; changes are recorded here | Process | Accepted |
+| [0008](0008-companion-servers-own-repo.md) | The player kit's companion servers live in their own repo and ship in the kit's container image | Changes | Accepted |
+| [0009](0009-scriptorium-spec-errata.md) | Errata for the player kit (Scriptorium) sections | Fixes | Accepted |
+| [0010](0010-player-kit-harnesses-v1.md) | The player kit supports Claude Code, then Codex CLI; no Google harness in v1 | Changes | Accepted |
+| [0011](0011-player-repo-push-from-host.md) | Player memory is pushed from the human's machine, never from inside the container | Changes | Accepted |
+| [0012](0012-launcher-in-geldar-scriptorium.md) | The `geldar-play` launcher lives in `geldar-scriptorium` and is installed once per machine | Settles | Accepted |
+| [0013](0013-public-player-repos.md) | Living player repos may be public; the agent is confined to its own repo by construction | Changes | Accepted |
+| [0020](0020-receipts.md) | Every action gets a receipt; economic actions get two | Fixes | Accepted |
+| [0021](0021-velocity-from-phase0.md) | Velocity bot ingress from Phase 0, matching production | Changes | Accepted |
+| [0022](0022-minecraft-26-1.md) | Minecraft 26.1 and the pinned body stack | Settles | Accepted |
