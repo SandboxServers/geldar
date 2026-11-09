@@ -11,7 +11,7 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 | Packet | Worktree | Branch | Stage |
 |---|---|---|---|
 | P0-00 | `phase0/p0-00-threat-model` | shipped, merged into wave1 |
-| P0-01 | `.claude/worktrees/p0-01` | continuation 2 of 3 (first coder hit context before commit) |
+| P0-01 | `phase0/p0-01-contract` | shipped, merged into wave1 (commit 8f17621 trailer says Haiku 5.5; accepted, noted) |
 | P0-05 | `phase0/p0-05-sql` | shipped, merged into wave1 |
 
 `.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.

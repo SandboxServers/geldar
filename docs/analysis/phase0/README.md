@@ -38,7 +38,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | Packet | Wave | Title | Implementer | Status | Depends on | PR |
 |---|---|---|---|---|---|---|
 | P0-00 | 1 | Threat model (`docs/threat-model.md`) | Sonnet (general-purpose) | Done | — | |
-| P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Writing (continuation 2) | — | |
+| P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Done | — | |
 | P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | BlockedDependency | P0-01 | |
 | P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | BlockedDependency | P0-01 | |
 | P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | BlockedDependency | P0-01 | |
