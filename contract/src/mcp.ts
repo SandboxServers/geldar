@@ -3,10 +3,9 @@
  * SC-30b adds the types of the other ten tools.
  */
 import type { ValidateFunction } from 'ajv';
+import { MCP_TOOL_NAMES } from './generated/mcp-tools.ts';
 import * as generatedValidators from './generated/validators.js';
 import { formatError, type ValidationResult } from './validation.ts';
-
-import { MCP_TOOL_NAMES } from './generated/mcp-tools.ts';
 
 export { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from './generated/mcp-tools.ts';
 export type {

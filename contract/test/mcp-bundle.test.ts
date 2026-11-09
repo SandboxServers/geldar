@@ -1,7 +1,12 @@
 import ajv2020Module from 'ajv/dist/2020.js';
 import ajvFormatsModule from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { buildMcpTools, bundleDefinition,type LoadedSchema, loadSchemas } from '../scripts/generator.ts';
+import {
+  buildMcpTools,
+  bundleDefinition,
+  type LoadedSchema,
+  loadSchemas,
+} from '../scripts/generator.ts';
 import {
   MCP_TOOL_NAMES,
   mcpToolSchemas,
@@ -57,7 +62,7 @@ withHeard.snapshot.heard.push({ from: 'Pike', text: 'Hi', age_seconds: 1 });
 const withSignText = structuredClone(WAIT_RESULT);
 Object.assign(withSignText.snapshot.surroundings.notable_blocks[1] as object, { text: 'KESTREL' });
 
-const bundles =Object.entries(mcpToolSchemas).flatMap(([tool, entry]) => [
+const bundles = Object.entries(mcpToolSchemas).flatMap(([tool, entry]) => [
   { name: `${tool} input`, tool, kind: 'input' as const, schema: entry.input },
   { name: `${tool} result`, tool, kind: 'result' as const, schema: entry.result },
 ]);
