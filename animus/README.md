@@ -48,3 +48,29 @@ animus/
 - In-world text (speech, signs, player names) is untrusted. It reaches a prompt only as a JSON-escaped string in the quoted-world-text section of the user message; the output validator is the control.
 - A model, embedding digest or personality seed that is still a placeholder in `shards/phase0.yaml` stops the Mind from starting. Tests pass `allowPlaceholders`.
 - No new SQL migration (D-P0-11): a missing column is an interface request.
+
+## Running the Mind
+
+The Mind is one of three host processes of Adam's run (decision 0050). Start and stop them together with `./geldar.ps1 adam`; do not start them by hand unless you are debugging.
+
+```
+./geldar.ps1 shard up phase0          # Paper, Velocity, Postgres, NATS, eventsink (compose)
+ollama serve                          # if it is not already running; it listens on 127.0.0.1:11434 only
+./geldar.ps1 adam models              # the pinned models, whether Ollama has them, the digests found
+./geldar.ps1 adam up [--model strong|fast]
+./geldar.ps1 adam status              # `down` when nothing runs; else each process and the last thought's latency
+./geldar.ps1 adam logs animus [--follow]
+./geldar.ps1 adam down                # the Thinker, then the Mind, then the Body (last)
+```
+
+What the Mind needs, and what `adam up` checks before it starts anything:
+
+- **The shard is healthy**: Postgres `127.0.0.1:5432` (password in `compose/secrets/postgres.txt`), NATS `127.0.0.1:4222`, and the Velocity ingress. The `thoughts`, `intents` and `agents` tables already exist (D-P0-11: no migration runner).
+- **Ollama has the pinned models** with the recorded digests: the tier's chat model (`qwen3:32b` strong, `qwen3:8b` fast) and `nomic-embed-text`. `adam up` refuses the digest placeholder `sha256:RECORD_AT_DISPATCH` and the personality-seed placeholder `DRAFT_PENDING_OWNER_APPROVAL` and says what to do: run `ollama pull <tag>`, then `./geldar.ps1 adam models --record` (writes the digests it found over the placeholders in `shards/phase0.yaml`; it never overwrites a recorded digest and refuses when a model is missing), review the change and commit it; the owner approves the seed in `mind.agent.personality_seed`.
+- **`--model strong|fast`** picks the life: `ag_adam_01` on `qwen3:32b`, or `ag_adam_02` on `qwen3:8b` (the `mind.lives` table in the shard file). It rewrites `mind.agent.username`, `mind.agent.tier` and `mind.run_tier` to match. The model is fixed for a life (spec 5.3.3), so the fast run is a separate life and needs a fresh world volume (decision 0051).
+
+Ports (all loopback): the Thinker socket `127.0.0.1:7410` (`mind.thinker`; `lantern-local` connects to it, see [../lantern-local/README.md](../lantern-local/README.md)); nothing else is opened. The Mind connects out to NATS, Postgres and Ollama.
+
+Logs and state: `.geldar/adam/animus.log` and `animus.pid` (gitignored), one JSON object per line with `life_id`, `thought_id` and `intent_id` where they apply. Prompt and completion text never reach the log; the full prompt and the raw output of every thought are in the `thoughts` table. Configuration comes from `shards/phase0.yaml` (`mind`, `model_pins`, `embedding`) and the environment keys in `.env.example`.
+
+To run it by hand: `node src/main.ts` from `animus/` (Node 22 runs the TypeScript directly), with the same environment. It stops cleanly on SIGINT or SIGTERM. On Windows `adam down` ends the processes at once, so the Body resumes from its last checkpoint.

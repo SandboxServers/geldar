@@ -21,3 +21,9 @@ prompts/
 ## Degraded reflection
 
 When the Mind is on the degraded path the reflection keeps all six fields (the contract requires them), but `memories_to_keep` holds at most 2 entries and `relationship_updates`, `beliefs_add`, `beliefs_remove` and `goals` must be empty lists. The validator rejects anything else.
+
+## Running with these templates
+
+The templates are read from this directory by the Mind (`animus/src/prompts/library.ts`) when it starts; there is nothing to build or serve. Start the Mind with `./geldar.ps1 adam up` (see [../animus/README.md](../animus/README.md)); its log is `.geldar/adam/animus.log`. Every thought the Mind records in the `thoughts` table carries the `prompt_template_version` (`<kind>@<n>+sha256:<12 hex>`) of the template it used, and the complete messages it sent in `model_input`, so a run can be checked against the files here. A template change is a new `vN` file and takes effect on the next `adam up`; the running Mind keeps the version it loaded.
+
+What the run needs from this directory: `thought/v1.md`, `reflection/v1.md` and `body-api/v1.json` must exist and pass the library's slot check, or the Mind stops at start-up with the file name in the error. No port, no secret and no network access are involved.
