@@ -1,10 +1,4 @@
-import {
-  HORIZONTAL_LIMIT,
-  MAX_Y,
-  MIN_Y,
-  PLAYER_NAME,
-  type TestControl,
-} from '../test-control.ts';
+import { HORIZONTAL_LIMIT, MAX_Y, MIN_Y, PLAYER_NAME, type TestControl } from '../test-control.ts';
 
 /** The only `ctl` methods a scenario may call while it runs. */
 const RUN_PHASE_CONTROL = new Set(['effect', 'effectClear', 'timeSet', 'fill', 'chestItems']);

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RunEnv } from '../types.ts';
+import type { RunEnv, Scenario } from '../types.ts';
 import { gotoSmoke } from './goto-smoke.ts';
-import type { Scenario } from '../types.ts';
 import { findScenario, scenarios, visibleScenarios } from './index.ts';
 
 describe('scenario registry', () => {
