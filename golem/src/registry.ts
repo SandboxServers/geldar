@@ -85,9 +85,13 @@ export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistr
 /**
  * Registers bot usernames in the life registry. NATS is opened on the first `register`, so a
  * session that never needs it never connects; an unreachable NATS fails every `register` anew.
+ * Opening is single-flight: overlapping calls share one connection.
  */
 export class LifeRegistration implements BotRegistry {
   private opened: OpenedRegistry | null = null;
+  private opening: Promise<OpenedRegistry> | null = null;
+  /** Usernames a put was attempted for; a put may land even when its reply is lost. */
+  private readonly touched = new Set<string>();
   private readonly open: () => Promise<OpenedRegistry>;
   private readonly now: () => Date;
 
@@ -97,10 +101,11 @@ export class LifeRegistration implements BotRegistry {
   }
 
   async register(username: string): Promise<void> {
-    this.opened ??= await this.open();
+    const opened = await this.connection();
     const value = { life_id: lifeIdFor(username), registered_at: this.now().toISOString() };
+    this.touched.add(username);
     try {
-      await this.opened.kv.put(registryKey(username), JSON.stringify(value));
+      await opened.kv.put(registryKey(username), JSON.stringify(value));
     } catch (error) {
       // A dead connection must not stick: drop it so the next register opens a fresh one.
       await this.close().catch(() => undefined);
@@ -108,17 +113,44 @@ export class LifeRegistration implements BotRegistry {
     }
   }
 
+  /**
+   * Deletes the key. When the connection was dropped (a failed put, an outage) it is reopened
+   * first, so a key that may have landed is not left behind; a username never put is a no-op.
+   * Failures throw, and the caller logs them.
+   */
   async unregister(username: string): Promise<void> {
-    await this.opened?.kv.delete(registryKey(username));
+    if (!this.touched.has(username)) return;
+    const opened = await this.connection();
+    try {
+      await opened.kv.delete(registryKey(username));
+    } catch (error) {
+      await this.close().catch(() => undefined);
+      throw error;
+    }
+    this.touched.delete(username);
   }
 
   async close(): Promise<void> {
+    await this.opening?.catch(() => undefined);
     const opened = this.opened;
     this.opened = null;
     await opened?.close();
   }
-}
 
+  /** The open bucket, opening it if needed; concurrent callers wait for the same open. */
+  private connection(): Promise<OpenedRegistry> {
+    if (this.opened !== null) return Promise.resolve(this.opened);
+    this.opening ??= this.open()
+      .then((opened) => {
+        this.opened = opened;
+        return opened;
+      })
+      .finally(() => {
+        this.opening = null;
+      });
+    return this.opening;
+  }
+}
 /** The registry for a config: undefined (registry off) unless `GELDAR_NATS_URL` is set. */
 export function registryFromConfig(cfg: GolemConfig): BotRegistry | undefined {
   const url = cfg.natsUrl;

@@ -201,16 +201,20 @@ export class ConnectionManager extends EventEmitter {
    */
   private async guardedSession(): Promise<SessionEnd> {
     if (this.registry !== undefined) {
+      // Marked before the put: a stop() or failure while it is in flight must still delete the key.
+      const first = !this.registered;
+      this.registered = true;
       try {
         await this.registry.register(this.username);
-        this.registered = true;
       } catch (err) {
-        if (!this.registered) throw err;
+        if (first) throw err;
         const reason = `life registry: ${err instanceof Error ? err.message : String(err)}`;
         return { reason, kicked: false, spawnedAt: null };
       }
       // stop() may have run while the registration was in flight: undo it and do not connect.
       if (this.isStopped()) {
+        // stop()'s own release may have run before the put landed: delete again.
+        this.registered = true;
         await this.release();
         return { reason: 'stopped', kicked: false, spawnedAt: null };
       }
@@ -288,6 +292,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private fail(reason: string): void {
+    // A stop() that raced the failure wins: the state stays `stopped`.
+    if (this.isStopped()) return;
     this.state = 'fatal';
     this.log({ event: 'fatal', reason });
     this.emit('fatal', { reason });
