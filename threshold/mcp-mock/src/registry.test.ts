@@ -95,13 +95,13 @@ describe('callTool', () => {
     const res = await callTool(
       createFakeHandlers(),
       'act',
-      { reasoning: 'r'.repeat(5000), actions: Array.from({ length: 60 }, () => ({ bogus: 1 })) },
+      { actions: Array.from({ length: 60 }, () => ({ bogus: 1 })) },
       ctx,
     );
     expect(res.isError).toBe(true);
     const text = res.content[0]?.text ?? '';
     expect(text.startsWith('invalid_input:')).toBe(true);
-    expect(text.length).toBeLessThanOrEqual(600);
+    expect(text.length).toBe(600);
   });
 
   it('shows a ToolError but hides any other fault', async () => {
