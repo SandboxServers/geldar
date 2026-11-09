@@ -3,6 +3,14 @@ import type { ValidateFunction } from 'ajv';
 
 export declare const validateActionRecord: ValidateFunction;
 export declare const validateWorldEvent: ValidateFunction;
+export declare const validateLookInput: ValidateFunction;
+export declare const validateLookResult: ValidateFunction;
+export declare const validateWaitInput: ValidateFunction;
+export declare const validateWaitResult: ValidateFunction;
+export declare const validateActInput: ValidateFunction;
+export declare const validateActResult: ValidateFunction;
+export declare const validateSayInput: ValidateFunction;
+export declare const validateSayResult: ValidateFunction;
 export declare const validateReceipt: ValidateFunction;
 export declare const validateSnapshot: ValidateFunction;
 export declare const validateThinkerFrame: ValidateFunction;

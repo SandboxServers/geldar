@@ -2,26 +2,13 @@
  * Public surface of @geldar/contract: the generated types and one typed validator
  * per schema. Each packet fills only its own marked block below.
  */
-import type { ErrorObject, ValidateFunction } from 'ajv';
+import type { ValidateFunction } from 'ajv';
 import type { Snapshot } from './generated/types.ts';
 import { validateSnapshot as validateSnapshotSchema } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type { Snapshot } from './generated/types.ts';
-
-/**
- * Validation outcome. Errors are "<instancePath> <message>", e.g. "/self/health must be <= 20".
- */
-export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: string[] };
-
-/** Formats one Ajv error; the property name of additionalProperties/required is appended when the message omits it. */
-function formatError(error: ErrorObject): string {
-  const where = error.instancePath === '' ? '""' : error.instancePath;
-  const params = error.params as Record<string, unknown>;
-  const name = params.additionalProperty ?? params.missingProperty;
-  const quoted = typeof name === 'string' ? `'${name}'` : '';
-  const suffix = quoted !== '' && !(error.message ?? '').includes(quoted) ? ` ${quoted}` : '';
-  return `${where} ${error.message ?? 'is invalid'}${suffix}`;
-}
+export type { ValidationResult } from './validation.ts';
 
 // --- P0-01 snapshot ---
 /** Checks a value against snapshot.schema.json. Never throws; unknown properties are rejected. */
@@ -69,6 +56,9 @@ export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent>
   if (validateWorldEventSchema(value)) return { ok: true, value: value as WorldEvent };
   return { ok: false, errors: (validateWorldEventSchema.errors ?? []).map(formatError) };
 }
+
+// --- SC-30a mcp ---
+export * from './mcp.ts';
 
 // --- P0-04 thinker ---
 import type { ThinkerFrame } from './generated/types.ts';
