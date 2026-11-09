@@ -2,13 +2,17 @@ import type { Bot } from 'mineflayer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
 import { craftAction, diagnoseCraft } from './craft.ts';
-import { craftAtTable } from './craft-table.ts';
+import { craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
 import { moveNear } from './pathing.ts';
 
 // The moves are the pathfinder's; a fake bot has none, so the tests only check the arguments.
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
-// The table path talks to the protocol client, which a fake bot does not have. Its own tests cover it.
-vi.mock('./craft-table.ts', () => ({ craftAtTable: vi.fn(async () => null) }));
+// The recipe-book path talks to the protocol client, which a fake bot does not have. Its own tests
+// cover it. By default no display is unlocked, so a 2x2 craft falls back to bot.craft.
+vi.mock('./craft-table.ts', () => ({
+  craftFromBook: vi.fn(async () => null),
+  hasUnlockedDisplay: vi.fn(() => false),
+}));
 
 const DEFS = [
   { id: 1, name: 'wooden_pickaxe' },
@@ -124,23 +128,42 @@ describe('craftAction', () => {
       inventory: { 10: 3, 7: 2 },
       table: TABLE,
     });
-    vi.mocked(craftAtTable).mockImplementationOnce(async () => {
+    vi.mocked(craftFromBook).mockImplementationOnce(async () => {
       await fake.craft(pickaxe);
       return null;
     });
     const out = await run(fake.bot, 'wooden_pickaxe', 1);
     expect(moveNear).toHaveBeenCalledWith(fake.bot, TABLE.position, 3, expect.anything());
-    expect(craftAtTable).toHaveBeenCalledWith(
+    expect(craftFromBook).toHaveBeenCalledWith(
       expect.anything(),
-      TABLE,
       { id: 1, name: 'wooden_pickaxe' },
       1,
+      TABLE,
     );
     expect(fake.craft).toHaveBeenCalledTimes(1);
     expect(out).toMatchObject({
       status: 'completed',
       detail: { item: 'wooden_pickaxe', crafted: 1, used_table: true },
     });
+  });
+
+  it('crafts a 2x2 recipe through the recipe book at window 0 when its display is unlocked', async () => {
+    const planks = recipe(5, 4, { 6: 1 });
+    const fake = fakeBot({ recipes: [planks], inventory: { 6: 1 } });
+    vi.mocked(hasUnlockedDisplay).mockReturnValueOnce(true);
+    vi.mocked(craftFromBook).mockImplementationOnce(async () => {
+      fake.give(5, 4);
+      return null;
+    });
+    const out = await run(fake.bot, 'oak_planks', 4);
+    expect(craftFromBook).toHaveBeenCalledWith(
+      expect.anything(),
+      { id: 5, name: 'oak_planks' },
+      1,
+      null,
+    );
+    expect(fake.craft).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ status: 'completed', detail: { used_table: false, crafted: 4 } });
   });
 
   it('prefers the cobblestone variant when two variants tie, whatever their index', async () => {

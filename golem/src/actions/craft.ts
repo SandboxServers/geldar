@@ -1,7 +1,7 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Block, Recipe } from './bot-types.ts';
-import { craftAtTable } from './craft-table.ts';
+import { craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
 import { heldCount } from './inventory-count.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -71,9 +71,10 @@ async function runCraft(
   const times = Math.ceil(action.count / recipe.result.count);
   const before = heldCount(bot, item.id);
   try {
-    if (usedTable) {
-      // Table recipes skip bot.craft: its stateId is shared by every window and the table rejects it.
-      const stop = await craftAtTable(ctx, usedTable, item, times);
+    if (usedTable || hasUnlockedDisplay(bot, item)) {
+      // Recipe-book crafts skip bot.craft: its stateId is shared by every window, and on 26.1 the
+      // table rejects it. A 2x2 recipe with no unlocked display falls back to bot.craft.
+      const stop = await craftFromBook(ctx, item, times, usedTable);
       if (stop) return stop;
     } else {
       for (let i = 0; i < times; i++) {

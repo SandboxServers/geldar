@@ -98,18 +98,28 @@ function unlockedDisplays(bot: Bot, resultId: number): number[] {
   return ids;
 }
 
+/** The window id of the player's own inventory, whose 2x2 crafting grid needs no open. */
+const PLAYER_WINDOW_ID = 0;
+
+/** Whether the recipe book has an unlocked crafting display for this item. */
+export function hasUnlockedDisplay(bot: Bot, item: TableTarget): boolean {
+  return unlockedDisplays(bot, item.id).length > 0;
+}
+
 /**
- * Crafts `times` of a table recipe through the server's recipe book, the way the vanilla client
- * does: a `craft_recipe_request` fills the grid, the result is shift-clicked, and the table window's
- * own stateId is sent with the click. Mineflayer's `craft` is not used, because its stateId is one
- * value shared by every window, and on 26.1 the table rejects it (see the 26.1 craft diagnosis).
- * Returns null when every craft ran, else the outcome that stopped it. The window is closed here.
+ * Crafts `times` of a recipe through the server's recipe book, the way the vanilla client does: a
+ * `craft_recipe_request` fills the grid, the result is shift-clicked, and the window's own stateId is
+ * sent with the click. The window is the table's when `table` is given, opened here and closed
+ * here; with no table it is the player's own 2x2 grid (window 0), which is neither opened nor
+ * closed. Mineflayer's `craft` is not used, because its stateId is one value shared by every window,
+ * and on 26.1 the table rejects it (see the 26.1 craft diagnosis). Returns null when every craft ran,
+ * else the outcome that stopped it.
  */
-export async function craftAtTable(
+export async function craftFromBook(
   ctx: ActionContext,
-  table: Block,
   item: TableTarget,
   times: number,
+  table: Block | null,
 ): Promise<ActionOutcome | null> {
   const { bot } = ctx;
   dropLateTableWindow(bot);
@@ -132,10 +142,14 @@ export async function craftAtTable(
   client.on('window_items', trackState);
   client.on('set_slot', trackState);
   try {
-    const opened = await openTable(ctx, table);
-    if ('outcome' in opened) return opened.outcome;
+    let windowId = PLAYER_WINDOW_ID;
+    if (table) {
+      const opened = await openTable(ctx, table);
+      if ('outcome' in opened) return opened.outcome;
+      windowId = opened.window.id;
+    }
     for (let i = 0; i < times; i++) {
-      const crafted = await craftOnce(ctx, client, opened.window.id, displayIds, states, item.name);
+      const crafted = await craftOnce(ctx, client, windowId, displayIds, states, item.name);
       if ('outcome' in crafted) return crafted.outcome;
       // The display that worked is tried first on the next craft.
       displayIds = [crafted.displayId, ...displayIds.filter((id) => id !== crafted.displayId)];
@@ -144,7 +158,8 @@ export async function craftAtTable(
   } finally {
     client.removeListener('window_items', trackState);
     client.removeListener('set_slot', trackState);
-    if (bot.currentWindow) {
+    // Only a table window is closed: window 0 is the player's inventory, not one this craft opened.
+    if (table && bot.currentWindow) {
       await bot.closeWindow(bot.currentWindow).catch((error: unknown) => {
         console.warn(`crafting table window did not close: ${errorText(error)}`);
       });

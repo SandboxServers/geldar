@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
-import { craftAtTable, watchRecipeBook } from './craft-table.ts';
+import { craftFromBook, hasUnlockedDisplay, watchRecipeBook } from './craft-table.ts';
 import type { ActionContext } from './registry.ts';
 
 const TABLE = { position: { x: 1, y: 200, z: 3 } } as unknown as Block;
@@ -57,13 +57,16 @@ function openWithWindowState(client: EventEmitter): void {
   client.emit('set_slot', { windowId: 0, stateId: 9, slot: 45, item: { present: false } });
 }
 
-/** A server that fills the result slot after each recipe request, with stateIds 6, 7, ... */
-function answerRequests(client: { write: ReturnType<typeof vi.fn> } & EventEmitter): void {
+/** A server that fills the result slot of `windowId` after each recipe request, with stateIds 6, 7, ... */
+function answerRequests(
+  client: { write: ReturnType<typeof vi.fn> } & EventEmitter,
+  windowId = WINDOW.id,
+): void {
   let next = 6;
   client.write.mockImplementation((name: string) => {
     if (name !== 'craft_recipe_request') return;
     client.emit('set_slot', {
-      windowId: WINDOW.id,
+      windowId,
       stateId: next++,
       slot: 0,
       item: { present: true, itemId: BED.id, itemCount: 1 },
@@ -102,7 +105,7 @@ function ackClicksLater(
 /** Runs the table path with a fresh signal and a short wait (timeScale 0.01 is 50 ms). */
 function run(bot: Bot, times: number, signal = new AbortController().signal) {
   const ctx: ActionContext = { bot, signal, timeScale: 0.01 };
-  return craftAtTable(ctx, TABLE, BED, times);
+  return craftFromBook(ctx, BED, times, TABLE);
 }
 
 /** The writes of one packet name, with their params. */
@@ -110,7 +113,39 @@ function writesOf(client: { write: ReturnType<typeof vi.fn> }, name: string) {
   return client.write.mock.calls.filter(([n]) => n === name).map(([, params]) => params);
 }
 
-describe('craftAtTable', () => {
+describe('craftFromBook', () => {
+  it('crafts in the player grid at window 0 with no table: nothing opened, nothing closed', async () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    answerRequests(fake.client, 0);
+    const ctx: ActionContext = {
+      bot: fake.bot,
+      signal: new AbortController().signal,
+      timeScale: 0.01,
+    };
+
+    expect(await craftFromBook(ctx, BED, 1, null)).toBeNull();
+
+    expect(fake.raw.activateBlock).not.toHaveBeenCalled();
+    expect(fake.raw.closeWindow).not.toHaveBeenCalled();
+    expect(writesOf(fake.client, 'craft_recipe_request')).toEqual([
+      { windowId: 0, recipeId: SHAPED_BED, makeAll: false },
+    ]);
+    // Window 0's own stateId (6, from its result packet), not the table window's.
+    expect(writesOf(fake.client, 'window_click')).toEqual([
+      expect.objectContaining({ windowId: 0, stateId: 6, slot: 0, mode: 1 }),
+    ]);
+  });
+
+  it('reports whether the book has an unlocked crafting display for the item', () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    expect(hasUnlockedDisplay(fake.bot, BED)).toBe(false);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    expect(hasUnlockedDisplay(fake.bot, BED)).toBe(true);
+  });
+
   it('requests the shaped display of the recipe, then shift-clicks with the window own stateId', async () => {
     const fake = fakeGame(openWithWindowState);
     watchRecipeBook(fake.bot);
