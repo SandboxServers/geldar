@@ -9,7 +9,7 @@ describe('ulid', () => {
   it('encodes a fixed time and fixed random bytes to a known literal', () => {
     const allOnes = () => new Uint8Array(10).fill(255);
     expect(ulid(1, allOnes)).toBe('0000000001ZZZZZZZZZZZZZZZZ');
-    expect(ulid(0, () => new Uint8Array(10))).toBe('0000000000' + '0'.repeat(16));
+    expect(ulid(0, () => new Uint8Array(10))).toBe(`0000000000${'0'.repeat(16)}`);
   });
 
   it('encodes a realistic time and non-trivial random bytes to a known literal', () => {
