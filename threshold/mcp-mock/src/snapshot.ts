@@ -16,6 +16,10 @@ export interface SnapshotParams {
   inventory: { item: string; count: number }[];
   neighbours: { name: string; distance: number }[];
   plan?: { goal: string; action: string; status: string };
+  /** Thoughts left today; defaults to 99. */
+  budget?: number;
+  /** Days since the last sleep; defaults to 0. */
+  daysSinceSleep?: number;
 }
 
 /**
@@ -37,8 +41,8 @@ export function buildSnapshot(p: SnapshotParams): Snapshot {
       held_item: null,
       inventory: p.inventory.map((s) => ({ item: s.item, count: s.count })),
       effects: [],
-      budget_remaining_thoughts: 99,
-      days_since_sleep: 0,
+      budget_remaining_thoughts: p.budget ?? 99,
+      days_since_sleep: p.daysSinceSleep ?? 0,
     },
     surroundings: {
       blocks_summary: 'Grass and a few oak trees.',

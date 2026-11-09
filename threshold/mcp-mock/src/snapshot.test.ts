@@ -29,6 +29,16 @@ describe('buildSnapshot', () => {
     expect(buildSnapshot(base).current_plan).toBeUndefined();
   });
 
+  it('defaults the budget to 99 and days since sleep to 0, and takes overrides', () => {
+    const d = buildSnapshot(base).self;
+    expect(d.budget_remaining_thoughts).toBe(99);
+    expect(d.days_since_sleep).toBe(0);
+    const o = buildSnapshot({ ...base, budget: 7, daysSinceSleep: 3 });
+    expect(o.self.budget_remaining_thoughts).toBe(7);
+    expect(o.self.days_since_sleep).toBe(3);
+    expect(validateSnapshot(o).ok).toBe(true);
+  });
+
   it('keeps heard empty and notable blocks free of text', () => {
     const s = buildSnapshot(base);
     expect(s.heard).toEqual([]);

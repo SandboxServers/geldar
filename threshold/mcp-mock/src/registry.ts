@@ -12,7 +12,9 @@ export interface ToolContext {
   signal: AbortSignal;
 }
 
+/** One tool's behaviour: gets the validated input and the call context, returns the result (sync or async). Throw a `ToolError` for a failure the character should see. */
 export type ToolHandler = (input: unknown, ctx: ToolContext) => unknown | Promise<unknown>;
+/** A handler for every tool in the contract, keyed by tool name. */
 export type ToolHandlers = Record<McpToolName, ToolHandler>;
 
 /** Largest tool result, in bytes of JSON text. */
@@ -30,6 +32,7 @@ export class ToolError extends Error {
   }
 }
 
+/** What `callTool` returns: one text part, with `isError` set on a failure. */
 export interface ToolResponse {
   isError?: boolean;
   content: { type: 'text'; text: string }[];

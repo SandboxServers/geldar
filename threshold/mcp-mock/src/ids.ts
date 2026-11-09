@@ -1,5 +1,6 @@
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
+/** The id kinds: snapshot, intent, action, proposal and book. */
 export type IdPrefix = 'sn' | 'in' | 'ac' | 'pr' | 'bk';
 
 /**
