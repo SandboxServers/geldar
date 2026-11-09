@@ -95,6 +95,11 @@ function Initialize-ShardSecrets([string] $Shard) {
     try {
       $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
     } catch [IO.IOException] {
+      # Only "file already exists" (ERROR_FILE_EXISTS) means another writer won; any other IO error is rethrown as is.
+      $alreadyExists = $_.Exception.HResult -eq -2147024816
+      if (-not $alreadyExists -or -not (Test-Path $path)) { throw }
+      # The winner may not have written its secret yet: give it one short retry before calling the file empty.
+      if ((Get-Item $path).Length -eq 0) { Start-Sleep -Milliseconds 500 }
       if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
       continue
     }

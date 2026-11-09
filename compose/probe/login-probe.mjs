@@ -1,4 +1,6 @@
-// Login probe for the Phase 0 forwarding wall (spec 5.1). Run it on the compose network, for example:
+// Login probe for the Phase 0 forwarding wall (spec 5.1).
+// This is a manual evidence tool: CI and ./geldar.ps1 check do not run it. It always exits 0 by
+// design, so read the printed answer rather than the exit code. Run it on the compose network, for example:
 //   docker run --rm --network geldar-phase0_default -v <this dir>:/probe:ro node:24-alpine \
 //     node /probe/login-probe.mjs paper 25565 bad-hmac
 // Arguments: host, port, mode. Modes: bad-hmac (Velocity data with an all-zero HMAC),
