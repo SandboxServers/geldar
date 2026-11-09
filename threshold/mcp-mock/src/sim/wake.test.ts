@@ -211,6 +211,16 @@ describe('evaluateWake', () => {
     expect(d.recheckAtMs).toBe(110_000);
   });
 
+  it('17b: a distant fallback leaves the spacing release as recheckAtMs', () => {
+    const d = run([ev({ seq: 3, kind: 'speech', addressed: true })], {
+      lastWakeMs: 95_000,
+      intentStartedMs: 90_000,
+      config: { minSpacingMs: 20_000, intentRunTooLongMs: 300_000 },
+    });
+    expect(d.wake).toBeNull();
+    expect(d.recheckAtMs).toBe(115_000);
+  });
+
   it('18: intent_finished needs no running intent, and failed needs no failure field', () => {
     const done = run([ev({ kind: 'intent_finished', outcome: 'completed' })], {
       intentStartedMs: null,
