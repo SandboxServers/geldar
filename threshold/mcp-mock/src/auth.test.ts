@@ -56,10 +56,16 @@ describe('loadTokens', () => {
   }, 30_000);
 
   it('does not echo a key that is really a token', () => {
-    const message = loadError(JSON.stringify({ [TOKEN_A]: 'x' }));
-    expect(message).not.toContain(TOKEN_A);
-    expect(message).not.toContain(TOKEN_A.slice(0, 10));
-    expect(message).toContain('entry 1');
+    // Valid token as value reaches the token branch; the `.x` key fails the player-id branch.
+    for (const [key, value] of [
+      [TOKEN_A, 'x'],
+      [`${TOKEN_A}.x`, TOKEN_B],
+    ] as const) {
+      const message = loadError(JSON.stringify({ [key]: value }));
+      expect(message).not.toContain(key);
+      expect(message).not.toContain(key.slice(0, 10));
+      expect(message).toContain('entry 1');
+    }
   });
 
   it('accepts a file that starts with a UTF-8 BOM', () => {
