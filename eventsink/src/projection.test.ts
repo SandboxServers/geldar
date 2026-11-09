@@ -132,6 +132,18 @@ describe('intents', () => {
     expect(direct.intents.get(INTENT_ID)).toMatchObject({ state: 'completed', ended_tick: 30 });
   });
 
+  it('ignores a late older-generation interrupt while the newer generation is running', async () => {
+    const store = new MemoryProjectionStore();
+    await project(store, [
+      intentEvent('accepted', 4),
+      intentEvent('running', 8, undefined, { body_generation: 2 }),
+    ]);
+    await project(store, [intentEvent('interrupted', 6, 'restart')]);
+    const row = store.intents.get(INTENT_ID);
+    expect(row).toMatchObject({ state: 'running', body_generation: 2, ended_tick: null });
+    expect(row?.end_reason).toBeNull();
+  });
+
   it('fills the intent columns from the accepted event, also when it arrives late', async () => {
     const inOrder = new MemoryProjectionStore();
     await project(inOrder, [

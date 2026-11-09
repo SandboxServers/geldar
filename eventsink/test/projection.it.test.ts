@@ -119,6 +119,8 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       await intent('accepted', 4, {}, resumedId);
       await intent('interrupted', 8, {}, resumedId, 'restart');
       await intent('running', 10, { body_generation: 2 }, resumedId);
+      // The generation-1 interrupt arriving again, late: it must not undo the running generation 2.
+      await intent('interrupted', 8, {}, resumedId, 'restart');
       await intent('completed', 20, { body_generation: 2 }, resumedId, 'done');
       await action('completed', receiptA);
       await action('accepted', null);
