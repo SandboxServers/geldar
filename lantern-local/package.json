@@ -1,0 +1,18 @@
+{
+  "name": "@geldar/lantern-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@geldar/contract": "workspace:*",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2",
+    "ws": "8.22.0"
+  }
+}

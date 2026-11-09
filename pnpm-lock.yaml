@@ -273,6 +273,22 @@ importers:
         specifier: 2.9.1
         version: 2.9.1
 
+  lantern-local:
+    dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../contract
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+    devDependencies:
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
+      ws:
+        specifier: 8.22.0
+        version: 8.22.0
+
   threshold/mcp-mock:
     dependencies:
       '@geldar/contract':
