@@ -17,6 +17,11 @@ const LATE_WINDOW_WAIT_MS = 3 * OPEN_WAIT_MS;
 /** The late-window cleanup of the last open per bot, so the next open can remove a stale one. */
 const lateWindowDrop = new WeakMap<Bot, () => void>();
 /**
+ * The window types a late container window can have: the 9-wide chest, trapped chest and barrel
+ * types, which are `generic_<cols>x<rows>`. A crafting window is not one of them.
+ */
+const CONTAINER_WINDOW = /^minecraft:generic_\d+x\d+$/;
+/**
  * The library's message when the bot's inventory cannot take the withdrawn stacks: "Bot inventory
  * is full" from the pre-check, "destination full" when a transfer stops part-way.
  */
@@ -86,18 +91,25 @@ async function withContainer(
   }
 
   let lost = false;
+  // The grace timer that drops this open's listener after a lost race. Cleared when the drop runs.
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
   const onLateWindow = (window: Window): void => {
-    if (lost) {
-      bot.closeWindow(window).catch((error: unknown) => {
-        console.warn(`late container window did not close: ${errorText(error)}`);
-      });
-    }
+    if (!lost) return;
+    // The late window has arrived, so the listener and its grace timer have done their job.
+    dropLateWindow();
+    // Only a container is closed: a crafting window may be the one the next action is waiting for.
+    if (typeof window.type !== 'string' || !CONTAINER_WINDOW.test(window.type)) return;
+    bot.closeWindow(window).catch((error: unknown) => {
+      console.warn(`late container window did not close: ${errorText(error)}`);
+    });
   };
   bot.on('windowOpen', onLateWindow);
   // Removes this open's late-window listener. A lost open may never settle, so this is also
   // called from a timer and from the next open on the same bot.
   const dropLateWindow = (): void => {
     bot.off('windowOpen', onLateWindow);
+    if (graceTimer !== undefined) clearTimeout(graceTimer);
+    graceTimer = undefined;
     if (lateWindowDrop.get(bot) === dropLateWindow) lateWindowDrop.delete(bot);
   };
   lateWindowDrop.set(bot, dropLateWindow);
@@ -133,7 +145,11 @@ async function withContainer(
     if (onAbort) signal.removeEventListener('abort', onAbort);
   }
   // A lost open may never settle, so its listener is dropped after a grace period too.
-  if (lost) setTimeout(dropLateWindow, LATE_WINDOW_WAIT_MS * timeScale);
+  if (lost) {
+    graceTimer = setTimeout(dropLateWindow, LATE_WINDOW_WAIT_MS * timeScale);
+    // Unref'd: the grace period alone must not keep the process alive.
+    graceTimer.unref();
+  }
   if ('outcome' in opened) return opened.outcome;
 
   try {

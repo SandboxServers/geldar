@@ -51,6 +51,8 @@ function fakeContainer(inv: Stacks, chest: Stacks, opts: FakeOptions, onClose: (
     close: vi.fn(async () => {
       onClose();
     }),
+    /** A chest's window type, as mineflayer names it. */
+    type: 'minecraft:generic_9x3',
   };
 }
 
@@ -160,6 +162,36 @@ describe('open', () => {
     expect(second).toMatchObject({ status: 'completed' });
     expect(h.bot.closeWindow).not.toHaveBeenCalled();
     expect(h.container.close).toHaveBeenCalledOnce();
+  });
+
+  it('does not close a late crafting window, which the next action may be waiting for', async () => {
+    type Container = Awaited<ReturnType<Bot['openContainer']>>;
+    const h = harness();
+    vi.mocked(h.bot.openContainer).mockImplementationOnce(() => new Promise<Container>(() => {}));
+    const first = await openAction.run(ctxFor(h.bot, 0.01), { do: 'open', at: AT });
+    expect(first).toMatchObject({ status: 'failed', reason: 'blocked' });
+    // The late window is a crafting table's: the listener is still armed, but must leave it open.
+    h.emitter.emit('windowOpen', { id: 7, type: 'minecraft:crafting' });
+    expect(h.bot.closeWindow).not.toHaveBeenCalled();
+  });
+
+  it('clears the grace timer once the late window arrives', async () => {
+    type Container = Awaited<ReturnType<Bot['openContainer']>>;
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      vi.mocked(h.bot.openContainer).mockImplementationOnce(() => new Promise<Container>(() => {}));
+      const pending = openAction.run(ctxFor(h.bot), { do: 'open', at: AT });
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await pending).toMatchObject({ status: 'failed', reason: 'blocked' });
+      // The grace timer is armed. The late window arrives and runs the drop, which clears it.
+      expect(vi.getTimerCount()).toBe(1);
+      h.emitter.emit('windowOpen', h.container);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(h.bot.closeWindow).toHaveBeenCalledWith(h.container);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps a close error from replacing the outcome', async () => {
