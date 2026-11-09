@@ -27,8 +27,6 @@ import { tryEat } from './reflex.ts';
 
 /** The least time between two top-level `say` calls by one player. */
 const SAY_SPACING_MS = 2000;
-/** How many ids the receipts ledger keeps; matches `PlayerSim`. */
-const RECEIPT_LIMIT = 1000;
 
 /** The input `act` receives after validation. */
 interface ActArgs {
@@ -40,9 +38,7 @@ interface ActArgs {
 const lastSay = new WeakMap<PlayerSim, number>();
 
 function receipt(sim: PlayerSim): void {
-  sim.receipts.push(sim.nextId('ac'));
-  if (sim.receipts.length > RECEIPT_LIMIT)
-    sim.receipts.splice(0, sim.receipts.length - RECEIPT_LIMIT);
+  sim.pushReceipt(sim.nextId('ac'));
 }
 
 /** True if a top-level say is allowed now; records the time when it is. */

@@ -174,6 +174,13 @@ describe('actTool', () => {
     expect(sim.receipts).toEqual([]);
   }, 30_000);
 
+  it('keeps only the newest 1000 receipt ids', () => {
+    const { hub, sim } = setup({ budget: 2000 });
+    act(hub, { actions: Array.from({ length: 1100 }, () => mine) });
+    expect(sim.receipts).toHaveLength(1000);
+    expect(new Set(sim.receipts).size).toBe(1000);
+  }, 30_000);
+
   it('accepts an intent-only call and the sim then runs it', async () => {
     const { clock, hub, sim } = setup();
     expect(act(hub, { intent: intentOf() }).accepted).toEqual([0]);
