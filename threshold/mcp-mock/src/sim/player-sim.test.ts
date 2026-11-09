@@ -273,6 +273,9 @@ describe('PlayerSim', () => {
       expect(small.inventory).toEqual(big.inventory);
       expect(small.tick).toBe(big.tick);
       expect(big.log.lastSeq()).toBeGreaterThan(3);
+      // An emptied stack leaves the list, so a missing first stack counts as 0 left.
+      expect(big.inventory[0]?.count ?? 0).toBeLessThan(40);
+      expect(big.log.since(0).events.some((e) => e.kind === 'reflex')).toBe(true);
     }
   });
 
