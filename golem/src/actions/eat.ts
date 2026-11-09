@@ -1,4 +1,5 @@
-import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
+import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
+import { pollUntil } from './poll.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /**
@@ -98,16 +99,7 @@ async function eat(ctx: ActionContext): Promise<ActionOutcome> {
 
 /** Polls the food level once a tick until it rises, the wait runs out or the action is aborted. */
 async function waitForFood(ctx: ActionContext, before: number): Promise<boolean> {
-  const { bot } = ctx;
-  const deadline = Date.now() + FOOD_WAIT_MS * ctx.timeScale;
-  while (bot.food <= before) {
-    if (ctx.signal.aborted || Date.now() >= deadline) return false;
-    await bot.waitForTicks(1);
-  }
-  return true;
-}
-
-/** The error text, cut to the message limit. */
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).slice(0, 200);
+  return pollUntil(ctx.bot, ctx.signal, () => ctx.bot.food > before, {
+    wallMs: FOOD_WAIT_MS * ctx.timeScale,
+  });
 }

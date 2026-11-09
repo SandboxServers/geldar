@@ -1,11 +1,12 @@
 import type { Action } from '@geldar/contract';
-import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
+import type { Position } from './bot-types.ts';
+import { outcomeOfMove } from './move-outcome.ts';
+import { type ActionOutcome, completed, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** The `goto` action as the contract types it. */
 type GotoAction = Extract<Action, { do: 'goto' }>;
-type Spot = { x: number; y: number; z: number };
 
 /** A goto aim: a block position, or a player to walk up to. */
 export type GotoTarget =
@@ -30,7 +31,7 @@ export const gotoAction: ActionHandler<'goto'> = {
   timeoutMs: 120_000,
   async run(ctx: ActionContext, action: GotoAction): Promise<ActionOutcome> {
     const target = targetOf(action);
-    let aim: Spot;
+    let aim: Position;
     let range: number;
     if (target.kind === 'player') {
       const entity = ctx.bot.players[target.name]?.entity;
@@ -48,10 +49,7 @@ export const gotoAction: ActionHandler<'goto'> = {
       signal: ctx.signal,
       timeScale: ctx.timeScale,
     });
-    if (!move.ok) {
-      if (move.reason === 'cancelled') return cancelled();
-      return failed(move.reason, move.message);
-    }
+    if (!move.ok) return outcomeOfMove(move);
     const at = ctx.bot.entity.position;
     return completed({ position: { x: at.x, y: at.y, z: at.z }, distance: move.distance });
   },

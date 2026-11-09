@@ -1,15 +1,16 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
-import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
+import type { Block, Item } from './bot-types.ts';
+import { outcomeOfMove } from './move-outcome.ts';
+import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { ensurePathfinder, type MoveResult, moveNear } from './pathing.ts';
+import { pollUntil } from './poll.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** The `mine` action as the contract types it. */
 type MineAction = Extract<Action, { do: 'mine' }>;
 type FailedMove = Extract<MoveResult, { ok: false }>;
-type Block = NonNullable<ReturnType<Bot['blockAt']>>;
-type Item = ReturnType<Bot['inventory']['items']>[number];
 /** The part of an inventory stack that the delta reads. */
 export type ItemStack = Pick<Item, 'name' | 'count'>;
 
@@ -103,8 +104,8 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
       await bot.dig(block);
     } catch (error) {
       if (signal.aborted) return abort(bot, mined);
-      const message = error instanceof Error ? error.message : String(error);
-      return failed(digReason(message), message.slice(0, 200), { mined });
+      const message = errorText(error);
+      return failed(digReason(message), message, { mined });
     } finally {
       signal.removeEventListener('abort', stopDig);
     }
@@ -137,13 +138,15 @@ async function waitForDrop(
   before: ItemStack[],
 ): Promise<void> {
   const names = dropNames(bot, block);
-  const polls = Math.ceil(DROP_POLLS * ctx.timeScale);
-  for (let poll = 0; poll <= polls; poll++) {
-    const gained = inventoryDelta(before, snapshot(bot));
-    if (names.some((name) => (gained[name] ?? 0) > 0)) return;
-    if (poll === polls || ctx.signal.aborted) return;
-    await bot.waitForTicks(1);
-  }
+  await pollUntil(
+    bot,
+    ctx.signal,
+    () => {
+      const gained = inventoryDelta(before, snapshot(bot));
+      return names.some((name) => (gained[name] ?? 0) > 0);
+    },
+    { polls: Math.ceil(DROP_POLLS * ctx.timeScale) },
+  );
 }
 
 /** The item names a block drops. A drop entry is an item ID, or a rule that holds one. */
@@ -220,7 +223,7 @@ function abort(bot: Bot, mined: number): ActionOutcome {
 /** Turns a failed move into the action's failure, keeping the blocks broken so far. */
 function fromMove(bot: Bot, move: FailedMove, mined: number): ActionOutcome {
   if (move.reason === 'cancelled') return abort(bot, mined);
-  return failed(move.reason, move.message, { mined });
+  return outcomeOfMove(move, { mined });
 }
 
 /** The `mine` handler: breaks `count` blocks and reports what the inventory gained. */

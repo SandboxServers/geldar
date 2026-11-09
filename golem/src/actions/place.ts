@@ -1,6 +1,8 @@
 import { Vec3 } from 'vec3';
-import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
-import { type MoveResult, moveNear } from './pathing.ts';
+import type { Position } from './bot-types.ts';
+import { outcomeOfMove } from './move-outcome.ts';
+import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
+import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -69,7 +71,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       signal: ctx.signal,
       timeScale: ctx.timeScale,
     });
-    if (!move.ok) return moveOutcome(move);
+    if (!move.ok) return outcomeOfMove(move);
   }
   if (ctx.signal.aborted) return cancelled();
 
@@ -121,22 +123,12 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   return completed({ block, at: spot(target), reference: spot(referencePos) });
 }
 
-/** Maps a walk that did not arrive to an outcome. */
-function moveOutcome(move: Extract<MoveResult, { ok: false }>): ActionOutcome {
-  return move.reason === 'cancelled' ? cancelled() : failed(move.reason, move.message);
-}
-
 /** The cell a position is in. */
 function floor(position: Vec3): Vec3 {
   return new Vec3(Math.floor(position.x), Math.floor(position.y), Math.floor(position.z));
 }
 
 /** A plain position for the outcome detail. */
-function spot(position: Vec3): { x: number; y: number; z: number } {
+function spot(position: Vec3): Position {
   return { x: position.x, y: position.y, z: position.z };
-}
-
-/** The error text, cut to the message limit. */
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).slice(0, 200);
 }

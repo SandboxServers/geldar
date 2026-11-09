@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Block } from './bot-types.ts';
 import { craftAction, diagnoseCraft } from './craft.ts';
 import { moveNear } from './pathing.ts';
 
@@ -83,8 +84,6 @@ function fakeBot(opts: {
   };
   return { bot: bot as unknown as Bot, state, craft, closeWindow };
 }
-
-type Block = NonNullable<ReturnType<Bot['blockAt']>>;
 
 /** A table block at a fixed spot. Only `position` is read. */
 const TABLE = { position: { x: 1, y: 200, z: 3 } } as unknown as Block;

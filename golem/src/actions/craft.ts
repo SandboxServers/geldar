@@ -1,13 +1,12 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
-import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
+import type { Block, Recipe } from './bot-types.ts';
+import { heldCount } from './inventory-count.ts';
+import { outcomeOfMove } from './move-outcome.ts';
+import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
-/** The crafting table block, as Mineflayer's world model returns it. */
-type Block = NonNullable<ReturnType<Bot['blockAt']>>;
-/** One Mineflayer recipe. Tags expand into one recipe per variant. */
-type Recipe = ReturnType<Bot['recipesFor']>[number];
 /** The item fields `craft` reads from the registry. */
 interface CraftItem {
   id: number;
@@ -54,7 +53,7 @@ async function runCraft(
     // The recipe may need the table: walk to it, then look again with the table as the station.
     const move = await moveNear(bot, table.position, TABLE_STANDOFF, { signal, timeScale });
     if (!move.ok) {
-      return move.reason === 'cancelled' ? cancelled() : failed(move.reason, move.message);
+      return outcomeOfMove(move);
     }
     if (signal.aborted) return cancelled();
     recipes = bot.recipesFor(item.id, null, action.count, table);
@@ -65,14 +64,14 @@ async function runCraft(
   const recipe = pickRecipe(bot, recipes, action.count);
   if (!recipe) return failed('not_possible', 'not craftable');
   const times = Math.ceil(action.count / recipe.result.count);
-  const before = bot.inventory.count(item.id, null);
+  const before = heldCount(bot, item.id);
   try {
     for (let i = 0; i < times; i++) {
       if (signal.aborted) break;
       await bot.craft(recipe, 1, usedTable ?? undefined);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorText(error);
     // The library reports a short inventory as an error; that is a missing-materials outcome.
     if (/ingredient/i.test(message)) return failed('missing_materials', message.slice(0, 200));
     throw error;
@@ -80,17 +79,17 @@ async function runCraft(
     // A close error must not replace the outcome that the loop produced.
     if (bot.currentWindow) {
       await bot.closeWindow(bot.currentWindow).catch((error: unknown) => {
-        console.warn(`crafting window did not close: ${error instanceof Error ? error.message : String(error)}`);
+        console.warn(`crafting window did not close: ${errorText(error)}`);
       });
     }
   }
   if (signal.aborted) {
-    return cancelled({ item: item.name, crafted: bot.inventory.count(item.id, null) - before });
+    return cancelled({ item: item.name, crafted: heldCount(bot, item.id) - before });
   }
 
   // Mineflayer's own clock is not the server's: wait for the inventory correction to arrive.
   await bot.waitForTicks(SETTLE_TICKS);
-  const crafted = bot.inventory.count(item.id, null) - before;
+  const crafted = heldCount(bot, item.id) - before;
   const expected = times * recipe.result.count;
   // Completed means produced: a result the server did not give back is an internal failure.
   if (crafted < expected) {
@@ -165,7 +164,7 @@ function shortfall(bot: Bot, recipe: Recipe, count: number): Record<string, numb
   const missing: Record<string, number> = {};
   for (const d of recipe.delta) {
     if (d.count >= 0) continue;
-    const need = -d.count * times - bot.inventory.count(d.id, d.metadata);
+    const need = -d.count * times - heldCount(bot, d.id, d.metadata);
     if (need > 0) missing[ingredientName(bot, d.id)] = need;
   }
   return missing;

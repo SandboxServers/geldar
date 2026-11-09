@@ -304,7 +304,11 @@ describe('withdraw', () => {
       item: 'cobblestone',
       count: 5,
     });
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'not_possible', detail: { moved: 0 } });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      detail: { moved: 0 },
+    });
   });
 
   it('fails invalid_args for an unknown item', async () => {

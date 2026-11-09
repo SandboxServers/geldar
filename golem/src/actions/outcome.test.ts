@@ -5,6 +5,7 @@ import {
   type ActionOutcome,
   cancelled,
   completed,
+  errorText,
   failed,
   recordState,
   toResult,
@@ -43,6 +44,18 @@ describe('toResult', () => {
       detail: {},
     });
     expect(Object.values(result)).not.toContain(undefined);
+  });
+});
+
+describe('errorText', () => {
+  it('takes the message of an Error and of other thrown values as a string', () => {
+    expect(errorText(new Error('boom'))).toBe('boom');
+    expect(errorText('plain')).toBe('plain');
+    expect(errorText(42)).toBe('42');
+  });
+
+  it('cuts the text to 200 characters', () => {
+    expect(errorText(new Error('x'.repeat(300)))).toHaveLength(200);
   });
 });
 

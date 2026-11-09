@@ -1,6 +1,8 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
+import type { Block, Container, Position } from './bot-types.ts';
+import { outcomeOfMove } from './move-outcome.ts';
+import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
@@ -22,10 +24,7 @@ const INVENTORY_FULL = /full/i;
 /** A full container: the library's own wording is not known, so the word `full` is the match. */
 const CONTAINER_FULL = /full/i;
 
-type Container = Awaited<ReturnType<Bot['openContainer']>>;
 type Window = NonNullable<Bot['currentWindow']>;
-type Block = NonNullable<ReturnType<Bot['blockAt']>>;
-type Position = { x: number; y: number; z: number };
 
 /** What the open race produced: the open container, or the outcome that ended it. */
 type Opened = { container: Container } | { outcome: ActionOutcome };
@@ -34,11 +33,6 @@ type Opened = { container: Container } | { outcome: ActionOutcome };
 function containerAt(bot: Bot, at: Position): Block | null {
   const block = bot.blockAt(new Vec3(at.x, at.y, at.z));
   return block && CONTAINER_BLOCKS.has(block.name) ? block : null;
-}
-
-/** The text of a thrown value. */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -87,7 +81,7 @@ async function withContainer(
   if (bot.entity.position.distanceTo(center) > REACH) {
     const walk = await moveNear(bot, at, 3, { signal, timeScale });
     if (!walk.ok) {
-      return walk.reason === 'cancelled' ? cancelled() : failed(walk.reason, walk.message);
+      return outcomeOfMove(walk);
     }
   }
 
@@ -95,7 +89,7 @@ async function withContainer(
   const onLateWindow = (window: Window): void => {
     if (lost) {
       bot.closeWindow(window).catch((error: unknown) => {
-        console.warn(`late container window did not close: ${errorMessage(error)}`);
+        console.warn(`late container window did not close: ${errorText(error)}`);
       });
     }
   };
@@ -110,7 +104,7 @@ async function withContainer(
   const attempt: Promise<Opened> = bot.openContainer(block).then(
     (container): Opened => ({ container }),
     (error: unknown): Opened => ({
-      outcome: failed('blocked', `container did not open: ${errorMessage(error)}`),
+      outcome: failed('blocked', `container did not open: ${errorText(error)}`),
     }),
   );
   // The late-window listener stays until the open settles: a window that opens after the race
@@ -149,7 +143,7 @@ async function withContainer(
     try {
       await opened.container.close();
     } catch (error: unknown) {
-      console.warn(`container did not close: ${errorMessage(error)}`);
+      console.warn(`container did not close: ${errorText(error)}`);
     }
   }
 }
@@ -172,7 +166,7 @@ async function withdraw(
   try {
     await container.withdraw(itemId, null, count);
   } catch (caught) {
-    error = errorMessage(caught);
+    error = errorText(caught);
   }
   // The window is the truth: the library moves what fits, then may throw.
   const moved = inventoryCount(container, itemId) - before;
@@ -200,7 +194,7 @@ async function deposit(
   try {
     await container.deposit(itemId, null, count);
   } catch (caught) {
-    error = errorMessage(caught);
+    error = errorText(caught);
   }
   // The window is the truth: the library moves what fits, then may throw.
   const moved = held - inventoryCount(container, itemId);
