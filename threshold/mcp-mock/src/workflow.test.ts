@@ -6,10 +6,11 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const workflow = readFileSync(resolve(root, '.github', 'workflows', 'mcp-mock-image.yml'), 'utf8');
 
+const gate = "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'";
+
 // The workflow cannot run in a unit test, so these pin the lines that gate publishing.
 describe('mcp-mock-image workflow', () => {
   it('logs in and pushes only on main, never from a pull request or another ref', () => {
-    const gate = "github.event_name != 'pull_request' && github.ref == 'refs/heads/main'";
     const login = workflow.slice(workflow.indexOf('docker/login-action'));
     expect(login.slice(0, login.indexOf('with:'))).toContain(`if: ${gate}`);
     const push = workflow.slice(workflow.indexOf('id: push'));
@@ -54,7 +55,7 @@ describe('mcp-mock-image workflow', () => {
 
   it('writes the digest only when something was pushed', () => {
     const summary = workflow.slice(workflow.indexOf('name: write the digest'));
-    expect(summary).toContain("if: github.event_name != 'pull_request'");
+    expect(summary.slice(0, summary.indexOf('env:'))).toContain(`if: ${gate}`);
   });
 
   it('has no unused env', () => {
