@@ -13,10 +13,11 @@ const DEFS: Record<IdPrefix, string> = {
   in: 'IntentId',
   ac: 'ActionId',
   jb: 'JobId',
+  ev: 'EventId',
 };
 
 describe('newId', () => {
-  for (const prefix of ['th', 'in', 'ac', 'jb'] as const) {
+  for (const prefix of ['th', 'in', 'ac', 'jb', 'ev'] as const) {
     it(`matches the contract pattern for ${prefix}_`, () => {
       const pattern = COMMON.$defs[DEFS[prefix]]?.pattern;
       expect(pattern).toBeDefined();

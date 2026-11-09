@@ -23,6 +23,9 @@ const STABLE = 'You are a fake agent. Answer with JSON.';
  * the right shape.
  */
 export class FakePromptLibrary implements PromptLibrary {
+  readonly thoughtVersion = 'fake-thought';
+  readonly reflectionVersion = 'fake-reflection';
+  readonly bodyApiVersion = 'fake-body-api';
   /** Every render call, in order. */
   readonly renders: {
     kind: 'thought' | 'reflection';
@@ -67,9 +70,13 @@ export class FakeOutputValidator implements OutputValidator {
     return result.ok ? result : { ok: false, errors: result.errors.map(schemaError) };
   }
 
-  correctiveMessage(errors: OutputError[]): ModelMessage {
+  correctiveMessage(errors: OutputError[], rejected?: string): ModelMessage {
     const lines = errors.map((e) => `${e.code} at ${e.path === '' ? '/' : e.path}`);
-    return { role: 'user', content: `Your answer was rejected: ${lines.join('; ')}. Try again.` };
+    const echo = rejected === undefined ? '' : ` Rejected: ${JSON.stringify(rejected.slice(0, 512))}`;
+    return {
+      role: 'user',
+      content: `Your answer was rejected: ${lines.join('; ')}. Try again.${echo}`,
+    };
   }
 }
 

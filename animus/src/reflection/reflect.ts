@@ -3,7 +3,7 @@
  * retry on invalid output), apply the result, and record the attempt as a journal row and a
  * `reflection` event. A failed attempt applies nothing and is recorded; it never throws.
  */
-import type { WorldEvent } from '@geldar/contract';
+import type { Reflection, WorldEvent } from '@geldar/contract';
 import type { JobSettings } from '../config.ts';
 import { newId } from '../ids.ts';
 import {
@@ -86,10 +86,6 @@ export interface ReflectResult {
   errors?: OutputError[];
 }
 
-function eventId(): string {
-  return `ev_${newId('th').slice(3)}`;
-}
-
 function estimate(chars: number): number {
   return Math.ceil(chars / 4);
 }
@@ -116,9 +112,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
     ),
     knownNames: memory.relationships.map((r) => r.otherId),
   });
-  // The prompt port has no digest slot yet (interface request in the P0-31 report), so the
-  // digest rides along as an extra field and the day's journal entries as `journal`.
-  const vars: ReflectionPromptVars & { digest: string } = {
+  const vars: ReflectionPromptVars = {
     agent: deps.agent,
     day: due.day,
     journal: journal.filter((j) => j.worldDay === due.day),
@@ -139,6 +133,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
   let outcome: ReflectOutcome = 'invalid_output';
   let errors: OutputError[] | undefined;
   let applied: ApplyResult | undefined;
+  let reflection: Reflection | null = null;
   const sent: ModelMessage[][] = [];
 
   for (let attempt = 0; attempt < 2 && outcome === 'invalid_output'; attempt++) {
@@ -174,6 +169,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
     }
     const parsed = deps.validator.parseReflection(raw, { degraded });
     if (parsed.ok) {
+      reflection = parsed.value;
       try {
         applied = await applyReflection(deps, parsed.value, {
           lifeId: due.lifeId,
@@ -190,7 +186,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
       }
     } else {
       errors = parsed.errors;
-      messages = [...render.messages, deps.validator.correctiveMessage(parsed.errors)];
+      messages = [...render.messages, deps.validator.correctiveMessage(parsed.errors, raw)];
     }
   }
 
@@ -215,14 +211,14 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
     tokensOutEstimated: raw === null ? null : estimate(raw.length),
     providerUsage: usage,
     rawOutput: raw,
-    parsed: null,
+    parsed: reflection,
     latencyMs,
     creditsReserved: REFLECTION_COST,
     creditsSettled: REFLECTION_COST,
   };
   await deps.journal.recordThought(row);
   const event: WorldEvent = {
-    source_event_id: eventId(),
+    source_event_id: newId('ev'),
     at: row.at,
     shard: deps.shard,
     world_day: due.day,

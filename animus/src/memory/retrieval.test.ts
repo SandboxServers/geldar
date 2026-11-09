@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { FakeEmbedder, FakeMemoryStore } from '../fakes/memory.fakes.ts';
-import type { AgentRow, Embedder, NewMemory, RelationshipRow } from '../ports/index.ts';
+import type {
+  AgentRow,
+  Embedder,
+  MemoryStore,
+  NewMemory,
+  RelationshipRow,
+} from '../ports/index.ts';
 import {
   isFatigued,
   MemoryRetriever,
-  type PartialWriteStore,
   type RetrievalRequest,
   rankRelationships,
 } from './retrieval.ts';
@@ -233,7 +238,7 @@ describe('an embedder failure', () => {
         written.push(e);
         return m.map((_, i) => i + 1);
       },
-    } as unknown as PartialWriteStore;
+    } as unknown as MemoryStore;
     const ids = await retriever.remember(store, LIFE, [memory({}), memory({})]);
     expect(ids).toEqual([1, 2]);
     expect(written).toEqual([[null, null]]);

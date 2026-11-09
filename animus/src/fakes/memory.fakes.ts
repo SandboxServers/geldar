@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { Thought } from '@geldar/contract';
 import type {
   AgentRow,
   DeterministicMemory,
@@ -59,7 +60,8 @@ function cosine(a: number[], b: number[]): number {
 
 interface StoredMemory {
   row: MemoryRow;
-  embedding: number[];
+  /** Null until written or backfilled; a memory without a vector is not found by a search. */
+  embedding: number[] | null;
 }
 
 /**
@@ -74,6 +76,12 @@ export class FakeMemoryStore implements MemoryStore, Journal {
   private readonly relationships = new Map<string, RelationshipRow>();
   private readonly goals = new Map<string, GoalRow[]>();
   private nextMemoryId = 1;
+  private readonly embedder: Embedder | undefined;
+
+  /** The embedder is needed only by `backfillEmbeddings`. */
+  constructor(embedder?: Embedder) {
+    this.embedder = embedder;
+  }
 
   async ensureAgent(agent: AgentRow): Promise<void> {
     if (!this.agents.has(agent.agentId)) this.agents.set(agent.agentId, { ...agent });
@@ -110,7 +118,18 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     if (memories.length !== embeddings.length) {
       throw new Error(`${memories.length} memories but ${embeddings.length} embeddings`);
     }
-    if (embeddings.some((e) => e.length !== DIMS)) {
+    return this.writeMemoriesPartial(lifeId, memories, embeddings);
+  }
+
+  async writeMemoriesPartial(
+    lifeId: string,
+    memories: NewMemory[],
+    embeddings: (number[] | null)[],
+  ): Promise<number[]> {
+    if (memories.length !== embeddings.length) {
+      throw new Error(` memories but ${embeddings.length} embeddings`);
+    }
+    if (embeddings.some((e) => e !== null && e.length !== DIMS)) {
       throw new Error(`every embedding must have ${DIMS} numbers`);
     }
     return memories.map((memory, i) => {
@@ -122,9 +141,34 @@ export class FakeMemoryStore implements MemoryStore, Journal {
         resolved: false,
         active: true,
       };
-      this.memories.push({ row, embedding: embeddings[i] ?? [] });
+      this.memories.push({ row, embedding: embeddings[i] ?? null });
       return memoryId;
     });
+  }
+
+  async backfillEmbeddings(limit: number): Promise<number> {
+    if (this.embedder === undefined) throw new Error('backfillEmbeddings needs an embedder');
+    const pending = this.memories.filter((m) => m.row.active && m.embedding === null).slice(0, limit);
+    if (pending.length === 0) return 0;
+    const vectors = await this.embedder.embed(
+      pending.map((m) => m.row.text),
+      'document',
+    );
+    for (const [i, m] of pending.entries()) m.embedding = vectors[i] ?? null;
+    return pending.length;
+  }
+
+  async resolveCommitment(lifeId: string, memoryId: number): Promise<boolean> {
+    const found = this.memories.find(
+      (m) =>
+        m.row.agentId === lifeId &&
+        m.row.memoryId === memoryId &&
+        m.row.provenance === 'commitment' &&
+        !m.row.resolved,
+    );
+    if (found === undefined) return false;
+    found.row.resolved = true;
+    return true;
   }
 
   async deactivateBeliefs(lifeId: string, beliefs: string[]): Promise<number> {
@@ -182,16 +226,16 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     this.suppressed.push(row);
   }
 
-  async journalSince(lifeId: string, tick: number): Promise<JournalEntry[]> {
-    return this.thoughts
+  async journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]> {
+    const all = this.thoughts
       .filter((t) => t.lifeId === lifeId && t.worldTick >= tick)
-      .sort((a, b) => a.worldTick - b.worldTick)
-      .map((t) => ({
+      .sort((a, b) => a.worldTick - b.worldTick);
+    return (limit === undefined ? all : all.slice(-limit)).map((t) => ({
         thoughtId: t.thoughtId,
         worldDay: t.worldDay,
         worldTick: t.worldTick,
         wakeReason: t.wakeReason,
-        parsed: t.parsed,
+        parsed: t.wakeReason === 'reflection' ? null : (t.parsed as Thought | null),
       }));
   }
 
@@ -207,7 +251,7 @@ export class FakeMemoryStore implements MemoryStore, Journal {
   ): MemoryRow[] {
     return this.memories
       .filter((m) => m.row.agentId === lifeId && m.row.kind === kind && m.row.active)
-      .map((m) => ({ row: m.row, score: cosine(m.embedding, embedding) }))
+      .flatMap((m) => (m.embedding === null ? [] : [{ row: m.row, score: cosine(m.embedding, embedding) }]))
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
       .map((m) => m.row);

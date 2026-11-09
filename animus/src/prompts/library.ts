@@ -60,18 +60,8 @@ export interface PromptLibraryOptions {
   version?: number;
 }
 
-/** A loaded library, with the version ids it recorded. */
-export interface LoadedPromptLibrary extends PromptLibrary {
-  /** `thought@1+sha256:<12 hex>`. */
-  readonly thoughtVersion: string;
-  /** `reflection@1+sha256:<12 hex>`. */
-  readonly reflectionVersion: string;
-  /** `body-api@1+sha256:<12 hex>`. */
-  readonly bodyApiVersion: string;
-}
-
 /** Loads and hashes the templates now; throws on an unknown slot, a missing block or a bad file. */
-export function createPromptLibrary(options: PromptLibraryOptions = {}): LoadedPromptLibrary {
+export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptLibrary {
   const dir = options.promptsDir ?? join(repoRoot(), 'prompts');
   const n = options.version ?? 1;
   const thought = loadChecked(
@@ -98,7 +88,7 @@ export function createPromptLibrary(options: PromptLibraryOptions = {}): LoadedP
   return new TemplatePromptLibrary(thought, reflection, bodyApi, bodyApiVersion, degradedText);
 }
 
-class TemplatePromptLibrary implements LoadedPromptLibrary {
+class TemplatePromptLibrary implements PromptLibrary {
   readonly thoughtVersion: string;
   readonly reflectionVersion: string;
   readonly bodyApiVersion: string;
@@ -239,7 +229,12 @@ function renderReflection(
     goal_stack: renderGoals(vars.goals),
     beliefs: renderBeliefs(vars.beliefs),
     memories: renderEpisodic(vars.episodic),
-    quoted_world_text: renderWorldText(relationshipLines(vars.relationships, 'relationship', 20)),
+    quoted_world_text: renderWorldText([
+      ...relationshipLines(vars.relationships, 'relationship', 20),
+      ...(vars.digest.trim() === ''
+        ? []
+        : [{ kind: 'day_digest', fields: { text: vars.digest } } satisfies WorldTextLine]),
+    ]),
   };
   const system = [1, 2].map((n) => block(t, n, values, 'reflection')).join('\n\n');
   const user = block(t, 3, values, 'reflection');

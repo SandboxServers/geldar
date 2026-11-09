@@ -33,7 +33,8 @@ export type WorldTextKind =
   | 'person'
   | 'relationship'
   | 'plan'
-  | 'surroundings';
+  | 'surroundings'
+  | 'day_digest';
 
 /** A value a line may carry. */
 export type WorldTextValue = string | number | boolean | null;

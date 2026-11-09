@@ -2,6 +2,7 @@
 export type {
   AttentionController,
   BodyWakeReason,
+  DigestEntry,
   MindWakeReason,
   ReflectionDue,
   SuppressionReason,

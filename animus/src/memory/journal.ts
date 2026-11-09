@@ -68,18 +68,23 @@ export class PgJournal implements Journal {
     );
   }
 
-  async journalSince(lifeId: string, tick: number): Promise<JournalEntry[]> {
+  async journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]> {
+    // The newest $3 rows (all of them when $3 is null), returned oldest first.
     const result = await this.db.query(
-      `SELECT thought_id, world_day, world_tick, wake_reason, parsed FROM thoughts
-       WHERE life_id = $1 AND world_tick >= $2 ORDER BY world_tick, at, thought_id`,
-      [lifeId, tick],
+      `SELECT * FROM (
+         SELECT thought_id, world_day, world_tick, wake_reason, parsed, at FROM thoughts
+         WHERE life_id = $1 AND world_tick >= $2
+         ORDER BY world_tick DESC, at DESC, thought_id DESC LIMIT $3
+       ) newest ORDER BY world_tick, at, thought_id`,
+      [lifeId, tick, limit ?? null],
     );
     return result.rows.map((r) => ({
       thoughtId: r.thought_id,
       worldDay: Number(r.world_day),
       worldTick: Number(r.world_tick),
       wakeReason: r.wake_reason,
-      parsed: r.parsed ?? null,
+      // A reflection row keeps a reflection in `parsed`; the journal shows thoughts only.
+      parsed: r.wake_reason === 'reflection' ? null : (r.parsed ?? null),
     }));
   }
 }

@@ -27,12 +27,23 @@ export type MindWakeReason =
   | 'speech_addressed'
   /** Someone spoke about the agent without addressing it. */
   | 'speech_about_me'
+  /** Someone spoke about a commitment the agent holds with the speaker. */
+  | 'speech_about_my_commitments'
   /** Nothing has happened for a while and no plan is running. */
   | 'idle'
   /** The fallback timer fired (`attention.fallback_wakeup_ticks`). */
   | 'fallback'
   /** The Mind has just started and has not thought yet. */
   | 'mind_start';
+
+/** One speaker's part of the conversation digest. */
+export interface DigestEntry {
+  speaker: string;
+  /** How many lines the speaker said since the digest was last taken. */
+  count: number;
+  /** The last three lines, oldest first. */
+  lastLines: string[];
+}
 
 /** A decision to think. */
 export interface WakeDecision {
@@ -45,6 +56,8 @@ export interface WakeDecision {
    * first, for the prompt's digest section.
    */
   digest: MindEvent[];
+  /** The same chatter as per-speaker counts and last lines (absent on a hand-made decision). */
+  digestSummary?: DigestEntry[];
   /** Higher is more urgent: 0 idle or fallback, 1 normal, 2 danger or direct address. */
   priority: 0 | 1 | 2;
 }
@@ -53,8 +66,8 @@ export interface WakeDecision {
 export type SuppressionReason =
   /** The minimum spacing since the last wake has not passed. */
   | 'min_spacing'
-  /** A thought is already running. */
-  | 'thinking'
+  /** A thought is already running: the wake was held and merged behind it. */
+  | 'coalesced_in_flight'
   /** The event was folded into the digest. */
   | 'digested'
   /** The same wake is already pending. */

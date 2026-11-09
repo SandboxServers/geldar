@@ -50,6 +50,11 @@ export interface ReflectionPromptVars {
   beliefs: MemoryRow[];
   /** Episodic memories retrieved for the day, nearest first. */
   episodic: MemoryRow[];
+  /**
+   * What the day's events came to (the reflection's digest of events, spec 5.4). Rendered inside the
+   * user message as quoted data, escaped like other in-world text.
+   */
+  digest: string;
   /** True when the Mind is on the degraded path (a smaller output budget; see `parseReflection`). */
   degraded: boolean;
 }
@@ -70,6 +75,12 @@ export type PromptKind = 'thought' | 'reflection';
 
 /** Renders the templates in `prompts/`. */
 export interface PromptLibrary {
+  /** The template version id the thought prompt records, 	hought@1+sha256:<12 hex>. */
+  readonly thoughtVersion: string;
+  /** The reflection template's version id, eflection@1+sha256:<12 hex>. */
+  readonly reflectionVersion: string;
+  /** The Body API table's version id, ody-api@1+sha256:<12 hex>. */
+  readonly bodyApiVersion: string;
   render(kind: 'thought', vars: ThoughtPromptVars): PromptRender;
   render(kind: 'reflection', vars: ReflectionPromptVars): PromptRender;
 }
@@ -109,8 +120,9 @@ export interface OutputValidator {
    */
   parseReflection(text: string, options: { degraded: boolean }): OutputResult<Reflection>;
   /**
-   * The user message that asks the model to try once more, naming the errors (codes and paths, never
-   * echoing the rejected text).
+   * The user message that asks the model to try once more, naming the errors (codes and paths).
+   * ejected, when given, is the rejected text: the implementation echoes at most 512 characters
+   * of it as a JSON-escaped string, quoted as data, never as instructions.
    */
-  correctiveMessage(errors: OutputError[]): ModelMessage;
+  correctiveMessage(errors: OutputError[], rejected?: string): ModelMessage;
 }

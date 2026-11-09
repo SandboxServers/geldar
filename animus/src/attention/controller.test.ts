@@ -1,7 +1,9 @@
+import { validateWakePayload } from '@geldar/contract';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { FakeMemoryStore } from '../fakes/memory.fakes.ts';
 import type { MindEvent, ReflectionDue, WakeDecision } from '../ports/index.ts';
 import { Attention } from './controller.ts';
+import { BODY_WAKE_REASONS } from './policy.ts';
 import { ManualTiming } from './timing.fakes.ts';
 
 const LIFE = 'ag_adam_01';
@@ -82,6 +84,7 @@ describe('speech', () => {
     r.attention.onEvent(speech('Steve', 'Adam, hello', 11));
     expect(r.decisions).toHaveLength(1);
     expect(r.decisions[0]?.digest).toHaveLength(6);
+    expect(r.decisions[0]?.digestSummary).toEqual(summary);
     expect(r.attention.digestSummary()).toEqual([]);
   });
 
@@ -95,7 +98,7 @@ describe('speech', () => {
     r.attention.onEvent(speech('Adam', 'Adam is talking to himself', 0, true));
     expect(r.decisions).toHaveLength(0);
     r.attention.onEvent(speech('Eve', 'the delivery is ready'));
-    expect(r.decisions[0]).toMatchObject({ reason: 'speech_about_me', priority: 1 });
+    expect(r.decisions[0]).toMatchObject({ reason: 'speech_about_my_commitments', priority: 1 });
   });
 });
 
@@ -145,7 +148,7 @@ describe('one thought in flight', () => {
     r.attention.onEvent(wake('limit_reached', 1));
     r.attention.onEvent(speech('Steve', 'Adam!', 2));
     expect(r.decisions).toHaveLength(1);
-    const held = r.store.suppressed.filter((s) => s.reason === 'thinking');
+    const held = r.store.suppressed.filter((s) => s.reason === 'coalesced_in_flight');
     expect(held.map((s) => s.eventTypes)).toEqual([['wake'], ['speech']]);
     expect(held[0]?.intentId).toBe('in_1');
     r.time.advance(20_000);
@@ -176,7 +179,7 @@ describe('priority', () => {
     r.attention.onEvent(speech('Eve', 'bringing the wood'));
     expect(r.decisions).toHaveLength(1);
     r.time.advance(20_000);
-    expect(r.decisions[1]?.reason).toBe('speech_about_me');
+    expect(r.decisions[1]?.reason).toBe('speech_about_my_commitments');
     r.attention.thoughtSettled('planned');
     r.attention.onEvent(speech('Steve', 'Adam, help'));
     r.attention.onEvent(wake('goal_completed'));
@@ -268,5 +271,14 @@ describe('robustness', () => {
     r.attention.onEvent(wake('something_new'));
     expect(r.decisions).toHaveLength(0);
     expect(r.store.suppressed.map((s) => s.reason)).toEqual(['intent_running']);
+  });
+});
+
+describe('the Body wake reasons', () => {
+  it('every listed reason is a reason the contract schema admits, and the schema admits no other', () => {
+    for (const reason of [...BODY_WAKE_REASONS, 'new_agent_within_8']) {
+      expect(validateWakePayload({ reason, tick: 0, intent_id: null }).ok).toBe(true);
+    }
+    expect(validateWakePayload({ reason: 'speech_addressed', tick: 0, intent_id: null }).ok).toBe(false);
   });
 });

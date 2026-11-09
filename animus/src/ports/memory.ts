@@ -125,8 +125,11 @@ export interface ThoughtRow {
   /** Provider-reported usage with its provenance, when available. */
   providerUsage: Record<string, unknown> | null;
   rawOutput: string | null;
-  /** The validated thought, or null when the output was rejected. */
-  parsed: Thought | null;
+  /**
+   * The validated thought, or for a reflection row (wakeReason eflection) the validated
+   * reflection; null when the output was rejected.
+   */
+  parsed: Thought | Reflection | null;
   latencyMs: number | null;
   creditsReserved: number | null;
   creditsSettled: number | null;
@@ -166,6 +169,23 @@ export interface MemoryStore {
    * order. Fails, writing nothing, when the counts differ or an embedding is not 768 numbers.
    */
   writeMemories(lifeId: string, memories: NewMemory[], embeddings: number[][]): Promise<number[]>;
+  /**
+   * Like `writeMemories`, but an embedding may be null (the embedder was down): the row is kept
+   * without a vector until `backfillEmbeddings` fills it in. Fails, writing nothing, when the
+   * counts differ or a non-null embedding is not 768 numbers.
+   */
+  writeMemoriesPartial(
+    lifeId: string,
+    memories: NewMemory[],
+    embeddings: (number[] | null)[],
+  ): Promise<number[]>;
+  /**
+   * Embeds up to `limit` active memories that have no vector yet (oldest first) and stores the
+   * vectors; returns how many were filled. Needs the store's embedder; rejects when it fails.
+   */
+  backfillEmbeddings(limit: number): Promise<number>;
+  /** Marks one of the life's commitments resolved; returns whether a row changed. */
+  resolveCommitment(lifeId: string, memoryId: number): Promise<boolean>;
   /** Marks the active beliefs whose text equals one of `beliefs` as inactive; returns how many. */
   deactivateBeliefs(lifeId: string, beliefs: string[]): Promise<number>;
   /** Inserts or updates one row per update, keyed by (life, other party). */
@@ -186,8 +206,11 @@ export interface Journal {
   recordThought(row: ThoughtRow): Promise<void>;
   /** Stores one suppressed wake. */
   recordSuppressed(row: SuppressedWakeup): Promise<void>;
-  /** The life's thoughts with `worldTick` at or after `tick`, oldest first. */
-  journalSince(lifeId: string, tick: number): Promise<JournalEntry[]>;
+  /**
+   * The life's thoughts with `worldTick` at or after `tick`, oldest first. With `limit`, only
+   * the newest `limit` of them (still oldest first).
+   */
+  journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]>;
 }
 
 /** Turns text into vectors (decision D-P0-12: `nomic-embed-text`, 768 dimensions). */

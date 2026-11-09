@@ -2,20 +2,13 @@
  * Coalescing (spec 5.3.2): overheard speech folds into a per-speaker digest, and the wake candidates
  * that arrive before a decision merge into one pending set.
  */
-import type { MindEvent } from '../ports/index.ts';
+import type { DigestEntry, MindEvent } from '../ports/index.ts';
 import { type CandidateReason, rankOf } from './policy.ts';
+
+export type { DigestEntry };
 
 /** How many lines per speaker the digest keeps. */
 const DIGEST_LINES = 3;
-
-/** One speaker's part of the digest. */
-export interface DigestEntry {
-  speaker: string;
-  /** How many lines the speaker said since the digest was last taken. */
-  count: number;
-  /** The last three lines, oldest first. */
-  lastLines: string[];
-}
 
 /** The overheard chatter since the last decision, kept as a count and the last lines per speaker. */
 export class ConversationDigest {

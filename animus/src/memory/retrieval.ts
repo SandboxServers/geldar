@@ -57,14 +57,6 @@ export interface RetrievalObserver {
   onEmbedFailure(error: unknown): void;
 }
 
-/** A store that can also keep a memory without a vector (`PgMemoryStore`). */
-export interface PartialWriteStore extends MemoryStore {
-  writeMemoriesPartial(
-    lifeId: string,
-    memories: NewMemory[],
-    embeddings: (number[] | null)[],
-  ): Promise<number[]>;
-}
 
 /** Days awake at which an agent is fatigued; the clock starts at the last sleep, or at birth. */
 export function isFatigued(agent: AgentRow, nowDay: number, fatigueDays: number): boolean {
@@ -132,7 +124,7 @@ export class MemoryRetriever {
 
     const { episodic, degraded } = await this.searchEpisodic(request, alreadyLoaded);
     const window = fatigued ? FATIGUED_WORKING_WINDOW : this.settings.workingWindow;
-    const journal = await this.journal.journalSince(request.lifeId, 0);
+    const journal = await this.journal.journalSince(request.lifeId, 0, window);
 
     return {
       agent: loaded.agent,
@@ -143,7 +135,7 @@ export class MemoryRetriever {
       relationshipsNamedOnly,
       beliefs,
       episodic,
-      workingWindow: journal.slice(-window),
+      workingWindow: journal,
       degraded,
     };
   }
@@ -153,7 +145,7 @@ export class MemoryRetriever {
    * and the memories are stored with a NULL embedding for `backfillEmbeddings` to fill in.
    */
   async remember(
-    store: PartialWriteStore,
+    store: MemoryStore,
     lifeId: string,
     memories: NewMemory[],
   ): Promise<number[]> {

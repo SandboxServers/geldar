@@ -162,7 +162,8 @@ export class Attention implements AttentionController {
       this.wokenIntents.add(intentId);
     }
     if (rankOf(reason) === null) {
-      // A reason the policy does not know cannot be ranked; the intent carries on.
+      // The contract schema admits only the Body's listed reasons, so this is a Body newer than
+      // the Mind: it cannot be ranked, so the intent carries on and the wake is only recorded.
       this.record(['wake'], 'intent_running', intentId);
       return;
     }
@@ -227,7 +228,7 @@ export class Attention implements AttentionController {
     if (this.pending.size === 0) return;
     const ranked = this.pending.ranked();
     if (this.inFlight) {
-      for (const c of ranked) if (!c.recorded) this.recordCandidate(c, 'thinking', true);
+      for (const c of ranked) if (!c.recorded) this.recordCandidate(c, 'coalesced_in_flight', true);
       return;
     }
     const spacingMs = this.options.config.minWakeupSpacingS * 1000;
@@ -253,8 +254,9 @@ export class Attention implements AttentionController {
       .filter((e) => !seen.has(e.eventId) && seen.add(e.eventId))
       .sort((a, b) => a.tick - b.tick);
     const decision: WakeDecision = {
-      reason: best.reason === 'speech_about_my_commitments' ? 'speech_about_me' : best.reason,
+      reason: best.reason,
       events,
+      digestSummary: this.digest.summary(),
       digest: this.digest.take(),
       priority: priorityOf(best.rank),
     };

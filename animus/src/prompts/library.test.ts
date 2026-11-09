@@ -48,6 +48,7 @@ function reflectionVars(degraded: boolean): ReflectionPromptVars {
     ],
     beliefs: [],
     episodic: [],
+    digest: 'Eve said hello twice.',
     degraded,
   };
 }

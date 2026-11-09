@@ -4,8 +4,24 @@
  */
 import type { MindWakeReason } from '../ports/index.ts';
 
-/** The reason a candidate carries before it is a decision: the speech class that is not a port reason. */
-export type CandidateReason = MindWakeReason | 'speech_about_my_commitments';
+/** The reason a candidate carries before it is a decision: every port reason is one. */
+export type CandidateReason = MindWakeReason;
+
+/**
+ * The Body's wake reasons, listed once for the Mind (the Body's own list is `WakeReason` in
+ * `golem/src/body/wake.ts`, and the contract's `wake-event.schema.json` pattern is the authority;
+ * a test checks this list against the schema). `new_agent_within_N` is matched by pattern.
+ */
+export const BODY_WAKE_REASONS: readonly string[] = [
+  'directly_addressed',
+  'precondition_failed',
+  'unexpected_damage',
+  'goal_completed',
+  'reflex_danger',
+  'action_failed',
+  'limit_reached',
+  'no_plan',
+];
 
 /** Priority tiers, most urgent first. A lower tier number wins. */
 const TIER_ONE: readonly string[] = [

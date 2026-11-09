@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
-/** The id prefixes the Mind mints: thought, intent, action and Thinker job (common.schema.json). */
-export type IdPrefix = 'th' | 'in' | 'ac' | 'jb';
+/** The id prefixes the Mind mints: thought, intent, action and Thinker job and event (common.schema.json). */
+export type IdPrefix = 'th' | 'in' | 'ac' | 'jb' | 'ev';
 
 /** The Crockford base32 alphabet of a ULID: no I, L, O or U. */
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -53,7 +53,7 @@ function ulid(nowMs: number): string {
 
 /**
  * A new id of the form `<prefix>_<ULID>`, matching the patterns in `common.schema.json`
- * (`th_`, `in_`, `ac_`, `jb_`). Ids from one process sort in the order they were made.
+ * (`th_`, `in_`, `ac_`, `jb_`, `ev_`). Ids from one process sort in the order they were made.
  */
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${ulid(Date.now())}`;
