@@ -12,7 +12,7 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 |---|---|---|---|
 | P0-00 | `phase0/p0-00-threat-model` | shipped, merged into wave1 |
 | P0-01 | `.claude/worktrees/p0-01` | continuation 2 of 3 (first coder hit context before commit) |
-| P0-05 | `.claude/worktrees/p0-05` | review fix pass 1 (owner: composite FK with edition; spec Appendix D needs correction, owner to record) |
+| P0-05 | `phase0/p0-05-sql` | shipped, merged into wave1 |
 
 `.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.
 
@@ -25,4 +25,4 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 5. All seven shipped: wave review over `origin/main..phase0/wave1`, then `./geldar.ps1 check`, open the PR, wait for `ci gate`, tell the owner. Don't merge.
 6. Before removing packet worktrees (only after the PR is open), copy useful `.claude/reports/` files into `worknotes/`.
 
-**Open owner decisions:** none.
+**Open owner decisions:** P0-06 needs Qwen3 32B and 8B in Ollama; `ollama list` shows only nomic-embed-text. Asked the owner before pulling anything. Also: docs/spec.md Appendix D needs the composite skill FK correction (owner to record).
