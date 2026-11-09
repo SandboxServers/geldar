@@ -12,15 +12,27 @@ import org.junit.jupiter.api.Test;
 /** JavaPlugin cannot be built without a server, so the wiring that onEnable registers is tested directly. */
 class GeldarCoreTest {
     @Test
-    void enableRegistersTheExporterTheRecipeGrantAndTheCommandBlock() {
-        EventExporter exporter = new EventExporter(
-                new InMemoryEventPublisher(), "phase0", () -> 0, Instant::now, Logger.getLogger("test"));
-        List<Listener> listeners = GeldarCore.listeners(exporter, Logger.getLogger("test"));
+    void enableRegistersTheExporterAndTheCommandBlockButNotTheRecipeGrantByDefault() {
+        EventExporter exporter = exporter();
+        List<Listener> listeners = GeldarCore.listeners(exporter, Logger.getLogger("test"), false);
+
+        assertEquals(2, listeners.size());
+        assertTrue(listeners.contains(exporter));
+        assertTrue(listeners.stream().anyMatch(l -> l instanceof CommandBlockListener));
+        assertTrue(listeners.stream().noneMatch(l -> l instanceof RecipeGrantListener));
+    }
+
+    @Test
+    void theRecipeGrantIsRegisteredWhenTheFlagIsSet() {
+        List<Listener> listeners = GeldarCore.listeners(exporter(), Logger.getLogger("test"), true);
 
         assertEquals(3, listeners.size());
-        assertTrue(listeners.contains(exporter));
         assertTrue(listeners.stream().anyMatch(l -> l instanceof RecipeGrantListener));
-        assertTrue(listeners.stream().anyMatch(l -> l instanceof CommandBlockListener));
+    }
+
+    private static EventExporter exporter() {
+        return new EventExporter(
+                new InMemoryEventPublisher(), "phase0", () -> 0, Instant::now, Logger.getLogger("test"));
     }
 
     @Test

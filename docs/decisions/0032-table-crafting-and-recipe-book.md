@@ -17,7 +17,7 @@
 
 ## Consequences
 
-- The live fixture and any Adam shard must grant recipes before a table craft; P0-11 owns the join-time grant.
+- The live fixture and any Adam shard must grant recipes before a table craft; P0-11 owns the join-time grant. Superseded by [0048](0048-recipe-discovery-is-part-of-the-game.md): the join-time grant is off by default and recipes unlock through play.
 - The recipe-book watcher is installed through `ConnectionOptions.onBot` at bot creation, because the join-time `recipe_book_add` arrives before any later listener could attach.
 - `craft` is slower than a direct library call by one packet round trip per display it must try; the working display is remembered per bot and item.
 - Revisit when Mineflayer ships a per-window stateId: the table path can go back to `bot.craft`.

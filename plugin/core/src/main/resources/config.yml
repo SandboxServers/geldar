@@ -6,3 +6,6 @@ shard: phase0
 queue:
   capacity: 10000
 tps_interval_seconds: 20
+recipes:
+  # Recipes unlock through play (decision 0048). true grants every recipe on join, for a test shard only.
+  grant_on_join: false
