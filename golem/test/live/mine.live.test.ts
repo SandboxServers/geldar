@@ -66,6 +66,7 @@ describe('mine on 26.1', () => {
       expect(foundCount(await ctl.command(`clear ${NAME} cobblestone 0`))).toBe(0);
 
       await ctl.give(NAME, 'wooden_pickaxe', 1);
+      await bot.waitForTicks(10);
       const tooled = await runAction(createRegistry(), bot, {
         do: 'mine',
         block: 'stone',

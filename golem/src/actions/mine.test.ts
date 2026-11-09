@@ -2,10 +2,10 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ItemStack, inventoryDelta, mineAction } from './mine.ts';
-import { moveNear } from './pathing.ts';
+import { ensurePathfinder, moveNear } from './pathing.ts';
 import type { ActionContext } from './registry.ts';
 
-vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
+vi.mock('./pathing.ts', () => ({ moveNear: vi.fn(), ensurePathfinder: vi.fn() }));
 
 interface FakeBlock {
   type: number;
@@ -53,14 +53,20 @@ function fakeBot(blocks: FakeBlock[], inventory: ItemStack[] = []) {
       items: Object.fromEntries(Object.entries(names).map(([id, name]) => [id, { name }])),
     },
     inventory: { items: () => inventory },
+    // As in Mineflayer, the matcher first sees each block type with a null position (the palette
+    // probe), then every cell with its position.
     findBlocks: vi.fn(
-      ({ matching, count }: { matching: (b: FakeBlock) => boolean; count: number }) =>
-        blocks
+      ({ matching, count }: { matching: (b: FakeBlock) => boolean; count: number }) => {
+        for (const b of blocks) matching({ ...b, position: null } as unknown as FakeBlock);
+        return blocks
           .filter((b) => matching(b))
           .slice(0, count)
-          .map((b) => b.position),
+          .map((b) => b.position);
+      },
     ),
     blockAt: vi.fn((at: Vec3) => blocks.find((b) => b.position.equals(at)) ?? null),
+    /** Within Mineflayer's dig reach; a test sets this to true to skip the walk. */
+    canDigBlock: vi.fn((_target: FakeBlock | null): boolean => false),
     pathfinder: {
       bestHarvestTool: vi.fn((): null => null),
       stop: vi.fn(),
@@ -189,6 +195,31 @@ describe('mineAction', () => {
       message: 'no path',
       detail: { mined: 0 },
     });
+  });
+
+  it('skips the walk to a block the bot can already dig from where it stands', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
+    bot.canDigBlock.mockReturnValue(true);
+    const outcome = await mine(bot, 1);
+    expect(outcome.status).toBe('completed');
+    // Only the pickup walk is left; the reach walk (range 3) was skipped.
+    expect(vi.mocked(moveNear).mock.calls.map(([, , range]) => range)).toEqual([1]);
+  });
+
+  it('completes when the walk to a drop fails, because the wait and the inventory decide', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
+    vi.mocked(moveNear)
+      .mockResolvedValueOnce({ ok: true, distance: 0 })
+      .mockResolvedValueOnce({ ok: false, reason: 'blocked', message: 'no path' });
+    const outcome = await mine(bot, 1);
+    expect(outcome.status).toBe('completed');
+    expect(outcome.detail.mined).toBe(1);
+  });
+
+  it('ensures the pathfinder before the action reads or stops it', async () => {
+    const bot = fakeBot([]);
+    await mine(bot, 1);
+    expect(ensurePathfinder).toHaveBeenCalledWith(bot);
   });
 
   it('calls dig once and cancels when the signal aborts between two blocks', async () => {

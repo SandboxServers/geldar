@@ -1,7 +1,8 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import type { Vec3 } from 'vec3';
 import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
-import { type MoveResult, moveNear } from './pathing.ts';
+import { ensurePathfinder, type MoveResult, moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** The `mine` action as the contract types it. */
@@ -14,10 +15,12 @@ export type ItemStack = Pick<Item, 'name' | 'count'>;
 
 /** How far from the bot a block is searched for, in blocks. */
 const SEARCH_DISTANCE = 32;
-/** How close the bot walks to a block before it digs. */
+/** How close the bot walks to a block it cannot dig from where it stands. */
 const DIG_RANGE = 3;
-/** How close the bot walks to a broken block to pick up its drop. */
+/** How close the bot walks to a broken block's drop to pick it up. */
 const PICKUP_RANGE = 1;
+/** How many cells a drop falls at most, to the lowest air cell under the broken block. */
+const FALL_CELLS = 16;
 /** Pickup polls at one world tick each, before timeScale. A drop waits about 10 server ticks. */
 const DROP_POLLS = 60;
 
@@ -48,6 +51,8 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     ? bot.registry.blocksByName[action.block]
     : undefined;
   if (!info) return failed('invalid_args', `unknown block ${action.block}`);
+  // `bestHarvestTool` and `stop` need the pathfinder, which only exists after this call.
+  ensurePathfinder(bot);
   const wanted = new Set<number>([info.id]);
   const start = snapshot(bot);
   const tried = new Set<string>();
@@ -56,7 +61,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   while (mined < action.count) {
     if (signal.aborted) return abort(bot, mined);
     const found = bot.findBlocks({
-      matching: (block: Block) => wanted.has(block.type) && !tried.has(block.position.toString()),
+      matching: (block: Block) => wantedAt(wanted, tried, block),
       maxDistance: SEARCH_DISTANCE,
       count: 1,
     });
@@ -66,12 +71,16 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     }
     tried.add(at.toString());
     // Breaking the block under the feet would drop the bot.
-    if (at.equals(bot.entity.position.floored().offset(0, -1, 0))) {
-      return failed('not_possible', 'would drop the bot', { mined });
-    }
+    if (standsOn(bot, at)) return failed('not_possible', 'would drop the bot', { mined });
 
-    const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
-    if (!reach.ok) return fromMove(bot, reach, mined);
+    // Mineflayer's own dig reach comes first. A block in reach needs no walk, and a high block of
+    // a trunk has no standing cell for the pathfinder to walk to.
+    const target = bot.blockAt(at);
+    if (!(target && bot.canDigBlock(target))) {
+      const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
+      if (!reach.ok) return fromMove(bot, reach, mined);
+      if (standsOn(bot, at)) return failed('not_possible', 'would drop the bot', { mined });
+    }
     if (signal.aborted) return abort(bot, mined);
 
     const block = bot.blockAt(at);
@@ -103,8 +112,14 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     mined += 1;
     if (signal.aborted) return abort(bot, mined);
 
-    const pickup = await moveNear(bot, at, PICKUP_RANGE, { signal, timeScale: ctx.timeScale });
-    if (!pickup.ok) return fromMove(bot, pickup, mined);
+    // The drop falls to the lowest air cell under the block. A walk there can fail (a high block
+    // has no standing cell); that is not a failed action: the wait and the inventory say whether
+    // the drop arrived.
+    const pickup = await moveNear(bot, dropSpot(bot, at), PICKUP_RANGE, {
+      signal,
+      timeScale: ctx.timeScale,
+    });
+    if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
     await waitForDrop(ctx, bot, block, before);
     if (signal.aborted) return abort(bot, mined);
   }
@@ -160,6 +175,32 @@ function digReason(message: string): 'interrupted' | 'not_possible' | 'blocked' 
   if (/Infinity/.test(message)) return 'not_possible';
   if (/not in view/.test(message)) return 'blocked';
   return 'internal';
+}
+
+/**
+ * The `findBlocks` matcher. Mineflayer first probes each chunk palette with position-less blocks
+ * (`position` is null), which must be answered on the type alone; cells carry their position.
+ */
+function wantedAt(wanted: Set<number>, tried: Set<string>, block: Block): boolean {
+  if (!wanted.has(block.type)) return false;
+  const at = block.position as Vec3 | null;
+  return !at || !tried.has(at.toString());
+}
+
+/** Whether the bot stands on the block at `at`: breaking it would drop the bot. */
+function standsOn(bot: Bot, at: Vec3): boolean {
+  return at.equals(bot.entity.position.floored().offset(0, -1, 0));
+}
+
+/** The lowest air cell under `at`, where a drop from the block at `at` falls to. */
+function dropSpot(bot: Bot, at: Vec3): Vec3 {
+  let spot = at;
+  for (let step = 0; step < FALL_CELLS; step++) {
+    const below = bot.blockAt(spot.offset(0, -1, 0));
+    if (!below || below.boundingBox !== 'empty') break;
+    spot = spot.offset(0, -1, 0);
+  }
+  return spot;
 }
 
 /** The current inventory as plain stacks. */
