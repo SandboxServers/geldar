@@ -144,6 +144,29 @@ describe('PlayerSim', () => {
     expect(sim.tick).toBe(500);
   });
 
+  it('drops suppressed seqs that left the log', () => {
+    // 1000 damage events plus dusk and dawn make 1002, so seqs 1 and 2 leave the log of 1000.
+    const events = Array.from({ length: 1000 }, (_, i) => ({
+      type: 'damage',
+      at_tick: i + 1,
+      amount: 1,
+    }));
+    const sim = build({ events });
+    sim.syncTo(1000);
+    for (const seq of [1, 2, 3, 1000]) sim.suppressedSeqs.add(seq);
+    sim.syncTo(24000);
+    expect(sim.log.firstSeq()).toBe(3);
+    expect([...sim.suppressedSeqs]).toEqual([3, 1000]);
+  });
+
+  it('keeps only the last 1000 receipts', () => {
+    const sim = build();
+    for (let t = 1; t <= 1100; t++) sim.startIntent(intent(1), t);
+    expect(sim.receipts).toHaveLength(1000);
+    expect(sim.receipts[0]).toBe(makeId('in', 101));
+    expect(sim.receipts[999]).toBe(makeId('in', 1100));
+  });
+
   it('reports the next scheduled moment', () => {
     const sim = build();
     // No event and no intent: the next half-day boundary (dusk at 12000), not null.

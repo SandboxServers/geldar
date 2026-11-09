@@ -9,6 +9,8 @@ import type { Scenario } from './scenario.ts';
 /** Half a day: the gap between dawn and dusk. */
 const HALF_DAY = 12000;
 const DAY = 24000;
+/** How many ids the receipts ledger keeps; the oldest drop first. */
+const RECEIPT_LIMIT = 1000;
 
 /** What a `PlayerSim` is built from. */
 export interface PlayerSimInit {
@@ -43,7 +45,7 @@ export class PlayerSim {
   readonly suppressedSeqs: Set<number> = new Set();
   /** The tick reached by the last `syncTo`. */
   tick = 0;
-  /** The private ledger of `ac_` and `in_` ids. No tool result carries it. */
+  /** The private ledger of `ac_` and `in_` ids, the last 1000. No tool result carries it. */
   readonly receipts: string[] = [];
   /** The clock time the running intent started, or null. */
   intentStartedMs: number | null = null;
@@ -75,6 +77,8 @@ export class PlayerSim {
       this.current = r.state;
       this.intentStartedMs = nowMs;
       this.receipts.push(id);
+      if (this.receipts.length > RECEIPT_LIMIT)
+        this.receipts.splice(0, this.receipts.length - RECEIPT_LIMIT);
     }
     return r;
   }
@@ -114,6 +118,9 @@ export class PlayerSim {
       this.step(t);
     }
     if (target > this.tick) this.tick = target;
+    // A suppressed seq that left the log can never be asked about again.
+    const first = this.log.firstSeq();
+    for (const seq of this.suppressedSeqs) if (seq < first) this.suppressedSeqs.delete(seq);
   }
 
   private nextStepTick(): number {
