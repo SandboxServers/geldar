@@ -1,6 +1,7 @@
 import type { Dirent } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseItems, TestControl } from './test-control.ts';
 
@@ -28,11 +29,38 @@ async function tsFilesUnder(dir: string): Promise<string[]> {
   return files;
 }
 
-/** The absolute paths of the relative imports in a source file (`from`, bare and dynamic). */
+/** Whether a path is an existing regular file. A directory or a missing path is not. */
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The file a relative import names. Tries the specifier as written, then `.js` read as `.ts`, then
+ * `.ts` added, then a directory's `index.ts`. Undefined when none of them is a file.
+ */
+async function resolveImport(file: string, spec: string): Promise<string | undefined> {
+  const base = resolve(dirname(file), spec);
+  const candidates = [base, base.replace(/\.js$/, '.ts'), `${base}.ts`, join(base, 'index.ts')];
+  for (const candidate of candidates) {
+    if (await isFile(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/** The files a source file imports by relative path (`from`, bare and dynamic) that resolve. */
 async function relativeImports(file: string): Promise<string[]> {
   const text = await readFile(file, 'utf8');
   const specs = text.matchAll(/\b(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g);
-  return [...specs].map((match) => resolve(dirname(file), match[1] ?? ''));
+  const found: string[] = [];
+  for (const match of specs) {
+    const target = await resolveImport(file, match[1] ?? '');
+    if (target !== undefined) found.push(target);
+  }
+  return found;
 }
 
 /** Follows imports from `start` through any file reached, and returns the first forbidden one. */
@@ -131,6 +159,27 @@ describe('TestControl', () => {
     expect([...parseItems(reply)]).toEqual([['diamond_sword', 1]]);
   });
 
+  it('reads the entry count when a nested compound with its own count comes first', () => {
+    const reply =
+      'The block has the following block data: [{Slot: 0b, components: ' +
+      '{"minecraft:custom_data": {count: 50}}, id: "minecraft:stick", count: 2}]';
+    expect([...parseItems(reply)]).toEqual([['stick', 2]]);
+  });
+
+  it('throws when the only count is inside a nested compound', () => {
+    const reply =
+      'The block has the following block data: [{Slot: 0b, id: "minecraft:stick", ' +
+      'components: {count: 5}}]';
+    expect(() => parseItems(reply)).toThrow(/chest entry has no id or count/);
+  });
+
+  it('does not let a brace inside a quoted string before id and count end the entry', () => {
+    const reply =
+      'The block has the following block data: [{Slot: 0b, note: "a } brace", ' +
+      'id: "minecraft:stick", count: 4}]';
+    expect([...parseItems(reply)]).toEqual([['stick', 4]]);
+  });
+
   it('chestItems sends the data get command and parses the reply', async () => {
     const reply =
       'The block has the following block data: [{Slot: 0b, id: "minecraft:dirt", count: 2}]';
@@ -185,6 +234,31 @@ describe('TestControl', () => {
     const actions = await tsFilesUnder(join(import.meta.dirname, 'actions'));
     for (const file of actions) {
       expect(await reachesForbidden(file), file).toBeUndefined();
+    }
+  });
+
+  it('resolves directory, .js and extensionless import specifiers without a file-system error', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'guard-'));
+    try {
+      await mkdir(join(dir, 'sub'));
+      await writeFile(join(dir, 'plain.ts'), 'export const plain = 1;\n');
+      await writeFile(
+        join(dir, 'ok.ts'),
+        "import './sub';\nimport './plain.js';\nimport './plain';\n",
+      );
+      expect(await reachesForbidden(join(dir, 'ok.ts'))).toBeUndefined();
+      // The forbidden rcon.ts, named without its extension or with .js, is still found.
+      const rcon = relative(dir, join(import.meta.dirname, 'rcon'))
+        .split(sep)
+        .join('/');
+      for (const spec of [rcon, `${rcon}.js`]) {
+        await writeFile(join(dir, 'leak.ts'), `import '${spec}';\n`);
+        expect(await reachesForbidden(join(dir, 'leak.ts'))).toBe(
+          join(import.meta.dirname, 'rcon.ts'),
+        );
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
