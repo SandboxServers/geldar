@@ -61,5 +61,4 @@ Later waves, sliced when wave 2 closes (spec section 10 "Build" line):
 
 ## Cross-packet notes (wave 1 review)
 
-- **Model names.** Ollama tags (`qwen3:32b`, `qwen3:8b`) are what `shards/phase0.yaml` and the local Thinker use end to end in Phase 0. Appendix E and H write `qwen3-32b`; the spec form is an illustration. The Thinker advertises the Ollama tag in `hello.models[].name` and the Mind routes by that exact string. Mapping between naming schemes, if ever needed, belongs to the Thinker, decided when the Gateway exists (Phase 2).
-- **Spec departures that need an owner edit or record:** `Snapshot.revision` (Appendix A), `actions.snapshot_revision` and `receipts.detail` (Appendix D; 0020 covers the receipts change), composite skill FKs (Appendix D), snake_case gamerules (5.1).
+- **Spec gaps settled in records:** [0023](../../decisions/0023-skill-foreign-keys.md) composite skill FKs, [0024](../../decisions/0024-gamerules-26-1.md) snake_case gamerules, [0025](../../decisions/0025-snapshot-revision.md) revision fields, [0026](../../decisions/0026-one-database-per-shard.md) one database per shard, [0027](../../decisions/0027-final-receipt-constraints.md) final-receipt constraints, [0028](../../decisions/0028-model-names.md) Ollama tags as model names.

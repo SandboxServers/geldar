@@ -27,3 +27,9 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0020](0020-receipts.md) | Every action gets a receipt; economic actions get two | Accepted |
 | [0021](0021-velocity-from-phase0.md) | Velocity bot ingress from Phase 0, matching production | Accepted |
 | [0022](0022-minecraft-26-1.md) | Minecraft 26.1 and the pinned body stack | Accepted |
+| [0023](0023-skill-foreign-keys.md) | Books and the skill library point at one edition of a skill | Accepted |
+| [0024](0024-gamerules-26-1.md) | Gamerule names on Minecraft 26.1 are snake_case | Accepted |
+| [0025](0025-snapshot-revision.md) | Snapshots and action records carry a revision | Accepted |
+| [0026](0026-one-database-per-shard.md) | Phase 0 is one database per shard | Accepted |
+| [0027](0027-final-receipt-constraints.md) | The database enforces one final receipt per action | Accepted |
+| [0028](0028-model-names.md) | Phase 0 names models by their Ollama tag | Accepted |
