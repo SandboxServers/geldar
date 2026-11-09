@@ -7,8 +7,7 @@ export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 export const mcpToolSchemas: Record<
   McpToolName,
   { description: string; input: Record<string, unknown>; result: Record<string, unknown> }
-> = 
-{
+> = {
   "act": {
     "description": "Act: say something, run up to six immediate actions in order, and start or replace your intent. Give at least one of intent, actions or say.",
     "input": {
