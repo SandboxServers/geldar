@@ -153,12 +153,12 @@ export class PlayerSim {
   private skipQuietly(target: number): void {
     const ev = this.scenario.events[this.nextScenarioEvent];
     const due = Math.min(
-      target,
       ev ? ev.at_tick : Number.POSITIVE_INFINITY,
       this.current ? intentEndTick(this.current) : Number.POSITIVE_INFINITY,
     );
-    // Stop one tick short of a due moment so the normal step handles it; the target needs no step.
-    const to = due === target ? target : Math.max(this.tick, due - 1);
+    // Stop one tick short of a due moment, even one on the target, so the normal step handles it.
+    // If that leaves the tick where it is, the next batch of normal steps makes the progress.
+    const to = due <= target ? Math.max(this.tick, due - 1) : target;
     const h = this.scenario.reflex.hunger_interval_ticks;
     const steps = Math.floor(to / h) - Math.floor(this.tick / h);
     this.food = Math.max(0, this.food - steps);

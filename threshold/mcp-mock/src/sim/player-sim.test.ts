@@ -216,6 +216,32 @@ describe('PlayerSim', () => {
     expect(sim.log.since(0).events.filter((e) => e.kind === 'damage')).toHaveLength(1);
   });
 
+  it('steps a scenario event that falls exactly on the target tick after a skip', () => {
+    const sim = build({
+      day_length_seconds: 0.001,
+      reflex: { hunger_interval_ticks: 1, eat_below: 14 },
+      events: [{ type: 'damage', at_tick: 24_000_000, amount: 4 }],
+    });
+    sim.syncTo(1000);
+    expect(sim.tick).toBe(24_000_000);
+    expect(sim.log.since(0).events.filter((e) => e.kind === 'damage')).toHaveLength(1);
+  });
+
+  it('completes an intent that ends exactly on the target tick after a skip', () => {
+    const sim = build({
+      day_length_seconds: 0.001,
+      reflex: { hunger_interval_ticks: 1, eat_below: 14 },
+    });
+    const long = intent(24_000_000);
+    long.limits.max_world_ticks = 100_000_000;
+    sim.startIntent(long, 0);
+    sim.syncTo(1000);
+    expect(sim.intent()).toBeNull();
+    const fin = sim.log.since(0).events.filter((e) => e.kind === 'intent_finished');
+    expect(fin).toHaveLength(1);
+    expect(fin[0]).toMatchObject({ outcome: 'completed', tick: 24_000_000 });
+  });
+
   it('is deterministic when it skips', () => {
     const make = (): PlayerSim =>
       build({
