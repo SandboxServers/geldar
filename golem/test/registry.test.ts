@@ -8,6 +8,7 @@ import {
   LifeRegistration,
   lifeIdFor,
   type OpenedRegistry,
+  openRegistryBucket,
   registryFromConfig,
   registryKey,
 } from '../src/registry.ts';
@@ -176,6 +177,18 @@ describe('LifeRegistration', () => {
     await Promise.all([reg.register('A'), reg.register('B')]);
     expect(open).toHaveBeenCalledTimes(1);
     expect(log.filter((l) => l.startsWith('put'))).toHaveLength(2);
+  });
+});
+
+describe('openRegistryBucket', () => {
+  it('names only host and port when NATS is unreachable, not credentials', async () => {
+    const error = await openRegistryBucket('nats://someuser:s3cret@127.0.0.1:1').catch(
+      (e: unknown) => e as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('127.0.0.1:1');
+    expect(error.message).not.toContain('s3cret');
+    expect(error.message).not.toContain('someuser');
   });
 });
 

@@ -55,6 +55,15 @@ export function registryKey(username: string): string {
   return username.toLowerCase();
 }
 
+/** Host and port of a NATS URL, for messages: credentials and the path never reach a log. */
+function hostAndPort(natsUrl: string): string {
+  try {
+    return new URL(natsUrl).host;
+  } catch {
+    return 'the configured NATS server';
+  }
+}
+
 /** Opens NATS and creates the bucket if it is missing. Throws a clear error when unreachable. */
 export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistry> {
   let nc: Awaited<ReturnType<typeof connect>>;
@@ -68,7 +77,7 @@ export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistr
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `NATS is unreachable at ${natsUrl} (${why}); start the shard (./geldar.ps1 shard up phase0) ` +
+      `NATS is unreachable at ${hostAndPort(natsUrl)} (${why}); start the shard (./geldar.ps1 shard up phase0) ` +
         'or unset GELDAR_NATS_URL to run without the life registry',
       { cause: error },
     );
