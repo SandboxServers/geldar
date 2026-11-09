@@ -84,6 +84,28 @@ describe('runCell run bookkeeping', () => {
   });
 });
 
+describe('runCell wall time', () => {
+  it('stops runWallMs before the post-run tick query', async () => {
+    const { deps } = setup();
+    const original = deps.ctl;
+    let ran = false;
+    const source: CommandSource = {
+      async command(cmd) {
+        if (ran && cmd.startsWith('tick query')) await new Promise((r) => setTimeout(r, 200));
+        return original.command(cmd);
+      },
+    };
+    const scenario = scenarioOf({
+      async run() {
+        ran = true;
+        return { passed: true, note: '' };
+      },
+    });
+    const cell = await runCell(scenario, 20, 1, { ...deps, ctl: new TestControl(source) });
+    expect(cell.runWallMs[0]).toBeLessThan(150);
+  });
+});
+
 describe('runCell cleanup between runs', () => {
   it('closes an open window and wakes a sleeping bot, and survives a step that throws', async () => {
     const { bot, deps } = setup();

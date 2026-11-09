@@ -324,7 +324,9 @@ async function playRun(
     ageEnd: worldAge(bot),
     achievedTps: null,
   };
-  const wallSeconds = (Date.now() - ageWallStart) / 1000;
+  // The same instant for both figures: the tick query and the cleanup after it are not the run.
+  const wallMs = Date.now() - ageWallStart;
+  const wallSeconds = wallMs / 1000;
   // Under 5 age steps the 20-tick quantisation dominates the figure: leave it null (decision 0038).
   if (
     ageStart !== null &&
@@ -343,7 +345,7 @@ async function playRun(
   }
   const timeOfDay: unknown = bot.time?.timeOfDay;
   timing.timeOfDay = typeof timeOfDay === 'number' ? timeOfDay : null;
-  return { passed, note, wallMs: Date.now() - ageWallStart, timing, actions, stuck };
+  return { passed, note, wallMs, timing, actions, stuck };
 }
 
 /** The per-kind counts of a cell's actions. */
