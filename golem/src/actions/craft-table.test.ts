@@ -45,6 +45,8 @@ function fakeGame(onOpen?: (client: EventEmitter) => void) {
     closeWindow: vi.fn(async () => {
       raw.currentWindow = null;
     }),
+    // A real 1 ms tick, so a timer the server sets (an ack) can fire between the polls.
+    waitForTicks: vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 1))),
   });
   return { bot: raw as unknown as Bot, client, raw };
 }
@@ -66,6 +68,34 @@ function answerRequests(client: { write: ReturnType<typeof vi.fn> } & EventEmitt
       slot: 0,
       item: { present: true, itemId: BED.id, itemCount: 1 },
     });
+  });
+}
+
+/**
+ * Acknowledges each shift-click `delayMs` after it is written, by clearing the result slot, and logs
+ * every write and ack in `log`, so a test can check their order against the window's close.
+ */
+function ackClicksLater(
+  client: EventEmitter & { write: ReturnType<typeof vi.fn> },
+  delayMs: number,
+  log: string[],
+): void {
+  const answer = client.write.getMockImplementation() as
+    | ((name: string, params: Record<string, unknown>) => void)
+    | undefined;
+  client.write.mockImplementation((name: string, params: Record<string, unknown>) => {
+    log.push(`write ${name}`);
+    answer?.(name, params);
+    if (name !== 'window_click') return;
+    setTimeout(() => {
+      log.push('ack');
+      client.emit('set_slot', {
+        windowId: WINDOW.id,
+        stateId: 50,
+        slot: 0,
+        item: { present: false },
+      });
+    }, delayMs);
   });
 }
 
@@ -124,6 +154,44 @@ describe('craftAtTable', () => {
     expect(
       writesOf(fake.client, 'window_click').map((p) => (p as { stateId: number }).stateId),
     ).toEqual([6, 7]);
+  });
+
+  it('waits for each shift-click to be acknowledged before the next craft and before the close', async () => {
+    const fake = fakeGame(openWithWindowState);
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    answerRequests(fake.client);
+    const log: string[] = [];
+    ackClicksLater(fake.client, 5, log);
+    fake.raw.closeWindow.mockImplementation(async () => {
+      log.push('close');
+      fake.raw.currentWindow = null;
+    });
+
+    expect(await run(fake.bot, 2)).toBeNull();
+
+    // Without the wait, the window closes and the second request goes out before any ack.
+    expect(log).toEqual([
+      'write craft_recipe_request',
+      'write window_click',
+      'ack',
+      'write craft_recipe_request',
+      'write window_click',
+      'ack',
+      'close',
+    ]);
+  });
+
+  it('does not wait past the bound for an ack that never comes, and still closes', async () => {
+    const fake = fakeGame(openWithWindowState);
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    answerRequests(fake.client);
+
+    expect(await run(fake.bot, 1)).toBeNull();
+
+    expect(fake.raw.closeWindow).toHaveBeenCalledWith(WINDOW);
+    expect(fake.raw.currentWindow).toBeNull();
   });
 
   it('keeps only the displays of crafting types: a result with no crafting display is not unlocked', async () => {

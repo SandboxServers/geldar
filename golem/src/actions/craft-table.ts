@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, errorText, failed } from './outcome.ts';
+import { pollUntil } from './poll.ts';
 import type { ActionContext } from './registry.ts';
 
 type Window = NonNullable<Bot['currentWindow']>;
@@ -52,6 +53,8 @@ const RESULT_SLOT = 0;
 const TABLE_OPEN_WAIT_MS = 5_000;
 /** Wall-clock wait for the result slot after each recipe request, scaled by `timeScale`. */
 const RESULT_WAIT_MS = 5_000;
+/** Wall-clock wait for the server to acknowledge a shift-click, scaled by `timeScale`. */
+const CLICK_ACK_WAIT_MS = 3_000;
 
 /**
  * The recipe displays the server has unlocked per bot: display id to the result's item id. Filled
@@ -168,23 +171,57 @@ async function craftOnce(
     const result = await landed;
     if (result === 'aborted') return { outcome: cancelled() };
     if (result === 'filled') {
-      // Read at click time: the result slot's own packet has already moved the window's stateId on.
-      client.write('window_click', {
-        windowId,
-        stateId: states.get(windowId) ?? -1,
-        slot: RESULT_SLOT,
-        mouseButton: 0,
-        mode: 1,
-        changedSlots: [],
-        // An empty cursor is `null` on the wire (an optional HashedSlot), as Mineflayer writes it.
-        cursorItem: null,
-      });
+      await shiftClick(ctx, client, windowId, states);
       return { displayId };
     }
   }
   return {
     outcome: failed('timeout', `the crafting table did not produce ${name}`, { item: name }),
   };
+}
+
+/**
+ * Shift-clicks the result, then waits until the server acknowledges it, so the window is not closed
+ * (and the next craft not started) while the click is still in flight. The ack is the result slot
+ * clearing, or a full resend of the window. The wait is bounded: a server that never acks is not
+ * waited for past it, and the caller judges the craft by the inventory.
+ */
+async function shiftClick(
+  ctx: ActionContext,
+  client: RecipeClient,
+  windowId: number,
+  states: Map<number, number>,
+): Promise<void> {
+  let acked = false;
+  const onSlot = (packet: unknown): void => {
+    const set = packet as SetSlot;
+    if (set.windowId === windowId && set.slot === RESULT_SLOT && !isStack(set.item)) acked = true;
+  };
+  const onItems = (packet: unknown): void => {
+    if ((packet as WindowState).windowId === windowId) acked = true;
+  };
+  // The listeners go on before the write: a reply may arrive synchronously.
+  client.on('set_slot', onSlot);
+  client.on('window_items', onItems);
+  try {
+    // Read at click time: the result slot's own packet has already moved the window's stateId on.
+    client.write('window_click', {
+      windowId,
+      stateId: states.get(windowId) ?? -1,
+      slot: RESULT_SLOT,
+      mouseButton: 0,
+      mode: 1,
+      changedSlots: [],
+      // An empty cursor is `null` on the wire (an optional HashedSlot), as Mineflayer writes it.
+      cursorItem: null,
+    });
+    await pollUntil(ctx.bot, ctx.signal, () => acked, {
+      wallMs: CLICK_ACK_WAIT_MS * ctx.timeScale,
+    });
+  } finally {
+    client.removeListener('set_slot', onSlot);
+    client.removeListener('window_items', onItems);
+  }
 }
 
 /** How a wait for the result slot ended. */

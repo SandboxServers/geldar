@@ -85,15 +85,19 @@ function fakeBot(opts: {
     closeWindow,
     waitForTicks: vi.fn(async () => {}),
   };
-  return { bot: bot as unknown as Bot, state, craft, closeWindow };
+  // `give` adds items as the server would, late: the inventory moves outside the craft's own clicks.
+  const give = (id: number, n: number): void => {
+    counts.set(id, have(id) + n);
+  };
+  return { bot: bot as unknown as Bot, state, craft, closeWindow, give };
 }
 
 /** A table block at a fixed spot. Only `position` is read. */
 const TABLE = { position: { x: 1, y: 200, z: 3 } } as unknown as Block;
 
-/** Runs the handler with a fresh signal, the way `runAction` gives it one. */
+/** Runs the handler with a fresh signal. timeScale 0.01 keeps the bounded inventory wait short. */
 function run(bot: Bot, item: string, count: number, signal = new AbortController().signal) {
-  return craftAction.run({ bot, signal, timeScale: 1 }, { do: 'craft', item, count });
+  return craftAction.run({ bot, signal, timeScale: 0.01 }, { do: 'craft', item, count });
 }
 
 beforeEach(() => {
@@ -206,6 +210,26 @@ describe('craftAction', () => {
     });
     await run(fake.bot, 'oak_planks', 4);
     expect(fake.closeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports completed once the product reaches the inventory, even when it arrives late', async () => {
+    const stick = recipe(7, 4, { 5: 2 }, true);
+    const fake = fakeBot({ recipes: [stick], inventory: { 5: 2 }, table: TABLE });
+    // The server's correction lands 12 ticks after the craft: past a fixed settle of a few ticks.
+    let ticks = 0;
+    vi.mocked(fake.bot.waitForTicks).mockImplementation(async () => {
+      ticks += 1;
+      if (ticks === 12) fake.give(7, 4);
+    });
+    const out = await run(fake.bot, 'stick', 4);
+    expect(out).toMatchObject({ status: 'completed', detail: { item: 'stick', crafted: 4 } });
+  });
+
+  it('fails internal once the bounded wait runs out with no product in the inventory', async () => {
+    const stick = recipe(7, 4, { 5: 2 }, true);
+    const fake = fakeBot({ recipes: [stick], inventory: { 5: 2 }, table: TABLE });
+    const out = await run(fake.bot, 'stick', 4);
+    expect(out).toMatchObject({ status: 'failed', reason: 'internal', detail: { crafted: 0 } });
   });
 
   it('keeps the completed outcome when closing the window fails', async () => {

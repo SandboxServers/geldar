@@ -6,6 +6,7 @@ import { heldCount } from './inventory-count.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
+import { pollUntil } from './poll.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** The item fields `craft` reads from the registry. */
@@ -23,8 +24,11 @@ const TABLE_STANDOFF = 3;
  * "first" would otherwise be arbitrary; this order keeps the common variant.
  */
 const PREFERRED_INGREDIENTS = ['cobblestone', 'oak_planks', 'oak_log'];
-/** Ticks to wait after the last craft, so a server correction of the inventory arrives. */
-const SETTLE_TICKS = 5;
+/**
+ * Wall-clock wait for the crafted items to reach the inventory after the last craft, scaled by
+ * `timeScale`. The server's inventory correction can arrive late, so the craft waits for it.
+ */
+const SETTLE_WALL_MS = 3_000;
 
 /**
  * Crafts `count` of an item. A recipe with a table needs the table in reach: the bot walks to the
@@ -94,10 +98,12 @@ async function runCraft(
     return cancelled({ item: item.name, crafted: heldCount(bot, item.id) - before });
   }
 
-  // Mineflayer's own clock is not the server's: wait for the inventory correction to arrive.
-  await bot.waitForTicks(SETTLE_TICKS);
-  const crafted = heldCount(bot, item.id) - before;
+  // Success is judged by the inventory, not by the clicks: wait, bounded, for the product to show.
   const expected = times * recipe.result.count;
+  await pollUntil(bot, signal, () => heldCount(bot, item.id) - before >= expected, {
+    wallMs: SETTLE_WALL_MS * timeScale,
+  });
+  const crafted = heldCount(bot, item.id) - before;
   // Completed means produced: a result the server did not give back is an internal failure.
   if (crafted < expected) {
     return failed('internal', `server produced ${crafted} of ${expected} ${item.name}`, {
