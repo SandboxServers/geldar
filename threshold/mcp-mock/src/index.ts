@@ -3,4 +3,7 @@ export * from './fake-world.ts';
 export * from './ids.ts';
 export * from './registry.ts';
 export * from './server.ts';
+export * from './sim/clock.ts';
+export * from './sim/scenario.ts';
+export * from './sim/wake.ts';
 export * from './snapshot.ts';
