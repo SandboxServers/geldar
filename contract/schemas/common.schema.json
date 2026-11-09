@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/common.schema.json",
+  "$defs": {
+    "SnapshotId": {
+      "type": "string",
+      "pattern": "^sn_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ThoughtId": {
+      "type": "string",
+      "pattern": "^th_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "IntentId": {
+      "type": "string",
+      "pattern": "^in_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ActionId": {
+      "type": "string",
+      "pattern": "^ac_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ReceiptId": {
+      "type": "string",
+      "pattern": "^rc_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "EventId": {
+      "type": "string",
+      "pattern": "^ev_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "JobId": {
+      "type": "string",
+      "pattern": "^jb_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "LifeId": {
+      "description": "Permanent identity of one agent life, such as ag_kestrel_01.",
+      "type": "string",
+      "pattern": "^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$"
+    },
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+      }
+    },
+    "SelfPosition": {
+      "description": "A Position plus the biome the body stands in. Written out in full, since additionalProperties: false does not combine with allOf.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "biome": { "type": "string", "pattern": "^[a-z_]{1,64}$" }
+      }
+    },
+    "ItemName": {
+      "description": "A Minecraft item ID without the minecraft: prefix.",
+      "type": "string",
+      "pattern": "^[a-z0-9_]{1,64}$"
+    },
+    "ItemStack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item", "count"],
+      "properties": {
+        "item": { "$ref": "#/$defs/ItemName" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "book_id": {
+          "description": "Set for written books; identifies the book the agent can read.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "WorldTick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ShardName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,31}$"
+    }
+  }
+}

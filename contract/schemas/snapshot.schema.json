@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/snapshot.schema.json",
+  "title": "Snapshot",
+  "description": "The perception snapshot the Body builds for every thought (spec Appendix A).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "snapshot_id",
+    "agent_id",
+    "shard",
+    "world_time",
+    "self",
+    "surroundings",
+    "heard",
+    "events_since_last_thought",
+    "revision"
+  ],
+  "properties": {
+    "snapshot_id": { "$ref": "common.schema.json#/$defs/SnapshotId" },
+    "agent_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "shard": { "$ref": "common.schema.json#/$defs/ShardName" },
+    "revision": {
+      "description": "The snapshot revision the attention controller compares plans against (spec 5.3.2).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "world_time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["day", "time_of_day", "ticks", "weather"],
+      "properties": {
+        "day": { "type": "integer", "minimum": 0 },
+        "time_of_day": { "type": "string", "enum": ["dawn", "day", "dusk", "night"] },
+        "ticks": { "$ref": "common.schema.json#/$defs/WorldTick" },
+        "weather": { "type": "string", "enum": ["clear", "rain", "thunder"] }
+      }
+    },
+    "self": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "position",
+        "health",
+        "hunger",
+        "armor",
+        "held_item",
+        "inventory",
+        "effects",
+        "budget_remaining_thoughts",
+        "days_since_sleep"
+      ],
+      "properties": {
+        "position": { "$ref": "common.schema.json#/$defs/SelfPosition" },
+        "health": { "type": "number", "minimum": 0, "maximum": 20 },
+        "hunger": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "armor": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "held_item": {
+          "description": "Null when the hand is empty.",
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemName" }, { "type": "null" }]
+        },
+        "inventory": {
+          "type": "array",
+          "items": { "$ref": "common.schema.json#/$defs/ItemStack" }
+        },
+        "effects": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z_]{1,64}$" }
+        },
+        "budget_remaining_thoughts": { "type": "integer", "minimum": 0 },
+        "days_since_sleep": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "surroundings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blocks_summary", "notable_blocks", "entities", "agents"],
+      "properties": {
+        "blocks_summary": { "type": "string" },
+        "notable_blocks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "x", "y", "z"],
+            "properties": {
+              "type": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
+              "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "text": { "type": "string", "maxLength": 256 }
+            }
+          }
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "distance", "direction"],
+            "properties": {
+              "type": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
+              "distance": { "type": "number", "minimum": 0 },
+              "direction": { "type": "string", "pattern": "^[a-z_]{1,16}$" }
+            }
+          }
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "distance", "held_item", "health_estimate"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "maxLength": 32 },
+              "distance": { "type": "number", "minimum": 0 },
+              "held_item": {
+                "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemName" }, { "type": "null" }]
+              },
+              "health_estimate": { "type": "string", "maxLength": 32 }
+            }
+          }
+        }
+      }
+    },
+    "heard": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "text", "age_seconds"],
+        "properties": {
+          "from": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "text": { "type": "string", "maxLength": 256 },
+          "age_seconds": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "events_since_last_thought": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "description": "Event payloads are typed in later packets, so this object only fixes its type name and allows other properties.",
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "pattern": "^[a-z][a-z_]{0,47}$" }
+        }
+      }
+    },
+    "current_plan": {
+      "description": "Null when the agent has no plan.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["goal", "action", "status"],
+          "properties": {
+            "goal": { "type": "string", "maxLength": 256 },
+            "action": { "type": "string", "maxLength": 256 },
+            "status": { "type": "string", "maxLength": 64 }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "stuck": {
+      "description": "Null unless the Body's watchdog reports a repeating action (the watchdog injects a stuck event with the repeat count).",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "repeat_count"],
+          "properties": {
+            "action": { "type": "string", "maxLength": 256 },
+            "repeat_count": { "type": "integer", "minimum": 0 }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}
