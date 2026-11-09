@@ -21,6 +21,15 @@ cd plugin; ./gradlew build; cd ..   # writes core/build/libs/geldar-core.jar and
 
 `--wait` fails if a container is unhealthy after its start period. Paper's first start generates the world and can take minutes; don't treat a slow start as a failure until its healthcheck's start period has passed. The `eventsink` service has no healthcheck: `shard status` shows it running, and the events rows below show it works.
 
+## Wave test procedure
+
+Run this once per wave, after the wave branch is merged and checked, on the code you want measured:
+
+1. `./geldar.ps1 shard up phase0` (rebuilds the repo images, so the stack runs the current eventsink) and walk the health rows below.
+2. Start the live lane in the background: `./geldar.ps1 pnpm --filter @geldar/golem test:live` takes about 11 minutes, longer than a foreground shell call allows. Read its output file when it finishes; do not poll in a loop.
+3. Run the eventsink integration tests against the rebuilt image, with the stack idle (no live lane running): `$env:GELDAR_IT = '1'; ./geldar.ps1 pnpm test eventsink` (add `--no-file-parallelism` if the two `.it` files collide on the shared `geldar.phaseit.*` subject).
+4. Then the benchmark (`body-bench` skill). The live lane, the integration tests and the benchmark use the one shard: run them one at a time.
+
 ## Health: what "healthy" means
 
 Every row must pass before a benchmark or an Adam run. Report each one, not just "it's up". The `dc` commands below assume, in the repo root:

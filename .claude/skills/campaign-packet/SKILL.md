@@ -42,6 +42,8 @@ Observed in wave 1 (coder passes + fixes): P0-00 1+1; P0-01 2+1 (first ran out o
 
 Planning rule (owner ruling, wave 3): shape the dependency graph to fan out early. Put first the small packets that unblock parallel work (skeletons, contracts, config, registries, fixtures), each only as large as the parallel packets need to start; then run the independent packets side by side. The wave's packet table names the unblocking packets, what they unblock and the fan-out point; a large packet that blocks others is split before dispatch.
 
+Integration step (fan-out waves): after the parallel packets, one integration coder merges the fan-out branches into the wave branch, owns the shared interface files (for example `view.ts` and the reflex context type, which several packets extend) and wires the pieces together. Parallel packets that must add fields to a shared file say so in the packet table, so the integration coder knows what to reconcile instead of every coder editing the same file. Keep a coder brief to about 12 items; split a larger one.
+
 Waves hold about four to six packets that one reviewer can hold at once. A wave usually ships as one PR from an integration branch, or one PR per packet when they are independent.
 
 ## 3. Dispatch a wave
@@ -87,6 +89,10 @@ A continuation coder ("continuation N of 3") first commits any uncommitted work 
 Brief template additions: never weaken an assertion or change a fixture to make a test pass (report a Body finding); probes against the server use read-only verbs only; check every parser or fixture of a server reply against a captured real reply; no live lane or Docker unless the brief names the coder as the only live user. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
 
 Retry and cap rule (every coder brief): a packet that adds a retry, a requeue or a cap says what happens at the cap (dead letter, fatal, drop) and requires a test for the last allowed attempt; copy that sentence into the brief when the packet does.
+
+Diagnostics first (live failures): coders cannot run live tests, so a failing live case is not fixed by guessing. First change the case so its failure message prints the state it depends on (inventory, position, time, health, the server reply), have the orchestrator run it, and only then change behaviour. One diagnostic round is cheaper than three blind fixes.
+
+Flaky tests: a test that fails once in any check, even if it passes on rerun, is recorded the same day (worknote or ledger) and gets a fix item in the current wave, not at wave end.
 
 Never keep an agent alive with messages or resume a finished one: follow-ups go to a fresh agent with the report as input.
 
