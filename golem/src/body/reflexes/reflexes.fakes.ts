@@ -36,9 +36,14 @@ export class GridWorld {
   }
 
   /** The block as the bot's `blockAt` returns it, or the air block. */
-  blockAt(cell: Vec3): { name: string; boundingBox: string; diggable: boolean } {
+  blockAt(cell: Vec3): { name: string; boundingBox: string; diggable: boolean; position: Vec3 } {
     const name = this.name(cell);
-    return { name, boundingBox: name === 'air' ? 'empty' : 'block', diggable: name !== 'bedrock' };
+    return {
+      name,
+      boundingBox: name === 'air' ? 'empty' : 'block',
+      diggable: name !== 'bedrock',
+      position: new Vec3(Math.floor(cell.x), Math.floor(cell.y), Math.floor(cell.z)),
+    };
   }
 
   /** The cells holding `name`, nearest to `from` first. */
@@ -59,7 +64,12 @@ export interface GridBot {
   inventory: Map<string, number>;
 }
 
-export function gridBot(world: GridWorld, start: Vec3): GridBot {
+/** `drops` maps a dug block to the item it leaves (default: its own name). */
+export function gridBot(
+  world: GridWorld,
+  start: Vec3,
+  drops: Record<string, string> = { stone: 'cobblestone' },
+): GridBot {
   const inventory = new Map<string, number>();
   const bot = new EventEmitter() as unknown as Record<string, unknown>;
   const entity = { position: new Vec3(start.x + 0.5, start.y, start.z + 0.5), height: 1.8 };
@@ -68,6 +78,14 @@ export function gridBot(world: GridWorld, start: Vec3): GridBot {
   bot.entity = entity;
   bot.time = { age: 0 };
   bot.blockAt = (cell: Vec3) => world.blockAt(cell);
+  // `bot.dig` removes exactly the block it is given, as the real one does.
+  bot.canDigBlock = () => true;
+  bot.stopDigging = () => undefined;
+  bot.dig = async (block: { name: string; position: Vec3 }) => {
+    world.set(block.position, null);
+    const drop = drops[block.name] ?? block.name;
+    inventory.set(drop, (inventory.get(drop) ?? 0) + 1);
+  };
   bot.lookAt = async (target: Vec3) => {
     look = target.clone();
   };
@@ -170,6 +188,7 @@ export function reflexContext(
     lifeId: 'ag_test_01',
     bodyGeneration: 1,
     tick: 100,
+    timeScale: 1,
     signal: new AbortController().signal,
     cancels: 0,
     cancelAction: async () => {

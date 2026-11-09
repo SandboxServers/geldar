@@ -5,6 +5,7 @@ import type { Block } from '../../actions/bot-types.ts';
 import { runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
+import { DIGGABLE_BLOCKS, digCell, holds } from './dig-cell.ts';
 
 /** Blocks the Body seals itself in with, in the order it prefers them (all common digging drops). */
 export const SEAL_BLOCKS: readonly string[] = [
@@ -27,8 +28,6 @@ const DIRECTIONS: readonly Vec3[] = [
   new Vec3(0, 0, 1),
   new Vec3(0, 0, -1),
 ];
-/** Mine attempts for one cell: `mine` takes the nearest block of a name, which may be another cell. */
-const DIG_ATTEMPTS = 3;
 /** Ticks the Body walks at most to cross one cell. */
 const WALK_TICKS = 40;
 /** How close to a cell's center the walk stops, in blocks. */
@@ -40,6 +39,8 @@ export interface BurrowPlan {
   mouth: [Vec3, Vec3];
   /** The pocket: the feet cell and the head cell above it, to be dug out. */
   pocket: [Vec3, Vec3];
+  /** The cells around the pocket (far end, flanks, floor, roof) that must stay solid. */
+  closed: Vec3[];
 }
 
 /** What the Body remembers of the burrow it dug, until it leaves at dawn. */
@@ -84,7 +85,7 @@ export function planBurrow(blockAt: (cell: Vec3) => Block | null, feet: Vec3): B
     ];
     if (!isDiggable(blockAt(low)) || !isDiggable(blockAt(high))) continue;
     if (!closed.every((cell) => isWall(blockAt(cell)))) continue;
-    return { mouth: [feet, feet.plus(up)], pocket: [low, high] };
+    return { mouth: [feet, feet.plus(up)], pocket: [low, high], closed };
   }
   return null;
 }
@@ -96,21 +97,11 @@ export function pickSeal(count: (item: string) => number): string | null {
 
 /** Runs one action through the registry; true when it completed. */
 async function act(ctx: ReflexContext, action: Action): Promise<boolean> {
-  const run = await runAction(ctx.registry, ctx.bot, action, { signal: ctx.signal });
+  const run = await runAction(ctx.registry, ctx.bot, action, {
+    signal: ctx.signal,
+    timeScale: ctx.timeScale,
+  });
   return run.state === 'completed';
-}
-
-/** True while the cell holds a block (the bot reads its own client world). */
-function holds(bot: Bot, cell: Vec3): boolean {
-  return (bot.blockAt(cell)?.boundingBox ?? 'empty') !== 'empty';
-}
-
-/** Mines `name` until the cell is empty, at most `DIG_ATTEMPTS` times. */
-async function dig(ctx: ReflexContext, cell: Vec3, name: string): Promise<boolean> {
-  for (let i = 0; i < DIG_ATTEMPTS && holds(ctx.bot, cell); i++) {
-    if (ctx.signal.aborted || !(await act(ctx, { do: 'mine', block: name, count: 1 }))) break;
-  }
-  return !holds(ctx.bot, cell);
 }
 
 /** Walks straight into the cell next to the Body, a few ticks at a time. */
@@ -130,20 +121,23 @@ async function stepInto(bot: Bot, cell: Vec3): Promise<boolean> {
   }
 }
 
-/** Digs the pocket, steps in and seals the mouth. */
+/** Digs the pocket cell by cell, steps in and seals the mouth. */
 async function burrow(ctx: ReflexContext, view: BodyView): Promise<ReflexOutcome> {
   const { bot } = ctx;
-  await ctx.cancelAction();
-  const feet = bot.entity.position.floored();
-  const plan = planBurrow((cell) => bot.blockAt(cell), feet);
+  // Decide first: a plan that does not exist must not cost the intent its running action.
+  const plan = planBurrow((cell) => bot.blockAt(cell), bot.entity.position.floored());
   if (!plan) return { result: 'abandoned', detail: 'no suitable block' };
+  await ctx.cancelAction();
 
-  const [low, high] = plan.pocket;
-  const names = [bot.blockAt(low)?.name ?? '', bot.blockAt(high)?.name ?? ''];
-  // The lower cell first: it is the nearer, so the nearest-block mine is most likely to take it.
-  if (!(await dig(ctx, low, names[0] ?? '')) || !(await dig(ctx, high, names[1] ?? ''))) {
-    return { result: 'failed', detail: 'could not dig the pocket' };
+  // The cancel took time: the closed cells are checked again before each dig and before the step in.
+  const breached = (): boolean => !plan.closed.every((cell) => isWall(bot.blockAt(cell)));
+  for (const cell of plan.pocket) {
+    if (breached()) return { result: 'failed', detail: 'pocket wall breached' };
+    if (!(await digCell(ctx, cell)))
+      return { result: 'failed', detail: 'could not dig the pocket' };
   }
+  if (breached()) return { result: 'failed', detail: 'pocket wall breached' };
+  const [low] = plan.pocket;
   if (!(await stepInto(bot, low))) return { result: 'failed', detail: 'could not step in' };
   const seal = pickSeal((item) => view.inventoryCount(item));
   if (seal === null) return { result: 'failed', detail: 'nothing to seal with' };
@@ -158,11 +152,11 @@ async function burrow(ctx: ReflexContext, view: BodyView): Promise<ReflexOutcome
   return { result: 'handled', detail: 'sealed in' };
 }
 
-/** Opens the mouth again and walks out. */
+/** Opens the mouth again (the exact two cells it was sealed at) and walks out. */
 async function leave(ctx: ReflexContext, view: BodyView, dug: Burrow): Promise<ReflexOutcome> {
   await ctx.cancelAction();
   const [lower, upper] = dug.mouth;
-  if (!(await dig(ctx, upper, dug.seal)) || !(await dig(ctx, lower, dug.seal))) {
+  if (!(await digCell(ctx, upper)) || !(await digCell(ctx, lower))) {
     return { result: 'failed', detail: 'could not open the seal' };
   }
   if (!(await stepInto(ctx.bot, lower))) return { result: 'failed', detail: 'could not step out' };
@@ -171,10 +165,51 @@ async function leave(ctx: ReflexContext, view: BodyView, dug: Burrow): Promise<R
 }
 
 /**
- * Panic burrow (spec 5.2): at night with no bed and no shelter, dig a 1x2 pocket into a wall with
- * `mine`, step in and seal the mouth with `place`; at dawn open the seal and walk out. It refuses
- * (outcome `abandoned`) when no wall next to the Body can hold a pocket. It needs the `isNight`,
- * `bedNearby` and `enclosed` reads of the view; a view without them never fires it.
+ * The way out of a sealed cell the Body has no burrow state for (it restarted or reconnected
+ * while sealed): a direction whose feet and head cells are open or a block the Body may dig, over
+ * a solid floor. Returns the two cells, feet first, or null.
+ */
+export function planBreakout(
+  blockAt: (cell: Vec3) => Block | null,
+  feet: Vec3,
+): [Vec3, Vec3] | null {
+  const up = new Vec3(0, 1, 0);
+  const passable = (block: Block | null): boolean =>
+    block !== null && (block.boundingBox === 'empty' || DIGGABLE_BLOCKS.has(block.name));
+  for (const dir of DIRECTIONS) {
+    const low = feet.plus(dir);
+    const high = low.plus(up);
+    const floor = blockAt(low.minus(up));
+    if (!passable(blockAt(low)) || !passable(blockAt(high))) continue;
+    if (floor === null || floor.boundingBox !== 'block') continue;
+    return [low, high];
+  }
+  return null;
+}
+
+/** Dawn with no burrow state but a closed cell: dig out through an adjacent diggable block. */
+async function breakOut(ctx: ReflexContext): Promise<ReflexOutcome> {
+  const { bot } = ctx;
+  const way = planBreakout((cell) => bot.blockAt(cell), bot.entity.position.floored());
+  if (!way) return { result: 'abandoned', detail: 'no block to dig out through' };
+  await ctx.cancelAction();
+  const [low, high] = way;
+  if (!(await digCell(ctx, high)) || !(await digCell(ctx, low))) {
+    return { result: 'failed', detail: 'could not dig out' };
+  }
+  if (!holds(bot, low) && !(await stepInto(bot, low))) {
+    return { result: 'failed', detail: 'could not step out' };
+  }
+  return { result: 'handled', detail: 'dug out at dawn' };
+}
+
+/**
+ * Panic burrow (spec 5.2): at night with no bed and no shelter, dig a 1x2 pocket into a wall (the
+ * exact cells, with `bot.dig`), step in and seal the mouth with `place`; at dawn open the seal and
+ * walk out. A Body that finds itself closed in by day with no burrow state (it restarted while
+ * sealed) digs out through an adjacent diggable block. It refuses (outcome `abandoned`) when no
+ * wall next to the Body can hold a pocket, and then leaves the running action alone. It needs the
+ * `isNight`, `bedNearby` and `enclosed` reads of the view; a view without them never fires it.
  */
 export const panicBurrowReflex: Reflex = {
   name: 'panic_burrow',
@@ -184,12 +219,14 @@ export const panicBurrowReflex: Reflex = {
     if (burrows.has(view)) {
       return view.isNight === false ? { phase: 'dawn' } : null;
     }
+    if (view.isNight === false && view.enclosed === true) return { phase: 'dawn', orphan: true };
     if (view.isNight !== true || view.bedNearby !== false || view.enclosed !== false) return null;
     return { phase: 'night', bed: false, shelter: false };
   },
   async run(trigger, ctx) {
     const dug = burrows.get(ctx.view);
     if (dug && trigger.phase === 'dawn') return leave(ctx, ctx.view, dug);
+    if (trigger.orphan === true) return breakOut(ctx);
     return burrow(ctx, ctx.view);
   },
 };

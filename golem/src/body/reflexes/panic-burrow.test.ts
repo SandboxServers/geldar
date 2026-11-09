@@ -24,7 +24,7 @@ function wallWorld(): GridWorld {
 }
 
 function setup(world: GridWorld, drops?: Record<string, string>) {
-  const grid = gridBot(world, FEET);
+  const grid = gridBot(world, FEET, drops);
   const registry = new ActionRegistry();
   registry.register(gridMine(world, grid, drops));
   registry.register(gridPlace(world, grid));
@@ -121,10 +121,101 @@ describe('panic burrow: run', () => {
     const before = world.cells.size;
     const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
     expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block' });
+    // Nothing to do, so the running action is left alone.
+    expect(ctx.cancels).toBe(0);
     expect(world.cells.size).toBe(before);
     expect(view.enclosed).toBe(false);
   });
 
+  it('digs exactly the pocket cells and leaves the flanks, floor and roof alone', async () => {
+    // A stone floor under a stone wall: a dig by name could take a floor or flank block instead.
+    const world = new GridWorld();
+    world.fill(new Vec3(-5, 63, -5), new Vec3(5, 63, 5), 'stone');
+    world.fill(new Vec3(1, 64, -3), new Vec3(5, 67, 3), 'stone');
+    const { grid, ctx } = setup(world);
+    grid.inventory.set('dirt', 4);
+    const closed = planBurrow((cell) => world.blockAt(cell) as never, FEET)?.closed ?? [];
+    expect(closed).toHaveLength(8);
+    const stone = world.nearest('stone', FEET).length;
+
+    const sealed = await panicBurrowReflex.run({ phase: 'night' }, ctx);
+    expect(sealed).toMatchObject({ result: 'handled' });
+    for (const cell of closed) expect(world.name(cell)).toBe('stone');
+    // Two stone blocks became the pocket; the rest of the stone is where it was.
+    expect(world.nearest('stone', FEET)).toHaveLength(stone - 2);
+    expect(world.name(new Vec3(1, 64, 0))).toBe('air');
+    expect(world.name(new Vec3(1, 65, 0))).toBe('air');
+
+    // Leaving opens the two mouth cells and nothing else.
+    ctx.cancels = 0;
+    const left = await panicBurrowReflex.run({ phase: 'dawn' }, ctx);
+    expect(left).toMatchObject({ result: 'handled', detail: 'left at dawn' });
+    expect(world.nearest('stone', FEET)).toHaveLength(stone - 2);
+  });
+
+  it('leaves a dirt floor alone when it opens the dirt seal', async () => {
+    const world = wallWorld();
+    world.fill(new Vec3(-5, 63, -5), new Vec3(5, 63, 5), 'dirt');
+    const { grid, ctx } = setup(world);
+    grid.inventory.set('dirt', 4);
+    await panicBurrowReflex.run({ phase: 'night' }, ctx);
+    const dirt = world.nearest('dirt', FEET).length;
+    await panicBurrowReflex.run({ phase: 'dawn' }, ctx);
+    // Only the two mouth cells (dirt) are removed: the floor under the Body stays.
+    expect(world.nearest('dirt', FEET)).toHaveLength(dirt - 2);
+    expect(world.name(new Vec3(0, 63, 0))).toBe('dirt');
+    expect(world.name(new Vec3(0, 64, 0))).toBe('air');
+  });
+
+  it('fails when a flank is breached while it waited, and digs nothing', async () => {
+    const world = wallWorld();
+    const { grid, ctx } = setup(world);
+    grid.inventory.set('dirt', 4);
+    ctx.cancelAction = async () => {
+      ctx.cancels += 1;
+      world.set(new Vec3(1, 64, 1), null);
+    };
+    const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
+    expect(outcome).toEqual({ result: 'failed', detail: 'pocket wall breached' });
+    expect(world.name(new Vec3(1, 64, 0))).toBe('stone');
+    expect(world.name(new Vec3(1, 65, 0))).toBe('stone');
+  });
+
+  it('never digs a block outside the allowlist', async () => {
+    const world = wallWorld();
+    world.set(new Vec3(1, 64, 0), 'diamond_ore');
+    const { ctx } = setup(world);
+    const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
+    expect(outcome).toEqual({ result: 'failed', detail: 'could not dig the pocket' });
+    expect(world.name(new Vec3(1, 64, 0))).toBe('diamond_ore');
+  });
+
+  it('digs out at dawn when it is closed in and remembers no burrow', async () => {
+    const world = new GridWorld();
+    world.fill(new Vec3(-3, 62, -3), new Vec3(3, 67, 3), 'stone');
+    world.set(new Vec3(0, 64, 0), null);
+    world.set(new Vec3(0, 65, 0), null);
+    const { view, ctx } = setup(world);
+    view.enclosed = true;
+    view.isNight = false;
+    const trigger = panicBurrowReflex.check(view);
+    expect(trigger).toEqual({ phase: 'dawn', orphan: true });
+    const outcome = await panicBurrowReflex.run(trigger ?? {}, ctx);
+    expect(outcome).toMatchObject({ result: 'handled', detail: 'dug out at dawn' });
+    expect(world.name(new Vec3(1, 64, 0))).toBe('air');
+    expect(world.name(new Vec3(1, 65, 0))).toBe('air');
+    expect(Math.floor(ctx.bot.entity.position.x)).toBe(1);
+  });
+
+  it('does not dig out at night, or when it is not closed in', () => {
+    const view = settableView();
+    view.isNight = true;
+    view.enclosed = true;
+    expect(panicBurrowReflex.check(view)).toBeNull();
+    view.isNight = false;
+    view.enclosed = false;
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
   it('fails when it has nothing to seal with', async () => {
     const world = wallWorld();
     // Stone drops a block that is no seal, so the Body has nothing to close the mouth with.
