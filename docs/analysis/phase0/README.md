@@ -72,6 +72,21 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-18 | 4 | Body restart resumes from its checkpoint | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-16a, P0-16b, P0-17 | |
 | W4-process | 4 | Apply the wave 4 retro actions | packet-coder | Writing (after the benchmark re-record) | wave 4 test, review and retro | |
 | P0-19 | 5 | Recipe discovery: find why vanilla recipe unlocking did not fire, make unlocking work (or a plugin unlock), remove the grant, scenarios without `recipe give` (decision 0048) | packet-coder | Ready (first packet after wave 4) | wave 4 | |
+| P0-20 | 5 | Mind contract and Body sense interfaces (unblocker 1) | packet-coder | Ready (after owner answers Q1 to Q3, Q14) | wave 4 | |
+| P0-21 | 5 | `animus/` skeleton: ports, config, ids, fakes (unblocker 2) | packet-coder | BlockedDependency | P0-20 | |
+| P0-22 | 5 | `lantern-local/`: local Thinker (Appendix H to Ollama) | packet-coder | BlockedDependency | P0-20 | |
+| P0-23 | 5 | Body perception: authorized surroundings and unlocked recipes | packet-coder | BlockedDependency | P0-20 | |
+| P0-24 | 5 | Body ears, voice, `wait`, recent events | packet-coder | BlockedDependency | P0-20 | |
+| P0-25 | 5 | Thinker hub and model client (animus side of Appendix H) | packet-coder | BlockedDependency | P0-21 | |
+| P0-26 | 5 | Body-Mind channel over NATS (both ends) | packet-coder | BlockedDependency | P0-21 | |
+| P0-27 | 5 | Attention controller | packet-coder | BlockedDependency | P0-21 | |
+| P0-28 | 5 | Memory store and embedder (Postgres, pgvector) | packet-coder | BlockedDependency | P0-21 | |
+| P0-29 | 5 | Prompts v1, renderer, output validators | packet-coder | BlockedDependency | P0-21 | |
+| P0-30 | 5 | Thinking loop (5.3.4) | packet-coder | BlockedDependency | P0-21 | |
+| P0-31 | 5 | Sleep reflection (5.4) | packet-coder | BlockedDependency | P0-21 | |
+| P0-32 | 5 | Integration: Mind process, Adam Body process, e2e with fakes | packet-coder | BlockedDependency | P0-19, P0-22 to P0-31 | |
+| P0-33 | 5 | `./geldar.ps1 adam` and the Mind live cases | packet-coder | BlockedDependency | P0-32 | |
+| W5-process | 5 | Apply the wave 5 retro actions | packet-coder | BlockedDependency | wave 5 test, review and retro | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-06 | |
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-03, P0-05 | |
 | P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-11 | |
@@ -85,7 +100,7 @@ Later waves, sliced when wave 2 closes (spec section 10 "Build" line):
 
 - **Wave 3, world to record** (the Phase 0 wave; not "Scriptorium Wave 3", which is already merged to main: the mock Geldar MCP world, PRs #5 to #15): Geldar-Core plugin (Gradle, Paper API) with event export to NATS `geldar.<shard>.<type>`; `eventsink/` NATS → Postgres (idempotent on `source_event_id`); the Velocity bot-ingress identity plugin (Appendix F, P0-13), which reads registrations from a NATS JetStream key-value bucket that Golem writes before connecting, standing in for the production supervisor. Packet IDs for this wave: P0-11 to P0-13. Obligations carried in: P0-11 must make the Geldar-Core plugin grant all recipes on join ([0032](../../decisions/0032-table-crafting-and-recipe-book.md)); `compose/phase0.yml` sets `ENFORCE_WHITELIST` on and Golem whitelists its bots over RCON, so P0-13 must keep that working or replace it.
 - **Wave 4, the Body lives:** reflexes (spec 5.2 table), the intent executor with preconditions, wake conditions, limits and checkpoints, action records and receipts, Body restart resuming from checkpoint.
-- **Wave 5, the Mind:** `lantern-local/` (Appendix H over a local WebSocket to Ollama), `animus/` thinking loop (5.3.4), attention controller (5.3.2), memory and sleep reflection (5.4), first versioned prompts in `prompts/` (Appendix B).
+- **Wave 5, the Mind** (the plan and cards are in [wave5-packets.md](wave5-packets.md)): `lantern-local/` (Appendix H over a local WebSocket to Ollama), `animus/` thinking loop (5.3.4), attention controller (5.3.2), memory and sleep reflection (5.4), first versioned prompts in `prompts/` (Appendix B).
 - **Wave 6, watch and run Adam:** `glass/` Thought Stream v0, then the Adam runs on Qwen3 32B and 8B against the exit criteria above, and the campaign review.
 
 ## Cross-packet notes (wave 1 and wave 2 review)
