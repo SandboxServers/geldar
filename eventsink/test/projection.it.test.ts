@@ -2,7 +2,7 @@
  * Integration test of the projection against the live phase0 stack (postgres and nats up,
  * eventsink running). Skipped unless GELDAR_IT=1. Reads the Postgres password from
  * compose/secrets/postgres.txt. Publishes intent, action and receipt events out of order and
- * twice, plus a second final receipt, on the geldar.phaseit.> subjects, then checks the tables.
+ * twice, plus a second final receipt, on the geldar.phaseitproj.> subjects, then checks the tables.
  */
 import { readFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -33,6 +33,7 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
     const jsm = await jetstreamManager(nc);
     const intentId = freshId('in');
     const interruptedId = freshId('in');
+    const resumedId = freshId('in');
     const actionId = freshId('ac');
     const receiptA = freshId('rc');
     const receiptB = freshId('rc');
@@ -41,11 +42,11 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       const source = freshId('ev');
       sourceIds.push(source);
       await js.publish(
-        `geldar.phaseit.${type}`,
+        `geldar.phaseitproj.${type}`,
         JSON.stringify({
           source_event_id: source,
           at: new Date().toISOString(),
-          shard: 'phaseit',
+          shard: 'phaseitproj',
           world_day: 0,
           world_tick: 1,
           type,
@@ -114,6 +115,11 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       await intent('completed', 30);
       await intent('accepted', 5, {}, interruptedId);
       await intent('interrupted', 8, {}, interruptedId, 'woke the Mind');
+      // Interrupted at generation 1, resumed and completed by generation 2: ends completed.
+      await intent('accepted', 4, {}, resumedId);
+      await intent('interrupted', 8, {}, resumedId, 'restart');
+      await intent('running', 10, { body_generation: 2 }, resumedId);
+      await intent('completed', 20, { body_generation: 2 }, resumedId, 'done');
       await action('completed', receiptA);
       await action('accepted', null);
       await action('running', null);
@@ -152,6 +158,14 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
         ended_tick: '8',
         end_reason: 'interrupted: woke the Mind',
       });
+      const resumed = (await pool.query('SELECT * FROM intents WHERE intent_id = $1', [resumedId]))
+        .rows;
+      expect(resumed[0]).toMatchObject({
+        state: 'completed',
+        body_generation: 2,
+        ended_tick: '20',
+        end_reason: 'done',
+      });
       const actions = (await pool.query('SELECT * FROM actions WHERE action_id = $1', [actionId]))
         .rows;
       expect(actions).toHaveLength(1);
@@ -166,7 +180,7 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       let reason: string | undefined;
       for (let seq = end; seq > startSeq && reason === undefined; seq--) {
         const m = await jsm.streams.getMessage('GELDAR_EVENTS', { seq }).catch(() => null);
-        if (m === null || m.subject !== 'geldar.phaseit.dlq') continue;
+        if (m === null || m.subject !== 'geldar.phaseitproj.dlq') continue;
         const body = JSON.parse(new TextDecoder().decode(m.data));
         if (typeof body.data === 'string' && body.data.includes(receiptB)) reason = body.reason;
       }
@@ -175,7 +189,7 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       await pool.query('DELETE FROM receipts WHERE action_id = $1', [actionId]);
       await pool.query('DELETE FROM actions WHERE action_id = $1', [actionId]);
       await pool.query('DELETE FROM intents WHERE intent_id = ANY($1)', [
-        [intentId, interruptedId],
+        [intentId, interruptedId, resumedId],
       ]);
       await pool.query('DELETE FROM events WHERE source_event_id = ANY($1)', [sourceIds]);
       await pool.end();

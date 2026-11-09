@@ -99,6 +99,39 @@ describe('intents', () => {
     });
   });
 
+  it('treats a higher body generation as a new run of the same intent', async () => {
+    const store = new MemoryProjectionStore();
+    await project(store, [
+      intentEvent('accepted', 4),
+      intentEvent('running', 5),
+      intentEvent('interrupted', 6, 'restart'),
+      intentEvent('running', 8, undefined, { body_generation: 2 }),
+    ]);
+    expect(store.intents.get(INTENT_ID)).toMatchObject({
+      state: 'running',
+      body_generation: 2,
+      ended_tick: null,
+      end_reason: null,
+    });
+    await project(store, [intentEvent('completed', 30, 'done', { body_generation: 2 })]);
+    expect(store.intents.get(INTENT_ID)).toMatchObject({
+      state: 'completed',
+      body_generation: 2,
+      ended_tick: 30,
+      end_reason: 'done',
+    });
+    // The old generation's events arriving late change nothing.
+    await project(store, [intentEvent('interrupted', 6, 'restart'), intentEvent('running', 5)]);
+    expect(store.intents.get(INTENT_ID)).toMatchObject({ state: 'completed', body_generation: 2 });
+    // The new run resumes at generation 2 even when only the final event arrives.
+    const direct = new MemoryProjectionStore();
+    await project(direct, [
+      intentEvent('interrupted', 6, 'restart'),
+      intentEvent('completed', 30, undefined, { body_generation: 2 }),
+    ]);
+    expect(direct.intents.get(INTENT_ID)).toMatchObject({ state: 'completed', ended_tick: 30 });
+  });
+
   it('fills the intent columns from the accepted event, also when it arrives late', async () => {
     const inOrder = new MemoryProjectionStore();
     await project(inOrder, [
