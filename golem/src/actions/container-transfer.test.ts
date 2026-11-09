@@ -23,6 +23,8 @@ interface Options {
   bumpAtClick?: number;
   /** 1-based index of a click after which the server closes the window. */
   closeAtClick?: number;
+  /** A stack the server already has on the cursor when the window opens. */
+  startCursor?: Cell;
   /** Runs after each non-sync click is written (the number of clicks so far). */
   onClick?: (n: number) => void;
 }
@@ -33,7 +35,7 @@ interface Options {
  */
 function rig(chest: Cell[], opts: Options = {}) {
   const server: Cell[] = Array.from({ length: SIZE }, (_, i) => chest[i] ?? null);
-  let cursor: Cell = null;
+  let cursor: Cell = opts.startCursor ?? null;
   let serverState = 5;
   let clicks = 0;
   let syncs = 0;
@@ -42,7 +44,7 @@ function rig(chest: Cell[], opts: Options = {}) {
   const container = {
     id: 7,
     slots: Array.from({ length: SIZE }, () => null) as Cell[],
-    selectedItem: null as Cell,
+    selectedItem: (opts.startCursor ?? null) as Cell,
     inventoryStart: CHEST,
     inventoryEnd: SIZE,
   };
@@ -261,6 +263,29 @@ describe('transferItems', () => {
     const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
     expect(end.error).toBe('the server closed the window');
     expect(r.log.filter((l) => l.startsWith('click')).length).toBe(1);
+  });
+
+  it('leaves a stray cursor stack alone and places nothing', async () => {
+    const r = rig([{ type: 1, count: 10 }], { startCursor: { type: 1, count: 3 } });
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+    expect(end).toEqual({ error: 'cursor not empty', aborted: false });
+    expect(r.log.filter((l) => l.startsWith('click')).length).toBe(0);
+    expect(r.cursor()).toEqual({ type: 1, count: 3 });
+    expect(r.server[0]).toEqual({ type: 1, count: 10 });
+  });
+
+  it('places into a stack with room using one left click, not one right click per item', async () => {
+    const cells: Cell[] = Array.from({ length: SIZE }, () => null);
+    cells[0] = { type: 1, count: 64 };
+    cells[CHEST] = { type: 1, count: 32 };
+    const r = rig(cells);
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 64);
+    expect(end.error).toBeNull();
+    expect(r.server[CHEST]).toEqual({ type: 1, count: 64 });
+    expect(r.server[CHEST + 1]).toEqual({ type: 1, count: 32 });
+    expect(r.server[0]).toBeNull();
+    // Pick up, fill the stack of 32, put the other 32 in an empty slot.
+    expect(r.log.filter((l) => l.startsWith('click')).length).toBe(3);
   });
 
   it('reports failure when the server stops answering', async () => {

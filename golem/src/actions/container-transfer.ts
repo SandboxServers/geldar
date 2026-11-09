@@ -326,7 +326,8 @@ async function moveStacks(
     for (const slot of targets) {
       if (toPlace === 0) break;
       const p = Math.min(room(slot), toPlace);
-      if (p === (s.model.cursor?.count ?? 0)) {
+      // A left click places what the slot takes of the whole cursor: all of it, or the room it has.
+      if (p === Math.min(room(slot), s.model.cursor?.count ?? 0)) {
         if (!(await click(s, slot, 0))) return s.fault;
       } else {
         for (let i = 0; i < p; i++) if (!(await click(s, slot, 1))) return s.fault;
@@ -387,9 +388,9 @@ export async function transferItems(
     const chest: [number, number] = [0, container.inventoryStart];
     const inventory: [number, number] = [container.inventoryStart, container.inventoryEnd];
     const [from, to] = direction === 'withdraw' ? [chest, inventory] : [inventory, chest];
-    const ended = s.model.cursor
-      ? 'cursor not empty'
-      : await moveStacks(s, itemId, count, from, to);
+    // A stack already on the cursor is not ours to place: closing the window returns it to the inventory.
+    if (s.model.cursor) return { error: 'cursor not empty', aborted: false };
+    const ended = await moveStacks(s, itemId, count, from, to);
     if (s.closed) return { error: 'the server closed the window', aborted: false };
     await restoreCursor(s);
     if (s.model.cursor) return { error: 'could not put the cursor stack back', aborted: false };
