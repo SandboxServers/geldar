@@ -2,3 +2,4 @@
 import type { ValidateFunction } from 'ajv';
 
 export declare const validateSnapshot: ValidateFunction;
+export declare const validateThought: ValidateFunction;

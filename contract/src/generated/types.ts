@@ -129,3 +129,455 @@ export interface Snapshot {
     repeat_count: number;
   } | null;
 }
+
+export type Thought = (
+  | {
+      intent: unknown;
+      [k: string]: unknown;
+    }
+  | {
+      actions: unknown;
+      [k: string]: unknown;
+    }
+  | {
+      say: string;
+      [k: string]: unknown;
+    }
+) & {
+  /**
+   * Private reasoning, <= 80 words. Never shown to other agents.
+   */
+  reasoning: string;
+  /**
+   * What to say aloud, or null.
+   */
+  say?: string | null;
+  intent?: Intent;
+  /**
+   * Immediate steps, at most 6, executed in order.
+   *
+   * @maxItems 6
+   */
+  actions?:
+    | []
+    | [Action]
+    | [Action, Action]
+    | [Action, Action, Action]
+    | [Action, Action, Action, Action]
+    | [Action, Action, Action, Action, Action]
+    | [Action, Action, Action, Action, Action, Action];
+};
+
+export type Action =
+  | {
+      do: "goto";
+      /**
+       * A position, or the name of an agent.
+       */
+      target: Position | string;
+    }
+  | {
+      do: "mine";
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      block: string;
+      count: number;
+    }
+  | {
+      do: "craft";
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      item: string;
+      count: number;
+    }
+  | {
+      do: "place";
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      block: string;
+      /**
+       * A position, or feet for the block under the agent.
+       */
+      at: Position | "feet";
+    }
+  | {
+      do: "build";
+      blueprint: {
+        name: string;
+        /**
+         * @maxItems 512
+         */
+        blocks: {
+          /**
+           * A Minecraft item ID without the minecraft: prefix.
+           */
+          block: string;
+          dx: number;
+          dy: number;
+          dz: number;
+        }[];
+      };
+    }
+  | {
+      do: "attack";
+      target: string;
+    }
+  | {
+      do: "eat";
+    }
+  | {
+      do: "sleep";
+    }
+  | {
+      do: "give";
+      to: string;
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      item: string;
+      count: number;
+    }
+  | {
+      do: "write_sign";
+      text: string;
+    }
+  | ((
+      | {
+          skill_id: unknown;
+          [k: string]: unknown;
+        }
+      | {
+          text: unknown;
+          [k: string]: unknown;
+        }
+    ) & {
+      do: "write_book";
+      title: string;
+      skill_id?: string;
+      text?: string;
+    })
+  | {
+      do: "read_book";
+    }
+  | {
+      do: "use_skill";
+      name: string;
+      /**
+       * Skill arguments. The shape depends on the skill.
+       */
+      args: {
+        [k: string]: unknown;
+      };
+    }
+  | {
+      do: "define_skill";
+      name: string;
+      description: string;
+      code: string;
+    }
+  | {
+      do: "offer";
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      item: string;
+      count: number;
+    }
+  | {
+      do: "propose";
+      rule: string;
+      /**
+       * The proposed value. Any JSON value; the rule decides what is valid.
+       */
+      value: {
+        [k: string]: unknown;
+      };
+      reason: string;
+    }
+  | {
+      do: "vote";
+      proposal_id: string;
+      vote: "yes" | "no";
+    }
+  | {
+      do: "note";
+      text: string;
+    }
+  | {
+      do: "wait";
+      seconds: number;
+    }
+  | {
+      do: "open";
+      at: Position;
+    }
+  | {
+      do: "deposit";
+      at: Position;
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      item: string;
+      count: number;
+    }
+  | {
+      do: "withdraw";
+      at: Position;
+      /**
+       * A Minecraft item ID without the minecraft: prefix.
+       */
+      item: string;
+      count: number;
+    };
+
+export interface Intent {
+  goal: string;
+  /**
+   * A built-in program, or the name of a skill.
+   */
+  program: ("travel" | "gather" | "craft" | "build" | "rest" | "flee" | "follow" | "trade_wait") | string;
+  /**
+   * Program arguments. The shape depends on the program, so it is not typed here.
+   */
+  arguments: {
+    [k: string]: unknown;
+  };
+  /**
+   * @maxItems 16
+   */
+  preconditions?:
+    | []
+    | [string]
+    | [string, string]
+    | [string, string, string]
+    | [string, string, string, string]
+    | [string, string, string, string, string]
+    | [string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string, string, string, string, string, string]
+    | [
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string
+      ]
+    | [
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string
+      ];
+  /**
+   * @maxItems 16
+   */
+  wake_on:
+    | []
+    | [("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ]
+    | [
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string,
+        ("directly_addressed" | "precondition_failed" | "unexpected_damage" | "goal_completed") | string
+      ];
+  limits: {
+    max_world_ticks: number;
+    max_block_operations: number;
+  };
+  /**
+   * Program state saved so the intent can resume. The shape depends on the program.
+   */
+  checkpoint?: {
+    [k: string]: unknown;
+  };
+}
