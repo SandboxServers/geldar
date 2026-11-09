@@ -8,7 +8,9 @@ import type { ActionContext } from './registry.ts';
 const TABLE = { position: { x: 1, y: 200, z: 3 } } as unknown as Block;
 const BED = { id: 900, name: 'white_bed' };
 /** The table window's id: the id a crafting table window gets in the vanilla open. */
-const WINDOW = { id: 1 };
+const WINDOW = { id: 1, type: 'minecraft:crafting' };
+/** A chest window, as another action opens; the table path must never close it. */
+const CHEST = { id: 2, type: 'minecraft:generic_9x3' };
 /** The recipe display of the shaped bed, and the dye recolour that shares its result. */
 const SHAPED_BED = 1454;
 const DYE_BED = 499;
@@ -234,5 +236,93 @@ describe('craftAtTable', () => {
 
     expect(out).toMatchObject({ status: 'failed', reason: 'timeout' });
     expect(fake.client.write).not.toHaveBeenCalled();
+  });
+
+  it('blocks when the window that opens is not a crafting table, and sends nothing', async () => {
+    const fake = fakeGame();
+    fake.raw.activateBlock.mockImplementationOnce(async () => {
+      fake.raw.currentWindow = CHEST;
+      fake.raw.emit('windowOpen', CHEST);
+    });
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+
+    const out = await run(fake.bot, 1);
+
+    expect(out).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.client.write).not.toHaveBeenCalled();
+    // The window that did open is closed by the path, so the bot is not left in it.
+    expect(fake.raw.closeWindow).toHaveBeenCalledWith(CHEST);
+  });
+
+  it('fails blocked when activating the table rejects, with the listeners removed', async () => {
+    const fake = fakeGame();
+    fake.raw.activateBlock.mockImplementationOnce(async () => {
+      throw new Error('out of reach');
+    });
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+
+    const out = await run(fake.bot, 1);
+
+    expect(out).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.client.listenerCount('set_slot')).toBe(0);
+    expect(fake.client.listenerCount('window_items')).toBe(0);
+    // The late-window listener stays for its bounded wait (50 ms here), then is gone.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(fake.raw.listenerCount('windowOpen')).toBe(0);
+  });
+
+  it('cancels during the open wait, with the listeners removed', async () => {
+    const fake = fakeGame();
+    fake.raw.activateBlock.mockImplementationOnce(async () => {});
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 5);
+
+    const out = await run(fake.bot, 1, controller.signal);
+
+    expect(out).toMatchObject({ status: 'cancelled' });
+    expect(fake.client.write).not.toHaveBeenCalled();
+    expect(fake.client.listenerCount('set_slot')).toBe(0);
+    expect(fake.client.listenerCount('window_items')).toBe(0);
+  });
+
+  it('closes a crafting window that opens after the open gave up, and never a chest', async () => {
+    const fake = fakeGame();
+    fake.raw.activateBlock.mockImplementationOnce(async () => {});
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    expect(await run(fake.bot, 1)).toMatchObject({ status: 'failed', reason: 'timeout' });
+
+    // The lost open is closed when its table window arrives; a chest that opens next is not.
+    fake.raw.emit('windowOpen', CHEST);
+    expect(fake.raw.closeWindow).not.toHaveBeenCalledWith(CHEST);
+    fake.raw.emit('windowOpen', WINDOW);
+    expect(fake.raw.closeWindow).toHaveBeenCalledWith(WINDOW);
+  });
+
+  it('drops the late-window listener when the next craft starts', async () => {
+    const fake = fakeGame();
+    fake.raw.activateBlock.mockImplementationOnce(async () => {});
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    expect(await run(fake.bot, 1)).toMatchObject({ status: 'failed', reason: 'timeout' });
+
+    // The second craft opens its own table and succeeds, so it arms no late listener of its own.
+    answerRequests(fake.client);
+    // Closes made by the window's own open event: a stale listener would close the table here.
+    let closedAtOpen = -1;
+    fake.raw.activateBlock.mockImplementationOnce(async () => {
+      fake.raw.currentWindow = WINDOW;
+      const before = fake.raw.closeWindow.mock.calls.length;
+      fake.raw.emit('windowOpen', WINDOW);
+      closedAtOpen = fake.raw.closeWindow.mock.calls.length - before;
+      openWithWindowState(fake.client);
+    });
+    expect(await run(fake.bot, 1)).toBeNull();
+    expect(closedAtOpen).toBe(0);
+    expect(fake.raw.closeWindow).toHaveBeenCalledTimes(1);
   });
 });
