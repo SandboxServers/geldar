@@ -40,6 +40,30 @@ describe('immediate actions and a reflex that starts between them', () => {
     expect(result.actions.map((a) => a.record.state)).toEqual(['completed', 'completed']);
   });
 
+  it('waits before the first action for a reflex that began while the intent was being paused', async () => {
+    const { active, reflex } = holdingReflex();
+    const h = executorHarness({ reflexes: [reflex], hold: true });
+    await h.executor.submit(thought({ intent: {} }), planFor(0));
+    let fired: Promise<void> | undefined;
+    const cancel = h.runtime.cancelAction.bind(h.runtime);
+    // The reflex starts after the wait at the top of submit, while the running intent is paused.
+    vi.spyOn(h.runtime, 'cancelAction').mockImplementation(async () => {
+      active.on = true;
+      fired = h.runtime.reflexRunner.onTick(1);
+      active.on = false;
+      await cancel();
+    });
+    const submitted = h.executor.submit(thought({ actions: waits(1) }), planFor(1, { n: 2 }));
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(fired).toBeDefined();
+    expect(h.handlers.runs).toEqual([]);
+    reflex.release();
+    await fired;
+    const result = await submitted;
+    expect(h.handlers.runs).toEqual(['wait:1']);
+    expect(result.actions[0]?.record.state).toBe('completed');
+  });
+
   it('gives up on a reflex that never ends after a scaled timeout, and warns', async () => {
     vi.useFakeTimers();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

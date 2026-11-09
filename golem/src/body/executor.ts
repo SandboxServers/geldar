@@ -188,7 +188,8 @@ export class IntentExecutor {
     let failedAt: number | null = null;
     let rejection: Rejection | null = null;
     // A reflex that is busy has the Body: the plan's actions wait for it to end.
-    if (actions.length > 0) await waitForReflexIdle(this.runtime);
+    // One that outlasts the bound is given up on for the whole plan, not waited for again per action.
+    let gaveUp = actions.length > 0 && (await waitForReflexIdle(this.runtime));
     const paused = actions.length > 0 ? await this.pauseForActions() : null;
     try {
       for (const [index, action] of actions.entries()) {
@@ -198,7 +199,7 @@ export class IntentExecutor {
           if (rejection) break;
         }
         // A reflex may have started since the last action ended; it drives the bot, so wait again.
-        if (index > 0) await waitForReflexIdle(this.runtime);
+        if (!gaveUp) gaveUp = await waitForReflexIdle(this.runtime);
         const report = await this.runOne(action, id, index, plan);
         reports.push(report);
         if (report.record.state !== 'completed') {

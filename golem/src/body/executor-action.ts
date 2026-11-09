@@ -7,10 +7,13 @@ import type { BodyRuntime } from './runtime.ts';
 /** Longest wall wait (at time scale 1) for a busy reflex before a plan's action starts anyway. */
 const REFLEX_IDLE_MS = 10_000;
 
-/** Waits for a busy reflex to end, at most `REFLEX_IDLE_MS` (scaled); a stuck reflex is logged, not obeyed forever. */
-export async function waitForReflexIdle(runtime: BodyRuntime): Promise<void> {
+/**
+ * Waits for a busy reflex to end, at most `REFLEX_IDLE_MS` (scaled); a stuck reflex is logged, not
+ * obeyed forever. Returns true when the wait gave up, so the caller does not wait for it again.
+ */
+export async function waitForReflexIdle(runtime: BodyRuntime): Promise<boolean> {
   const runner = runtime.reflexRunner;
-  if (!runner.busy) return;
+  if (!runner.busy) return false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = REFLEX_IDLE_MS * runtime.timeScale;
   const expired = new Promise<boolean>((resolve) => {
@@ -22,6 +25,7 @@ export async function waitForReflexIdle(runtime: BodyRuntime): Promise<void> {
     console.warn(
       `a reflex is still running after ${limit} ms; the plan's next action starts anyway`,
     );
+  return timedOut;
 }
 
 /**
