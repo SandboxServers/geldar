@@ -133,8 +133,10 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get bedNearby() {
       return (
-        bot.findBlock({ matching: (block) => block.name.endsWith('_bed'), maxDistance: BED_RADIUS }) !==
-        null
+        bot.findBlock({
+          matching: (block) => block.name.endsWith('_bed'),
+          maxDistance: BED_RADIUS,
+        }) !== null
       );
     },
     get enclosed() {
