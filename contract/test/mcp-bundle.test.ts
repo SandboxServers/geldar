@@ -1,7 +1,7 @@
 import ajv2020Module from 'ajv/dist/2020.js';
 import ajvFormatsModule from 'ajv-formats';
 import { describe, expect, it } from 'vitest';
-import { bundleDefinition, type LoadedSchema, loadSchemas } from '../scripts/generator.ts';
+import { buildMcpTools, bundleDefinition,type LoadedSchema, loadSchemas } from '../scripts/generator.ts';
 import {
   MCP_TOOL_NAMES,
   mcpToolSchemas,
@@ -142,6 +142,18 @@ describe('bundled tool schemas', () => {
 
   it('lists the tools', () => {
     expect([...MCP_TOOL_NAMES]).toEqual(['act', 'look', 'say', 'wait']);
+  });
+
+  it('throws when Input and Result live in different schema files', () => {
+    const file = (name: string, defs: Record<string, unknown>): LoadedSchema => ({
+      name,
+      schema: { $id: `https://geldar.dev/schemas/${name}.schema.json`, $defs: defs },
+    });
+    const schemas = [
+      file('a', { FooInput: { description: 'Foo.', type: 'object' } }),
+      file('b', { FooResult: { type: 'object' } }),
+    ];
+    expect(() => buildMcpTools(schemas)).toThrow(/same schema file/);
   });
 
   it('throws when a definition refs a missing name', async () => {

@@ -110,6 +110,9 @@ function toolPairs(schemas: LoadedSchema[]): ToolPair[] {
       if (match === null) continue;
       const stem = defName.slice(0, -(match[1] as string).length);
       const entry = found.get(stem) ?? { tool: snakeCase(stem), schemaName };
+      if (entry.schemaName !== schemaName) {
+        throw new Error(`${stem}Input and ${stem}Result must live in the same schema file`);
+      }
       if (match[1] === 'Input') {
         if (typeof definition.description !== 'string' || definition.description === '') {
           throw new Error(`${defName} has no description`);
@@ -216,7 +219,7 @@ export function bundleDefinition(
 }
 
 /** The generated mcp-tools.ts: tool names and a self-contained input and result schema per tool. */
-function buildMcpTools(schemas: LoadedSchema[]): string {
+export function buildMcpTools(schemas: LoadedSchema[]): string {
   const pairs = toolPairs(schemas);
   const entries = pairs.map((pair) => {
     const defs = (schemas.find((s) => s.name === pair.schemaName)?.schema.$defs ?? {}) as Defs;
