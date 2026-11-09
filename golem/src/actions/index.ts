@@ -15,7 +15,7 @@ import { ActionRegistry, type AnyActionHandler } from './registry.ts';
 // (imports for this block go here)
 
 // --- P0-09b open, deposit, withdraw ---
-// (imports for this block go here)
+import { depositAction, openAction, withdrawAction } from './container.ts';
 
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
@@ -29,7 +29,9 @@ export const allActions: AnyActionHandler[] = [
   // (handlers for P0-09a go here)
   // --- end P0-09a ---
   // --- P0-09b open, deposit, withdraw ---
-  // (handlers for P0-09b go here)
+  openAction,
+  depositAction,
+  withdrawAction,
   // --- end P0-09b ---
 ];
 
