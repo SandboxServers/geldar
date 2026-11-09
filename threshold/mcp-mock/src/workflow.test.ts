@@ -61,4 +61,12 @@ describe('mcp-mock-image workflow', () => {
   it('has no unused env', () => {
     expect(workflow).not.toMatch(/^\s+IMAGE:/m);
   });
+  it('does not upload a build-record artifact from either build step', () => {
+    const steps = workflow.split('uses: docker/build-push-action@').slice(1);
+    expect(steps).toHaveLength(2);
+    for (const step of steps) {
+      const head = step.slice(0, step.indexOf('with:'));
+      expect(head).toContain("DOCKER_BUILD_RECORD_UPLOAD: 'false'");
+    }
+  });
 });
