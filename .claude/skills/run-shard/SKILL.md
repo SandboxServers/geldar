@@ -1,0 +1,49 @@
+---
+name: run-shard
+description: Bring a Geldar shard's Docker Compose stack up (Paper, Postgres with pgvector, NATS JetStream and the Geldar services), check that every part is healthy, read its logs, and take it down. Use when asked to "start the shard", "bring the stack up", "is the shard healthy", "restart Paper", or before any live test, benchmark or Adam run.
+---
+
+# Run a shard
+
+Usable once packet P0-06 has added `compose/phase0.yml`; until then `./geldar.ps1 shard up` says the file does not exist. Phase 0 runs everything on this one PC (`docs/decisions/0002-phase0-host-and-models.md`); Ollama runs on the host, not in compose, so it can use the GPU.
+
+## Start
+
+```powershell
+./geldar.ps1 shard up phase0       # docker compose up -d --wait: returns when every healthcheck passes
+./geldar.ps1 shard status phase0
+```
+
+`--wait` fails if a container is unhealthy after its start period. Paper's first start generates the world and can take minutes; don't treat a slow start as a failure until its healthcheck's start period has passed.
+
+## Health: what "healthy" means
+
+Every row must pass before a benchmark or an Adam run. Report each one, not just "it's up".
+
+| Part | Check | Healthy when |
+|---|---|---|
+| Postgres 16 | `docker compose -p geldar-phase0 exec postgres pg_isready` | exits 0 |
+| pgvector | `... exec postgres psql -U geldar -d geldar -tAc "select extversion from pg_extension where extname='vector'"` | prints a version |
+| Migrations | `... exec postgres psql -U geldar -d geldar -tAc "select count(*) from information_schema.tables where table_schema='public'"` | the table count from `sql/` |
+| NATS JetStream | `curl -fsS http://localhost:8222/healthz?js-enabled-only=true` | `{"status":"ok"}` |
+| Paper | compose healthcheck (RCON `list` answers) | `healthy` in `shard status` |
+| Ollama (host) | `curl -fsS http://localhost:11434/api/tags` | lists the models in `shards/phase0.yaml` |
+
+Ports, users and database names come from `compose/phase0.yml` and its `.env.example`; if they differ from the table, the compose file wins. Update this table in the same PR.
+
+## Logs and restarts
+
+```powershell
+./geldar.ps1 shard logs phase0 paper
+docker compose -p geldar-phase0 restart paper
+```
+
+Never fix a problem by acting inside the world (teleporting a bot, giving items, running a command as an agent). Fix the infrastructure (spec Principle 1 and section 11).
+
+## Stop
+
+```powershell
+./geldar.ps1 shard down phase0     # keeps volumes: the world and the database survive
+```
+
+Deleting volumes destroys the world and the record. Ask the owner before `docker compose down -v` or removing a volume.

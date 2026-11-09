@@ -1,0 +1,26 @@
+# Security updates only. Every dependency, action and image is pinned on
+# purpose (docs/decisions/0005-pinning-and-security-updates.md), so routine
+# version-update PRs are switched off with open-pull-requests-limit: 0.
+# Dependabot *security* updates are enabled in the repo settings and still open
+# PRs for known vulnerabilities; the entries below give those PRs a prefix and
+# labels. Add an entry when a packet creates a new ecosystem (gradle for
+# plugin/, docker for compose/).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
