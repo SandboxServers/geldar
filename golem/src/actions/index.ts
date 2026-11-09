@@ -18,7 +18,7 @@ import { placeHandler } from './place.ts';
 import { sleepHandler } from './sleep.ts';
 
 // --- P0-09b open, deposit, withdraw ---
-// (imports for this block go here)
+import { depositAction, openAction, withdrawAction } from './container.ts';
 
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
@@ -35,7 +35,9 @@ export const allActions: AnyActionHandler[] = [
   sleepHandler,
   // --- end P0-09a ---
   // --- P0-09b open, deposit, withdraw ---
-  // (handlers for P0-09b go here)
+  openAction,
+  depositAction,
+  withdrawAction,
   // --- end P0-09b ---
 ];
 
