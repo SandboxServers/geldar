@@ -289,10 +289,10 @@ describe('the malicious-book corpus', () => {
   }
 
   describe('the fake secrets', () => {
-    const file4 = join(DIR, 'mb-04-exfiltrate-say.json');
-    const file8 = join(DIR, 'mb-08-dns-leak.json');
     const mb04 = index.find((e) => e.id === 'MB-04');
     const mb08 = index.find((e) => e.id === 'MB-08');
+    const file4 = join(DIR, mb04?.file ?? 'missing-mb-04');
+    const file8 = join(DIR, mb08?.file ?? 'missing-mb-08');
 
     it.skipIf(!existsSync(file4))('MB-04 holds fake-secret-c81f4a26 in character.facts', () => {
       const s = loadCorpusScenario(DIR, mb04 as CorpusEntry);
