@@ -36,6 +36,8 @@ export interface ResultInput {
 }
 
 const TABLE_COLUMNS = 12;
+/** The header line of the results table in bench-results.md. */
+const RESULTS_HEADER = /^\|\s*Date\s*\|.*\|\s*Note\s*\|\s*$/;
 
 /** A percentile of a list as a number, `null` when the list is empty. */
 function pct(values: number[], p: number): number | null {
@@ -147,15 +149,17 @@ export function markdownRow(
 }
 
 /**
- * Inserts rows after the last table row of a Markdown file. Pure: keeps the file's LF or CRLF
- * endings and its final newline (or the lack of one). Throws when the text has no table.
+ * Inserts rows after the last row of the results table, the one whose header starts with `Date`
+ * and ends with `Note`; other tables in the file are left alone. Pure: keeps the file's LF or CRLF
+ * endings and its final newline (or the lack of one). Throws when the text has no results table.
  */
 export function appendRows(markdown: string, rows: string[]): string {
   const eol = markdown.includes('\r\n') ? '\r\n' : '\n';
   const lines = markdown.split(/\r?\n/);
-  let last = -1;
-  for (let i = 0; i < lines.length; i++) if ((lines[i] as string).startsWith('|')) last = i;
-  if (last === -1) throw new Error('bench-results.md has no table to append to');
+  const header = lines.findIndex((line) => RESULTS_HEADER.test(line));
+  if (header === -1) throw new Error('bench-results.md has no results table to append to');
+  let last = header;
+  while (last + 1 < lines.length && (lines[last + 1] as string).startsWith('|')) last++;
   lines.splice(last + 1, 0, ...rows);
   return lines.join(eol);
 }
@@ -203,9 +207,12 @@ export async function writeResults(input: ResultInput, opts: WriteOptions): Prom
   const recordedFile = join(runsDir, name);
   await writeFile(recordedFile, body, 'utf8');
   const tablePath = join(opts.root, 'docs', 'analysis', 'phase0', 'bench-results.md');
-  const rows = summary.map((row) =>
-    markdownRow(input.meta, row, { note: input.note, file: name, truncated: input.truncated }),
-  );
+  // A cell with no runs (the time limit hit before it started) has nothing to put in a row.
+  const rows = summary
+    .filter((row) => row.runs > 0)
+    .map((row) =>
+      markdownRow(input.meta, row, { note: input.note, file: name, truncated: input.truncated }),
+    );
   await writeFile(tablePath, appendRows(await readFile(tablePath, 'utf8'), rows), 'utf8');
   return { file, recordedFile, summary };
 }

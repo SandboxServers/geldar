@@ -45,12 +45,13 @@ function cellOf(partial: Partial<CellResult> = {}): CellResult {
   };
 }
 
-const TABLE = '# T\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nafter\n';
+const HEAD = '| Date | Commit | Note |';
+const TABLE = `# T\n\n${HEAD}\n|---|---|\n| 1 | 2 |\n\nafter\n`;
 
 describe('appendRows', () => {
   it('keeps the header and earlier rows and adds the new row last in the table', () => {
     const out = appendRows(TABLE, ['| 3 | 4 |']);
-    expect(out).toBe('# T\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\nafter\n');
+    expect(out).toBe(`# T\n\n${HEAD}\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\nafter\n`);
   });
 
   it('keeps CRLF as CRLF and LF as LF, and the final newline', () => {
@@ -59,7 +60,15 @@ describe('appendRows', () => {
     expect(crlf.replace(/\r\n/g, '')).not.toContain('\n');
     expect(crlf.endsWith('\r\n')).toBe(true);
     expect(appendRows(TABLE, ['| 3 | 4 |'])).not.toContain('\r');
-    expect(appendRows('| a |\n|---|', ['| x |'])).toBe('| a |\n|---|\n| x |');
+    expect(appendRows(`${HEAD}\n|---|`, ['| x |'])).toBe(`${HEAD}\n|---|\n| x |`);
+  });
+
+  it('appends to the results table, not to a later table or any other pipe line', () => {
+    const doc = `${TABLE}\n| other | table |\n|---|---|\n| z | z |\n`;
+    const out = appendRows(doc, ['| 3 | 4 |']);
+    expect(out).toContain('| 1 | 2 |\n| 3 | 4 |\n\nafter');
+    expect(out.indexOf('| 3 | 4 |')).toBeLessThan(out.indexOf('| other | table |'));
+    expect(() => appendRows('| other | table |\n|---|---|\n', ['| x |'])).toThrow(/results table/);
   });
 
   it('is pure and throws without a table', () => {
@@ -149,7 +158,9 @@ describe('findingsOf', () => {
   it('always states the 20-tick age step and adds a non-dilation line per slower cell', () => {
     const slow = cellOf({
       tps: 5,
-      actions: [{ kind: 'goto', status: 'completed', reason: null, latencyMs: 400, worldTicks: 20 }],
+      actions: [
+        { kind: 'goto', status: 'completed', reason: null, latencyMs: 400, worldTicks: 20 },
+      ],
     });
     expect(findingsOf([cellOf()])).toEqual(['age-step: 20']);
     expect(findingsOf([cellOf(), slow])).toEqual([
@@ -169,12 +180,12 @@ describe('writeResults', () => {
     const root = await mkdtemp(join(tmpdir(), 'bench-'));
     const doc = join(root, 'docs', 'analysis', 'phase0');
     await import('node:fs/promises').then((fs) => fs.mkdir(doc, { recursive: true }));
-    await writeFile(join(doc, 'bench-results.md'), '| a |\n|---|\n');
+    await writeFile(join(doc, 'bench-results.md'), `${HEAD}\n|---|\n`);
     const input = { meta: META, cells: [cellOf()], truncated: false, note: 'n' };
 
     const plain = await writeResults(input, { root, record: false });
     expect(plain.recordedFile).toBeNull();
-    expect(await readFile(join(doc, 'bench-results.md'), 'utf8')).toBe('| a |\n|---|\n');
+    expect(await readFile(join(doc, 'bench-results.md'), 'utf8')).toBe(`${HEAD}\n|---|\n`);
 
     const done = await writeResults(input, { root, record: true });
     const copy = await readFile(done.recordedFile as string, 'utf8');
@@ -185,6 +196,17 @@ describe('writeResults', () => {
     expect(JSON.parse(copy).meta.findings).toEqual(['age-step: 20']);
     const table = await readFile(join(doc, 'bench-results.md'), 'utf8');
     expect(table.split('\n')).toHaveLength(4);
+    expect(table.startsWith(HEAD)).toBe(true);
     expect(table).toContain('bench-runs/20261109T031500Z-abc1234.json');
+
+    // A cell with no runs (cut off by --max-minutes) is in the JSON but not in the table.
+    const empty = cellOf({ scenario: 'idle', runs: 0, passed: 0, actions: [] });
+    await writeResults(
+      { ...input, cells: [cellOf(), empty], truncated: true },
+      { root, record: true },
+    );
+    const after = await readFile(join(doc, 'bench-results.md'), 'utf8');
+    expect(after).toContain('| goto-smoke |');
+    expect(after).not.toContain('| idle |');
   });
 });
