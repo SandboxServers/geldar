@@ -139,14 +139,54 @@ describe('installTpsRestore', () => {
     console.error = () => undefined;
     try {
       handlers.get(event)?.(new Error('x'));
-      handlers.get(event)?.(new Error('y'));
-      handlers.get('SIGINT')?.();
+      // A second crash event is ignored; a second signal is covered by its own test.
+      handlers.get('uncaughtException')?.(new Error('y'));
       await done;
     } finally {
       console.error = quiet;
     }
-    expect(commands.filter((c) => c === 'tick rate 20')).toHaveLength(1);
+    // The rate goes back first, then the world rules, then the rate again at the end of restoreWorld.
+    expect(commands[0]).toBe('tick rate 20');
+    expect(commands.filter((c) => c === 'gamerule').length).toBeGreaterThan(0);
     expect(exits).toEqual([event.startsWith('SIG') ? 130 : 1]);
+  });
+
+  it('closes ctl after the first event and exits 130 at once on a second signal', async () => {
+    const commands: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ctl = {
+      async command(cmd: string) {
+        commands.push(cmd);
+        return '';
+      },
+      async gamerule() {
+        return '';
+      },
+      async tickRate(n: number) {
+        commands.push(`tick rate ${n}`);
+        await gate;
+        return '';
+      },
+    } as unknown as TestControl;
+    const { proc, handlers } = fakeProcess();
+    const exits: number[] = [];
+    installTpsRestore(ctl, { proc, exit: (code) => exits.push(code), log: () => undefined });
+
+    // Before any event the runner's ctl works.
+    await ctl.command('before');
+    handlers.get('SIGINT')?.();
+    // The restore is stuck on tick rate 20: the runner's late commands must throw, not interleave.
+    expect(() => ctl.command('late')).toThrow(/stopping/);
+    expect(exits).toEqual([]);
+    handlers.get('SIGINT')?.();
+    expect(exits).toEqual([130]);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(commands).not.toContain('late');
+    expect(commands.slice(0, 2)).toEqual(['before', 'tick rate 20']);
   });
 
   it('retries on a fresh connection and prints the hint when all fail', async () => {

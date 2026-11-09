@@ -96,8 +96,13 @@ export async function restoreServer(
   opts: Pick<TpsRestoreOptions, 'openFresh' | 'log'> = {},
 ): Promise<boolean> {
   const log = opts.log ?? ((line: string) => console.error(line));
+  // The rate first: everything after it waits on server ticks, which crawl at 5 TPS.
+  const restoreAll = async (c: TestControl): Promise<void> => {
+    await c.tickRate(20);
+    await restoreWorld(c);
+  };
   try {
-    await restoreWorld(ctl);
+    await restoreAll(ctl);
     return true;
   } catch {
     // Fall through to a fresh connection.
@@ -107,7 +112,7 @@ export async function restoreServer(
     try {
       const fresh = await open();
       try {
-        await restoreWorld(fresh.ctl);
+        await restoreAll(fresh.ctl);
         return true;
       } finally {
         await fresh.close().catch(() => undefined);
@@ -121,22 +126,50 @@ export async function restoreServer(
 }
 
 /**
+ * Makes every method of `ctl` throw once `isStopping()` is true, and returns a control that keeps
+ * the original behaviour for the restore. The runner may still be mid-run when a signal arrives;
+ * without the guard its commands would race the restore and could undo it.
+ */
+function guardControl(ctl: TestControl, isStopping: () => boolean): TestControl {
+  const raw = Object.assign(Object.create(Object.getPrototypeOf(ctl)), ctl) as TestControl;
+  const target = ctl as unknown as Record<string, unknown>;
+  const names = new Set<string>();
+  for (let o: object | null = ctl; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    for (const name of Object.getOwnPropertyNames(o)) names.add(name);
+  }
+  for (const name of names) {
+    const original = target[name];
+    if (name === 'constructor' || typeof original !== 'function') continue;
+    target[name] = (...args: unknown[]): unknown => {
+      if (isStopping()) throw new Error('bench is stopping: server control closed');
+      return (original as (...a: unknown[]) => unknown).apply(raw, args);
+    };
+  }
+  return raw;
+}
+
+/**
  * Registers one-shot handlers that restore 20 TPS and `restoreWorld` once before the process exits
- * (exit code 130 for signals, 1 for a crash). A second event during the restore does nothing.
- * Returns a function that removes the handlers.
+ * (exit code 130 for signals, 1 for a crash). From the first event on, `ctl` rejects every command
+ * so the runner cannot race the restore. A second signal during the restore exits with 130 at once;
+ * a second crash event does nothing. Returns a function that removes the handlers.
  */
 export function installTpsRestore(ctl: TestControl, opts: TpsRestoreOptions = {}): () => void {
   const proc = opts.proc ?? (process as unknown as ProcessLike);
   const exit = opts.exit ?? ((code: number) => process.exit(code));
-  let fired = false;
+  let stopping = false;
+  const raw = guardControl(ctl, () => stopping);
   const handlers = new Map<string, (arg?: unknown) => void>();
   for (const event of EVENTS) {
     const isSignal = event.startsWith('SIG');
     const handler = (arg?: unknown): void => {
-      if (fired) return;
-      fired = true;
+      if (stopping) {
+        if (isSignal) exit(130);
+        return;
+      }
+      stopping = true;
       if (!isSignal) console.error(`${event}: ${arg instanceof Error ? arg.stack : String(arg)}`);
-      void restoreServer(ctl, opts).finally(() => exit(isSignal ? 130 : 1));
+      void restoreServer(raw, opts).finally(() => exit(isSignal ? 130 : 1));
     };
     handlers.set(event, handler);
     proc.on(event, handler);
