@@ -70,6 +70,9 @@ export interface ProcessLike {
   off(event: string, handler: (arg?: unknown) => void): unknown;
 }
 
+/** The remover installTpsRestore returns, with the flag the caller checks before it closes the control. */
+export type RestoreHandle = (() => void) & { isStopping(): boolean };
+
 /** Overridable parts of `installTpsRestore`, for tests. */
 export interface TpsRestoreOptions {
   proc?: ProcessLike;
@@ -152,11 +155,13 @@ function guardControl(ctl: TestControl, isStopping: () => boolean): TestControl 
  * Registers one-shot handlers that restore 20 TPS and `restoreWorld` once before the process exits
  * (exit code 130 for signals, 1 for a crash). From the first event on, `ctl` rejects every command
  * so the runner cannot race the restore. A second signal during the restore exits with 130 at once;
- * a second crash event does nothing. Returns a function that removes the handlers.
+ * a second crash event does nothing. Returns a function that removes the handlers; its `isStopping`
+ * is true from the first event on, when the handler owns the connection and will exit the process.
  */
-export function installTpsRestore(ctl: TestControl, opts: TpsRestoreOptions = {}): () => void {
+export function installTpsRestore(ctl: TestControl, opts: TpsRestoreOptions = {}): RestoreHandle {
   const proc = opts.proc ?? (process as unknown as ProcessLike);
   const exit = opts.exit ?? ((code: number) => process.exit(code));
+  const log = opts.log ?? ((line: string) => console.error(line));
   let stopping = false;
   const raw = guardControl(ctl, () => stopping);
   const handlers = new Map<string, (arg?: unknown) => void>();
@@ -164,7 +169,10 @@ export function installTpsRestore(ctl: TestControl, opts: TpsRestoreOptions = {}
     const isSignal = event.startsWith('SIG');
     const handler = (arg?: unknown): void => {
       if (stopping) {
-        if (isSignal) exit(130);
+        if (isSignal) {
+          log(`server may be left at ${lastRate} TPS: run ./geldar.ps1 bench --restore`);
+          exit(130);
+        }
         return;
       }
       stopping = true;
@@ -174,7 +182,8 @@ export function installTpsRestore(ctl: TestControl, opts: TpsRestoreOptions = {}
     handlers.set(event, handler);
     proc.on(event, handler);
   }
-  return () => {
+  const remove = (): void => {
     for (const [event, handler] of handlers) proc.off(event, handler);
   };
+  return Object.assign(remove, { isStopping: () => stopping });
 }

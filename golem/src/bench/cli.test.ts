@@ -189,6 +189,33 @@ describe('main', () => {
     expect(h.log.lastIndexOf('stop bot')).toBeLessThan(h.log.lastIndexOf('tick rate 20'));
   });
 
+  it.each([
+    [true, 0],
+    [false, 1],
+  ])(
+    'with the restore handler stopping=%s it closes the control %i time(s)',
+    async (stopping, closes) => {
+      const h = harness();
+      let closed = 0;
+      const connect = h.deps.connectRcon as NonNullable<CliDeps['connectRcon']>;
+      h.deps.connectRcon = async (cfg) => {
+        const rcon = await connect(cfg);
+        return {
+          ctl: rcon.ctl,
+          close: async () => {
+            closed++;
+          },
+        };
+      };
+      h.deps.installRestore = () => Object.assign(() => undefined, { isStopping: () => stopping });
+      await main(['--scenario', 'goto-smoke', '--tps', '20', '--runs', '1'], h.deps);
+      // The handler restores and closes when it is stopping; main must not race it.
+      expect(closed).toBe(closes);
+      expect(h.log.includes('tick rate 20')).toBe(!stopping);
+      expect(h.err.join('\n')).not.toMatch(/restoreWorld failed/);
+    },
+  );
+
   it('plays every cell in arena slot 5', async () => {
     const h = harness();
     const slots: number[] = [];

@@ -138,7 +138,7 @@ export interface CliDeps {
   meta?: typeof collectMeta;
   write?: typeof writeResults;
   dirty?: () => boolean;
-  installRestore?: (ctl: TestControl) => () => void;
+  installRestore?: (ctl: TestControl) => (() => void) & { isStopping?: () => boolean };
   out?: (line: string) => void;
   err?: (line: string) => void;
   now?: () => number;
@@ -261,7 +261,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 1;
   }
   const { ctl } = rcon;
-  let removeRestore: (() => void) | undefined;
+  let removeRestore: ((() => void) & { isStopping?: () => boolean }) | undefined;
   let manager: ReturnType<NonNullable<CliDeps['createManager']>> | undefined;
   try {
     if (options.restore) {
@@ -360,15 +360,19 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     } catch {
       // Stopping is best effort.
     }
-    if (!options.restore) {
-      try {
-        await restoreWorld(ctl);
-      } catch (error) {
-        err(`restoreWorld failed: ${error instanceof Error ? error.message : String(error)}`);
+    // After a signal the restore handler owns the control: it restores, closes and exits the process.
+    // Running restoreWorld here would only throw 'bench is stopping', and closing would cut it off.
+    if (removeRestore?.isStopping?.() !== true) {
+      if (!options.restore) {
+        try {
+          await restoreWorld(ctl);
+        } catch (error) {
+          err(`restoreWorld failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
+      removeRestore?.();
+      await rcon.close().catch(() => undefined);
     }
-    removeRestore?.();
-    await rcon.close().catch(() => undefined);
   }
 }
 

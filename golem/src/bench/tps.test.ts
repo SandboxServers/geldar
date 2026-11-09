@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TestControl } from '../test-control.ts';
+import { TestControl } from '../test-control.ts';
 import {
   installTpsRestore,
   type ProcessLike,
@@ -187,6 +187,43 @@ describe('installTpsRestore', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(commands).not.toContain('late');
     expect(commands.slice(0, 2)).toEqual(['before', 'tick rate 20']);
+  });
+
+  it('guards a real TestControl, flags stopping and logs the hint on a second signal', async () => {
+    const sent: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ctl = new TestControl({
+      async command(cmd: string) {
+        sent.push(cmd);
+        if (cmd.startsWith('tick rate')) await gate;
+        return '';
+      },
+    });
+    const { proc, handlers } = fakeProcess();
+    const exits: number[] = [];
+    const logs: string[] = [];
+    const handle = installTpsRestore(ctl, {
+      proc,
+      exit: (code) => exits.push(code),
+      log: (line) => logs.push(line),
+    });
+    expect(handle.isStopping()).toBe(false);
+    await ctl.tickQuery();
+    handlers.get('SIGTERM')?.();
+    expect(handle.isStopping()).toBe(true);
+    // Prototype methods are guarded too: the runner's late command throws, the restore's goes through.
+    expect(() => ctl.tickQuery()).toThrow(/stopping/);
+    expect(() => ctl.command('late')).toThrow(/stopping/);
+    expect(sent).toEqual(['tick query', 'tick rate 20']);
+    handlers.get('SIGTERM')?.();
+    expect(exits).toEqual([130]);
+    expect(logs).toEqual(['server may be left at 20 TPS: run ./geldar.ps1 bench --restore']);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sent).not.toContain('late');
   });
 
   it('retries on a fresh connection and prints the hint when all fail', async () => {
