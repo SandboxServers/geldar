@@ -57,7 +57,6 @@ export interface RetrievalObserver {
   onEmbedFailure(error: unknown): void;
 }
 
-
 /** Days awake at which an agent is fatigued; the clock starts at the last sleep, or at birth. */
 export function isFatigued(agent: AgentRow, nowDay: number, fatigueDays: number): boolean {
   const since = agent.lastSleepDay ?? agent.bornDay ?? nowDay;
@@ -144,11 +143,7 @@ export class MemoryRetriever {
    * Writes memories with their vectors. When the embedder fails the failure is logged and counted
    * and the memories are stored with a NULL embedding for `backfillEmbeddings` to fill in.
    */
-  async remember(
-    store: MemoryStore,
-    lifeId: string,
-    memories: NewMemory[],
-  ): Promise<number[]> {
+  async remember(store: MemoryStore, lifeId: string, memories: NewMemory[]): Promise<number[]> {
     if (memories.length === 0) return [];
     let vectors: (number[] | null)[];
     try {

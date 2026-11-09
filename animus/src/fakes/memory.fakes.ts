@@ -148,7 +148,9 @@ export class FakeMemoryStore implements MemoryStore, Journal {
 
   async backfillEmbeddings(limit: number): Promise<number> {
     if (this.embedder === undefined) throw new Error('backfillEmbeddings needs an embedder');
-    const pending = this.memories.filter((m) => m.row.active && m.embedding === null).slice(0, limit);
+    const pending = this.memories
+      .filter((m) => m.row.active && m.embedding === null)
+      .slice(0, limit);
     if (pending.length === 0) return 0;
     const vectors = await this.embedder.embed(
       pending.map((m) => m.row.text),
@@ -231,12 +233,12 @@ export class FakeMemoryStore implements MemoryStore, Journal {
       .filter((t) => t.lifeId === lifeId && t.worldTick >= tick)
       .sort((a, b) => a.worldTick - b.worldTick);
     return (limit === undefined ? all : all.slice(-limit)).map((t) => ({
-        thoughtId: t.thoughtId,
-        worldDay: t.worldDay,
-        worldTick: t.worldTick,
-        wakeReason: t.wakeReason,
-        parsed: t.wakeReason === 'reflection' ? null : (t.parsed as Thought | null),
-      }));
+      thoughtId: t.thoughtId,
+      worldDay: t.worldDay,
+      worldTick: t.worldTick,
+      wakeReason: t.wakeReason,
+      parsed: t.wakeReason === 'reflection' ? null : (t.parsed as Thought | null),
+    }));
   }
 
   private activeRows(lifeId: string): MemoryRow[] {
@@ -251,7 +253,9 @@ export class FakeMemoryStore implements MemoryStore, Journal {
   ): MemoryRow[] {
     return this.memories
       .filter((m) => m.row.agentId === lifeId && m.row.kind === kind && m.row.active)
-      .flatMap((m) => (m.embedding === null ? [] : [{ row: m.row, score: cosine(m.embedding, embedding) }]))
+      .flatMap((m) =>
+        m.embedding === null ? [] : [{ row: m.row, score: cosine(m.embedding, embedding) }],
+      )
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
       .map((m) => m.row);

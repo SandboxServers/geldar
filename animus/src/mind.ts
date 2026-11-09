@@ -186,9 +186,11 @@ export class Mind {
   }
 
   private track(task: Promise<void>): void {
-    const tracked = task.catch((error: unknown) => this.deps.onError?.(error)).finally(() => {
-      this.work.delete(tracked);
-    });
+    const tracked = task
+      .catch((error: unknown) => this.deps.onError?.(error))
+      .finally(() => {
+        this.work.delete(tracked);
+      });
     this.work.add(tracked);
   }
 

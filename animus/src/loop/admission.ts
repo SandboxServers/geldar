@@ -23,8 +23,7 @@ const HOUR_MS = 3_600_000;
 export class Admission implements ReflectionAdmission {
   private readonly cap: number;
   private readonly now: () => number;
-  private readonly spent: { at: number; cost: number; released: boolean; settled: boolean }[] =
-    [];
+  private readonly spent: { at: number; cost: number; released: boolean; settled: boolean }[] = [];
 
   constructor(maxThoughtsPerRealHour: number, now: () => number = Date.now) {
     this.cap = maxThoughtsPerRealHour;

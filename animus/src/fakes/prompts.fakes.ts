@@ -72,7 +72,8 @@ export class FakeOutputValidator implements OutputValidator {
 
   correctiveMessage(errors: OutputError[], rejected?: string): ModelMessage {
     const lines = errors.map((e) => `${e.code} at ${e.path === '' ? '/' : e.path}`);
-    const echo = rejected === undefined ? '' : ` Rejected: ${JSON.stringify(rejected.slice(0, 512))}`;
+    const echo =
+      rejected === undefined ? '' : ` Rejected: ${JSON.stringify(rejected.slice(0, 512))}`;
     return {
       role: 'user',
       content: `Your answer was rejected: ${lines.join('; ')}. Try again.${echo}`,

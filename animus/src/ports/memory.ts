@@ -128,7 +128,7 @@ export interface ThoughtRow {
   providerUsage: Record<string, unknown> | null;
   rawOutput: string | null;
   /**
-   * The validated thought, or for a reflection row (wakeReason eflection) the validated
+   * The validated thought, or for a reflection row (wakeReason reflection) the validated
    * reflection; null when the output was rejected.
    */
   parsed: Thought | Reflection | null;

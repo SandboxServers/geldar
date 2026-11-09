@@ -287,7 +287,10 @@ export class ThinkingLoop {
     let last = first;
     if (first.kind === 'invalid') {
       const retryId = newId('th');
-      const messages = [...render.messages, this.deps.validator.correctiveMessage(first.errors, first.completion.text)];
+      const messages = [
+        ...render.messages,
+        this.deps.validator.correctiveMessage(first.errors, first.completion.text),
+      ];
       last = await this.attempt(cycle, retryId, CORRECTIVE_RETRY, messages);
       if (last.kind === 'ok') finalId = retryId;
     }

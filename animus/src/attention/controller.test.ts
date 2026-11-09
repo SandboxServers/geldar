@@ -279,6 +279,8 @@ describe('the Body wake reasons', () => {
     for (const reason of [...BODY_WAKE_REASONS, 'new_agent_within_8']) {
       expect(validateWakePayload({ reason, tick: 0, intent_id: null }).ok).toBe(true);
     }
-    expect(validateWakePayload({ reason: 'speech_addressed', tick: 0, intent_id: null }).ok).toBe(false);
+    expect(validateWakePayload({ reason: 'speech_addressed', tick: 0, intent_id: null }).ok).toBe(
+      false,
+    );
   });
 });
