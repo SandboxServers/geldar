@@ -6,7 +6,8 @@ import { ActionRegistry, type AnyActionHandler } from './registry.ts';
 // inside its block, in place: Biome's import sorting would move a marker and its import apart.
 
 // --- P0-08a goto, mine ---
-// (imports for this block go here)
+import { gotoAction } from './goto.ts';
+import { mineAction } from './mine.ts';
 
 // --- P0-08b craft ---
 // (imports for this block go here)
@@ -20,7 +21,8 @@ import { ActionRegistry, type AnyActionHandler } from './registry.ts';
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
   // --- P0-08a goto, mine ---
-  // (handlers for P0-08a go here)
+  gotoAction,
+  mineAction,
   // --- end P0-08a ---
   // --- P0-08b craft ---
   // (handlers for P0-08b go here)
