@@ -194,9 +194,12 @@ describe('createApp', () => {
       expect(text.endsWith('stand-in text.'), name).toBe(true);
       expect(text.split(/(?<=[.!?])\s+/).length, name).toBeLessThanOrEqual(4);
     }
-    const reflect = await client.getPrompt({ name: 'geldar:reflect' });
-    const reflectText = promptText(reflect.messages);
-    for (const tool of ['look', 'wait', 'act', 'sleep']) expect(reflectText).toContain(tool);
+    for (const { name } of prompts) {
+      const { messages } = await client.getPrompt({ name });
+      for (const tool of ['look', 'wait', 'act', 'sleep']) {
+        expect(promptText(messages), `${name} ${tool}`).toMatch(new RegExp(`\\b${tool}\\b`, 'i'));
+      }
+    }
     await expect(client.getPrompt({ name: 'geldar:nope' })).rejects.toThrow(/unknown prompt/);
   }, 30_000);
 

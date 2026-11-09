@@ -73,22 +73,29 @@ async function main(): Promise<void> {
     process.stderr.write(`${JSON.stringify(line)}\n`);
   };
   const app = createApp({ tokens, world: createFixedWorld(), log });
-  const bound = await app.listen(port, host);
-  log({ event: 'listening', host, port: bound });
-
   let stopping = false;
   const stop = (): void => {
     // A second signal while close() runs is ignored, not allowed to kill the process mid-shutdown.
     if (stopping) return;
     stopping = true;
     log({ event: 'stopping' });
+    // A hung close() must not block shutdown: force the exit after 5 s (unref'd, so it never keeps the loop alive).
+    setTimeout(() => process.exit(1), 5000).unref();
     app.close().then(
       () => process.exit(0),
-      () => process.exit(1),
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : 'close failed';
+        log({ event: 'stop_failed', error: message.slice(0, 200) });
+        process.exit(1);
+      },
     );
   };
+  // Registered before listening so a signal right after the `listening` line is always handled.
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+
+  const bound = await app.listen(port, host);
+  log({ event: 'listening', host, port: bound });
 }
 
 main().catch((error: unknown) => {

@@ -27,10 +27,12 @@ function run(args: string[]): { child: ChildProcess; stderr: () => string } {
   return { child: proc, stderr: () => text };
 }
 
+/** Resolves with the exit code once the child has closed (stdio drained, so stderr is complete). */
 function exited(proc: ChildProcess): Promise<number | null> {
   return new Promise((resolve) => {
     if (proc.exitCode !== null) resolve(proc.exitCode);
-    else proc.once('exit', (code) => resolve(code));
+    else if (proc.signalCode !== null) resolve(null);
+    else proc.once('close', (code) => resolve(code));
   });
 }
 
@@ -53,7 +55,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  if (child !== undefined && child.exitCode === null) {
+  // A child killed by a signal has exitCode null too, so check signalCode as well.
+  if (child !== undefined && child.exitCode === null && child.signalCode === null) {
     child.kill();
     await exited(child);
   }
