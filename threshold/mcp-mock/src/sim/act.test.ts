@@ -124,6 +124,26 @@ describe('actTool', () => {
     expect(sim.budget).toBe(98);
   }, 30_000);
 
+  it('refuses delegated book and vote failures with their codes and charges nothing for them', () => {
+    const { hub, sim } = setup();
+    const r = act(hub, {
+      actions: [
+        { do: 'write_book', title: 'T', skill_id: 'nope' },
+        { do: 'offer', item: 'diamond', count: 1 },
+        { do: 'vote', proposal_id: 'pr_zzz' },
+        mine,
+      ],
+    });
+    expect(r.rejected.map((x) => x.reason)).toEqual([
+      'unknown_skill',
+      'not_held',
+      'unknown_proposal',
+    ]);
+    expect(r.accepted).toEqual([3]);
+    expect(r.budget_remaining_thoughts).toBe(99);
+    expect(sim.budget).toBe(99);
+  }, 30_000);
+
   it('accepts an intent-only call and the sim then runs it', async () => {
     const { clock, hub, sim } = setup();
     expect(act(hub, { intent: intentOf() }).accepted).toEqual([0]);
