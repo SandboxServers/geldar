@@ -15,12 +15,23 @@ export interface ControlCharFinding {
  * committed text file. Binary files (any NUL byte) and the `.bat`/`.cmd` files
  * that `.gitattributes` marks CRLF are skipped. Pass the index content, not the
  * working tree, so a local `core.autocrlf` cannot change the verdict.
+ *
+ * With `crlfPairsOk` (a working-tree scan) a CR directly before an LF is
+ * allowed: `core.autocrlf` or an editor makes those, and git turns them into LF
+ * when the file is added (`.gitattributes` says `eol=lf`). A lone CR is not
+ * converted and stays a defect.
  */
-export function findControlChar(path: string, bytes: Uint8Array): ControlCharFinding | null {
+export function findControlChar(
+  path: string,
+  bytes: Uint8Array,
+  crlfPairsOk = false,
+): ControlCharFinding | null {
   if (CRLF_FILES.test(path) || bytes.includes(0)) return null;
   let line = 1;
-  for (const byte of bytes) {
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i] as number;
     if (byte === 0x0a) line++;
+    else if (byte === 0x0d && crlfPairsOk && bytes[i + 1] === 0x0a) continue;
     else if (byte < 0x20 && byte !== 0x09) return { path, line, byte };
   }
   return null;

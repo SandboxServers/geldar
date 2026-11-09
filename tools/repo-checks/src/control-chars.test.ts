@@ -26,6 +26,17 @@ describe('findControlChar', () => {
     expect(findControlChar('a.ts', bytes('\u0007'))?.byte).toBe(0x07);
   });
 
+  it('allows CRLF pairs but not a lone CR when crlfPairsOk is set', () => {
+    expect(findControlChar('a.md', bytes('one\r\ntwo\r\n'), true)).toBeNull();
+    expect(findControlChar('a.md', bytes('one\r\ntwo\rthree\n'), true)).toEqual({
+      path: 'a.md',
+      line: 2,
+      byte: 0x0d,
+    });
+    expect(findControlChar('a.md', bytes('a\u000c\r\n'), true)?.byte).toBe(0x0c);
+    expect(findControlChar('a.md', bytes('end\r'), true)?.byte).toBe(0x0d);
+  });
+
   it('skips binary content (any NUL byte)', () => {
     expect(findControlChar('a.png', bytes('\u0001\u0000\u0002'))).toBeNull();
   });

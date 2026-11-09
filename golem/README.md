@@ -2,6 +2,8 @@
 
 The Minecraft bot client and benchmark (`golem/src`). Live tests need the Phase 0 stack: `./geldar.ps1 shard up phase0`, then `./geldar.ps1 pnpm --filter @geldar/golem test:live`.
 
+Live-test conventions: a case must not depend on the time of day or on player data a previous run left behind (low health, effects, inventory). A case that depends on world state starts with `resetBot` from `golem/test/live/fixture.ts` (heal, clear effects, set time and weather, set gamerules) and calls the returned restore function in `finally`. Put the state a case depends on in its failure message.
+
 ## Life registry (`GELDAR_NATS_URL`)
 
 The Velocity ingress plugin admits only usernames in the NATS KV bucket `geldar-life-registry`. Golem is the registrar: when `GELDAR_NATS_URL` is set (a `nats://` URL on `127.0.0.1` or `localhost`, for example `nats://127.0.0.1:4222`), it creates the bucket if missing, puts `{life_id, registered_at}` under the lowercase username before the first connect and before every reconnect, and deletes the key on `stop()` (reopening NATS if the connection was dropped; a failed delete is logged). If NATS is unreachable at the first connect, the connection goes fatal with a clear error (host and port only) and makes no connect attempt. If it becomes unreachable later, the failed registration counts as a failed session: the manager backs off and retries instead of giving up.

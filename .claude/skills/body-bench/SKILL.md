@@ -13,6 +13,10 @@ The spec runs this before any model is attached: it is "the floor everything sta
 2. Nothing else is connected to the shard: no Adam run, no second benchmark, no live test run and no other agent.
 3. The tree is clean and committed, so the result can name the commit it measured (`--record` refuses a dirty tree unless you pass `--allow-dirty`, which adds a `+dirty` suffix to the commit).
 
+The wave test order (live lane in the background, sink integration tests, then this benchmark) is in the `run-shard` skill, "Wave test procedure".
+
+Live-test conventions (`golem/test/live/`): a case must not depend on the time of day or on player data left by a previous run (low health, effects, inventory, position). Start from `resetBot` in `golem/test/live/fixture.ts` (heals, clears effects, sets the time and weather, restores the gamerules in `finally`). Print the state a case depends on in its failure message.
+
 ## Run
 
 ```powershell

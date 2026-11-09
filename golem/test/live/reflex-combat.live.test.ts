@@ -5,7 +5,7 @@ import { runAction } from '../../src/actions/registry.ts';
 import { MemorySink } from '../../src/body/records.ts';
 import { combatReflexes } from '../../src/body/reflexes/combat.ts';
 import { BodyRuntime } from '../../src/body/runtime.ts';
-import { withLiveBot } from './fixture.ts';
+import { healBot, resetBot, withLiveBot } from './fixture.ts';
 
 /** The arena slot for this file (P0-15b: slot 9) and the bot that plays it. */
 const SLOT = 9;
@@ -15,18 +15,6 @@ const POLL_LIMIT = 600;
 
 /** The test control's command surface, as the fixture hands it out. */
 type Control = Parameters<Parameters<typeof withLiveBot>[1]>[0]['ctl'];
-
-/**
- * Sets the world to midnight and waits until the bot sees it, so a summoned zombie does not burn
- * in daylight and never attacks. Returns the call that puts the time back to noon.
- */
-async function midnight(bot: Bot, ctl: Control): Promise<() => Promise<void>> {
-  await ctl.timeSet('midnight');
-  for (let i = 0; i < 100 && bot.time.timeOfDay < 13_000; i++) await bot.waitForTicks(1);
-  return async () => {
-    await ctl.timeSet('noon');
-  };
-}
 
 /** Summons a zombie in a helmet (test setup only: the Body uses no RCON), so the sun cannot burn it. */
 async function summonZombie(ctl: Control, x: number, z: number): Promise<void> {
@@ -93,23 +81,11 @@ async function vitals(bot: Bot, ctl: Control): Promise<string> {
   return `health ${bot.health}, at ${bot.entity.position.floored()}, gamerule ${REGEN_RULE}: ${rule}`;
 }
 
-/**
- * Heals the bot to full and checks it took. The bot persists between runs, so a case must not
- * inherit the low health an earlier retreat case left behind.
- */
-async function healToFull(bot: Bot, ctl: Control): Promise<void> {
-  await ctl.effectClear(BOT);
-  const reply = await ctl.command(`effect give ${BOT} minecraft:instant_health 1 10`);
-  const full = await waitFor(bot, () => bot.health >= 20);
-  expect(full, `bot did not heal to full: reply '${reply}'; ${await vitals(bot, ctl)}`).toBe(true);
-}
-
 describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('an armed bot kills a zombie that attacks it', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena, manager }) => {
       const { x: cx, z: cz } = arena.center;
-      await healToFull(bot, ctl);
-      const restoreTime = await midnight(bot, ctl);
+      const restoreTime = await resetBot(bot, ctl, { time: 'midnight' });
       await ctl.give(BOT, 'iron_sword', 1);
       const sink = new MemorySink();
       const runtime = new BodyRuntime({
@@ -146,8 +122,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('an unarmed bot flees a zombie that attacks it', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena, manager }) => {
       const { x: cx, z: cz } = arena.center;
-      await healToFull(bot, ctl);
-      const restoreTime = await midnight(bot, ctl);
+      const restoreTime = await resetBot(bot, ctl, { time: 'midnight' });
       await ctl.clear(BOT);
       const sink = new MemorySink();
       const runtime = new BodyRuntime({
@@ -178,8 +153,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('a bot at 4 health retreats toward the world spawn and raises a danger wake', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena, manager }) => {
       const { x: cx, z: cz } = arena.center;
-      await healToFull(bot, ctl);
-      const restoreTime = await midnight(bot, ctl);
+      const restoreTime = await resetBot(bot, ctl, { time: 'midnight' });
       const sink = new MemorySink();
       const runtime = new BodyRuntime({
         lifeId: 'live-combat',
@@ -207,7 +181,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
       } finally {
         await runtime.stop();
         await restoreTime();
-        await healToFull(bot, ctl);
+        await healBot(bot, ctl);
         await regen();
       }
     });
@@ -216,8 +190,7 @@ describe('reflexes: retreat and fight-or-flee against a real server', () => {
   it('the attack action kills a loaded zombie through the registry', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
       const { x: cx, z: cz } = arena.center;
-      await healToFull(bot, ctl);
-      const restoreTime = await midnight(bot, ctl);
+      const restoreTime = await resetBot(bot, ctl, { time: 'midnight' });
       await ctl.give(BOT, 'iron_sword', 1);
       try {
         await summonZombie(ctl, cx + 4, cz);

@@ -1,6 +1,8 @@
 /**
  * Repo hygiene gate: fails on files over the hard line cap, on CRLF in the
- * index, on a stray control character or CR in a committed text file, on a
+ * index, on a stray control character or CR in a committed text file or in the
+ * working tree (an unstaged edit or an untracked file; CRLF pairs there are
+ * left to git's conversion, a lone CR is not), on a
  * compose port that does not bind to loopback, on a workflow that is not valid
  * YAML or repeats a key, or on a decision record that
  * `docs/decisions/README.md` does not index. Line caps cover
@@ -9,7 +11,7 @@
  * (`text=auto eol=lf`) converts it to LF when the file is added.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   findControlChar,
@@ -77,10 +79,12 @@ for (const path of crlfPaths) {
   failed = true;
 }
 
+const indexFindings: string[] = [];
 try {
   for (const [path, content] of indexContents(entries)) {
     const found = findControlChar(path, content);
     // A CRLF file is already reported above: one message per file.
+    if (found) indexFindings.push(`${path}:${found.line}:${found.byte}`);
     if (found && !(found.byte === 0x0d && crlfPaths.has(path))) {
       const byte = found.byte.toString(16).padStart(2, '0');
       console.log(
@@ -92,6 +96,40 @@ try {
 } catch (error) {
   // A git failure must fail the gate with one line, not a stack trace.
   console.log(`error: control-character check: ${(error as Error).message}`);
+  failed = true;
+}
+
+/**
+ * The working tree too: tracked files (an unstaged edit) and untracked,
+ * not-ignored files (a new file not yet added). A defect already reported from
+ * the index is not repeated.
+ */
+try {
+  const reported = new Set(indexFindings);
+  const treePaths = [
+    ...entries.filter((entry) => !entry.gitlink).map((entry) => entry.path),
+    ...listFiles(['--others', '--exclude-standard']),
+  ];
+  for (const path of new Set(treePaths)) {
+    let bytes: Buffer;
+    try {
+      if (!lstatSync(join(root, path)).isFile()) continue;
+      bytes = readFileSync(join(root, path));
+    } catch {
+      continue; // deleted in the working tree but still in the index
+    }
+    const found = findControlChar(path, bytes, true);
+    if (!found) continue;
+    const key = `${path}:${found.line}:${found.byte}`;
+    if (reported.has(key)) continue;
+    const byte = found.byte.toString(16).padStart(2, '0');
+    console.log(
+      `error: ${path}:${found.line} has a control character (0x${byte}) in the working tree; use LF and no raw control bytes`,
+    );
+    failed = true;
+  }
+} catch (error) {
+  console.log(`error: working-tree control-character check: ${(error as Error).message}`);
   failed = true;
 }
 
