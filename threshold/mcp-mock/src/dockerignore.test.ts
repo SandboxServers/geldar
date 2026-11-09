@@ -3,7 +3,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const ignorePath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'Dockerfile.dockerignore');
+const ignorePath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'Dockerfile.dockerignore',
+);
 const lines = readFileSync(ignorePath, 'utf8')
   .split('\n')
   .map((l) => l.trim())
