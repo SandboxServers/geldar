@@ -122,6 +122,8 @@ async function resetBench(deps: RunnerDeps): Promise<ReturnType<typeof buildAren
   await ctl.command(`kill @e[type=minecraft:experience_orb,x=${x},y=200,z=${z},distance=..40]`);
   await ctl.tp(botName, x, arena.center.y + 1, z);
   await ctl.clear(botName);
+  // Recipes unlock through play (decision 0048): start every run with an empty recipe book.
+  await ctl.recipeReset(botName);
   // Clear first: the effect commands below must not be wiped before they act.
   await ctl.effectClear(botName);
   await ctl.effect(botName, 'saturation', 1, 255);

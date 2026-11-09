@@ -84,6 +84,19 @@ export interface ResetOptions {
   time?: ResetTime;
   /** Gamerules to set for the case; each previous value is put back by the restore call. */
   gamerules?: Record<string, boolean>;
+  /**
+   * Reset the bot's recipe book to nothing, so recipes unlock only through play (decision 0048).
+   * Revokes the recipe advancements AND takes the recipes: either alone leaves the bot unable to unlock.
+   */
+  recipes?: boolean;
+}
+
+/**
+ * The one explicit recipe unlock for live cases that are not about discovery (table crafting and the
+ * like). A case about discovery never calls this: it uses `resetBot(..., { recipes: true })`.
+ */
+export async function unlockAllRecipes(ctl: TestControl, name: string): Promise<void> {
+  await ctl.recipeGive(name);
 }
 
 /** Heals the bot to full health, failing with the server's reply and the bot's state. */
@@ -121,6 +134,7 @@ export async function resetBot(
   const time = opts.time ?? 'noon';
   const previous = new Map<string, boolean>();
   await healBot(bot, ctl);
+  if (opts.recipes) await ctl.recipeReset(bot.username);
   await ctl.timeSet(time);
   await ctl.command('weather clear');
   const wanted = { day: 1000, noon: 6000, night: 13_000, midnight: 18_000 }[time];

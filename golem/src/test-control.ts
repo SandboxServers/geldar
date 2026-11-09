@@ -66,6 +66,32 @@ export class TestControl {
     return this.source.command(cmd);
   }
 
+  /** Unlocks every recipe for a player. Test setup only; recipes otherwise unlock through play (decision 0048). */
+  recipeGive(name: string): Promise<string> {
+    return this.source.command(`recipe give ${player(name)} *`);
+  }
+
+  /** Takes every recipe back from a player's recipe book. */
+  recipeTake(name: string): Promise<string> {
+    return this.source.command(`recipe take ${player(name)} *`);
+  }
+
+  /** Revokes the player's recipe advancements, so vanilla unlocking can fire again. */
+  advancementRevokeRecipes(name: string): Promise<string> {
+    return this.source.command(`advancement revoke ${player(name)} from minecraft:recipes/root`);
+  }
+
+  /**
+   * Puts a player back to a recipe book with nothing unlocked. Both steps are needed: `recipe take`
+   * alone leaves the advancement progress earned, and then pickups unlock nothing (recipe unlock diagnosis).
+   * Resolves with the two replies joined by a newline.
+   */
+  async recipeReset(name: string): Promise<string> {
+    const revoked = await this.advancementRevokeRecipes(name);
+    const taken = await this.recipeTake(name);
+    return `${revoked}\n${taken}`;
+  }
+
   /** Clears a player's inventory. */
   clear(name: string): Promise<string> {
     return this.source.command(`clear ${player(name)}`);
