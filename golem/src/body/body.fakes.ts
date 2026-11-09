@@ -46,6 +46,9 @@ export function fakeView(overrides: Partial<Record<'health' | 'hunger', number>>
     inFluid: null,
     onFire: false,
     fallingDistance: 0,
+    air: 20,
+    edibleFoods: () => [],
+    dropAhead: () => 0,
   };
 }
 

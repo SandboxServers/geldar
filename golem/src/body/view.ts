@@ -34,7 +34,20 @@ export interface BodyView {
   readonly onFire: boolean;
   /** Blocks fallen since the Body left the ground; 0 on the ground. */
   readonly fallingDistance: number;
+  /** Air left, 0 to 20 bubbles; 20 when the Body is not underwater. */
+  readonly air: number;
+  /** Names of the foods the Body carries (any item the registry lists as food), one per stack. */
+  edibleFoods(): string[];
+  /**
+   * Blocks of open air below the cell lookahead blocks ahead of the Body's horizontal motion
+   * (default 1); 0 when the Body stands still, a wall is in the way, or the drop ends in water.
+   * Capped at MAX_DROP_SCAN.
+   */
+  dropAhead(lookahead?: number): number;
 }
+
+/** The deepest drop dropAhead measures, in blocks. */
+export const MAX_DROP_SCAN = 32;
 
 /** A `BodyView` that tracks falls by listening to the bot; `dispose` removes the listener. */
 export interface TrackedBodyView extends BodyView {
@@ -101,6 +114,35 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     get fallingDistance() {
       if (bot.entity.onGround) return 0;
       return Math.max(0, peakY - bot.entity.position.y);
+    },
+    get air() {
+      return bot.oxygenLevel ?? 20;
+    },
+    edibleFoods() {
+      const foods = bot.registry.foodsByName;
+      return bot.inventory
+        .items()
+        .filter((stack) => foods[stack.name] !== undefined)
+        .map((stack) => stack.name);
+    },
+    dropAhead(lookahead = 1) {
+      const { x: vx, z: vz } = bot.entity.velocity;
+      const speed = Math.hypot(vx, vz);
+      if (speed < 0.01) return 0;
+      const here = bot.entity.position;
+      const ahead = here.offset((vx / speed) * lookahead, 0, (vz / speed) * lookahead);
+      const floorY = Math.floor(here.y) - 1;
+      // A solid block at foot level ahead is a wall, not an edge.
+      if (bot.blockAt(ahead.offset(0, 0.5, 0))?.boundingBox === 'block') return 0;
+      let drop = 0;
+      while (drop < MAX_DROP_SCAN) {
+        const block = bot.blockAt(ahead.set(ahead.x, floorY - drop, ahead.z));
+        if (!block) return 0;
+        if (block.name === 'water') return 0;
+        if (block.boundingBox !== 'empty') break;
+        drop += 1;
+      }
+      return drop;
     },
     dispose() {
       bot.off('physicsTick', sample);
