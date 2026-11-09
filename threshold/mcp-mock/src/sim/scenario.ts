@@ -12,11 +12,22 @@ const MAX_ITEMS = 1000;
 /** The largest scenario text parseScenario reads, in bytes. */
 const MAX_TEXT_BYTES = 1024 * 1024;
 
-/** Nesting depth of a JSON value: scalars are 0, each array or object level adds one. */
-function jsonDepth(v: unknown): number {
-  if (typeof v !== 'object' || v === null) return 0;
-  const kids: unknown[] = Array.isArray(v) ? v : Object.values(v);
-  return 1 + Math.max(0, ...kids.map(jsonDepth));
+/**
+ * Nesting depth of a JSON value: scalars are 0, each array or object level adds one. The walk is
+ * iterative and stops once the depth passes `limit`, so a hostile deep value cannot overflow the stack.
+ */
+function jsonDepth(v: unknown, limit: number): number {
+  let deepest = 0;
+  const pending: Array<[unknown, number]> = [[v, 0]];
+  for (let item = pending.pop(); item !== undefined; item = pending.pop()) {
+    const [value, depth] = item;
+    if (typeof value !== 'object' || value === null) continue;
+    deepest = Math.max(deepest, depth + 1);
+    if (deepest > limit) return deepest;
+    for (const kid of Array.isArray(value) ? value : Object.values(value))
+      pending.push([kid, depth + 1]);
+  }
+  return deepest;
 }
 
 /** True if any string in the value (keys excluded) is longer than `max` characters. */
@@ -28,8 +39,10 @@ function hasLongString(v: unknown, max: number): boolean {
 }
 
 /** A law value: any JSON value (contract ProposeInput.value), at most depth 4 and 1 KiB serialised. */
-const lawValue = z.json().superRefine((v, ctx) => {
-  if (jsonDepth(v) > 4) ctx.addIssue({ code: 'custom', message: 'must nest at most 4 deep' });
+const lawValue = z.unknown().superRefine((v, ctx) => {
+  if (v === undefined) ctx.addIssue({ code: 'custom', message: 'is required' });
+  else if (jsonDepth(v, 4) > 4)
+    ctx.addIssue({ code: 'custom', message: 'must nest at most 4 deep' });
   else if (JSON.stringify(v).length > 1024)
     ctx.addIssue({ code: 'custom', message: 'must serialise to at most 1024 characters' });
   else if (hasLongString(v, 256))
@@ -40,7 +53,7 @@ const character = z.strictObject({
   name: identifier,
   life_id: z.string().regex(/^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/, 'must match the LifeId pattern'),
   born_day: z.int().min(0).default(0),
-  seed: z.string().min(1).default('mock-seed-0001'),
+  seed: z.string().min(1).max(64).default('mock-seed-0001'),
   position,
   food: z.int().min(0).max(20).default(20),
   inventory: z
@@ -69,8 +82,8 @@ const event = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('speech'),
     at_tick: atTick,
-    from: z.string().max(64),
-    to: z.string().nullable(),
+    from: z.string().min(1).max(64),
+    to: z.string().max(64).nullable(),
     text: z.string().max(512),
   }),
   z.strictObject({ type: z.literal('damage'), at_tick: atTick, amount: z.int().min(1).max(20) }),
@@ -83,7 +96,7 @@ const event = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('proposal'),
     at_tick: atTick,
-    id: z.string().regex(/^pr_/),
+    id: z.string().max(64).regex(/^pr_/),
     rule: z.string().max(256),
   }),
   z.strictObject({ type: z.literal('set_fact'), at_tick: atTick, fact: z.string().max(256) }),
@@ -192,8 +205,7 @@ export interface ScenarioOverrides {
 function checkSeconds(name: string, value: number | undefined, min: number): number | undefined {
   if (value === undefined) return undefined;
   if (!Number.isFinite(value) || value < min || value > MAX_SECONDS) {
-    const lower = min > 0 ? '> 0' : '>= 0';
-    throw new Error(`scenario: ${name}: must be ${lower} and finite, at most ${MAX_SECONDS}`);
+    throw new Error(`scenario: ${name}: must be >= ${min} and finite, at most ${MAX_SECONDS}`);
   }
   return value;
 }

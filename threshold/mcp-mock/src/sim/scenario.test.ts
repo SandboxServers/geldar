@@ -179,6 +179,23 @@ describe('parseScenario size limits', () => {
     expect(() => parseScenario(JSON.stringify({ ...base(), name: 'n'.repeat(64) }))).not.toThrow();
   });
 
+  it('bounds the event and character strings', () => {
+    const speech = (patch: Record<string, unknown>): string =>
+      withEvents([{ type: 'speech', at_tick: 1, from: 'x', to: null, text: 'hi', ...patch }]);
+    expect(() => parseScenario(speech({ from: '' }))).toThrow('scenario: events.0.from');
+    expect(() => parseScenario(speech({ from: 'f'.repeat(65) }))).toThrow('events.0.from');
+    expect(() => parseScenario(speech({ to: 't'.repeat(65) }))).toThrow('events.0.to');
+    expect(() => parseScenario(speech({ from: 'f'.repeat(64), to: 't'.repeat(64) }))).not.toThrow();
+    expect(() => parseScenario(withCharacter({ seed: 's'.repeat(65) }))).toThrow(
+      'scenario: character.seed',
+    );
+    expect(() => parseScenario(withCharacter({ seed: 's'.repeat(64) }))).not.toThrow();
+    const proposal = (id: string): string =>
+      withEvents([{ type: 'proposal', at_tick: 1, id, rule: 'r' }]);
+    expect(() => parseScenario(proposal(`pr_${'p'.repeat(62)}`))).toThrow('events.0.id');
+    expect(() => parseScenario(proposal(`pr_${'p'.repeat(61)}`))).not.toThrow();
+  });
+
   it('rejects text over 1 MiB', () => {
     const big = `${JSON.stringify(base())}${' '.repeat(1024 * 1024)}`;
     expect(() => parseScenario(big)).toThrow('scenario: (file): too large');
@@ -232,6 +249,19 @@ describe('law values', () => {
     expect(() => parseScenario(law(['v'.repeat(257)]))).toThrow('laws.0.value');
     expect(() => parseScenario(law('v'.repeat(256)))).not.toThrow();
   });
+
+  it('requires the value key', () => {
+    const text = JSON.stringify({ ...base(), laws: [{ rule: 'chat' }] });
+    expect(() => parseScenario(text)).toThrow('scenario: laws.0.value');
+  });
+
+  it('rejects a hostile deeply nested value without overflowing the stack', () => {
+    const depth = 200_000;
+    const text = `${'['.repeat(depth)}${']'.repeat(depth)}`;
+    const file = `{"name":"dawn","character":{"name":"Aelfric","life_id":"ag_aelfric_01","position":{"x":0,"y":64,"z":0}},"laws":[{"rule":"chat","value":${text}}]}`;
+    expect(Buffer.byteLength(file)).toBeLessThan(1024 * 1024);
+    expect(() => parseScenario(file)).toThrow('scenario: laws.0.value');
+  });
 });
 describe('parseScenario text', () => {
   it('strips a UTF-8 byte order mark', () => {
@@ -260,12 +290,12 @@ describe('applyOverrides', () => {
 
   it('rejects out-of-range overrides', () => {
     const s = parseScenario(JSON.stringify(base()));
-    for (const bad of [0, Number.NaN, -5, Number.POSITIVE_INFINITY]) {
+    for (const bad of [0, 0.0005, Number.NaN, -5, Number.POSITIVE_INFINITY]) {
       expect(() => applyOverrides(s, { dayLengthSeconds: bad })).toThrow(
-        'scenario: day_length_seconds: must be > 0',
+        'scenario: day_length_seconds: must be >= 0.001',
       );
       expect(() => applyOverrides(s, { intentRunTooLongSeconds: bad })).toThrow(
-        'scenario: wake.intent_run_too_long_seconds: must be > 0',
+        'scenario: wake.intent_run_too_long_seconds: must be >= 0.001',
       );
     }
     for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
