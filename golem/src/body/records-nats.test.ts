@@ -160,7 +160,7 @@ describe('NatsRecordSink', () => {
       sink.actionChanged({ ...ACTION, state });
     }
     await sink.flush();
-    expect(sent.map((s) => (s.event.payload as ActionRecord).state)).toEqual([
+    expect(sent.map((s) => (s.event.payload as unknown as ActionRecord).state)).toEqual([
       'accepted',
       'running',
       'completed',

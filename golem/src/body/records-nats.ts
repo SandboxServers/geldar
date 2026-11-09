@@ -203,7 +203,7 @@ export class NatsRecordSink implements RecordSink {
         world_tick: tick,
         type,
         agent_id: this.opts.lifeId,
-        payload,
+        payload: payload as WorldEvent['payload'],
       };
       const checked = check(payload);
       const whole = validateWorldEvent(event);

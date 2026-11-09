@@ -49,7 +49,7 @@ export function eventOf(type: string, payload: object, n = 1): WorldEvent {
     world_tick: 100,
     type,
     agent_id: 'ag_kestrel_01',
-    payload,
+    payload: payload as WorldEvent['payload'],
   };
 }
 
