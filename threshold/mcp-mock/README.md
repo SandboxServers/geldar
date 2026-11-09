@@ -6,7 +6,7 @@ A stand-in for the Threshold MCP server with the real tool contract (`@geldar/co
 
 ```
 # run from source (Node 22.23.2, type stripping)
-./geldar.ps1 pnpm --filter @geldar/mcp-mock exec node src/cli.ts --tokens threshold/mcp-mock/tokens.example.json
+./geldar.ps1 pnpm --filter @geldar/mcp-mock exec node src/cli.ts --tokens tokens.example.json
 
 # run the image (tokens file kept outside the repo, mounted read-only; see compose.example.yml)
 docker run --rm -p 127.0.0.1:8787:8787 -v "$HOME/.config/geldar/mcp-tokens.json:/run/secrets/mcp-tokens.json:ro" ghcr.io/sandboxservers/geldar-mcp-mock:main
