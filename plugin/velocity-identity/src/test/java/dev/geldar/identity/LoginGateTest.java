@@ -3,6 +3,7 @@ package dev.geldar.identity;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.nats.client.api.KeyValueOperation;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -30,9 +31,75 @@ class LoginGateTest {
 
     @Test
     void admitsAKnownNameIgnoringCase() {
-        registry.put("Alice", VALID);
+        registry.put("alice", VALID);
         registry.markSynced();
         assertTrue(gate.admits("ALICE"));
+        assertTrue(gate.admits("alice"));
+    }
+
+    @Test
+    void ignoresABucketKeyThatIsNotCanonicalLowercase() {
+        registry.put("Alice", VALID);
+        registry.put("al ice", VALID);
+        registry.put("a".repeat(17), VALID);
+        registry.markSynced();
+        assertFalse(gate.admits("alice"));
+        assertFalse(gate.admits("Alice"));
+        // A mixed-case key must not revoke or replace the canonical one either.
+        registry.put("alice", VALID);
+        registry.remove("ALICE");
+        registry.put("ALICE", "garbage".getBytes(StandardCharsets.UTF_8));
+        assertTrue(gate.admits("alice"));
+    }
+
+    @Test
+    void deniesNamesThatAreNotPlainUsernames() {
+        // Kelvin sign lowercases to "k" and dotted capital I to "i" in some locales; neither may match.
+        registry.put("kelvin", VALID);
+        registry.put("iris", VALID);
+        registry.markSynced();
+        assertTrue(gate.admits("kelvin"));
+        assertFalse(gate.admits("\u212Aelvin"));
+        assertFalse(gate.admits("\u0130ris"));
+        assertFalse(gate.admits(""));
+        assertFalse(gate.admits("a".repeat(17)));
+        assertFalse(gate.admits("al ice"));
+        assertFalse(gate.admits("alice\n"));
+    }
+
+    @Test
+    void aReplayReplacesTheOldEntriesOnlyAtTheEnd() {
+        registry.put("alice", VALID);
+        registry.put("bob", VALID);
+        registry.markSynced();
+
+        registry.markUnsynced();
+        registry.beginReplay();
+        registry.put("alice", VALID);
+        assertFalse(gate.admits("alice"), "closed until the replay ends");
+        registry.markSynced();
+        assertTrue(gate.admits("alice"));
+        assertFalse(gate.admits("bob"), "a key deleted while the watch was down is gone");
+    }
+
+    @Test
+    void aLostWatchClosesTheGate() {
+        registry.put("alice", VALID);
+        registry.markSynced();
+        registry.markUnsynced();
+        assertFalse(gate.admits("alice"));
+    }
+
+    @Test
+    void aDeleteOrPurgeFromTheWatchRevokes() {
+        registry.put("alice", VALID);
+        registry.put("bob", VALID);
+        registry.markSynced();
+        RegistryClient.apply(registry, KeyValueOperation.DELETE, "alice", null);
+        RegistryClient.apply(registry, KeyValueOperation.PURGE, "bob", null);
+        assertFalse(gate.admits("alice"));
+        assertFalse(gate.admits("bob"));
+        RegistryClient.apply(registry, KeyValueOperation.PUT, "alice", VALID);
         assertTrue(gate.admits("alice"));
     }
 

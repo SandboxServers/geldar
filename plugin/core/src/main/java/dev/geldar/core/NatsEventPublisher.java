@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BooleanSupplier;
 import java.util.logging.Logger;
 
 /**
@@ -34,11 +35,14 @@ public final class NatsEventPublisher implements EventPublisher {
     private static final long FAILURE_PAUSE_MS = 250;
     private static final long DROP_LOG_INTERVAL_MS = 60_000;
     private static final long CLOSE_FLUSH_MS = 2_000;
+    /** Failed sends in a row after which the worker reconnects and re-checks the stream. */
+    static final int MAX_CONSECUTIVE_FAILURES = 20;
 
     private long loggedDrops;
     private long lastDropLogNanos = System.nanoTime();
     private volatile boolean running = true;
     private volatile boolean connected;
+    private int consecutiveFailures;
 
     public NatsEventPublisher(String url, int queueCapacity, Logger log) {
         this.url = url;
@@ -88,6 +92,7 @@ public final class NatsEventPublisher implements EventPublisher {
                 JetStream js = nc.jetStream();
                 ensureStream(nc.jetStreamManagement());
                 connected = true;
+                consecutiveFailures = 0;
                 backoffMs = 500;
                 log.info("Connected to NATS, publishing into " + STREAM);
                 drain(nc, js);
@@ -131,38 +136,65 @@ public final class NatsEventPublisher implements EventPublisher {
         }
     }
 
-    private void drain(Connection nc, JetStream js) throws InterruptedException {
+    private void drain(Connection nc, JetStream js) throws InterruptedException, IOException {
+        Sender sender = (subject, headers, body) -> js.publish(subject, headers, body);
         while (running && nc.getStatus() == Connection.Status.CONNECTED) {
             logDrops();
             EventEnvelope event = queue.poll(500, TimeUnit.MILLISECONDS);
             if (event == null) {
                 continue;
             }
-            if (!send(js, event)) {
-                queue.offerFirst(event);
+            if (!attempt(sender, event)) {
+                if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                    // The connection can look fine while the stream is gone; reconnecting re-runs ensureStream.
+                    throw new IOException("publishing failed " + consecutiveFailures + " times in a row");
+                }
                 Thread.sleep(FAILURE_PAUSE_MS);
             }
         }
-        flushOnClose(nc, js);
+        flushOnClose(nc, sender);
+    }
+
+    /** Sends one event; a failed event goes back to the head of the queue and counts toward a reconnect. */
+    boolean attempt(Sender sender, EventEnvelope event) {
+        if (send(sender, event)) {
+            consecutiveFailures = 0;
+            return true;
+        }
+        consecutiveFailures++;
+        queue.offerFirst(event);
+        return false;
     }
 
     /** On shutdown, sends what is still queued (a final death must not be lost), for a bounded time. */
-    private void flushOnClose(Connection nc, JetStream js) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(CLOSE_FLUSH_MS);
-        while (nc.getStatus() == Connection.Status.CONNECTED && System.nanoTime() < deadline) {
+    private void flushOnClose(Connection nc, Sender sender) throws InterruptedException {
+        flush(sender, () -> nc.getStatus() == Connection.Status.CONNECTED, CLOSE_FLUSH_MS);
+    }
+
+    /** Sends queued events while {@code connected} holds and the budget lasts; stops at the first failure. */
+    void flush(Sender sender, BooleanSupplier connected, long budgetMs) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs);
+        while (connected.getAsBoolean() && System.nanoTime() < deadline) {
             EventEnvelope event = queue.poll(0, TimeUnit.MILLISECONDS);
-            if (event == null || !send(js, event)) {
-                if (event != null) {
-                    queue.offerFirst(event);
-                }
+            if (event == null) {
+                return;
+            }
+            if (!send(sender, event)) {
+                queue.offerFirst(event);
                 return;
             }
         }
     }
 
-    private boolean send(JetStream js, EventEnvelope event) {
+    /** The one call that reaches JetStream; a seam so the retry paths can be tested without a server. */
+    @FunctionalInterface
+    interface Sender {
+        void publish(String subject, Headers headers, byte[] body) throws Exception;
+    }
+
+    private boolean send(Sender sender, EventEnvelope event) {
         try {
-            js.publish(event.subject(), headers(event), event.toBytes());
+            sender.publish(event.subject(), headers(event), event.toBytes());
             published.incrementAndGet();
             return true;
         } catch (Exception e) {
@@ -172,6 +204,15 @@ public final class NatsEventPublisher implements EventPublisher {
         }
     }
 
+    /** Failed sends in a row since the last success. */
+    int consecutiveFailures() {
+        return consecutiveFailures;
+    }
+
+    /** The events waiting to be sent. */
+    int queued() {
+        return queue.size();
+    }
     /** Logs the drop count when it changed, at most once a minute. */
     private void logDrops() {
         long now = System.nanoTime();

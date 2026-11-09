@@ -14,7 +14,7 @@ describe('mcp-mock-image workflow', () => {
     const login = workflow.slice(workflow.indexOf('docker/login-action'));
     expect(login.slice(0, login.indexOf('with:'))).toContain(`if: ${gate}`);
     const push = workflow.slice(workflow.indexOf('id: push'));
-    expect(push.slice(0, push.indexOf('with:'))).toContain(`if: ${gate}`);
+    expect(push.slice(0, push.indexOf('run:'))).toContain(`if: ${gate}`);
   });
 
   it('does not persist the checkout credentials', () => {
@@ -24,7 +24,7 @@ describe('mcp-mock-image workflow', () => {
   it('tests the loaded image before it logs in or pushes', () => {
     const test = workflow.indexOf('name: image test');
     const login = workflow.indexOf('docker/login-action');
-    const push = workflow.indexOf('push: true');
+    const push = workflow.indexOf('docker push');
     expect(test).toBeGreaterThan(-1);
     expect(login).toBeGreaterThan(test);
     expect(push).toBeGreaterThan(login);
@@ -61,9 +61,16 @@ describe('mcp-mock-image workflow', () => {
   it('has no unused env', () => {
     expect(workflow).not.toMatch(/^\s+IMAGE:/m);
   });
-  it('does not upload a build-record artifact from either build step', () => {
+  it('pushes the image the test ran against instead of rebuilding it', () => {
+    expect(workflow).not.toContain('push: true');
+    const step = workflow.slice(workflow.indexOf('id: push'));
+    expect(step).toContain('docker push "$REPO:main"');
+    expect(step).toContain('docker push "$REPO:sha-$SHA"');
+  });
+
+  it('does not upload a build-record artifact from the build step', () => {
     const steps = workflow.split('uses: docker/build-push-action@').slice(1);
-    expect(steps).toHaveLength(2);
+    expect(steps).toHaveLength(1);
     for (const step of steps) {
       const head = step.slice(0, step.indexOf('with:'));
       expect(head).toContain("DOCKER_BUILD_RECORD_UPLOAD: 'false'");

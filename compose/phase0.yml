@@ -94,7 +94,9 @@ services:
       - "127.0.0.1:25575:25575"
     healthcheck:
       <<: *mc-health
-      test: ["CMD-SHELL", "mc-health"]
+      # Healthy only when the server is up AND Geldar-Core enabled: a plugin that failed to load must not
+      # leave a healthy server with no command block and no export. Paper logs to /data/logs/latest.log.
+      test: ["CMD-SHELL", "mc-health && grep -q 'Geldar-Core enabled' /data/logs/latest.log"]
     restart: unless-stopped
 
   velocity:
@@ -110,7 +112,7 @@ services:
     volumes:
       - ./velocity/velocity.toml:/config/velocity.toml:ro
       - velocity-data:/server
-      # itzg/mc-proxy copies /plugins into /server/plugins on start (not verified without Docker). Build the jar first: cd plugin; ./gradlew build
+      # itzg/mc-proxy copies /plugins into /server/plugins on start. Build the jar first: cd plugin; ./gradlew build
       - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
     ports:
       # The bot ingress. Phase 0 stands in for production's internal VLAN (decision 0021).
@@ -121,7 +123,9 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/25565"]
+      # Port open AND the identity plugin enabled: without the plugin the proxy would admit anyone.
+      # Velocity logs to /server/logs/latest.log (not verified without Docker; `shard up` re-checks the log).
+      test: ["CMD", "bash", "-c", "grep -q 'Geldar identity enabled' /server/logs/latest.log && exec 3<>/dev/tcp/127.0.0.1/25565"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -145,6 +149,7 @@ services:
       nats:
         condition: service_healthy
     restart: unless-stopped
+
 secrets:
   postgres:
     file: ./secrets/postgres.txt

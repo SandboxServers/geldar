@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -19,6 +20,17 @@ public final class GeldarCore extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        try {
+            enable();
+        } catch (RuntimeException e) {
+            // A server that runs on without the command block and the export is worse than one that stops.
+            getLogger().log(Level.SEVERE, "Geldar-Core failed to enable; stopping the server", e);
+            onDisable();
+            getServer().shutdown();
+        }
+    }
+
+    private void enable() {
         saveDefaultConfig();
         CoreConfig config = CoreConfig.load(getConfig(), System::getenv);
         publisher = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger());

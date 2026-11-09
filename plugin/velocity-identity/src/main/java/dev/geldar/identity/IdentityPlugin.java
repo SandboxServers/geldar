@@ -13,6 +13,8 @@ import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
@@ -35,7 +37,13 @@ public final class IdentityPlugin {
     private final Logger log;
     private final LifeRegistry registry = new LifeRegistry();
     private final LoginGate gate = new LoginGate(registry);
+    private static final int MAX_LOGGED_DENIALS = 10;
+    private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
+
     private RegistryClient client;
+    private long denyWindowStart = System.nanoTime();
+    private int loggedDenials;
+    private int suppressedDenials;
 
     @Inject
     public IdentityPlugin(ProxyServer proxy, Logger log) {
@@ -73,12 +81,44 @@ public final class IdentityPlugin {
             return;
         }
         event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
-        log.info("Denied {}", printable(player.getUsername()));
+        if (allowDenyLog()) {
+            log.info("Denied {}", printable(player.getUsername()));
+        }
+    }
+
+    /** Denials come from anyone who can reach the port: log at most 10 per 10 s and count the rest. */
+    private synchronized boolean allowDenyLog() {
+        long now = System.nanoTime();
+        if (now - denyWindowStart >= DENY_WINDOW_NANOS) {
+            if (suppressedDenials > 0) {
+                log.info("{} more denials were not logged in the last window", suppressedDenials);
+            }
+            denyWindowStart = now;
+            loggedDenials = 0;
+            suppressedDenials = 0;
+        }
+        if (loggedDenials >= MAX_LOGGED_DENIALS) {
+            suppressedDenials++;
+            return false;
+        }
+        loggedDenials++;
+        return true;
     }
 
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
-        gate.release(event.getPlayer().getUniqueId());
+        release(event.getPlayer().getUniqueId(), event.getLoginStatus());
+    }
+
+    /**
+     * Forgets an admission when its connection ends. A login that lost to an already connected player of the
+     * same name ends with CONFLICTING_LOGIN and shares that player's UUID: it must not revoke the live admission.
+     */
+    void release(UUID connection, DisconnectEvent.LoginStatus status) {
+        if (status == DisconnectEvent.LoginStatus.CONFLICTING_LOGIN) {
+            return;
+        }
+        gate.release(connection);
     }
 
     /** Drops {@code geldar:cmd} messages from any client connection that was not admitted. */
