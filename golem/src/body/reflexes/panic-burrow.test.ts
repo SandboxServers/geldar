@@ -1,6 +1,7 @@
+import type { Action } from '@geldar/contract';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
-import { ActionRegistry } from '../../actions/registry.ts';
+import { type ActionContext, type ActionHandler, ActionRegistry } from '../../actions/registry.ts';
 import { allReflexesOn, ReflexRunner } from '../index.ts';
 import { MemorySink } from '../records.ts';
 import { panicBurrowReflex, pickSeal, planBreakout, planBurrow } from './panic-burrow.ts';
@@ -262,6 +263,28 @@ describe('panic burrow: run', () => {
     view.enclosed = false;
     expect(panicBurrowReflex.check(view)).toBeNull();
   });
+  it('runs the seal placements at the runtime time scale', async () => {
+    const world = wallWorld();
+    const grid = gridBot(world, FEET);
+    grid.inventory.set('dirt', 4);
+    const seen: number[] = [];
+    const registry = new ActionRegistry();
+    registry.register(gridMine(world, grid));
+    const place: ActionHandler<'place'> = gridPlace(world, grid);
+    registry.register({
+      ...place,
+      run: async (actx: ActionContext, action: Extract<Action, { do: 'place' }>) => {
+        seen.push(actx.timeScale);
+        return place.run(actx, action);
+      },
+    });
+    const ctx = reflexContext(grid.bot, settableView(grid), registry);
+    ctx.timeScale = 5;
+    await panicBurrowReflex.run({ phase: 'night' }, ctx);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((scale) => scale === 5)).toBe(true);
+  });
+
   it('fails when it has nothing to seal with', async () => {
     const world = wallWorld();
     // Stone drops a block that is no seal, so the Body has nothing to close the mouth with.

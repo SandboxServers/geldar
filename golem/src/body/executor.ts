@@ -358,7 +358,7 @@ export class IntentExecutor {
     await a.stepping;
   }
 
-  /** Waits for a busy reflex to end, at most REFLEX_IDLE_MS (scaled); a stuck reflex is logged, not obeyed forever. */
+  /** Waits for a busy reflex to end, at most `REFLEX_IDLE_MS` (scaled); a stuck reflex is logged, not obeyed forever. */
   private async reflexIdle(): Promise<void> {
     const runner = this.runtime.reflexRunner;
     if (!runner.busy) return;
