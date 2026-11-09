@@ -13,6 +13,8 @@ interface FakeBlock {
   drops: number[];
   harvestTools: Record<number, boolean> | undefined;
   canHarvest(tool: number | null): boolean;
+  /** `'empty'` for air: a drop falls through it. Solid blocks leave it unset. */
+  boundingBox?: 'empty';
 }
 
 /** A block of `type` at `at`. It can be harvested bare-handed unless `harvestTools` says otherwise. */
@@ -206,6 +208,91 @@ describe('mineAction', () => {
     expect(vi.mocked(moveNear).mock.calls.map(([, , range]) => range)).toEqual([0]);
   });
 
+  it('fails not_possible when the reach walk ends on the block, and digs nothing', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG])]);
+    // Out of dig reach, so the walk runs; it moves the bot onto the cell above the block.
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      bot.entity.position = new Vec3(3, 64, 0);
+      return { ok: true, distance: 0 };
+    });
+    expect(await mine(bot, 1)).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      detail: { mined: 0 },
+    });
+    expect(bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('walks once toward a block that is not in view, then digs it again', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
+    bot.canDigBlock.mockReturnValue(true);
+    bot.dig.mockRejectedValueOnce(new Error('Block is not in view'));
+    expect(await mine(bot, 1)).toEqual({
+      status: 'completed',
+      detail: { mined: 1, collected: { oak_log: 1 } },
+    });
+    expect(bot.dig).toHaveBeenCalledTimes(2);
+    // The retry walk (range 3) comes between the two digs; the pickup walk (range 0) is last.
+    expect(vi.mocked(moveNear).mock.calls.map(([, , range]) => range)).toEqual([3, 0]);
+  });
+
+  it('fails blocked and digs no more than twice when the retry is still not in view', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
+    bot.canDigBlock.mockReturnValue(true);
+    bot.dig.mockRejectedValue(new Error('Block is not in view'));
+    expect(await mine(bot, 1)).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      detail: { mined: 0 },
+    });
+    expect(bot.dig).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails not_possible when the retry walk ends on the block, and digs nothing more', async () => {
+    const bot = fakeBot([block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG])]);
+    bot.canDigBlock.mockReturnValue(true);
+    bot.dig.mockRejectedValueOnce(new Error('Block is not in view'));
+    // The walk moves the bot onto the cell above the block, so the block is under its feet.
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      bot.entity.position = new Vec3(3, 64, 0);
+      return { ok: true, distance: 0 };
+    });
+    expect(await mine(bot, 1)).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      detail: { mined: 0 },
+    });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
+  });
+
+  it('walks the drop to the lowest air cell under the broken block', async () => {
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      { ...block(0, new Vec3(2, 63, 0), []), boundingBox: 'empty' },
+    ]);
+    bot.canDigBlock.mockReturnValue(true);
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    // With the reach walk skipped, the only walk is the pickup, to the air cell below.
+    expect(vi.mocked(moveNear).mock.calls).toHaveLength(1);
+    expect(vi.mocked(moveNear).mock.calls[0]?.[1]).toEqual(new Vec3(2, 63, 0));
+    expect(vi.mocked(moveNear).mock.calls[0]?.[2]).toBe(0);
+  });
+
+  it('does not dig a cell twice: a cell already tried is left out of the next search', async () => {
+    // The first dig reports success but leaves the log in place, so the cell is still wanted.
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      block(OAK_LOG, new Vec3(3, 64, 0), [OAK_LOG]),
+    ]);
+    bot.canDigBlock.mockReturnValue(true);
+    bot.dig.mockImplementationOnce(async () => undefined);
+    expect(await mine(bot, 2)).toMatchObject({ status: 'completed', detail: { mined: 2 } });
+    expect(bot.dig.mock.calls.map(([target]) => target.position)).toEqual([
+      new Vec3(2, 64, 0),
+      new Vec3(3, 64, 0),
+    ]);
+  });
+
   it('completes when the walk to a drop fails, because the wait and the inventory decide', async () => {
     const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
     vi.mocked(moveNear)
@@ -284,7 +371,8 @@ describe('mineAction', () => {
     ['boom', 'internal'],
   ] as const)('maps a dig rejection of "%s" to %s', async (message, reason) => {
     const bot = fakeBot([block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG])]);
-    bot.dig.mockRejectedValueOnce(new Error(message));
+    // Persistent, so a "not in view" rejection is still there after the one retry.
+    bot.dig.mockRejectedValue(new Error(message));
     expect(await mine(bot, 1)).toMatchObject({ status: 'failed', reason, detail: { mined: 0 } });
   });
 });

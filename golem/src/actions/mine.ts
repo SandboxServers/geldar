@@ -97,17 +97,19 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (signal.aborted) return abort(bot, mined);
 
     const before = snapshot(bot);
-    // `stopDigging` ends a dig already in progress, so an abort during the dig takes effect.
-    const stopDig = (): void => bot.stopDigging();
-    signal.addEventListener('abort', stopDig, { once: true });
-    try {
-      await bot.dig(block);
-    } catch (error) {
+    let error = await digOnce(bot, block, signal);
+    // `canDigBlock` is a distance test only: a block in reach can still be occluded. One walk
+    // toward it, then one more dig, is the fix for "not in view".
+    if (error !== null && !signal.aborted && /not in view/.test(error)) {
+      const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
+      if (!reach.ok) return fromMove(bot, reach, mined);
       if (signal.aborted) return abort(bot, mined);
-      const message = errorText(error);
-      return failed(digReason(message), message, { mined });
-    } finally {
-      signal.removeEventListener('abort', stopDig);
+      if (standsOn(bot, at)) return failed('not_possible', 'would drop the bot', { mined });
+      error = await digOnce(bot, block, signal);
+    }
+    if (error !== null) {
+      if (signal.aborted) return abort(bot, mined);
+      return failed(digReason(error), error, { mined });
     }
     // The block is broken even if the abort came during the dig, so it counts.
     mined += 1;
@@ -170,6 +172,23 @@ function toolNames(bot: Bot, block: Block): string[] {
   return Object.keys(block.harvestTools ?? {}).map(
     (id) => bot.registry.items[Number(id)]?.name ?? id,
   );
+}
+
+/**
+ * One dig of `block`. Resolves to the rejection message, or null when the block was broken.
+ * `stopDigging` ends a dig already in progress, so an abort during the dig takes effect.
+ */
+async function digOnce(bot: Bot, block: Block, signal: AbortSignal): Promise<string | null> {
+  const stopDig = (): void => bot.stopDigging();
+  signal.addEventListener('abort', stopDig, { once: true });
+  try {
+    await bot.dig(block);
+    return null;
+  } catch (error) {
+    return errorText(error);
+  } finally {
+    signal.removeEventListener('abort', stopDig);
+  }
 }
 
 /** Maps a dig rejection to a failure reason. Only the messages Mineflayer uses are matched. */
