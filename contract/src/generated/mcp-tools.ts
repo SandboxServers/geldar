@@ -800,11 +800,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "define_skill": {
-    "description": "Define a reusable skill from code. It is tested before it is saved.",
+    "description": "Create a Body skill from code that runs in the colo sandbox. Returns the test result.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Define a reusable skill from code. It is tested before it is saved.",
+      "description": "Create a Body skill from code that runs in the colo sandbox. Returns the test result.",
       "additionalProperties": false,
       "required": [
         "name",
@@ -862,11 +862,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "journal": {
-    "description": "Write an entry in your journal. It is kept between days.",
+    "description": "Append an entry to the colo's mirror of this player's journal.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Write an entry in your journal. It is kept between days.",
+      "description": "Append an entry to the colo's mirror of this player's journal.",
       "additionalProperties": false,
       "required": [
         "text"
@@ -1457,11 +1457,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "offer": {
-    "description": "Offer items from your inventory to the player or agent next to you.",
+    "description": "Offer items from your inventory at the shrine.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Offer items from your inventory to the player or agent next to you.",
+      "description": "Offer items from your inventory at the shrine.",
       "additionalProperties": false,
       "required": [
         "item",
@@ -1742,11 +1742,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "sleep": {
-    "description": "Sleep through the night: ends the day and returns a digest of what happened.",
+    "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Sleep through the night: ends the day and returns a digest of what happened.",
+      "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
       "additionalProperties": false
     },
     "result": {
@@ -1903,11 +1903,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "status": {
-    "description": "Check your budget, how long you have been alive and the community rules.",
+    "description": "Check your budget remaining, days alive, days since sleep and the laws in force.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Check your budget, how long you have been alive and the community rules.",
+      "description": "Check your budget remaining, days alive, days since sleep and the laws in force.",
       "additionalProperties": false
     },
     "result": {

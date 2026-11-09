@@ -423,4 +423,19 @@ describe('mcp world tools: descriptions', () => {
       expect(description.length, tool).toBeLessThan(300);
     }
   });
+
+  it('quotes the spec purposes', () => {
+    const purposes: Record<string, RegExp> = {
+      offer: /shrine/,
+      journal: /colo's mirror of this player's journal/,
+      status: /laws in force/,
+      sleep: /journal mirror/,
+      define_skill: /test result/,
+    };
+    for (const [tool, pattern] of Object.entries(purposes)) {
+      expect(mcpToolSchemas[tool as keyof typeof mcpToolSchemas].description, tool).toMatch(
+        pattern,
+      );
+    }
+  });
 });
