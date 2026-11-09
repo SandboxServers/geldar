@@ -144,6 +144,11 @@ describe('law values', () => {
     expect(() => parseScenario(law('v'.repeat(256)))).not.toThrow();
   });
 });
+describe('parseScenario text', () => {
+  it('strips a UTF-8 byte order mark', () => {
+    expect(parseScenario(`\uFEFF${JSON.stringify(base())}`).name).toBe('dawn');
+  });
+});
 describe('applyOverrides', () => {
   it('lets flags beat the file and the file beat the defaults', () => {
     const s = parseScenario(
@@ -189,4 +194,16 @@ describe('applyOverrides', () => {
     expect(() => parseScenario(JSON.stringify({ ...base(), day_length_seconds: 0.0001 }))).toThrow(
       'scenario: day_length_seconds',
     );
-  });});
+  });
+  it('returns a deep copy', () => {
+    const s = parseScenario(JSON.stringify(base()));
+    const o = applyOverrides(s, { dayLengthSeconds: 24 });
+    o.wake.min_spacing_seconds = 999;
+    o.character.position.x = 999;
+    o.events.push({ type: 'damage', at_tick: 1, amount: 1 });
+    expect(s.wake.min_spacing_seconds).toBe(20);
+    expect(s.character.position.x).toBe(0);
+    expect(s.events).toHaveLength(0);
+    expect(s.day_length_seconds).toBe(2400);
+  });
+});

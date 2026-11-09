@@ -129,7 +129,7 @@ export type Scenario = z.output<typeof scenarioSchema>;
 export function parseScenario(text: string): Scenario {
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(text.replace(/^\uFEFF/, ''));
   } catch {
     throw new Error('scenario: (file): not valid JSON');
   }
