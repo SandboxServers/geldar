@@ -2,21 +2,27 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** the scaffold PR (GitHub #2: repo setup, agent setup, CI, this campaign folder) is merged to `main`. Already done in repo settings: `main` is protected (PR required, required check `ci gate`, no force-push or deletion; admins can bypass), Dependabot alerts and security updates are on. No packet has been dispatched.
+**State (2026-11-08):** scaffold PR #2 merged. `main` is protected (PR, required check `ci gate`). Owner decisions settled (Minecraft 26.1, Velocity from Phase 0). Branch `phase0/wave1` exists on origin; `.claude/state/active-campaign` = phase0.
 
-**Current wave:** 1, the contract and a healthy stack (ships as the wave 1 PR).
+**Current wave:** 1, the contract and a healthy stack (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
 
-**In flight:** nothing.
+**In flight (coders, background, started 2026-11-08):**
 
-**Next action:**
+| Packet | Worktree | Branch | Stage |
+|---|---|---|---|
+| P0-00 | `.claude/worktrees/p0-00` | `phase0/p0-00-threat-model` | writing (Sonnet general-purpose) |
+| P0-01 | `.claude/worktrees/p0-01` | `phase0/p0-01-contract` | writing |
+| P0-05 | `.claude/worktrees/p0-05` | `phase0/p0-05-sql` | writing |
 
-1. Owner decisions are settled: Minecraft 26.1 (D-P0-07, decision 0022) and Velocity from Phase 0 (D-P0-08, decision 0021).
-2. Create `phase0/wave1` from `main` and push it. Packet worktrees branch from it (work-packets.md, wave 1 intro).
-3. Dispatch in parallel: P0-00 (threat model, Sonnet), P0-01 (contract), P0-05 (sql).
-4. When P0-01 has `ship`, merge it into `phase0/wave1`, then dispatch P0-02, P0-03, P0-04 in parallel from there. Resolve their `contract/src/index.ts` and generated-file conflicts at merge as work-packets.md § Contract says.
-5. When P0-05 has `ship`, dispatch P0-06 with the Ollama model tags filled in (versions are in its packet).
-6. Wave review, then one PR from `phase0/wave1` to `main`.
+`.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.
+
+**Next actions:**
+
+1. As each coder returns `done`, start a fresh `packet-reviewer` (pass 1; report `<worktree>/.claude/reports/phase0/<packet>-review-1.md`). `fix` goes to a fresh packet-coder, up to 3 passes. `decision` or `fix` after pass 3: ask the owner.
+2. On `ship`, `git merge --no-ff` the branch into `phase0/wave1`, push, update the ledger row.
+3. After P0-01 is merged: dispatch P0-02, P0-03, P0-04 in parallel from `origin/phase0/wave1`; resolve `contract/src/index.ts` and `contract/src/generated/*` conflicts per work-packets.md § Contract.
+4. After P0-05 is merged: `ollama list`; if Qwen3 32B and 8B are both present, dispatch P0-06 with the exact tags, else ask the owner before pulling.
+5. All seven shipped: wave review over `origin/main..phase0/wave1`, then `./geldar.ps1 check`, open the PR, wait for `ci gate`, tell the owner. Don't merge.
+6. Before removing packet worktrees (only after the PR is open), copy useful `.claude/reports/` files into `worknotes/`.
 
 **Open owner decisions:** none.
-
-**Worktrees:** none.
