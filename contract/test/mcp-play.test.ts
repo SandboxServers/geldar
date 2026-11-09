@@ -198,6 +198,15 @@ describe('look, say and act results', () => {
     expect(validateToolResult('act', ok).ok).toBe(true);
     expect(validateToolResult('act', { ...ok, accepted: [0.5] }).ok).toBe(false);
     expect(validateToolResult('act', { ...ok, ids: [] }).ok).toBe(false);
+    for (const bad of [
+      { index: 0.5, reason: 'x' },
+      { index: 1, reason: 'Bad' },
+      { index: 1, reason: 'x', extra: 1 },
+    ]) {
+      expect(validateToolResult('act', { ...ok, rejected: [bad] }).ok, JSON.stringify(bad)).toBe(
+        false,
+      );
+    }
   });
 
   it('reports an unknown tool', () => {
