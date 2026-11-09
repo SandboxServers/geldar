@@ -17,6 +17,10 @@ interface Options {
   ignoreClick?: number;
   /** After this many answered syncs the server stops answering. */
   muteAfterSyncs?: number;
+  /** 1-based index of a sync whose answer is held back this many ms (later answers queue behind it). */
+  lateSync?: { n: number; ms: number };
+  /** 1-based index of a click that finds the server's stateId bumped (the client view is stale). */
+  bumpAtClick?: number;
   /** Runs after each non-sync click is written (the number of clicks so far). */
   onClick?: (n: number) => void;
 }
@@ -40,7 +44,9 @@ function rig(chest: Cell[], opts: Options = {}) {
     inventoryStart: CHEST,
     inventoryEnd: SIZE,
   };
-  const deliver = (): void => {
+  let lastLand = 0;
+  let inFlight = 0;
+  const deliver = (extra = 0): void => {
     const items = server.map((c) => (c ? { ...c } : null));
     const carried = cursor ? { ...cursor } : null;
     serverState += 1;
@@ -52,8 +58,19 @@ function rig(chest: Cell[], opts: Options = {}) {
       container.selectedItem = carried;
       emitter.emit('window_items', { windowId: 7, stateId: state });
     };
-    if (opts.latencyMs) setTimeout(land, opts.latencyMs);
-    else land();
+    const delay = (opts.latencyMs ?? 0) + extra;
+    if (delay === 0 && inFlight === 0) {
+      land();
+      return;
+    }
+    // The server answers in order: a held-back answer holds every later one.
+    const at = Math.max(Date.now() + delay, lastLand + 1);
+    lastLand = at;
+    inFlight += 1;
+    setTimeout(() => {
+      inFlight -= 1;
+      land();
+    }, at - Date.now());
   };
   const apply = (slot: number, button: number): void => {
     const here = server[slot] ?? null;
@@ -88,14 +105,16 @@ function rig(chest: Cell[], opts: Options = {}) {
         log.push('sync');
         syncs += 1;
         if (opts.muteAfterSyncs !== undefined && syncs > opts.muteAfterSyncs) return;
-        deliver();
+        deliver(opts.lateSync?.n === syncs ? opts.lateSync.ms : 0);
         return;
       }
       clicks += 1;
+      if (clicks === opts.bumpAtClick) serverState += 1;
       log.push(`click:${p.slot}:${p.mouseButton}:${p.stateId}`);
       const stale = p.stateId !== serverState;
+      // Vanilla still runs a stale click, then sends the full window on top of the sync's answer.
+      if (clicks !== opts.ignoreClick) apply(p.slot as number, p.mouseButton as number);
       if (stale) deliver();
-      else if (clicks !== opts.ignoreClick) apply(p.slot as number, p.mouseButton as number);
       opts.onClick?.(clicks);
     },
   };
@@ -111,6 +130,7 @@ function rig(chest: Cell[], opts: Options = {}) {
     container: container as unknown as Container,
     server,
     log,
+    emitter,
     cursor: () => cursor,
   };
 }
@@ -192,6 +212,25 @@ describe('transferItems', () => {
     expect(end.error).not.toBeNull();
     expect(r.cursor()).toBeNull();
     expect(total(r.server, 0, SIZE)).toBe(10);
+  });
+
+  it('survives a late sync answer: the owed answer is swallowed, not taken for the next barrier', async () => {
+    const r = rig([{ type: 1, count: 10 }], { lateSync: { n: 2, ms: 40 } });
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+    expect(end).toEqual({ error: null, aborted: false });
+    expect(r.server[0]).toEqual({ type: 1, count: 6 });
+    expect(total(r.server, CHEST, SIZE)).toBe(4);
+    expect(r.cursor()).toBeNull();
+    expect(r.emitter.listenerCount('window_items')).toBe(0);
+  });
+
+  it('handles a stale stateId click that the server runs and answers twice', async () => {
+    const r = rig([{ type: 1, count: 10 }], { bumpAtClick: 2 });
+    const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
+    expect(end).toEqual({ error: null, aborted: false });
+    expect(total(r.server, CHEST, SIZE)).toBe(4);
+    expect(r.cursor()).toBeNull();
+    expect(r.emitter.listenerCount('window_items')).toBe(0);
   });
 
   it('reports failure when the server stops answering', async () => {

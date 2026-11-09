@@ -67,6 +67,8 @@ interface Session {
   model: Model;
   /** The slot the stack on the cursor came from. */
   origin: number;
+  /** Answers still owed by barriers that timed out. */
+  owed: number;
   /** Set when the window stopped matching the prediction. */
   fault: string | null;
   /** Set while the cursor is put back, when the signal no longer stops the clicks. */
@@ -139,6 +141,8 @@ function applyClick(s: Session, slot: number, button: 0 | 1): void {
 /**
  * Writes the sync click and waits for the window's full answer. Returns false when the answer did not
  * come within the bounded wait. The listener is armed before the write: a reply may be synchronous.
+ * Answers still owed by earlier timed-out barriers arrive first (the server answers in order), so that
+ * many are swallowed: a late answer must not stand in for this barrier's own.
  */
 function barrier(s: Session): Promise<boolean> {
   return new Promise((resolve) => {
@@ -146,6 +150,10 @@ function barrier(s: Session): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onItems = (packet: unknown): void => {
       if ((packet as WindowPacket).windowId !== windowId) return;
+      if (s.owed > 0) {
+        s.owed -= 1;
+        return;
+      }
       clearTimeout(timer);
       client.removeListener('window_items', onItems);
       resolve(true);
@@ -153,6 +161,8 @@ function barrier(s: Session): Promise<boolean> {
     client.on('window_items', onItems);
     timer = setTimeout(() => {
       client.removeListener('window_items', onItems);
+      s.owed += 1;
+      console.warn(`[container-transfer] barrier timed out (window ${windowId}, owed ${s.owed})`);
       resolve(false);
     }, BARRIER_WAIT_MS * s.ctx.timeScale);
     client.write('window_click', {
@@ -167,9 +177,16 @@ function barrier(s: Session): Promise<boolean> {
   });
 }
 
+/** The fault text for the first difference between the prediction and the window. */
+function describeMismatch(index: number): string {
+  return index === -2 ? 'window differs at the cursor' : `window differs at slot ${index}`;
+}
+
 /**
  * One click: predict it, send it with the window's stateId, wait for the barrier, and require the
- * window to equal the prediction. On a mismatch the model becomes the window's truth and `fault` is set.
+ * window to equal the prediction. A timeout or a mismatch may come from a late or stray answer, so one
+ * more barrier is run and the window re-read before a fault is declared. On a fault the model becomes
+ * the window's truth and `fault` is set.
  */
 async function click(s: Session, slot: number, button: 0 | 1): Promise<boolean> {
   if (!s.restoring && s.ctx.signal.aborted) {
@@ -193,21 +210,23 @@ async function click(s: Session, slot: number, button: 0 | 1): Promise<boolean> 
     changedSlots,
     cursorItem: hashed(s.model.cursor),
   });
-  const answered = await barrier(s);
+  let answered = await barrier(s);
+  let diff = answered ? firstMismatch(s.model, readModel(s.container)) : -1;
+  if (!answered || diff !== -1) {
+    answered = await barrier(s);
+    diff = answered ? firstMismatch(s.model, readModel(s.container)) : diff;
+  }
+  if (answered && diff === -1) return true;
   const actual = readModel(s.container);
-  if (!answered) {
-    s.model = actual;
+  if (!answered && diff === -1) {
     s.fault = 'server did not confirm a transfer click';
-    return false;
+  } else {
+    s.fault = describeMismatch(diff);
+    console.warn(`[container-transfer] ${s.fault} after a click on slot ${slot}`);
   }
-  if (firstMismatch(s.model, actual) !== -1) {
-    s.model = actual;
-    s.fault = 'window does not match the predicted click';
-    return false;
-  }
-  return true;
+  s.model = actual;
+  return false;
 }
-
 /** True when a slot can take the cursor's stack whole. */
 function takesCursor(s: Session, slot: number): boolean {
   const cursor = s.model.cursor;
@@ -313,6 +332,7 @@ export async function transferItems(
     stateId: -1,
     model: readModel(container),
     origin: 0,
+    owed: 0,
     fault: null,
     restoring: false,
   };
