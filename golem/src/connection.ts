@@ -12,7 +12,11 @@ export interface ConnectionOptions {
   version?: string;
   /** Injectable for tests; the default is `mineflayer.createBot`. */
   createBot?: (o: BotOptions) => Bot;
-  sleep?: (ms: number) => Promise<void>;
+  /**
+   * Waits `ms` before a reconnect. The signal aborts on `stop()`, and a sleep that honours it ends
+   * at once. Default: a timer that is cleared on abort.
+   */
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
   rng?: () => number;
   /** A session shorter than this does not reset the attempt counter. Default 10 000 ms. */
@@ -21,13 +25,14 @@ export interface ConnectionOptions {
   log?: (line: Record<string, unknown>) => void;
 }
 
+/** Where the manager is: `idle` before `start()`, `connecting` and `online` while a bot is up. */
 export type ConnectionState = 'idle' | 'connecting' | 'online' | 'backoff' | 'stopped' | 'fatal';
 
 interface SessionEnd {
   reason: string;
   /** True when the server sent a kick; a kick is the only end that can be fatal. */
   kicked: boolean;
-  /** When the most recent spawn of this session happened, or null if it never spawned. */
+  /** When the first spawn of this session happened, or null if it never spawned. */
   spawnedAt: number | null;
 }
 
@@ -36,12 +41,40 @@ const DEFAULT_STABLE_MS = 10_000;
 /** A kick for a permanent refusal: retrying cannot succeed, so the connection goes fatal. */
 const PERMANENT_REFUSAL = /whitelist|banned/i;
 
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * Resolves after `ms`, or at once when `signal` aborts. Either way the timer and the abort
+ * listener are released, so a stopped manager leaves nothing behind.
+ */
+const defaultSleep = (ms: number, signal: AbortSignal): Promise<void> =>
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 
 const defaultLog = (line: Record<string, unknown>): void => {
   console.log(JSON.stringify(line));
 };
+
+/**
+ * A kick reason as text. Mineflayer passes the packet's reason through untouched, and on newer
+ * protocols that can be a parsed component object rather than a string.
+ */
+function reasonText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const json = JSON.stringify(value) as string | undefined;
+  return json ?? String(value);
+}
 
 /**
  * Keeps one bot connected: joins, and on a disconnect waits `nextDelayMs(attempt)` and joins
@@ -49,7 +82,9 @@ const defaultLog = (line: Record<string, unknown>): void => {
  * delayMs }), `fatal`({ reason }).
  */
 export class ConnectionManager extends EventEmitter {
+  /** Where the manager is now; see `ConnectionState`. */
   state: ConnectionState = 'idle';
+  /** The bot of the current or most recent session, or null before the first one. */
   bot: Bot | null = null;
   /** Consecutive failed sessions; 0 right after a stable session. */
   attempt = 0;
@@ -58,14 +93,13 @@ export class ConnectionManager extends EventEmitter {
   private readonly username: string;
   private readonly version: string;
   private readonly createBot: (o: BotOptions) => Bot;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly now: () => number;
   private readonly rng: () => number;
   private readonly stableMs: number;
   private readonly log: (line: Record<string, unknown>) => void;
-  /** Resolved by stop() so a pending backoff sleep ends at once. */
-  private readonly stopSignal: Promise<void>;
-  private resolveStop: () => void = () => {};
+  /** Aborted by stop() so a pending backoff sleep ends at once. */
+  private readonly stopController = new AbortController();
   private pending: { resolve: (bot: Bot) => void; reject: (err: Error) => void } | null = null;
 
   constructor(options: ConnectionOptions) {
@@ -80,9 +114,6 @@ export class ConnectionManager extends EventEmitter {
     this.rng = options.rng ?? Math.random;
     this.stableMs = options.stableMs ?? DEFAULT_STABLE_MS;
     this.log = options.log ?? defaultLog;
-    this.stopSignal = new Promise<void>((resolve) => {
-      this.resolveStop = resolve;
-    });
   }
 
   /** Joins and resolves on the first spawn. Rejects if the connection goes fatal before that. */
@@ -104,7 +135,7 @@ export class ConnectionManager extends EventEmitter {
   async stop(): Promise<void> {
     if (this.state === 'fatal' || this.state === 'stopped') return;
     this.state = 'stopped';
-    this.resolveStop();
+    this.stopController.abort();
     this.pending?.reject(new Error('connection stopped before the first spawn'));
     this.pending = null;
     this.bot?.quit();
@@ -127,7 +158,7 @@ export class ConnectionManager extends EventEmitter {
       this.state = 'backoff';
       this.emit('retry', { attempt: this.attempt, delayMs });
       this.log({ event: 'retry', attempt: this.attempt, delayMs, reason: end.reason });
-      await Promise.race([this.sleep(delayMs), this.stopSignal]);
+      await this.sleep(delayMs, this.stopController.signal);
       if (this.isStopped()) return;
       this.state = 'connecting';
     }
@@ -155,6 +186,8 @@ export class ConnectionManager extends EventEmitter {
         resolve({ reason, kicked, spawnedAt });
       };
       bot.on('spawn', () => {
+        // Death and dimension changes spawn again inside the same session: only the first counts.
+        if (spawnedAt !== null) return;
         spawnedAt = this.now();
         if (this.state === 'stopped') return;
         this.state = 'online';
@@ -162,7 +195,7 @@ export class ConnectionManager extends EventEmitter {
         this.pending?.resolve(bot);
         this.pending = null;
       });
-      bot.on('kicked', (reason: string) => finish(reason, true));
+      bot.on('kicked', (reason: unknown) => finish(reasonText(reason), true));
       bot.on('end', (reason?: string) => finish(reason ?? 'end', false));
       // Protocol errors are logged, not thrown: an unhandled 'error' event would crash the process.
       bot.on('error', (err: unknown) => {

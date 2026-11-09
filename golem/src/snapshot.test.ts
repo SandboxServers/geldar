@@ -1,7 +1,14 @@
+import { createRequire } from 'node:module';
 import { validateSnapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it } from 'vitest';
 import { buildSnapshot, type SnapshotOptions } from './snapshot.ts';
+
+const require = createRequire(import.meta.url);
+/** The 26.1 effect registry from minecraft-data, the same table the live bot's registry comes from. */
+const REGISTRY_EFFECTS = (
+  require('minecraft-data')('26.1') as { effects: Record<string, { name: string }> }
+).effects;
 
 /** A bot stand-in with only the fields the snapshot builder reads. */
 function fakeBot(over: Record<string, unknown> = {}): Bot {
@@ -42,6 +49,28 @@ describe('buildSnapshot', () => {
     expect(named(100)).toBe('day');
   });
 
+  it('switches time of day exactly at each window edge', () => {
+    const named = (timeOfDay: number) =>
+      buildSnapshot(fakeBot({ time: { age: 1000, timeOfDay } }), opts).world_time.time_of_day;
+    expect(named(11999)).toBe('day');
+    expect(named(12000)).toBe('dusk');
+    expect(named(13799)).toBe('dusk');
+    expect(named(13800)).toBe('night');
+    expect(named(22299)).toBe('night');
+    expect(named(22300)).toBe('dawn');
+    expect(named(23999)).toBe('dawn');
+    expect(named(0)).toBe('day');
+  });
+
+  it('names the weather, with thunder over rain over clear', () => {
+    const weather = (over: Record<string, unknown>) =>
+      buildSnapshot(fakeBot(over), opts).world_time.weather;
+    expect(weather({})).toBe('clear');
+    expect(weather({ isRaining: true })).toBe('rain');
+    expect(weather({ isRaining: true, thunderState: 1 })).toBe('thunder');
+    expect(weather({ isRaining: false, thunderState: 1 })).toBe('thunder');
+  });
+
   it('takes ticks from the world age and the day from age / 24000', () => {
     const snap = buildSnapshot(fakeBot({ time: { age: 50_000, timeOfDay: 2000 } }), opts);
     expect(snap.world_time).toMatchObject({ ticks: 50_000, day: 2 });
@@ -78,17 +107,63 @@ describe('buildSnapshot', () => {
         position: { x: 0, y: 64, z: 0 },
         effects: { 1: { id: 1, amplifier: 0, duration: 100 } },
       },
-      registry: { effects: { 1: { name: 'speed' } } },
+      registry: { effects: REGISTRY_EFFECTS },
     });
     const snap = buildSnapshot(bot, { ...opts, budgetRemainingThoughts: 7 });
     expect(snap.self.inventory).toEqual([{ item: 'cobblestone', count: 10 }]);
     expect(snap.self.held_item).toBe('stone_pickaxe');
-    expect(snap.self.effects).toEqual(['speed']);
+    expect(snap.self.effects).toEqual(['slowness']);
     expect(snap.self.budget_remaining_thoughts).toBe(7);
   });
 
-  it('throws when the contract rejects the result (health above 20)', () => {
-    expect(() => buildSnapshot(fakeBot({ health: 25 }), opts)).toThrow(
+  it('names active effects from the real 26.1 registry in snake_case', () => {
+    // minecraft-data 3.117.0 names effects in CamelCase; the contract wants snake_case.
+    const active = [0, 3, 10, 21].map((id) => [id, { id, amplifier: 0, duration: 100 }]);
+    const bot = fakeBot({
+      entity: { position: { x: 0, y: 64, z: 0 }, effects: Object.fromEntries(active) },
+      registry: { effects: REGISTRY_EFFECTS },
+    });
+    const snap = buildSnapshot(bot, opts);
+    expect(snap.self.effects).toEqual(['speed', 'mining_fatigue', 'resistance', 'absorption']);
+    expect(validateSnapshot(snap).ok).toBe(true);
+  });
+
+  it('builds a contract-valid snapshot with every 26.1 effect active', () => {
+    const all = Object.keys(REGISTRY_EFFECTS).map((id) => [
+      Number(id),
+      { id: Number(id), amplifier: 0, duration: 100 },
+    ]);
+    const bot = fakeBot({
+      entity: { position: { x: 0, y: 64, z: 0 }, effects: Object.fromEntries(all) },
+      registry: { effects: REGISTRY_EFFECTS },
+    });
+    const snap = buildSnapshot(bot, opts);
+    expect(snap.self.effects).toHaveLength(Object.keys(REGISTRY_EFFECTS).length);
+    expect(snap.self.effects).toContain('dolphins_grace');
+  });
+
+  it('drops effect ids the registry does not know and names that still fail the contract', () => {
+    const bot = fakeBot({
+      entity: {
+        position: { x: 0, y: 64, z: 0 },
+        effects: {
+          0: { id: 0, amplifier: 0, duration: 100 },
+          999: { id: 999, amplifier: 0, duration: 100 },
+          1: { id: 1, amplifier: 0, duration: 100 },
+        },
+      },
+      registry: { effects: { 0: { name: 'Speed' }, 1: { name: 'Odd Name' } } },
+    });
+    expect(buildSnapshot(bot, opts).self.effects).toEqual(['speed']);
+  });
+
+  it('caps health at the contract maximum of 20 (Health Boost can lift it above)', () => {
+    expect(buildSnapshot(fakeBot({ health: 25 }), opts).self.health).toBe(20);
+    expect(buildSnapshot(fakeBot({ health: 13.5 }), opts).self.health).toBe(13.5);
+  });
+
+  it('throws when the contract rejects the result (revision below 0)', () => {
+    expect(() => buildSnapshot(fakeBot(), { ...opts, revision: -1 })).toThrow(
       /snapshot rejected by the contract/,
     );
   });

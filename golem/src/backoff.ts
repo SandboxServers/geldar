@@ -6,6 +6,7 @@ export interface BackoffPolicy {
   jitter: number;
 }
 
+/** The reconnect policy Golem uses: 1 s doubling to a 30 s cap, with 20% jitter. */
 export const DEFAULT_BACKOFF: BackoffPolicy = { baseMs: 1000, maxMs: 30000, jitter: 0.2 };
 
 /**

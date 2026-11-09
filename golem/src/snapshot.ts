@@ -31,14 +31,15 @@ function timeOfDayName(t: number): Snapshot['world_time']['time_of_day'] {
   return 'day';
 }
 
+/** Thunder outranks rain: a thunderstorm is also raining, and the snapshot names one weather. */
 function weatherName(bot: Bot): Snapshot['world_time']['weather'] {
   if (bot.thunderState > 0) return 'thunder';
   if (bot.isRaining) return 'rain';
   return 'clear';
 }
 
-/** The contract's biome id: a bare lowercase name such as `plains`. */
-const BIOME_ID = /^[a-z_]{1,64}$/;
+/** The contract's bare lowercase name: biome ids and effect names both match it. */
+const CONTRACT_NAME = /^[a-z_]{1,64}$/;
 
 /**
  * The bare biome id for the snapshot, or `undefined` when there is no name or the name does not
@@ -48,15 +49,28 @@ const BIOME_ID = /^[a-z_]{1,64}$/;
 function biomeId(name: string | undefined): string | undefined {
   if (name === undefined) return undefined;
   const bare = name.replace(/^minecraft:/, '');
-  return BIOME_ID.test(bare) ? bare : undefined;
+  return CONTRACT_NAME.test(bare) ? bare : undefined;
 }
 
-/** Effect names from the entity's active effects; ids the registry does not know are dropped. */
+/**
+ * The snake_case form of a registry effect name: `MiningFatigue` becomes `mining_fatigue`, the
+ * spelling the contract uses. The 26.1 registry names are CamelCase.
+ */
+function snakeName(name: string): string {
+  return name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+/**
+ * Effect names from the entity's active effects, in snake_case. Ids the registry does not know,
+ * and names that still do not match the contract after conversion, are dropped.
+ */
 function effectNames(bot: Bot): string[] {
   const names: string[] = [];
   for (const effect of Object.values(bot.entity.effects)) {
-    const name = bot.registry.effects[effect.id]?.name;
-    if (name !== undefined) names.push(name);
+    const registryName = bot.registry.effects[effect.id]?.name;
+    if (registryName === undefined) continue;
+    const name = snakeName(registryName);
+    if (CONTRACT_NAME.test(name)) names.push(name);
   }
   return names;
 }
@@ -93,7 +107,8 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
     },
     self: {
       position,
-      health: bot.health,
+      // Health Boost can lift the current health above the contract's 20; the contract caps it.
+      health: Math.min(20, bot.health),
       hunger: bot.food,
       // Armor is computed in wave 4 from the equipped items; 0 until then.
       armor: 0,

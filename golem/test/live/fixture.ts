@@ -41,8 +41,13 @@ export async function withLiveBot(
     await bot.waitForTicks(10);
     await fn({ bot, ctl, arena, manager });
   } finally {
-    await manager.stop();
-    await restoreWorld(ctl);
-    await rcon.close();
+    // `stop()` does not wait for the bot to leave, so `restoreWorld` can run while it is leaving.
+    // RCON closes even when the restore fails.
+    try {
+      await manager.stop();
+      await restoreWorld(ctl);
+    } finally {
+      await rcon.close();
+    }
   }
 }
