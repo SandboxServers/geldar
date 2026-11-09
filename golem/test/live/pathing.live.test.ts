@@ -55,4 +55,22 @@ describe('pathing: moveNear on 26.1', () => {
       expect(Date.now() - abortedAt).toBeLessThan(2_000);
     });
   }, 180_000);
+
+  it('walks again at once after a cancel, without a PathStopped error', async () => {
+    await withLiveBot({ name: 'GolemSmoke', slot: 0 }, async ({ bot, arena }) => {
+      const controller = new AbortController();
+      const target = { x: arena.center.x - 10, y: arena.center.y, z: arena.center.z };
+      const pending = moveNear(bot, target, 1, { signal: controller.signal, timeScale: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      controller.abort();
+      expect(await pending).toMatchObject({ ok: false, reason: 'cancelled' });
+
+      // Sent right after the cancel: the next goto must not inherit the deferred stop.
+      const again = await moveNear(bot, arena.center, 2, {
+        signal: new AbortController().signal,
+        timeScale: 1,
+      });
+      expect(again.ok).toBe(true);
+    });
+  }, 180_000);
 });

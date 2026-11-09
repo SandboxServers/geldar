@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { completed } from './outcome.ts';
+import { type ActionOutcome, completed } from './outcome.ts';
 import { type ActionHandler, ActionRegistry, runAction } from './registry.ts';
 
 /** A fake bot with only the world clock: `runAction` reads nothing else. */
@@ -89,7 +89,8 @@ describe('runAction', () => {
     expect(seen?.aborted).toBe(true);
   });
 
-  it('returns internal when the handler throws', async () => {
+  it('returns internal when the handler throws, and logs it', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const registry = new ActionRegistry();
     registry.register(
       mineHandler(async () => {
@@ -100,6 +101,111 @@ describe('runAction', () => {
     expect(out.state).toBe('failed');
     expect(out.result.reason).toBe('internal');
     expect(out.result.message).toBe('boom');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'));
+    warn.mockRestore();
+  });
+
+  it('drops a handler result that arrives after the timeout', async () => {
+    let seen: AbortSignal | undefined;
+    let late: (outcome: ActionOutcome) => void = () => undefined;
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler((ctx) => {
+        seen = ctx.signal;
+        return new Promise((resolve) => {
+          late = resolve;
+        });
+      }, 1_000),
+    );
+
+    const run = runAction(registry, fakeBot().bot, validMine);
+    await vi.advanceTimersByTimeAsync(1_000);
+    late(completed({ mined: 2 }));
+    const out = await run;
+
+    expect(out.state).toBe('failed');
+    expect(out.result.reason).toBe('timeout');
+    expect(seen?.aborted).toBe(true);
+  });
+
+  it('logs and drops a handler that rejects after the timeout', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let late: (error: Error) => void = () => undefined;
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(
+        () =>
+          new Promise((_resolve, reject) => {
+            late = reject;
+          }),
+        1_000,
+      ),
+    );
+
+    const run = runAction(registry, fakeBot().bot, validMine);
+    await vi.advanceTimersByTimeAsync(1_000);
+    late(new Error('late boom'));
+    await vi.advanceTimersByTimeAsync(0);
+    const out = await run;
+
+    expect(out.result.reason).toBe('timeout');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('late boom'));
+    warn.mockRestore();
+  });
+
+  it.each([0, -2, Number.NaN])('uses timeScale 1 when timeScale is %s', async (timeScale) => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(() => new Promise(() => undefined), 1_000));
+    let settled = false;
+    const run = runAction(registry, fakeBot().bot, validMine, { timeScale }).then((out) => {
+      settled = true;
+      return out;
+    });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await run).result.reason).toBe('timeout');
+  });
+
+  it('caps the wall timeout at the longest delay setTimeout accepts', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(() => new Promise(() => undefined), 1_000));
+    let settled = false;
+    const run = runAction(registry, fakeBot().bot, validMine, { timeScale: 1e9 }).then((out) => {
+      settled = true;
+      return out;
+    });
+    await vi.advanceTimersByTimeAsync(2_147_483_646);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await run).result.reason).toBe('timeout');
+  });
+
+  it('leaves no timer and no abort listener behind after a run completes', async () => {
+    let seen: AbortSignal | undefined;
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(async (ctx) => {
+        seen = ctx.signal;
+        return completed();
+      }),
+    );
+    const controller = new AbortController();
+    await runAction(registry, fakeBot().bot, validMine, { signal: controller.signal });
+
+    expect(vi.getTimerCount()).toBe(0);
+    controller.abort();
+    expect(seen?.aborted).toBe(false);
+  });
+
+  it('reports latency as the wall time the handler took', async () => {
+    const readings = [100, 350];
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => completed()));
+    const out = await runAction(registry, fakeBot().bot, validMine, {
+      now: () => readings.shift() ?? 0,
+    });
+    expect(out.result.latency_ms).toBe(250);
   });
 
   it('returns cancelled when the external signal aborts', async () => {

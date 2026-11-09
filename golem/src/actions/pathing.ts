@@ -45,6 +45,16 @@ export function classifyPathError(error: unknown): 'blocked' | 'interrupted' | n
 }
 
 /**
+ * Stops the pathfinder now. `stop()` alone only sets a flag that the next path node or reset
+ * consumes, so a `goto` started soon after would be rejected `PathStopped`. `setGoal(null)` runs
+ * that reset at once, which consumes the flag here.
+ */
+function haltPathing(bot: Bot): void {
+  bot.pathfinder.stop();
+  bot.pathfinder.setGoal(null);
+}
+
+/**
  * Walks the bot to within `range` of `target`. Stops early with `blocked` when the bot has not
  * moved 0.75 blocks for `stallTicks` world ticks (`bot.time.age`, not wall time), and with
  * `cancelled` when the signal aborts. `timeScale` is accepted for the caller's convenience but the
@@ -68,7 +78,7 @@ export function moveNear(
     let done = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
     const onAbort = (): void => {
-      bot.pathfinder.stop();
+      haltPathing(bot);
       settle({ ok: false, reason: 'cancelled', message: 'move cancelled' });
     };
     const cleanup = (): void => {
@@ -89,7 +99,7 @@ export function moveNear(
         lastPos = bot.entity.position.clone();
         lastMovedAge = bot.time.age;
       } else if (bot.time.age - lastMovedAge >= stallTicks) {
-        bot.pathfinder.stop();
+        haltPathing(bot);
         settle({
           ok: false,
           reason: 'blocked',
@@ -99,7 +109,16 @@ export function moveNear(
     }, WATCH_INTERVAL_MS);
     opts.signal.addEventListener('abort', onAbort, { once: true });
 
-    bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, range)).then(
+    let walk: Promise<void>;
+    try {
+      walk = bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, range));
+    } catch (error) {
+      // A synchronous throw skips the handlers below, so undo the watchdog and listener here.
+      done = true;
+      cleanup();
+      throw error;
+    }
+    walk.then(
       () => settle({ ok: true, distance: bot.entity.position.distanceTo(goal) }),
       (error: unknown) => {
         const reason = classifyPathError(error);

@@ -67,6 +67,8 @@ export interface ActionRun {
 
 /** Longest error text kept in a failure message. */
 const MESSAGE_LIMIT = 200;
+/** Longest delay `setTimeout` accepts. A longer one fires at once, so the timeout is capped here. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * Validates one action against the contract, then runs its handler with a wall-clock timeout and
@@ -90,10 +92,12 @@ export async function runAction(
   }
   if (opts.signal?.aborted) return finish(cancelled(), 0, 0);
 
-  const timeScale = opts.timeScale ?? 1;
+  // A zero, negative, NaN or infinite scale would time the action out at once or never: use 1.
+  const requested = opts.timeScale ?? 1;
+  const timeScale = Number.isFinite(requested) && requested > 0 ? requested : 1;
   const now = opts.now ?? (() => performance.now());
   const controller = new AbortController();
-  const timeoutMs = handler.timeoutMs * timeScale;
+  const timeoutMs = Math.min(handler.timeoutMs * timeScale, MAX_TIMER_MS);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onExternal: (() => void) | undefined;
 
@@ -117,9 +121,13 @@ export async function runAction(
   // The async call turns a synchronous throw into a rejection, so both paths reach `catch`.
   // The registry keys handlers by verb, so `valid` is the action type this handler takes.
   const typed = handler as ActionHandler;
-  const ran = (async () => typed.run(ctx, valid))().catch((error: unknown) =>
-    failed('internal', truncate(error instanceof Error ? error.message : String(error))),
-  );
+  // A rejection that arrives after the timeout also lands here; the race has already dropped it, so
+  // the warning is the only trace.
+  const ran = (async () => typed.run(ctx, valid))().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`action ${valid.do} handler failed: ${message}`);
+    return failed('internal', truncate(message));
+  });
 
   let outcome: ActionOutcome;
   try {

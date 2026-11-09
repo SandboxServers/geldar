@@ -1,7 +1,9 @@
+// biome-ignore-all assist/source/organizeImports: each packet's imports stay in its own block, in packet order
 import { ActionRegistry, type AnyActionHandler } from './registry.ts';
 
 // The registry file: each action packet fills only its own marked block, in the import list and
-// in the array. A merge conflict here is mechanical: keep every block.
+// in the array. A merge conflict here is mechanical: keep every block. Keep each packet's imports
+// inside its block, in place: Biome's import sorting would move a marker and its import apart.
 
 // --- P0-08a goto, mine ---
 // (imports for this block go here)
