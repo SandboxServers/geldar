@@ -351,6 +351,14 @@ describe('waitUntil', () => {
     }
   });
 
+  it('gives up on the wall clock when the world age is frozen', async () => {
+    const started = Date.now();
+    // 2 ticks at timeScale 0.01 is 1 ms of wall time: only the 1 s margin is left.
+    const frozen = { ...envOf(() => 40), timeScale: 0.01 };
+    expect(await waitUntil(frozen, () => false, 2)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
   it('does not time out early when the age steps by 20 from a stale start', async () => {
     let age = 0;
     const tick = setInterval(() => {
