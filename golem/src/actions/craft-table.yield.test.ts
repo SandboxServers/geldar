@@ -14,7 +14,7 @@ import { craftFromBook, watchRecipeBook } from './craft-table.ts';
 import type { ActionContext } from './registry.ts';
 
 // The same item has two displays with different yields (bamboo 1 stick, planks 4 sticks), the
-// bamboo one first in the book. The yield the server gives must decide the number of crafts.
+// bamboo one first in the book. The result slot always shows 1, but a shift-click delivers the\n// display's yield: the inventory gain, not the slot, must decide the number of crafts.
 const YIELDS = { [PLANKS_STICK]: 4, [BAMBOO_STICK]: 1 };
 
 function setup(table: boolean, accepted?: number[]) {
@@ -27,7 +27,7 @@ function setup(table: boolean, accepted?: number[]) {
       [PLANKS_STICK, 'crafting_shaped', STICK.id, 4],
     ]),
   );
-  answerRequests(fake.client, table ? 1 : 0, accepted, YIELDS, STICK.id);
+  answerRequests(fake.client, table ? 1 : 0, accepted, YIELDS, STICK.id, fake.stock);
   const ctx: ActionContext & { want?: number } = {
     bot: fake.bot,
     signal: new AbortController().signal,
