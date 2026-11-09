@@ -1,7 +1,40 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { classifyPathError, type MoveResult, moveNear } from './pathing.ts';
+import { classifyPathError, forbidCornerCutting, type MoveResult, moveNear } from './pathing.ts';
+
+describe('forbidCornerCutting', () => {
+  /** Movements whose foot-level cell at (dx, dz) is solid when `solid` lists it. */
+  function movementsWith(solid: string[]) {
+    const original = vi.fn();
+    return {
+      original,
+      movements: {
+        getBlock: (_node: unknown, dx: number, dy: number, dz: number) => ({
+          physical: dy === 0 && solid.includes(`${dx},${dz}`),
+        }),
+        getMoveDiagonal: original,
+      },
+    };
+  }
+  const dir = { x: 1, z: 1 };
+
+  it('keeps the diagonal when both side cells are free', () => {
+    const { movements, original } = movementsWith([]);
+    forbidCornerCutting(movements);
+    movements.getMoveDiagonal({}, dir, []);
+    expect(original).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the diagonal when either side cell is solid', () => {
+    for (const solid of [['1,0'], ['0,1'], ['1,0', '0,1']]) {
+      const { movements, original } = movementsWith(solid);
+      forbidCornerCutting(movements);
+      movements.getMoveDiagonal({}, dir, []);
+      expect(original).not.toHaveBeenCalled();
+    }
+  });
+});
 
 /** The parts of a bot that `moveNear` reads; `pathfinder` is set, so the plugin is not loaded. */
 interface FakeBot {

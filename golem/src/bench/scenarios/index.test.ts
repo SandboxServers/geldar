@@ -16,6 +16,19 @@ describe('scenario registry', () => {
     expect(visibleScenarios().every((s) => !s.hidden)).toBe(true);
   });
 
+  it('lists the six visible scenarios and keeps bed-clear hidden', () => {
+    expect(visibleScenarios().map((s) => s.name)).toEqual([
+      'wood-to-stone-tools',
+      'food',
+      'shelter',
+      'bed',
+      'chest',
+      'blocked-path',
+    ]);
+    expect(findScenario('bed-clear')?.hidden).toBe(true);
+    expect(visibleScenarios().map((s) => s.name)).not.toContain('bed-clear');
+  });
+
   it('finds a scenario by name', () => {
     expect(findScenario('goto-smoke')?.name).toBe('goto-smoke');
     expect(findScenario('nope')).toBeUndefined();
