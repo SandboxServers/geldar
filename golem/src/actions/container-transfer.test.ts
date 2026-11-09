@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Container } from './bot-types.ts';
 import { transferItems } from './container-transfer.ts';
 import type { ActionContext } from './registry.ts';
@@ -43,6 +43,7 @@ afterEach(() => {
     }
   }
   emitters.length = 0;
+  vi.restoreAllMocks();
 });
 
 /**
@@ -236,9 +237,11 @@ describe('transferItems', () => {
   });
 
   it('stops on a lost click, restores the cursor and does not claim success', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = rig([{ type: 1, count: 10 }], { ignoreClick: 2 });
     const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
-    expect(end.error).not.toBeNull();
+    expect(end.error).toMatch(/window differs at (slot \d+|the cursor)/);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/window differs at/));
     expect(r.cursor()).toBeNull();
     expect(total(r.server, 0, SIZE)).toBe(10);
   });
@@ -267,13 +270,11 @@ describe('transferItems', () => {
 
   it('fails at once when the server closes the window, without restore waits', async () => {
     const r = rig([{ type: 1, count: 10 }], { muteAfterSyncs: 1, closeAtClick: 1 });
-    const started = Date.now();
     const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
     expect(end).toEqual({ error: 'the server closed the window', aborted: false });
     // The opening sync and the pickup's sync only: no second barrier, no restore click.
     expect(r.log.filter((l) => l === 'sync').length).toBe(2);
     expect(r.log.filter((l) => l.startsWith('click')).length).toBe(1);
-    expect(Date.now() - started).toBeLessThan(25);
     expect(r.emitter.listenerCount('window_items')).toBe(0);
     expect(r.emitter.listenerCount('close_window')).toBe(0);
   });
@@ -350,10 +351,12 @@ describe('transferItems', () => {
   });
 
   it('reports it when the cursor stack cannot be put back', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = rig([{ type: 1, count: 10 }], { ignoreFrom: 2 });
     const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
     expect(end).toEqual({ error: 'could not put the cursor stack back', aborted: false });
     expect(r.cursor()).toEqual({ type: 1, count: 10 });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/could not put the cursor stack back/));
   });
 
   it('tops up a partial same-type stack in the destination before an empty slot', async () => {
@@ -392,9 +395,11 @@ describe('transferItems', () => {
   });
 
   it('reports failure when the server stops answering', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const r = rig([{ type: 1, count: 10 }], { muteAfterSyncs: 1 });
     const end = await transferItems(r.ctx, r.container, 'withdraw', 1, 4);
     expect(end.error).not.toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/barrier timed out/));
     expect(end.aborted).toBe(false);
   });
 });

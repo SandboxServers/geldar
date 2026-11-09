@@ -326,6 +326,21 @@ describe('deposit', () => {
     });
   });
 
+  it('never reports a negative moved count when the inventory grows during a deposit', async () => {
+    const h = harness();
+    transfer.mockImplementationOnce(async () => {
+      h.inv.set(1, 13);
+      return { error: null, aborted: false };
+    });
+    const outcome = await depositAction.run(ctxFor(h.bot), {
+      do: 'deposit',
+      at: AT,
+      item: 'cobblestone',
+      count: 4,
+    });
+    expect(outcome).toMatchObject({ status: 'failed', detail: { moved: 0 } });
+  });
+
   it('fails invalid_args for an unknown item, before anything moves', async () => {
     const h = harness();
     const outcome = await depositAction.run(ctxFor(h.bot), {
@@ -413,6 +428,22 @@ describe('withdraw', () => {
       count: 4,
     });
     expect(outcome).toMatchObject({ status: 'failed', reason: 'internal', detail: { moved: 4 } });
+  });
+
+  it('never reports a negative moved count when the inventory shrinks during a withdraw', async () => {
+    const h = harness();
+    h.chest.set(1, 6);
+    transfer.mockImplementationOnce(async () => {
+      h.inv.set(1, 7);
+      return { error: null, aborted: false };
+    });
+    const outcome = await withdrawAction.run(ctxFor(h.bot), {
+      do: 'withdraw',
+      at: AT,
+      item: 'cobblestone',
+      count: 4,
+    });
+    expect(outcome).toMatchObject({ status: 'failed', detail: { moved: 0 } });
   });
 
   it('fails not_found without withdrawing when the container holds less', async () => {
