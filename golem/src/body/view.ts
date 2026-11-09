@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { worldAge } from '../world-clock.ts';
+import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
 /** A hostile mob near the Body. */
 export interface HostileView {
@@ -34,6 +35,13 @@ export interface BodyView {
   readonly onFire: boolean;
   /** Blocks fallen since the Body left the ground; 0 on the ground. */
   readonly fallingDistance: number;
+  /**
+   * Physics ticks since the Body's health last dropped, or null when it has not dropped since the
+   * view was made. Optional so a hand-built view (a test fake) may leave it out.
+   */
+  readonly ticksSinceHurt?: number | null;
+  /** The bed or world spawn the Body treats as safe, or null when it knows none. */
+  readonly safeSpot?: SafeSpot | null;
 }
 
 /** A `BodyView` that tracks falls by listening to the bot; `dispose` removes the listener. */
@@ -49,11 +57,20 @@ const DEFAULT_HOSTILE_RADIUS = 16;
  */
 export function createBodyView(bot: Bot): TrackedBodyView {
   let peakY = bot.entity.position.y;
+  let sinceHurt: number | null = null;
   const sample = (): void => {
     const y = bot.entity.position.y;
     peakY = bot.entity.onGround ? y : Math.max(peakY, y);
+    if (sinceHurt !== null) sinceHurt += 1;
   };
   bot.on('physicsTick', sample);
+  let lastHealth = bot.health;
+  const onHealth = (): void => {
+    if (bot.health < lastHealth) sinceHurt = 0;
+    lastHealth = bot.health;
+  };
+  bot.on('health', onHealth);
+  const safeSpots = trackSafeSpot(bot);
 
   return {
     get tick() {
@@ -102,8 +119,16 @@ export function createBodyView(bot: Bot): TrackedBodyView {
       if (bot.entity.onGround) return 0;
       return Math.max(0, peakY - bot.entity.position.y);
     },
+    get ticksSinceHurt() {
+      return sinceHurt;
+    },
+    get safeSpot() {
+      return safeSpots.current();
+    },
     dispose() {
       bot.off('physicsTick', sample);
+      bot.off('health', onHealth);
+      safeSpots.dispose();
     },
   };
 }
