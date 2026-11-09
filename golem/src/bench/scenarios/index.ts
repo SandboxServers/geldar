@@ -9,6 +9,7 @@ import type { Scenario } from '../types.ts';
 import { gotoSmoke } from './goto-smoke.ts';
 
 // --- P0-10b wood-to-stone-tools, food, shelter ---
+import { woodToStoneTools } from './wood-to-stone-tools.ts';
 
 // --- P0-10c bed, chest, blocked-path ---
 
@@ -19,6 +20,7 @@ export const scenarios: Scenario[] = [
   // --- end P0-10a ---
 
   // --- P0-10b wood-to-stone-tools, food, shelter ---
+  woodToStoneTools,
   // --- end P0-10b ---
 
   // --- P0-10c bed, chest, blocked-path ---
