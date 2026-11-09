@@ -18,7 +18,11 @@ export interface RunReads {
 }
 
 /** What a scenario's `run` sees as `ctl`: the allowed control methods plus the read-only queries. */
-export type RunControl = TestControl & RunReads;
+export type RunControl = Pick<
+  TestControl,
+  'effect' | 'effectClear' | 'timeSet' | 'fill' | 'chestItems' | 'gamerule'
+> &
+  RunReads;
 
 function coordinate(value: number, min: number, max: number, label: string): number {
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -86,5 +90,16 @@ export function limitedControl(ctl: TestControl): RunControl {
       const value: unknown = Reflect.get(target, prop, receiver);
       return typeof value === 'function' ? value.bind(target) : value;
     },
-  }) as RunControl;
+    // Reflection must not hand out the raw command source or the class with its other methods.
+    getOwnPropertyDescriptor(target, prop) {
+      if (prop === 'source') return undefined;
+      return Reflect.getOwnPropertyDescriptor(target, prop);
+    },
+    ownKeys(target) {
+      return Reflect.ownKeys(target).filter((key) => key !== 'source');
+    },
+    getPrototypeOf() {
+      return Object.prototype;
+    },
+  }) as unknown as RunControl;
 }

@@ -146,6 +146,24 @@ describe('limitedControl allow-list', () => {
     }
   });
 
+  it('does not expose the raw command source through reflection', () => {
+    expect(Object.getOwnPropertyDescriptor(ctl, 'source')).toBeUndefined();
+    expect(Object.getOwnPropertyNames(ctl)).not.toContain('source');
+    expect(Reflect.ownKeys(ctl)).not.toContain('source');
+    expect(Object.getPrototypeOf(ctl)).toBe(Object.prototype);
+    expect(Object.values(ctl)).toEqual([]);
+  });
+
+  it('types out the methods a scenario may not call', () => {
+    const typed = ctlReplying('').ctl;
+    // @ts-expect-error give is not part of RunControl
+    expect(() => typed.give('GolemBench', 'stone', 1)).toThrow(/not available/);
+    // @ts-expect-error command is not part of RunControl
+    expect(() => typed.command('stop')).toThrow(/not available/);
+    // @ts-expect-error setblock is not part of RunControl
+    expect(() => typed.setblock(0, 0, 0, 'stone')).toThrow(/not available/);
+  });
+
   it('the new queries are not a path to free-form command text', () => {
     const source = readFileSync(new URL('./limited-control.ts', import.meta.url), 'utf8');
     for (const call of [

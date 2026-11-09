@@ -42,7 +42,7 @@ export interface Scenario {
 }
 
 /** The env a scenario's `run` gets: `ctl` is the limited control with the read-only queries. */
-export type RunEnv = BenchEnv & { ctl: RunControl };
+export type RunEnv = Omit<BenchEnv, 'ctl'> & { ctl: RunControl };
 
 /** One finished action as the benchmark keeps it. */
 export interface ActionRecordLite {
