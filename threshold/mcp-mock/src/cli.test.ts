@@ -220,6 +220,59 @@ describe('cli', () => {
     expect(records.some((r) => r.reason === 'min_spacing')).toBe(false);
     expect(lines.join('\n')).not.toContain('secret chatter');
   }, 60_000);
+
+  it('applies --intent-run-too-long-seconds to a long intent', async () => {
+    const tokens = join(dir, 'tokens.json');
+    writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
+    const scenario = join(dir, 'long.scenario.json');
+    writeFileSync(
+      scenario,
+      JSON.stringify({
+        name: 'long',
+        day_length_seconds: 24,
+        character: { name: 'Kestrel', life_id: 'ag_kestrel_01', position: { x: 0, y: 64, z: 0 } },
+        reflex: { hunger_interval_ticks: 10000000, eat_below: 14 },
+      }),
+    );
+    const { stderr } = run([
+      '--tokens',
+      tokens,
+      '--port',
+      '0',
+      '--scenario',
+      scenario,
+      '--intent-run-too-long-seconds',
+      '2',
+    ]);
+    const port = await listeningPort(stderr);
+    const client = new Client({ name: 'test', version: '0.0.0' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/p/aa`), {
+        requestInit: { headers: { Authorization: `Bearer ${TOKEN}` } },
+      }),
+    );
+    // 100000 ticks is 100 s at 1000 ticks a second: far beyond the 2 s override, and the 300 s default.
+    const intent = {
+      goal: 'walk',
+      program: 'travel',
+      arguments: { mock_ticks: 100000 },
+      wake_on: ['directly_addressed', 'goal_completed'],
+      limits: { max_world_ticks: 240000, max_block_operations: 10 },
+    };
+    await client.callTool({ name: 'act', arguments: { intent } });
+    const started = Date.now();
+    const r = (await client.callTool({ name: 'wait', arguments: { max_seconds: 5 } })) as {
+      content: { text: string }[];
+    };
+    const elapsed = Date.now() - started;
+    await client.close();
+    expect((JSON.parse(r.content[0]?.text ?? '{}') as { wake_reason: string }).wake_reason).toBe(
+      'intent_run_too_long',
+    );
+    // max_seconds is at least 5, so waking inside 4 s shows the 2 s override took effect.
+    expect(elapsed).toBeLessThan(4000);
+  }, 30_000);
+
   it('exits 1 when --suppressed-log is a directory', async () => {
     const tokens = join(dir, 'tokens.json');
     writeFileSync(tokens, JSON.stringify({ aa: TOKEN }));
