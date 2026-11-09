@@ -133,13 +133,33 @@ describe('open', () => {
   });
 
   it('closes a window that opens after the open race was lost, and fails blocked', async () => {
-    const h = harness({ openDelayMs: 30 });
-    // 5 s scaled by 0.001 is 5 ms: the race is lost long before the window opens.
-    const outcome = await openAction.run(ctxFor(h.bot, 0.001), { do: 'open', at: AT });
+    const h = harness({ openDelayMs: 100 });
+    // Scaled by 0.01: the race is lost at 50 ms, the window opens at 100 ms, and the late-window
+    // listener is still armed (it is dropped at 150 ms).
+    const outcome = await openAction.run(ctxFor(h.bot, 0.01), { do: 'open', at: AT });
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    await new Promise((resolve) => setTimeout(resolve, 120));
     expect(h.bot.closeWindow).toHaveBeenCalledWith(h.container);
     expect(h.container.close).not.toHaveBeenCalled();
+  });
+
+  it('does not close the window of the next open after a lost race that never settled', async () => {
+    type Container = Awaited<ReturnType<Bot['openContainer']>>;
+    const h = harness();
+    // The first open never gets a window: its race is lost and the open stays pending.
+    vi.mocked(h.bot.openContainer).mockImplementationOnce(() => new Promise<Container>(() => {}));
+    // 5 s scaled by 0.001 is 5 ms: the race is lost long before anything opens.
+    const first = await openAction.run(ctxFor(h.bot, 0.001), { do: 'open', at: AT });
+    expect(first).toMatchObject({ status: 'failed', reason: 'blocked' });
+    // The next open gets a normal window, which the library announces on `windowOpen`.
+    vi.mocked(h.bot.openContainer).mockImplementationOnce(async () => {
+      h.emitter.emit('windowOpen', h.container);
+      return h.container as unknown as Container;
+    });
+    const second = await openAction.run(ctxFor(h.bot), { do: 'open', at: AT });
+    expect(second).toMatchObject({ status: 'completed' });
+    expect(h.bot.closeWindow).not.toHaveBeenCalled();
+    expect(h.container.close).toHaveBeenCalledOnce();
   });
 
   it('keeps a close error from replacing the outcome', async () => {
@@ -273,6 +293,18 @@ describe('withdraw', () => {
       message: 'inventory full',
       detail: { moved: 0 },
     });
+  });
+
+  it('fails not_possible, not internal, when the library says destination full', async () => {
+    const h = harness({ withdrawError: 'destination full' });
+    h.chest.set(1, 5);
+    const outcome = await withdrawAction.run(ctxFor(h.bot), {
+      do: 'withdraw',
+      at: AT,
+      item: 'cobblestone',
+      count: 5,
+    });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'not_possible', detail: { moved: 0 } });
   });
 
   it('fails invalid_args for an unknown item', async () => {

@@ -10,8 +10,15 @@ const CONTAINER_BLOCKS = new Set(['chest', 'trapped_chest', 'barrel']);
 const REACH = 4.5;
 /** Wall-clock wait for the window to open, scaled by `timeScale`. `openContainer` has no timeout. */
 const OPEN_WAIT_MS = 5_000;
-/** The library's message when the bot's inventory cannot take the withdrawn stacks. */
-const INVENTORY_FULL = /inventory is full/i;
+/** How long a lost open's late-window listener stays armed, scaled by `timeScale`. */
+const LATE_WINDOW_WAIT_MS = 3 * OPEN_WAIT_MS;
+/** The late-window cleanup of the last open per bot, so the next open can remove a stale one. */
+const lateWindowDrop = new WeakMap<Bot, () => void>();
+/**
+ * The library's message when the bot's inventory cannot take the withdrawn stacks: "Bot inventory
+ * is full" from the pre-check, "destination full" when a transfer stops part-way.
+ */
+const INVENTORY_FULL = /full/i;
 /** A full container: the library's own wording is not known, so the word `full` is the match. */
 const CONTAINER_FULL = /full/i;
 
@@ -71,6 +78,8 @@ async function withContainer(
   fn: (container: Container) => Promise<ActionOutcome>,
 ): Promise<ActionOutcome> {
   const { bot, signal, timeScale } = ctx;
+  // An earlier open that lost its race must not close this action's window.
+  lateWindowDrop.get(bot)?.();
   if (signal.aborted) return cancelled();
   const block = containerAt(bot, at);
   if (!block) return failed('not_found', 'no container at that position');
@@ -84,9 +93,20 @@ async function withContainer(
 
   let lost = false;
   const onLateWindow = (window: Window): void => {
-    if (lost) void bot.closeWindow(window).catch(() => undefined);
+    if (lost) {
+      bot.closeWindow(window).catch((error: unknown) => {
+        console.warn(`late container window did not close: ${errorMessage(error)}`);
+      });
+    }
   };
   bot.on('windowOpen', onLateWindow);
+  // Removes this open's late-window listener. A lost open may never settle, so this is also
+  // called from a timer and from the next open on the same bot.
+  const dropLateWindow = (): void => {
+    bot.off('windowOpen', onLateWindow);
+    if (lateWindowDrop.get(bot) === dropLateWindow) lateWindowDrop.delete(bot);
+  };
+  lateWindowDrop.set(bot, dropLateWindow);
   const attempt: Promise<Opened> = bot.openContainer(block).then(
     (container): Opened => ({ container }),
     (error: unknown): Opened => ({
@@ -95,7 +115,7 @@ async function withContainer(
   );
   // The late-window listener stays until the open settles: a window that opens after the race
   // is lost arrives through it.
-  void attempt.finally(() => bot.off('windowOpen', onLateWindow));
+  void attempt.finally(dropLateWindow);
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
@@ -118,6 +138,8 @@ async function withContainer(
     clearTimeout(timer);
     if (onAbort) signal.removeEventListener('abort', onAbort);
   }
+  // A lost open may never settle, so its listener is dropped after a grace period too.
+  if (lost) setTimeout(dropLateWindow, LATE_WINDOW_WAIT_MS * timeScale);
   if ('outcome' in opened) return opened.outcome;
 
   try {
@@ -126,8 +148,8 @@ async function withContainer(
     // A close error must not replace the outcome that `fn` produced.
     try {
       await opened.container.close();
-    } catch {
-      // The window is gone or the connection dropped; nothing more to do here.
+    } catch (error: unknown) {
+      console.warn(`container did not close: ${errorMessage(error)}`);
     }
   }
 }
