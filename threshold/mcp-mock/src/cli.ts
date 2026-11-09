@@ -5,6 +5,7 @@ import { createApp, type McpWorld } from './app.ts';
 import { loadTokens } from './auth.ts';
 import { createFakeHandlers } from './fake-world.ts';
 import type { ToolHandlers } from './registry.ts';
+import { createShutdown } from './shutdown.ts';
 
 /** A fixed fake world; each player gets its own handler set, built on first use (the set holds a counter). */
 function createFixedWorld(): McpWorld {
@@ -73,26 +74,15 @@ async function main(): Promise<void> {
     process.stderr.write(`${JSON.stringify(line)}\n`);
   };
   const app = createApp({ tokens, world: createFixedWorld(), log });
-  let stopping = false;
-  const stop = (): void => {
-    // A second signal while close() runs is ignored, not allowed to kill the process mid-shutdown.
-    if (stopping) return;
-    stopping = true;
-    log({ event: 'stopping' });
-    // A hung close() must not block shutdown: force the exit after 5 s (unref'd, so it never keeps the loop alive).
-    setTimeout(() => process.exit(1), 5000).unref();
-    app.close().then(
-      () => process.exit(0),
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : 'close failed';
-        log({ event: 'stop_failed', error: message.slice(0, 200) });
-        process.exit(1);
-      },
-    );
-  };
+  const stop = createShutdown({
+    close: () => app.close(),
+    log,
+    exit: (code) => process.exit(code),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+  });
   // Registered before listening so a signal right after the `listening` line is always handled.
-  process.on('SIGINT', stop);
-  process.on('SIGTERM', stop);
+  process.on('SIGINT', () => stop('SIGINT'));
+  process.on('SIGTERM', () => stop('SIGTERM'));
 
   const bound = await app.listen(port, host);
   log({ event: 'listening', host, port: bound });
