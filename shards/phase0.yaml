@@ -57,22 +57,22 @@ mind:
   lives: { strong: ag_adam_01, fast: ag_adam_02 }
 
 # Pinned models (decision 0051). A model whose digest differs from the Ollama one is not advertised.
-# The digests are recorded from `ollama list` at dispatch; until then they hold the literal
-# placeholder below, which the config loader (a later packet) must refuse outside tests.
+# The digests were recorded from Ollama by `./geldar.ps1 adam models --record` on 2026-11-09; the
+# loaders refuse the literal placeholder `sha256:RECORD_AT_DISPATCH` outside tests.
 model_pins:
   "qwen3:32b":
-    digest: "sha256:RECORD_AT_DISPATCH"   # placeholder: record at dispatch
+    digest: "sha256:030ee887880fc378860c2dd35101da424377520441ae4bfe7be6deff8ade7840"   # recorded from Ollama on 2026-11-09
     num_ctx: 8192                # context window sent as an Ollama option
     keep_alive: 30m              # how long Ollama keeps the model loaded
     max_concurrent: 1            # one job at a time per model
   "qwen3:8b":
-    digest: "sha256:RECORD_AT_DISPATCH"   # placeholder: record at dispatch
+    digest: "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"   # recorded from Ollama on 2026-11-09
     num_ctx: 8192
     keep_alive: 30m
     max_concurrent: 1
 
 embedding:
   model: nomic-embed-text        # decision D-P0-12
-  digest: "sha256:RECORD_AT_DISPATCH"     # placeholder: record at dispatch
+  digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"     # recorded from Ollama on 2026-11-09
   dims: 768
   on_cpu: true                   # num_gpu 0, so it does not compete for the 24 GB card

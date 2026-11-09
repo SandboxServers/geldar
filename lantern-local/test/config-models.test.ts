@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig, PLACEHOLDER_DIGEST } from '../src/config.ts';
+import { loadConfig, PLACEHOLDER_DIGEST } from '../src/config.ts';
 import { discoverModels, selectModels } from '../src/models.ts';
 import { FakeOllama, GOOD_DIGEST, pin } from './thinker.fakes.ts';
 
@@ -45,8 +45,10 @@ describe('loadConfig', () => {
     expect(loadConfig({ file, env: {}, allowPlaceholders: true }).pins).toHaveLength(1);
   });
 
-  it('refuses the real shard file while its digests are placeholders', () => {
-    expect(() => loadConfig({ env: {} })).toThrow(ConfigError);
+  it('loads the real shard file strictly, with its recorded digests', () => {
+    const config = loadConfig({ env: {} });
+    expect(config.pins.map((p) => p.name)).toEqual(['qwen3:32b', 'qwen3:8b']);
+    for (const p of config.pins) expect(p.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
   it('refuses a malformed digest', () => {

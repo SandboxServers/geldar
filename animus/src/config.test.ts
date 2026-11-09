@@ -59,7 +59,8 @@ describe('animus config', () => {
 
   it('refuses the placeholders unless allowed', () => {
     const draft = shardDoc();
-    for (const pin of Object.values<Doc>(draft.model_pins)) pin.digest = 'sha256:RECORD_AT_DISPATCH';
+    for (const pin of Object.values<Doc>(draft.model_pins))
+      pin.digest = 'sha256:RECORD_AT_DISPATCH';
     draft.embedding.digest = 'sha256:RECORD_AT_DISPATCH';
     draft.mind.agent.personality_seed = 'DRAFT_PENDING_OWNER_APPROVAL';
     expect(() => parseAnimusConfig(draft, { env: {} })).toThrow('personality_seed');
@@ -70,6 +71,12 @@ describe('animus config', () => {
     embeddingOnly.embedding.digest = 'sha256:RECORD_AT_DISPATCH';
     expect(() => parseAnimusConfig(embeddingOnly, { env: {} })).toThrow('embedding.digest');
     expect(() => parseAnimusConfig(draft, { env: {}, allowPlaceholders: true })).not.toThrow();
+  });
+
+  it('loads the real shard file strictly: recorded digests and the approved seed', async () => {
+    const config = await loadAnimusConfig({ env: {} });
+    expect(config.agent.personalitySeed).toContain('Long Ford');
+    expect(config.embedding.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
   it('refuses a malformed digest even when placeholders are allowed', () => {
