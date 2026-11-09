@@ -60,7 +60,7 @@ function Invoke-Check {
     Invoke-Step 'lint (biome)' { pnpm lint }
     Invoke-Step 'typecheck' { pnpm typecheck }
     Invoke-Step 'test (vitest)' { pnpm test }
-    Invoke-Step 'repo checks (line caps, LF)' { pnpm check:repo }
+    Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
     foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }

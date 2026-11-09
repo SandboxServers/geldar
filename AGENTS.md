@@ -9,6 +9,7 @@ These rules apply to Claude Code, Codex, Copilot and any other harness. Read [CL
 | implement a packet | your packet's section of [docs/analysis/phase0/work-packets.md](docs/analysis/phase0/work-packets.md) and [.claude/agents/packet-coder.md](.claude/agents/packet-coder.md) |
 | review a packet or PR | [.claude/agents/packet-reviewer.md](.claude/agents/packet-reviewer.md) |
 | open, update or merge a PR | [.claude/skills/ship-pr/SKILL.md](.claude/skills/ship-pr/SKILL.md) |
+| close a wave | `work-packets.md` § Wave close and the [campaign-packet skill](.claude/skills/campaign-packet/SKILL.md) § 6 |
 | start the stack or run the benchmark | [.claude/skills/run-shard/SKILL.md](.claude/skills/run-shard/SKILL.md), [.claude/skills/body-bench/SKILL.md](.claude/skills/body-bench/SKILL.md) |
 
 Harnesses without Claude Code's skills or subagents read those files directly: a skill's `SKILL.md` is the procedure, an agent's `.md` is the brief.
@@ -19,9 +20,9 @@ A campaign is a folder `docs/analysis/<campaign>/` holding a ledger (`README.md`
 
 1. Reads `RESUME.md` and the ledger before acting, and again after any compaction or resume.
 2. Gives each packet its own git worktree under `.claude/worktrees/` and one implementing agent.
-3. Has every finished packet reviewed by a fresh, read-only reviewer that did not write it. A `fix` verdict goes to a fresh coder, up to 3 review passes.
+3. Has every finished packet reviewed by a fresh, read-only reviewer that did not write it. A `fix` verdict goes to a fresh coder, up to 3 review passes (5 rounds for a batch of parallel packets).
 4. Updates the ledger's packet rows and rewrites `RESUME.md` (40 lines at most) at every wave boundary.
-5. Ships with the `ship-pr` skill and removes the worktree the same day.
+5. Ships with the `ship-pr` skill and removes the worktree after merge, copying useful reports to `worknotes/` first (the wave close does the leftovers).
 
 Owner decisions are never guessed: the ledger marks them `BlockedDecision` and the orchestrator asks the owner.
 

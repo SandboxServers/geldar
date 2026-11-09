@@ -18,6 +18,7 @@ The repo follows spec section 6.6, created one directory at a time as Phase 0 ne
 | `eventsink/`, `glass/` | NATS → Postgres, and the Thought Stream |
 | `sql/`, `compose/`, `shards/`, `prompts/` | Schema migrations, compose stacks, shard configs, versioned prompts |
 | `docs/` | The spec, decisions, ideas, campaign ledgers |
+| `threshold/` | The Threshold gateway area; today `threshold/mcp-mock`, a mock MCP server |
 | `tools/` | Repo tooling (`repo-checks`) |
 
 ## Setup

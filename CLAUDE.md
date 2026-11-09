@@ -21,8 +21,11 @@ The design is [docs/spec.md](docs/spec.md). Current work is Phase 0 ("Adam", spe
 ./geldar.ps1 pnpm <args>           # pnpm with the pinned version on PATH, when pnpm isn't installed
 ./geldar.ps1 check                 # everything CI runs: biome, typecheck, vitest, repo checks, contract drift, compose config, gradle
 ./geldar.ps1 shard up phase0       # the spec's `make shard ... up`
-./geldar.ps1 bench                 # body benchmark
+./geldar.ps1 bench                 # body benchmark (flags: --dry-run, --list, --record)
+./geldar.ps1 pnpm --filter @geldar/golem test:live   # live tests; needs the shard, excluded from check and CI
 ```
+
+`bench` and `test:live` mutate the shard (tick rate, whitelist, world): use them exclusively, one at a time.
 
 pnpm workspace, Node 22 (`.nvmrc`), TypeScript, Biome, Vitest. Windows with PowerShell 7 is the main dev platform; CI runs on Linux.
 
