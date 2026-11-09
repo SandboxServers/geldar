@@ -8,18 +8,18 @@ A stand-in for the Threshold MCP server with the real tool contract (`@geldar/co
 # run from source (Node 22.23.2, type stripping)
 ./geldar.ps1 pnpm --filter @geldar/mcp-mock exec node src/cli.ts --tokens tokens.example.json
 
-# run the image (tokens file kept outside the repo, mounted read-only; see compose.example.yml)
-docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:8787:8787 -v "$HOME/.config/geldar/mcp-tokens.json:/run/secrets/mcp-tokens.json:ro" ghcr.io/sandboxservers/geldar-mcp-mock:main
+# run the image (tokens file kept outside the repo, mounted read-only; create it first, see Tokens file; --mount errors on a missing source where -v would create a root-owned directory; see compose.example.yml)
+docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:8787:8787 --mount "type=bind,source=$HOME/.config/geldar/mcp-tokens.json,target=/run/secrets/mcp-tokens.json,readonly" ghcr.io/sandboxservers/geldar-mcp-mock:main
 
 # point a player at it: mcp_url http://127.0.0.1:8787/p/<player_id>, GELDAR_MCP_TOKEN = that player's token
 ```
 
 ## Tokens file
 
-A JSON object of player id to token: `{ "alice": "<token>" }`. A player id matches `^[a-z][a-z0-9-]{1,38}$`; a token is 16 to 200 characters of `A-Za-z0-9._~+/=-`. See `tokens.example.json` (fake values). Keep a real file outside the repo; inside the container it must be readable by uid 1000 (`chmod 644`, or a matching owner):
+A JSON object of player id to token: `{ "alice": "<token>" }`. A player id matches `^[a-z][a-z0-9-]{1,38}$`; a token is 16 to 200 characters of `A-Za-z0-9._~+/=-`. See `tokens.example.json` (fake values). Keep a real file outside the repo; inside the container it must be readable by uid 1000 (`chmod 644`, or a matching owner). The container user is non-root (uid 1000) and reads the file through the bind mount, so 644 on the file is acceptable; the directory is 700 so other local users cannot reach it. Create the file before the first `docker run`:
 
 ```
-mkdir -p ~/.config/geldar
+mkdir -p ~/.config/geldar && chmod 700 ~/.config/geldar
 node -e "console.log(JSON.stringify({ alice: require('crypto').randomBytes(16).toString('hex') }))" > ~/.config/geldar/mcp-tokens.json && chmod 644 ~/.config/geldar/mcp-tokens.json
 ```
 
