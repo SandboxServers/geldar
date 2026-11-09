@@ -243,6 +243,24 @@ describe('runCell', () => {
     expect(seen).not.toBe(bot);
   });
 
+  it('records the world age at the start and end of a run and the achieved TPS', async () => {
+    const { bot, deps } = setup();
+    const scenario = scenarioOf({
+      timeoutMs: 400,
+      async run() {
+        await new Promise((r) => setTimeout(r, 40));
+        (bot.time as { age: number }).age = 100;
+        return { passed: true, note: '' };
+      },
+    });
+    const cell = await runCell(scenario, 20, 1, deps);
+    const timing = cell.perRun[0];
+    expect(timing?.ageStart).toBe(0);
+    expect(timing?.ageEnd).toBe(100);
+    expect(timing?.achievedTps).toBeGreaterThan(0);
+    expect(timing?.achievedTps).toBeLessThan(100 / 0.04);
+  });
+
   it('records the remaining runs as failed when the bot never returns', async () => {
     const { manager, deps } = setup({ reconnectWaitMs: 100 });
     const scenario = scenarioOf({

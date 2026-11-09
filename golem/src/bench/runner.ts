@@ -229,6 +229,8 @@ async function playRun(
   let abortNote: string | null = null;
   const doRun = deps.runAction ?? runAction;
   const arena = await resetBench(deps);
+  const ageStart = worldAge(bot);
+  const ageWallStart = Date.now();
 
   const onDisconnect = (): void => {
     disconnects++;
@@ -350,7 +352,14 @@ async function playRun(
     targetMspt: null,
     timeOfDay: null,
     reconnects: disconnects,
+    ageStart,
+    ageEnd: worldAge(bot),
+    achievedTps: null,
   };
+  const wallSeconds = (Date.now() - ageWallStart) / 1000;
+  if (ageStart !== null && timing.ageEnd !== null && wallSeconds > 0) {
+    timing.achievedTps = (timing.ageEnd - ageStart) / wallSeconds;
+  }
   try {
     const reply = await deps.ctl.tickQuery();
     timing.mspt = parseMspt(reply);
@@ -412,7 +421,15 @@ export async function runCell(
     cell.notes.push(report.note);
     cell.runWallMs.push(full?.wallMs ?? 0);
     cell.perRun.push(
-      full?.timing ?? { mspt: null, targetMspt: null, timeOfDay: null, reconnects: 0 },
+      full?.timing ?? {
+        mspt: null,
+        targetMspt: null,
+        timeOfDay: null,
+        reconnects: 0,
+        ageStart: null,
+        ageEnd: null,
+        achievedTps: null,
+      },
     );
     if (full) cell.actions.push(...full.actions);
     log(

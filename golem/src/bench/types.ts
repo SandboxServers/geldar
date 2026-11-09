@@ -43,6 +43,11 @@ export interface ActionRecordLite {
   status: 'completed' | 'failed' | 'cancelled';
   reason: string | null;
   latencyMs: number;
+  /**
+   * World ticks the action took. `bot.time.age` has a 20-tick resolution (decision 0038), so this
+   * is a difference of two quantised values, off by up to 20 ticks: wall `latencyMs` is the
+   * primary number.
+   */
   worldTicks: number | null;
 }
 
@@ -59,6 +64,15 @@ export interface RunTiming {
   targetMspt: number | null;
   timeOfDay: number | null;
   reconnects: number;
+  /** `bot.time.age` when the run started, or null without a time packet. */
+  ageStart: number | null;
+  /** `bot.time.age` when the run ended. */
+  ageEnd: number | null;
+  /**
+   * Ticks per second the world really ran at: (`ageEnd` - `ageStart`) over the wall seconds
+   * between the two samples. Whole-run figure with a total error of up to 20 ticks.
+   */
+  achievedTps: number | null;
 }
 
 /** The result of one scenario at one TPS over several runs. */

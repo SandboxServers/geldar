@@ -20,7 +20,7 @@ export interface Row {
   successPct: number | null;
   /** Wall latency of completed actions, rounded ms. */
   latencyMs: Percentiles;
-  /** World ticks of completed actions. */
+  /** World ticks of completed actions; each value has a 20-tick resolution (decision 0038). */
   worldTicks: Percentiles;
   byKind: Record<string, Percentiles & { total: number; completed: number }>;
   actionsOk: number;
@@ -153,7 +153,13 @@ export interface Written {
 export async function writeResults(input: ResultInput, opts: WriteOptions): Promise<Written> {
   const summary = summarize(input.cells);
   const body = `${JSON.stringify(
-    { meta: input.meta, truncated: input.truncated, note: input.note, cells: input.cells, summary },
+    {
+      meta: { ...input.meta, worldAgeResolutionTicks: 20 },
+      truncated: input.truncated,
+      note: input.note,
+      cells: input.cells,
+      summary,
+    },
     null,
     2,
   )}\n`;

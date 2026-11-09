@@ -155,6 +155,7 @@ describe('writeResults', () => {
     expect(copy).toBe(await readFile(done.file, 'utf8'));
     expect(copy.endsWith('}\n')).toBe(true);
     expect(JSON.parse(copy).summary).toHaveLength(1);
+    expect(JSON.parse(copy).meta.worldAgeResolutionTicks).toBe(20);
     const table = await readFile(join(doc, 'bench-results.md'), 'utf8');
     expect(table.split('\n')).toHaveLength(4);
     expect(table).toContain('bench-runs/20261109T031500Z-abc1234.json');
