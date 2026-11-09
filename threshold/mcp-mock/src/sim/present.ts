@@ -166,26 +166,46 @@ function size(result: unknown): number {
 }
 
 /**
- * Trims a `wait`, `sleep` or `look` result under `maxBytes`: first the newest 200 events (the
- * schema cap), then, while too big, the oldest event, the oldest speech line, and last the front of
- * the book text. Dropped events add to `dropped_events` when the result has that field.
+ * Trims a `wait`, `sleep` or `look` result under `maxBytes`. The events that woke the agent
+ * (`wakingSeqs`) and the `wake_reason` are never dropped: a character woken with no visible cause
+ * cannot decide well. Order: other events oldest-first (the newest 200 events first, the schema
+ * cap), then speech lines oldest-first, then the front of the book text. Dropped events add to
+ * `dropped_events` when the result has that field.
  *
- * Events go before speech because that is the packet's reading; it can drop the event that woke
- * the agent before any speech line is touched (an orchestrator ambiguity, not settled here).
+ * The waking events stay even if that leaves fewer than the cap of other events. If they alone
+ * still exceed `maxBytes`, their `text` is cut from the end, longest first, until the result fits
+ * (or every text is empty); the seq and type stay. If the waking events alone pass the 200-event
+ * schema cap, the oldest of them drop.
  */
-export function fitResult<T extends Fittable>(result: T, maxBytes = 16000): T {
+export function fitResult<T extends Fittable>(
+  result: T,
+  maxBytes = 16000,
+  wakingSeqs: readonly number[] = [],
+): T {
   const drop = (n: number): void => {
     if (n > 0 && result.dropped_events !== undefined) result.dropped_events += n;
   };
+  const waking = new Set(wakingSeqs);
   const events = result.events;
+  /** Removes the oldest event that did not wake the agent; false when none is left. */
+  const dropOther = (): boolean => {
+    if (!events) return false;
+    const at = events.findIndex((e) => !waking.has(e.seq));
+    if (at < 0) return false;
+    events.splice(at, 1);
+    drop(1);
+    return true;
+  };
+  while (events && events.length > MAX_WAIT_EVENTS && dropOther()) {
+    // down to the schema cap, oldest non-waking event first
+  }
   if (events && events.length > MAX_WAIT_EVENTS) {
     const extra = events.length - MAX_WAIT_EVENTS;
     events.splice(0, extra);
     drop(extra);
   }
-  while (events && events.length > 0 && size(result) > maxBytes) {
-    events.shift();
-    drop(1);
+  while (size(result) > maxBytes && dropOther()) {
+    // oldest non-waking event first
   }
   const speech = result.untrusted_world_text.speech;
   while (speech && speech.length > 0 && size(result) > maxBytes) speech.shift();
@@ -193,6 +213,13 @@ export function fitResult<T extends Fittable>(result: T, maxBytes = 16000): T {
   while (book && book.text.length > 0 && size(result) > maxBytes) {
     const excess = size(result) - maxBytes;
     book.text = book.text.slice(Math.min(book.text.length, Math.max(1, excess)));
+  }
+  while (events && size(result) > maxBytes) {
+    let longest: McpPlayerEvent | undefined;
+    for (const e of events) if (e.text.length > (longest?.text.length ?? 0)) longest = e;
+    if (!longest) break;
+    const cut = Math.min(longest.text.length, size(result) - maxBytes);
+    longest.text = longest.text.slice(0, longest.text.length - cut);
   }
   return result;
 }

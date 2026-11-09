@@ -116,31 +116,71 @@ describe('fitResult', () => {
     expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
-  it('trims events before speech lines (the packet reading of the trim order)', () => {
-    const hub = hubFor();
-    const sim = hub.player('p1');
-    const events = Array.from({ length: 5 }, (_, i) => ({
-      seq: i + 1,
-      type: 'damage' as const,
-      tick: i,
-      text: 'hit',
-    }));
-    const result: WaitResult = {
-      snapshot: snapshotOf(sim, hub.scenario),
-      events,
-      cursor: 'c_5',
-      wake_reason: 'timeout',
+  /** A wait result with `n` damage events (seq 1..n) and the given speech lines. */
+  function waitResult(n: number, speechLines: SimEvent[], text = 'hit'): WaitResult {
+    const sim = hubFor().player('p1');
+    return {
+      snapshot: snapshotOf(sim, hubFor().scenario),
+      events: Array.from({ length: n }, (_, i) => ({
+        seq: i + 1,
+        type: 'damage' as const,
+        tick: i,
+        text,
+      })),
+      cursor: `c_${n}`,
+      wake_reason: 'unexpected_damage',
       dropped_events: 0,
-      untrusted_world_text: worldText([speech(1, { text: 'x'.repeat(500) }), speech(2)]),
+      untrusted_world_text: worldText(speechLines),
       note: WORLD_TEXT_NOTE,
     };
-    const full = Buffer.byteLength(JSON.stringify(result));
-    const fitted = fitResult(result, full - 1);
+  }
+
+  const bytes = (r: unknown): number => Buffer.byteLength(JSON.stringify(r));
+
+  it('drops other events oldest-first before any speech line', () => {
+    const result = waitResult(5, [speech(1, { text: 'x'.repeat(500) }), speech(2)]);
+    const fitted = fitResult(result, bytes(result) - 1, [5]);
     expect(fitted.events.map((e) => e.seq)).toEqual([2, 3, 4, 5]);
     expect(fitted.dropped_events).toBe(1);
     expect(fitted.untrusted_world_text.speech).toHaveLength(2);
   });
 
+  it('keeps the waking event and wake_reason when the result is too large', () => {
+    const result = waitResult(5, [speech(1), speech(2)]);
+    const fitted = fitResult(result, bytes(result) - 1, [1]);
+    expect(fitted.events.map((e) => e.seq)).toContain(1);
+    expect(fitted.events.map((e) => e.seq)).toEqual([1, 3, 4, 5]);
+    expect(fitted.wake_reason).toBe('unexpected_damage');
+    expect(fitted.dropped_events).toBe(1);
+  });
+
+  it('drops other events, then speech lines, oldest-first, never the waking event', () => {
+    const result = waitResult(4, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const noSpeech = waitResult(1, []);
+    const fitted = fitResult(result, bytes(noSpeech) + 10, [2]);
+    expect(fitted.events.map((e) => e.seq)).toEqual([2]);
+    expect(fitted.dropped_events).toBe(3);
+    expect(fitted.untrusted_world_text.speech ?? []).toHaveLength(0);
+    const partial = waitResult(4, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const keepOne = fitResult(partial, bytes(partial) - 1, [4]);
+    expect(keepOne.events.map((e) => e.seq)).toEqual([2, 3, 4]);
+    const lines = waitResult(1, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const speechTrim = fitResult(lines, bytes(lines) - 1, [1]);
+    expect(speechTrim.events.map((e) => e.seq)).toEqual([1]);
+    expect(speechTrim.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['b']);
+    expect(speechTrim.dropped_events).toBe(0);
+  });
+
+  it('truncates the waking event text when it alone exceeds the byte cap', () => {
+    const result = waitResult(3, [], 'y'.repeat(2000));
+    const cap = bytes(waitResult(1, [], '')) + 100;
+    const fitted = fitResult(result, cap, [2]);
+    expect(fitted.events.map((e) => e.seq)).toEqual([2]);
+    expect(fitted.events[0]?.text.length).toBeGreaterThan(0);
+    expect(bytes(fitted)).toBeLessThanOrEqual(cap);
+    expect(fitted.wake_reason).toBe('unexpected_damage');
+    expect(fitted.dropped_events).toBe(2);
+  });
   it('fits a look with 40 long speech lines under the cap', () => {
     const hub = hubFor();
     const sim = hub.player('p1');

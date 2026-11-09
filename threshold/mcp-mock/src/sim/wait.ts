@@ -49,6 +49,7 @@ export async function waitTool(
   const deadline = clock.nowMs() + input.max_seconds * 1000;
 
   let reason: WakeReason;
+  let wakingSeqs: number[] = [];
   let now: number;
   for (;;) {
     if (ctx.signal.aborted) throw superseded();
@@ -79,6 +80,7 @@ export async function waitTool(
     }
     if (decision.wake) {
       reason = decision.wake.reason;
+      wakingSeqs = decision.wake.seqs;
       break;
     }
     if (now >= deadline) {
@@ -109,5 +111,5 @@ export async function waitTool(
     untrusted_world_text: worldText(since.events),
     note: WORLD_TEXT_NOTE,
   };
-  return fitResult(result);
+  return fitResult(result, undefined, wakingSeqs);
 }
