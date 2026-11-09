@@ -11,7 +11,7 @@
 
 ## Why
 
-- Mineflayer 4.39.0 keeps one `stateId` for all windows. In a crafting table window it sends window 0's counter, so the server answers each click with a full resync that overwrites the client's model mid-script, and the craft never completes. The 2x2 path showed the same timing-dependent failure once. Diagnosis: packet traces in the P0-08b batch notes (`worknotes/`). Upstream fix would be a per-window stateId.
+- Mineflayer 4.39.0 keeps one `stateId` for all windows. In a crafting table window it sends window 0's counter, so the server answers each click with a full resync that overwrites the client's model mid-script, and the craft never completes. The 2x2 path showed the same timing-dependent failure once. Diagnosis: packet traces in `docs/analysis/phase0/worknotes/craft-26-1-diagnosis.md`. Upstream fix would be a per-window stateId.
 - Decision 0022 says do not patch the library; this workaround is ordinary code in `golem/src` that uses the protocol directly.
 - Granting the whole recipe book is a Phase 0 simplification: recipe discovery is not what the benchmark or the first Adam runs measure. Whether Adam should discover recipes is a design question; if it should, a later decision changes the grant, not the action.
 
