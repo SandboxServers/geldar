@@ -1,6 +1,6 @@
-import { type ActionRecord, validateActionRecord } from '@geldar/contract';
+import { validateActionRecord } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
-import { ulid } from '../ulid.ts';
+import { recordFor } from '../../test/live/record.ts';
 import {
   type ActionOutcome,
   cancelled,
@@ -10,23 +10,13 @@ import {
   toResult,
 } from './outcome.ts';
 
-/** A full `ActionRecord` around an outcome, the way the Body stores it. */
-function recordFor(outcome: ActionOutcome): ActionRecord {
-  return {
-    action_id: `ac_${ulid()}`,
-    intent_id: null,
-    life_id: 'ag_kestrel_01',
-    body_generation: 1,
-    sequence: 0,
-    source_snapshot_id: `sn_${ulid()}`,
-    snapshot_revision: 1,
-    expires_tick: 24_000,
-    kind: 'goto',
-    args: { target: 'GolemSmoke' },
-    state: recordState(outcome),
-    result: { ...toResult(outcome, 12, 40) },
-    receipt_id: null,
-  };
+/** The record for an outcome, built around the `runAction` shape for a `goto`. */
+function goRecord(outcome: ActionOutcome) {
+  return recordFor(
+    'goto',
+    { target: 'GolemSmoke' },
+    { state: recordState(outcome), result: toResult(outcome, 12, 40) },
+  );
 }
 
 describe('toResult', () => {
@@ -70,13 +60,13 @@ describe('ActionRecord around an outcome', () => {
     ['failed', failed('timeout', 'no result within 60000 ms')],
     ['cancelled', cancelled()],
   ])('passes validateActionRecord for a %s outcome', (_name, outcome) => {
-    const verdict = validateActionRecord(recordFor(outcome));
+    const verdict = validateActionRecord(goRecord(outcome));
     expect(verdict.ok, verdict.ok ? '' : verdict.errors.join('; ')).toBe(true);
   });
 
   it('carries a state that matches the outcome, so a wrong mapping is caught', () => {
-    expect(recordFor(completed()).state).toBe('completed');
-    expect(recordFor(failed('blocked', 'x')).state).toBe('failed');
-    expect(recordFor(cancelled()).state).toBe('cancelled');
+    expect(goRecord(completed()).state).toBe('completed');
+    expect(goRecord(failed('blocked', 'x')).state).toBe('failed');
+    expect(goRecord(cancelled()).state).toBe('cancelled');
   });
 });
