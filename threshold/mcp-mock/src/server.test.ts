@@ -150,7 +150,7 @@ describe('mock http', () => {
   }, 30_000);
 
   it('allows a local Origin', async () => {
-    for (const origin of ['http://localhost:1234', 'http://127.0.0.1']) {
+    for (const origin of ['http://localhost:1234', 'http://127.0.0.1', 'http://[::1]:1234']) {
       const res = await call('/p/aa', {
         method: 'POST',
         headers: bearer(TOKEN_A, { Origin: origin }),
