@@ -72,6 +72,9 @@ function intentText(e: SimEvent): string {
   return 'Your intent finished.';
 }
 
+/** For each speech array `worldText` built, the event seq behind each line (same order). */
+const speechSeqs = new WeakMap<object, number[]>();
+
 /**
  * The wrapper for text other agents wrote: the last 40 speech lines (`from` clipped to 32,
  * `text` to 512), plus signs and a book when given.
@@ -87,6 +90,11 @@ export function worldText(
       from: (e.from ?? '').slice(0, SPEECH_FROM_LIMIT),
       text: (e.text ?? '').slice(0, SPEECH_TEXT_LIMIT),
     }));
+    // The seq of each line, kept off the result so `fitResult` can tell which lines woke the agent.
+    speechSeqs.set(
+      text.speech,
+      lines.map((e) => e.seq),
+    );
   }
   if (extra.signs !== undefined) {
     text.signs = extra.signs.map((s) => s.slice(0, SIGN_LIMIT)) as NonNullable<
@@ -168,13 +176,13 @@ function size(result: unknown): number {
 /**
  * Trims a `wait`, `sleep` or `look` result under `maxBytes`. The events that woke the agent
  * (`wakingSeqs`) and the `wake_reason` are never dropped: a character woken with no visible cause
- * cannot decide well. Order: other events oldest-first (the newest 200 events first, the schema
- * cap), then speech lines oldest-first, then the front of the book text. Dropped events add to
- * `dropped_events` when the result has that field.
- *
- * The waking events stay even if that leaves fewer than the cap of other events. If they alone
- * still exceed `maxBytes`, their `text` is cut from the end, longest first, until the result fits
- * (or every text is empty); the seq and type stay. If the waking events alone pass the 200-event
+ * cannot decide well, and neither is the speech line behind a waking speech event (the event text
+ * is fixed; the words are in `untrusted_world_text.speech`). Trim order: first the events over the
+ * 200-event schema cap, oldest non-waking first; then non-waking events oldest-first; then speech
+ * lines that did not wake the agent, oldest-first; then the front of the book text; last, the
+ * `text` of the waking events and of their speech lines is cut from the end, longest first, until
+ * the result fits (or every text is empty); seq, type and `from` stay. Dropped events add to
+ * `dropped_events` when the result has that field. If the waking events alone pass the 200-event
  * schema cap, the oldest of them drop.
  */
 export function fitResult<T extends Fittable>(
@@ -208,15 +216,22 @@ export function fitResult<T extends Fittable>(
     // oldest non-waking event first
   }
   const speech = result.untrusted_world_text.speech;
-  while (speech && speech.length > 0 && size(result) > maxBytes) speech.shift();
+  const seqs = speech ? [...(speechSeqs.get(speech) ?? [])] : [];
+  while (speech && size(result) > maxBytes) {
+    const at = speech.findIndex((_, i) => !waking.has(seqs[i] ?? -1));
+    if (at < 0) break;
+    speech.splice(at, 1);
+    seqs.splice(at, 1);
+  }
   const book = result.untrusted_world_text.book;
   while (book && book.text.length > 0 && size(result) > maxBytes) {
     const excess = size(result) - maxBytes;
     book.text = book.text.slice(Math.min(book.text.length, Math.max(1, excess)));
   }
-  while (events && size(result) > maxBytes) {
-    let longest: McpPlayerEvent | undefined;
-    for (const e of events) if (e.text.length > (longest?.text.length ?? 0)) longest = e;
+  const cuttable: { text: string }[] = [...(events ?? []), ...(speech ?? [])];
+  while (size(result) > maxBytes) {
+    let longest: { text: string } | undefined;
+    for (const e of cuttable) if (e.text.length > (longest?.text.length ?? 0)) longest = e;
     if (!longest) break;
     const cut = Math.min(longest.text.length, size(result) - maxBytes);
     longest.text = longest.text.slice(0, longest.text.length - cut);

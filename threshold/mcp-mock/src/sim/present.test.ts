@@ -117,10 +117,16 @@ describe('fitResult', () => {
   });
 
   /** A wait result with `n` damage events (seq 1..n) and the given speech lines. */
-  function waitResult(n: number, speechLines: SimEvent[], text = 'hit'): WaitResult {
-    const sim = hubFor().player('p1');
+  function waitResult(
+    n: number,
+    speechLines: SimEvent[],
+    text = 'hit',
+    wakeReason: WaitResult['wake_reason'] = 'unexpected_damage',
+  ): WaitResult {
+    const hub = hubFor();
+    const sim = hub.player('p1');
     return {
-      snapshot: snapshotOf(sim, hubFor().scenario),
+      snapshot: snapshotOf(sim, hub.scenario),
       events: Array.from({ length: n }, (_, i) => ({
         seq: i + 1,
         type: 'damage' as const,
@@ -128,7 +134,7 @@ describe('fitResult', () => {
         text,
       })),
       cursor: `c_${n}`,
-      wake_reason: 'unexpected_damage',
+      wake_reason: wakeReason,
       dropped_events: 0,
       untrusted_world_text: worldText(speechLines),
       note: WORLD_TEXT_NOTE,
@@ -152,35 +158,120 @@ describe('fitResult', () => {
     expect(fitted.events.map((e) => e.seq)).toEqual([1, 3, 4, 5]);
     expect(fitted.wake_reason).toBe('unexpected_damage');
     expect(fitted.dropped_events).toBe(1);
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
-  it('drops other events, then speech lines, oldest-first, never the waking event', () => {
-    const result = waitResult(4, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
-    const noSpeech = waitResult(1, []);
-    const fitted = fitResult(result, bytes(noSpeech) + 10, [2]);
+  /** What `result` should become when only the given events and speech lines (by index) are left. */
+  function shrunk(
+    r: WaitResult,
+    keep: number[],
+    dropped: number,
+    speechKeep: number[] = [],
+  ): WaitResult {
+    const speechLines = r.untrusted_world_text.speech;
+    return {
+      ...r,
+      events: r.events.filter((e) => keep.includes(e.seq)),
+      dropped_events: dropped,
+      untrusted_world_text: speechLines
+        ? { speech: speechLines.filter((_, i) => speechKeep.includes(i)) }
+        : {},
+    };
+  }
+
+  it('drops other events, then non-waking speech lines, oldest-first, never the waking event', () => {
+    const result = waitResult(4, [speech(5, { text: 'a' }), speech(6, { text: 'b' })]);
+    const fitted = fitResult(result, bytes(shrunk(result, [2], 3)), [2]);
     expect(fitted.events.map((e) => e.seq)).toEqual([2]);
+    expect(fitted.events[0]?.text).toBe('hit');
     expect(fitted.dropped_events).toBe(3);
     expect(fitted.untrusted_world_text.speech ?? []).toHaveLength(0);
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
     const partial = waitResult(4, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
     const keepOne = fitResult(partial, bytes(partial) - 1, [4]);
     expect(keepOne.events.map((e) => e.seq)).toEqual([2, 3, 4]);
-    const lines = waitResult(1, [speech(1, { text: 'a' }), speech(2, { text: 'b' })]);
+    const lines = waitResult(1, [speech(5, { text: 'a' }), speech(6, { text: 'b' })]);
     const speechTrim = fitResult(lines, bytes(lines) - 1, [1]);
     expect(speechTrim.events.map((e) => e.seq)).toEqual([1]);
     expect(speechTrim.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['b']);
     expect(speechTrim.dropped_events).toBe(0);
   });
 
+  it('keeps the speech line of a waking event and drops newer non-waking lines first', () => {
+    const result = waitResult(2, [speech(1, { text: 'bbbb' }), speech(2, { text: 'aaaa' })]);
+    const cap = bytes(shrunk(result, [1], 1, [0]));
+    const fitted = fitResult(result, cap, [1]);
+    expect(fitted.events.map((e) => e.seq)).toEqual([1]);
+    expect(fitted.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['bbbb']);
+    expect(fitted.dropped_events).toBe(1);
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
+  });
+
   it('truncates the waking event text when it alone exceeds the byte cap', () => {
     const result = waitResult(3, [], 'y'.repeat(2000));
-    const cap = bytes(waitResult(1, [], '')) + 100;
+    const cap = bytes({
+      ...shrunk(result, [2], 2),
+      events: [{ ...result.events[1]!, text: 'y'.repeat(50) }],
+    });
     const fitted = fitResult(result, cap, [2]);
     expect(fitted.events.map((e) => e.seq)).toEqual([2]);
-    expect(fitted.events[0]?.text.length).toBeGreaterThan(0);
+    expect(fitted.events[0]?.text).toBe('y'.repeat(50));
     expect(bytes(fitted)).toBeLessThanOrEqual(cap);
     expect(fitted.wake_reason).toBe('unexpected_damage');
     expect(fitted.dropped_events).toBe(2);
+    expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
+
+  it('truncates the waking speech text last, longest first', () => {
+    const result = waitResult(1, [speech(1, { text: 'z'.repeat(600) })]);
+    const cap = bytes(result) - 100;
+    const fitted = fitResult(result, cap, [1]);
+    expect(fitted.events[0]?.text).toBe('hit');
+    expect(fitted.untrusted_world_text.speech?.[0]?.text).toBe('z'.repeat(412));
+    expect(bytes(fitted)).toBeLessThanOrEqual(cap);
+  });
+
+  it('keeps several waking events, including seqs that are not adjacent', () => {
+    const result = waitResult(5, []);
+    const fitted = fitResult(result, bytes(shrunk(result, [1, 3], 3)), [1, 3]);
+    expect(fitted.events.map((e) => e.seq)).toEqual([1, 3]);
+    expect(fitted.dropped_events).toBe(3);
+    expect(fitted.wake_reason).toBe('unexpected_damage');
+  });
+
+  it.each(['timeout', 'intent_run_too_long'] as const)(
+    'drops every event when none woke the agent (%s) and leaves the wake_reason',
+    (reason) => {
+      const result = waitResult(5, [], 'hit', reason);
+      const fitted = fitResult(result, bytes(shrunk(result, [], 5)), []);
+      expect(fitted.events).toEqual([]);
+      expect(fitted.dropped_events).toBe(5);
+      expect(fitted.wake_reason).toBe(reason);
+    },
+  );
+
+  it('drops the oldest waking events when they alone pass the 200-event cap', () => {
+    const result = waitResult(250, []);
+    const fitted = fitResult(
+      result,
+      undefined,
+      result.events.map((e) => e.seq),
+    );
+    expect(fitted.events).toHaveLength(200);
+    expect(fitted.events[0]?.seq).toBe(51);
+    expect(fitted.events.at(-1)?.seq).toBe(250);
+    expect(fitted.dropped_events).toBe(50);
+  });
+
+  it('gives the same output for the same input', () => {
+    const build = (): WaitResult =>
+      waitResult(8, [speech(1, { text: 'bbbb' }), speech(2, { text: 'aaaa' })], 'y'.repeat(300));
+    const a = build();
+    const b = build();
+    const cap = bytes(a) - 1500;
+    expect(fitResult(a, cap, [1, 4])).toEqual(fitResult(b, cap, [1, 4]));
+  });
+
   it('fits a look with 40 long speech lines under the cap', () => {
     const hub = hubFor();
     const sim = hub.player('p1');
