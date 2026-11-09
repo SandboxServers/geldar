@@ -17,8 +17,8 @@ export type ItemStack = Pick<Item, 'name' | 'count'>;
 const SEARCH_DISTANCE = 32;
 /** How close the bot walks to a block it cannot dig from where it stands. */
 const DIG_RANGE = 3;
-/** How close the bot walks to a broken block's drop to pick it up. */
-const PICKUP_RANGE = 1;
+/** How close the bot walks to a broken block's drop to pick it up: onto its cell, so it is in reach. */
+const PICKUP_RANGE = 0;
 /** How many cells a drop falls at most, to the lowest air cell under the broken block. */
 const FALL_CELLS = 16;
 /** Pickup polls at one world tick each, before timeScale. A drop waits about 10 server ticks. */

@@ -203,7 +203,7 @@ describe('mineAction', () => {
     const outcome = await mine(bot, 1);
     expect(outcome.status).toBe('completed');
     // Only the pickup walk is left; the reach walk (range 3) was skipped.
-    expect(vi.mocked(moveNear).mock.calls.map(([, , range]) => range)).toEqual([1]);
+    expect(vi.mocked(moveNear).mock.calls.map(([, , range]) => range)).toEqual([0]);
   });
 
   it('completes when the walk to a drop fails, because the wait and the inventory decide', async () => {
