@@ -298,13 +298,18 @@ describe('auditWorldText', () => {
     expect(auditWorldText(input('You are Adam.', user), [marker])).toEqual([]);
   });
 
+  it('accepts a wake_speech line quoted as JSON inside the section', () => {
+    const user = `Day 1\n${header}\n- wake_speech ${quoted}\nEND OF QUOTED WORLD TEXT`;
+    expect(auditWorldText(input('You are Adam.', user), [marker])).toEqual([]);
+  });
+
   it('flags a marker in the system message, outside the section and on a non-heard line', () => {
     const user = `Day 1 ${marker}\n${header}\n- sign ${quoted}\n- heard {not json ${marker}\nEND OF QUOTED WORLD TEXT`;
     const problems = auditWorldText(input(`rule: ${marker}`, user), [marker]);
     expect(problems.join('\n')).toContain('message 0 (system) contains');
     expect(problems.join('\n')).toContain('outside the quoted section');
-    expect(problems.join('\n')).toContain('not a heard line');
-    expect(problems.join('\n')).toContain('heard line that is not JSON');
+    expect(problems.join('\n')).toContain('not a heard or wake_speech line');
+    expect(problems.join('\n')).toContain('quoted line that is not JSON');
   });
 
   it('flags a second header or footer in the user message', () => {
