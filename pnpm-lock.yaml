@@ -241,6 +241,9 @@ importers:
       vec3:
         specifier: 0.1.10
         version: 0.1.10
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   threshold/mcp-mock:
     dependencies:

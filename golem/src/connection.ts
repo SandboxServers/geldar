@@ -3,6 +3,7 @@ import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { nextDelayMs } from './backoff.ts';
 import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
+import { worldAge } from './world-clock.ts';
 
 /** Where a bot connects and how it reconnects. Production passes host and port from `loadConfig` only. */
 export interface ConnectionOptions {
@@ -140,6 +141,17 @@ export class ConnectionManager extends EventEmitter {
     this.log = options.log ?? defaultLog;
     this.registry = options.registry;
   }
+
+  /**
+   * Calls `listener` with the world age on every time update of the current and later bots, and
+   * returns the function that unsubscribes. This is the `TickSource` of `BodyRuntime`.
+   */
+  onWorldTick = (listener: (worldAge: number) => void): (() => void) => {
+    this.on('worldTick', listener);
+    return () => {
+      this.off('worldTick', listener);
+    };
+  };
 
   /** Joins and resolves on the first spawn. Rejects if the connection goes fatal before that. */
   start(): Promise<Bot> {
@@ -289,6 +301,11 @@ export class ConnectionManager extends EventEmitter {
         this.emit('spawn', bot);
         this.pending?.resolve(bot);
         this.pending = null;
+      });
+      // Mineflayer emits `time` on each time update, with `bot.time.age` already set.
+      bot.on('time', () => {
+        const age = worldAge(bot);
+        if (age !== null) this.emit('worldTick', age);
       });
       bot.on('kicked', (reason: unknown) => finish(reasonText(reason), true));
       bot.on('end', (reason?: string) => finish(reason ?? 'end', false));

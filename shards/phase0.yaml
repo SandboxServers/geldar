@@ -5,7 +5,15 @@ seed: 8675309                    # compose/phase0.yml SEED must equal this; keep
 tick_rate: 20                    # dilation only after 5.14 tests pass
 world_border_radius: 1500        # spec 5.1: diameter 3000 in the world border command
 population_target: 1
-reflexes: { enabled: true, panic_burrow: true }
+reflexes:                        # one flag per spec 5.2 reflex; enabled: false turns all off
+  enabled: true
+  eat: true
+  retreat: true
+  hazard_escape: true
+  fall_stop: true
+  fight_or_flee: true
+  blocked_path: true
+  panic_burrow: true
 chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
 memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
 attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }
