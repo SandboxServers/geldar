@@ -116,6 +116,31 @@ describe('fitResult', () => {
     expect(validateToolResult('wait', fitted).ok).toBe(true);
   });
 
+  it('trims events before speech lines (the packet reading of the trim order)', () => {
+    const hub = hubFor();
+    const sim = hub.player('p1');
+    const events = Array.from({ length: 5 }, (_, i) => ({
+      seq: i + 1,
+      type: 'damage' as const,
+      tick: i,
+      text: 'hit',
+    }));
+    const result: WaitResult = {
+      snapshot: snapshotOf(sim, hub.scenario),
+      events,
+      cursor: 'c_5',
+      wake_reason: 'timeout',
+      dropped_events: 0,
+      untrusted_world_text: worldText([speech(1, { text: 'x'.repeat(500) }), speech(2)]),
+      note: WORLD_TEXT_NOTE,
+    };
+    const full = Buffer.byteLength(JSON.stringify(result));
+    const fitted = fitResult(result, full - 1);
+    expect(fitted.events.map((e) => e.seq)).toEqual([2, 3, 4, 5]);
+    expect(fitted.dropped_events).toBe(1);
+    expect(fitted.untrusted_world_text.speech).toHaveLength(2);
+  });
+
   it('fits a look with 40 long speech lines under the cap', () => {
     const hub = hubFor();
     const sim = hub.player('p1');

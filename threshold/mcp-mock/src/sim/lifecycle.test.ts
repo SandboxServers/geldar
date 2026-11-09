@@ -72,11 +72,16 @@ describe('statusTool and sleepTool', () => {
   it('keeps the last 8192 journal characters and returns them on sleep', () => {
     const { hub } = setup();
     const parts = ['a'.repeat(3000), 'b'.repeat(3000), 'c'.repeat(3000)];
-    for (const text of parts) expect(journalTool(hub, ctx, { text }).ok).toBe(true);
+    for (const text of parts) {
+      const written = journalTool(hub, ctx, { text });
+      expect(written.ok).toBe(true);
+      expect(validateToolResult('journal', written).ok).toBe(true);
+    }
     const expected = parts.join('\n').slice(-8192);
     const r = sleepTool(hub, ctx);
     expect(r.untrusted_world_text.book).toEqual({ title: 'journal', text: expected });
     expect(expected).toHaveLength(8192);
+    expect(validateToolResult('sleep', r).ok).toBe(true);
   });
 
   it('cancels the running intent', () => {

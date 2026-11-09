@@ -169,6 +169,9 @@ function size(result: unknown): number {
  * Trims a `wait`, `sleep` or `look` result under `maxBytes`: first the newest 200 events (the
  * schema cap), then, while too big, the oldest event, the oldest speech line, and last the front of
  * the book text. Dropped events add to `dropped_events` when the result has that field.
+ *
+ * Events go before speech because that is the packet's reading; it can drop the event that woke
+ * the agent before any speech line is touched (an orchestrator ambiguity, not settled here).
  */
 export function fitResult<T extends Fittable>(result: T, maxBytes = 16000): T {
   const drop = (n: number): void => {
