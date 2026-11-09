@@ -49,6 +49,12 @@ export interface MindDeps {
   timing?: { clock: Clock; scheduler: Scheduler };
   /** Wall clock in milliseconds for the loop and the reflection; defaults to `Date.now`. */
   now?: () => number;
+  /** Waits `ms` between snapshot retries; tests pass an instant one. */
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /** Resolves true when a Thinker for the model is connected, false after the timeout. */
+  awaitThinker?: (model: string, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
+  /** One structured log line from the loop (ids and codes, never prompt or completion text). */
+  log?: (line: Record<string, unknown>) => void;
   /** Called with anything a handler threw (the handlers themselves never reject). */
   onError?: (error: unknown) => void;
 }
@@ -134,6 +140,9 @@ export class Mind {
         events: deps.publisher,
         admission: this.admission,
         now,
+        ...(deps.sleep ? { sleep: deps.sleep } : {}),
+        ...(deps.awaitThinker ? { awaitThinker: deps.awaitThinker } : {}),
+        ...(deps.log ? { log: deps.log } : {}),
       },
       options,
     );

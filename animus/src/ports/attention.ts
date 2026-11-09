@@ -75,7 +75,9 @@ export type SuppressionReason =
   /** A running intent does not need the Mind yet. */
   | 'intent_running'
   /** The thought budget is spent. */
-  | 'tired';
+  | 'tired'
+  /** The Body gave no snapshot within the retry window, so there was nothing to think about. */
+  | 'snapshot_unavailable';
 
 /** A reflection is due: the agent slept, so the day is to be summarised (spec 5.4). */
 export interface ReflectionDue {

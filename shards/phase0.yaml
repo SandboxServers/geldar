@@ -38,8 +38,10 @@ mind:
     port: 7410
     name: local                  # the Thinker name in the welcome frame
     heartbeat_s: 15              # seconds between heartbeat frames
+  snapshot_retry_s: 60           # the Mind retries a snapshot request for this long while the Body is not up
+  thinker_wait_s: 20             # a thought waits this long for a Thinker to connect, then retries once
   thought:
-    max_tokens: 600              # output cap of a standard thought
+    max_tokens: 600             # output cap of a standard thought
     temperature: 0.7
     deadline_s: 25               # job deadline, seconds after dispatch
     reasoning: "off"             # the job's reasoning switch (decision 0049)

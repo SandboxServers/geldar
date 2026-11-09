@@ -280,6 +280,61 @@ describe('ThinkingLoop: fallback', () => {
   });
 });
 
+describe('ThinkingLoop: a Thinker that is not connected yet', () => {
+  const noThinker = (): ModelError => new ModelError('no_thinker', 'none connected');
+
+  it('waits for a Thinker and retries once, then plans', async () => {
+    const waits: [string, number][] = [];
+    const lines: Record<string, unknown>[] = [];
+    const rig = await makeRig([noThinker(), VALID_THOUGHT], {
+      loop: { thinkerWaitMs: 20_000 },
+      deps: {
+        awaitThinker: async (model, ms) => {
+          waits.push([model, ms]);
+          return true;
+        },
+        log: (line) => lines.push(line),
+      },
+    });
+    const result = await rig.loop.handle(makeDecision('idle'));
+    expect(result.outcome).toBe('planned');
+    expect(waits).toEqual([['qwen3:32b', 20_000]]);
+    expect(rig.model.jobs).toHaveLength(2);
+    expect(rig.store.thoughts).toHaveLength(1);
+    expect(lines.find((l) => l.event === 'thought_outcome')).toMatchObject({ outcome: 'planned' });
+  });
+
+  it('falls back after one wait when no Thinker comes, and journals and logs the error code', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const rig = await makeRig([noThinker(), noThinker()], {
+      loop: { thinkerWaitMs: 20_000 },
+      deps: { awaitThinker: async () => false, log: (line) => lines.push(line) },
+    });
+    const result = await rig.loop.handle(makeDecision('idle'));
+    expect(result.outcome).toBe('model_error');
+    expect(rig.model.jobs).toHaveLength(1);
+    expect(rig.store.thoughts[0]?.providerUsage).toEqual({
+      error_code: 'no_thinker',
+      source: 'error',
+    });
+    expect(lines.find((l) => l.event === 'thought_outcome')).toMatchObject({
+      outcome: 'model_error',
+      error_code: 'no_thinker',
+    });
+    expect(JSON.stringify(lines)).not.toContain('Adam');
+  });
+
+  it('retries at most once even when the second call fails with no_thinker too', async () => {
+    const rig = await makeRig([noThinker(), noThinker()], {
+      loop: { thinkerWaitMs: 1000 },
+      deps: { awaitThinker: async () => true },
+    });
+    const result = await rig.loop.handle(makeDecision('idle'));
+    expect(result.outcome).toBe('model_error');
+    expect(rig.model.jobs).toHaveLength(2);
+  });
+});
+
 describe('ThinkingLoop: admission', () => {
   it('is tired at the cap: no model call, a row with no call, a tired event', async () => {
     const rig = await makeRig([VALID_THOUGHT], { cap: 1 });

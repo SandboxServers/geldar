@@ -30,6 +30,8 @@ export interface SessionContext {
   log: (line: string) => void;
   /** Called once when the socket has closed. */
   onClosed: (session: ThinkerSession) => void;
+  /** Called once when a `hello` has been answered with a `welcome`. */
+  onWelcomed?: (session: ThinkerSession) => void;
 }
 
 /** What a finished job returns to the client. */
@@ -258,6 +260,7 @@ export class ThinkerSession {
       server_time: new Date(this.ctx.now()).toISOString(),
     });
     this.ctx.log(`${this.id}: welcomed, ${this.accepted.size} of ${frame.models.length} models`);
+    this.ctx.onWelcomed?.(this);
   }
 
   private onAnswer(frame: Frame<'completion'> | Frame<'error'>): void {

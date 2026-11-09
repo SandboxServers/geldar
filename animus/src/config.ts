@@ -53,6 +53,8 @@ export interface AnimusConfig {
   };
   agent: { name: string; username: string; tier: string; personalitySeed: string };
   thinker: { host: string; port: number; name: string; heartbeatS: number };
+  /** How long the Mind waits for what it starts before the Body and the Thinker are up. */
+  mind: { snapshotRetryS: number; thinkerWaitS: number };
   thought: JobSettings;
   reflection: JobSettings;
   admission: { maxThoughtsPerRealHour: number };
@@ -175,6 +177,10 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
       port: int(thinker, 'port', 'mind.thinker', 1, 65535),
       name: text(thinker, 'name', 'mind.thinker'),
       heartbeatS: heartbeat,
+    },
+    mind: {
+      snapshotRetryS: optionalInt(mind, 'snapshot_retry_s', 'mind', 60, 0),
+      thinkerWaitS: optionalInt(mind, 'thinker_wait_s', 'mind', 20, 0),
     },
     thought,
     reflection: jobSettings(mind, 'reflection', thought.temperature),
@@ -302,6 +308,17 @@ function int(
     throw new Error(`${where}.${key} must be an integer from ${min} to ${max}`);
   }
   return value;
+}
+
+/** An integer setting that may be absent, in which case `fallback` applies. */
+function optionalInt(
+  block: Record<string, unknown>,
+  key: string,
+  where: string,
+  fallback: number,
+  min: number,
+): number {
+  return block[key] === undefined ? fallback : int(block, key, where, min);
 }
 
 function loopbackHost(name: string, host: string): string {

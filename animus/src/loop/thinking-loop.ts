@@ -72,6 +72,10 @@ export interface LoopOptions {
   workingWindow: number;
   /** How many episodic memories to retrieve. */
   episodicTopK: number;
+  /** How long to keep asking for a snapshot while the Body is not up; absent means once. */
+  snapshotRetryMs?: number;
+  /** How long a `no_thinker` call waits for a Thinker before the fallback; absent means not at all. */
+  thinkerWaitMs?: number;
 }
 
 /** The loop's options from the loaded configuration; `bodyVersion` is the Body build's version. */
@@ -94,6 +98,8 @@ export function loopOptionsFromConfig(config: AnimusConfig, versions: LoopVersio
     expiresAfterTicks: config.plan.expiresAfterTicks,
     workingWindow: config.memory.workingWindow,
     episodicTopK: config.memory.episodicTopK,
+    snapshotRetryMs: config.mind.snapshotRetryS * 1000,
+    thinkerWaitMs: config.mind.thinkerWaitS * 1000,
   };
 }
 
@@ -114,6 +120,32 @@ export interface LoopDeps {
   ledger?: IntentLedger;
   /** Wall clock in milliseconds; defaults to `Date.now`. */
   now?: () => number;
+  /** Waits `ms` or until `signal` aborts; tests pass an instant one. Defaults to a timer. */
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
+  /**
+   * Resolves true when a Thinker offering `model` is connected, false after `timeoutMs` (or an
+   * abort). Absent means a `no_thinker` failure is final at once.
+   */
+  awaitThinker?: (model: string, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
+  /** One structured log line: ids, codes and counts only, never prompt or completion text. */
+  log?: (line: Record<string, unknown>) => void;
+}
+
+/** First wait between snapshot requests while the Body is not up; it doubles up to the cap. */
+const SNAPSHOT_RETRY_START_MS = 250;
+const SNAPSHOT_RETRY_CAP_MS = 5_000;
+
+/** A timer that ends early, without rejecting, when `signal` aborts. */
+function sleepFor(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener('abort', done, { once: true });
+  });
 }
 
 /** What one cycle did. */
@@ -149,6 +181,8 @@ interface Cycle {
   latencyMs: number;
   thinkerId: string | undefined;
   journalErrors: number;
+  /** The code of the last model call that failed, for the journal and the log. */
+  errorCode?: string;
 }
 
 /** The thinking loop of one life. */
@@ -210,11 +244,9 @@ export class ThinkingLoop {
     for (const event of [...decision.events, ...decision.digest]) this.ledger.observe(event);
 
     // 1. The snapshot, with the budget and the sleep counter set.
-    let raw: Snapshot;
-    try {
-      raw = await this.deps.body.requestSnapshot(decision.reason.slice(0, 64));
-    } catch (error) {
-      if (!(error instanceof BodyLinkError)) throw error;
+    const raw = await this.snapshotWithRetry(decision.reason.slice(0, 64));
+    if (raw === null) {
+      await this.recordLostWake(decision);
       return {
         outcome: 'fallback_hold',
         thoughtId: null,
@@ -341,9 +373,8 @@ export class ThinkingLoop {
     if (reservation === null) return { kind: 'tired' };
     const shape = jobShape(cycle.effort.level, this.options.thought);
     cycle.calls++;
-    let completion: ModelCompletion;
-    try {
-      completion = await this.deps.model.complete(
+    const call = (): Promise<ModelCompletion> =>
+      this.deps.model.complete(
         {
           model: this.options.model,
           messages,
@@ -357,10 +388,15 @@ export class ThinkingLoop {
         },
         this.abort.signal,
       );
+    let completion: ModelCompletion;
+    try {
+      completion = await this.callWaitingForThinker(call);
     } catch (error) {
+      const code = error instanceof ModelError ? error.code : 'internal';
       reservation.release();
-      await this.record(cycle, thoughtId, wakeReason, messages, null, null, THOUGHT_COST, 0);
-      return { kind: 'error', code: error instanceof ModelError ? error.code : 'internal' };
+      cycle.errorCode = code;
+      await this.record(cycle, thoughtId, wakeReason, messages, null, null, THOUGHT_COST, 0, code);
+      return { kind: 'error', code };
     }
     reservation.settle();
     cycle.latencyMs += completion.latencyMs;
@@ -379,6 +415,84 @@ export class ThinkingLoop {
     );
     if (parsed.ok) return { kind: 'ok', thought: parsed.value, completion };
     return { kind: 'invalid', errors: parsed.errors, completion };
+  }
+
+  /**
+   * Runs one model call. A `no_thinker` failure waits up to `thinkerWaitMs` for a Thinker to
+   * connect and retries once; the original error stands when none comes.
+   */
+  private async callWaitingForThinker(
+    call: () => Promise<ModelCompletion>,
+  ): Promise<ModelCompletion> {
+    try {
+      return await call();
+    } catch (error) {
+      const wait = this.options.thinkerWaitMs ?? 0;
+      const awaitThinker = this.deps.awaitThinker;
+      if (
+        !(error instanceof ModelError) ||
+        error.code !== 'no_thinker' ||
+        awaitThinker === undefined ||
+        wait <= 0
+      ) {
+        throw error;
+      }
+      this.log({ event: 'thinker_wait', life_id: this.options.lifeId, wait_ms: wait });
+      const connected = await awaitThinker(this.options.model, wait, this.abort.signal);
+      this.log({ event: 'thinker_wait_over', life_id: this.options.lifeId, connected });
+      if (!connected) throw error;
+      return await call();
+    }
+  }
+
+  /**
+   * The snapshot, asked again with a backoff (250 ms doubling to 5 s) while the Body does not
+   * answer, for up to `snapshotRetryMs` of waiting; null when it never did.
+   */
+  private async snapshotWithRetry(reason: string): Promise<Snapshot | null> {
+    const budget = this.options.snapshotRetryMs ?? 0;
+    const sleep = this.deps.sleep ?? sleepFor;
+    let slept = 0;
+    let delay = SNAPSHOT_RETRY_START_MS;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.deps.body.requestSnapshot(reason);
+      } catch (error) {
+        if (!(error instanceof BodyLinkError)) throw error;
+        const wait = Math.min(delay, SNAPSHOT_RETRY_CAP_MS);
+        const giveUp = slept + wait > budget || this.abort.signal.aborted;
+        this.log({
+          event: giveUp ? 'snapshot_unavailable' : 'snapshot_retry',
+          life_id: this.options.lifeId,
+          wake_reason: reason,
+          attempt,
+          error_code: error.code,
+        });
+        if (giveUp) return null;
+        await sleep(wait, this.abort.signal);
+        slept += wait;
+        delay *= 2;
+      }
+    }
+  }
+
+  /** A wake that never got a snapshot is still on record: a `suppressed_wakeups` row says why. */
+  private async recordLostWake(decision: WakeDecision): Promise<void> {
+    try {
+      await this.deps.journal.recordSuppressed({
+        lifeId: this.options.lifeId,
+        at: new Date(this.now()).toISOString(),
+        eventTypes: [decision.reason],
+        reason: 'snapshot_unavailable',
+        intentId: null,
+      });
+    } catch {
+      // The log line says it; a journal failure must not stop the Mind.
+    }
+  }
+
+  private log(line: Record<string, unknown>): void {
+    this.deps.log?.(line);
   }
 
   /** Embeds the wake and searches the episodic memories; memory is best effort, so a failure gives none. */
@@ -428,8 +542,10 @@ export class ThinkingLoop {
     parsed: Thought | null,
     reserved: number,
     settled: number,
+    errorCode?: string,
   ): Promise<void> {
     const row = buildThoughtRow({
+      ...(errorCode === undefined ? {} : { errorCode }),
       thoughtId,
       snapshot: cycle.snapshot,
       wakeReason,
@@ -480,6 +596,15 @@ export class ThinkingLoop {
       },
     };
     if (cycle.thinkerId !== undefined) event.thinker_id = cycle.thinkerId;
+    this.log({
+      event: 'thought_outcome',
+      life_id: this.options.lifeId,
+      thought_id: thoughtId,
+      wake_reason: cycle.decision.reason,
+      outcome,
+      ...(cycle.errorCode === undefined ? {} : { error_code: cycle.errorCode }),
+      latency_ms: Math.round(cycle.latencyMs),
+    });
     try {
       await this.deps.events.publish(event);
     } catch {

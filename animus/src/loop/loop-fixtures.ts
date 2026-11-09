@@ -14,7 +14,7 @@ import type {
 } from '../ports/index.ts';
 import { Admission } from './admission.ts';
 import { IntentLedger } from './fallback.ts';
-import { type LoopOptions, ThinkingLoop } from './thinking-loop.ts';
+import { type LoopDeps, type LoopOptions, ThinkingLoop } from './thinking-loop.ts';
 
 export const LIFE = 'ag_adam_01';
 
@@ -184,6 +184,7 @@ export async function makeRig(
     cap?: number;
     ack?: AckScript;
     loop?: Partial<LoopOptions>;
+    deps?: Partial<LoopDeps>;
   } = {},
 ): Promise<Rig> {
   const clock = { ms: Date.parse('2026-11-09T10:00:00.000Z') };
@@ -226,6 +227,7 @@ export async function makeRig(
       admission,
       ledger,
       now: () => clock.ms,
+      ...options.deps,
     },
     { ...OPTIONS, ...options.loop },
   );

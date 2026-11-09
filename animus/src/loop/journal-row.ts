@@ -33,6 +33,8 @@ export interface ThoughtRowInput {
   creditsSettled: number;
   /** ISO 8601. */
   at: string;
+  /** The code of the model failure when the call failed, kept in `provider_usage`. */
+  errorCode?: string;
 }
 
 /** Characters to tokens, the estimate the journal records beside the provider's own count. */
@@ -64,13 +66,15 @@ export function buildThoughtRow(input: ThoughtRowInput): ThoughtRow {
     tokensInEstimated: inChars === null ? null : estimateTokens(inChars),
     tokensOutEstimated: completion === null ? null : estimateTokens(completion.text.length),
     providerUsage:
-      usage === undefined
-        ? null
-        : {
+      usage !== undefined
+        ? {
             prompt_tokens: usage.promptTokens,
             completion_tokens: usage.completionTokens,
             source: 'provider',
-          },
+          }
+        : input.errorCode !== undefined
+          ? { error_code: input.errorCode, source: 'error' }
+          : null,
     rawOutput: completion?.text ?? null,
     parsed: input.parsed,
     latencyMs: completion?.latencyMs ?? null,

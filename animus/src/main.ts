@@ -49,6 +49,8 @@ export interface StoreResource {
 /** What the Thinker hub step gives the Mind. */
 export interface HubResource {
   model: ModelClient;
+  /** Resolves true when a Thinker for the model is connected, false after the timeout. */
+  waitForThinker?: (model: string, timeoutMs: number, signal: AbortSignal) => Promise<boolean>;
   /** Sends the Thinkers a `drain` frame and closes the socket. */
   stop(): Promise<void>;
 }
@@ -193,6 +195,8 @@ export async function startMind(
       events: link.events,
       publisher: loggingPublisher(link.publisher, lifeId, log),
       model: hub.model,
+      ...(hub.waitForThinker ? { awaitThinker: hub.waitForThinker } : {}),
+      log,
       store: db.store,
       journal: db.journal,
       embedder,
@@ -239,10 +243,21 @@ export const realStack: MindStack = {
     const hub = new ThinkerHub({
       config,
       log: (line) => log({ event: 'thinker', line }),
+      onThinker: ({ kind, id, models }) =>
+        log({
+          event: kind === 'connected' ? 'thinker_connected' : 'thinker_disconnected',
+          thinker_id: id,
+          thinker: config.thinker.name,
+          models,
+        }),
     });
     await hub.start();
     const client = new LocalThinkerClient(hub);
-    return { model: client, stop: () => hub.stop() };
+    return {
+      model: client,
+      waitForThinker: (model, timeoutMs, signal) => hub.waitForThinker(model, timeoutMs, signal),
+      stop: () => hub.stop(),
+    };
   },
   async openLink(config, log) {
     const nc = await connect({ servers: config.natsUrl, name: 'animus', timeout: 5_000 });

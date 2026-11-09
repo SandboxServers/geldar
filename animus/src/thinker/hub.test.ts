@@ -18,6 +18,40 @@ async function connected(): Promise<FakeThinker> {
   return t;
 }
 
+describe('ThinkerHub arrivals', () => {
+  it('reports a Thinker when it is welcomed and when it is gone, with the model names', async () => {
+    const seen: string[] = [];
+    hub = await startHub({
+      onThinker: (e) => seen.push(`${e.kind}:${e.models.join(',')}`),
+    });
+    const t = await connected();
+    expect(seen).toEqual([]);
+    await t.hello();
+    expect(seen).toEqual([`connected:${MODEL}`]);
+    t.close();
+    await until(() => seen.length === 2, 'the disconnect report');
+    expect(seen[1]).toBe(`disconnected:${MODEL}`);
+  });
+
+  it('resolves waitForThinker when a Thinker connects later, and false on a timeout', async () => {
+    hub = await startHub();
+    expect(await hub.waitForThinker(MODEL, 30)).toBe(false);
+    const waiting = hub.waitForThinker(MODEL, 5_000);
+    const t = await connected();
+    await t.hello();
+    expect(await waiting).toBe(true);
+    expect(await hub.waitForThinker(MODEL, 30)).toBe(true);
+  });
+
+  it('ends waitForThinker as false when the signal aborts', async () => {
+    hub = await startHub();
+    const abort = new AbortController();
+    const waiting = hub.waitForThinker(MODEL, 5_000, abort.signal);
+    abort.abort();
+    expect(await waiting).toBe(false);
+  });
+});
+
 describe('ThinkerHub handshake', () => {
   it('welcomes with the configured name and only the models the Mind pins', async () => {
     hub = await startHub();

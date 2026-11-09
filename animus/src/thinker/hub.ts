@@ -28,6 +28,8 @@ export interface HubOptions {
   /** Connections beyond this are closed at once. */
   maxConnections?: number;
   now?: () => number;
+  /** Called when a Thinker has been welcomed (with the models accepted) and when it is gone. */
+  onThinker?: (event: { kind: 'connected' | 'disconnected'; id: string; models: string[] }) => void;
   /** One line per event: ids, lengths and counts only, never prompt or completion text. */
   log?: (line: string) => void;
 }
@@ -44,9 +46,15 @@ export interface SessionStats {
 
 /** The server half of Appendix H. */
 export class ThinkerHub {
-  private readonly opts: Required<Omit<HubOptions, 'port' | 'log'>> & { log: (l: string) => void };
+  private readonly opts: Required<Omit<HubOptions, 'port' | 'log' | 'onThinker'>> & {
+    log: (l: string) => void;
+  };
+  private readonly onThinker: NonNullable<HubOptions['onThinker']>;
   private readonly listenPort: number;
   private readonly sessions = new Map<string, ThinkerSession>();
+  /** The sessions that were welcomed, with their models, for the disconnect report. */
+  private readonly welcomed = new Map<string, string[]>();
+  private readonly waiters = new Set<{ model: string; done: (connected: boolean) => void }>();
   private server: WebSocketServer | null = null;
   private counter = 0;
 
@@ -60,7 +68,32 @@ export class ThinkerHub {
       log: () => {},
       ...options,
     };
+    this.onThinker = options.onThinker ?? (() => {});
     this.listenPort = options.port ?? options.config.thinker.port;
+  }
+
+  /**
+   * Resolves true once a live Thinker offers `model` (at once when one does), false after
+   * `timeoutMs` or when `signal` aborts.
+   */
+  waitForThinker(model: string, timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+    if (this.pick(model) !== undefined) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const waiter = {
+        model,
+        done: (connected: boolean): void => {
+          clearTimeout(timer);
+          signal?.removeEventListener('abort', onAbort);
+          this.waiters.delete(waiter);
+          resolve(connected);
+        },
+      };
+      const onAbort = (): void => waiter.done(false);
+      const timer = setTimeout(() => waiter.done(false), timeoutMs);
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) onAbort();
+      else this.waiters.add(waiter);
+    });
   }
 
   /** The port the server listens on; valid after {@link start}. */
@@ -98,7 +131,21 @@ export class ThinkerHub {
         now: this.opts.now,
         helloTimeoutMs: this.opts.helloTimeoutMs,
         log: this.opts.log,
-        onClosed: (closed) => this.sessions.delete(closed.id),
+        onClosed: (closed) => {
+          this.sessions.delete(closed.id);
+          const models = this.welcomed.get(closed.id);
+          if (models === undefined) return;
+          this.welcomed.delete(closed.id);
+          this.onThinker({ kind: 'disconnected', id: closed.id, models });
+        },
+        onWelcomed: (ready) => {
+          const models = [...ready.accepted.keys()];
+          this.welcomed.set(ready.id, models);
+          this.onThinker({ kind: 'connected', id: ready.id, models });
+          for (const waiter of [...this.waiters]) {
+            if (this.pick(waiter.model) !== undefined) waiter.done(true);
+          }
+        },
       });
       this.sessions.set(id, session);
       this.opts.log(`${id}: connected`);
