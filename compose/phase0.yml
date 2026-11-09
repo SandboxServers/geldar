@@ -1,0 +1,132 @@
+# Phase 0 shard stack (spec 5.1, 6.5, 6.7; decisions 0021 and 0022).
+# Bots reach Paper only through the Velocity bot ingress on 127.0.0.1:25565.
+# Paper publishes no game port and accepts only Velocity-forwarded connections.
+# Secrets are files in compose/secrets/ (run `./geldar.ps1 shard secrets phase0`).
+# Ollama runs on the host, outside compose (decision 0002).
+name: geldar-phase0
+
+x-minecraft-healthcheck: &mc-health
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 10m
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    environment:
+      POSTGRES_DB: geldar
+      POSTGRES_USER: geldar
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+    secrets: [postgres]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Applied in name order on a fresh volume only (sql/README.md).
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      # -h 127.0.0.1: during first-boot init Postgres listens only on its socket.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "geldar", "-d", "geldar"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  nats:
+    image: nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
+    # Per-service NATS accounts arrive with the components that need them (waves 3 to 5).
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  paper:
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    # Writes the Velocity forwarding secret into paper-global.yml from its secret file, then starts the image.
+    entrypoint: ["/bin/sh", "/geldar/paper-entrypoint.sh"]
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "26.1.2"
+      PAPER_BUILD: "74"
+      MEMORY: ${PAPER_MEMORY:-6G}
+      # 5.1 server.properties. SEED must equal `seed` in shards/phase0.yaml; keep them equal.
+      SEED: "8675309"
+      ONLINE_MODE: "FALSE"
+      ENABLE_WHITELIST: "TRUE"
+      ENFORCE_WHITELIST: "TRUE"
+      HARDCORE: "FALSE"
+      DIFFICULTY: normal
+      VIEW_DISTANCE: "6"
+      SIMULATION_DISTANCE: "5"
+      MAX_PLAYERS: "400"
+      SPAWN_PROTECTION: "0"
+      ALLOW_FLIGHT: "TRUE"
+      MOTD: "Geldar - no humans"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD_FILE: /run/secrets/rcon
+      # 5.1 world border (diameter 3000 = radius 1500) and gamerules, run once the server is up.
+      # The image splits this value on newlines, one RCON command per line. Gamerule names are
+      # the 26.1 ones: the camelCase names from spec 5.1 are rejected ("Incorrect argument").
+      RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
+    secrets: [rcon, velocity-forwarding]
+    volumes:
+      - paper-data:/data
+      - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
+    ports:
+      # Ops and the benchmark only. The game port (25565) is deliberately not published.
+      - "127.0.0.1:25575:25575"
+    healthcheck:
+      <<: *mc-health
+      test: ["CMD-SHELL", "mc-health"]
+    restart: unless-stopped
+
+  velocity:
+    image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
+    environment:
+      TYPE: VELOCITY
+      VELOCITY_VERSION: "3.5.1"
+      VELOCITY_BUILD_ID: "615"
+      MEMORY: 512M
+    secrets: [velocity-forwarding]
+    volumes:
+      - ./velocity/velocity.toml:/config/velocity.toml:ro
+      - velocity-data:/server
+    ports:
+      # The bot ingress. Phase 0 stands in for production's internal VLAN (decision 0021).
+      - "127.0.0.1:25565:25565"
+    depends_on:
+      paper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/25565"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+secrets:
+  postgres:
+    file: ./secrets/postgres.txt
+  rcon:
+    file: ./secrets/rcon.txt
+  velocity-forwarding:
+    file: ./secrets/velocity-forwarding.txt
+
+volumes:
+  postgres-data:
+  nats-data:
+  paper-data:
+  velocity-data:

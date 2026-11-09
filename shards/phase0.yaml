@@ -1,0 +1,15 @@
+# Phase 0 shard config: Appendix E trimmed to Phase 0 (spec 5.1, decision 0022).
+# The economy, shrine, governance, sovereign and historian blocks arrive in later phases.
+shard: phase0
+seed: 8675309                    # compose/phase0.yml SEED must equal this; keep them equal
+tick_rate: 20                    # dilation only after 5.14 tests pass
+world_border_radius: 1500        # spec 5.1: diameter 3000 in the world border command
+population_target: 1
+reflexes: { enabled: true, panic_burrow: true }
+chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
+memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
+attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }
+lifecycle: { permadeath: false }
+models:
+  strong: ["qwen3:32b"]          # Ollama on the host (decision 0002)
+  fast: ["qwen3:8b"]
