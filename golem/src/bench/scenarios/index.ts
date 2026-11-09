@@ -25,12 +25,15 @@ export const scenarios: Scenario[] = [
   // --- end P0-10c ---
 ];
 
-/** The scenarios `all` runs: everything not hidden. */
-export function visibleScenarios(): Scenario[] {
-  return scenarios.filter((scenario) => !scenario.hidden);
+/** The scenarios `all` runs: everything not hidden, from the registry or the list given. */
+export function visibleScenarios(list: readonly Scenario[] = scenarios): Scenario[] {
+  return list.filter((scenario) => !scenario.hidden);
 }
 
-/** The scenario with this name, or undefined. */
-export function findScenario(name: string): Scenario | undefined {
-  return scenarios.find((scenario) => scenario.name === name);
+/** The scenario with this name in the registry or the list given, or undefined. */
+export function findScenario(
+  name: string,
+  list: readonly Scenario[] = scenarios,
+): Scenario | undefined {
+  return list.find((scenario) => scenario.name === name);
 }

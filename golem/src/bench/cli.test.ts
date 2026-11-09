@@ -2,9 +2,21 @@ import { describe, expect, it } from 'vitest';
 import type { GolemConfig } from '../config.ts';
 import { type CliDeps, gateLine, main, parseCli, UsageError } from './cli.ts';
 import type { Written } from './results.ts';
-import type { CellResult } from './types.ts';
+import type { CellResult, Scenario } from './types.ts';
 
 const clean = (): boolean => false;
+
+function fakeScenario(name: string, hidden = false): Scenario {
+  return {
+    name,
+    description: name,
+    timeoutMs: 25,
+    hidden,
+    prepare: async () => undefined,
+    ready: () => true,
+    run: async () => ({ passed: true, note: '' }),
+  };
+}
 
 function cellOf(partial: Partial<CellResult>): CellResult {
   return {
@@ -70,17 +82,18 @@ describe('parseCli', () => {
   });
 
   it('refuses the default all while no scenario is visible, except for --list and --restore', () => {
-    expect(() => parseCli([], clean)).toThrow(/no visible scenario/);
-    expect(() => parseCli(['--list'], clean)).not.toThrow();
-    expect(() => parseCli(['--restore'], clean)).not.toThrow();
+    expect(() => parseCli([], clean, [])).toThrow(/no visible scenario/);
+    expect(() => parseCli([], clean, [fakeScenario('hid', true)])).toThrow(/no visible scenario/);
+    expect(() => parseCli(['--list'], clean, [])).not.toThrow();
+    expect(() => parseCli(['--restore'], clean, [])).not.toThrow();
+    expect(parseCli([], clean, [fakeScenario('seen')]).scenarios).toEqual(['seen']);
   });
 
   it('refuses --record on a dirty tree unless --allow-dirty', () => {
-    // `all` has no visible scenarios yet in P0-10a, so a named hidden one is not usable here:
-    // the dirty check must still apply before anything else is recorded.
-    expect(() => parseCli(['--record'], () => true)).toThrow(/dirty/);
-    // Past the dirty check the empty default list is the next refusal.
-    expect(() => parseCli(['--record', '--allow-dirty'], () => true)).toThrow(
+    // The dirty check applies before anything else is recorded.
+    expect(() => parseCli(['--record'], () => true, [])).toThrow(/dirty/);
+    // Past the dirty check the empty list is the next refusal.
+    expect(() => parseCli(['--record', '--allow-dirty'], () => true, [])).toThrow(
       /no visible scenario/,
     );
   });
@@ -238,9 +251,18 @@ describe('main', () => {
 
   it('exits 2 for --scenario all while no scenario is visible', async () => {
     const h = harness();
+    h.deps.scenarios = [];
     expect(await main(['--tps', '20'], h.deps)).toBe(2);
     expect(h.err.join('\n')).toMatch(/no visible scenario/);
     expect(h.log).toEqual([]);
+  });
+
+  it('runs the injected visible scenarios for --scenario all and prints the n/a gate for zero cells', async () => {
+    const h = harness();
+    h.deps.scenarios = [fakeScenario('seen')];
+    h.deps.cell = async () => cellOf({ scenario: 'seen', tps: 5 });
+    expect(await main(['--tps', '5', '--runs', '1'], h.deps)).toBe(0);
+    expect(h.out).toContain('GATE: n/a (no 20 TPS cell ran)');
   });
 
   it('does not close the control when a signal arrives during the final restore', async () => {

@@ -258,6 +258,7 @@ describe('runCell', () => {
       async run(env) {
         await env.ctl.fill({ x: 0, y: 200, z: 0 }, { x: 1, y: 200, z: 1 }, 'stone');
         await env.ctl.gamerule('spawn_mobs');
+        // @ts-expect-error give is not part of RunControl
         expect(() => env.ctl.give('GolemBench', 'stick', 1)).toThrow(/not available/);
         expect(() => env.ctl.gamerule('spawn_mobs', true)).toThrow(/only query/);
         return { passed: true, note: 'limited' };
