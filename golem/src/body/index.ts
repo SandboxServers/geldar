@@ -5,6 +5,24 @@
 // world tick), but fire at the client's 20 Hz physics tick, not at the ~1 Hz time packet. The value is
 // still in world ticks (`watchWorldTicks` in `world-clock.ts`), so cooldowns stay in world ticks.
 export type { ActionRun } from '../actions/registry.ts';
+export { type Body, type CreateBodyOptions, createBody, enabledReflexes } from './create-body.ts';
+export {
+  type ActionReport,
+  DEFAULT_REMEMBERED_ACTIONS,
+  type ExecutorOptions,
+  type IntentDisposition,
+  IntentExecutor,
+  MAX_ACTIONS,
+  type PlanEnvelope,
+  type SubmitResult,
+} from './executor.ts';
+export { blockOperationsOf, type IntentLimits, type LimitKind, LimitTracker } from './limits.ts';
+export {
+  builtinPreconditions,
+  type Precondition,
+  PreconditionRegistry,
+  type PreconditionVerdict,
+} from './preconditions.ts';
 export {
   type IntentProgram,
   type ProgramCheckpoint,
@@ -14,12 +32,30 @@ export {
   type StepResult,
 } from './program.ts';
 export {
+  CraftProgram,
+  createProgramRegistry,
+  FleeProgram,
+  GatherProgram,
+  ProgramError,
+  type ProgramErrorReason,
+  RestProgram,
+  TravelProgram,
+  UNSUPPORTED_PROGRAMS,
+} from './programs/index.ts';
+export {
   type IntentChange,
   type IntentState,
   MemorySink,
   type RecordSink,
   type ReflexFiredRecord,
 } from './records.ts';
+export {
+  type EventPublisher,
+  eventIdFor,
+  jetStreamPublisher,
+  NatsRecordSink,
+  type NatsSinkOptions,
+} from './records-nats.ts';
 export {
   type Reflex,
   type ReflexContext,
@@ -37,7 +73,19 @@ export {
   type ReflexConfig,
   type ReflexName,
 } from './reflex-config.ts';
+export { basicReflexes } from './reflexes/basic.ts';
+export { type BlockedReport, hasBlockedReport, reportBlocked } from './reflexes/blocked-path.ts';
+export { combatReflexes } from './reflexes/combat.ts';
+export { shelterReflexes } from './reflexes/shelter.ts';
 export { BodyRuntime, type BodyRuntimeOptions, type TickSource } from './runtime.ts';
+export {
+  type BodyIdentity,
+  checkValidity,
+  DEFAULT_SNAPSHOT_WINDOW,
+  type PlanIdentity,
+  type Rejection,
+  type RejectReason,
+} from './validity.ts';
 export {
   type BodyView,
   createBodyView,
@@ -45,3 +93,4 @@ export {
   type TrackedBodyView,
 } from './view.ts';
 export type { WakeReason, WakeRequest } from './wake.ts';
+export { WakeConditions, type WakeSample, WakeTap } from './wake-conditions.ts';

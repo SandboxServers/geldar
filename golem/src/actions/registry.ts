@@ -40,6 +40,7 @@ export type AnyActionHandler = { [K in ActionKind]: ActionHandler<K> }[ActionKin
 /** Maps each verb to its one handler. */
 export class ActionRegistry {
   private readonly handlers = new Map<string, AnyActionHandler>();
+  private readonly finishListeners = new Set<(action: unknown, run: ActionRun) => void>();
 
   /** Adds a handler. Throws if its kind already has one. */
   register(handler: AnyActionHandler): void {
@@ -57,6 +58,26 @@ export class ActionRegistry {
   /** The registered verbs, in registration order. */
   kinds(): string[] {
     return [...this.handlers.keys()];
+  }
+
+  /**
+   * Calls listener with the action and its run each time unAction ends one on this registry,
+   * whoever started it. ction is as passed in, so it may not be valid. Returns the remover.
+   */
+  onFinished(listener: (action: unknown, run: ActionRun) => void): () => void {
+    this.finishListeners.add(listener);
+    return () => this.finishListeners.delete(listener);
+  }
+
+  /** Tells the onFinished listeners; one that throws does not stop the others. */
+  notifyFinished(action: unknown, run: ActionRun): void {
+    for (const listener of [...this.finishListeners]) {
+      try {
+        listener(action, run);
+      } catch (error) {
+        console.warn(`action listener failed: ${error instanceof Error ? error.message : error}`);
+      }
+    }
   }
 }
 
@@ -81,6 +102,18 @@ export async function runAction(
   bot: Bot,
   action: unknown,
   opts: { timeScale?: number; signal?: AbortSignal; now?: () => number } = {},
+): Promise<ActionRun> {
+  const run = await runUnobserved(registry, bot, action, opts);
+  registry.notifyFinished(action, run);
+  return run;
+}
+
+/** unAction without the onFinished notification. */
+async function runUnobserved(
+  registry: ActionRegistry,
+  bot: Bot,
+  action: unknown,
+  opts: { timeScale?: number; signal?: AbortSignal; now?: () => number },
 ): Promise<ActionRun> {
   const verdict = validateThought({ reasoning: 'x', actions: [action] });
   if (!verdict.ok) {

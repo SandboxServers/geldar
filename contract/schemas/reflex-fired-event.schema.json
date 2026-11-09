@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/reflex-fired-event.schema.json",
+  "title": "ReflexFiredPayload",
+  "description": "Payload of a WorldEvent of type `reflex_fired`: what the Body did on its own (spec 5.2 reflex table), so the Mind and the Historian see it. Events only, no table. source_event_id derives from (name, life_id, body_generation, tick), so a retry dedups.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "life_id", "body_generation", "tick", "trigger", "outcome"],
+  "properties": {
+    "name": {
+      "description": "The reflex name, for example eat or hazard_escape.",
+      "type": "string",
+      "pattern": "^[a-z][a-z_]{0,47}$"
+    },
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "body_generation": { "type": "integer", "minimum": 0 },
+    "tick": {
+      "description": "World age when the reflex fired.",
+      "$ref": "common.schema.json#/$defs/WorldTick"
+    },
+    "trigger": {
+      "description": "The values the reflex's check returned.",
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" }
+        ]
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result"],
+      "properties": {
+        "result": { "type": "string", "enum": ["handled", "failed", "abandoned"] },
+        "detail": { "type": "string", "maxLength": 256 }
+      }
+    }
+  }
+}

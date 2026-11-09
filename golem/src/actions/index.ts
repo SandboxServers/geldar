@@ -20,6 +20,9 @@ import { sleepAction } from './sleep.ts';
 // --- P0-09b open, deposit, withdraw ---
 import { depositAction, openAction, withdrawAction } from './container.ts';
 
+// --- P0-15b attack ---
+import { attackAction } from './attack.ts';
+
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
   // --- P0-08a goto, mine ---
@@ -39,6 +42,9 @@ export const allActions: AnyActionHandler[] = [
   depositAction,
   withdrawAction,
   // --- end P0-09b ---
+  // --- P0-15b attack ---
+  attackAction,
+  // --- end P0-15b ---
 ];
 
 /** A registry with every handler in `allActions` registered. */

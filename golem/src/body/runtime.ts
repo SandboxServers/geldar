@@ -30,13 +30,15 @@ export interface BodyRuntimeOptions {
   reflexConfig?: ReflexConfig;
   /** Default: one built from the bot. A caller that passes one also owns its disposal. */
   view?: BodyView;
+  /** The programs the executor may start. Default: an empty registry. */
+  programs?: ProgramRegistry;
   /** `20 / target TPS`, passed to every action run. Default 1. */
   timeScale?: number;
 }
 
 /**
  * The Body's runtime: identity (`lifeId`, `bodyGeneration`), the one `ActionRegistry`, the empty
- * `ProgramRegistry`, the record sink, the view, and the reflex loop. The executor, programs and
+ * `ProgramRegistry` (empty unless the options carry one), the record sink, the view, and the reflex loop. The executor, programs and
  * reflexes are built on it and add nothing to its interface except through those registries.
  *
  * The runtime runs at most one action at a time through `runAction`; a reflex (or the executor)
@@ -48,8 +50,8 @@ export class BodyRuntime {
   readonly bot: Bot;
   /** The one action registry of this Body. */
   readonly actions = new ActionRegistry();
-  /** The program registry; empty until the program packets register into it. */
-  readonly programs = new ProgramRegistry();
+  /** The program registry; empty unless the options carried one. */
+  readonly programs: ProgramRegistry;
   readonly sink: RecordSink;
   readonly view: BodyView;
   readonly reflexRunner: ReflexRunner;
@@ -66,6 +68,7 @@ export class BodyRuntime {
     this.bodyGeneration = options.bodyGeneration;
     this.bot = options.bot;
     this.sink = options.sink;
+    this.programs = options.programs ?? new ProgramRegistry();
     this.ticks = options.ticks;
     this.timeScale = options.timeScale ?? 1;
     const tracked = options.view === undefined ? createBodyView(options.bot) : null;
