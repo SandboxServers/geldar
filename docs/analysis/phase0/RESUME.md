@@ -2,27 +2,29 @@
 
 Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at every wave boundary; 40 lines at most.
 
-**State (2026-11-08):** scaffold PR #2 merged. `main` is protected (PR, required check `ci gate`). Owner decisions settled (Minecraft 26.1, Velocity from Phase 0). Branch `phase0/wave1` exists on origin; `.claude/state/active-campaign` = phase0.
+**State (2026-11-08):** scaffold PR #2 merged. `main` is protected (PR, required check `ci gate`). Owner decisions settled (Minecraft 26.1, Velocity from Phase 0). Branch `phase0/wave1` on origin; `.claude/state/active-campaign` = phase0. Ollama has `qwen3:32b` and `qwen3:8b` (pulled by the orchestrator at the owner's request).
 
 **Current wave:** 1, the contract and a healthy stack (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
 
-**In flight (coders, background, started 2026-11-08):**
+**Merged into `phase0/wave1`:** P0-00, P0-01, P0-03, P0-05.
 
-| Packet | Worktree | Branch | Stage |
-|---|---|---|---|
-| P0-00 | `phase0/p0-00-threat-model` | shipped, merged into wave1 |
-| P0-01 | `phase0/p0-01-contract` | shipped, merged into wave1 (commit 8f17621 trailer says Haiku 5.5; accepted, noted) |
-| P0-05 | `phase0/p0-05-sql` | shipped, merged into wave1 |
+**In flight (background agents):**
+
+| Packet | Worktree | Stage |
+|---|---|---|
+| P0-02 | `.claude/worktrees/p0-02` | fix 1 committed (477de1b); review pass 2 running |
+| P0-04 | `.claude/worktrees/p0-04` | review fix pass 1 running |
+| P0-06 | `.claude/worktrees/p0-06` | coder writing (tags `qwen3:32b`, `qwen3:8b`) |
 
 `.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.
 
 **Next actions:**
 
-1. As each coder returns `done`, start a fresh `packet-reviewer` (pass 1; report `<worktree>/.claude/reports/phase0/<packet>-review-1.md`). `fix` goes to a fresh packet-coder, up to 3 passes. `decision` or `fix` after pass 3: ask the owner.
-2. On `ship`, `git merge --no-ff` the branch into `phase0/wave1`, push, update the ledger row.
-3. After P0-01 is merged: dispatch P0-02, P0-03, P0-04 in parallel from `origin/phase0/wave1`; resolve `contract/src/index.ts` and `contract/src/generated/*` conflicts per work-packets.md § Contract.
-4. After P0-05 is merged: `ollama list`; if Qwen3 32B and 8B are both present, dispatch P0-06 with the exact tags, else ask the owner before pulling.
-5. All seven shipped: wave review over `origin/main..phase0/wave1`, then `./geldar.ps1 check`, open the PR, wait for `ci gate`, tell the owner. Don't merge.
-6. Before removing packet worktrees (only after the PR is open), copy useful `.claude/reports/` files into `worknotes/`.
+1. Review loop per packet: fresh `packet-reviewer`, `fix` goes to a fresh `packet-coder`, up to 3 passes. `decision` or `fix` after pass 3: ask the owner. Reviewers may lack a write tool; then pass their inline findings in the fix brief.
+2. On `ship`, `git merge --no-ff` into `phase0/wave1`. P0-02/P0-03/P0-04 conflicts in `contract/src/index.ts` and `contract/src/generated/*`: keep every block, regenerate (`./geldar.ps1 pnpm --filter @geldar/contract generate`), commit (work-packets.md § Contract). P0-03 is merged already, so P0-02 and P0-04 will conflict.
+3. All seven shipped: wave review over `origin/main..phase0/wave1`, then `./geldar.ps1 check`, open the PR, wait for `ci gate`, tell the owner. Don't merge.
+4. Before removing packet worktrees (only after the PR is open), copy useful `.claude/reports/` files into `worknotes/`.
 
-**Open owner decisions:** P0-06 needs Qwen3 32B and 8B in Ollama; `ollama list` shows only nomic-embed-text. Asked the owner before pulling anything. Also: docs/spec.md Appendix D needs the composite skill FK correction (owner to record).
+**Notes for the wave review:** P0-01 commit 8f17621 has a Haiku 5.5 co-author trailer (accepted). P0-03 left `credits`/`count`/`world_day` without upper bounds (SQL columns are INT) and `thinker_id` as a free string. P0-04 adds invented limits (job `max_tokens` cap, semver pattern) listed in its fix report.
+
+**Open owner decisions:** `docs/spec.md` Appendix D needs the composite skill FK correction `(skill_id, edition)` on `books` and `skill_library` (owner chose it at P0-05 review; owner to record).
