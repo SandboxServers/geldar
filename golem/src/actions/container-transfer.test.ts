@@ -310,7 +310,12 @@ describe('transferItems', () => {
   it('writes the click and sync packets in the pc/26.1 wire shape', async () => {
     const r = rig([{ type: 1, count: 10 }]);
     await transferItems(r.ctx, r.container, 'withdraw', 1, 10);
-    const stack = (n: number) => ({ itemId: 1, itemCount: n, components: [], removeComponents: [] });
+    const stack = (n: number) => ({
+      itemId: 1,
+      itemCount: n,
+      components: [],
+      removeComponents: [],
+    });
     const clicks = r.writes.filter((w) => w.mode === 0);
     expect(clicks[0]).toEqual({
       windowId: 7,

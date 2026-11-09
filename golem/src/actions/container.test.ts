@@ -257,7 +257,13 @@ describe('deposit', () => {
       detail: { moved: 10, container: { cobblestone: 10 } },
     });
     expect(h.inv.get(1)).toBe(0);
-    expect(transfer).toHaveBeenCalledExactlyOnceWith(expect.anything(), h.container, 'deposit', 1, 10);
+    expect(transfer).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      h.container,
+      'deposit',
+      1,
+      10,
+    );
     expect(h.container.close).toHaveBeenCalledOnce();
   });
 
@@ -348,7 +354,13 @@ describe('withdraw', () => {
       detail: { moved: 4, container: { cobblestone: 2 } },
     });
     expect(h.inv.get(1)).toBe(14);
-    expect(transfer).toHaveBeenCalledExactlyOnceWith(expect.anything(), h.container, 'withdraw', 1, 4);
+    expect(transfer).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      h.container,
+      'withdraw',
+      1,
+      4,
+    );
   });
 
   it('reports cancelled with the moved count when the transfer was aborted', async () => {

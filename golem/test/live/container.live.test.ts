@@ -118,6 +118,49 @@ describe('open, deposit and withdraw on 26.1', () => {
     });
   }, 180_000);
 
+  it('deposit 100 then withdraw 70 moves exact counts across several stacks', async () => {
+    await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
+      const at = await place(
+        ctl,
+        { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
+        'chest',
+      );
+      await ctl.give(BOT, 'cobblestone', 100);
+      await bot.waitForTicks(10);
+      const put = await act(bot, { do: 'deposit', at, item: 'cobblestone', count: 100 });
+      expect(put.result, JSON.stringify(put.result)).toMatchObject({ status: 'completed' });
+      expect(Number(put.result.detail.moved)).toBe(100);
+      expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 100]]));
+      expect(held(bot, 'cobblestone')).toBe(0);
+
+      const taken = await act(bot, { do: 'withdraw', at, item: 'cobblestone', count: 70 });
+      expect(taken.result, JSON.stringify(taken.result)).toMatchObject({ status: 'completed' });
+      expect(Number(taken.result.detail.moved)).toBe(70);
+      expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['cobblestone', 30]]));
+      expect(held(bot, 'cobblestone')).toBe(70);
+    });
+  }, 180_000);
+
+  it('deposits a damaged tool with item components', async () => {
+    await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      await clearDrops(ctl, arena.center);
+      const at = await place(
+        ctl,
+        { x: arena.center.x + 3, y: arena.center.y, z: arena.center.z },
+        'chest',
+      );
+      // The packet carries components: [], so the server must still accept and run the click.
+      await ctl.command(`give ${BOT} iron_pickaxe[minecraft:damage=50]`);
+      await bot.waitForTicks(10);
+      const run = await act(bot, { do: 'deposit', at, item: 'iron_pickaxe', count: 1 });
+      expect(run.result, JSON.stringify(run.result)).toMatchObject({ status: 'completed' });
+      expect(Number(run.result.detail.moved)).toBe(1);
+      expect(await ctl.chestItems(at.x, at.y, at.z)).toEqual(new Map([['iron_pickaxe', 1]]));
+      expect(held(bot, 'iron_pickaxe')).toBe(0);
+    });
+  }, 180_000);
+
   it('deposit of a stick the bot does not hold is missing_materials', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
       await clearDrops(ctl, arena.center);
