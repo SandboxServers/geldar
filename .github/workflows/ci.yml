@@ -89,10 +89,54 @@ jobs:
             echo "::endgroup::"
           done
 
+  sql:
+    name: sql
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s
+          --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: wait for postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres; then exit 0; fi
+            sleep 2
+          done
+          echo "::error::postgres did not become ready"
+          exit 1
+      - name: apply migrations in name order
+        env:
+          PGPASSWORD: ci
+        run: |
+          shopt -s nullglob
+          files=(sql/[0-9]*.sql)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no sql/[0-9]*.sql migrations found"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f "$f"
+            echo "::endgroup::"
+          done
+      - name: check schema (Appendix D tables and pgvector)
+        env:
+          PGPASSWORD: ci
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql
+
   gate:
     name: ci gate
     if: always()
-    needs: [typescript, plugin, compose]
+    needs: [typescript, plugin, compose, sql]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
