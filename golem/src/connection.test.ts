@@ -64,6 +64,33 @@ describe('ConnectionManager', () => {
     await manager.stop();
   });
 
+  it('closes the bot and goes fatal when onBot throws, so no socket is left open', async () => {
+    const made: FakeBot[] = [];
+    const manager = new ConnectionManager({
+      host: '127.0.0.1',
+      port: 25565,
+      username: 'GolemSmoke',
+      createBot: () => {
+        const bot = new FakeBot();
+        made.push(bot);
+        return bot as unknown as Bot;
+      },
+      onBot: () => {
+        throw new Error('hook broke');
+      },
+      log: () => {},
+    });
+    const fatals: unknown[] = [];
+    manager.on('fatal', (e) => fatals.push(e));
+
+    await expect(manager.start()).rejects.toThrow('hook broke');
+
+    expect(made).toHaveLength(1);
+    expect(made[0]?.quit).toHaveBeenCalledOnce();
+    expect(manager.state).toBe('fatal');
+    expect(fatals).toEqual([{ reason: 'hook broke' }]);
+  });
+
   it('records the recipe book the join sends when onBot starts the watch', async () => {
     const made: FakeBot[] = [];
     const manager = new ConnectionManager({

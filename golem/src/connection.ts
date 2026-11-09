@@ -182,7 +182,14 @@ export class ConnectionManager extends EventEmitter {
       hideErrors: false,
     });
     this.bot = bot;
-    this.onBot?.(bot);
+    try {
+      this.onBot?.(bot);
+    } catch (err) {
+      // The bot already holds a socket and no listener is attached yet: close it, then let the
+      // throw reach start()'s catch, which goes fatal as for any other failure to run.
+      bot.quit();
+      throw err;
+    }
     this.state = 'connecting';
     return new Promise((resolve) => {
       let spawnedAt: number | null = null;

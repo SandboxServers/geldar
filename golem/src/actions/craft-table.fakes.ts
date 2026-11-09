@@ -6,8 +6,11 @@ import { craftFromBook } from './craft-table.ts';
 import type { ActionContext } from './registry.ts';
 
 // Test doubles shared by craft-table.test.ts and craft-table.display.test.ts. No production code imports this file.
+// A build or lint config that includes *.test.ts must exclude *.fakes.ts too, or the doubles ship.
 
+/** The crafting table block the table path opens; only its position is read. */
 export const TABLE = { position: { x: 1, y: 200, z: 3 } } as unknown as Block;
+/** The item the table tests craft: a white bed, made from the shaped recipe or a dye recolour. */
 export const BED = { id: 900, name: 'white_bed' };
 /** The table window's id: the id a crafting table window gets in the vanilla open. */
 export const WINDOW = { id: 1, type: 'minecraft:crafting' };
