@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
 import { connect } from '@nats-io/transport-node';
@@ -29,20 +30,26 @@ export interface BotRegistry {
   close(): Promise<void>;
 }
 
+/** The LifeId pattern of contract/schemas/common.schema.json. */
+const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
+
 /**
- * The permanent life id for a bot username: `ag_<name>_01` where name is the username lowercased,
- * stripped to `[a-z0-9]`, starting with a letter and at most 16 characters (the LifeId pattern of
- * contract/schemas/common.schema.json). A username with no usable letters becomes `bot`.
+ * The permanent life id for a bot username. A username that already is a LifeId (`ag_kestrel_01`)
+ * is used unchanged, so the registry and the plugin's `agent_id` agree. Any other username becomes
+ * `ag_<stem><hash>_01`: the stem is the username lowercased, stripped to `[a-z0-9]`, starting with
+ * a letter and cut to 8 characters (`bot` when nothing is left); the hash is the first 8 hex
+ * digits of the SHA-256 of the exact username, so `Steve_1` and `Steve1` get distinct ids.
  */
 export function lifeIdFor(username: string): string {
-  const name = username
+  if (LIFE_ID.test(username)) return username;
+  const stem = username
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
     .replace(/^[0-9]+/, '')
-    .slice(0, 16);
-  return `ag_${name === '' ? 'bot' : name}_01`;
+    .slice(0, 8);
+  const hash = createHash('sha256').update(username).digest('hex').slice(0, 8);
+  return `ag_${stem === '' ? 'bot' : stem}${hash}_01`;
 }
-
 /** The registry key for a username: lowercase, as the plugin looks it up. */
 export function registryKey(username: string): string {
   return username.toLowerCase();

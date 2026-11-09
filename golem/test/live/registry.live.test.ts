@@ -3,7 +3,12 @@ import { Kvm } from '@nats-io/kv';
 import { connect } from '@nats-io/transport-node';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
-import { LifeRegistration, openRegistryBucket, REGISTRY_BUCKET } from '../../src/registry.ts';
+import {
+  LifeRegistration,
+  lifeIdFor,
+  openRegistryBucket,
+  REGISTRY_BUCKET,
+} from '../../src/registry.ts';
 
 const NAME = 'GolemRegistryLive';
 
@@ -19,9 +24,9 @@ describe('life registry (live NATS)', () => {
       const kv = await new Kvm(jetstream(nc)).open(REGISTRY_BUCKET);
       const entry = await kv.get(NAME.toLowerCase());
       expect(entry?.operation).toBe('PUT');
-      expect(JSON.parse(entry?.string() ?? '{}')).toMatchObject({
-        life_id: 'ag_golemregistrylive_01',
-      });
+      const lifeId = lifeIdFor(NAME);
+      expect(lifeId).toMatch(/^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/);
+      expect(JSON.parse(entry?.string() ?? '{}')).toMatchObject({ life_id: lifeId });
       await reg.unregister(NAME);
       const gone = await kv.get(NAME.toLowerCase());
       expect(gone === null || gone.operation !== 'PUT').toBe(true);

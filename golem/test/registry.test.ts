@@ -36,8 +36,36 @@ describe('lifeIdFor and registryKey', () => {
     for (const name of ['GolemBench', 'Golem_Smoke', '9lives', '___', 'A', 'x'.repeat(40), 'Ünï']) {
       expect(lifeIdFor(name)).toMatch(LIFE_ID);
     }
-    expect(lifeIdFor('GolemBench')).toBe('ag_golembench_01');
-    expect(lifeIdFor('9Lives_')).toBe('ag_lives_01');
+    expect(lifeIdFor('GolemBench')).toMatch(/^ag_golemben[0-9a-f]{8}_01$/);
+    expect(lifeIdFor('9Lives_')).toMatch(/^ag_lives[0-9a-f]{8}_01$/);
+  });
+
+  it('uses a username that already is a LifeId unchanged', () => {
+    expect(lifeIdFor('ag_kestrel_01')).toBe('ag_kestrel_01');
+    expect(lifeIdFor('ag_a_42')).toBe('ag_a_42');
+    // Wrong case or a one-digit suffix is not a LifeId: it is hashed like any other name.
+    expect(lifeIdFor('AG_Kestrel_01')).not.toBe('AG_Kestrel_01');
+    expect(lifeIdFor('ag_kestrel_1')).not.toBe('ag_kestrel_1');
+  });
+
+  it('is deterministic and gives distinct ids to distinct usernames', () => {
+    expect(lifeIdFor('Steve_1')).toBe(lifeIdFor('Steve_1'));
+    const names = [
+      'Steve_1',
+      'Steve1',
+      'steve1',
+      'Steve__1',
+      'a'.repeat(16),
+      'a'.repeat(15),
+      'Golem_Smoke_01',
+      'Golem_Smoke_02',
+      '9lives',
+      '___',
+      'ag_kestrel_01',
+    ];
+    const ids = names.map((n) => lifeIdFor(n));
+    expect(new Set(ids).size).toBe(names.length);
+    for (const id of ids) expect(id).toMatch(LIFE_ID);
   });
 
   it('keys by the lowercase username, as the plugin looks it up', () => {
@@ -54,7 +82,7 @@ describe('LifeRegistration', () => {
     );
     await reg.register('GolemBench');
     expect(log).toEqual([
-      `put golembench ${JSON.stringify({ life_id: 'ag_golembench_01', registered_at: '2026-01-02T03:04:05.000Z' })}`,
+      `put golembench ${JSON.stringify({ life_id: lifeIdFor('GolemBench'), registered_at: '2026-01-02T03:04:05.000Z' })}`,
     ]);
   });
 
