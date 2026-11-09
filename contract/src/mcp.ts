@@ -1,6 +1,6 @@
 /**
  * The MCP tool surface: bundled tool definitions and validators looked up by tool name.
- * SC-30b adds the types of the other ten tools.
+ * The types cover all fourteen tools.
  */
 import type { ValidateFunction } from 'ajv';
 import { MCP_TOOL_NAMES } from './generated/mcp-tools.ts';
@@ -8,20 +8,46 @@ import * as generatedValidators from './generated/validators.js';
 import { formatError, type ValidationResult } from './validation.ts';
 
 export { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from './generated/mcp-tools.ts';
+import type { ActionOutcome } from './generated/types.ts';
+
 export type {
   ActInput,
+  ActionOutcome,
   ActResult,
+  DefineSkillInput,
+  DefineSkillResult,
+  JournalInput,
+  JournalResult,
+  LookInput,
   LookResult,
   McpCursor,
   McpInterest,
   McpPlayerEvent,
   McpWakeReason,
+  OfferInput,
+  ProposeInput,
+  ProposeResult,
+  ReadBookInput,
+  ReadBookResult,
   SayInput,
   SayResult,
+  SleepInput,
+  SleepResult,
+  StatusInput,
+  StatusResult,
   UntrustedWorldText,
+  UseSkillInput,
+  VoteInput,
   WaitInput,
   WaitResult,
+  WriteBookInput,
+  WriteBookResult,
 } from './generated/types.ts';
+
+/** The three tools whose result is just the outcome share its type (the schema $refs it). */
+export type UseSkillResult = ActionOutcome;
+export type OfferResult = ActionOutcome;
+export type VoteResult = ActionOutcome;
 
 const validators = generatedValidators as unknown as Record<string, ValidateFunction | undefined>;
 

@@ -147,7 +147,22 @@ describe('bundled tool schemas', () => {
   });
 
   it('lists the tools', () => {
-    expect([...MCP_TOOL_NAMES]).toEqual(['act', 'look', 'say', 'wait']);
+    expect([...MCP_TOOL_NAMES]).toEqual([
+      'act',
+      'define_skill',
+      'journal',
+      'look',
+      'offer',
+      'propose',
+      'read_book',
+      'say',
+      'sleep',
+      'status',
+      'use_skill',
+      'vote',
+      'wait',
+      'write_book',
+    ]);
   });
 
   it('throws when Input and Result live in different schema files', () => {
