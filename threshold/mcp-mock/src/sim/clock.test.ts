@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeClock, msAt, RealClock, TICKS_PER_DAY, tickAt, ticksPerSecond } from './clock.ts';
 
 describe('tick arithmetic', () => {
@@ -60,6 +60,42 @@ describe('FakeClock', () => {
   });
 });
 
+describe('FakeClock details', () => {
+  it('runs chained sleeps inside one advance', async () => {
+    const clock = new FakeClock();
+    const seen: number[] = [];
+    const loop = (async () => {
+      for (let n = 0; n < 3; n++) {
+        await clock.sleep(100);
+        seen.push(clock.nowMs());
+      }
+    })();
+    await clock.advance(300);
+    await loop;
+    expect(seen).toEqual([100, 200, 300]);
+  });
+
+  it('removes an aborted sleep from the pending list', async () => {
+    const clock = new FakeClock();
+    const ac = new AbortController();
+    const p = clock.sleep(100, ac.signal).catch(() => 'aborted');
+    void clock.sleep(100);
+    expect(clock.pendingCount).toBe(2);
+    ac.abort(new Error('stop'));
+    expect(await p).toBe('aborted');
+    expect(clock.pendingCount).toBe(1);
+    await clock.advance(100);
+    expect(clock.pendingCount).toBe(0);
+  });
+
+  it('rejects a negative or non-finite advance', async () => {
+    const clock = new FakeClock();
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      await expect(clock.advance(bad)).rejects.toThrow(RangeError);
+    }
+    expect(clock.nowMs()).toBe(0);
+  });
+});
 describe('RealClock', () => {
   it('sleeps and rejects on an immediate abort', async () => {
     const clock = new RealClock();
@@ -70,4 +106,24 @@ describe('RealClock', () => {
     ac.abort(new Error('gone'));
     await expect(clock.sleep(20, ac.signal)).rejects.toThrow('gone');
   }, 5_000);
+
+  it('clears the timer when aborted while pending', async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = new RealClock();
+      const ac = new AbortController();
+      const p = clock.sleep(60_000, ac.signal);
+      const caught = p.then(
+        () => 'resolved',
+        (e: Error) => e.message,
+      );
+      setTimeout(() => ac.abort(new Error('late stop')), 20);
+      expect(vi.getTimerCount()).toBe(2);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(await caught).toBe('late stop');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

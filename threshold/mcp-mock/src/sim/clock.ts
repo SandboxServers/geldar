@@ -1,15 +1,19 @@
 /** Time for the world simulation. All sim logic takes a `Clock`, so tests drive it with `FakeClock`. */
 export interface Clock {
+  /** Milliseconds on this clock's timeline. */
   nowMs(): number;
+  /** Resolves after ms; rejects with the signal's reason if it aborts first. */
   sleep(ms: number, signal?: AbortSignal): Promise<void>;
 }
 
 /** The wall clock: `Date.now` and `setTimeout`. */
 export class RealClock implements Clock {
+  /** Date.now(). */
   nowMs(): number {
     return Date.now();
   }
 
+  /** A setTimeout sleep; an abort clears the timer and rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return Promise.reject(signal.reason);
     return new Promise<void>((resolve, reject) => {
@@ -39,14 +43,22 @@ export class FakeClock implements Clock {
   private counter = 0;
   private pending: PendingSleep[] = [];
 
+  /** Starts the clock at startMs. */
   constructor(startMs = 0) {
     this.now = startMs;
   }
 
+  /** The current fake time. */
   nowMs(): number {
     return this.now;
   }
 
+  /** How many sleeps are waiting; an aborted sleep is no longer counted. */
+  get pendingCount(): number {
+    return this.pending.length;
+  }
+
+  /** Waits until dvance passes ms from now; an abort removes the sleep and rejects. */
   sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return Promise.reject(signal.reason);
     return new Promise<void>((resolve, reject) => {
@@ -65,8 +77,12 @@ export class FakeClock implements Clock {
     });
   }
 
-  /** Moves time forward, firing due sleeps in time order. */
+  /**
+   * Moves time forward, firing due sleeps in time order. Calls must be serialised: await one
+   * `advance` before starting the next. Throws `RangeError` for a negative or non-finite `ms`.
+   */
   async advance(ms: number): Promise<void> {
+    if (!Number.isFinite(ms) || ms < 0) throw new RangeError(`advance: bad ms ${ms}`);
     const target = this.now + ms;
     for (;;) {
       let next: PendingSleep | undefined;
