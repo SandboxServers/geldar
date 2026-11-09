@@ -82,13 +82,13 @@ jobs:
         id: push
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          IMAGE: ghcr.io/sandboxservers/geldar-mcp-mock
+          REPO: ghcr.io/sandboxservers/geldar-mcp-mock
           SHA: ${{ github.sha }}
         run: |
           # The image loaded by the build step above is the one the test ran against: push that exact image.
-          docker push "$IMAGE:main"
-          docker push "$IMAGE:sha-$SHA"
-          ref=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE:main" | grep -F "$IMAGE@" | head -n 1)
+          docker push "$REPO:main"
+          docker push "$REPO:sha-$SHA"
+          ref=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REPO:main" | grep -F "$REPO@" | head -n 1)
           echo "digest=${ref#*@}" >> "$GITHUB_OUTPUT"      - name: write the digest to the step summary
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
