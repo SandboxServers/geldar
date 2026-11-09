@@ -1,13 +1,15 @@
-import type { TestControl } from '../test-control.ts';
+import {
+  HORIZONTAL_LIMIT,
+  MAX_Y,
+  MIN_Y,
+  PLAYER_NAME,
+  type TestControl,
+} from '../test-control.ts';
 
 /** The only `ctl` methods a scenario may call while it runs. */
 const RUN_PHASE_CONTROL = new Set(['effect', 'effectClear', 'timeSet', 'fill', 'chestItems']);
 
-const PLAYER_NAME = /^[A-Za-z0-9_]{3,16}$/;
 const BLOCK_ID = /^[a-z0-9_:]{1,64}$/;
-const HORIZONTAL_LIMIT = 30_000_000;
-const MIN_Y = -64;
-const MAX_Y = 320;
 
 /** Server-side reads a scenario may make while it runs. Both are strictly read-only. */
 export interface RunReads {

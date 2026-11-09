@@ -51,7 +51,8 @@ describe('limitedControl.blockIs', () => {
   it('rejects bad coordinates and block ids before sending anything', async () => {
     const { ctl, commands } = ctlReplying(PASSED);
     await expect(ctl.blockIs(1.5, 0, 0, 'air')).rejects.toThrow(RangeError);
-    await expect(ctl.blockIs(0, 400, 0, 'air')).rejects.toThrow(RangeError);
+    await expect(ctl.blockIs(0, 320, 0, 'air')).rejects.toThrow(RangeError);
+    await expect(ctl.blockIs(0, -65, 0, 'air')).rejects.toThrow(RangeError);
     await expect(ctl.blockIs(Number.NaN, 0, 0, 'air')).rejects.toThrow(RangeError);
     for (const block of ['', 'Stone', 'air; stop', 'air\nstop', 'a b', 'a'.repeat(65)]) {
       await expect(ctl.blockIs(0, 0, 0, block)).rejects.toThrow(RangeError);

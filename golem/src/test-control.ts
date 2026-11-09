@@ -12,14 +12,17 @@ export interface CommandSource {
 
 /** The slots of a single chest, read one by one when the server folds the whole reply. */
 const CHEST_SLOTS = 27;
-const PLAYER_NAME = /^[A-Za-z0-9_]{3,16}$/;
+/** A Minecraft username. */
+export const PLAYER_NAME = /^[A-Za-z0-9_]{3,16}$/;
 const RESOURCE_ID = /^[a-z0-9_]{1,64}$/;
 const RULE_NAME = /^[a-z_]{1,64}$/;
 /** One fill command changes at most this many blocks. */
 const FILL_LIMIT = 32_768;
-const HORIZONTAL_LIMIT = 30_000_000;
-const MIN_Y = -64;
-const MAX_Y = 320;
+/** The world border's horizontal limit in blocks. */
+export const HORIZONTAL_LIMIT = 30_000_000;
+/** The lowest and highest block y of the overworld (a 384-block height). */
+export const MIN_Y = -64;
+export const MAX_Y = 319;
 
 /**
  * Test and ops control over server commands. Every method checks its arguments before it builds
