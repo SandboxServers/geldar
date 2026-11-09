@@ -180,6 +180,34 @@ describe('TestControl', () => {
     expect([...parseItems(reply)]).toEqual([['stick', 4]]);
   });
 
+  it('throws on a reply the server folded to "..." instead of dropping the later stacks', () => {
+    const reply =
+      'The block has the following block data: [{Slot: 0b, id: "minecraft:cobblestone", count: 64}, {Slot:...';
+    expect(() => parseItems(reply)).toThrow(/truncated/);
+  });
+
+  it('chestItems reads slot by slot when the whole reply is folded', async () => {
+    const sent: string[] = [];
+    const head = 'The block has the following block data: ';
+    const control = new TestControl({
+      command: async (cmd: string) => {
+        sent.push(cmd);
+        if (cmd.endsWith(' Items'))
+          return `${head}[{Slot: 0b, id: "minecraft:iron_pickaxe", count: 1, components: {...`;
+        if (cmd.endsWith('Items[{Slot:0b}].id')) return `${head}"minecraft:iron_pickaxe"`;
+        if (cmd.endsWith('Items[{Slot:0b}].count')) return `${head}1`;
+        if (cmd.endsWith('Items[{Slot:3b}].id')) return `${head}"minecraft:stick"`;
+        if (cmd.endsWith('Items[{Slot:3b}].count')) return `${head}2`;
+        return 'Found no elements matching Items';
+      },
+    });
+    const totals = await control.chestItems(1, 2, 3);
+    expect([...totals]).toEqual([
+      ['iron_pickaxe', 1],
+      ['stick', 2],
+    ]);
+  });
+
   it('chestItems sends the data get command and parses the reply', async () => {
     const reply =
       'The block has the following block data: [{Slot: 0b, id: "minecraft:dirt", count: 2}]';

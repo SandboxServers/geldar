@@ -10,6 +10,8 @@ export interface CommandSource {
   command(cmd: string): Promise<string>;
 }
 
+/** The slots of a single chest, read one by one when the server folds the whole reply. */
+const CHEST_SLOTS = 27;
 const PLAYER_NAME = /^[A-Za-z0-9_]{3,16}$/;
 const RESOURCE_ID = /^[a-z0-9_]{1,64}$/;
 const RULE_NAME = /^[a-z_]{1,64}$/;
@@ -155,11 +157,27 @@ export class TestControl {
     return this.source.command('version');
   }
 
-  /** Reads a chest's `Items` and sums the stacks by item name (without `minecraft:`). */
+  /**
+   * Reads a chest's `Items` and sums the stacks by item name (without `minecraft:`). The server
+   * folds a long reply to `...` (many stacks, or a stack with components), so then each of the 27
+   * slots of a single chest is read on its own, as `id` and `count`.
+   */
   async chestItems(x: number, y: number, z: number): Promise<Map<string, number>> {
     const at = coords({ x, y, z });
-    const reply = await this.source.command(`data get block ${at.x} ${at.y} ${at.z} Items`);
-    return parseItems(reply);
+    const base = `data get block ${at.x} ${at.y} ${at.z}`;
+    const reply = await this.source.command(`${base} Items`);
+    if (!reply.includes('...')) return parseItems(reply);
+    const totals = new Map<string, number>();
+    for (let slot = 0; slot < CHEST_SLOTS; slot++) {
+      const path = `Items[{Slot:${slot}b}]`;
+      const id = await this.source.command(`${base} ${path}.id`);
+      if (id.includes('Found no elements')) continue;
+      const count = await this.source.command(`${base} ${path}.count`);
+      const entry = `{id: ${dataValue(id)}, count: ${dataValue(count)}}`;
+      const one = parseItems(`has the following block data: [${entry}]`);
+      for (const [name, n] of one) totals.set(name, (totals.get(name) ?? 0) + n);
+    }
+    return totals;
   }
 }
 
@@ -221,7 +239,17 @@ function topLevelEntries(reply: string): string[] {
       entry += depth === 1 ? ch : ' ';
     }
   }
+  // The server folds a long reply to `...`, which leaves an entry open: later stacks are lost.
+  if (depth > 0) throw new Error(`chest reply is truncated: ${reply}`);
   return entries;
+}
+
+/** The value in a `data get` reply: the text after `has the following block data: `. */
+function dataValue(reply: string): string {
+  const marker = 'has the following block data:';
+  const at = reply.indexOf(marker);
+  if (at < 0) throw new Error(`chest read failed: ${reply}`);
+  return reply.slice(at + marker.length).trim();
 }
 
 function player(name: string): string {

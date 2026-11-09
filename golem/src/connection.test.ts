@@ -1,12 +1,15 @@
 import { EventEmitter } from 'node:events';
 import type { Bot, BotOptions } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
+import { hasUnlockedDisplay, watchRecipeBook } from './actions/craft-table.ts';
 import { ConnectionManager } from './connection.ts';
 import { stackVersions } from './versions.ts';
 
 /** A bot stand-in: an emitter with a `quit` spy, so tests drive the lifecycle by hand. */
 class FakeBot extends EventEmitter {
   quit = vi.fn();
+  // The recipe-book watch listens on the protocol client, which the manager's fake has as an emitter.
+  _client = new EventEmitter();
 }
 
 /** Wires a manager to fake bots, a recorded sleep and a fake clock. */
@@ -39,6 +42,82 @@ function harness(stableMs?: number) {
 }
 
 describe('ConnectionManager', () => {
+  it('hands each bot to onBot as it is created, before the session starts', async () => {
+    const made: FakeBot[] = [];
+    const onBot = vi.fn((_bot: Bot) => {});
+    const manager = new ConnectionManager({
+      host: '127.0.0.1',
+      port: 25565,
+      username: 'GolemSmoke',
+      createBot: () => {
+        const bot = new FakeBot();
+        made.push(bot);
+        return bot as unknown as Bot;
+      },
+      onBot,
+      log: () => {},
+    });
+    manager.start().catch(() => {});
+    // The hook runs synchronously inside start(), so a listener it sets sees the join's packets.
+    expect(onBot).toHaveBeenCalledTimes(1);
+    expect(onBot).toHaveBeenCalledWith(made[0]);
+    await manager.stop();
+  });
+
+  it('closes the bot and goes fatal when onBot throws, so no socket is left open', async () => {
+    const made: FakeBot[] = [];
+    const manager = new ConnectionManager({
+      host: '127.0.0.1',
+      port: 25565,
+      username: 'GolemSmoke',
+      createBot: () => {
+        const bot = new FakeBot();
+        made.push(bot);
+        return bot as unknown as Bot;
+      },
+      onBot: () => {
+        throw new Error('hook broke');
+      },
+      log: () => {},
+    });
+    const fatals: unknown[] = [];
+    manager.on('fatal', (e) => fatals.push(e));
+
+    await expect(manager.start()).rejects.toThrow('hook broke');
+
+    expect(made).toHaveLength(1);
+    expect(made[0]?.quit).toHaveBeenCalledOnce();
+    expect(manager.state).toBe('fatal');
+    expect(fatals).toEqual([{ reason: 'hook broke' }]);
+  });
+
+  it('records the recipe book the join sends when onBot starts the watch', async () => {
+    const made: FakeBot[] = [];
+    const manager = new ConnectionManager({
+      host: '127.0.0.1',
+      port: 25565,
+      username: 'GolemSmoke',
+      createBot: () => {
+        const bot = new FakeBot();
+        made.push(bot);
+        return bot as unknown as Bot;
+      },
+      onBot: watchRecipeBook,
+      log: () => {},
+    });
+    manager.start().catch(() => {});
+    const bed = { id: 900, name: 'white_bed' };
+    const result = { type: 'item_stack', data: { itemId: bed.id, itemCount: 1 } };
+    made[0]?._client.emit('recipe_book_add', {
+      replace: false,
+      entries: [
+        { recipe: { displayId: 1454, display: { type: 'crafting_shaped', data: { result } } } },
+      ],
+    });
+    expect(hasUnlockedDisplay(made[0] as unknown as Bot, bed)).toBe(true);
+    await manager.stop();
+  });
+
   it('sleeps for the first three backoff delays after three ends in a row', async () => {
     const h = harness();
     const joined = h.manager.start();

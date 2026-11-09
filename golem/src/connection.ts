@@ -13,6 +13,11 @@ export interface ConnectionOptions {
   /** Injectable for tests; the default is `mineflayer.createBot`. */
   createBot?: (o: BotOptions) => Bot;
   /**
+   * Called with each bot right after it is created, before any packet is read. The server sends
+   * the recipe book during the join, so a listener for it must be attached here. Default: none.
+   */
+  onBot?: (bot: Bot) => void;
+  /**
    * Waits `ms` before a reconnect. The signal aborts on `stop()`, and a sleep that honours it ends
    * at once. Default: a timer that is cleared on abort.
    */
@@ -93,6 +98,7 @@ export class ConnectionManager extends EventEmitter {
   private readonly username: string;
   private readonly version: string;
   private readonly createBot: (o: BotOptions) => Bot;
+  private readonly onBot: ((bot: Bot) => void) | undefined;
   private readonly sleep: (ms: number, signal: AbortSignal) => Promise<void>;
   private readonly now: () => number;
   private readonly rng: () => number;
@@ -109,6 +115,7 @@ export class ConnectionManager extends EventEmitter {
     this.username = options.username;
     this.version = options.version ?? DEFAULT_VERSION;
     this.createBot = options.createBot ?? ((o) => mineflayer.createBot(o));
+    this.onBot = options.onBot;
     this.sleep = options.sleep ?? defaultSleep;
     this.now = options.now ?? Date.now;
     this.rng = options.rng ?? Math.random;
@@ -175,6 +182,14 @@ export class ConnectionManager extends EventEmitter {
       hideErrors: false,
     });
     this.bot = bot;
+    try {
+      this.onBot?.(bot);
+    } catch (err) {
+      // The bot already holds a socket and no listener is attached yet: close it, then let the
+      // throw reach start()'s catch, which goes fatal as for any other failure to run.
+      bot.quit();
+      throw err;
+    }
     this.state = 'connecting';
     return new Promise((resolve) => {
       let spawnedAt: number | null = null;

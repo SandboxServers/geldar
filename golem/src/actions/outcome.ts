@@ -74,3 +74,8 @@ export function toResult(
 export function recordState(outcome: ActionOutcome): 'completed' | 'failed' | 'cancelled' {
   return outcome.status;
 }
+
+/** The text of a thrown value, cut to the 200-character limit the action messages keep. */
+export function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).slice(0, 200);
+}
