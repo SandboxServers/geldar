@@ -9,8 +9,12 @@ const NIGHT_WAIT_TICKS = 200;
 
 /** Offset of the crafting table from the arena center. */
 const TABLE = { x: 2, z: 0 };
-/** Where the bed goes. Its second half lands one block further along the bot's facing, so x +1 to +4 and z +1 to +3 stay clear. */
-const BED = { x: 2, z: 2 };
+/**
+ * Where the bed goes: on the side away from the table, because the sleep walk from the crafting spot
+ * stalled against the table when the bed was beside it (live: no movement for 600 world ticks).
+ * The second half lands one block further along the bot's facing.
+ */
+const BED = { x: -2, z: 2 };
 
 /** True when the client's inventory holds at least `count` of `name`. */
 function holds(env: BenchEnv, name: string, count: number): boolean {
@@ -82,7 +86,7 @@ export const bed: Scenario = {
       const server = await ctl.isSleeping(bot.username);
       const passed = bedVerdict(result.status, client, server);
       const mismatch = client === server ? '' : '; client and server disagree';
-      const note = `sleep ${result.status} (${result.reason ?? '-'}), client isSleeping ${client}, server ${server}${mismatch}`;
+      const note = `sleep ${result.status} (${result.reason ?? '-'}: ${result.message ?? ''}), client isSleeping ${client}, server ${server}${mismatch}`;
       return { passed, note };
     } finally {
       if (bot.isSleeping) await bot.wake().catch(() => undefined);
