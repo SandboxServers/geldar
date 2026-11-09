@@ -29,3 +29,7 @@ Thumbs.db
 bench-results/
 compose/secrets/
 .data/
+
+# Token files for the MCP mock: keep real ones outside the repo
+*tokens*.json
+!tokens.example.json
