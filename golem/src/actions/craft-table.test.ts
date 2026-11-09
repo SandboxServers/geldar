@@ -22,7 +22,10 @@ function bookAdd(entries: [number, string, number][], replace = false) {
     entries: entries.map(([displayId, type, resultId]) => ({
       recipe: {
         displayId,
-        display: { type, data: { result: { type: 'item', data: { itemId: resultId } } } },
+        display: {
+          type,
+          data: { result: { type: 'item_stack', data: { itemId: resultId, itemCount: 1 } } },
+        },
       },
     })),
   };
@@ -57,14 +60,19 @@ function openWithWindowState(client: EventEmitter): void {
   client.emit('set_slot', { windowId: 0, stateId: 9, slot: 45, item: { present: false } });
 }
 
-/** A server that fills the result slot of `windowId` after each recipe request, with stateIds 6, 7, ... */
+/**
+ * A server that fills the result slot of `windowId` after each recipe request, with stateIds 6, 7, ...
+ * A request for a display not in `displayIds` gets no answer, as a wrong display does.
+ */
 function answerRequests(
   client: { write: ReturnType<typeof vi.fn> } & EventEmitter,
   windowId = WINDOW.id,
+  displayIds?: number[],
 ): void {
   let next = 6;
-  client.write.mockImplementation((name: string) => {
+  client.write.mockImplementation((name: string, params: Record<string, unknown>) => {
     if (name !== 'craft_recipe_request') return;
+    if (displayIds && !displayIds.includes(params.recipeId as number)) return;
     client.emit('set_slot', {
       windowId,
       stateId: next++,
@@ -146,16 +154,27 @@ describe('craftFromBook', () => {
     expect(hasUnlockedDisplay(fake.bot, BED)).toBe(true);
   });
 
+  it('reads a result of type item, a bare item id, as the item it makes', () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', {
+      replace: false,
+      entries: [
+        {
+          recipe: {
+            displayId: SHAPED_BED,
+            display: { type: 'crafting_shaped', data: { result: { type: 'item', data: BED.id } } },
+          },
+        },
+      ],
+    });
+    expect(hasUnlockedDisplay(fake.bot, BED)).toBe(true);
+  });
+
   it('requests the shaped display of the recipe, then shift-clicks with the window own stateId', async () => {
     const fake = fakeGame(openWithWindowState);
     watchRecipeBook(fake.bot);
-    fake.client.emit(
-      'recipe_book_add',
-      bookAdd([
-        [DYE_BED, 'crafting_special_dye', BED.id],
-        [SHAPED_BED, 'crafting_shaped', BED.id],
-      ]),
-    );
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
     answerRequests(fake.client);
 
     expect(await run(fake.bot, 1)).toBeNull();
@@ -175,6 +194,73 @@ describe('craftFromBook', () => {
     ]);
     expect(fake.raw.closeWindow).toHaveBeenCalledWith(WINDOW);
     expect(fake.raw.currentWindow).toBeNull();
+  });
+
+  it('moves to the next display when the first never answers, and tries the working one first next time', async () => {
+    const fake = fakeGame(openWithWindowState);
+    watchRecipeBook(fake.bot);
+    fake.client.emit(
+      'recipe_book_add',
+      bookAdd([
+        [DYE_BED, 'crafting_shapeless', BED.id],
+        [SHAPED_BED, 'crafting_shaped', BED.id],
+      ]),
+    );
+    answerRequests(fake.client, WINDOW.id, [SHAPED_BED]);
+
+    expect(await run(fake.bot, 2)).toBeNull();
+
+    // The silent display costs one result wait in the first craft only; the second craft asks the
+    // display that worked first.
+    expect(
+      writesOf(fake.client, 'craft_recipe_request').map(
+        (p) => (p as { recipeId: number }).recipeId,
+      ),
+    ).toEqual([DYE_BED, SHAPED_BED, SHAPED_BED]);
+  });
+
+  it('moves on at once from a display the server answers without a result', async () => {
+    const fake = fakeGame(openWithWindowState);
+    watchRecipeBook(fake.bot);
+    fake.client.emit(
+      'recipe_book_add',
+      bookAdd([
+        [DYE_BED, 'crafting_shapeless', BED.id],
+        [SHAPED_BED, 'crafting_shaped', BED.id],
+      ]),
+    );
+    answerRequests(fake.client, WINDOW.id, [SHAPED_BED]);
+    const answer = fake.client.write.getMockImplementation() as (
+      name: string,
+      params: Record<string, unknown>,
+    ) => void;
+    const sentAt = new Map<number, number>();
+    fake.client.write.mockImplementation((name: string, params: Record<string, unknown>) => {
+      if (name === 'craft_recipe_request') {
+        sentAt.set(params.recipeId as number, Date.now());
+        if (params.recipeId === DYE_BED) {
+          // The server's answer to a request: the placed recipe, with no result slot after it.
+          fake.client.emit('craft_recipe_response', {
+            windowId: WINDOW.id,
+            recipeDisplay: { type: 'crafting_shapeless', data: {} },
+          });
+        }
+      }
+      answer(name, params);
+    });
+    // timeScale 0.1: the result wait is 500 ms, the answer grace 100 ms.
+    const ctx: ActionContext = {
+      bot: fake.bot,
+      signal: new AbortController().signal,
+      timeScale: 0.1,
+    };
+
+    expect(await craftFromBook(ctx, BED, 1, TABLE)).toBeNull();
+
+    const gap = (sentAt.get(SHAPED_BED) ?? 0) - (sentAt.get(DYE_BED) ?? 0);
+    expect(writesOf(fake.client, 'craft_recipe_request')).toHaveLength(2);
+    // The result wait would be 500 ms: the answered miss must come well before it.
+    expect(gap).toBeLessThan(400);
   });
 
   it('sends one request and one shift-click per craft, each at the latest stateId', async () => {

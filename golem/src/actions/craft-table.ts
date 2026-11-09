@@ -22,13 +22,22 @@ interface RecipeClient {
   write(name: string, params: Record<string, unknown>): void;
 }
 
+/**
+ * A recipe result slot display, as the 26.1 protocol sends it: `item` carries a bare item id, and
+ * `item_stack` carries an item stack template (its id and count).
+ */
+interface SlotDisplay {
+  type: string;
+  data?: number | { itemId: number; itemCount?: number };
+}
+
 /** The `recipe_book_add` fields read here: the unlocked displays, `replace` on a full resend. */
 interface RecipeBookAdd {
   replace?: boolean;
   entries: {
     recipe: {
       displayId: number;
-      display: { type: string; data?: { result?: { data?: { itemId?: number } } } };
+      display: { type: string; data?: { result?: SlotDisplay } };
     };
   }[];
 }
@@ -45,7 +54,13 @@ interface SetSlot extends WindowState {
   item?: { present?: boolean; itemCount?: number } | null;
 }
 
-/** The recipe display types a table can craft from. Other types are special recipes (dye, banners). */
+/** A crafting display the book unlocked: the item one craft of it makes, and how many. */
+interface Display {
+  itemId: number;
+  count: number;
+}
+
+/** The recipe displays the table can craft from. Other types are special recipes (dye, banners). */
 const CRAFTING_DISPLAYS = new Set(['crafting_shaped', 'crafting_shapeless']);
 /** The crafting table's result slot: the craft is taken from here. */
 const RESULT_SLOT = 0;
@@ -53,14 +68,24 @@ const RESULT_SLOT = 0;
 const TABLE_OPEN_WAIT_MS = 5_000;
 /** Wall-clock wait for the result slot after each recipe request, scaled by `timeScale`. */
 const RESULT_WAIT_MS = 5_000;
+/**
+ * Wall-clock wait, after the server answers a recipe request, for the result slot to fill. A display
+ * the server answers but does not fill is a miss after this wait, not after `RESULT_WAIT_MS`.
+ */
+const ANSWER_GRACE_MS = 1_000;
 /** Wall-clock wait for the server to acknowledge a shift-click, scaled by `timeScale`. */
 const CLICK_ACK_WAIT_MS = 3_000;
 
 /**
- * The recipe displays the server has unlocked per bot: display id to the result's item id. Filled
- * by `watchRecipeBook` from the bot's first packets, because the server sends the book at join.
+ * The recipe displays the server has unlocked per bot: display id to what it makes. Filled by
+ * `watchRecipeBook` from the bot's first packets, because the server sends the book at join.
  */
-const unlocked = new WeakMap<Bot, Map<number, number>>();
+const unlocked = new WeakMap<Bot, Map<number, Display>>();
+/**
+ * The display that last crafted each item per bot: its item id to the display id. It is tried first
+ * on the next craft, so a display that works is not preceded by one that does not.
+ */
+const workingDisplay = new WeakMap<Bot, Map<number, number>>();
 /** The late-window cleanup of the last open per bot, so the next craft can remove a stale one. */
 const lateTableWindow = new WeakMap<Bot, () => void>();
 
@@ -70,32 +95,58 @@ const lateTableWindow = new WeakMap<Bot, () => void>();
  */
 export function watchRecipeBook(bot: Bot): void {
   if (unlocked.has(bot)) return;
-  const displays = new Map<number, number>();
+  const displays = new Map<number, Display>();
   unlocked.set(bot, displays);
   const client = bot._client as unknown as RecipeClient;
   client.on('recipe_book_add', (packet: unknown) => {
     const { replace, entries } = packet as RecipeBookAdd;
     if (replace) displays.clear();
     for (const { recipe } of entries) {
-      const { displayId, display } = recipe;
-      const resultId = display.data?.result?.data?.itemId;
-      if (CRAFTING_DISPLAYS.has(display.type) && resultId !== undefined) {
-        displays.set(displayId, resultId);
+      const result = resultOf(recipe.display.data?.result);
+      if (CRAFTING_DISPLAYS.has(recipe.display.type) && result) {
+        displays.set(recipe.displayId, result);
       }
     }
   });
 }
 
 /**
- * The unlocked crafting displays whose result is this item. One item can have several (a bed has
- * its wool-and-planks shape and a dye recolour), and the server answers a wrong one with nothing.
+ * What a recipe's result display makes, and how many per craft. Null when the display is not an item
+ * (a tag or a composite), which a craft cannot read a count from.
  */
-function unlockedDisplays(bot: Bot, resultId: number): number[] {
-  const ids: number[] = [];
-  for (const [displayId, itemId] of unlocked.get(bot) ?? []) {
-    if (itemId === resultId) ids.push(displayId);
+function resultOf(result: SlotDisplay | undefined): Display | null {
+  const data = result?.data;
+  if (result?.type === 'item' && typeof data === 'number') return { itemId: data, count: 1 };
+  if (result?.type === 'item_stack' && typeof data === 'object') {
+    return { itemId: data.itemId, count: data.itemCount ?? 1 };
   }
-  return ids;
+  return null;
+}
+
+/**
+ * The unlocked crafting displays whose result is this item, the working one first. One item can have
+ * several (a bed has its wool-and-planks shape and a dye recolour), and the server answers a wrong
+ * one with nothing.
+ */
+function unlockedDisplays(bot: Bot, resultId: number): { displayId: number; count: number }[] {
+  const found: { displayId: number; count: number }[] = [];
+  for (const [displayId, display] of unlocked.get(bot) ?? []) {
+    if (display.itemId === resultId) found.push({ displayId, count: display.count });
+  }
+  const working = workingDisplay.get(bot)?.get(resultId);
+  // The sort is stable: the working display first, the rest in the book's order.
+  found.sort((a, b) => Number(b.displayId === working) - Number(a.displayId === working));
+  return found;
+}
+
+/** Records the display that crafted this item for this bot, so it is tried first next time. */
+function rememberWorking(bot: Bot, itemId: number, displayId: number): void {
+  let byItem = workingDisplay.get(bot);
+  if (!byItem) {
+    byItem = new Map<number, number>();
+    workingDisplay.set(bot, byItem);
+  }
+  byItem.set(itemId, displayId);
 }
 
 /** The window id of the player's own inventory, whose 2x2 crafting grid needs no open. */
@@ -123,8 +174,7 @@ export async function craftFromBook(
 ): Promise<ActionOutcome | null> {
   const { bot } = ctx;
   dropLateTableWindow(bot);
-  let displayIds = unlockedDisplays(bot, item.id);
-  if (displayIds.length === 0) {
+  if (!hasUnlockedDisplay(bot, item)) {
     return failed(
       'missing_materials',
       `${item.name} is not unlocked: its recipe is not in the recipe book`,
@@ -149,10 +199,17 @@ export async function craftFromBook(
       windowId = opened.window.id;
     }
     for (let i = 0; i < times; i++) {
-      const crafted = await craftOnce(ctx, client, windowId, displayIds, states, item.name);
+      // Read per craft: the display that worked last craft is first now.
+      const crafted = await craftOnce(
+        ctx,
+        client,
+        windowId,
+        unlockedDisplays(bot, item.id),
+        states,
+        item.name,
+      );
       if ('outcome' in crafted) return crafted.outcome;
-      // The display that worked is tried first on the next craft.
-      displayIds = [crafted.displayId, ...displayIds.filter((id) => id !== crafted.displayId)];
+      rememberWorking(bot, item.id, crafted.displayId);
     }
     return null;
   } finally {
@@ -169,17 +226,19 @@ export async function craftFromBook(
 
 /**
  * One craft: request each candidate display into the grid until one fills the result, then
- * shift-click that result. Returns the display that worked, or the outcome that ended the craft.
+ * shift-click that result. A display that is answered without a result, or that stays silent, is
+ * a miss and the next one is requested. Returns the display that worked, or the outcome that ended
+ * the craft.
  */
 async function craftOnce(
   ctx: ActionContext,
   client: RecipeClient,
   windowId: number,
-  displayIds: number[],
+  candidates: { displayId: number }[],
   states: Map<number, number>,
   name: string,
 ): Promise<{ displayId: number } | { outcome: ActionOutcome }> {
-  for (const displayId of displayIds) {
+  for (const { displayId } of candidates) {
     if (ctx.signal.aborted) return { outcome: cancelled() };
     const landed = awaitResult(ctx, client, windowId);
     client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
@@ -239,12 +298,14 @@ async function shiftClick(
   }
 }
 
-/** How a wait for the result slot ended. */
-type ResultWait = 'filled' | 'timeout' | 'aborted';
+/** How a wait for the result slot ended: filled, missed (answered, no result), timed out, or aborted. */
+type ResultWait = 'filled' | 'missed' | 'timeout' | 'aborted';
 
 /**
- * Resolves when the window's result slot gets a stack, or when the bounded wait runs out or the
- * signal aborts. The listener is removed on every path.
+ * Resolves when the window's result slot gets a stack. If the server answers the request with a
+ * `craft_recipe_response` for this window and no stack follows within the grace, it resolves as a
+ * miss at once. Otherwise it resolves on the bounded wait running out, or when the signal aborts.
+ * The listeners and the timer are released on every path.
  */
 function awaitResult(
   ctx: ActionContext,
@@ -257,6 +318,7 @@ function awaitResult(
     const finish = (result: ResultWait): void => {
       clearTimeout(timer);
       client.removeListener('set_slot', onSlot);
+      client.removeListener('craft_recipe_response', onAnswer);
       signal.removeEventListener('abort', onAbort);
       resolve(result);
     };
@@ -266,8 +328,14 @@ function awaitResult(
         finish('filled');
       }
     };
+    const onAnswer = (packet: unknown): void => {
+      if ((packet as WindowState).windowId !== windowId) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => finish('missed'), ANSWER_GRACE_MS * timeScale);
+    };
     const onAbort = (): void => finish('aborted');
     client.on('set_slot', onSlot);
+    client.on('craft_recipe_response', onAnswer);
     signal.addEventListener('abort', onAbort, { once: true });
     timer = setTimeout(() => finish('timeout'), RESULT_WAIT_MS * timeScale);
   });
