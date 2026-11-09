@@ -194,6 +194,9 @@ importers:
 
   threshold/mcp-mock:
     dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../../contract
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
