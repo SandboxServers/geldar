@@ -52,6 +52,24 @@ function runnerFor(ctx: LiveContext, view: TrackedBodyView, sink: MemorySink): R
   });
 }
 
+/** The 3x3x3 of blocks around the bot as ascii layers (feet level first), for a failure message. */
+function surroundings(bot: LiveContext['bot']): string {
+  const feet = bot.entity.position.floored();
+  const layers: string[] = [];
+  for (const dy of [-1, 0, 1]) {
+    const rows: string[] = [];
+    for (let dz = -1; dz <= 1; dz++) {
+      const row: string[] = [];
+      for (let dx = -1; dx <= 1; dx++) {
+        row.push(bot.blockAt(feet.offset(dx, dy, dz))?.name ?? '?');
+      }
+      rows.push(row.join(' '));
+    }
+    layers.push(`y${dy >= 0 ? '+' : ''}${dy}: ${rows.join(' | ')}`);
+  }
+  return layers.join('\n');
+}
+
 describe('panic burrow on 26.1', () => {
   it('seals the bot in at night with no bed and no shelter', async () => {
     await withLiveBot({ name: BURROW_BOT, slot: BURROW_SLOT }, async (ctx) => {
@@ -72,7 +90,10 @@ describe('panic burrow on 26.1', () => {
         await runnerFor(ctx, view, sink).onTick(bot.time.age);
 
         expect(sink.reflexes.map((r) => r.name)).toEqual(['panic_burrow']);
-        expect(sink.reflexes[0]?.outcome.result).toBe('handled');
+        const outcome = sink.reflexes[0]?.outcome;
+        const p = bot.entity.position;
+        const why = `burrow outcome ${JSON.stringify(outcome)} at ${p.x.toFixed(2)} ${p.y.toFixed(2)} ${p.z.toFixed(2)}`;
+        expect(outcome?.result, `${why}\n${surroundings(bot)}`).toBe('handled');
         await bot.waitForTicks(SETTLE_TICKS);
         expect(view.enclosed).toBe(true);
       } finally {
