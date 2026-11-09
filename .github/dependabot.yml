@@ -3,8 +3,7 @@
 # version-update PRs are switched off with open-pull-requests-limit: 0.
 # Dependabot *security* updates are enabled in the repo settings and still open
 # PRs for known vulnerabilities; the entries below give those PRs a prefix and
-# labels. Add an entry when a packet creates a new ecosystem (gradle for
-# plugin/, docker for compose/).
+# labels. Add an entry when a packet creates a new ecosystem.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -27,6 +26,24 @@ updates:
 
   - package-ecosystem: docker
     directory: /compose
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
+
+  - package-ecosystem: gradle
+    directory: /plugin
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
+
+  - package-ecosystem: docker
+    directory: /eventsink
     schedule:
       interval: weekly
     open-pull-requests-limit: 0

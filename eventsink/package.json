@@ -1,0 +1,19 @@
+{
+  "name": "@geldar/eventsink",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit",
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@geldar/contract": "workspace:*",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

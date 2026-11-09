@@ -3,6 +3,7 @@ import type { Bot, BotOptions } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import { hasUnlockedDisplay, watchRecipeBook } from './actions/craft-table.ts';
 import { ConnectionManager } from './connection.ts';
+import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
 
 /** A bot stand-in: an emitter with a `quit` spy, so tests drive the lifecycle by hand. */
@@ -13,7 +14,7 @@ class FakeBot extends EventEmitter {
 }
 
 /** Wires a manager to fake bots, a recorded sleep and a fake clock. */
-function harness(stableMs?: number) {
+function harness(stableMs?: number, registry?: BotRegistry) {
   const bots: FakeBot[] = [];
   const sleeps: number[] = [];
   const clock = { t: 0 };
@@ -34,6 +35,7 @@ function harness(stableMs?: number) {
     rng: () => 0.5,
     log: () => {},
     ...(stableMs === undefined ? {} : { stableMs }),
+    ...(registry === undefined ? {} : { registry }),
   });
   /** Waits until the manager has created at least `n` bots. */
   const waitForBots = (n: number) =>
@@ -189,6 +191,78 @@ describe('ConnectionManager', () => {
     await outcome;
     expect(h.manager.state).toBe('fatal');
     expect(h.createBot).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes fatal on a not-admitted kick with a message that names GELDAR_NATS_URL', async () => {
+    const h = harness();
+    const joined = h.manager.start();
+    const outcome = expect(joined).rejects.toThrow(/GELDAR_NATS_URL/);
+    h.bots[0]?.emit('kicked', 'This connection is not admitted.', true);
+    await outcome;
+    expect(h.manager.state).toBe('fatal');
+    expect(h.createBot).toHaveBeenCalledTimes(1);
+    expect(h.sleeps).toEqual([]);
+  });
+
+  it('goes fatal on a not-admitted kick sent as a text component', async () => {
+    const h = harness();
+    const joined = h.manager.start();
+    const outcome = expect(joined).rejects.toThrow(/GELDAR_NATS_URL/);
+    h.bots[0]?.emit('kicked', { text: 'This connection is not admitted.' }, true);
+    await outcome;
+    expect(h.manager.state).toBe('fatal');
+  });
+
+  it('a not-admitted text in an end reason, not a kick, still retries', async () => {
+    const h = harness();
+    h.manager.start().catch(() => {});
+    h.bots[0]?.emit('end', 'This connection is not admitted.');
+    await vi.waitFor(() => expect(h.sleeps).toEqual([1000]));
+    expect(h.manager.state).not.toBe('fatal');
+    await h.manager.stop();
+  });
+
+  it('retries a not-admitted kick with the registry on, and goes fatal after 5 in a row', async () => {
+    const registry: BotRegistry = {
+      register: async () => {},
+      unregister: async () => {},
+      close: async () => {},
+    };
+    const h = harness(undefined, registry);
+    const joined = h.manager.start();
+    const outcome = expect(joined).rejects.toThrow(/5 kicks in a row/);
+    for (let n = 1; n <= 5; n += 1) {
+      await h.waitForBots(n);
+      if (n < 5) expect(h.manager.state).not.toBe('fatal');
+      h.bots[n - 1]?.emit('kicked', 'This connection is not admitted.', true);
+    }
+    await outcome;
+    expect(h.manager.state).toBe('fatal');
+    expect(h.createBot).toHaveBeenCalledTimes(5);
+    expect(h.sleeps).toEqual([1000, 2000, 4000, 8000]);
+  });
+
+  it('counts only consecutive not-admitted kicks: another end resets the run', async () => {
+    const registry: BotRegistry = {
+      register: async () => {},
+      unregister: async () => {},
+      close: async () => {},
+    };
+    const h = harness(undefined, registry);
+    h.manager.start().catch(() => {});
+    for (let n = 1; n <= 4; n += 1) {
+      await h.waitForBots(n);
+      h.bots[n - 1]?.emit('kicked', 'This connection is not admitted.', true);
+    }
+    await h.waitForBots(5);
+    h.bots[4]?.emit('end', 'closed');
+    for (let n = 6; n <= 9; n += 1) {
+      await h.waitForBots(n);
+      h.bots[n - 1]?.emit('kicked', 'This connection is not admitted.', true);
+    }
+    await h.waitForBots(10);
+    expect(h.manager.state).not.toBe('fatal');
+    await h.manager.stop();
   });
 
   it('a respawn in the same session neither restarts the stability clock nor spawns again', async () => {

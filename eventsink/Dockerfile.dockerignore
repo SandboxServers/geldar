@@ -1,0 +1,10 @@
+# Allowlist: the build context is the repo root, so exclude everything (worktrees, secrets, .env)
+# and add back only what the image installs and runs.
+*
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!contract
+!eventsink
+**/node_modules
+eventsink/test

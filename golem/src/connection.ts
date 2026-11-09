@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
 import { nextDelayMs } from './backoff.ts';
+import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
 
 /** Where a bot connects and how it reconnects. Production passes host and port from `loadConfig` only. */
@@ -26,6 +27,11 @@ export interface ConnectionOptions {
   rng?: () => number;
   /** A session shorter than this does not reset the attempt counter. Default 10 000 ms. */
   stableMs?: number;
+  /**
+   * The life registry. When set, the username is registered before the first connect and before
+   * every reconnect, and removed on stop(). Default: none (no registry, no NATS).
+   */
+  registry?: BotRegistry | undefined;
   /** Default: one JSON line to the console. */
   log?: (line: Record<string, unknown>) => void;
 }
@@ -45,6 +51,13 @@ const DEFAULT_VERSION = '26.1';
 const DEFAULT_STABLE_MS = 10_000;
 /** A kick for a permanent refusal: retrying cannot succeed, so the connection goes fatal. */
 const PERMANENT_REFUSAL = /whitelist|banned/i;
+/** The kick the Velocity identity plugin sends to a username that is not in the life registry. */
+const NOT_ADMITTED = /This connection is not admitted\./;
+/** With the registry on, this many not-admitted kicks in a row (about 15 s of backoff) go fatal. */
+const MAX_NOT_ADMITTED = 5;
+const NOT_ADMITTED_HINT =
+  'the proxy did not admit this bot: its username is not in the life registry. Set ' +
+  'GELDAR_NATS_URL (nats://127.0.0.1:4222 on the Phase 0 stack) so Golem registers it before connecting';
 
 /**
  * Resolves after `ms`, or at once when `signal` aborts. Either way the timer and the abort
@@ -104,6 +117,10 @@ export class ConnectionManager extends EventEmitter {
   private readonly rng: () => number;
   private readonly stableMs: number;
   private readonly log: (line: Record<string, unknown>) => void;
+  private readonly registry: BotRegistry | undefined;
+  private registered = false;
+  /** Consecutive not-admitted kicks; any other session end resets it. */
+  private notAdmitted = 0;
   /** Aborted by stop() so a pending backoff sleep ends at once. */
   private readonly stopController = new AbortController();
   private pending: { resolve: (bot: Bot) => void; reject: (err: Error) => void } | null = null;
@@ -121,6 +138,7 @@ export class ConnectionManager extends EventEmitter {
     this.rng = options.rng ?? Math.random;
     this.stableMs = options.stableMs ?? DEFAULT_STABLE_MS;
     this.log = options.log ?? defaultLog;
+    this.registry = options.registry;
   }
 
   /** Joins and resolves on the first spawn. Rejects if the connection goes fatal before that. */
@@ -146,17 +164,35 @@ export class ConnectionManager extends EventEmitter {
     this.pending?.reject(new Error('connection stopped before the first spawn'));
     this.pending = null;
     this.bot?.quit();
+    await this.release();
   }
 
   /** Joins, waits for the session to end, backs off, and repeats until stopped or fatal. */
   private async run(): Promise<void> {
     for (;;) {
-      const end = await this.session();
+      const end = await this.guardedSession();
       if (this.state === 'stopped' || this.state === 'fatal') return;
       this.emit('disconnect', { reason: end.reason });
       if (end.kicked && PERMANENT_REFUSAL.test(end.reason)) {
         this.fail(end.reason);
         return;
+      }
+      if (end.kicked && NOT_ADMITTED.test(end.reason)) {
+        // Without a registry nothing can ever admit the bot. With one, the proxy's gate can be
+        // closed for seconds (cold stack, NATS blip, resync): retry, and give up after a run.
+        this.notAdmitted += 1;
+        if (this.registry === undefined) {
+          this.fail(NOT_ADMITTED_HINT);
+          return;
+        }
+        if (this.notAdmitted >= MAX_NOT_ADMITTED) {
+          this.fail(
+            `${NOT_ADMITTED_HINT} (the registry is on and ${this.notAdmitted} kicks in a row, so check the registry entry and the plugin log)`,
+          );
+          return;
+        }
+      } else {
+        this.notAdmitted = 0;
       }
       // A session that stayed up long enough counts as healthy: the next failure starts over.
       if (end.spawnedAt !== null && this.now() - end.spawnedAt >= this.stableMs) this.attempt = 0;
@@ -169,6 +205,50 @@ export class ConnectionManager extends EventEmitter {
       if (this.isStopped()) return;
       this.state = 'connecting';
     }
+  }
+
+  /**
+   * Registers the username, then runs a session. A registry failure before the first connect is
+   * thrown (the connection goes fatal with the error's text, and no connect is attempted); later
+   * it counts as a failed session, so the usual backoff retries it.
+   */
+  private async guardedSession(): Promise<SessionEnd> {
+    if (this.registry !== undefined) {
+      // Marked before the put: a stop() or failure while it is in flight must still delete the key.
+      const first = !this.registered;
+      this.registered = true;
+      try {
+        await this.registry.register(this.username);
+      } catch (err) {
+        if (first) throw err;
+        const reason = `life registry: ${err instanceof Error ? err.message : String(err)}`;
+        return { reason, kicked: false, spawnedAt: null };
+      }
+      // stop() may have run while the registration was in flight: undo it and do not connect.
+      if (this.isStopped()) {
+        // stop()'s own release may have run before the put landed: delete again.
+        this.registered = true;
+        await this.release();
+        return { reason: 'stopped', kicked: false, spawnedAt: null };
+      }
+    }
+    return this.session();
+  }
+
+  /** Removes the username from the registry and drops NATS; failures are logged, never thrown. */
+  private async release(): Promise<void> {
+    const registry = this.registry;
+    if (registry === undefined) return;
+    try {
+      if (this.registered) await registry.unregister(this.username);
+    } catch (err) {
+      this.log({
+        event: 'registry-error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+    this.registered = false;
+    await registry.close().catch(() => undefined);
   }
 
   /** One bot from creation to its end: resolves once, on the first `end` or `kicked`. */
@@ -225,10 +305,13 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private fail(reason: string): void {
+    // A stop() that raced the failure wins: the state stays `stopped`.
+    if (this.isStopped()) return;
     this.state = 'fatal';
     this.log({ event: 'fatal', reason });
     this.emit('fatal', { reason });
     this.pending?.reject(new Error(`connection failed for good: ${reason}`));
     this.pending = null;
+    void this.release();
   }
 }

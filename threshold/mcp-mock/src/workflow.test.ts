@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const workflow = readFileSync(resolve(root, '.github', 'workflows', 'mcp-mock-image.yml'), 'utf8');
@@ -14,7 +15,7 @@ describe('mcp-mock-image workflow', () => {
     const login = workflow.slice(workflow.indexOf('docker/login-action'));
     expect(login.slice(0, login.indexOf('with:'))).toContain(`if: ${gate}`);
     const push = workflow.slice(workflow.indexOf('id: push'));
-    expect(push.slice(0, push.indexOf('with:'))).toContain(`if: ${gate}`);
+    expect(push.slice(0, push.indexOf('run:'))).toContain(`if: ${gate}`);
   });
 
   it('does not persist the checkout credentials', () => {
@@ -24,7 +25,7 @@ describe('mcp-mock-image workflow', () => {
   it('tests the loaded image before it logs in or pushes', () => {
     const test = workflow.indexOf('name: image test');
     const login = workflow.indexOf('docker/login-action');
-    const push = workflow.indexOf('push: true');
+    const push = workflow.indexOf('docker push');
     expect(test).toBeGreaterThan(-1);
     expect(login).toBeGreaterThan(test);
     expect(push).toBeGreaterThan(login);
@@ -61,12 +62,35 @@ describe('mcp-mock-image workflow', () => {
   it('has no unused env', () => {
     expect(workflow).not.toMatch(/^\s+IMAGE:/m);
   });
-  it('does not upload a build-record artifact from either build step', () => {
+  it('pushes the image the test ran against instead of rebuilding it', () => {
+    expect(workflow).not.toContain('push: true');
+    const step = workflow.slice(workflow.indexOf('id: push'));
+    expect(step).toContain('docker push "$REPO:main"');
+    expect(step).toContain('docker push "$REPO:sha-$SHA"');
+  });
+
+  it('does not upload a build-record artifact from the build step', () => {
     const steps = workflow.split('uses: docker/build-push-action@').slice(1);
-    expect(steps).toHaveLength(2);
+    expect(steps).toHaveLength(1);
     for (const step of steps) {
       const head = step.slice(0, step.indexOf('with:'));
       expect(head).toContain("DOCKER_BUILD_RECORD_UPLOAD: 'false'");
+    }
+  });
+
+  it('parses as YAML and keeps every step of the publish job as its own step', () => {
+    const doc = parse(workflow) as { jobs: Record<string, { steps: Record<string, unknown>[] }> };
+    const steps = Object.values(doc.jobs).flatMap((job) => job.steps);
+    const pushStep = steps.find((step) => step.id === 'push');
+    expect(pushStep?.run).toContain('docker push "$REPO:main"');
+    expect(pushStep?.run).toContain('>> "$GITHUB_OUTPUT"');
+    // A lost newline folds the next step into the run script: it must stay a step of its own.
+    expect(String(pushStep?.run)).not.toContain('- name:');
+    const summary = steps.find((step) => step.name === 'write the digest to the step summary');
+    expect(summary?.if).toBe(gate);
+    expect(summary?.run).toContain('GITHUB_STEP_SUMMARY');
+    for (const step of steps) {
+      expect(step.uses !== undefined || step.run !== undefined, JSON.stringify(step)).toBe(true);
     }
   });
 });

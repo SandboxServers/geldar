@@ -20,6 +20,10 @@ Review adversarially:
 
 Checklist (do each; report the result, not an inference):
 - Mutate each new test: revert the change it guards (edit one line with `Set-Content`, or revert one hunk), run the test, and confirm it fails. Restore each mutated file with `git -C <worktree> checkout -- <path>` (never through `git show | Set-Content`, which can change line endings), then confirm `git -C <worktree> status --short` is empty. Never leave the tree changed; if a mutation cannot be restored, say so on the first line of your return.
+- Fails open: for every security or gating component the diff adds or relies on (a plugin, a filter, a check), find the startup proof that it loaded; if the component can be missing and the system still starts and admits everything, that is a finding.
+- Fix side effects: for every fix, ask whether it adds a race, a retry-forever or an unbounded queue; a retry or requeue needs a cap, a stated outcome at the cap and a test for the last allowed attempt.
+- Config and YAML edits: parse them with a real parser; do not judge them by slicing strings or regexes.
+- Test strength: judge each new test by whether it fails without its fix. The mutation must reintroduce the old behaviour faithfully; a mutation that fails for another reason proves nothing.
 - Hostile inputs: run crafted inputs (empty, huge, odd quoting, path tricks, YAML or JSON edge forms) against each new parser or validator, and quote the actual result.
 - Doc claims: compare each claim in a changed doc with what the code or CI enforces. A claim nothing enforces is a finding.
 - Merge: dry-run the merge into the integration branch with `git merge-tree --write-tree <integration> <branch>` (no checkout) and report any conflict.

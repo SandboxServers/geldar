@@ -74,6 +74,36 @@ function Invoke-Check {
   } finally { Pop-Location }
 }
 
+# Compose bind-mounts the plugin jars; Docker creates a missing bind source as a directory, and the server then
+# boots without the plugin. Refuse to start unless every jar the compose file mounts is a real file.
+function Assert-PluginJar([string] $Shard) {
+  $file = Get-ComposeFile $Shard
+  $jars = 'plugin/core/build/libs/geldar-core.jar', 'plugin/velocity-identity/build/libs/geldar-velocity-identity.jar'
+  foreach ($rel in $jars) {
+    if (-not (Select-String -Path $file -SimpleMatch (Split-Path -Leaf $rel) -Quiet)) { continue }
+    $jar = Join-Path $Root $rel
+    if (Test-Path -PathType Leaf $jar) { continue }
+    $why = if (Test-Path -PathType Container $jar) {
+      'it is a directory (a previous start without the jar made Docker create one); delete that directory'
+    } else { 'it does not exist' }
+    throw "$rel is not a file: $why, then run: cd plugin; ./gradlew build"
+  }
+}
+
+# `up --wait` only proves the healthchecks passed. A plugin that failed to load must not go unnoticed (the Velocity
+# gate would admit anyone), so each service's log must hold its plugin's enabled line.
+function Assert-PluginsEnabled([string] $Shard, [string[]] $Compose) {
+  $file = Get-ComposeFile $Shard
+  $expected = [ordered]@{ paper = 'Geldar-Core enabled'; velocity = 'Geldar identity enabled' }
+  foreach ($service in $expected.Keys) {
+    if (-not (Select-String -Path $file -Pattern "^  ${service}:" -Quiet)) { continue }
+    $log = (docker @Compose logs --no-color $service 2>&1) -join "`n"
+    if (-not $log.Contains($expected[$service])) {
+      throw "$service did not log '$($expected[$service])': the plugin did not load. Check: ./geldar.ps1 shard logs $Shard $service"
+    }
+  }
+}
+
 # Writes the shard's Docker secret files (spec 6.7) when they are missing. Each holds
 # 32 random URL-safe characters with no newline. Existing files are never overwritten.
 function Initialize-ShardSecrets([string] $Shard) {
@@ -119,7 +149,7 @@ function Invoke-Shard([string[]] $ShardArgs) {
   $compose = @('compose', '-f', $file, '-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }
-    'up' { Initialize-ShardSecrets $shard; Invoke-Step "start shard $shard" { docker @compose up -d --wait } }
+    'up' { Assert-PluginJar $shard; Initialize-ShardSecrets $shard; Invoke-Step "start shard $shard" { docker @compose up -d --wait }; Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose } }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }
     'logs' { Invoke-Step "logs of shard $shard" { docker @compose logs --tail 200 @extra } }

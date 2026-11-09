@@ -1,9 +1,10 @@
 import type { Bot } from 'mineflayer';
 import { watchRecipeBook } from '../../src/actions/craft-table.ts';
 import { type Arena, buildArena, quietWorld, restoreWorld } from '../../src/arena.ts';
-import { loadConfig, readRconPassword } from '../../src/config.ts';
+import { loadStackConfig, readRconPassword } from '../../src/config.ts';
 import { ConnectionManager } from '../../src/connection.ts';
 import { RconClient } from '../../src/rcon.ts';
+import { registryFromConfig } from '../../src/registry.ts';
 import { TestControl } from '../../src/test-control.ts';
 
 /** What a live test gets: the joined bot, the RCON control, the arena and the connection manager. */
@@ -23,7 +24,7 @@ export async function withLiveBot(
   opts: { name: string; slot: number },
   fn: (ctx: LiveContext) => Promise<void>,
 ): Promise<void> {
-  const cfg = loadConfig();
+  const cfg = loadStackConfig();
   const password = await readRconPassword(cfg);
   const rcon = await RconClient.connect({ host: cfg.rconHost, port: cfg.rconPort, password });
   const manager = new ConnectionManager({
@@ -31,6 +32,7 @@ export async function withLiveBot(
     port: cfg.mcPort,
     username: opts.name,
     onBot: watchRecipeBook,
+    registry: registryFromConfig(cfg),
   });
   await runWithBot({ ctl: new TestControl(rcon), manager, close: () => rcon.close() }, opts, fn);
 }

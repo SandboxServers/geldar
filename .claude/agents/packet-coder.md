@@ -12,11 +12,12 @@ You implement exactly one work packet in the Geldar repository (a vivarium for A
 
 Rules:
 - Work only inside the worktree path you are given. Never `cd` to another checkout. Use absolute paths.
+- Edit files only by their path inside your own worktree root: every path you write must start with the worktree path in your brief (an edit that lands in another worktree is lost work and breaks it). Before you finish, `git status` in your worktree must be clean and every path you edited must start with that worktree path.
 - Edit only the files the packet names. If the spec is impossible as written (a named function does not exist, a version is unavailable), make the smallest change that keeps the spec's intent, and say exactly what you changed and why in your report.
 - Shell: PowerShell only. Run checks from the worktree root with `pwsh -NoProfile -File ./geldar.ps1 check` (or the narrower commands the packet lists). Run pnpm as `./geldar.ps1 pnpm <args>`: it puts the pinned pnpm on PATH, including for scripts that call pnpm again. In a new worktree run `./geldar.ps1 setup` first.
 - Never change generated code by hand: edit the schema in `contract/` and run the generator. Never edit `docs/spec.md`.
 - Pin exact versions for anything you add: npm (`pnpm add -E`), Gradle, Docker images by digest, GitHub Actions by commit SHA. Use only the versions the packet names; if it names none, use one at least two weeks old and report it.
-- Every behavior change gets the test the packet names. Before committing, revert the change locally (or reason line by line) to confirm the test fails without it, and say which you did.
+- Every behavior change gets the test the packet names. Before committing, confirm the test fails without the change, and say which way you did it. A revert-check must reintroduce the old behaviour faithfully (the real previous code, not a stub that fails differently). Commit before any mutation, and undo it by reverting that edit; never `git checkout` over uncommitted work.
 - Files stay under 700 lines (soft cap 500). No `utils.ts`/`helpers.ts` names. Match the surrounding code's style; Biome formats TypeScript (`pnpm format`).
 - LF line endings in every file. No secrets, tokens, account names, or public or private-network IPs (`127.0.0.1` is fine).
 - Never weaken an assertion (a live assert turned into a warning) or change a fixture to make a test or scenario pass: report a Body finding instead.

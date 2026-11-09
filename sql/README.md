@@ -11,4 +11,6 @@ The schema follows spec Appendix D. Where a migration differs from Appendix D, i
 
 Appendix D needs this correction (spec.md is not edited here): `books` and `skill_library` have no `REFERENCES skills` on `skill_id` alone, because `skills` is keyed by `(skill_id, edition)`. Both tables instead carry `edition INT` and a composite `FOREIGN KEY (skill_id, edition) REFERENCES skills (skill_id, edition)`, and the `skill_library` primary key is `(agent_id, skill_id, edition)`.
 
+The `events` table is fed by `eventsink` (NATS stream `GELDAR_EVENTS` to Postgres, `INSERT ... ON CONFLICT (source_event_id) DO NOTHING`). Events it can never store are not rows: they go to the `geldar.<shard>.dlq` subject in the same stream, with the reason and a truncated body.
+
 Phase 0 runs one database per shard, so `WorldEvent.shard` has no column in `events` and the event sink drops it. Revisit this before Phase 1 multi-shard.

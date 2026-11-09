@@ -1,0 +1,17 @@
+# Exact pins only. Every version is at least two weeks old when it lands.
+[versions]
+paper = "26.1.2.build.74-stable"
+jnats = "2.26.4"
+gson = "2.14.0"
+junit = "6.1.3"
+json-schema-validator = "3.0.8"
+velocity = "3.5.1"
+
+[libraries]
+paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
+jnats = { module = "io.nats:jnats", version.ref = "jnats" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
+json-schema-validator = { module = "com.networknt:json-schema-validator", version.ref = "json-schema-validator" }
+velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity" }

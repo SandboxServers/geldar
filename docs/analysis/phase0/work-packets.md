@@ -18,13 +18,19 @@ Each packet is self-contained: the coder skips CLAUDE.md, so these rules travel 
 10. Budget: the packet should fit about 40k tokens, but wave 1 coders used 60k to 95k and three ran out of context before committing. Read each file once, pipe long output through `Select-Object -Last 20`, and commit as soon as `./geldar.ps1 check` passes; write a short progress note to the report path after the first working step, so a continuation coder starts from facts. Use the exact commit message and trailer lines in the brief, unchanged.
 11. Batch review (owner ruling, wave 2): packets that run in parallel (P0-08a, 08b, 09a, 09b; then P0-10b, 10c) are not reviewed one by one. When all coders in the batch have committed, merge them into a temporary review branch `phase0/wave2-batch-<name>` off `phase0/wave2` and run ONE full, thorough review over the combined diff (cross-packet collisions, registry blocks, shared arena and world state, live-test interference, plus each packet against its spec). Fix passes go to fresh coders per packet or one coder for the batch; re-review the batch up to 5 rounds (not 3) before asking the owner. Single packets keep the 3-pass loop. As run in wave 2: the batches were P0-08a, 08b, 09a, 09b (branch `phase0/wave2-batch-body`) and P0-10b, 10c (branch `phase0/wave2-batch-bench`); P0-10a was reviewed alone, in 3 passes. The body batch's round 5 returned `decision`; the test-strength fixes were applied with no sixth review (overnight decision 12).
 
+## Packet planning rule (owner ruling, wave 3)
+
+When writing packets for a wave, shape the dependency graph to fan out as early as feasible. Put first the packets that unblock parallel work (shared skeletons, contracts, config, registries, fixtures) and make each as small as it can be: only what the parallel packets need to start, with everything else left to them. Then run the independent packets side by side. Each wave's packet table states the unblocking packets, what they unblock, and the fan-out point. A packet that is large and blocks others is split before dispatch.
+
 ## Wave close (every wave)
 
-A wave is not done when its last packet ships. Before the wave PR is merged, and as part of that PR, the orchestrator runs the wave close:
+A wave is not done when its last feature packet ships. Before the wave PR is merged, and as part of that PR, the orchestrator runs the wave close in this order (owner rulings, wave 3: reviews and tests run once, at the end of the wave; the process packet comes after them so its retro sees the whole wave):
+
+0. **Wave test and review.** One live pass and ONE thorough wave review (split by area, up to 5 rounds), both after the last feature packet and before steps 1 to 4. No per-packet or per-batch reviews or live runs earlier.
 
 1. **Docs.** A docs sweep: the files that describe what the wave changed (README, `sql/README.md`, skills such as `run-shard` and `body-bench`, the threat model, `docs/decisions/` records for anything that departs from the spec) match the code. A fresh `packet-coder` does it from a list the wave reviewer writes (the wave review already checks "docs that no longer match"); the orchestrator never edits outside `docs/analysis/phase0/`, `docs/decisions/` records (owner-authorised), `.claude/state/` and branch state.
 2. **Retro.** The orchestrator writes `docs/analysis/phase0/retro/wave-<N>.md`: what shipped, what cost the most agent passes and why (read the reviewer verdicts), what the reviews caught that tests did not, what went wrong in the process (agents out of context, tool limits, Windows quirks, brief mistakes), what to keep, and numbered **Actions**, each with an owner (a packet, a skill edit, an agent edit, a CI check) and a size.
-3. **Process packet.** A `W<N>-process` packet applies the Actions that change the development process or AI SDLC scaffolding: `.claude/skills/`, `.claude/agents/`, `CLAUDE.md`, `AGENTS.md`, `tools/repo-checks`, CI, packet and brief templates. It is written like any packet (files, tests or checks, commit subject), goes through the same review loop, and merges into the wave branch. Actions that need an owner decision are asked, not guessed.
+3. **Process packet (after the wave test, review and retro).** A `W<N>-process` packet applies the Actions that change the development process or AI SDLC scaffolding: `.claude/skills/`, `.claude/agents/`, `CLAUDE.md`, `AGENTS.md`, `tools/repo-checks`, CI, packet and brief templates. It is written like any packet (files, tests or checks, commit subject), goes through the same review loop, and merges into the wave branch. Actions that need an owner decision are asked, not guessed.
 4. **Ledger.** `README.md` records the retro and the process packet; `RESUME.md` names the next wave.
 
 The retro Actions must be small and checkable. A process change that does not make the next wave cheaper or safer is dropped, not kept.
@@ -533,6 +539,55 @@ export interface Scenario {
 ### After wave 2 merges: the first benchmark run (orchestrator, not a coder packet)
 
 `./geldar.ps1 bench --record --runs 10 --note "first run, <commit>"` on a clean tree (merged into `phase0/wave2`, before the wave PR opens) with the shard up and nothing else connected, then commit `docs/analysis/phase0/bench-results.md` with the rows and the `docs/analysis/phase0/bench-runs/<name>.json` file the rows name, plus the amendments listed in P0-10a's Checks. Failures are findings: do not rerun until green. The owner reads the 10 and 5 TPS rows before wave 4 builds reflexes on top of the actions.
+
+## Wave 3 — the world to the record (ships as the wave 3 PR)
+
+Packets: P0-11 (plugin skeleton, event export, recipe grant) and P0-12 (`eventsink/`) run in parallel and are reviewed as ONE batch (rule 11, up to 5 rounds). P0-13a (Velocity identity plugin) needs P0-11's Gradle skeleton, so it runs after P0-11 merges into the wave branch; P0-13b (Golem registration, compose wiring, live proof) runs after P0-13a. 13a and 13b are reviewed together as a second batch. Live runs against the shard are the orchestrator's (serial). Pins to settle at dispatch and record in the report: Java and Gradle versions (Java 25 matches the image), Paper API 26.1.2 build 74 and Velocity API 3.5.1 (decision 0022), the `jnats` and `pg` versions and the `@nats-io/transport-node`, `@nats-io/jetstream` and `@nats-io/kv` 3.4.0 client packages (the `nats` package is deprecated upstream; decision 0041; each at least two weeks old).
+
+**Wave 3 conventions.**
+- `plugin/` is a Gradle multi-project (`settings.gradle.kts`, committed wrapper, `.java-version`, version catalog `gradle/libs.versions.toml` with exact pins, dependency locking on). CI's `plugin` job already runs `./gradlew build --no-daemon` once `plugin/build.gradle.kts` exists. Subprojects: `core` (Paper, Geldar-Core) and later `velocity-identity`.
+- Java code has JUnit tests that run in `./gradlew build` and need no server. Each test is revert-checked as in rule 7.
+- Every event the plugin builds is validated in a Gradle test against `contract/schemas/event.schema.json` (read from `../contract/schemas`).
+- Secrets and connection strings come from environment or Docker secret files, never source. Phase 0 has one open NATS on the compose network (per-service accounts arrive later, spec 6.5); say so in the report.
+
+### P0-11 — Geldar-Core plugin skeleton, event export, recipe grant
+
+- **Depends on** P0-06. Branch `phase0/p0-11-core`, worktree `p0-11`. Commit: `feat(plugin): add the Geldar-Core Paper plugin with NATS event export and recipe grant`.
+- **Spec:** Appendix F (event export, command block), 5.1 plugin table, section 7 event bus, decisions 0032 and 0022.
+- **Create:** the `plugin/` root files above, `plugin/core/**` (`GeldarCore` main class, `EventExporter`, `EventPublisher` interface with a NATS and an in-memory implementation, `EventEnvelope` builder, `RecipeGrant` listener, `CoreConfig` reading `plugins/GeldarCore/config.yml`), `plugin/README.md`. **Change:** `compose/phase0.yml` (mount the built jar into Paper's plugins directory read-only; pass `GELDAR_NATS_URL` and `GELDAR_SHARD`; the build is documented, not run by compose), `.gitignore` for `plugin/**/build`, the `run-shard` health table (plugin loaded, events flowing).
+- **Behaviour:**
+  1. On enable, connect to NATS off the main thread with backoff; the server never blocks on NATS. A bounded queue drops the oldest event when full and counts drops.
+  2. Export the Phase 0 event types: `server_tps` every 20 s, `damage`, `death`, `sleep`. Each event has `source_event_id` (`ev_` plus a ULID), `at`, `shard`, `world_day`, `world_tick`, `type`, optional `agent_id`. Publish on `geldar.<shard>.<type>` into JetStream stream `GELDAR_EVENTS` (created if missing: subjects `geldar.*.*`, file storage, 30-day retention), with the message id header set to `source_event_id` so JetStream de-duplicates.
+  3. On `PlayerJoinEvent`, grant all recipes (`Player.discoverRecipes` over every registered recipe) so table crafts work without RCON (decision 0032).
+  4. `PlayerCommandPreprocessEvent` from a player is cancelled and logged (Appendix F); console and RCON are untouched.
+  5. Ghosts are out of scope (no ghosts in Phase 0): a README note only.
+- **Tests:** JUnit: envelopes are schema-valid with unique ids and the right subject; queue overflow drops oldest and counts; a publisher failure never throws into the server thread; the recipe listener discovers every recipe (MockBukkit or a test double, pinned). Live (orchestrator): a Golem bot joins and `craft` of `crafting_table` and `stone_pickaxe` works with no `recipe give`; a `server_tps` event arrives on `geldar.phase0.server_tps`; a command typed by the bot is cancelled.
+- **Checks:** `cd plugin; ./gradlew build`, then `./geldar.ps1 check`.
+
+### P0-12 — `eventsink/`: NATS to Postgres
+
+- **Depends on** P0-03, P0-05. Branch `phase0/p0-12-eventsink`, worktree `p0-12`. Commit: `feat(eventsink): sink NATS events to Postgres idempotently`.
+- **Spec:** section 7 event bus, Appendix D `events`, decision D-P0-10.
+- **Create:** `eventsink/package.json` (`@geldar/eventsink`), `tsconfig.json`, `src/{config,consumer,writer,validate,main}.ts`, tests, `eventsink/Dockerfile`, `eventsink/README.md`. **Change:** `compose/phase0.yml` (an `eventsink` service built from `./eventsink`, after healthy postgres and nats, secrets as Docker secret files), `ci.yml` only if the image build needs it.
+- **Behaviour:** a durable pull consumer on `GELDAR_EVENTS` (create the stream with the same config as P0-11 if missing; the config is one documented constant in both READMEs); validate each message with the generated `contract` validator; `INSERT ... ON CONFLICT (source_event_id) DO NOTHING` in small batches; ack only after commit; a message that fails validation goes to the dead-letter subject `geldar.<shard>.dlq` with the reason and is acked (never lost, never retried forever); transient DB errors nak with backoff; shutdown drains.
+- **Tests:** unit with fakes (duplicate delivery inserts once, invalid message to DLQ, nak on DB error, ack only after commit). Integration test (skipped unless `GELDAR_IT=1`): against the live stack, publish the same event twice and a malformed one; the table has one row and the DLQ one message. Revert-check each.
+- **Checks:** `./geldar.ps1 check`; the integration test is run by the orchestrator.
+
+### P0-13a — Velocity bot-ingress identity plugin
+
+- **Depends on** P0-11 (Gradle skeleton). Branch `phase0/p0-13a-identity`, worktree `p0-13a`. Commit: `feat(plugin): add the Velocity bot-ingress identity plugin`.
+- **Spec:** Appendix F (bot ingress identity), 8.4, 5.1, decision 0021.
+- **Create:** `plugin/velocity-identity/**` (`IdentityPlugin`, `LoginGate`, `RegistryClient` over the NATS JetStream KV bucket `geldar-life-registry`: key is the lowercase username, value JSON `{life_id, registered_at}`; a watcher keeps a local cache; the gate fails CLOSED until the cache has synced once), tests. **Change:** `plugin/settings.gradle.kts`, `compose/phase0.yml` (mount the jar, pass `GELDAR_NATS_URL`), `compose/velocity/velocity.toml` only if needed, `docs/threat-model.md` (the ingress gate).
+- **Behaviour:** on `LoginEvent`, deny with one fixed message any username not in the registry, or revoked (key deleted), or with a malformed entry; admit otherwise; log admit and deny with no secrets and no hint of which check failed. The Paper whitelist stays enforced (two checks); Golem keeps whitelisting its bots over RCON.
+- **Tests:** JUnit for the gate (unknown, known, revoked, never synced = deny, case-insensitivity, malformed entry = deny). Live after P0-13b (orchestrator): an unregistered username is denied at the proxy, a registered one reaches Paper.
+- **Checks:** `cd plugin; ./gradlew build`, then `./geldar.ps1 check`.
+
+### P0-13b — Golem registers its bot before connecting
+
+- **Depends on** P0-13a. Branch `phase0/p0-13b-registration`, worktree `p0-13b`. Commit: `feat(golem): register the bot username in the life registry before connecting`.
+- **Create:** `golem/src/registry.ts` (open the KV bucket, put `{life_id, registered_at}` for the bot's username, delete on shutdown), `golem/test/registry.test.ts`, a live case. **Change:** `golem/src/connection.ts` (register before the first connect and before each reconnect; fail with a clear error if NATS is unreachable), `golem/src/config.ts` (`GELDAR_NATS_URL`), the live fixture.
+- **Tests:** unit with a fake KV (registered before connect, deleted on stop, NATS down means no connect attempt). Live (orchestrator): the full live lane and a short benchmark pass still work through the gate.
+- **Checks:** `./geldar.ps1 check`; the live lane by the orchestrator.
 
 ## Process packets (one per wave close)
 

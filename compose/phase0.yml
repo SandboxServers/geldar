@@ -76,6 +76,9 @@ services:
       MOTD: "Geldar - no humans"
       ENABLE_RCON: "TRUE"
       RCON_PASSWORD_FILE: /run/secrets/rcon
+      # Geldar-Core (plugin/core). Phase 0 NATS is open on the compose network; accounts come later (spec 6.5).
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_SHARD: phase0
       # 5.1 world border (diameter 3000 = radius 1500) and gamerules, run once the server is up.
       # The image splits this value on newlines, one RCON command per line. Gamerule names are
       # the 26.1 ones: the camelCase names from spec 5.1 are rejected ("Incorrect argument").
@@ -84,12 +87,16 @@ services:
     volumes:
       - paper-data:/data
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
+      # The image copies /plugins into /data/plugins on start. Build the jar first: cd plugin; ./gradlew build
+      - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
     ports:
       # Ops and the benchmark only. The game port (25565) is deliberately not published.
       - "127.0.0.1:25575:25575"
     healthcheck:
       <<: *mc-health
-      test: ["CMD-SHELL", "mc-health"]
+      # Healthy only when the server is up AND Geldar-Core enabled: a plugin that failed to load must not
+      # leave a healthy server with no command block and no export. Paper logs to /data/logs/latest.log.
+      test: ["CMD-SHELL", "mc-health && grep -q 'Geldar-Core enabled' /data/logs/latest.log"]
     restart: unless-stopped
 
   velocity:
@@ -99,22 +106,48 @@ services:
       VELOCITY_VERSION: "3.5.1"
       VELOCITY_BUILD_ID: "615"
       MEMORY: 512M
+      # Geldar identity plugin (plugin/velocity-identity): admits only usernames in the NATS life registry.
+      GELDAR_NATS_URL: nats://nats:4222
     secrets: [velocity-forwarding]
     volumes:
       - ./velocity/velocity.toml:/config/velocity.toml:ro
       - velocity-data:/server
+      # itzg/mc-proxy copies /plugins into /server/plugins on start. Build the jar first: cd plugin; ./gradlew build
+      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
     ports:
       # The bot ingress. Phase 0 stands in for production's internal VLAN (decision 0021).
       - "127.0.0.1:25565:25565"
     depends_on:
       paper:
         condition: service_healthy
+      nats:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/25565"]
+      # Port open AND the identity plugin enabled: without the plugin the proxy would admit anyone.
+      # Velocity logs to /server/logs/latest.log (verified on the live stack; `shard up` re-checks the log).
+      test: ["CMD", "bash", "-c", "grep -q 'Geldar identity enabled' /server/logs/latest.log && exec 3<>/dev/tcp/127.0.0.1/25565"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 30s
+    restart: unless-stopped
+
+  eventsink:
+    # NATS GELDAR_EVENTS to Postgres `events`, idempotently (spec 7). Context is the repo root:
+    # the image needs the workspace's contract package.
+    build:
+      context: ..
+      dockerfile: eventsink/Dockerfile
+    environment:
+      GELDAR_NATS_URL: nats://nats:4222
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+    secrets: [postgres]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
     restart: unless-stopped
 
 secrets:

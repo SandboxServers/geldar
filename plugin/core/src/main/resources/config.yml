@@ -1,0 +1,8 @@
+# Geldar-Core settings. GELDAR_NATS_URL and GELDAR_SHARD in the environment override nats.url and shard.
+# Phase 0 has one open NATS on the compose network; per-service accounts come later.
+nats:
+  url: nats://nats:4222
+shard: phase0
+queue:
+  capacity: 10000
+tps_interval_seconds: 20
