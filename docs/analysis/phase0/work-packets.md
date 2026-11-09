@@ -15,6 +15,18 @@ Each packet is self-contained: the coder skips CLAUDE.md, so these rules travel 
 7. Confirm each new test fails without the change it guards (revert locally, run, restore) and say so in the report.
 8. Commit once with the message in your brief. Never `git stash`, `git push`, `gh pr` or `git worktree prune`.
 9. Report to the path in your brief; return one line: `<packet> <done|blocked|failed> <commit-sha|-> <report-path>`.
+10. Budget: the packet should fit about 40k tokens, but wave 1 coders used 60k to 95k and three ran out of context before committing. Read each file once, pipe long output through `Select-Object -Last 20`, and commit as soon as `./geldar.ps1 check` passes; write a short progress note to the report path after the first working step, so a continuation coder starts from facts. Use the exact commit message and trailer lines in the brief, unchanged.
+
+## Wave close (every wave)
+
+A wave is not done when its last packet ships. Before the wave PR is merged, and as part of that PR, the orchestrator runs the wave close:
+
+1. **Docs.** A docs sweep: the files that describe what the wave changed (README, `sql/README.md`, skills such as `run-shard` and `body-bench`, the threat model, `docs/decisions/` records for anything that departs from the spec) match the code. A fresh `packet-coder` does it from a list the wave reviewer writes (the wave review already checks "docs that no longer match"); the orchestrator never edits outside `docs/analysis/phase0/`, `.claude/state/` and branch state.
+2. **Retro.** The orchestrator writes `docs/analysis/phase0/retro/wave-<N>.md`: what shipped, what cost the most agent passes and why (read the reviewer verdicts), what the reviews caught that tests did not, what went wrong in the process (agents out of context, tool limits, Windows quirks, brief mistakes), what to keep, and numbered **Actions**, each with an owner (a packet, a skill edit, an agent edit, a CI check) and a size.
+3. **Process packet.** A `W<N>-process` packet applies the Actions that change the development process or AI SDLC scaffolding: `.claude/skills/`, `.claude/agents/`, `CLAUDE.md`, `AGENTS.md`, `tools/repo-checks`, CI, packet and brief templates. It is written like any packet (files, tests or checks, commit subject), goes through the same review loop, and merges into the wave branch. Actions that need an owner decision are asked, not guessed.
+4. **Ledger.** `README.md` records the retro and the process packet; `RESUME.md` names the next wave.
+
+The retro Actions must be small and checkable. A process change that does not make the next wave cheaper or safer is dropped, not kept.
 
 ## Contract (what packets build against)
 
@@ -504,3 +516,18 @@ export interface Scenario {
 ### After wave 2 merges: the first benchmark run (orchestrator, not a coder packet)
 
 `./geldar.ps1 bench --record --note "first run, <commit>"` on a clean tree with the shard up and nothing else connected, then commit `docs/analysis/phase0/bench-results.md` with the rows. Failures are findings: do not rerun until green. The owner reads the 10 and 5 TPS rows before wave 4 builds reflexes on top of the actions.
+
+## Process packets (one per wave close)
+
+### W1-process — apply the wave 1 retro actions
+
+- **Depends on** nothing in wave 2's code; branches from `phase0/wave2`. Branch `phase0/w1-process`, worktree `w1-process`. Commit: `chore(process): apply the wave 1 retro to the agents, skills and repo checks`.
+- **Spec:** none; the source is [retro/wave-1.md](retro/wave-1.md), Actions 1 to 8. Do exactly those and nothing else.
+- **Change:**
+  - `.claude/agents/packet-reviewer.md` (Actions 1 and 5): the reviewer may create exactly one file, the report path in its brief, with `Set-Content`/`Out-File` (nothing else is writable); the report file is required, and if it cannot be written the reviewer says so on the first line of its return. Add the reviewer checklist: mutate each new test by reverting the guarded change (in a scratch copy or by reverting and restoring; never leave the tree changed), run hostile inputs against new parsers or validators, compare doc claims with enforced behavior, dry-run the merge into the integration branch with `git merge-tree`, report commit trailers verbatim.
+  - `.claude/agents/packet-coder.md` (Action 2): commit as soon as checks pass; write a progress note to the report path after the first working step; WIP commits on the packet branch are allowed (the final commit message in the brief is applied with an amend or a squash by the final continuation, say which, and keep it consistent with dispatch rule 8 of work-packets.md); keep the brief's commit message and trailer lines unchanged.
+  - `.claude/skills/campaign-packet/SKILL.md` (Actions 2, 3, 6, 8): the fixed brief template; a continuation coder commits any uncommitted work first; the size guideline and observed cost (from the retro table); the rule about writing decision records in the same wave; the wave close section (docs, retro, process packet), pointing at `work-packets.md` § Wave close.
+  - `.claude/skills/ship-pr/SKILL.md` (Action 4): the Windows notes.
+  - `tools/repo-checks`: a new module and test for Action 7 (every `docs/decisions/NNNN-*.md` appears in `docs/decisions/README.md`'s table, and every table row links an existing file), wired into `cli.ts` like the loopback-ports check. Follow that module's structure and tests, including a test that fails when the wiring is removed.
+- **Keep each skill and agent file short and keep its existing frontmatter valid.** Where the existing text already says something, edit it, do not duplicate it.
+- **Checks:** `./geldar.ps1 check`; confirm the new repo check fails when a decision file is missing from the README table (revert and restore).
