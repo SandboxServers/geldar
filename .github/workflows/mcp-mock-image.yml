@@ -1,0 +1,75 @@
+# Builds the mcp-mock image, pushes :main and :sha-<commit> to GHCR on main (not on
+# pull requests), and runs the image test against the loaded image. The first push
+# creates a private package; making it public is an owner action, not done here.
+# Unsigned, no SBOM, no provenance attestation (owner ruling).
+name: mcp-mock-image
+
+on:
+  pull_request:
+    paths:
+      - threshold/mcp-mock/**
+      - contract/**
+      - pnpm-lock.yaml
+      - .nvmrc
+      - .github/workflows/mcp-mock-image.yml
+  push:
+    branches: [main]
+    paths:
+      - threshold/mcp-mock/**
+      - contract/**
+      - pnpm-lock.yaml
+      - .nvmrc
+      - .github/workflows/mcp-mock-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/sandboxservers/geldar-mcp-mock
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: build (and push outside pull requests)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: threshold/mcp-mock/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          load: true
+          provenance: false
+          tags: |
+            ghcr.io/sandboxservers/geldar-mcp-mock:main
+            ghcr.io/sandboxservers/geldar-mcp-mock:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: image test
+        env:
+          GELDAR_IMAGE_TESTS: '1'
+          MOCK_IMAGE: ghcr.io/sandboxservers/geldar-mcp-mock:main
+        run: pnpm vitest run threshold/mcp-mock/src/image.test.ts
+      - name: write the digest to the step summary
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "digest $DIGEST" >> "$GITHUB_STEP_SUMMARY"
