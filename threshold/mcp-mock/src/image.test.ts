@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,10 @@ const DEFAULT_COMMAND = [
   '0.0.0.0',
 ];
 
+// Names that must not ship (test-support and tests, token files, env files) plus the one scenario that must.
+const FIND_SHIPPED =
+  '-name node_modules -prune -o \\( -name "*.test.ts" -o -name "*tokens*.json" -o -name "docker.ts" -o -name ".env*" -o -name "dawn.scenario.json" \\) -print';
+
 let dir: string | undefined;
 let containerId: string | undefined;
 let client: Client | undefined;
@@ -35,7 +39,19 @@ async function start(options: { mountTokens: boolean; command?: string[] }): Pro
   const file = join(dir, 'tokens.json');
   writeFileSync(file, JSON.stringify({ [PLAYER]: TOKEN }));
   chmodSync(file, 0o644);
-  const args = ['run', '-d', '--rm', '-p', '127.0.0.1::8787'];
+  // The same hardening the README and compose example recommend: the image must start under it.
+  const args = [
+    'run',
+    '-d',
+    '--rm',
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--security-opt',
+    'no-new-privileges:true',
+    '-p',
+    '127.0.0.1::8787',
+  ];
   if (options.mountTokens) {
     args.push('--mount', `type=bind,source=${file},target=/run/secrets/mcp-tokens.json,readonly`);
   }
@@ -122,7 +138,7 @@ describe.skipIf(!ready)('mcp-mock image', () => {
         'sh',
         tag,
         '-c',
-        'find /opt/geldar -name node_modules -prune -o \\( -name "*.test.ts" -o -name "*tokens*.json" -o -name ".env*" -o -name "dawn.scenario.json" \\) -print',
+        `find /opt/geldar ${FIND_SHIPPED}`,
       ],
       { timeoutMs: 60_000 },
     );
@@ -131,6 +147,17 @@ describe.skipIf(!ready)('mcp-mock image', () => {
     expect(lines).toEqual(['/opt/geldar/threshold/mcp-mock/scenarios/dawn.scenario.json']);
   }, 120_000);
 
+  it('finds each forbidden name when one is present (the search is not vacuous)', () => {
+    const names = ['a.test.ts', 'mcp-tokens.json', 'tokens.json', 'docker.ts', '.env.local'];
+    const script = `mkdir -p /tmp/probe && cd /tmp/probe && touch ${names.join(' ')} && find /tmp/probe ${FIND_SHIPPED}`;
+    const found = run(['run', '--rm', '--entrypoint', 'sh', tag, '-c', script], {
+      timeoutMs: 60_000,
+    });
+    expect(found.status, found.stderr).toBe(0);
+    expect(found.stdout.split('\n').filter((l) => l !== '').sort()).toEqual(
+      names.map((n) => `/tmp/probe/${n}`).sort(),
+    );
+  }, 120_000);
   it('runs the scenario in the container', async () => {
     const port = await start({
       mountTokens: true,

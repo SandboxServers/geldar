@@ -9,7 +9,7 @@ A stand-in for the Threshold MCP server with the real tool contract (`@geldar/co
 ./geldar.ps1 pnpm --filter @geldar/mcp-mock exec node src/cli.ts --tokens tokens.example.json
 
 # run the image (tokens file kept outside the repo, mounted read-only; see compose.example.yml)
-docker run --rm -p 127.0.0.1:8787:8787 -v "$HOME/.config/geldar/mcp-tokens.json:/run/secrets/mcp-tokens.json:ro" ghcr.io/sandboxservers/geldar-mcp-mock:main
+docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges:true -p 127.0.0.1:8787:8787 -v "$HOME/.config/geldar/mcp-tokens.json:/run/secrets/mcp-tokens.json:ro" ghcr.io/sandboxservers/geldar-mcp-mock:main
 
 # point a player at it: mcp_url http://127.0.0.1:8787/p/<player_id>, GELDAR_MCP_TOKEN = that player's token
 ```
