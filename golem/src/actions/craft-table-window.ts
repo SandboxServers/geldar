@@ -6,7 +6,7 @@ import type { ActionContext } from './registry.ts';
 /** The window of the bot's open container. */
 type Window = NonNullable<Bot['currentWindow']>;
 
-/** Wall-clock wait for the table window to open, scaled by 	imeScale. */
+/** Wall-clock wait for the table window to open, scaled by `timeScale`. */
 const TABLE_OPEN_WAIT_MS = 5_000;
 /** The late-window cleanup of the last open per bot, so the next craft can remove a stale one. */
 const lateTableWindow = new WeakMap<Bot, () => void>();
