@@ -361,6 +361,24 @@ describe('mock http', () => {
       expect(String(line?.error)).toContain('boom-from-connect');
     });
   }, 30_000);
+  it('starts no session for an initialize that outlives close()', async () => {
+    stubbornMs = 3000;
+    const first = await connect('aa', TOKEN_A);
+    const started = new Promise<void>((resolve) => {
+      hanging = resolve;
+    });
+    const pending = first.callTool({ name: 'hang' });
+    await started;
+    // The supersede waits for the stubborn handler, and close() begins meanwhile.
+    const second = connect('aa', TOKEN_A).catch(() => undefined);
+    await vi.waitFor(() => expect(signals.aa?.[0]?.aborted).toBe(true));
+    await http.close();
+    void second;
+    void pending.catch(() => undefined);
+    await new Promise<void>((resolve) => setTimeout(resolve, 1300));
+    expect(signals.aa).toHaveLength(1);
+    expect(http.sessionCount('aa')).toBe(0);
+  }, 30_000);
   it('aborts the old signal before waiting for in-flight handlers', async () => {
     const first = await connect('aa', TOKEN_A);
     const started = new Promise<void>((resolve) => {

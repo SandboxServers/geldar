@@ -95,6 +95,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
   const superseded = new Map<string, string>();
   // Per player, the tail of the chain that serialises session starts.
   const starting = new Map<string, Promise<unknown>>();
+  // Set once close() begins, so an initialize still in flight cannot start a session after it.
+  let closing = false;
 
   function rememberSuperseded(id: string, playerId: string): void {
     superseded.set(id, playerId);
@@ -153,10 +155,12 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
   }
 
   async function prepareSession(playerId: string): Promise<Session> {
+    if (closing) throw new Error('server is closing');
     const previous = byPlayer.get(playerId);
     if (previous !== undefined) {
       if (previous.id !== undefined) rememberSuperseded(previous.id, playerId);
       await endSession(previous);
+      if (closing) throw new Error('server is closing');
     }
     const controller = new AbortController();
     const session: Session = {
@@ -349,6 +353,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       });
     },
     async close() {
+      closing = true;
       const live = new Set([...byPlayer.values(), ...sessions.values()]);
       await Promise.all([...live].map((session) => endSession(session)));
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
