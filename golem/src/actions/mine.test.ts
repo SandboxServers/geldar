@@ -49,6 +49,8 @@ function fakeBot(blocks: FakeBlock[], inventory: ItemStack[] = []) {
   };
   return {
     entity: { position: new Vec3(0, 64, 0) },
+    /** Item entities in view; a test adds a drop here to steer the pickup walk. */
+    entities: {} as Record<number, { name: string; position: Vec3 }>,
     time: { age: 0 },
     registry: {
       blocksByName: { oak_log: { id: OAK_LOG }, stone: { id: STONE } },
@@ -307,6 +309,33 @@ describe('mineAction', () => {
     const bot = fakeBot([]);
     await mine(bot, 1);
     expect(ensurePathfinder).toHaveBeenCalledWith(bot);
+  });
+
+  it('retries the drop walk from a neighbour cell when the drop cell cannot be reached', async () => {
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      { ...block(0, new Vec3(2, 63, 0), []), boundingBox: 'empty' },
+    ]);
+    bot.canDigBlock.mockReturnValue(true);
+    // The drop cell has a block above it: the first walk to it fails.
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: false, reason: 'blocked', message: 'no path' });
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    expect(vi.mocked(moveNear).mock.calls.map(([, target]) => target)).toEqual([
+      new Vec3(2, 63, 0),
+      new Vec3(3, 63, 0),
+    ]);
+  });
+
+  it('aims the drop walk at the neighbour nearest the item entity first', async () => {
+    const bot = fakeBot([
+      block(OAK_LOG, new Vec3(2, 64, 0), [OAK_LOG]),
+      { ...block(0, new Vec3(2, 63, 0), []), boundingBox: 'empty' },
+    ]);
+    bot.canDigBlock.mockReturnValue(true);
+    // The item lies just east of the drop cell, so the walk goes to the cell east of it first.
+    bot.entities[1] = { name: 'item', position: new Vec3(3.2, 63.2, 0.5) };
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed' });
+    expect(vi.mocked(moveNear).mock.calls[0]?.[1]).toEqual(new Vec3(3, 63, 0));
   });
 
   it('calls dig once and cancels when the signal aborts between two blocks', async () => {

@@ -20,6 +20,10 @@ const SEARCH_DISTANCE = 32;
 const DIG_RANGE = 3;
 /** How close the bot walks to a broken block's drop to pick it up: onto its cell, so it is in reach. */
 const PICKUP_RANGE = 0;
+/** How many walks a drop gets at most: the drop cell, then the neighbour nearest the drop entity. */
+const PICKUP_WALKS = 2;
+/** How near a drop entity must be to the drop cell for the walk order to follow it, in blocks. */
+const DROP_ENTITY_RANGE = 2;
 /** How many cells a drop falls at most, to the lowest air cell under the broken block. */
 const FALL_CELLS = 16;
 /** Pickup polls at one world tick each, before timeScale. A drop waits about 10 server ticks. */
@@ -117,10 +121,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // The drop falls to the lowest air cell under the block. A walk there can fail (a high block
     // has no standing cell); that is not a failed action: the wait and the inventory say whether
     // the drop arrived.
-    const pickup = await moveNear(bot, dropSpot(bot, at), PICKUP_RANGE, {
-      signal,
-      timeScale: ctx.timeScale,
-    });
+    const pickup = await walkToDrop(ctx, bot, dropSpot(bot, at));
     if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
     await waitForDrop(ctx, bot, block, start, mined);
     if (signal.aborted) return abort(bot, mined);
@@ -225,6 +226,45 @@ function dropSpot(bot: Bot, at: Vec3): Vec3 {
     spot = spot.offset(0, -1, 0);
   }
   return spot;
+}
+
+/**
+ * Walks the bot to a drop so it can pick it up. The drop cell comes first. A cell with a block
+ * above it cannot be stood on, so that walk can fail; the next walk aims at a neighbour cell, the
+ * one nearest the drop entity. Stops at the first walk that arrives, or at `PICKUP_WALKS`.
+ */
+async function walkToDrop(ctx: ActionContext, bot: Bot, spot: Vec3): Promise<MoveResult> {
+  let result: MoveResult = { ok: true, distance: 0 };
+  for (const cell of pickupCells(bot, spot).slice(0, PICKUP_WALKS)) {
+    result = await moveNear(bot, cell, PICKUP_RANGE, {
+      signal: ctx.signal,
+      timeScale: ctx.timeScale,
+    });
+    if (result.ok || result.reason === 'cancelled') break;
+  }
+  return result;
+}
+
+/**
+ * The cells a drop walk may aim at: the drop cell, then its four horizontal neighbours. When an
+ * item entity lies near the drop cell, the cells are ordered nearest that entity first.
+ */
+function pickupCells(bot: Bot, spot: Vec3): Vec3[] {
+  const cells = [
+    spot,
+    spot.offset(1, 0, 0),
+    spot.offset(-1, 0, 0),
+    spot.offset(0, 0, 1),
+    spot.offset(0, 0, -1),
+  ];
+  const drop = Object.values(bot.entities).find(
+    (entity) => entity.name === 'item' && entity.position.distanceTo(spot) < DROP_ENTITY_RANGE,
+  );
+  if (!drop) return cells;
+  // Horizontal distance from the drop entity to the centre of a cell.
+  const gap = (cell: Vec3): number =>
+    Math.hypot(cell.x + 0.5 - drop.position.x, cell.z + 0.5 - drop.position.z);
+  return cells.sort((a, b) => gap(a) - gap(b));
 }
 
 /** The current inventory as plain stacks. */
