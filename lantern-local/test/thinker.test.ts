@@ -79,7 +79,9 @@ describe('reconnect backoff', () => {
     expect(logs.some((l) => l.startsWith('connecting to ws://'))).toBe(true);
     expect(logs.some((l) => l.startsWith('connected; sending hello'))).toBe(true);
     expect(logs.some((l) => l.startsWith('welcomed; accepted 1'))).toBe(true);
-    expect(logs.find((l) => l.startsWith('closed ('))).toMatch(/code 1000, reason 'drain'\) \(was welcomed\)/);
+    expect(logs.find((l) => l.startsWith('closed ('))).toMatch(
+      /code 1000, reason 'drain'\) \(was welcomed\)/,
+    );
   });
 });
 

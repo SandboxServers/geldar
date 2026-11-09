@@ -28,7 +28,7 @@ export interface ProcessSpec {
   /** The log line that says the process is ready. */
   ready: RegExp;
   /** After this process is ready, wait for a line in another process's log (by its name). */
-  then?: { process: string; pattern: RegExp };
+  awaits?: { process: string; pattern: RegExp };
 }
 
 /**
@@ -60,7 +60,7 @@ export function adamProcessSpecs(root: string, base: NodeJS.ProcessEnv): Process
       cwd: root,
       env,
       ready: /serving /,
-      then: { process: 'animus', pattern: /"event":"thinker_connected"/ },
+      awaits: { process: 'animus', pattern: /"event":"thinker_connected"/ },
     },
   ];
 }
@@ -208,9 +208,9 @@ export class AdamStack {
         const proc = new HostProcess(spec);
         this.processes.push(proc);
         await proc.waitForLog(spec.ready, readyTimeoutMs);
-        if (spec.then !== undefined) {
-          const other = this.processes.find((p) => p.spec.name === spec.then?.process);
-          await other?.waitForLog(spec.then.pattern, readyTimeoutMs);
+        if (spec.awaits !== undefined) {
+          const other = this.processes.find((p) => p.spec.name === spec.awaits?.process);
+          await other?.waitForLog(spec.awaits.pattern, readyTimeoutMs);
         }
       }
     } catch (error) {

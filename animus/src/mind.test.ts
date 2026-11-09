@@ -112,7 +112,12 @@ describe('the Mind of one life', () => {
     r.body.failWith = new BodyLinkError('unavailable', 'nobody serves the snapshot subject');
     r.mind.start();
     await r.mind.settled();
-    expect(r.body.snapshotRequests).toEqual(['mind_start', 'mind_start', 'mind_start', 'mind_start']);
+    expect(r.body.snapshotRequests).toEqual([
+      'mind_start',
+      'mind_start',
+      'mind_start',
+      'mind_start',
+    ]);
     expect(slept).toHaveLength(3);
     expect(Math.max(...slept)).toBeLessThanOrEqual(5_000);
     expect(r.store.thoughts.map((t) => t.wakeReason)).toEqual(['mind_start']);
