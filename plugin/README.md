@@ -31,7 +31,7 @@ Settings are in `plugins/GeldarCore/config.yml`; `GELDAR_NATS_URL` and `GELDAR_S
 
 ## Velocity identity: known limits
 
-- **Case and duplicate logins.** The registry key is the lowercase username, so `Alice` and `alice` are the same life. Velocity treats the two names as different players, so a second login that differs from a connected one only in case is not a CONFLICTING_LOGIN: both are admitted, and the identity plugin does not tell them apart. Accepted for Phase 0 (one bot per life, and Paper's own name handling decides who stays).
+- **Case and duplicate logins (unverified edge).** The registry key is the lowercase username, so `Alice` and `alice` are the same life. Whether Velocity 3.5.1 folds case when it detects a duplicate login (CONFLICTING_LOGIN) was not verified: the API jar does not contain the proxy's connection map. Offline-mode UUIDs are derived from the exact name, so two logins that differ only in case hold different UUIDs. If Velocity folds case and rejects the second as CONFLICTING_LOGIN, the plugin skips that release and the second UUID's admission is never released; if it does not fold case, both are admitted. Neither outcome is handled in code. Accepted for Phase 0 (one bot per life); to be settled against the proxy source or a live test.
 - **Stale cache window.** A bucket deleted or recreated on a live connection is noticed by a probe every 30 s, not at once (see `docs/threat-model.md`).
 
 ## Tests
