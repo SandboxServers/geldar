@@ -11,6 +11,8 @@ import { gotoSmoke } from './goto-smoke.ts';
 // --- P0-10b wood-to-stone-tools, food, shelter ---
 
 // --- P0-10c bed, chest, blocked-path ---
+import { bed } from './bed.ts';
+import { chest } from './chest.ts';
 
 /** Every scenario. `all` means every one without `hidden`. */
 export const scenarios: Scenario[] = [
@@ -22,6 +24,8 @@ export const scenarios: Scenario[] = [
   // --- end P0-10b ---
 
   // --- P0-10c bed, chest, blocked-path ---
+  bed,
+  chest,
   // --- end P0-10c ---
 ];
 
