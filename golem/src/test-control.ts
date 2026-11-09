@@ -76,6 +76,11 @@ export class TestControl {
     return this.source.command(`recipe take ${player(name)} *`);
   }
 
+  /** Takes one recipe (a registry name such as `stone_pickaxe`) back from a player's recipe book. */
+  recipeTakeOne(name: string, recipe: string): Promise<string> {
+    return this.source.command(`recipe take ${player(name)} minecraft:${recipe}`);
+  }
+
   /** Revokes the player's recipe advancements, so vanilla unlocking can fire again. */
   advancementRevokeRecipes(name: string): Promise<string> {
     return this.source.command(`advancement revoke ${player(name)} from minecraft:recipes/root`);
