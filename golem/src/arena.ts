@@ -22,6 +22,8 @@ export const GAMERULES = {
 } as const;
 
 const HALF_WIDTH = 15;
+/** The world border is 1,500 blocks each way from spawn; an arena must sit inside it. */
+const WORLD_BORDER = 1_500;
 const STONE_Y = 199;
 const AIR_BOTTOM_Y = 200;
 const AIR_TOP_Y = 220;
@@ -31,13 +33,19 @@ const SPACING = 64;
 const BUILD_TRIES = 20;
 const RETRY_DELAY_MS = 250;
 
-/** Pure: the arena for a slot. */
+/**
+ * Pure: the arena for a slot. Throws RangeError for a slot whose arena would reach past the
+ * world border (slot 10 is the last one that fits).
+ */
 export function arenaFor(slot: number): Arena {
   if (!Number.isSafeInteger(slot) || slot < 0) {
     throw new RangeError(`arena slot must be a non-negative integer, got ${slot}`);
   }
   const x = BASE_X + SPACING * slot;
   const z = BASE_Z;
+  if (x + HALF_WIDTH > WORLD_BORDER) {
+    throw new RangeError(`arena slot ${slot} is past the world border`);
+  }
   return {
     slot,
     center: { x, y: AIR_BOTTOM_Y, z },

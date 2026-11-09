@@ -1,5 +1,5 @@
 import net from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RconClient } from './rcon.ts';
 
 /** Builds one Source RCON frame: size, id, type, body, two NUL bytes. */
@@ -15,19 +15,25 @@ function frame(id: number, type: number, body: string): Buffer {
 
 interface FakeServer {
   port: number;
+  /** Command bodies in the order they arrived. */
   received: string[];
+  /** `recv <cmd>` when a command arrives and `send <cmd>` when its reply is written. */
+  events: string[];
   close(): Promise<void>;
 }
 
 /**
  * An in-process RCON server. `reply` gives the body parts for each command, each sent as its own
- * packet with the command's id, as Minecraft does for a long reply.
+ * packet with the command's id, as Minecraft does for a long reply. `delayMs` holds each reply
+ * back that long, so a test can see whether the client sent the next command too early.
  */
 async function startFake(
   password: string,
   reply: (cmd: string) => string[] = (cmd) => [`echo ${cmd}`],
+  delayMs = 0,
 ): Promise<FakeServer> {
   const received: string[] = [];
+  const events: string[] = [];
   const sockets: net.Socket[] = [];
   const server = net.createServer((socket) => {
     sockets.push(socket);
@@ -44,7 +50,14 @@ async function startFake(
           socket.write(frame(body === password ? id : -1, 2, ''));
         } else if (type === 2) {
           received.push(body);
-          for (const part of reply(body)) socket.write(frame(id, 0, part));
+          events.push(`recv ${body}`);
+          const send = () => {
+            if (socket.destroyed) return;
+            events.push(`send ${body}`);
+            for (const part of reply(body)) socket.write(frame(id, 0, part));
+          };
+          if (delayMs === 0) send();
+          else setTimeout(send, delayMs);
         }
       }
     });
@@ -55,6 +68,7 @@ async function startFake(
   return {
     port: address.port,
     received,
+    events,
     close: () =>
       new Promise<void>((resolve) => {
         for (const socket of sockets) socket.destroy();
@@ -104,6 +118,60 @@ describe('RconClient', () => {
     );
     expect(fake.received).toEqual([]);
     await client.close();
+  });
+
+  it('runs one command at a time: the second is sent after the first reply', async () => {
+    fake = await startFake('pw', undefined, 30);
+    const client = await RconClient.connect({ host: '127.0.0.1', port: fake.port, password: 'pw' });
+    await Promise.all([client.command('first'), client.command('second')]);
+    expect(fake.events).toEqual(['recv first', 'send first', 'recv second', 'send second']);
+    await client.close();
+  });
+
+  it('fails the client on a command timeout, logs it, and says so on the next command', async () => {
+    fake = await startFake('pw', (cmd) => (cmd === 'silent' ? [] : [`echo ${cmd}`]));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const client = await RconClient.connect({
+      host: '127.0.0.1',
+      port: fake.port,
+      password: 'pw',
+      timeoutMs: 50,
+    });
+    await expect(client.command('silent')).rejects.toThrow('RCON command timed out: silent');
+    await expect(client.command('list')).rejects.toThrow(
+      'RCON client failed earlier: RCON command timed out: silent',
+    );
+    expect(warn).toHaveBeenCalledWith('RCON command timed out, client failed: silent');
+    warn.mockRestore();
+    await client.close();
+  });
+
+  it('treats a packet size over the bound as a protocol error, not a wait', async () => {
+    const sockets: net.Socket[] = [];
+    const server = net.createServer((socket) => {
+      sockets.push(socket);
+      socket.once('data', () => {
+        const header = Buffer.alloc(4);
+        header.writeInt32LE(1 << 30, 0);
+        socket.write(header);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('no port');
+    try {
+      await expect(
+        RconClient.connect({
+          host: '127.0.0.1',
+          port: address.port,
+          password: 'pw',
+          timeoutMs: 2000,
+        }),
+      ).rejects.toThrow(`RCON protocol error: packet size ${1 << 30}`);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+    }
   });
 
   it('says the shard is not up when nothing listens', async () => {

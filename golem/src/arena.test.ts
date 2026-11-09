@@ -30,6 +30,11 @@ describe('arenaFor', () => {
     expect(arena.max).toEqual({ x: 815, y: 220, z: 815 });
   });
 
+  it('allows slot 10 and rejects slot 11, whose arena is past the 1,500 border', () => {
+    expect(arenaFor(10).max.x).toBe(1455);
+    expect(() => arenaFor(11)).toThrow(RangeError);
+  });
+
   it('rejects a negative slot', () => {
     expect(() => arenaFor(-1)).toThrow(RangeError);
   });

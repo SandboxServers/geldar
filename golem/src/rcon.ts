@@ -8,8 +8,16 @@ const TYPE_AUTH_RESPONSE = 2;
 const AUTH_FAILED_ID = -1;
 /** Smallest legal packet: id, type and the two trailing NUL bytes. */
 const MIN_PACKET_SIZE = 10;
+/**
+ * Largest packet size the client accepts: a 4096-byte body plus id, type and two NULs, with
+ * slack. A larger size is a protocol error, not something to buffer until the timeout.
+ */
+const MAX_PACKET_SIZE = 4110;
 const MAX_ID = 0x7fffffff;
-/** How long the stream must stay quiet after a reply before the reply is complete. */
+/**
+ * How long the stream must stay quiet after a reply before the reply is complete. See
+ * docs/decisions/0029-rcon-reply-framing.md for why there is no terminator and what it costs.
+ */
 const QUIET_MS = 100;
 
 interface Packet {
@@ -28,6 +36,10 @@ interface Waiter {
  * time. Minecraft has no terminator: it closes the connection on an empty type-0 request. A
  * reply longer than one packet arrives as a burst of packets with the command's id, so the
  * client reads on until the stream has been quiet for a short window.
+ *
+ * A command that gets no reply within the timeout fails the whole client: the command rejects
+ * with the timeout, the socket closes, and every later command rejects with
+ * `RCON client failed earlier: ...`. Callers reconnect to go on.
  */
 export class RconClient {
   private readonly socket: net.Socket;
@@ -118,6 +130,9 @@ export class RconClient {
   }
 
   private async exchange(cmd: string): Promise<string> {
+    if (this.failure !== undefined) {
+      throw new Error(`RCON client failed earlier: ${this.failure.message}`);
+    }
     const id = this.allocId();
     this.write(id, TYPE_EXEC, cmd);
     let body = '';
@@ -126,7 +141,11 @@ export class RconClient {
         this.next(),
         this.timeoutMs,
         `RCON command timed out: ${cmd}`,
-        (error) => this.abort(error),
+        (error) => {
+          // Only the command name is logged: arguments can carry names, and never the password.
+          console.warn(`RCON command timed out, client failed: ${cmd.split(' ')[0]}`);
+          this.abort(error);
+        },
       );
       if (packet.id === id) {
         body += packet.body;
@@ -196,7 +215,7 @@ export class RconClient {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     while (this.buffer.length >= 4) {
       const size = this.buffer.readInt32LE(0);
-      if (size < MIN_PACKET_SIZE) {
+      if (size < MIN_PACKET_SIZE || size > MAX_PACKET_SIZE) {
         this.abort(new Error(`RCON protocol error: packet size ${size}`));
         return;
       }

@@ -68,6 +68,20 @@ describe('readRconPassword', () => {
     expect(password).toBe('secret-value');
   });
 
+  it('throws when the password file holds only whitespace', async () => {
+    const file = join(dir, 'blank.txt');
+    await writeFile(file, ' \n');
+    await expect(
+      readRconPassword({
+        mcHost: '127.0.0.1',
+        mcPort: 25565,
+        rconHost: '127.0.0.1',
+        rconPort: 25575,
+        rconPasswordFile: file,
+      }),
+    ).rejects.toThrow(/is empty/);
+  });
+
   it('names the file and the secrets command when the file is missing', async () => {
     const file = join(dir, 'missing.txt');
     await expect(
