@@ -1,4 +1,6 @@
 import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
+import { isNightOrStorm } from '../actions/sleep.ts';
 import { worldAge } from '../world-clock.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
@@ -52,6 +54,15 @@ export interface BodyView {
   readonly ticksSinceHurt?: number | null;
   /** The bed or world spawn the Body treats as safe, or null when it knows none. */
   readonly safeSpot?: SafeSpot | null;
+  /**
+   * True at night or in a thunderstorm (the window sleep uses). Optional so a view without a clock
+   * can omit it; a reflex reads a missing value as false.
+   */
+  readonly isNight?: boolean;
+  /** True when a bed stands within 32 blocks. Optional like isNight. */
+  readonly bedNearby?: boolean;
+  /** True when solid blocks close the Body's cell on every side, above and below. Optional like isNight. */
+  readonly enclosed?: boolean;
 }
 
 /** The deepest drop dropAhead measures, in blocks. */
@@ -63,6 +74,21 @@ export interface TrackedBodyView extends BodyView {
 }
 
 const DEFAULT_HOSTILE_RADIUS = 16;
+/** How far a bed counts as near, in blocks (the range sleep searches). */
+const BED_RADIUS = 32;
+/** The cells that must be solid for the Body to count as enclosed: four at feet and head level, above, below. */
+const ENCLOSURE: readonly Vec3[] = [
+  new Vec3(1, 0, 0),
+  new Vec3(-1, 0, 0),
+  new Vec3(0, 0, 1),
+  new Vec3(0, 0, -1),
+  new Vec3(1, 1, 0),
+  new Vec3(-1, 1, 0),
+  new Vec3(0, 1, 1),
+  new Vec3(0, 1, -1),
+  new Vec3(0, 2, 0),
+  new Vec3(0, -1, 0),
+];
 
 /**
  * Builds the read-only view of a bot. The fall distance needs a sample every physics tick, so the
@@ -166,6 +192,21 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get safeSpot() {
       return safeSpots.current();
+    },
+    get isNight() {
+      return isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0);
+    },
+    get bedNearby() {
+      return (
+        bot.findBlock({
+          matching: (block) => block.name.endsWith('_bed'),
+          maxDistance: BED_RADIUS,
+        }) !== null
+      );
+    },
+    get enclosed() {
+      const feet = bot.entity.position.floored();
+      return ENCLOSURE.every((o) => bot.blockAt(feet.plus(o))?.boundingBox === 'block');
     },
     dispose() {
       bot.off('physicsTick', sample);
