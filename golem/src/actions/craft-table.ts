@@ -81,12 +81,16 @@ export function watchRecipeBook(bot: Bot): void {
   });
 }
 
-/** The first unlocked crafting display whose result is this item, or undefined when none is. */
-function unlockedDisplay(bot: Bot, resultId: number): number | undefined {
+/**
+ * The unlocked crafting displays whose result is this item. One item can have several (a bed has
+ * its wool-and-planks shape and a dye recolour), and the server answers a wrong one with nothing.
+ */
+function unlockedDisplays(bot: Bot, resultId: number): number[] {
+  const ids: number[] = [];
   for (const [displayId, itemId] of unlocked.get(bot) ?? []) {
-    if (itemId === resultId) return displayId;
+    if (itemId === resultId) ids.push(displayId);
   }
-  return undefined;
+  return ids;
 }
 
 /**
@@ -103,8 +107,8 @@ export async function craftAtTable(
   times: number,
 ): Promise<ActionOutcome | null> {
   const { bot } = ctx;
-  const displayId = unlockedDisplay(bot, item.id);
-  if (displayId === undefined) {
+  let displayIds = unlockedDisplays(bot, item.id);
+  if (displayIds.length === 0) {
     return failed(
       'missing_materials',
       `${item.name} is not unlocked: its recipe is not in the recipe book`,
@@ -125,8 +129,10 @@ export async function craftAtTable(
     const opened = await openTable(ctx, table);
     if ('outcome' in opened) return opened.outcome;
     for (let i = 0; i < times; i++) {
-      const stop = await craftOnce(ctx, client, opened.window.id, displayId, states, item.name);
-      if (stop) return stop;
+      const crafted = await craftOnce(ctx, client, opened.window.id, displayIds, states, item.name);
+      if ('outcome' in crafted) return crafted.outcome;
+      // The display that worked is tried first on the next craft.
+      displayIds = [crafted.displayId, ...displayIds.filter((id) => id !== crafted.displayId)];
     }
     return null;
   } finally {
@@ -141,36 +147,41 @@ export async function craftAtTable(
 }
 
 /**
- * One craft: request the recipe into the grid, wait for the result, then shift-click it. Null when
- * the craft was sent, else the outcome that ended the wait.
+ * One craft: request each candidate display into the grid until one fills the result, then
+ * shift-click that result. Returns the display that worked, or the outcome that ended the craft.
  */
 async function craftOnce(
   ctx: ActionContext,
   client: RecipeClient,
   windowId: number,
-  displayId: number,
+  displayIds: number[],
   states: Map<number, number>,
   name: string,
-): Promise<ActionOutcome | null> {
-  if (ctx.signal.aborted) return cancelled();
-  const landed = awaitResult(ctx, client, windowId);
-  client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
-  const result = await landed;
-  if (result === 'aborted') return cancelled();
-  if (result === 'timeout') {
-    return failed('timeout', `the crafting table did not produce ${name}`, { item: name });
+): Promise<{ displayId: number } | { outcome: ActionOutcome }> {
+  for (const displayId of displayIds) {
+    if (ctx.signal.aborted) return { outcome: cancelled() };
+    const landed = awaitResult(ctx, client, windowId);
+    client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
+    const result = await landed;
+    if (result === 'aborted') return { outcome: cancelled() };
+    if (result === 'filled') {
+      // Read at click time: the result slot's own packet has already moved the window's stateId on.
+      client.write('window_click', {
+        windowId,
+        stateId: states.get(windowId) ?? -1,
+        slot: RESULT_SLOT,
+        mouseButton: 0,
+        mode: 1,
+        changedSlots: [],
+        // An empty cursor is `null` on the wire (an optional HashedSlot), as Mineflayer writes it.
+        cursorItem: null,
+      });
+      return { displayId };
+    }
   }
-  // Read at click time: the result slot's own packet has already moved the window's stateId on.
-  client.write('window_click', {
-    windowId,
-    stateId: states.get(windowId) ?? -1,
-    slot: RESULT_SLOT,
-    mouseButton: 0,
-    mode: 1,
-    changedSlots: [],
-    cursorItem: { present: false },
-  });
-  return null;
+  return {
+    outcome: failed('timeout', `the crafting table did not produce ${name}`, { item: name }),
+  };
 }
 
 /** How a wait for the result slot ended. */
