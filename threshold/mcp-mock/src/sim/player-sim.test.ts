@@ -72,6 +72,27 @@ describe('PlayerSim', () => {
     expect(fin[0]).toMatchObject({ outcome: 'completed', tick: 1150 });
   });
 
+  it('ends an intent on the same tick a fact clears as completed, not failed', () => {
+    const sim = build(clearAt1200);
+    sim.syncTo(1000);
+    sim.startIntent(intent(200), 1000);
+    sim.syncTo(2000);
+    const fin = sim.log.since(0).events.filter((e) => e.kind === 'intent_finished');
+    expect(fin).toHaveLength(1);
+    expect(fin[0]).toMatchObject({ outcome: 'completed', tick: 1200 });
+    expect(sim.facts.has('has_axe')).toBe(false);
+  });
+
+  it('logs a damage event on the tick the intent ends with wakeOn null', () => {
+    const sim = build({ events: [{ type: 'damage', at_tick: 1200, amount: 3 }] });
+    sim.syncTo(1000);
+    sim.startIntent(intent(200), 1000);
+    sim.syncTo(2000);
+    const events = sim.log.since(0).events;
+    expect(events.map((e) => e.kind)).toEqual(['intent_finished', 'damage']);
+    expect(events[1]?.wakeOn).toBeNull();
+  });
+
   it('logs intent_finished with the intent wake_on list', () => {
     const sim = build();
     sim.syncTo(100);
