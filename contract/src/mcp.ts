@@ -6,6 +6,8 @@ import type { ValidateFunction } from 'ajv';
 import * as generatedValidators from './generated/validators.js';
 import { formatError, type ValidationResult } from './validation.ts';
 
+import { MCP_TOOL_NAMES } from './generated/mcp-tools.ts';
+
 export { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from './generated/mcp-tools.ts';
 export type {
   ActInput,
@@ -37,7 +39,7 @@ function validateTool(
   suffix: 'Input' | 'Result',
   value: unknown,
 ): ValidationResult<unknown> {
-  const validate = /^[a-z][a-z0-9_]*$/.test(tool)
+  const validate = (MCP_TOOL_NAMES as readonly string[]).includes(tool)
     ? validators[`validate${pascalCase(tool)}${suffix}`]
     : undefined;
   if (validate === undefined) return { ok: false, errors: [`unknown tool ${tool}`] };

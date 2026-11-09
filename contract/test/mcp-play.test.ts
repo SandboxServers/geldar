@@ -203,5 +203,15 @@ describe('look, say and act results', () => {
   it('reports an unknown tool', () => {
     expect(validateToolInput('dance', {})).toEqual({ ok: false, errors: ['unknown tool dance'] });
     expect(validateToolResult('dance', {})).toEqual({ ok: false, errors: ['unknown tool dance'] });
+    for (const alias of ['look_', 'wait__', 'read__book']) {
+      expect(validateToolInput(alias, {})).toEqual({
+        ok: false,
+        errors: [`unknown tool ${alias}`],
+      });
+      expect(validateToolResult(alias, {})).toEqual({
+        ok: false,
+        errors: [`unknown tool ${alias}`],
+      });
+    }
   });
 });
