@@ -69,23 +69,19 @@ describe('parseCli', () => {
     ).toThrow(/hidden/);
   });
 
-  it('refuses the default all while no scenario is visible, except for --list and --restore', () => {
-    expect(() => parseCli([], clean)).toThrow(/no visible scenario/);
+  it('runs every visible scenario by default and never the hidden ones', () => {
+    const names = parseCli([], clean).scenarios;
+    expect(names.length).toBeGreaterThan(0);
+    expect(names).not.toContain('goto-smoke');
     expect(() => parseCli(['--list'], clean)).not.toThrow();
     expect(() => parseCli(['--restore'], clean)).not.toThrow();
   });
 
   it('refuses --record on a dirty tree unless --allow-dirty', () => {
-    // `all` has no visible scenarios yet in P0-10a, so a named hidden one is not usable here:
-    // the dirty check must still apply before anything else is recorded.
     expect(() => parseCli(['--record'], () => true)).toThrow(/dirty/);
-    // Past the dirty check the empty default list is the next refusal.
-    expect(() => parseCli(['--record', '--allow-dirty'], () => true)).toThrow(
-      /no visible scenario/,
-    );
+    expect(() => parseCli(['--record', '--allow-dirty'], () => true)).not.toThrow();
   });
 });
-
 describe('gateLine', () => {
   it('says truncated for a 20 TPS cell with fewer runs than asked, FAIL still wins', () => {
     expect(gateLine([cellOf({ runs: 1, passed: 1 })], 2)).toBe('GATE: INCOMPLETE (truncated)');
@@ -235,13 +231,6 @@ describe('main', () => {
       expect(h.err.join('\n')).not.toMatch(/restoreWorld failed/);
     },
   );
-
-  it('exits 2 for --scenario all while no scenario is visible', async () => {
-    const h = harness();
-    expect(await main(['--tps', '20'], h.deps)).toBe(2);
-    expect(h.err.join('\n')).toMatch(/no visible scenario/);
-    expect(h.log).toEqual([]);
-  });
 
   it('does not close the control when a signal arrives during the final restore', async () => {
     const h = harness();
