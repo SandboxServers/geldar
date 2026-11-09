@@ -122,7 +122,7 @@ describe.skipIf(!ready)('mcp-mock image', () => {
         'sh',
         tag,
         '-c',
-        'find /opt/geldar -name node_modules -prune -o \\( -name "*.test.ts" -o -name "tokens*.json" -o -name ".env*" -o -name "dawn.scenario.json" \\) -print',
+        'find /opt/geldar -name node_modules -prune -o \\( -name "*.test.ts" -o -name "*tokens*.json" -o -name ".env*" -o -name "dawn.scenario.json" \\) -print',
       ],
       { timeoutMs: 60_000 },
     );

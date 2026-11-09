@@ -13,4 +13,4 @@
 **/*.test.ts
 threshold/mcp-mock/test-support
 **/.env*
-**/tokens*.json
+**/*tokens*.json
