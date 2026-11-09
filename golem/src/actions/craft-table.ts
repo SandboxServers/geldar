@@ -192,6 +192,12 @@ export async function craftFromBook(
   table: Block | null,
 ): Promise<ActionOutcome | null> {
   const { bot } = ctx;
+  // A bot with a client that was never watched has an empty book it cannot tell from a locked
+  // recipe: the composition root must call watchRecipeBook at bot creation (decision 0032).
+  if (bot._client && !unlocked.has(bot)) {
+    console.warn('recipe book is not watched: call watchRecipeBook when the bot is created');
+    return failed('internal', 'recipe book is not watched');
+  }
   dropLateTableWindow(bot);
   if (!hasUnlockedDisplay(bot, item)) {
     // Not missing_materials: the Mind holds the ingredients and must not go gathering them.

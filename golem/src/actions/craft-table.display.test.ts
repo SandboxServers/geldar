@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   answerRequests,
   BED,
@@ -137,6 +137,19 @@ describe('craftFromBook, the crafting display', () => {
     });
     expect(fake.raw.activateBlock).not.toHaveBeenCalled();
     expect(writesOf(fake.client, 'craft_recipe_request')).toEqual([]);
+  });
+
+  it('fails internal, and never opens the table, when a bot with a client was never watched', async () => {
+    const fake = fakeGame(openWithWindowState);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const out = await run(fake.bot, 1);
+
+    expect(out).toMatchObject({ status: 'failed', reason: 'internal' });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('watchRecipeBook'));
+    expect(fake.raw.activateBlock).not.toHaveBeenCalled();
+    expect(writesOf(fake.client, 'craft_recipe_request')).toEqual([]);
+    warn.mockRestore();
   });
 
   it('fails not_possible with a not-unlocked detail, and never opens the table, when the book has no display', async () => {
