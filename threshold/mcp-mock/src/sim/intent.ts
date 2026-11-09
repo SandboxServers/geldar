@@ -39,7 +39,6 @@ export function startIntent(
   atTick: number,
   defaultTicks: number,
   facts: ReadonlySet<string>,
-  id = '',
 ): { ok: true; state: IntentState } | { ok: false; reason: 'precondition_false' } {
   if (missingPrecondition(spec, facts)) return { ok: false, reason: 'precondition_false' };
   const mock = spec.arguments.mock_ticks;
@@ -48,7 +47,7 @@ export function startIntent(
   return {
     ok: true,
     state: {
-      id,
+      id: '',
       spec,
       startedTick: atTick,
       durationTicks,

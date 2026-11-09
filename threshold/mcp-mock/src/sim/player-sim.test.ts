@@ -183,7 +183,7 @@ describe('PlayerSim', () => {
     expect(sim.intent()?.id).toBe(makeId('in', 1));
   });
 
-  it('cancelIntent after syncTo logs the finished intent first', () => {
+  it('characterisation: cancelIntent after syncTo logs the finished intent first', () => {
     const sim = build();
     sim.startIntent(intent(100), 0);
     sim.syncTo(500);
