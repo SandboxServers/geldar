@@ -221,6 +221,7 @@ describe('ConnectionManager', () => {
     expect(h.manager.state).not.toBe('fatal');
     await h.manager.stop();
   });
+
   it('retries a not-admitted kick with the registry on, and goes fatal after 5 in a row', async () => {
     const registry: BotRegistry = {
       register: async () => {},
