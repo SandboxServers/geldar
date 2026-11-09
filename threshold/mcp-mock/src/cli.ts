@@ -53,8 +53,12 @@ async function main(): Promise<void> {
   if (values.tokens === undefined) {
     return fail(2, 'usage: cli.ts --tokens <file> [--port <n>] [--host <addr>]');
   }
+  if (values.port !== undefined && !/^[0-9]{1,5}$/.test(values.port)) {
+    return fail(2, 'invalid --port');
+  }
   const port = values.port === undefined ? 8787 : Number(values.port);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) return fail(2, 'invalid --port');
+  if (port > 65535) return fail(2, 'invalid --port');
+  if (values.host !== undefined && values.host.trim() === '') return fail(2, 'invalid --host');
   const host = values.host ?? '127.0.0.1';
 
   let tokens: ReturnType<typeof loadTokens>;
@@ -72,14 +76,19 @@ async function main(): Promise<void> {
   const bound = await app.listen(port, host);
   log({ event: 'listening', host, port: bound });
 
+  let stopping = false;
   const stop = (): void => {
+    // A second signal while close() runs is ignored, not allowed to kill the process mid-shutdown.
+    if (stopping) return;
+    stopping = true;
+    log({ event: 'stopping' });
     app.close().then(
       () => process.exit(0),
       () => process.exit(1),
     );
   };
-  process.once('SIGINT', stop);
-  process.once('SIGTERM', stop);
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
 }
 
 main().catch((error: unknown) => {
