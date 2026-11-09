@@ -139,6 +139,7 @@ export function basicContext(
     lifeId: 'life',
     bodyGeneration: 1,
     tick: 100,
+    timeScale: 1,
     signal: new AbortController().signal,
     cancelAction: async () => {
       cancels += 1;

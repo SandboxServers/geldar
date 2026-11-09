@@ -170,6 +170,7 @@ export function reflexContext(
     lifeId: 'ag_test_01',
     bodyGeneration: 1,
     tick: 100,
+    timeScale: 1,
     signal: new AbortController().signal,
     cancels: 0,
     cancelAction: async () => {

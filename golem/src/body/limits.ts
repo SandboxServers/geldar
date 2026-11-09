@@ -1,4 +1,5 @@
 import type { Action } from '@geldar/contract';
+import type { ActionRun } from '../actions/registry.ts';
 
 /** An intent's limits (the contract's `limits`, snake_case there). */
 export interface IntentLimits {
@@ -52,6 +53,17 @@ export class LimitTracker {
     if (this.blockOperations >= this.limits.maxBlockOperations) return 'max_block_operations';
     return null;
   }
+}
+
+/**
+ * The block operations an ended action did: all of `blockOperationsOf` when it completed; for a
+ * `mine` that failed or was cancelled, the blocks it reports it had already broken (`mined`).
+ */
+export function blockOperationsDone(action: Action, run: ActionRun): number {
+  if (run.state === 'completed') return blockOperationsOf(action);
+  if (action.do !== 'mine') return 0;
+  const mined = run.result.detail?.mined;
+  return typeof mined === 'number' ? mined : 0;
 }
 
 /** How many block operations one action costs: `mine` its count, `place` one, `build` its blocks. */

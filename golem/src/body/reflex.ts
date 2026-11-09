@@ -24,6 +24,8 @@ export interface ReflexContext {
   bodyGeneration: number;
   /** World age of the tick that fired this reflex. */
   tick: number;
+  /** `20 / target TPS`: pass it to every action run and scale fixed wall limits by it. */
+  timeScale: number;
   /** Aborted when the runtime stops; a reflex should end its work promptly then. */
   signal: AbortSignal;
   /**
@@ -88,6 +90,11 @@ export class ReflexRunner {
   /** True while a reflex is running. */
   get busy(): boolean {
     return this.running !== null;
+  }
+
+  /** Resolves once no reflex is running (at once when none is). */
+  async idle(): Promise<void> {
+    while (this.running) await this.running;
   }
 
   /**

@@ -101,11 +101,24 @@ export async function runAction(
   registry: ActionRegistry,
   bot: Bot,
   action: unknown,
-  opts: { timeScale?: number; signal?: AbortSignal; now?: () => number } = {},
+  opts: ActionRunOptions = {},
 ): Promise<ActionRun> {
   const run = await runUnobserved(registry, bot, action, opts);
   registry.notifyFinished(action, run);
   return run;
+}
+
+/** What `runAction` takes besides the action. */
+export interface ActionRunOptions {
+  timeScale?: number;
+  signal?: AbortSignal;
+  now?: () => number;
+  /**
+   * Called once, before the first await, with a promise that settles when the handler itself has
+   * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
+   * must know the handler is done before it starts the next action waits on this.
+   */
+  onHandler?: (ended: Promise<void>) => void;
 }
 
 /** runAction without the onFinished notification. */
@@ -113,7 +126,7 @@ async function runUnobserved(
   registry: ActionRegistry,
   bot: Bot,
   action: unknown,
-  opts: { timeScale?: number; signal?: AbortSignal; now?: () => number },
+  opts: ActionRunOptions,
 ): Promise<ActionRun> {
   const verdict = validateThought({ reasoning: 'x', actions: [action] });
   if (!verdict.ok) {
@@ -163,6 +176,7 @@ async function runUnobserved(
     return failed('internal', truncate(message));
   });
 
+  opts.onHandler?.(ran.then(() => undefined));
   let outcome: ActionOutcome;
   try {
     outcome = await Promise.race([ran, timedOut, externallyAborted]);
