@@ -237,6 +237,226 @@ export interface Snapshot {
   } | null;
 }
 
+export type ThinkerFrame =
+  | HelloFrame
+  | HeartbeatFrame
+  | CompletionFrame
+  | ErrorFrame
+  | GoodbyeFrame
+  | WelcomeFrame
+  | JobFrame
+  | CancelFrame
+  | DrainFrame;
+
+export type SemVer = string;
+
+export type ModelName = string;
+
+export type ThinkerName = string;
+
+export interface HelloFrame {
+  type: "hello";
+  thinker_version: SemVer;
+  /**
+   * @minItems 1
+   * @maxItems 16
+   */
+  models:
+    | [ModelOffer]
+    | [ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer]
+    | [ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer, ModelOffer]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ]
+    | [
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer,
+        ModelOffer
+      ];
+}
+
+export interface ModelOffer {
+  name: ModelName;
+  max_concurrent: number;
+  max_tokens: number;
+}
+
+export interface HeartbeatFrame {
+  type: "heartbeat";
+  load: {
+    [k: string]: number;
+  };
+}
+
+export interface CompletionFrame {
+  type: "completion";
+  job_id: string;
+  text: string;
+  usage_reported?: Usage;
+}
+
+export interface Usage {
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface ErrorFrame {
+  type: "error";
+  job_id: string;
+  code: "model_unavailable" | "timeout" | "internal";
+  message: string;
+}
+
+export interface GoodbyeFrame {
+  type: "goodbye";
+  reason: "schedule" | "shutdown";
+}
+
+export interface WelcomeFrame {
+  type: "welcome";
+  thinker: ThinkerName;
+  accepted_models: ModelName[];
+  server_time: string;
+}
+
+export interface JobFrame {
+  type: "job";
+  job_id: string;
+  model: ModelName;
+  /**
+   * @minItems 1
+   * @maxItems 64
+   */
+  messages: [Message, ...Message[]];
+  max_tokens: number;
+  temperature: number;
+  stop: string[] | null;
+  deadline: string;
+  cache_hint?: CacheHint;
+}
+
+export interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface CacheHint {
+  stable_prefix_chars: number;
+}
+
+export interface CancelFrame {
+  type: "cancel";
+  job_id: string;
+}
+
+export interface DrainFrame {
+  type: "drain";
+  reconnect_after_seconds: number;
+}
+
 export type Thought = (
   | {
       intent: unknown;

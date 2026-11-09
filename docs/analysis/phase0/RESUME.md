@@ -6,14 +6,13 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 
 **Current wave:** 1, the contract and a healthy stack (one PR `phase0/wave1` to `main`, not merged by the orchestrator).
 
-**Merged into `phase0/wave1`:** P0-00, P0-01, P0-02, P0-03, P0-05.
+**Merged into `phase0/wave1`:** P0-00 to P0-05 (all but P0-06).
 
 **In flight (background agents):**
 
 | Packet | Worktree | Stage |
 |---|---|---|
-| P0-04 | `.claude/worktrees/p0-04` | fix 1 continuation (generator change allowed, worknotes/p0-04.md); then review pass 2 |
-| P0-06 | `.claude/worktrees/p0-06` | coder writing (tags `qwen3:32b`, `qwen3:8b`) |
+| P0-06 | `.claude/worktrees/p0-06` | coder continuation 2 of 3 (first coder hit context; files uncommitted) |
 
 `.claude/worktrees/wave1` is the orchestrator's checkout of `phase0/wave1` (ledger commits, merges). Do not touch `scriptorium-decisions`.
 
@@ -27,3 +26,5 @@ Read this, then [README.md](README.md) (the ledger), before acting. Rewrite at e
 **Notes for the wave review:** P0-01 commit 8f17621 has a Haiku 5.5 co-author trailer (accepted). P0-03 left `credits`/`count`/`world_day` without upper bounds (SQL columns are INT) and `thinker_id` as a free string. P0-04 adds invented limits (job `max_tokens` cap, semver pattern) listed in its fix report.
 
 **Open owner decisions:** `docs/spec.md` Appendix D needs the composite skill FK correction `(skill_id, edition)` on `books` and `skill_library` (owner chose it at P0-05 review; owner to record).
+
+**P0-04 follow-ups for the wave review (non-blocking):** add `ModelName` length-bound tests and a `welcome.accepted_models` uniqueItems test; `MAX_FRAME_BYTES` value untested. P0-02 review-2 low findings: no tests for `attack.target` bad characters, the `skill_id` 64-char boundary, offset -257, `propose.rule` at 257 chars; `use_skill.args`, `Intent.arguments` and `Intent.checkpoint` are unbounded in size (backstop is `MAX_FRAME_BYTES`). `generator.ts` now exports a validator per `$defs` frame with `properties.type.const` (worknotes/p0-04.md).

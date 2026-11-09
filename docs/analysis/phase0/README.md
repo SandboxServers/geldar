@@ -41,7 +41,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Done.
 | P0-01 | 1 | `contract/` package, generator, drift check, snapshot schema | packet-coder | Done | — | |
 | P0-02 | 1 | Thought schema: intents and actions (Appendix C) | packet-coder | Done | P0-01 | |
 | P0-03 | 1 | Action record, receipt and event envelope schemas | packet-coder | Done | P0-01 | |
-| P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | Review (fix 1) | P0-01 | |
+| P0-04 | 1 | Thinker protocol frame schemas (Appendix H) | packet-coder | Done | P0-01 | |
 | P0-05 | 1 | `sql/` migrations from Appendix D, checked in CI | packet-coder | Done | — | |
 | P0-06 | 1 | `compose/phase0.yml` (Paper behind Velocity, Postgres, NATS) and `shards/phase0.yaml`, healthy stack | packet-coder | Writing | P0-05 | |
 | P0-07 | 2 | `golem/` skeleton: connect, reconnect, RCON test control | written at wave 1 close | BlockedDependency | P0-06 | |
