@@ -5,6 +5,7 @@ import com.networknt.schema.InputFormat;
 import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SchemaRegistryConfig;
 import com.networknt.schema.SpecificationVersion;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -22,7 +23,12 @@ final class EventSchemaCheck {
     private static Schema load() {
         Path dir = Path.of(System.getProperty("geldar.schemas")).toAbsolutePath().normalize();
         SchemaRegistry registry = SchemaRegistry.withDefaultDialect(
-                SpecificationVersion.DRAFT_2020_12, builder -> builder.schemas(id -> read(dir, id)));
+                SpecificationVersion.DRAFT_2020_12,
+                builder -> builder
+                        .schemas(id -> read(dir, id))
+                        // Without this, "format": "date-time" is an annotation and a bad timestamp passes.
+                        .schemaRegistryConfig(
+                                SchemaRegistryConfig.builder().formatAssertionsEnabled(true).build()));
         return registry.getSchema(SchemaLocation.of(BASE + "event.schema.json"));
     }
 
@@ -40,6 +46,11 @@ final class EventSchemaCheck {
 
     /** Schema errors for the envelope; empty when valid. */
     static List<Error> errors(EventEnvelope event) {
-        return SCHEMA.validate(event.toJson().toString(), InputFormat.JSON);
+        return errors(event.toJson().toString());
+    }
+
+    /** Schema errors for a raw JSON document; empty when valid. */
+    static List<Error> errors(String json) {
+        return SCHEMA.validate(json, InputFormat.JSON);
     }
 }
