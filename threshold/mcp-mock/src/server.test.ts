@@ -25,6 +25,8 @@ let clients: Client[];
 let hanging: (() => void) | undefined;
 let failCreate = false;
 let stubbornMs = 0;
+// When set, a new session's connect waits for the gate, then rejects.
+let connectGate: Promise<void> | undefined;
 
 function pingServer(signal: AbortSignal): McpServer {
   const mcp = new McpServer(
@@ -54,6 +56,7 @@ beforeEach(async () => {
   writeFileSync(file, JSON.stringify({ aa: TOKEN_A, bb: TOKEN_B }));
   failCreate = false;
   stubbornMs = 0;
+  connectGate = undefined;
   signals = {};
   lines = [];
   clients = [];
@@ -64,7 +67,15 @@ beforeEach(async () => {
       const list = signals[playerId] ?? [];
       list.push(signal);
       signals[playerId] = list;
-      return pingServer(signal);
+      const mcp = pingServer(signal);
+      if (connectGate !== undefined) {
+        const gate = connectGate;
+        mcp.connect = async () => {
+          await gate;
+          throw new Error('boom-from-connect');
+        };
+      }
+      return mcp;
     },
     log: (line) => lines.push(line),
   });
@@ -296,6 +307,20 @@ describe('mock http', () => {
     expect(JSON.stringify(lines)).not.toContain(TOKEN_A);
   }, 30_000);
 
+  it('starts a session after an initialize that failed', async () => {
+    failCreate = true;
+    const headers = bearer(TOKEN_A, {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    });
+    const failed = await call('/p/aa', { method: 'POST', headers, body: JSON.stringify(INIT) });
+    expect(failed.status).toBe(500);
+    failCreate = false;
+    const retry = await call('/p/aa', { method: 'POST', headers, body: JSON.stringify(INIT) });
+    expect(retry.status).toBe(200);
+    await retry.text();
+    expect(http.sessionCount('aa')).toBe(1);
+  }, 30_000);
   it('aborts the old signal before waiting for in-flight handlers', async () => {
     const first = await connect('aa', TOKEN_A);
     const started = new Promise<void>((resolve) => {
