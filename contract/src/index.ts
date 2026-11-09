@@ -33,5 +33,31 @@ export function validateSnapshot(value: unknown): ValidationResult<Snapshot> {
 // --- P0-02 thought ---
 
 // --- P0-03 records ---
+import type { ActionRecord, Receipt, WorldEvent } from './generated/types.ts';
+import {
+  validateActionRecord as validateActionRecordSchema,
+  validateReceipt as validateReceiptSchema,
+  validateWorldEvent as validateWorldEventSchema,
+} from './generated/validators.js';
+
+export type { ActionRecord, Receipt, WorldEvent } from './generated/types.ts';
+
+/** Checks a value against action-record.schema.json. Never throws; unknown properties are rejected. */
+export function validateActionRecord(value: unknown): ValidationResult<ActionRecord> {
+  if (validateActionRecordSchema(value)) return { ok: true, value: value as ActionRecord };
+  return { ok: false, errors: (validateActionRecordSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against receipt.schema.json. Never throws; unknown properties are rejected. */
+export function validateReceipt(value: unknown): ValidationResult<Receipt> {
+  if (validateReceiptSchema(value)) return { ok: true, value: value as Receipt };
+  return { ok: false, errors: (validateReceiptSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against event.schema.json. Never throws; unknown properties are rejected. */
+export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent> {
+  if (validateWorldEventSchema(value)) return { ok: true, value: value as WorldEvent };
+  return { ok: false, errors: (validateWorldEventSchema.errors ?? []).map(formatError) };
+}
 
 // --- P0-04 thinker ---
