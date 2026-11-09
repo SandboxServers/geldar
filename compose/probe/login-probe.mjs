@@ -4,6 +4,9 @@
 // Arguments: host, port, mode. Modes: bad-hmac (Velocity data with an all-zero HMAC),
 // not-understood (plugin response with success=false), velocity (answer nothing; a Velocity
 // front end answers Paper itself). Holds no secrets. Prints the server's answer and exits.
+// CONTINUE=1 goes past Login Success: Login Acknowledged, then the configuration phase
+// (known packs, finish configuration) into play, where a kick reason is printed. HOLD_MS
+// keeps the session open after that; IDLE_MS sets the no-data timeout (default 15 s).
 
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
@@ -16,8 +19,21 @@ const LOGIN_DISCONNECT = 0x00;
 const LOGIN_SUCCESS = 0x02;
 const LOGIN_PLUGIN_REQUEST = 0x04;
 const LOGIN_PLUGIN_RESPONSE = 0x02;
+const LOGIN_ACKNOWLEDGED = 0x03;
 const SET_COMPRESSION = 0x03;
 const ENCRYPTION_REQUEST = 0x01;
+// Configuration phase (protocol 775), clientbound and serverbound ids.
+const CFG_DISCONNECT = 0x02;
+const CFG_FINISH = 0x03;
+const CFG_KEEP_ALIVE = 0x04;
+const CFG_PING = 0x05;
+const CFG_KNOWN_PACKS = 0x0e;
+const CFG_FINISH_ACK = 0x03;
+const CFG_KEEP_ALIVE_ACK = 0x04;
+const CFG_PONG = 0x05;
+const CFG_KNOWN_PACKS_ACK = 0x07;
+const CONTINUE = process.env.CONTINUE === '1';
+let phase = 'login';
 
 function varInt(value) {
   const out = [];
@@ -87,7 +103,9 @@ function finish(sock, text) {
 }
 
 const sock = net.connect(Number(portArg), host);
-sock.setTimeout(15000, () => finish(sock, 'no answer within 15 s'));
+sock.setTimeout(Number(process.env.IDLE_MS ?? 15000), () =>
+  finish(sock, 'no answer within the idle timeout'),
+);
 
 sock.on('connect', () => {
   const portBuf = Buffer.alloc(2);
@@ -102,6 +120,10 @@ sock.on('connect', () => {
 sock.on('data', (chunk) => {
   pending = Buffer.concat([pending, chunk]);
   for (let p = nextPacket(); p; p = nextPacket()) {
+    if (phase !== 'login') {
+      handlePostLogin(sock, p);
+      continue;
+    }
     if (p.id === SET_COMPRESSION) {
       threshold = readVarInt(p.data, 0).value;
       console.log(`[${mode}] set compression threshold ${threshold}`);
@@ -125,6 +147,12 @@ sock.on('data', (chunk) => {
     } else if (p.id === LOGIN_DISCONNECT) {
       finish(sock, `disconnect: ${readString(p.data)}`);
     } else if (p.id === LOGIN_SUCCESS) {
+      if (CONTINUE) {
+        console.log(`[${mode}] login success; sending login acknowledged`);
+        send(sock, LOGIN_ACKNOWLEDGED, Buffer.alloc(0));
+        phase = 'config';
+        continue;
+      }
       // HOLD_MS keeps the session open so the server's player list can be read meanwhile.
       setTimeout(() => finish(sock, 'login success'), Number(process.env.HOLD_MS ?? 0));
     } else if (p.id === ENCRYPTION_REQUEST) {
@@ -137,6 +165,46 @@ sock.on('data', (chunk) => {
 
 sock.on('close', () => finish(sock, 'connection closed by server'));
 sock.on('error', (err) => finish(sock, `socket error: ${err.message}`));
+
+// Configuration and play: finish the configuration phase, then hold in play for HOLD_MS.
+function handlePostLogin(sock, p) {
+  if (phase === 'config') {
+    if (p.id === CFG_DISCONNECT) {
+      finish(sock, `configuration disconnect: ${printable(p.data)}`);
+    } else if (p.id === CFG_FINISH) {
+      send(sock, CFG_FINISH_ACK, Buffer.alloc(0));
+      phase = 'play';
+      console.log(`[${mode}] configuration finished; entering play`);
+      setTimeout(
+        () => finish(sock, `play held, ${playPackets} play packets received`),
+        Number(process.env.HOLD_MS ?? 0),
+      );
+    } else if (p.id === CFG_KNOWN_PACKS) {
+      // Empty known-packs list: the server sends every registry entry.
+      send(sock, CFG_KNOWN_PACKS_ACK, varInt(0));
+    } else if (p.id === CFG_KEEP_ALIVE) {
+      send(sock, CFG_KEEP_ALIVE_ACK, p.data.subarray(0, 8));
+    } else if (p.id === CFG_PING) {
+      send(sock, CFG_PONG, p.data.subarray(0, 4));
+    } else {
+      console.log(`[${mode}] configuration packet id ${p.id}`);
+    }
+    return;
+  }
+  // Play phase: count the packets (the world streams many) and report the first one.
+  playPackets += 1;
+  if (playPackets === 1) console.log(`[${mode}] first play packet id ${p.id}`);
+}
+
+let playPackets = 0;
+
+// Printable ASCII of a buffer, for reading kick reasons out of NBT text components.
+function printable(data) {
+  return data
+    .toString('utf8')
+    .replace(/[^\x20-\x7e]+/g, ' ')
+    .trim();
+}
 
 function readString(data) {
   const len = readVarInt(data, 0);
