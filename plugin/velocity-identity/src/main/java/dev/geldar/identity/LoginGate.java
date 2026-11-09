@@ -22,7 +22,7 @@ public final class LoginGate {
 
     /** True when this username may log in. Pure cache lookup, safe on the event loop. */
     public boolean admits(String username) {
-        return username != null && registry.isSynced() && registry.find(username).isPresent();
+        return LifeRegistry.isValidUsername(username) && registry.isSynced() && registry.find(username).isPresent();
     }
 
     /** Checks the username and, when it passes, remembers the connection as admitted. */

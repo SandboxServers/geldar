@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.velocitypowered.api.event.ResultedEvent;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
@@ -79,6 +80,33 @@ class IdentityPluginTest {
     void messagesFromTheBackendAreNotTouched() {
         ServerConnection server = backend();
         PluginMessageEvent message = new PluginMessageEvent(server, backend(), IdentityPlugin.COMMAND_CHANNEL, new byte[0]);
+        plugin.onPluginMessage(message);
+        assertTrue(message.getResult().isAllowed());
+    }
+
+    @Test
+    void aDisconnectReleasesTheAdmissionAndClosesTheCommandChannel() throws Exception {
+        register("alice");
+        Player alice = player("Alice", UUID.randomUUID());
+        plugin.onLogin(new LoginEvent(alice));
+        plugin.onDisconnect(new DisconnectEvent(alice, DisconnectEvent.LoginStatus.SUCCESSFUL_LOGIN));
+
+        PluginMessageEvent message = new PluginMessageEvent(alice, backend(), IdentityPlugin.COMMAND_CHANNEL, new byte[0]);
+        plugin.onPluginMessage(message);
+        assertFalse(message.getResult().isAllowed());
+    }
+
+    @Test
+    void aConflictingLoginDisconnectKeepsTheLiveSessionAdmitted() throws Exception {
+        register("alice");
+        UUID id = UUID.randomUUID();
+        Player live = player("Alice", id);
+        Player duplicate = player("Alice", id);
+        plugin.onLogin(new LoginEvent(live));
+        plugin.onLogin(new LoginEvent(duplicate));
+        plugin.onDisconnect(new DisconnectEvent(duplicate, DisconnectEvent.LoginStatus.CONFLICTING_LOGIN));
+
+        PluginMessageEvent message = new PluginMessageEvent(live, backend(), IdentityPlugin.COMMAND_CHANNEL, new byte[0]);
         plugin.onPluginMessage(message);
         assertTrue(message.getResult().isAllowed());
     }
