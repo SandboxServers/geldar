@@ -108,16 +108,28 @@ describe('define_skill', () => {
 
 describe('source rules', () => {
   // The mock never executes model code or reaches the network. Docker test helpers live outside src.
-  const FORBIDDEN = [
-    'eval(',
-    'new Function',
-    'node:vm',
-    'child_process',
-    'worker_threads',
-    'fetch(',
-    'http.request',
+  // server.ts alone may import node:http and node:net: it is the mock's own listener.
+  const FORBIDDEN: { name: string; pattern: RegExp; allowedIn?: string }[] = [
+    { name: 'eval', pattern: /\beval\s*\(/ },
+    { name: 'new Function', pattern: /\bnew\s+Function\b/ },
+    { name: 'Function call', pattern: /\bFunction\s*\(/ },
+    {
+      name: 'vm, child process or worker import',
+      pattern: /from\s+['"](node:)?(vm|child_process|worker_threads)['"]/,
+    },
+    {
+      name: 'net or http import',
+      pattern: /from\s+['"](node:)?(net|https?)['"]/,
+      allowedIn: 'server.ts',
+    },
+    { name: 'fetch', pattern: /\bfetch\s*\(/ },
   ];
 
+  function violations(code: string, file: string): string[] {
+    return FORBIDDEN.filter(
+      (f) => f.pattern.test(code) && (f.allowedIn === undefined || !file.endsWith(f.allowedIn)),
+    ).map((f) => f.name);
+  }
   function sources(dir: string): string[] {
     return readdirSync(dir).flatMap((name) => {
       const path = join(dir, name);
@@ -138,14 +150,36 @@ describe('source rules', () => {
     const files = sources(SRC_DIR);
     expect(files.length).toBeGreaterThan(20);
     for (const file of files) {
-      const code = stripComments(readFileSync(file, 'utf8'));
-      for (const word of FORBIDDEN) {
-        expect(code.includes(word), `${file} contains ${word}`).toBe(false);
-      }
+      expect(violations(stripComments(readFileSync(file, 'utf8')), file), file).toEqual([]);
     }
   });
-});
 
+  it('flags a positive control for every pattern', () => {
+    const controls: [string, string][] = [
+      ['eval', 'const x = eval ("1");'],
+      ['new Function', 'const f = new   Function("return 1");'],
+      ['Function call', 'const f = Function ("return 1");'],
+      ['vm, child process or worker import', "import { x } from 'node:vm';"],
+      ['vm, child process or worker import', 'import { spawn } from "child_process";'],
+      ['net or http import', "import net from 'node:net';"],
+      ['net or http import', "import https from 'https';"],
+      ['vm, child process or worker import', "import { Worker } from 'worker_threads';"],
+      ['fetch', 'await fetch ("http://x");'],
+    ];
+    for (const [name, code] of controls) {
+      expect(violations(code, 'sim/x.ts'), code).toContain(name);
+    }
+    expect(violations('const evaluate = 1; const f = Reflect.get(a, "b");', 'sim/x.ts')).toEqual(
+      [],
+    );
+  });
+
+  it('allows node:http and node:net only in server.ts', () => {
+    const code = "import { createServer } from 'node:http';";
+    expect(violations(code, 'src/sim/x.ts')).not.toEqual([]);
+    expect(violations(code, 'src/server.ts')).toEqual([]);
+  });
+});
 describe('offer and vote', () => {
   it('offer of an item not held is refused and free', () => {
     const hub = setup();
