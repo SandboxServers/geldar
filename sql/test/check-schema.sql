@@ -1,11 +1,31 @@
 -- Fails with RAISE EXCEPTION unless every table of spec Appendix D exists in
 -- public, the pgvector extension is installed, and the changes that differ
--- from Appendix D are in place: receipts has a unique key over exactly
--- (action_id, phase) and none over action_id alone, receipts.detail and
--- actions.snapshot_revision exist, schema archive exists, and books and
+-- from Appendix D are in place. The receipts and actions.state rules are
+-- checked by behaviour: probe rows are inserted and always rolled back, so the
+-- check leaves no rows behind. Catalog checks cover the rest: receipts.detail
+-- and actions.snapshot_revision exist, schema archive exists, and books and
 -- skill_library have the composite foreign keys to skills (skill_id, edition).
 -- CI runs it after the migrations; a missing CREATE TABLE or a reverted
 -- change makes it fail.
+--
+-- Runs each statement list, then rolls it back. Returns 'accepted' when every
+-- statement succeeds, 'rejected' when one fails.
+CREATE FUNCTION pg_temp.receipt_probe(statements TEXT[]) RETURNS TEXT
+LANGUAGE plpgsql AS $probe$
+DECLARE
+  statement TEXT;
+BEGIN
+  BEGIN
+    FOREACH statement IN ARRAY statements LOOP
+      EXECUTE statement;
+    END LOOP;
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'probe rollback';
+  EXCEPTION
+    WHEN SQLSTATE 'P0001' THEN RETURN 'accepted';
+    WHEN OTHERS THEN RETURN 'rejected';
+  END;
+END
+$probe$;
 DO $$
 DECLARE
   expected TEXT[] := ARRAY[
@@ -15,7 +35,7 @@ DECLARE
   ];
   missing TEXT[];
   ext_version TEXT;
-  unique_sets TEXT[];
+  probe TEXT;
   fk_sets TEXT[];
   problems TEXT[] := ARRAY[]::TEXT[];
 BEGIN
@@ -34,24 +54,68 @@ BEGIN
     RAISE EXCEPTION 'schema check: the pgvector extension (vector) is not installed';
   END IF;
 
-  -- Each unique index or constraint on receipts, as a sorted comma list of
-  -- its column names (covers UNIQUE constraints and CREATE UNIQUE INDEX).
-  unique_sets := ARRAY(
-    SELECT string_agg(a.attname, ',' ORDER BY a.attname)
-    FROM pg_index i
-    JOIN pg_class t ON t.oid = i.indrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(i.indkey)
-    WHERE n.nspname = 'public' AND t.relname = 'receipts' AND i.indisunique
-    GROUP BY i.indexrelid
-  );
-  IF NOT ('action_id,phase' = ANY(unique_sets)) THEN
-    problems := array_append(problems, 'receipts needs a unique key over (action_id, phase)');
-  END IF;
-  IF 'action_id' = ANY(unique_sets) THEN
-    problems := array_append(problems, 'receipts must not have a unique key over action_id alone');
+  -- Behavioural receipts checks. The actions probe is a control: a valid row
+  -- must be accepted, or the other probes prove nothing.
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO actions (action_id, state) VALUES (''probe-action'', ''accepted'')'
+  ]);
+  IF probe <> 'accepted' THEN
+    problems := array_append(problems, 'actions.state must accept accepted (control probe: ' || probe || ')');
   END IF;
 
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO actions (action_id, state) VALUES (''probe-action'', ''bogus'')'
+  ]);
+  IF probe <> 'rejected' THEN
+    problems := array_append(problems, 'actions.state needs a CHECK limited to the contract action states (probe: ' || probe || ')');
+  END IF;
+
+  -- One final receipt per action: prepared then committed is the normal path.
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-1'', ''probe-action'', ''prepared'')',
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-2'', ''probe-action'', ''committed'')'
+  ]);
+  IF probe <> 'accepted' THEN
+    problems := array_append(problems, 'receipts must accept a prepared then a committed row for one action (probe: ' || probe || ')');
+  END IF;
+
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-1'', ''probe-action'', ''committed'')',
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-2'', ''probe-action'', ''aborted'')'
+  ]);
+  IF probe <> 'rejected' THEN
+    problems := array_append(problems, 'receipts must reject a committed and an aborted row for one action (probe: ' || probe || ')');
+  END IF;
+
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-1'', ''probe-action'', ''committed'')',
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-2'', ''probe-action'', ''committed'')'
+  ]);
+  IF probe <> 'rejected' THEN
+    problems := array_append(problems, 'receipts must reject two committed rows for one action (probe: ' || probe || ')');
+  END IF;
+
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-1'', ''probe-action'', ''prepared'')',
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-2'', ''probe-action'', ''prepared'')'
+  ]);
+  IF probe <> 'rejected' THEN
+    problems := array_append(problems, 'receipts must reject two prepared rows for one action (probe: ' || probe || ')');
+  END IF;
+
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-1'', ''probe-action'', ''bogus'')'
+  ]);
+  IF probe <> 'rejected' THEN
+    problems := array_append(problems, 'receipts.phase needs a CHECK limited to prepared, committed and aborted (probe: ' || probe || ')');
+  END IF;
+
+  probe := pg_temp.receipt_probe(ARRAY[
+    'INSERT INTO receipts (receipt_id, action_id, phase) VALUES (''probe-1'', NULL, ''committed'')'
+  ]);
+  IF probe <> 'rejected' THEN
+    problems := array_append(problems, 'receipts.action_id must be NOT NULL (probe: ' || probe || ')');
+  END IF;
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'receipts' AND column_name = 'detail'
