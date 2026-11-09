@@ -159,6 +159,45 @@ describe('PlayerSim', () => {
     expect([...sim.suppressedSeqs]).toEqual([3, 1000]);
   });
 
+  it('ignores a non-finite time', () => {
+    const sim = build();
+    sim.syncTo(500);
+    sim.syncTo(Number.NaN);
+    sim.syncTo(Number.POSITIVE_INFINITY);
+    sim.syncTo(Number.NEGATIVE_INFINITY);
+    expect(sim.tick).toBe(500);
+  });
+
+  it('skips a quiet stretch for a tiny day but keeps scenario events and an intent end', () => {
+    // 24000 ticks a millisecond and a hunger step every tick: 2.4e13 ticks in the jump.
+    const sim = build({
+      day_length_seconds: 0.001,
+      reflex: { hunger_interval_ticks: 1, eat_below: 14 },
+      events: [{ type: 'damage', at_tick: 5_000_000_000, amount: 4 }],
+    });
+    const started = Date.now();
+    sim.syncTo(1_000_000_000);
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(sim.tick).toBe(24_000_000_000_000);
+    expect(sim.food).toBe(0);
+    expect(sim.log.since(0).events.filter((e) => e.kind === 'damage')).toHaveLength(1);
+  });
+
+  it('is deterministic when it skips', () => {
+    const make = (): PlayerSim =>
+      build({
+        day_length_seconds: 0.001,
+        reflex: { hunger_interval_ticks: 7, eat_below: 14 },
+      });
+    const a = make();
+    const b = make();
+    a.syncTo(1_000_000);
+    b.syncTo(1_000_000);
+    expect(a.food).toBe(b.food);
+    expect(a.tick).toBe(b.tick);
+    expect(a.log.lastSeq()).toBe(b.log.lastSeq());
+  });
+
   it('keeps only the last 1000 receipts', () => {
     const sim = build();
     for (let t = 1; t <= 1100; t++) sim.startIntent(intent(1), t);

@@ -9,6 +9,8 @@ import type { Scenario } from './scenario.ts';
 /** Half a day: the gap between dawn and dusk. */
 const HALF_DAY = 12000;
 const DAY = 24000;
+/** Steps one `syncTo` plays before it skips a quiet stretch. */
+const MAX_CATCHUP_STEPS = 10000;
 /** How many ids the receipts ledger keeps; the oldest drop first. */
 const RECEIPT_LIMIT = 1000;
 
@@ -107,20 +109,53 @@ export class PlayerSim {
     return Number.isFinite(ms) ? ms : null;
   }
 
-  /** Plays the world forward to `nowMs`, one step per due moment in tick order. Never goes back. */
+  /**
+   * Plays the world forward to `nowMs`, one step per due moment in tick order. Never goes back; a
+   * non-finite `nowMs` is ignored.
+   *
+   * With a very short day a long jump holds billions of steps. After `MAX_CATCHUP_STEPS` steps
+   * without reaching a scenario event or an intent end, the run skips ahead to that moment (or to
+   * the target). The skipped stretch is quiet and deterministic: no `day_night` events, no eating,
+   * and food falls by the hunger steps it holds (never below 0). Scenario events and intent ends
+   * are never skipped.
+   */
   syncTo(nowMs: number): void {
+    if (!Number.isFinite(nowMs)) return;
     const dayLen = this.scenario.day_length_seconds;
     const target = tickAt(nowMs - this.startMs, dayLen);
+    let steps = 0;
     while (this.tick < target) {
+      if (steps >= MAX_CATCHUP_STEPS) {
+        this.skipQuietly(target);
+        steps = 0;
+        continue;
+      }
       const t = this.nextStepTick();
       if (t > target) break;
       this.tick = t;
       this.step(t);
+      steps++;
     }
     if (target > this.tick) this.tick = target;
     // A suppressed seq that left the log can never be asked about again.
     const first = this.log.firstSeq();
     for (const seq of this.suppressedSeqs) if (seq < first) this.suppressedSeqs.delete(seq);
+  }
+
+  /** Jumps to just before the next event or intent end (or to `target`), counting hunger only. */
+  private skipQuietly(target: number): void {
+    const ev = this.scenario.events[this.nextScenarioEvent];
+    const due = Math.min(
+      target,
+      ev ? ev.at_tick : Number.POSITIVE_INFINITY,
+      this.current ? intentEndTick(this.current) : Number.POSITIVE_INFINITY,
+    );
+    // Stop one tick short of a due moment so the normal step handles it; the target needs no step.
+    const to = due === target ? target : Math.max(this.tick, due - 1);
+    const h = this.scenario.reflex.hunger_interval_ticks;
+    const steps = Math.floor(to / h) - Math.floor(this.tick / h);
+    this.food = Math.max(0, this.food - steps);
+    this.tick = to;
   }
 
   private nextStepTick(): number {
