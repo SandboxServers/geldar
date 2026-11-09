@@ -47,7 +47,9 @@ export function loadTokens(path: string): TokenTable {
       );
     }
     if (typeof token !== 'string' || !TOKEN.test(token)) {
-      throw new Error(`tokens file: invalid token in entry ${index + 1} (player id length ${playerId.length})`);
+      throw new Error(
+        `tokens file: invalid token in entry ${index + 1} (player id length ${playerId.length})`,
+      );
     }
     const hex = digest(token).toString('hex');
     const other = owners.get(hex);

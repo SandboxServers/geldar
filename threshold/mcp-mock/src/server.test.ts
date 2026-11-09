@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadTokens } from './auth.ts';
 import type { MockHttp } from './server.ts';
 import { createMockHttp } from './server.ts';
@@ -23,6 +23,8 @@ let lines: Record<string, unknown>[];
 let clients: Client[];
 
 let hanging: (() => void) | undefined;
+let failCreate = false;
+let stubbornMs = 0;
 
 function pingServer(signal: AbortSignal): McpServer {
   const mcp = new McpServer(
@@ -35,6 +37,11 @@ function pingServer(signal: AbortSignal): McpServer {
   // hang stands in for a long wait: it returns only when the session's signal aborts.
   mcp.server.setRequestHandler(CallToolRequestSchema, async () => {
     hanging?.();
+    if (stubbornMs > 0) {
+      // Ignores the abort for a while, so ending the session has to wait for it.
+      await new Promise<void>((resolve) => setTimeout(resolve, stubbornMs));
+      return { content: [{ type: 'text' as const, text: 'late' }] };
+    }
     await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
     return { content: [{ type: 'text' as const, text: 'released' }] };
   });
@@ -45,12 +52,15 @@ beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'mcp-mock-'));
   const file = join(dir, 'tokens.json');
   writeFileSync(file, JSON.stringify({ aa: TOKEN_A, bb: TOKEN_B }));
+  failCreate = false;
+  stubbornMs = 0;
   signals = {};
   lines = [];
   clients = [];
   http = createMockHttp({
     tokens: loadTokens(file),
     createSession: (playerId, signal) => {
+      if (failCreate) throw new Error('boom-from-create');
       const list = signals[playerId] ?? [];
       list.push(signal);
       signals[playerId] = list;
@@ -139,6 +149,50 @@ describe('mock http', () => {
     expect(res.status).toBe(403);
   }, 30_000);
 
+  it('allows a local Origin', async () => {
+    for (const origin of ['http://localhost:1234', 'http://127.0.0.1']) {
+      const res = await call('/p/aa', {
+        method: 'POST',
+        headers: bearer(TOKEN_A, { Origin: origin }),
+      });
+      // Past the Origin gate it reaches the body parse, which rejects the empty body.
+      expect(res.status).toBe(400);
+    }
+  }, 30_000);
+
+  it('answers 400 Parse error to a body that is not JSON', async () => {
+    const res = await call('/p/aa', {
+      method: 'POST',
+      headers: bearer(TOKEN_A, { 'Content-Type': 'application/json' }),
+      body: '{ nope',
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('Parse error');
+  }, 30_000);
+
+  it('answers 413 at once when content-length is over the limit', async () => {
+    const status = await new Promise<number | string>((resolve) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: new URL(base).port,
+          path: '/p/aa',
+          method: 'POST',
+          headers: bearer(TOKEN_A, { 'Content-Length': String(2 * 1024 * 1024) }),
+          timeout: 10_000,
+        },
+        (res) => {
+          resolve(res.statusCode ?? 'none');
+          req.destroy();
+        },
+      );
+      req.on('error', () => undefined);
+      req.on('timeout', () => resolve('timeout'));
+      req.write('x');
+    });
+    expect(status).toBe(413);
+  }, 30_000);
+
   it('answers 413 to a 2 MiB body', async () => {
     const port = new URL(base).port;
     const outcome = await new Promise<string>((resolve) => {
@@ -195,6 +249,51 @@ describe('mock http', () => {
     });
     expect(res.status).toBe(404);
     expect(await res.text()).toContain('session_superseded');
+  }, 30_000);
+
+  it('keeps one live session when two initializes race over an existing one', async () => {
+    const first = await connect('aa', TOKEN_A);
+    stubbornMs = 400;
+    const started = new Promise<void>((resolve) => {
+      hanging = resolve;
+    });
+    const pending = first.callTool({ name: 'slow' });
+    await started;
+    await Promise.all([sessionIdOf('aa', TOKEN_A), sessionIdOf('aa', TOKEN_A)]);
+    expect(http.sessionCount('aa')).toBe(1);
+    expect(signals.aa).toHaveLength(3);
+    expect(signals.aa?.filter((signal) => !signal.aborted)).toHaveLength(1);
+    await pending.catch(() => undefined);
+  }, 30_000);
+
+  it("answers session_not_found for another player's superseded id", async () => {
+    const oldId = await sessionIdOf('aa', TOKEN_A);
+    await sessionIdOf('aa', TOKEN_A);
+    const res = await call('/p/bb', {
+      method: 'GET',
+      headers: bearer(TOKEN_B, { 'mcp-session-id': oldId }),
+    });
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain('session_not_found');
+  }, 30_000);
+
+  it('answers 500 and logs the cause when creating a session throws', async () => {
+    failCreate = true;
+    const res = await call('/p/aa', {
+      method: 'POST',
+      headers: bearer(TOKEN_A, {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      }),
+      body: JSON.stringify(INIT),
+    });
+    expect(res.status).toBe(500);
+    await vi.waitFor(() => {
+      const line = lines.find((entry) => entry.event === 'internal_error');
+      expect(line?.status).toBe(500);
+      expect(String(line?.error)).toContain('boom-from-create');
+    });
+    expect(JSON.stringify(lines)).not.toContain(TOKEN_A);
   }, 30_000);
 
   it('aborts the old signal before waiting for in-flight handlers', async () => {

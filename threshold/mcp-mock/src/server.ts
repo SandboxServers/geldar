@@ -21,6 +21,7 @@ export interface MockHttp {
   listen(port: number, host?: string): Promise<number>;
   /** Closes sessions and the listener, then connections. */
   close(): Promise<void>;
+  /** Live sessions for the player: 1 while it has one, else 0 (a player never has more than one). */
   sessionCount(playerId: string): number;
 }
 
@@ -39,6 +40,13 @@ interface Session {
   inflight: number;
   idle: (() => void) | undefined;
   ended: boolean;
+}
+
+/** What the per-request log line reports; `handle` fills it in as the request progresses. */
+interface LogContext {
+  event: string;
+  playerId: string | undefined;
+  error: string | undefined;
 }
 
 class BodyTooLarge extends Error {}
@@ -83,12 +91,15 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     ((line: Record<string, unknown>) => process.stderr.write(`${JSON.stringify(line)}\n`));
   const sessions = new Map<string, Session>();
   const byPlayer = new Map<string, Session>();
-  const superseded = new Set<string>();
+  // Superseded session id -> owning player, so only the owner is told "superseded".
+  const superseded = new Map<string, string>();
+  // Per player, the tail of the chain that serialises session starts.
+  const starting = new Map<string, Promise<unknown>>();
 
-  function rememberSuperseded(id: string): void {
-    superseded.add(id);
+  function rememberSuperseded(id: string, playerId: string): void {
+    superseded.set(id, playerId);
     if (superseded.size > MAX_SUPERSEDED_IDS) {
-      const oldest = superseded.values().next().value;
+      const oldest = superseded.keys().next().value;
       if (oldest !== undefined) superseded.delete(oldest);
     }
   }
@@ -120,15 +131,31 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     await session.mcp.close().catch(() => undefined);
   }
 
+  /**
+   * Starts sessions one at a time per player, so two simultaneous initializes cannot both
+   * read the same `previous` and leave two live sessions.
+   * Sessions are only ever ended by a newer initialize, a DELETE or close(): a client that
+   * drops without DELETE keeps its session until the player's next initialize supersedes it.
+   */
   async function startSession(
     playerId: string,
     req: IncomingMessage,
     res: ServerResponse,
     body: unknown,
   ): Promise<void> {
+    const turn = (starting.get(playerId) ?? Promise.resolve()).then(() => prepareSession(playerId));
+    starting.set(
+      playerId,
+      turn.catch(() => undefined),
+    );
+    const session = await turn;
+    await dispatch(session, req, res, body);
+  }
+
+  async function prepareSession(playerId: string): Promise<Session> {
     const previous = byPlayer.get(playerId);
     if (previous !== undefined) {
-      if (previous.id !== undefined) rememberSuperseded(previous.id);
+      if (previous.id !== undefined) rememberSuperseded(previous.id, playerId);
       await endSession(previous);
     }
     const controller = new AbortController();
@@ -144,7 +171,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
         sessionIdGenerator: randomUUID,
         onsessioninitialized: (id) => {
           session.id = id;
-          sessions.set(id, session);
+          // A newer initialize may have ended this session before its id was issued.
+          if (!session.ended) sessions.set(id, session);
         },
       }),
     };
@@ -155,7 +183,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       forget(session);
     };
     await session.mcp.connect(session.transport);
-    await dispatch(session, req, res, body);
+    return session;
   }
 
   async function dispatch(
@@ -175,49 +203,48 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     await session.transport.handleRequest(req, res, body);
   }
 
-  async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    let event = 'request';
-    let playerId: string | undefined;
+  async function handle(req: IncomingMessage, res: ServerResponse, ctx: LogContext): Promise<void> {
     res.on('close', () => {
       log({
-        event,
-        ...(playerId !== undefined ? { player_id: playerId } : {}),
+        event: ctx.event,
+        ...(ctx.playerId !== undefined ? { player_id: ctx.playerId } : {}),
         status: res.statusCode,
+        ...(ctx.error !== undefined ? { error: ctx.error } : {}),
       });
     });
 
     const path = (req.url ?? '').split('?')[0] ?? '';
     const match = PATH.exec(path);
     if (match?.[1] === undefined) {
-      event = 'not_found';
+      ctx.event = 'not_found';
       res.writeHead(404).end();
       return;
     }
     const player = match[1];
-    playerId = player;
+    ctx.playerId = player;
 
     const origin = req.headers.origin;
     if (origin !== undefined && !hostAllowed(origin)) {
-      event = 'origin_rejected';
+      ctx.event = 'origin_rejected';
       res.writeHead(403).end();
       return;
     }
 
     const auth = checkBearer(options.tokens, player, req.headers.authorization);
     if (auth === 'unauthorized') {
-      event = 'unauthorized';
+      ctx.event = 'unauthorized';
       res.writeHead(401, { 'WWW-Authenticate': 'Bearer' }).end();
       return;
     }
     if (auth === 'forbidden') {
-      event = 'forbidden';
+      ctx.event = 'forbidden';
       res.writeHead(403).end();
       return;
     }
 
     const method = req.method ?? '';
     if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
-      event = 'method_not_allowed';
+      ctx.event = 'method_not_allowed';
       res.writeHead(405, { Allow: 'POST, GET, DELETE' }).end();
       return;
     }
@@ -234,7 +261,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
         }
       }
       if (raw === undefined) {
-        event = 'body_too_large';
+        ctx.event = 'body_too_large';
         const cut = setTimeout(() => req.destroy(), 2000);
         cut.unref();
         req.on('close', () => clearTimeout(cut));
@@ -244,12 +271,12 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       try {
         parsed = JSON.parse(raw);
       } catch {
-        event = 'parse_error';
+        ctx.event = 'parse_error';
         rpcError(res, 400, -32700, 'Parse error');
         return;
       }
       if (isInitializeRequest(parsed)) {
-        event = 'initialize';
+        ctx.event = 'initialize';
         await startSession(player, req, res, parsed);
         return;
       }
@@ -258,33 +285,38 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     const header = req.headers['mcp-session-id'];
     const sessionId = Array.isArray(header) ? header[0] : header;
     if (sessionId === undefined) {
-      event = 'missing_session';
+      ctx.event = 'missing_session';
       rpcError(res, 400, -32000, 'missing_session');
       return;
     }
-    if (superseded.has(sessionId)) {
-      event = 'session_superseded';
+    if (superseded.get(sessionId) === player) {
+      ctx.event = 'session_superseded';
       rpcError(res, 404, -32001, 'session_superseded');
       return;
     }
     const session = sessions.get(sessionId);
     if (session === undefined || session.playerId !== player) {
-      event = 'session_not_found';
+      ctx.event = 'session_not_found';
       rpcError(res, 404, -32001, 'session_not_found');
       return;
     }
     if (method === 'DELETE') {
-      event = 'session_deleted';
+      ctx.event = 'session_deleted';
       await endSession(session);
       res.writeHead(200).end();
       return;
     }
-    event = 'session_request';
+    ctx.event = 'session_request';
     await dispatch(session, req, res, parsed);
   }
 
   const server = createServer((req, res) => {
-    handle(req, res).catch(() => {
+    const ctx: LogContext = { event: 'request', playerId: undefined, error: undefined };
+    handle(req, res, ctx).catch((error: unknown) => {
+      // Class and message only: never the request or its headers.
+      ctx.event = 'internal_error';
+      ctx.error =
+        error instanceof Error ? `${error.constructor.name}: ${error.message}` : 'non-Error thrown';
       if (!res.headersSent) res.writeHead(500);
       res.end();
     });
@@ -301,7 +333,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       });
     },
     async close() {
-      await Promise.all([...byPlayer.values()].map((session) => endSession(session)));
+      const live = new Set([...byPlayer.values(), ...sessions.values()]);
+      await Promise.all([...live].map((session) => endSession(session)));
       const closed = new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections();
       await closed;
