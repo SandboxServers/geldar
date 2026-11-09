@@ -92,6 +92,11 @@ export class ReflexRunner {
     return this.running !== null;
   }
 
+  /** Resolves once no reflex is running (at once when none is). */
+  async idle(): Promise<void> {
+    while (this.running) await this.running;
+  }
+
   /**
    * Handles one world tick. Resolves when the reflex it started (if any) has ended, so callers
    * and tests may await it; the runtime does not.

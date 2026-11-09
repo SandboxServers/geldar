@@ -63,7 +63,7 @@ export class FleeProgram implements IntentProgram {
         z: Math.round(here.z + uz * state.distance),
       },
     });
-    const stop = stopOf(run);
+    const stop = stopOf(run, ctx);
     if (stop) {
       if (stop.status === 'running') state.legs -= 1;
       return stop;

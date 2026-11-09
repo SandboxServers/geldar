@@ -127,7 +127,9 @@ export function createBody(options: CreateBodyOptions): Body {
   });
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
-    reportBlockedWalk(built, executor, action, run);
+    // With the reflex off nothing would take the report, so a program must not wait for one.
+    if (isReflexEnabled(reflexConfig, 'blocked_path'))
+      reportBlockedWalk(built, executor, action, run);
     executor.noteAction(action, run);
   });
   return { runtime: built, executor, tap, records, checkpoints };

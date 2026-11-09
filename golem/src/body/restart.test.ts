@@ -146,11 +146,13 @@ describe('checkpointing the running intent', () => {
     const kv = buckets();
     const b = await boot(kv);
     await startIntent(b);
+    // Installing the intent already saved an entry (steps 0); step 1's write fails and leaves it.
+    await b.body.checkpoints?.flush();
     kv.checkpoints.failPuts(1);
     await b.body.executor.onTick(1);
     await b.body.checkpoints?.flush();
     expect(b.lines.some((line) => line.includes('not written'))).toBe(true);
-    expect(kv.checkpoints.peek(LIFE)).toBeUndefined();
+    expect(parseEntry(kv.checkpoints.peek(LIFE) ?? '')?.checkpoint).toEqual({ steps: 0 });
     await b.body.executor.onTick(2);
     await b.body.checkpoints?.flush();
     expect(b.made[0]?.log.steps).toBe(2);

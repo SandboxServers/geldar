@@ -1,13 +1,26 @@
-import type { Action, ActionRecord, Thought } from '@geldar/contract';
+import type { Action, Thought } from '@geldar/contract';
 import { validateThought } from '@geldar/contract';
 import { errorText } from '../actions/outcome.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { runPlanAction } from './executor-action.ts';
-import { startIntentRun } from './executor-intent.ts';
-import { blockOperationsOf, type LimitTracker } from './limits.ts';
+import { type IntentStartMode, startIntentRun } from './executor-intent.ts';
+import {
+  type ActionReport,
+  type ActiveIntent,
+  DEFAULT_REMEMBERED_ACTIONS,
+  type ExecutorOptions,
+  type Intent,
+  type IntentDisposition,
+  type IntentObserver,
+  type PlanEnvelope,
+  type StepSnapshot,
+  type SubmitResult,
+} from './executor-types.ts';
+import { blockOperationsDone } from './limits.ts';
 import { builtinPreconditions, type PreconditionRegistry } from './preconditions.ts';
-import type { IntentProgram, ProgramCheckpoint, ProgramContext, StepResult } from './program.ts';
+import type { ProgramCheckpoint, StepResult } from './program.ts';
 import type { IntentState } from './records.ts';
+import { dropBlockedReport } from './reflexes/blocked-path.ts';
 import type { BodyRuntime, TickSource } from './runtime.ts';
 import {
   checkValidity,
@@ -16,125 +29,8 @@ import {
   type Rejection,
 } from './validity.ts';
 import type { WakeReason } from './wake.ts';
-import type { WakeConditions, WakeTap } from './wake-conditions.ts';
 
-export type Intent = NonNullable<Thought['intent']>;
-
-/** Most actions a thought may carry (the contract's `maxItems`). */
-export const MAX_ACTIONS = 6;
-/** Default number of settled action ids the executor remembers for duplicate delivery. */
-export const DEFAULT_REMEMBERED_ACTIONS = 4096;
-
-/**
- * The identity a delivered plan carries around its thought (spec section 7). The thought itself
- * has no ids; the Mind's dispatch adds them: one `intent_id`, one `action_id` per action in order.
- */
-export interface PlanEnvelope extends PlanIdentity {
-  sourceSnapshotId: string;
-  /** Required when the thought has an `intent`. */
-  intentId?: string;
-  /** One id per entry of the thought's `actions`, in order. */
-  actionIds: readonly string[];
-}
-
-/** An action as the executor reports it: its final record, and whether it was a duplicate delivery. */
-export interface ActionReport {
-  record: ActionRecord;
-  /** True when the action id was already known: nothing ran, `record` is the stored one. */
-  duplicate: boolean;
-}
-
-/** What became of the thought's intent. */
-export type IntentDisposition =
-  | 'none'
-  | 'started'
-  /** The intent id is already known: nothing changed. */
-  | 'duplicate'
-  /** An action failed or the plan was refused part way, so the intent never started. */
-  | 'skipped'
-  | 'unsupported_program'
-  | 'precondition_failed'
-  | 'invalid_arguments';
-
-/** The result of `submit`. */
-export interface SubmitResult {
-  /** Set when the plan (or, part way through the list, its remaining part) was refused. */
-  rejection: Rejection | null;
-  actions: ActionReport[];
-  /** Index of the first action that did not complete, or null. */
-  failedAt: number | null;
-  intent: IntentDisposition;
-}
-
-/** What the executor tells an observer after a program step: the running intent and its state. */
-export interface StepSnapshot {
-  intentId: string;
-  /** The intent as accepted (or as resumed). */
-  intent: Intent;
-  /** The program's `checkpoint()`, null when it has nothing to save. */
-  checkpoint: ProgramCheckpoint | null;
-  /** World tick from which the intent is past `max_world_ticks`. */
-  expiresTick: number;
-}
-
-/**
- * Watches the running intent so its state can outlive the process (the `CheckpointStore`). Calls
- * must return at once and not throw; the executor ignores a throw all the same.
- */
-export interface IntentObserver {
-  /** A step returned `running`. */
-  stepped(step: StepSnapshot): void;
-  /** The intent ended for good. Not called when `stop()` ends it: that is a restart, not an end. */
-  ended(intentId: string): void;
-}
-
-/** What an ``IntentExecutor`` is built from. */
-export interface ExecutorOptions {
-  runtime: BodyRuntime;
-  /** Drives the intent: the same world ticks the runtime uses. */
-  ticks: TickSource;
-  /** The Body's current snapshot revision, read at validation time. */
-  currentRevision: () => number;
-  /** How far behind the current revision a plan may be. Default `DEFAULT_SNAPSHOT_WINDOW` (2). */
-  snapshotWindow?: number;
-  /** Default: `builtinPreconditions()`. */
-  preconditions?: PreconditionRegistry;
-  /** The tap the runtime's sink is, so a reflex wake stops the intent from resuming. */
-  wakeTap?: WakeTap;
-  /** Names of the other agents within `radius` blocks, for `new_agent_within_N`. Default: none seen. */
-  nearbyAgents?: (radius: number) => string[];
-  now?: () => Date;
-  /** How many action ids to remember for duplicate delivery. Default 4096; the oldest is dropped. */
-  maxRememberedActions?: number;
-  /** Told about each step and each end of the intent. Default: none. */
-  observer?: IntentObserver;
-}
-
-/** One running intent. `executor-intent.ts` builds it; the executor drives it. */
-export interface ActiveIntent {
-  id: string;
-  /** The intent as accepted. */
-  intent: Intent;
-  /** World tick from which the intent is past max_world_ticks. */
-  expiresTick: number;
-  program: IntentProgram;
-  base: Omit<ProgramContext, 'signal'>;
-  /** Aborted when the intent ends. */
-  controller: AbortController;
-  /** Aborted to pause or cancel the step in flight; replaced for each step. */
-  stepController: AbortController | null;
-  limits: LimitTracker;
-  wake: WakeConditions;
-  preconditions: readonly string[];
-  state: IntentState;
-  pause: 'reflex' | 'actions' | null;
-  stepping: Promise<void> | null;
-  ended: boolean;
-  /** A reflex ran or paused the intent since the step started: a failed step result is not trusted. */
-  interrupted: boolean;
-  /** A reflex raised a wake: do not resume. */
-  reflexWoke: boolean;
-}
+export * from './executor-types.ts';
 
 /**
  * The Body's executor (spec 5.3, section 7). `submit` takes a thought and its envelope: it checks
@@ -229,15 +125,17 @@ export class IntentExecutor {
   }
 
   /**
-   * Tells the executor an action ended: a completed action a program ran for the running intent
-   * counts its block operations (mine, place, build) against the intent's limit. An action a
-   * reflex or an immediate plan action ran, while the intent is paused, is not the intent's.
+   * Tells the executor an action ended: an action the running intent's program ran counts its
+   * block operations (mine, place, build) against the intent's limit, and a mine that failed or
+   * was cancelled counts the blocks it had already broken. An action a reflex or an immediate
+   * plan action ran is not the intent's, however it overlaps the step.
    */
   noteAction(action: Action, run: ActionRun): void {
     const a = this.active;
-    if (run.state !== 'completed' || !a || a.pause !== null || a.stepping === null) return;
-    a.limits.addBlockOperations(blockOperationsOf(action));
+    if (!a?.ownActions.has(action)) return;
+    a.limits.addBlockOperations(blockOperationsDone(action, run));
   }
+
   /** Someone spoke to the Body. Wakes the Mind when the intent lists `directly_addressed`. */
   async notifyAddressed(from: string): Promise<boolean> {
     const a = this.active;
@@ -273,6 +171,8 @@ export class IntentExecutor {
     const reports: ActionReport[] = [];
     let failedAt: number | null = null;
     let rejection: Rejection | null = null;
+    // A reflex that is busy has the Body: the plan's actions wait for it to end.
+    if (actions.length > 0) await this.runtime.reflexRunner.idle();
     const paused = actions.length > 0 ? await this.pauseForActions() : null;
     try {
       for (const [index, action] of actions.entries()) {
@@ -290,6 +190,15 @@ export class IntentExecutor {
       }
     } finally {
       if (paused) await this.resumeFromActions(paused);
+    }
+    // The actions took time: the plan may have gone stale since the check at the top.
+    if (
+      intent &&
+      failedAt === null &&
+      rejection === null &&
+      !this.seenIntents.has(plan.intentId ?? '')
+    ) {
+      rejection = this.validate(plan);
     }
     const stopped = failedAt !== null || rejection !== null;
     if (failedAt !== null) {
@@ -387,6 +296,8 @@ export class IntentExecutor {
   ): Promise<void> {
     if (a.ended) return;
     a.ended = true;
+    // A detour for a walk this intent asked for is of no use to whoever plans next.
+    dropBlockedReport(this.runtime.view, a.id);
     if (this.active === a) this.active = null;
     a.controller.abort();
     a.stepController?.abort();
@@ -462,14 +373,7 @@ export class IntentExecutor {
     if (a.ended) return;
     if (result.status === 'failed' && (a.interrupted || controller.signal.aborted)) return;
     if (result.status === 'running') {
-      this.tellObserver((o) =>
-        o.stepped({
-          intentId: a.id,
-          intent: a.intent,
-          checkpoint: a.program.checkpoint(),
-          expiresTick: a.expiresTick,
-        }),
-      );
+      this.tellObserver((o) => o.stepped(this.snapshot(a)));
       return;
     }
     if (result.status === 'completed') {
@@ -480,6 +384,16 @@ export class IntentExecutor {
     } else {
       await this.end(a, 'interrupted', result.message ?? result.reason, result.reason, true);
     }
+  }
+
+  private snapshot(a: ActiveIntent): StepSnapshot {
+    return {
+      intentId: a.id,
+      intent: a.intent,
+      checkpoint: a.program.checkpoint(),
+      blockOperationsUsed: a.limits.blockOperationsUsed,
+      expiresTick: a.expiresTick,
+    };
   }
 
   /** Calls the observer; what it throws never reaches the step loop. */
@@ -493,14 +407,19 @@ export class IntentExecutor {
   }
 
   /**
-   * Starts `intent` again after a Body restart, from its saved `checkpoint` when it has one. It
-   * is not a new plan: no validity check, no actions. Returns how the start went.
+   * Starts `intent` again after a Body restart, from its saved `checkpoint` when it has one, with
+   * `usedBlockOperations` already spent. It is not a new plan: no validity check, no actions.
+   * Returns how the start went. Only this path reads the intent's `checkpoint`: `submit` never does.
    */
-  resume(intent: Intent, intentId: string): Promise<IntentDisposition> {
-    return this.startIntent(intent, intentId);
+  resume(intent: Intent, intentId: string, usedBlockOperations = 0): Promise<IntentDisposition> {
+    return this.startIntent(intent, intentId, { resumed: true, usedBlockOperations });
   }
 
-  private startIntent(intent: Intent, id: string): Promise<IntentDisposition> {
+  private startIntent(
+    intent: Intent,
+    id: string,
+    mode: IntentStartMode = { resumed: false },
+  ): Promise<IntentDisposition> {
     if (this.seenIntents.has(id)) return Promise.resolve('duplicate');
     this.seenIntents.add(id);
     return startIntentRun(
@@ -514,10 +433,13 @@ export class IntentExecutor {
         current: () => this.active,
         install: (a) => {
           this.active = a;
+          // A restart during the first step finds this entry; each step then refreshes it.
+          this.tellObserver((o) => o.stepped(this.snapshot(a)));
         },
       },
       intent,
       id,
+      mode,
     );
   }
 

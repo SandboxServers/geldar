@@ -115,7 +115,13 @@ export const LIFE = 'ag_test_01';
 export const GENERATION = 3;
 
 export function executorHarness(
-  opts: { reflexes?: Reflex[]; script?: StepResult[]; hold?: boolean; window?: number } = {},
+  opts: {
+    reflexes?: Reflex[];
+    script?: StepResult[];
+    hold?: boolean;
+    window?: number;
+    timeScale?: number;
+  } = {},
 ): ExecutorHarness {
   const ticks = manualTicks();
   const sink = new MemorySink();
@@ -131,6 +137,7 @@ export function executorHarness(
     sink: tap,
     view,
     reflexes: opts.reflexes ?? [],
+    ...(opts.timeScale === undefined ? {} : { timeScale: opts.timeScale }),
   });
   const handlers = countingHandlers();
   runtime.actions.register(handlers.wait);

@@ -21,16 +21,29 @@ export interface IntentStartDeps {
   install(a: ActiveIntent): void;
 }
 
+/** How an intent starts: fresh from its arguments, or again after a Body restart. */
+export interface IntentStartMode {
+  /**
+   * True after a restart: the program is resumed from the intent's saved `checkpoint` (when it
+   * has one). A thought's own `checkpoint` is never trusted: a plan always starts the program
+   * from its arguments.
+   */
+  resumed: boolean;
+  /** Block operations the earlier run already counted against `max_block_operations`. */
+  usedBlockOperations?: number;
+}
+
 /**
  * Replaces the current intent (it ends `cancelled`) with a new one: records `accepted`, checks the
- * preconditions (an unknown name fails), builds the program from the registry, starts it (or
- * resumes it from the intent's `checkpoint`), then records `running`. A failure ends the new intent
- * `failed` and says which of the dispositions it was.
+ * preconditions (an unknown name fails), builds the program from the registry, starts it (or, in
+ * `resumed` mode, resumes it from the intent's `checkpoint`), then records `running`. A failure
+ * ends the new intent `failed` and says which of the dispositions it was.
  */
 export async function startIntentRun(
   deps: IntentStartDeps,
   intent: NonNullable<Thought['intent']>,
   id: string,
+  mode: IntentStartMode = { resumed: false },
 ): Promise<IntentDisposition> {
   const { runtime } = deps;
   const old = deps.current();
@@ -51,6 +64,12 @@ export async function startIntentRun(
       sink: runtime.sink,
       lifeId: runtime.lifeId,
       bodyGeneration: runtime.bodyGeneration,
+      timeScale: runtime.timeScale,
+      // Every action a program runs goes through the runtime's one slot; the executor counts it.
+      runAction: (action, signal) => {
+        a.ownActions.add(action);
+        return runtime.runAction(action, signal);
+      },
     },
     controller,
     stepController: null,
@@ -69,7 +88,9 @@ export async function startIntentRun(
     ended: false,
     interrupted: false,
     reflexWoke: false,
+    ownActions: new WeakSet(),
   };
+  a.limits.addBlockOperations(mode.usedBlockOperations ?? 0);
   deps.setState(a, 'accepted');
 
   const verdict = deps.preconditions.evaluate(a.preconditions, view);
@@ -86,7 +107,8 @@ export async function startIntentRun(
   a.program = program;
   try {
     const ctx = { ...a.base, signal: controller.signal };
-    if (intent.checkpoint) await program.resume(intent.checkpoint as ProgramCheckpoint, ctx);
+    if (mode.resumed && intent.checkpoint)
+      await program.resume(intent.checkpoint as ProgramCheckpoint, ctx);
     else await program.start(intent.arguments, ctx);
   } catch (error) {
     await deps.end(a, 'failed', errorText(error));

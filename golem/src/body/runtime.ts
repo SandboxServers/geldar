@@ -14,6 +14,9 @@ import { type BodyView, createBodyView } from './view.ts';
  */
 export type TickSource = (listener: (worldAge: number) => void) => () => void;
 
+/** Longest wall wait (at time scale 1) for an aborted handler to return before the next action. */
+const HANDLER_GRACE_MS = 2000;
+
 /** What a `BodyRuntime` is built from. */
 export interface BodyRuntimeOptions {
   /** The agent life this Body serves (`life_id`). */
@@ -56,11 +59,18 @@ export class BodyRuntime {
   readonly view: BodyView;
   readonly reflexRunner: ReflexRunner;
   private readonly ticks: TickSource;
-  private readonly timeScale: number;
+  /** `20 / target TPS`: scales the wall limits of every action run. */
+  readonly timeScale: number;
   private readonly ownedView: { dispose(): void } | null;
   private readonly stopController = new AbortController();
   private unsubscribe: (() => void) | null = null;
-  private current: { controller: AbortController; done: Promise<unknown> } | null = null;
+  private current: {
+    controller: AbortController;
+    /** The run's result. */
+    done: Promise<unknown>;
+    /** Settles when the handler itself returned, which can be after `done` on an abort. */
+    handlerEnded: Promise<void>;
+  } | null = null;
   private stopped = false;
 
   constructor(options: BodyRuntimeOptions) {
@@ -125,11 +135,16 @@ export class BodyRuntime {
     const forward = (): void => controller.abort();
     signal?.addEventListener('abort', forward, { once: true });
     if (signal?.aborted) forward();
+    let handlerEnded: Promise<void> = Promise.resolve();
     const done = runAction(this.actions, this.bot, action, {
       timeScale: this.timeScale,
       signal: controller.signal,
+      // Called before runAction's first await, so it is set before the slot is filled.
+      onHandler: (ended) => {
+        handlerEnded = ended;
+      },
     });
-    this.current = { controller, done };
+    this.current = { controller, done, handlerEnded };
     try {
       return await done;
     } finally {
@@ -143,12 +158,23 @@ export class BodyRuntime {
     return this.current !== null;
   }
 
-  /** Cancels the running action and resolves once it has ended. A no-op when none runs. */
+  /**
+   * Cancels the running action and resolves once its handler has ended (the run result comes
+   * back on the abort, but the handler may still be cleaning up: stopping the pathfinder, putting
+   * an item back). A handler that ignores the abort is waited for at most `HANDLER_GRACE_MS`
+   * (times the time scale). A no-op when none runs.
+   */
   async cancelAction(): Promise<void> {
     const running = this.current;
     if (!running) return;
     running.controller.abort();
     await running.done.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const grace = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, HANDLER_GRACE_MS * this.timeScale);
+    });
+    await Promise.race([running.handlerEnded, grace]);
+    clearTimeout(timer);
   }
 
   private reflexContext(tick: number): ReflexContext {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { reportBlocked } from '../reflexes/blocked-path.ts';
 import { ProgramError } from './args.ts';
 import { contextFor, drive, expectResumeEverywhere, newWorld } from './programs.fakes.ts';
 import { TravelProgram } from './travel.ts';
@@ -49,5 +50,16 @@ describe('travel', () => {
 
   it('resumes at every step boundary to the same end state', async () => {
     await expectResumeEverywhere(make, { target }, () => newWorld());
+  });
+
+  it('stays running when a walk ends blocked and a detour report waits, and fails without one', async () => {
+    const world = newWorld({ failing: { goto: 'blocked' } });
+    const ctx = contextFor(world);
+    const program = make();
+    await program.start({ target }, ctx);
+    expect(await program.step(ctx)).toMatchObject({ status: 'failed' });
+    reportBlocked(ctx.view, { goal: { x: 10, y: 64, z: -5 }, range: 1, intentId: null });
+    expect(await program.step(ctx)).toEqual({ status: 'running' });
+    expect(program.checkpoint()).toEqual({ target, legs: 1 });
   });
 });

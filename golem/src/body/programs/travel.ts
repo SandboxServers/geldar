@@ -43,7 +43,7 @@ export class TravelProgram implements IntentProgram {
     }
     state.legs += 1;
     const run = await runStepAction(ctx, { do: 'goto', target });
-    const stop = stopOf(run);
+    const stop = stopOf(run, ctx);
     if (stop) {
       if (stop.status === 'running') state.legs -= 1;
       return stop;

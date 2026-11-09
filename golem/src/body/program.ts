@@ -1,7 +1,7 @@
-import type { Intent } from '@geldar/contract';
+import type { Action, Intent } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { JsonValue } from '../actions/outcome.ts';
-import type { ActionRegistry } from '../actions/registry.ts';
+import type { ActionRegistry, ActionRun } from '../actions/registry.ts';
 import type { RecordSink } from './records.ts';
 import type { BodyView } from './view.ts';
 import type { WakeReason } from './wake.ts';
@@ -14,6 +14,14 @@ export interface ProgramContext {
   sink: RecordSink;
   lifeId: string;
   bodyGeneration: number;
+  /** `20 / target TPS`: scale any fixed wall limit the program sets by it. */
+  timeScale: number;
+  /**
+   * Runs one action in the Body's current-action slot (the one reflexes pre-empt through
+   * `cancelAction`), at `timeScale`, and counts its block operations against the intent's limit.
+   * Programs act through this and never call the registry themselves.
+   */
+  runAction(action: Action, signal: AbortSignal): Promise<ActionRun>;
   /** Aborted when the intent is cancelled or the runtime stops. */
   signal: AbortSignal;
 }
