@@ -40,6 +40,8 @@ Size: aim for packets a packet-coder (Haiku) finishes in under **40k working tok
 
 Observed in wave 1 (coder passes + fixes): P0-00 1+1; P0-01 2+1 (first ran out of context); P0-02 1+1; P0-03 1+1; P0-04 1+2; P0-05 1+1; P0-06 compose 2+3 (the most expensive; budget two coder sessions for live-stack packets); wave review 3 fixes.
 
+Planning rule (owner ruling, wave 3): shape the dependency graph to fan out early. Put first the small packets that unblock parallel work (skeletons, contracts, config, registries, fixtures), each only as large as the parallel packets need to start; then run the independent packets side by side. The wave's packet table names the unblocking packets, what they unblock and the fan-out point; a large packet that blocks others is split before dispatch.
+
 Waves hold about four to six packets that one reviewer can hold at once. A wave usually ships as one PR from an integration branch, or one PR per packet when they are independent.
 
 ## 3. Dispatch a wave
@@ -84,17 +86,21 @@ A continuation coder ("continuation N of 3") first commits any uncommitted work 
 
 Brief template additions: never weaken an assertion or change a fixture to make a test pass (report a Body finding); probes against the server use read-only verbs only; check every parser or fixture of a server reply against a captured real reply; no live lane or Docker unless the brief names the coder as the only live user. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
 
+Retry and cap rule (every coder brief): a packet that adds a retry, a requeue or a cap says what happens at the cap (dead letter, fatal, drop) and requires a test for the last allowed attempt; copy that sentence into the brief when the packet does.
+
 Never keep an agent alive with messages or resume a finished one: follow-ups go to a fresh agent with the report as input.
 
 ## 4. Review loops, then ship
 
 | Loop | When | Scope |
 |---|---|---|
-| Packet | as soon as its coder returns `done` | the packet's commit range |
+| Packet | only when the owner asks; by default packets are not reviewed one by one | the packet's commit range |
 | Wave | when every packet of the wave has `ship` (waves of two or more) | the wave together: contract drift between packets, duplicated code, two packets editing one file |
 | Campaign | after the last wave merges | everything the campaign merged: docs that no longer match, decisions with nothing behind them |
 
-A single packet gets up to 3 passes. Parallel packets can be reviewed as one **batch** (dispatch rule 11): merge them into a temporary branch `phase0/wave<N>-batch-<name>`, review that, and allow up to 5 rounds, then a `decision` ruling. A wave review is split by area (docs; code, CI and security), one reviewer each. Each pass is a fresh `packet-reviewer`. `ship` ends the loop. `fix` before pass L goes to a fresh `packet-coder` ("Review fix, pass N of <L>", the report path; it applies only the `## Fix notes`), then a fresh reviewer for pass N+1. `fix` on pass L, or `decision` on any pass, goes to a ruling: the main session (Opus) decides re-spec, re-slice, accept with a follow-up packet, or ask the owner, and writes it to `worknotes/<packet>.md`. Opus rules; it does not implement packets.
+Owner ruling (wave 3): reviews and live runs happen once per wave, at the end (wave close step 0), not per packet or batch. The wave review gets up to 5 rounds with a fix round between them. A single packet that is reviewed on request gets up to 3 passes. Parallel packets can be reviewed as one **batch** (dispatch rule 11): merge them into a temporary branch `phase0/wave<N>-batch-<name>`, review that, and allow up to 5 rounds, then a `decision` ruling. A wave review is split by area (docs; code, CI and security), one reviewer each. Each pass is a fresh `packet-reviewer`. `ship` ends the loop. `fix` before pass L goes to a fresh `packet-coder` ("Review fix, pass N of <L>", the report path; it applies only the `## Fix notes`), then a fresh reviewer for pass N+1. `fix` on pass L, or `decision` on any pass, goes to a ruling: the main session (Opus) decides re-spec, re-slice, accept with a follow-up packet, or ask the owner, and writes it to `worknotes/<packet>.md`. Opus rules; it does not implement packets.
+
+The orchestrator, not the reviewer, records each review round's findings in `worknotes/wave<N>-review-<r>.md` with an owner per item (fix coder, docs, process packet, owner decision). A fix coder's brief gives the path of that file (or the reviewer report) and the items it owns.
 
 A coder that stops on context gets a fresh coder that continues from its report ("continuation N of 3"). After 3 sessions, re-slice the packet.
 
@@ -106,4 +112,4 @@ At every wave boundary rewrite `RESUME.md` and the ledger rows. The transcript i
 
 ## 6. Wave close
 
-Every wave ends with the wave close in `work-packets.md` § Wave close: (1) a docs sweep by a fresh `packet-coder`, from a list the wave reviewer writes; (2) the retro, `retro/wave-<N>.md`, with numbered Actions, each with an owner and a size; (3) a `W<N>-process` packet that applies the Actions that change the process or the agent and skill scaffolding, reviewed like any packet and merged into the wave branch; (4) the ledger: `README.md` records the retro and the process packet, and `RESUME.md` names the next wave; (5) remove the packet worktrees after copying useful reports to `worknotes/` (`ship-pr` § 7).
+Every wave ends with the wave close in `work-packets.md` § Wave close, in this order: (0) the wave test and ONE thorough wave review, split by area, up to 5 rounds with a fix round between them, after the last feature packet; (1) a docs sweep by a fresh `packet-coder`, from a list the wave reviewer writes; (2) the retro, `retro/wave-<N>.md`, with numbered Actions, each with an owner and a size; (3) a `W<N>-process` packet that applies the Actions that change the process or the agent and skill scaffolding, reviewed like any packet and merged into the wave branch; (4) the ledger: `README.md` records the retro and the process packet, and `RESUME.md` names the next wave; (5) remove the packet worktrees after copying useful reports to `worknotes/` (`ship-pr` § 7).

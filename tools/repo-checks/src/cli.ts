@@ -1,7 +1,8 @@
 /**
  * Repo hygiene gate: fails on files over the hard line cap, on CRLF in the
  * index, on a stray control character or CR in a committed text file, on a
- * compose port that does not bind to loopback, or on a decision record that
+ * compose port that does not bind to loopback, on a workflow that is not valid
+ * YAML or repeats a key, or on a decision record that
  * `docs/decisions/README.md` does not index. Line caps cover
  * untracked, not-ignored files too, so a new file fails locally before it is
  * staged. Untracked CRLF needs no check: `.gitattributes`
@@ -20,6 +21,7 @@ import { checkDecisionIndex } from './decision-index.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
+import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
 
 /** Every path below is relative to the repo root, wherever the CLI runs from. */
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -98,6 +100,13 @@ for (const file of [...tracked, ...untracked].filter((f) => isComposeFile(f.path
     console.log(
       `error: ${port.path} service ${port.service}: ${port.reason} (docs/threat-model.md section 1)`,
     );
+    failed = true;
+  }
+}
+
+for (const file of [...tracked, ...untracked].filter((f) => isWorkflowFile(f.path))) {
+  for (const problem of checkWorkflowYaml(file.path, file.text)) {
+    console.log(`error: ${problem}`);
     failed = true;
   }
 }
