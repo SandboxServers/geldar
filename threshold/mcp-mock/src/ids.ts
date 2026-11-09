@@ -1,5 +1,8 @@
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
+/** Book ids are 8 digits, so the counter must stay below 32^8. */
+const BK_LIMIT = 32 ** 8;
+
 /** The id kinds: snapshot, intent, action, proposal and book. */
 export type IdPrefix = 'sn' | 'in' | 'ac' | 'pr' | 'bk';
 
@@ -10,6 +13,9 @@ export type IdPrefix = 'sn' | 'in' | 'ac' | 'pr' | 'bk';
 export function makeId(prefix: IdPrefix, n: number): string {
   if (!Number.isSafeInteger(n) || n < 0) {
     throw new RangeError(`id counter must be a non-negative integer, got ${n}`);
+  }
+  if (prefix === 'bk' && n >= BK_LIMIT) {
+    throw new RangeError(`book counter must be below 32^8, got ${n}`);
   }
   let rest = BigInt(n);
   let digits = '';

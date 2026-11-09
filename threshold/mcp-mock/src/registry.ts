@@ -38,7 +38,7 @@ export interface ToolResponse {
   content: { type: 'text'; text: string }[];
 }
 
-/** The tool list, sorted by name, with the bundled contract input schema for each. */
+/** The tool list, sorted by name, with a copy of the bundled contract input schema for each (callers may mutate it). */
 export function listTools(): {
   name: string;
   description: string;
@@ -47,7 +47,7 @@ export function listTools(): {
   return [...MCP_TOOL_NAMES].sort().map((name) => ({
     name,
     description: mcpToolSchemas[name].description,
-    inputSchema: mcpToolSchemas[name].input,
+    inputSchema: structuredClone(mcpToolSchemas[name].input),
   }));
 }
 
@@ -57,7 +57,9 @@ function failure(text: string): ToolResponse {
 
 /**
  * Runs one tool call: validates the input, runs the handler, validates the result and caps its size.
- * Never throws. Handler faults are logged, not shown to the character.
+ * Never throws. Handler faults are logged, not shown to the character. `log` gets those faults
+ * (`internal_error`, `invalid_output`) and the refusals worth a trace (`unknown_tool`,
+ * `result_too_large`); it defaults to a no-op.
  */
 export async function callTool(
   handlers: ToolHandlers,
@@ -66,8 +68,10 @@ export async function callTool(
   ctx: ToolContext,
   log: (m: string) => void = () => {},
 ): Promise<ToolResponse> {
-  if (!(MCP_TOOL_NAMES as readonly string[]).includes(name))
+  if (!(MCP_TOOL_NAMES as readonly string[]).includes(name)) {
+    log(`unknown_tool: ${name}`);
     return failure(`unknown_tool: ${name}`);
+  }
   const tool = name as McpToolName;
 
   const input = validateToolInput(tool, args === undefined ? {} : args);
@@ -93,6 +97,9 @@ export async function callTool(
   }
 
   const text = JSON.stringify(result);
-  if (Buffer.byteLength(text) > MAX_RESULT_BYTES) return failure(`result_too_large: ${tool}`);
+  if (Buffer.byteLength(text) > MAX_RESULT_BYTES) {
+    log(`result_too_large from ${tool}: ${Buffer.byteLength(text)} bytes`);
+    return failure(`result_too_large: ${tool}`);
+  }
   return { content: [{ type: 'text', text }] };
 }

@@ -62,5 +62,7 @@ describe('makeId', () => {
     expect(makeId('sn', 1)).toBe(makeId('sn', 1));
     expect(() => makeId('sn', -1)).toThrow();
     expect(() => makeId('sn', 1.5)).toThrow();
+    expect(makeId('bk', 32 ** 8 - 1)).toBe('bk_ZZZZZZZZ');
+    expect(() => makeId('bk', 32 ** 8)).toThrow();
   });
 });

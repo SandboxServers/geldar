@@ -40,7 +40,20 @@ describe('listTools', () => {
     for (const t of tools) {
       expect(t.description.length).toBeGreaterThan(0);
       expect(t.inputSchema).toEqual(mcpToolSchemas[t.name as McpToolName].input);
+      expect(t.inputSchema.type, t.name).toBe('object');
     }
+  });
+
+  it('returns copies, so a caller mutating a schema changes nothing else', () => {
+    const before = structuredClone(mcpToolSchemas.say.input);
+    const first = listTools().find((t) => t.name === 'say');
+    expect(first).toBeDefined();
+    if (first === undefined) return;
+    first.inputSchema.type = 'mutated';
+    first.inputSchema.extra = true;
+    const second = listTools().find((t) => t.name === 'say');
+    expect(second?.inputSchema).toEqual(before);
+    expect(mcpToolSchemas.say.input).toEqual(before);
   });
 });
 
@@ -131,6 +144,71 @@ describe('callTool', () => {
     expect(res.isError).toBe(true);
     expect(res.content[0]?.text.startsWith('invalid_output:')).toBe(true);
     expect(logged.length).toBe(1);
+    expect(logged[0]).toContain('invalid_output');
+  });
+
+  it('logs internal_error faults, unknown tools and oversized results', async () => {
+    const logged: string[] = [];
+    const log = (m: string) => logged.push(m);
+    await callTool(
+      with1('look', () => {
+        throw new Error('boom');
+      }),
+      'look',
+      {},
+      ctx,
+      log,
+    );
+    expect(logged[0]).toContain('look');
+    expect(logged[0]).toContain('boom');
+    await callTool(createFakeHandlers(), 'dance', {}, ctx, log);
+    expect(logged[1]).toContain('unknown_tool');
+    const base = (await createFakeHandlers().wait({}, ctx)) as Record<string, unknown>;
+    const events = Array.from({ length: 100 }, (_, i) => ({
+      seq: i + 1,
+      type: 'reflex',
+      tick: i,
+      text: 'x'.repeat(200),
+    }));
+    await callTool(
+      with1('wait', () => ({ ...base, events })),
+      'wait',
+      { max_seconds: 5 },
+      ctx,
+      log,
+    );
+    expect(logged[2]).toContain('result_too_large');
+    expect(logged.length).toBe(3);
+  });
+
+  it('passes the validated input and the context to the handler', async () => {
+    let seen: { input: unknown; ctx: ToolContext } | undefined;
+    await callTool(
+      with1('say', (input, c) => {
+        seen = { input, ctx: c };
+        return { spoken: true, budget_remaining_thoughts: 1 };
+      }),
+      'say',
+      { text: 'hi' },
+      ctx,
+    );
+    expect(seen?.ctx).toBe(ctx);
+    expect(seen?.input).toEqual({ text: 'hi' });
+  });
+
+  it('gives each look and wait a different snapshot id, in a fixed order', async () => {
+    const id = async (h: ToolHandlers, name: 'look' | 'wait') => {
+      const res = await callTool(h, name, name === 'wait' ? { max_seconds: 5 } : {}, ctx);
+      return (JSON.parse(res.content[0]?.text ?? '') as { snapshot: { snapshot_id: string } })
+        .snapshot.snapshot_id;
+    };
+    const h = createFakeHandlers();
+    const a = await id(h, 'look');
+    const b = await id(h, 'wait');
+    expect(a).not.toBe(b);
+    const h2 = createFakeHandlers();
+    expect(await id(h2, 'look')).toBe(a);
+    expect(await id(h2, 'wait')).toBe(b);
   });
 
   it('caps the result size', async () => {
