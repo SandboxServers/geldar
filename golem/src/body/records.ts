@@ -23,7 +23,7 @@ export interface IntentChange {
   /** Why, in plain text (for example the failure message). */
   detail?: string;
   /**
-   * The intent as accepted: set on the ccepted change, so the record can show what the intent
+   * The intent as accepted: set on the `accepted` change, so the record can show what the intent
    * was (goal, program, arguments, preconditions, wake_on, limits). Absent on the other changes.
    */
   intent?: NonNullable<Thought['intent']>;

@@ -66,7 +66,7 @@ const MAX_PENDING = 10_000;
 /** Record types the sink never gives up on: the audit record of decision 0020 (action and receipt). */
 const AUDIT_TYPES: ReadonlySet<string> = new Set(['action', 'receipt']);
 
-/** One queued event; udit ones are retried until they are sent. */
+/** One queued event; `audit` ones are retried until they are sent. */
 interface Queued {
   event: WorldEvent;
   audit: boolean;
