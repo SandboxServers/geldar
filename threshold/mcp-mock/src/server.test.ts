@@ -336,6 +336,31 @@ describe('mock http', () => {
     expect(signals.aa?.[0]?.aborted).toBe(true);
   }, 30_000);
 
+  it('logs the cause when the client leaves before the handler throws', async () => {
+    let release: () => void = () => undefined;
+    connectGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const controller = new AbortController();
+    const sent = fetch(`${base}/p/aa`, {
+      method: 'POST',
+      headers: bearer(TOKEN_A, {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      }),
+      body: JSON.stringify(INIT),
+      signal: controller.signal,
+    }).catch(() => undefined);
+    await vi.waitFor(() => expect(signals.aa?.length).toBe(1));
+    controller.abort();
+    await sent;
+    await vi.waitFor(() => expect(lines.some((entry) => entry.event === 'initialize')).toBe(true));
+    release();
+    await vi.waitFor(() => {
+      const line = lines.find((entry) => entry.event === 'internal_error');
+      expect(String(line?.error)).toContain('boom-from-connect');
+    });
+  }, 30_000);
   it('aborts the old signal before waiting for in-flight handlers', async () => {
     const first = await connect('aa', TOKEN_A);
     const started = new Promise<void>((resolve) => {

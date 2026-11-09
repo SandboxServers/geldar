@@ -323,6 +323,16 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       ctx.event = 'internal_error';
       ctx.error =
         error instanceof Error ? `${error.constructor.name}: ${error.message}` : 'non-Error thrown';
+      // The close hook already logged if the client left first, so log the cause here.
+      if (res.closed) {
+        log({
+          event: ctx.event,
+          ...(ctx.playerId !== undefined ? { player_id: ctx.playerId } : {}),
+          status: res.statusCode,
+          error: ctx.error,
+        });
+        return;
+      }
       if (!res.headersSent) res.writeHead(500);
       res.end();
     });
