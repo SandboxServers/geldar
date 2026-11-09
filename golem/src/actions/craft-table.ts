@@ -277,9 +277,9 @@ async function craftOnce(
 ): Promise<{ displayId: number } | { outcome: ActionOutcome }> {
   for (const { displayId } of candidates) {
     if (ctx.signal.aborted) return { outcome: cancelled() };
-    const landed = awaitResult(ctx, client, windowId);
-    client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
-    const result = await landed;
+    const write = (): void =>
+      client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
+    const result = await awaitResult(ctx, client, windowId, write);
     if (result === 'aborted') return { outcome: cancelled() };
     if (result === 'filled') {
       await shiftClick(ctx, client, windowId, states);
@@ -344,21 +344,27 @@ type ResultWait = 'filled' | 'missed' | 'timeout' | 'aborted';
  * Resolves when the window's result slot gets a stack. If the server answers the request with a
  * `craft_recipe_response` for this window and no stack follows within the grace, it resolves as a
  * miss at once. Otherwise it resolves on the bounded wait running out, or when the signal aborts.
- * The listeners and the timer are released on every path.
+ * The request is sent by `send` once the listeners and the timer are armed, since a reply may arrive
+ * synchronously. If `send` throws, the wait is released and the error rejects. The listeners and the
+ * timer are released on every path.
  */
 function awaitResult(
   ctx: ActionContext,
   client: RecipeClient,
   windowId: number,
+  send: () => void,
 ): Promise<ResultWait> {
   const { signal, timeScale } = ctx;
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (result: ResultWait): void => {
+    const release = (): void => {
       clearTimeout(timer);
       client.removeListener('set_slot', onSlot);
       client.removeListener('craft_recipe_response', onAnswer);
       signal.removeEventListener('abort', onAbort);
+    };
+    const finish = (result: ResultWait): void => {
+      release();
       resolve(result);
     };
     const onSlot = (packet: unknown): void => {
@@ -377,6 +383,12 @@ function awaitResult(
     client.on('craft_recipe_response', onAnswer);
     signal.addEventListener('abort', onAbort, { once: true });
     timer = setTimeout(() => finish('timeout'), RESULT_WAIT_MS * timeScale);
+    try {
+      send();
+    } catch (error) {
+      release();
+      reject(error);
+    }
   });
 }
 

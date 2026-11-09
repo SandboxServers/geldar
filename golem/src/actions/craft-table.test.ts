@@ -333,6 +333,30 @@ describe('craftFromBook', () => {
     expect(writesOf(fake.client, 'close_window')).toEqual([{ windowId: 0 }]);
   });
 
+  it('releases the result wait when the request write throws: no listeners or timer left', async () => {
+    const fake = fakeGame();
+    watchRecipeBook(fake.bot);
+    fake.client.emit('recipe_book_add', bookAdd([[SHAPED_BED, 'crafting_shaped', BED.id]]));
+    // The client has ended: the request write throws, as the protocol client does then.
+    fake.client.write.mockImplementation((name: string) => {
+      if (name === 'craft_recipe_request') throw new Error('client ended');
+    });
+    const signal = new AbortController().signal;
+    const removeAbort = vi.spyOn(signal, 'removeEventListener');
+    const ctx: ActionContext = { bot: fake.bot, signal, timeScale: 0.01 };
+    vi.useFakeTimers();
+    try {
+      await expect(craftFromBook(ctx, BED, 1, null)).rejects.toThrow('client ended');
+      // The 5 s result wait is the only timer that could be left armed: none is.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fake.client.listenerCount('set_slot')).toBe(0);
+    expect(fake.client.listenerCount('craft_recipe_response')).toBe(0);
+    expect(removeAbort).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+
   it('does not close window 0 after a grid craft that ran to the end', async () => {
     const fake = fakeGame();
     watchRecipeBook(fake.bot);
