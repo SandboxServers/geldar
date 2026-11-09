@@ -51,6 +51,8 @@ describe('listTools', () => {
     if (first === undefined) return;
     first.inputSchema.type = 'mutated';
     first.inputSchema.extra = true;
+    const props = first.inputSchema.properties as Record<string, Record<string, unknown>>;
+    props.text = { type: 'mutated' };
     const second = listTools().find((t) => t.name === 'say');
     expect(second?.inputSchema).toEqual(before);
     expect(mcpToolSchemas.say.input).toEqual(before);
