@@ -41,7 +41,10 @@ export const DLQ_DATA_LIMIT = 8192;
 /** Longest `reason` kept in a dead letter body. */
 const DLQ_REASON_LIMIT = 2000;
 
-/** Server-side redelivery cap, a backstop against a message that can never be processed. */
+/**
+ * Server-side redelivery cap. Every delivery counts, including ones that failed only because the
+ * database was down, so the last delivery dead-letters instead of naking (see `retryOrDeadLetter`).
+ */
 export const MAX_DELIVER = 20;
 
 /** Nak delay for the nth delivery: 1 s, 2 s, 4 s ... capped at 30 s. */
@@ -103,6 +106,29 @@ async function deadLetter(
   }
 }
 
+/**
+ * Handles a transient write failure for one message: nak with backoff, except on the last
+ * delivery the server allows. JetStream stops redelivering after `MAX_DELIVER` and says nothing,
+ * so that delivery dead-letters the event instead of losing it.
+ */
+async function retryOrDeadLetter(
+  message: SinkMessage,
+  error: unknown,
+  deps: BatchDeps,
+  log: (line: string) => void,
+): Promise<void> {
+  if (message.deliveryCount >= MAX_DELIVER) {
+    await deadLetter(
+      message,
+      `database unavailable after ${message.deliveryCount} deliveries: ${String(error)}`,
+      deps,
+      log,
+    );
+    return;
+  }
+  message.nak(nakDelayMs(message.deliveryCount));
+}
+
 /** After a permanent batch error: one row at a time, so only the offending rows are dead-lettered. */
 async function insertRowByRow(
   valid: readonly { message: SinkMessage; event: WorldEvent }[],
@@ -123,7 +149,7 @@ async function insertRowByRow(
         );
       } else {
         log(`eventsink: write failed, nak ${event.source_event_id}: ${String(error)}`);
-        message.nak(nakDelayMs(message.deliveryCount));
+        await retryOrDeadLetter(message, error, deps, log);
       }
     }
   }
@@ -134,7 +160,8 @@ async function insertRowByRow(
  * - Own dead letters (`geldar.<shard>.dlq` bodies without a `source_event_id`) are acked and skipped.
  * - Invalid messages are published to the DLQ with the reason, then acked; a DLQ failure naks.
  * - Valid ones are inserted in one transaction and acked only after it commits. A connection or
- *   timeout error naks them all; a permanent error (SQLSTATE 22 or 23) retries row by row and
+ *   timeout error naks them all (dead-letters those on their last delivery); a permanent error (SQLSTATE 22 or 23)
+ *   retries row by row and
  *   dead-letters only the rows the database rejects.
  */
 export async function handleBatch(
@@ -166,7 +193,7 @@ export async function handleBatch(
     }
     const ids = valid.map((v) => v.event.source_event_id).join(',');
     log(`eventsink: write failed, nak ${valid.length} events [${ids}]: ${String(error)}`);
-    for (const { message } of valid) message.nak(nakDelayMs(message.deliveryCount));
+    for (const { message } of valid) await retryOrDeadLetter(message, error, deps, log);
     return;
   }
   for (const { message } of valid) message.ack();

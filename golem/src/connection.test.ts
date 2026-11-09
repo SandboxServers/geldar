@@ -191,6 +191,34 @@ describe('ConnectionManager', () => {
     expect(h.createBot).toHaveBeenCalledTimes(1);
   });
 
+  it('goes fatal on a not-admitted kick with a message that names GELDAR_NATS_URL', async () => {
+    const h = harness();
+    const joined = h.manager.start();
+    const outcome = expect(joined).rejects.toThrow(/GELDAR_NATS_URL/);
+    h.bots[0]?.emit('kicked', 'This connection is not admitted.', true);
+    await outcome;
+    expect(h.manager.state).toBe('fatal');
+    expect(h.createBot).toHaveBeenCalledTimes(1);
+    expect(h.sleeps).toEqual([]);
+  });
+
+  it('goes fatal on a not-admitted kick sent as a text component', async () => {
+    const h = harness();
+    const joined = h.manager.start();
+    const outcome = expect(joined).rejects.toThrow(/GELDAR_NATS_URL/);
+    h.bots[0]?.emit('kicked', { text: 'This connection is not admitted.' }, true);
+    await outcome;
+    expect(h.manager.state).toBe('fatal');
+  });
+
+  it('a not-admitted text in an end reason, not a kick, still retries', async () => {
+    const h = harness();
+    h.manager.start().catch(() => {});
+    h.bots[0]?.emit('end', 'This connection is not admitted.');
+    await vi.waitFor(() => expect(h.sleeps).toEqual([1000]));
+    expect(h.manager.state).not.toBe('fatal');
+    await h.manager.stop();
+  });
   it('a respawn in the same session neither restarts the stability clock nor spawns again', async () => {
     const h = harness();
     const spawns: unknown[] = [];

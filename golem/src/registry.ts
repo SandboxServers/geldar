@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
 import { connect } from '@nats-io/transport-node';
@@ -29,23 +30,38 @@ export interface BotRegistry {
   close(): Promise<void>;
 }
 
+/** The LifeId pattern of contract/schemas/common.schema.json. */
+const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
+
 /**
- * The permanent life id for a bot username: `ag_<name>_01` where name is the username lowercased,
- * stripped to `[a-z0-9]`, starting with a letter and at most 16 characters (the LifeId pattern of
- * contract/schemas/common.schema.json). A username with no usable letters becomes `bot`.
+ * The permanent life id for a bot username. A username that already is a LifeId (`ag_kestrel_01`)
+ * is used unchanged, so the registry and the plugin's `agent_id` agree. Any other username becomes
+ * `ag_<stem><hash>_01`: the stem is the username lowercased, stripped to `[a-z0-9]`, starting with
+ * a letter and cut to 8 characters (`bot` when nothing is left); the hash is the first 8 hex
+ * digits of the SHA-256 of the exact username, so `Steve_1` and `Steve1` get distinct ids.
  */
 export function lifeIdFor(username: string): string {
-  const name = username
+  if (LIFE_ID.test(username)) return username;
+  const stem = username
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
     .replace(/^[0-9]+/, '')
-    .slice(0, 16);
-  return `ag_${name === '' ? 'bot' : name}_01`;
+    .slice(0, 8);
+  const hash = createHash('sha256').update(username).digest('hex').slice(0, 8);
+  return `ag_${stem === '' ? 'bot' : stem}${hash}_01`;
 }
-
 /** The registry key for a username: lowercase, as the plugin looks it up. */
 export function registryKey(username: string): string {
   return username.toLowerCase();
+}
+
+/** Host and port of a NATS URL, for messages: credentials and the path never reach a log. */
+function hostAndPort(natsUrl: string): string {
+  try {
+    return new URL(natsUrl).host;
+  } catch {
+    return 'the configured NATS server';
+  }
 }
 
 /** Opens NATS and creates the bucket if it is missing. Throws a clear error when unreachable. */
@@ -61,7 +77,7 @@ export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistr
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `NATS is unreachable at ${natsUrl} (${why}); start the shard (./geldar.ps1 shard up phase0) ` +
+      `NATS is unreachable at ${hostAndPort(natsUrl)} (${why}); start the shard (./geldar.ps1 shard up phase0) ` +
         'or unset GELDAR_NATS_URL to run without the life registry',
       { cause: error },
     );
@@ -78,9 +94,13 @@ export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistr
 /**
  * Registers bot usernames in the life registry. NATS is opened on the first `register`, so a
  * session that never needs it never connects; an unreachable NATS fails every `register` anew.
+ * Opening is single-flight: overlapping calls share one connection.
  */
 export class LifeRegistration implements BotRegistry {
   private opened: OpenedRegistry | null = null;
+  private opening: Promise<OpenedRegistry> | null = null;
+  /** Usernames a put was attempted for; a put may land even when its reply is lost. */
+  private readonly touched = new Set<string>();
   private readonly open: () => Promise<OpenedRegistry>;
   private readonly now: () => Date;
 
@@ -90,10 +110,11 @@ export class LifeRegistration implements BotRegistry {
   }
 
   async register(username: string): Promise<void> {
-    this.opened ??= await this.open();
+    const opened = await this.connection();
     const value = { life_id: lifeIdFor(username), registered_at: this.now().toISOString() };
+    this.touched.add(username);
     try {
-      await this.opened.kv.put(registryKey(username), JSON.stringify(value));
+      await opened.kv.put(registryKey(username), JSON.stringify(value));
     } catch (error) {
       // A dead connection must not stick: drop it so the next register opens a fresh one.
       await this.close().catch(() => undefined);
@@ -101,17 +122,44 @@ export class LifeRegistration implements BotRegistry {
     }
   }
 
+  /**
+   * Deletes the key. When the connection was dropped (a failed put, an outage) it is reopened
+   * first, so a key that may have landed is not left behind; a username never put is a no-op.
+   * Failures throw, and the caller logs them.
+   */
   async unregister(username: string): Promise<void> {
-    await this.opened?.kv.delete(registryKey(username));
+    if (!this.touched.has(username)) return;
+    const opened = await this.connection();
+    try {
+      await opened.kv.delete(registryKey(username));
+    } catch (error) {
+      await this.close().catch(() => undefined);
+      throw error;
+    }
+    this.touched.delete(username);
   }
 
   async close(): Promise<void> {
+    await this.opening?.catch(() => undefined);
     const opened = this.opened;
     this.opened = null;
     await opened?.close();
   }
-}
 
+  /** The open bucket, opening it if needed; concurrent callers wait for the same open. */
+  private connection(): Promise<OpenedRegistry> {
+    if (this.opened !== null) return Promise.resolve(this.opened);
+    this.opening ??= this.open()
+      .then((opened) => {
+        this.opened = opened;
+        return opened;
+      })
+      .finally(() => {
+        this.opening = null;
+      });
+    return this.opening;
+  }
+}
 /** The registry for a config: undefined (registry off) unless `GELDAR_NATS_URL` is set. */
 export function registryFromConfig(cfg: GolemConfig): BotRegistry | undefined {
   const url = cfg.natsUrl;

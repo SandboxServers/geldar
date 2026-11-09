@@ -4,7 +4,7 @@ import type { Bot } from 'mineflayer';
 import { watchRecipeBook } from '../actions/craft-table.ts';
 import { createRegistry } from '../actions/index.ts';
 import { restoreWorld } from '../arena.ts';
-import { type GolemConfig, loadConfig, readRconPassword, repoRoot } from '../config.ts';
+import { type GolemConfig, loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { RconClient } from '../rcon.ts';
 import { registryFromConfig } from '../registry.ts';
@@ -269,7 +269,7 @@ export async function main(argv: string[], deps: CliDeps = {}): Promise<number> 
     return 0;
   }
 
-  const cfg = deps.config ?? loadConfig();
+  const cfg = deps.config ?? loadStackConfig();
   let rcon: { ctl: TestControl; close(): Promise<void> };
   try {
     rcon = await (deps.connectRcon ?? defaultConnect)(cfg);

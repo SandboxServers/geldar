@@ -8,6 +8,7 @@ import {
   LifeRegistration,
   lifeIdFor,
   type OpenedRegistry,
+  openRegistryBucket,
   registryFromConfig,
   registryKey,
 } from '../src/registry.ts';
@@ -36,8 +37,36 @@ describe('lifeIdFor and registryKey', () => {
     for (const name of ['GolemBench', 'Golem_Smoke', '9lives', '___', 'A', 'x'.repeat(40), 'Ünï']) {
       expect(lifeIdFor(name)).toMatch(LIFE_ID);
     }
-    expect(lifeIdFor('GolemBench')).toBe('ag_golembench_01');
-    expect(lifeIdFor('9Lives_')).toBe('ag_lives_01');
+    expect(lifeIdFor('GolemBench')).toMatch(/^ag_golemben[0-9a-f]{8}_01$/);
+    expect(lifeIdFor('9Lives_')).toMatch(/^ag_lives[0-9a-f]{8}_01$/);
+  });
+
+  it('uses a username that already is a LifeId unchanged', () => {
+    expect(lifeIdFor('ag_kestrel_01')).toBe('ag_kestrel_01');
+    expect(lifeIdFor('ag_a_42')).toBe('ag_a_42');
+    // Wrong case or a one-digit suffix is not a LifeId: it is hashed like any other name.
+    expect(lifeIdFor('AG_Kestrel_01')).not.toBe('AG_Kestrel_01');
+    expect(lifeIdFor('ag_kestrel_1')).not.toBe('ag_kestrel_1');
+  });
+
+  it('is deterministic and gives distinct ids to distinct usernames', () => {
+    expect(lifeIdFor('Steve_1')).toBe(lifeIdFor('Steve_1'));
+    const names = [
+      'Steve_1',
+      'Steve1',
+      'steve1',
+      'Steve__1',
+      'a'.repeat(16),
+      'a'.repeat(15),
+      'Golem_Smoke_01',
+      'Golem_Smoke_02',
+      '9lives',
+      '___',
+      'ag_kestrel_01',
+    ];
+    const ids = names.map((n) => lifeIdFor(n));
+    expect(new Set(ids).size).toBe(names.length);
+    for (const id of ids) expect(id).toMatch(LIFE_ID);
   });
 
   it('keys by the lowercase username, as the plugin looks it up', () => {
@@ -54,7 +83,7 @@ describe('LifeRegistration', () => {
     );
     await reg.register('GolemBench');
     expect(log).toEqual([
-      `put golembench ${JSON.stringify({ life_id: 'ag_golembench_01', registered_at: '2026-01-02T03:04:05.000Z' })}`,
+      `put golembench ${JSON.stringify({ life_id: lifeIdFor('GolemBench'), registered_at: '2026-01-02T03:04:05.000Z' })}`,
     ]);
   });
 
@@ -99,6 +128,68 @@ describe('LifeRegistration', () => {
     await expect(reg.register('Bot')).rejects.toThrow(/closed/);
     await reg.register('Bot');
     expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('reopens in unregister after a failed put dropped the connection, so the key is deleted', async () => {
+    const log: string[] = [];
+    let first = true;
+    const open = vi.fn(async (): Promise<OpenedRegistry> => {
+      const opened = fakeKv(log);
+      if (first) {
+        first = false;
+        opened.kv.put = async () => {
+          throw new Error('reply lost');
+        };
+      }
+      return opened;
+    });
+    const reg = new LifeRegistration(open);
+    await expect(reg.register('Bot')).rejects.toThrow(/reply lost/);
+    await reg.unregister('Bot');
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(log).toContain('delete bot');
+  });
+
+  it('does not open NATS to unregister a username that was never put', async () => {
+    const open = vi.fn(async () => fakeKv([]));
+    const reg = new LifeRegistration(open);
+    await reg.unregister('Bot');
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('throws a failed delete so the caller can log it', async () => {
+    const opened = fakeKv([]);
+    opened.kv.delete = async () => {
+      throw new Error('stream gone');
+    };
+    const reg = new LifeRegistration(async () => opened);
+    await reg.register('Bot');
+    await expect(reg.unregister('Bot')).rejects.toThrow(/stream gone/);
+  });
+
+  it('opens one connection for overlapping registers', async () => {
+    const log: string[] = [];
+    const open = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return fakeKv(log);
+    });
+    const reg = new LifeRegistration(open);
+    await Promise.all([reg.register('A'), reg.register('B')]);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(log.filter((l) => l.startsWith('put'))).toHaveLength(2);
+  });
+});
+
+describe('openRegistryBucket', () => {
+  it('names only host and port when NATS is unreachable, not credentials', async () => {
+    const error = await openRegistryBucket('nats://someuser:s3cret@127.0.0.1:1').then(
+      () => new Error('connected'),
+      (e: Error) => e,
+    );
+    expect(error.message).not.toBe('connected');
+    expect(error.message).toContain('127.0.0.1:1');
+    expect(error.message).not.toContain('s3cret');
+    expect(error.message).not.toContain('someuser');
   });
 });
 
@@ -235,6 +326,61 @@ describe('ConnectionManager with a registry', () => {
     release();
     await stopped;
     await vi.waitFor(() => expect(log).toContain('unregister GolemBench'));
+    expect(log).not.toContain('connect');
+  });
+
+  it('deletes the key through a real registration when the first put fails', async () => {
+    const log: string[] = [];
+    const opened = fakeKv(log);
+    opened.kv.put = async () => {
+      throw new Error('reply lost');
+    };
+    let opens = 0;
+    const registration = new LifeRegistration(async () => {
+      opens += 1;
+      return opens === 1 ? opened : fakeKv(log);
+    });
+    const { manager } = managed(registration, log);
+    await expect(manager.start()).rejects.toThrow(/reply lost/);
+    await vi.waitFor(() => expect(log).toContain('delete golembench'));
+    expect(log).not.toContain('connect');
+  });
+
+  it('stays stopped when a stop() races a failing registration', async () => {
+    const log: string[] = [];
+    let fail: () => void = () => {};
+    const gate = new Promise<void>((_resolve, reject) => {
+      fail = () => reject(new Error('NATS is unreachable at nats://127.0.0.1:4222'));
+    });
+    const registry = loggedRegistry(log);
+    registry.register = () => gate;
+    const { manager } = managed(registry, log);
+    manager.start().catch(() => {});
+    await manager.stop();
+    fail();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(manager.state).toBe('stopped');
+  });
+
+  it('deletes the key again when stop() ran before the in-flight put landed', async () => {
+    const log: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const registry = loggedRegistry(log);
+    const register = registry.register;
+    registry.register = async (u) => {
+      await gate;
+      await register(u);
+    };
+    const { manager } = managed(registry, log);
+    manager.start().catch(() => {});
+    await manager.stop();
+    release();
+    await vi.waitFor(() =>
+      expect(log.filter((l) => l === 'unregister GolemBench')).toHaveLength(2),
+    );
     expect(log).not.toContain('connect');
   });
 });

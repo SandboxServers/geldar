@@ -5,6 +5,7 @@ import {
   DLQ_DATA_LIMIT,
   dlqSubject,
   handleBatch,
+  MAX_DELIVER,
   nakDelayMs,
   type SinkMessage,
 } from './consumer.ts';
@@ -101,6 +102,21 @@ describe('handleBatch', () => {
     const h = harness({ dbFails: true });
     await handleBatch([h.message('geldar.phase0.damage', EVENT, 3)], h.deps);
     expect(h.log).toEqual(['nak geldar.phase0.damage 4000']);
+  });
+
+  it('dead-letters a transient failure on the last delivery instead of naking it', async () => {
+    const h = harness({ dbFails: true });
+    await handleBatch([h.message('geldar.phase0.damage', EVENT, MAX_DELIVER)], h.deps);
+    expect(h.dlq).toHaveLength(1);
+    expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain('connection refused');
+    expect(h.log).toEqual(['dlq', 'ack geldar.phase0.damage']);
+  });
+
+  it('still naks a transient failure one delivery before the cap', async () => {
+    const h = harness({ dbFails: true });
+    await handleBatch([h.message('geldar.phase0.damage', EVENT, MAX_DELIVER - 1)], h.deps);
+    expect(h.dlq).toHaveLength(0);
+    expect(h.log).toEqual(['nak geldar.phase0.damage 30000']);
   });
 
   it('naks instead of acking when the DLQ publish fails', async () => {

@@ -51,6 +51,11 @@ const DEFAULT_VERSION = '26.1';
 const DEFAULT_STABLE_MS = 10_000;
 /** A kick for a permanent refusal: retrying cannot succeed, so the connection goes fatal. */
 const PERMANENT_REFUSAL = /whitelist|banned/i;
+/** The kick the Velocity identity plugin sends to a username that is not in the life registry. */
+const NOT_ADMITTED = /This connection is not admitted\./;
+const NOT_ADMITTED_HINT =
+  'the proxy did not admit this bot: its username is not in the life registry. Set ' +
+  'GELDAR_NATS_URL (nats://127.0.0.1:4222 on the Phase 0 stack) so Golem registers it before connecting';
 
 /**
  * Resolves after `ms`, or at once when `signal` aborts. Either way the timer and the abort
@@ -168,6 +173,14 @@ export class ConnectionManager extends EventEmitter {
         this.fail(end.reason);
         return;
       }
+      if (end.kicked && NOT_ADMITTED.test(end.reason)) {
+        this.fail(
+          this.registry === undefined
+            ? NOT_ADMITTED_HINT
+            : `${NOT_ADMITTED_HINT} (the registry is on, so check the registry entry and the plugin log)`,
+        );
+        return;
+      }
       // A session that stayed up long enough counts as healthy: the next failure starts over.
       if (end.spawnedAt !== null && this.now() - end.spawnedAt >= this.stableMs) this.attempt = 0;
       this.attempt += 1;
@@ -188,16 +201,20 @@ export class ConnectionManager extends EventEmitter {
    */
   private async guardedSession(): Promise<SessionEnd> {
     if (this.registry !== undefined) {
+      // Marked before the put: a stop() or failure while it is in flight must still delete the key.
+      const first = !this.registered;
+      this.registered = true;
       try {
         await this.registry.register(this.username);
-        this.registered = true;
       } catch (err) {
-        if (!this.registered) throw err;
+        if (first) throw err;
         const reason = `life registry: ${err instanceof Error ? err.message : String(err)}`;
         return { reason, kicked: false, spawnedAt: null };
       }
       // stop() may have run while the registration was in flight: undo it and do not connect.
       if (this.isStopped()) {
+        // stop()'s own release may have run before the put landed: delete again.
+        this.registered = true;
         await this.release();
         return { reason: 'stopped', kicked: false, spawnedAt: null };
       }
@@ -275,6 +292,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   private fail(reason: string): void {
+    // A stop() that raced the failure wins: the state stays `stopped`.
+    if (this.isStopped()) return;
     this.state = 'fatal';
     this.log({ event: 'fatal', reason });
     this.emit('fatal', { reason });

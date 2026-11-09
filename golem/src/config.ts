@@ -35,6 +35,21 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   };
 }
 
+/** The Phase 0 NATS port on the host loopback; the default registry URL of the bench and live tests. */
+export const DEFAULT_STACK_NATS_URL = 'nats://127.0.0.1:4222';
+
+/**
+ * `loadConfig` for callers that always run against the Phase 0 stack (the bench CLI and the live
+ * tests): with `GELDAR_NATS_URL` unset the life registry is on at `DEFAULT_STACK_NATS_URL`, because
+ * the ingress refuses a bot that is not registered. An empty value still turns the registry off.
+ * The host loopback rule of `loadConfig` applies first, so the default is never used off loopback.
+ */
+export function loadStackConfig(
+  env: Record<string, string | undefined> = process.env,
+): GolemConfig {
+  return loadConfig({ ...env, GELDAR_NATS_URL: env.GELDAR_NATS_URL ?? DEFAULT_STACK_NATS_URL });
+}
+
 /** Reads the RCON password from its secret file, without the trailing newline. */
 export async function readRconPassword(cfg: GolemConfig): Promise<string> {
   const file = cfg.rconPasswordFile;
