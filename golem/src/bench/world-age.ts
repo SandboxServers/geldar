@@ -2,6 +2,8 @@ import type { Bot } from 'mineflayer';
 import type { BenchEnv } from './types.ts';
 
 const POLL_MS = 50;
+/** The wall-clock ceiling is 1.5 times the nominal time of the ticks, so a lagging server (80% speed) still fits. */
+const WALL_LAG_FACTOR = 1.5;
 /** Slack on the wall-clock ceiling of `waitUntil`: the first time packet can lag by up to a second. */
 const WALL_MARGIN_MS = 1_000;
 /** `bot.time.age` changes only when the server sends a time update, every 20 ticks (decision 0038). */
@@ -25,7 +27,7 @@ export function worldAge(bot: Bot): number | null {
 /**
  * The polling helper for scenarios: true as soon as `predicate` holds; false when `maxWorldTicks`
  * of world age pass first or `env.signal` aborts. Polls every 50 ms of wall time. The wall time those
- * ticks would take, plus a second, is a ceiling in every case: a frozen or missing world clock (time
+ * ticks would take, times 1.5 for a lagging server, plus a second, is a ceiling in every case: a frozen or missing world clock (time
  * packets stopped) cannot hang a scenario.
  */
 export async function waitUntil(
@@ -35,7 +37,7 @@ export async function waitUntil(
 ): Promise<boolean> {
   const start = worldAge(env.bot);
   const wallStart = Date.now();
-  const wallLimit = maxWorldTicks * 50 * env.timeScale + WALL_MARGIN_MS;
+  const wallLimit = maxWorldTicks * 50 * env.timeScale * WALL_LAG_FACTOR + WALL_MARGIN_MS;
   for (;;) {
     if (env.signal.aborted) return false;
     if (predicate()) return true;

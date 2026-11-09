@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ActionRun } from '../actions/registry.ts';
 import type { CommandSource } from '../test-control.ts';
 import { limitedControl, type RunnerDeps, runCell, waitUntil } from './runner.ts';
@@ -357,6 +357,24 @@ describe('waitUntil', () => {
     const frozen = { ...envOf(() => 40), timeScale: 0.01 };
     expect(await waitUntil(frozen, () => false, 2)).toBe(false);
     expect(Date.now() - started).toBeLessThan(3_000);
+  });
+
+  it('still succeeds within the tick budget when the server runs at 80% speed', async () => {
+    vi.useFakeTimers();
+    try {
+      let age = 0;
+      // 80% of 20 TPS is 16 ticks a second: a 20-tick time update every 1250 ms.
+      setInterval(() => {
+        age += 20;
+      }, 1_250);
+      const env = envOf(() => age);
+      // 100 ticks take 6250 ms here: past the nominal 5 s plus 1 s margin, inside the 1.5 times ceiling.
+      const result = waitUntil(env, () => age >= 100, 100);
+      await vi.advanceTimersByTimeAsync(7_000);
+      expect(await result).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not time out early when the age steps by 20 from a stale start', async () => {
