@@ -178,7 +178,9 @@ describe('NatsRecordSink', () => {
     expect(calls()).toBe(3);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.msgId).toBe(eventIdFor(`action:${ACTION.action_id}:accepted`));
-    expect(logs).toEqual([]);
+    // An audit record that fails is logged on its first failure only (attempt 2 is not a log line).
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('attempt 1,');
   });
 
   it('logs and drops a wake record after the last attempt, and carries on', async () => {
