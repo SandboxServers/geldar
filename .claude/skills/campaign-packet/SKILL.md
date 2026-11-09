@@ -30,13 +30,15 @@ Owner decisions are never guessed. Mark them `BlockedDecision` and ask the owner
 
 ## 2. Packets are prescriptive and self-contained
 
-Size: aim for packets a packet-coder (Haiku) finishes in under **50k working tokens**; split a packet whose estimate is higher. Observed in wave 1 (coder passes + fixes): P0-00 1+1; P0-01 2+1 (first ran out of context); P0-02 1+1; P0-03 1+1; P0-04 1+2; P0-05 1+1; P0-06 compose 2+3 (the most expensive; budget two coder sessions for live-stack packets); wave review 3 fixes. The coder skips CLAUDE.md, so each packet **inlines** the rules it needs. Each packet names:
+Size: aim for packets a packet-coder (Haiku) finishes in under **40k working tokens** (the same figure as `work-packets.md` dispatch rule 10); split a packet whose estimate is higher. The coder skips CLAUDE.md, so each packet **inlines** the rules it needs. Each packet names:
 
 - the exact files to create or change, with code shapes for anything non-obvious and the spec sections it implements;
 - the test to add and why it fails when the change is reverted;
 - its checks in order (`pnpm lint`, `pnpm typecheck`, `pnpm test`, or `./geldar.ps1 check`);
 - versions to pin, when it adds dependencies;
 - the branch, worktree name and commit subject.
+
+Observed in wave 1 (coder passes + fixes): P0-00 1+1; P0-01 2+1 (first ran out of context); P0-02 1+1; P0-03 1+1; P0-04 1+2; P0-05 1+1; P0-06 compose 2+3 (the most expensive; budget two coder sessions for live-stack packets); wave review 3 fixes.
 
 Waves hold about four to six packets that one reviewer can hold at once. A wave usually ships as one PR from an integration branch, or one PR per packet when they are independent.
 
@@ -46,7 +48,7 @@ Waves hold about four to six packets that one reviewer can hold at once. A wave 
 2. Dispatch every independent packet of the wave in one message, in the background, each with the brief template below (under about 25 lines).
 3. On each return, update the ledger row. Open the report only on `blocked`, `failed` or a `decision` verdict.
 
-Brief template (fill the angle-bracket fields; copy the rest unchanged):
+Coder brief template (fill the angle-bracket fields; copy the rest unchanged):
 
 ```
 Worktree: <absolute path to the worktree>
@@ -57,6 +59,22 @@ Commit message (exact, with trailers; do not alter the trailer lines):
   <attribution trailer lines, verbatim>
 Return one line: <packet> <done|blocked|failed> <commit-sha|-> <report-path>
 ```
+
+Trailer lines: copy the attribution text from the session's attribution instruction; never retype it from memory.
+
+Reviewer brief template (a fresh `packet-reviewer`, read-only):
+
+```
+Worktree: <absolute path to the worktree>
+Scope: <packet id, wave N or campaign>; commit range <base>..<head>
+Spec: docs/analysis/<campaign>/work-packets.md, section "### <packet id>" (or docs/spec.md sections <list>)
+Pass: <N> of 3
+Integration branch: <origin/phase0/wave<N>, for the merge-tree check>
+Report: <worktree>\.claude\reports\<campaign>\review-<scope>-<N>.md (three sections: Findings, Fix notes, Verdict)
+Return one line: <scope> verdict=<ship|fix|decision> <report-path>
+```
+
+Fix coder brief ("review fix, pass N of 3"): the worktree, the packet section, the input report path (the reviewer's report; it applies only its `## Fix notes`), the commit message and the coder return line above. Continuation coder brief ("continuation N of 3"): the same fields, plus the input report path (the coder's own report, which records the base sha).
 
 A continuation coder ("continuation N of 3") first commits any uncommitted work in the worktree (a WIP commit, squashed into the final commit as the packet-coder rules say), then continues from its report.
 

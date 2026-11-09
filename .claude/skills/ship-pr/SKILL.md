@@ -70,7 +70,7 @@ git worktree remove --force .claude/worktrees/<name>
 git branch -D <branch>      # only after the PR merged
 ```
 
-Never run `git worktree prune`, and never remove a worktree a running agent is still using. Copy anything worth keeping from `.claude/reports/` in that worktree to the campaign's `worknotes/` first.
+Never run `git worktree prune`, and never remove a worktree a running agent is still using. `--force` discards uncommitted and untracked work, which the plain command refuses to do: run `git -C <worktree> status --short` first, and commit or copy whatever it lists. Copy anything worth keeping from `.claude/reports/` in that worktree to the campaign's `worknotes/` first.
 
 ## 8. Windows notes
 
