@@ -112,6 +112,18 @@ describe('TestControl', () => {
     expect(sent).toEqual(['tp GolemSmoke 1 2 3']);
   });
 
+  it('resets a recipe book with the advancement revoke and then the recipe take', async () => {
+    const { control, sent } = fakeControl();
+    await control.recipeReset('GolemRecipe');
+    expect(sent).toEqual([
+      'advancement revoke GolemRecipe from minecraft:recipes/root',
+      'recipe take GolemRecipe *',
+    ]);
+    await control.recipeGive('GolemRecipe');
+    expect(sent.at(-1)).toBe('recipe give GolemRecipe *');
+    await expect(control.recipeReset('a b')).rejects.toThrow(RangeError);
+  });
+
   it('rejects player names with spaces, separators, or the wrong length', async () => {
     const { control, sent } = fakeControl();
     for (const name of ['a b', 'x;y', 'ab', 'a'.repeat(17)]) {

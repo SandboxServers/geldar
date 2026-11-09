@@ -5,7 +5,7 @@ import { hasUnlockedDisplay, type TableTarget } from '../../src/actions/craft-ta
 import { createRegistry } from '../../src/actions/index.ts';
 import { type ActionRun, runAction } from '../../src/actions/registry.ts';
 import type { TestControl } from '../../src/test-control.ts';
-import { withLiveBot } from './fixture.ts';
+import { unlockAllRecipes, withLiveBot } from './fixture.ts';
 import { recordFor } from './record.ts';
 
 /** Reads how many of an item the bot carries. `clear <name> <item> 0` counts and removes nothing. */
@@ -13,15 +13,6 @@ async function carried(ctl: TestControl, name: string, item: string): Promise<nu
   const reply = await ctl.command(`clear ${name} ${item} 0`);
   const match = /Found (\d+) matching item/.exec(reply);
   return match ? Number(match[1]) : 0;
-}
-
-/**
- * Unlocks every recipe for the bot so a table craft can find its recipe display. Test setup only:
- * the Body never uses RCON. The shard grants the recipe book; giving ingredients does not unlock a
- * recipe on 26.1 (decision 0032).
- */
-async function unlockRecipes(ctl: TestControl, name: string): Promise<void> {
-  await ctl.command(`recipe give ${name} *`);
 }
 
 /**
@@ -67,7 +58,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_log', 2);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'oak_planks'),
         'recipe_book_add for oak_planks did not arrive after recipe give',
@@ -88,7 +79,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_planks', 2);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'stick'),
         'recipe_book_add for stick did not arrive after recipe give',
@@ -105,7 +96,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_planks', 4);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'crafting_table'),
         'recipe_book_add for crafting_table did not arrive after recipe give',
@@ -122,7 +113,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       // The server keeps the book across connections: take the recipes back so the book path cannot run.
-      await ctl.command('recipe take GolemCraft *');
+      await ctl.recipeReset('GolemCraft');
       await ctl.give('GolemCraft', 'oak_log', 2);
       await bot.waitForTicks(40);
       expect(hasUnlockedDisplay(bot, targetOf(bot, 'oak_planks'))).toBe(false);
@@ -161,7 +152,7 @@ describe('craft on 26.1', () => {
       // The table is 20 blocks east of the bot, so the walk alone takes longer than 60 ticks.
       await ctl.setblock(cx + 10, cy, cz, 'crafting_table');
       await ctl.tp('GolemCraft', cx - 10, cy + 1, cz);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'wooden_pickaxe', 1);
       expect(run.state).toBe('completed');
@@ -180,7 +171,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, cx, cz);
       await ctl.clear('GolemCraft');
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'stone_pickaxe', 1);
       expect(run.state).toBe('failed');
@@ -221,7 +212,7 @@ describe('craft on 26.1', () => {
       await ctl.give('GolemCraft', 'white_wool', 3);
       await ctl.give('GolemCraft', 'oak_planks', 3);
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'white_bed', 1);
       expect(run.state).toBe('completed');
@@ -230,8 +221,8 @@ describe('craft on 26.1', () => {
     });
   }, 180_000);
 
-  // Giving ingredients does not unlock a recipe on 26.1 (decision 0032). The Body never uses RCON, so
-  // these two cases take and grant the recipe book through RCON, as the shard's test fixture does.
+  // These cases are about the locked outcome and the table craft, not discovery (that is
+  // recipe-discovery.live.test.ts): they reset and unlock the recipe book through RCON, and the Body never does.
   it('does not craft wooden_pickaxe from its ingredients while the recipe is not in the book', async () => {
     await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
       const cx = arena.center.x;
@@ -239,8 +230,8 @@ describe('craft on 26.1', () => {
       const cz = arena.center.z;
       await clearDrops(ctl, cx, cz);
       await ctl.clear('GolemCraft');
-      // The server keeps the book across connections, so take it back first.
-      await ctl.command('recipe take GolemCraft *');
+      // The server keeps the book across connections, so reset it first.
+      await ctl.recipeReset('GolemCraft');
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
       await ctl.give('GolemCraft', 'oak_planks', 3);
       await ctl.give('GolemCraft', 'stick', 2);
@@ -264,7 +255,7 @@ describe('craft on 26.1', () => {
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
       await ctl.give('GolemCraft', 'oak_planks', 3);
       await ctl.give('GolemCraft', 'stick', 2);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'wooden_pickaxe'),
         'recipe_book_add for wooden_pickaxe did not arrive after recipe give',

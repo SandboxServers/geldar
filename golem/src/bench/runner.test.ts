@@ -87,6 +87,8 @@ describe('runCell', () => {
     expect(text).toMatch(/^effect give GolemBench (minecraft:)?instant_health 1 4$/m);
     expect(text).toContain('effect clear GolemBench');
     expect(text).toContain('clear GolemBench');
+    expect(text).toContain('advancement revoke GolemBench from minecraft:recipes/root');
+    expect(text).toContain('recipe take GolemBench *');
     expect(text).not.toMatch(/gamerule \S+ true/);
   });
 

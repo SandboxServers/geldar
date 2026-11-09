@@ -1,6 +1,7 @@
 package dev.geldar.core;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -45,7 +46,7 @@ public final class GeldarCore extends JavaPlugin {
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
         tpsExporter = exporter;
 
-        for (Listener listener : listeners(exporter, getLogger())) {
+        for (Listener listener : listeners(exporter, getLogger(), config.grantRecipesOnJoin())) {
             getServer().getPluginManager().registerEvents(listener, this);
         }
 
@@ -61,9 +62,18 @@ public final class GeldarCore extends JavaPlugin {
         getLogger().info("Geldar-Core enabled for shard " + config.shard());
     }
 
-    /** Every listener the plugin registers, in registration order. */
-    static List<Listener> listeners(EventExporter exporter, Logger log) {
-        return List.of(exporter, new RecipeGrantListener(), new CommandBlockListener(log));
+    /**
+     * Every listener the plugin registers, in registration order. The recipe grant is registered only when
+     * {@code grantRecipesOnJoin} is set (decision 0048: recipes unlock through play).
+     */
+    static List<Listener> listeners(EventExporter exporter, Logger log, boolean grantRecipesOnJoin) {
+        List<Listener> all = new ArrayList<>();
+        all.add(exporter);
+        if (grantRecipesOnJoin) {
+            all.add(new RecipeGrantListener(log));
+        }
+        all.add(new CommandBlockListener(log));
+        return List.copyOf(all);
     }
 
     private void requestTpsExport() {

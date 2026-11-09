@@ -7,8 +7,9 @@ import org.bukkit.configuration.ConfigurationSection;
 /**
  * Settings from {@code plugins/GeldarCore/config.yml}. The environment wins over the file:
  * {@code GELDAR_NATS_URL} and {@code GELDAR_SHARD}. Phase 0 has one open NATS, so there is no credential.
+ * {@code recipes.grant_on_join} (default false) turns the join-time recipe grant back on.
  */
-public record CoreConfig(String natsUrl, String shard, int queueCapacity, int tpsIntervalSeconds) {
+public record CoreConfig(String natsUrl, String shard, int queueCapacity, int tpsIntervalSeconds, boolean grantRecipesOnJoin) {
 
     public static final String DEFAULT_NATS_URL = "nats://nats:4222";
     public static final String DEFAULT_SHARD = "phase0";
@@ -29,7 +30,9 @@ public record CoreConfig(String natsUrl, String shard, int queueCapacity, int tp
         }
         int capacity = Math.max(1, file.getInt("queue.capacity", 10_000));
         int tps = Math.max(1, file.getInt("tps_interval_seconds", 20));
-        return new CoreConfig(url, shard, capacity, tps);
+        // Off by default: recipes unlock through play (decision 0048). The flag keeps the old grant for a test shard.
+        boolean grant = file.getBoolean("recipes.grant_on_join", false);
+        return new CoreConfig(url, shard, capacity, tps, grant);
     }
 
     private static String firstNonBlank(String... values) {
