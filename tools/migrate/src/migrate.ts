@@ -134,11 +134,31 @@ const PASSWORD_ROLE = 'geldar_mcp';
 
 /**
  * Reads a password file as UTF-8, without a leading byte-order mark and one trailing newline.
- * Windows editors add the mark; Postgres would take it as part of the password.
+ * Windows editors add the mark; Postgres would take it as part of the password. A password that
+ * starts or ends with whitespace is refused: the MCP server trims its password file, so such a
+ * password would authenticate differently there.
  */
 export async function readPasswordFile(path: string): Promise<string> {
-  const text = await readFile(path, 'utf8');
-  return text.replace(/^\uFEFF/, '').replace(/\r?\n$/, '');
+  const text = (await readFile(path, 'utf8')).replace(/^\uFEFF/, '').replace(/\r?\n$/, '');
+  if (/^\s|\s$/.test(text)) {
+    throw new Error(
+      'the password must not start or end with whitespace: remove the extra spaces or tabs from the password file',
+    );
+  }
+  return text;
+}
+
+/**
+ * The statement that sets a role's login password to a SCRAM verifier. The CLI's allowlist sits
+ * in setRolePassword; the integration test uses this builder for a throwaway role.
+ */
+export function passwordStatement(
+  role: string,
+  verifier: string,
+  escapeLiteral: (value: string) => string,
+): string {
+  if (!/^[a-z_][a-z0-9_]*$/.test(role)) throw new Error(`not a plain role name: ${role}`);
+  return `ALTER ROLE ${role} WITH LOGIN PASSWORD ${escapeLiteral(verifier)}`;
 }
 
 /**
@@ -161,7 +181,7 @@ export async function setRolePassword(
   }
   const client = await pool.connect();
   try {
-    const sql = `ALTER ROLE ${role} WITH LOGIN PASSWORD ${client.escapeLiteral(verifier)}`;
+    const sql = passwordStatement(role, verifier, (value) => client.escapeLiteral(value));
     await client.query(sql);
     options.log(`password set for role ${role}`);
   } finally {

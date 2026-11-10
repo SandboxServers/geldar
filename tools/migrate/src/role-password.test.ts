@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Pool } from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readPasswordFile, setRolePassword } from './migrate.ts';
+import { passwordStatement, readPasswordFile, setRolePassword } from './migrate.ts';
+import { scramVerifier } from './scram.ts';
 
 /** A pool that records every statement it runs and every connect. */
 function fakePool(): { pool: Pool; sent: string[]; connects: { count: number } } {
@@ -85,5 +86,56 @@ describe('readPasswordFile', () => {
 
   it('strips one trailing LF and keeps everything else', async () => {
     expect(await readPasswordFile(await fileWith('pen cil\n'))).toBe('pen cil');
+  });
+
+  it('strips a byte-order mark alone, with no newline', async () => {
+    expect(await readPasswordFile(await fileWith('﻿pencil'))).toBe('pencil');
+  });
+
+  it('strips only one trailing CRLF: a second one is refused as trailing whitespace', async () => {
+    await expect(readPasswordFile(await fileWith('pencil\r\n\r\n'))).rejects.toThrow('whitespace');
+  });
+
+  it('refuses a leading space', async () => {
+    await expect(readPasswordFile(await fileWith(' pencil\n'))).rejects.toThrow('whitespace');
+  });
+
+  it('refuses a space left after the byte-order mark is stripped', async () => {
+    await expect(readPasswordFile(await fileWith('﻿ pencil'))).rejects.toThrow('whitespace');
+  });
+
+  it('refuses a trailing space', async () => {
+    await expect(readPasswordFile(await fileWith('pencil \n'))).rejects.toThrow('whitespace');
+  });
+
+  it('refuses a trailing tab', async () => {
+    await expect(readPasswordFile(await fileWith('pencil\t'))).rejects.toThrow('whitespace');
+  });
+});
+
+describe('passwordStatement', () => {
+  const SALT = Buffer.alloc(16, 7);
+  const PASSWORD = 'hunter2-secret';
+  const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
+
+  it('never contains the plaintext password', () => {
+    const verifier = scramVerifier(PASSWORD, SALT);
+    const sql = passwordStatement('geldar_mcp', verifier, quote);
+    expect(sql).not.toContain(PASSWORD);
+  });
+
+  it('uses the SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey> format', () => {
+    const verifier = scramVerifier(PASSWORD, SALT);
+    const sql = passwordStatement('geldar_mcp', verifier, quote);
+    const base64 = '[A-Za-z0-9+/]+=*';
+    const format = new RegExp(
+      `^ALTER ROLE geldar_mcp WITH LOGIN PASSWORD 'SCRAM-SHA-256\\$4096:${base64}\\$${base64}:${base64}'$`,
+    );
+    expect(sql).toMatch(format);
+    expect(sql).toBe(`ALTER ROLE geldar_mcp WITH LOGIN PASSWORD '${verifier}'`);
+  });
+
+  it('refuses a role name that is not plain', () => {
+    expect(() => passwordStatement('geldar_mcp; DROP TABLE x', 'v', quote)).toThrow('not a plain');
   });
 });
