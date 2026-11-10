@@ -59,3 +59,10 @@ The orchestrator decided these questions. They close Q1 to Q3 and confirm R1 and
 
 - **WM-11: use PlayerLog.head() from WM-04 for say's start cursor; plan_result needs thought_id and said.** `say` reads the Body's `plan_result` from the life's event log. WM-05 takes its start cursor from the `PlayerEventLog` port WM-01 defined (the newest sequence `since(lifeId, 0)` returns, taken before the plan is sent), because WM-04's `head()` cursor is on an unmerged branch. WM-11 should swap that for `PlayerLog.head()`. The `plan_result` event must carry `thought_id` and `said`; `planResultFor` in `threshold/mcp/src/tools/say.ts` reads both.
 - **Body rate-limit refusal maps to `body_refused`.** `plan_result` has no reason field, so a refusal by the Body's own rate limit (`said: false`) is reported as the existing `body_refused` outcome, not as a separate reason. Revisit if the Body starts sending a reason.
+
+## WM-06
+
+- (a) No contract pattern exists for `book_id`. `contract/schemas/common.schema.json` (`book_id`, line 72) and `mcp-world.schema.json` only bound it with `minLength: 1` and `maxLength: 64`. The MCP tool code uses `bk_` followed by 26 hex characters, derived from a SHA-256 over title, author and text (`threshold/mcp/src/tools/read-book.ts`). A contract pattern is requested so the id format is checked at the boundary.
+- (b) The sleep-mark port (`SleepMark`, `SleepMarks` in `threshold/mcp/src/tools/sleep.ts`) and the agent-profile port (`AgentProfile`, `AgentProfiles` in `threshold/mcp/src/resources.ts`) are defined in tool and resource modules. They should move to `threshold/mcp/src/ports.ts` (WM-11), next to the existing ports.
+- (c) `buildSleepPlan` is injected into the sleep tool (`sleep.ts`, dependency `buildSleepPlan`). WM-11 must wire it to the animus sleep plan builder in production.
+- (d) Sleep waits for the plan acknowledgement only. It calls `body.submitPlan` and returns on `ack.accepted`; a refusal raises `sleep_refused`. It does not wait for the plan to finish executing.
