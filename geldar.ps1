@@ -248,7 +248,16 @@ function Invoke-Mcp([string[]] $McpArgs) {
 }
 
 switch ($Command) {
-  'players' { Invoke-Node 'tools/players-cli/src/rangers-cli.ts' $Rest }
+  'players' {
+    # Presence and the skin CLI read NATS through GELDAR_NATS_URL; unset, it defaults to the loopback NATS of the shard.
+    # The variable is restored in finally, so the command leaves the shell's environment as it found it.
+    $savedNats = $env:GELDAR_NATS_URL
+    try {
+      if (-not $env:GELDAR_NATS_URL) { $env:GELDAR_NATS_URL = 'nats://127.0.0.1:4222' }
+      Invoke-Node 'tools/players-cli/src/rangers-cli.ts' $Rest
+    }
+    finally { $env:GELDAR_NATS_URL = $savedNats }
+  }
   'mcp-tokens' { Invoke-Node 'tools/mcp-tokens/src/cli.ts' $Rest }
   'db' {
     $action, $extra = $Rest

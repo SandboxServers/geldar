@@ -45,7 +45,8 @@ shard config itself and uses the life id it names.
 
 PID files and logs live under `.geldar/players/` (git-ignored). `logs` prints the last 200 lines; it does not follow.
 The player hosts need NATS (`GELDAR_NATS_URL`) and the shard's RCON secret, and the whitelist entries are written
-by the host, not by this command.
+by the host, not by this command. Presence needs NATS: when `GELDAR_NATS_URL` is unset, the `players` block sets it to
+`nats://127.0.0.1:4222` for that command only and restores the variable afterwards.
 
 A sovereign player's skin is set with the players CLI, which is not in the `players` block above. It checks
 `GELDAR_NATS_URL` and opens the skin bucket before it spends a MineSkin generation. The skin PNG goes under the

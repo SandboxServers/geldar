@@ -263,4 +263,19 @@ describe('geldar.ps1 Wave M block', () => {
       expect(block.slice(finallyAt, finallyAt + 300), name).toContain('$saved.Keys');
     }
   });
+
+  it('defaults GELDAR_NATS_URL in the players block and restores it in a finally', () => {
+    const players = script.slice(script.indexOf("'players' {"), script.indexOf("'mcp-tokens' {"));
+    expect(players).toContain('$savedNats = $env:GELDAR_NATS_URL');
+    expect(players).toContain(
+      "if (-not $env:GELDAR_NATS_URL) { $env:GELDAR_NATS_URL = 'nats://127.0.0.1:4222' }",
+    );
+    const invokeAt = players.indexOf('Invoke-Node');
+    const tryAt = players.indexOf('try {');
+    expect(tryAt).toBeGreaterThan(-1);
+    expect(invokeAt).toBeGreaterThan(tryAt);
+    const finallyAt = players.indexOf('finally {', invokeAt);
+    expect(finallyAt).toBeGreaterThan(invokeAt);
+    expect(players.slice(finallyAt)).toContain('$env:GELDAR_NATS_URL = $savedNats');
+  });
 });
