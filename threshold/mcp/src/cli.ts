@@ -2,14 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { natsRequestTransport } from '@geldar/animus/src/link/nats-body-link.ts';
 import { RealClock } from '@geldar/mcp-mock';
-import {
-  AckPolicy,
-  DeliverPolicy,
-  type JetStreamClient,
-  type JetStreamManager,
-  jetstream,
-  jetstreamManager,
-} from '@nats-io/jetstream';
+import { jetstream, jetstreamManager } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
 import { connect } from '@nats-io/transport-node';
 import { Client, Pool } from 'pg';
@@ -24,6 +17,7 @@ import {
   type RunningMcp,
   startMcp,
 } from './main.ts';
+import { jetStreamReplay, StreamWaitTimeout } from './replay-source.ts';
 
 /** Exit codes: 0 stopped on a signal, 1 a runtime failure, 2 a usage error, 78 a configuration error. */
 export const EXIT = { stopped: 0, failed: 1, usage: 2, config: 78 } as const;
@@ -180,30 +174,12 @@ async function connectNats(
       await js.publish(`geldar.${shard}.sovereign_call`, JSON.stringify(payload), { msgID: msgId });
     },
     replay: (subjects, fromIso, onMessage) =>
-      startReplay(jetStreamReplay(js, jsm), subjects, fromIso, onMessage, {
+      startReplay(jetStreamReplay(js, jsm, { log }), subjects, fromIso, onMessage, {
         log,
         waitMs: REPLAY_CATCHUP_MS,
       }),
     drain: async () => {
       await nc.drain();
-    },
-  };
-}
-
-/** The replay consumer on GELDAR_EVENTS: from the start time, on the subjects, explicit acks. */
-function jetStreamReplay(js: JetStreamClient, jsm: JetStreamManager): ReplaySource {
-  return {
-    async open(subjects, fromIso) {
-      const info = await jsm.consumers.add('GELDAR_EVENTS', {
-        deliver_policy: DeliverPolicy.StartTime,
-        opt_start_time: fromIso,
-        ack_policy: AckPolicy.Explicit,
-        filter_subjects: subjects,
-        inactive_threshold: 300_000_000_000,
-      });
-      const consumer = await js.consumers.get('GELDAR_EVENTS', info.name);
-      const messages = await consumer.consume();
-      return { pending: info.num_pending, messages, stop: async () => messages.stop() };
     },
   };
 }
@@ -324,6 +300,11 @@ async function reopenOrExit(
       log({ event: 'stream_loop_reopened', attempt: failures.count });
       return messages;
     } catch (error) {
+      // The stream was absent for the whole wait: that is not a failed try, so the process ends at once.
+      if (error instanceof StreamWaitTimeout) {
+        restart.exit(1);
+        return null;
+      }
       log({ event: 'stream_loop_reopen_failed', attempt: failures.count, ...errorFields(error) });
     }
   }

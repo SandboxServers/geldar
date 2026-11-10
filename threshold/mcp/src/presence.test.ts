@@ -109,7 +109,7 @@ class FakeManager implements BucketManager {
   }
 }
 
-function storeAt(bucket: FakeBucket, nowRef: { ms: number }): KvPresenceStore {
+function storeAt(bucket: PresenceBucket, nowRef: { ms: number }): KvPresenceStore {
   return new KvPresenceStore(bucket, () => nowRef.ms);
 }
 
