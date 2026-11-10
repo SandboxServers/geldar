@@ -64,6 +64,9 @@ const REFLECTION_SLOTS: Record<number, string[]> = {
   3: ['day', 'journal_today', 'goal_stack', 'beliefs', 'memories', 'quoted_world_text'],
 };
 
+/** The thought template a new Mind renders: `thought/v2.md`. `thought/v1.md` stays loadable. */
+export const DEFAULT_THOUGHT_VERSION = 2;
+
 const THOUGHT_BLOCKS = [1, 2, 3, 4, 5, 6];
 const REFLECTION_BLOCKS = [1, 2, 3];
 
@@ -71,8 +74,10 @@ const REFLECTION_BLOCKS = [1, 2, 3];
 export interface PromptLibraryOptions {
   /** The `prompts/` directory. Defaults to the repository's. */
   promptsDir?: string;
-  /** The template version to load. Only 1 exists. */
+  /** The reflection and body-api template version to load. Only 1 exists. */
   version?: number;
+  /** The thought template version to load. Defaults to {@link DEFAULT_THOUGHT_VERSION}; 1 stays loadable. */
+  thoughtVersion?: number;
   /** See {@link PromptLimits.thoughtBudgetChars}. */
   thoughtBudgetChars?: number;
   /** See {@link PromptLimits.maxBeliefs}. */
@@ -83,10 +88,11 @@ export interface PromptLibraryOptions {
 export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptLibrary {
   const dir = options.promptsDir ?? join(repoRoot(), 'prompts');
   const n = options.version ?? 1;
+  const t = options.thoughtVersion ?? DEFAULT_THOUGHT_VERSION;
   const thought = loadChecked(
     'thought',
-    n,
-    join(dir, 'thought', `v${n}.md`),
+    t,
+    join(dir, 'thought', `v${t}.md`),
     THOUGHT_BLOCKS,
     THOUGHT_SLOTS,
   );

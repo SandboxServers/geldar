@@ -4,7 +4,8 @@ Versioned prompt templates for the Mind (`animus/`). The renderer is `animus/src
 
 ```
 prompts/
-  thought/v1.md       the thought prompt (spec Appendix B.1): blocks 1 to 6
+  thought/v1.md       the thought prompt (spec Appendix B.1): blocks 1 to 6; kept loadable, not the default
+  thought/v2.md       the default thought prompt: v1 plus the knowledge, sleep and anti-loop rules in block 1 (decision 0058)
   reflection/v1.md    the sleep reflection prompt (Appendix B.2), with a degraded variant section
   body-api/v1.json    the Phase 0 allow-list of verbs and programs, one valid example each
 ```
@@ -26,4 +27,4 @@ When the Mind is on the degraded path the reflection keeps all six fields (the c
 
 The templates are read from this directory by the Mind (`animus/src/prompts/library.ts`) when it starts; there is nothing to build or serve. Start the Mind with `./geldar.ps1 adam up` (see [../animus/README.md](../animus/README.md)); its log is `.geldar/adam/animus.log`. Every thought the Mind records in the `thoughts` table carries the `prompt_template_version` (`<kind>@<n>+sha256:<12 hex>`) of the template it used, and the complete messages it sent in `model_input`, so a run can be checked against the files here. A template change is a new `vN` file and takes effect on the next `adam up`; the running Mind keeps the version it loaded.
 
-What the run needs from this directory: `thought/v1.md`, `reflection/v1.md` and `body-api/v1.json` must exist and pass the library's slot check, or the Mind stops at start-up with the file name in the error. No port, no secret and no network access are involved.
+What the run needs from this directory: `thought/v2.md` (the default; `thought/v1.md` stays loadable), `reflection/v1.md` and `body-api/v1.json` must exist and pass the library's slot check, or the Mind stops at start-up with the file name in the error. No port, no secret and no network access are involved.

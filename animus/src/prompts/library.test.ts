@@ -5,26 +5,26 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.ts';
 import type { ReflectionPromptVars } from '../ports/index.ts';
-import { createPromptLibrary } from './library.ts';
+import { createPromptLibrary, DEFAULT_THOUGHT_VERSION } from './library.ts';
 import { pickRecipes, renderSnapshot } from './render-snapshot.ts';
 import { sampleSnapshot, sampleThoughtVars } from './snapshot.fixture.ts';
 import { fill } from './template.ts';
 
 const library = createPromptLibrary();
 
-/** A copy of `prompts/` in a temp directory, with `edit` applied to the thought template. */
+/** A copy of `prompts/` in a temp directory, with `edit` applied to the default thought template (v2). */
 function promptsWith(edit: (text: string) => string): string {
   const dir = mkdtempSync(join(tmpdir(), 'prompts-'));
   for (const sub of ['thought', 'reflection', 'body-api']) {
     mkdirSync(join(dir, sub));
   }
   const root = join(repoRoot(), 'prompts');
-  for (const file of ['reflection/v1.md', 'body-api/v1.json']) {
+  for (const file of ['thought/v1.md', 'reflection/v1.md', 'body-api/v1.json']) {
     writeFileSync(join(dir, file), readFileSync(join(root, file)));
   }
   writeFileSync(
-    join(dir, 'thought/v1.md'),
-    edit(readFileSync(join(root, 'thought/v1.md'), 'utf8')),
+    join(dir, 'thought/v2.md'),
+    edit(readFileSync(join(root, 'thought/v2.md'), 'utf8')),
   );
   return dir;
 }
@@ -54,14 +54,43 @@ function reflectionVars(degraded: boolean): ReflectionPromptVars {
 }
 
 describe('prompt library', () => {
-  it('records the version id as kind@1+sha256 of the first 12 hex of the file', () => {
-    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v1.md'));
+  it('records the version id as kind@n+sha256 of the first 12 hex of the file', () => {
+    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v2.md'));
     const hex = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
-    expect(library.thoughtVersion).toBe(`thought@1+sha256:${hex}`);
+    expect(library.thoughtVersion).toBe(`thought@2+sha256:${hex}`);
     expect(library.reflectionVersion).toMatch(/^reflection@1\+sha256:[0-9a-f]{12}$/);
     expect(library.bodyApiVersion).toMatch(/^body-api@1\+sha256:[0-9a-f]{12}$/);
     expect(library.render('thought', sampleThoughtVars()).templateVersion).toBe(
       library.thoughtVersion,
+    );
+  });
+
+  it('makes thought v2 the default and keeps v1 loadable', () => {
+    expect(DEFAULT_THOUGHT_VERSION).toBe(2);
+    const v1 = createPromptLibrary({ thoughtVersion: 1 });
+    expect(v1.thoughtVersion).toMatch(/^thought@1\+sha256:[0-9a-f]{12}$/);
+    expect(v1.render('thought', sampleThoughtVars()).templateVersion).toBe(v1.thoughtVersion);
+    const system = v1.render('thought', sampleThoughtVars()).messages[0]?.content as string;
+    expect(system).not.toContain('You know only what you have seen');
+  });
+
+  it('keeps the bytes of thought v1 unchanged (its SHA-256 is pinned)', () => {
+    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v1.md'));
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+      'ee0e1f9750324ba567890ded5bf85ee05da869443cb6f69df112d014860369da',
+    );
+  });
+
+  it('renders the knowledge, sleep and anti-loop rules in block 1 of thought v2', () => {
+    const system = library.render('thought', sampleThoughtVars()).messages[0]?.content as string;
+    expect(system).toContain(
+      'You know only what you have seen, tried, or been told by people here. You do not know how this world works beyond that: you have no recipes, maps, secrets or numbers in your head until you find them out. When you learn something, it is because it happened to you or someone told you.',
+    );
+    expect(system).toContain(
+      'At night, find a bed you have placed and sleep in it (the routine named sleep); a night without sleep makes you tired and your thoughts shorter.',
+    );
+    expect(system).toContain(
+      'If you have no current intent, choose one now. Do not repeat something you already said: if you greeted someone, act on your own goals instead.',
     );
   });
 
