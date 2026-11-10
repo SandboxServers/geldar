@@ -74,9 +74,12 @@ function Invoke-Check {
     Invoke-Step 'test (vitest)' { pnpm test }
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue) {
+    # An overlay (nats-auth.yml) adds to a base file and has no image of its own, so it is checked with its base.
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'nats-auth.yml' }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
+    $natsBase = Join-Path $Root 'compose/phase0.yml'
+    Invoke-Step 'docker compose config (phase0.yml + nats-auth.yml)' { docker compose -f $natsBase -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
     if (Test-Path plugin/build.gradle.kts) {
       $gradlew = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
       Push-Location plugin
