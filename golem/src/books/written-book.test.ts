@@ -113,6 +113,19 @@ describe('readWrittenBook: result size and hostile characters', () => {
     );
   });
 
+  it('strips the zero-width, invisible-operator, BOM and tag-block characters', () => {
+    const hidden = [
+      0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x061c, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064,
+      0xfeff, 0xe0001, 0xe0041, 0xe007f,
+    ];
+    for (const code of hidden) {
+      const page = `a${String.fromCodePoint(code)}b`;
+      expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+        'ab',
+      );
+    }
+  });
+
   it('strips the same characters from the title and author', () => {
     const book = readWrittenBook(componentBook({ title: 'T‮it le', author: 'A⁩u ', pages: ['x'] }));
     expect(book).toEqual({ title: 'Title', author: 'Au', text: 'x' });
