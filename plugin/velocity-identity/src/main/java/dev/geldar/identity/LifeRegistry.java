@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
  * bucket into a fresh map that replaces the old one only at the end of the replay, so keys deleted
  * while the watch was down do not survive; a lost watch makes the registry unsynced again (fail closed).
  */
-public class LifeRegistry {
+public class LifeRegistry implements RegistryClient.Feed {
     /** One registered life. */
     public record Entry(String lifeId, String registeredAt) {}
 

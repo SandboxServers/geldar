@@ -7,6 +7,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
+import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
@@ -14,8 +15,12 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.scheduler.ScheduledTask;
+import com.velocitypowered.api.util.GameProfile;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.concurrent.TimeUnit;
@@ -43,12 +48,16 @@ public final class IdentityPlugin {
     private final Logger log;
     private final LifeRegistry registry = new LifeRegistry();
     private final LoginGate gate = new LoginGate(registry);
+    private final SkinRegistry skins;
     private final DenialLimiter denials;
     private static final int MAX_LOGGED_DENIALS = 10;
     private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
+    /** The profile property Mojang's session servers use for skins. */
+    static final String TEXTURES = "textures";
 
     private final Supplier<String> natsUrl;
     private RegistryClient client;
+    private RegistryClient skinClient;
     private ScheduledTask denialSummary;
     private ReadyMarker readyMarker;
 
@@ -59,9 +68,15 @@ public final class IdentityPlugin {
 
     /** Takes the NATS URL source, so a test can leave it unset without touching the environment. */
     IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl) {
+        this(proxy, log, natsUrl, new SkinRegistry(log));
+    }
+
+    /** Takes the skin store too, so a test can make its lookups fail. */
+    IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl, SkinRegistry skins) {
         this.proxy = proxy;
         this.log = log;
         this.natsUrl = natsUrl;
+        this.skins = skins;
         this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
                 count -> log.info("{} more denials were not logged in the last window", count));
     }
@@ -81,6 +96,8 @@ public final class IdentityPlugin {
         }
         client = new RegistryClient(url, registry, log);
         client.start();
+        skinClient = new RegistryClient(url, SkinRegistry.BUCKET, skins, log);
+        skinClient.start();
     }
 
     @Subscribe
@@ -90,6 +107,9 @@ public final class IdentityPlugin {
         }
         if (client != null) {
             client.close();
+        }
+        if (skinClient != null) {
+            skinClient.close();
         }
         if (readyMarker != null) {
             try {
@@ -141,6 +161,39 @@ public final class IdentityPlugin {
             return;
         }
         gate.release(connection);
+    }
+
+    /**
+     * Gives a registered life its stored skin. The lookup is in memory, so login never waits on NATS. Only a stored,
+     * validated texture replaces the profile's textures property; nothing the client sends can set one. The gate
+     * decides admission on its own: this handler never changes it. Any failure keeps the default profile.
+     */
+    @Subscribe
+    public void onGameProfile(GameProfileRequestEvent event) {
+        try {
+            Optional<LifeRegistry.Entry> life = registry.find(event.getGameProfile().getName());
+            if (life.isEmpty()) {
+                return;
+            }
+            Optional<SkinRegistry.Texture> texture = skins.find(life.get().lifeId());
+            if (texture.isPresent()) {
+                event.setGameProfile(withTexture(event.getGameProfile(), texture.get()));
+            }
+        } catch (RuntimeException e) {
+            log.warn("Skin lookup failed ({}), the default profile is kept", e.getClass().getSimpleName());
+        }
+    }
+
+    /** The profile with its textures property replaced by the stored one; the other properties are kept. */
+    static GameProfile withTexture(GameProfile profile, SkinRegistry.Texture texture) {
+        List<GameProfile.Property> properties = new ArrayList<>();
+        for (GameProfile.Property property : profile.getProperties()) {
+            if (!TEXTURES.equals(property.getName())) {
+                properties.add(property);
+            }
+        }
+        properties.add(new GameProfile.Property(TEXTURES, texture.value(), texture.signature()));
+        return profile.withProperties(properties);
     }
 
     /** Drops {@code geldar:cmd} messages from any client connection that was not admitted. */
