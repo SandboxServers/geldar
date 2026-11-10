@@ -115,19 +115,15 @@ describe('handleBatch', () => {
     expect(h.log).toEqual(['nak geldar.phase0.damage 4000']);
   });
 
-  it('dead-letters a transient failure on the last delivery instead of naking it', async () => {
+  it('naks a transient failure on any delivery and never dead-letters it', async () => {
     const h = harness({ dbFails: true });
-    await handleBatch([h.message('geldar.phase0.damage', EVENT, MAX_DELIVER)], h.deps);
-    expect(h.dlq).toHaveLength(1);
-    expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain('connection refused');
-    expect(h.log).toEqual(['dlq', 'ack geldar.phase0.damage']);
-  });
-
-  it('still naks a transient failure one delivery before the cap', async () => {
-    const h = harness({ dbFails: true });
-    await handleBatch([h.message('geldar.phase0.damage', EVENT, MAX_DELIVER - 1)], h.deps);
+    await handleBatch([h.message('geldar.phase0.damage', EVENT, 1000)], h.deps);
     expect(h.dlq).toHaveLength(0);
     expect(h.log).toEqual(['nak geldar.phase0.damage 30000']);
+  });
+
+  it('has no redelivery cap, so the server keeps every event for redelivery', () => {
+    expect(MAX_DELIVER).toBe(-1);
   });
 
   it('naks instead of acking when the DLQ publish fails', async () => {
@@ -164,13 +160,10 @@ describe('handleBatch', () => {
     const flaky = { ...EVENT, source_event_id: 'ev_01HFFFFFFFFFFFFFFFFFFFFFFF' };
     const options = { rejectIds: [bad.source_event_id], flakyIds: [flaky.source_event_id] };
 
-    it('naks the flaky row before the delivery cap and dead-letters only the rejected one', async () => {
+    it('naks the flaky row and dead-letters only the rejected one', async () => {
       const h = harness(options);
       await handleBatch(
-        [
-          h.message('geldar.phase0.damage', flaky, MAX_DELIVER - 1),
-          h.message('geldar.phase0.damage', bad),
-        ],
+        [h.message('geldar.phase0.damage', flaky, 20), h.message('geldar.phase0.damage', bad)],
         h.deps,
       );
       expect(h.dlq).toHaveLength(1);
@@ -178,20 +171,14 @@ describe('handleBatch', () => {
       expect(h.log.filter((l) => l.startsWith('nak'))).toEqual(['nak geldar.phase0.damage 30000']);
     });
 
-    it('dead-letters the flaky row on the last delivery instead of losing it', async () => {
+    it('still naks the flaky row on a late delivery instead of dead-lettering it', async () => {
       const h = harness(options);
       await handleBatch(
-        [
-          h.message('geldar.phase0.damage', flaky, MAX_DELIVER),
-          h.message('geldar.phase0.damage', bad),
-        ],
+        [h.message('geldar.phase0.damage', flaky, 25), h.message('geldar.phase0.damage', bad)],
         h.deps,
       );
-      expect(h.dlq).toHaveLength(2);
-      expect(JSON.parse(h.dlq[0]?.body ?? '{}').reason).toContain(
-        'database unavailable after 20 deliveries',
-      );
-      expect(h.log.filter((l) => l.startsWith('nak'))).toHaveLength(0);
+      expect(h.dlq).toHaveLength(1);
+      expect(h.log.filter((l) => l.startsWith('nak'))).toEqual(['nak geldar.phase0.damage 30000']);
     });
   });
 
@@ -227,6 +214,70 @@ describe('backoff and subjects', () => {
   it('derives the DLQ subject from the shard segment', () => {
     expect(dlqSubject('geldar.alpha.damage')).toBe('geldar.alpha.dlq');
     expect(dlqSubject('weird')).toBe('geldar.unknown.dlq');
+  });
+});
+
+describe('a database outage', () => {
+  const SECOND: WorldEvent = { ...EVENT, source_event_id: 'ev_01HSSSSSSSSSSSSSSSSSSSSSSS' };
+  const OUTAGE_MS = 10 * 60_000;
+
+  interface Delivery {
+    subject: string;
+    raw: string;
+    deliveryCount: number;
+    dueMs: number;
+    done: boolean;
+  }
+
+  it('loses no event through a 10-minute outage and dead-letters only the poison message', async () => {
+    let clockMs = 0;
+    const written: string[] = [];
+    const dlq: string[] = [];
+    const deps: BatchDeps = {
+      writer: {
+        async insertBatch(events) {
+          if (clockMs < OUTAGE_MS) throw new Error('connection refused');
+          for (const e of events) written.push(e.source_event_id);
+        },
+      },
+      log: () => undefined,
+      async publishDlq(_subject, body) {
+        dlq.push(body);
+      },
+    };
+    // A fake consumer: each nak redelivers the message once its delay has passed on a simulated clock.
+    const queue: Delivery[] = [
+      { subject: 'geldar.phase0.damage', raw: JSON.stringify(EVENT) },
+      { subject: 'geldar.phase0.damage', raw: JSON.stringify(SECOND) },
+      { subject: 'geldar.phase0.damage', raw: 'not json' },
+    ].map((d) => ({ ...d, deliveryCount: 1, dueMs: 0, done: false }));
+    for (let step = 0; queue.some((d) => !d.done); step++) {
+      if (step > 1000) throw new Error('the simulation did not settle');
+      const next = queue
+        .filter((d) => !d.done)
+        .reduce((earliest, d) => (d.dueMs < earliest.dueMs ? d : earliest));
+      clockMs = Math.max(clockMs, next.dueMs);
+      const message: SinkMessage = {
+        subject: next.subject,
+        data: new TextEncoder().encode(next.raw),
+        deliveryCount: next.deliveryCount,
+        ack: () => {
+          next.done = true;
+        },
+        nak: (delayMs) => {
+          next.deliveryCount++;
+          next.dueMs = clockMs + delayMs;
+        },
+      };
+      await handleBatch([message], deps);
+    }
+
+    expect(written.sort()).toEqual([EVENT.source_event_id, SECOND.source_event_id].sort());
+    expect(clockMs).toBeGreaterThanOrEqual(OUTAGE_MS);
+    // Well past the old cap of 20 deliveries, so a cap would have lost these events.
+    expect(Math.max(...queue.map((d) => d.deliveryCount))).toBeGreaterThan(20);
+    expect(dlq).toHaveLength(1);
+    expect(JSON.parse(dlq[0] ?? '{}').data).toBe('not json');
   });
 });
 
