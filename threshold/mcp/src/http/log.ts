@@ -7,7 +7,11 @@ const PLAYER = /^[a-z][a-z0-9-]{1,38}$/;
 const CAUSE_MAX = 200;
 /** Text that looks like a credential: a bearer token, a `password=`-style value, or a long opaque run. */
 const SECRET_LIKE =
-  /bearer\s+\S+|(?:password|passwd|token|secret)\s*[=:]\s*\S*|[A-Za-z0-9+/_-]{32,}/gi;
+  /bearer\s+\S+|[a-z_]*(?:password|passwd|secret|token|key)"?\s*[=:]\s*"?[^\s",]+|(?:password|passwd|token|secret)\s*[=:]\s*\S*|[A-Za-z0-9+/_-]{32,}/gi;
+/** An `Authorization` or `Cookie` header in the cause: the rest of the line is credential text. */
+const AUTH_LINE = /(?:authorization|cookie)\s*:\s*\S.*/gi;
+/** The userinfo of a connection string, `scheme://user:password@host`: the scheme is kept. */
+const USERINFO = /(:\/\/)[^\/\s:@]+:[^@\s]+@/g;
 
 /**
  * Keeps only the fields a request log line may carry: the event, the player id from the URL,
@@ -32,7 +36,11 @@ export function safeLogLine(line: Record<string, unknown>): Record<string, strin
  */
 function causeText(cause: string): string {
   const first = cause.split('\n', 1)[0] ?? '';
-  return first.replace(SECRET_LIKE, '[redacted]').slice(0, CAUSE_MAX);
+  const redacted = first
+    .replace(AUTH_LINE, '[redacted]')
+    .replace(USERINFO, '$1[redacted]@')
+    .replace(SECRET_LIKE, '[redacted]');
+  return redacted.slice(0, CAUSE_MAX);
 }
 
 function errorTemplate(error: string): string {
