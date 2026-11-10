@@ -69,7 +69,10 @@ export function checkBench(bench: BenchFile | null, headSha: string): BenchCheck
   const commit = parsed.meta.commit;
   const short = headSha.slice(0, 7);
   const problems: string[] = [];
-  if (commit !== short) {
+  // A bench writer may record a longer short sha than seven digits, so compare by prefix either way.
+  const sameCommit =
+    commit.length >= 7 && (headSha.startsWith(commit) || commit.startsWith(headSha));
+  if (!sameCommit) {
     problems.push(
       `benchmark gate: ${file} was recorded at ${commit}, HEAD is ${short}; re-run OPS-0 at HEAD`,
     );

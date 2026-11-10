@@ -99,6 +99,16 @@ describe('checkBench', () => {
     });
   });
 
+  it('accepts a longer short sha at HEAD, and a full sha when HEAD is given short', () => {
+    expect(checkBench(file(result({ commit: 'eba101b2f00' })), HEAD).ok).toBe(true);
+    expect(checkBench(file(result({ commit: HEAD })), 'eba101b').ok).toBe(true);
+  });
+
+  it('refuses a longer sha that names another commit, and an empty commit', () => {
+    expect(checkBench(file(result({ commit: 'eba101b2f00ffff' })), HEAD).ok).toBe(false);
+    expect(checkBench(file(result({ commit: '' })), HEAD).ok).toBe(false);
+  });
+
   it('refuses a 20 TPS cell below 100%, and lists that cell', () => {
     const verdict = checkBench(file(result({ pct20: { 'blocked-path': 80 } })), HEAD);
     expect(verdict).toEqual({
