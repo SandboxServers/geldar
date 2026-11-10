@@ -76,7 +76,7 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     expect(second.outcome).toBe('planned');
   });
 
-  it('ends a cycle whose thought row write never returns, before any plan is sent', async () => {
+  it('counts a thought row write that never returns as a journal error, and still sends the plan', async () => {
     const logs: Line[] = [];
     const rig = await makeRig([{ text: VALID_THOUGHT }, { text: VALID_THOUGHT }], {
       loop: { stepTimeoutMs: STEP_MS },
@@ -85,9 +85,10 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     rig.store.recordThought = hangFirst(rig.store.recordThought.bind(rig.store));
 
     const first = await rig.loop.handle(makeDecision('idle'));
-    expect(first.outcome).toBe('model_error');
-    expect(aborts(logs)).toEqual(['journal']);
-    expect(rig.body.plans).toHaveLength(0);
+    expect(first.outcome).toBe('planned');
+    expect(first.journalErrors).toBe(1);
+    expect(aborts(logs)).toEqual([]);
+    expect(rig.body.plans).toHaveLength(1);
 
     const second = await rig.loop.handle(makeDecision('idle'));
     expect(second.outcome).toBe('planned');

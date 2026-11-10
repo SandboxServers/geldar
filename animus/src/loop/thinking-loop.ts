@@ -517,12 +517,18 @@ export class ThinkingLoop {
       creditsSettled: settled,
       at: this.iso(),
     });
-    const written = await bounded(
-      writeThoughtRow(this.deps.journal, row, thoughtId, this.report),
-      this.stepMs,
-      'journal',
-    );
-    if (!written) {
+    // The thought is valid and its credits are settled, so a write that fails or hangs is counted,
+    // not fatal: the plan is still sent.
+    try {
+      const written = await bounded(
+        writeThoughtRow(this.deps.journal, row, thoughtId, this.report),
+        this.stepMs,
+        'journal',
+      );
+      if (!written) cycle.journalErrors++;
+    } catch (error) {
+      if (!(error instanceof CycleAborted)) throw error;
+      reportFailure(this.report, error, 'journal_write_failed', { thought_id: thoughtId });
       cycle.journalErrors++;
     }
   }
