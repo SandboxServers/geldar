@@ -417,6 +417,18 @@ describe('snapshot rendering', () => {
     expect(v1.render('reflection', vars).messages[1]?.content).not.toContain('Meet Pike');
   });
 
+  it('keeps a long set of due commitments inside the thought budget, the most overdue first', () => {
+    // A budget of 1000 gives the due commitments a quarter (250): the first fits, the second does not.
+    const small = createPromptLibrary({ thoughtBudgetTokens: 1000 });
+    const dueCommitments = Array.from({ length: 50 }, (_, i) =>
+      commitmentRow(`${i} ${'m'.repeat(5000)}`, i),
+    );
+    const user = small.render('thought', { ...sampleThoughtVars(), dueCommitments }).messages[1];
+    expect(promptCost(user?.content ?? '')).toBeLessThanOrEqual(1000);
+    expect(user?.content).toContain('- due tick 0: ');
+    expect(user?.content).not.toContain('- due tick 1:');
+  });
+
   it('keeps a long set of commitments inside the reflection budget, the most overdue first', () => {
     // A budget of 1000 gives the commitments a quarter (250): the first, most overdue, one fits
     // (a 512-character text is about 170 tokens), the second does not.

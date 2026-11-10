@@ -293,13 +293,18 @@ function renderThought(
       world.push({ kind: 'overheard', fields: { from: e.payload.from, text: e.payload.text } });
     }
   }
+  // The due commitments get COMMITMENT_SHARE of the budget and come out of the memory share, as in
+  // the reflection, so the user message stays inside the budget however many are due.
+  const commitments = renderCommitments(
+    fitCommitments(vars.dueCommitments, limits.thoughtBudgetTokens * COMMITMENT_SHARE),
+  );
   const memory = fitMemory(
     {
       beliefs: beliefLines(vars.beliefs, limits.maxBeliefs),
       memories: episodicLines(vars.episodic),
       journal: journalLines(vars.recentThoughts),
     },
-    limits.thoughtBudgetTokens * MEMORY_SHARE,
+    limits.thoughtBudgetTokens * MEMORY_SHARE - promptCost(commitments),
   );
   const schema = thoughtDecodeSchema();
   const self = vars.snapshot.self;
@@ -310,7 +315,7 @@ function renderThought(
     personality_seed: vars.agent.personalitySeed,
     skill_index: 'none yet. You have not learned any skills.',
     goal_stack: renderGoals(vars.goals),
-    commitments: renderCommitments(vars.dueCommitments),
+    commitments,
     beliefs: renderLines(memory.beliefs),
     memories: renderLines(memory.memories),
     days: String(vars.snapshot.world_time.day),
