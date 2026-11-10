@@ -32,6 +32,7 @@ describe('animus config: the start-up waits', () => {
       thinkerWaitS: 20,
       promptBudgetChars: 12000,
       maxBeliefs: 40,
+      memoryTimeoutS: 10,
     });
   });
 
@@ -44,6 +45,7 @@ describe('animus config: the start-up waits', () => {
       thinkerWaitS: 20,
       promptBudgetChars: 12000,
       maxBeliefs: 40,
+      memoryTimeoutS: 10,
     });
     doc.mind.thinker_wait_s = -1;
     expect(() => parseAnimusConfig(doc)).toThrow('mind.thinker_wait_s');

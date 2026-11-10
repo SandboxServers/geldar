@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { loadAnimusConfig } from '../config.ts';
 import type { AgentRow, NewMemory, ThoughtRow } from '../ports/index.ts';
 import { PgJournal } from './journal.ts';
-import { PgMemoryStore, type PgPool, type SqlResult } from './pg-store.ts';
+import { PgMemoryStore, type PgPool, poolConfig, type SqlResult } from './pg-store.ts';
 
 interface Call {
   sql: string;
@@ -230,5 +231,20 @@ describe('PgJournal', () => {
     expect(await new PgJournal(pool).journalSince('l', 0)).toEqual([
       { thoughtId: 'th_1', worldDay: 1, worldTick: 5, wakeReason: 'w', parsed: null },
     ]);
+  });
+});
+
+describe('the Postgres pool settings', () => {
+  it('bounds every wait: connect, query and statement', async () => {
+    const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+    expect(poolConfig(config, 'pw')).toMatchObject({
+      host: '127.0.0.1',
+      port: 5432,
+      password: 'pw',
+      max: 4,
+      connectionTimeoutMillis: 10_000,
+      query_timeout: 30_000,
+      statement_timeout: 30_000,
+    });
   });
 });

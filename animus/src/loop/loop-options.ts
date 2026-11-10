@@ -23,6 +23,8 @@ export interface LoopOptions {
   snapshotRetryMs?: number;
   /** How long a `no_thinker` call waits for a Thinker before the fallback; absent means not at all. */
   thinkerWaitMs?: number;
+  /** How long the memory load may take before the thought fails; absent means no limit. */
+  memoryTimeoutMs?: number;
 }
 
 /** The loop's options from the loaded configuration; `bodyVersion` is the Body build's version. */
@@ -47,5 +49,6 @@ export function loopOptionsFromConfig(config: AnimusConfig, versions: LoopVersio
     episodicTopK: config.memory.episodicTopK,
     snapshotRetryMs: config.mind.snapshotRetryS * 1000,
     thinkerWaitMs: config.mind.thinkerWaitS * 1000,
+    memoryTimeoutMs: config.mind.memoryTimeoutS * 1000,
   };
 }

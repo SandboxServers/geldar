@@ -61,6 +61,8 @@ export interface AnimusConfig {
     promptBudgetChars: number;
     /** Beliefs loaded and shown, newest first (`mind.max_beliefs`). */
     maxBeliefs: number;
+    /** How long a memory load may take before the Mind gives up (`mind.memory_timeout_s`). */
+    memoryTimeoutS: number;
   };
   thought: JobSettings;
   reflection: JobSettings;
@@ -190,6 +192,7 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
       thinkerWaitS: optionalInt(mind, 'thinker_wait_s', 'mind', 20, 0),
       promptBudgetChars: optionalInt(mind, 'prompt_budget_chars', 'mind', 12000, 1000),
       maxBeliefs: optionalInt(mind, 'max_beliefs', 'mind', 40, 1),
+      memoryTimeoutS: optionalInt(mind, 'memory_timeout_s', 'mind', 10, 1),
     },
     thought,
     reflection: jobSettings(mind, 'reflection', thought.temperature),
