@@ -1,11 +1,18 @@
-import { callTool, type ToolContext, type ToolHandlers } from '@geldar/mcp-mock';
+import { callTool, type FakeClock, type ToolContext, type ToolHandlers } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import type { FakeJournalStore, RecordingCallRecorder } from './fakes/stores.fakes.ts';
-import { type FakeBody, NO_BOOK, worldFixture } from './fakes/world.fakes.ts';
+import {
+  type FakeBody,
+  type MemoryPresenceBucket,
+  NO_BOOK,
+  worldFixture,
+} from './fakes/world.fakes.ts';
 import type { PlayerRecord } from './ports.ts';
 import { WORLD_TEXT_NOTE } from './tools/look.ts';
 import { NOT_AVAILABLE_MESSAGE } from './tools/unavailable.ts';
 import { createWorld } from './world.ts';
+
+const GOTO = { do: 'goto', target: { x: 1, y: 64, z: 1 } };
 
 const PLAYER: PlayerRecord = {
   playerId: 'ag-ranger-01',
@@ -168,5 +175,102 @@ describe('the player comes from the bound session', () => {
     const reply = await run(tools, 'look', {}, 'ag-nobody-01');
     expect(reply.isError).toBe(true);
     expect(reply.text.startsWith('unknown_player: ')).toBe(true);
+  });
+});
+
+/** A world over both players, with PLAYER's budget seeded; the world's handlers are `tools`. */
+function wired() {
+  const fx = worldFixture([PLAYER, OTHER]);
+  fx.budget.seed(PLAYER.lifeId, 37, 0);
+  const world = createWorld(fx.deps);
+  return { ...fx, world, tools: world.tools };
+}
+
+const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+/** Moves the fake clock one second at a time, letting each step's timers and handlers run first. */
+async function passSeconds(clock: FakeClock, seconds: number): Promise<void> {
+  for (let i = 0; i < seconds; i++) {
+    await flush();
+    await clock.advance(1000);
+  }
+  await flush();
+}
+
+/** The presence record the bucket holds for a life, as the Body and the settle timer leave it. */
+function storedPresence(bucket: MemoryPresenceBucket, lifeId: string) {
+  const value = bucket.values.get(lifeId);
+  if (value === undefined) throw new Error(`no presence record for ${lifeId}`);
+  return JSON.parse(value) as { state: string; desired_body: string };
+}
+
+describe('the bound life is the only one a handler reaches', () => {
+  it.each(['look', 'status'])('answers %s from the bound life Body, not another', async (name) => {
+    const { tools, body } = wired();
+    body.setOffline(OTHER.lifeId, true);
+    const reply = await run(tools, name);
+    expect(reply.isError, reply.text).toBe(false);
+  });
+
+  it('sends an act to the bound life even when the arguments name another player', async () => {
+    const { tools, body } = wired();
+    await tools.act({ reasoning: 'ok', actions: [GOTO] }, ctx(PLAYER.playerId));
+    // The act schema refuses the extra key, so this one submits nothing.
+    const other = await tools.act(
+      { reasoning: 'ok', actions: [GOTO], player_id: OTHER.playerId },
+      ctx(PLAYER.playerId),
+    );
+    expect(other).toMatchObject({ accepted: [] });
+    expect(body.plans.map((p) => p.lifeId)).toEqual([PLAYER.lifeId]);
+  });
+
+  it('answers an act with a Body that does not answer with body_unavailable', async () => {
+    const { tools, body } = wired();
+    body.setOffline(PLAYER.lifeId, true);
+    const reply = await run(tools, 'act', { reasoning: 'ok', actions: [GOTO] });
+    expect(reply.isError).toBe(true);
+    expect(reply.text.startsWith('body_unavailable: ')).toBe(true);
+  });
+});
+
+describe('the wait poll keeps the life awake', () => {
+  it('touches the bound life presence on each poll', async () => {
+    const { tools, bucket, clock } = wired();
+    const waiting = run(tools, 'wait', { max_seconds: 5 }, PLAYER.playerId);
+    await passSeconds(clock, 5);
+    const reply = await waiting;
+    expect(reply.isError, reply.text).toBe(false);
+    const touches = bucket.puts.filter((put) => put.key === PLAYER.lifeId);
+    expect(touches.length).toBeGreaterThan(1);
+    expect(bucket.puts.every((put) => put.key === PLAYER.lifeId)).toBe(true);
+  });
+});
+
+describe('the settle timer', () => {
+  it('dims an awake life after a minute and hibernates it after ten, on the injected clock', async () => {
+    const { world, tools, bucket, clock, deps } = wired();
+    await run(tools, 'look');
+    await deps.presence.wantBody(PLAYER.lifeId, clock.nowMs());
+    await passSeconds(clock, 60);
+    expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({
+      state: 'dim',
+      desired_body: 'up',
+    });
+    await passSeconds(clock, 540);
+    expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({
+      state: 'hibernating',
+      desired_body: 'down',
+    });
+    world.close();
+  });
+
+  it('stops settling once close runs', async () => {
+    const { world, tools, bucket, clock, deps } = wired();
+    await run(tools, 'look');
+    await deps.presence.wantBody(PLAYER.lifeId, clock.nowMs());
+    world.close();
+    const before = bucket.puts.length;
+    await passSeconds(clock, 600);
+    expect(bucket.puts.length).toBe(before);
   });
 });
