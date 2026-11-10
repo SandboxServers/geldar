@@ -6,7 +6,13 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
 
 1. Decision record `docs/decisions/0067-nats-accounts-and-least-privilege.md`: done.
 2. Opt-in overlay (generated `compose/secrets/nats-auth.conf`, `compose/nats-auth.yml`, per-component
-   `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD` reads): not started.
+   `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD` reads): PARTIAL. Done: `./geldar.ps1 shard nats-auth
+   <name>` (writes `compose/secrets/nats-auth.conf` and `nats-<user>.txt`, owner-only ACL, untested
+   live) and `compose/nats-auth.yml` (mounts the config into `nats`). NOT done: component credential
+   reads (golem, animus, eventsink, MCP, Java publisher and Velocity client), their connect tests,
+   and wiring the users' password files into their services. Until those land the overlay is not a
+   working stack, and the JetStream permission lists are **untested against a live server**. No
+   `geldar.ps1` test harness exists, so the subcommand was checked by running it and reading the file.
 3. Thinker socket shared secret (`animus/src/thinker/hub.ts`, `lantern-local/src/thinker.ts`): not started.
 4. Static no-credentials guard `tools/repo-checks/src/no-credentials.test.ts`: done (3 tests). It
    fails when a tracked `probe-cred.txt` holds a `nats://user:pass@` URL (planted, confirmed, removed

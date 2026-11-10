@@ -1,0 +1,9 @@
+# Opt-in NATS auth overlay (decision 0067). Untested against a live server.
+# Use with: docker compose -f compose/phase0.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
+# The server config is written by ./geldar.ps1 shard nats-auth phase0 and is git-ignored.
+# Components do not read the credentials yet, so this overlay is not a working stack on its own.
+services:
+  nats:
+    command: ["-c", "/etc/nats/nats-auth.conf", "-m", "8222"]
+    volumes:
+      - ./secrets/nats-auth.conf:/etc/nats/nats-auth.conf:ro
