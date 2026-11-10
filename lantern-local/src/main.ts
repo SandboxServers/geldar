@@ -1,6 +1,6 @@
 import { loadConfig, thinkerVersion } from './config.ts';
 import { discoverModels } from './models.ts';
-import { ollamaChat, ollamaWarm } from './ollama.ts';
+import { ollamaChat, ollamaEmbedPing, ollamaWarm } from './ollama.ts';
 import { LocalThinker } from './thinker.ts';
 
 const log = (line: string): void => {
@@ -29,6 +29,12 @@ async function main(): Promise<number> {
     heartbeatMs: config.heartbeatMs,
     warmTimeoutMs: config.warmTimeoutMs,
     keepAlivePingMs: config.keepAlivePingMs,
+    keepWarmNames: config.keepWarmNames,
+    keepWarmWarning: config.keepWarmWarning,
+    pingEmbedder:
+      config.embedder === undefined
+        ? undefined
+        : ollamaEmbedPing(config.ollamaUrl, config.embedder.name, config.embedder.onCpu),
     log,
   });
   const shutdown = (): void => {

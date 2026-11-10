@@ -364,6 +364,107 @@ describe('keep-alive', () => {
     expect(clears).toHaveBeenCalledWith(timer);
   });
 
+  describe('keep-warm set (hardware: one chat model fits in VRAM with the embedder)', () => {
+    const both = [pin('qwen3:32b'), pin('qwen3:8b')];
+    const chatPings = (name: string): number =>
+      warmCalls().filter((r) => r.body.model === name).length;
+    const UNSET =
+      'run_tier is not set: not keeping both chat models warm (they cannot both fit in VRAM)';
+
+    it('run_tier strong: after hello, pings only the strong model and the embedder', async () => {
+      let embeds = 0;
+      launchWarm({
+        models: both,
+        keepWarmNames: ['qwen3:32b'],
+        keepAlivePingMs: 20,
+        pingEmbedder: async () => {
+          embeds += 1;
+        },
+      });
+      await mind.next('hello');
+      const eight = chatPings('qwen3:8b');
+      const strong = chatPings('qwen3:32b');
+      await until(
+        () => embeds >= 2 && chatPings('qwen3:32b') >= strong + 2,
+        'strong and embedder pings',
+      );
+      expect(chatPings('qwen3:8b')).toBe(eight);
+    });
+
+    it('run_tier fast: after hello, pings only the fast model and the embedder', async () => {
+      let embeds = 0;
+      launchWarm({
+        models: both,
+        keepWarmNames: ['qwen3:8b'],
+        keepAlivePingMs: 20,
+        pingEmbedder: async () => {
+          embeds += 1;
+        },
+      });
+      await mind.next('hello');
+      const strong = chatPings('qwen3:32b');
+      const fast = chatPings('qwen3:8b');
+      await until(
+        () => embeds >= 2 && chatPings('qwen3:8b') >= fast + 2,
+        'fast and embedder pings',
+      );
+      expect(chatPings('qwen3:32b')).toBe(strong);
+    });
+
+    it('run_tier unset: pings no chat model, pings the embedder, and logs the warning once', async () => {
+      let embeds = 0;
+      launchWarm({
+        models: both,
+        keepWarmNames: [],
+        keepWarmWarning: UNSET,
+        keepAlivePingMs: 20,
+        pingEmbedder: async () => {
+          embeds += 1;
+        },
+      });
+      await mind.next('hello');
+      const before = warmCalls().length;
+      await until(() => embeds >= 3, 'three embedder pings');
+      expect(warmCalls()).toHaveLength(before);
+      expect(logs.filter((l) => l === UNSET)).toHaveLength(1);
+    });
+
+    it('a failed embedder ping is logged and the pings go on', async () => {
+      let embeds = 0;
+      launchWarm({
+        keepAlivePingMs: 20,
+        pingEmbedder: async () => {
+          embeds += 1;
+          throw new Error('embedder down');
+        },
+      });
+      await mind.next('hello');
+      await until(
+        () =>
+          logs.filter((l) => l === 'keep-alive ping failed embedder: unexpected failure').length >=
+          2,
+        'two logged embedder failures',
+      );
+      expect(embeds).toBeGreaterThanOrEqual(2);
+    });
+
+    it('does not re-warm a chat model the run tier does not keep', async () => {
+      ollama.handler = (_req, res) => ollama.reply(res, answer);
+      launchWarm({
+        models: both,
+        keepWarmNames: ['qwen3:32b'],
+        coldAfterIdleMs: 0,
+        slowFirstTokenMs: 0,
+      });
+      await mind.next('hello');
+      const before = chatPings('qwen3:8b');
+      mind.push(mind.job());
+      await mind.next('completion');
+      await new Promise((r) => setTimeout(r, 100));
+      expect(chatPings('qwen3:8b')).toBe(before);
+    });
+  });
+
   it('re-warms a model after a slow job that follows an idle spell, and logs why', async () => {
     ollama.handler = (_req, res) => ollama.reply(res, answer);
     launchWarm({ coldAfterIdleMs: 0, slowFirstTokenMs: 0 });

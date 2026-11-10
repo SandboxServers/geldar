@@ -63,6 +63,15 @@ export interface ThinkerOptions {
   warmTimeoutMs?: number;
   /** How often each advertised model gets a one-token call; the calls are skipped while a job runs on it. */
   keepAlivePingMs?: number;
+  /**
+   * The chat models the keep-alive ping and the cold re-warm may touch: the run tier's models only, so
+   * two chat models are never kept resident together. Undefined means every advertised model.
+   */
+  keepWarmNames?: string[] | undefined;
+  /** Logged once at start; main sets it when no chat model may be kept warm. */
+  keepWarmWarning?: string | undefined;
+  /** One call that keeps the embedder resident; it is pinged on every keep-alive tick. */
+  pingEmbedder?: ((signal: AbortSignal) => Promise<void>) | undefined;
   /** A job that takes `slowFirstTokenMs` or more on a model idle `coldAfterIdleMs` or more re-warms it. */
   coldAfterIdleMs?: number;
   slowFirstTokenMs?: number;
@@ -92,11 +101,23 @@ export class LocalThinker {
   welcomes = 0;
 
   private readonly opts: Required<
-    Omit<ThinkerOptions, 'log' | 'warm' | 'warmNames' | 'recheck'>
+    Omit<
+      ThinkerOptions,
+      | 'log'
+      | 'warm'
+      | 'warmNames'
+      | 'recheck'
+      | 'keepWarmNames'
+      | 'keepWarmWarning'
+      | 'pingEmbedder'
+    >
   > & {
     log: (line: string) => void;
     warm?: WarmFn;
     warmNames?: string[];
+    keepWarmNames?: string[] | undefined;
+    keepWarmWarning?: string | undefined;
+    pingEmbedder?: ((signal: AbortSignal) => Promise<void>) | undefined;
     recheck?: () => Promise<string[]>;
   };
   private readonly byName = new Map<string, AdvertisedModel>();
@@ -141,6 +162,7 @@ export class LocalThinker {
 
   /** Starts the connection loop; it keeps reconnecting until {@link stop}. */
   start(): void {
+    if (this.opts.keepWarmWarning !== undefined) this.opts.log(this.opts.keepWarmWarning);
     this.pingTimer = setInterval(() => void this.pingIdle(), this.opts.keepAlivePingMs);
     this.pingTimer.unref();
     void this.connect();
@@ -247,30 +269,52 @@ export class LocalThinker {
       for (const pin of this.advertised) {
         if (this.stopped) return;
         const busy = [...this.inFlight.values()].some((job) => job.model === pin.name);
-        if (!busy) await this.touch(pin, 'keep-alive ping');
+        if (!busy && this.keepsWarm(pin.name)) await this.touch(pin, 'keep-alive ping');
+      }
+      const embed = this.opts.pingEmbedder;
+      if (embed !== undefined && !this.stopped) {
+        await this.guarded('keep-alive ping failed embedder', embed);
       }
     } finally {
       this.pinging = false;
     }
   }
 
+  /** Whether the keep-alive ping and the cold re-warm may touch this chat model (see `keepWarmNames`). */
+  private keepsWarm(name: string): boolean {
+    const names = this.opts.keepWarmNames;
+    return names === undefined || names.includes(name);
+  }
+
   /** One one-token call that marks the model used; a failure is logged, never thrown, and stop() aborts it. */
   private async touch(pin: AdvertisedModel, why: string): Promise<void> {
     const warm = this.opts.warm;
     if (warm === undefined || this.stopped) return;
+    if (await this.guarded(`${why} failed ${pin.name}`, (signal) => warm(pin, signal))) {
+      this.lastUsed.set(pin.name, Date.now());
+    }
+  }
+
+  /**
+   * Runs one keep-alive call with the warm-up timeout and registers it so stop() aborts it. A failure
+   * is logged under `label` and returns false; it is never thrown.
+   */
+  private async guarded(
+    label: string,
+    call: (signal: AbortSignal) => Promise<void>,
+  ): Promise<boolean> {
     const controller = new AbortController();
     this.pingAborts.add(controller);
     const timer = setTimeout(() => controller.abort(), this.opts.warmTimeoutMs);
     try {
-      await warm(pin, controller.signal);
-      this.lastUsed.set(pin.name, Date.now());
+      await call(controller.signal);
+      return true;
     } catch (err) {
       if (!this.stopped) {
         const reason = err instanceof OllamaError ? err.message : 'unexpected failure';
-        this.opts.log(
-          `${why} failed ${pin.name}: ${controller.signal.aborted ? 'no answer in time' : reason}`,
-        );
+        this.opts.log(`${label}: ${controller.signal.aborted ? 'no answer in time' : reason}`);
       }
+      return false;
     } finally {
       clearTimeout(timer);
       this.pingAborts.delete(controller);
@@ -469,7 +513,11 @@ export class LocalThinker {
       const idle = lastUsed === undefined ? 0 : started - lastUsed;
       const took = Date.now() - started;
       this.lastUsed.set(pin.name, Date.now());
-      if (idle >= this.opts.coldAfterIdleMs && took >= this.opts.slowFirstTokenMs) {
+      if (
+        idle >= this.opts.coldAfterIdleMs &&
+        took >= this.opts.slowFirstTokenMs &&
+        this.keepsWarm(pin.name)
+      ) {
         this.opts.log(
           `cold start: job ${id} took ${took} ms after ${idle} ms idle; re-warming ${pin.name}`,
         );
