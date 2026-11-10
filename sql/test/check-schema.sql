@@ -160,3 +160,45 @@ BEGIN
   RAISE NOTICE 'schema check passed: % tables, pgvector %', array_length(expected, 1), ext_version;
 END
 $$;
+
+-- Migration 0002 (not in spec Appendix D): the sovereign MCP tables, the revocation
+-- trigger, the geldar_mcp role with its grants, and the migration ledger.
+DO $mcp$
+DECLARE
+  mcp_expected TEXT[] := ARRAY[
+    'schema_migrations', 'mcp_owners', 'mcp_players', 'mcp_tokens', 'mcp_budget', 'mcp_journal'
+  ];
+  missing TEXT[];
+  ledger TEXT[];
+BEGIN
+  SELECT array_agg(t.name ORDER BY t.name) INTO missing
+  FROM unnest(mcp_expected) AS t(name)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = t.name
+  );
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'schema check: missing mcp tables in public: %', missing;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_tokens_revoked') THEN
+    RAISE EXCEPTION 'schema check: the mcp_tokens_revoked trigger is missing';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar_mcp' AND NOT rolcanlogin) THEN
+    RAISE EXCEPTION 'schema check: role geldar_mcp is missing or can log in';
+  END IF;
+  IF has_table_privilege('geldar_mcp', 'thoughts', 'SELECT')
+     OR has_table_privilege('geldar_mcp', 'memories', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can read thoughts or memories';
+  END IF;
+
+  SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations
+  WHERE version IN ('0001', '0002');
+  IF ledger IS DISTINCT FROM ARRAY['0001', '0002'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 and 0002, found %', ledger;
+  END IF;
+
+  RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
+END
+$mcp$;
