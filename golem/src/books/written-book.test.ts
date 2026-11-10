@@ -115,8 +115,8 @@ describe('readWrittenBook: result size and hostile characters', () => {
 
   it('strips the zero-width, invisible-operator, BOM and tag-block characters', () => {
     const hidden = [
-      0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x061c, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064,
-      0xfeff, 0xe0001, 0xe0041, 0xe007f,
+      0x200b, 0x200e, 0x200f, 0x061c, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0xfeff, 0xe0001,
+      0xe0041, 0xe007f,
     ];
     for (const code of hidden) {
       const page = `a${String.fromCodePoint(code)}b`;
@@ -124,6 +124,75 @@ describe('readWrittenBook: result size and hostile characters', () => {
         'ab',
       );
     }
+  });
+
+  it('strips the other invisible carriers: soft hyphen, fillers, separators and variation selectors', () => {
+    const hidden = [
+      0x00ad, 0x034f, 0x180e, 0x115f, 0x1160, 0x3164, 0xffa0, 0x206a, 0x206b, 0x206c, 0x206d,
+      0x206e, 0x206f, 0xfe00, 0xfe0d, 0xe0100, 0xe01ef,
+    ];
+    for (const code of hidden) {
+      const page = `a${String.fromCodePoint(code)}b`;
+      expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+        'ab',
+      );
+    }
+  });
+
+  it('strips a run of variation selectors from E0100 to E01EF', () => {
+    const page = 'a\u{E0100}\u{E0101}\u{E01EF}b';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      'ab',
+    );
+  });
+
+  it('keeps a single ZWNJ between two letters, so a Persian word reads whole', () => {
+    const page = 'می‌خواهم';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      page,
+    );
+  });
+
+  it('keeps a family emoji of ZWJ-joined people', () => {
+    const page = '\u{1F468}‍\u{1F469}‍\u{1F467}';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      page,
+    );
+  });
+
+  it('keeps a Malayalam conjunct with a ZWJ after a virama', () => {
+    const page = 'ന്‍ന';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      page,
+    );
+  });
+
+  it('strips a run of three joiners, the binary steganography pattern', () => {
+    const page = 'a‍‌‍b';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      'ab',
+    );
+  });
+
+  it('strips a joiner at the start or end of the text', () => {
+    const page = '‍a‍';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      'a',
+    );
+  });
+
+  it('strips a joiner next to a space', () => {
+    const page = 'a‍ b';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      'a b',
+    );
+  });
+
+  it('keeps an emoji base with its U+FE0F selector', () => {
+    const page = '❤️ x';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      page,
+    );
   });
 
   it('strips the same characters from the title and author', () => {

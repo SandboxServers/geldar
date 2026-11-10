@@ -22,6 +22,11 @@ export const RECENT_JOURNAL_LINES = 20;
 /** What a player reads when a resource read fails: neutral, with no word about the world's nature. */
 export const PLAYER_FAULT = 'something went wrong; try again';
 
+/** The cause of a failure as one log field: the error's name and message, or its string form. */
+export function causeOf(error: unknown): string {
+  return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+}
+
 /** The prompt text a player reads: the mock's prompt without its stand-in suffix. */
 export function getPrompt(name: string) {
   return mockPrompt(name, '');
@@ -77,8 +82,11 @@ export async function readPlayerResource(
       facts.journal = await deps.journal.recent(player.lifeId, RECENT_JOURNAL_LINES);
     }
   } catch (error) {
-    const cause = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    log?.({ event: 'resource_error', player_id: player.playerId, cause: `${uri}: ${cause}` });
+    log?.({
+      event: 'resource_error',
+      player_id: player.playerId,
+      cause: `${uri}: ${causeOf(error)}`,
+    });
     throw new McpError(ErrorCode.InternalError, PLAYER_FAULT);
   }
   const world: ResourceWorld = {

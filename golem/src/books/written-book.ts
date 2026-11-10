@@ -152,27 +152,87 @@ function plainText(node: unknown, depth = 0): string {
  * page cannot reorder or split the text the player reads.
  */
 function clean(text: string): string {
+  const codes = [...text].map((char) => char.codePointAt(0) ?? 0);
   let out = '';
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    if (code > 0x1f && (code < 0x7f || code > 0x9f) && !isHiddenControl(code)) out += char;
-  }
+  codes.forEach((code, at) => {
+    if (isControl(code) || isHiddenControl(code)) return;
+    if (isVariationSelector(code)) {
+      if (isTextSelector(code) && isVisible(codes[at - 1])) out += String.fromCodePoint(code);
+      return;
+    }
+    if (isJoiner(code)) {
+      if (isLoneJoiner(codes, at)) out += String.fromCodePoint(code);
+      return;
+    }
+    out += String.fromCodePoint(code);
+  });
   return out;
 }
 
+/** A ZWNJ or ZWJ is kept only alone, between two visible characters: a run of joiners is a payload. */
+function isLoneJoiner(codes: number[], at: number): boolean {
+  if (isInvisible(codes[at - 1]) || isInvisible(codes[at + 1])) return false;
+  let before = at - 1;
+  while (before >= 0 && isVariationSelector(codes[before] ?? 0)) before--;
+  let after = at + 1;
+  while (after < codes.length && isVariationSelector(codes[after] ?? 0)) after++;
+  return isVisible(codes[before]) && isVisible(codes[after]);
+}
+
+/** A visible character: not a space, a control, an invisible mark or a selector. */
+function isVisible(code: number | undefined): boolean {
+  if (code === undefined || isControl(code) || isInvisible(code) || isVariationSelector(code)) {
+    return false;
+  }
+  return !/\s/u.test(String.fromCodePoint(code));
+}
+
+function isControl(code: number): boolean {
+  return code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+}
+
+function isJoiner(code: number): boolean {
+  return code === 0x200c || code === 0x200d;
+}
+
+function isInvisible(code: number | undefined): boolean {
+  return code !== undefined && (isJoiner(code) || isHiddenControl(code));
+}
+
+/** The variation selectors: U+FE00-FE0F and the supplement U+E0100-E01EF. */
+function isVariationSelector(code: number): boolean {
+  return (code >= 0xfe00 && code <= 0xfe0f) || (code >= 0xe0100 && code <= 0xe01ef);
+}
+
+/** U+FE0E and U+FE0F pick text or emoji style; they are kept only after a visible character. */
+function isTextSelector(code: number): boolean {
+  return code === 0xfe0e || code === 0xfe0f;
+}
+
 /**
- * Zero-width and directional marks (U+200B-U+200F, U+061C), the word joiner and invisible operators
- * (U+2060-U+2064), the byte order mark (U+FEFF) and the Unicode tag block (U+E0000-U+E007F), which can
- * carry invisible ASCII instructions to a model.
+ * Zero-width and directional marks (U+200B, U+200E-U+200F, U+061C), the word joiner and invisible
+ * operators (U+2060-U+2064, U+206A-U+206F), the soft hyphen, combining grapheme joiner, Mongolian
+ * vowel separator and the Hangul and halfwidth fillers, the byte order mark (U+FEFF), the line and
+ * paragraph separators, the bidi embedding, override and isolate controls, and the Unicode tag block
+ * (U+E0000-U+E007F), which can carry invisible ASCII instructions to a model. The joiners are not
+ * here: they are kept in some words and dropped by `isLoneJoiner`.
  */
 function isHiddenControl(code: number): boolean {
   return (
+    code === 0x200b ||
+    (code >= 0x200e && code <= 0x200f) ||
+    code === 0x061c ||
     (code >= 0x2028 && code <= 0x2029) ||
     (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2060 && code <= 0x206f) ||
     (code >= 0x2066 && code <= 0x2069) ||
-    (code >= 0x200b && code <= 0x200f) ||
-    code === 0x061c ||
-    (code >= 0x2060 && code <= 0x2064) ||
+    code === 0x00ad ||
+    code === 0x034f ||
+    code === 0x180e ||
+    code === 0x115f ||
+    code === 0x1160 ||
+    code === 0x3164 ||
+    code === 0xffa0 ||
     code === 0xfeff ||
     (code >= 0xe0000 && code <= 0xe007f)
   );

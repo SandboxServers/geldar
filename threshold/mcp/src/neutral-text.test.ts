@@ -226,4 +226,31 @@ describe('a database fault reaches the player as the neutral text, with its caus
     const fault = lines.find((line) => line.event === 'resource_error');
     expect(String(fault?.cause)).toContain(denied);
   });
+
+  it('reads the neutral fault when the player lookup throws, and logs the cause', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const credential = 'password authentication failed for user "geldar_mcp"';
+    const base = worldDeps(undefined, false);
+    const players = {
+      find: async () => {
+        throw new Error(credential);
+      },
+    };
+    const deps = {
+      ...base,
+      players,
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await readOrError(client, 'geldar://shard/rules');
+      expect(reply).toContain(NEUTRAL_FAULT);
+      expect(reply).not.toContain('password authentication');
+      expect(reply).not.toContain('geldar_mcp');
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain(credential);
+  });
 });

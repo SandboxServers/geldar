@@ -2,16 +2,19 @@ import { callTool, listTools, type ToolHandlers } from '@geldar/mcp-mock';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
+  ErrorCode,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  McpError,
   ReadResourceRequestSchema,
   type ServerNotification,
   SetLevelRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { KeepAlive, PlayerDirectory } from './ports.ts';
+import type { KeepAlive, PlayerDirectory, PlayerRecord } from './ports.ts';
 import {
+  causeOf,
   getPrompt,
   listPrompts,
   listResources,
@@ -105,7 +108,13 @@ export function createWorldSession(
     resources: listResources(),
   }));
   mcp.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const player = await deps.players.find(playerId);
+    let player: PlayerRecord | null;
+    try {
+      player = await deps.players.find(playerId);
+    } catch (error) {
+      deps.log?.({ event: 'resource_error', player_id: playerId, cause: causeOf(error) });
+      throw new McpError(ErrorCode.InternalError, PLAYER_FAULT);
+    }
     if (player === null) throw new Error('no player is bound to this session');
     return readPlayerResource(deps.resources, player, request.params.uri, deps.log);
   });
