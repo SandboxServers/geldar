@@ -75,6 +75,37 @@ Each refusal and strip line was reverted in turn, and the pepper test files fail
   token file is correct, only the reader was wrong. If the smoke still returns 401, the next suspect
   is e2 (the container's mounted shard file).
 
+## L2
+
+### The act intent had no limits (fixed)
+
+- Finding: the live stub-client case sent an `act` intent without `limits`. The contract requires
+  `limits.max_world_ticks` and `limits.max_block_operations` on every intent
+  (`contract/schemas/thought.schema.json`, Intent), so the act was refused and the case could not
+  reach its wait.
+- The player-facing `act` description did not say that `limits` is required. A model reading it
+  had no way to know.
+- The MCP does not default `limits`. It refuses the intent, so the fix belongs in the client's
+  request and in the description, not in a server-side default.
+
+### Fixes
+
+- `contract/schemas/mcp-play.schema.json`: the `act` description now says an intent must carry
+  `limits` with both fields and their bounds (1 to 240000 and 1 to 10000), and ends with a minimal
+  valid intent. The generated copies are regenerated. `act-description.test.ts` checks the example
+  against the validator and fails when `limits` is dropped.
+- `threshold/mcp/test/live/live-requests.ts`: the case's look, act and wait bodies are built in one
+  place. The act intent carries `limits` (max_world_ticks 2400, max_block_operations 64).
+  `live-requests.test.ts` checks every body against the contract validator and the Mind output
+  validator, and refuses an act without `limits`.
+- `stub-client.live.test.ts`: `WAIT_STEPS` rises from 4 to 8. 2400 world ticks is about two minutes,
+  so an intent that runs to its limit ends as `intent_run_too_long` inside the case's waits.
+
+### What ops must re-run
+
+- `./geldar.ps1 mcp smoke`. The case now takes up to about 200 s (8 waits of 25 s), not about 100 s.
+  A run that ends `intent_run_too_long` is a pass: the limit was reached and reported.
+
 ## L1c
 
 Two fixes in threshold/mcp: the presence bucket is created before it is used, and a missing GELDAR_EVENTS stream is waited for.
