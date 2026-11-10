@@ -20,6 +20,7 @@ import {
   type WakeDecision,
 } from '../ports/index.ts';
 import { THOUGHT_COST } from './admission.ts';
+import { bounded, CycleAborted, STEP_TIMEOUT_MS } from './cycle-await.ts';
 import type { Attempt, Cycle } from './cycle-state.ts';
 import { chooseEffort, isRepeatedFailureWake, jobShape } from './effort.ts';
 import { continueInterrupted, IntentLedger } from './fallback.ts';
@@ -58,6 +59,7 @@ export class ThinkingLoop {
   private readonly abort = new AbortController();
   private readonly report: FailureReport;
   private previousReason: string | null = null;
+  private startedAt = 0;
   private readonly links: IntentLinker;
   private readonly submitCtx: SubmitContext;
 
@@ -111,11 +113,26 @@ export class ThinkingLoop {
 
   /** Thinks once for `decision`. Never rejects: a failure ends the cycle as `model_error`. */
   async handle(decision: WakeDecision): Promise<LoopResult> {
+    this.startedAt = this.now();
     this.deps.attention.thoughtStarted();
+    this.log({
+      event: 'thought_started',
+      life_id: this.options.lifeId,
+      wake_reason: decision.reason,
+    });
     let result: LoopResult;
     try {
       result = await this.run(decision);
     } catch (error) {
+      // A step that hung ends the cycle with its closed reason; any other throw is `error`.
+      const reason = error instanceof CycleAborted ? error.reason : 'error';
+      this.log({
+        event: 'cycle_aborted',
+        life_id: this.options.lifeId,
+        wake_reason: decision.reason,
+        reason,
+        elapsed_ms: this.elapsed(),
+      });
       reportFailure(this.report, error, 'cycle_failed');
       result = {
         outcome: 'model_error',
@@ -137,16 +154,25 @@ export class ThinkingLoop {
     for (const event of [...decision.events, ...decision.digest]) this.ledger.observe(event);
 
     // 1. The snapshot, with the budget and the sleep counter set.
-    const raw = await requestSnapshotWithRetry(decision.reason.slice(0, 64), {
-      body: this.deps.body,
-      lifeId: this.options.lifeId,
-      budgetMs: this.options.snapshotRetryMs ?? 0,
-      sleep: this.deps.sleep ?? sleepFor,
-      signal: this.abort.signal,
-      log: (line) => this.log(line),
-    });
+    const snapshotBudget = this.options.snapshotRetryMs ?? 0;
+    const raw = await bounded(
+      requestSnapshotWithRetry(decision.reason.slice(0, 64), {
+        body: this.deps.body,
+        lifeId: this.options.lifeId,
+        budgetMs: snapshotBudget,
+        sleep: this.deps.sleep ?? sleepFor,
+        signal: this.abort.signal,
+        log: (line) => this.log(line),
+      }),
+      snapshotBudget + this.stepMs,
+      'snapshot',
+    );
     if (raw === null) {
-      await recordLostWake(this.deps.journal, decision.reason, this.iso(), this.report);
+      await bounded(
+        recordLostWake(this.deps.journal, decision.reason, this.iso(), this.report),
+        this.stepMs,
+        'journal',
+      );
       return {
         outcome: 'fallback_hold',
         thoughtId: null,
@@ -159,6 +185,12 @@ export class ThinkingLoop {
       };
     }
     const snappedAt = this.now();
+    this.log({
+      event: 'snapshot_ok',
+      life_id: this.options.lifeId,
+      wake_reason: decision.reason,
+      elapsed_ms: this.elapsed(),
+    });
     const { lifeId } = this.options;
     const tick = raw.world_time.ticks;
 
@@ -174,7 +206,7 @@ export class ThinkingLoop {
     // A life with no sleep and no birth day counts from now, not from day 0 of the world; its first
     // thought fixes that day as its birth day, so the tiredness clock starts there.
     if (memory.agent.bornDay === null)
-      await this.deps.memory.setBornDay(lifeId, raw.world_time.day);
+      await bounded(this.deps.memory.setBornDay(lifeId, raw.world_time.day), this.stepMs, 'memory');
     const lastSleep = memory.agent.lastSleepDay ?? memory.agent.bornDay ?? raw.world_time.day;
     const snapshot: Snapshot = {
       ...raw,
@@ -184,11 +216,14 @@ export class ThinkingLoop {
         days_since_sleep: Math.max(0, raw.world_time.day - lastSleep),
       },
     };
-    const episodic = await this.retrieve(decision, snapshot);
+    const episodic = await bounded(this.retrieve(decision, snapshot), this.stepMs, 'memory');
     const since = Math.max(0, tick - 24_000);
-    const recent = (await this.deps.journal.journalSince(lifeId, since)).slice(
-      -this.options.workingWindow,
+    const recentRows = await bounded(
+      this.deps.journal.journalSince(lifeId, since),
+      this.stepMs,
+      'journal',
     );
+    const recent = recentRows.slice(-this.options.workingWindow);
 
     // 3. The prompt.
     const render = this.deps.prompts.render('thought', {
@@ -311,24 +346,53 @@ export class ThinkingLoop {
         },
         this.abort.signal,
       );
+    // The Thinker's own deadline, the wait for a Thinker and one step of slack bound the call.
+    const thinkerBound = shape.deadlineS * 1000 + (this.options.thinkerWaitMs ?? 0) + this.stepMs;
     let completion: ModelCompletion;
+    this.log({
+      event: 'thinker_request_sent',
+      life_id: this.options.lifeId,
+      thought_id: thoughtId,
+      model: this.options.model,
+      elapsed_ms: this.elapsed(),
+    });
     try {
-      completion = await callWaitingForThinker(call, {
-        model: this.options.model,
-        lifeId: this.options.lifeId,
-        waitMs: this.options.thinkerWaitMs ?? 0,
-        awaitThinker: this.deps.awaitThinker,
-        signal: this.abort.signal,
-        log: (line) => this.log(line),
-      });
+      completion = await bounded(
+        callWaitingForThinker(call, {
+          model: this.options.model,
+          lifeId: this.options.lifeId,
+          waitMs: this.options.thinkerWaitMs ?? 0,
+          awaitThinker: this.deps.awaitThinker,
+          signal: this.abort.signal,
+          log: (line) => this.log(line),
+        }),
+        thinkerBound,
+        'thinker',
+      );
     } catch (error) {
       const code = error instanceof ModelError ? error.code : 'internal';
       reservation.release();
+      this.log({
+        event: 'thinker_reply',
+        life_id: this.options.lifeId,
+        thought_id: thoughtId,
+        ok: false,
+        error_code: error instanceof CycleAborted ? error.reason : code,
+        elapsed_ms: this.elapsed(),
+      });
+      if (error instanceof CycleAborted) throw error;
       cycle.errorCode = code;
       await this.record(cycle, thoughtId, wakeReason, messages, null, null, THOUGHT_COST, 0, code);
       return { kind: 'error', code };
     }
     reservation.settle();
+    this.log({
+      event: 'thinker_reply',
+      life_id: this.options.lifeId,
+      thought_id: thoughtId,
+      ok: true,
+      elapsed_ms: this.elapsed(),
+    });
     cycle.latencyMs += completion.latencyMs;
     cycle.thinkerId = completion.thinkerId;
     const parsed = this.deps.validator.parseThought(completion.text);
@@ -353,6 +417,16 @@ export class ThinkingLoop {
 
   private iso(): string {
     return new Date(this.now()).toISOString();
+  }
+
+  /** Milliseconds since the current cycle started, from the injected clock. */
+  private elapsed(): number {
+    return Math.max(0, this.now() - this.startedAt);
+  }
+
+  /** The limit of one step that waits on a dependency. */
+  private get stepMs(): number {
+    return this.options.stepTimeoutMs ?? STEP_TIMEOUT_MS;
   }
 
   /** Embeds the wake and searches the episodic memories; memory is best effort, so a failure gives none. */
@@ -434,7 +508,12 @@ export class ThinkingLoop {
       creditsSettled: settled,
       at: this.iso(),
     });
-    if (!(await writeThoughtRow(this.deps.journal, row, thoughtId, this.report))) {
+    const written = await bounded(
+      writeThoughtRow(this.deps.journal, row, thoughtId, this.report),
+      this.stepMs,
+      'journal',
+    );
+    if (!written) {
       cycle.journalErrors++;
     }
   }
@@ -471,7 +550,30 @@ export class ThinkingLoop {
       intentId,
       at: this.iso(),
     });
-    await publishThoughtEvent(this.deps.events, event, thoughtId, this.report);
+    this.log({
+      event: 'thought_committed',
+      life_id: this.options.lifeId,
+      thought_id: thoughtId,
+      outcome,
+      elapsed_ms: this.elapsed(),
+    });
+    // The plan is already committed, so a hung event publish is logged and the outcome stands.
+    try {
+      await bounded(
+        publishThoughtEvent(this.deps.events, event, thoughtId, this.report),
+        this.stepMs,
+        'publish',
+      );
+    } catch (error) {
+      if (!(error instanceof CycleAborted)) throw error;
+      this.log({
+        event: 'cycle_aborted',
+        life_id: this.options.lifeId,
+        wake_reason: cycle.decision.reason,
+        reason: error.reason,
+        elapsed_ms: this.elapsed(),
+      });
+    }
     return {
       outcome,
       thoughtId,
