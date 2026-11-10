@@ -56,7 +56,12 @@ export async function watchPresence(options: PresenceWatchOptions): Promise<void
         log({ event: 'presence_ignored', life_id: lifeId });
         continue;
       }
-      log({ event: 'presence', life_id: lifeId, state: record.state, desired_body: record.desired_body });
+      log({
+        event: 'presence',
+        life_id: lifeId,
+        state: record.state,
+        desired_body: record.desired_body,
+      });
       if (record.desired_body === 'up') await handlers.up();
       else await handlers.down();
     }
