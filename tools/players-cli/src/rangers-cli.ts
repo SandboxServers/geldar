@@ -28,7 +28,7 @@ import {
   rangerState,
   selectRangers,
 } from './rangers.ts';
-import { type LogFs, PRODUCTION_LOG_FS, tailLines } from './rangers-logs.ts';
+import { type LogFs, PRODUCTION_LOG_FS, rotateLog, tailLines } from './rangers-logs.ts';
 import { readPresence } from './rangers-presence.ts';
 import { type ProcessOps, productionOps, stopRangerProcess } from './rangers-process.ts';
 
@@ -92,7 +92,7 @@ export interface RangerLine {
   failed: boolean;
 }
 
-function start(dir: string, ranger: Ranger): RangerLine {
+function start(dir: string, ranger: Ranger, logFs: LogFs): RangerLine {
   const state = rangerState(readPidText(dir, ranger), isAlive);
   if (state.state === 'online') {
     return { line: `${ranger.playerId} already running (pid ${state.pid})`, failed: false };
@@ -105,6 +105,8 @@ function start(dir: string, ranger: Ranger): RangerLine {
     };
   }
   mkdirSync(dir, { recursive: true });
+  // The ranger is not running, so its log is not held open: a log over the cap moves to .1 before this run appends.
+  rotateLog(logFs, logFile(dir, ranger));
   const out = openSync(logFile(dir, ranger), 'a');
   try {
     const child = spawn(process.execPath, rangerCommand(REPO_ROOT, ranger.playerId).args, {
@@ -211,7 +213,8 @@ export async function runRangersCli(
   if (options === null || verb === undefined) return { code: 2, lines: [USAGE] };
   try {
     const rangers = selectRangers(listRangers(shardYaml), options.playerId);
-    if (verb === 'up') return await eachRanger(rangers, async (ranger) => start(dir, ranger));
+    if (verb === 'up')
+      return await eachRanger(rangers, async (ranger) => start(dir, ranger, deps.logFs));
     if (verb === 'down') {
       return await eachRanger(rangers, (ranger) => stop(dir, ranger, deps.ops));
     }
