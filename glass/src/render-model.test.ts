@@ -9,15 +9,19 @@ import {
   LIST_CAP,
   pushThought,
   TEXT_CAP,
-  toView,
   type ThoughtView,
+  toView,
   visible,
 } from './render-model.ts';
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the same controls the page marks
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/u;
 
 function viewAt(id: string, extra: Partial<ThoughtView> = {}): ThoughtView {
-  return { ...toView({ thought_id: id, life_id: 'kestrel', at: '2026-11-10T00:00:00Z' }), ...extra };
+  return {
+    ...toView({ thought_id: id, life_id: 'kestrel', at: '2026-11-10T00:00:00Z' }),
+    ...extra,
+  };
 }
 
 describe('toView', () => {
@@ -79,7 +83,13 @@ describe('filterThoughts', () => {
   const views = [
     toView(hostileRow('<b>walk</b>', 1)),
     toView({ thought_id: 'b', life_id: 'owl', at: '2026-11-01T00:00:00Z', parsed: null }),
-    toView({ thought_id: 'c', life_id: 'owl', at: '2026-11-09T12:00:00Z', parsed: { plan: 'dig' }, prompt_template_version: 'v2' }),
+    toView({
+      thought_id: 'c',
+      life_id: 'owl',
+      at: '2026-11-09T12:00:00Z',
+      parsed: { plan: 'dig' },
+      prompt_template_version: 'v2',
+    }),
   ];
 
   it('filters by agent, outcome and template version', () => {

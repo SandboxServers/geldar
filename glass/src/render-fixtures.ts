@@ -15,6 +15,7 @@ export const HOSTILE: string[] = [
   '​'.repeat(500),
   'nul\u0000byte',
   'x'.repeat(10_000),
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: hostile text that must reach the page as plain text
   '${alert(1)} {{constructor}} __proto__ &amp; &lt;b&gt;',
 ];
 

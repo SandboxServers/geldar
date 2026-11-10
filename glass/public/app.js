@@ -130,7 +130,9 @@ async function openThought(id) {
     const notes = [];
     if (modelInput.truncated) {
       const size = `${modelInput.bytes} bytes`;
-      notes.push(renderNote(document, `The model input is ${size}; only the first 64 KiB is shown.`));
+      notes.push(
+        renderNote(document, `The model input is ${size}; only the first 64 KiB is shown.`),
+      );
     }
     const detail = renderDetail(document, toView(thought), modelInput.json ?? '', receipts);
     els.detail.replaceChildren(...notes, detail);

@@ -8,7 +8,9 @@ class FakeSource implements StreamSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   private listeners: ((ev: { data: string }) => void)[] = [];
-  constructor(readonly url: string) {
+  readonly url: string;
+  constructor(url: string) {
+    this.url = url;
     FakeSource.made.push(this);
   }
   addEventListener(_type: string, listener: (ev: { data: string }) => void): void {

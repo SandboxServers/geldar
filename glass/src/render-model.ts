@@ -71,11 +71,14 @@ export function toView(row: Row): ThoughtView {
 }
 
 /** Shows a bidi override, a zero-width or a control character as a visible marker. */
-const INVISIBLE =
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/gu;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the class names the controls it marks
+const INVISIBLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/gu;
 
 export function visible(value: string): string {
-  return value.replace(INVISIBLE, (ch) => `[U+${ch.codePointAt(0)?.toString(16).toUpperCase().padStart(4, '0')}]`);
+  return value.replace(
+    INVISIBLE,
+    (ch) => `[U+${ch.codePointAt(0)?.toString(16).toUpperCase().padStart(4, '0')}]`,
+  );
 }
 
 /** Clips a field to `cap` characters and says how many were dropped. */

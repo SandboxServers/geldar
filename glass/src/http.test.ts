@@ -199,7 +199,12 @@ describe('the Glass HTTP handler', () => {
 
   it('does not serve a file that is not in the page table', async () => {
     const port = await start({ db: noQueries, hub: endingHub });
-    for (const path of ['/js/render-fixtures.ts', '/js/../http.ts', '/public/index.html', '/app.js/x']) {
+    for (const path of [
+      '/js/render-fixtures.ts',
+      '/js/../http.ts',
+      '/public/index.html',
+      '/app.js/x',
+    ]) {
       expect((await send(port, 'GET', path)).status, path).toBe(404);
     }
   });

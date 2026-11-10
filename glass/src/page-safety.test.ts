@@ -64,7 +64,10 @@ describe('page sources', () => {
       'const f = new Function(value);',
     ];
     for (const line of samples) {
-      expect(FORBIDDEN.some((re) => re.test(line)), line).toBe(true);
+      expect(
+        FORBIDDEN.some((re) => re.test(line)),
+        line,
+      ).toBe(true);
     }
     expect(FORBIDDEN.some((re) => re.test('const evaluated = retrieval.text;'))).toBe(false);
   });

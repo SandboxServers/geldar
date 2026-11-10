@@ -81,7 +81,9 @@ export function renderDetail(doc: Doc, view: ThoughtView, raw: string, receipts:
   section.append(facts, make(doc, 'h3', '', 'Receipts'));
   const list = doc.createElement('ul');
   for (const receipt of receipts) {
-    const line = ['kind', 'phase', 'item', 'count', 'credits'].map((k) => str(receipt[k])).join(' ');
+    const line = ['kind', 'phase', 'item', 'count', 'credits']
+      .map((k) => str(receipt[k]))
+      .join(' ');
     list.append(make(doc, 'li', 'receipt', line));
   }
   section.append(list, make(doc, 'h3', '', 'Raw reply'), make(doc, 'pre', 'raw', raw));

@@ -1,12 +1,25 @@
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
-import { display, toView } from './render-model.ts';
 import { HOSTILE, hostileRow, plainRow } from './render-fixtures.ts';
-import { type El, fillAgentOptions, type Doc, renderDetail, renderRow } from './render-view.ts';
+import { display, toView } from './render-model.ts';
+import { type Doc, type El, fillAgentOptions, renderDetail, renderRow } from './render-view.ts';
 
 /** Every tag the page builds itself. A data value can never add a tag outside this list. */
 const ALLOWED_TAGS = new Set([
-  'UL', 'LI', 'BUTTON', 'SPAN', 'DL', 'DT', 'DD', 'SECTION', 'H3', 'PRE', 'P', 'SELECT', 'OPTION', 'DIV',
+  'UL',
+  'LI',
+  'BUTTON',
+  'SPAN',
+  'DL',
+  'DT',
+  'DD',
+  'SECTION',
+  'H3',
+  'PRE',
+  'P',
+  'SELECT',
+  'OPTION',
+  'DIV',
 ]);
 /** Attributes the page sets. `value` on an option holds an index, never data. */
 const ALLOWED_ATTRS = new Set(['class', 'type', 'value']);
@@ -22,7 +35,10 @@ function auditTree(root: { querySelectorAll(selector: string): ArrayLike<AuditNo
   for (const node of Array.from(root.querySelectorAll('*'))) {
     expect(ALLOWED_TAGS.has(node.tagName), `unexpected element ${node.tagName}`).toBe(true);
     for (const attr of Array.from(node.attributes)) {
-      expect(ALLOWED_ATTRS.has(attr.name), `unexpected attribute ${attr.name} on ${node.tagName}`).toBe(true);
+      expect(
+        ALLOWED_ATTRS.has(attr.name),
+        `unexpected attribute ${attr.name} on ${node.tagName}`,
+      ).toBe(true);
     }
     tags.push(node.tagName);
   }
@@ -66,7 +82,9 @@ describe('renderRow with hostile data', () => {
   it('fires the open callback with the thought id when the row is pressed', () => {
     const doc = freshDoc();
     const seen: string[] = [];
-    const row = renderRow(doc as unknown as Doc, toView(hostileRow('<b>x</b>', 7)), (id) => seen.push(id));
+    const row = renderRow(doc as unknown as Doc, toView(hostileRow('<b>x</b>', 7)), (id) =>
+      seen.push(id),
+    );
     (doc.body as unknown as El).append(row as unknown as El);
     doc.body.querySelector('button')?.click();
     expect(seen).toEqual(['t-7']);
@@ -78,7 +96,12 @@ describe('renderDetail with hostile data', () => {
     for (const [index, value] of HOSTILE.entries()) {
       const doc = freshDoc();
       const receipts = [{ kind: value, phase: value, item: value, count: 1, credits: 2 }];
-      const section = renderDetail(doc as unknown as Doc, toView(hostileRow(value, index)), value, receipts);
+      const section = renderDetail(
+        doc as unknown as Doc,
+        toView(hostileRow(value, index)),
+        value,
+        receipts,
+      );
       (doc.body as unknown as El).append(section as unknown as El);
       auditTree(doc.body);
       expect(doc.body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
