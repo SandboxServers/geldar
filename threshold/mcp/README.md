@@ -153,7 +153,7 @@ if the two drift apart.
 The owner cap counts an owner's players that are not retired, in this shard's database (one database
 per shard). Migration 0006 enforces it in the database, so direct SQL cannot pass it: a new or
 re-activated player over the cap is refused. Lowering a cap does not retire anyone; an owner who is
-over a lowered cap has every token refused at auth until the cap is raised or a player is retired. The
+over a lowered cap has every token refused at auth (reason `owner_over_cap`, never cached) until the cap is raised or a player is retired. The
 owner_cap_owner value (20, decision 0052) is not read by `owner add`: give that owner `--cap 20`.
 
 ### Later: the public tunnel (not run)
