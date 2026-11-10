@@ -56,6 +56,46 @@ describe('RingEventLog', () => {
     expect(got.dropped).toBe(1);
   });
 
+  it('keeps plan_results beside the ring, so 1000 of them evict no real event and count as no drop', async () => {
+    const log = new RingEventLog({ capacity: 3 });
+    await fill(log, 1, 3);
+    for (let i = 1; i <= 1000; i++) {
+      await log.append(LIFE, {
+        ...ev(3 + i),
+        kind: 'plan_result',
+        thought_id: `th_${i}`,
+        said: true,
+      });
+    }
+    const got = await log.since(LIFE, 0);
+    expect(got.dropped).toBe(0);
+    expect(got.events.filter((e) => e.kind === 'proposal').map((e) => e.seq)).toEqual([1, 2, 3]);
+    expect(got.events.some((e) => e.kind === 'plan_result' && e.thought_id === 'th_1000')).toBe(
+      true,
+    );
+  });
+
+  it('returns a plan_result among the ring events in sequence order, after the cursor', async () => {
+    const log = new RingEventLog();
+    await log.append(LIFE, ev(1));
+    await log.append(LIFE, { ...ev(2), kind: 'plan_result', thought_id: 'th_2', said: false });
+    await log.append(LIFE, ev(3));
+    expect((await log.since(LIFE, 0)).events.map((e) => e.seq)).toEqual([1, 2, 3]);
+    expect((await log.since(LIFE, 1)).events.map((e) => e.kind)).toEqual([
+      'plan_result',
+      'proposal',
+    ]);
+  });
+
+  it('puts an earlier sequence that arrives after a later one in order, and still ignores a repeat', async () => {
+    const log = new RingEventLog();
+    await log.append(LIFE, ev(4));
+    await log.append(LIFE, ev(7));
+    await log.append(LIFE, ev(5));
+    await log.append(LIFE, ev(5));
+    expect((await log.since(LIFE, 0)).events.map((e) => e.seq)).toEqual([4, 5, 7]);
+  });
+
   it('keeps each life in its own ring', async () => {
     const log = new RingEventLog();
     await log.append(LIFE, ev(1));

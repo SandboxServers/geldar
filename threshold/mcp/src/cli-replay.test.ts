@@ -13,23 +13,29 @@ import { handleStreamMessage, type StreamCounters } from './events/stream.ts';
 
 type Line = Record<string, string | number>;
 
-/** A delivered message with its acknowledgements counted; `json` parses the body or throws. */
-function message(seq: number, body: string): StreamMessage & { acked: number; naked: number } {
-  const state = { acked: 0, naked: 0 };
+type Counted = StreamMessage & { acked: number; naked: number; delays: Array<number | undefined> };
+
+/** A delivered message with its acknowledgements and naks counted, and each nak's delay; `json` parses the body or throws. */
+function message(seq: number, body: string): Counted {
+  const state = { acked: 0, naked: 0, delays: [] as Array<number | undefined> };
   return {
     seq,
     json: () => JSON.parse(body),
     ack: () => {
       state.acked++;
     },
-    nak: () => {
+    nak: (delayMs?: number) => {
       state.naked++;
+      state.delays.push(delayMs);
     },
     get acked() {
       return state.acked;
     },
     get naked() {
       return state.naked;
+    },
+    get delays() {
+      return state.delays;
     },
   };
 }
@@ -54,6 +60,26 @@ async function* redelivering(m: StreamMessage & { acked: number; naked: number }
 
 function loopCounters(): StreamLoopCounters {
   return { malformed: 0, failed: 0, dropped: 0 };
+}
+
+/** A consumer that never delivers again and never ends, as a quiet stream does. */
+function stalled(): AsyncIterable<StreamMessage> {
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: () => new Promise<IteratorResult<StreamMessage>>(() => {}),
+    }),
+  };
+}
+
+/** A consumer whose first read fails, as a dropped connection does. */
+function broken(): AsyncIterable<StreamMessage> {
+  return {
+    [Symbol.asyncIterator]: () => ({
+      next: async (): Promise<IteratorResult<StreamMessage>> => {
+        throw new Error('nats gone');
+      },
+    }),
+  };
 }
 
 const dayNight = (phase: string, tick: number) => ({
@@ -122,7 +148,7 @@ describe('the stream loop survives a bad message', () => {
     expect(counters).toEqual({ malformed: 0, failed: 1, dropped: 0 });
   });
 
-  it('drops a day_night whose lives() rejects after three tries, and keeps reading', async () => {
+  it('drops a day_night whose lives() rejects after four tries, and keeps reading', async () => {
     const counters = loopCounters();
     const streamCounters: StreamCounters = { invalid: 0 };
     const ctx = {
@@ -139,8 +165,8 @@ describe('the stream loop survives a bad message', () => {
       () => {},
     ).then(() => 'resolved');
     expect(resolved).toBe('resolved');
-    expect(counters).toEqual({ malformed: 0, failed: 3, dropped: 1 });
-    expect(fanOut.naked).toBe(2);
+    expect(counters).toEqual({ malformed: 0, failed: 4, dropped: 1 });
+    expect(fanOut.naked).toBe(3);
     expect(fanOut.acked).toBe(1);
     expect(after.acked).toBe(1);
     expect(streamCounters.invalid).toBe(1);
@@ -148,8 +174,16 @@ describe('the stream loop survives a bad message', () => {
 });
 
 describe('startReplay waits for the replay to catch up', () => {
+  /** The first open gives `messages`; a reopen after its end gives a stream that stays quiet. */
   function sourceOf(pending: number, messages: AsyncIterable<StreamMessage>): ReplaySource {
-    return { open: async () => ({ pending, messages, stop: async () => {} }) };
+    let opened = 0;
+    return {
+      open: async () => {
+        opened++;
+        const next = opened === 1 ? messages : stalled();
+        return { pending, messages: next, stop: async () => {} };
+      },
+    };
   }
 
   it('resolves only once the messages the replay held are settled', async () => {
@@ -197,5 +231,192 @@ describe('startReplay waits for the replay to catch up', () => {
       pending: 3,
       waitMs: 20,
     });
+  });
+
+  it('naks a failing message after 1 s, 5 s and 15 s, then drops it, counts it, and logs its code', async () => {
+    const counters = loopCounters();
+    const lines: Line[] = [];
+    const poison = message(9, '{"x":1}');
+    await runStreamLoop(
+      feed(redelivering(poison)),
+      async () => {
+        throw Object.assign(new Error('pg down'), { code: '57P01' });
+      },
+      counters,
+      (line) => lines.push(line),
+    );
+    expect(poison.delays).toEqual([1000, 5000, 15000]);
+    expect(poison.acked).toBe(1);
+    expect(counters).toEqual({ malformed: 0, failed: 4, dropped: 1 });
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        event: 'stream_message_dropped',
+        dropped_total: 1,
+        error: 'Error',
+        code: '57P01',
+      }),
+    );
+  });
+
+  it('reopens the consumer after an unexpected end and keeps reading until a stop', async () => {
+    const seen: number[] = [];
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    let opened = 0;
+    let stopped = false;
+    await runStreamLoop(
+      broken(),
+      async (seq) => {
+        seen.push(seq);
+        stopped = true;
+      },
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          return feed(message(10, '{"x":1}'));
+        },
+        stopping: () => stopped,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => 0,
+      },
+    );
+    expect(opened).toBe(1);
+    expect(seen).toEqual([10]);
+    expect(sleeps).toEqual([1000]);
+    expect(exits).toEqual([]);
+  });
+
+  it('exits non-zero after five failed reopens, waiting 1 s up to 16 s between them', async () => {
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    await runStreamLoop(
+      broken(),
+      async () => {},
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          throw new Error('still gone');
+        },
+        stopping: () => false,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => 0,
+      },
+    );
+    expect(sleeps).toEqual([1000, 2000, 4000, 8000, 16000]);
+    expect(exits).toEqual([1]);
+  });
+
+  it('exits non-zero at the fifth failure when each reopened consumer ends at once', async () => {
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    let opened = 0;
+    await runStreamLoop(
+      feed(),
+      async () => {},
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          return feed();
+        },
+        stopping: () => false,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => 0,
+      },
+    );
+    expect(opened).toBe(5);
+    expect(sleeps).toEqual([1000, 2000, 4000, 8000, 16000]);
+    expect(exits).toEqual([1]);
+  });
+
+  it('resets the failures after a reopened consumer runs 60 s, so the next wait is 1 s again', async () => {
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    const plan = ['flap', 'flap', 'flap', 'long'];
+    let clock = 0;
+    let opened = 0;
+    await runStreamLoop(
+      feed(),
+      async () => {},
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          if (plan.shift() !== 'long') return feed();
+          return (async function* () {
+            yield* [];
+            clock += 60_000;
+          })();
+        },
+        stopping: () => false,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => clock,
+      },
+    );
+    expect(opened).toBe(9);
+    expect(sleeps).toEqual([1000, 2000, 4000, 8000, 1000, 2000, 4000, 8000, 16000]);
+    expect(exits).toEqual([1]);
+  });
+
+  it('reopens the replay consumer through startReplay when its messages end with an error', async () => {
+    let opened = 0;
+    const handled: number[] = [];
+    const source: ReplaySource = {
+      open: async () => {
+        opened++;
+        const messages = opened === 1 ? broken() : feed(message(11, '{"x":1}'), stalled());
+        return { pending: 0, messages, stop: async () => {} };
+      },
+    };
+    const handle = await startReplay(
+      source,
+      ['geldar.phase0.speech'],
+      '2026-01-01T00:00:00.000Z',
+      async (seq) => {
+        handled.push(seq);
+      },
+      { log: () => {}, waitMs: 5_000, sleep: async () => {} },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(opened).toBe(2);
+    expect(handled).toEqual([11]);
+    await handle.stop();
+  });
+
+  it('counts a poison message once toward the settled count, so the replay waits for the rest', async () => {
+    const handled: number[] = [];
+    await startReplay(
+      sourceOf(2, feed(redelivering(message(1, '{"x":1}')), message(2, '{"x":2}'))),
+      ['geldar.phase0.speech'],
+      '2026-01-01T00:00:00.000Z',
+      async (seq) => {
+        if (seq === 1) throw new Error('transient');
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        handled.push(seq);
+      },
+      { log: () => {}, waitMs: 5_000, sleep: async () => {} },
+    );
+    expect(handled).toEqual([2]);
   });
 });
