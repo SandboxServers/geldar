@@ -86,12 +86,16 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
+      const address = req.socket.remoteAddress ?? 'unknown';
+      // An address out of failed-auth tokens is refused before any token lookup reaches the database.
+      const blockedSec = gates.authBlocked(address, now());
+      if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
       const verdict = await verifyBearer(options.store, options.pepper, playerId, header, now());
       if (verdict.outcome === 'ok') {
         players.set(req, verdict.player);
         return { outcome: 'ok' };
       }
-      const retryAfterSec = gates.failedAuth(req.socket.remoteAddress ?? 'unknown', now());
+      const retryAfterSec = gates.failedAuth(address, now());
       if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
       return { outcome: verdict.outcome };
     },

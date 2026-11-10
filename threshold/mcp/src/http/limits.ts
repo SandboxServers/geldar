@@ -34,6 +34,16 @@ export class FrontLimits {
     return undefined;
   }
 
+  /**
+   * Seconds to wait while the address has no failed-auth token left, else undefined. Reads the
+   * bucket without taking from it, so a refused address costs no token lookup.
+   */
+  authBlocked(address: string, nowMs: number): number | undefined {
+    const decision = this.limiter.peek?.(`auth-failed:address:${address}`, nowMs);
+    if (decision === undefined || decision.allowed) return undefined;
+    return retrySeconds(decision.retryAfterMs);
+  }
+
   /** Takes one call from the player's bucket and one from the owner's. Seconds to wait, or undefined. */
   call(playerId: string, ownerId: string, nowMs: number): number | undefined {
     const byPlayer = this.limiter.take(`player:${playerId}`, nowMs);

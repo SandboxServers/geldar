@@ -137,18 +137,23 @@ const SWEEP_AT = 1_000;
 export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): RateLimiter {
   const buckets = new Map<string, { tokens: number; atMs: number }>();
   let sweepAt = SWEEP_AT;
-  const refilled = (bucket: string, nowMs: number) => {
+  // The bucket refilled to `nowMs`, and the decision for one token from it. Writes nothing.
+  const read = (bucket: string, nowMs: number) => {
     const rule = ruleOf(bucket);
     const state = buckets.get(bucket) ?? { tokens: rule.capacity, atMs: nowMs };
     const tokens = Math.min(
       rule.capacity,
       state.tokens + ((nowMs - state.atMs) * rule.perMinute) / 60_000,
     );
-    return { rule, tokens };
+    const decision: RateDecision =
+      tokens >= 1
+        ? { allowed: true, retryAfterMs: 0 }
+        : { allowed: false, retryAfterMs: Math.ceil(((1 - tokens) * 60_000) / rule.perMinute) };
+    return { rule, tokens, decision };
   };
   const sweep = (nowMs: number) => {
     for (const key of [...buckets.keys()]) {
-      const { rule, tokens } = refilled(key, nowMs);
+      const { rule, tokens } = read(key, nowMs);
       if (tokens >= rule.capacity) buckets.delete(key);
     }
     sweepAt = Math.max(SWEEP_AT, buckets.size * 2);
@@ -156,13 +161,12 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
   return {
     take(bucket: string, nowMs: number): RateDecision {
       if (buckets.size >= sweepAt) sweep(nowMs);
-      const { rule, tokens } = refilled(bucket, nowMs);
-      if (tokens >= 1) {
-        buckets.set(bucket, { tokens: tokens - 1, atMs: nowMs });
-        return { allowed: true, retryAfterMs: 0 };
-      }
-      buckets.set(bucket, { tokens, atMs: nowMs });
-      return { allowed: false, retryAfterMs: Math.ceil(((1 - tokens) * 60_000) / rule.perMinute) };
+      const { tokens, decision } = read(bucket, nowMs);
+      buckets.set(bucket, { tokens: decision.allowed ? tokens - 1 : tokens, atMs: nowMs });
+      return decision;
+    },
+    peek(bucket: string, nowMs: number): RateDecision {
+      return read(bucket, nowMs).decision;
     },
   };
 }

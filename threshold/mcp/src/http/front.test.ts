@@ -56,6 +56,13 @@ class CapLimiter implements RateLimiter {
     this.used.set(bucket, used + 1);
     return { allowed: true, retryAfterMs: 0 };
   }
+
+  peek(bucket: string): RateDecision {
+    const used = this.used.get(bucket) ?? 0;
+    return used >= this.cap(bucket)
+      ? { allowed: false, retryAfterMs: 1500 }
+      : { allowed: true, retryAfterMs: 0 };
+  }
 }
 
 function defaultCap(bucket: string): number {
@@ -379,6 +386,21 @@ describe('scoping and limits', () => {
     }
     expect(statuses[FAILED_AUTH_PER_MINUTE - 1]).toBe(401);
     expect(statuses[FAILED_AUTH_PER_MINUTE]).toBe(429);
+  });
+
+  it('answers 429 from the address bucket without a token lookup once it is empty', async () => {
+    const lookup = store.resolve.bind(store);
+    let lookups = 0;
+    store.resolve = async (hash, nowMs) => {
+      lookups += 1;
+      return lookup(hash, nowMs);
+    };
+    const wrong = { body: INIT, headers: { Authorization: 'Bearer wrong-token-0123456789wrong' } };
+    for (let i = 0; i < FAILED_AUTH_PER_MINUTE; i += 1) await send('/p/aa', wrong);
+    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+    const reply = await send('/p/aa', wrong);
+    expect(reply.status).toBe(429);
+    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
   });
 
   it('holds at most 4 open requests per player and refuses the 5th', async () => {
