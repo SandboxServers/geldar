@@ -20,6 +20,11 @@ Fix: `parseTokenFile` in `client.ts` takes the value after `GELDAR_MCP_TOKEN=`, 
 CRLF, and still accepts a bare token. Commit `e557d5e`. The test `token-file.test.ts` fails with the
 reader reverted (3 of 5 fail) and passes with the fix (5 of 5).
 
+Pepper rule (item 3, fixed): the pepper is the file bytes minus one trailing `\r?\n`; a UTF-8 BOM is refused by
+`readPepper` and `pepperBytes`; the minimum is 32 bytes. The rule is now tested across implementations in
+`tools/mcp-tokens/src/pepper-digest.test.ts` (CLI writer and digest against the container-ports reader; commit `4b39889`).
+Each refusal and strip line was reverted in turn, and the pepper test files failed each time.
+
 ### Candidates checked
 
 | # | Candidate | Evidence | Unit test that would catch it |
