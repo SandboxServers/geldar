@@ -11,14 +11,18 @@ import { ADAM_LIFE_ID, memoriesFrom, mindLiveEnabled } from './adam-stack.ts';
 const SLOT = 10;
 /** Polls faster than the default second, to catch an intent before it completes. */
 const FAST_POLL_MS = 500;
-const FIRST_INTENT_MS = 150_000;
+const FIRST_INTENT_MS = 60_000;
 const RESUME_MS = 90_000;
 const SLEEP_MS = 360_000;
 const SETTLE_MS = 20_000;
 
 describe.skipIf(!mindLiveEnabled)('Adam across a Body crash and a night', () => {
   it('resumes the intent from the checkpoint after the Body is killed, and the next plan carries the new generation', async () => {
-    await withAdamCase({ slot: SLOT }, async (ac) => {
+    await withAdamCase({ slot: SLOT, kind: 'restart' }, async (ac) => {
+      // The day and the empty inventory leave Adam nothing to do on his own, so the chatter gives him
+      // a walk to make: the travel goal the first plan carries.
+      ac.chatter.speak();
+      await ac.chatter.say('Adam, walk over to the far wall of the arena and look around.');
       // Adam's travel intents are short and finish between polls, so the state is not awaited: the
       // newest intent of any state is the one the Body is killed under, the moment the plan lands.
       const planned = await ac.waitFor(
@@ -67,7 +71,7 @@ describe.skipIf(!mindLiveEnabled)('Adam across a Body crash and a night', () => 
   }, 900_000);
 
   it('sleeps at night and writes exactly one reflection row and its memories', async () => {
-    await withAdamCase({ slot: SLOT, time: 'night' }, async (ac) => {
+    await withAdamCase({ slot: SLOT, kind: 'sleep' }, async (ac) => {
       const { x, y, z } = ac.live.arena.center;
       // A whole bed next to Adam, both halves (a lone white_bed is a half bed, which sleep refuses).
       // The block states need `command`: `setblock` takes plain ids only.

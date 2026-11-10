@@ -347,6 +347,31 @@ export async function intentsOf(db: Queryable, lifeId: string): Promise<IntentRo
   }));
 }
 
+/** One `actions` row, as the cases read it. */
+export interface ActionRow {
+  action_id: string;
+  intent_id: string | null;
+  body_generation: number;
+  state: string;
+  kind: string | null;
+}
+
+/** Every action of a life, oldest id first (ULIDs sort by time). */
+export async function actionsOf(db: Queryable, lifeId: string): Promise<ActionRow[]> {
+  const { rows } = await db.query(
+    `SELECT action_id, intent_id, body_generation, state, kind
+       FROM actions WHERE life_id = $1 ORDER BY action_id`,
+    [lifeId],
+  );
+  return rows.map((r) => ({
+    action_id: String(r.action_id),
+    intent_id: r.intent_id === null ? null : String(r.intent_id),
+    body_generation: Number(r.body_generation),
+    state: String(r.state),
+    kind: r.kind === null ? null : String(r.kind),
+  }));
+}
+
 /** The memories a set of thoughts wrote (`source_thought`), as `kind:subject` labels. */
 export async function memoriesFrom(db: Queryable, thoughtIds: string[]): Promise<string[]> {
   if (thoughtIds.length === 0) return [];
@@ -374,6 +399,14 @@ export function describeIntents(rows: IntentRow[]): string {
   if (rows.length === 0) return 'no intents';
   return rows
     .map((r) => `${r.intent_id.slice(-6)} ${r.program ?? '-'} ${r.state} gen ${r.body_generation}`)
+    .join('; ');
+}
+
+/** One line per action for failure messages. */
+export function describeActions(rows: ActionRow[]): string {
+  if (rows.length === 0) return 'no actions';
+  return rows
+    .map((r) => `${r.action_id.slice(-6)} ${r.kind ?? '-'} ${r.state} gen ${r.body_generation}`)
     .join('; ');
 }
 

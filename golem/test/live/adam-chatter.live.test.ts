@@ -25,7 +25,7 @@ const HOSTILE = [
 
 describe.skipIf(!mindLiveEnabled)('Adam and the chatter bot', () => {
   it('answers an addressed line with a say within 30 s of the wake while his intent resumes or is replaced', async () => {
-    await withAdamCase({ slot: SLOT }, async (ac) => {
+    await withAdamCase({ slot: SLOT, kind: 'chatter' }, async (ac) => {
       // Adam is acting when he has an intent of any state (short ones finish between polls) or when
       // a valid say is already out; the wait is not on 'running', which a short intent never shows.
       await ac.waitFor('Adam acting: an intent or a valid say', FIRST_THOUGHT_MS, async () =>
@@ -84,7 +84,7 @@ describe.skipIf(!mindLiveEnabled)('Adam and the chatter bot', () => {
     });
     const markers = HOSTILE.map((h) => h.marker);
 
-    await withAdamCase({ slot: SLOT }, async (ac) => {
+    await withAdamCase({ slot: SLOT, kind: 'chatter' }, async (ac) => {
       await ac.waitFor('a first valid thought', FIRST_THOUGHT_MS, async () =>
         (await ac.thoughts()).find((t) => t.valid),
       );

@@ -1,20 +1,20 @@
 /**
  * Live case (a) of P0-33: Adam on `qwen3:8b` (life `ag_adam_02`). Written, not run; it needs the
  * shard, Postgres, NATS and Ollama, so it runs only with `GELDAR_IT=1 GELDAR_OLLAMA=1`.
- * What the model chooses is not asserted: only that it thought, that the plan was accepted and an
- * intent exists, and that the latency was recorded.
+ * What the model chooses is not asserted: only that it thought, that the plan was accepted (an
+ * intent made from the thought, or an action of that intent completed) and that the latency was
+ * recorded. The case starts at day with an empty inventory (see `caseSetup`).
  */
 import { describe, expect, it } from 'vitest';
-import { withAdamCase } from './adam-case.ts';
+import { planEvidence, withAdamCase } from './adam-case.ts';
 import { mindLiveEnabled } from './adam-stack.ts';
 
 const SLOT = 10;
 const BUDGET_MS = 90_000;
-const ACCEPTED = ['accepted', 'running', 'completed'];
 
 describe.skipIf(!mindLiveEnabled)('Adam smoke: the Mind thinks and the Body acts', () => {
-  it('records a valid thought, an accepted plan, an accepted intent and a latency within 90 s', async () => {
-    await withAdamCase({ slot: SLOT }, async (ac) => {
+  it('records a valid thought, an accepted plan (an intent or a completed action), and a latency within 90 s', async () => {
+    await withAdamCase({ slot: SLOT, kind: 'smoke' }, async (ac) => {
       const t0 = Date.now();
       const left = () => Math.max(1, BUDGET_MS - (Date.now() - t0));
 
@@ -24,21 +24,11 @@ describe.skipIf(!mindLiveEnabled)('Adam smoke: the Mind thinks and the Body acts
       expect(valid.valid, await ac.state()).toBe(true);
 
       const plan = await ac.waitFor(
-        'an accepted plan (an intent made from a valid thought)',
+        'an accepted plan (an intent made from a valid thought, or an action of it completed)',
         left(),
-        async () => {
-          const good = new Set(
-            (await ac.thoughts()).filter((t) => t.valid).map((t) => t.thought_id),
-          );
-          return (await ac.intents()).find((i) => i.thought_id !== null && good.has(i.thought_id));
-        },
+        async () => planEvidence(await ac.thoughts(), await ac.intents(), await ac.actions()),
       );
-      expect(plan.thought_id, await ac.state()).not.toBeNull();
-
-      const intent = await ac.waitFor('an accepted intent', left(), async () =>
-        (await ac.intents()).find((i) => ACCEPTED.includes(i.state)),
-      );
-      expect(ACCEPTED, await ac.state()).toContain(intent.state);
+      expect(['intent', 'action'], await ac.state()).toContain(plan.via);
 
       const timed = await ac.waitFor('a thoughts row with a latency', left(), async () =>
         (await ac.thoughts()).find((t) => t.latency_ms !== null && t.latency_ms > 0),
