@@ -47,3 +47,15 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
   needs `compose/mcp.yml` as well (the `geldar-mcp` entry has no image of its own). The check now
   validates `phase0.yml + mcp.yml + nats-auth.yml`. Host-run Body (`body`) and Mind (`mind`) take the
   same two variables from their environment; they are not in compose.
+- Step 5 (wrap-up, this session): `docs/threat-model.md` rows updated (NATS, Local Thinker WebSocket,
+  MCP HTTP, MCP to NATS, WM-10b). The enable steps are in the root `README.md` under "Opt-in NATS
+  auth". Enable order: `./geldar.ps1 shard nats-auth phase0` (writes `compose/secrets/nats-<user>.txt`
+  for body, mind, eventsink, mcp, velocity, paper and ops; `thinker-token.txt`; `nats-auth.conf`),
+  then start with `-f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml`. Host-run
+  Body and Mind need `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD_FILE`; Mind and lantern-local need
+  `GELDAR_THINKER_TOKEN_FILE`. lantern-local has no NATS connection, so it has no NATS user.
+- Overlay status: **UNTESTED against a live nats-server.** Verify first: (1) JetStream API permissions
+  (`$JS.API.>`, `$JS.ACK.>`, `_INBOX.>`) for every consumer and pull; (2) KV bucket permissions per
+  component (`$KV.<bucket>.>`); (3) plan and book subject permissions for Body, Mind and MCP, and the
+  MCP replay subscription (`geldar.*.player.>`), which the MCP's `Sub` list does not grant yet.
+  The `ops` user holds `>` and is for administration only.
