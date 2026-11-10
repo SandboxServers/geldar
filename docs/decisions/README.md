@@ -77,4 +77,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0070](0070-phase1-is-the-colo-first-shard.md) | Phase 1 is the colo-first shard: final environment, invite-only, not announced | Accepted (owner) |
 | [0071](0071-public-endpoints-and-ports.md) | The public Minecraft endpoint is a new TCP port with an SRV record; HTTPS ingress is the shared Caddy, reloaded and never restarted | Accepted (owner) |
 | [0072](0072-glass-and-bluemap-are-public.md) | Glass and BlueMap are public, read-only, and hardened before exposure | Accepted (owner) |
+| [0073](0073-spec-is-never-edited.md) | docs/spec.md is never edited by agents; decision records amend it, with the open amendments listed | Accepted (owner) |
 >
