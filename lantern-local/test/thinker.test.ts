@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ollamaChat, ollamaWarm } from '../src/ollama.ts';
 import {
   DEFAULT_BACKOFF_INITIAL_MS,
@@ -304,6 +304,8 @@ const warmCalls = (): (typeof ollama.requests)[number][] =>
   );
 
 describe('keep-alive', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('sends a one-token call to each advertised model on a timer, with the pin keep_alive', async () => {
     launchWarm({ keepAlivePingMs: 20 });
     await mind.next('hello');
@@ -349,6 +351,17 @@ describe('keep-alive', () => {
     const settled = warmCalls().length;
     await new Promise((r) => setTimeout(r, 100));
     expect(warmCalls()).toHaveLength(settled);
+  });
+
+  it('stop() clears the ping interval itself, not only the sends it guards', async () => {
+    const sets = vi.spyOn(globalThis, 'setInterval');
+    const clears = vi.spyOn(globalThis, 'clearInterval');
+    const t = launchWarm({ keepAlivePingMs: 20 });
+    const index = sets.mock.calls.findIndex(([, ms]) => ms === 20);
+    const timer = sets.mock.results[index]?.value;
+    expect(timer).toBeDefined();
+    await t.stop();
+    expect(clears).toHaveBeenCalledWith(timer);
   });
 
   it('re-warms a model after a slow job that follows an idle spell, and logs why', async () => {
