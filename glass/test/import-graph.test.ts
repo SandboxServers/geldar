@@ -73,6 +73,9 @@ export function sqlViolations(text: string): string[] {
   return out;
 }
 
+/** The tree scans below are synchronous, and vitest still times a sync test out at its 5 s default. */
+const SCAN_TIMEOUT_MS = 30_000;
+
 function files(dir: string, pattern: RegExp): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -86,18 +89,22 @@ function relPath(path: string): string {
 }
 
 describe('the Glass import graph', () => {
-  it('imports only built-ins, pg, happy-dom, vitest and glass files', () => {
-    // This file holds the planted imports for the self-test, so it is the one file not scanned.
-    const found = SCANNED.flatMap((dir) => files(join(GLASS, dir), /\.(ts|js|mjs)$/)).filter(
-      (path) => !path.endsWith(`${sep}import-graph.test.ts`),
-    );
-    expect(found.length).toBeGreaterThan(20);
-    const violations = found.flatMap((path) => {
-      const rel = relPath(path);
-      return importViolations(rel, readFileSync(path, 'utf8')).map((v) => `${rel} -> ${v}`);
-    });
-    expect(violations).toEqual([]);
-  });
+  it(
+    'imports only built-ins, pg, happy-dom, vitest and glass files',
+    () => {
+      // This file holds the planted imports for the self-test, so it is the one file not scanned.
+      const found = SCANNED.flatMap((dir) => files(join(GLASS, dir), /\.(ts|js|mjs)$/)).filter(
+        (path) => !path.endsWith(`${sep}import-graph.test.ts`),
+      );
+      expect(found.length).toBeGreaterThan(20);
+      const violations = found.flatMap((path) => {
+        const rel = relPath(path);
+        return importViolations(rel, readFileSync(path, 'utf8')).map((v) => `${rel} -> ${v}`);
+      });
+      expect(violations).toEqual([]);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
   it('rejects a planted import of animus, golem, threshold or a write-capable package', () => {
     const planted = [
@@ -125,17 +132,21 @@ describe('the Glass import graph', () => {
 });
 
 describe('the SQL the shipped Glass source can send', () => {
-  it('sends only SELECT, BEGIN READ ONLY, ROLLBACK or SET, and the reads are there', () => {
-    const shipped = ['src', 'public'].flatMap((dir) =>
-      files(join(GLASS, dir), /\.(ts|js)$/).filter((path) => !/\.test\.ts$/.test(path)),
-    );
-    const violations = shipped.flatMap((path) =>
-      sqlViolations(readFileSync(path, 'utf8')).map((v) => `${relPath(path)} -> ${v}`),
-    );
-    expect(violations).toEqual([]);
-    const query = readFileSync(join(GLASS, 'src', 'query.ts'), 'utf8');
-    expect(query).toMatch(/`SELECT /);
-  });
+  it(
+    'sends only SELECT, BEGIN READ ONLY, ROLLBACK or SET, and the reads are there',
+    () => {
+      const shipped = ['src', 'public'].flatMap((dir) =>
+        files(join(GLASS, dir), /\.(ts|js)$/).filter((path) => !/\.test\.ts$/.test(path)),
+      );
+      const violations = shipped.flatMap((path) =>
+        sqlViolations(readFileSync(path, 'utf8')).map((v) => `${relPath(path)} -> ${v}`),
+      );
+      expect(violations).toEqual([]);
+      const query = readFileSync(join(GLASS, 'src', 'query.ts'), 'utf8');
+      expect(query).toMatch(/`SELECT /);
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
   it('flags a planted write statement and passes SELECT, BEGIN READ ONLY and SET', () => {
     expect(sqlViolations('db.query(`DELETE FROM thoughts`)')).toHaveLength(1);
