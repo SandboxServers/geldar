@@ -30,3 +30,8 @@ fails when its line is reverted.
   is alive. Those are the stack's services, shared by every run.
 - A failed `adam up` writes an abort line that says no safe stop ran, reports, and returns without calling the
   supervisor. A stack that half-started is left for the operator to read in status.log.
+
+## Item 3 revert checks (run after 413c67f)
+
+- `cli.ts` `if (others.length > 0)` mutated to `> 999`: `cli.test.ts` "refuses a start while service processes of another run are alive" fails (expected 0 to be 1). Restored; clean.
+- `sequence.ts` failed `adam up` path: one line `await finish('abort', 'error', reason);` added before `await report(now);`. `sequence.test.ts` "a failed adam up runs no safe stop" fails (supervisor calls `stop:lantern-local` recorded). Restored; clean.
