@@ -5,6 +5,7 @@ import {
   FakeClock,
   FakeReporter,
   FakeSampler,
+  FakeWorldVolumes,
   MemoryFiles,
   passingPreflight,
   scenario,
@@ -19,6 +20,7 @@ import {
   type Service,
   type Supervisor,
 } from './ports.ts';
+import { parsePrepared } from './world-volume.ts';
 
 const REPO = '/repo';
 const RUN = 'run-1';
@@ -56,7 +58,9 @@ function harness(
     },
   };
   const reporter = opts.reporter ?? new FakeReporter();
+  const worldVolumes = new FakeWorldVolumes();
   const h: Harness = {
+    worldVolumes,
     clock,
     processes,
     supervisor: recordingSupervisor(calls),
@@ -69,7 +73,19 @@ function harness(
     criteria: CRITERIA,
     criteriaText: '{}',
   };
-  return { h, files, calls, signals };
+  return { h, files, calls, signals, worldVolumes };
+}
+
+/** A prepared record as `prepare-volume` writes it, for the given profile and run. */
+function preparedJson(profile: string, runId: string): string {
+  const worldVolume = `geldar-phase0-world-${runId}`;
+  return JSON.stringify({
+    schema: 'adam-run-prepared/1',
+    profile,
+    runId,
+    worldVolume,
+    preparedAt: '2026-11-10T00:00:00.000Z',
+  });
 }
 
 function capture(): { log: (s: string) => void; text: () => string } {
@@ -204,6 +220,84 @@ describe('stop', () => {
     expect(await runCli(['smoke', 'stop', '--run-id', RUN], REPO, h, out.log)).toBe(0);
     expect(files.read(join(RUN_DIR, 'stop-request.json'))).not.toBeNull();
     expect(calls).toEqual([]);
+  });
+});
+
+describe('prepare-volume', () => {
+  it('makes one new volume, records it in manifest.json, and prints how to select it', async () => {
+    const out = capture();
+    const { h, files, worldVolumes, calls } = harness();
+    const code = await runCli(['8b', 'prepare-volume', '--run-id', RUN], REPO, h, out.log);
+    expect(code).toBe(0);
+    const name = `geldar-phase0-world-${RUN}`;
+    expect(worldVolumes.calls).toEqual([
+      `inspect:${name}`,
+      `create:${name}:${RUN}`,
+      `inspect:${name}`,
+    ]);
+    expect(JSON.parse(files.read(runPaths(RUN_DIR).manifest) ?? '{}').worldVolume).toBe(name);
+    expect(out.text()).toContain(`$env:GELDAR_WORLD_VOLUME = '${name}'`);
+    expect(calls).toEqual([]);
+  });
+
+  it('refuses a folder that already holds a run, and creates nothing', async () => {
+    const out = capture();
+    const { h, files, worldVolumes } = harness();
+    files.write(runPaths(RUN_DIR).manifest, JSON.stringify({ startedAt: '2026-11-10T00:00:00Z' }));
+    expect(await runCli(['8b', 'prepare-volume', '--run-id', RUN], REPO, h, out.log)).toBe(1);
+    expect(out.text()).toContain('already holds a manifest');
+    expect(worldVolumes.calls.filter((c) => c.startsWith('create'))).toEqual([]);
+  });
+
+  it('refuses when the volume name already exists, and never reuses it', async () => {
+    const out = capture();
+    const { h, worldVolumes, files } = harness();
+    worldVolumes.volumes.set(`geldar-phase0-world-${RUN}`, {
+      exists: true,
+      labelled: true,
+      empty: true,
+      usedBy: [],
+    });
+    expect(await runCli(['8b', 'prepare-volume', '--run-id', RUN], REPO, h, out.log)).toBe(1);
+    expect(out.text()).toContain('already exists');
+    expect(files.read(runPaths(RUN_DIR).manifest)).toBeNull();
+  });
+
+  it('is for 32b and 8b only: smoke is a usage error', () => {
+    expect(parseArgs(['smoke', 'prepare-volume']).ok).toBe(false);
+    expect(parseArgs(['32b', 'prepare-volume']).ok).toBe(true);
+  });
+});
+
+describe('a prepared-only folder', () => {
+  it('status reports it as prepared, not stopped', async () => {
+    const out = capture();
+    const { h, files } = harness();
+    files.write(runPaths(RUN_DIR).manifest, preparedJson('8b', RUN));
+    expect(await runCli(['8b', 'status', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('state: prepared');
+  });
+
+  it('stop runs no safe stop: no supervisor call and no signal', async () => {
+    const out = capture();
+    const { h, files, signals, calls } = harness({ processes: [] });
+    files.write(runPaths(RUN_DIR).manifest, preparedJson('8b', RUN));
+    expect(await runCli(['8b', 'stop', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('no safe stop run');
+    expect(calls).toEqual([]);
+    expect(signals).toEqual([]);
+  });
+
+  it('start accepts the prepared record and replaces it with the run manifest', async () => {
+    const out = capture();
+    const { h, files } = harness();
+    files.write(runPaths(RUN_DIR).manifest, preparedJson('32b', RUN));
+    await runCli(['32b', 'start', '--run-id', RUN, '--hours', '0.02'], REPO, h, out.log);
+    expect(out.text()).not.toContain('already holds a run');
+    expect(parsePrepared(files.read(runPaths(RUN_DIR).manifest))).toBeNull();
+    expect(JSON.parse(files.read(runPaths(RUN_DIR).manifest) ?? '{}').schema).toBe(
+      'adam-run-manifest/1',
+    );
   });
 });
 

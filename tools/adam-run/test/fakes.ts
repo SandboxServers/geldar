@@ -16,6 +16,7 @@ import type {
   Supervisor,
 } from '../src/ports.ts';
 import type { Preflight, PreflightFacts } from '../src/sequence.ts';
+import type { VolumeState, WorldVolumes } from '../src/world-volume.ts';
 
 export const MIN = 60_000;
 export const START_MS = Date.parse('2026-11-10T00:00:00Z');
@@ -203,6 +204,24 @@ export class FakeProcesses implements Processes {
   signal(pid: number, force: boolean): void {
     this.signals.push({ pid, force });
     if (!this.survives.has(pid)) this.table = this.table.filter((p) => p.pid !== pid);
+  }
+}
+
+/**
+ * The Docker volume port in memory. `create` makes a labelled, empty, unused volume, as the real create does. The port
+ * has no remove method, so a test cannot see a deletion; `calls` records every call for the reuse checks.
+ */
+export class FakeWorldVolumes implements WorldVolumes {
+  readonly volumes = new Map<string, VolumeState>();
+  readonly calls: string[] = [];
+  async inspect(name: string): Promise<VolumeState> {
+    this.calls.push(`inspect:${name}`);
+    const found = this.volumes.get(name);
+    return { ...(found ?? { exists: false, labelled: false, empty: false, usedBy: [] }) };
+  }
+  async create(name: string, runId: string): Promise<void> {
+    this.calls.push(`create:${name}:${runId}`);
+    this.volumes.set(name, { exists: true, labelled: true, empty: true, usedBy: [] });
   }
 }
 
