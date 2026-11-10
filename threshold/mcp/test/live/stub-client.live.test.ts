@@ -7,7 +7,7 @@
  * The request bodies come from live-requests.ts, which a unit test checks against the contract (ActInput, WaitInput).
  */
 import { describe, expect, it } from 'vitest';
-import { connectAs, geldar, readTokenFile, TEST_PLAYER } from './client.ts';
+import { connectAs, geldar, readTokenFile, structuredOf, TEST_PLAYER } from './client.ts';
 import { liveEnabled } from './gate.ts';
 import { actCall, lookCall, WAIT_SECONDS, waitCall } from './live-requests.ts';
 import { describeWaits, traceOf, type WaitTrace } from './live-trace.ts';
@@ -77,10 +77,12 @@ describe.skipIf(!liveEnabled())('MCP stub client: look, act gather oak_log, wait
           elapsed,
           `wait ${step} ran ${elapsed} ms, past its ${WAIT_SECONDS} s bound\n${describeWaits(traces)}`,
         ).toBeLessThanOrEqual((WAIT_SECONDS + 10) * 1000);
-        const structured = waited.structuredContent as
-          | { cursor?: unknown; wake_reason?: string; events?: unknown }
-          | undefined;
-        traces.push(traceOf(step, structured ?? {}));
+        const structured = structuredOf(waited) as {
+          cursor?: unknown;
+          wake_reason?: string;
+          events?: unknown;
+        };
+        traces.push(traceOf(step, structured));
         cursor = structured?.cursor ?? cursor;
         ended = ENDS.includes(structured?.wake_reason ?? '');
       }
