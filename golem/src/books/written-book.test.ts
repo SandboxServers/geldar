@@ -71,6 +71,54 @@ describe('readWrittenBook: shapes', () => {
   });
 });
 
+/** The size of the reply book-server sends for a book: the JSON the tool result carries. */
+function replyBytes(book: { title: string; author: string; text: string }): number {
+  return Buffer.byteLength(JSON.stringify({ status: 'ok', ...book }));
+}
+
+describe('readWrittenBook: result size and hostile characters', () => {
+  it('keeps a text of 8192 quotes under the 16384-byte result cap, with a marker', () => {
+    const book = readWrittenBook(
+      componentBook({ title: 't', author: 'a', pages: ['"'.repeat(8192)] }),
+    );
+    expect(book).not.toBeNull();
+    if (book === null) return;
+    expect(replyBytes(book)).toBeLessThanOrEqual(16_384);
+    expect(book.text.endsWith('[book text cut short]')).toBe(true);
+  });
+
+  it('keeps a text of 8192 CJK characters under the result cap, with a marker', () => {
+    const book = readWrittenBook(
+      componentBook({ title: 'T', author: 'A', pages: ['中'.repeat(8192)] }),
+    );
+    expect(book).not.toBeNull();
+    if (book === null) return;
+    expect(replyBytes(book)).toBeLessThanOrEqual(16_384);
+    expect(book.text.endsWith('[book text cut short]')).toBe(true);
+  });
+
+  it('keeps a worst-case title and author with a full text under the result cap', () => {
+    const book = readWrittenBook(
+      componentBook({ title: '"'.repeat(64), author: '"'.repeat(32), pages: ['"'.repeat(8192)] }),
+    );
+    expect(book).not.toBeNull();
+    if (book === null) return;
+    expect(replyBytes(book)).toBeLessThanOrEqual(16_384);
+  });
+
+  it('strips U+2028, U+2029 and the bidi controls from the text', () => {
+    const page = 'a‮b⁦c⁩d e f‪g‬h‭i‮j';
+    expect(readWrittenBook(componentBook({ title: '', author: '', pages: [page] }))?.text).toBe(
+      'abcdefghij',
+    );
+  });
+
+  it('strips the same characters from the title and author', () => {
+    const book = readWrittenBook(componentBook({ title: 'T‮it le', author: 'A⁩u ', pages: ['x'] }));
+    expect(book).toEqual({ title: 'Title', author: 'Au', text: 'x' });
+  });
+});
+
 describe('readWrittenBook: hostile or broken input', () => {
   it('returns null for garbage and never throws', () => {
     const garbage: unknown[] = [
