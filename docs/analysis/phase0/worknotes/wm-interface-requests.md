@@ -173,3 +173,24 @@ WM-11b part 2 (partial, not complete):
   4. A real NATS run of the gateway: snapshot, plan and book requests, the stream replay, and the presence bucket creation.
   5. A live case for the `extraServe` path against a running player Body (WM-08 item c).
   6. An e2e against the real services (NATS, Postgres, a running Body). The world+front-door e2e with fakes is done (`cf9aa56`).
+
+## WM-13
+
+Status: CLI part committed (980edfb, e63f13e). Velocity plugin part committed (29e85eb): plugin done, live steps still owed (below). Docs part is this section.
+
+- Plugin (29e85eb): `RegistryClient` takes a bucket name and a `Feed` (`LifeRegistry` implements it); a second client watches `geldar-skins` into `SkinRegistry`. On `GameProfileRequestEvent` a registered username gets its stored `textures` property, validated (base64 JSON, `textures.minecraft.net` host, life id equal to the key, base64 signature). Lookups are in memory, so login never waits on NATS; any failure keeps the default profile and logs a warning without the value. The gate is not changed.
+- Plugin open item: an absent `geldar-skins` bucket (no skin set yet) logs a warning each retry (every 5 s at the backoff cap). Lower it to info or add a quiet mode if the ops monitor counts it as noise.
+
+- `shards/phase0.yaml` `skin:` key is not added: the packet lists only the CLI, plugin and docs files for WM-13. Decide with WM-12 whether the config key lands with the plugin or in WM-12.
+- Live steps owed, none run in this job:
+  - MineSkin upload of the six PNGs. Needs the owner's explicit yes at that time (third-party service receives the PNGs), and the key in `compose/secrets/mineskin.txt`.
+  - A `geldar-skins` write against a real NATS (`GELDAR_NATS_URL`).
+  - A Velocity login with a third client to see both rangers' textures (after the plugin part lands).
+- Endpoint assumptions to verify before the live upload (read from docs.mineskin.org on 2026-11-09, not from a live call):
+  - Endpoint is `POST https://api.mineskin.org/v2/generate` (V2 Changes and Migrating to V2 pages). The V2 OpenAPI viewer did not expose a fetchable spec, so the request body is unverified.
+  - Auth is `Authorization: Bearer <key>` (getting-started page and the V1 spec).
+  - `User-Agent` header is sent; the V1 spec marks it required. Unverified for V2.
+  - Request body is multipart with fields `file` (PNG) and `variant` (`classic` or `slim`). The V1 spec labels the body `application/x-www-form-urlencoded` with a binary file, which is inconsistent; multipart is assumed.
+  - Reply: `skin.texture.data.value` and `skin.texture.data.signature`. The V1 `data.texture` shape is refused.
+  - The docs describe a queue (`POST /v2/queue`, `GET /queue/:jobId`) for the new generation path. The basic migration keeps `POST /v2/generate` synchronous; if it returns a job id instead, `mineskin.ts` must change.
+  - Rate limit: 429 is treated as a refusal with the status only.

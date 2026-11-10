@@ -15,12 +15,26 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 
 /**
- * Keeps a {@link LifeRegistry} in step with the JetStream KV bucket {@code geldar-life-registry}.
- * A daemon thread connects with backoff and watches the bucket. The bucket is created by Golem;
- * when it is absent the registry stays unsynced (the gate stays closed) and the thread retries.
+ * Keeps a {@link Feed} (the {@link LifeRegistry}, or the {@link SkinRegistry}) in step with a JetStream KV bucket.
+ * The life registry is the default bucket {@code geldar-life-registry}, created by Golem; a second client watches
+ * {@code geldar-skins}. A daemon thread connects with backoff and watches the bucket. When the bucket is absent the
+ * feed stays unsynced (the gate stays closed, no skin is set) and the thread retries.
  */
 public final class RegistryClient implements AutoCloseable {
     public static final String BUCKET = "geldar-life-registry";
+
+    /** Receives the bucket's changes: the registries implement it. */
+    public interface Feed {
+        void beginReplay();
+
+        void put(String key, byte[] value);
+
+        void remove(String key);
+
+        void markSynced();
+
+        void markUnsynced();
+    }
 
     /** Short, so a first denial caused by a slow start does not last long. */
     private static final long MAX_BACKOFF_MS = 5_000;
@@ -32,7 +46,8 @@ public final class RegistryClient implements AutoCloseable {
     private static final long POLL_MS = 500;
 
     private final String url;
-    private final LifeRegistry registry;
+    private final String bucket;
+    private final Feed registry;
     private final Logger log;
     private final Thread worker;
     private volatile boolean running = true;
@@ -42,8 +57,13 @@ public final class RegistryClient implements AutoCloseable {
     long backoffMs = INITIAL_BACKOFF_MS;
 
     public RegistryClient(String url, LifeRegistry registry, Logger log) {
+        this(url, BUCKET, registry, log);
+    }
+
+    public RegistryClient(String url, String bucket, Feed feed, Logger log) {
         this.url = url;
-        this.registry = registry;
+        this.bucket = bucket;
+        this.registry = feed;
         this.log = log;
         this.worker = new Thread(this::run, "geldar-registry-watcher");
         this.worker.setDaemon(true);
@@ -65,7 +85,7 @@ public final class RegistryClient implements AutoCloseable {
                     .connectionListener(this::onConnectionEvent)
                     .build();
             try (Connection nc = Nats.connect(options)) {
-                KeyValue kv = nc.keyValue(BUCKET);
+                KeyValue kv = nc.keyValue(bucket);
                 watchWhileConnected(nc::getStatus, bucketOf(kv), this::resetBackoff, POLL_MS, BUCKET_CHECK_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -73,9 +93,9 @@ public final class RegistryClient implements AutoCloseable {
             } catch (Exception e) {
                 // The message is left out: a connection error can echo the URL.
                 if (bucketAbsent(e)) {
-                    log.warn("Life registry bucket {} is absent (Golem creates it), retrying in {} ms", BUCKET, backoffMs);
+                    log.warn("Bucket {} is absent, retrying in {} ms", bucket, backoffMs);
                 } else {
-                    log.warn("Life registry unavailable ({}), retrying in {} ms", e.getClass().getSimpleName(), backoffMs);
+                    log.warn("Bucket {} unavailable ({}), retrying in {} ms", bucket, e.getClass().getSimpleName(), backoffMs);
                 }
             }
             registry.markUnsynced();
@@ -153,7 +173,7 @@ public final class RegistryClient implements AutoCloseable {
             Object identity = bucket.identity();
             AutoCloseable sub = bucket.watchAll(new RegistryWatch());
             watching.run();
-            log.info("Watching the life registry");
+            log.info("Watching bucket {}", bucket);
             try {
                 long nextCheck = System.nanoTime() + checkMs * 1_000_000;
                 while (running && status.get() != Connection.Status.CLOSED && !disrupted.get()) {
@@ -198,7 +218,7 @@ public final class RegistryClient implements AutoCloseable {
     }
 
     /** Applies one bucket change to the registry: a put sets the entry, anything else (delete, purge) revokes it. */
-    static void apply(LifeRegistry registry, KeyValueOperation operation, String key, byte[] value) {
+    static void apply(Feed registry, KeyValueOperation operation, String key, byte[] value) {
         if (operation == KeyValueOperation.PUT) {
             registry.put(key, value);
         } else {
