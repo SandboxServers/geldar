@@ -1,0 +1,106 @@
+{
+  "note": "Real payloads the Body published in live run 5 (agent ag_test_01), with the envelope rebuilt from the events table columns. thinker_id is omitted: the column is null, and the contract types thinker_id as a string, so the wire message has no such key. The source_event_id values and the shard are test ids: the events table has no shard column, and the contract requires one. Oldest first.",
+  "events": [
+    {
+      "source_event_id": "ev_ET8S859VVRCNYJ8JPF2FHGPR63",
+      "at": "2026-11-10T08:21:18.696+00:00",
+      "shard": "phase0",
+      "world_day": 83,
+      "world_tick": 2006969,
+      "type": "wake",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "tick": 2006969,
+        "detail": "restarted with nothing to resume and no plan arrived",
+        "reason": "no_plan",
+        "intent_id": null
+      }
+    },
+    {
+      "source_event_id": "ev_7TRQGM9KA9E490FNW278AVXA8N",
+      "at": "2026-11-10T09:02:46.979+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2054169,
+      "type": "intent",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "goal": "gather_oak_log",
+        "tick": 2054169,
+        "state": "accepted",
+        "limits": { "max_world_ticks": 2400, "max_block_operations": 64 },
+        "life_id": "ag_test_01",
+        "program": "gather",
+        "wake_on": ["goal_completed", "precondition_failed"],
+        "arguments": { "block": "oak_log", "count": 12 },
+        "intent_id": "in_01M72B44XF2JVP515T11F9G7B8",
+        "preconditions": [],
+        "body_generation": 2
+      }
+    },
+    {
+      "source_event_id": "ev_S8XGZXE2PGZNNV5PQ2W3HG2FA1",
+      "at": "2026-11-10T09:02:46.983+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2054169,
+      "type": "intent",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "tick": 2054169,
+        "state": "running",
+        "life_id": "ag_test_01",
+        "intent_id": "in_01M72B44XF2JVP515T11F9G7B8",
+        "body_generation": 2
+      }
+    },
+    {
+      "source_event_id": "ev_T5NRA6M63VCBNKFYTSH85PQ1G4",
+      "at": "2026-11-10T09:02:46.984+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2054169,
+      "type": "plan_result",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "said": false,
+        "intent": "started",
+        "actions": [],
+        "failed_at": null,
+        "thought_id": "th_01M72B44XF2JVP515T11F9G7B7"
+      }
+    },
+    {
+      "source_event_id": "ev_45JGC893RBAV51W1DE29MDW0XK",
+      "at": "2026-11-10T09:04:46.918+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2056429,
+      "type": "intent",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "tick": 2056429,
+        "state": "failed",
+        "detail": "max_world_ticks reached",
+        "life_id": "ag_test_01",
+        "intent_id": "in_01M72B44XF2JVP515T11F9G7B8",
+        "body_generation": 2
+      }
+    },
+    {
+      "source_event_id": "ev_TZZRB0988FSX2T4Q5DB4R7PAZ0",
+      "at": "2026-11-10T09:04:46.919+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2056429,
+      "type": "wake",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "tick": 2056429,
+        "detail": "max_world_ticks reached",
+        "reason": "limit_reached",
+        "intent_id": "in_01M72B44XF2JVP515T11F9G7B8"
+      }
+    }
+  ]
+}
