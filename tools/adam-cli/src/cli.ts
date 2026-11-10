@@ -1,5 +1,5 @@
 /**
- * The command line behind `./geldar.ps1 adam`: `up [--model strong|fast]`, `select --model ...`, `down`, `status`,
+ * The command line behind `./geldar.ps1 adam`: `up [--model strong|fast]`, `select --model strong|fast|smoke`, `down`, `status`,
  * `logs [service] [--follow]` and `models [--record]`. Run with `node tools/adam-cli/src/cli.ts`.
  * Exit codes: 0 done, 1 a refusal or failure with the reason printed, 2 bad usage.
  */
@@ -13,6 +13,7 @@ import {
   compare,
   installedFromTags,
   type PinRow,
+  type LifeKey,
   preflightProblems,
   readLives,
   readPins,
@@ -40,7 +41,7 @@ import {
 import { recordDigests, selectLife } from './yaml-edit.ts';
 
 const USAGE =
-  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast | down | status | logs [body|animus|lantern-local] [--follow] | models [--record] | restart-body';
+  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast|smoke | down | status | logs [body|animus|lantern-local] [--follow] | models [--record] | restart-body';
 
 class Refusal extends Error {}
 
@@ -92,20 +93,20 @@ function applyLife(file: string, source: string, tier: Tier, life: string): void
   }
 }
 
-/** `select --model strong|fast`: only the rewrite; checks nothing and starts nothing. */
+/** `select --model strong|fast|smoke`: only the rewrite; checks nothing and starts nothing. */
 function select(args: string[]): void {
   const wanted = argValue(args, '--model');
-  if (wanted !== 'strong' && wanted !== 'fast')
-    throw new Refusal('select needs --model strong|fast');
+  if (wanted !== 'strong' && wanted !== 'fast' && wanted !== 'smoke')
+    throw new Refusal('select needs --model strong|fast|smoke');
   selectInFile(shardFile(runEnv()), wanted);
 }
 
-/** Points the shard file at a tier's life, from its `mind.lives` table; returns the life id. */
-export function selectInFile(file: string, tier: Tier): string {
+/** Points the shard file at a life from its `mind.lives` table; the smoke life runs on the fast tier. */
+export function selectInFile(file: string, key: LifeKey): string {
   const source = readFileSync(file, 'utf8');
-  const life = readLives(parse(source))[tier];
-  applyLife(file, source, tier, life);
-  console.log(`selected: life ${life} (${tier})`);
+  const life = readLives(parse(source))[key];
+  applyLife(file, source, key === 'smoke' ? 'fast' : key, life);
+  console.log(`selected: life ${life} (${key})`);
   return life;
 }
 

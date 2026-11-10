@@ -30,6 +30,16 @@ describe('adam select', () => {
     vi.restoreAllMocks();
   });
 
+  it('selects the smoke life on the fast tier, with run_tier fast and never run_tier smoke', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const file = copyShard();
+    expect(selectInFile(file, 'smoke')).toBe('ag_smoke_01');
+    const smoke = parse(readFileSync(file, 'utf8'));
+    expect(smoke.mind.agent).toMatchObject({ username: 'ag_smoke_01', tier: 'fast' });
+    expect(smoke.mind.run_tier).toBe('fast');
+    vi.restoreAllMocks();
+  });
+
   it('refuses a missing or unknown --model with exit code 1 and does not touch a file', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(await run(['select'])).toBe(1);
