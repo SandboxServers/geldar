@@ -111,7 +111,7 @@ describe('runSequence', () => {
     expect(events(lines, 'restart_stack')).toMatchObject([{ minute: 60 }]);
     expect(events(lines, 'body_kill')).toMatchObject([{ minute: 120 }]);
     expect(JSON.parse(r.files.read(runPaths(RUN_DIR).manifest) ?? '{}')).toMatchObject({
-      life_id: 'ag_adam_01',
+      life_id: 'ag_adam_03',
     });
     expect(r.reporter.runs).toEqual(['run-1']);
   });

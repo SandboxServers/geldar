@@ -12,11 +12,18 @@ import type { FileStore } from './ports.ts';
 export const PROFILES = ['32b', '8b', 'smoke'] as const;
 export type Profile = (typeof PROFILES)[number];
 
-/** The life each profile runs (decision 0051: the 8B run is a separate life on a fresh world volume). */
+/** The life each profile runs: a fresh life per exit run (decision 0051; decision 0064 names the lives). */
 export const LIFE_ID: Record<Profile, string> = {
-  '32b': 'ag_adam_01',
-  '8b': 'ag_adam_02',
+  '32b': 'ag_adam_03',
+  '8b': 'ag_adam_04',
   smoke: 'ag_smoke_01',
+};
+
+/** The tier each profile's Mind runs on: the shard file's `mind.agent.tier` and `mind.run_tier` must say it. */
+export const PROFILE_TIER: Record<Profile, 'strong' | 'fast'> = {
+  '32b': 'strong',
+  '8b': 'fast',
+  smoke: 'fast',
 };
 
 /** The chat model each profile runs. The smoke run uses the fast model. */

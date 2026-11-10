@@ -4,6 +4,7 @@ import {
   buildManifest,
   LIFE_ID,
   type ManifestInput,
+  PROFILE_TIER,
   readPins,
   sha256Hex,
   writeManifest,
@@ -69,11 +70,15 @@ describe('readPins', () => {
 
 describe('buildManifest', () => {
   it.each([
-    ['32b', 'ag_adam_01'],
-    ['8b', 'ag_adam_02'],
+    ['32b', 'ag_adam_03'],
+    ['8b', 'ag_adam_04'],
     ['smoke', LIFE_ID.smoke],
   ] as const)('the %s profile runs life %s', (profile, life) => {
     expect(buildManifest({ ...input, profile }).life_id).toBe(life);
+  });
+
+  it('the 32b profile runs the strong tier, and the 8b and smoke profiles the fast tier', () => {
+    expect(PROFILE_TIER).toEqual({ '32b': 'strong', '8b': 'fast', smoke: 'fast' });
   });
 
   it('records the bench file, its commit and the 20 TPS rows, and null when there is no gate', () => {

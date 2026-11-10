@@ -12,8 +12,8 @@ import { adamEnv, loopbackProblems, parseComposePs, parseEnvFile, shardProblems 
 import {
   compare,
   installedFromTags,
-  type PinRow,
   type LifeKey,
+  type PinRow,
   preflightProblems,
   readLives,
   readPins,

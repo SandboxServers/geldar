@@ -8,10 +8,11 @@ import {
   LIFE_ID,
   type PinnedModel,
   PROFILE_MODEL,
+  PROFILE_TIER,
   type Profile,
   tagKey,
 } from './manifest.ts';
-import { SHARD_PATH, type ShardEdit } from './shard-edit.ts';
+import { type MindLife, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
 import type { PreparedRecord, VolumeState } from './world-volume.ts';
 
 export interface PreconditionFacts {
@@ -36,6 +37,8 @@ export interface PreconditionFacts {
   worldVolumeEnv: string | undefined;
   /** The life id the run would use. */
   lifeId: string;
+  /** The Mind's life as `shards/phase0.yaml` names it now: the username, the agent tier and the run tier. */
+  mind: MindLife;
 }
 
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
@@ -104,6 +107,18 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   }
   if (f.lifeId !== LIFE_ID[f.profile]) {
     missing.push(`life id: profile ${f.profile} runs ${LIFE_ID[f.profile]}, not ${f.lifeId}`);
+  }
+  // The Mind runs the shard file's life and tier: a run whose profile names another one would run the wrong model.
+  const select = `adam select --model ${f.profile === 'smoke' ? 'smoke' : PROFILE_TIER[f.profile]}`;
+  if (f.mind.username !== LIFE_ID[f.profile]) {
+    missing.push(
+      `shard life: profile ${f.profile} runs ${LIFE_ID[f.profile]}, but ${SHARD_PATH} selects ${f.mind.username ?? 'no life'}; run ${select}`,
+    );
+  }
+  if (f.mind.tier !== PROFILE_TIER[f.profile]) {
+    missing.push(
+      `shard tier: profile ${f.profile} runs the ${PROFILE_TIER[f.profile]} tier, but ${SHARD_PATH} sets ${f.mind.tier ?? 'none'}; run ${select}`,
+    );
   }
   if (f.profile !== 'smoke') missing.push(...worldVolumeProblems(f));
   const allowed = allowedLoaded(f.profile, f.pins);
