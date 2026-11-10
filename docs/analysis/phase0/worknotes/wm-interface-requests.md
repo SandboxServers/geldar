@@ -66,3 +66,11 @@ The orchestrator decided these questions. They close Q1 to Q3 and confirm R1 and
 - (b) The sleep-mark port (`SleepMark`, `SleepMarks` in `threshold/mcp/src/tools/sleep.ts`) and the agent-profile port (`AgentProfile`, `AgentProfiles` in `threshold/mcp/src/resources.ts`) are defined in tool and resource modules. They should move to `threshold/mcp/src/ports.ts` (WM-11), next to the existing ports.
 - (c) `buildSleepPlan` is injected into the sleep tool (`sleep.ts`, dependency `buildSleepPlan`). WM-11 must wire it to the animus sleep plan builder in production.
 - (d) Sleep waits for the plan acknowledgement only. It calls `body.submitPlan` and returns on `ack.accepted`; a refusal raises `sleep_refused`. It does not wait for the plan to finish executing.
+
+## WM-08 (player host: whitelist, presence, Body)
+
+(a) Latent bug in the Adam host. `golem/src/adam/main.ts` `BodySupervisor` only listens for stop after start has begun, so a stop issued during start hangs until the bot ends. The player session (`golem/src/players/session.ts`) works around it. Follow-up for the Adam host: listen for stop from the beginning of start, the same way the player session does.
+
+(b) `golem/src/players/main.ts` opens `PRESENCE_BUCKET` with `open`, and fails if the MCP has not created it. WM-11 must create the bucket first, so that the player host can open it on a fresh stack.
+
+(c) No test covers the `extraServe` path of `startPlayerBody`. It needs a live case later, against a running stack.

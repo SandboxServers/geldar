@@ -12,9 +12,14 @@ const FORBIDDEN = [
 ];
 
 /** Files and directories under src that are allowed to reach the RCON layer. */
-const CONTROL_USERS = ['bench', 'arena.ts', 'rcon.ts', 'test-control.ts'].map((name) =>
-  join(import.meta.dirname, name),
-);
+const CONTROL_USERS = [
+  ...['bench', 'arena.ts', 'rcon.ts', 'test-control.ts'].map((name) =>
+    join(import.meta.dirname, name),
+  ),
+  // Threat-model rule 9 and the WM-08 packet: the player host whitelists a life over RCON before connect.
+  join(import.meta.dirname, 'players', 'whitelist.ts'),
+  join(import.meta.dirname, 'players', 'main.ts'),
+];
 
 /** What actions must not reach: the RCON layer, the arena builder and the bench. */
 async function forbiddenForActions(): Promise<string[]> {
@@ -296,6 +301,19 @@ describe('TestControl', () => {
     for (const file of files) {
       expect(await reachesForbidden(file), file).toBeUndefined();
     }
+  });
+
+  it('lets only the two player files whitelist over RCON, and no third players file', async () => {
+    const players = join(import.meta.dirname, 'players');
+    const admitted = CONTROL_USERS.filter((user) => user.startsWith(players + sep)).sort();
+    expect(admitted).toEqual([join(players, 'main.ts'), join(players, 'whitelist.ts')]);
+    const reaching: string[] = [];
+    for (const file of await tsFilesUnder(players)) {
+      if (!file.endsWith('.test.ts') && (await reachesForbidden(file)) !== undefined) {
+        reaching.push(file);
+      }
+    }
+    expect(reaching.sort()).toEqual(admitted);
   });
 
   it('keeps the arena and the bench out of src/actions as well', async () => {
