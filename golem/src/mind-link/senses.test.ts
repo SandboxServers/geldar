@@ -62,12 +62,14 @@ describe('buildSnapshot options', () => {
 });
 
 describe('sense fakes', () => {
-  it('drains events once and leaves heard lines in place', () => {
+  it('keeps events until they are acked, and leaves heard lines in place', () => {
     const ears = new FakeEars();
     ears.lines = [{ from: 'Sage', text: 'hi', age_seconds: 1 }];
     ears.queued = [{ type: 'agent_approached' }];
-    expect(ears.drainEvents()).toHaveLength(1);
-    expect(ears.drainEvents()).toHaveLength(0);
+    expect(ears.peekEvents()).toHaveLength(1);
+    expect(ears.peekEvents()).toHaveLength(1);
+    ears.ackEvents(1);
+    expect(ears.peekEvents()).toHaveLength(0);
     expect(ears.heard()).toHaveLength(1);
     expect(ears.heard()).toHaveLength(1);
   });

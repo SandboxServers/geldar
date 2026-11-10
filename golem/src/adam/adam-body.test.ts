@@ -92,6 +92,9 @@ function rig(): Rig {
             notifyAddressed: async (from: string) => {
               addressed.push(from);
             },
+            stop: async () => {
+              stops.push('executor.stop');
+            },
           },
         } as unknown as RestartedBody['body'],
         stop: async () => {
@@ -166,5 +169,34 @@ describe('startAdamBody', () => {
     const second = await startAdamBody(rig().env, fakeBot());
     second.fail('executor fault');
     await expect(second.ended).resolves.toBe('executor fault');
+  });
+
+  it('quits the bot when the start throws, so the connection makes a fresh one', async () => {
+    const quit = vi.fn();
+    const bot = Object.assign(fakeBot(), { quit });
+    const r = rig();
+    r.env.restart = async () => {
+      throw new Error('checkpoint unreadable');
+    };
+    await expect(startAdamBody(r.env, bot)).rejects.toThrow('checkpoint unreadable');
+    expect(quit).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles the start when the bot ends during it, without waiting for the restart', async () => {
+    const quit = vi.fn();
+    const bot = Object.assign(fakeBot(), { quit });
+    const r = rig();
+    r.env.restart = () => new Promise<RestartedBody>(() => undefined);
+    const starting = startAdamBody(r.env, bot);
+    bot.emit('end' as never, 'kicked' as never);
+    await expect(starting).rejects.toThrow('bot ended during start: bot ended: kicked');
+    expect(quit).not.toHaveBeenCalled();
+  });
+
+  it('stops the executor before the link waits for running plans', async () => {
+    const r = rig();
+    const running = await startAdamBody(r.env, fakeBot());
+    await running.stop();
+    expect(r.stops[0]).toBe('executor.stop');
   });
 });

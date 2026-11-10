@@ -43,8 +43,8 @@ interface HeardLine {
  * ring of the last 50 lines for the snapshot (`heard`), publishes each line as a `speech` event and
  * tells the executor when the Body is named.
  *
- * Chat on 26.1 offline mode reaches Mineflayer 4.39 as a raw `player_chat` packet (`senderUuid`,
- * `plainMessage`, `networkName`) and as the derived `chat` event; both are read and a line that
+ * Chat on 26.1 offline mode reaches Mineflayer 4.39 as a `playerChat` client event (`sender`,
+ * `senderName`, `plainMessage`) and as the derived `chat` event; both are read and a line that
  * arrives by both is kept once. Everything read from a packet is untrusted and parsed defensively.
  */
 export class BotEars implements Pick<Ears, 'heard'> {
@@ -95,9 +95,9 @@ export class BotEars implements Pick<Ears, 'heard'> {
     const packet = data as Record<string, unknown>;
     const text = typeof packet.plainMessage === 'string' ? packet.plainMessage : null;
     if (text === null) return;
-    const uuid = typeof packet.senderUuid === 'string' ? packet.senderUuid : null;
+    const uuid = typeof packet.sender === 'string' ? packet.sender : null;
     if (uuid !== null && uuid === bot.player?.uuid) return;
-    const named = nameFromText(packet.networkName) ?? nameFromText(packet.senderName);
+    const named = nameFromText(packet.senderName);
     const known = Object.values(bot.players ?? {}).find((p) => uuid !== null && p.uuid === uuid);
     const from = known?.username ?? named;
     if (from) this.hear(from, text);

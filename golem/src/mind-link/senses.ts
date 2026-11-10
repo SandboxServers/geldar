@@ -29,10 +29,12 @@ export interface Ears {
    */
   heard(): Snapshot['heard'];
   /**
-   * Events since the last call, oldest first, at most 100. Consumes them: the next call returns
-   * only newer events. Called once per snapshot, by the snapshot builder.
+   * Events since the last acknowledged snapshot, oldest first, at most 100. Does not consume them:
+   * a snapshot that is not sent leaves them queued for the next one.
    */
-  drainEvents(): Snapshot['events_since_last_thought'];
+  peekEvents(): Snapshot['events_since_last_thought'];
+  /** Consumes the first `count` events, the ones a sent snapshot carried. */
+  ackEvents(count: number): void;
 }
 
 /** Why the Voice did not speak. */

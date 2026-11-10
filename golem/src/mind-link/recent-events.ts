@@ -92,10 +92,20 @@ export class RecentEvents implements RecordSink {
     }
   }
 
+  /** The digest, oldest first, at most 100 entries. Does not clear it. */
+  peekEvents(): Snapshot['events_since_last_thought'] {
+    return [...this.events];
+  }
+
+  /** Drops the oldest `count` entries: the ones a snapshot carried once it was sent. */
+  ackEvents(count: number): void {
+    this.events.splice(0, count);
+  }
+
   /** The digest, oldest first, at most 100 entries. Clears it. */
   drainEvents(): Snapshot['events_since_last_thought'] {
-    const out = this.events;
-    this.events = [];
+    const out = this.peekEvents();
+    this.ackEvents(out.length);
     return out;
   }
 

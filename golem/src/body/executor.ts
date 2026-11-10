@@ -95,6 +95,11 @@ export class IntentExecutor {
     return this.active?.state ?? null;
   }
 
+  /** The running intent as the Mind sent it, or null. A resumed intent has one too. */
+  get runningIntent(): Intent | null {
+    return this.active?.intent ?? null;
+  }
+
   /** The running program's checkpoint, or null when none runs or it has nothing to save. */
   checkpoint(): ProgramCheckpoint | null {
     return this.active ? this.savedCheckpoint(this.active) : null;

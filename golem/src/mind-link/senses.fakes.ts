@@ -21,7 +21,7 @@ export class FakePerception implements Perception {
   }
 }
 
-/** An `Ears` with queued events: `heard` is a plain list, `drainEvents` empties the queue. */
+/** An `Ears` with queued events: `heard` is a plain list, `ackEvents` drops the queued ones. */
 export class FakeEars implements Ears {
   lines: Snapshot['heard'] = [];
   queued: Snapshot['events_since_last_thought'] = [];
@@ -30,10 +30,12 @@ export class FakeEars implements Ears {
     return [...this.lines];
   }
 
-  drainEvents(): Snapshot['events_since_last_thought'] {
-    const events = this.queued;
-    this.queued = [];
-    return events;
+  peekEvents(): Snapshot['events_since_last_thought'] {
+    return [...this.queued];
+  }
+
+  ackEvents(count: number): void {
+    this.queued = this.queued.slice(count);
   }
 }
 

@@ -144,3 +144,12 @@ describe('hostile text corpus', () => {
     expect(renderWorldText(many)).toContain('(10 more lines not shown)');
   });
 });
+
+describe('invisible code points', () => {
+  it('escapes tag characters, variation selectors and fillers inside a prompt string', () => {
+    for (const cp of [0x34f, 0x61c, 0x115f, 0x1160, 0x180e, 0x3164, 0xfe0f, 0xe0041]) {
+      expect(isRiskyCodePoint(cp)).toBe(true);
+    }
+    expect(isRiskyCodePoint(0x41)).toBe(false);
+  });
+});
