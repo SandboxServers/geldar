@@ -33,6 +33,34 @@ function fakeClient(
 const win = { lifeId: 'life-fake', from: new Date(0), to: new Date(1000) };
 const isThoughts = (text: string) => text.includes('FROM thoughts');
 
+describe('loadRunData reads only the window', () => {
+  it('every statement that reads a run table is bound to the window, with its values', async () => {
+    const seen: { text: string; values: unknown[] }[] = [];
+    const client: QueryClient = {
+      connect: async () => undefined,
+      query: async (text: string, values?: unknown[]) => {
+        seen.push({ text, values: values ?? [] });
+        return { rows: [] };
+      },
+      end: async () => undefined,
+    };
+    await loadRunData(() => client, win);
+    const runTables = [
+      'FROM thoughts',
+      'FROM intents',
+      'FROM actions',
+      'FROM receipts',
+      'FROM events',
+    ];
+    const reads = seen.filter((s) => runTables.some((t) => s.text.includes(t)));
+    expect(reads.map((s) => s.text.split('\n')[0])).toHaveLength(5);
+    for (const s of reads) {
+      expect(s.text).toMatch(/\$2/);
+      expect(s.values).toEqual(['life-fake', win.from, win.to]);
+    }
+  });
+});
+
 describe('loadRunData with a fake client', () => {
   it('reads inside one read-only transaction, commits, and closes the client', async () => {
     const fake = fakeClient();
