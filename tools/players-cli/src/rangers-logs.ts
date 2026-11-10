@@ -32,7 +32,8 @@ export const LOG_CAP_BYTES = 5 * 1024 * 1024;
 
 /**
  * The last `count` whole lines of a log, reading only the last `maxBytes` of the file. A partial first line
- * (the read began mid-line) is dropped, so the output never starts with a fragment.
+ * (the read began mid-line) is dropped, so the output never starts with a fragment. When the read holds no
+ * newline at all (one line longer than `maxBytes`), the truncated tail itself is returned as the one line.
  */
 export function tailLines(fs: LogFs, path: string, count: number, maxBytes = TAIL_BYTES): string[] {
   const size = fs.size(path);
@@ -40,7 +41,7 @@ export function tailLines(fs: LogFs, path: string, count: number, maxBytes = TAI
   let text = fs.read(path, start, size - start);
   if (start > 0) {
     const cut = text.indexOf('\n');
-    text = cut < 0 ? '' : text.slice(cut + 1);
+    if (cut >= 0) text = text.slice(cut + 1);
   }
   if (text.endsWith('\n')) text = text.slice(0, -1);
   return text === '' ? [] : text.split('\n').slice(-count);

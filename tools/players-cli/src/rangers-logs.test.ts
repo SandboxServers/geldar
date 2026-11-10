@@ -55,6 +55,11 @@ describe('tailLines', () => {
     expect(log.bytesRead).toBe(8);
   });
 
+  it('returns the truncated tail when the last bytes hold no newline (one giant line)', () => {
+    const { fs } = fakeFs({ '/run/a.log': `${'x'.repeat(100)}` });
+    expect(tailLines(fs, '/run/a.log', 200, 10)).toEqual(['x'.repeat(10)]);
+  });
+
   it('returns no lines for an empty log', () => {
     const { fs } = fakeFs({ '/run/a.log': '' });
     expect(tailLines(fs, '/run/a.log', 200)).toEqual([]);
