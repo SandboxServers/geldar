@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { AddressConnections } from './address-count.ts';
 import type { AuthResult, TokenTable } from './auth.ts';
 import { checkBearer } from './auth.ts';
 
@@ -470,19 +471,14 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
   }
   const perAddress = options.limits?.maxConnectionsPerAddress;
   if (perAddress !== undefined) {
-    const open = new Map<string, number>();
+    const connections = new AddressConnections(perAddress);
     server.on('connection', (socket) => {
       const address = socket.remoteAddress ?? 'unknown';
-      const count = open.get(address) ?? 0;
-      if (count >= perAddress) {
+      if (!connections.take(address)) {
         socket.destroy();
         return;
       }
-      open.set(address, count + 1);
-      socket.once('close', () => {
-        if (count === 0) open.delete(address);
-        else open.set(address, count);
-      });
+      socket.once('close', () => connections.release(address));
     });
   }
 
