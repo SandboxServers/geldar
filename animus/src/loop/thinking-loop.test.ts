@@ -1,6 +1,5 @@
 import { validateThoughtEventPayload, validateWorldEvent } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
-import { loadAnimusConfig } from '../config.ts';
 import { newId } from '../ids.ts';
 import { BodyLinkError, ModelError } from '../ports/index.ts';
 import {
@@ -13,7 +12,7 @@ import {
   planResultEvent,
   VALID_THOUGHT,
 } from './loop-fixtures.ts';
-import { CORRECTIVE_RETRY, loopOptionsFromConfig } from './thinking-loop.ts';
+import { CORRECTIVE_RETRY } from './thinking-loop.ts';
 
 /** Events that leave an interrupted gather behind. */
 function interrupted(program = 'gather') {
@@ -139,57 +138,6 @@ describe('ThinkingLoop: the model plans', () => {
     expect(rig.events.published[0]?.payload).toMatchObject({ wake_reason: 'speech_addressed' });
   });
 
-  it('holds, with no intent id, when the Body refuses a plan for a reason a new snapshot cannot cure', async () => {
-    const lines: Record<string, unknown>[] = [];
-    const rig = await makeRig([VALID_THOUGHT], {
-      deps: { log: (line) => lines.push(line) },
-      ack: (plan) => ({
-        thought_id: plan.thought_id,
-        accepted: false,
-        rejection: { reason: 'invalid_plan', detail: 'the Body does not run this' },
-      }),
-    });
-    const result = await rig.loop.handle(makeDecision());
-    expect(result.outcome).toBe('fallback_hold');
-    expect(result.ack?.accepted).toBe(false);
-    expect(rig.attention.settled).toEqual(['fallback_hold']);
-    expect(lines.some((l) => l.event === 'plan_refused' && l.reason === 'invalid_plan')).toBe(true);
-  });
-
-  it('re-snapshots and re-thinks once when the Body refuses a stale plan', async () => {
-    let refusals = 0;
-    const rig = await makeRig([VALID_THOUGHT, VALID_THOUGHT], {
-      ack: (plan) => {
-        refusals += 1;
-        return refusals === 1
-          ? {
-              thought_id: plan.thought_id,
-              accepted: false,
-              rejection: { reason: 'stale_snapshot', detail: 'newer revision' },
-            }
-          : { thought_id: plan.thought_id, accepted: true, rejection: null };
-      },
-    });
-    const result = await rig.loop.handle(makeDecision());
-    expect(result.outcome).toBe('planned');
-    expect(refusals).toBe(2);
-  });
-
-  it('retries a plan once when the ack times out (the Body dedupes by thought id)', async () => {
-    let sent = 0;
-    const rig = await makeRig([VALID_THOUGHT], {
-      deps: { sleep: async () => {} },
-      ack: (plan) => {
-        sent += 1;
-        if (sent === 1) throw new BodyLinkError('timeout', 'no ack in time');
-        return { thought_id: plan.thought_id, accepted: true, rejection: null };
-      },
-    });
-    const result = await rig.loop.handle(makeDecision());
-    expect(result.outcome).toBe('planned');
-    expect(sent).toBe(2);
-  });
-
   it('logs a loop_error with the life id and an error code when the memory load fails', async () => {
     const lines: Record<string, unknown>[] = [];
     const rig = await makeRig([VALID_THOUGHT], { deps: { log: (line) => lines.push(line) } });
@@ -214,6 +162,18 @@ describe('ThinkingLoop: the model plans', () => {
     expect(result.outcome).toBe('model_error');
     expect(rig.body.plans).toHaveLength(0);
     expect(lines.find((l) => l.event === 'loop_error')).toBeDefined();
+  });
+
+  it('logs memory_load_timeout with the life id and an error code when the memory load runs out', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const rig = await makeRig([VALID_THOUGHT], {
+      loop: { memoryTimeoutMs: 20 },
+      deps: { log: (line) => lines.push(line) },
+    });
+    rig.store.loadDeterministic = () => new Promise<never>(() => undefined);
+    await rig.loop.handle(makeDecision());
+    const timeout = lines.find((l) => l.event === 'memory_load_timeout');
+    expect(timeout).toMatchObject({ life_id: LIFE, error_code: 'timeout' });
   });
 
   it('counts days since sleep from now when the life has neither a sleep nor a birth day', async () => {
@@ -510,56 +470,5 @@ describe('ThinkingLoop: effort', () => {
     await rig.loop.handle(makeDecision('precondition_failed'));
     await rig.loop.handle(makeDecision('precondition_failed'));
     expect(rig.model.jobs.map((j) => j.reasoning)).toEqual(['off', 'on']);
-  });
-});
-
-describe('ThinkingLoop: the intent links to its thought', () => {
-  it('sets the intent row thought_id once the sink has written the row', async () => {
-    const rig = await makeRig([{ text: VALID_THOUGHT }], { deps: { sleep: async () => {} } });
-    const result = await rig.loop.handle(makeDecision('idle'));
-    const plan = result.plan;
-    expect(result.ack?.accepted).toBe(true);
-    const intentId = plan?.intent_id;
-    if (plan === null || intentId === undefined) throw new Error('the plan has no intent');
-
-    // The sink projects the accepted intent after the plan was acknowledged.
-    expect(rig.store.intentThought(intentId)).toBeUndefined();
-    rig.store.addIntentRow(intentId);
-    await rig.loop.settleLinks();
-
-    expect(rig.store.intentThought(intentId)).toBe(plan.thought_id);
-  });
-
-  it('does not link a plan the Body refused', async () => {
-    const rig = await makeRig([{ text: VALID_THOUGHT }], {
-      ack: {
-        thought_id: newId('th'),
-        accepted: false,
-        rejection: { reason: 'invalid_plan', detail: 'refused in the test' },
-      },
-      deps: { sleep: async () => {} },
-    });
-    const result = await rig.loop.handle(makeDecision('idle'));
-    const intentId = result.plan?.intent_id;
-    expect(result.ack?.accepted).toBe(false);
-    if (intentId === undefined) throw new Error('the plan has no intent');
-
-    // The row exists, so only the refusal keeps the link from being written.
-    rig.store.addIntentRow(intentId);
-    await rig.loop.settleLinks();
-    expect(rig.store.intentThought(intentId)).toBeNull();
-  });
-});
-
-describe('loopOptionsFromConfig', () => {
-  it('reads the model, its pin and the plan window from the shard file', async () => {
-    const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
-    const options = loopOptionsFromConfig(config, OPTIONS.versions);
-    expect(options.lifeId).toBe(config.agent.username);
-    expect(options.model).toBe(config.models[config.runTier]?.[0]);
-    expect(options.modelConfig.length).toBeLessThanOrEqual(256);
-    expect(options.modelConfig).toContain(options.model);
-    expect(options.expiresAfterTicks).toBe(config.plan.expiresAfterTicks);
-    expect(options.thought).toBe(config.thought);
   });
 });

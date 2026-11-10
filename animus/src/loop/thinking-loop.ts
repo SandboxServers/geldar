@@ -9,41 +9,26 @@
  * accepted; `fallback_hold` when the Body refused or never got the plan; otherwise the cause when
  * nothing was submitted: `tired` (admission refused), `model_error` or `invalid_output` (twice).
  */
-import {
-  type PlanAck,
-  type PlanMessage,
-  type Snapshot,
-  type Thought,
-  validatePlanMessage,
-} from '@geldar/contract';
-import type { AnimusConfig, JobSettings } from '../config.ts';
+import type { PlanAck, PlanMessage, Snapshot, Thought } from '@geldar/contract';
 import { newId } from '../ids.ts';
 import {
-  type AttentionController,
-  type BodyLink,
-  BodyLinkError,
-  type Embedder,
-  type EventPublisher,
-  type Journal,
-  type MemoryStore,
   type MindEvent,
-  type ModelClient,
   type ModelCompletion,
   ModelError,
   type ModelMessage,
-  type OutputError,
-  type OutputValidator,
-  type PromptLibrary,
-  type PromptRender,
   type ThoughtOutcome,
   type WakeDecision,
 } from '../ports/index.ts';
-import { type Admission, THOUGHT_COST } from './admission.ts';
-import { chooseEffort, type EffortChoice, isRepeatedFailureWake, jobShape } from './effort.ts';
+import { THOUGHT_COST } from './admission.ts';
+import type { Attempt, Cycle } from './cycle-state.ts';
+import { chooseEffort, isRepeatedFailureWake, jobShape } from './effort.ts';
 import { continueInterrupted, IntentLedger } from './fallback.ts';
 import { IntentLinker } from './intent-link.ts';
-import { buildThoughtRow, type LoopVersions } from './journal-row.ts';
-import { buildPlan, planExpiredBy } from './plan.ts';
+import { buildThoughtRow } from './journal-row.ts';
+import { type LoopOptions, loopOptionsFromConfig } from './loop-options.ts';
+import type { LoopDeps, LoopResult } from './loop-types.ts';
+import { buildPlan } from './plan.ts';
+import { isStaleRefusal, noteRefusal, type SubmitContext, submitChecked } from './plan-submit.ts';
 import { requestSnapshotWithRetry, sleepFor } from './snapshot-retry.ts';
 import { callWaitingForThinker } from './thinker-wait.ts';
 import {
@@ -54,69 +39,15 @@ import {
   reportFailure,
   writeThoughtRow,
 } from './thought-journal.ts';
+import { withinLimit } from './within-limit.ts';
 
 export type { LoopVersions } from './journal-row.ts';
 
 /** The `thoughts.wake_reason` of the second call of a cycle. */
 export const CORRECTIVE_RETRY = 'corrective_retry';
 
-/** The loop options and the ports, re-exported for the callers that build the loop. */
-export { type LoopOptions, loopOptionsFromConfig } from './loop-options.ts';
-
-import type { LoopOptions } from './loop-options.ts';
-
-export type { LoopDeps, LoopResult } from './loop-types.ts';
-
-import type { LoopDeps, LoopResult } from './loop-types.ts';
-
-type Attempt =
-  | { kind: 'ok'; thought: Thought; completion: ModelCompletion }
-  | { kind: 'invalid'; errors: OutputError[]; completion: ModelCompletion }
-  | { kind: 'error'; code: string }
-  | { kind: 'tired' };
-
-/** Mutable state of one cycle. */
-interface Cycle {
-  decision: WakeDecision;
-  snapshot: Snapshot;
-  render: PromptRender;
-  effort: EffortChoice;
-  calls: number;
-  latencyMs: number;
-  thinkerId: string | undefined;
-  journalErrors: number;
-  /** The code of the last model call that failed, for the journal and the log. */
-  errorCode?: string;
-}
-
-/**
- * Waits for `work`, and fails after `ms` when a limit is set. A late result is dropped, never left
- * as an unhandled rejection; the timer is cleared as soon as `work` settles.
- */
-function withinLimit<T>(work: Promise<T>, ms: number | undefined): Promise<T> {
-  if (ms === undefined) return work;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const limit = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
-  });
-  work.catch(() => undefined);
-  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
-}
-
-/** The Body refused a plan because it expired before it was sent; the loop decides, not the Body. */
-function expiredRefusal(thoughtId: string): PlanAck {
-  return {
-    thought_id: thoughtId,
-    accepted: false,
-    rejection: { reason: 'expired', detail: 'the plan expired before it was submitted' },
-  };
-}
-
-/** A refusal that a fresh snapshot can cure: the plan was built on a state that has moved on. */
-function isStaleRefusal(ack: PlanAck): boolean {
-  const reason = ack.rejection?.reason;
-  return reason === 'stale_generation' || reason === 'stale_snapshot' || reason === 'expired';
-}
+/** The loop options, the ports and the results, re-exported for the callers that build the loop. */
+export { type LoopDeps, type LoopOptions, type LoopResult, loopOptionsFromConfig };
 
 /** The thinking loop of one life. */
 export class ThinkingLoop {
@@ -128,6 +59,7 @@ export class ThinkingLoop {
   private readonly report: FailureReport;
   private previousReason: string | null = null;
   private readonly links: IntentLinker;
+  private readonly submitCtx: SubmitContext;
 
   constructor(deps: LoopDeps, options: LoopOptions) {
     this.deps = deps;
@@ -145,6 +77,14 @@ export class ThinkingLoop {
       sleep: deps.sleep ?? sleepFor,
       log: (line) => this.log(line),
     });
+    this.submitCtx = {
+      body: deps.body,
+      lifeId: options.lifeId,
+      tickMs: 1000 / options.tickRate,
+      now: this.now,
+      report: this.report,
+      log: (line) => this.log(line),
+    };
   }
 
   /** Resolves once the intent links started so far have ended: linked, given up or stopped. */
@@ -224,7 +164,13 @@ export class ThinkingLoop {
 
     // 2. The profile and the memory.
     const load = this.deps.memory.loadDeterministic(lifeId, tick);
-    const memory = await withinLimit(load, this.options.memoryTimeoutMs);
+    const memory = await withinLimit(load, this.options.memoryTimeoutMs, () =>
+      this.log({
+        event: 'memory_load_timeout',
+        life_id: lifeId,
+        error_code: 'timeout',
+      }),
+    );
     // A life with no sleep and no birth day counts from now, not from day 0 of the world.
     const lastSleep = memory.agent.lastSleepDay ?? memory.agent.bornDay ?? raw.world_time.day;
     const snapshot: Snapshot = {
@@ -299,10 +245,12 @@ export class ThinkingLoop {
         snapshot,
         expiresAfterTicks: this.options.expiresAfterTicks,
       });
-      const ack = await this.submitChecked(plan, finalId, tick, snappedAt);
+      const ack = await submitChecked(this.submitCtx, plan, finalId, tick, snappedAt);
       if (ack === null) return this.finish(cycle, 'fallback_hold', finalId, null, null);
-      this.noteRefusal(finalId, ack);
-      if (!ack.accepted && !retried && isStaleRefusal(ack)) return this.run(decision, true);
+      noteRefusal(this.submitCtx, finalId, ack);
+      if (!ack.accepted && !retried && isStaleRefusal(ack)) {
+        return this.rethink(decision, cycle, finalId, ack.rejection?.reason ?? 'unspecified');
+      }
       return this.finish(cycle, ack.accepted ? 'planned' : 'fallback_hold', finalId, plan, ack);
     }
 
@@ -318,9 +266,9 @@ export class ThinkingLoop {
         snapshot,
         expiresAfterTicks: this.options.expiresAfterTicks,
       });
-      const ack = await this.submitChecked(plan, firstId, tick, snappedAt);
+      const ack = await submitChecked(this.submitCtx, plan, firstId, tick, snappedAt);
       if (ack !== null) {
-        this.noteRefusal(firstId, ack);
+        noteRefusal(this.submitCtx, firstId, ack);
         if (ack.accepted) this.ledger.markResubmitted(next.resumedIntentId);
         return this.finish(
           cycle,
@@ -426,57 +374,29 @@ export class ThinkingLoop {
     }
   }
 
-  /** Checks the plan's expiry first: a plan that would expire on the way is refused, not sent. */
-  private async submitChecked(
-    plan: PlanMessage,
-    thoughtId: string,
-    snapshotTick: number,
-    snappedAt: number,
-  ): Promise<PlanAck | null> {
-    if (planExpiredBy(plan, snapshotTick, this.now() - snappedAt)) return expiredRefusal(thoughtId);
-    return this.submit(plan);
-  }
-
   /**
-   * Sends the plan. An ack that times out is sent once more (the Body dedupes by thought id). A
-   * plan the contract rejects, or a Body that stays unreachable, gives null.
+   * The single re-think after a stale or expired refusal: a second cycle from a fresh snapshot. Its
+   * result also carries the first cycle's model calls and journal errors, so the counts add up.
    */
-  private async submit(plan: PlanMessage): Promise<PlanAck | null> {
-    const checked = validatePlanMessage(plan);
-    if (!checked.ok) {
-      reportFailure(this.report, new Error('invalid plan'), 'invalid_plan', {
-        thought_id: plan.thought_id,
-      });
-      return null;
-    }
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.deps.body.submitPlan(plan);
-      } catch (error) {
-        if (!(error instanceof BodyLinkError)) throw error;
-        if (error.code !== 'timeout' || attempt >= 2) {
-          reportFailure(this.report, error, error.code, { thought_id: plan.thought_id });
-          return null;
-        }
-        this.log({
-          event: 'plan_submit_retry',
-          life_id: this.options.lifeId,
-          thought_id: plan.thought_id,
-          error_code: error.code,
-        });
-      }
-    }
-  }
-
-  /** A refused plan is logged with its reason; the rejection's detail text stays out of the log. */
-  private noteRefusal(thoughtId: string, ack: PlanAck): void {
-    if (ack.accepted) return;
+  private async rethink(
+    decision: WakeDecision,
+    first: Cycle,
+    oldThoughtId: string,
+    reason: string,
+  ): Promise<LoopResult> {
+    const second = await this.run(decision, true);
     this.log({
-      event: 'plan_refused',
+      event: 'thought_rethink',
       life_id: this.options.lifeId,
-      thought_id: thoughtId,
-      reason: ack.rejection?.reason ?? 'unspecified',
+      old_thought_id: oldThoughtId,
+      new_thought_id: second.thoughtId,
+      reason,
     });
+    return {
+      ...second,
+      modelCalls: second.modelCalls + first.calls,
+      journalErrors: second.journalErrors + first.journalErrors,
+    };
   }
 
   private async recordNoCall(cycle: Cycle, thoughtId: string): Promise<void> {

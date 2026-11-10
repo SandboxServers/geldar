@@ -15,6 +15,8 @@ export interface LoopOptions {
   thought: JobSettings;
   /** `mind.plan.expires_after_ticks`. */
   expiresAfterTicks: number;
+  /** The shard's `tick_rate`: world ticks a second. Turns the plan's expiry into wall-clock time. */
+  tickRate: number;
   /** How many recent thoughts the prompt gets. */
   workingWindow: number;
   /** How many episodic memories to retrieve. */
@@ -45,6 +47,7 @@ export function loopOptionsFromConfig(config: AnimusConfig, versions: LoopVersio
     versions,
     thought: config.thought,
     expiresAfterTicks: config.plan.expiresAfterTicks,
+    tickRate: config.tickRate,
     workingWindow: config.memory.workingWindow,
     episodicTopK: config.memory.episodicTopK,
     snapshotRetryMs: config.mind.snapshotRetryS * 1000,

@@ -159,6 +159,7 @@ export const OPTIONS: LoopOptions = {
   versions: { schema: 'thought@1', mind: 'mind-0.0.0', body: 'body-0.0.0' },
   thought: { maxTokens: 600, temperature: 0.7, deadlineS: 25, reasoning: 'off' },
   expiresAfterTicks: 1200,
+  tickRate: 20,
   workingWindow: 5,
   episodicTopK: 8,
 };

@@ -125,9 +125,14 @@ export class MindLinkServer {
     );
   }
 
+  /** Stops serving at once, without waiting: a plan that arrives after this is not accepted. */
+  stopServing(): void {
+    for (const stop of this.stops.splice(0)) stop();
+  }
+
   /** Stops serving and resolves once the plans already accepted have finished. */
   async stop(): Promise<void> {
-    for (const stop of this.stops.splice(0)) stop();
+    this.stopServing();
     await this.idle();
   }
 
