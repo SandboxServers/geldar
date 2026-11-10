@@ -8,6 +8,9 @@ export const PLACEHOLDER_DIGEST = 'sha256:RECORD_AT_DISPATCH';
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
+/** The keep-alive ping interval when the shard file does not set `keep_alive_ping_s`: 10 minutes. */
+export const DEFAULT_KEEP_ALIVE_PING_S = 600;
+
 /** One pinned model: what the Thinker will advertise if Ollama has exactly this build. */
 export interface ModelPin {
   /** The Ollama tag, such as `qwen3:32b`; also the name advertised to the Mind. */
@@ -25,6 +28,8 @@ export interface LanternConfig {
   heartbeatMs: number;
   /** How long one pinned model may take to load in its warm-up before it is left unadvertised. */
   warmTimeoutMs: number;
+  /** How often each advertised model gets a one-token call, so Ollama's keep_alive never lapses mid-run. */
+  keepAlivePingMs: number;
   /** The pinned names to warm, in order: the run tier's models, or else all with the strong tier last. */
   warmNames: string[];
   pins: ModelPin[];
@@ -152,6 +157,11 @@ export function loadConfig(options: LoadOptions = {}): LanternConfig {
   const port = int(thinker.port, 'mind.thinker.port', 1);
   const heartbeatS = int(thinker.heartbeat_s, 'mind.thinker.heartbeat_s', 1);
   const warmS = int(thinker.warm_timeout_s, 'mind.thinker.warm_timeout_s', 1);
+  // Optional: the default keeps each model resident well inside the 30 m keep_alive of decision 0051.
+  const pingS =
+    thinker.keep_alive_ping_s === undefined
+      ? DEFAULT_KEEP_ALIVE_PING_S
+      : int(thinker.keep_alive_ping_s, 'mind.thinker.keep_alive_ping_s', 1);
   const wsUrl = env.GELDAR_MIND_WS_URL ?? `ws://${host}:${port}/v1/thinker/stream`;
   const ollamaUrl = env.OLLAMA_URL ?? 'http://127.0.0.1:11434';
   const pins = parsePins(doc.model_pins, options.allowPlaceholders === true);
@@ -160,6 +170,7 @@ export function loadConfig(options: LoadOptions = {}): LanternConfig {
     ollamaUrl: requireLoopback(ollamaUrl, ['http:'], 'OLLAMA_URL'),
     heartbeatMs: heartbeatS * 1000,
     warmTimeoutMs: warmS * 1000,
+    keepAlivePingMs: pingS * 1000,
     warmNames: warmOrder(mind, tiers, pins),
     pins,
   };

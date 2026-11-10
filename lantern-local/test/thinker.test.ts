@@ -297,6 +297,80 @@ describe('warm-up', () => {
   });
 });
 
+/** The one-token warm and ping calls the fake Ollama has received (num_predict 1). */
+const warmCalls = (): (typeof ollama.requests)[number][] =>
+  ollama.requests.filter(
+    (r) => (r.body.options as { num_predict?: number } | undefined)?.num_predict === 1,
+  );
+
+describe('keep-alive', () => {
+  it('sends a one-token call to each advertised model on a timer, with the pin keep_alive', async () => {
+    launchWarm({ keepAlivePingMs: 20 });
+    await mind.next('hello');
+    await until(() => warmCalls().length >= 3, 'the warm-up and two pings');
+    expect(
+      warmCalls().every((r) => r.body.model === 'qwen3:8b' && r.body.keep_alive === '30m'),
+    ).toBe(true);
+  });
+
+  it('logs a failed ping and keeps pinging', async () => {
+    ollama.warmHandler = (_req, res) => {
+      if (warmCalls().length === 1) ollama.reply(res, { message: { content: '' } });
+      else ollama.reply(res, { error: 'busy' }, 500);
+    };
+    launchWarm({ keepAlivePingMs: 20 });
+    await mind.next('hello');
+    await until(
+      () => logs.includes('keep-alive ping failed qwen3:8b: Ollama answered 500'),
+      'a failed ping',
+    );
+    await until(() => warmCalls().length >= 3, 'a ping after the failure');
+  });
+
+  it('stop() aborts a ping in flight and sends no more pings', async () => {
+    ollama.warmHandler = (_req, res) => {
+      if (warmCalls().length > 1) return;
+      ollama.reply(res, { message: { content: '' } });
+    };
+    const t = launchWarm({ keepAlivePingMs: 20 });
+    await mind.next('hello');
+    await until(() => warmCalls().length === 2, 'a ping that hangs');
+    await t.stop();
+    await until(() => warmCalls()[1]?.aborted === true, 'the ping aborted by stop()');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(warmCalls()).toHaveLength(2);
+  });
+
+  it('sends no ping after stop(): the timer is cleared', async () => {
+    const t = launchWarm({ keepAlivePingMs: 20 });
+    await mind.next('hello');
+    await until(() => warmCalls().length >= 2, 'a ping');
+    await t.stop();
+    const settled = warmCalls().length;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(warmCalls()).toHaveLength(settled);
+  });
+
+  it('re-warms a model after a slow job that follows an idle spell, and logs why', async () => {
+    ollama.handler = (_req, res) => ollama.reply(res, answer);
+    launchWarm({ coldAfterIdleMs: 0, slowFirstTokenMs: 0 });
+    await mind.next('hello');
+    mind.push(mind.job());
+    await mind.next('completion');
+    await until(() => warmCalls().length === 2, 're-warm after the job');
+    expect(logs.some((l) => l.startsWith('cold start: job '))).toBe(true);
+  });
+
+  it('does not re-warm after a fast job on a recently used model', async () => {
+    ollama.handler = (_req, res) => ollama.reply(res, answer);
+    launchWarm();
+    await mind.next('hello');
+    mind.push(mind.job());
+    await mind.next('completion');
+    expect(warmCalls()).toHaveLength(1);
+  });
+});
+
 describe('jobs', () => {
   async function ready(overrides: Partial<ThinkerOptions> = {}): Promise<LocalThinker> {
     const t = launch(overrides);

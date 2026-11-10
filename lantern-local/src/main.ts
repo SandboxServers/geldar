@@ -28,6 +28,7 @@ async function main(): Promise<number> {
     version: thinkerVersion(),
     heartbeatMs: config.heartbeatMs,
     warmTimeoutMs: config.warmTimeoutMs,
+    keepAlivePingMs: config.keepAlivePingMs,
     log,
   });
   const shutdown = (): void => {
