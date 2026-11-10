@@ -22,6 +22,20 @@ describe('PgJournalStore', () => {
     expect(pool.sent).toHaveLength(1);
   });
 
+  it('drops NUL bytes, which Postgres cannot store, before the insert', async () => {
+    const pool = new FakePool();
+    await new PgJournalStore(pool.asPool()).append('ag_jason_01', 'a\u0000b', 0);
+    expect(pool.sent[0]?.values).toEqual(['ag_jason_01', new Date(0), 'ab']);
+  });
+
+  it('keeps the newest 1000 lines of a life in the same statement as the insert', async () => {
+    const pool = new FakePool();
+    await new PgJournalStore(pool.asPool()).append('ag_jason_01', 'x', 0);
+    expect(pool.sent[0]?.text).toContain('DELETE FROM mcp_journal WHERE life_id = $1');
+    expect(pool.sent[0]?.text).toContain('OFFSET 999');
+    expect(pool.sent).toHaveLength(1);
+  });
+
   it('counts characters as Postgres does: 4000 emoji (8000 UTF-16 units) fit', async () => {
     const pool = new FakePool();
     const store = new PgJournalStore(pool.asPool());
