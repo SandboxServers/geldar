@@ -36,6 +36,8 @@ export const BODY_WAIT_MS = 4 * MINUTE_MS;
 export interface PreflightFacts {
   facts: PreconditionFacts;
   shardConfigSha256: string;
+  /** The digest of the committed shard file when the working copy differs from it; null when it does not. */
+  shardCommittedSha256: string | null;
   criteriaSha256: string;
 }
 
@@ -140,6 +142,15 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
         input.plannedRestartAtMs === null ? null : new Date(input.plannedRestartAtMs).toISOString(),
       git: { sha: f.headSha, clean: f.otherChanges.length === 0 && f.shardEdit.kind === 'none' },
       shardConfigSha256: gathered.shardConfigSha256,
+      // The select's edit is recorded only when the classifier accepted one; a refused edit never reaches a start.
+      shardEdit:
+        f.shardEdit.kind === 'select' && gathered.shardCommittedSha256 !== null
+          ? {
+              changes: f.shardEdit.changes,
+              sha256Before: gathered.shardCommittedSha256,
+              sha256After: gathered.shardConfigSha256,
+            }
+          : null,
       pins: f.pins,
       observedDigests: f.observedDigests,
       bench: benchGate.ok ? benchGate.summary : null,

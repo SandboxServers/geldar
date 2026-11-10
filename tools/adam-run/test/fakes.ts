@@ -275,6 +275,7 @@ export function passingPreflight(
           lifeId: LIFE_ID[profile],
         },
         shardConfigSha256: 'a'.repeat(64),
+        shardCommittedSha256: null,
         criteriaSha256: 'b'.repeat(64),
       };
     },

@@ -77,6 +77,13 @@ export function readPins(shardYaml: string): PinnedModel[] {
   return out;
 }
 
+/** What `adam-cli select` changed in the shard file before the start, with the file's digest before and after. */
+export interface ShardEditInput {
+  changes: { key: string; from: string; to: string }[];
+  sha256Before: string;
+  sha256After: string;
+}
+
 export interface ManifestInput {
   runId: string;
   profile: Profile;
@@ -85,6 +92,8 @@ export interface ManifestInput {
   plannedRestartAt: string | null;
   git: { sha: string; clean: boolean };
   shardConfigSha256: string;
+  /** The select's edit of the shard file, or null when the file was not edited before the start. */
+  shardEdit: ShardEditInput | null;
   pins: PinnedModel[];
   /** The digest Ollama reports for each tag, or null when the tag is not pulled. */
   observedDigests: Record<string, string | null>;
@@ -106,6 +115,12 @@ export interface ManifestPin {
   matches: boolean;
 }
 
+export interface ManifestShardEdit {
+  changes: { key: string; from: string; to: string }[];
+  sha256_before: string;
+  sha256_after: string;
+}
+
 export interface Manifest {
   schema: 'adam-run-manifest/1';
   run_id: string;
@@ -114,6 +129,7 @@ export interface Manifest {
   seed: number;
   git: { sha: string; clean: boolean };
   shard_config_sha256: string;
+  shard_edit: ManifestShardEdit | null;
   model_pins: ManifestPin[];
   bench: ManifestBench | null;
   criteria_sha256: string;
@@ -131,6 +147,14 @@ export function buildManifest(input: ManifestInput): Manifest {
     seed: input.seed,
     git: { sha: input.git.sha, clean: input.git.clean },
     shard_config_sha256: input.shardConfigSha256,
+    shard_edit:
+      input.shardEdit === null
+        ? null
+        : {
+            changes: input.shardEdit.changes.map((c) => ({ key: c.key, from: c.from, to: c.to })),
+            sha256_before: input.shardEdit.sha256Before,
+            sha256_after: input.shardEdit.sha256After,
+          },
     model_pins: input.pins.map((pin) => {
       const observed = input.observedDigests[pin.tag] ?? null;
       return {

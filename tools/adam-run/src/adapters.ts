@@ -390,10 +390,12 @@ export function createPreflight(opts: {
         .map((line) => line.slice(3).trim());
       const otherChanges = changed.filter((path) => path !== SHARD_PATH);
       let shardEdit: ShardEdit = { kind: 'none' };
+      let shardCommittedSha256: string | null = null;
       if (changed.includes(SHARD_PATH)) {
         const committed = await opts.runner.exec('git', ['show', `HEAD:${SHARD_PATH}`]);
         if (committed.code !== 0) throw new Error(`git could not read the committed ${SHARD_PATH}`);
         shardEdit = classifyShardEdit(committed.stdout, shardYaml);
+        shardCommittedSha256 = sha256Hex(committed.stdout);
       }
       const pins: PinnedModel[] = readPins(shardYaml);
       const benchDir = join(opts.repoRoot, 'bench-results');
@@ -431,6 +433,7 @@ export function createPreflight(opts: {
           lifeId: LIFE_ID[opts.profile],
         },
         shardConfigSha256: sha256Hex(shardYaml),
+        shardCommittedSha256,
         criteriaSha256: sha256Hex(opts.criteriaText),
       };
     },
