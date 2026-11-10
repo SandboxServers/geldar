@@ -65,3 +65,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0058](0058-the-character-knowledge-boundary-and-thought-v2.md) | Characters honour the in-world knowledge of the character, not the model's training data; thought prompt v2 carries the knowledge, sleep and anti-loop rules | Accepted (owner) |
 | [0059](0059-identity-mode-is-about-human-observation-not-agent-belief.md) | `identity_mode` governs whether humans may observe a shard; the agents are never told they are watched | Accepted (owner) |
 | [0060](0060-persona-size-limits.md) | Persona files are not artificially size-limited (identity 8192 bytes, goals 4096); the prompt fit is open for Wave M | Accepted (owner) |
+| [0061](0061-phase-0-exit-criteria-readings.md) | Readings of the Phase 0 exit criteria (survival, useful minute, latency, 24 hours, model floor) and the read-only Glass role | Accepted provisionally (orchestrator, owner may revise) |
