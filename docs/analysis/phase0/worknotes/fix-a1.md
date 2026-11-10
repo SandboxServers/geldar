@@ -62,3 +62,17 @@ Branch `fix/a1-admission-nats` from `wave6-main`. One commit per item, in priori
 - Guard: `players/life-removal.ts` reaches RCON for the operator removal path, so it joins the
   test-control guard's allow-list. This loosens the guard for that file; review it with rule 9.
 - Not done: original items 3 to 5 (eventsink DLQ, Body crash reconciliation, RCON hardening).
+
+## Step 1: eventsink DLQ (original item 3)
+
+- Commits 26605a6 (consumer) and 9b239d2 (README). A transient error (connection, timeout, Postgres
+  down) now always naks with capped backoff. `MAX_DELIVER` is -1 (no cap) and `ensureConsumer`
+  lifts the cap on an existing consumer created with 20. Only permanent poison (SQLSTATE 22/23,
+  invalid bodies) is dead-lettered, and each DLQ publish logs an `ALERT dead letter published to`
+  line with the DLQ subject and reason.
+- Tests: a fake consumer runs a 10-minute simulated outage (the old cap would have dead-lettered at
+  20 deliveries) and loses no event; the poison message reaches the DLQ. Revert check: an ack on
+  the 20th delivery in `retryLater` fails the unit tests.
+- Replay: documented steps in `eventsink/README.md` (no command: a DLQ body with `data_truncated`
+  true cannot be replayed).
+- Not done: step 2 (RCON hardening, original item 5); item 4 is another finisher's.
