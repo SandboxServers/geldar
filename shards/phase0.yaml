@@ -122,6 +122,7 @@ sovereign:
     say_min_seconds: 3           # the least gap between two says of one player
     owner_calls_per_minute: 600  # per owner
     failed_auth_per_minute: 30   # per client address; the global limit is 300 a minute, in code
+    handshake_per_minute: 300    # per player; initialize, resources/read and the other non-call methods (optional, default 300)
   # Arrival is staggered (owner): Jason first, then Billy and Trini, then Zack and Kimberly, Tommy last.
   # The test player serves only the live cases. Life ids are the player ids with underscores.
   players:

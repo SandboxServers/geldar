@@ -48,6 +48,8 @@ export interface SovereignConfig {
     sayMinSeconds: number;
     ownerCallsPerMinute: number;
     failedAuthPerMinute: number;
+    /** Per player: initialize, resources/read and the other non-call methods. */
+    handshakePerMinute: number;
   };
   players: PlayerConfig[];
 }
@@ -98,6 +100,8 @@ const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
 const DNS_NAME = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const HOST_TOKEN = /^[a-z0-9.-]+$/;
 const DEFAULT_DEV_HOSTS = 'host.docker.internal,127.0.0.1,localhost';
+/** Used when the shard file leaves `rate_limits.handshake_per_minute` out: above the 60 calls a minute. */
+const HANDSHAKE_PER_MINUTE_DEFAULT = 300;
 
 /** The repository root: the nearest directory above this file that holds pnpm-workspace.yaml. */
 export function repoRoot(): string {
@@ -235,6 +239,10 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
         1,
         100000,
       ),
+      handshakePerMinute:
+        limits.handshake_per_minute === undefined
+          ? HANDSHAKE_PER_MINUTE_DEFAULT
+          : int(limits, 'handshake_per_minute', 'sovereign.rate_limits', 1, 100000),
     },
     players: players(list(block, 'players', 'sovereign'), agentUsername),
   };

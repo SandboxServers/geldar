@@ -1,4 +1,5 @@
 import { request } from 'node:http';
+import { connect } from 'node:net';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -6,7 +7,7 @@ import type { McpConfig } from '../config.ts';
 import { FakeTokenStore } from '../fakes/stores.fakes.ts';
 import type { PlayerRecord, RateDecision, RateLimiter } from '../ports.ts';
 import { tokenDigest } from './auth.ts';
-import type { FrontDoor } from './front.ts';
+import type { FrontDoor, FrontDoorOptions } from './front.ts';
 import { createFrontDoor } from './front.ts';
 import { frontLog } from './log.ts';
 
@@ -56,6 +57,13 @@ class CapLimiter implements RateLimiter {
     this.used.set(bucket, used + 1);
     return { allowed: true, retryAfterMs: 0 };
   }
+
+  peek(bucket: string): RateDecision {
+    const used = this.used.get(bucket) ?? 0;
+    return used >= this.cap(bucket)
+      ? { allowed: false, retryAfterMs: 1500 }
+      : { allowed: true, retryAfterMs: 0 };
+  }
 }
 
 function defaultCap(bucket: string): number {
@@ -75,12 +83,17 @@ function makeServer(): McpServer {
     tools: [
       { name: 'ping', inputSchema: { type: 'object' as const } },
       { name: 'wait', inputSchema: { type: 'object' as const } },
+      { name: 'slow', inputSchema: { type: 'object' as const } },
     ],
   }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (req.params.name === 'wait') {
       // Never answers: the revocation (or close) ends the request, so no reply is written after that.
       await new Promise<never>(() => undefined);
+    }
+    if (req.params.name === 'slow') {
+      // Answers only after a held response, longer than the request timeouts the tests use.
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
     return { content: [{ type: 'text' as const, text: 'ok' }] };
   });
@@ -381,6 +394,21 @@ describe('scoping and limits', () => {
     expect(statuses[FAILED_AUTH_PER_MINUTE]).toBe(429);
   });
 
+  it('answers 429 from the address bucket without a token lookup once it is empty', async () => {
+    const lookup = store.resolve.bind(store);
+    let lookups = 0;
+    store.resolve = async (hash, nowMs) => {
+      lookups += 1;
+      return lookup(hash, nowMs);
+    };
+    const wrong = { body: INIT, headers: { Authorization: 'Bearer wrong-token-0123456789wrong' } };
+    for (let i = 0; i < FAILED_AUTH_PER_MINUTE; i += 1) await send('/p/aa', wrong);
+    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+    const reply = await send('/p/aa', wrong);
+    expect(reply.status).toBe(429);
+    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+  });
+
   it('holds at most 4 open requests per player and refuses the 5th', async () => {
     const sid = await openSession();
     const open = Array.from({ length: MAX_OPEN_PER_PLAYER }, (_, i) =>
@@ -395,6 +423,81 @@ describe('scoping and limits', () => {
     expect(fifth.text).toContain('too_many_open_requests');
     store.revoke('tok-a');
     await Promise.all(open);
+  });
+});
+
+describe('connection limits', () => {
+  /** Replaces the door of the test with one built with these limits. */
+  async function restart(limits: NonNullable<FrontDoorOptions['limits']>): Promise<void> {
+    await door.close();
+    door = createFrontDoor({
+      http: CONFIG,
+      pepper: PEPPER,
+      store,
+      limiter,
+      createSession: () => makeServer(),
+      log: (line) => logs.push(line),
+      limits,
+    });
+    port = await door.listen(0);
+  }
+
+  it('cuts a POST whose body stalls past the request timeout', async () => {
+    await restart({ requestTimeoutMs: 300 });
+    const req = request({
+      host: '127.0.0.1',
+      port,
+      path: '/p/aa',
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${TOKEN_A}`,
+        'Content-Type': 'application/json',
+        'Content-Length': '100',
+      },
+    });
+    req.on('error', () => undefined);
+    req.write('{');
+    const outcome = await new Promise<string>((resolve) => {
+      const timer = setTimeout(() => resolve('still open'), 3000);
+      req.on('close', () => {
+        clearTimeout(timer);
+        resolve('closed');
+      });
+      req.on('response', (res) => res.resume());
+    });
+    expect(outcome).toBe('closed');
+  });
+
+  it('delivers a response held longer than the request timeout', async () => {
+    await restart({ requestTimeoutMs: 200 });
+    const id = await openSession();
+    const reply = await send('/p/aa', { body: call('slow', 3), headers: { 'mcp-session-id': id } });
+    expect(reply.status).toBe(200);
+    expect(reply.text).toContain('ok');
+  });
+
+  it('lets one address hold no more than its default cap of 16 connections', async () => {
+    const held = Array.from({ length: 16 }, () => connect({ host: '127.0.0.1', port }));
+    await Promise.all(held.map((s) => new Promise((resolve) => s.once('connect', resolve))));
+    const extra = connect({ host: '127.0.0.1', port });
+    const closed = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 2000);
+      extra.once('close', () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+    for (const s of [...held, extra]) s.destroy();
+    expect(closed).toBe(true);
+  });
+
+  it('closes the socket after a refused bearer', async () => {
+    const reply = await send('/p/aa', {
+      body: INIT,
+      headers: { Authorization: 'Bearer wrong-token' },
+    });
+    expect(reply.status).toBe(401);
+    expect(reply.headers.connection).toBe('close');
   });
 });
 

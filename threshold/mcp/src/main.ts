@@ -91,24 +91,102 @@ export async function loadStartConfig(file: string, env: Record<string, string |
   return parseMcpConfig(parse(text), { env });
 }
 
-/** A token bucket per key: `capacity` tokens, refilled evenly over a minute. */
-export function tokenBucketLimiter(perMinute: number): RateLimiter {
+/** A bucket's size: `capacity` tokens, and `perMinute` of them added back over each minute. */
+export interface BucketRule {
+  capacity: number;
+  perMinute: number;
+}
+
+/** The failed-auth budget for all addresses together (the approved 300 a minute; not configurable). */
+export const GLOBAL_FAILED_AUTH_PER_MINUTE = 300;
+
+/**
+ * The rule for each bucket, by name: the front door's `player:`, `owner:`, `auth-failed:` buckets
+ * and the tools' `act:` and `say:` buckets, whose minimum spacing is one token per N seconds.
+ */
+export function bucketRules(
+  limits: Pick<
+    McpConfig['sovereign']['rateLimits'],
+    | 'callsPerMinute'
+    | 'ownerCallsPerMinute'
+    | 'failedAuthPerMinute'
+    | 'handshakePerMinute'
+    | 'actMinSeconds'
+    | 'sayMinSeconds'
+  >,
+): (bucket: string) => BucketRule {
+  const perMinute = (n: number): BucketRule => ({ capacity: n, perMinute: n });
+  const spaced = (seconds: number): BucketRule =>
+    seconds > 0 ? { capacity: 1, perMinute: 60 / seconds } : perMinute(limits.callsPerMinute);
+  return (bucket) => {
+    if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
+    if (bucket.startsWith('auth-failed:address:')) return perMinute(limits.failedAuthPerMinute);
+    if (bucket === 'auth-failed:global') return perMinute(GLOBAL_FAILED_AUTH_PER_MINUTE);
+    if (bucket.startsWith('handshake:')) return perMinute(limits.handshakePerMinute);
+    if (bucket.startsWith('act:')) return spaced(limits.actMinSeconds);
+    if (bucket.startsWith('say:')) return spaced(limits.sayMinSeconds);
+    return perMinute(limits.callsPerMinute);
+  };
+}
+
+/** Above this many buckets the limiter drops the full ones: a full bucket is the same as a new one. */
+const SWEEP_AT = 1_000;
+
+/**
+ * A token bucket per key, sized by `ruleOf`. A bucket that has refilled to full is dropped when the
+ * table grows, so an address that rotates through IPv6 cannot grow the table without bound.
+ */
+export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): RateLimiter {
   const buckets = new Map<string, { tokens: number; atMs: number }>();
+  let sweepAt = SWEEP_AT;
+  // The bucket refilled to `nowMs`, and the decision for one token from it. Writes nothing.
+  const read = (bucket: string, nowMs: number) => {
+    const rule = ruleOf(bucket);
+    const state = buckets.get(bucket) ?? { tokens: rule.capacity, atMs: nowMs };
+    const tokens = Math.min(
+      rule.capacity,
+      state.tokens + ((nowMs - state.atMs) * rule.perMinute) / 60_000,
+    );
+    const decision: RateDecision =
+      tokens >= 1
+        ? { allowed: true, retryAfterMs: 0 }
+        : { allowed: false, retryAfterMs: Math.ceil(((1 - tokens) * 60_000) / rule.perMinute) };
+    return { rule, tokens, decision };
+  };
+  const sweep = (nowMs: number) => {
+    for (const key of [...buckets.keys()]) {
+      const { rule, tokens } = read(key, nowMs);
+      if (tokens >= rule.capacity) buckets.delete(key);
+    }
+    sweepAt = Math.max(SWEEP_AT, buckets.size * 2);
+  };
   return {
     take(bucket: string, nowMs: number): RateDecision {
-      const state = buckets.get(bucket) ?? { tokens: perMinute, atMs: nowMs };
-      const refilled = Math.min(
-        perMinute,
-        state.tokens + ((nowMs - state.atMs) * perMinute) / 60_000,
-      );
-      if (refilled >= 1) {
-        buckets.set(bucket, { tokens: refilled - 1, atMs: nowMs });
-        return { allowed: true, retryAfterMs: 0 };
-      }
-      buckets.set(bucket, { tokens: refilled, atMs: nowMs });
-      return { allowed: false, retryAfterMs: Math.ceil(((1 - refilled) * 60_000) / perMinute) };
+      if (buckets.size >= sweepAt) sweep(nowMs);
+      const { tokens, decision } = read(bucket, nowMs);
+      buckets.set(bucket, { tokens: decision.allowed ? tokens - 1 : tokens, atMs: nowMs });
+      return decision;
+    },
+    peek(bucket: string, nowMs: number): RateDecision {
+      return read(bucket, nowMs).decision;
     },
   };
+}
+
+/** The shortest HMAC pepper the server accepts; a shorter one is refused at startup. */
+export const PEPPER_MIN_BYTES = 32;
+
+/**
+ * The pepper bytes from its file's text, read as `tools/mcp-tokens` reads it: one trailing LF or
+ * CRLF is removed and nothing else, so a minted token verifies here. The message names the rule,
+ * never the pepper.
+ */
+export function pepperBytes(text: string): Buffer {
+  const bytes = Buffer.from(text.replace(/\r?\n$/, ''), 'utf8');
+  if (bytes.length < PEPPER_MIN_BYTES) {
+    throw new ConfigRejected(`pepper is shorter than ${PEPPER_MIN_BYTES} bytes`);
+  }
+  return bytes;
 }
 
 /** How long a read of the living lives or of one life's identity is reused. */
@@ -153,7 +231,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
   try {
     log({ event: 'mcp_start', shard: config.shard });
     const password = (await ports.readSecret(config.postgres.passwordFile)).trim();
-    const pepper = Buffer.from((await ports.readSecret(config.pepperFile)).trim(), 'utf8');
+    const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
     const { host, port, database, user } = config.postgres;
     const pgOptions: PgOptions = { host, port, database, user, password };
     const pool = ports.openPool(pgOptions);
@@ -170,6 +248,10 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     const nats = await ports.connectNats(config.nats.url);
     closers.push(() => nats.drain());
     log({ event: 'nats_connected' });
+    // The LISTEN connection starts before anything serves a request, so a revoke ends sessions at once.
+    await tokens.start();
+    closers.push(() => tokens.stop());
+    log({ event: 'revoke_listening' });
 
     const presence = new KvPresenceStore(await openPresenceBucket(nats.buckets), now);
     const body = new NatsBodyGateway({ transport: nats.request, shard: config.shard });
@@ -180,6 +262,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       intentRunTooLongMs: config.sovereign.wake.intentRunTooLongSeconds * 1000,
     };
     const recorder = new SovereignCallRecorder({ publish: (id, p) => nats.publishCall(id, p) });
+    const limiter = tokenBucketLimiter(bucketRules(config.sovereign.rateLimits));
     const world = createWorld({
       players: new PgPlayerDirectory(pool),
       body,
@@ -190,7 +273,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       recorder,
       events,
       presence,
-      limiter: tokenBucketLimiter(config.sovereign.rateLimits.callsPerMinute),
+      limiter,
       validator: createOutputValidator(),
       clock: ports.clock,
       runs,
@@ -227,7 +310,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       http: config.http,
       pepper,
       store: tokens,
-      limiter: tokenBucketLimiter(config.sovereign.rateLimits.callsPerMinute),
+      limiter,
       createSession: (playerId, signal) => createWorldSession(sessionDeps, playerId, signal),
       log: (line) => ports.log(line),
       now,

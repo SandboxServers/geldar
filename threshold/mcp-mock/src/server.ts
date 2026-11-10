@@ -39,8 +39,17 @@ export interface MockHttpOptions {
   maxBodyBytes?: number;
   /** Sees every parsed POST body before it is dispatched; a refusal is sent instead. */
   onToolCall?: (playerId: string, body: unknown, res: ServerResponse) => Refusal | undefined;
-  /** Server limits. An unset one keeps Node's default. */
-  limits?: { maxConnections?: number; headersTimeoutMs?: number; requestTimeoutMs?: number };
+  /** Runs after the auth check and before a POST body is read, so a refusal costs no body read. */
+  beforeBody?: (playerId: string, req: IncomingMessage, res: ServerResponse) => Refusal | undefined;
+  /** Adds `Connection: close` to a 401, 403 or 429 from the auth check, so the socket closes. Default false. */
+  closeRefused?: boolean;
+  /** Server limits. An unset one keeps Node's default. `maxConnectionsPerAddress` destroys a surplus socket. */
+  limits?: {
+    maxConnections?: number;
+    maxConnectionsPerAddress?: number;
+    headersTimeoutMs?: number;
+    requestTimeoutMs?: number;
+  };
 }
 
 export interface MockHttp {
@@ -79,6 +88,7 @@ interface LogContext {
 }
 
 class BodyTooLarge extends Error {}
+class BodyStalled extends Error {}
 
 function readBody(req: IncomingMessage, limit: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -96,7 +106,25 @@ function readBody(req: IncomingMessage, limit: number): Promise<string> {
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
+    // A socket cut before the end settles the read (a no-op once it has ended).
+    req.on('close', () => reject(new BodyStalled()));
   });
+}
+
+/** Writes a refusal: its status, a JSON-RPC error with the fixed message, and any retry hint. */
+function sendRefusal(res: ServerResponse, refusal: Refusal): void {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (refusal.retryAfterSec !== undefined) {
+    headers['Retry-After'] = String(refusal.retryAfterSec);
+  }
+  res.writeHead(refusal.status, headers);
+  res.end(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: -32003, message: refusal.message },
+      id: null,
+    }),
+  );
 }
 
 function rpcError(res: ServerResponse, status: number, code: number, message: string): void {
@@ -294,19 +322,22 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       options.authenticate !== undefined
         ? await options.authenticate(player, authHeader, req)
         : { outcome: checkBearer(options.tokens, player, authHeader) };
+    // A refused client is not read further, so its socket closes when the option asks for it.
+    const close: Record<string, string> =
+      options.closeRefused === true ? { Connection: 'close' } : {};
     if ('retryAfterSec' in decision) {
       ctx.event = 'rate_limited';
-      res.writeHead(429, { 'Retry-After': String(decision.retryAfterSec) }).end();
+      res.writeHead(429, { 'Retry-After': String(decision.retryAfterSec), ...close }).end();
       return;
     }
     if (decision.outcome === 'unauthorized') {
       ctx.event = 'unauthorized';
-      res.writeHead(401, { 'WWW-Authenticate': 'Bearer' }).end();
+      res.writeHead(401, { 'WWW-Authenticate': 'Bearer', ...close }).end();
       return;
     }
     if (decision.outcome === 'forbidden') {
       ctx.event = 'forbidden';
-      res.writeHead(403).end();
+      res.writeHead(403, close).end();
       return;
     }
 
@@ -317,16 +348,36 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       return;
     }
 
+    if (method === 'POST' && options.beforeBody !== undefined) {
+      const refusal = options.beforeBody(player, req, res);
+      if (refusal !== undefined) {
+        ctx.event = 'refused';
+        ctx.error = refusal.message;
+        sendRefusal(res, refusal);
+        return;
+      }
+    }
+
     let parsed: unknown;
     if (method === 'POST') {
       const limit = options.maxBodyBytes ?? MAX_BODY_BYTES;
       const declared = Number(req.headers['content-length']);
       let raw: string | undefined;
       if (!(declared > limit)) {
+        // The whole body must arrive within the request timeout; the response is not timed.
+        const limitMs = options.limits?.requestTimeoutMs;
+        const stall = limitMs === undefined ? undefined : setTimeout(() => req.destroy(), limitMs);
         try {
           raw = await readBody(req, limit);
         } catch (error) {
+          if (error instanceof BodyStalled) {
+            ctx.event = 'body_timeout';
+            res.writeHead(408, { Connection: 'close' }).end();
+            return;
+          }
           if (!(error instanceof BodyTooLarge)) throw error;
+        } finally {
+          clearTimeout(stall);
         }
       }
       if (raw === undefined) {
@@ -348,18 +399,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       if (refusal !== undefined) {
         ctx.event = 'refused';
         ctx.error = refusal.message;
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (refusal.retryAfterSec !== undefined) {
-          headers['Retry-After'] = String(refusal.retryAfterSec);
-        }
-        res.writeHead(refusal.status, headers);
-        res.end(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32003, message: refusal.message },
-            id: null,
-          }),
-        );
+        sendRefusal(res, refusal);
         return;
       }
       if (isInitializeRequest(parsed)) {
@@ -427,6 +467,23 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
   }
   if (options.limits?.requestTimeoutMs !== undefined) {
     server.requestTimeout = options.limits.requestTimeoutMs;
+  }
+  const perAddress = options.limits?.maxConnectionsPerAddress;
+  if (perAddress !== undefined) {
+    const open = new Map<string, number>();
+    server.on('connection', (socket) => {
+      const address = socket.remoteAddress ?? 'unknown';
+      const count = open.get(address) ?? 0;
+      if (count >= perAddress) {
+        socket.destroy();
+        return;
+      }
+      open.set(address, count + 1);
+      socket.once('close', () => {
+        if (count === 0) open.delete(address);
+        else open.set(address, count);
+      });
+    });
   }
 
   return {

@@ -7,12 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { repoRoot } from './config.ts';
 import { MemoryPresenceBucket } from './fakes/world.fakes.ts';
 import {
+  bucketRules,
   ConfigRejected,
   LIFE_CACHE_MS,
   lazyLifeRegistry,
   loadStartConfig,
   type McpPorts,
   type NatsLink,
+  pepperBytes,
   startMcp,
   tokenBucketLimiter,
 } from './main.ts';
@@ -20,7 +22,7 @@ import type { PgAgentStore } from './store/pg-agents.ts';
 
 /** A password and a pepper no log line may ever carry. */
 const CANARY_PASSWORD = 'canary-pg-password-7f3a';
-const CANARY_PEPPER = 'canary-pepper-9d1c';
+const CANARY_PEPPER = 'canary-pepper-9d1c-0123456789abcdef';
 const SHARD_FILE = join(repoRoot(), 'shards', 'phase0.yaml');
 /** The environment the shipped shard needs: the two secret file paths (the files are never read in these tests). */
 const ENV = {
@@ -40,6 +42,22 @@ function shardCopy(edit: (text: string) => string): string {
   const file = join(dir, 'phase0.yaml');
   writeFileSync(file, edit(readFileSync(SHARD_FILE, 'utf8')));
   return file;
+}
+
+/** The LISTEN connection fake: records the LISTEN and the end, the two steps the server must run. */
+function fakeListener(order: string[]): Client {
+  const listener = {
+    on: () => listener,
+    connect: async () => {},
+    query: async (sql: string) => {
+      order.push(sql.startsWith('LISTEN') ? 'revoke.listen' : 'revoke.other');
+      return { rows: [] };
+    },
+    end: async () => {
+      order.push('revoke.stop');
+    },
+  };
+  return listener as unknown as Client;
 }
 
 /** Fakes for every outside port. `order` records what happened, in order; nothing listens or connects. */
@@ -82,7 +100,7 @@ function fakePorts(order: string[], logs: string[]): McpPorts {
       order.push('nats.connect');
       return nats;
     },
-    openRevokeListener: () => ({}) as Client,
+    openRevokeListener: () => fakeListener(order),
     keepAlive: { start: () => () => undefined },
     clock: new FakeClock(1_000_000),
     log: (line) => logs.push(JSON.stringify(line)),
@@ -125,18 +143,19 @@ describe('startMcp', () => {
       'secret:pepper',
       'pool.open',
       'nats.connect',
+      'revoke.listen',
       'replay',
       'listen',
     ]);
   });
 
-  it('stops in order: stop accepting, drain the consumer, drain NATS, then close the pool', async () => {
+  it('stops in order: stop accepting, drain the consumer, stop the revoke listener, drain NATS, then close the pool', async () => {
     const order: string[] = [];
     const config = await loadStartConfig(SHARD_FILE, ENV);
     const running = await startMcp(config, fakePorts(order, []));
     order.length = 0;
     await running.stop();
-    expect(order).toEqual(['front.close', 'replay.stop', 'nats.drain', 'pool.end']);
+    expect(order).toEqual(['front.close', 'replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
   it('closes what it opened when a later step fails, then rethrows', async () => {
@@ -152,7 +171,7 @@ describe('startMcp', () => {
     });
     const config = await loadStartConfig(SHARD_FILE, ENV);
     await expect(startMcp(config, ports)).rejects.toThrow('address in use');
-    expect(order.slice(-3)).toEqual(['replay.stop', 'nats.drain', 'pool.end']);
+    expect(order.slice(-4)).toEqual(['replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
   it('keeps the password and the pepper out of every log line', async () => {
@@ -166,6 +185,26 @@ describe('startMcp', () => {
     const all = logs.join('\n');
     expect(all).not.toContain(CANARY_PASSWORD);
     expect(all).not.toContain(CANARY_PEPPER);
+  });
+});
+
+describe('pepper', () => {
+  const key = 'k'.repeat(32);
+  it('reads the pepper as the CLI does: one trailing LF or CRLF goes, nothing else', () => {
+    expect(pepperBytes(`${key}\r\n`).toString()).toBe(key);
+    expect(pepperBytes(`${key}\n`).toString()).toBe(key);
+    expect(pepperBytes(`${key} `).toString()).toBe(`${key} `);
+  });
+
+  it('refuses a pepper under 32 bytes at startup, before the pool opens', async () => {
+    const order: string[] = [];
+    const config = await loadStartConfig(SHARD_FILE, ENV);
+    const ports = fakePorts(order, []);
+    const readSecret = ports.readSecret;
+    ports.readSecret = async (path) => (path.endsWith('pepper') ? 'short' : readSecret(path));
+    const failure = await startMcp(config, ports).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ConfigRejected);
+    expect(order).not.toContain('pool.open');
   });
 });
 
@@ -211,7 +250,7 @@ describe('lazyLifeRegistry', () => {
 
 describe('tokenBucketLimiter', () => {
   it('allows the capacity, refuses the next call, and refills one token every 60/capacity seconds', () => {
-    const limiter = tokenBucketLimiter(2);
+    const limiter = tokenBucketLimiter(() => ({ capacity: 2, perMinute: 2 }));
     expect(limiter.take('ag-jason-01', 0).allowed).toBe(true);
     expect(limiter.take('ag-jason-01', 0).allowed).toBe(true);
     const refused = limiter.take('ag-jason-01', 0);
@@ -219,5 +258,55 @@ describe('tokenBucketLimiter', () => {
     expect(refused.retryAfterMs).toBe(30_000);
     expect(limiter.take('ag-jason-01', 30_000).allowed).toBe(true);
     expect(limiter.take('other', 0).allowed).toBe(true);
+  });
+
+  it('gives each bucket the capacity its name calls for, through the real config rules', () => {
+    const limits = {
+      callsPerMinute: 60,
+      ownerCallsPerMinute: 600,
+      failedAuthPerMinute: 30,
+      actMinSeconds: 2,
+      sayMinSeconds: 3,
+      handshakePerMinute: 300,
+    };
+    const count = (bucket: string): number => {
+      const limiter = tokenBucketLimiter(bucketRules(limits));
+      let allowed = 0;
+      while (allowed < 1000 && limiter.take(bucket, 0).allowed) allowed += 1;
+      return allowed;
+    };
+    expect(count('player:ag-jason-01')).toBe(60);
+    expect(count('owner:steve')).toBe(600);
+    expect(count('auth-failed:address:203.0.113.9')).toBe(30);
+    expect(count('auth-failed:global')).toBe(300);
+    expect(count('act:ag_jason')).toBe(1);
+    expect(count('say:ag_jason')).toBe(1);
+  });
+
+  it('spaces act and say by their minimum seconds: one token each, refilled every N seconds', () => {
+    const limiter = tokenBucketLimiter(
+      bucketRules({
+        callsPerMinute: 60,
+        ownerCallsPerMinute: 600,
+        failedAuthPerMinute: 30,
+        actMinSeconds: 2,
+        sayMinSeconds: 3,
+        handshakePerMinute: 300,
+      }),
+    );
+    expect(limiter.take('act:ag_jason', 0).allowed).toBe(true);
+    expect(limiter.take('act:ag_jason', 1_999).allowed).toBe(false);
+    expect(limiter.take('act:ag_jason', 2_000).allowed).toBe(true);
+    expect(limiter.take('say:ag_jason', 0).allowed).toBe(true);
+    expect(limiter.take('say:ag_jason', 2_999).allowed).toBe(false);
+    expect(limiter.take('say:ag_jason', 3_000).allowed).toBe(true);
+  });
+
+  it('keeps counting after the table is swept of full buckets', () => {
+    const limiter = tokenBucketLimiter(() => ({ capacity: 1, perMinute: 1 }));
+    for (let i = 0; i < 1500; i += 1) limiter.take(`auth-failed:address:${i}`, 0);
+    expect(limiter.take('auth-failed:address:0', 0).allowed).toBe(false);
+    expect(limiter.take('auth-failed:address:0', 60_000).allowed).toBe(true);
+    expect(limiter.take('auth-failed:address:fresh', 0).allowed).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   hashToken,
   mintToken as newTokenValue,
@@ -24,12 +25,35 @@ export const MAX_GRACE_MINUTES = 1440;
 export const TOKEN_VARIABLE = 'GELDAR_MCP_TOKEN';
 
 /**
- * A `--out` path must lie outside the repo, so a token file can never be committed. The file is
- * never overwritten: the write fails if it exists.
+ * The absolute path with symlinks resolved: realpath of the nearest existing ancestor (or of the
+ * path itself), with the missing rest appended as written.
+ */
+export function resolveThroughSymlinks(path: string): string {
+  let existing = resolve(path);
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(existing), ...missing);
+    } catch {
+      const parent = dirname(existing);
+      if (parent === existing) return join(existing, ...missing);
+      missing.unshift(basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+/**
+ * A `--out` path must lie outside the repo, so a token file can never be committed. The check runs
+ * on the path as given and on its symlink-resolved form, so a link outside the repo that points in
+ * is refused too. The file is never overwritten: the write fails if it exists.
  */
 export function checkOutPath(out: string, repoRoot: string = REPO_ROOT): string {
   const path = resolve(out);
-  if (isInsideRepo(path, repoRoot)) {
+  const inside =
+    isInsideRepo(path, repoRoot) ||
+    isInsideRepo(resolveThroughSymlinks(path), resolveThroughSymlinks(repoRoot));
+  if (inside) {
     throw new Error('--out must be outside the repo; a token file must never be committed');
   }
   return path;

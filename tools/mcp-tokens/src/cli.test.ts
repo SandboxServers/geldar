@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type Env, type Io, parseArgs, run } from './cli.ts';
+import { type Env, type Io, PASSWORD_REWRITE_WARNING, parseArgs, run } from './cli.ts';
 import { PEPPER_FILE, REPO_ROOT } from './secret-files.ts';
 
 const dirs: string[] = [];
@@ -115,6 +115,18 @@ describe('init', () => {
     expect(code).toBe(0);
     expect(h.out.slice(-2).map((line) => line.split(' ')[0])).toEqual(['replaced', 'replaced']);
     expect(await readFile(join(h.secretDir, PEPPER_FILE), 'utf8')).not.toBe(before);
+  });
+
+  it('warns after --force that the database role password must be set, and not before', async () => {
+    const h = await harness();
+    await run(['init'], h.io, envOf(h));
+    expect(h.err).toEqual([]);
+    const code = await run(['init', '--force', '--i-understand'], h.io, envOf(h));
+    expect(code).toBe(0);
+    expect(h.err).toEqual([PASSWORD_REWRITE_WARNING]);
+    expect(h.err.join('\n')).toContain(
+      'db migrate --set-role-password geldar_mcp --password-file compose/secrets/postgres-mcp.txt',
+    );
   });
 
   it('prints the usage and exits 2 for an unknown command', async () => {

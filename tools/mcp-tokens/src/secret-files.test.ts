@@ -9,6 +9,7 @@ import {
   PEPPER_FILE,
   REPO_ROOT,
   readPepper,
+  restrictToOwner,
 } from './secret-files.ts';
 
 const dirs: string[] = [];
@@ -79,6 +80,93 @@ describe('readPepper', () => {
     await initSecretFiles(dir, { force: false });
     await writeFile(join(dir, PEPPER_FILE), 'short\n');
     await expect(readPepper(dir)).rejects.toThrow('too short');
+  });
+});
+
+describe('restrictToOwner', () => {
+  const IMPLIED = '/inheritance:r /grant:r steve:F';
+
+  it('runs icacls on win32 with inheritance off and full control for the current user only', async () => {
+    const calls: string[][] = [];
+    await restrictToOwner('C:\\secrets\\x.txt', {
+      platform: 'win32',
+      user: 'steve',
+      run: async (args) => {
+        calls.push([...args]);
+      },
+    });
+    expect(calls).toEqual([['C:\\secrets\\x.txt', '/inheritance:r', '/grant:r', 'steve:F']]);
+  });
+
+  it('never runs icacls on other platforms', async () => {
+    const calls: string[][] = [];
+    for (const platform of ['linux', 'darwin'] as const) {
+      await restrictToOwner('/secrets/x.txt', {
+        platform,
+        user: 'steve',
+        run: async (args) => {
+          calls.push([...args]);
+        },
+      });
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it('runs icacls for the directory and then each secret file on win32, and not elsewhere', async () => {
+    const dir = await tempDir();
+    const calls: string[][] = [];
+    const acl = {
+      user: 'steve',
+      run: async (args: readonly string[]) => {
+        calls.push([...args]);
+      },
+    };
+    await initSecretFiles(dir, { force: false, acl: { ...acl, platform: 'win32' } });
+    expect(calls.map((call) => call[0])).toEqual([
+      dir,
+      join(dir, PEPPER_FILE),
+      join(dir, PASSWORD_FILE),
+    ]);
+    expect(calls.every((call) => call.slice(1).join(' ') === IMPLIED)).toBe(true);
+    calls.length = 0;
+    await initSecretFiles(dir, { force: true, acl: { ...acl, platform: 'linux' } });
+    expect(calls).toEqual([]);
+  });
+
+  it('never fails the command when icacls fails, and never logs the pepper', async () => {
+    const dir = await tempDir();
+    const warnings: string[] = [];
+    const reports = await initSecretFiles(dir, {
+      force: false,
+      random: () => Buffer.alloc(32, 7),
+      acl: {
+        platform: 'win32',
+        user: 'steve',
+        run: async () => {
+          throw new Error('icacls exited 5');
+        },
+        warn: (line) => warnings.push(line),
+      },
+    });
+    expect(reports.map((report) => report.action)).toEqual(['created', 'created']);
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.join('\n')).toContain(dir);
+    expect(warnings.join('\n')).not.toContain('07'.repeat(32));
+  });
+
+  it('keeps the default permissions with a warning when the account name is unknown', async () => {
+    const warnings: string[] = [];
+    const calls: string[][] = [];
+    await restrictToOwner('C:\\secrets\\x.txt', {
+      platform: 'win32',
+      user: '',
+      run: async (args) => {
+        calls.push([...args]);
+      },
+      warn: (line) => warnings.push(line),
+    });
+    expect(calls).toEqual([]);
+    expect(warnings).toHaveLength(1);
   });
 });
 

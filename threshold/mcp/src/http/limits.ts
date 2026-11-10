@@ -34,6 +34,16 @@ export class FrontLimits {
     return undefined;
   }
 
+  /**
+   * Seconds to wait while the address has no failed-auth token left, else undefined. Reads the
+   * bucket without taking from it, so a refused address costs no token lookup.
+   */
+  authBlocked(address: string, nowMs: number): number | undefined {
+    const decision = this.limiter.peek?.(`auth-failed:address:${address}`, nowMs);
+    if (decision === undefined || decision.allowed) return undefined;
+    return retrySeconds(decision.retryAfterMs);
+  }
+
   /** Takes one call from the player's bucket and one from the owner's. Seconds to wait, or undefined. */
   call(playerId: string, ownerId: string, nowMs: number): number | undefined {
     const byPlayer = this.limiter.take(`player:${playerId}`, nowMs);
@@ -41,6 +51,15 @@ export class FrontLimits {
     const byOwner = this.limiter.take(`owner:${ownerId}`, nowMs);
     if (!byOwner.allowed) return retrySeconds(byOwner.retryAfterMs);
     return undefined;
+  }
+
+  /**
+   * Takes one token from the player's handshake bucket, which carries initialize, resources/read
+   * and the other non-call methods at its own, higher rate. Seconds to wait, or undefined.
+   */
+  handshake(playerId: string, nowMs: number): number | undefined {
+    const decision = this.limiter.take(`handshake:${playerId}`, nowMs);
+    return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
   }
 
   /** Counts one more open request for the player; false when the player is at its cap. */
