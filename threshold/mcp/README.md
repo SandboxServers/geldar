@@ -82,7 +82,18 @@ invalid. Environment: `GELDAR_SHARD`, `GELDAR_NATS_URL`, `POSTGRES_HOST`, `POSTG
 `GELDAR_MCP_DB_PASSWORD_FILE`, `GELDAR_MCP_PEPPER_FILE`, `GELDAR_MCP_PUBLIC_HOST` (a DNS name
 only; no IP literal, `localhost`, `*.local`, `*.internal` or userinfo; may be unset in local mode
 with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` only with
-`GELDAR_MCP_IN_CONTAINER=1`).
+`GELDAR_MCP_IN_CONTAINER=1`). `GELDAR_MCP_TRUSTED_PROXIES` (comma-separated IPs or ranges) replaces
+`sovereign.mcp.trusted_proxies`, and `GELDAR_MCP_CLIENT_IP_HEADER` replaces
+`sovereign.mcp.client_ip_header`. The Caddy deployment sets the header to `x-geldar-client-ip`
+and names Caddy's container address as the trusted proxy; without a trusted proxy the header is
+never read. The default header is `cf-connecting-ip`; `x-forwarded-for` is also accepted.
+
+The shard's `sovereign.mcp` limits are: `wait_cap_seconds` (wait's clamp), `max_body_bytes`
+(request body), `max_result_bytes` (tool result after trimming), and `presence.lease_seconds` and
+`presence.hibernate_after_seconds`. `shard/rules` reports their effective values from the loaded
+shard, not the defaults. When `max_connections` or `max_connections_per_address` is left out, both
+are derived from `owner_cap_owner`: per address 4 times the owner cap (80 at 20), and the listener
+total 4 owners' worth of that (320 at 20).
 
 ## Hosting
 
