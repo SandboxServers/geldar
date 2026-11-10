@@ -1,5 +1,7 @@
 package dev.geldar.core;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,9 +17,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 /** Geldar-Core plugin entry point: wires config, the NATS publisher, exporter and listeners. */
 public final class GeldarCore extends JavaPlugin {
+    /** Written while the plugin is enabled; the Paper healthcheck in compose/phase0.yml reads it. */
+    static final Path READY_FILE = Path.of("/tmp/geldar-core.ready");
+
     private EventPublisher publisher;
     private volatile EventExporter tpsExporter;
     private ScheduledExecutorService tpsTimer;
+    private ReadyMarker readyMarker;
 
     @Override
     public void onEnable() {
@@ -59,6 +65,14 @@ public final class GeldarCore extends JavaPlugin {
         });
         tpsTimer.scheduleAtFixedRate(this::requestTpsExport, config.tpsIntervalSeconds(),
                 config.tpsIntervalSeconds(), TimeUnit.SECONDS);
+        // Last of the enable steps: the healthcheck passes only once the command block and export are wired.
+        ReadyMarker marker = ReadyMarker.forThisProcess(READY_FILE);
+        try {
+            marker.write();
+        } catch (IOException e) {
+            throw new IllegalStateException("cannot write " + READY_FILE, e);
+        }
+        readyMarker = marker;
         getLogger().info("Geldar-Core enabled for shard " + config.shard());
     }
 
@@ -97,6 +111,13 @@ public final class GeldarCore extends JavaPlugin {
         }
         if (publisher != null) {
             publisher.close();
+        }
+        if (readyMarker != null) {
+            try {
+                readyMarker.remove();
+            } catch (IOException e) {
+                getLogger().warning("cannot remove " + READY_FILE + ": " + e.getMessage());
+            }
         }
     }
 

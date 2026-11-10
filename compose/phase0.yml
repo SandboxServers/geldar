@@ -94,9 +94,12 @@ services:
       - "127.0.0.1:25575:25575"
     healthcheck:
       <<: *mc-health
-      # Healthy only when the server is up AND Geldar-Core enabled: a plugin that failed to load must not
-      # leave a healthy server with no command block and no export. Paper logs to /data/logs/latest.log.
-      test: ["CMD-SHELL", "mc-health && grep -q 'Geldar-Core enabled' /data/logs/latest.log"]
+      # Healthy only when the server is up AND Geldar-Core enabled in this server process: a plugin that failed to
+      # load must not leave a healthy server with no command block and no export. Geldar-Core writes
+      # /tmp/geldar-core.ready (its pid and start time) on enable and removes it on disable. The check compares the
+      # start time with /proc/<pid>/stat, so a marker left by an earlier process never passes. The rolling
+      # /data/logs/latest.log is not read: Paper rolls it at midnight UTC. ($$ is Compose's escape for $.)
+      test: ["CMD-SHELL", "mc-health && read -r pid start < /tmp/geldar-core.ready && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ]"]
     restart: unless-stopped
 
   velocity:
@@ -123,9 +126,10 @@ services:
       nats:
         condition: service_healthy
     healthcheck:
-      # Port open AND the identity plugin enabled: without the plugin the proxy would admit anyone.
-      # Velocity logs to /server/logs/latest.log (verified on the live stack; `shard up` re-checks the log).
-      test: ["CMD", "bash", "-c", "grep -q 'Geldar identity enabled' /server/logs/latest.log && exec 3<>/dev/tcp/127.0.0.1/25565"]
+      # Port open AND the identity plugin enabled in this proxy process: without the plugin the proxy would admit
+      # anyone. The plugin writes /tmp/geldar-identity.ready (its pid and start time) at init and removes it at
+      # shutdown; the start time is compared with /proc, and the rolling proxy log is not read.
+      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
       interval: 10s
       timeout: 5s
       retries: 12

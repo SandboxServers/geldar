@@ -14,6 +14,8 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.scheduler.ScheduledTask;
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +36,8 @@ import org.slf4j.Logger;
 public final class IdentityPlugin {
     /** The mechanic channel (spec Appendix F). Only admitted connections may send on it. */
     static final MinecraftChannelIdentifier COMMAND_CHANNEL = MinecraftChannelIdentifier.create("geldar", "cmd");
+    /** Written while the proxy runs; the Velocity healthcheck in compose/phase0.yml reads it. */
+    static final Path READY_FILE = Path.of("/tmp/geldar-identity.ready");
 
     private final ProxyServer proxy;
     private final Logger log;
@@ -46,6 +50,7 @@ public final class IdentityPlugin {
     private final Supplier<String> natsUrl;
     private RegistryClient client;
     private ScheduledTask denialSummary;
+    private ReadyMarker readyMarker;
 
     @Inject
     public IdentityPlugin(ProxyServer proxy, Logger log) {
@@ -65,6 +70,7 @@ public final class IdentityPlugin {
     public void onProxyInitialization(ProxyInitializeEvent event) {
         // Velocity only raises PluginMessageEvent for registered channels; others pass straight through.
         proxy.getChannelRegistrar().register(COMMAND_CHANNEL);
+        writeReadyMarker();
         log.info("Geldar identity enabled");
         // Scheduled before the URL check: a missing URL denies every login, which is when the summary matters most.
         denialSummary = proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
@@ -84,6 +90,26 @@ public final class IdentityPlugin {
         }
         if (client != null) {
             client.close();
+        }
+        if (readyMarker != null) {
+            try {
+                readyMarker.remove();
+            } catch (IOException e) {
+                log.warn("cannot remove {}: {}", READY_FILE, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * A failed write (or a host without /proc) leaves the healthcheck failing, so `shard up` reports the proxy as
+     * unhealthy. The proxy itself keeps running: the login gate does not depend on the marker.
+     */
+    private void writeReadyMarker() {
+        readyMarker = ReadyMarker.forThisProcess(READY_FILE);
+        try {
+            readyMarker.write();
+        } catch (IOException | RuntimeException e) {
+            log.error("cannot write {}; the proxy healthcheck will fail: {}", READY_FILE, e.getMessage());
         }
     }
 
