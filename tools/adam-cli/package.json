@@ -1,0 +1,12 @@
+{
+  "name": "@geldar/adam-cli",
+  "private": true,
+  "description": "The logic behind ./geldar.ps1 adam: model pin checks, digest recording, life selection, host process control.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  }
+}

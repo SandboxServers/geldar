@@ -1,0 +1,39 @@
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
+import { run, selectInFile } from './cli.ts';
+
+const REAL = join(import.meta.dirname, '..', '..', '..', 'shards', 'phase0.yaml');
+
+/** A copy of the real shard file in a temp dir, so the test never edits the checked-in one. */
+function copyShard(): string {
+  const file = join(mkdtempSync(join(tmpdir(), 'adam-select-')), 'phase0.yaml');
+  writeFileSync(file, readFileSync(REAL, 'utf8'));
+  return file;
+}
+
+describe('adam select', () => {
+  it('rewrites the life, the tier and the run tier to the fast life and back', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const file = copyShard();
+    const before = readFileSync(file, 'utf8');
+    expect(selectInFile(file, 'fast')).toBe('ag_adam_02');
+    const fast = parse(readFileSync(file, 'utf8'));
+    expect(fast.mind.agent).toMatchObject({ username: 'ag_adam_02', tier: 'fast' });
+    expect(fast.mind.run_tier).toBe('fast');
+    expect(fast.mind.agent.personality_seed).toBe(parse(before).mind.agent.personality_seed);
+    expect(selectInFile(file, 'strong')).toBe('ag_adam_01');
+    const strong = parse(readFileSync(file, 'utf8'));
+    expect(strong.mind).toEqual(parse(before).mind);
+    vi.restoreAllMocks();
+  });
+
+  it('refuses a missing or unknown --model with exit code 1 and does not touch a file', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await run(['select'])).toBe(1);
+    expect(await run(['select', '--model', 'huge'])).toBe(1);
+    vi.restoreAllMocks();
+  });
+});

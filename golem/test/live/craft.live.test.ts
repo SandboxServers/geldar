@@ -5,7 +5,7 @@ import { hasUnlockedDisplay, type TableTarget } from '../../src/actions/craft-ta
 import { createRegistry } from '../../src/actions/index.ts';
 import { type ActionRun, runAction } from '../../src/actions/registry.ts';
 import type { TestControl } from '../../src/test-control.ts';
-import { withLiveBot } from './fixture.ts';
+import { unlockAllRecipes, withLiveBot } from './fixture.ts';
 import { recordFor } from './record.ts';
 
 /** Reads how many of an item the bot carries. `clear <name> <item> 0` counts and removes nothing. */
@@ -13,15 +13,6 @@ async function carried(ctl: TestControl, name: string, item: string): Promise<nu
   const reply = await ctl.command(`clear ${name} ${item} 0`);
   const match = /Found (\d+) matching item/.exec(reply);
   return match ? Number(match[1]) : 0;
-}
-
-/**
- * Unlocks every recipe for the bot so a table craft can find its recipe display. Test setup only:
- * the Body never uses RCON. The shard grants the recipe book; giving ingredients does not unlock a
- * recipe on 26.1 (decision 0032).
- */
-async function unlockRecipes(ctl: TestControl, name: string): Promise<void> {
-  await ctl.command(`recipe give ${name} *`);
 }
 
 /**
@@ -35,6 +26,52 @@ async function waitUnlocked(bot: Bot, name: string): Promise<boolean> {
     await bot.waitForTicks(4);
   }
   return hasUnlockedDisplay(bot, target);
+}
+
+/** Counts the recipes the server has unlocked for the bot since this call, from its recipe book packets. */
+function countRecipes(bot: Bot): () => number {
+  const known = new Set<number>();
+  const client = bot._client as unknown as {
+    on(event: string, fn: (packet: unknown) => void): void;
+  };
+  client.on('recipe_book_add', (packet) => {
+    const { replace, entries } = packet as {
+      replace: boolean;
+      entries: { recipe: { displayId?: number } }[];
+    };
+    if (replace) known.clear();
+    for (const { recipe } of entries) {
+      if (typeof recipe.displayId === 'number') known.add(recipe.displayId);
+    }
+  });
+  client.on('recipe_book_remove', (packet) => {
+    for (const id of (packet as { recipeIds?: number[] }).recipeIds ?? []) known.delete(id);
+  });
+  return () => known.size;
+}
+
+/**
+ * Sets up "this one recipe is not in the book while its ingredients are held". The ingredients come
+ * first because vanilla unlocks a recipe as soon as they are held; only then is that recipe taken.
+ * Asserts the precondition, naming the unlocked count and the held items on failure.
+ */
+async function lockRecipeAfterGive(
+  bot: Bot,
+  ctl: TestControl,
+  recipes: () => number,
+  gives: [item: string, count: number][],
+  recipe: string,
+): Promise<void> {
+  for (const [item, count] of gives) await ctl.give('GolemCraft', item, count);
+  await bot.waitForTicks(40);
+  await ctl.recipeTakeOne('GolemCraft', recipe);
+  await bot.waitForTicks(20);
+  const held: string[] = [];
+  for (const [item] of gives) held.push(`${item} x${await carried(ctl, 'GolemCraft', item)}`);
+  expect(
+    hasUnlockedDisplay(bot, targetOf(bot, recipe)),
+    `${recipe} still in the book after recipe take: ${recipes()} recipes unlocked; holds ${held.join(', ')}`,
+  ).toBe(false);
 }
 
 /** The craft target for an item name, from the 26.1 registry. */
@@ -67,7 +104,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_log', 2);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'oak_planks'),
         'recipe_book_add for oak_planks did not arrive after recipe give',
@@ -88,7 +125,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_planks', 2);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'stick'),
         'recipe_book_add for stick did not arrive after recipe give',
@@ -105,7 +142,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
       await ctl.give('GolemCraft', 'oak_planks', 4);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'crafting_table'),
         'recipe_book_add for crafting_table did not arrive after recipe give',
@@ -121,11 +158,9 @@ describe('craft on 26.1', () => {
     await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
       await clearDrops(ctl, arena.center.x, arena.center.z);
       await ctl.clear('GolemCraft');
-      // The server keeps the book across connections: take the recipes back so the book path cannot run.
-      await ctl.command('recipe take GolemCraft *');
-      await ctl.give('GolemCraft', 'oak_log', 2);
-      await bot.waitForTicks(40);
-      expect(hasUnlockedDisplay(bot, targetOf(bot, 'oak_planks'))).toBe(false);
+      // Holding logs unlocks planks in vanilla, so take just that recipe after the give.
+      const recipes = countRecipes(bot);
+      await lockRecipeAfterGive(bot, ctl, recipes, [['oak_log', 2]], 'oak_planks');
       const run = await craft(bot, 'oak_planks', 4);
       expect(run.state).toBe('completed');
       expect(run.result.detail).toMatchObject({ item: 'oak_planks', used_table: false });
@@ -161,7 +196,7 @@ describe('craft on 26.1', () => {
       // The table is 20 blocks east of the bot, so the walk alone takes longer than 60 ticks.
       await ctl.setblock(cx + 10, cy, cz, 'crafting_table');
       await ctl.tp('GolemCraft', cx - 10, cy + 1, cz);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'wooden_pickaxe', 1);
       expect(run.state).toBe('completed');
@@ -180,7 +215,7 @@ describe('craft on 26.1', () => {
       await clearDrops(ctl, cx, cz);
       await ctl.clear('GolemCraft');
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'stone_pickaxe', 1);
       expect(run.state).toBe('failed');
@@ -221,7 +256,7 @@ describe('craft on 26.1', () => {
       await ctl.give('GolemCraft', 'white_wool', 3);
       await ctl.give('GolemCraft', 'oak_planks', 3);
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       await bot.waitForTicks(10);
       const run = await craft(bot, 'white_bed', 1);
       expect(run.state).toBe('completed');
@@ -230,8 +265,8 @@ describe('craft on 26.1', () => {
     });
   }, 180_000);
 
-  // Giving ingredients does not unlock a recipe on 26.1 (decision 0032). The Body never uses RCON, so
-  // these two cases take and grant the recipe book through RCON, as the shard's test fixture does.
+  // These cases are about the locked outcome and the table craft, not discovery (that is
+  // recipe-discovery.live.test.ts): they reset and unlock the recipe book through RCON, and the Body never does.
   it('does not craft wooden_pickaxe from its ingredients while the recipe is not in the book', async () => {
     await withLiveBot({ name: 'GolemCraft', slot: 2 }, async ({ bot, ctl, arena }) => {
       const cx = arena.center.x;
@@ -239,12 +274,19 @@ describe('craft on 26.1', () => {
       const cz = arena.center.z;
       await clearDrops(ctl, cx, cz);
       await ctl.clear('GolemCraft');
-      // The server keeps the book across connections, so take it back first.
-      await ctl.command('recipe take GolemCraft *');
+      const recipes = countRecipes(bot);
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
-      await ctl.give('GolemCraft', 'oak_planks', 3);
-      await ctl.give('GolemCraft', 'stick', 2);
-      await bot.waitForTicks(40);
+      // Holding the ingredients unlocks the recipe in vanilla, so take just that recipe after the give.
+      await lockRecipeAfterGive(
+        bot,
+        ctl,
+        recipes,
+        [
+          ['oak_planks', 3],
+          ['stick', 2],
+        ],
+        'wooden_pickaxe',
+      );
       const run = await craft(bot, 'wooden_pickaxe', 1);
       expect(run.state).toBe('failed');
       expect(run.result).toMatchObject({ status: 'failed', reason: 'not_possible' });
@@ -264,7 +306,7 @@ describe('craft on 26.1', () => {
       await ctl.setblock(cx + 2, cy, cz, 'crafting_table');
       await ctl.give('GolemCraft', 'oak_planks', 3);
       await ctl.give('GolemCraft', 'stick', 2);
-      await unlockRecipes(ctl, 'GolemCraft');
+      await unlockAllRecipes(ctl, 'GolemCraft');
       expect(
         await waitUnlocked(bot, 'wooden_pickaxe'),
         'recipe_book_add for wooden_pickaxe did not arrive after recipe give',

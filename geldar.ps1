@@ -16,6 +16,11 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 shard status <name>   Show container health
   ./geldar.ps1 shard logs <name> [service]
   ./geldar.ps1 bench [args...]       Run the body benchmark (golem/), passing args through
+  ./geldar.ps1 adam up [--model strong|fast]   Check the shard and the pinned models, then start Adam's host processes
+  ./geldar.ps1 adam select --model strong|fast  Rewrite the life lines of the shard file (no checks, starts nothing)
+  ./geldar.ps1 adam down|status     Stop them (the Body last) or show their state and the last thought's latency
+  ./geldar.ps1 adam logs [service] [--follow]  Tail body, animus or lantern-local under .geldar/adam/
+  ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
 #>
 [CmdletBinding()]
 param(
@@ -171,11 +176,23 @@ function Invoke-Bench([string[]] $BenchArgs) {
   finally { Pop-Location }
 }
 
+# The adam commands are thin: the logic (pins, digests, PID files, status) is in tools/adam-cli/ and
+# unit-tested there. The exit code of the CLI is the exit code of this command.
+function Invoke-Adam([string[]] $AdamArgs) {
+  Push-Location $Root
+  try {
+    node (Join-Path $Root 'tools/adam-cli/src/cli.ts') @AdamArgs
+    exit $LASTEXITCODE
+  }
+  finally { Pop-Location }
+}
+
 switch ($Command) {
   'setup' { Push-Location $Root; try { Invoke-Step 'pnpm install' { pnpm install --frozen-lockfile } } finally { Pop-Location } }
   'pnpm' { Push-Location $Root; try { pnpm @Rest; exit $LASTEXITCODE } finally { Pop-Location } }
   'check' { Invoke-Check }
   'shard' { Invoke-Shard $Rest }
   'bench' { Invoke-Bench $Rest }
+  'adam' { Invoke-Adam $Rest }
   default { Get-Help $PSCommandPath -Detailed | Out-Host }
 }

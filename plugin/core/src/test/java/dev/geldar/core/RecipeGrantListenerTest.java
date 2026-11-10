@@ -1,9 +1,11 @@
 package dev.geldar.core;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Logger;
 import net.kyori.adventure.text.Component;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -20,8 +22,23 @@ class RecipeGrantListenerTest {
         List<NamespacedKey> granted = new ArrayList<>();
         Player player = ListenerDoubles.player("ag_wren_02", keys, granted);
 
-        new RecipeGrantListener().onJoin(new PlayerJoinEvent(player, Component.empty()));
+        new RecipeGrantListener(Logger.getLogger("test")).onJoin(new PlayerJoinEvent(player, Component.empty()));
 
         assertEquals(keys, granted);
+    }
+
+    @Test
+    void aFailingGrantIsLoggedAndNeverThrownIntoTheServerThread() {
+        List<NamespacedKey> keys = List.of(new NamespacedKey("minecraft", "furnace"));
+        List<NamespacedKey> failing = new ArrayList<>() {
+            @Override
+            public boolean addAll(java.util.Collection<? extends NamespacedKey> c) {
+                throw new IllegalStateException("server refused the discovery");
+            }
+        };
+        Player player = ListenerDoubles.player("ag_wren_02", keys, failing);
+
+        assertDoesNotThrow(() -> new RecipeGrantListener(Logger.getLogger("test"))
+                .onJoin(new PlayerJoinEvent(player, Component.empty())));
     }
 }

@@ -1,6 +1,9 @@
 package dev.geldar.core;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -14,9 +17,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 /** Geldar-Core plugin entry point: wires config, the NATS publisher, exporter and listeners. */
 public final class GeldarCore extends JavaPlugin {
+    /** Written while the plugin is enabled; the Paper healthcheck in compose/phase0.yml reads it. */
+    static final Path READY_FILE = Path.of("/tmp/geldar-core.ready");
+
     private EventPublisher publisher;
     private volatile EventExporter tpsExporter;
     private ScheduledExecutorService tpsTimer;
+    private ReadyMarker readyMarker;
 
     @Override
     public void onEnable() {
@@ -45,7 +52,7 @@ public final class GeldarCore extends JavaPlugin {
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
         tpsExporter = exporter;
 
-        for (Listener listener : listeners(exporter, getLogger())) {
+        for (Listener listener : listeners(exporter, getLogger(), config.grantRecipesOnJoin())) {
             getServer().getPluginManager().registerEvents(listener, this);
         }
 
@@ -58,12 +65,29 @@ public final class GeldarCore extends JavaPlugin {
         });
         tpsTimer.scheduleAtFixedRate(this::requestTpsExport, config.tpsIntervalSeconds(),
                 config.tpsIntervalSeconds(), TimeUnit.SECONDS);
+        // Last of the enable steps: the healthcheck passes only once the command block and export are wired.
+        ReadyMarker marker = ReadyMarker.forThisProcess(READY_FILE);
+        try {
+            marker.write();
+        } catch (IOException e) {
+            throw new IllegalStateException("cannot write " + READY_FILE, e);
+        }
+        readyMarker = marker;
         getLogger().info("Geldar-Core enabled for shard " + config.shard());
     }
 
-    /** Every listener the plugin registers, in registration order. */
-    static List<Listener> listeners(EventExporter exporter, Logger log) {
-        return List.of(exporter, new RecipeGrantListener(), new CommandBlockListener(log));
+    /**
+     * Every listener the plugin registers, in registration order. The recipe grant is registered only when
+     * {@code grantRecipesOnJoin} is set (decision 0048: recipes unlock through play).
+     */
+    static List<Listener> listeners(EventExporter exporter, Logger log, boolean grantRecipesOnJoin) {
+        List<Listener> all = new ArrayList<>();
+        all.add(exporter);
+        if (grantRecipesOnJoin) {
+            all.add(new RecipeGrantListener(log));
+        }
+        all.add(new CommandBlockListener(log));
+        return List.copyOf(all);
     }
 
     private void requestTpsExport() {
@@ -87,6 +111,13 @@ public final class GeldarCore extends JavaPlugin {
         }
         if (publisher != null) {
             publisher.close();
+        }
+        if (readyMarker != null) {
+            try {
+                readyMarker.remove();
+            } catch (IOException e) {
+                getLogger().warning("cannot remove " + READY_FILE + ": " + e.getMessage());
+            }
         }
     }
 

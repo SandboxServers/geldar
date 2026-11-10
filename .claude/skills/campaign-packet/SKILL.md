@@ -48,17 +48,18 @@ Waves hold about four to six packets that one reviewer can hold at once. A wave 
 
 ## 3. Dispatch a wave
 
-1. Create the wave's integration branch from `main` (`phase0/wave<N>`) and push it. Create one worktree per packet from that branch (`ship-pr` skill § 1, with `origin/phase0/wave<N>` as the start point). Merge each packet branch into the wave branch with `git merge --no-ff` once its review says `ship`; packets that build on another branch from the wave branch after that merge.
+1. Create the wave's integration branch from `main` (`phase0/wave<N>`) and push it. Each packet gets its own worktree from that branch: the brief names the path, and the coder creates it with `git worktree add <path> -b <packet branch> origin/phase0/wave<N>` (`ship-pr` skill § 1 has the same steps). Coders never share the wave worktree. Merge each packet branch into the wave branch with `git merge --no-ff` once its review says `ship`; packets that build on another branch from the wave branch after that merge.
 2. Dispatch every independent packet of the wave in one message, in the background, each with the brief template below (under about 25 lines).
 3. On each return, update the ledger row. Open the report only on `blocked`, `failed` or a `decision` verdict.
 
 Coder brief template (fill the angle-bracket fields; copy the rest unchanged):
 
 ```
-Worktree: <absolute path to the worktree>
+Worktree: <absolute path; the coder creates it with `git worktree add <path> -b <branch> <start>` if it does not exist>
 Packet: docs/analysis/<campaign>/work-packets.md, section "### <packet id>" (read it; do not paste it)
 Report: <worktree>\.claude\reports\<campaign>\<packet>-<role>.md (role coder, review-<N>, fix-<N>); write it before you return
 Live lane: <none | you are the only live user>
+Budget: about 35 tool calls; commit each item as it passes; near the cap, commit what passes and report what remains
 Commit message (exact, with trailers; do not alter the trailer lines):
   <subject>
   <attribution trailer lines, verbatim>
@@ -86,7 +87,7 @@ Fix coder brief ("Review fix, pass N of <L>"): the worktree, the packet section,
 
 A continuation coder ("continuation N of 3") first commits any uncommitted work in the worktree (a WIP commit, squashed into the final commit as the packet-coder rules say), then continues from its report.
 
-Brief template additions: never weaken an assertion or change a fixture to make a test pass (report a Body finding); probes against the server use read-only verbs only; check every parser or fixture of a server reply against a captured real reply; no live lane or Docker unless the brief names the coder as the only live user. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
+Brief template additions: never weaken an assertion or change a fixture to make a test pass (report a Body finding); probes against the server use read-only verbs only; check every parser or fixture of a server reply against a captured real reply; no live lane or Docker unless the brief names the coder as the only live user. Live cases start their own Mind and Body: a brief never has anyone run `adam up` (or `adam up --help`) before them, since it holds port 7410; the live cases are 8B-only, and the 32B run is one manual `adam up --model strong` with no live cases. `adam select` rewrites `shards/phase0.yaml`: restore the committed file before any commit or merge. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
 
 Retry and cap rule (every coder brief): a packet that adds a retry, a requeue or a cap says what happens at the cap (dead letter, fatal, drop) and requires a test for the last allowed attempt; copy that sentence into the brief when the packet does.
 

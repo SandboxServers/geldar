@@ -29,9 +29,30 @@ const NEIGHBOR_OFFSETS: readonly Vec3[] = [
   new Vec3(0, 0, -1),
   new Vec3(0, 1, 0),
 ];
+/** The four horizontal steps, in a fixed order. */
+const CARDINALS: readonly Vec3[] = [
+  new Vec3(1, 0, 0),
+  new Vec3(0, 0, 1),
+  new Vec3(-1, 0, 0),
+  new Vec3(0, 0, -1),
+];
+/** Fixed failure texts shown to the model: each says what to try next (under 160 characters). */
+const MESSAGE = {
+  noSpace: 'no free space next to you: step to open ground or name a position',
+  insideBlock: 'you are inside a block: step to open ground first',
+  occupied: 'target is occupied: name an empty position or mine the block first',
+  notLoaded: 'target is not loaded: move closer or name a loaded position',
+  noReference: 'no solid block to place against: name a position next to a solid block',
+  refused:
+    'the server refused: stand on solid ground within reach and choose a block position next to you',
+  unconfirmed:
+    'the block did not appear at the target: stand on solid ground and choose a block position next to you',
+  timeout: 'the server did not answer the placement: try again',
+} as const;
 
 /** Where the block goes: a position, or `'feet'` for the cell the bot's feet are in (decision 0031). */
 type Spot = { x: number; y: number; z: number } | 'feet';
+type Bot = ActionContext['bot'];
 
 /** Places a block from the inventory, held in the hand, at a position or at the bot's feet. */
 export const placeAction: ActionHandler<'place'> = {
@@ -57,14 +78,19 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   if (!stack) return failed('missing_materials', `no ${block} in the inventory`);
   const boundingBox = bot.registry.blocksByName[block]?.boundingBox;
   if (boundingBox === undefined) return failed('not_possible', `${block} is not a block`);
-  if (at === 'feet' && boundingBox !== 'empty') {
-    return failed('blocked', 'target is inside the bot');
-  }
 
-  const target = at === 'feet' ? floor(bot.entity.position) : new Vec3(at.x, at.y, at.z);
+  let target = at === 'feet' ? floor(bot.entity.position) : new Vec3(at.x, at.y, at.z);
   const targetCell = bot.blockAt(target);
-  if (!targetCell) return failed('not_possible', 'target is not loaded');
-  if (!REPLACEABLE.has(targetCell.name)) return failed('blocked', 'target occupied');
+  if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
+  if (!REPLACEABLE.has(targetCell.name)) return failed('blocked', MESSAGE.occupied);
+
+  // A solid block on the bot's own cells moves to the first free cell beside the bot.
+  let beside: { target: Vec3; step: Vec3 } | null = null;
+  if (boundingBox !== 'empty' && inBody(bot, target)) {
+    beside = freeBeside(bot, floor(bot.entity.position), block.endsWith('_bed'));
+    if (!beside) return failed('blocked', MESSAGE.noSpace);
+    target = beside.target;
+  }
 
   if (bot.entity.position.distanceTo(target) > REACH) {
     const move = await moveNear(bot, target, WALK_RANGE, {
@@ -79,22 +105,28 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   const body = floor(bot.entity.position);
   for (const dy of [0, 1]) {
     const cell = bot.blockAt(new Vec3(body.x, body.y + dy, body.z));
-    if (cell && cell.boundingBox !== 'empty') return failed('blocked', 'target is inside the bot');
+    if (cell && cell.boundingBox !== 'empty') return failed('blocked', MESSAGE.insideBlock);
   }
 
   // At `feet` the reference is the block below; otherwise the first solid neighbor in order.
   const candidates =
-    at === 'feet'
+    at === 'feet' && !beside
       ? [target.offset(0, -1, 0)]
       : NEIGHBOR_OFFSETS.map((o) => target.offset(o.x, o.y, o.z));
   const cells = candidates.map((position) => bot.blockAt(position));
   const index = pickReference(cells.map((cell) => cell?.boundingBox === 'block'));
   const reference = index === null ? undefined : cells[index];
   const referencePos = index === null ? undefined : candidates[index];
-  if (!reference || !referencePos) return failed('blocked', 'nothing to place against');
+  if (!reference || !referencePos) return failed('blocked', MESSAGE.noReference);
 
   if (bot.heldItem?.name !== block) {
     await bot.equip(stack, 'hand');
+    if (ctx.signal.aborted) return cancelled();
+  }
+
+  // A bed's head goes the way the bot faces, so the bot turns toward the cell it moved to.
+  if (beside && block.endsWith('_bed')) {
+    await bot.look(Math.atan2(-beside.step.x, beside.step.z), 0, true);
     if (ctx.signal.aborted) return cancelled();
   }
 
@@ -108,19 +140,69 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   } catch (error) {
     const message = errorText(error);
     if (/did not answer the placement|did not fire within timeout/.test(message)) {
-      return failed('timeout', message);
+      return failed('timeout', MESSAGE.timeout);
     }
-    if (/refused to place/.test(message)) return failed('blocked', message);
+    if (/refused to place/.test(message)) return failed('blocked', MESSAGE.refused);
     throw error;
   }
   if (ctx.signal.aborted) return cancelled();
 
   // Only the target block is checked: a bed placed here also makes a second block.
   const placed = bot.blockAt(target)?.name ?? '';
-  if (!confirmsPlacement(placed, block)) {
-    return failed('blocked', `${block} not confirmed at the target, found ${placed || 'nothing'}`);
-  }
+  if (!confirmsPlacement(placed, block)) return failed('blocked', MESSAGE.unconfirmed);
   return completed({ block, at: spot(target), reference: spot(referencePos) });
+}
+
+/** True when the cell is the bot's feet cell or the cell above it. */
+function inBody(bot: Bot, cell: Vec3): boolean {
+  const feet = floor(bot.entity.position);
+  return cell.equals(feet) || cell.equals(feet.offset(0, 1, 0));
+}
+
+/**
+ * The first cell beside the bot, in facing order, that is open and has a solid neighbor. A bed
+ * also needs the cell one further on, where its second half goes.
+ */
+function freeBeside(bot: Bot, body: Vec3, bed: boolean): { target: Vec3; step: Vec3 } | null {
+  for (const step of stepsFromFacing(bot.entity.yaw)) {
+    const cell = body.plus(step);
+    if (!isFree(bot, cell)) continue;
+    if (bed && !isOpen(bot, cell.plus(step))) continue;
+    return { target: cell, step };
+  }
+  return null;
+}
+
+/** The cardinal step the bot faces, then the other three in their fixed order. */
+function stepsFromFacing(yaw: number): Vec3[] {
+  const dx = -Math.sin(yaw);
+  const dz = Math.cos(yaw);
+  const facing =
+    Math.abs(dx) > Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
+  return [facing, ...CARDINALS.filter((step) => !step.equals(facing))];
+}
+
+/** True when a block may replace the cell and no entity stands in it. */
+function isOpen(bot: Bot, cell: Vec3): boolean {
+  const name = bot.blockAt(cell)?.name;
+  return name !== undefined && REPLACEABLE.has(name) && !occupiedByEntity(bot, cell);
+}
+
+/** True when the cell is open and one of its neighbors is solid to place against. */
+function isFree(bot: Bot, cell: Vec3): boolean {
+  return (
+    isOpen(bot, cell) &&
+    NEIGHBOR_OFFSETS.some((o) => bot.blockAt(cell.plus(o))?.boundingBox === 'block')
+  );
+}
+
+/** True when another entity's feet or head cell is the cell. */
+function occupiedByEntity(bot: Bot, cell: Vec3): boolean {
+  return Object.values(bot.entities).some((entity) => {
+    if (entity === bot.entity) return false;
+    const feet = floor(entity.position);
+    return feet.equals(cell) || feet.offset(0, 1, 0).equals(cell);
+  });
 }
 
 /** The cell a position is in. */

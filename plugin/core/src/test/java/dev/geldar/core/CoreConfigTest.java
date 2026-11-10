@@ -1,7 +1,9 @@
 package dev.geldar.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -26,6 +28,14 @@ class CoreConfigTest {
         CoreConfig defaults = CoreConfig.load(new YamlConfiguration(), k -> null);
         assertEquals(CoreConfig.DEFAULT_NATS_URL, defaults.natsUrl());
         assertEquals(10_000, defaults.queueCapacity());
+    }
+
+    @Test
+    void theRecipeGrantIsOffByDefaultAndOnWhenTheFlagIsSet() {
+        assertFalse(CoreConfig.load(new YamlConfiguration(), k -> null).grantRecipesOnJoin());
+        YamlConfiguration file = new YamlConfiguration();
+        file.set("recipes.grant_on_join", true);
+        assertTrue(CoreConfig.load(file, k -> null).grantRecipesOnJoin());
     }
 
     @Test

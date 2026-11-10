@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/reflection.schema.json",
+  "title": "Reflection",
+  "description": "The output of one sleep reflection (spec 5.4, Appendix B.2). The Mind validates it strictly and applies it to memory; a failure is rejected and recorded, never repaired.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "memories_to_keep",
+    "relationship_updates",
+    "beliefs_add",
+    "beliefs_remove",
+    "goals",
+    "day_summary"
+  ],
+  "properties": {
+    "memories_to_keep": {
+      "description": "Memories worth keeping from the day, as short sentences.",
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "string", "maxLength": 280 }
+    },
+    "relationship_updates": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "impression", "trust"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "impression": { "type": "string", "maxLength": 280 },
+          "trust": { "type": "integer", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "beliefs_add": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["belief", "kind"],
+        "properties": {
+          "belief": { "type": "string", "maxLength": 280 },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "observation",
+              "report",
+              "interpretation",
+              "prediction",
+              "commitment",
+              "preference"
+            ]
+          }
+        }
+      }
+    },
+    "beliefs_remove": {
+      "description": "Beliefs to retire, by their text.",
+      "type": "array",
+      "maxItems": 16,
+      "items": { "type": "string", "maxLength": 280 }
+    },
+    "goals": {
+      "description": "Goals for the next day, at most 8.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["goal", "why"],
+        "properties": {
+          "goal": { "type": "string", "maxLength": 120 },
+          "why": { "type": "string", "maxLength": 280 }
+        }
+      }
+    },
+    "day_summary": { "type": "string", "maxLength": 1200 }
+  }
+}

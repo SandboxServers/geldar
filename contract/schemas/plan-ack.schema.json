@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/plan-ack.schema.json",
+  "title": "PlanAck",
+  "description": "Body to Mind, the quick reply to a PlanMessage: accepted, or refused with a reason. The outcome of the plan's actions arrives later as a `plan_result` event (plan-result-event.schema.json). accepted is true exactly when rejection is null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["thought_id", "accepted", "rejection"],
+  "properties": {
+    "thought_id": { "$ref": "common.schema.json#/$defs/ThoughtId" },
+    "accepted": { "type": "boolean" },
+    "rejection": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "detail"],
+          "properties": {
+            "reason": {
+              "type": "string",
+              "enum": [
+                "wrong_life",
+                "stale_generation",
+                "stale_snapshot",
+                "expired",
+                "invalid_plan"
+              ]
+            },
+            "detail": { "type": "string", "maxLength": 256 }
+          }
+        },
+        { "type": "null" }
+      ]
+    }
+  }
+}

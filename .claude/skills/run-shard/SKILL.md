@@ -44,9 +44,9 @@ function dc { docker compose -f compose/phase0.yml -p geldar-phase0 @args }
 | pgvector | `dc exec postgres psql -U geldar -d geldar -tAc "select extversion from pg_extension where extname='vector'"` | prints a version |
 | Migrations | `dc exec postgres psql -U geldar -d geldar -tAc "select count(*) from information_schema.tables where table_schema='public'"` | the table count from `sql/` |
 | NATS JetStream | `curl -fsS http://localhost:8222/healthz?js-enabled-only=true` | `{"status":"ok"}` |
-| Paper | compose healthcheck (the image's `mc-health` and the `Geldar-Core enabled` log line) | `healthy` in `shard status` |
+| Paper | compose healthcheck (the image's `mc-health`, and the `/tmp/geldar-core.ready` marker that Geldar-Core writes on enable: its pid and start time must match `/proc/<pid>/stat` in the container). The check does not read `latest.log`, which rolls at midnight UTC | `healthy` in `shard status` |
 | Paper is behind the proxy | `dc port paper 25565`, run only while paper is running (`docker inspect -f '{{.State.Running}}' geldar-phase0-paper-1` prints `true`) | fails with `no port 25565/tcp` (exit 1): Paper has no published game port. A stopped paper also fails this command, so the check is meaningless unless the inspect line shows `true` first |
-| Velocity bot ingress | compose healthcheck (the `Geldar identity enabled` log line and the port), and `Test-NetConnection 127.0.0.1 -Port 25565` | `healthy`, and the port answers |
+| Velocity bot ingress | compose healthcheck (the `/tmp/geldar-identity.ready` marker, matched against `/proc` as for Paper, and the port), and `Test-NetConnection 127.0.0.1 -Port 25565` | `healthy`, and the port answers |
 | RCON (test control) | `Test-NetConnection 127.0.0.1 -Port 25575` (published at `127.0.0.1:25575` by the `paper` service's `ports` in `compose/phase0.yml`) | the port answers; Paper enforces the whitelist, so any bot that joins (Golem whitelists its own over RCON) must be whitelisted first. Check this row before `test:live` |
 | Geldar-Core plugin loaded | `docker logs geldar-phase0-paper-1 2>&1 \| Select-String "Geldar-Core enabled"` | prints the line `Geldar-Core enabled for shard phase0` (the jar is built first: `cd plugin; ./gradlew build`) |
 | Identity plugin loaded, unregistered name denied | `docker logs geldar-phase0-velocity-1 2>&1 \| Select-String "Geldar identity enabled\|Watching the life registry\|Denied"` | prints `Geldar identity enabled` and `Watching the life registry` (the jar is built first: `cd plugin; ./gradlew build`; until Golem creates the `geldar-life-registry` bucket the plugin logs "Life registry unavailable" and denies everyone); a login with an unregistered username is refused at the proxy and logs `Denied <name>` |
@@ -71,6 +71,12 @@ Never fix a problem by acting inside the world (teleporting a bot, giving items,
 Golem reads these from the environment (`golem/src/config.ts`): `GELDAR_MC_HOST` (must be `127.0.0.1` or `localhost`), `GELDAR_MC_PORT` (default 25565), `GELDAR_RCON_PORT` (default 25575) and `GELDAR_RCON_PASSWORD_FILE` (default `compose/secrets/rcon.txt` under the repo root). Secrets live in the starting worktree's `compose/secrets/`: if another checkout started the stack, point `GELDAR_RCON_PASSWORD_FILE` at that checkout's file.
 
 The Phase 0 stack now runs the Velocity identity gate: a bot is admitted only if Golem registered its username in NATS first. The bench CLI and the live lane default `GELDAR_NATS_URL` to `nats://127.0.0.1:4222` when it is unset; any other Golem run needs it set, or the gate denies the bot and Golem stops with a message naming `GELDAR_NATS_URL`. See `golem/README.md`.
+
+## Adam and live cases
+
+- `adam up` holds port 7410 (the Mind's Thinker socket). Never run `adam up` or `adam up --help` before a live case: the live cases start their own Mind and Body, and a held port makes them fail to bind.
+- The live cases are 8B-only. The 32B run is manual: `adam up --model strong` once, with no live cases alongside it. Stop it with `adam down` when done.
+- `adam select` rewrites the life selection in `shards/phase0.yaml`. Restore the committed file (check `git diff`) before any commit or merge.
 
 ## Secrets and volumes
 

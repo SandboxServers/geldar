@@ -1,0 +1,90 @@
+/**
+ * The attention policy (spec 5.3.2, decision 0047): which wake reasons outrank which, and which are
+ * exempt from the minimum spacing. Pure data and functions, so the tests can read the table.
+ */
+import type { MindWakeReason } from '../ports/index.ts';
+
+/** The reason a candidate carries before it is a decision: every port reason is one. */
+export type CandidateReason = MindWakeReason;
+
+/**
+ * The Body's wake reasons, listed once for the Mind (the Body's own list is `WakeReason` in
+ * `golem/src/body/wake.ts`, and the contract's `wake-event.schema.json` pattern is the authority;
+ * a test checks this list against the schema). `new_agent_within_N` is matched by pattern.
+ */
+export const BODY_WAKE_REASONS: readonly string[] = [
+  'directly_addressed',
+  'precondition_failed',
+  'unexpected_damage',
+  'goal_completed',
+  'reflex_danger',
+  'action_failed',
+  'limit_reached',
+  'no_plan',
+];
+
+/** Priority tiers, most urgent first. A lower tier number wins. */
+const TIER_ONE: readonly string[] = [
+  'reflex_danger',
+  'unexpected_damage',
+  'action_failed',
+  'precondition_failed',
+  'directly_addressed',
+  'speech_addressed',
+];
+const TIER_TWO: readonly string[] = [
+  'speech_about_my_commitments',
+  'limit_reached',
+  'goal_completed',
+  'no_plan',
+  'mind_start',
+  'speech_about_me',
+];
+const TIER_THREE: readonly string[] = ['idle', 'fallback'];
+
+/** Wakes the 20 s spacing never delays (decision from the orchestrator, Q8). */
+const SPACING_EXEMPT: ReadonlySet<string> = new Set(['no_plan', 'mind_start']);
+
+const NEW_AGENT = /^new_agent_within_\d+$/;
+
+/**
+ * The rank of a reason: its tier times 100 plus its place in the tier's list. Lower is more urgent.
+ * `new_agent_within_N` opens tier three; a reason the policy does not know is `null`.
+ */
+export function rankOf(reason: string): number | null {
+  const one = TIER_ONE.indexOf(reason);
+  if (one >= 0) return one;
+  const two = TIER_TWO.indexOf(reason);
+  if (two >= 0) return 100 + two;
+  if (NEW_AGENT.test(reason)) return 200;
+  const three = TIER_THREE.indexOf(reason);
+  if (three >= 0) return 201 + three;
+  return null;
+}
+
+/** The `WakeDecision.priority` of a rank: 2 danger or direct address, 1 normal, 0 idle or fallback. */
+export function priorityOf(rank: number): 0 | 1 | 2 {
+  if (rank < 100) return 2;
+  return rank < 200 ? 1 : 0;
+}
+
+/** Whether the minimum spacing does not apply to this reason. */
+export function isSpacingExempt(reason: string): boolean {
+  return SPACING_EXEMPT.has(reason);
+}
+
+/**
+ * The two reasons one addressed chat line can carry: the Body's `directly_addressed` wake and the
+ * Mind's own `speech_addressed` classification of the same speech event. They are one wake.
+ */
+const ADDRESSED: ReadonlySet<string> = new Set(['directly_addressed', 'speech_addressed']);
+
+/** Whether the reason is one of the two addressed reasons (see `ADDRESSED`). */
+export function isAddressed(reason: string): boolean {
+  return ADDRESSED.has(reason);
+}
+
+/** Whether the reason is an idle or fallback wake: nothing happened, so a thought makes it stale. */
+export function isFiller(reason: string): boolean {
+  return reason === 'idle' || reason === 'fallback';
+}

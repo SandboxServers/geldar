@@ -9,8 +9,10 @@
  * error, which the consumer dead-letters with the reason). An `interrupted` intent event is stored
  * as `cancelled` with an end reason that starts `interrupted:` (the table has no such state);
  * `paused` is not stored. The `accepted` event's goal, program, arguments, preconditions, wake_on
- * and limits fill the matching columns. `thought_id` and `checkpoint` stay null: no event carries
- * a thought id, and the running checkpoint lives in NATS KV (decision 0043). Other event types are
+ * and limits fill the matching columns. `checkpoint` stays null: the running checkpoint lives in
+ * NATS KV (decision 0043). `thought_id` stays null here, since no event carries a thought id; Animus
+ * sets it with its own UPDATE once the Body accepts the plan. This upsert keeps a stored
+ * `thought_id` (COALESCE), so a projection that runs later never clears it. Other event types are
  * not projected.
  *
  * Latent: two sink replicas that each see the first event of a new intent or action can both find
@@ -44,7 +46,7 @@ export interface IntentRow {
   limits: unknown;
   /** Always null today: see the module comment. */
   checkpoint: unknown;
-  /** Always null today: see the module comment. */
+  /** Null until Animus links the thought that planned the intent: see the module comment. */
   thought_id: string | null;
 }
 
@@ -266,7 +268,7 @@ export function pgProjectionStore(db: Queryable): ProjectionStore {
            end_reason = EXCLUDED.end_reason, goal = EXCLUDED.goal, program = EXCLUDED.program,
            arguments = EXCLUDED.arguments, preconditions = EXCLUDED.preconditions,
            wake_on = EXCLUDED.wake_on, limits = EXCLUDED.limits, checkpoint = EXCLUDED.checkpoint,
-           thought_id = EXCLUDED.thought_id`,
+           thought_id = COALESCE(EXCLUDED.thought_id, intents.thought_id)`,
         [
           row.intent_id,
           row.life_id,

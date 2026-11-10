@@ -12,6 +12,7 @@ The design is [docs/spec.md](docs/spec.md). Current work is Phase 0 ("Adam", spe
 - **Files: soft cap 500 lines, hard cap 700** (code and config; Markdown and generated code are exempt). Split along natural seams; no `utils.ts` or `helpers.ts` dumping grounds. `pnpm check:repo` enforces the hard cap.
 - **LF line endings everywhere** (`.gitattributes`), except `*.bat`/`*.cmd`.
 - **No secrets, account names, or public or private-network IPs in the repo** (`127.0.0.1` is fine). It is public. `.env` files are gitignored; commit a `.env.example`.
+- **Live runs start their own stack.** Live cases start their own Mind and Body, so never run `adam up` (or `adam up --help`) before them: `adam up` holds port 7410, the Thinker socket. The live cases are 8B-only. The 32B run is manual: `adam up --model strong` once, with no live cases.
 - **Principle 1 holds in code too:** nothing we build lets a human act inside the world (spec section 2).
 
 ## Commands
@@ -34,5 +35,5 @@ pnpm workspace, Node 22 (`.nvmrc`), TypeScript, Biome, Vitest. Windows with Powe
 ## Skills, agents and memory
 
 - Skills in `.claude/skills/`: `ship-pr` (branch to merged PR), `campaign-packet` (run Phase 0 as packets), `run-shard` (bring the stack up and check health), `body-bench` (run the benchmark and record numbers). Load the matching one before that kind of work.
-- Agents in `.claude/agents/`: `packet-coder` implements one packet, `packet-reviewer` reviews it read-only. These Geldar copies override the global ones of the same name.
+- Agents in `.claude/agents/`: `packet-coder` implements one packet, `packet-reviewer` reviews it read-only, `ops` (haiku) merges branches and runs checks, benchmarks, live lanes and cleanups without ever editing code. These Geldar copies override the global ones of the same name.
 - Project memory is committed in `.claude/agent-memory/main-session/`. Grep it before researching a topic; add what you learn with the change that taught it.

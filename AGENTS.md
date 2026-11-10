@@ -26,6 +26,10 @@ A campaign is a folder `docs/analysis/<campaign>/` holding a ledger (`README.md`
 
 Owner decisions are never guessed: the ledger marks them `BlockedDecision` and the orchestrator asks the owner.
 
+## Live runs
+
+Live cases start their own Mind and Body, so never run `adam up` (or `adam up --help`) before them: `adam up` holds port 7410, the Thinker socket. The live cases are 8B-only. The 32B run is manual: `adam up --model strong` once, with no live cases.
+
 ## Writing for people
 
 In PR bodies, issue comments and reports, reference files from the repo root (`docs/spec.md`), never absolute host paths. Keep it short and lead with the outcome.

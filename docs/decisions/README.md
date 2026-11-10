@@ -53,3 +53,10 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0046](0046-scripted-stub-cli-stands-in-for-the-vendor-cli-in-ci.md) | A scripted stub CLI stands in for the vendor CLI in CI (D-SC-10) | Accepted |
 | [0047](0047-thinking-time-comes-from-intents-and-waits-not-dilation.md) | Adam's thinking time comes from intents, waits and reflexes; time dilation is not a Phase 0 mechanism | Accepted (owner) |
 | [0048](0048-recipe-discovery-is-part-of-the-game.md) | Recipe discovery is part of the game; the plugin stops granting the recipe book | Accepted (owner) |
+| [0049](0049-thinker-job-gets-response-format-and-reasoning.md) | The Thinker job frame gains `response_format` and `reasoning` (Appendix H) | Accepted (owner) |
+| [0050](0050-phase0-mind-processes-run-on-the-host.md) | In Phase 0 the Mind, the local Thinker and Adam's Body run as host processes | Accepted (owner) |
+| [0051](0051-adam-identity-and-model-pins.md) | Adam's identity and the Phase 0 model pins | Accepted (owner; seed approved 2026-11-09) |
+| [0052](0052-per-owner-sovereign-player-cap-raised-to-20.md) | The per-owner cap on sovereign players is raised to 20 for the owner; the real Geldar MCP is built alongside wave 6 | Accepted (owner) |
+| [0058](0058-the-character-knowledge-boundary-and-thought-v2.md) | Characters honour the in-world knowledge of the character, not the model's training data; thought prompt v2 carries the knowledge, sleep and anti-loop rules | Accepted (owner) |
+| [0059](0059-identity-mode-is-about-human-observation-not-agent-belief.md) | `identity_mode` governs whether humans may observe a shard; the agents are never told they are watched | Accepted (owner) |
+| [0060](0060-persona-size-limits.md) | Persona files are not artificially size-limited (identity 8192 bytes, goals 4096); the prompt fit is open for Wave M | Accepted (owner) |
