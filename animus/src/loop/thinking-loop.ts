@@ -116,13 +116,14 @@ export class ThinkingLoop {
   async handle(decision: WakeDecision): Promise<LoopResult> {
     this.startedAt = this.now();
     this.deps.attention.thoughtStarted();
-    this.log({
-      event: 'thought_started',
-      life_id: this.options.lifeId,
-      wake_reason: decision.reason,
-    });
     let result: LoopResult;
     try {
+      // Inside the try: a log sink that throws still settles the thought it started.
+      this.log({
+        event: 'thought_started',
+        life_id: this.options.lifeId,
+        wake_reason: decision.reason,
+      });
       result = await this.run(decision);
     } catch (error) {
       // A step that hung ends the cycle with its closed reason; any other throw is `error`.
