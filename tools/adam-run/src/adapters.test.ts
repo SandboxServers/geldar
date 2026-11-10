@@ -96,6 +96,45 @@ describe('the sampler death count', () => {
   });
 });
 
+describe('the sampler reads only this run', () => {
+  it('the thought count, the latency and the active intent are bounded by the run start', async () => {
+    const START = Date.UTC(2026, 10, 10, 9);
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes: new FakeProcesses(),
+      clock: new FakeClock(),
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    await sampler.observe(START);
+    const since = [new Date(START)];
+    const count = texts.findIndex((t) => t.includes('count(*)::int AS n, max(at)'));
+    expect(texts[count]).toContain('at >= $2');
+    expect(params[count]).toEqual(['ag_adam_04', ...since]);
+    const p95 = texts.findIndex((t) => t.includes('percentile_cont'));
+    expect(texts[p95]).toContain('at >= $2');
+    expect(params[p95]).toEqual(['ag_adam_04', ...since]);
+    const intent = texts.findIndex((t) => t.includes('FROM intents'));
+    expect(texts[intent]).toContain(
+      'thought_id IN (SELECT thought_id FROM thoughts WHERE life_id = $1 AND at >= $2)',
+    );
+    expect(params[intent]).toEqual(['ag_adam_04', ...since]);
+  });
+});
+
 describe('the forbidden-flags rule', () => {
   it('no adapter or CLI source contains a volume-removing or pruning command', () => {
     const forbidden = ['down -v', '--volumes', 'rm -f', 'volume rm', 'prune'];

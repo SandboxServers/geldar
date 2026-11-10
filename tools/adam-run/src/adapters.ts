@@ -278,22 +278,25 @@ export function createSampler(deps: SamplerDeps): Sampler {
       ]);
       const disk = statfsSync(deps.repoRoot);
       const sql = await readOnly(deps.sql, async (q) => {
+        // Every row is bounded by the run start: a life keeps its rows after a run ends, so a rerun must not read them.
+        const since = new Date(runStartMs);
         const t = await q.query(
-          'SELECT count(*)::int AS n, max(at) AS last FROM thoughts WHERE life_id = $1',
-          [lifeId],
+          'SELECT count(*)::int AS n, max(at) AS last FROM thoughts WHERE life_id = $1 AND at >= $2',
+          [lifeId, since],
         );
         const p95 = await q.query(
-          "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p FROM thoughts WHERE life_id = $1 AND at > now() - interval '30 minutes'",
-          [lifeId],
+          "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p FROM thoughts WHERE life_id = $1 AND at >= $2 AND at > now() - interval '30 minutes'",
+          [lifeId, since],
         );
         // Death events, not agents.died_at: nothing in the repo writes died_at, so it would always read 0.
         const d = await q.query(
           "SELECT count(*)::int AS n FROM events WHERE agent_id = $1 AND type = 'death' AND at >= $2",
           [lifeId, new Date(runStartMs)],
         );
+        // Intents carry no time: the run's intents are those a thought of this run made.
         const i = await q.query(
-          "SELECT intent_id FROM intents WHERE life_id = $1 AND state IN ('accepted','running') ORDER BY started_tick DESC NULLS LAST LIMIT 1",
-          [lifeId],
+          "SELECT intent_id FROM intents WHERE life_id = $1 AND state IN ('accepted','running') AND thought_id IN (SELECT thought_id FROM thoughts WHERE life_id = $1 AND at >= $2) ORDER BY started_tick DESC NULLS LAST LIMIT 1",
+          [lifeId, since],
         );
         return { t: t.rows[0], p95: p95.rows[0], d: d.rows[0], i: i.rows[0] };
       });
