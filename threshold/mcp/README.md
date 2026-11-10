@@ -107,6 +107,26 @@ Each request sends `Authorization: Bearer <token>`. The token is the player's va
 a commit, a log or a chat. The DB password and the pepper are Docker secret files in
 `compose/secrets/` (gitignored); the container reads them from `/run/secrets/`.
 
+### Run (commands)
+
+Each step is a `./geldar.ps1` command. The shard (`./geldar.ps1 shard up phase0`) must be up first.
+
+```
+./geldar.ps1 mcp-tokens init               # the pepper and the MCP's own Postgres password (never overwritten)
+./geldar.ps1 db migrate --dry-run          # then without --dry-run; back up the live volume first
+./geldar.ps1 mcp-tokens owner add <owner>  # then: player add, and token mint --out <file outside the repo>
+./geldar.ps1 mcp up                        # init, build and start the container on 127.0.0.1:8788
+./geldar.ps1 mcp status                    # prints "down" when it is not running
+./geldar.ps1 mcp logs
+./geldar.ps1 mcp smoke                     # the stub client case against /p/ag-test-01 (needs GELDAR_MCP_TEST_TOKEN_FILE)
+./geldar.ps1 mcp down                      # stops the container; volumes and the shard are kept
+```
+
+`mcp-tokens` and `db` are passthroughs to `tools/mcp-tokens` and `tools/migrate`; their usage lines
+print with no arguments. Open item (owner): `compose/mcp.yml` names the secret files `mcp-db.txt` and
+`mcp-pepper.txt`, but `mcp-tokens init` writes `postgres-mcp.txt` and `mcp-token-pepper.txt`. The
+names must agree before `mcp up` can start the container.
+
 ### Later: the public tunnel (not run)
 
 The public name is owner decision 0053, reserved and not taken. When it is taken, these are the steps:

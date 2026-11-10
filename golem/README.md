@@ -28,3 +28,21 @@ Two NATS KV buckets hold the Body's working memory, both keyed by `life_id` (dec
 | `geldar-checkpoints` | the running intent and its program state, written when the intent is installed and after each step (an unchanged entry is not rewritten), deleted (with retries) when the intent ends |
 
 `restartBody` is the entry point after a start or a crash: it takes the next generation, builds the Body with checkpointing on, then resumes the saved intent when the checkpoint belongs to this life, is not expired, and its program is registered. The resumed intent keeps its original expiry (never more than its own tick limit). Otherwise the Body idles and returns the reason (`no_checkpoint`, `checkpoint_unreadable`, `other_life`, `expired`, `unknown_program`, `resume_failed`, `tick_unknown`) and, if no plan arrives within 45 s, raises a `no_plan` wake. `tick_unknown` (the view's world tick never arrived within `tickWaitMs`) leaves the checkpoint in place and is not retried: that Body idles, with the checkpoint still in the bucket, until the Mind starts a new intent (which replaces the checkpoint) or the next restart finds a tick. `stop()` keeps the checkpoint, waits for the last checkpoint write and, for a bounded time, for the record sink to send what it holds. `openRestartKv(url)` opens the buckets on a loopback `nats://` URL and reconnects with backoff. The restart live test (`test/live/restart.live.test.ts`) tears a Body down inside one process and starts a second one on the same buckets; it uses ids unique to the run and deletes its keys.
+
+## Players (sovereign rangers, ./geldar.ps1 players)
+
+One detached Body process per sovereign player named in \shards/phase0.yaml\, each with a 320 MB heap cap
+(\--max-old-space-size=320\). The entry point is \src/players/main.ts\ with \--player <player-id>\; the Body reads the
+shard config itself and uses the life id it names.
+
+\\\
+./geldar.ps1 players up                 # all configured players; a running one is left alone
+./geldar.ps1 players up --player ag-jason-01
+./geldar.ps1 players status             # online, PID and RSS per player; prints "down" when none runs
+./geldar.ps1 players logs --player ag-jason-01
+./geldar.ps1 players down
+\\\
+
+PID files and logs live under \.geldar/players/\ (git-ignored). \logs\ prints the last 200 lines; it does not follow.
+The player hosts need NATS (\GELDAR_NATS_URL\) and the shard's RCON secret, and the whitelist entries are written
+by the host, not by this command.
