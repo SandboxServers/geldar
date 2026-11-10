@@ -48,6 +48,8 @@ export interface ReflectionPromptVars {
   goals: GoalRow[];
   relationships: RelationshipRow[];
   beliefs: MemoryRow[];
+  /** The open commitments, shown in their own block (`mind.max_commitments`); resolved by "beliefs_remove". */
+  commitments: MemoryRow[];
   /** Episodic memories retrieved for the day, nearest first. */
   episodic: MemoryRow[];
   /**

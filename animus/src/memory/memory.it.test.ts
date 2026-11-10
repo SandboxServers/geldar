@@ -44,6 +44,7 @@ const applyContext = (over: Partial<ApplyContext> = {}): ApplyContext => ({
   degraded: false,
   digest: { ownObservations: [], heard: [] },
   beliefs: [],
+  commitments: [],
   ...over,
 });
 

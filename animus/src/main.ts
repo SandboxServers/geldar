@@ -241,7 +241,11 @@ export const realStack: MindStack = {
     const pool = await openPool(config);
     await pool.query('SELECT 1');
     return {
-      store: new PgMemoryStore(pool, { embedder, maxBeliefs: config.mind.maxBeliefs }),
+      store: new PgMemoryStore(pool, {
+        embedder,
+        maxBeliefs: config.mind.maxBeliefs,
+        maxCommitments: config.mind.maxCommitments,
+      }),
       journal: new PgJournal(pool),
       close: () => pool.end(),
     };

@@ -109,6 +109,17 @@ export function fitMemory(items: MemoryItems, room: number): MemoryItems {
 }
 
 /**
+ * The commitments that fit `room` estimated tokens, in the order given (most overdue first). The
+ * least overdue go first. An overflow commitment is not lost: it waits for a later reflection,
+ * once the earlier ones are resolved and drop out of the due query.
+ */
+export function fitCommitments(rows: readonly MemoryRow[], room: number): MemoryRow[] {
+  const out = [...rows];
+  while (out.length > 0 && promptCost(renderCommitments(out)) > room) out.pop();
+  return out;
+}
+
+/**
  * Relationships as quoted lines: the people with the strongest feelings (trust far from neutral,
  * then most recently seen) with their impression, the rest by name only.
  */

@@ -125,6 +125,8 @@ export interface PgMemoryStoreOptions {
   embedder?: Embedder;
   /** The newest active beliefs `loadDeterministic` returns (`mind.max_beliefs`). */
   maxBeliefs?: number;
+  /** The open commitments `loadDeterministic` returns, earliest due first (`mind.max_commitments`). */
+  maxCommitments?: number;
 }
 
 /**
@@ -135,11 +137,13 @@ export class PgMemoryStore implements MemoryStore {
   private readonly pool: PgPool;
   private readonly embedder: Embedder | undefined;
   private readonly maxBeliefs: number;
+  private readonly maxCommitments: number;
 
   constructor(pool: PgPool, options: PgMemoryStoreOptions = {}) {
     this.pool = pool;
     this.embedder = options.embedder;
     this.maxBeliefs = options.maxBeliefs ?? 40;
+    this.maxCommitments = options.maxCommitments ?? 10;
   }
 
   async ensureAgent(agent: AgentRow): Promise<void> {
@@ -185,15 +189,18 @@ export class PgMemoryStore implements MemoryStore {
       this.pool.query(
         `SELECT ${MEMORY_COLUMNS} FROM memories
          WHERE agent_id = $1 AND kind = 'semantic' AND COALESCE(active, true)
+           AND provenance IS DISTINCT FROM 'commitment'
          ORDER BY memory_id DESC LIMIT $2`,
         [lifeId, this.maxBeliefs],
       ),
+      // Most overdue first, capped at mind.max_commitments. Overflow commitments are not lost: they
+      // wait for a later reflection, once the earlier ones are resolved and drop out of this query.
       this.pool.query(
         `SELECT ${MEMORY_COLUMNS} FROM memories
          WHERE agent_id = $1 AND provenance = 'commitment' AND COALESCE(active, true)
            AND NOT COALESCE(resolved, false) AND (due_tick IS NULL OR due_tick <= $2)
-         ORDER BY due_tick NULLS FIRST, memory_id`,
-        [lifeId, nowTick],
+         ORDER BY due_tick NULLS FIRST, memory_id LIMIT $3`,
+        [lifeId, nowTick, this.maxCommitments],
       ),
     ]);
     return {

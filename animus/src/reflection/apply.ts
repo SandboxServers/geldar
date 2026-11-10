@@ -51,6 +51,8 @@ export interface ApplyContext {
   digest: Pick<Digest, 'ownObservations' | 'heard'>;
   /** The active beliefs before the reflection. */
   beliefs: MemoryRow[];
+  /** The open commitments shown to the reflection; one named in "beliefs_remove" is resolved. */
+  commitments: MemoryRow[];
 }
 
 function clampTrust(trust: number): number {
@@ -147,9 +149,9 @@ export async function applyReflection(
             log,
           ),
     deactivate: removals,
-    resolve: context.beliefs
-      .filter((b) => b.provenance === 'commitment' && removals.includes(b.text))
-      .map((b) => b.memoryId),
+    resolve: context.commitments
+      .filter((c) => c.provenance === 'commitment' && removals.includes(c.text))
+      .map((c) => c.memoryId),
     relationships: context.degraded
       ? []
       : (reflection.relationship_updates.map((u) => ({

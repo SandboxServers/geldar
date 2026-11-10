@@ -180,6 +180,21 @@ describe('PgMemoryStore', () => {
     expect(beliefs?.sql).toContain('ORDER BY memory_id DESC LIMIT $2');
     expect(beliefs?.params).toEqual(['l', 12]);
   });
+
+  it('keeps commitments out of the belief load, and bounds the due ones, earliest due first', async () => {
+    const { pool, calls } = fakePool((sql) =>
+      sql.startsWith('SELECT * FROM agents') ? { rows: [{ agent_id: 'l', born_at: null }] } : {},
+    );
+    await new PgMemoryStore(pool, { maxBeliefs: 40, maxCommitments: 10 }).loadDeterministic(
+      'l',
+      100,
+    );
+    const beliefs = calls.find((c) => c.sql.includes("kind = 'semantic'"));
+    expect(beliefs?.sql).toContain("provenance IS DISTINCT FROM 'commitment'");
+    const due = calls.find((c) => c.sql.includes("provenance = 'commitment'"));
+    expect(due?.sql).toContain('ORDER BY due_tick NULLS FIRST, memory_id LIMIT $3');
+    expect(due?.params).toEqual(['l', 100, 10]);
+  });
 });
 
 describe('PgJournal', () => {
