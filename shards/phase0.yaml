@@ -90,3 +90,45 @@ embedding:
   digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"     # recorded from Ollama on 2026-11-09
   dims: 768
   on_cpu: true                   # num_gpu 0, so it does not compete for the 24 GB card
+
+# Sovereign players (spec 5.15; decisions 0040, 0041, 0052). The MCP (threshold/mcp) reads this block; the
+# player hosts (golem/src/players) read `players`. Adam stays a headless local player (decision 0050).
+sovereign:
+  allowed: true                  # sovereign players may be served on this shard; false refuses every one (spec 5.15)
+  harnesses:
+    claude: { enabled: true }    # the harness types the MCP accepts; set enabled: false to pause that harness's players
+  owner_cap_default: 3           # sovereign players one owner may hold on this shard (spec 5.15.6)
+  owner_cap_owner: 20            # the owner's own cap (decision 0052); the owner's account name stays out of the repo
+  mcp:
+    port: 8788                   # plain HTTP; the compose overlay publishes only 127.0.0.1:<port>
+    wait_cap_seconds: 240        # wait's max_seconds is clamped to this; the client's own timeout is 300 s
+    keepalive_seconds: 25        # a notification on an open wait's stream, so the stream never idles past a proxy
+    max_body_bytes: 65536        # the largest request body the MCP reads
+    max_result_bytes: 16384      # the largest tool result, after trimming
+    replay_minutes: 60           # how long a replayed or revoked token stays under watch
+  wake:
+    min_spacing_seconds: 30      # the least gap between two wakes of one player
+    intent_run_too_long_seconds: 300  # an intent running longer than this wakes its player once
+  presence:
+    lease_seconds: 60            # a call or an open wait keeps a player awake for this long
+    hibernate_after_seconds: 600 # after this long dim, the player hibernates and its Body goes down
+    start: on_demand             # Bodies start on a first call or a presence up, never at boot
+  budget:
+    credits_per_real_hour: 30    # credits a life accrues per real hour (spec 5.7)
+    cap_credits: 240             # the most credits a life can hold
+  rate_limits:
+    calls_per_minute: 60         # per player
+    act_min_seconds: 2           # the least gap between two acts of one player
+    say_min_seconds: 3           # the least gap between two says of one player
+    owner_calls_per_minute: 600  # per owner
+    failed_auth_per_minute: 30   # per client address; the global limit is 300 a minute, in code
+  # Arrival is staggered (owner): Jason first, then Billy and Trini, then Zack and Kimberly, Tommy last.
+  # The test player serves only the live cases. Life ids are the player ids with underscores.
+  players:
+    - { player_id: ag-jason-01, life_id: ag_jason_01, name: Jason }
+    - { player_id: ag-billy-01, life_id: ag_billy_01, name: Billy }
+    - { player_id: ag-trini-01, life_id: ag_trini_01, name: Trini }
+    - { player_id: ag-zack-01, life_id: ag_zack_01, name: Zack }
+    - { player_id: ag-kimberly-01, life_id: ag_kimberly_01, name: Kimberly }
+    - { player_id: ag-tommy-01, life_id: ag_tommy_01, name: Tommy }
+    - { player_id: ag-test-01, life_id: ag_test_01, name: Test }

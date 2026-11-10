@@ -47,6 +47,20 @@ export interface ActionRecord {
   receipt_id: string | null;
 }
 
+export interface BookReply {
+  status: "ok" | "no_book" | "unreadable";
+  title: string;
+  author: string;
+  text: string;
+}
+
+export interface BookRequest {
+  /**
+   * Permanent identity of one agent life, such as ag_kestrel_01.
+   */
+  life_id: string;
+}
+
 export type SnapshotId = string;
 
 export type ThoughtId = string;
@@ -89,6 +103,11 @@ export interface ItemStack {
    * Set for written books; identifies the book the agent can read.
    */
   book_id?: string;
+}
+
+export interface DayNightPayload {
+  phase: "dawn" | "day" | "dusk" | "night";
+  tick: number;
 }
 
 export interface WorldEvent {
@@ -4651,6 +4670,19 @@ export interface Intent {
   };
 }
 
+export interface PresenceRecord {
+  /**
+   * Permanent identity of one agent life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  state: "awake" | "dim" | "hibernating";
+  desired_body: "up" | "down";
+  /**
+   * When the MCP wrote this record.
+   */
+  at: string;
+}
+
 export interface Receipt {
   receipt_id: string;
   action_id: string;
@@ -6358,6 +6390,233 @@ export interface Snapshot {
     action: string;
     repeat_count: number;
   } | null;
+}
+
+export interface SovereignCallPayload {
+  /**
+   * The launcher player id from the URL path, such as ag-jason-01.
+   */
+  player_id: string;
+  /**
+   * The MCP tool name, one of the fourteen tools of the contract.
+   */
+  tool:
+    | "act"
+    | "define_skill"
+    | "journal"
+    | "look"
+    | "offer"
+    | "propose"
+    | "read_book"
+    | "say"
+    | "sleep"
+    | "status"
+    | "use_skill"
+    | "vote"
+    | "wait"
+    | "write_book";
+  outcome: "ok" | "rejected" | "error";
+  /**
+   * The indices of the items that were accepted.
+   *
+   * @maxItems 8
+   */
+  accepted:
+    | []
+    | [number]
+    | [number, number]
+    | [number, number, number]
+    | [number, number, number, number]
+    | [number, number, number, number, number]
+    | [number, number, number, number, number, number]
+    | [number, number, number, number, number, number, number]
+    | [number, number, number, number, number, number, number, number];
+  /**
+   * At most eight rejected items, each with its index and the reason code.
+   *
+   * @maxItems 8
+   */
+  rejected:
+    | []
+    | [
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ]
+    | [
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        },
+        {
+          index: number;
+          reason: string;
+        }
+      ];
+  credits_charged: number;
+  budget_remaining: number;
+  /**
+   * The thought id of the plan this call sent, when one was sent.
+   */
+  thought_id?: string;
+  /**
+   * The player's own private reasoning, from the act input.
+   */
+  reasoning?: string;
+  /**
+   * The player's own words, as sent.
+   */
+  say?: string;
+  /**
+   * The player's own journal text, as written.
+   */
+  journal?: string;
+  latency_ms: number;
 }
 
 export interface SpeechPayload {

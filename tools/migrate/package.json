@@ -1,0 +1,12 @@
+{
+  "name": "@geldar/migrate",
+  "private": true,
+  "description": "The migration runner: applies sql/[0-9]*.sql in order and records them in schema_migrations.",
+  "type": "module",
+  "dependencies": {
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

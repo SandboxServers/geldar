@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/day-night-event.schema.json",
+  "title": "DayNightPayload",
+  "description": "Payload of a WorldEvent of type `day_night` (spec 5.15.2, Wave M design): the MCP publishes it from the world clock when the phase changes, deduplicated by (shard, day, phase), and it fans out to every ranger's event log. The phase names are those of the snapshot's world_time.time_of_day.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["phase", "tick"],
+  "properties": {
+    "phase": { "type": "string", "enum": ["dawn", "day", "dusk", "night"] },
+    "tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
+  }
+}

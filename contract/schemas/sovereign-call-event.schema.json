@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/sovereign-call-event.schema.json",
+  "title": "SovereignCallPayload",
+  "description": "Payload of a WorldEvent of type `sovereign_call` (spec 5.15.3, 5.7): one MCP tool call by a sovereign player, with what was accepted, rejected and charged. It carries the player's own reasoning, say and journal text, never world text, and no token or session field. Events only, no table. The MCP publishes it and the sink writes it to `events`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "player_id",
+    "tool",
+    "outcome",
+    "accepted",
+    "rejected",
+    "credits_charged",
+    "budget_remaining",
+    "latency_ms"
+  ],
+  "properties": {
+    "player_id": {
+      "description": "The launcher player id from the URL path, such as ag-jason-01.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,38}$"
+    },
+    "tool": {
+      "description": "The MCP tool name, one of the fourteen tools of the contract.",
+      "type": "string",
+      "enum": [
+        "act",
+        "define_skill",
+        "journal",
+        "look",
+        "offer",
+        "propose",
+        "read_book",
+        "say",
+        "sleep",
+        "status",
+        "use_skill",
+        "vote",
+        "wait",
+        "write_book"
+      ]
+    },
+    "outcome": { "type": "string", "enum": ["ok", "rejected", "error"] },
+    "accepted": {
+      "description": "The indices of the items that were accepted.",
+      "type": "array",
+      "maxItems": 8,
+      "items": { "type": "integer", "minimum": 0 }
+    },
+    "rejected": {
+      "description": "At most eight rejected items, each with its index and the reason code.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "reason"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+        }
+      }
+    },
+    "credits_charged": { "type": "integer", "minimum": 0 },
+    "budget_remaining": { "type": "integer", "minimum": 0 },
+    "thought_id": {
+      "description": "The thought id of the plan this call sent, when one was sent.",
+      "$ref": "common.schema.json#/$defs/ThoughtId"
+    },
+    "reasoning": {
+      "description": "The player's own private reasoning, from the act input.",
+      "type": "string",
+      "maxLength": 600
+    },
+    "say": {
+      "description": "The player's own words, as sent.",
+      "type": "string",
+      "maxLength": 256
+    },
+    "journal": {
+      "description": "The player's own journal text, as written.",
+      "type": "string",
+      "maxLength": 2000
+    },
+    "latency_ms": { "type": "integer", "minimum": 0 }
+  }
+}

@@ -2,6 +2,9 @@
 import type { ValidateFunction } from 'ajv';
 
 export declare const validateActionRecord: ValidateFunction;
+export declare const validateBookReply: ValidateFunction;
+export declare const validateBookRequest: ValidateFunction;
+export declare const validateDayNightPayload: ValidateFunction;
 export declare const validateWorldEvent: ValidateFunction;
 export declare const validateIntentEventPayload: ValidateFunction;
 export declare const validateLookInput: ValidateFunction;
@@ -35,11 +38,13 @@ export declare const validateStatusResult: ValidateFunction;
 export declare const validatePlanAck: ValidateFunction;
 export declare const validatePlanResultPayload: ValidateFunction;
 export declare const validatePlanMessage: ValidateFunction;
+export declare const validatePresenceRecord: ValidateFunction;
 export declare const validateReceipt: ValidateFunction;
 export declare const validateReflection: ValidateFunction;
 export declare const validateReflexFiredPayload: ValidateFunction;
 export declare const validateSnapshotRequest: ValidateFunction;
 export declare const validateSnapshot: ValidateFunction;
+export declare const validateSovereignCallPayload: ValidateFunction;
 export declare const validateSpeechPayload: ValidateFunction;
 export declare const validateThinkerFrame: ValidateFunction;
 export declare const validateHelloFrame: ValidateFunction;

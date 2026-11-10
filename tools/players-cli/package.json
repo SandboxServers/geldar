@@ -1,0 +1,9 @@
+{
+  "name": "@geldar/players-cli",
+  "private": true,
+  "description": "The logic behind ./geldar.ps1 players: one supervised Body process per sovereign ranger.",
+  "type": "module",
+  "dependencies": {
+    "yaml": "2.9.1"
+  }
+}

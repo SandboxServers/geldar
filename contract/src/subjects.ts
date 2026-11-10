@@ -34,3 +34,16 @@ export function planSubject(shard: string, lifeId: string): string {
   checked(shard, lifeId);
   return `geldar.${shard}.body.${lifeId}.plan`;
 }
+
+/**
+ * Where the Body listens for a `BookRequest` and replies with a `BookReply` (WM-01 sovereign):
+ * `geldar.<shard>.body.<life_id>.book`. Five tokens, like the other Body subjects, so it is
+ * outside the sink's `geldar.*.*` filter. Throws on a shard or life id the contract rejects.
+ */
+export function bookSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.body.${lifeId}.book`;
+}
+
+/** The KV bucket of presence records, one key per life id (`PresenceRecord`, WM-01 sovereign). */
+export const PRESENCE_BUCKET = 'geldar-presence';
