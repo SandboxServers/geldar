@@ -177,3 +177,59 @@ Two fixes in threshold/mcp: the presence bucket is created before it is used, an
 4. `./geldar.ps1 mcp smoke`. Its wake phase brings the Body up; allow up to 120 s.
 5. The negative HTTP checks.
 6. Cleanup, per the leftover tokens policy above.
+
+## L4
+
+### Evidence from the live run
+
+- The intent `gather_oak_log`, count 12, ended `failed` at `max_world_ticks` with zero actions. The Body
+  did nothing for its whole limit.
+- The MCP consumer delivered 7 messages to the player. The live case waited for an end and none reached
+  it as a terminal wake.
+- The per-wait output of that run was not saved, so the exact cursor sequence is not on record. The
+  mechanism below is the one the fix commit (`697f555`) names: a wait whose cursor was past the failure saw
+  only the limit wake, which mapped to no player event, so it timed out.
+
+### Trace: Mind event to wait to live case, before and after (`697f555`)
+
+| Mind event | Mapper before (`cfbaa0b`) | Wait result before | Mapper after (`697f555`) | Wait result after | Live case reaction |
+| --- | --- | --- | --- | --- | --- |
+| intent terminal `failed`, detail `max_world_ticks reached` | intent_finished `failed` | wake `precondition_failed` (the reason for any failure) | intent_finished `limit_reached` | wake `intent_run_too_long` | before: a `precondition_failed` wake ended the case only if a wait saw it; after: the end is named for its limit |
+| wake `limit_reached` for the same intent | no event | none: the wait times out | no second event (deduped by `lastEndedId`) | none | nothing to end on; the terminal event already ended the run |
+| intent terminal `completed` | intent_finished `completed` | wake `goal_completed` | unchanged | `goal_completed` | ends the case |
+| intent terminal `failed`, other detail (e.g. `no oak_log within reach`) | intent_finished `failed` | `precondition_failed` | unchanged | `precondition_failed` | ends the case |
+| intent terminal `cancelled` or `interrupted` | intent_finished `failed` | `precondition_failed` | unchanged | `precondition_failed` | ends the case |
+| a second terminal event for an intent already ended | intent_finished again | a second end | dropped (`lastEndedId`) | one end | one end |
+
+The live case's end check (`stub-client.live.test.ts`) accepts exactly the contract's terminal wake reasons:
+`goal_completed`, `precondition_failed`, `intent_run_too_long`. Those lists were already in place at
+`697f555`, so this packet changed what the case prints on failure (`live-trace.ts`, commit `dbf76c0`), not
+what it accepts. A run that stops at the limit is a pass: it ended, and the wake says why.
+
+### Where the end was lost
+
+- The Body's failure at its limit was reported as a plain failure, so the wake named `precondition_failed`
+  for an intent that had run out of ticks. The contract's reason for a limit is `intent_run_too_long`.
+- The Body's limit wake (`limit_reached`) mapped to no player event. A wait from a cursor after the failure
+  had nothing to return, and the case timed out at its bound.
+
+### Deviation: cancelled and interrupted have no contract wake reason
+
+- The contract's wake list (`contract/schemas/mcp-common.schema.json`, `wake_reason`) has no reason for a
+  cancelled or interrupted intent. Both wake as `precondition_failed`, so the agent hears that its intent is
+  over, but not why it stopped.
+- Extending the closed list needs a decision record. Follow-up: write the record before any change to the
+  contract enum.
+
+### Open: the Body's `gather` did nothing at spawn
+
+- The Body's `gather` made zero actions in 2260 ticks at spawn (19.5, 79, 85.5), then ran to its limit.
+- Open question for a later packet: is there an oak tree within the Body's perception range from that
+  spot? If not, should `gather` end at once with a failed precondition (`no oak_log in range`) instead of
+  idling to `max_world_ticks`? That needs the Body's perception radius and a look at its precondition checks.
+
+### What ops must re-run
+
+- `./geldar.ps1 mcp smoke`, after the image is rebuilt from `threshold/mcp/src` (the mapper change is in
+  `697f555`). A run that ends `intent_run_too_long` or `precondition_failed` is a pass. The trace of each
+  wait is printed on failure.
