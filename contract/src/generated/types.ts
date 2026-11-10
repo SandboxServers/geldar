@@ -7312,6 +7312,10 @@ export interface HelloFrame {
         ModelOffer,
         ModelOffer
       ];
+  /**
+   * The shared secret of GELDAR_THINKER_TOKEN_FILE. Sent only when the hub is configured with one; never logged.
+   */
+  token?: string;
 }
 
 export interface ModelOffer {

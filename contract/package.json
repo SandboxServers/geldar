@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./nats": "./src/nats-connect.ts"
+    "./nats": "./src/nats-connect.ts",
+    "./thinker-token": "./src/thinker-token.ts"
   },
   "scripts": {
     "generate": "node scripts/generate.ts",
