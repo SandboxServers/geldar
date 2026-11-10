@@ -3,7 +3,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { McpConfig } from '../config.ts';
 import { FakeTokenStore } from '../fakes/stores.fakes.ts';
-import type { PlayerRecord, RateDecision, RateLimiter } from '../ports.ts';
+import type { PlayerRecord, RateDecision, RateLimiter, TokenStore } from '../ports.ts';
+import { FakePool } from '../store/pg-fakes.ts';
+import { PgTokenStore, type TokenRow } from '../store/pg-tokens.ts';
 import { tokenDigest } from './auth.ts';
 import type { FrontDoor } from './front.ts';
 import { createFrontDoor } from './front.ts';
@@ -59,6 +61,22 @@ function player(playerId: string): PlayerRecord {
   };
 }
 
+/** The row the PG store reads for TOKEN_A: active, unexpired, unrevoked, on an enabled harness. */
+function tokenRow(): TokenRow {
+  return {
+    token_id: 'tok-a',
+    token_hash: Buffer.from(tokenDigest(PEPPER, TOKEN_A)),
+    player_id: 'aa',
+    life_id: 'aa_life',
+    owner_id: 'owner-1',
+    display_name: 'AA',
+    harness: 'test',
+    status: 'active',
+    expires_at: new Date(Date.now() + 86_400_000),
+    revoked_at: null,
+  };
+}
+
 let door: FrontDoor | undefined;
 let port = 0;
 
@@ -67,8 +85,8 @@ afterEach(async () => {
   door = undefined;
 });
 
-/** Starts a front door whose peer, 127.0.0.1, is the only address a test client really has. */
-async function start(http: Partial<McpConfig['http']> = {}): Promise<void> {
+/** A fake token store that holds TOKEN_A for player aa. */
+function fakeTokenStore(): FakeTokenStore {
   const store = new FakeTokenStore();
   store.add({
     tokenId: 'tok-a',
@@ -77,6 +95,14 @@ async function start(http: Partial<McpConfig['http']> = {}): Promise<void> {
     expiresAtMs: Number.POSITIVE_INFINITY,
     revoked: false,
   });
+  return store;
+}
+
+/** Starts a front door whose peer, 127.0.0.1, is the only address a test client really has. */
+async function start(
+  http: Partial<McpConfig['http']> = {},
+  store: TokenStore = fakeTokenStore(),
+): Promise<void> {
   door = createFrontDoor({
     http: {
       bind: '127.0.0.1',
@@ -132,7 +158,7 @@ describe('failed-auth state and token cache', () => {
     await start();
     await exhaust();
     expect(await post(BAD)).toBe(429);
-    // The token is a cached hit after its first use, so the empty bucket cannot refuse it.
+    // The fake store reports every valid token as a cached hit, so the empty bucket never refuses it.
     expect(await post(TOKEN_A)).toBe(200);
   });
 
@@ -140,6 +166,17 @@ describe('failed-auth state and token cache', () => {
     await start();
     await exhaust();
     expect(await post(BAD)).toBe(429);
+  });
+
+  it('refuses an uncached token behind an empty bucket, and passes it once cached', async () => {
+    const pool = new FakePool(() => ({ rows: [tokenRow()] }));
+    const store = new PgTokenStore(pool.asPool(), { test: true }, {});
+    await start({}, store);
+    await exhaust();
+    expect(await post(TOKEN_A)).toBe(429);
+    // A successful resolve caches the hit for 5 s, so the same token now passes the empty bucket.
+    expect(await store.resolve(tokenDigest(PEPPER, TOKEN_A), Date.now())).not.toBeNull();
+    expect(await post(TOKEN_A)).toBe(200);
   });
 });
 

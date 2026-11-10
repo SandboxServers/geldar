@@ -45,9 +45,17 @@ export interface MockHttpOptions {
   onToolCall?: (playerId: string, body: unknown, res: ServerResponse) => Refusal | undefined;
   /** Runs after the auth check and before a POST body is read, so a refusal costs no body read. */
   beforeBody?: (playerId: string, req: IncomingMessage, res: ServerResponse) => Refusal | undefined;
+  /** Runs before a GET stream is served, after the auth check; a refusal is sent instead. */
+  beforeStream?: (
+    playerId: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ) => Refusal | undefined;
+  /** Says whether a TCP peer is exempt from the per-peer connection cap (a trusted proxy). Default: none. */
+  exemptPeer?: (peer: string) => boolean;
   /** Adds `Connection: close` to a 401, 403 or 429 from the auth check, so the socket closes. Default false. */
   closeRefused?: boolean;
-  /** Server limits. An unset one keeps Node's default. `maxConnectionsPerAddress` destroys a surplus socket. */
+  /** Server limits. An unset one keeps Node's default. `maxConnectionsPerAddress` destroys a surplus socket of a peer. */
   limits?: {
     maxConnections?: number;
     maxConnectionsPerAddress?: number;
@@ -328,6 +336,9 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       options.authenticate !== undefined
         ? await options.authenticate(player, authHeader, req)
         : { outcome: checkBearer(options.tokens, player, authHeader) };
+    // A client that left during the lookup has already fired 'close', so nothing would release what
+    // the hooks take next. There is no one to answer, so the request ends here.
+    if (res.closed || res.destroyed) return;
     // A refused client is not read further, so its socket closes when the option asks for it.
     const close: Record<string, string> =
       options.closeRefused === true ? { Connection: 'close' } : {};
@@ -361,6 +372,15 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
 
     if (method === 'POST' && options.beforeBody !== undefined) {
       const refusal = options.beforeBody(player, req, res);
+      if (refusal !== undefined) {
+        ctx.event = 'refused';
+        ctx.error = refusal.message;
+        sendRefusal(res, refusal);
+        return;
+      }
+    }
+    if (method === 'GET' && options.beforeStream !== undefined) {
+      const refusal = options.beforeStream(player, req, res);
       if (refusal !== undefined) {
         ctx.event = 'refused';
         ctx.error = refusal.message;
@@ -484,6 +504,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     const connections = new AddressConnections(perAddress);
     server.on('connection', (socket) => {
       const address = socket.remoteAddress ?? 'unknown';
+      // An exempt peer (a trusted proxy) carries many clients; only the total cap applies to it.
+      if (options.exemptPeer?.(address) === true) return;
       if (!connections.take(address)) {
         socket.destroy();
         return;

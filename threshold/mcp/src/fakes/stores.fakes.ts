@@ -59,7 +59,10 @@ export class FakeTokenStore implements TokenStore {
     this.touched.push({ tokenId, nowMs });
   }
 
-  /** No cache here, so a token that resolves now counts as a cached hit. */
+  /**
+   * The fake keeps no cache, so every token that resolves now reports as a cached hit. That is not
+   * the real first-use behaviour: front-address.test.ts drives the real PgTokenStore for that.
+   */
   isCachedHit(tokenHash: Uint8Array, nowMs: number): boolean {
     for (const token of this.tokens.values()) {
       if (!digestEqual(token.tokenHash, tokenHash)) continue;

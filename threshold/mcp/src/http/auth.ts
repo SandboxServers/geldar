@@ -63,6 +63,32 @@ function unmapped(address: string): string {
 }
 
 /**
+ * The key a client's failed-auth bucket and open-request slots are kept under. An IPv6 address is
+ * keyed by its /64, since one network holds a whole /64 of addresses; an IPv4 address, or an IPv4
+ * address in its `::ffff:` mapped form, is keyed as the plain IPv4 address.
+ */
+export function clientKey(address: string): string {
+  const bare = unmapped(address);
+  if (isIP(bare) !== 6) return bare;
+  const hextets = expandIPv6(bare).slice(0, 4);
+  return `${hextets.map((hextet) => hextet.toString(16)).join(':')}::/64`;
+}
+
+/** The eight 16-bit groups of an IPv6 literal, with `::` filled in and an embedded IPv4 tail split. */
+function expandIPv6(address: string): number[] {
+  const text = address.replace(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/, (_, a, b, c, d) => {
+    const high = (Number(a) << 8) | Number(b);
+    const low = (Number(c) << 8) | Number(d);
+    return `${high.toString(16)}:${low.toString(16)}`;
+  });
+  const [head = '', tail = ''] = text.split('::');
+  const left = head === '' ? [] : head.split(':');
+  const right = tail === '' ? [] : tail.split(':');
+  const zeros = new Array<string>(8 - left.length - right.length).fill('0');
+  return [...left, ...zeros, ...right].map((group) => Number.parseInt(group, 16));
+}
+
+/**
  * A matcher over the `trusted_proxies` entries: exact IPs or CIDR ranges. An empty list trusts
  * no peer, so no forwarded header is ever read.
  */

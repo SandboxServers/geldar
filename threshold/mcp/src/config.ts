@@ -450,6 +450,11 @@ function optionalInt(
 function proxyList(block: Doc, key: string, where: string): string[] {
   if (block[key] === undefined) return [];
   return list(block, key, where).map((entry, index) => {
+    if (typeof entry === 'string' && /\/0+$/.test(entry)) {
+      throw new Error(
+        `${where}.${key}[${index}] has prefix length 0, which would trust every peer; name a narrower range`,
+      );
+    }
     if (typeof entry !== 'string' || !validProxyEntry(entry)) {
       throw new Error(
         `${where}.${key}[${index}] must be an IP address or an IP range such as 10.0.0.0/8, not '${String(entry)}'`,
