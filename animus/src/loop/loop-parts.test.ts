@@ -140,16 +140,38 @@ describe('IntentLedger and continueInterrupted', () => {
     expect(continueInterrupted(ledger)).toBeNull();
   });
 
-  it('counts failures in a row and resets them on a completion or a start', () => {
+  it('counts only intent failed events toward failures in a row', () => {
     const ledger = new IntentLedger();
     ledger.observe(intentEvent(newId('in'), 'failed', 100));
+    expect(ledger.failedInARow).toBe(1);
+    // A refused plan is not a failed intent: the same failure must not count twice.
     ledger.observe(planResultEvent('precondition_failed'));
+    expect(ledger.failedInARow).toBe(1);
+    ledger.observe(intentEvent(newId('in'), 'failed', 200));
     expect(ledger.failedInARow).toBe(2);
+  });
+
+  it('resets failures in a row on a completion or a started plan', () => {
+    const ledger = new IntentLedger();
+    ledger.observe(intentEvent(newId('in'), 'failed', 100));
+    ledger.observe(intentEvent(newId('in'), 'failed', 200));
     ledger.observe(planResultEvent('started'));
     expect(ledger.failedInARow).toBe(0);
-    ledger.observe(intentEvent(newId('in'), 'failed', 200));
-    ledger.observe(intentEvent(newId('in'), 'completed', 300));
+    ledger.observe(intentEvent(newId('in'), 'failed', 300));
+    ledger.observe(intentEvent(newId('in'), 'completed', 400));
     expect(ledger.failedInARow).toBe(0);
+  });
+
+  it('resumes only the most recently changed intent', () => {
+    const ledger = new IntentLedger();
+    const older = newId('in');
+    ledger.observe(intentEvent(older, 'accepted', 100));
+    ledger.observe(intentEvent(older, 'interrupted', 200, 'gather', false));
+    const newer = newId('in');
+    ledger.observe(intentEvent(newer, 'accepted', 300));
+    ledger.observe(intentEvent(newer, 'completed', 400, 'gather', false));
+    // The older interrupted intent is stale now: a later intent ended, so it is not resumed.
+    expect(continueInterrupted(ledger)).toBeNull();
   });
 });
 

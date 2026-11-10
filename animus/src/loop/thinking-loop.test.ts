@@ -139,18 +139,68 @@ describe('ThinkingLoop: the model plans', () => {
     expect(rig.events.published[0]?.payload).toMatchObject({ wake_reason: 'speech_addressed' });
   });
 
-  it('records a rejected plan without failing the cycle', async () => {
+  it('holds, with no intent id, when the Body refuses a plan for a reason a new snapshot cannot cure', async () => {
+    const lines: Record<string, unknown>[] = [];
     const rig = await makeRig([VALID_THOUGHT], {
+      deps: { log: (line) => lines.push(line) },
       ack: (plan) => ({
         thought_id: plan.thought_id,
         accepted: false,
-        rejection: { reason: 'stale_snapshot', detail: 'newer revision' },
+        rejection: { reason: 'invalid_plan', detail: 'the Body does not run this' },
       }),
     });
     const result = await rig.loop.handle(makeDecision());
-    expect(result.outcome).toBe('planned');
+    expect(result.outcome).toBe('fallback_hold');
     expect(result.ack?.accepted).toBe(false);
-    expect(rig.attention.settled).toEqual(['planned']);
+    expect(rig.attention.settled).toEqual(['fallback_hold']);
+    expect(lines.some((l) => l.event === 'plan_refused' && l.reason === 'invalid_plan')).toBe(true);
+  });
+
+  it('re-snapshots and re-thinks once when the Body refuses a stale plan', async () => {
+    let refusals = 0;
+    const rig = await makeRig([VALID_THOUGHT, VALID_THOUGHT], {
+      ack: (plan) => {
+        refusals += 1;
+        return refusals === 1
+          ? {
+              thought_id: plan.thought_id,
+              accepted: false,
+              rejection: { reason: 'stale_snapshot', detail: 'newer revision' },
+            }
+          : { thought_id: plan.thought_id, accepted: true, rejection: null };
+      },
+    });
+    const result = await rig.loop.handle(makeDecision());
+    expect(result.outcome).toBe('planned');
+    expect(refusals).toBe(2);
+  });
+
+  it('retries a plan once when the ack times out (the Body dedupes by thought id)', async () => {
+    let sent = 0;
+    const rig = await makeRig([VALID_THOUGHT], {
+      deps: { sleep: async () => {} },
+      ack: (plan) => {
+        sent += 1;
+        if (sent === 1) throw new BodyLinkError('timeout', 'no ack in time');
+        return { thought_id: plan.thought_id, accepted: true, rejection: null };
+      },
+    });
+    const result = await rig.loop.handle(makeDecision());
+    expect(result.outcome).toBe('planned');
+    expect(sent).toBe(2);
+  });
+
+  it('logs a loop_error with the life id and an error code when the memory load fails', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const rig = await makeRig([VALID_THOUGHT], { deps: { log: (line) => lines.push(line) } });
+    rig.store.loadDeterministic = async () => {
+      throw new Error('db down');
+    };
+    const result = await rig.loop.handle(makeDecision());
+    expect(result.outcome).toBe('model_error');
+    const logged = lines.find((l) => l.event === 'loop_error');
+    expect(logged?.life_id).toBeTypeOf('string');
+    expect(logged?.error_code).toBeTypeOf('string');
   });
 
   it('runs a decision from the attention controller through attach', async () => {
@@ -406,10 +456,22 @@ describe('ThinkingLoop: effort', () => {
     const rig = await makeRig([VALID_THOUGHT]);
     const events = [
       intentEvent(newId('in'), 'failed', 100),
-      planResultEvent('precondition_failed', 200),
+      intentEvent(newId('in'), 'failed', 200),
     ];
     await rig.loop.handle(makeDecision('action_failed', events));
     expect(rig.model.jobs[0]?.reasoning).toBe('on');
+    expect(rig.store.thoughts[0]?.effort).toBe('high');
+  });
+
+  it('stays minimal when one failed intent is followed by a refused plan', async () => {
+    const rig = await makeRig([VALID_THOUGHT]);
+    const events = [
+      intentEvent(newId('in'), 'failed', 100),
+      planResultEvent('precondition_failed', 200),
+    ];
+    await rig.loop.handle(makeDecision('action_failed', events));
+    expect(rig.model.jobs[0]?.reasoning).toBe('off');
+    expect(rig.store.thoughts[0]?.effort).toBe('minimal');
   });
 
   it('goes high on a repeated failure wake, not on the first', async () => {
@@ -442,7 +504,7 @@ describe('ThinkingLoop: the intent links to its thought', () => {
       ack: {
         thought_id: newId('th'),
         accepted: false,
-        rejection: { reason: 'stale_generation', detail: 'refused in the test' },
+        rejection: { reason: 'invalid_plan', detail: 'refused in the test' },
       },
       deps: { sleep: async () => {} },
     });

@@ -16,6 +16,17 @@ export interface PlanInput {
   expiresAfterTicks: number;
 }
 
+/** The wall-clock length of one world tick (20 ticks a second). */
+export const TICK_MS = 50;
+
+/**
+ * True when `plan` has expired by the time it would be submitted: the snapshot's tick plus the
+ * whole ticks elapsed since the snapshot was taken must reach `expires_tick`.
+ */
+export function planExpiredBy(plan: PlanMessage, snapshotTick: number, elapsedMs: number): boolean {
+  return snapshotTick + Math.ceil(elapsedMs / TICK_MS) >= plan.expires_tick;
+}
+
 /**
  * The plan for `input.thought`: one `ac_` id per action in order, an `in_` id when the thought
  * starts an intent, and an expiry of the snapshot's tick plus the configured window. A snapshot
