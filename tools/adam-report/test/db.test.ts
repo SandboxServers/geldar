@@ -6,8 +6,14 @@ interface FakeClient extends QueryClient {
   ended: number;
 }
 
-/** A fake client. `failWhen` makes one statement throw; every statement is recorded in order. */
-function fakeClient(failWhen: (text: string) => boolean = () => false): FakeClient {
+/**
+ * A fake client. `failWhen` makes one statement throw; `rowsFor` gives the rows of a statement.
+ * Every statement is recorded in order.
+ */
+function fakeClient(
+  failWhen: (text: string) => boolean = () => false,
+  rowsFor: (text: string) => Record<string, unknown>[] = () => [],
+): FakeClient {
   const fake: FakeClient = {
     sql: [],
     ended: 0,
@@ -15,7 +21,7 @@ function fakeClient(failWhen: (text: string) => boolean = () => false): FakeClie
     query: async (text: string) => {
       fake.sql.push(text);
       if (failWhen(text)) throw new Error('fake failure');
-      return { rows: [] };
+      return { rows: rowsFor(text) };
     },
     end: async () => {
       fake.ended++;
@@ -53,6 +59,48 @@ describe('loadRunData with a fake client', () => {
     await expect(loadRunData(() => fake, win, controller.signal)).rejects.toThrow();
     expect(fake.sql).toEqual(['BEGIN READ ONLY', 'ROLLBACK']);
     expect(fake.ended).toBe(1);
+  });
+
+  it('maps a place action to the block it places; other actions have none', async () => {
+    const actionRows = [
+      {
+        action_id: 'a1',
+        intent_id: null,
+        body_generation: 1,
+        state: 'completed',
+        kind: 'place',
+        place_block: 'white_bed',
+      },
+      {
+        action_id: 'a2',
+        intent_id: 'i1',
+        body_generation: 1,
+        state: 'completed',
+        kind: 'mine',
+        place_block: null,
+      },
+    ];
+    const fake = fakeClient(undefined, (text) => (text.includes('FROM actions') ? actionRows : []));
+    const data = await loadRunData(() => fake, win);
+    expect(fake.sql.some((s) => s.includes("kind = 'place'"))).toBe(true);
+    expect(data.actions).toEqual([
+      {
+        actionId: 'a1',
+        intentId: null,
+        bodyGeneration: 1,
+        state: 'completed',
+        kind: 'place',
+        placeBlock: 'white_bed',
+      },
+      {
+        actionId: 'a2',
+        intentId: 'i1',
+        bodyGeneration: 1,
+        state: 'completed',
+        kind: 'mine',
+        placeBlock: null,
+      },
+    ]);
   });
 
   it('closes the client when BEGIN itself fails', async () => {

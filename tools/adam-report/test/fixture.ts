@@ -70,7 +70,15 @@ export function intent(id: string, o: Partial<IntentRow> = {}): IntentRow {
 }
 
 export function action(id: string, o: Partial<ActionRow> = {}): ActionRow {
-  return { actionId: id, intentId: null, bodyGeneration: 1, state: 'completed', ...o };
+  return {
+    actionId: id,
+    intentId: null,
+    bodyGeneration: 1,
+    state: 'completed',
+    kind: 'mine',
+    placeBlock: null,
+    ...o,
+  };
 }
 
 export function receipt(actionId: string, phase: string, atMs = T0): ReceiptRow {

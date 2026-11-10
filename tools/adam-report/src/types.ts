@@ -33,6 +33,10 @@ export interface ActionRow {
   intentId: string | null;
   bodyGeneration: number | null;
   state: string;
+  /** The action's `do` verb (kind), for example place or mine. */
+  kind: string;
+  /** For a place action, the block it places (args.block); null for any other action. */
+  placeBlock: string | null;
 }
 
 export interface ReceiptRow {

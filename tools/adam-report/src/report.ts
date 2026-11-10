@@ -70,6 +70,8 @@ export function computeReport(input: ReportInput): Report {
       : survivalMeasure({
           thoughts,
           events,
+          actions,
+          receipts,
           days: criteria.survivalDays,
           deathFailsRun: criteria.deathFailsRun ?? true,
         });

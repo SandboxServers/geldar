@@ -29,7 +29,8 @@ const THOUGHTS_SQL = `SELECT thought_id, at, world_day, world_tick, wake_reason,
   FROM thoughts WHERE life_id = $1 AND at >= $2 AND at <= $3 ORDER BY at, thought_id`;
 const INTENTS_SQL = `SELECT intent_id, state, started_tick, ended_tick, end_reason
   FROM intents WHERE life_id = $1 ORDER BY intent_id`;
-const ACTIONS_SQL = `SELECT action_id, intent_id, body_generation, state
+const ACTIONS_SQL = `SELECT action_id, intent_id, body_generation, state, kind,
+  CASE WHEN kind = 'place' THEN args->>'block' END AS place_block
   FROM actions WHERE life_id = $1 ORDER BY action_id`;
 const RECEIPTS_SQL = `SELECT action_id, phase, at FROM receipts
   WHERE life_id = $1 AND at IS NOT NULL ORDER BY receipt_id`;
@@ -76,6 +77,8 @@ function actionRow(r: Record<string, unknown>): ActionRow {
     intentId: nullableText(r.intent_id),
     bodyGeneration: nullableInt(r.body_generation),
     state: String(r.state),
+    kind: String(r.kind),
+    placeBlock: nullableText(r.place_block),
   };
 }
 
