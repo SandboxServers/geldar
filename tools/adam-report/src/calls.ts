@@ -109,8 +109,10 @@ export interface LatencyInput {
 
 /** Thought latency from `thoughts.latency_ms`: p50, p95, max, and the hard limit. */
 export function latencyMeasure(input: LatencyInput, windowText: string): Measure {
+  // An errored call has no answer to time: it is counted apart and kept out of the latency.
+  const errored = input.thoughts.filter((t) => t.called && t.errored).length;
   const samples = input.thoughts
-    .filter((t) => t.called && t.latencyMs !== null)
+    .filter((t) => t.called && !t.errored && t.latencyMs !== null)
     .map((t) => t.latencyMs as number)
     .sort((a, b) => a - b);
   const title = 'Thought latency (p95 under the criterion)';
@@ -120,7 +122,7 @@ export function latencyMeasure(input: LatencyInput, windowText: string): Measure
       title,
       verdict: 'UNKNOWN',
       window: windowText,
-      values: { samples: 0 },
+      values: { samples: 0, errored_calls: errored },
       note: 'no model call with a latency',
     };
   }
@@ -129,6 +131,7 @@ export function latencyMeasure(input: LatencyInput, windowText: string): Measure
   const max = samples[samples.length - 1] ?? null;
   const values: Record<string, Value> = {
     samples: samples.length,
+    errored_calls: errored,
     p50_ms: p50,
     p95_ms: p95,
     max_ms: max,
