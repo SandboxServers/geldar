@@ -1,5 +1,7 @@
 # Adam run: the ops checklist (32B and 8B)
 
+Deferred by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md): the exit runs this checklist governs are not performed in Phase 0. The checklist is kept as written.
+
 Status: draft for owner review, 2026-11-10 (W6-14). Both run protocols, [adam-run-32b.md](adam-run-32b.md) and [adam-run-8b.md](adam-run-8b.md), read this file first. The readings behind the numbers are **provisional**: [decision 0061](../../decisions/0061-phase-0-exit-criteria-readings.md). The owner's open items are in [adam-run-owner-decisions.md](adam-run-owner-decisions.md). Numbers live in `tools/adam-report/criteria.yaml` and `tools/adam-run/abort-criteria.json`, never in these documents.
 
 **Who runs this.** The `ops` agent. It runs commands and reads outputs. It makes no code edits and no design decisions. Anything this file does not cover goes to the orchestrator.

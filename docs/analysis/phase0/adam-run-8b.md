@@ -1,5 +1,7 @@
 # Adam run protocol: Qwen3 8B (fast), exit run life `ag_adam_04`
 
+Deferred by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md): this run is not performed in Phase 0. Its harness paths are unexercised.
+
 Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist.md](adam-run-ops-checklist.md) first: its preconditions, commands, checks, abort rules and report reading apply to this run. This file adds only what is specific to the 8B run. Readings are provisional (decision 0061; [owner items](adam-run-owner-decisions.md)).
 
 **This run starts only when the 32B verdict says so.** Section 1 is the gate. Do not start this run on your own judgement.

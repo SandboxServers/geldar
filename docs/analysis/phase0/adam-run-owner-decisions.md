@@ -1,5 +1,7 @@
 # Adam runs: owner decisions and open points
 
+Deferred by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md): the exit runs these points serve are not performed in Phase 0; the points stay open.
+
 Status: 2026-11-10 (W6-17; O-3 and O-10 to O-12 added by W6-19, decision 0064). The items of [wave6-packets.md](wave6-packets.md) section 4 are answered provisionally in [decision 0061](../../decisions/0061-phase-0-exit-criteria-readings.md). The points below are what the run protocols still need from the owner or the orchestrator. Item O-2 blocks the 32B run. O-1 is no longer open.
 
 | # | Point | Why it matters | Current state in the code and docs |

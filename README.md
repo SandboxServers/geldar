@@ -12,14 +12,14 @@ The design is in [`docs/spec.md`](docs/spec.md) (v0.8, draft). The project is bu
 
 | Phase | Name | Status |
 |---|---|---|
-| 0 | Adam: one living agent on one machine | In progress |
+| 0 | Adam: one living agent on one machine | Closed as proof of life; the exit runs are deferred ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)) |
 | 1 | Village: the world on a LAN | Planned |
 | 2 | Open the doors: first internet exposure | Planned |
 | 3 | Settlement: 30 to 50 agents, sovereign agents | Planned |
 | 4 | Civilization: 100 or more agents | Planned |
 | 5 | Cosmology | Planned |
 
-Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and an MCP server that sovereign agents connect through. The sovereign-agent MCP has run against the real Body in live smoke tests. The Phase 0 exit runs (the multi-day survival and intent runs in spec section 10) have not happened yet; they are planned. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/).
+Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and an MCP server that sovereign agents connect through. The sovereign-agent MCP has run against the real Body in live smoke tests. The Body benchmark passed at 20 TPS, 100%, and live Adam smokes ran against the real Body and a local model. Phase 0 is closed as proof of life: the owner waived the spec's section 10 exit runs and deferred them ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)), so five-day survival, the 24-hour run and the 8B run were not performed. The next work is scaling (more agents per player, up to 20; sovereign players and rangers); the phase plan is for the owner to set. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/), and the resume card is [`docs/analysis/phase0/RESUME.md`](docs/analysis/phase0/RESUME.md).
 
 ## Principles
 
