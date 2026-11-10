@@ -80,6 +80,34 @@ describe('the scripted chatter bot', () => {
     expect(chatter.describe()).toContain('ag_adam_02: Hello, Steve');
   });
 
+  it('a silent chatter sends nothing and records nothing until it speaks', async () => {
+    const { bot, chatted } = fakeBot();
+    const time = manualTime();
+    const chatter = new ChatterBot(bot, {
+      rateLimitSeconds: 3,
+      maxChars: 256,
+      silent: true,
+      ...time,
+    });
+    expect(await chatter.say('Adam, hello')).toEqual({ status: 'refused', reason: 'silent' });
+    expect(await chatter.sayAll(['one', 'two'])).toEqual([
+      { status: 'refused', reason: 'silent' },
+      { status: 'refused', reason: 'silent' },
+    ]);
+    expect(chatted).toEqual([]);
+    expect(chatter.records).toEqual([]);
+    chatter.speak();
+    expect(await chatter.say('Adam, hello')).toEqual({ status: 'said', text: 'Adam, hello' });
+    expect(chatted).toEqual(['Adam, hello']);
+  });
+
+  it('a chatter that is not silent says at once, as before', async () => {
+    const { bot, chatted } = fakeBot();
+    const chatter = new ChatterBot(bot, { rateLimitSeconds: 3, maxChars: 256, silent: false });
+    expect(await chatter.say('Adam, hi')).toEqual({ status: 'said', text: 'Adam, hi' });
+    expect(chatted).toEqual(['Adam, hi']);
+  });
+
   it('stops listening on stop', () => {
     const { bot, hear } = fakeBot();
     const chatter = new ChatterBot(bot, { rateLimitSeconds: 3, maxChars: 256 });

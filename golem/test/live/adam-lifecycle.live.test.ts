@@ -77,6 +77,7 @@ describe.skipIf(!mindLiveEnabled)('Adam across a Body crash and a night', () => 
       await ac.live.ctl.command(
         `setblock ${x + 3} ${y + 1} ${z + 1} white_bed[part=head,facing=east]`,
       );
+      ac.chatter.speak();
       await ac.chatter.say(
         'Adam, it is night and a bed is right next to you. Go to bed and sleep.',
       );

@@ -37,6 +37,11 @@ export interface ChatterBotOptions {
   rateLimitSeconds: number;
   /** `chat.max_chars`. */
   maxChars: number;
+  /**
+   * Starts silent: `say` is refused (reason `silent`, nothing sent, no speech event) until the case
+   * calls `speak()`. Default false.
+   */
+  silent?: boolean;
   lifeId?: string;
   /** Wall clock in ms; tests pass their own. */
   now?: () => number;
@@ -47,6 +52,9 @@ export interface ChatterBotOptions {
 
 const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** A `say` outcome, or the refusal of a silent chatter (nothing was sent, no speech event). */
+export type ChatOutcome = SayOutcome | { status: 'refused'; reason: 'silent' };
+
 /** The scripted chatter on one joined bot. */
 export class ChatterBot {
   /** Everything said, refused and heard, oldest first. */
@@ -56,9 +64,11 @@ export class ChatterBot {
   private readonly voice: BotVoice;
   private readonly detach: () => void;
   private readonly opts: ChatterBotOptions;
+  private silent: boolean;
 
   constructor(bot: Bot, opts: ChatterBotOptions) {
     this.opts = opts;
+    this.silent = opts.silent ?? false;
     this.lifeId = opts.lifeId ?? CHATTER_LIFE_ID;
     const log = opts.log ?? (() => undefined);
     const events = new SpeechEvents({
@@ -84,8 +94,17 @@ export class ChatterBot {
     this.detach = ears.attach(bot);
   }
 
+  /**
+   * Lets a silent chatter speak from now on. A case calls it once Adam has acted, so the chatter
+   * does not greet him before he has a plan of his own.
+   */
+  speak(): void {
+    this.silent = false;
+  }
+
   /** Says one line, with the Body voice's limits. A refusal is recorded and returned, not thrown. */
-  async say(text: string): Promise<SayOutcome> {
+  async say(text: string): Promise<ChatOutcome> {
+    if (this.silent) return { status: 'refused', reason: 'silent' };
     const outcome = await this.voice.say(text);
     if (outcome.status === 'refused') {
       this.push({ kind: 'refused', from: this.lifeId, text, reason: outcome.reason });
@@ -97,9 +116,9 @@ export class ChatterBot {
    * Says each line in turn, waiting out the rate limit between them; a line refused for any reason
    * other than the rate limit is returned as is. Returns one outcome per line.
    */
-  async sayAll(lines: string[]): Promise<SayOutcome[]> {
+  async sayAll(lines: string[]): Promise<ChatOutcome[]> {
     const sleep = this.opts.sleep ?? realSleep;
-    const outcomes: SayOutcome[] = [];
+    const outcomes: ChatOutcome[] = [];
     for (const [index, line] of lines.entries()) {
       if (index > 0) await sleep(this.opts.rateLimitSeconds * 1000 + 250);
       let outcome = await this.say(line);
@@ -165,13 +184,14 @@ export class ChatterBot {
  * life registry and the whitelist are handled there) and stops it afterwards.
  */
 export async function withChatterBot(
-  opts: { slot: number; rateLimitSeconds: number; maxChars: number },
+  opts: { slot: number; rateLimitSeconds: number; maxChars: number; silent?: boolean },
   fn: (chatter: ChatterBot, ctx: LiveContext) => Promise<void>,
 ): Promise<void> {
   await withLiveBot({ name: CHATTER_LIFE_ID, slot: opts.slot }, async (ctx) => {
     const chatter = new ChatterBot(ctx.bot, {
       rateLimitSeconds: opts.rateLimitSeconds,
       maxChars: opts.maxChars,
+      silent: opts.silent ?? false,
     });
     try {
       await fn(chatter, ctx);
