@@ -113,7 +113,10 @@ export function checkDockerfileFrom(path: string, text: string): string[] {
   return problems;
 }
 
-/** Every service that pulls an image names it by digest. A service with `build:` is built locally. */
+/**
+ * Every service that pulls an image names it by digest. A service with `build:` is built locally, and a
+ * service with neither (an overlay that only sets fields on a base service) takes its image from the base.
+ */
 export function checkComposeImageDigests(path: string, text: string): string[] {
   let document: unknown;
   try {
@@ -126,7 +129,7 @@ export function checkComposeImageDigests(path: string, text: string): string[] {
   const problems: string[] = [];
   for (const [name, service] of Object.entries(services)) {
     const fields = (service ?? {}) as { image?: unknown; build?: unknown };
-    if (fields.build !== undefined) continue;
+    if (fields.build !== undefined || fields.image === undefined) continue;
     if (typeof fields.image !== 'string' || !DIGEST.test(fields.image)) {
       problems.push(
         `${path} service ${name}: image ${JSON.stringify(fields.image)} is not pinned by digest`,

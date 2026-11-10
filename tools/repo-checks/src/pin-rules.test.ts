@@ -92,6 +92,11 @@ describe('checkComposeImageDigests', () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('service nats');
   });
+
+  it('accepts an overlay service that only sets fields on a base service, with no image', () => {
+    const text = 'services:\n  paper:\n    environment:\n      RCON_HOST: 127.0.0.1\n';
+    expect(checkComposeImageDigests('compose/rcon-host.yml', text)).toEqual([]);
+  });
 });
 
 describe('checkActionPins', () => {
