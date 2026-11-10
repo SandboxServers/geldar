@@ -152,7 +152,11 @@ interface PidRecord {
   runId: string;
 }
 
-/** A live run owns the folder when its pid, its command line and its start time all match the pid file. */
+/**
+ * A live run owns the folder when its pid, its command line and its start time all match the pid file. The run id is
+ * not in the command line when the operator started the run without --run-id: the id is generated inside, after the
+ * process has started. The marker, the pid and the start time identify the process all the same.
+ */
 function liveOwner(h: Harness, runDir: string): PidRecord | null {
   const text = h.runFiles(runDir).read(join(runDir, PID_FILE));
   if (text === null) return null;
@@ -167,7 +171,7 @@ function liveOwner(h: Harness, runDir: string): PidRecord | null {
   if (found === undefined || Number.isNaN(recorded)) return null;
   const line = found.commandLine.replace(/\\/g, '/');
   const started = Date.parse(found.startedAt);
-  const sameRun = line.includes(RUN_MARKER) && line.includes(rec.runId);
+  const sameRun = line.includes(RUN_MARKER);
   const sameStart = Math.abs(started - recorded) < 2 * MINUTE_MS;
   return sameRun && sameStart ? rec : null;
 }

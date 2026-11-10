@@ -244,6 +244,35 @@ describe('status and report without --run-id', () => {
     expect(files.read(join(NEW, 'stop-request.json'))).not.toBeNull();
     expect(files.read(join(OLD, 'stop-request.json'))).toBeNull();
   });
+
+  it('a run started without --run-id is live to status and stop: its pid, start time and marker match', async () => {
+    const out = capture();
+    const { h, files, calls } = harness({
+      runFolders: folders,
+      processes: [
+        {
+          pid: 888,
+          startedAt: '2026-11-10T12:14:08.000Z',
+          commandLine: 'node C:/repo/tools/adam-run/src/cli.ts smoke start',
+        },
+      ],
+    });
+    files.write(runPaths(NEW).manifest, JSON.stringify({ started_at: '2026-11-10T12:14:08Z' }));
+    files.write(runPaths(NEW).status, '{"event":"sample"}\n');
+    files.write(
+      join(NEW, 'run.pid.json'),
+      JSON.stringify({
+        pid: 888,
+        startedAt: '2026-11-10T12:14:08.000Z',
+        runId: 'smoke-20261110T121408Z',
+      }),
+    );
+    expect(await runCli(['smoke', 'status'], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('state: running');
+    expect(await runCli(['smoke', 'stop'], REPO, h, out.log)).toBe(0);
+    expect(files.read(join(NEW, 'stop-request.json'))).not.toBeNull();
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('a run aborted before it started', () => {
