@@ -87,6 +87,33 @@ describe('KvPresenceStore', () => {
     expect(validatePresenceRecord(stored(bucket)).ok).toBe(true);
   });
 
+  it('skips the write of a touch while the awake record is under 5 s old, and writes at 5 s', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 4_999;
+    await store.touch(LIFE);
+    expect(bucket.puts).toBe(1);
+    now.ms = T0 + 5_000;
+    await store.touch(LIFE);
+    expect(bucket.puts).toBe(2);
+    expect((stored(bucket) as { at: string }).at).toBe('2026-11-09T12:00:05.000Z');
+  });
+
+  it('a touch still writes when the life is hibernating, however recent its record', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 700_000;
+    await store.settle(LIFE);
+    const puts = bucket.puts;
+    await store.touch(LIFE);
+    expect(bucket.puts).toBe(puts + 1);
+    expect(stored(bucket)).toMatchObject({ state: 'awake', desired_body: 'up' });
+  });
+
   it('wantBody writes an awake record stamped with the given time', async () => {
     const bucket = new FakeBucket();
     await new KvPresenceStore(bucket, () => 0).wantBody(LIFE, T0 + 5_000);

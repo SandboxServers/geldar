@@ -13,6 +13,9 @@ export const AWAKE_WINDOW_MS = 60_000;
 /** How long after the last touch a life stays dim before it hibernates (10 minutes). */
 export const HIBERNATE_AFTER_MS = 600_000;
 
+/** A touch of an awake life this recent is not written again (the wait poll's write rate). */
+export const TOUCH_SKIP_MS = 5_000;
+
 /** The part of a KV bucket the presence store uses; the NATS KV bucket satisfies it. */
 export interface PresenceBucket {
   get(key: string): Promise<{ string(): string } | null>;
@@ -80,9 +83,23 @@ export class KvPresenceStore implements PresenceStore {
     await this.write(lifeId, nowMs);
   }
 
-  /** A wait marks the life as watched now: awake, with the Body up. */
+  /**
+   * A wait marks the life as watched now: awake, with the Body up. A life already awake with the
+   * Body up and a touch under `TOUCH_SKIP_MS` old is left alone, so a wait's poll writes every few
+   * seconds rather than every second; the 60 s window still runs from a touch at most that old.
+   */
   async touch(lifeId: string): Promise<void> {
-    await this.write(lifeId, this.now());
+    const nowMs = this.now();
+    const stored = await this.read(lifeId);
+    const age = stored === null ? -1 : nowMs - Date.parse(stored.at);
+    const fresh =
+      stored !== null &&
+      stored.state === 'awake' &&
+      stored.desired_body === 'up' &&
+      age >= 0 &&
+      age < TOUCH_SKIP_MS;
+    if (fresh) return;
+    await this.write(lifeId, nowMs);
   }
 
   /**
