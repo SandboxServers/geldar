@@ -48,7 +48,8 @@ export interface ReceiptRow {
 /** A row of the `events` table for one life: only `death` and `sleep` are read. */
 export interface EventRow {
   type: string;
-  day: number;
+  /** The world day, or null when the producer sent none. A null day is never a day 0. */
+  day: number | null;
   atMs: number;
 }
 

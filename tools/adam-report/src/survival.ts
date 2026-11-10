@@ -113,15 +113,31 @@ function missingItems(c: DayCheck): string[] {
   return out;
 }
 
+/**
+ * A death inside the window: at or after the first thought, and on a day no later than the last
+ * day of the window. A death with no world day counts by its time alone.
+ */
+function deathsInWindow(events: EventRow[], firstAtMs: number, last: number): EventRow[] {
+  return events.filter(
+    (e) => e.type === 'death' && e.atMs >= firstAtMs && (e.day === null || e.day <= last),
+  );
+}
+
 function verdictOf(
-  deaths: number,
+  death: EventRow | undefined,
   coveredDays: number,
   days: number,
   checks: DayCheck[],
   deathFailsRun: boolean,
 ): { verdict: Verdict; note: string } {
-  if (deaths > 0 && deathFailsRun)
-    return { verdict: 'FAIL', note: 'a death fell inside the window' };
+  if (death !== undefined && deathFailsRun) {
+    const when = new Date(death.atMs).toISOString();
+    const day = death.day === null ? 'no world day recorded' : `world day ${death.day}`;
+    return {
+      verdict: 'FAIL',
+      note: `the life ended by death at ${when} (${day}) inside the window; the cause is not in the read model`,
+    };
+  }
   if (coveredDays < days)
     return { verdict: 'UNKNOWN', note: `thoughts cover ${coveredDays} of ${days} days` };
   const failed = checks.filter((c) => missingItems(c).length > 0);
@@ -157,10 +173,11 @@ export function survivalMeasure(input: SurvivalInput): Measure {
   const first = Math.min(...allDays);
   const last = first + days - 1;
   const covered = new Set(allDays.filter((d) => d >= first && d <= last)).size;
-  const deaths = events.filter((e) => e.type === 'death' && e.day >= first && e.day <= last).length;
+  const deathRows = deathsInWindow(events, sorted[0]?.atMs ?? 0, last);
   const bedDays = bedPlacementDays(sorted, actions, receipts);
   const checks = dayChecks(thoughts, events, bedDays, first, last);
-  const { verdict, note } = verdictOf(deaths, covered, days, checks, deathFailsRun);
+  const { verdict, note } = verdictOf(deathRows[0], covered, days, checks, deathFailsRun);
+  const deaths = deathRows.length;
   const count = (f: (c: DayCheck) => boolean) => checks.filter(f).length;
   return {
     id: 'survival',

@@ -85,6 +85,29 @@ describe('survival measure (decision 0061 item 1)', () => {
     expect(m.note).toContain('death');
   });
 
+  it('FAIL, with the death time, for a death whose event has no world day', () => {
+    const data = life(5);
+    const shifted: ThoughtRow[] = data.thoughts.map((t) => ({ ...t, day: t.day + 1 }));
+    const death: EventRow = { type: 'death', day: null, atMs: 3 * DAY_MS + 60_000 };
+    const m = survivalMeasure({
+      ...data,
+      thoughts: shifted,
+      events: [...data.events, death],
+      days: 5,
+      deathFailsRun: true,
+    });
+    expect(m.verdict).toBe('FAIL');
+    expect(m.values.deaths).toBe(1);
+    expect(m.note).toContain(new Date(death.atMs).toISOString());
+    expect(m.note).toContain('no world day recorded');
+  });
+
+  it('a death after the last day of the window does not count', () => {
+    const data = life(5);
+    data.events.push(event('death', 5, 5 * DAY_MS));
+    expect(measure(data).values.deaths).toBe(0);
+  });
+
   it('UNKNOWN when the thoughts cover fewer days than the window', () => {
     const m = measure(life(4));
     expect(m.verdict).toBe('UNKNOWN');
