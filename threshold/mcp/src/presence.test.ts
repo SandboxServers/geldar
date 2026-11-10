@@ -1,0 +1,171 @@
+import { PRESENCE_BUCKET, validatePresenceRecord } from '@geldar/contract';
+import { describe, expect, it } from 'vitest';
+import {
+  type BucketManager,
+  KvPresenceStore,
+  openPresenceBucket,
+  type PresenceBucket,
+  presenceAt,
+} from './presence.ts';
+
+const LIFE = 'ag_jason_01';
+const T0 = Date.parse('2026-11-09T12:00:00.000Z');
+
+/** An in-memory KV bucket that keeps the stored text, as NATS KV does. */
+class FakeBucket implements PresenceBucket {
+  readonly values = new Map<string, string>();
+  puts = 0;
+
+  async get(key: string): Promise<{ string(): string } | null> {
+    const value = this.values.get(key);
+    return value === undefined ? null : { string: () => value };
+  }
+
+  async put(key: string, value: string): Promise<number> {
+    this.puts++;
+    this.values.set(key, value);
+    return this.puts;
+  }
+}
+
+/** A bucket manager with buckets that exist only once created, and a log of its calls. */
+class FakeManager implements BucketManager {
+  readonly calls: string[] = [];
+  readonly buckets = new Map<string, FakeBucket>();
+
+  async open(name: string): Promise<PresenceBucket> {
+    this.calls.push(`open:${name}`);
+    const bucket = this.buckets.get(name);
+    if (bucket === undefined) throw new Error(`no bucket ${name}`);
+    return bucket;
+  }
+
+  async create(name: string): Promise<PresenceBucket> {
+    this.calls.push(`create:${name}`);
+    const bucket = new FakeBucket();
+    this.buckets.set(name, bucket);
+    return bucket;
+  }
+}
+
+function storeAt(bucket: FakeBucket, nowRef: { ms: number }): KvPresenceStore {
+  return new KvPresenceStore(bucket, () => nowRef.ms);
+}
+
+function stored(bucket: FakeBucket): unknown {
+  return JSON.parse(bucket.values.get(LIFE) ?? 'null');
+}
+
+describe('openPresenceBucket', () => {
+  it('creates the presence bucket when the host has not yet opened it', async () => {
+    const manager = new FakeManager();
+    await openPresenceBucket(manager);
+    expect(manager.calls).toEqual([`open:${PRESENCE_BUCKET}`, `create:${PRESENCE_BUCKET}`]);
+    expect(manager.buckets.has(PRESENCE_BUCKET)).toBe(true);
+  });
+
+  it('opens the existing bucket and creates nothing when it is there already', async () => {
+    const manager = new FakeManager();
+    await openPresenceBucket(manager);
+    manager.calls.length = 0;
+    await openPresenceBucket(manager);
+    expect(manager.calls).toEqual([`open:${PRESENCE_BUCKET}`]);
+  });
+});
+
+describe('KvPresenceStore', () => {
+  it('touch writes an awake record with the Body up, as the contract shape', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    await storeAt(bucket, now).touch(LIFE);
+    expect(stored(bucket)).toEqual({
+      life_id: LIFE,
+      state: 'awake',
+      desired_body: 'up',
+      at: '2026-11-09T12:00:00.000Z',
+    });
+    expect(validatePresenceRecord(stored(bucket)).ok).toBe(true);
+  });
+
+  it('wantBody writes an awake record stamped with the given time', async () => {
+    const bucket = new FakeBucket();
+    await new KvPresenceStore(bucket, () => 0).wantBody(LIFE, T0 + 5_000);
+    expect(stored(bucket)).toMatchObject({ state: 'awake', desired_body: 'up' });
+    expect((stored(bucket) as { at: string }).at).toBe('2026-11-09T12:00:05.000Z');
+  });
+
+  it('keeps the life awake for 60 s, dims it after, and hibernates it after 10 minutes', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+
+    now.ms = T0 + 59_999;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'awake', desired_body: 'up' });
+
+    now.ms = T0 + 60_000;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'dim', desired_body: 'up' });
+
+    now.ms = T0 + 600_000;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'hibernating', desired_body: 'down' });
+    expect(validatePresenceRecord(stored(bucket)).ok).toBe(true);
+  });
+
+  it('keeps the last touch time when it settles, so the record keeps aging', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 700_000;
+    await store.settle(LIFE);
+    expect((stored(bucket) as { at: string }).at).toBe('2026-11-09T12:00:00.000Z');
+    expect(stored(bucket)).toMatchObject({ state: 'hibernating', desired_body: 'down' });
+  });
+
+  it('writes only when the state changes, so a settle in the same state costs no put', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    const puts = bucket.puts;
+    now.ms = T0 + 10_000;
+    await store.settle(LIFE);
+    expect(bucket.puts).toBe(puts);
+  });
+
+  it('a touch wakes a hibernating life back to awake with the Body up', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 700_000;
+    await store.settle(LIFE);
+    now.ms = T0 + 800_000;
+    await store.touch(LIFE);
+    expect(stored(bucket)).toMatchObject({ state: 'awake', desired_body: 'up' });
+  });
+
+  it('settle writes nothing and returns null for a life with no record', async () => {
+    const bucket = new FakeBucket();
+    expect(await storeAt(bucket, { ms: T0 }).settle(LIFE)).toBeNull();
+    expect(bucket.puts).toBe(0);
+  });
+
+  it('reads null for a missing key and for a stored value that is not a presence record', async () => {
+    const bucket = new FakeBucket();
+    const store = storeAt(bucket, { ms: T0 });
+    expect(await store.read(LIFE)).toBeNull();
+    bucket.values.set(LIFE, '{"life_id":"ag_jason_01","state":"asleep"}');
+    expect(await store.read(LIFE)).toBeNull();
+    bucket.values.set(LIFE, '{not json');
+    expect(await store.read(LIFE)).toBeNull();
+  });
+});
+
+describe('presenceAt', () => {
+  it('derives the state from the age of the last touch, never below zero', () => {
+    expect(presenceAt(T0, T0 - 1_000)).toEqual({ state: 'awake', desired_body: 'up' });
+    expect(presenceAt(T0, T0 + 600_000 - 1)).toEqual({ state: 'dim', desired_body: 'up' });
+    expect(presenceAt(T0, T0 + 600_000)).toEqual({ state: 'hibernating', desired_body: 'down' });
+  });
+});
