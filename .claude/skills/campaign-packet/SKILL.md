@@ -24,7 +24,7 @@ Read `docs/analysis/<campaign>/RESUME.md`, then the ledger `README.md`. Open a p
 - `README.md` (the ledger): purpose and exit criteria, a **Decisions** table (`D-P0-NN`: status, owner, record link), and a packet table with status **Ready / BlockedDependency / BlockedDecision / Writing / Review / Done**.
 - `work-packets.md`: dispatch rules, the shared **contract** packets build against (names, paths, schemas, return formats), then one section per packet grouped into waves.
 - `RESUME.md`: at most 40 lines. Current wave, packets in flight with their worktrees, the next action, open decisions.
-- `worknotes/`: leftovers from finished packets and ruling notes.
+- `worknotes/`: one file per packet (`worknotes/<packet>.md`), coder and reviewer reports in `worknotes/reports/`, and ruling notes. Never a shared append-only file across parallel branches: in Wave M one such file caused add/add conflicts on eight branches.
 
 Owner decisions are never guessed. Mark them `BlockedDecision` and ask the owner (AskUserQuestion) before dispatching what depends on them. A settled decision gets a record in `docs/decisions/` and its ledger row links it. A spec gap found by a coder or reviewer gets its record in the same wave: the owner has authorised the orchestrator to write `docs/decisions/` records (and their ledger rows) in the same wave, which is the one exception to "never edits outside `docs/analysis/phase0/`"; a decision that needs the owner's choice is queued in `RESUME.md` and asked at the next boundary.
 
@@ -44,6 +44,8 @@ Planning rule (owner ruling, wave 3): shape the dependency graph to fan out earl
 
 Integration step (fan-out waves): after the parallel packets, one integration coder merges the fan-out branches into the wave branch, owns the shared interface files (for example `view.ts` and the reflex context type, which several packets extend) and wires the pieces together. Parallel packets that must add fields to a shared file say so in the packet table, so the integration coder knows what to reconcile instead of every coder editing the same file. Keep a coder brief to about 12 items; split a larger one.
 
+Database and live-service packets (SQL, grants, migrations, NATS, compose): such a packet counts as done only after ops has run its integration cases. Reasoned SQL is not evidence; in Wave M the first real run of the cases found the defects that the coders had reasoned past.
+
 Waves hold about four to six packets that one reviewer can hold at once. A wave usually ships as one PR from an integration branch, or one PR per packet when they are independent.
 
 ## 3. Dispatch a wave
@@ -55,6 +57,7 @@ Waves hold about four to six packets that one reviewer can hold at once. A wave 
 Coder brief template (fill the angle-bracket fields; copy the rest unchanged):
 
 ```
+Standing rules: `.claude/agents/packet-coder.md` (not repeated here)
 Worktree: <absolute path; the coder creates it with `git worktree add <path> -b <branch> <start>` if it does not exist>
 Packet: docs/analysis/<campaign>/work-packets.md, section "### <packet id>" (read it; do not paste it)
 Report: <worktree>\.claude\reports\<campaign>\<packet>-<role>.md (role coder, review-<N>, fix-<N>); write it before you return
@@ -68,7 +71,7 @@ Return one line: <packet> <done|blocked|failed> <commit-sha|-> <report-path>
 
 Live lane: the default is `none` (the coder writes `live: pending`); name `you are the only live user` only for the one coder the orchestrator lets use the live lane.
 
-Trailer lines: copy the attribution text from the session's attribution instruction; never retype it from memory.
+Trailer lines: the orchestrator decides them, once per campaign, and states them in the brief. For the campaign they are `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` and the `Claude-Session:` line, whatever model runs the agent. The coder copies them verbatim (`.claude/agents/packet-coder.md`).
 
 Reviewer brief template (a fresh `packet-reviewer`, read-only):
 
@@ -87,7 +90,7 @@ Fix coder brief ("Review fix, pass N of <L>"): the worktree, the packet section,
 
 A continuation coder ("continuation N of 3") first commits any uncommitted work in the worktree (a WIP commit, squashed into the final commit as the packet-coder rules say), then continues from its report.
 
-Brief template additions: never weaken an assertion or change a fixture to make a test pass (report a Body finding); probes against the server use read-only verbs only; check every parser or fixture of a server reply against a captured real reply; no live lane or Docker unless the brief names the coder as the only live user. Live cases start their own Mind and Body: a brief never has anyone run `adam up` (or `adam up --help`) before them, since it holds port 7410; the live cases are 8B-only, and the 32B run is one manual `adam up --model strong` with no live cases. `adam select` rewrites `shards/phase0.yaml`: restore the committed file before any commit or merge. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
+Brief template additions (the standing rules in `packet-coder.md` already cover assertions, fixtures, probes and parsers): no live lane or Docker unless the brief names the coder as the only live user. Live cases start their own Mind and Body: a brief never has anyone run `adam up` (or `adam up --help`) before them, since it holds port 7410; the live cases are 8B-only, and the 32B run is one manual `adam up --model strong` with no live cases. `adam select` rewrites `shards/phase0.yaml`: restore the committed file before any commit or merge. The orchestrator owns the live lane and runs it serially (one shard: `bench` and `test:live` mutate it); a brief may name exactly one coder as the only live user for that packet; otherwise coders write `live: pending` in their report (live tests are written but not run; the orchestrator runs them). A benchmark failure is a finding, not something to tune away; a hidden control scenario (`bed-clear`) keeps an honest scenario honest.
 
 Retry and cap rule (every coder brief): a packet that adds a retry, a requeue or a cap says what happens at the cap (dead letter, fatal, drop) and requires a test for the last allowed attempt; copy that sentence into the brief when the packet does.
 
@@ -109,7 +112,9 @@ Owner ruling (wave 3): reviews and live runs happen once per wave, at the end (w
 
 The orchestrator, not the reviewer, records each review round's findings in `worknotes/wave<N>-review-<r>.md` with an owner per item (fix coder, docs, process packet, owner decision). A fix coder's brief gives the path of that file (or the reviewer report) and the items it owns.
 
-A coder that stops on context gets a fresh coder that continues from its report ("continuation N of 3"). After 3 sessions, re-slice the packet.
+A coder that stops on context gets a fresh coder that continues from its report ("continuation N of 3"). After 3 sessions, re-slice the packet. A packet that needs more than one finisher is split at the next dispatch, not finished by another session: each finisher re-reads the same files and costs a merge and a check (Wave M: eleven of thirteen packets needed one to three finishers).
+
+Every review round after a fix round targets the fix commits and the code they touch first, then the original surface. In Wave M two of three rounds found regressions introduced by the previous round's fixes.
 
 Then ship with the `ship-pr` skill (§ 8 for the wave PR) and update the ledger rows.
 
