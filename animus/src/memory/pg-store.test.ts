@@ -169,6 +169,16 @@ describe('PgMemoryStore', () => {
     expect(calls[1]?.sql).toContain('SET embedding = $2::vector');
     expect(calls[1]?.params[0]).toBe('4');
   });
+
+  it('bounds the belief load to the configured limit, newest first', async () => {
+    const { pool, calls } = fakePool((sql) =>
+      sql.startsWith('SELECT * FROM agents') ? { rows: [{ agent_id: 'l', born_at: null }] } : {},
+    );
+    await new PgMemoryStore(pool, { maxBeliefs: 12 }).loadDeterministic('l', 5);
+    const beliefs = calls.find((c) => c.sql.includes("kind = 'semantic'"));
+    expect(beliefs?.sql).toContain('ORDER BY memory_id DESC LIMIT $2');
+    expect(beliefs?.params).toEqual(['l', 12]);
+  });
 });
 
 describe('PgJournal', () => {

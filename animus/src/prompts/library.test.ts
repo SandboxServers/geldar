@@ -250,4 +250,39 @@ describe('snapshot rendering', () => {
     });
     expect(renderSnapshot(b).text).toBe(renderSnapshot(a).text);
   });
+
+  it('shows a six-kilobyte day digest whole, its last section included', () => {
+    const digest = Array.from(
+      { length: 100 },
+      (_, i) => `Section ${i}: ${'lorem ipsum '.repeat(4)}`,
+    ).join('\n');
+    expect(digest.length).toBeGreaterThan(6000);
+    const user = library.render('reflection', { ...reflectionVars(false), digest }).messages[1];
+    expect(user?.content).toContain('Section 0:');
+    expect(user?.content).toContain('Section 99:');
+  });
+
+  it('shows at most mind.max_beliefs beliefs, the newest first, out of 500', () => {
+    const beliefs = Array.from({ length: 500 }, (_, i) => ({
+      memoryId: 500 - i,
+      agentId: 'ag_adam_01',
+      kind: 'semantic' as const,
+      provenance: 'observation' as const,
+      subject: null,
+      text: `zq-belief-${i}`,
+      createdDay: 1,
+      sourceThought: null,
+      sourceAgent: null,
+      dueTick: null,
+      resolved: false,
+      active: true,
+    }));
+    const user = library.render('thought', { ...sampleThoughtVars(), beliefs }).messages[1];
+    expect((user?.content ?? '').split('"zq-belief-').length - 1).toBe(40);
+    expect(user?.content).toContain('"zq-belief-39"');
+    expect(user?.content).not.toContain('"zq-belief-40"');
+    const five = createPromptLibrary({ maxBeliefs: 5 });
+    const short = five.render('thought', { ...sampleThoughtVars(), beliefs }).messages[1];
+    expect((short?.content ?? '').split('"zq-belief-').length - 1).toBe(5);
+  });
 });

@@ -27,16 +27,38 @@ function approvedDoc(): Doc {
 describe('animus config: the start-up waits', () => {
   it('reads the snapshot retry and the Thinker wait from the shard file', async () => {
     const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
-    expect(config.mind).toEqual({ snapshotRetryS: 60, thinkerWaitS: 20 });
+    expect(config.mind).toEqual({
+      snapshotRetryS: 60,
+      thinkerWaitS: 20,
+      promptBudgetChars: 12000,
+      maxBeliefs: 40,
+    });
   });
 
   it('defaults them when absent and rejects a bad value', () => {
     const doc = approvedDoc();
     delete doc.mind.snapshot_retry_s;
     delete doc.mind.thinker_wait_s;
-    expect(parseAnimusConfig(doc).mind).toEqual({ snapshotRetryS: 60, thinkerWaitS: 20 });
+    expect(parseAnimusConfig(doc).mind).toEqual({
+      snapshotRetryS: 60,
+      thinkerWaitS: 20,
+      promptBudgetChars: 12000,
+      maxBeliefs: 40,
+    });
     doc.mind.thinker_wait_s = -1;
     expect(() => parseAnimusConfig(doc)).toThrow('mind.thinker_wait_s');
+  });
+
+  it('reads the prompt budget and the belief limit, and rejects a value out of range', () => {
+    const doc = approvedDoc();
+    doc.mind.prompt_budget_chars = 12000;
+    doc.mind.max_beliefs = 40;
+    expect(parseAnimusConfig(doc).mind.promptBudgetChars).toBe(12000);
+    doc.mind.prompt_budget_chars = 999;
+    expect(() => parseAnimusConfig(doc)).toThrow('mind.prompt_budget_chars');
+    doc.mind.prompt_budget_chars = 12000;
+    doc.mind.max_beliefs = 0;
+    expect(() => parseAnimusConfig(doc)).toThrow('mind.max_beliefs');
   });
 });
 

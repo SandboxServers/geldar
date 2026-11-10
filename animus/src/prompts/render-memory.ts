@@ -37,9 +37,15 @@ export function renderCommitments(rows: readonly MemoryRow[]): string {
   );
 }
 
-/** Beliefs with their kind. */
-export function renderBeliefs(rows: readonly MemoryRow[]): string {
-  return lines(rows.map((m) => `- (${m.provenance}) ${jsonString(m.text)}`));
+/** The beliefs a prompt shows by default (`mind.max_beliefs`). */
+export const DEFAULT_MAX_BELIEFS = 40;
+
+/** Beliefs with their kind: the first `max` of them, which are the newest (the load is newest first). */
+export function renderBeliefs(
+  rows: readonly MemoryRow[],
+  max: number = DEFAULT_MAX_BELIEFS,
+): string {
+  return lines(rows.slice(0, max).map((m) => `- (${m.provenance}) ${jsonString(m.text)}`));
 }
 
 /** Episodic memories, in the order given (nearest first). */

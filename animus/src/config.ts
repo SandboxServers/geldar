@@ -54,7 +54,14 @@ export interface AnimusConfig {
   agent: { name: string; username: string; tier: string; personalitySeed: string };
   thinker: { host: string; port: number; name: string; heartbeatS: number };
   /** How long the Mind waits for what it starts before the Body and the Thinker are up. */
-  mind: { snapshotRetryS: number; thinkerWaitS: number };
+  mind: {
+    snapshotRetryS: number;
+    thinkerWaitS: number;
+    /** Characters of a thought's user message (`mind.prompt_budget_chars`). */
+    promptBudgetChars: number;
+    /** Beliefs loaded and shown, newest first (`mind.max_beliefs`). */
+    maxBeliefs: number;
+  };
   thought: JobSettings;
   reflection: JobSettings;
   admission: { maxThoughtsPerRealHour: number };
@@ -181,6 +188,8 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
     mind: {
       snapshotRetryS: optionalInt(mind, 'snapshot_retry_s', 'mind', 60, 0),
       thinkerWaitS: optionalInt(mind, 'thinker_wait_s', 'mind', 20, 0),
+      promptBudgetChars: optionalInt(mind, 'prompt_budget_chars', 'mind', 12000, 1000),
+      maxBeliefs: optionalInt(mind, 'max_beliefs', 'mind', 40, 1),
     },
     thought,
     reflection: jobSettings(mind, 'reflection', thought.temperature),

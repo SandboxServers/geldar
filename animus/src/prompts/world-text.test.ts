@@ -153,3 +153,43 @@ describe('invisible code points', () => {
     expect(isRiskyCodePoint(0x41)).toBe(false);
   });
 });
+
+describe('the thought budget', () => {
+  const BUDGET = 12000;
+
+  /** Fifty heard lines of 256 characters each, ages 1 to 50, and one short wake speech. */
+  function hostileVars(ch: string) {
+    const heard = Array.from({ length: 50 }, (_, i) => ({
+      from: 'Mallory',
+      text: ch.repeat(256),
+      age_seconds: i + 1,
+    }));
+    const vars = sampleThoughtVars(sampleSnapshot({ heard }));
+    return {
+      ...vars,
+      wake: { ...vars.wake, events: [speech('Eve', 'WAKE-SPEECH-MARK hello')] },
+    };
+  }
+
+  it.each([
+    ['汉', 'CJK'],
+    ['<', 'angle bracket'],
+  ])('keeps the user message under budget with 50 lines of 256 %s characters', (ch) => {
+    const user = library.render('thought', hostileVars(ch)).messages[1]?.content ?? '';
+    expect(user.length).toBeLessThanOrEqual(BUDGET);
+    expect(user).toContain('WAKE-SPEECH-MARK hello');
+    expect(user).toContain('more lines not shown');
+  });
+
+  it('drops the oldest heard lines first and keeps the newest', () => {
+    const user = library.render('thought', hostileVars('汉')).messages[1]?.content ?? '';
+    expect(user).toContain('"age_seconds":1,');
+    expect(user).not.toContain('"age_seconds":50,');
+  });
+
+  it('keeps every line when the budget is not reached', () => {
+    const out = library.render('thought', sampleThoughtVars()).messages[1]?.content ?? '';
+    expect(out).not.toContain('more lines not shown');
+    expect(renderWorldText([], BUDGET)).toBe(`${WORLD_TEXT_HEADER}\n(none)\n${WORLD_TEXT_FOOTER}`);
+  });
+});
