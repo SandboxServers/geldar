@@ -45,7 +45,12 @@ function recordingSupervisor(calls: string[]): Supervisor {
 }
 
 function harness(
-  opts: { processes?: ProcessView[]; otherChanges?: string[]; reporter?: Reporter } = {},
+  opts: {
+    processes?: ProcessView[];
+    otherChanges?: string[];
+    reporter?: Reporter;
+    runFolders?: string[];
+  } = {},
 ) {
   const clock = new FakeClock();
   const files = new MemoryFiles();
@@ -67,6 +72,7 @@ function harness(
     sampler: () => new FakeSampler(clock, scenario(LIFE_ID.smoke)),
     runFiles: () => files,
     runsFiles: files,
+    runFolders: () => opts.runFolders ?? [],
     preflight: (profile: Profile) =>
       passingPreflight(profile, { otherChanges: opts.otherChanges ?? [] }),
     reporter: () => reporter,
@@ -181,6 +187,35 @@ describe('status', () => {
     expect(await runCli(['smoke', 'status', '--run-id', 'nope'], REPO, h, out.log)).toBe(1);
     expect(out.text()).toContain('no run at');
     expect(calls).toEqual([]);
+  });
+});
+
+describe('status and report without --run-id', () => {
+  const OLD = join(REPO, '.geldar', 'runs', 'smoke-20261109T230000Z');
+  const NEW = join(REPO, '.geldar', 'runs', 'smoke-20261110T121408Z');
+  const folders = ['smoke-20261109T230000Z', 'smoke-20261110T121408Z', '8b-20261111T000000Z'];
+
+  it('status reads the newest folder of the profile, not the id the current time gives', async () => {
+    const out = capture();
+    const { h, files } = harness({ runFolders: folders });
+    files.write(runPaths(OLD).manifest, JSON.stringify({ started_at: '2026-11-09T23:00:00Z' }));
+    files.write(runPaths(OLD).status, '{"event":"old"}\n');
+    files.write(runPaths(NEW).manifest, JSON.stringify({ started_at: '2026-11-10T12:14:08Z' }));
+    files.write(runPaths(NEW).status, '{"event":"sample"}\n');
+    expect(await runCli(['smoke', 'status'], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('{"event":"sample"}');
+  });
+
+  it('report passes the newest folder id to the reporter', async () => {
+    const out = capture();
+    const seen: string[] = [];
+    const { h, files } = harness({
+      runFolders: folders,
+      reporter: { reportRun: async (id) => void seen.push(id) },
+    });
+    files.write(runPaths(NEW).manifest, JSON.stringify({ started_at: '2026-11-10T12:14:08Z' }));
+    expect(await runCli(['smoke', 'report'], REPO, h, out.log)).toBe(0);
+    expect(seen).toEqual(['smoke-20261110T121408Z']);
   });
 });
 

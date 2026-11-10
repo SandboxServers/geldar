@@ -348,7 +348,7 @@ export function createReporter(
 }
 
 /** The file names in a folder; none when the folder is missing. */
-function listDir(dir: string): string[] {
+export function listDir(dir: string): string[] {
   try {
     return readdirSync(dir);
   } catch {

@@ -17,6 +17,7 @@ import {
   createRunner,
   createSampler,
   createSupervisor,
+  listDir,
 } from './adapters.ts';
 import { LIFE_ID, PROFILES, type Profile } from './manifest.ts';
 import {
@@ -135,6 +136,8 @@ export interface Harness {
   /** The file store of the run folder, and of the runs root (for the gate file and the 8B marker). */
   runFiles(runDir: string): FileStore;
   runsFiles: FileStore;
+  /** The names of the folders under the runs root; none when the root is missing. */
+  runFolders(): string[];
   /** The Docker port of the world volume (`prepare-volume`, and the precondition check). */
   worldVolumes: WorldVolumes;
   preflight(profile: Profile, runDir: string): Preflight;
@@ -186,6 +189,17 @@ function runState(h: Harness, runDir: string): { state: string; last: string } {
   return { state: liveOwner(h, runDir) === null ? 'stopped' : 'running', last };
 }
 
+/** The newest run folder of a profile. Run ids carry a fixed-width UTC timestamp, so the last name in order is the latest. */
+function latestRunId(folders: string[], profile: Profile): string | null {
+  const id = new RegExp(`^${profile}-\\d{8}T\\d{6}Z$`);
+  return (
+    folders
+      .filter((f) => id.test(f))
+      .sort()
+      .at(-1) ?? null
+  );
+}
+
 /** Runs the CLI with the given harness. Returns the exit code: 0 done, 1 refused or failed, 2 usage. */
 export async function runCli(
   argv: string[],
@@ -199,10 +213,16 @@ export async function runCli(
     return 2;
   }
   const a = parsed.args;
-  const runId =
-    a.runId ??
-    `${a.profile}-${new Date(h.clock.nowMs()).toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
   const runsDir = join(repoRoot, '.geldar', 'runs');
+  // status and report read an existing run: with no --run-id they take the profile's newest folder.
+  const readsRun = a.command === 'status' || a.command === 'report';
+  const latest = latestRunId(h.runFolders(), a.profile);
+  if (a.runId === null && readsRun && latest === null) {
+    log(`adam-run: no ${a.profile} run under ${runsDir}`);
+    return 1;
+  }
+  const newId = `${a.profile}-${new Date(h.clock.nowMs()).toISOString().replace(/[-:.]/g, '').slice(0, 15)}Z`;
+  const runId = a.runId ?? (readsRun ? latest : null) ?? newId;
   const runDir = join(runsDir, runId);
   const files = h.runFiles(runDir);
 
@@ -370,6 +390,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
       }),
     runFiles: (dir) => createFileStore(dir),
     runsFiles: createFileStore(join(repoRoot, '.geldar', 'runs')),
+    runFolders: () => listDir(join(repoRoot, '.geldar', 'runs')),
     preflight: (profile, runDir) =>
       createPreflight({
         runner,
