@@ -113,7 +113,10 @@ file. Follow-ups, each for the orchestrator to schedule:
 
 ## WM-13
 
-Status: CLI part committed (980edfb, e63f13e). Velocity plugin part (plugin/velocity-identity) not started. Docs part is this section.
+Status: CLI part committed (980edfb, e63f13e). Velocity plugin part committed (29e85eb): plugin done, live steps still owed (below). Docs part is this section.
+
+- Plugin (29e85eb): `RegistryClient` takes a bucket name and a `Feed` (`LifeRegistry` implements it); a second client watches `geldar-skins` into `SkinRegistry`. On `GameProfileRequestEvent` a registered username gets its stored `textures` property, validated (base64 JSON, `textures.minecraft.net` host, life id equal to the key, base64 signature). Lookups are in memory, so login never waits on NATS; any failure keeps the default profile and logs a warning without the value. The gate is not changed.
+- Plugin open item: an absent `geldar-skins` bucket (no skin set yet) logs a warning each retry (every 5 s at the backoff cap). Lower it to info or add a quiet mode if the ops monitor counts it as noise.
 
 - `shards/phase0.yaml` `skin:` key is not added: the packet lists only the CLI, plugin and docs files for WM-13. Decide with WM-12 whether the config key lands with the plugin or in WM-12.
 - Live steps owed, none run in this job:
