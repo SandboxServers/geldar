@@ -239,13 +239,13 @@ export async function runCli(
       return 0;
     }
     const manifest = JSON.parse(files.read(runPaths(runDir).manifest) ?? '{}') as {
-      startedAt?: string;
+      started_at?: string;
     };
     const outcome = await safeStop(
       { clock: h.clock, files, processes: h.processes, supervisor: h.supervisor },
       {
         runDir,
-        runStartedAtMs: Date.parse(manifest.startedAt ?? '') || h.clock.nowMs(),
+        runStartedAtMs: Date.parse(manifest.started_at ?? '') || h.clock.nowMs(),
         rule: 'operator_stop',
         reason: 'stop with no live run in this folder',
         lastObservation: null,

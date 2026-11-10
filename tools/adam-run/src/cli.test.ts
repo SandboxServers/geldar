@@ -185,12 +185,28 @@ describe('status', () => {
 });
 
 describe('stop', () => {
+  it('reads started_at from the manifest, so a service started in this run is owned and signalled', async () => {
+    const out = capture();
+    const service: ProcessView = {
+      pid: 4343,
+      startedAt: '2026-11-09T23:30:00.000Z',
+      commandLine: 'node C:/repo/golem/src/adam/main.ts',
+    };
+    const { h, files, signals } = harness({ processes: [service] });
+    files.write(
+      runPaths(RUN_DIR).manifest,
+      JSON.stringify({ started_at: '2026-11-09T23:00:00.000Z' }),
+    );
+    await runCli(['smoke', 'stop', '--run-id', RUN], REPO, h, out.log);
+    expect(signals.map((s) => s.pid)).toContain(4343);
+  });
+
   it('with a stale pid file does not signal the recorded pid and runs the safe stop', async () => {
     const out = capture();
     const { h, files, signals, calls } = harness({ processes: [] });
     files.write(
       runPaths(RUN_DIR).manifest,
-      JSON.stringify({ startedAt: '2026-11-10T00:00:00.000Z' }),
+      JSON.stringify({ started_at: '2026-11-10T00:00:00.000Z' }),
     );
     files.write(
       join(RUN_DIR, 'run.pid.json'),
@@ -212,7 +228,7 @@ describe('stop', () => {
       commandLine: 'node C:/repo/tools/adam-run/src/cli.ts smoke start --run-id run-1',
     };
     const { h, files, calls } = harness({ processes: [live] });
-    files.write(runPaths(RUN_DIR).manifest, JSON.stringify({ startedAt: start }));
+    files.write(runPaths(RUN_DIR).manifest, JSON.stringify({ started_at: start }));
     files.write(
       join(RUN_DIR, 'run.pid.json'),
       JSON.stringify({ pid: 4242, startedAt: start, runId: RUN }),
@@ -243,7 +259,7 @@ describe('prepare-volume', () => {
   it('refuses a folder that already holds a run, and creates nothing', async () => {
     const out = capture();
     const { h, files, worldVolumes } = harness();
-    files.write(runPaths(RUN_DIR).manifest, JSON.stringify({ startedAt: '2026-11-10T00:00:00Z' }));
+    files.write(runPaths(RUN_DIR).manifest, JSON.stringify({ started_at: '2026-11-10T00:00:00Z' }));
     expect(await runCli(['8b', 'prepare-volume', '--run-id', RUN], REPO, h, out.log)).toBe(1);
     expect(out.text()).toContain('already holds a manifest');
     expect(worldVolumes.calls.filter((c) => c.startsWith('create'))).toEqual([]);
@@ -308,7 +324,7 @@ describe('report', () => {
     const { h, files } = harness({ reporter: { reportRun: async (id) => void seen.push(id) } });
     files.write(
       runPaths(RUN_DIR).manifest,
-      JSON.stringify({ startedAt: '2026-11-10T00:00:00.000Z' }),
+      JSON.stringify({ started_at: '2026-11-10T00:00:00.000Z' }),
     );
     expect(await runCli(['smoke', 'report', '--run-id', RUN], REPO, h, out.log)).toBe(0);
     expect(seen).toEqual([RUN]);

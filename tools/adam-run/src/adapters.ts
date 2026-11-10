@@ -324,15 +324,15 @@ export function createReporter(
   const paths = runPaths(runDir);
   return {
     async reportRun() {
-      const manifest = JSON.parse(files.read(paths.manifest) ?? '{}') as { startedAt?: string };
-      if (manifest.startedAt === undefined)
-        throw new Error('report: manifest.json has no startedAt');
+      const manifest = JSON.parse(files.read(paths.manifest) ?? '{}') as { started_at?: string };
+      if (manifest.started_at === undefined)
+        throw new Error('report: manifest.json has no started_at');
       const res = await runner.exec('node', [
         join(repoRoot, 'tools', 'adam-report', 'src', 'cli.ts'),
         '--life',
         lifeOf(profile),
         '--from',
-        manifest.startedAt,
+        manifest.started_at,
         '--to',
         new Date(clock.nowMs()).toISOString(),
         '--manifest',
