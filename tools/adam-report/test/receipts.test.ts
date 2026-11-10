@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { receiptMeasure } from '../src/intents.ts';
 import type { ActionRow, ReceiptRow, Verdict } from '../src/types.ts';
-import { MIN_MS, T0, action, receipt } from './fixture.ts';
+import { action, MIN_MS, receipt, T0 } from './fixture.ts';
 
 const WIN = 'window';
 
