@@ -110,3 +110,46 @@ describe('stream', () => {
     expect(subjects).toHaveLength(11);
   });
 });
+
+describe('per-life speech identity', () => {
+  const identities: Record<string, SpeechIdentity> = {
+    ag_jason_01: { name: 'Jason', username: 'jason_01' },
+    ag_mira_01: { name: 'Mira', username: 'mira_01' },
+  };
+  const speech = (n: number, lifeId: string, from: string, text: string, own: boolean) => ({
+    ...eventOf('speech', n, lifeId),
+    payload: { from, text, distance: 3, own },
+  });
+  function perLife(log: RingEventLog) {
+    return {
+      ...context(log),
+      identityOf: async (lifeId: string) => identities[lifeId] as SpeechIdentity,
+    };
+  }
+
+  it('drops an own-speech line for each of two lives', async () => {
+    const log = new RingEventLog();
+    const counters = { invalid: 0 };
+    for (const life of LIVES) {
+      await handleStreamMessage(
+        1,
+        speech(1, life, 'Jason', 'Mira, hello', true),
+        perLife(log),
+        counters,
+      );
+    }
+    for (const life of LIVES) expect((await log.since(life, 0)).events).toEqual([]);
+  });
+
+  it('classifies a line against the hearing life name, not the other life', async () => {
+    const log = new RingEventLog();
+    const counters = { invalid: 0 };
+    const line = speech(2, 'ag_jason_01', 'Eve', 'Mira, are you there?', false);
+    await handleStreamMessage(2, line, perLife(log), counters);
+    await handleStreamMessage(3, { ...line, agent_id: 'ag_mira_01' }, perLife(log), counters);
+    const [jason] = (await log.since('ag_jason_01', 0)).events;
+    const [mira] = (await log.since('ag_mira_01', 0)).events;
+    expect(jason).toMatchObject({ kind: 'speech', addressed: false });
+    expect(mira).toMatchObject({ kind: 'speech', addressed: true });
+  });
+});

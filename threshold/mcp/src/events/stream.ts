@@ -1,3 +1,4 @@
+import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
 import { mindEventSubjects, normaliseEvent } from '@geldar/animus/src/link/mind-event.ts';
 import { validateDayNightPayload, validateWorldEvent, type WorldEvent } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
@@ -24,7 +25,9 @@ export interface StreamContext {
   map: MapContext;
   log: PlayerEventLog;
   /** Every life whose log a day_night event fans out to. */
-  lives: () => readonly string[];
+  lives: () => readonly string[] | Promise<readonly string[]>;
+  /** The speech identity of one life, for its own mapping; `map.identity` is used when absent. */
+  identityOf?: (lifeId: string) => Promise<SpeechIdentity>;
 }
 
 /** Counts of messages the handler set aside. */
@@ -54,7 +57,7 @@ export async function handleStreamMessage(
   if (world.type === 'day_night') {
     const event = dayNightEvent(seq, world);
     if (event === null) counters.invalid++;
-    else for (const lifeId of ctx.lives()) await ctx.log.append(lifeId, event);
+    else for (const lifeId of await ctx.lives()) await ctx.log.append(lifeId, event);
     return;
   }
   if (world.type === 'sovereign_call') return;
@@ -64,8 +67,11 @@ export async function handleStreamMessage(
     return;
   }
   if (n.status === 'ignored') return;
-  for (const event of mapMindEvent(n.event, seq, ctx.map)) {
-    if (n.event.lifeId !== '') await ctx.log.append(n.event.lifeId, event);
+  const lifeId = n.event.lifeId;
+  const identity =
+    ctx.identityOf !== undefined && lifeId !== '' ? await ctx.identityOf(lifeId) : ctx.map.identity;
+  for (const event of mapMindEvent(n.event, seq, { ...ctx.map, identity })) {
+    if (lifeId !== '') await ctx.log.append(lifeId, event);
   }
 }
 
