@@ -6,16 +6,16 @@ Branch `fix/d-mind-loop` from `wave6-main`. Review findings in `animus/src` (dec
 
 | # | Finding | Status | Commit |
 |---|---------|--------|--------|
-| 1 | Damage candidate opens a second thought after a Body `unexpected_damage` wake or during an in-flight thought | in progress | - |
-| 2 | `ended` (after death) not checked in speech, wake, intent handlers or the settle timer | pending | - |
+| 1 | Damage candidate opens a second thought after a Body `unexpected_damage` wake or during an in-flight thought | done (test + spacing fix) | 5169f66, dd69f8e |
+| 2 | `ended` (after death) not checked in speech, wake, intent handlers or the settle timer | done (guard in handle, settle timer) | 75d412f |
 | 3 | Memory retrieve timeout aborts the cycle (wake lost) | pending | - |
 | 4 | Plan submit and memory load not bounded (inFlight stuck) | pending | - |
 | 5 | Hung journal write after a valid completion discards the thought | pending | - |
 | 6 | Aborted cycle records no suppressed_wakeups row | pending | - |
 | 7 | `thought_started` log outside try (unhandled rejection, inFlight stuck) | pending | - |
 | 8 | Memory timeout logged as reason `error` instead of `memory` | pending | - |
-| 9 | lantern-local warmOrder warms every pin when run_tier unset | pending | - |
-| 10 | Owner tuning item: shards/phase0.yaml mind deadline_s 25 vs 600 tokens on the 32B | recorded only | - |
+| 9 | lantern-local warmOrder warms every pin when run_tier unset | done (warms only keepWarmSet names) | see git log |
+| 10 | Owner tuning item: shards/phase0.yaml mind deadline_s 25 vs 600 tokens on the 32B | recorded (owner item, shard unchanged) | - |
 
 ## Owner tuning items
 
