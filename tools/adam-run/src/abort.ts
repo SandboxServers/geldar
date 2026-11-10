@@ -75,9 +75,7 @@ export function evaluateAbort(
   if (c.deathFailsRun && last.deaths > (history[0]?.deaths ?? 0)) {
     return { rule: 'death', reason: 'a death happened in the run, and deaths fail it' };
   }
-  if (
-    sustained(history, now, c.tpsWindowMs, (s) => s.tps !== null && s.tps < c.tpsMin)
-  ) {
+  if (sustained(history, now, c.tpsWindowMs, (s) => s.tps !== null && s.tps < c.tpsMin)) {
     return { rule: 'tps', reason: `TPS under ${c.tpsMin} for ${c.tpsWindowMs / 60_000} minutes` };
   }
   if (
@@ -109,7 +107,11 @@ export function evaluateAbort(
     return { rule: 'disk', reason: `free disk is ${last.diskFreeGb} GB, under ${c.diskMinGb} GB` };
   }
   const lastThought = last.lastThoughtAtMs;
-  if (lastThought === null ? now - (history[0]?.atMs ?? now) >= c.noThoughtMs : now - lastThought >= c.noThoughtMs) {
+  if (
+    lastThought === null
+      ? now - (history[0]?.atMs ?? now) >= c.noThoughtMs
+      : now - lastThought >= c.noThoughtMs
+  ) {
     return { rule: 'no-thought', reason: `no thought for ${c.noThoughtMs / 60_000} minutes` };
   }
   return null;

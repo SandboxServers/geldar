@@ -63,22 +63,118 @@ describe('evaluateAbort', () => {
   });
 
   // Table: each rule fires when its condition holds for its window, and does not fire one minute short.
-  const table: Array<{ name: string; rule: string; bad: Partial<Sample>; from: number; last: number }> = [
-    { name: 'TPS under 19.5 for 5 minutes fires', rule: 'tps', bad: { tps: 19.4 }, from: 25, last: 30 },
-    { name: 'TPS under 19.5 for 4 minutes does not', rule: '', bad: { tps: 19.4 }, from: 27, last: 30 },
-    { name: 'p95 over 15 s for 30 minutes fires', rule: 'latency', bad: { latencyP95Ms: 15_001 }, from: 0, last: 30 },
-    { name: 'p95 over 15 s for 29 minutes does not', rule: '', bad: { latencyP95Ms: 15_001 }, from: 1, last: 30 },
-    { name: 'Ollama down for 5 minutes fires', rule: 'ollama', bad: { ollamaUp: false }, from: 25, last: 30 },
-    { name: 'Postgres down for 5 minutes fires', rule: 'postgres', bad: { postgresUp: false }, from: 25, last: 30 },
-    { name: 'NATS down for 5 minutes fires', rule: 'nats', bad: { natsUp: false }, from: 25, last: 30 },
-    { name: 'NATS down for 4 minutes does not', rule: '', bad: { natsUp: false }, from: 27, last: 30 },
-    { name: 'Body disconnected for 5 minutes fires', rule: 'body', bad: { bodyConnected: false }, from: 25, last: 30 },
-    { name: 'GPU absent fires at once', rule: 'gpu', bad: { gpuPresent: false }, from: 30, last: 30 },
-    { name: 'a death fires (deaths fail the run)', rule: 'death', bad: { deaths: 1 }, from: 30, last: 30 },
-    { name: 'free disk under 10 GB fires', rule: 'disk', bad: { diskFreeGb: 9.9 }, from: 30, last: 30 },
-    { name: 'disk exactly 10 GB does not fire', rule: '', bad: { diskFreeGb: 10 }, from: 30, last: 30 },
-    { name: 'no thought for 10 minutes fires', rule: 'no-thought', bad: { lastThoughtAtMs: 0 }, from: 0, last: 30 },
-    { name: 'no thought for 9 minutes does not', rule: '', bad: { lastThoughtAtMs: 21 * MIN }, from: 21, last: 30 },
+  const table: Array<{
+    name: string;
+    rule: string;
+    bad: Partial<Sample>;
+    from: number;
+    last: number;
+  }> = [
+    {
+      name: 'TPS under 19.5 for 5 minutes fires',
+      rule: 'tps',
+      bad: { tps: 19.4 },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'TPS under 19.5 for 4 minutes does not',
+      rule: '',
+      bad: { tps: 19.4 },
+      from: 27,
+      last: 30,
+    },
+    {
+      name: 'p95 over 15 s for 30 minutes fires',
+      rule: 'latency',
+      bad: { latencyP95Ms: 15_001 },
+      from: 0,
+      last: 30,
+    },
+    {
+      name: 'p95 over 15 s for 29 minutes does not',
+      rule: '',
+      bad: { latencyP95Ms: 15_001 },
+      from: 1,
+      last: 30,
+    },
+    {
+      name: 'Ollama down for 5 minutes fires',
+      rule: 'ollama',
+      bad: { ollamaUp: false },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'Postgres down for 5 minutes fires',
+      rule: 'postgres',
+      bad: { postgresUp: false },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'NATS down for 5 minutes fires',
+      rule: 'nats',
+      bad: { natsUp: false },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'NATS down for 4 minutes does not',
+      rule: '',
+      bad: { natsUp: false },
+      from: 27,
+      last: 30,
+    },
+    {
+      name: 'Body disconnected for 5 minutes fires',
+      rule: 'body',
+      bad: { bodyConnected: false },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'GPU absent fires at once',
+      rule: 'gpu',
+      bad: { gpuPresent: false },
+      from: 30,
+      last: 30,
+    },
+    {
+      name: 'a death fires (deaths fail the run)',
+      rule: 'death',
+      bad: { deaths: 1 },
+      from: 30,
+      last: 30,
+    },
+    {
+      name: 'free disk under 10 GB fires',
+      rule: 'disk',
+      bad: { diskFreeGb: 9.9 },
+      from: 30,
+      last: 30,
+    },
+    {
+      name: 'disk exactly 10 GB does not fire',
+      rule: '',
+      bad: { diskFreeGb: 10 },
+      from: 30,
+      last: 30,
+    },
+    {
+      name: 'no thought for 10 minutes fires',
+      rule: 'no-thought',
+      bad: { lastThoughtAtMs: 0 },
+      from: 0,
+      last: 30,
+    },
+    {
+      name: 'no thought for 9 minutes does not',
+      rule: '',
+      bad: { lastThoughtAtMs: 21 * MIN },
+      from: 21,
+      last: 30,
+    },
   ];
 
   for (const row of table) {
