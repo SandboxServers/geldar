@@ -64,6 +64,12 @@ export class FrontLimits {
     return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
   }
 
+  /** Takes one token from the owner's bucket, the one tool calls share. Seconds to wait, or undefined. */
+  owner(ownerId: string, nowMs: number): number | undefined {
+    const decision = this.limiter.take(`owner:${ownerId}`, nowMs);
+    return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
+  }
+
   /** Counts one more open request for the player; false when the player is at its cap. */
   acquire(playerId: string): boolean {
     return takeSlot(this.open, playerId, MAX_OPEN_PER_PLAYER);

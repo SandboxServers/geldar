@@ -138,6 +138,11 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         return { outcome: 'unavailable' };
       }
       if (verdict.outcome === 'ok') {
+        // GET and DELETE never reach the POST hook, so the handshake bucket meters them here.
+        if (req.method === 'GET' || req.method === 'DELETE') {
+          const waitSec = gates.handshake(verdict.player.playerId, now());
+          if (waitSec !== undefined) return { outcome: 'limited', retryAfterSec: waitSec };
+        }
         players.set(req, verdict.player);
         return { outcome: 'ok' };
       }
@@ -165,8 +170,13 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
       const player = players.get(res.req);
       if (player === undefined) return { status: 401, message: 'unauthorized' };
-      // Every other method (initialize, resources/read, ...) takes from the cheaper handshake bucket.
-      if (!isToolCall(body)) return refusedRateLimit(gates.handshake(playerId, now()));
+      // Every other method (initialize, resources/read, ...) takes from the cheaper handshake bucket
+      // and from its owner's bucket, so a player's non-call traffic cannot outrun the owner's budget.
+      if (!isToolCall(body)) {
+        const waitSec = gates.handshake(playerId, now());
+        if (waitSec !== undefined) return refusedRateLimit(waitSec);
+        return refusedRateLimit(gates.owner(player.ownerId, now()));
+      }
       return refusedRateLimit(gates.call(playerId, player.ownerId, now()));
     },
   });

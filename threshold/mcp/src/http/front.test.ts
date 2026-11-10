@@ -347,7 +347,8 @@ describe('scoping and limits', () => {
   });
 
   it('shares the owner budget across players and refuses past it', async () => {
-    limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 3 : 1000));
+    // Each openSession's initialize also draws on the owner, so two sessions leave three for the calls.
+    limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 5 : 1000));
     await door.close();
     door = createFrontDoor({
       http: CONFIG,
