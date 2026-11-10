@@ -58,6 +58,11 @@ export class RingEventLog implements PlayerEventLog {
     return { events: [...older, ...kept], dropped: Math.max(0, lostAfter.length - older.length) };
   }
 
+  /** The newest sequence the life holds, 0 when none; a cursor with no value starts here. */
+  head(lifeId: string): number {
+    return this.ringOf(lifeId).events.at(-1)?.seq ?? 0;
+  }
+
   private ringOf(lifeId: string): LifeRing {
     let ring = this.rings.get(lifeId);
     if (ring === undefined) {
