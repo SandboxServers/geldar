@@ -13,6 +13,12 @@ Branch `fix/a1-admission-nats` from `wave6-main`. One commit per item, in priori
   naming the stream. Remove `KV_geldar-life-registry` once so golem recreates it.
 - Tests: `golem/test/registry.test.ts` (heartbeat cadence, failed-beat recovery, stop on close),
   `golem/test/registry-bucket.test.ts` (TTL passed to create, recreate hint).
-- Not done in this pass: deleting the key and the Paper whitelist entry from `players down` and
-  `adam stop`, and whitelist removal in `tools/mcp-tokens retire`; the TTL bounds the window
-  to about a minute without them.
+- Open (item 1 is partial):
+  - Velocity cache: a NATS TTL expiry removes the message without a delete for watchers, so
+    `LifeRegistry` keeps an expired entry until the watch is rebuilt. Fix: record the local receipt
+    time per put in `LifeRegistry` and make `find` treat entries older than 60 s as absent. Not done:
+    the Java build cannot run here (no Gradle wrapper or Gradle on this machine), so no Java change
+    was made without its tests.
+  - Not done: deleting the key and the Paper whitelist entry from `players down` and `adam stop`,
+    and whitelist removal in `tools/mcp-tokens retire`.
+- Items 2 to 5 are not started.
