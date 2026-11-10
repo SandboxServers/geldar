@@ -187,9 +187,12 @@ describe('startMcp', () => {
     }) as unknown as Pool;
     const ports = { ...fakePorts(order, logs), openPool: () => pool };
     const running = await startMcp(await loadStartConfig(SHARD_FILE, ENV), ports);
-    const dropped = Object.assign(new Error('terminating connection due to administrator command'), {
-      code: '57P01',
-    });
+    const dropped = Object.assign(
+      new Error('terminating connection due to administrator command'),
+      {
+        code: '57P01',
+      },
+    );
     expect(() => pool.emit('error', dropped)).not.toThrow();
     const line = logs.find((text) => text.includes('postgres_pool_error'));
     expect(JSON.parse(line ?? '{}')).toEqual({

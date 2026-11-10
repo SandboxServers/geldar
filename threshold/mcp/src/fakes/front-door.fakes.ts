@@ -34,8 +34,11 @@ export function player(playerId: string): PlayerRecord {
 /** Only the failed-auth bucket of an address is capped (at `failedAuthCap`); every other bucket allows. */
 export class CappedLimiter implements RateLimiter {
   private readonly used = new Map<string, number>();
+  private readonly failedAuthCap: number;
 
-  constructor(private readonly failedAuthCap = 30) {}
+  constructor(failedAuthCap = 30) {
+    this.failedAuthCap = failedAuthCap;
+  }
 
   private cap(bucket: string): number {
     return bucket.startsWith('auth-failed:address:')
@@ -60,8 +63,11 @@ export class CappedLimiter implements RateLimiter {
 
 /** A token store whose lookup takes `delayMs`, so a request sits in authentication for that long. */
 export class DelayedTokenStore extends FakeTokenStore {
-  constructor(private readonly delayMs: number) {
+  private readonly delayMs: number;
+
+  constructor(delayMs: number) {
     super();
+    this.delayMs = delayMs;
   }
 
   override async resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null> {
@@ -113,7 +119,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
     createSession: () =>
       new McpServer({ name: 'front-door-test', version: '0.0.0' }, { capabilities: { tools: {} } }),
     log: () => undefined,
-    limits: options.limits,
+    ...(options.limits === undefined ? {} : { limits: options.limits }),
   });
   const port = await door.listen(0);
   return { door, port };
