@@ -43,7 +43,7 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     expect(rig.attention.settled).toEqual(['model_error', 'planned']);
   });
 
-  it('ends a cycle whose memory retrieval never returns', async () => {
+  it('degrades a memory retrieval that never returns to no memories, and the cycle still plans', async () => {
     const logs: Line[] = [];
     const rig = await makeRig([{ text: VALID_THOUGHT }], {
       loop: { stepTimeoutMs: STEP_MS },
@@ -56,11 +56,8 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     });
 
     const first = await rig.loop.handle(makeDecision('idle'));
-    expect(first.outcome).toBe('model_error');
-    expect(aborts(logs)).toEqual(['memory']);
-
-    const second = await rig.loop.handle(makeDecision('idle'));
-    expect(second.outcome).toBe('planned');
+    expect(first.outcome).toBe('planned');
+    expect(aborts(logs)).toEqual([]);
   });
 
   it('ends a cycle whose journal read never returns', async () => {

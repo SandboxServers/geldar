@@ -216,7 +216,7 @@ export class ThinkingLoop {
         days_since_sleep: Math.max(0, raw.world_time.day - lastSleep),
       },
     };
-    const episodic = await bounded(this.retrieve(decision, snapshot), this.stepMs, 'memory');
+    const episodic = await this.retrieve(decision, snapshot);
     const since = Math.max(0, tick - 24_000);
     const recentRows = await bounded(
       this.deps.journal.journalSince(lifeId, since),
@@ -429,7 +429,10 @@ export class ThinkingLoop {
     return this.options.stepTimeoutMs ?? STEP_TIMEOUT_MS;
   }
 
-  /** Embeds the wake and searches the episodic memories; memory is best effort, so a failure gives none. */
+  /**
+   * Embeds the wake and searches the episodic memories. Memory is best effort: each await has its own
+   * bound, and a failure or a timeout gives none, so the cycle still thinks without them.
+   */
   private async retrieve(decision: WakeDecision, snapshot: Snapshot) {
     const query = [
       decision.reason,
@@ -439,12 +442,16 @@ export class ThinkingLoop {
       .join(' ')
       .slice(0, 512);
     try {
-      const [vector] = await this.deps.embedder.embed([query], 'query');
+      const [vector] = await bounded(
+        this.deps.embedder.embed([query], 'query'),
+        this.stepMs,
+        'memory',
+      );
       if (vector === undefined) return [];
-      return await this.deps.memory.searchEpisodic(
-        this.options.lifeId,
-        vector,
-        this.options.episodicTopK,
+      return await bounded(
+        this.deps.memory.searchEpisodic(this.options.lifeId, vector, this.options.episodicTopK),
+        this.stepMs,
+        'memory',
       );
     } catch {
       return [];
