@@ -1,5 +1,5 @@
-import { loadConfig, thinkerVersion } from './config.ts';
 import { thinkerToken } from '@geldar/contract/thinker-token';
+import { loadConfig, thinkerVersion } from './config.ts';
 import { discoverModels } from './models.ts';
 import { ollamaChat, ollamaEmbedPing, ollamaWarm } from './ollama.ts';
 import { LocalThinker } from './thinker.ts';

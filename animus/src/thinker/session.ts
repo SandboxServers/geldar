@@ -29,7 +29,7 @@ export interface SessionContext {
   /** How long a connection may stay silent before `hello`. */
   helloTimeoutMs: number;
   /** When set, a `hello` must carry this token (GELDAR_THINKER_TOKEN_FILE); unset means open. */
-  token?: string;
+  token?: string | undefined;
   log: (line: string) => void;
   /** Called once when the socket has closed. */
   onClosed: (session: ThinkerSession) => void;

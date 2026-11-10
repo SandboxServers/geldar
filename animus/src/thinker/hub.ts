@@ -28,7 +28,7 @@ export interface HubOptions {
   /** Connections beyond this are closed at once. */
   maxConnections?: number;
   /** The shared secret a `hello` must carry; unset means open (GELDAR_THINKER_TOKEN_FILE). */
-  token?: string;
+  token?: string | undefined;
   now?: () => number;
   /** Called when a Thinker has been welcomed (with the models accepted) and when it is gone. */
   onThinker?: (event: { kind: 'connected' | 'disconnected'; id: string; models: string[] }) => void;

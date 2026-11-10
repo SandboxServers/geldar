@@ -39,7 +39,7 @@ export function jitteredDelay(baseMs: number, random: () => number): number {
 export interface ThinkerOptions {
   wsUrl: string;
   /** Sent in the hello when the Mind's hub has a token (GELDAR_THINKER_TOKEN_FILE); never logged. */
-  token?: string;
+  token?: string | undefined;
   models: AdvertisedModel[];
   chat: ChatFn;
   /**
@@ -112,9 +112,11 @@ export class LocalThinker {
       | 'keepWarmNames'
       | 'keepWarmWarning'
       | 'pingEmbedder'
+      | 'token'
     >
   > & {
     log: (line: string) => void;
+    token?: string | undefined;
     warm?: WarmFn;
     warmNames?: string[];
     keepWarmNames?: string[] | undefined;
