@@ -151,3 +151,4 @@ Not started: `threshold/mcp/src/world.ts` (the 14 handlers, keepalive, logging c
 Facts a finisher needs: the 8 wired handlers take `ToolCall { playerId, lifeId }` from the bound token; the 6 unavailable tools go through `notAvailableTool`. `WaitDeps` needs `WakeConfig`, `RunState` (events/mapper.ts), `createWaitState`, `touchPresence` and a `FakeKeepAlive`. `ActDeps` and `SayDeps` need an `OutputValidator` and a `Clock`; the `OutputValidator` and `WakeConfig` definitions were not located in this pass. The MCP tool registration pattern is in `threshold/mcp-mock/src/server.ts`, not yet read.
 
 Left for 11b: main.ts, cli.ts, golem extraServe wiring, image build test, e2e.
+WM-11a complete; 11b left: main.ts, cli.ts, golem extraServe wiring, image build test, e2e
