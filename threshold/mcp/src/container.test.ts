@@ -220,3 +220,20 @@ describe('compose/mcp.yml healthcheck', () => {
     expect(hc.interval).toMatch(/^\d+s$/);
   });
 });
+
+describe('geldar.ps1 Wave M block', () => {
+  const script = read('geldar.ps1');
+  const block = script.slice(script.indexOf('function Invoke-Mcp'), script.indexOf('switch ($Command)'));
+
+  it('saves and restores in a finally every environment variable it sets', () => {
+    const names = [...block.matchAll(/\$env:(\w+)\s*=/gi)].map((m) => m[1] as string);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(block, `${name} is saved before it is set`).toMatch(new RegExp(`\\$saved = @\\{[^}]*\\b${name} = \\$env:${name}\\b`));
+      const at = block.indexOf(`$env:${name} =`);
+      const finallyAt = block.indexOf('finally', at);
+      expect(finallyAt, `${name} has a finally`).toBeGreaterThan(at);
+      expect(block.slice(finallyAt, finallyAt + 300), name).toContain('$saved.Keys');
+    }
+  });
+});

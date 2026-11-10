@@ -211,6 +211,14 @@ function Invoke-Mcp([string[]] $McpArgs) {
     switch ($action) {
       # `mcp-tokens init` writes the MCP's secret files when they are missing and never overwrites them.
       'up' {
+        # The role stays NOLOGIN until its password is set, so the first start needs this step (threshold/mcp/README.md).
+        $secretDir = Join-Path $Root 'compose/secrets'
+        $missing = @('postgres-mcp.txt', 'mcp-token-pepper.txt') | Where-Object { -not (Test-Path (Join-Path $secretDir $_)) }
+        if ($missing) {
+          Write-Host "precheck: missing $($missing -join ', ') in compose/secrets; mcp-tokens init creates them now."
+          Write-Host 'precheck: on a first start, after the stack is up, run: ./geldar.ps1 db migrate --set-role-password geldar_mcp --password-file compose/secrets/postgres-mcp.txt'
+          Write-Host 'precheck: until that runs the geldar_mcp role is NOLOGIN and the MCP fails on database auth.'
+        }
         Invoke-Step 'create the MCP secret files (mcp-tokens init, never overwrites)' { node (Join-Path $Root 'tools/mcp-tokens/src/cli.ts') init }
         Invoke-Step 'build the MCP image' { docker @McpCompose build geldar-mcp }
         Invoke-Step 'start the MCP on loopback (127.0.0.1:8788)' { docker @McpCompose up -d --wait geldar-mcp }
@@ -223,9 +231,16 @@ function Invoke-Mcp([string[]] $McpArgs) {
       'logs' { Invoke-Step 'logs of the MCP' { docker @McpCompose logs --tail 200 geldar-mcp @extra } }
       # The stub client case (threshold/mcp/test/live) against 127.0.0.1:8788/p/ag-test-01 with the test token file.
       'smoke' {
-        $env:GELDAR_IT = '1'
-        $env:GELDAR_MCP_LIVE = '1'
-        Invoke-Step 'MCP smoke (stub client, ag-test-01)' { pnpm --dir (Join-Path $Root 'threshold/mcp') exec vitest run test/live/stub-client.live.test.ts }
+        # Every variable this block sets is restored in finally, so a later check in the same shell runs its usual suites.
+        $saved = @{ GELDAR_IT = $env:GELDAR_IT; GELDAR_MCP_LIVE = $env:GELDAR_MCP_LIVE }
+        try {
+          $env:GELDAR_IT = '1'
+          $env:GELDAR_MCP_LIVE = '1'
+          Invoke-Step 'MCP smoke (stub client, ag-test-01)' { pnpm --dir (Join-Path $Root 'threshold/mcp') exec vitest run test/live/stub-client.live.test.ts }
+        }
+        finally {
+          foreach ($name in $saved.Keys) { Set-Item -Path "Env:$name" -Value $saved[$name] }
+        }
       }
       default { throw "Unknown mcp action '$action'. Use up, down, status, logs or smoke." }
     }
