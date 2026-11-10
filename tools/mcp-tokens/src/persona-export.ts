@@ -5,7 +5,7 @@
  * runs on both files: a hit refuses the export and prints only the offending lines, unless
  * --allow-meta keeps the persona with a warning. Existing files are never overwritten.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { findPersona, type PersonaFiles, personaFiles } from './persona-draft.ts';
@@ -48,10 +48,21 @@ export interface ExportOptions {
   inWorkTree?: (dir: string) => boolean;
 }
 
-/** True when `dir` or one of its parents holds a .git entry (a repo, or a worktree's .git file). */
+/** A real .git entry: a worktree's `gitdir:` file, or a repo's directory that holds a HEAD file. */
+function isGitEntry(entry: string): boolean {
+  try {
+    const info = statSync(entry);
+    if (info.isDirectory()) return existsSync(join(entry, 'HEAD'));
+    return info.isFile() && readFileSync(entry, 'utf8').startsWith('gitdir:');
+  } catch {
+    return false;
+  }
+}
+
+/** True when `dir` or one of its parents holds a real .git entry; empty .git directories are skipped. */
 export function insideGitWorkTree(dir: string): boolean {
   let current = resolve(dir);
-  while (!existsSync(join(current, '.git'))) {
+  while (!isGitEntry(join(current, '.git'))) {
     const parent = dirname(current);
     if (parent === current) return false;
     current = parent;

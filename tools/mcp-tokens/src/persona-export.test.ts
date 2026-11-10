@@ -75,6 +75,7 @@ describe('persona export', () => {
 
   it('refuses an --out inside a git work tree', async () => {
     await mkdir(join(root, 'repo', '.git'), { recursive: true });
+    await writeFile(join(root, 'repo', '.git', 'HEAD'), 'ref: refs/heads/main\n');
     await writeFile(source, draftWith({}));
     const inside = join(root, 'repo', 'sub', 'out');
     expect(insideGitWorkTree(inside)).toBe(true);
@@ -83,6 +84,23 @@ describe('persona export', () => {
       exportPersona(options({ out: inside, inWorkTree: undefined }), io),
     ).rejects.toThrow(/git work tree/);
     expect(existsSync(join(inside, 'memory'))).toBe(false);
+  });
+
+  it('does not treat an empty .git directory as a work tree', async () => {
+    await mkdir(join(root, 'stray', '.git'), { recursive: true });
+    expect(insideGitWorkTree(join(root, 'stray', 'sub', 'out'))).toBe(false);
+  });
+
+  it('treats a .git directory with a HEAD file as a work tree', async () => {
+    await mkdir(join(root, 'repo', '.git'), { recursive: true });
+    await writeFile(join(root, 'repo', '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    expect(insideGitWorkTree(join(root, 'repo', 'sub'))).toBe(true);
+  });
+
+  it('treats a .git file that starts with gitdir: as a work tree', async () => {
+    await mkdir(join(root, 'worktree'), { recursive: true });
+    await writeFile(join(root, 'worktree', '.git'), 'gitdir: C:/repo/.git/worktrees/w\n');
+    expect(insideGitWorkTree(join(root, 'worktree', 'sub'))).toBe(true);
   });
 
   it('refuses an --out inside this repo', async () => {
