@@ -239,6 +239,22 @@ describe('wait max_seconds cap', () => {
     expect(Buffer.byteLength(JSON.stringify(out.result))).toBeLessThanOrEqual(2048);
   });
 
+  it('caps max_seconds at the configured waitCapSeconds, not 240', async () => {
+    const { clock, deps } = setup({ waitCapSeconds: 60 });
+    let settled = false;
+    const p = wait(deps, { lifeId: LIFE, maxSeconds: 240 }).then((out) => {
+      settled = true;
+      return out;
+    });
+    await advance(clock, 59);
+    expect(settled).toBe(false);
+    await advance(clock, 1);
+    expect(settled).toBe(true);
+    const out = await p;
+    expect(out.ok && out.result.wake_reason).toBe('timeout');
+    expect(clock.nowMs()).toBe(60_000);
+  });
+
   it('allows a max_seconds of exactly 240', async () => {
     const { clock, deps } = setup();
     let settled = false;

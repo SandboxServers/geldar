@@ -52,6 +52,8 @@ export type TouchPresence = (lifeId: string) => Promise<void>;
 export interface WaitDeps {
   /** The largest result after trimming (`sovereign.mcp.max_result_bytes`). Default 16384. */
   maxResultBytes?: number | undefined;
+  /** The longest wait in seconds (`sovereign.mcp.wait_cap_seconds`). Default 240. */
+  waitCapSeconds?: number | undefined;
   clock: Clock;
   keepAlive: KeepAlive;
   log: WaitLog;
@@ -122,7 +124,7 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     from = decoded;
   }
 
-  const seconds = Math.min(MAX_WAIT_SECONDS, req.maxSeconds);
+  const seconds = Math.min(deps.waitCapSeconds ?? MAX_WAIT_SECONDS, req.maxSeconds);
   const deadline = clock.nowMs() + seconds * 1000;
   const interests: readonly string[] = req.interests ?? ALL_INTERESTS;
   const control = new AbortController();
