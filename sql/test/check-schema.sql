@@ -232,6 +232,7 @@ $mcp$;
 DO $glass$
 DECLARE
   glass_tables TEXT[] := ARRAY['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+  events_columns TEXT[] := ARRAY['type', 'agent_id', 'world_day', 'world_tick', 'at', 'source_event_id'];
   t TEXT;
   rel RECORD;
 BEGIN
@@ -278,6 +279,31 @@ BEGIN
        OR has_sequence_privilege('geldar_glass', rel.relname, 'SELECT')
        OR has_sequence_privilege('geldar_glass', rel.relname, 'UPDATE') THEN
       RAISE EXCEPTION 'schema check: geldar_glass has a privilege on sequence %', rel.relname;
+    END IF;
+  END LOOP;
+
+  -- events: SELECT on exactly the six granted columns (raw world text in payload is not one of them),
+  -- no table-level SELECT, no write of any kind.
+  IF has_table_privilege('geldar_glass', 'events', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass has table-level SELECT on events';
+  END IF;
+  IF has_table_privilege('geldar_glass', 'events', 'INSERT')
+     OR has_table_privilege('geldar_glass', 'events', 'UPDATE')
+     OR has_table_privilege('geldar_glass', 'events', 'DELETE') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass can write events';
+  END IF;
+  FOR rel IN
+    SELECT a.attname FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'events' AND a.attnum > 0 AND NOT a.attisdropped
+  LOOP
+    IF rel.attname = ANY (events_columns) THEN
+      IF NOT has_column_privilege('geldar_glass', 'events', rel.attname, 'SELECT') THEN
+        RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT events.%', rel.attname;
+      END IF;
+    ELSIF has_column_privilege('geldar_glass', 'events', rel.attname, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can read events.% (not granted)', rel.attname;
     END IF;
   END LOOP;
 
