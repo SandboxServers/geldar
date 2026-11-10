@@ -83,11 +83,14 @@ Consequences of the constraints:
 
 ## (e) Waves
 
+Dependencies: C2b follows C2 (the Glass and BlueMap hardening and the gate check), and C3 follows C2b. Decision 0075 is the record for C2b.
+
 | Wave | Built | Demonstrable at end | Exit check | Owner | Agents | Risks |
 |---|---|---|---|---|---|---|
 | C0 Decisions | Decisions 0070 to 0073 and this plan | The plan and the decisions are in the index | The decisions are indexed and `check` passes | Owner | Writing | None open |
 | C1 Shard on the Colo, internal | The shard on the node, on its own compose network, with limits. Body-host image. Non-PowerShell deploy tooling. Secrets as root-only env files. Backups v1. Metrics into the existing telemetry. BlueMap installed. First ranger connects over loopback or a tunnel | A shard runs on the node, a ranger plays it, and a backup restores to a scratch shard | The restore test passes; the first ranger completes a session; no other node service degrades | Owner: node access, deploy account, backup destination | Build, test, deploy tooling | Resource contention with the production server; the Mind location decision |
 | C2 Doors | Public MCP through Caddy with trusted proxies. NATS accounts overlay live-tested (0067). Velocity on the new TCP port, SRV record, whitelist. Glass and BlueMap public with the hardening of 0072. External port scan. Targeted security review of public surfaces | The four public surfaces answer, the scan shows only the intended ports, and the review has no open high findings | The gate check (below); invitations wait for these gates | Owner: UniFi forward, DNS records, tokens policy | Build and test | Public exposure bugs; tokens policy for outsiders |
+| C2b Lakitu | An invisible, read-only world data feed from the plugin; a web renderer with a collision-bound follow camera; owner and admin targeting; multi-pane views; an audit log (0075) | An owner opens the Glass, picks an agent of theirs, orbits the camera with collision, opens a second pane on another agent; an admin sees all; nothing is visible in game or in agent-visible text | The leak test (tab list, entity list, agent snapshots with a camera up) is automated and revert-checked; the collision test passes; the per-session cap holds | Owner: auth choice (interim tokens or a small login), texture licence, anonymous versus login cameras (0075) | Build and test | Renderer scope; data-feed load on a shared node; texture licensing; public versus login cameras (the 0072 tension) |
 | C3 Population and operability | Roster and cap in the database. N-bot Paper benchmark on the node. Runbooks. Chaos day. 7-day soak. Intent persistence for sovereign players. Honest sleep mark. Shelter intent and `build`, callable by agents | 10 to 15 agents run for 7 days; a chaos day passes | The soak meets the Phase 1 exit (7 real days, fewer than one wakeup per agent per real minute) | Owner: runbook review, chaos day sign-off | Build, soak, runbooks | Benchmark results on shared hardware; sovereign persistence gaps |
 | C4 Village features on the Colo | The spec's Phase 1 content: proximity chat, books and skills, sleep reflection, hibernation, credits (allowance only), shrine and birth. Thinker gateway so desktop-GPU agents can join | The mechanism demo passes on the node; the Phase 1 exit items pass | The spec Phase 1 exit (line 1418), with test agents | Owner: Thinker enrollment, GPU hosts | Build and test | The exit wording conflict; the Thinker gateway's security |
 
@@ -130,6 +133,19 @@ Consequences of the constraints:
 - **Owner vs agents:** the owner creates the UniFi forward and the DNS records, and decides the tokens policy for outsiders. Agents build, test and scan.
 - **Risks:** public exposure bugs; the tokens policy for outsiders; the privacy review of Glass text (0072, item 4).
 
+### C2b Lakitu
+
+- **Built:**
+  - an invisible, read-only world data feed from a plugin in Geldar-Core: chunk sections around the targeted agents, block updates, and agent and entity positions, with the schema in `contract/` (0075, points 1, 2 and 7);
+  - a web renderer in the Glass (WebGL), with a free-fly follow camera that is bound by collision against the same voxel data (0075, point 3);
+  - owner and admin targeting: an owner picks among the agents of their players, an admin among all agents (0075, point 4);
+  - several independent panes per Glass page, each with its own target and mode (follow, orbit or free), under a per-session cap (proposed 4) enforced by the feed (0075, point 5);
+  - an audit log of who watched which agent, and when, with no secrets (0075, point 6).
+- **Demonstrable at end:** an owner opens the Glass, picks an agent of theirs, orbits the camera around it with collision, and opens a second pane on another agent. An admin sees every agent. Nothing is visible in game or in agent-visible text.
+- **Exit check:** the invisibility leak test (tab list, entity list, and agent snapshots with a camera up show no trace) is automated and revert-checked; the collision test passes; the per-session cap holds.
+- **Owner vs agents:** the owner chooses the auth interim (static tokens or a small login), the texture licence, and whether anonymous visitors get cameras (0075, owner items). Agents build, test and check the leak test.
+- **Risks:** renderer scope; data-feed load on a shared node; texture licensing (no Mojang assets in the repo); public versus login cameras, which is a tension with 0072 that stays open until the owner decides.
+
 ### C3 Population and operability
 
 - **Built:**
@@ -165,6 +181,7 @@ Consequences of the constraints:
 7. Identifiers in the public repo history. The spec carries personal names in about 30 lines (known-gaps). Whether any identifiers in the history need removal is not yet checked.
 8. Confirm the reading of decision 0070 that invitations wait for the gates (0070, consequence 3).
 9. The spec amendments listed in [docs/decisions/0073](../../decisions/0073-spec-is-never-edited.md): the observers sentence, the owner cap of 3, the terms "player" and "agent", and the personal names.
+10. Anonymous or login cameras (0075, the open fork). Decision 0072 makes the Glass public with no login. The recommendation is that anonymous visitors get the thought stream and the map only, and Lakitu cameras need an owner or admin login. The owner confirms this, which moves 0075 from Proposed to Accepted, or chooses otherwise.
 
 ## (g) Lessons from the first ranger run
 
