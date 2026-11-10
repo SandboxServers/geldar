@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toLiteSnapshot } from '../src/snapshot.ts';
 import { hasStonePickaxe, survivalMeasure } from '../src/survival.ts';
 import type { ActionRow, EventRow, LiteSnapshot, ReceiptRow, ThoughtRow } from '../src/types.ts';
-import { DAY_MS, action, event, receipt, snap, thought } from './fixture.ts';
+import { action, DAY_MS, event, receipt, snap, thought } from './fixture.ts';
 
 /** A contract snapshot as the loader reads it: the snapshot's `self` mapped to a LiteSnapshot. */
 const lite = (o: Parameters<typeof snap>[0]): LiteSnapshot => {

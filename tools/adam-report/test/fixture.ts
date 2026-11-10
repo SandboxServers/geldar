@@ -1,12 +1,12 @@
 import type {
   ActionRow,
+  Criteria,
   EventRow,
   IntentRow,
   Manifest,
   ReceiptRow,
   ThoughtRow,
 } from '../src/types.ts';
-import type { Criteria } from '../src/types.ts';
 
 /** Shared test builders. Each returns a plain row; tests override only the fields they read. */
 
