@@ -20,14 +20,18 @@ const SRC = [join(import.meta.dirname, 'adapters.ts'), join(import.meta.dirname,
 /** A runner that records every call and answers with a fixed exit code. */
 function recordingRunner(code = 0): {
   runner: Runner;
-  calls: { file: string; args: readonly string[] }[];
+  calls: { file: string; args: readonly string[]; env?: Record<string, string | undefined> }[];
 } {
-  const calls: { file: string; args: readonly string[] }[] = [];
+  const calls: {
+    file: string;
+    args: readonly string[];
+    env?: Record<string, string | undefined>;
+  }[] = [];
   return {
     calls,
     runner: {
-      exec: async (file, args): Promise<ExecResult> => {
-        calls.push({ file, args: [...args] });
+      exec: async (file, args, env): Promise<ExecResult> => {
+        calls.push({ file, args: [...args], env });
         return { code, stdout: '', stderr: '' };
       },
     },
@@ -181,12 +185,13 @@ describe('the supervisor and reporter argument arrays', () => {
     const { runner, calls } = recordingRunner();
     await createReporter(
       runner,
-      '/repo',
+      repoWithGlassSecret(),
       runDir,
       files,
       createClock(),
       () => 'ag_smoke_01',
       'smoke',
+      {},
     ).reportRun('run-1');
     expect(calls[0]?.args).toContain('2026-11-10T00:00:00.000Z');
     expect(calls[0]?.args).toContain('--life');
@@ -194,7 +199,69 @@ describe('the supervisor and reporter argument arrays', () => {
     expect(calls[0]?.args).toContain('--out');
     expect(calls[0]?.args).toContain(runDir);
   });
+
+  it('the reporter gives adam-report the glass password file path and the read-only DB address, never the password', async () => {
+    const repo = repoWithGlassSecret();
+    const runDir = reportRunDir();
+    const { runner, calls } = recordingRunner();
+    await createReporter(
+      runner,
+      repo,
+      runDir,
+      createFileStore(runDir),
+      createClock(),
+      () => 'ag_smoke_01',
+      'smoke',
+      {},
+    ).reportRun('run-1');
+    expect(calls[0]?.env).toMatchObject({
+      GELDAR_REPORT_DB_PASSWORD_FILE: join(repo, 'compose', 'secrets', 'postgres-glass.txt'),
+      GELDAR_REPORT_DB_USER: 'geldar_glass',
+      POSTGRES_HOST: '127.0.0.1',
+      POSTGRES_PORT: '5432',
+      POSTGRES_DB: 'geldar',
+    });
+    expect(JSON.stringify(calls)).not.toContain(GLASS_SECRET);
+  });
+
+  it('the reporter refuses, naming the missing glass password file, and runs nothing', async () => {
+    const runDir = reportRunDir();
+    const { runner, calls } = recordingRunner();
+    await expect(
+      createReporter(
+        runner,
+        join(runDir, 'no-repo'),
+        runDir,
+        createFileStore(runDir),
+        createClock(),
+        () => 'ag_smoke_01',
+        'smoke',
+        {},
+      ).reportRun('run-1'),
+    ).rejects.toThrow(/postgres-glass\.txt/);
+    expect(calls).toEqual([]);
+  });
 });
+
+const GLASS_SECRET = 'glass-secret-value-7731';
+
+/** A repo root whose compose/secrets/postgres-glass.txt holds a value the tests must never see printed. */
+function repoWithGlassSecret(): string {
+  const repo = mkdtempSync(join(tmpdir(), 'adam-run-repo-'));
+  mkdirSync(join(repo, 'compose', 'secrets'), { recursive: true });
+  writeFileSync(join(repo, 'compose', 'secrets', 'postgres-glass.txt'), `${GLASS_SECRET}\n`);
+  return repo;
+}
+
+/** A run folder with a manifest that has a start time, which the reporter needs. */
+function reportRunDir(): string {
+  const runDir = mkdtempSync(join(tmpdir(), 'adam-run-rep-'));
+  createFileStore(runDir).write(
+    join(runDir, 'manifest.json'),
+    JSON.stringify({ started_at: '2026-11-10T00:00:00.000Z' }),
+  );
+  return runDir;
+}
 
 describe('the preflight facts', () => {
   it('reads the newest bench result from bench-results/ and the prepared volume from the run folder', async () => {

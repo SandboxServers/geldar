@@ -442,6 +442,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
         clock,
         (p) => LIFE_ID[p],
         profile,
+        env,
       ),
     criteria,
     criteriaText,

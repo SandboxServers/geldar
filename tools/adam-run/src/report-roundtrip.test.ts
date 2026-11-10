@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run as runAdamReport } from '@geldar/adam-report/src/cli.ts';
@@ -19,6 +19,9 @@ afterEach(() => {
 function fakeRunFolder(): string {
   const dir = mkdtempSync(join(tmpdir(), 'adam-rt-'));
   dirs.push(dir);
+  // The reporter refuses without the glass password file under the repo root (the run folder's `repo` child here).
+  mkdirSync(join(dir, 'repo', 'compose', 'secrets'), { recursive: true });
+  writeFileSync(join(dir, 'repo', 'compose', 'secrets', 'postgres-glass.txt'), 'roundtrip-only\n');
   return dir;
 }
 
@@ -80,6 +83,7 @@ describe('adam-run writes a manifest that adam-report reads', () => {
       clock,
       () => 'ag_smoke_01',
       'smoke',
+      {},
     ).reportRun('smoke-rt-1');
 
     const report = JSON.parse(readFileSync(join(runDir, 'run-report.json'), 'utf8')) as {
@@ -126,6 +130,7 @@ describe('adam-run writes a manifest that adam-report reads', () => {
         clock,
         () => 'ag_smoke_01',
         'smoke',
+        {},
       ).reportRun('smoke-rt-1'),
     ).rejects.toThrow('adam-report exited 1');
     expect(logs.join('\n')).toContain('manifest: schema must be adam-run-manifest/1');

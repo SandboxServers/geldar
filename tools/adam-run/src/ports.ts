@@ -69,9 +69,16 @@ export interface ExecResult {
   stderr: string;
 }
 
-/** Runs one program with an argument array, never a shell string. The adapters use it for `ollama`, `nvidia-smi`, `pg`. */
+/**
+ * Runs one program with an argument array, never a shell string. The adapters use it for `ollama`, `nvidia-smi`, `pg`.
+ * `env` adds variables to the child's inherited environment; none means the child inherits it unchanged.
+ */
 export interface Runner {
-  exec(file: string, args: readonly string[]): Promise<ExecResult>;
+  exec(
+    file: string,
+    args: readonly string[],
+    env?: Record<string, string | undefined>,
+  ): Promise<ExecResult>;
 }
 
 /** One status sample. Missing measures are null, never zero. */

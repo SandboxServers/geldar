@@ -82,12 +82,17 @@ export function createClock(): Clock {
 /** Runs one program with an argument array. A missing program is a non-zero exit, not a throw. */
 export function createRunner(cwd: string): Runner {
   return {
-    exec: (file, args) =>
+    exec: (file, args, env) =>
       new Promise<ExecResult>((done) => {
         execFile(
           file,
           [...args],
-          { cwd, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+          {
+            cwd,
+            windowsHide: true,
+            maxBuffer: 64 * 1024 * 1024,
+            env: env === undefined ? undefined : { ...process.env, ...env },
+          },
           (err, stdout, stderr) => {
             const code = err === null ? 0 : typeof err.code === 'number' ? err.code : 1;
             done({ code, stdout: String(stdout), stderr: String(stderr) });
@@ -311,6 +316,33 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
   };
 }
 
+/**
+ * The glass password file: GELDAR_GLASS_PG_PASSWORD_FILE when set, else compose/secrets/postgres-glass.txt under the
+ * repo root. Only the path is returned; the file is never read here.
+ */
+export function glassPasswordFile(
+  repoRoot: string,
+  env: Record<string, string | undefined>,
+): string {
+  return (
+    env.GELDAR_GLASS_PG_PASSWORD_FILE ?? join(repoRoot, 'compose', 'secrets', 'postgres-glass.txt')
+  );
+}
+
+/** The variables adam-report reads (tools/adam-report/src/db.ts): the glass role, its password file, and the DB address. */
+function reportEnv(
+  passwordFile: string,
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  return {
+    GELDAR_REPORT_DB_PASSWORD_FILE: passwordFile,
+    GELDAR_REPORT_DB_USER: 'geldar_glass',
+    POSTGRES_HOST: '127.0.0.1',
+    POSTGRES_PORT: env.GELDAR_GLASS_PG_PORT ?? '5432',
+    POSTGRES_DB: env.GELDAR_GLASS_PG_DB ?? 'geldar',
+  };
+}
+
 /** Calls the W6-12 report generator on the run folder, writing run-report.json and run-report.md there. */
 export function createReporter(
   runner: Runner,
@@ -320,6 +352,7 @@ export function createReporter(
   clock: Clock,
   lifeOf: (profile: Profile) => string,
   profile: Profile,
+  env: Record<string, string | undefined>,
 ): Reporter {
   const paths = runPaths(runDir);
   return {
@@ -327,21 +360,28 @@ export function createReporter(
       const manifest = JSON.parse(files.read(paths.manifest) ?? '{}') as { started_at?: string };
       if (manifest.started_at === undefined)
         throw new Error('report: manifest.json has no started_at');
-      const res = await runner.exec('node', [
-        join(repoRoot, 'tools', 'adam-report', 'src', 'cli.ts'),
-        '--life',
-        lifeOf(profile),
-        '--from',
-        manifest.started_at,
-        '--to',
-        new Date(clock.nowMs()).toISOString(),
-        '--manifest',
-        paths.manifest,
-        '--out',
-        runDir,
-        '--format',
-        'both',
-      ]);
+      const passwordFile = glassPasswordFile(repoRoot, env);
+      if (!existsSync(passwordFile))
+        throw new Error(`report: glass password file is missing: ${passwordFile}`);
+      const res = await runner.exec(
+        'node',
+        [
+          join(repoRoot, 'tools', 'adam-report', 'src', 'cli.ts'),
+          '--life',
+          lifeOf(profile),
+          '--from',
+          manifest.started_at,
+          '--to',
+          new Date(clock.nowMs()).toISOString(),
+          '--manifest',
+          paths.manifest,
+          '--out',
+          runDir,
+          '--format',
+          'both',
+        ],
+        reportEnv(passwordFile, env),
+      );
       if (res.code !== 0) throw new Error(`adam-report exited ${res.code}`);
     },
   };
