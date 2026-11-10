@@ -42,12 +42,24 @@ export function caseTime(kind: AdamCaseKind): ResetTime {
 }
 
 /**
- * The control commands a case runs once Adam's Body is up (`give` needs him online): the time of
- * day (`resetBot` sets it too, so the repeat is harmless), then an empty inventory. Only the sleep
- * case gives him a bed; a bed in the hands of any other case invites a `place` that fails.
+ * The control commands a case runs once Adam's Body is up, in the order they run. The arena's item
+ * drops go first: a drop left by an earlier run is picked up as Adam walks over it, so it is killed
+ * before he is moved in. Then Adam is moved into the arena, then the time of day (`resetBot` sets it
+ * too, so the repeat is harmless), then an empty inventory, which therefore runs after every pickup
+ * the move could cause. Only the sleep case gives him a bed; a bed in the hands of any other case
+ * invites a `place` that fails.
  */
-export function caseSetup(kind: AdamCaseKind): string[] {
-  const commands = [`time set ${caseTime(kind)}`, `clear ${ADAM_LIFE_ID}`];
+export function caseSetup(
+  kind: AdamCaseKind,
+  center: { x: number; y: number; z: number },
+): string[] {
+  const { x, y, z } = center;
+  const commands = [
+    `kill @e[type=item,x=${x},y=${y},z=${z},distance=..40]`,
+    `tp ${ADAM_LIFE_ID} ${x + 1} ${y + 1} ${z + 1}`,
+    `time set ${caseTime(kind)}`,
+    `clear ${ADAM_LIFE_ID}`,
+  ];
   if (kind === 'sleep') commands.push(`give ${ADAM_LIFE_ID} white_bed 1`);
   return commands;
 }
@@ -157,8 +169,8 @@ export async function checkEightBillionLife(config: AdamConfig): Promise<void> {
 /**
  * Runs `fn` with Adam's stack up. The world is reset the standard way (`resetBot`, with the time
  * the case's kind needs); Adam is whitelisted; then the Body starts, and before the Mind starts the
- * kind's `caseSetup` commands run (empty his inventory, give the sleep case its bed), Adam is moved
- * into the arena, and his inventory is read back and must hold exactly the case's items. Only then
+ * kind's `caseSetup` commands run (kill the arena's drops, move Adam in, empty his inventory, give the
+ * sleep case its bed), and his inventory is read back and must hold exactly the case's items. Only then
  * do animus and lantern-local start, so the Mind's first look sees the case's world. Everything is
  * stopped and restored afterwards, even on failure. The chatter starts silent: a case that needs it
  * to speak calls `ac.chatter.speak()` once Adam has acted.
@@ -223,9 +235,9 @@ export async function withAdamCase(
       try {
         // The Body, then the case's world, then the Mind: the Mind's first thought sees the setup.
         await stack.start(120_000, async () => {
-          for (const command of caseSetup(opts.kind)) await live.ctl.command(command);
-          const { x, y, z } = live.arena.center;
-          await live.ctl.tp(ADAM_LIFE_ID, x + 1, y + 1, z + 1);
+          for (const command of caseSetup(opts.kind, live.arena.center)) {
+            await live.ctl.command(command);
+          }
           const reply = await live.ctl.command(`data get entity ${ADAM_LIFE_ID} Inventory`);
           checkCaseInventory(opts.kind, reply);
         });

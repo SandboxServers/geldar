@@ -39,22 +39,27 @@ function action(id: string, intentId: string | null, state: string): ActionRow {
   return { action_id: id, intent_id: intentId, body_generation: 1, state, kind: 'goto' };
 }
 
+const CENTER = { x: 100, y: 200, z: -50 };
+
 describe('the case setup', () => {
   it('starts only the sleep case at night, with a bed in the inventory', () => {
     expect(caseTime('sleep')).toBe('night');
-    expect(caseSetup('sleep')).toContain(`give ${ADAM_LIFE_ID} white_bed 1`);
+    expect(caseSetup('sleep', CENTER)).toContain(`give ${ADAM_LIFE_ID} white_bed 1`);
     for (const kind of KINDS.filter((k) => k !== 'sleep')) {
       expect(caseTime(kind)).toBe('day');
-      expect(caseSetup(kind).some((c) => c.includes('white_bed'))).toBe(false);
-      expect(caseSetup(kind).some((c) => c.includes('time set night'))).toBe(false);
+      expect(caseSetup(kind, CENTER).some((c) => c.includes('white_bed'))).toBe(false);
+      expect(caseSetup(kind, CENTER).some((c) => c.includes('time set night'))).toBe(false);
     }
   });
 
-  it('empties the inventory before every case, and sets the time first', () => {
+  it('kills the arena drops before Adam walks in, and empties his inventory after he is there', () => {
     for (const kind of KINDS) {
-      const commands = caseSetup(kind);
-      expect(commands[0]).toBe(`time set ${caseTime(kind)}`);
-      expect(commands[1]).toBe(`clear ${ADAM_LIFE_ID}`);
+      const commands = caseSetup(kind, CENTER);
+      expect(commands[0]).toBe('kill @e[type=item,x=100,y=200,z=-50,distance=..40]');
+      expect(commands[1]).toBe(`tp ${ADAM_LIFE_ID} 101 201 -49`);
+      expect(commands).toContain(`time set ${caseTime(kind)}`);
+      // The clear runs after the move, so a pickup the move could cause is cleared, not kept.
+      expect(commands.indexOf(`clear ${ADAM_LIFE_ID}`)).toBeGreaterThan(1);
     }
   });
 });
