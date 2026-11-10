@@ -240,7 +240,11 @@ export class FakeReporter implements Reporter {
 /** Facts that pass every precondition for the profile: a clean tree, a gate at HEAD, the profile's life id. */
 export function passingPreflight(
   profile: Profile,
-  over: { otherChanges?: string[]; shardEdit?: import('../src/shard-edit.ts').ShardEdit } = {},
+  over: {
+    otherChanges?: string[];
+    shardEdit?: import('../src/shard-edit.ts').ShardEdit;
+    lifeRows?: import('../src/preconditions.ts').LifeRows | null;
+  } = {},
 ): Preflight {
   const bench = {
     meta: { commit: 'abc123' },
@@ -273,6 +277,7 @@ export function passingPreflight(
             profile === 'smoke' ? null : { exists: true, labelled: true, empty: true, usedBy: [] },
           worldVolumeEnv: FAKE_WORLD_VOLUME,
           lifeId: LIFE_ID[profile],
+          lifeRows: over.lifeRows === undefined ? { thoughts: 0, intents: 0 } : over.lifeRows,
           mind: {
             username: LIFE_ID[profile],
             tier: PROFILE_TIER[profile],

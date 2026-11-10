@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FakeClock, FakeProcesses } from '../test/fakes.ts';
 import {
   ADAM_UP_TIMEOUT_MS,
+  countLifeRows,
   createClock,
   createFileStore,
   createGlassClient,
@@ -63,6 +64,45 @@ function recordingSql(failOn?: string): { sql: SqlClient; texts: string[] } {
     },
   };
 }
+
+describe('the start reads the life rows', () => {
+  it('counts the life thoughts and intents in one read-only transaction, then closes the client', async () => {
+    const texts: string[] = [];
+    const values: unknown[][] = [];
+    let closed = false;
+    const sql: SqlClient = {
+      query: async (text, params) => {
+        texts.push(text);
+        values.push(params);
+        return { rows: [{ t: 3, i: 2 }] };
+      },
+      close: async () => {
+        closed = true;
+      },
+    };
+    expect(await countLifeRows(sql, 'ag_adam_04')).toEqual({ thoughts: 3, intents: 2 });
+    expect(texts[0]).toBe('BEGIN READ ONLY');
+    expect(texts[texts.length - 1]).toBe('COMMIT');
+    expect(texts[2]).toContain('FROM thoughts');
+    expect(texts[2]).toContain('FROM intents');
+    expect(values[2]).toEqual(['ag_adam_04']);
+    expect(closed).toBe(true);
+  });
+
+  it('returns null when Postgres cannot be read, and still closes the client', async () => {
+    let closed = false;
+    const sql: SqlClient = {
+      query: async () => {
+        throw new Error('connection refused');
+      },
+      close: async () => {
+        closed = true;
+      },
+    };
+    expect(await countLifeRows(sql, 'ag_adam_04')).toBeNull();
+    expect(closed).toBe(true);
+  });
+});
 
 describe('the sampler death count', () => {
   it('counts death events of the life since the run start, never agents.died_at', async () => {
@@ -458,6 +498,7 @@ describe('the preflight facts', () => {
         criteriaText: '{}',
         files: createFileStore(runDir),
         worldVolumes,
+        sql: recordingSql().sql,
         env: { GELDAR_WORLD_VOLUME: 'geldar-phase0-world-run-1' },
       });
       const { facts } = await preflight.gather();

@@ -39,6 +39,7 @@ const good: PreconditionFacts = {
   volume: FRESH,
   worldVolumeEnv: VOLUME,
   lifeId: 'ag_adam_04',
+  lifeRows: { thoughts: 0, intents: 0 },
   mind: { username: 'ag_adam_04', tier: 'fast', runTier: 'fast' },
 };
 
@@ -93,6 +94,21 @@ describe('checkPreconditions', () => {
 
   it.each<[string, PreconditionFacts, string]>([
     ['a dirty tree', { ...good, otherChanges: ['animus/src/x.ts'] }, 'clean tree'],
+    [
+      'a life that already has thoughts',
+      { ...good, lifeRows: { thoughts: 3, intents: 0 } },
+      'life ag_adam_04 already has 3 thoughts and 0 intents; a fresh life id is needed',
+    ],
+    [
+      'a life that already has intents only',
+      { ...good, lifeRows: { thoughts: 0, intents: 2 } },
+      'already has 0 thoughts and 2 intents; a fresh life id is needed',
+    ],
+    [
+      'Postgres that cannot be read to check the life',
+      { ...good, lifeRows: null },
+      'Postgres could not be read to check the life is unused',
+    ],
     [
       'a select edit next to a code change',
       {

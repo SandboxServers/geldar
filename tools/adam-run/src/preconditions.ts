@@ -37,13 +37,37 @@ export interface PreconditionFacts {
   worldVolumeEnv: string | undefined;
   /** The life id the run would use. */
   lifeId: string;
+  /** The thoughts and intents rows the life already holds, or null when Postgres could not be read. */
+  lifeRows: LifeRows | null;
   /** The Mind's life as `shards/phase0.yaml` names it now: the username, the agent tier and the run tier. */
   mind: MindLife;
   /** The secret files a start needs that are missing or unreadable, as paths. Absent means none were checked. */
   secretsMissing?: string[];
 }
 
+export interface LifeRows {
+  thoughts: number;
+  intents: number;
+}
+
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
+
+/**
+ * A run's life must hold no journal rows yet: decision 0064 keeps every row, so a life that has any is used up and the
+ * run needs a fresh life id.
+ */
+function freshLifeProblems(f: PreconditionFacts): string[] {
+  if (f.lifeRows === null) {
+    return [
+      `life ${f.lifeId}: Postgres could not be read to check the life is unused; start the stack and retry`,
+    ];
+  }
+  const { thoughts, intents } = f.lifeRows;
+  if (thoughts === 0 && intents === 0) return [];
+  return [
+    `life ${f.lifeId} already has ${thoughts} thoughts and ${intents} intents; a fresh life id is needed (decision 0064; journals are never deleted)`,
+  ];
+}
 
 /** The digest Ollama reports for a pin's tag, matching `tag` and `tag:latest` alike. */
 function observedFor(observed: Record<string, string | null>, tag: string): string | null {
@@ -115,6 +139,7 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   if (f.lifeId !== LIFE_ID[f.profile]) {
     missing.push(`life id: profile ${f.profile} runs ${LIFE_ID[f.profile]}, not ${f.lifeId}`);
   }
+  missing.push(...freshLifeProblems(f));
   // The Mind runs the shard file's life and tier: a run whose profile names another one would run the wrong model.
   const select = `adam select --model ${f.profile === 'smoke' ? 'smoke' : PROFILE_TIER[f.profile]}`;
   if (f.mind.username !== LIFE_ID[f.profile]) {

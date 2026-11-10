@@ -460,6 +460,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
         criteriaText,
         files: createFileStore(runDir),
         worldVolumes,
+        sql: createGlassClient(env),
         env,
       }),
     reporter: (runDir, profile) =>

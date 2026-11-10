@@ -36,6 +36,7 @@ import {
   type Service,
   type Supervisor,
 } from './ports.ts';
+import type { LifeRows } from './preconditions.ts';
 import { serviceAlive } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
 import { classifyShardEdit, mindLifeOf, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
@@ -485,6 +486,24 @@ export function listDir(dir: string): string[] {
   }
 }
 
+/** The thoughts and intents rows a life holds, read once and the client closed; null when Postgres cannot be read. */
+export async function countLifeRows(sql: SqlClient, lifeId: string): Promise<LifeRows | null> {
+  try {
+    const row = await readOnly(sql, async (q) => {
+      const res = await q.query(
+        'SELECT (SELECT count(*)::int FROM thoughts WHERE life_id = $1) AS t, (SELECT count(*)::int FROM intents WHERE life_id = $1) AS i',
+        [lifeId],
+      );
+      return res.rows[0];
+    });
+    return { thoughts: Number(row?.t ?? 0), intents: Number(row?.i ?? 0) };
+  } catch {
+    return null;
+  } finally {
+    await sql.close?.().catch(() => undefined);
+  }
+}
+
 /** The gate's facts: git, the newest bench result, the pins, the Ollama tags and loaded models, the prepared volume. */
 export function createPreflight(opts: {
   runner: Runner;
@@ -494,6 +513,7 @@ export function createPreflight(opts: {
   criteriaText: string;
   files: FileStore;
   worldVolumes: WorldVolumes;
+  sql: SqlClient;
   env: Record<string, string | undefined>;
 }): Preflight {
   const fetchJson = async (path: string): Promise<Record<string, unknown>> => {
@@ -556,6 +576,7 @@ export function createPreflight(opts: {
           volume,
           worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
+          lifeRows: await countLifeRows(opts.sql, LIFE_ID[opts.profile]),
           mind: mindLifeOf(shardYaml),
           secretsMissing: unreadablePaths(startSecretPaths(opts.repoRoot, opts.env)),
         },
