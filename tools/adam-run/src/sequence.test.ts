@@ -82,6 +82,13 @@ describe('runSequence', () => {
     expect(manifest.seed).toBe(8675309);
   });
 
+  it('carries the prepared world volume into the run manifest that replaces its record', async () => {
+    const r = rig('8b', {});
+    await runSequence(r.deps, r.run);
+    const manifest = JSON.parse(r.files.read(runPaths(RUN_DIR).manifest) ?? '{}');
+    expect(manifest.world_volume).toBe('geldar-phase0-world-run-1');
+  });
+
   it('runs 30 simulated minutes with a restart and a Body kill, then reports', async () => {
     const r = rig(
       'smoke',

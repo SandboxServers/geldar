@@ -148,6 +148,8 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
       runId: input.runId,
       profile: input.profile,
       seed: gathered.seed,
+      // The prepared record is replaced by this manifest; the volume name it held moves here.
+      worldVolume: f.prepared?.worldVolume ?? null,
       startedAt: new Date(startMs).toISOString(),
       plannedRestartAt:
         input.plannedRestartAtMs === null ? null : new Date(input.plannedRestartAtMs).toISOString(),

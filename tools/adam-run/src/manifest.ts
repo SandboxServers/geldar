@@ -104,6 +104,8 @@ export interface ManifestInput {
   runId: string;
   profile: Profile;
   seed: number;
+  /** The world volume prepare-volume made for this run, or null for a smoke run. */
+  worldVolume: string | null;
   startedAt: string;
   plannedRestartAt: string | null;
   git: { sha: string; clean: boolean };
@@ -143,6 +145,7 @@ export interface Manifest {
   profile: Profile;
   life_id: string;
   seed: number;
+  world_volume: string | null;
   git: { sha: string; clean: boolean };
   shard_config_sha256: string;
   shard_edit: ManifestShardEdit | null;
@@ -161,6 +164,7 @@ export function buildManifest(input: ManifestInput): Manifest {
     profile: input.profile,
     life_id: LIFE_ID[input.profile],
     seed: input.seed,
+    world_volume: input.worldVolume,
     git: { sha: input.git.sha, clean: input.git.clean },
     shard_config_sha256: input.shardConfigSha256,
     shard_edit:

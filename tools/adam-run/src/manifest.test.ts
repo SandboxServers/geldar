@@ -26,6 +26,7 @@ const input: ManifestInput = {
   runId: 'r1',
   profile: '8b',
   seed: 8675309,
+  worldVolume: 'geldar-phase0-world-r1',
   startedAt: '2026-11-10T00:00:00.000Z',
   plannedRestartAt: '2026-11-10T12:00:00.000Z',
   git: { sha: 'eba101b', clean: true },
