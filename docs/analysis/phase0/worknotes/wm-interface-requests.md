@@ -54,3 +54,8 @@ The orchestrator decided these questions. They close Q1 to Q3 and confirm R1 and
 (b) `threshold/mcp-mock` should export `present.ts` from its index. WM-04 carries a copy at `threshold/mcp/src/events/present.ts` so the MCP package can build the presence view without the mock's index. Once the mock exports it, the copy can be removed.
 
 (c) The event texts `You slept.`, `You died and woke at spawn.` and `Your actions finished: N done, M failed` are not defined by the packet or the mock. None were added. Whoever owns the event wording should decide them.
+
+## WM-05
+
+- **WM-11: use PlayerLog.head() from WM-04 for say's start cursor; plan_result needs thought_id and said.** `say` reads the Body's `plan_result` from the life's event log. WM-05 takes its start cursor from the `PlayerEventLog` port WM-01 defined (the newest sequence `since(lifeId, 0)` returns, taken before the plan is sent), because WM-04's `head()` cursor is on an unmerged branch. WM-11 should swap that for `PlayerLog.head()`. The `plan_result` event must carry `thought_id` and `said`; `planResultFor` in `threshold/mcp/src/tools/say.ts` reads both.
+- **Body rate-limit refusal maps to `body_refused`.** `plan_result` has no reason field, so a refusal by the Body's own rate limit (`said: false`) is reported as the existing `body_refused` outcome, not as a separate reason. Revisit if the Body starts sending a reason.
