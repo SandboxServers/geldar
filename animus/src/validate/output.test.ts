@@ -408,11 +408,11 @@ describe('the body-api table', () => {
   it('matches the decode schema', () => {
     const schema = thoughtDecodeSchema() as {
       properties: {
-        actions: { items: { properties: { do: { enum: string[] } } } };
+        actions: { items: { oneOf: { properties: { do: { const: string } } }[] } };
         intent: { properties: { program: { enum: string[] } } };
       };
     };
-    expect([...schema.properties.actions.items.properties.do.enum].sort()).toEqual(
+    expect(schema.properties.actions.items.oneOf.map((v) => v.properties.do.const).sort()).toEqual(
       [...PHASE0_VERBS].sort(),
     );
     expect([...schema.properties.intent.properties.program.enum].sort()).toEqual(
