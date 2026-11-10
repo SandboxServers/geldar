@@ -15,6 +15,7 @@ import {
   getPrompt,
   listPrompts,
   listResources,
+  PLAYER_FAULT,
   type ResourceDeps,
   readPlayerResource,
 } from './resources.ts';
@@ -92,6 +93,7 @@ export function createWorldSession(
         request.params.arguments,
         { playerId, signal },
         (m) => deps.log?.({ event: 'tool_log', player_id: playerId, message: m.slice(0, 300) }),
+        PLAYER_FAULT,
       );
       return { ...response };
     } finally {
