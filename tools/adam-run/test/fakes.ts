@@ -254,7 +254,7 @@ export function passingPreflight(
   } = {},
 ): Preflight {
   const bench = {
-    meta: { commit: 'abc123' },
+    meta: { commit: 'abc1234' },
     truncated: false,
     summary: [{ scenario: 'food', tps: 20, successPct: 100 }],
   };
@@ -263,10 +263,10 @@ export function passingPreflight(
       return {
         facts: {
           profile,
-          headSha: 'abc123',
+          headSha: 'abc1234',
           otherChanges: over.otherChanges ?? [],
           shardEdit: over.shardEdit ?? { kind: 'none' },
-          bench: { file: '20261109T000000Z-abc123.json', text: JSON.stringify(bench) },
+          bench: { file: '20261109T000000Z-abc1234.json', text: JSON.stringify(bench) },
           pins: [],
           observedDigests: {},
           loadedModels: [],
