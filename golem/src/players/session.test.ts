@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import type { RunningAdamBody } from '../adam/adam-body.ts';
+import { watchPresence } from './presence.ts';
 import { type PlayerConnection, PlayerSession } from './session.ts';
 
 const LIFE = 'ag_jason_01';
@@ -110,5 +111,65 @@ describe('PlayerSession', () => {
     await session.up();
     expect(calls.filter((call) => call === 'connect')).toHaveLength(1);
     await session.down();
+  });
+});
+
+/** A presence value of the life, in the shape the MCP writes (presence.ts `write`, presenceAt). */
+function presenceValue(desired: 'up' | 'down'): string {
+  return JSON.stringify({
+    life_id: LIFE,
+    state: desired === 'up' ? 'awake' : 'hibernating',
+    desired_body: desired,
+    at: '2026-11-09T12:00:00Z',
+  });
+}
+
+/** Values the test pushes, read in order by the presence watch, as its bucket watch would deliver them. */
+function channel() {
+  const items: (string | null)[] = [];
+  let wake: (() => void) | undefined;
+  return {
+    push(value: string | null) {
+      items.push(value);
+      wake?.();
+      wake = undefined;
+    },
+    async *entries(): AsyncGenerator<string | null> {
+      for (;;) {
+        if (items.length === 0) {
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
+        }
+        yield items.shift() ?? null;
+      }
+    },
+  };
+}
+
+describe('a presence record drives the session', () => {
+  it('a flip from hibernating to awake starts the Body once, and a flip back to down stops it', async () => {
+    const { session, calls, closes, logs } = setup();
+    const feed = channel();
+    const signal = new AbortController();
+    const watch = watchPresence({
+      lifeId: LIFE,
+      entries: feed.entries(),
+      handlers: { up: () => session.up(), down: () => session.down() },
+      signal: signal.signal,
+      log: (line) => logs.push(line),
+    });
+    feed.push(presenceValue('down'));
+    feed.push(presenceValue('up'));
+    await vi.waitFor(() => expect(logs.some((l) => l.event === 'body_started')).toBe(true));
+    feed.push(presenceValue('up'));
+    feed.push(presenceValue('down'));
+    await vi.waitFor(() => expect(logs.some((l) => l.event === 'player_down')).toBe(true));
+    expect(calls.filter((call) => call === `admit ${LIFE}`)).toHaveLength(1);
+    expect(logs.filter((l) => l.event === 'body_started')).toHaveLength(1);
+    expect(session.running).toBe(false);
+    expect(closes.count).toBe(1);
+    signal.abort();
+    await watch;
   });
 });

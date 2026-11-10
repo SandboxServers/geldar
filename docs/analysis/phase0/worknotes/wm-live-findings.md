@@ -130,3 +130,50 @@ Two fixes in threshold/mcp: the presence bucket is created before it is used, an
 2. Mint a fresh token. The token file is an env line, so write the new token into it.
 3. `./geldar.ps1 mcp smoke`.
 4. Confirm the startup log has no `settle_error` line.
+
+## L3
+
+### Hibernated start: `players up` alone leaves no Body
+
+- After a run, the settle moves the presence record to hibernating or down. The player host obeys the
+  record, so `./geldar.ps1 players up` alone starts no Body.
+- The designed wake is the first MCP call. The live case now has a wake phase
+  (`threshold/mcp/test/live/live-wake.ts`) that brings the Body up before the scenario, and fails with
+  a pointer to `players logs` and `players status` if it does not.
+
+### PowerShell binder: `--out` (fixed)
+
+- Finding: `geldar.ps1` had a `[CmdletBinding()]` param block. PowerShell read `--out` as an ambiguous
+  prefix of `-OutVariable` and `-OutBuffer`, so `mcp-tokens token mint ... --out <file>` failed before
+  the CLI ran.
+- Fix (commit `13da18f`): the script has no param block. `$Command` and `$Rest` are read from `$args`,
+  with the same meaning for every command. The guard is `threshold/mcp/src/geldar-script.test.ts`; it
+  also runs the script under pwsh when pwsh exists and checks that the CLI's own error comes back.
+- Bare flags through the pass-through, measured with `pwsh -File` (exit code, first output line). On
+  origin/main, then on this branch:
+  - `pnpm -v`: main exit 2, prints the script's help text; branch exit 0, prints the pnpm version.
+  - `pnpm exec node -e 1`: main exit 1, `parameter 'e' is ambiguous`; branch exit 0.
+  - `pnpm -C threshold/mcp exec tsc --noEmit`: main exit 0 but runs nothing (prints the help text); branch
+    runs tsc and exits 0.
+  - `pnpm --filter @geldar/mcp exec vitest run`: exit 0 on both.
+  No form that worked on main fails on the branch. Not covered: forms outside these four.
+- Fixed: the no-argument usage. `geldar.ps1` now prints its usage from `Show-Usage` (commit `b658744`) with
+  `help`, `-h` and `--help`; an unknown command prints an error, the usage, and exits 2. The guard checks
+  that the usage names every case of the dispatch switch.
+
+### Leftover tokens policy
+
+- Not decided. The brief named a policy, but no rule was given and none exists in the repo.
+- Proposed for ops to confirm: each smoke run mints one token into a file outside the repo. At cleanup,
+  revoke that token with the mcp-tokens CLI and delete the file. Do not leave a token minted for a test
+  in use.
+
+### What ops runs next
+
+1. Mint a token: `./geldar.ps1 mcp-tokens token mint ag-test-01 --out <file outside the repo>`. The
+   wrapper now passes `--out` through.
+2. `./geldar.ps1 mcp up`.
+3. `./geldar.ps1 players up --player ag-test-01`. Do not wait for the Body to join.
+4. `./geldar.ps1 mcp smoke`. Its wake phase brings the Body up; allow up to 120 s.
+5. The negative HTTP checks.
+6. Cleanup, per the leftover tokens policy above.
