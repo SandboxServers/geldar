@@ -67,6 +67,7 @@ export async function callTool(
   args: unknown,
   ctx: ToolContext,
   log: (m: string) => void = () => {},
+  fault = 'the mock failed',
 ): Promise<ToolResponse> {
   if (!(MCP_TOOL_NAMES as readonly string[]).includes(name)) {
     log(`unknown_tool: ${JSON.stringify(name.slice(0, 80))}`);
@@ -87,7 +88,7 @@ export async function callTool(
     log(
       `handler for ${tool} threw: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
     );
-    return failure('internal_error: the mock failed');
+    return failure(`internal_error: ${fault}`);
   }
 
   const checked = validateToolResult(tool, result);

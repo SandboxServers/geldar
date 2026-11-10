@@ -12,6 +12,13 @@
 export const TITLE_LIMIT = 64;
 export const AUTHOR_LIMIT = 32;
 export const TEXT_LIMIT = 8192;
+/**
+ * The text's cap in JSON-escaped UTF-8 bytes. A quote or a CJK character costs more than one byte
+ * in a reply, so the text alone can outgrow the 16384-byte tool result cap; this budget keeps the
+ * whole reply (title and author included) under it.
+ */
+export const TEXT_BYTES = 12_288;
+const TRUNCATED = ' [book text cut short]';
 
 /** A written book holds at most 100 pages in Minecraft; more are ignored. */
 const MAX_PAGES = 100;
@@ -98,7 +105,7 @@ function fromParts(title: unknown, author: unknown, pages: unknown[]): WrittenBo
   return {
     title: clip(clean(plainText(rawOf(title))), TITLE_LIMIT),
     author: clip(clean(plainText(rawOf(author))), AUTHOR_LIMIT),
-    text: clip(text, TEXT_LIMIT),
+    text: fitBytes(clip(text, TEXT_LIMIT), TEXT_BYTES),
   };
 }
 
@@ -139,14 +146,46 @@ function plainText(node: unknown, depth = 0): string {
   return own + extra;
 }
 
-/** Drops C0 and C1 control characters and DEL, the newline and the tab among them. */
+/**
+ * Drops C0 and C1 control characters and DEL, the newline and the tab among them; also the line and
+ * paragraph separators (U+2028, U+2029) and the bidi embedding, override and isolate controls, so a
+ * page cannot reorder or split the text the player reads.
+ */
 function clean(text: string): string {
   let out = '';
   for (const char of text) {
     const code = char.codePointAt(0) ?? 0;
-    if (code > 0x1f && (code < 0x7f || code > 0x9f)) out += char;
+    if (code > 0x1f && (code < 0x7f || code > 0x9f) && !isHiddenControl(code)) out += char;
   }
   return out;
+}
+
+function isHiddenControl(code: number): boolean {
+  return (
+    (code >= 0x2028 && code <= 0x2029) ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069)
+  );
+}
+
+/** A string's size in a JSON reply: its JSON-escaped UTF-8 bytes, without the two quotes. */
+function jsonBytes(text: string): number {
+  return Buffer.byteLength(JSON.stringify(text)) - 2;
+}
+
+/** Cuts to at most `budget` JSON-escaped bytes, ending with a visible marker when it cuts. */
+function fitBytes(text: string, budget: number): string {
+  if (jsonBytes(text) <= budget) return text;
+  const room = budget - jsonBytes(TRUNCATED);
+  let out = '';
+  let used = 0;
+  for (const char of text) {
+    const cost = jsonBytes(char);
+    if (used + cost > room) break;
+    out += char;
+    used += cost;
+  }
+  return out + TRUNCATED;
 }
 
 /** Cuts to at most `limit` UTF-16 units, never leaving half of a surrogate pair. */

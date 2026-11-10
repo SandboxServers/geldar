@@ -48,6 +48,7 @@ export function readResource(
   playerId: string,
   uri: string,
   log?: (line: Record<string, unknown>) => void,
+  fault = 'the mock failed',
 ): { contents: { uri: string; mimeType: string; text: string }[] } {
   const listing = RESOURCE_LISTINGS.find((r) => r.uri === uri);
   if (listing === undefined) {
@@ -66,7 +67,7 @@ export function readResource(
       uri,
       message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
     });
-    throw new McpError(ErrorCode.InternalError, 'the mock failed');
+    throw new McpError(ErrorCode.InternalError, fault);
   }
   return { contents: [{ uri, mimeType: listing.mimeType, text }] };
 }
