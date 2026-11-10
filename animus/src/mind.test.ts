@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ManualTiming } from './attention/timing.fakes.ts';
-import { type AnimusConfig, loadAnimusConfig } from './config.ts';
+import type { AnimusConfig } from './config.ts';
 import { FakeBodyLink, FakeEventPublisher, FakeEventSource } from './fakes/body.fakes.ts';
 import { FakeEmbedder, FakeMemoryStore } from './fakes/memory.fakes.ts';
 import { FakeOutputValidator, FakePromptLibrary } from './fakes/prompts.fakes.ts';
 import { makeSnapshot, VALID_THOUGHT } from './loop/loop-fixtures.ts';
 import { Mind, type MindDeps } from './mind.ts';
+import { loadCommittedConfig } from './phase0-shard.fixture.ts';
 import {
   BodyLinkError,
   type MindEvent,
@@ -52,7 +53,7 @@ interface Rig {
 
 let config: AnimusConfig;
 beforeEach(async () => {
-  config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+  config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
 });
 
 async function rig(answers: string[], extra: Partial<MindDeps> = {}): Promise<Rig> {

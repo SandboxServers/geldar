@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { loadAnimusConfig } from './config.ts';
 import { FakeBodyLink, FakeEventPublisher, FakeEventSource } from './fakes/body.fakes.ts';
 import { FakeEmbedder, FakeMemoryStore } from './fakes/memory.fakes.ts';
 import { makeSnapshot, VALID_THOUGHT } from './loop/loop-fixtures.ts';
 import { agentRow, checkOllamaEmbedder, type LogLine, type MindStack, startMind } from './main.ts';
+import { loadCommittedConfig } from './phase0-shard.fixture.ts';
 import type { AgentRow, ModelClient } from './ports/index.ts';
 
-const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+const config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
 
 /** A stack of fakes that writes every open and close to `calls`. */
 function fakeStack(calls: string[], failAt?: string): MindStack {
