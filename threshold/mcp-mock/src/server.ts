@@ -328,6 +328,9 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       options.authenticate !== undefined
         ? await options.authenticate(player, authHeader, req)
         : { outcome: checkBearer(options.tokens, player, authHeader) };
+    // A client that left during the lookup has already fired 'close', so nothing would release what
+    // the hooks take next. There is no one to answer, so the request ends here.
+    if (res.closed || res.destroyed) return;
     // A refused client is not read further, so its socket closes when the option asks for it.
     const close: Record<string, string> =
       options.closeRefused === true ? { Connection: 'close' } : {};

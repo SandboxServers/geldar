@@ -160,6 +160,12 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         gates.releaseAddress(address);
         return tooManyOpen();
       }
+      // A response already closed would never fire 'close' again, so its slots are released now.
+      if (res.closed || res.destroyed) {
+        gates.release(playerId);
+        gates.releaseAddress(address);
+        return { status: 499, message: 'client_gone' };
+      }
       res.once('close', () => {
         gates.release(playerId);
         gates.releaseAddress(address);
