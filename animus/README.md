@@ -45,6 +45,7 @@ animus/
 ## Rules for every file here
 
 - Unit tests use the fakes only: no Ollama, NATS, Postgres or Minecraft in `./geldar.ps1 check`. Integration tests are `*.it.test.ts`, skipped unless `GELDAR_IT=1`.
+- The thought prompt is budgeted in estimated tokens: `mind.prompt_budget_tokens` (default 2500, replacing the old character budget), one estimated token per three ASCII characters, fitted to `num_ctx` 8192 with a 2048 output reserve (`prompts/library.ts`). The sleep reflection uses prompt v2, which carries a commitments block; open commitments are capped at `mind.max_commitments`, most overdue first, and the rest stay in the store (decision record: overnight decisions 50 and 51).
 - In-world text (speech, signs, player names) is untrusted. It reaches a prompt only as a JSON-escaped string in the quoted-world-text section of the user message; the output validator is the control.
 - A model, embedding digest or personality seed that is still a placeholder in `shards/phase0.yaml` stops the Mind from starting. Tests pass `allowPlaceholders`.
 - No new SQL migration (D-P0-11): a missing column is an interface request.
