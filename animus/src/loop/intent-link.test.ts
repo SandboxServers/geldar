@@ -3,6 +3,7 @@ import { FakeMemoryStore } from '../fakes/memory.fakes.ts';
 import { INTENT_LINK_BUDGET_MS, IntentLinker } from './intent-link.ts';
 
 const LIFE = 'ag_adam_01';
+const OTHER_LIFE = 'ag_kestrel_01';
 const INTENT = 'in_01HZX3V9Q4M2K8R7T6Y5W4E3D5';
 const THOUGHT = 'th_01HZX3V9Q4M2K8R7T6Y5W4E3D6';
 
@@ -86,9 +87,9 @@ describe('IntentLinker', () => {
     let failures = 2;
     // The first two writes fail as a dropped connection would; then the fake answers as usual.
     const flaky = {
-      linkIntent: async (intentId: string, thoughtId: string): Promise<boolean> => {
+      linkIntent: async (lifeId: string, intentId: string, thoughtId: string): Promise<boolean> => {
         if (failures-- > 0) throw new Error('connection reset');
-        return store.linkIntent(intentId, thoughtId);
+        return store.linkIntent(lifeId, intentId, thoughtId);
       },
     } as unknown as FakeMemoryStore;
     const { waits, sleep } = recordingSleep();
@@ -112,6 +113,19 @@ describe('IntentLinker', () => {
 
     expect(waits).toEqual([]);
     expect(lines).toEqual([expect.objectContaining({ event: 'intent_link_gave_up', attempts: 1 })]);
+  });
+
+  it("never links another life's intent row, and gives up", async () => {
+    const store = new FakeMemoryStore();
+    store.addIntentRow(INTENT, null, OTHER_LIFE);
+    const { waits, sleep } = recordingSleep();
+    const { linker, lines } = linkerOver(store, sleep);
+    linker.link(INTENT, THOUGHT, new AbortController().signal);
+    await linker.settled();
+
+    expect(store.intentThought(INTENT)).toBeNull();
+    expect(waits.reduce((sum, ms) => sum + ms, 0)).toBe(INTENT_LINK_BUDGET_MS);
+    expect(lines).toEqual([expect.objectContaining({ event: 'intent_link_gave_up' })]);
   });
 
   it('does not hold the caller: link returns before the row exists', () => {

@@ -144,7 +144,7 @@ describe('the Mind end to end with fakes', () => {
     const w = await world();
     const { time, mind, script, store, body } = w;
     script.script(SAY_THOUGHT, SAY_THOUGHT);
-    mind.start();
+    await mind.start();
     await mind.settled();
     expect(store.thoughts.map((t) => t.wakeReason)).toEqual(['mind_start']);
     time.advance(59_000);
@@ -166,7 +166,7 @@ describe('the Mind end to end with fakes', () => {
 
     // 1. mind_start: a plan with an intent.
     script.script(VALID_THOUGHT);
-    mind.start();
+    await mind.start();
     await step();
     expect(body.snapshotRequests).toEqual(['mind_start']);
 

@@ -207,7 +207,7 @@ export async function startMind(
       validator: createOutputValidator(),
       onError: (error) => log({ event: 'handler_failed', life_id: lifeId, error: String(error) }),
     });
-    mind.start();
+    await mind.start();
     log({ event: 'mind_started', life_id: lifeId, shard: config.shard });
     return {
       mind,

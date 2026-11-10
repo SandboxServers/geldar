@@ -20,7 +20,7 @@ export class PgJournal implements Journal {
        VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13,
          $14, $15, $16, $17, $18::jsonb, $19, $20::jsonb, $21, $22, $23)
        ON CONFLICT (thought_id) DO UPDATE SET
-         life_id = EXCLUDED.life_id, at = EXCLUDED.at, world_day = EXCLUDED.world_day,
+         at = EXCLUDED.at, world_day = EXCLUDED.world_day,
          world_tick = EXCLUDED.world_tick, wake_reason = EXCLUDED.wake_reason,
          snapshot = EXCLUDED.snapshot, model_input = EXCLUDED.model_input,
          prompt_template_version = EXCLUDED.prompt_template_version,
@@ -31,7 +31,8 @@ export class PgJournal implements Journal {
          tokens_out_estimated = EXCLUDED.tokens_out_estimated,
          provider_usage = EXCLUDED.provider_usage, raw_output = EXCLUDED.raw_output,
          parsed = EXCLUDED.parsed, latency_ms = EXCLUDED.latency_ms,
-         credits_reserved = EXCLUDED.credits_reserved, credits_settled = EXCLUDED.credits_settled`,
+         credits_reserved = EXCLUDED.credits_reserved, credits_settled = EXCLUDED.credits_settled
+       WHERE thoughts.life_id = EXCLUDED.life_id`,
       [
         row.thoughtId,
         row.lifeId,
@@ -68,14 +69,23 @@ export class PgJournal implements Journal {
     );
   }
 
-  async linkIntent(intentId: string, thoughtId: string): Promise<boolean> {
+  async linkIntent(lifeId: string, intentId: string, thoughtId: string): Promise<boolean> {
     // One statement: set the link when empty; true also when it already names this thought.
     const result = await this.db.query(
       `UPDATE intents SET thought_id = COALESCE(thought_id, $1)
-       WHERE intent_id = $2 AND (thought_id IS NULL OR thought_id = $1)`,
-      [thoughtId, intentId],
+       WHERE intent_id = $2 AND life_id = $3 AND (thought_id IS NULL OR thought_id = $1)`,
+      [thoughtId, intentId, lifeId],
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async lastReflectionTick(lifeId: string): Promise<number> {
+    const result = await this.db.query(
+      `SELECT COALESCE(MAX(world_tick), 0) AS tick FROM thoughts
+       WHERE life_id = $1 AND wake_reason = 'reflection'`,
+      [lifeId],
+    );
+    return Number(result.rows[0]?.tick ?? 0);
   }
 
   async journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]> {

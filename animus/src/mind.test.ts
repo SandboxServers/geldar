@@ -89,7 +89,7 @@ const sleep = (day: number, tick: number): MindEvent => event('sleep', tick, {},
 describe('the Mind of one life', () => {
   it('wakes with mind_start, thinks, and sends the plan to the Body', async () => {
     const r = await rig([VALID_THOUGHT]);
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     expect(r.body.snapshotRequests).toEqual(['mind_start']);
     expect(r.body.plans).toHaveLength(1);
@@ -110,7 +110,7 @@ describe('the Mind of one life', () => {
     };
     r = await rig([VALID_THOUGHT], { sleep });
     r.body.failWith = new BodyLinkError('unavailable', 'nobody serves the snapshot subject');
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     expect(r.body.snapshotRequests).toEqual([
       'mind_start',
@@ -133,7 +133,7 @@ describe('the Mind of one life', () => {
       },
     });
     r.body.failWith = new BodyLinkError('unavailable', 'nobody serves the snapshot subject');
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     const total = slept.reduce((a, b) => a + b, 0);
     expect(total).toBeLessThanOrEqual(config.mind.snapshotRetryS * 1000);
@@ -147,7 +147,7 @@ describe('the Mind of one life', () => {
 
   it('feeds an event to attention and a decision to the loop', async () => {
     const r = await rig([VALID_THOUGHT, VALID_THOUGHT]);
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     r.time.advance(20_000);
     r.source.emit(speech('Adam, come here', 100));
@@ -159,7 +159,7 @@ describe('the Mind of one life', () => {
 
   it('runs one reflection for a sleep event, and none for a second sleep on the same day', async () => {
     const r = await rig([VALID_THOUGHT, JSON.stringify(reflection())]);
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     r.source.emit(sleep(3, 500));
     await r.mind.settled();
@@ -170,6 +170,34 @@ describe('the Mind of one life', () => {
     expect(reflections).toHaveLength(1);
     expect(r.store.thoughts.filter((t) => t.wakeReason === 'reflection')).toHaveLength(1);
     expect((await r.store.loadDeterministic(config.agent.username, 0)).agent.lastSleepDay).toBe(3);
+  });
+
+  it('starts a restarted reflection window at the last reflection, not at tick 0', async () => {
+    const prompts = new FakePromptLibrary();
+    const first = await rig([VALID_THOUGHT, JSON.stringify(reflection())], { prompts });
+    await first.mind.start();
+    await first.mind.settled();
+    first.source.emit(sleep(3, 500));
+    await first.mind.settled();
+    await first.mind.stop();
+
+    // A new Mind over the same journal: the reflection at tick 500 is in it.
+    const second = await rig([VALID_THOUGHT, JSON.stringify(reflection())], {
+      prompts,
+      store: first.store,
+      journal: first.store,
+    });
+    await second.mind.start();
+    await second.mind.settled();
+    second.source.emit(sleep(4, 700));
+    await second.mind.settled();
+    await second.mind.stop();
+
+    const digests = prompts.renders
+      .filter((r) => r.kind === 'reflection')
+      .map((r) => ('digest' in r.vars ? r.vars.digest : ''));
+    expect(digests).toHaveLength(2);
+    expect(digests[1]).toContain('ticks 500 to 700');
   });
 
   it('fills in the missing vectors around a reflection', async () => {
@@ -190,7 +218,7 @@ describe('the Mind of one life', () => {
       ],
       [null],
     );
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     r.source.emit(sleep(3, 500));
     await r.mind.settled();
@@ -203,7 +231,7 @@ describe('the Mind of one life', () => {
     r.store.backfillEmbeddings = async () => {
       throw new Error('ollama down');
     };
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     r.source.emit(sleep(3, 500));
     await r.mind.settled();
@@ -218,7 +246,7 @@ describe('the Mind of one life', () => {
     r.model.gate = new Promise<void>((resolve) => {
       open = resolve;
     });
-    r.mind.start();
+    await r.mind.start();
     await vi.waitFor(() => expect(r.model.jobs).toHaveLength(1));
     r.source.emit(speech('Adam, hello', 100));
     r.source.emit(sleep(3, 200));
@@ -239,7 +267,7 @@ describe('the Mind of one life', () => {
 
   it('lets a reflection hold the slot: a wake arriving mid-reflection waits for it', async () => {
     const r = await rig([VALID_THOUGHT, JSON.stringify(reflection()), VALID_THOUGHT]);
-    r.mind.start();
+    await r.mind.start();
     await r.mind.settled();
     let open: () => void = () => {};
     r.model.gate = new Promise<void>((resolve) => {
