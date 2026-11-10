@@ -227,11 +227,13 @@ END
 $mcp$;
 
 -- Migration 0005 (wave 6 section 4 item 11): the read-only role geldar_glass. It reads exactly the
--- five tables Glass reads, writes nothing, holds no sequence and cannot read the MCP's tables.
+-- Glass tables and columns, writes nothing, holds no sequence and cannot read the MCP's tables.
 -- Privileges only: a password may have been set by `migrate --set-role-password geldar_glass`.
 DO $glass$
 DECLARE
   glass_tables TEXT[] := ARRAY['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+  glass_table_grants TEXT[] := ARRAY['thoughts', 'actions', 'receipts', 'intents'];
+  agents_columns TEXT[] := ARRAY['agent_id', 'name', 'life_seq', 'shard', 'mode', 'tier', 'born_day', 'died_at', 'death_cause'];
   events_columns TEXT[] := ARRAY['type', 'agent_id', 'world_day', 'world_tick', 'at', 'source_event_id'];
   t TEXT;
   rel RECORD;
@@ -244,7 +246,7 @@ BEGIN
   END IF;
 
   FOREACH t IN ARRAY glass_tables LOOP
-    IF NOT has_table_privilege('geldar_glass', t, 'SELECT') THEN
+    IF t = ANY (glass_table_grants) AND NOT has_table_privilege('geldar_glass', t, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT %', t;
     END IF;
     IF has_table_privilege('geldar_glass', t, 'INSERT')
@@ -307,10 +309,29 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- agents: SELECT on exactly the nine Glass columns, never personality_seed; no table-level SELECT.
+  IF has_table_privilege('geldar_glass', 'agents', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass has table-level SELECT on agents';
+  END IF;
+  FOR rel IN
+    SELECT a.attname FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'agents' AND a.attnum > 0 AND NOT a.attisdropped
+  LOOP
+    IF rel.attname = ANY (agents_columns) THEN
+      IF NOT has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
+        RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT agents.%', rel.attname;
+      END IF;
+    ELSIF has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can read agents.% (not granted)', rel.attname;
+    END IF;
+  END LOOP;
+
   IF has_schema_privilege('geldar_glass', 'public', 'CREATE') THEN
     RAISE EXCEPTION 'schema check: geldar_glass can CREATE in schema public';
   END IF;
 
-  RAISE NOTICE 'schema check passed: role geldar_glass reads % tables and writes none', array_length(glass_tables, 1);
+  RAISE NOTICE 'schema check passed: role geldar_glass reads its Glass tables and columns and writes none';
 END
 $glass$;
