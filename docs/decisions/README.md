@@ -1,4 +1,5 @@
 # Decisions
+| [0076](0076-backup-scope-and-destination.md) | Backup scope and destination: what a coordinated checkpoint contains, the destination, append-only journals, and a restore test | Proposed (owner confirms scope and destination) |
 
 One short record per decision as it is settled: an open decision from spec section 13, a gap the spec leaves, or a place where we chose differently from the spec. The spec stays the design. A record says what we decided, why, and what it changes. A decision that is still open lives in the Decisions table of the campaign ledger that needs it (for Phase 0, [docs/analysis/phase0/README.md](../analysis/phase0/README.md)), not here.
 
