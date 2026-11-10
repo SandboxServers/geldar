@@ -107,9 +107,9 @@ describe('uploadSkin', () => {
       },
     });
     const fetchFn: FetchFn = async () => new Response(body, { status: 200 });
-    await expect(
-      uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn }),
-    ).rejects.toThrow('too large');
+    await expect(uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn })).rejects.toThrow(
+      'too large',
+    );
     expect(pulls).toBeLessThan(10);
   });
 
