@@ -289,7 +289,11 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     closers.push(() => tokens.stop());
     log({ event: 'revoke_listening' });
 
-    const presence = new KvPresenceStore(await openPresenceBucket(nats.buckets), now);
+    const windows = {
+      awakeMs: config.sovereign.presence.leaseSeconds * 1000,
+      hibernateMs: config.sovereign.presence.hibernateAfterSeconds * 1000,
+    };
+    const presence = new KvPresenceStore(await openPresenceBucket(nats.buckets), now, windows);
     const body = new NatsBodyGateway({ transport: nats.request, shard: config.shard });
     const events = new RingEventLog();
     const runs = new Map<string, RunState>();

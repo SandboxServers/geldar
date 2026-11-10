@@ -13,6 +13,20 @@ export const AWAKE_WINDOW_MS = 60_000;
 /** How long after the last touch a life stays dim before it hibernates (10 minutes). */
 export const HIBERNATE_AFTER_MS = 600_000;
 
+/**
+ * The two windows a touch opens, from the shard's `presence.lease_seconds` (awake) and
+ * `presence.hibernate_after_seconds` (hibernating). The defaults are the spec's 60 s and 10 minutes.
+ */
+export interface PresenceWindows {
+  awakeMs: number;
+  hibernateMs: number;
+}
+
+export const DEFAULT_WINDOWS: PresenceWindows = {
+  awakeMs: AWAKE_WINDOW_MS,
+  hibernateMs: HIBERNATE_AFTER_MS,
+};
+
 /** A touch of an awake life this recent is not written again (the wait poll's write rate). */
 export const TOUCH_SKIP_MS = 5_000;
 
@@ -65,10 +79,11 @@ function parseRecord(text: string): PresenceRecord | null {
 export function presenceAt(
   lastMs: number,
   nowMs: number,
+  windows: PresenceWindows = DEFAULT_WINDOWS,
 ): Pick<PresenceRecord, 'state' | 'desired_body'> {
   const age = Math.max(0, nowMs - lastMs);
-  if (age < AWAKE_WINDOW_MS) return { state: 'awake', desired_body: 'up' };
-  if (age < HIBERNATE_AFTER_MS) return { state: 'dim', desired_body: 'up' };
+  if (age < windows.awakeMs) return { state: 'awake', desired_body: 'up' };
+  if (age < windows.hibernateMs) return { state: 'dim', desired_body: 'up' };
   return { state: 'hibernating', desired_body: 'down' };
 }
 
@@ -76,10 +91,16 @@ export function presenceAt(
 export class KvPresenceStore implements PresenceStore {
   private readonly bucket: PresenceBucket;
   private readonly now: () => number;
+  private readonly windows: PresenceWindows;
 
-  constructor(bucket: PresenceBucket, now: () => number) {
+  constructor(
+    bucket: PresenceBucket,
+    now: () => number,
+    windows: PresenceWindows = DEFAULT_WINDOWS,
+  ) {
     this.bucket = bucket;
     this.now = now;
+    this.windows = windows;
   }
 
   /** The stored record, or null when none is written or the stored value is not a record. */
@@ -129,7 +150,7 @@ export class KvPresenceStore implements PresenceStore {
       const entry = await this.entry(lifeId);
       if (entry === null || entry.record === null) return null;
       const { record, revision } = entry;
-      const next = presenceAt(Date.parse(record.at), this.now());
+      const next = presenceAt(Date.parse(record.at), this.now(), this.windows);
       if (next.state === record.state && next.desired_body === record.desired_body) return record;
       const settled: PresenceRecord = { ...record, ...next };
       try {
