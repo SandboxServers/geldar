@@ -209,6 +209,158 @@ These come from 0075. A card that touches the feed, the renderer or the relay mu
 
 ---
 
-## Cards 03a, 03b, 03c, 04, 05, the wave section and the ledger rows
+---
 
-Written in the next commit. The file is committed in parts; the wave section ends the file.
+## P1-C2b-03a: WebGL voxel mesher and scene from recorded fixtures
+
+- **id:** P1-C2b-03a
+- **title:** Browser voxel mesher and scene, fed by recorded feed fixtures, with a placeholder palette
+- **wave:** C2b
+- **lane:** C
+- **depends-on:** P1-C2b-00 (merged, for the frame types). No dependency on the live feed: the card works from fixtures recorded from the local shard.
+- **status:** B (desktop only; no login, no live node)
+- **size:** M
+- **may-edit:**
+  - `glass/public/lakitu/` (new directory: `mesher.js`, `scene.js`, `voxels.js` (the one voxel store, shared with 03b), `palette.js` (placeholder colours only))
+  - `glass/test/lakitu-mesher.test.ts`, `glass/test/lakitu-scene.test.ts` (new)
+  - `glass/test/fixtures/lakitu/` (new: recorded frames, see step 2)
+  - `tools/lakitu-record/` (new, small: records frames from the local shard's feed, read-only; see step 2)
+  - `glass/package.json` and the lockfile (this card is the one packet that changes them this wave; the three.js dependency only, with `pnpm add -E`)
+  - `docs/analysis/phase1/worknotes/P1-C2b-03a.md`
+- **must-not-edit:** `docs/spec.md`; `contract/`; `plugin/`; `glass/src/`; `glass/public/index.html` and `glass/public/app.js` (03c owns the page); `geldar.ps1`; `compose/`; any Mojang asset or texture file (none is copied into the repo, ever).
+- **decisions:** 0103 only. Write `docs/decisions/0103-lakitu-renderer-and-camera.md` as Proposed. Cards 03a, 03b and 03c share this number. Each card writes its own section of the record, and the last card to merge fixes the status.
+- **checks:**
+  - `glass/test/lakitu-mesher.test.ts`: the mesher output for each fixture matches its expected face count and bounding box (the expected values are computed by hand from the fixture and written next to it);
+  - `glass/test/lakitu-scene.test.ts`: the scene builds one mesh per non-empty section, and an empty section produces no mesh;
+  - `./geldar.ps1 pnpm --filter glass` typecheck and Biome (`pnpm format`);
+  - licence check (step 6): no file under `glass/public/lakitu/` or `glass/test/fixtures/lakitu/` is a texture or an image (grep for `.png`, `.jpg`, `.ogg`, `.jar`), and the palette file contains colours only;
+  - the file-size cap and the decision-index check.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C2b-03a.md`
+- **on-cap:** commit what passes; the scene can move to 03b's session if needed, recorded in the worknote.
+
+**Steps**
+
+1. Read the frame schema from card 00 (`contract/schemas/lakitu-feed.schema.json`). Read `glass/package.json` and `glass/src/render-view.ts` for the existing render style. The page is plain JavaScript; keep the new modules as plain ES modules with no bundler, loaded by `index.html` (03c adds the tag).
+2. Write `tools/lakitu-record/`: a Node script that connects to the feed endpoint on the desktop shard's loopback address, asks for one frame per target agent, and writes it as JSON under `glass/test/fixtures/lakitu/`. It is read-only: it issues GET requests only, and it refuses to run against any address that is not `127.0.0.1`. Record four fixtures: a flat area, a cave with an overhang, a wall of one block type with a door-sized gap, and an agent standing on the edge of a drop. Record them from the local shard only. The fixture contains block state names and coordinates. It contains no player names, no tokens and no asset.
+3. Write `glass/public/lakitu/voxels.js`: one voxel store. It holds sections by key (`world`, `section_x`, `section_y`, `section_z`), decodes the base64 `indices` into palette names, and answers `solidAt(x, y, z)` and `stateAt(x, y, z)`. The mesher and the camera (03b) both read this store and nothing else. There is no second copy of the block data.
+4. Write `glass/public/lakitu/mesher.js`: builds one mesh per non-empty section from the store, with hidden faces removed between solid neighbours in the same section and across section borders where the neighbour is loaded. An unloaded neighbour is drawn as a face (the safe reading).
+5. Write `glass/public/lakitu/palette.js`: placeholder colours, one flat colour per block state name, plus one neutral default colour for unknown names. The file says in its header that the colours are placeholders, that no texture is used, and that the texture licence decision (section 10) decides whether textures replace them.
+6. Write `glass/public/lakitu/scene.js`: builds the three.js scene from the meshes, with one camera object that 03b drives. Add three.js with `./geldar.ps1 pnpm add -E three@<version>`, choosing a release at least two weeks old at build time, and record the version and its date in the worknote. This is the only dependency change in the wave.
+7. Write the tests described in the checks, using the recorded fixtures. Compute the expected face counts by hand for the flat-area fixture (one top face per exposed block) and write the number next to the fixture.
+8. Run the licence check (in the checks list). Record the result.
+9. Write the 0103 record section for the renderer, the placeholder palette, and the open texture decision.
+
+**Commit plan.** Commit 1: the recorder tool and the four fixtures, subject `tools: lakitu fixture recorder and fixtures (P1-C2b-03a)`. Commit 2: voxels and mesher with tests, subject `feat: lakitu voxel store and mesher (P1-C2b-03a)`. Commit 3: palette, scene and the three.js dependency, subject `feat: lakitu scene and placeholder palette (P1-C2b-03a)`. Commit 4: decision 0103 section and worknote, subject `docs: decision 0103 renderer section (P1-C2b-03a)`.
+
+**Revert-checks.**
+- In `mesher.js`, change the border test so that an unloaded neighbour is treated as air (no face drawn). The mesher test for the wall fixture (door-sized gap) must fail, because the face count changes. Restore.
+- In `scene.js`, build a mesh for an empty section. The "empty section produces no mesh" test must fail. Restore.
+
+**Handoff.** Index line for `glass/package.json` (done in this card, recorded). Index line for the repo-checks registry: the licence check (step 8) as a repo check. 03b reads `voxels.js`; 03c reads `scene.js`. Neither edits them without a request.
+
+---
+
+## P1-C2b-03b: camera follow, orbit and free, bound by collision to the same voxels
+
+- **id:** P1-C2b-03b
+- **title:** Camera modes (follow, orbit, free) with collision against the voxel store the mesher draws
+- **wave:** C2b
+- **lane:** C
+- **depends-on:** P1-C2b-03a (merged). The login gate (0077) is not needed for this card; the card is tested on fixtures.
+- **status:** B
+- **size:** M
+- **may-edit:**
+  - `glass/public/lakitu/camera.js` (new)
+  - `glass/public/lakitu/collide.js` (new: the AABB against `voxels.js`)
+  - `glass/test/lakitu-camera.test.ts`, `glass/test/lakitu-collide.test.ts` (new)
+  - `docs/analysis/phase1/worknotes/P1-C2b-03b.md`
+- **must-not-edit:** `docs/spec.md`; `contract/`; `plugin/`; `glass/src/`; `glass/public/lakitu/voxels.js` and `mesher.js` (03a); `glass/public/index.html`, `app.js` (03c); `package.json` and the lockfile (03a owns them).
+- **decisions:** 0103 (the same number as 03a; add a section, do not renumber).
+- **checks:**
+  - `glass/test/lakitu-collide.test.ts`: the collision tests (below);
+  - `glass/test/lakitu-camera.test.ts`: the mode tests (below);
+  - `./geldar.ps1 pnpm --filter glass` typecheck and Biome;
+  - the file-size cap and the decision-index check.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C2b-03b.md`
+- **on-cap:** commit what passes; any mode not finished is written in the worknote as "not done".
+
+**Steps**
+
+1. Read `voxels.js` and `scene.js` from 03a. Read 0075 point 3 (collision is a viewing constraint only; it never changes the world).
+2. Write `collide.js`: a function `clampCamera(requested, store)` that moves the camera's box (a fixed box, for example 0.3 by 0.3 by 0.3 blocks) out of solid voxels by pushing it along the axis of least penetration. It reads only `store.solidAt`. It never writes to the store.
+3. Write `camera.js` with three modes, each computed each frame and then passed through `clampCamera`:
+   - **follow**: a fixed offset from the agent's position (the offset is part of the pane state). Returns the requested position clamped.
+   - **orbit**: a circle of radius `r` around the agent at a set yaw step, clamped. The radius is part of the pane state and is bounded.
+   - **free**: the camera position moves by the requested input vector, clamped, so it cannot leave a solid.
+4. Write the collision tests with the 03a fixtures:
+   - a free camera asked to move into a solid block stops on the face of the block, not inside it;
+   - an orbit camera at a radius that crosses a wall is pushed to the near side of the wall;
+   - a follow camera behind a wall in a cave stops at the last free position;
+   - a camera on the edge of a drop (fixture four) is not pushed into air below the agent.
+5. Write the mode tests: a follow camera keeps its offset over 60 frames of agent movement; an orbit camera's distance to the agent stays within the radius bounds; a free camera with zero input does not move.
+6. Write the 0103 section for the camera modes and the collision rule.
+
+**Commit plan.** Commit 1: collision and its tests, subject `feat: lakitu collision against the voxel store (P1-C2b-03b)`. Commit 2: camera modes and their tests, subject `feat: lakitu follow, orbit and free cameras (P1-C2b-03b)`. Commit 3: decision 0103 section and worknote, subject `docs: decision 0103 camera section (P1-C2b-03b)`.
+
+**Revert-checks.**
+- In `camera.js`, pass the requested position straight to the scene without `clampCamera` (in the free mode). The free-camera wall test must fail (the camera ends inside the block). Restore.
+- In `collide.js`, make `clampCamera` return the requested position unchanged. The four collision tests must fail. Restore.
+
+**Handoff.** Index line for the repo-checks registry: none. 03c calls the camera with a mode and a target; the call signature is written in the worknote and is not changed by 03c.
+
+---
+
+## P1-C2b-03c: multi-pane page and target picker (owner sees own agents, admin sees all)
+
+- **id:** P1-C2b-03c
+- **title:** Glass page with up to four camera panes, and a target picker that renders only what the relay returns
+- **wave:** C2b
+- **lane:** D
+- **depends-on:** P1-C2b-03a and P1-C2b-03b (merged), P1-C2b-02 (merged, for the target and frame endpoints). Owner answers 0075 point 5 before this card merges.
+- **status:** B for the page with fixtures; the live login path is O (it needs 0077 and the owner's interim tokens, card 05).
+- **size:** M
+- **may-edit:**
+  - `glass/public/lakitu/panes.js` (new: the pane list, the four-pane limit as a mirror of the relay's)
+  - `glass/public/lakitu/picker.js` (new: the target picker; it renders the list the relay returns and nothing else)
+  - `glass/public/index.html` (one mount point and one script tag, for the Lakitu section, shown only when the relay reports cameras are on)
+  - `glass/public/app.js` (only the import and the call that mounts the section)
+  - `glass/public/app.css` (only the classes for the panes and the picker)
+  - `glass/test/lakitu-panes.test.ts`, `glass/test/lakitu-picker.test.ts` (new); `glass/test/page-script.test.ts` (extend with the new script's escaping rule only)
+  - `docs/analysis/phase1/worknotes/P1-C2b-03c.md`
+- **must-not-edit:** `docs/spec.md`; `contract/`; `plugin/`; `glass/src/` (the relay is card 02's); `glass/public/lakitu/voxels.js`, `mesher.js`, `camera.js`, `collide.js` (03a, 03b); `package.json` and the lockfile; `geldar.ps1`; `compose/`.
+- **decisions:** 0103 (add a section; do not renumber).
+- **checks:**
+  - `glass/test/lakitu-panes.test.ts`: the cap mirror (below);
+  - `glass/test/lakitu-picker.test.ts`: the scope rules (below);
+  - `glass/test/page-script.test.ts`: the new script has no `innerHTML` with agent text, and agent names are set with `textContent` (decision 0072, point 3: escaped text);
+  - `./geldar.ps1 pnpm --filter glass` typecheck and Biome;
+  - the file-size cap and the decision-index check.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C2b-03c.md`
+- **on-cap:** commit what passes; the live login path is written as "not run, needs card 05".
+
+**Steps**
+
+1. Read `glass/public/index.html`, `app.js` and `app.css`, and the escaping rule in `glass/test/page-script.test.ts`. Read the relay's target and frame response shapes in card 02's worknote, once it has merged; until then, use the schema from card 00.
+2. Write `picker.js`: fills its list from the relay's `targets` response only. The page never builds a target list from the URL, from a stored list or from a default. An agent name is set with `textContent`. The picker has no link to any agent's data beyond the camera pane.
+3. Write `panes.js`: holds up to four panes. Each pane has a target id, a mode (`follow`, `orbit`, `free`) and its own camera from 03b. The "add pane" control is disabled at four, as a mirror of the relay's `pane_cap_reached`. The relay's refusal is what the page shows, if the page's mirror is out of date.
+4. Mount the section from `app.js` only when the Glass relay reports that Lakitu is on. Anonymous visitors see the thought stream and the map, and no camera section (0077, option A).
+5. Write the scope tests:
+   - the owner's picker fixture, from the relay response, lists only the owner's agents;
+   - the admin's picker fixture lists all agents;
+   - a target id that is not in the picker's list (from the URL or a hand edit) produces the `target_not_permitted` message and no pane;
+   - a fifth pane request does not add a pane (the mirror), and a relay refusal `pane_cap_reached` is shown as text.
+6. Write the 0103 section for the page, the picker and the mirror rule.
+
+**Commit plan.** Commit 1: picker and its scope tests, subject `feat: lakitu target picker from relay only (P1-C2b-03c)`. Commit 2: panes, cap mirror and page mount, subject `feat: lakitu up to four panes on the Glass page (P1-C2b-03c)`. Commit 3: decision 0103 section and worknote, subject `docs: decision 0103 page section (P1-C2b-03c)`.
+
+**Revert-checks.**
+- In `picker.js`, build the list from all agents in the fixture instead of the relay response. The owner scope test must fail (the owner's list shows another owner's agent). Restore.
+- In `panes.js`, change the disabled condition from `>= 4` to `> 4`. The cap-mirror test must fail. Restore.
+
+**Handoff.** Index line for `docs/decisions/README.md` (0103, shared with 03a and 03b; one line, added by the ops merge step). The `index.html` mount is shared with card 05 (the integration packet); 05 may edit the Caddy path only.
+
+---
+
+## Cards 04, 05, the wave section and the ledger rows
+
+Written in the next commit.
