@@ -88,3 +88,7 @@ The replay catch-up bound is the constant `REPLAY_CATCHUP_MS = 30000` in `thresh
 3. **Ranger logs grow without rotation.** The supervisor in the rangers code should rename a log to `<name>.1` when
    it passes a size cap (for example 10 MB) and reopen the file, so a long run cannot fill the disk. It belongs to the
    rangers owner (R5b), because the supervisor lives in the files R5b is changing.
+
+## FA
+
+1. **trusted_proxies must list the cloudflared container address.** Without it, all tunnel traffic shares one failed-auth bucket and one connection cap, because every request arrives from the tunnel's address. Set `sovereign.mcp.trusted_proxies` in `shards/phase0.yaml` to that address (IP or CIDR). Request for FD: a row in `docs/threat-model.md`.

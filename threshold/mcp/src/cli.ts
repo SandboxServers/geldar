@@ -131,8 +131,17 @@ export function runCli(
 /** Ports for the container: the files, Postgres, NATS, the wall clock and a timer keepalive. */
 export function containerPorts(shard: string): McpPorts {
   return {
-    readSecret: async (path) => (await readFile(path, 'utf8')).trim(),
-    openPool: (options: PgOptions) => new Pool({ ...options, max: 10 }),
+    // Raw text: the pepper keeps its spaces (pepperBytes strips only a final newline); main trims the password.
+    readSecret: (path) => readFile(path, 'utf8'),
+    // A stalled Postgres must fail a request, not hold its connection: every wait is bounded.
+    openPool: (options: PgOptions) =>
+      new Pool({
+        ...options,
+        max: 10,
+        connectionTimeoutMillis: 5000,
+        query_timeout: 5000,
+        statement_timeout: 5000,
+      }),
     openRevokeListener: (config) => new Client(config),
     connectNats: (url) => connectNats(url, shard, stderrLog),
     keepAlive: {

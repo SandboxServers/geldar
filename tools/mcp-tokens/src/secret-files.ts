@@ -47,6 +47,18 @@ const runIcacls: AclRunner = (args) =>
   });
 
 /**
+ * The grant for the account. A directory gets the inherit flags so the files created in it carry
+ * the same access; a file gets plain full control.
+ */
+async function grantFor(path: string, user: string): Promise<string> {
+  const directory = await stat(path).then(
+    (found) => found.isDirectory(),
+    () => false,
+  );
+  return directory ? `${user}:(OI)(CI)F` : `${user}:F`;
+}
+
+/**
  * On Windows the 0o600 mode is not enforced, so a secret file or directory gets the owner's access
  * only: inheritance off, the current account with full control. Best effort: a failure is warned
  * about, names the path and nothing from inside the file, and never fails the command.
@@ -60,7 +72,8 @@ export async function restrictToOwner(path: string, options: AclOptions = {}): P
     return;
   }
   try {
-    await (options.run ?? runIcacls)([path, '/inheritance:r', '/grant:r', `${user}:F`]);
+    const grant = await grantFor(path, user);
+    await (options.run ?? runIcacls)([path, '/inheritance:r', '/grant:r', grant]);
   } catch {
     warn(`warning: icacls could not restrict ${path}; check its permissions by hand`);
   }

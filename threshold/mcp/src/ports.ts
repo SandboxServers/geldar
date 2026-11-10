@@ -38,6 +38,11 @@ export interface TokenStore {
   resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null>;
   /** Records a use of the token. A store may skip the write so it happens at most once a minute. */
   touch(tokenId: string, nowMs: number): Promise<void>;
+  /**
+   * Says whether the hash is already a cached hit, without a query. Optional: a store without a
+   * cache answers false. The front door skips the failed-auth check for a cached hit.
+   */
+  isCachedHit?(tokenHash: Uint8Array, nowMs: number): boolean;
   /** Calls the listener for every token revoked from now on. Returns the unsubscribe function. */
   onRevoke(listener: (revoked: { tokenId: string; playerId: string }) => void): () => void;
 }
@@ -156,8 +161,8 @@ export interface RateDecision {
 export interface RateLimiter {
   /** Takes one token from the bucket when there is one. */
   take(bucket: string, nowMs: number): RateDecision;
-  /** Says whether the bucket has a token, without taking one. Optional: a limiter without it skips the pre-check. */
-  peek?(bucket: string, nowMs: number): RateDecision;
+  /** Says whether the bucket has a token, without taking one. The failed-auth pre-check depends on it. */
+  peek(bucket: string, nowMs: number): RateDecision;
 }
 
 /** Periodic ticks for an open `wait`, so its stream never idles past a proxy. */

@@ -105,6 +105,9 @@ sovereign:
     keepalive_seconds: 25        # a notification on an open wait's stream, so the stream never idles past a proxy
     max_body_bytes: 65536        # the largest request body the MCP reads
     max_result_bytes: 16384      # the largest tool result, after trimming
+    max_connections: 256         # the most open connections the listener holds at once
+    max_connections_per_address: 32  # the most open connections and open POSTs one client address holds
+    trusted_proxies: []          # cloudflared's container address (IP or CIDR); its CF-Connecting-IP names the client
     replay_minutes: 60           # how long a replayed or revoked token stays under watch
   wake:
     min_spacing_seconds: 30      # the least gap between two wakes of one player

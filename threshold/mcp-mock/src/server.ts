@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { AddressConnections } from './address-count.ts';
 import type { AuthResult, TokenTable } from './auth.ts';
 import { checkBearer } from './auth.ts';
 
@@ -12,7 +13,10 @@ import { checkBearer } from './auth.ts';
 export type SessionEndReason = 'session_revoked';
 
 /** The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. */
-export type AuthDecision = { outcome: AuthResult } | { outcome: 'limited'; retryAfterSec: number };
+export type AuthDecision =
+  | { outcome: AuthResult }
+  | { outcome: 'limited'; retryAfterSec: number }
+  | { outcome: 'unavailable' };
 
 /** A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint. */
 export interface Refusal {
@@ -277,6 +281,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     const open = openResponses.get(player) ?? new Set<ServerResponse>();
     openResponses.set(player, open);
     open.add(res);
+    // A write-after-end error has no other listener; without this it would crash the process.
+    res.on('error', () => undefined);
     res.on('close', () => {
       open.delete(res);
       if (open.size === 0 && openResponses.get(player) === open) openResponses.delete(player);
@@ -338,6 +344,11 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     if (decision.outcome === 'forbidden') {
       ctx.event = 'forbidden';
       res.writeHead(403, close).end();
+      return;
+    }
+    if (decision.outcome === 'unavailable') {
+      ctx.event = 'unavailable';
+      res.writeHead(503, { 'Content-Type': 'text/plain', ...close }).end('service unavailable');
       return;
     }
 
@@ -470,19 +481,14 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
   }
   const perAddress = options.limits?.maxConnectionsPerAddress;
   if (perAddress !== undefined) {
-    const open = new Map<string, number>();
+    const connections = new AddressConnections(perAddress);
     server.on('connection', (socket) => {
       const address = socket.remoteAddress ?? 'unknown';
-      const count = open.get(address) ?? 0;
-      if (count >= perAddress) {
+      if (!connections.take(address)) {
         socket.destroy();
         return;
       }
-      open.set(address, count + 1);
-      socket.once('close', () => {
-        if (count === 0) open.delete(address);
-        else open.set(address, count);
-      });
+      socket.once('close', () => connections.release(address));
     });
   }
 
@@ -494,6 +500,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
         id: null,
       });
       for (const res of [...(openResponses.get(playerId) ?? [])]) {
+        // Ended but not yet closed: a write now would emit ERR_STREAM_WRITE_AFTER_END.
+        if (res.writableEnded || res.destroyed) continue;
         if (!res.headersSent) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.write(frame);

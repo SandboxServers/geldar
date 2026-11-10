@@ -85,6 +85,7 @@ describe('readPepper', () => {
 
 describe('restrictToOwner', () => {
   const IMPLIED = '/inheritance:r /grant:r steve:F';
+  const IMPLIED_DIRECTORY = '/inheritance:r /grant:r steve:(OI)(CI)F';
 
   it('runs icacls on win32 with inheritance off and full control for the current user only', async () => {
     const calls: string[][] = [];
@@ -96,6 +97,22 @@ describe('restrictToOwner', () => {
       },
     });
     expect(calls).toEqual([['C:\\secrets\\x.txt', '/inheritance:r', '/grant:r', 'steve:F']]);
+  });
+
+  it('grants a directory the inherit flags, so files created in it get the same access', async () => {
+    const dir = await tempDir();
+    const file = join(dir, 'x.txt');
+    await writeFile(file, 'x');
+    const calls: string[][] = [];
+    const run = async (args: readonly string[]) => {
+      calls.push([...args]);
+    };
+    await restrictToOwner(dir, { platform: 'win32', user: 'steve', run });
+    await restrictToOwner(file, { platform: 'win32', user: 'steve', run });
+    expect(calls).toEqual([
+      [dir, '/inheritance:r', '/grant:r', 'steve:(OI)(CI)F'],
+      [file, '/inheritance:r', '/grant:r', 'steve:F'],
+    ]);
   });
 
   it('never runs icacls on other platforms', async () => {
@@ -127,7 +144,9 @@ describe('restrictToOwner', () => {
       join(dir, PEPPER_FILE),
       join(dir, PASSWORD_FILE),
     ]);
-    expect(calls.every((call) => call.slice(1).join(' ') === IMPLIED)).toBe(true);
+    const [directoryCall, ...fileCalls] = calls;
+    expect(directoryCall?.slice(1).join(' ')).toBe(IMPLIED_DIRECTORY);
+    expect(fileCalls.every((call) => call.slice(1).join(' ') === IMPLIED)).toBe(true);
     calls.length = 0;
     await initSecretFiles(dir, { force: true, acl: { ...acl, platform: 'linux' } });
     expect(calls).toEqual([]);

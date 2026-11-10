@@ -347,7 +347,8 @@ describe('scoping and limits', () => {
   });
 
   it('shares the owner budget across players and refuses past it', async () => {
-    limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 3 : 1000));
+    // Each openSession's initialize also draws on the owner, so two sessions leave three for the calls.
+    limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 5 : 1000));
     await door.close();
     door = createFrontDoor({
       http: CONFIG,
@@ -476,8 +477,8 @@ describe('connection limits', () => {
     expect(reply.text).toContain('ok');
   });
 
-  it('lets one address hold no more than its default cap of 16 connections', async () => {
-    const held = Array.from({ length: 16 }, () => connect({ host: '127.0.0.1', port }));
+  it('lets one address hold no more than its default cap of 32 connections', async () => {
+    const held = Array.from({ length: 32 }, () => connect({ host: '127.0.0.1', port }));
     await Promise.all(held.map((s) => new Promise((resolve) => s.once('connect', resolve))));
     const extra = connect({ host: '127.0.0.1', port });
     const closed = await new Promise<boolean>((resolve) => {

@@ -16,6 +16,7 @@ function retrySeconds(retryAfterMs: number): number {
 export class FrontLimits {
   private readonly limiter: RateLimiter;
   private readonly open = new Map<string, number>();
+  private readonly openByAddress = new Map<string, number>();
 
   constructor(limiter: RateLimiter) {
     this.limiter = limiter;
@@ -23,8 +24,8 @@ export class FrontLimits {
 
   /**
    * Takes one failed-auth token for the address and one global. Returns the seconds to wait
-   * when either bucket is empty, else undefined. Called only for a refused bearer, so a valid
-   * token is never blocked by a failure elsewhere.
+   * when either bucket is empty, else undefined. Called only for a bearer that missed the token
+   * cache and was refused: each such request costs one token, so a flood empties the bucket.
    */
   failedAuth(address: string, nowMs: number): number | undefined {
     const byAddress = this.limiter.take(`auth-failed:address:${address}`, nowMs);
@@ -36,10 +37,11 @@ export class FrontLimits {
 
   /**
    * Seconds to wait while the address has no failed-auth token left, else undefined. Reads the
-   * bucket without taking from it, so a refused address costs no token lookup.
+   * bucket without taking from it, so a refused address costs no token lookup. The caller skips
+   * this check for a cached hit, so authenticated traffic is never blocked by failed-auth state.
    */
   authBlocked(address: string, nowMs: number): number | undefined {
-    const decision = this.limiter.peek?.(`auth-failed:address:${address}`, nowMs);
+    const decision = this.limiter.peek(`auth-failed:address:${address}`, nowMs);
     if (decision === undefined || decision.allowed) return undefined;
     return retrySeconds(decision.retryAfterMs);
   }
@@ -62,18 +64,48 @@ export class FrontLimits {
     return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
   }
 
+  /** Takes one token from the owner's bucket, the one tool calls share. Seconds to wait, or undefined. */
+  owner(ownerId: string, nowMs: number): number | undefined {
+    const decision = this.limiter.take(`owner:${ownerId}`, nowMs);
+    return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
+  }
+
   /** Counts one more open request for the player; false when the player is at its cap. */
   acquire(playerId: string): boolean {
-    const count = this.open.get(playerId) ?? 0;
-    if (count >= MAX_OPEN_PER_PLAYER) return false;
-    this.open.set(playerId, count + 1);
-    return true;
+    return takeSlot(this.open, playerId, MAX_OPEN_PER_PLAYER);
   }
 
   /** Counts one open request for the player as closed. */
   release(playerId: string): void {
-    const count = this.open.get(playerId) ?? 0;
-    if (count <= 1) this.open.delete(playerId);
-    else this.open.set(playerId, count - 1);
+    freeSlot(this.open, playerId);
   }
+
+  /**
+   * Counts one more open request for the effective client address; false at the cap. Behind a
+   * tunnel every player shares the proxy's peer address, so this is the cap that is per client.
+   * The connection cap sees only the peer at connect time, so it cannot make this distinction.
+   */
+  acquireAddress(address: string, cap: number): boolean {
+    return takeSlot(this.openByAddress, address, cap);
+  }
+
+  /** Counts one open request for the effective client address as closed. */
+  releaseAddress(address: string): void {
+    freeSlot(this.openByAddress, address);
+  }
+}
+
+/** Adds one to the key's count unless it is at the cap. */
+function takeSlot(counts: Map<string, number>, key: string, cap: number): boolean {
+  const count = counts.get(key) ?? 0;
+  if (count >= cap) return false;
+  counts.set(key, count + 1);
+  return true;
+}
+
+/** Takes one from the key's count, dropping the entry at zero. */
+function freeSlot(counts: Map<string, number>, key: string): void {
+  const count = counts.get(key) ?? 0;
+  if (count <= 1) counts.delete(key);
+  else counts.set(key, count - 1);
 }

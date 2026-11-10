@@ -1,4 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage } from 'node:http';
+import { BlockList, isIP } from 'node:net';
 import type { PlayerRecord, TokenStore } from '../ports.ts';
 
 /** `ok` with the token and player it resolved to, or the refusal. */
@@ -49,4 +51,45 @@ export async function verifyBearer(
   if (!sameText(resolved.player.playerId, playerId)) return { outcome: 'forbidden' };
   await store.touch(resolved.tokenId, nowMs).catch(() => undefined);
   return { outcome: 'ok', tokenId: resolved.tokenId, player: resolved.player };
+}
+
+/** Says whether a TCP peer address is a trusted proxy. */
+export type ProxyTrust = (peer: string) => boolean;
+
+/** An IPv4 address in its `::ffff:` mapped IPv6 form, unwrapped; any other address unchanged. */
+function unmapped(address: string): string {
+  const mapped = address.toLowerCase().startsWith('::ffff:') ? address.slice(7) : '';
+  return isIP(mapped) === 4 ? mapped : address;
+}
+
+/**
+ * A matcher over the `trusted_proxies` entries: exact IPs or CIDR ranges. An empty list trusts
+ * no peer, so no forwarded header is ever read.
+ */
+export function trustedProxies(entries: readonly string[]): ProxyTrust {
+  const list = new BlockList();
+  for (const entry of entries) {
+    const [ip = '', bits] = entry.split('/');
+    const family = isIP(ip) === 6 ? 'ipv6' : 'ipv4';
+    if (bits === undefined) list.addAddress(ip, family);
+    else list.addSubnet(ip, Number(bits), family);
+  }
+  return (peer) => {
+    const address = unmapped(peer);
+    const family = isIP(address);
+    if (family === 0) return false;
+    return list.check(address, family === 6 ? 'ipv6' : 'ipv4');
+  };
+}
+
+/**
+ * The address a request is judged by: the TCP peer, unless the peer is a trusted proxy and sent
+ * a `CF-Connecting-IP` that is an IP literal. A header from any other peer is ignored.
+ */
+export function clientAddress(req: IncomingMessage, trusted: ProxyTrust): string {
+  const peer = req.socket.remoteAddress ?? 'unknown';
+  if (!trusted(peer)) return peer;
+  const header = req.headers['cf-connecting-ip'];
+  const claimed = typeof header === 'string' ? header.trim() : '';
+  return isIP(claimed) === 0 ? peer : claimed;
 }

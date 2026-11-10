@@ -59,6 +59,15 @@ export class FakeTokenStore implements TokenStore {
     this.touched.push({ tokenId, nowMs });
   }
 
+  /** No cache here, so a token that resolves now counts as a cached hit. */
+  isCachedHit(tokenHash: Uint8Array, nowMs: number): boolean {
+    for (const token of this.tokens.values()) {
+      if (!digestEqual(token.tokenHash, tokenHash)) continue;
+      return !token.revoked && nowMs < token.expiresAtMs && token.player.status === 'active';
+    }
+    return false;
+  }
+
   onRevoke(listener: (r: { tokenId: string; playerId: string }) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -232,6 +241,11 @@ export class ScriptedRateLimiter implements RateLimiter {
   take(bucket: string, nowMs: number): RateDecision {
     this.taken.push({ bucket, nowMs });
     return this.script.shift() ?? { allowed: true, retryAfterMs: 0 };
+  }
+
+  /** Answers with the next scripted decision without consuming it, and records nothing. */
+  peek(_bucket: string, _nowMs: number): RateDecision {
+    return this.script[0] ?? { allowed: true, retryAfterMs: 0 };
   }
 }
 
