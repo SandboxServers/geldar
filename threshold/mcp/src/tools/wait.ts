@@ -18,6 +18,7 @@ import type {
   SleepMarks,
 } from '../ports.ts';
 import { BodyUnavailable } from '../ports.ts';
+import { causeOf } from '../presence-write.ts';
 
 /** The longest `wait` the Scriptorium constraint allows, in seconds (spec 5.15.3). */
 export const MAX_WAIT_SECONDS = 240;
@@ -59,6 +60,8 @@ export interface WaitDeps {
   config: WakeConfig;
   state: WaitState;
   touchPresence?: TouchPresence;
+  /** Receives a failed touch as `presence_error`; the wait goes on without it. */
+  presenceLog?: (line: Record<string, unknown>) => void;
   keepAliveMs?: number;
   pollMs?: number;
 }
@@ -135,8 +138,9 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   const touch = async (): Promise<void> => {
     try {
       await deps.touchPresence?.(lifeId);
-    } catch {
+    } catch (err) {
       // presence is best effort; a failed touch never ends a wait
+      deps.presenceLog?.({ event: 'presence_error', cause: causeOf(err) });
     }
   };
   await touch();

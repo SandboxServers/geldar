@@ -169,7 +169,7 @@ describe('unverifiable processes', () => {
       runDir,
       readPresence: async () => new Map(),
     });
-    expect(result.lines[0]).toContain('ag-jason-01 unknown (cannot verify pid 4242)');
+    expect(result.lines[0]).toContain('ag-jason-01 unknown pid 4242 (cannot verify pid 4242)');
   });
 
   it('status shows a reused PID as stale, and up would start over it', async () => {
@@ -201,7 +201,7 @@ describe('unverifiable processes', () => {
       runDir,
       readPresence: async () => new Map(),
     });
-    expect(status.lines[0]).toContain('unknown (start time unreadable)');
+    expect(status.lines[0]).toContain('unknown pid 4242 (start time unreadable)');
     const down = await runRangersCli(['down'], SHARD, { ops, runDir });
     expect(down.code).toBe(1);
     expect(calls).toEqual([]);

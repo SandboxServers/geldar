@@ -32,7 +32,7 @@ import {
   type SleepMarks,
 } from './ports.ts';
 import type { KvPresenceStore } from './presence.ts';
-import { bestEffortPresence } from './presence-write.ts';
+import { bestEffortPresence, causeOf, rateLimitedPresenceLog } from './presence-write.ts';
 import { type ActArgs, ActToolError, actTool } from './tools/act.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './tools/journal.ts';
 import { lookTool, type ToolCall } from './tools/look.ts';
@@ -102,6 +102,8 @@ type Wired = WorldDeps & {
   now: () => number;
   lives: Set<string>;
   waitState: WaitState;
+  /** `deps.log` behind the per-kind rate limit: presence and settle failures, once a minute each. */
+  presenceLog: (line: Record<string, unknown>) => void;
 };
 
 type Run = (call: ToolCall, input: unknown, ctx: ToolContext) => unknown;
@@ -138,12 +140,14 @@ function bound(deps: Wired, run: Run): ToolHandler {
   return (input, ctx) =>
     guarded(async () => {
       const call = await callerOf(deps, ctx);
-      await bestEffortPresence(deps.log, () => deps.presence.touch(call.lifeId));
+      await bestEffortPresence(deps.presenceLog, () => deps.presence.touch(call.lifeId));
       try {
         return await run(call, input, ctx);
       } catch (err) {
         if (err instanceof BodyUnavailable) {
-          await bestEffortPresence(deps.log, () => deps.presence.wantBody(call.lifeId, deps.now()));
+          await bestEffortPresence(deps.presenceLog, () =>
+            deps.presence.wantBody(call.lifeId, deps.now()),
+          );
         }
         throw err;
       }
@@ -163,6 +167,7 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       runs: deps.runs,
       config: deps.wake,
       state: deps.waitState,
+      presenceLog: deps.presenceLog,
       touchPresence: async (lifeId) => {
         deps.lives.add(lifeId);
         await deps.presence.touch(lifeId);
@@ -217,7 +222,8 @@ function startSettle(deps: Wired): () => void {
     try {
       for (const lifeId of await deps.presence.lifeIds()) deps.lives.add(lifeId);
       return true;
-    } catch {
+    } catch (err) {
+      deps.presenceLog({ event: 'settle_error', cause: causeOf(err) });
       return false;
     }
   };
@@ -231,7 +237,10 @@ function startSettle(deps: Wired): () => void {
         return;
       }
       for (const lifeId of deps.lives) {
-        await deps.presence.settle(lifeId).catch(() => null);
+        await deps.presence.settle(lifeId).catch((err: unknown) => {
+          deps.presenceLog({ event: 'settle_error', cause: causeOf(err) });
+          return null;
+        });
       }
     }
   };
@@ -249,6 +258,7 @@ export function createWorld(deps: WorldDeps): World {
     now: () => deps.clock.nowMs(),
     lives: new Set(),
     waitState: createWaitState(),
+    presenceLog: rateLimitedPresenceLog(deps.log, () => deps.clock.nowMs()),
   };
   const unavailable = (tool: NotAvailableTool): ToolHandler =>
     bound(wired, (call) => notAvailableTool(wired, call, tool));
