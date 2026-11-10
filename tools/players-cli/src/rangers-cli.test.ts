@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { Presence } from './rangers.ts';
 import { parseOptions, runRangersCli, USAGE } from './rangers-cli.ts';
 
 const SHARD = `
@@ -21,15 +22,36 @@ describe('parseOptions', () => {
 });
 
 describe('runRangersCli', () => {
-  it('answers a usage error with exit 2 for an unknown verb', () => {
-    const result = runRangersCli(['restart'], SHARD);
+  const noPresence = { readPresence: async () => new Map() };
+
+  it('answers a usage error with exit 2 for an unknown verb', async () => {
+    const result = await runRangersCli(['restart'], SHARD, noPresence);
     expect(result.code).toBe(2);
     expect(result.lines).toEqual([USAGE]);
   });
 
-  it('refuses an id the shard config does not name, with exit 2 and no process started', () => {
-    const result = runRangersCli(['up', '--player', 'ag-nobody-01'], SHARD);
+  it('refuses an id the shard config does not name, with exit 2 and no process started', async () => {
+    const result = await runRangersCli(['up', '--player', 'ag-nobody-01'], SHARD, noPresence);
     expect(result.code).toBe(2);
     expect(result.lines[0]).toContain("no sovereign player 'ag-nobody-01'");
+  });
+
+  it('prints the presence of each life in status, read from the presence source', async () => {
+    const readPresence = async (lifeIds: readonly string[]) =>
+      new Map<string, Presence>(
+        lifeIds.map((id) => [
+          id,
+          { kind: 'record', state: 'hibernating', desiredBody: 'down', at: '2026-11-10T12:00:00Z' },
+        ]),
+      );
+    const result = await runRangersCli(['status'], SHARD, { readPresence });
+    expect(result.code).toBe(0);
+    expect(result.lines.join('\n')).toContain('presence: hibernating, desired body down');
+  });
+
+  it('prints presence unknown and keeps going when the presence source cannot be read', async () => {
+    const result = await runRangersCli(['status'], SHARD, { readPresence: async () => new Map() });
+    expect(result.code).toBe(0);
+    expect(result.lines.join('\n')).toContain('presence: unknown');
   });
 });

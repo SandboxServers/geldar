@@ -18,12 +18,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   formatStatus,
   listRangers,
+  type Presence,
   type Ranger,
   RangerError,
   rangerCommand,
   rangerState,
   selectRangers,
 } from './rangers.ts';
+import { readPresence } from './rangers-presence.ts';
 
 export const REPO_ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 export const RUN_DIR = join(REPO_ROOT, '.geldar', 'players');
@@ -32,7 +34,8 @@ export const USAGE = `usage: ./geldar.ps1 players <up|down|status|logs> [--playe
 
   up      start one Body process per ranger (or the one named); a running ranger is left alone
   down    stop the named ranger's Body (or all of them)
-  status  print each ranger's state, PID and resident memory; prints "down" when none runs
+  status  print each ranger's process (PID, resident memory) and its presence record (awake, dim or
+          hibernating); "presence: unknown" when NATS cannot be read; prints "down" when none runs
   logs    print the last 200 lines of each ranger's log (or the one named)
 `;
 
@@ -117,11 +120,21 @@ function stop(ranger: Ranger): string {
     : `${ranger.playerId} down`;
 }
 
+/** What `status` reads beyond the PID files: the presence of each life (a fake in tests). */
+export interface RangerDeps {
+  readPresence(lifeIds: readonly string[]): Promise<Map<string, Presence>>;
+}
+
+const PRODUCTION_DEPS: RangerDeps = {
+  readPresence: (lifeIds) => readPresence(process.env.GELDAR_NATS_URL, lifeIds),
+};
+
 /** Runs one command and returns the exit code. Status exits 0 whether or not anything runs. */
-export function runRangersCli(
+export async function runRangersCli(
   argv: readonly string[],
   shardYaml: string,
-): { code: number; lines: string[] } {
+  deps: RangerDeps = PRODUCTION_DEPS,
+): Promise<{ code: number; lines: string[] }> {
   const [verb, ...rest] = argv;
   const options = parseOptions(rest);
   if (options === null || verb === undefined) return { code: 2, lines: [USAGE] };
@@ -130,12 +143,14 @@ export function runRangersCli(
     if (verb === 'up') return { code: 0, lines: rangers.map(start) };
     if (verb === 'down') return { code: 0, lines: rangers.map(stop) };
     if (verb === 'status') {
+      const presence = await deps.readPresence(rangers.map((ranger) => ranger.lifeId));
       const rows = rangers.map((ranger) => {
         const state = rangerState(readPidText(ranger), isAlive);
         return {
           ranger,
           ...state,
           rssMb: state.pid === null || state.state !== 'online' ? null : rssMb(state.pid),
+          presence: presence.get(ranger.lifeId) ?? { kind: 'unknown' as const },
         };
       });
       return { code: 0, lines: formatStatus(rows) };
@@ -158,7 +173,8 @@ export function runRangersCli(
 
 if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const shardFile = join(REPO_ROOT, 'shards', `${process.env.GELDAR_SHARD ?? 'phase0'}.yaml`);
-  const { code, lines } = runRangersCli(process.argv.slice(2), readFileSync(shardFile, 'utf8'));
-  for (const line of lines) console.log(line);
-  process.exitCode = code;
+  runRangersCli(process.argv.slice(2), readFileSync(shardFile, 'utf8')).then(({ code, lines }) => {
+    for (const line of lines) console.log(line);
+    process.exitCode = code;
+  });
 }

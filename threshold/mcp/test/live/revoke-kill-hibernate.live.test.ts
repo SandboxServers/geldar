@@ -17,8 +17,12 @@ const env = (name: string): string => {
   if (value === undefined || value.trim() === '') throw new Error(`${name} is not set`);
   return value.trim();
 };
-const isOnline = (status: string, id: string): boolean =>
-  status.split('\n').some((line) => line.trimStart().startsWith(id) && /\bonline\b/i.test(line));
+/** The presence state `players status` prints for one ranger ('awake', 'dim', 'hibernating'), or undefined. */
+const presenceOf = (status: string, id: string): string | undefined =>
+  status
+    .split('\n')
+    .find((line) => line.trimStart().startsWith(id))
+    ?.match(/presence: (\w+)/)?.[1];
 
 describe.skipIf(!liveEnabled())('revoke (f), kill mid-intent (g), hibernate (h)', () => {
   it('(f) a revoke during a wait ends the wait, and the next call with that token is a 401', async () => {
@@ -90,10 +94,11 @@ describe.skipIf(!liveEnabled())('revoke (f), kill mid-intent (g), hibernate (h)'
     const ranger = env('GELDAR_LIVE_RANGER');
     const client = await connectAs(ranger, readTokenFile('GELDAR_LIVE_RANGER_TOKEN_FILE'));
     try {
-      // The lease lapses on its own (override 60 s); poll until the Body has logged out where it stood.
+      // The lease lapses on its own (override 60 s). The Body process stays up while hibernating, so poll the
+      // presence record that `players status` prints, not the process.
       const deadline = Date.now() + 240_000;
-      while (isOnline(geldar('players', 'status'), ranger)) {
-        expect(Date.now(), 'the Body never hibernated').toBeLessThan(deadline);
+      while (presenceOf(geldar('players', 'status'), ranger) !== 'hibernating') {
+        expect(Date.now(), 'the presence never reached hibernating').toBeLessThan(deadline);
         await sleep(5_000);
       }
       const started = Date.now();

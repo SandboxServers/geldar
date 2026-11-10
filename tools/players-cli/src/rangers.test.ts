@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   formatStatus,
   listRangers,
+  type Presence,
   parsePid,
+  parsePresenceRecord,
   RANGER_HEAP_MB,
   type Ranger,
   RangerError,
@@ -75,20 +77,107 @@ describe('parsePid and rangerState', () => {
   });
 });
 
+const AT = '2026-11-10T12:00:00.000Z';
+const awake: Presence = { kind: 'record', state: 'awake', desiredBody: 'up', at: AT };
+const dim: Presence = { kind: 'record', state: 'dim', desiredBody: 'up', at: AT };
+const hibernating: Presence = { kind: 'record', state: 'hibernating', desiredBody: 'down', at: AT };
+const unknown: Presence = { kind: 'unknown' };
+const JASON = ALL[0] as Ranger;
+const TEST = ALL[1] as Ranger;
+
+describe('parsePresenceRecord', () => {
+  const record = (overrides: Record<string, unknown>) =>
+    JSON.stringify({
+      life_id: 'ag_jason_01',
+      state: 'hibernating',
+      desired_body: 'down',
+      at: AT,
+      ...overrides,
+    });
+
+  it('reads a valid record of the life', () => {
+    expect(parsePresenceRecord(record({}), 'ag_jason_01')).toEqual(hibernating);
+  });
+
+  it('treats a record of another life, an unknown state, or bad JSON as no record', () => {
+    expect(parsePresenceRecord(record({}), 'ag_test_01')).toEqual({ kind: 'none' });
+    expect(parsePresenceRecord(record({ state: 'asleep' }), 'ag_jason_01')).toEqual({
+      kind: 'none',
+    });
+    expect(parsePresenceRecord('{not json', 'ag_jason_01')).toEqual({ kind: 'none' });
+  });
+});
+
 describe('formatStatus', () => {
-  it('prints down when nothing runs', () => {
-    const rows = ALL.map((ranger) => ({ ranger, state: 'down' as const, pid: null, rssMb: null }));
+  it('prints down when no process runs and the bucket holds no record', () => {
+    const rows = ALL.map((ranger) => ({
+      ranger,
+      state: 'down' as const,
+      pid: null,
+      rssMb: null,
+      presence: { kind: 'none' as const },
+    }));
     expect(formatStatus(rows)).toEqual(['down']);
   });
 
-  it('prints the state, PID and RSS of a running ranger', () => {
+  it('keeps the per-ranger lines when NATS cannot be read, even with no process', () => {
+    const lines = formatStatus(
+      ALL.map((ranger) => ({
+        ranger,
+        state: 'down' as const,
+        pid: null,
+        rssMb: null,
+        presence: unknown,
+      })),
+    );
+    expect(lines).toEqual([
+      'ag-jason-01 down (life ag_jason_01) presence: unknown',
+      'ag-test-01 down (life ag_test_01) presence: unknown',
+    ]);
+  });
+
+  it('prints an awake ranger with its PID, RSS and presence', () => {
     const lines = formatStatus([
-      { ranger: ALL[0] as Ranger, state: 'online', pid: 99, rssMb: 180 },
-      { ranger: ALL[1] as Ranger, state: 'down', pid: null, rssMb: null },
+      { ranger: JASON, state: 'online', pid: 99, rssMb: 180, presence: awake },
+      { ranger: TEST, state: 'down', pid: null, rssMb: null, presence: { kind: 'none' } },
     ]);
     expect(lines).toEqual([
-      'ag-jason-01 online pid 99 rss 180 MB (life ag_jason_01)',
-      'ag-test-01 down',
+      `ag-jason-01 online pid 99 rss 180 MB (life ag_jason_01) presence: awake, desired body up, at ${AT}`,
+      'ag-test-01 down (life ag_test_01) presence: no record',
     ]);
+  });
+
+  it('prints a dim ranger as dim, with its process still online', () => {
+    const [line] = formatStatus([
+      { ranger: JASON, state: 'online', pid: 99, rssMb: 180, presence: dim },
+    ]);
+    expect(line).toContain('presence: dim, desired body up');
+    expect(line).toContain('online pid 99');
+  });
+
+  it('prints a hibernating Body as hibernating while its process stays online', () => {
+    const [line] = formatStatus([
+      { ranger: JASON, state: 'online', pid: 99, rssMb: 180, presence: hibernating },
+    ]);
+    expect(line).toContain('online pid 99');
+    expect(line).toContain('presence: hibernating, desired body down');
+  });
+
+  it('prints presence unknown when NATS could not be read, and keeps the process line', () => {
+    const [line] = formatStatus([
+      { ranger: JASON, state: 'online', pid: 99, rssMb: null, presence: unknown },
+    ]);
+    expect(line).toBe('ag-jason-01 online pid 99 rss unknown (life ag_jason_01) presence: unknown');
+  });
+
+  it('prints a dead process as stale, and a known record even with no process', () => {
+    const lines = formatStatus([
+      { ranger: JASON, state: 'stale', pid: 7, rssMb: null, presence: awake },
+      { ranger: TEST, state: 'down', pid: null, rssMb: null, presence: hibernating },
+    ]);
+    expect(lines[0]).toContain('stale pid 7 rss unknown');
+    expect(lines[1]).toBe(
+      `ag-test-01 down (life ag_test_01) presence: hibernating, desired body down, at ${AT}`,
+    );
   });
 });

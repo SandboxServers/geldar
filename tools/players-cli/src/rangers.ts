@@ -73,14 +73,67 @@ export function rangerState(
   return isAlive(pid) ? { state: 'online', pid } : { state: 'stale', pid };
 }
 
-/** One status line per ranger; an offline ranger prints `down` and nothing else. */
-export function formatStatus(
-  rows: readonly { ranger: Ranger; state: RangerState; pid: number | null; rssMb: number | null }[],
-): string[] {
-  if (rows.every((row) => row.state === 'down')) return ['down'];
-  return rows.map(({ ranger, state, pid, rssMb }) => {
-    if (state === 'down') return `${ranger.playerId} down`;
+/**
+ * What the MCP's presence record of one life says (the `geldar-presence` bucket). `unknown` means NATS could
+ * not be read; `none` means the bucket holds no valid record for the life.
+ */
+export type Presence =
+  | { kind: 'record'; state: PresenceState; desiredBody: 'up' | 'down'; at: string }
+  | { kind: 'none' }
+  | { kind: 'unknown' };
+
+const PRESENCE_STATES = ['awake', 'dim', 'hibernating'] as const;
+export type PresenceState = (typeof PRESENCE_STATES)[number];
+
+/** The presence of a life from its record text; `none` when the text is not a valid record of that life. */
+export function parsePresenceRecord(text: string, lifeId: string): Presence {
+  let row: Record<string, unknown> | null;
+  try {
+    row = JSON.parse(text) as Record<string, unknown> | null;
+  } catch {
+    return { kind: 'none' };
+  }
+  if (row === null || typeof row !== 'object') return { kind: 'none' };
+  const state = row.state;
+  const desired = row.desired_body;
+  if (
+    row.life_id !== lifeId ||
+    !(PRESENCE_STATES as readonly unknown[]).includes(state) ||
+    (desired !== 'up' && desired !== 'down') ||
+    typeof row.at !== 'string'
+  ) {
+    return { kind: 'none' };
+  }
+  return { kind: 'record', state: state as PresenceState, desiredBody: desired, at: row.at };
+}
+
+/** The presence as one status fragment; `presence: unknown` is what an unreachable NATS prints. */
+export function formatPresence(presence: Presence): string {
+  if (presence.kind === 'unknown') return 'presence: unknown';
+  if (presence.kind === 'none') return 'presence: no record';
+  return `presence: ${presence.state}, desired body ${presence.desiredBody}, at ${presence.at}`;
+}
+
+/** One ranger's process state, RSS and presence, as `formatStatus` reads them. */
+export interface RangerRow {
+  ranger: Ranger;
+  state: RangerState;
+  pid: number | null;
+  rssMb: number | null;
+  presence: Presence;
+}
+
+/**
+ * One status line per ranger: the process (online, stale or down), its PID and RSS, and the presence. A Body
+ * stays online while hibernating, so presence is what says whether it is awake. Prints `down` only when no
+ * process runs and the bucket is known to hold no record for any ranger; an unreachable NATS still prints
+ * `presence: unknown` per ranger.
+ */
+export function formatStatus(rows: readonly RangerRow[]): string[] {
+  if (rows.every((row) => row.state === 'down' && row.presence.kind === 'none')) return ['down'];
+  return rows.map(({ ranger, state, pid, rssMb, presence }) => {
     const rss = rssMb === null ? 'rss unknown' : `rss ${rssMb} MB`;
-    return `${ranger.playerId} ${state} pid ${pid ?? 'none'} ${rss} (life ${ranger.lifeId})`;
+    const process = state === 'down' ? 'down' : `${state} pid ${pid ?? 'none'} ${rss}`;
+    return `${ranger.playerId} ${process} (life ${ranger.lifeId}) ${formatPresence(presence)}`;
   });
 }
