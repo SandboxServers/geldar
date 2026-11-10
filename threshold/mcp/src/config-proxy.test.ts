@@ -1,0 +1,71 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+import { parseMcpConfig, repoRoot } from './config.ts';
+
+const ENV = {
+  GELDAR_MCP_DB_PASSWORD_FILE: '/run/secrets/postgres-mcp.txt',
+  GELDAR_MCP_PEPPER_FILE: '/run/secrets/mcp-token-pepper.txt',
+};
+
+/** A fresh copy of the shipped shard file, so a test can change one key without touching the others. */
+function shardDoc(): Record<string, any> {
+  const text = readFileSync(join(repoRoot(), 'shards', 'phase0.yaml'), 'utf8');
+  return structuredClone(parse(text)) as Record<string, any>;
+}
+
+describe('proxy and client address settings', () => {
+  it('refuses a public host with no trusted proxy named, in yaml or in the environment', () => {
+    expect(() =>
+      parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_PUBLIC_HOST: 'geldar.example.net' } }),
+    ).toThrow('no trusted proxy is named');
+  });
+
+  it('accepts a public host once the proxy is named in the environment', () => {
+    const config = parseMcpConfig(shardDoc(), {
+      env: {
+        ...ENV,
+        GELDAR_MCP_PUBLIC_HOST: 'geldar.example.net',
+        GELDAR_MCP_TRUSTED_PROXIES: '10.0.0.5, 10.0.1.0/24',
+      },
+    });
+    expect(config.http.trustedProxies).toEqual(['10.0.0.5', '10.0.1.0/24']);
+    expect(config.http.allowedHosts[0]).toBe('geldar.example.net');
+  });
+
+  it('lets GELDAR_MCP_TRUSTED_PROXIES override a yaml list', () => {
+    const doc = shardDoc();
+    doc.sovereign.mcp.trusted_proxies = ['10.9.9.9'];
+    const config = parseMcpConfig(doc, { env: { ...ENV, GELDAR_MCP_TRUSTED_PROXIES: '10.1.1.1' } });
+    expect(config.http.trustedProxies).toEqual(['10.1.1.1']);
+  });
+
+  it('refuses a prefix length 0 in the environment list, as it refuses one in yaml', () => {
+    expect(() =>
+      parseMcpConfig(shardDoc(), {
+        env: { ...ENV, GELDAR_MCP_TRUSTED_PROXIES: '10.0.0.1,0.0.0.0/0' },
+      }),
+    ).toThrow('GELDAR_MCP_TRUSTED_PROXIES[1] has prefix length 0');
+  });
+
+  it('reads client_ip_header from yaml, defaulting to cf-connecting-ip', () => {
+    const doc = shardDoc();
+    doc.sovereign.mcp.client_ip_header = 'x-geldar-client-ip';
+    expect(parseMcpConfig(doc, { env: ENV }).http.clientIpHeader).toBe('x-geldar-client-ip');
+    expect(parseMcpConfig(shardDoc(), { env: ENV }).http.clientIpHeader).toBe('cf-connecting-ip');
+  });
+
+  it('lets GELDAR_MCP_CLIENT_IP_HEADER override the yaml header', () => {
+    const config = parseMcpConfig(shardDoc(), {
+      env: { ...ENV, GELDAR_MCP_CLIENT_IP_HEADER: 'x-forwarded-for' },
+    });
+    expect(config.http.clientIpHeader).toBe('x-forwarded-for');
+  });
+
+  it('refuses a header name that is not a lowercase header token', () => {
+    expect(() =>
+      parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_CLIENT_IP_HEADER: 'X Bad Name' } }),
+    ).toThrow('GELDAR_MCP_CLIENT_IP_HEADER must be a lowercase header name');
+  });
+});

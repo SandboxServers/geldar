@@ -134,14 +134,49 @@ export function trustedProxies(entries: readonly string[]): ProxyTrust {
   };
 }
 
+/** The mode that reads `X-Forwarded-For` rightmost-untrusted-hop style; any other name is single-valued. */
+export const FORWARDED_FOR = 'x-forwarded-for';
+
+/** The effective client address, and a warning when a trusted proxy sent no usable address. */
+export interface ClientAddress {
+  address: string;
+  warning?: 'header_missing' | 'header_malformed';
+}
+
 /**
- * The address a request is judged by: the TCP peer, unless the peer is a trusted proxy and sent
- * a `CF-Connecting-IP` that is an IP literal. A header from any other peer is ignored.
+ * The address a request is judged by. The TCP peer, unless the peer is a trusted proxy: then the
+ * named header (one IP literal), or `X-Forwarded-For` walked from the right past trusted hops. A
+ * header from any other peer is ignored. A trusted peer whose header is absent or not an IP
+ * literal gets the peer address and a warning, so a misconfigured proxy shows in the log.
  */
-export function clientAddress(req: IncomingMessage, trusted: ProxyTrust): string {
+export function clientAddress(
+  req: IncomingMessage,
+  trusted: ProxyTrust,
+  header: string,
+): ClientAddress {
   const peer = req.socket.remoteAddress ?? 'unknown';
-  if (!trusted(peer)) return peer;
-  const header = req.headers['cf-connecting-ip'];
-  const claimed = typeof header === 'string' ? header.trim() : '';
-  return isIP(claimed) === 0 ? peer : claimed;
+  if (!trusted(peer)) return { address: peer };
+  const raw = req.headers[header];
+  if (raw === undefined) return { address: peer, warning: 'header_missing' };
+  if (header === FORWARDED_FOR) return forwardedAddress(String(raw), peer, trusted);
+  const claimed = typeof raw === 'string' ? raw.trim() : '';
+  return isIP(claimed) === 0
+    ? { address: peer, warning: 'header_malformed' }
+    : { address: claimed };
+}
+
+/** The first hop from the right that is not a trusted proxy; malformed hops fall back to the peer. */
+function forwardedAddress(value: string, peer: string, trusted: ProxyTrust): ClientAddress {
+  const hops = value
+    .split(',')
+    .map((hop) => hop.trim())
+    .filter((hop) => hop !== '');
+  if (hops.length === 0) return { address: peer, warning: 'header_missing' };
+  for (let index = hops.length - 1; index >= 0; index--) {
+    const hop = hops[index] ?? '';
+    if (isIP(hop) === 0) return { address: peer, warning: 'header_malformed' };
+    if (!trusted(hop)) return { address: hop };
+  }
+  // Every hop is a trusted proxy: the client is the leftmost one.
+  return { address: hops[0] ?? peer };
 }

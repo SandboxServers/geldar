@@ -110,6 +110,7 @@ async function start(
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
+      clientIpHeader: 'cf-connecting-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
       ...http,

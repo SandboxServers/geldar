@@ -32,6 +32,7 @@ describe('loadMcpConfig', () => {
       allowedHosts: ['host.docker.internal', '127.0.0.1', 'localhost'],
       publicHost: null,
       trustedProxies: [],
+      clientIpHeader: 'cf-connecting-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
     });
@@ -81,7 +82,11 @@ describe('loadMcpConfig', () => {
 
   it('keeps the public host with the dev hosts when it is set', () => {
     const config = parseMcpConfig(shardDoc(), {
-      env: { ...ENV, GELDAR_MCP_PUBLIC_HOST: 'MCP.Example.com' },
+      env: {
+        ...ENV,
+        GELDAR_MCP_PUBLIC_HOST: 'MCP.Example.com',
+        GELDAR_MCP_TRUSTED_PROXIES: '10.0.0.5',
+      },
     });
     expect(config.http.publicHost).toBe('mcp.example.com');
     expect(config.http.allowedHosts[0]).toBe('mcp.example.com');

@@ -109,6 +109,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
+      clientIpHeader: 'cf-connecting-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
       ...options.http,

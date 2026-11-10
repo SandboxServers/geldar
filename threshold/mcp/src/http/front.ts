@@ -108,8 +108,11 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
   const gates = new FrontLimits(options.limiter);
-  // Only a peer on the trusted list may name the client in CF-Connecting-IP. An empty list trusts none.
+  // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
+  const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';
+  const addressOf = (req: IncomingMessage): string =>
+    clientAddress(req, trusted, clientIpHeader).address;
   const maxPerAddress =
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
@@ -138,7 +141,12 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
-      const address = clientAddress(req, trusted);
+      const client = clientAddress(req, trusted, clientIpHeader);
+      // A trusted proxy that sent no usable address is logged, not refused: the peer is used.
+      if (client.warning !== undefined) {
+        frontLog(options.log ?? stderrSink)({ event: `client_${client.warning}` });
+      }
+      const address = client.address;
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
       // bearer is refused before the lookup while its address is out of failed-auth tokens.
       const token = parseBearer(header);
@@ -175,7 +183,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     // The per-address slot is taken here, after the headers, because the connection cap sees only the
     // peer: behind a tunnel that is the proxy for every client.
     beforeBody(playerId, req, res): Refusal | undefined {
-      const address = clientAddress(req, trusted);
+      const address = addressOf(req);
       if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
       if (!gates.acquire(playerId)) {
         gates.releaseAddress(address);
@@ -189,7 +197,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     },
     // A GET stream takes the per-address slot only: a player's streams are not counted as its POSTs.
     beforeStream(_playerId, req, res): Refusal | undefined {
-      const address = clientAddress(req, trusted);
+      const address = addressOf(req);
       if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
       const held = releaseOnClose(res, () => gates.releaseAddress(address));
       return held ? undefined : clientGone();
