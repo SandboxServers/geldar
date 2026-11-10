@@ -131,7 +131,12 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
     // Empty unless the caller passes the perception module's authorized surroundings (spec 5.2).
     // `enclosed` is the Body's own read of its cell (decision 0074), not perception.
     surroundings: {
-      ...(opts.surroundings ?? { blocks_summary: '', notable_blocks: [], entities: [], agents: [] }),
+      ...(opts.surroundings ?? {
+        blocks_summary: '',
+        notable_blocks: [],
+        entities: [],
+        agents: [],
+      }),
       enclosed: isEnclosed((at) => bot.blockAt(at), cell),
     },
     ...(opts.bodyGeneration !== undefined ? { body_generation: opts.bodyGeneration } : {}),
