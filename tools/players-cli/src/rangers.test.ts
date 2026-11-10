@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatPidFile,
   formatStatus,
   listRangers,
   type Presence,
   parsePid,
+  parsePidFile,
   parsePresenceRecord,
   RANGER_HEAP_MB,
   type Ranger,
@@ -71,9 +73,27 @@ describe('parsePid and rangerState', () => {
 
   it('reports online for a live PID, stale for a dead one, down without a file', () => {
     const alive = (pid: number) => pid === 4242;
-    expect(rangerState('4242', alive)).toEqual({ state: 'online', pid: 4242 });
-    expect(rangerState('7', alive)).toEqual({ state: 'stale', pid: 7 });
+    const current = (pid: number) =>
+      formatPidFile({ pid, started: 'start-1', marker: 'players/main.ts --player ag-x' });
+    expect(rangerState(current(4242), alive)).toEqual({ state: 'online', pid: 4242 });
+    expect(rangerState(current(7), alive)).toEqual({ state: 'stale', pid: 7 });
     expect(rangerState(null, alive)).toEqual({ state: 'down', pid: null });
+  });
+
+  it('reads a bare-PID file from before format 2 as old: never online, and the PID is kept', () => {
+    const alive = () => true;
+    expect(parsePidFile('4242\n')).toEqual({ kind: 'old', pid: 4242 });
+    expect(rangerState('4242\n', alive)).toEqual({ state: 'stale', pid: 4242 });
+    expect(parsePidFile('not a pid')).toEqual({ kind: 'old', pid: null });
+  });
+
+  it('round-trips a format 2 PID file with its start time and marker', () => {
+    const record = {
+      pid: 99,
+      started: '2026-11-10T12:00:00.0000000Z',
+      marker: 'players/main.ts --player ag-x',
+    };
+    expect(parsePidFile(formatPidFile(record))).toEqual({ kind: 'current', record });
   });
 });
 

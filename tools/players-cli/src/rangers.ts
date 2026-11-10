@@ -59,7 +59,49 @@ export function parsePid(text: string): number | null {
   return pid > 0 ? pid : null;
 }
 
-/** online: the PID file names a live process; stale: it names a dead one; down: there is no PID file. */
+/** A PID file, format 2: the PID, the process start time, and the command-line marker that names the Body. */
+export interface PidRecord {
+  pid: number;
+  started: string;
+  marker: string;
+}
+
+export const PID_FORMAT = 2;
+
+/** The text a ranger's Body process must show on its command line for `down` to stop it. */
+export const rangerMarker = (playerId: string): string => `players/main.ts --player ${playerId}`;
+
+export function formatPidFile(record: PidRecord): string {
+  return `${JSON.stringify({ format: PID_FORMAT, ...record })}\n`;
+}
+
+/** A current PID file, or an old one (a bare PID, or anything else): an old file is never trusted to kill. */
+export type PidFile = { kind: 'current'; record: PidRecord } | { kind: 'old'; pid: number | null };
+
+export function parsePidFile(text: string): PidFile {
+  try {
+    const row = JSON.parse(text) as Record<string, unknown>;
+    if (
+      row.format === PID_FORMAT &&
+      typeof row.pid === 'number' &&
+      Number.isInteger(row.pid) &&
+      row.pid > 0 &&
+      typeof row.started === 'string' &&
+      row.started !== '' &&
+      typeof row.marker === 'string'
+    ) {
+      return {
+        kind: 'current',
+        record: { pid: row.pid, started: row.started, marker: row.marker },
+      };
+    }
+  } catch {
+    // Not JSON: an old, bare PID file.
+  }
+  return { kind: 'old', pid: parsePid(text) };
+}
+
+/** online: the PID file names a live process; stale: it names a dead one, or is an old file; down: no file. */
 export type RangerState = 'online' | 'stale' | 'down';
 
 /** The state of one ranger from its PID file text (null when there is none) and a liveness check. */
@@ -68,9 +110,13 @@ export function rangerState(
   isAlive: (pid: number) => boolean,
 ): { state: RangerState; pid: number | null } {
   if (pidText === null) return { state: 'down', pid: null };
-  const pid = parsePid(pidText);
+  const file = parsePidFile(pidText);
+  const pid = file.kind === 'current' ? file.record.pid : file.pid;
   if (pid === null) return { state: 'stale', pid: null };
-  return isAlive(pid) ? { state: 'online', pid } : { state: 'stale', pid };
+  // An old file's live PID is reported as stale with its PID, so `up` refuses to start over it.
+  return file.kind === 'current' && isAlive(pid)
+    ? { state: 'online', pid }
+    : { state: 'stale', pid };
 }
 
 /**
