@@ -3,6 +3,7 @@ import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import type { RestartBodyOptions, RestartedBody } from '../body/restart.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
+import { planOf } from '../mind-link/server.fakes.ts';
 import type { RequestServer } from '../mind-link/server.ts';
 import type { BotVoiceOptions } from '../voice/voice.ts';
 import { type AdamBodyEnv, startAdamBody } from './adam-body.ts';
@@ -249,7 +250,7 @@ describe('startAdamBody', () => {
     const running = await startAdamBody(r.env, fakeBot());
     const stopping = running.stop();
     for (const subject of r.served) {
-      expect(await r.deliver(subject, '{}')).toBeUndefined();
+      expect(await r.deliver(subject, JSON.stringify(planOf(1)))).toBeUndefined();
     }
     await stopping;
   });
