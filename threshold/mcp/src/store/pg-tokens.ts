@@ -11,6 +11,11 @@ export const REVOKE_CHANNEL = 'mcp_token_revoked';
 const RECONNECT_MS = 1_000;
 /** Clock slack when a reconnect asks for the revocations made since the drop. */
 const CATCH_UP_MARGIN_MS = 60_000;
+/** The LISTEN connection is pinged this often; a ping unanswered after the timeout counts as lost. */
+const PING_MS = 30_000;
+const PING_TIMEOUT_MS = 5_000;
+/** TCP keepalive on the LISTEN connection, so the kernel also notices a silent partition. */
+const KEEPALIVE_DELAY_MS = 10_000;
 const MAX_CACHE_ENTRIES = 4_096;
 
 /** One `mcp_tokens` row joined to its `mcp_players` row. */
@@ -63,6 +68,32 @@ interface Revocation {
   playerId: string;
 }
 
+/** The timers the store uses; a test may pass its own. */
+export interface Timers {
+  /** Runs `fn` once after `ms`. Returns a function that cancels it. */
+  after(ms: number, fn: () => void): () => void;
+  /** Runs `fn` every `ms`. Returns a function that stops it. */
+  every(ms: number, fn: () => void): () => void;
+}
+
+const SYSTEM_TIMERS: Timers = {
+  after(ms, fn) {
+    const handle = setTimeout(fn, ms);
+    handle.unref();
+    return () => clearTimeout(handle);
+  },
+  every(ms, fn) {
+    const handle = setInterval(fn, ms);
+    handle.unref();
+    return () => clearInterval(handle);
+  },
+};
+
+/** The LISTEN connection's config: the Postgres options with TCP keepalive switched on. */
+export function listenerConfig(pg: ClientConfig): ClientConfig {
+  return { ...pg, keepAlive: true, keepAliveInitialDelayMillis: KEEPALIVE_DELAY_MS };
+}
+
 /**
  * Hashed Bearer tokens in Postgres. Lookup is by hash, then a constant-time comparison. A hit is
  * cached for 5 s; a revocation (LISTEN on mcp_token_revoked) drops the cache entry at once.
@@ -72,6 +103,7 @@ export class PgTokenStore implements TokenStore {
   private readonly harnesses: Readonly<Record<string, boolean>>;
   private readonly listenConfig: ClientConfig;
   private readonly openListener: (config: ClientConfig) => Client;
+  private readonly timers: Timers;
   private readonly hits = new Map<string, { value: ResolvedToken; untilMs: number }>();
   private readonly touched = new Map<string, number>();
   private readonly listeners = new Set<(revoked: Revocation) => void>();
@@ -80,6 +112,10 @@ export class PgTokenStore implements TokenStore {
   private stopped = true;
   /** When the LISTEN connection was last lost; null until it has been lost. */
   private lostAtMs: number | null = null;
+  /** When the LISTEN connection was last known live: its LISTEN, then each good ping. */
+  private connectedAtMs: number | null = null;
+  /** Stops the ping of the current LISTEN connection; null when there is none. */
+  private stopPing: (() => void) | null = null;
   /** Bumped on every revocation: a row read before one may be stale, so it is not cached. */
   private revokeEpoch = 0;
 
@@ -93,11 +129,13 @@ export class PgTokenStore implements TokenStore {
     harnesses: Readonly<Record<string, boolean>>,
     listenConfig: ClientConfig,
     openListener: (config: ClientConfig) => Client = (config) => new Client(config),
+    timers: Timers = SYSTEM_TIMERS,
   ) {
     this.pool = pool;
     this.harnesses = harnesses;
     this.listenConfig = listenConfig;
     this.openListener = openListener;
+    this.timers = timers;
   }
 
   async resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null> {
@@ -148,7 +186,12 @@ export class PgTokenStore implements TokenStore {
     const lost = (): void => {
       if (this.listenClient !== listener) return;
       this.listenClient = null;
-      if (this.lostAtMs === null) this.lostAtMs = Date.now();
+      this.stopPing?.();
+      this.stopPing = null;
+      // The gap starts at the last moment the connection was known live, not when `end` fires: a
+      // partition can silence it for minutes before then.
+      const live = this.connectedAtMs ?? Date.now();
+      this.lostAtMs = this.lostAtMs === null ? live : Math.min(this.lostAtMs, live);
       this.reconnect();
     };
     listener.on('notification', (message) =>
@@ -162,6 +205,7 @@ export class PgTokenStore implements TokenStore {
     try {
       await listener.connect();
       await listener.query(`LISTEN ${REVOKE_CHANNEL}`);
+      this.connectedAtMs = Date.now();
       if (this.stopped) throw new Error('the revoke listener was stopped during start');
       this.hits.clear();
       // A NOTIFY sent while the connection was down is lost: fire what that gap hid. LISTEN is
@@ -175,7 +219,28 @@ export class PgTokenStore implements TokenStore {
     }
     // A drop during catch-up has already replaced this connection: the gap is not closed, so the
     // next start() catches up from the same earliest loss.
-    if (this.listenClient === listener) this.lostAtMs = null;
+    if (this.listenClient !== listener) return;
+    this.lostAtMs = null;
+    this.stopPing = this.timers.every(PING_MS, () => this.pingOnce(listener, lost));
+  }
+
+  /** One liveness ping: `SELECT 1` must answer within PING_TIMEOUT_MS, or the connection is lost. */
+  private pingOnce(listener: Client, lost: () => void): void {
+    const cancelTimeout = this.timers.after(PING_TIMEOUT_MS, () => {
+      lost();
+      listener.end().catch(() => undefined);
+    });
+    listener.query('SELECT 1').then(
+      () => {
+        cancelTimeout();
+        if (this.listenClient === listener) this.connectedAtMs = Date.now();
+      },
+      () => {
+        cancelTimeout();
+        lost();
+        listener.end().catch(() => undefined);
+      },
+    );
   }
 
   /**
@@ -197,6 +262,8 @@ export class PgTokenStore implements TokenStore {
     this.stopped = true;
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    this.stopPing?.();
+    this.stopPing = null;
     const listener = this.listenClient;
     this.listenClient = null;
     await listener?.end().catch(() => undefined);

@@ -25,7 +25,7 @@ import { PgAgentStore } from './store/pg-agents.ts';
 import { PgBudgetLedger } from './store/pg-budget.ts';
 import { PgJournalStore } from './store/pg-journal.ts';
 import { PgPlayerDirectory } from './store/pg-players.ts';
-import { PgTokenStore } from './store/pg-tokens.ts';
+import { listenerConfig, PgTokenStore } from './store/pg-tokens.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
 
@@ -239,7 +239,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     log({ event: 'postgres_open' });
 
     const harnesses = config.sovereign.harnesses;
-    const tokens = new PgTokenStore(pool, harnesses, pgOptions, (cfg) =>
+    const tokens = new PgTokenStore(pool, harnesses, listenerConfig(pgOptions), (cfg) =>
       ports.openRevokeListener(cfg),
     );
     const agents = new PgAgentStore(pool);

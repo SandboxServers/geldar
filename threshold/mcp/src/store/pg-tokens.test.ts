@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeListener, FakePool } from './pg-fakes.ts';
-import { activeToken, PgTokenStore, parseRevocation, type TokenRow } from './pg-tokens.ts';
+import {
+  activeToken,
+  listenerConfig,
+  PgTokenStore,
+  parseRevocation,
+  type TokenRow,
+} from './pg-tokens.ts';
 
 const NOW = Date.UTC(2026, 10, 9, 12);
 const DAY = 86_400_000;
@@ -307,6 +313,92 @@ describe('PgTokenStore LISTEN connection', () => {
     expect(listeners[0]?.ended).toBe(true);
     await vi.advanceTimersByTimeAsync(5_000);
     expect(listeners).toHaveLength(1);
+  });
+});
+
+/** A listener whose `SELECT 1` pings fail, hang, or answer, by `mode`. */
+class PingingListener extends FakeListener {
+  private readonly mode: 'fail' | 'hang' | 'ok';
+
+  constructor(mode: 'fail' | 'hang' | 'ok') {
+    super();
+    this.mode = mode;
+  }
+
+  override async query(text: string): Promise<{ rows: unknown[] }> {
+    if (text !== 'SELECT 1' || this.mode === 'ok') return super.query(text);
+    this.queries.push(text);
+    if (this.mode === 'fail') throw new Error('the connection is gone');
+    return new Promise(() => undefined);
+  }
+}
+
+function pingingStore(mode: 'fail' | 'hang' | 'ok') {
+  const listeners: PingingListener[] = [];
+  const store = new PgTokenStore(new FakePool().asPool(), HARNESSES, {}, () => {
+    const listener = new PingingListener(mode);
+    listeners.push(listener);
+    return listener.asClient();
+  });
+  return { store, listeners };
+}
+
+describe('PgTokenStore liveness', () => {
+  it('the LISTEN config keeps the Postgres options and turns TCP keepalive on', () => {
+    expect(listenerConfig({ host: 'db', user: 'geldar_mcp' })).toEqual({
+      host: 'db',
+      user: 'geldar_mcp',
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10_000,
+    });
+  });
+
+  it('pings the connection every 30 s, and keeps it while the pings answer', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = storeWith([]);
+    await store.start();
+    await vi.advanceTimersByTimeAsync(90_000);
+    expect(listeners).toHaveLength(1);
+    expect(listeners[0]?.queries).toEqual([`LISTEN ${REVOKE}`, 'SELECT 1', 'SELECT 1', 'SELECT 1']);
+    await store.stop();
+  });
+
+  it('a ping that fails ends the connection, and the connection is re-opened', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = pingingStore('fail');
+    await store.start();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(listeners[0]?.ended).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners).toHaveLength(2);
+    await store.stop();
+  });
+
+  it('a ping that never answers counts as lost after 5 s', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = pingingStore('hang');
+    await store.start();
+    await vi.advanceTimersByTimeAsync(34_999);
+    expect(listeners[0]?.ended).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listeners[0]?.ended).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners).toHaveLength(2);
+    await store.stop();
+  });
+
+  it('a drop opens the revoke gap at the last good ping, not at the moment end fires', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const { pool, store, listeners } = storeWith([]);
+    await store.start();
+    await vi.advanceTimersByTimeAsync(30_000);
+    listeners[0]?.emit('end');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners).toHaveLength(2);
+    const catchUp = pool.sent.find((sent) => sent.text.includes('revoked_at >='));
+    expect(catchUp?.values[0]).toEqual(new Date(NOW + 30_000 - 60_000));
+    await store.stop();
   });
 });
 
