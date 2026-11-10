@@ -35,9 +35,9 @@ const cases: Case[] = [
   {
     name: 'two final receipts for one action FAIL, naming its id',
     actions: [action('a1', { state: 'completed' })],
-    receipts: [receipt('a1', 'committed'), receipt('a1', 'aborted')],
+    receipts: [receipt('a1', 'prepared'), receipt('a1', 'committed'), receipt('a1', 'aborted')],
     verdict: 'FAIL',
-    noteHas: 'a1',
+    noteHas: 'action a1 has no one final receipt',
   },
   {
     name: 'an action that is not terminal yet is not counted',
