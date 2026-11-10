@@ -2,18 +2,26 @@ package dev.geldar.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
+import io.nats.client.Options;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 class NatsEventPublisherTest {
     private static EventEnvelope event() {
@@ -148,5 +156,52 @@ class NatsEventPublisherTest {
         } finally {
             publisher.close();
         }
+    }
+
+    private static Function<String, String> settings(Map<String, String> values) {
+        return values::get;
+    }
+
+    @Test
+    void connectsUnauthenticatedWhenNoCredentialIsSet() {
+        Options options = NatsEventPublisher.withCredentials(Options.builder().server("nats://127.0.0.1:4222"), settings(Map.of())).build();
+        assertNull(options.getUsername());
+        assertNull(options.getPassword());
+    }
+
+    @Test
+    void readsTheUserAndTheTrimmedPasswordFileWhenSet(@TempDir Path dir) throws IOException {
+        Path file = Files.writeString(dir.resolve("paper.txt"), "pw-from-file\n");
+        Map<String, String> values = Map.of("GELDAR_NATS_USER", "paper", "GELDAR_NATS_PASSWORD_FILE", file.toString());
+        Options options = NatsEventPublisher.withCredentials(Options.builder().server("nats://127.0.0.1:4222"), settings(values)).build();
+        assertEquals("paper", options.getUsername());
+        assertEquals("pw-from-file", options.getPassword());
+    }
+
+    @Test
+    void failsWithANamedSettingWhenOnlyOneOfTheTwoIsSet() {
+        Map<String, String> userOnly = Map.of("GELDAR_NATS_USER", "paper");
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> NatsEventPublisher.withCredentials(Options.builder(), settings(userOnly)));
+        assertTrue(error.getMessage().contains("GELDAR_NATS_PASSWORD_FILE"));
+    }
+
+    @Test
+    void failsOnAMissingPasswordFileWithoutEchoingAnything(@TempDir Path dir) {
+        Path missing = dir.resolve("missing.txt");
+        Map<String, String> values = Map.of("GELDAR_NATS_USER", "paper", "GELDAR_NATS_PASSWORD_FILE", missing.toString());
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> NatsEventPublisher.withCredentials(Options.builder(), settings(values)));
+        assertTrue(error.getMessage().contains("GELDAR_NATS_PASSWORD_FILE"));
+        assertFalse(error.getMessage().contains("pw-"));
+    }
+
+    @Test
+    void failsOnAnEmptyPasswordFile(@TempDir Path dir) throws IOException {
+        Path file = Files.writeString(dir.resolve("empty.txt"), "  \n");
+        Map<String, String> values = Map.of("GELDAR_NATS_USER", "paper", "GELDAR_NATS_PASSWORD_FILE", file.toString());
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> NatsEventPublisher.withCredentials(Options.builder(), settings(values)));
+        assertTrue(error.getMessage().contains("is empty"));
     }
 }

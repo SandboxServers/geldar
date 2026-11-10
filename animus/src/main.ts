@@ -8,6 +8,7 @@
 import { pathToFileURL } from 'node:url';
 import type { WorldEvent } from '@geldar/contract';
 import { connectNats } from '@geldar/contract/nats';
+import { thinkerToken } from '@geldar/contract/thinker-token';
 import { jetstream } from '@nats-io/jetstream';
 import { type AnimusConfig, loadAnimusConfig } from './config.ts';
 import { NatsBodyLink, natsRequestTransport } from './link/nats-body-link.ts';
@@ -254,6 +255,7 @@ export const realStack: MindStack = {
   async startHub(config, log) {
     const hub = new ThinkerHub({
       config,
+      token: thinkerToken(),
       log: (line) => log({ event: 'thinker', line }),
       onThinker: ({ kind, id, models }) =>
         log({

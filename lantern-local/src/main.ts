@@ -1,3 +1,4 @@
+import { thinkerToken } from '@geldar/contract/thinker-token';
 import { loadConfig, thinkerVersion } from './config.ts';
 import { discoverModels } from './models.ts';
 import { ollamaChat, ollamaEmbedPing, ollamaWarm } from './ollama.ts';
@@ -17,6 +18,7 @@ async function main(): Promise<number> {
   }
   const thinker = new LocalThinker({
     wsUrl: config.wsUrl,
+    token: thinkerToken(),
     models: advertised,
     chat: ollamaChat(config.ollamaUrl),
     warm: ollamaWarm(config.ollamaUrl),

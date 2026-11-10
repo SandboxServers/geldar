@@ -38,6 +38,8 @@ export function jitteredDelay(baseMs: number, random: () => number): number {
 
 export interface ThinkerOptions {
   wsUrl: string;
+  /** Sent in the hello when the Mind's hub has a token (GELDAR_THINKER_TOKEN_FILE); never logged. */
+  token?: string | undefined;
   models: AdvertisedModel[];
   chat: ChatFn;
   /**
@@ -110,9 +112,11 @@ export class LocalThinker {
       | 'keepWarmNames'
       | 'keepWarmWarning'
       | 'pingEmbedder'
+      | 'token'
     >
   > & {
     log: (line: string) => void;
+    token?: string | undefined;
     warm?: WarmFn;
     warmNames?: string[];
     keepWarmNames?: string[] | undefined;
@@ -337,6 +341,7 @@ export class LocalThinker {
           max_concurrent: m.maxConcurrent,
           max_tokens: ADVERTISED_MAX_TOKENS,
         })),
+        ...(this.opts.token === undefined ? {} : { token: this.opts.token }),
       });
       this.helloTimer = setTimeout(() => {
         this.opts.log('no welcome within the hello timeout; reconnecting');

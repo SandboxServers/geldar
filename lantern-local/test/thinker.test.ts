@@ -77,6 +77,20 @@ describe('connection', () => {
     expect(beat.load).toEqual({ 'qwen3:8b': 0 });
   });
 
+  it('sends the configured token in hello and never logs it', async () => {
+    const token = 'lantern-test-token-value';
+    launch({ token });
+    const hello = await mind.next('hello');
+    expect(hello.token).toBe(token);
+    expect(logs.every((line) => !line.includes(token))).toBe(true);
+  });
+
+  it('sends no token field when none is configured', async () => {
+    launch();
+    const hello = await mind.next('hello');
+    expect(hello).not.toHaveProperty('token');
+  });
+
   it('closes and reconnects when no welcome arrives in time', async () => {
     mind.autoWelcome = false;
     launch({ helloTimeoutMs: 50 });

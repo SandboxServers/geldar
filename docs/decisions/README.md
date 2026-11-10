@@ -72,3 +72,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0065](0065-damage-wakes-the-mind.md) | Damage wakes the Mind when no intent is running; death still ends the life | Accepted provisionally (orchestrator, owner may revise) |
 | [0066](0066-phase0-closed-as-proof-of-life.md) | Phase 0 is closed as proof of life; the spec's section 10 exit criteria are waived by the owner and the exit runs are deferred | Accepted (owner) |
 | [0068](0068-prompt-v4-and-agent-visible-text.md) | Nothing an agent reads may say humans watch it or reveal the shard, harness or credits; prompt v4 is the default and released templates are immutable; persona lint with `--allow-meta` | Proposed (fix-c; owner amends the spec line ~1584) |
+| [0067](0067-nats-accounts-and-least-privilege.md) | NATS accounts and least-privilege users, opt-in until the stack is cut over | Accepted provisionally (orchestrator, owner may revise) |
+>
