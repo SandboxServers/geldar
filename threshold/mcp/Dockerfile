@@ -17,3 +17,5 @@ USER 1000:1000
 WORKDIR /opt/geldar/threshold/mcp
 EXPOSE 8788
 ENTRYPOINT ["node", "src/cli.ts"]
+# `start` is the only subcommand (cli.ts exits 2 without it); the shard file is read from /opt/geldar/shards.
+CMD ["start"]
