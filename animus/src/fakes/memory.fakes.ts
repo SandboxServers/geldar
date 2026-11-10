@@ -327,9 +327,18 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     return true;
   }
 
+  /** As the Postgres store: a parsed reflection whose day is no later than the last sleep day. */
   async lastReflectionTick(lifeId: string): Promise<number> {
+    const sleptDay = this.agents.get(lifeId)?.lastSleepDay ?? null;
+    if (sleptDay === null) return 0;
     const ticks = this.thoughts
-      .filter((t) => t.lifeId === lifeId && t.wakeReason === 'reflection')
+      .filter(
+        (t) =>
+          t.lifeId === lifeId &&
+          t.wakeReason === 'reflection' &&
+          t.parsed !== null &&
+          t.worldDay <= sleptDay,
+      )
       .map((t) => t.worldTick);
     return ticks.length === 0 ? 0 : Math.max(...ticks);
   }

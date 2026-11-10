@@ -80,9 +80,13 @@ export class PgJournal implements Journal {
   }
 
   async lastReflectionTick(lifeId: string): Promise<number> {
+    // A reflection counts once it parsed and its day is no later than the life's last sleep: a
+    // failed one never sets `last_sleep_day` (`reflection/apply.ts`), so it does not count.
     const result = await this.db.query(
-      `SELECT COALESCE(MAX(world_tick), 0) AS tick FROM thoughts
-       WHERE life_id = $1 AND wake_reason = 'reflection'`,
+      `SELECT COALESCE(MAX(t.world_tick), 0) AS tick FROM thoughts t
+       JOIN agents a ON a.agent_id = t.life_id
+       WHERE t.life_id = $1 AND t.wake_reason = 'reflection' AND t.parsed IS NOT NULL
+         AND t.world_day <= a.last_sleep_day`,
       [lifeId],
     );
     return Number(result.rows[0]?.tick ?? 0);
