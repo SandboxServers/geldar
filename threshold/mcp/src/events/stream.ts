@@ -1,10 +1,9 @@
 import { mindEventSubjects, normaliseEvent } from '@geldar/animus/src/link/mind-event.ts';
+import { validateDayNightPayload, validateWorldEvent, type WorldEvent } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 import type { PlayerEventLog } from '../ports.ts';
 import type { DayPhase } from './day-night.ts';
 import { type MapContext, mapMindEvent } from './mapper.ts';
-
-const DAY_PHASES: readonly string[] = ['dawn', 'day', 'dusk', 'night'];
 
 /** The subjects the consumer reads: the Mind's event types plus `sovereign_call` and `day_night`. */
 export function streamSubjects(shard: string): string[] {
@@ -35,9 +34,10 @@ export interface StreamCounters {
 }
 
 /**
- * Handles one stream message at its stream sequence. A Mind event goes to its life's log as the
- * mapper maps it; a `day_night` event fans out to every life. Invalid messages are counted and
- * dropped. A `sovereign_call` is not a player event, so it is skipped.
+ * Handles one stream message at its stream sequence. The Body's events are untrusted: every message
+ * is checked against the contract envelope first, and an invalid one is counted and dropped without
+ * a throw. A Mind event goes to its life's log as the mapper maps it; a `day_night` event fans out
+ * to every life. A `sovereign_call` is not a player event, so it is skipped.
  */
 export async function handleStreamMessage(
   seq: number,
@@ -45,14 +45,19 @@ export async function handleStreamMessage(
   ctx: StreamContext,
   counters: StreamCounters,
 ): Promise<void> {
-  const type = (raw as { type?: unknown } | null)?.type;
-  if (type === 'day_night') {
-    const event = dayNightEvent(seq, raw);
+  const envelope = validateWorldEvent(raw);
+  if (!envelope.ok) {
+    counters.invalid++;
+    return;
+  }
+  const world = envelope.value;
+  if (world.type === 'day_night') {
+    const event = dayNightEvent(seq, world);
     if (event === null) counters.invalid++;
     else for (const lifeId of ctx.lives()) await ctx.log.append(lifeId, event);
     return;
   }
-  if (type === 'sovereign_call') return;
+  if (world.type === 'sovereign_call') return;
   const n = normaliseEvent(raw);
   if (n.status === 'invalid') {
     counters.invalid++;
@@ -64,20 +69,17 @@ export async function handleStreamMessage(
   }
 }
 
-/** The `day_night` message as a sim event, or null when its payload is not a phase and a tick. */
-function dayNightEvent(seq: number, raw: unknown): SimEvent | null {
-  const msg = raw as { payload?: { phase?: unknown; tick?: unknown }; at?: unknown };
-  const phase = msg.payload?.phase;
-  const tick = msg.payload?.tick;
-  if (typeof phase !== 'string' || !DAY_PHASES.includes(phase)) return null;
-  if (typeof tick !== 'number' || !Number.isInteger(tick) || tick < 0) return null;
-  const atMs = typeof msg.at === 'string' ? Date.parse(msg.at) : Number.NaN;
+/** The `day_night` event as a sim event, or null when its payload fails the contract. */
+function dayNightEvent(seq: number, world: WorldEvent): SimEvent | null {
+  const payload = validateDayNightPayload(world.payload);
+  if (!payload.ok) return null;
+  const atMs = Date.parse(world.at);
   return {
     seq,
-    tick,
+    tick: payload.value.tick,
     atMs: Number.isNaN(atMs) ? 0 : atMs,
     kind: 'day_night',
-    name: phase as DayPhase,
+    name: payload.value.phase as DayPhase,
     wakeOn: null,
   };
 }
