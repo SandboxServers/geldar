@@ -91,9 +91,11 @@ Each refusal and strip line was reverted in turn, and the pepper test files fail
 ### Fixes
 
 - `contract/schemas/mcp-play.schema.json`: the `act` description now says an intent must carry
-  `limits` with both fields and their bounds (1 to 240000 and 1 to 10000), and ends with a minimal
-  valid intent. The generated copies are regenerated. `act-description.test.ts` checks the example
-  against the validator and fails when `limits` is dropped.
+  `limits`, and ends with a minimal valid intent that shows both fields. The first version was 487
+  characters and broke the 300-character cap that `contract/test/mcp-world.test.ts` applies to every
+  input description, so it was shortened to 293 characters and the bounds were left out of the text
+  (the example carries the fields). The generated copies are regenerated. `act-description.test.ts`
+  checks the example against the validator and fails when `limits` is dropped.
 - `threshold/mcp/test/live/live-requests.ts`: the case's look, act and wait bodies are built in one
   place. The act intent carries `limits` (max_world_ticks 2400, max_block_operations 64).
   `live-requests.test.ts` checks every body against the contract validator and the Mind output
