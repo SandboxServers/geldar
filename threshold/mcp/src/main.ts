@@ -103,7 +103,7 @@ export const GLOBAL_FAILED_AUTH_PER_MINUTE = 300;
 
 /**
  * The rule for each bucket, by name: the front door's `player:`, `owner:`, `owner-agent:`,
- * `auth-failed:` buckets and the tools' `act:` and `say:` buckets, whose minimum spacing is one
+ * `auth-failed:` buckets and the tools' `act:`, `say:` and `journal:` buckets, whose minimum spacing is one
  * token per N seconds. `agentsPerOwner` is the owner's cap: each agent's reserved share of the
  * owner's calls is the owner rate split that many ways (at least one call a minute).
  */
@@ -116,6 +116,7 @@ export function bucketRules(
     | 'handshakePerMinute'
     | 'actMinSeconds'
     | 'sayMinSeconds'
+    | 'journalMinSeconds'
   >,
   agentsPerOwner = 1,
 ): (bucket: string) => BucketRule {
@@ -131,6 +132,7 @@ export function bucketRules(
     if (bucket.startsWith('handshake:')) return perMinute(limits.handshakePerMinute);
     if (bucket.startsWith('act:')) return spaced(limits.actMinSeconds);
     if (bucket.startsWith('say:')) return spaced(limits.sayMinSeconds);
+    if (bucket.startsWith('journal:')) return spaced(limits.journalMinSeconds);
     return perMinute(limits.callsPerMinute);
   };
 }

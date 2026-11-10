@@ -1,6 +1,10 @@
 import { callTool, type FakeClock, type ToolContext, type ToolHandlers } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
-import type { FakeJournalStore, RecordingCallRecorder } from './fakes/stores.fakes.ts';
+import {
+  type FakeJournalStore,
+  type RecordingCallRecorder,
+  ScriptedRateLimiter,
+} from './fakes/stores.fakes.ts';
 import {
   type FakeBody,
   type MemoryPresenceBucket,
@@ -100,6 +104,18 @@ describe('the read-only handlers', () => {
     expect((await journal.recent(PLAYER.lifeId, 10)).map((e) => e.text)).toEqual(['Dusk.']);
     expect(recorder.calls).toHaveLength(1);
     expect(recorder.calls[0]).toMatchObject({ tool: 'journal', outcome: 'ok', journal: 'Dusk.' });
+  });
+
+  it('refuses a journal line inside its spacing: nothing is written and no call is recorded', async () => {
+    const fx = worldFixture([PLAYER, OTHER]);
+    fx.budget.seed(PLAYER.lifeId, 37, 0);
+    const limiter = new ScriptedRateLimiter([{ allowed: false, retryAfterMs: 5_000 }]);
+    const tools = createWorld({ ...fx.deps, limiter }).tools;
+    const reply = await run(tools, 'journal', { text: 'Dusk.' });
+    expect(reply.isError).toBe(true);
+    expect(limiter.taken.map((t) => t.bucket)).toEqual([`journal:${PLAYER.lifeId}`]);
+    expect(await fx.journal.recent(PLAYER.lifeId, 10)).toEqual([]);
+    expect(fx.recorder.calls).toEqual([]);
   });
 
   it('returns the held book under untrusted_world_text, never in a typed field', async () => {

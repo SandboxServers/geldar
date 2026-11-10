@@ -11,6 +11,7 @@ const LIMITS = {
   handshakePerMinute: 300,
   actMinSeconds: 0,
   sayMinSeconds: 0,
+  journalMinSeconds: 5,
 };
 const OWNER_CAP = 20;
 const OWNER = 'owner-1';

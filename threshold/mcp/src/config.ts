@@ -65,6 +65,7 @@ export interface SovereignConfig {
     callsPerMinute: number;
     actMinSeconds: number;
     sayMinSeconds: number;
+    journalMinSeconds: number;
     ownerCallsPerMinute: number;
     failedAuthPerMinute: number;
     /** Per player: initialize, resources/read and the other non-call methods. */
@@ -280,6 +281,7 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
       callsPerMinute: int(limits, 'calls_per_minute', 'sovereign.rate_limits', 1, 100000),
       actMinSeconds: int(limits, 'act_min_seconds', 'sovereign.rate_limits', 0, 3600),
       sayMinSeconds: int(limits, 'say_min_seconds', 'sovereign.rate_limits', 0, 3600),
+      journalMinSeconds: int(limits, 'journal_min_seconds', 'sovereign.rate_limits', 0, 3600),
       ownerCallsPerMinute: int(
         limits,
         'owner_calls_per_minute',

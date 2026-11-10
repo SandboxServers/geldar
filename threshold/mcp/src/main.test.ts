@@ -359,6 +359,7 @@ describe('tokenBucketLimiter', () => {
       failedAuthPerMinute: 30,
       actMinSeconds: 2,
       sayMinSeconds: 3,
+      journalMinSeconds: 5,
       handshakePerMinute: 300,
     };
     const count = (bucket: string): number => {
@@ -383,6 +384,7 @@ describe('tokenBucketLimiter', () => {
         failedAuthPerMinute: 30,
         actMinSeconds: 2,
         sayMinSeconds: 3,
+        journalMinSeconds: 5,
         handshakePerMinute: 300,
       }),
     );
@@ -392,6 +394,23 @@ describe('tokenBucketLimiter', () => {
     expect(limiter.take('say:ag_jason', 0).allowed).toBe(true);
     expect(limiter.take('say:ag_jason', 2_999).allowed).toBe(false);
     expect(limiter.take('say:ag_jason', 3_000).allowed).toBe(true);
+  });
+
+  it('spaces journal lines by journal_min_seconds: one line, then one every N seconds', () => {
+    const limiter = tokenBucketLimiter(
+      bucketRules({
+        callsPerMinute: 60,
+        ownerCallsPerMinute: 600,
+        failedAuthPerMinute: 30,
+        actMinSeconds: 2,
+        sayMinSeconds: 3,
+        journalMinSeconds: 5,
+        handshakePerMinute: 300,
+      }),
+    );
+    expect(limiter.take('journal:ag_jason', 0).allowed).toBe(true);
+    expect(limiter.take('journal:ag_jason', 4_999).allowed).toBe(false);
+    expect(limiter.take('journal:ag_jason', 5_000).allowed).toBe(true);
   });
 
   it('keeps counting after the table is swept of full buckets', () => {

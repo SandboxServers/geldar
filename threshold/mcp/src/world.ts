@@ -61,6 +61,8 @@ const WAIT_MESSAGES: Record<WaitError, string> = {
 
 /** The most journal characters a `sovereign_call` record keeps (the payload's own limit). */
 const RECORD_JOURNAL_LIMIT = 2000;
+/** The refusal of a journal line inside the player's journal spacing (`journal_min_seconds`). */
+const JOURNAL_RATE_MESSAGE = 'Journal lines are spaced. Wait, then write again.';
 
 /** The thought a sleep plan carries: one `sleep` action and no words. */
 const SLEEP_THOUGHT = { reasoning: 'sleep', actions: [{ do: 'sleep' }] } as Thought;
@@ -198,9 +200,15 @@ function sleepPlanOf(expiresAfterTicks: number) {
     buildPlan({ thought: SLEEP_THOUGHT, thoughtId: newId('th'), snapshot, expiresAfterTicks });
 }
 
-/** Mirrors one journal line and records the call (spec 5.15.3: journal publishes a sovereign_call). */
+/**
+ * Mirrors one journal line and records the call (spec 5.15.3: journal publishes a sovereign_call). A line
+ * inside the player's journal spacing is refused before anything is written or recorded.
+ */
 async function journalAndRecord(deps: Wired, call: ToolCall, text: string) {
   const started = deps.now();
+  if (!deps.limiter.take(`journal:${call.lifeId}`, started).allowed) {
+    throw new ToolError('rate_limited', JOURNAL_RATE_MESSAGE);
+  }
   const result = await journalTool(deps, call, { text });
   const balance = await deps.budget.balance(call.lifeId, started);
   const record: SovereignCallPayload = {

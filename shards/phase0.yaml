@@ -130,6 +130,7 @@ sovereign:
     calls_per_minute: 60         # per player
     act_min_seconds: 2           # the least gap between two acts of one player
     say_min_seconds: 3           # the least gap between two says of one player
+    journal_min_seconds: 5       # the least gap between two journal lines of one player
     owner_calls_per_minute: 600  # per owner
     failed_auth_per_minute: 30   # per client address; the global limit is 300 a minute, in code
     handshake_per_minute: 300    # per player; initialize, resources/read and the other non-call methods (optional, default 300)
