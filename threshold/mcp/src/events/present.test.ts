@@ -16,6 +16,13 @@ it('never shows a plan_result entry to the player, in events or in world text', 
   expect(worldText([internal])).toEqual({});
 });
 
+it('shows a neutral wake as a plain line, not as a failed intent', () => {
+  const wake: SimEvent = { seq: 9, tick: 9, atMs: 9, kind: 'wake', wakeOn: null };
+  expect(toPlayerEvents([wake])).toEqual([
+    { seq: 9, tick: 9, type: 'wake', text: 'You wake with nothing underway.' },
+  ]);
+});
+
 function line(seq: number, text: string): SimEvent {
   return {
     seq,

@@ -1722,7 +1722,8 @@ export const mcpToolSchemas: Record<
                 "proposal",
                 "day_night",
                 "intent_finished",
-                "reflex"
+                "reflex",
+                "wake"
               ]
             },
             "tick": {
@@ -2159,7 +2160,8 @@ export const mcpToolSchemas: Record<
                 "proposal",
                 "day_night",
                 "intent_finished",
-                "reflex"
+                "reflex",
+                "wake"
               ]
             },
             "tick": {

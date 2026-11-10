@@ -200,7 +200,8 @@ export interface McpPlayerEvent {
     | "proposal"
     | "day_night"
     | "intent_finished"
-    | "reflex";
+    | "reflex"
+    | "wake";
   tick: number;
   text: string;
 }
