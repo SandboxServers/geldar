@@ -85,7 +85,7 @@ describe('runSequence', () => {
     const out = await runSequence(r.deps, r.run);
     expect(out).toEqual({ status: 'completed', bodyKills: 1, reportFailed: false });
     expect(r.sup.count('restartStack')).toBe(1);
-    expect(r.sup.count('killBody')).toBe(1);
+    expect(r.sup.count('restartBody')).toBe(1);
     expect(r.reporter.runs).toEqual(['run-1']);
     const lines = r.lines();
     expect(samples(lines).map((l) => l.minute)).toEqual(range(1, 30));
@@ -120,7 +120,7 @@ describe('runSequence', () => {
     const r = rig('smoke', { intent: () => 'intent-1' }, { bodyKillAtMs: START_MS + 5 * MIN });
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'completed', bodyKills: 1 });
-    expect(r.sup.count('killBody')).toBe(1);
+    expect(r.sup.count('restartBody')).toBe(1);
     expect(events(r.lines(), 'body_kill')).toHaveLength(1);
   });
 
@@ -128,7 +128,7 @@ describe('runSequence', () => {
     const r = rig('smoke', { intent: () => null }, { bodyKillAtMs: START_MS + 10 * MIN });
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'completed', bodyKills: 0 });
-    expect(r.sup.count('killBody')).toBe(0);
+    expect(r.sup.count('restartBody')).toBe(0);
     expect(events(r.lines(), 'body_kill')).toHaveLength(0);
   });
 
@@ -185,7 +185,7 @@ describe('runSequence', () => {
     );
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'aborted', rule: 'body_not_recovered', bodyKills: 1 });
-    expect(r.sup.count('killBody')).toBe(1);
+    expect(r.sup.count('restartBody')).toBe(1);
   });
 
   it('aborts with error when the sampler fails, and still runs the safe stop and the report', async () => {

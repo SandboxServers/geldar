@@ -272,7 +272,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
       killDone = true;
       bodyKills++;
       try {
-        await supervisor.killBody();
+        await supervisor.restartBody();
       } catch (err) {
         return abortWith('error', `body kill failed: ${message(err)}`);
       }

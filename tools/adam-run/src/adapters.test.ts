@@ -157,14 +157,14 @@ describe('the supervisor and reporter argument arrays', () => {
 
   it('the Body kill runs adam-cli restart-body through node, with an argument array', async () => {
     const { runner, calls } = recordingRunner();
-    await createSupervisor(runner, '/repo').killBody();
+    await createSupervisor(runner, '/repo').restartBody();
     expect(calls.map((c) => [c.file, c.args.slice(1)])).toEqual([['node', ['restart-body']]]);
     expect(calls[0]?.args[0]).toBe(join('/repo', 'tools', 'adam-cli', 'src', 'cli.ts'));
   });
 
   it('a refused Body restart throws, so the sequence aborts', async () => {
     const { runner } = recordingRunner(1);
-    await expect(createSupervisor(runner, '/repo').killBody()).rejects.toThrow(
+    await expect(createSupervisor(runner, '/repo').restartBody()).rejects.toThrow(
       /restart-body exited 1/,
     );
   });

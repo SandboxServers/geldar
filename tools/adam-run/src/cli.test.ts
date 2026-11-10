@@ -33,8 +33,8 @@ function recordingSupervisor(calls: string[]): Supervisor {
     restartStack: async () => {
       calls.push('restartStack');
     },
-    killBody: async () => {
-      calls.push('killBody');
+    restartBody: async () => {
+      calls.push('restartBody');
     },
     stop: async (service: Service) => {
       calls.push(`stop:${service}`);

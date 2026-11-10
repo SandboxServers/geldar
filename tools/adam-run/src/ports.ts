@@ -46,14 +46,14 @@ export interface Processes {
   signal(pid: number, force: boolean): void;
 }
 
-/** The supervisor actions. The Body is restarted by the supervisor after `killBody`; the protocol only waits for it. */
+/** The supervisor actions. `restartBody` ends the Body process and respawns it through `adam-cli restart-body`; the protocol only waits for `body_started`. */
 export interface Supervisor {
   /** The existing start path: `./geldar.ps1 adam up`. Never used for live cases. */
   up(): Promise<void>;
   /** The planned restart: stops and starts the stack through the supervisor. */
   restartStack(): Promise<void>;
-  /** A harness-injected Body kill, used mid-intent. The moment is recorded by the caller. */
-  killBody(): Promise<void>;
+  /** A harness-injected Body restart, used mid-intent. The moment is recorded by the caller. */
+  restartBody(): Promise<void>;
   /** Stops one service through the existing stop path. */
   stop(service: Service): Promise<void>;
 }

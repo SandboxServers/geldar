@@ -300,7 +300,7 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
         'docker compose restart',
       );
     },
-    async killBody() {
+    async restartBody() {
       // `restart-body` ends only the Body and starts a fresh one: nothing else restarts a killed Body process.
       check(await adam(['restart-body']), 'adam restart-body');
     },

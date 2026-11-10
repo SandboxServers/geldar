@@ -177,8 +177,8 @@ export class FakeSupervisor implements Supervisor {
     this.s.stackDownUntil = this.clock.nowMs() + 3 * MIN;
     this.s.lifeId = this.s.lifeAfterRestart;
   }
-  async killBody(): Promise<void> {
-    this.calls.push('killBody');
+  async restartBody(): Promise<void> {
+    this.calls.push('restartBody');
     this.s.bodyDownUntil = this.s.bodyNeverBack
       ? Number.POSITIVE_INFINITY
       : this.clock.nowMs() + 2 * MIN;
