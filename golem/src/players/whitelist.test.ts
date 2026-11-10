@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type AdmissionRcon, admissionOnly, admitLife, admitLifeOverRcon } from './whitelist.ts';
+import {
+  type AdmissionRcon,
+  admissionOnly,
+  admitLife,
+  admitLifeOverRcon,
+  removeLife,
+  removeLifeOverRcon,
+} from './whitelist.ts';
 
 /** A fake RCON that records each command and answers with `reply`. */
 function fakeRcon(reply: string): {
@@ -85,5 +92,37 @@ describe('admitLifeOverRcon', () => {
       /unexpected reply/,
     );
     expect(conn.state.closed).toBe(true);
+  });
+});
+
+describe('removeLife', () => {
+  it('sends whitelist remove for the life id and accepts Removed', async () => {
+    const rcon = fakeRcon('Removed ag_jason_01 from the whitelist');
+    await removeLife(rcon.source, 'ag_jason_01');
+    expect(rcon.sent).toEqual(['whitelist remove ag_jason_01']);
+  });
+
+  it('resolves when the player was not whitelisted (idempotent)', async () => {
+    const rcon = fakeRcon('Player is not whitelisted');
+    await expect(removeLife(rcon.source, 'ag_billy_01')).resolves.toBeUndefined();
+  });
+
+  it('throws on a reply it does not recognise', async () => {
+    const rcon = fakeRcon('Unknown command');
+    await expect(removeLife(rcon.source, 'ag_trini_01')).rejects.toThrow(/unexpected reply/);
+  });
+});
+
+describe('removeLifeOverRcon', () => {
+  it('closes the connection after a removal, and after a failed one', async () => {
+    const ok = fakeConnection('Removed ag_jason_01 from the whitelist');
+    await removeLifeOverRcon(async () => ok.connection, 'ag_jason_01');
+    expect(ok.sent).toEqual(['whitelist remove ag_jason_01']);
+    expect(ok.state.closed).toBe(true);
+    const bad = fakeConnection('Unknown command');
+    await expect(removeLifeOverRcon(async () => bad.connection, 'ag_trini_01')).rejects.toThrow(
+      /unexpected reply/,
+    );
+    expect(bad.state.closed).toBe(true);
   });
 });
