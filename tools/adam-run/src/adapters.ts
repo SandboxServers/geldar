@@ -13,6 +13,8 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   statfsSync,
   writeFileSync,
 } from 'node:fs';
@@ -72,9 +74,21 @@ export function createFileStore(runDir: string): FileStore {
       return existsSync(full) ? readFileSync(full, 'utf8') : null;
     },
     write: (path, text) => {
+      // Write a sibling temp file, then rename it over the target, so a failed write leaves the old file whole.
       const full = inside(path);
       mkdirSync(dirname(full), { recursive: true });
-      writeFileSync(full, text, 'utf8');
+      const temp = `${full}.tmp`;
+      try {
+        writeFileSync(temp, text, 'utf8');
+        renameSync(temp, full);
+      } catch (error) {
+        try {
+          rmSync(temp, { force: true });
+        } catch {
+          // Not a file we can remove; the write error is the one to report.
+        }
+        throw error;
+      }
     },
     append: (path, text) => {
       const full = inside(path);

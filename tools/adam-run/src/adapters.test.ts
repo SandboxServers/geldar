@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -317,6 +317,20 @@ describe('the run-folder file store', () => {
     expect(files.read(path)).toBe('a\nb\n');
     writeFileSync(join(runDir, 'x.txt'), 'y');
     expect(files.read(join(runDir, 'x.txt'))).toBe('y');
+  });
+
+  it('replaces a file by rename, and a failing write leaves the previous file whole', () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'adam-run-'));
+    const files = createFileStore(runDir);
+    const path = join(runDir, 'manifest.json');
+    files.write(path, 'first\n');
+    files.write(path, 'second\n');
+    expect(files.read(path)).toBe('second\n');
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+    // A directory where the temp file goes makes the write fail before the rename.
+    mkdirSync(`${path}.tmp`);
+    expect(() => files.write(path, 'third\n')).toThrow();
+    expect(files.read(path)).toBe('second\n');
   });
 });
 
