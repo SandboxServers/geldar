@@ -25,6 +25,7 @@ import {
 } from './render-memory.ts';
 import { renderSnapshot } from './render-snapshot.ts';
 import { fill, loadTemplate, type ParsedTemplate, refuseUnknownSlots } from './template.ts';
+import { wakeWording } from './wake-wording.ts';
 import {
   fitEscaped,
   promptCost,
@@ -326,7 +327,7 @@ function renderThought(
     days_since_sleep: String(self.days_since_sleep),
     credits: String(self.budget_remaining_thoughts),
     thinking_left: String(self.budget_remaining_thoughts),
-    wake_reason: vars.wake.reason,
+    wake_reason: wakeWording(vars.wake.reason),
     recent_thoughts: renderLines(memory.journal),
     intent_state:
       vars.snapshot.current_plan === null || vars.snapshot.current_plan === undefined

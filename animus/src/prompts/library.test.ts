@@ -195,7 +195,10 @@ describe('prompt library', () => {
     expect(system?.content).toContain('Your name is Adam.');
     expect(system?.content).toContain('Built-in routines and actions:');
     expect(user?.content).toContain('Your goals, in order:');
-    expect(user?.content).toContain('Why you were woken: idle');
+    expect(user?.content).toContain(
+      'Why you were woken: it had been quiet for a while and you had no plan running',
+    );
+    expect(user?.content).not.toMatch(/Why you were woken: [a-z]+_[a-z_]+|\bidle\b/);
     expect(system?.content).not.toContain('Why you were woken');
     expect(user?.content).not.toContain('Your name is');
   });
@@ -270,7 +273,7 @@ describe('prompt library', () => {
       People nearby and what you think of them: see the lines marked person in QUOTED WORLD TEXT.
 
       You have been alive 3 days. Days since you slept: 1. Strength left for thinking: 90.
-      Why you were woken: idle
+      Why you were woken: it had been quiet for a while and you had no plan running
       Recent thoughts, oldest first:
       (none)
       Current intent and its state: none, you are not pursuing anything right now.
