@@ -252,7 +252,7 @@ function Invoke-Mcp([string[]] $McpArgs) {
 # glass and adam-run (W6-13). Both are thin: tools/glass-ctl holds the Glass logic, tools/adam-run/src/cli.ts the run protocol.
 function Invoke-GlassCtl([string[]] $GlassArgs) {
   # Glass reads its password from the file this variable names; this script never opens it. Restored in finally.
-  $savedPasswordFile = $env:GELDAR_GLASS_PG_PASSWORD_FILE
+  $saved = @{ GELDAR_GLASS_PG_PASSWORD_FILE = $env:GELDAR_GLASS_PG_PASSWORD_FILE }
   Push-Location $Root
   try {
     $env:GELDAR_GLASS_PG_PASSWORD_FILE = Join-Path $Root 'compose/secrets/postgres-glass.txt'
@@ -260,7 +260,7 @@ function Invoke-GlassCtl([string[]] $GlassArgs) {
     $code = $LASTEXITCODE
   }
   finally {
-    $env:GELDAR_GLASS_PG_PASSWORD_FILE = $savedPasswordFile
+    foreach ($name in $saved.Keys) { Set-Item -Path "Env:$name" -Value $saved[$name] }
     Pop-Location
   }
   exit $code

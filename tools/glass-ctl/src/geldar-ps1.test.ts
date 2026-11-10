@@ -56,8 +56,11 @@ describe('geldar.ps1 glass and adam-run block', () => {
     expect(assigned).toContain('GELDAR_GLASS_PG_PASSWORD_FILE');
     const restores = finallyBodies(block).join('\n');
     for (const name of assigned) {
-      expect(restores, `$env:${name} is set but not restored in a finally`).toMatch(
-        new RegExp(`\\$env:${name}\\s*=`),
+      expect(block, `$env:${name} is not saved in the $saved hashtable before it is set`).toMatch(
+        new RegExp(`\\$saved = @\\{[^}]*\\b${name} = \\$env:${name}\\b`),
+      );
+      expect(restores, `$env:${name} is set but not restored in a finally`).toContain(
+        '$saved.Keys',
       );
     }
   });
