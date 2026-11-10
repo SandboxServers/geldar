@@ -87,11 +87,20 @@ jobs:
           if [ -f compose/.env.example ] && [ ! -f compose/.env ]; then
             cp compose/.env.example compose/.env
           fi
+          # Overlays (rcon-host.yml, nats-auth.yml) only add to a base file, so each is checked merged
+          # with its base, the same chains as ./geldar.ps1 check.
           for f in "${files[@]}"; do
+            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml) continue ;; esac
             echo "::group::$f"
             docker compose -f "$f" config --quiet
             echo "::endgroup::"
           done
+          echo "::group::phase0.yml with rcon-host.yml"
+          docker compose -f compose/phase0.yml -f compose/rcon-host.yml config --quiet
+          echo "::endgroup::"
+          echo "::group::phase0.yml with mcp.yml and nats-auth.yml"
+          docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml config --quiet
+          echo "::endgroup::"
 
   sql:
     name: sql
