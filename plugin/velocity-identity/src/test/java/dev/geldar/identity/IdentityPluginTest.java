@@ -19,11 +19,14 @@ import com.velocitypowered.api.scheduler.ScheduledTask;
 import com.velocitypowered.api.scheduler.Scheduler;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.helpers.NOPLogger;
 
 /** Drives the event handlers with Player doubles; no proxy runs. */
@@ -181,4 +184,15 @@ class IdentityPluginTest {
         assertEquals(1, schedules.scheduled.get());
         bare.onProxyShutdown(new ProxyShutdownEvent());
         assertEquals(1, schedules.cancelled.get(), "shutdown cancels the summary task");
-    }}
+    }
+
+    @Test
+    void aMissingNatsUrlNeverWritesTheMarker(@TempDir Path dir) {
+        Path file = dir.resolve("geldar-identity.ready");
+        ReadyMarker marker = new ReadyMarker(file, () -> "4242 777");
+        IdentityPlugin bare = new IdentityPlugin(new SchedulerLog().proxy(), NOPLogger.NOP_LOGGER, () -> null,
+                new SkinRegistry(NOPLogger.NOP_LOGGER), marker);
+        bare.onProxyInitialization(new ProxyInitializeEvent());
+        assertFalse(Files.exists(file), "no NATS connection, so the proxy must not claim readiness");
+    }
+}
