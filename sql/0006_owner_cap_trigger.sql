@@ -13,6 +13,15 @@ DECLARE
   owner_cap INT;
   counted INT;
 BEGIN
+  -- Retired rows never count. On an update, a row that already counted and keeps its owner
+  -- changes nothing, so it passes without the lock. The OLD test lives here, not in a WHEN clause,
+  -- because an INSERT trigger's WHEN may not reference OLD.
+  IF NEW.status = 'retired' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' AND OLD.status <> 'retired' AND OLD.owner_id = NEW.owner_id THEN
+    RETURN NEW;
+  END IF;
   SELECT player_cap INTO owner_cap FROM mcp_owners WHERE owner_id = NEW.owner_id FOR UPDATE;
   IF owner_cap IS NULL THEN
     RAISE EXCEPTION 'owner % does not exist', NEW.owner_id USING ERRCODE = 'foreign_key_violation';
@@ -31,8 +40,6 @@ $fn$;
 CREATE TRIGGER mcp_players_owner_cap
 BEFORE INSERT OR UPDATE OF status, owner_id ON mcp_players
 FOR EACH ROW
-WHEN (NEW.status <> 'retired'
-      AND (OLD IS NULL OR OLD.status = 'retired' OR OLD.owner_id <> NEW.owner_id))
 EXECUTE FUNCTION mcp_enforce_owner_cap();
 
 INSERT INTO schema_migrations (version) VALUES ('0006') ON CONFLICT DO NOTHING;
