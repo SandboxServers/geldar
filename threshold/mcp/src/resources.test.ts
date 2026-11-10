@@ -1,4 +1,4 @@
-import type { SimEvent } from '@geldar/mcp-mock';
+import { listTools, type SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { FakeBudgetLedger, FakeJournalStore, FakePlayerEventLog } from './fakes/stores.fakes.ts';
 import { FakeBody } from './fakes/world.fakes.ts';
@@ -16,6 +16,8 @@ import { lookTool, type ToolCall, WORLD_TEXT_NOTE } from './tools/look.ts';
 import { sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
 import { NOT_AVAILABLE_MESSAGE } from './tools/unavailable.ts';
+import { BODY_UNAVAILABLE_MESSAGE, NOT_WIRED_MESSAGE, UNKNOWN_PLAYER_MESSAGE } from './world.ts';
+import { KEEPALIVE_TEXT } from './world-session.ts';
 
 const LIFE = 'ag_ranger_01';
 const CALL: ToolCall = { playerId: 'ag-ranger-01', lifeId: LIFE };
@@ -137,7 +139,15 @@ describe('no tool or resource says or implies that humans are watching', () => {
         text: 'y',
       } as unknown as SimEvent);
     }
-    const strings: string[] = [WORLD_TEXT_NOTE, NOT_AVAILABLE_MESSAGE];
+    const strings: string[] = [
+      WORLD_TEXT_NOTE,
+      NOT_AVAILABLE_MESSAGE,
+      BODY_UNAVAILABLE_MESSAGE,
+      UNKNOWN_PLAYER_MESSAGE,
+      NOT_WIRED_MESSAGE,
+      KEEPALIVE_TEXT,
+      ...allStrings(listTools()),
+    ];
     strings.push(
       ...allStrings(await lookTool({ body, budget, sleeps, now }, CALL)),
       ...allStrings(
