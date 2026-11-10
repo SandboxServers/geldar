@@ -241,3 +241,79 @@ Reading order for a coder: the card, the two pre-wave decisions it names ([0078]
 - `./geldar.ps1 check` exit 0.
 
 **Index line to add (handoff):** `index: | [0120](0120-credit-reserve-and-refund-rules.md) | Credits: reserve before dispatch, refund on failure | Proposed |`
+
+---
+
+### P1-C4-05 shrine and birth: bounded pool, idempotent offers, server-allocated life IDs
+
+- **id:** P1-C4-05
+- **wave:** C4
+- **lane:** E (Shrine and birth)
+- **depends-on:** P1-C4-00 (the `life.started`, `life.ended` and `credit.*` shapes); C3-05 (the `prepared` receipt, which the duplicate-offer rule needs); decision 0079 confirmed for the tariff table and the pool size (the mechanism is built with them as shard config keys, the values wait for the owner)
+- **status:** B (mechanism); O (tariff and pool values, 0079)
+- **decisions:** 0121 (shrine pool, offers and server-allocated life IDs for births). Decision 0126 is reserved for the Shrine exit-wording ruling and is not used here.
+- **size:** L (two sessions: the shrine is one mechanism, birth and life IDs are another; the shrine items commit first)
+- **may-edit:** `plugin/core/src/main/java/dev/geldar/core/shrine/**` (create if it does not exist, and say so in the report), `plugin/core/src/main/java/dev/geldar/core/life/**` (create if it does not exist: life ID allocation and birth), `golem/src/life/**` (create if it does not exist: the Body's life state, read only from the server), `golem/src/actions/**` (the `offer` and `give` actions), `sql/` (one new migration for the shrine pool ledger and the life table; the next free number after the migration C4-02a adds; the index line goes to the ops merge step), `docs/analysis/phase1/worknotes/P1-C4-05.md`.
+- **must-not-edit:** section 0 list; `animus/**` (the Mind receives life IDs and never allocates them); `plugin/core` outside the shrine, life and the Geldar-Core protection path; `golem/src/bench/**`; the spawn-protection settings in the shard config.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C4-05.md`
+- **commit:** per item (1 pool and tariff as config keys, 2 offer and give with receipts and the duplicate no-op, 3 life ID allocation and the life table, 4 death and birth with distinct life IDs, 5 Cradle headroom).
+
+**Numbered steps**
+
+1. Pool (spec 5.7, the Shrine, around line 654): each shard has a fixed daily issuance pool. Offers during the day earn shares, weighted by the tariff table; the pool is paid out at the next in-game dawn. The pool size and the tariff table are shard config keys; the values are set only after 0079 is confirmed. Settlement writes `credit.settled` entries with integer amounts. The sum of shares paid never exceeds the pool (the bound).
+2. Offer and give: `offer(item, count)` at a Shrine is an economic action. The Body's `give` moves the items, and the server writes two receipts, one per side (0020). An `offer` repeated with the same action id is a no-op: it returns the first call's `prepared` receipt, moves no items and adds no shares. This needs the `prepared` receipt from C3-05.
+3. Ledger text: `read_sign` at the Shrine returns the public ledger (totals and offers only). The ledger text is agent-visible, so it follows 0058 and 0068 and passes the scans in section 0. It never shows Glass, BlueMap or operator data.
+4. Life IDs: the server allocates an opaque `lf_` ID when an agent is born (birth source `spawn`, `cradle` or `replacement`). The Body and the Mind receive the ID in `life.started`. The Body's action set has no field for an ID.
+5. Death and birth: a death writes `life.ended` for life L1. The birth that follows writes `life.started` for a new life L2 with parent life L1 (or null for a first life). L1 and L2 are distinct; the exit (spec 1418) needs both.
+6. Cradle headroom (spec 5.7, population around line 687): replacement births never consume the reserved Cradle headroom (default 10% of target). A test fills the population to the replacement line and asserts that the headroom stays open.
+7. The Shrine block pattern stays under Geldar-Core protection (spec, world settings, around line 283). This card does not change spawn protection.
+
+**Acceptance checks**
+
+- Test `shrine: a duplicate offer with the same action id is a no-op`. Revert-check: remove the `prepared` receipt lookup in the offer path. The second offer then adds shares again; the test must fail; restore.
+- Test `shrine: total shares paid never exceed the daily pool`. Revert-check: remove the pool cap at settlement. The test must fail; restore.
+- Test `give: both sides of an offer get a receipt` (0020).
+- Test `life: the server allocates life IDs and the Body cannot supply one`.
+- Test `birth: a death and its replacement birth have distinct life IDs and a parent link`. Revert-check: reuse the life ID at rebirth. The test must fail; restore.
+- Test `birth: replacement births leave the Cradle headroom open`.
+- Knowledge-boundary scan on the `read_sign` ledger text (`contract/test/agent-visible-text.test.ts`).
+- The migration applies on a fresh database and on the Phase 0 snapshot (`tools/migrate`).
+- `./geldar.ps1 check` exit 0.
+
+**Index line to add (handoff):** `index: | [0121](0121-shrine-pool-offers-and-server-life-ids.md) | Shrine pool, idempotent offers, and server-allocated life IDs for births | Proposed |`
+
+---
+
+### P1-C4-06 prompt v5 and wake wording: due_tick, damage in flight, suppressed wakeups
+
+- **id:** P1-C4-06
+- **wave:** C4
+- **lane:** C (hibernation and prompts; serialised after P1-C4-03, because both edit `animus/`)
+- **depends-on:** P1-C4-01 (the "speech heard" wake and its counter), P1-C4-02b (the skill-library slot in the prompt build), P1-C4-03 (the reflection and hibernation changes in `animus/`)
+- **status:** B
+- **decisions:** 0122
+- **size:** M (about 40k)
+- **may-edit:** `animus/src/prompts/**` (a new version directory and the version bump; the template registry), `prompts/**` (the versioned template directory if it lives outside `animus/`; verify the path on the wave branch first and report it), `animus/src/attention/**` (the wake wording and the `suppressed_wakeups` reason), `animus/test/**` (prompt and wake tests), `docs/analysis/phase1/worknotes/P1-C4-06.md`.
+- **must-not-edit:** section 0 list; every released template version (v1 to v4): they are never edited, only superseded; `contract/src/agent-text.ts` (the marker list belongs to C4-00); `golem/**`; `plugin/**`; `threshold/**`.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C4-06.md`
+- **commit:** per item (1 prompt v5 as a new version, 2 due_tick in the prompt, 3 damage re-raise and suppressed-wakeup reasons, 4 wake wording and the scans).
+
+**Numbered steps**
+
+1. Prompt v5 is a new template version with its own directory and a version bump in the registry (0068). Released versions v1 to v4 are not edited. A golden test records the content hash of each released template, so an edit to one fails the build.
+2. `due_tick`: the prompt shows the tick at which the agent's current intent is next due (the next wake the Body expects). The value is read from the intent, not computed in the prompt.
+3. Damage in flight: when the agent takes damage while a thought is in flight, the wake is re-raised after that thought returns. It is not dropped and not merged silently.
+4. `suppressed_wakeups`: a wakeup that the attention rule (C4-01) suppresses records its reason (for example `absorbed-by-intent`, `budget`, `dim`) in the journal. The agent-visible text says only what happened in the world ("you were busy with the walk"), never the reason code.
+5. Wake wording: the "speech heard" wake uses in-world words only. It contains no word from the marker list and no server, budget or wakeup term.
+6. Run the prompt scan and the agent-visible text scan on v5 and on every new wake string.
+
+**Acceptance checks**
+
+- Test `prompt: v5 is a new version and released v1 to v4 are byte-identical`. Revert-check: edit a released template. The golden test must fail; restore.
+- Test `wake: damage taken during a thought re-raises the wake`. Revert-check: drop the re-raise. The test must fail; restore.
+- Test `wake: a suppressed wakeup records its reason in the journal and the agent sees no reason code`.
+- Test `prompt: due_tick matches the intent's next due tick`.
+- Knowledge-boundary scans on v5 and the wake strings (section 0).
+- `./geldar.ps1 check` exit 0.
+
+**Index line to add (handoff):** `index: | [0122](0122-prompt-v5-and-wake-wording.md) | Prompt v5, due_tick, damage re-raise, and suppressed-wakeup reasons | Proposed |`
