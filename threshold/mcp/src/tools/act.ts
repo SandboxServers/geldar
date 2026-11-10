@@ -19,6 +19,7 @@ import {
   type PresenceStore,
   type RateLimiter,
 } from '../ports.ts';
+import { bestEffortPresence } from '../presence-write.ts';
 
 /** A tool failure the player sees: a code and a fixed message, never echoing world text. */
 export class ActToolError extends Error {
@@ -48,6 +49,8 @@ export interface ActDeps {
   clock: Clock;
   /** `plan.expires_after_ticks` from the config. */
   expiresAfterTicks: number;
+  /** Receives the cause of a presence write that failed; the refusal stands without it. */
+  log?: (line: Record<string, unknown>) => void;
 }
 
 /** The `act` input as the tool receives it, before the contract's union narrows it. */
@@ -250,7 +253,9 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     if (reserved)
       remaining = await deps.budget.refund(caller.lifeId, batchCost(kindsOf(survivors)));
     if (!(err instanceof BodyUnavailable)) throw err;
-    await deps.presence.wantBody(caller.lifeId, deps.clock.nowMs());
+    await bestEffortPresence(deps.log, () =>
+      deps.presence.wantBody(caller.lifeId, deps.clock.nowMs()),
+    );
     outcome = 'error';
     await recordCall(deps, callPayload(caller, input, result, remaining, started, deps, outcome));
     throw new ActToolError(

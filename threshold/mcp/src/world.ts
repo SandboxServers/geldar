@@ -32,6 +32,7 @@ import {
   type SleepMarks,
 } from './ports.ts';
 import type { KvPresenceStore } from './presence.ts';
+import { bestEffortPresence } from './presence-write.ts';
 import { type ActArgs, ActToolError, actTool } from './tools/act.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './tools/journal.ts';
 import { lookTool, type ToolCall } from './tools/look.ts';
@@ -86,6 +87,8 @@ export interface WorldDeps {
   expiresAfterTicks: number;
   /** The laws in force, as sign lines, for `status`. */
   laws: readonly string[];
+  /** Receives the cause of a presence write that failed; the call goes on without it. */
+  log?: (line: Record<string, unknown>) => void;
 }
 
 /** The world as the server uses it: the tool handlers, and a `close` that stops the settle timer. */
@@ -135,11 +138,13 @@ function bound(deps: Wired, run: Run): ToolHandler {
   return (input, ctx) =>
     guarded(async () => {
       const call = await callerOf(deps, ctx);
-      await deps.presence.touch(call.lifeId);
+      await bestEffortPresence(deps.log, () => deps.presence.touch(call.lifeId));
       try {
         return await run(call, input, ctx);
       } catch (err) {
-        if (err instanceof BodyUnavailable) await deps.presence.wantBody(call.lifeId, deps.now());
+        if (err instanceof BodyUnavailable) {
+          await bestEffortPresence(deps.log, () => deps.presence.wantBody(call.lifeId, deps.now()));
+        }
         throw err;
       }
     });
