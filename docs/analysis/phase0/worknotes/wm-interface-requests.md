@@ -110,3 +110,32 @@ file. Follow-ups, each for the orchestrator to schedule:
    It is not a placeholder. Re-check it at the next base-image update.
 4. **Decision 0053 (owner).** The public-hostname decision is reserved, not written. `compose/mcp.yml`
    and the threat model refer to it. The tunnel stays unrun until the owner takes it.
+
+## WM-11a
+
+Done (branch `wave-m/wm-11-integration`):
+
+- Interface requests against the WM-01 ports (`9d31d96`): `PresenceStore.touch`, `PlayerEventLog.head`
+  for the say start cursor, `SleepMark` and `AgentProfile` moved into `ports.ts`, the `book_id`
+  pattern `^bk_[a-z0-9_]{1,61}$`, `wait` `max_seconds` validation, and a constant-time fake token store.
+- `body-gateway.ts` (`f23a155`): one animus `NatsBodyLink` per life for snapshot and plan, and the
+  `book` request with a 5 s window. The gateway asks only the snapshot, plan and book subjects. Every
+  failure, a timeout, a missing responder or an invalid reply, rejects with `BodyUnavailable`.
+- Stream ingest (`d25f20d`): every message is checked against the WorldEvent envelope before it is
+  routed, and `day_night` payloads against their schema. Invalid messages are counted and dropped
+  without a throw. The consumer subscribes to the Mind subjects plus `sovereign_call` and `day_night`.
+- `presence.ts` (`2ac9210`): `openPresenceBucket` creates `geldar-presence` when it is missing; the
+  KV store writes awake, dim and hibernating records (`presenceAt`: 60 s and 10 min) that match the
+  presence record schema. `settle` keeps the last touch time, so the state ages.
+- Revert checks (mutation of one line each, restored from a backup copy, `git diff --stat` empty):
+  untrusted-event validation fails `drops a day_night event whose envelope or payload is not the
+  contract shape`; player-id binding fails `refuses a token for another player`; the BodyUnavailable
+  mapping fails `maps a timeout or a missing responder to BodyUnavailable`; presence
+  create-before-open fails `creates the presence bucket when the host has not yet opened it`.
+
+Left for finisher B: world.ts (14 handlers, keepalive, logging capability), worknote final pass.
+Wiring the finisher must do: call `KvPresenceStore.touch` and `wantBody` from the tool handlers, and call
+`settle` for each life on a timer (the dim and hibernate states are written only by `settle`).
+The `day_night` publisher is not written yet; the consumer only reads it.
+
+Left for 11b: main.ts, cli.ts, golem extraServe wiring, image build test, e2e.
