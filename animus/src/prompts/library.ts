@@ -25,6 +25,7 @@ import {
 } from './render-memory.ts';
 import { renderSnapshot } from './render-snapshot.ts';
 import { fill, loadTemplate, type ParsedTemplate, refuseUnknownSlots } from './template.ts';
+import { wakeWording } from './wake-wording.ts';
 import {
   fitEscaped,
   promptCost,
@@ -97,6 +98,7 @@ const THOUGHT_SLOTS: Record<number, string[]> = {
     'days',
     'days_since_sleep',
     'credits',
+    'thinking_left',
     'wake_reason',
     'recent_thoughts',
     'intent_state',
@@ -120,8 +122,11 @@ const REFLECTION_SLOTS: Record<number, string[]> = {
   ],
 };
 
-/** The thought template a new Mind renders: `thought/v2.md`. `thought/v1.md` stays loadable. */
-export const DEFAULT_THOUGHT_VERSION = 2;
+/**
+ * The thought template a new Mind renders: `thought/v4.md`. `thought/v1.md` to `v3.md` stay loadable
+ * (v2 and v3 use the `credits` slot, which the renderer still fills).
+ */
+export const DEFAULT_THOUGHT_VERSION = 4;
 
 /** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
 export const DEFAULT_REFLECTION_VERSION = 2;
@@ -321,7 +326,8 @@ function renderThought(
     days: String(vars.snapshot.world_time.day),
     days_since_sleep: String(self.days_since_sleep),
     credits: String(self.budget_remaining_thoughts),
-    wake_reason: vars.wake.reason,
+    thinking_left: String(self.budget_remaining_thoughts),
+    wake_reason: wakeWording(vars.wake.reason),
     recent_thoughts: renderLines(memory.journal),
     intent_state:
       vars.snapshot.current_plan === null || vars.snapshot.current_plan === undefined

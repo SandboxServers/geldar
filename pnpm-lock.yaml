@@ -415,6 +415,9 @@ importers:
 
   tools/mcp-tokens:
     dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../../contract
       '@geldar/mcp':
         specifier: workspace:*
         version: link:../../threshold/mcp

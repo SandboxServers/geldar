@@ -203,6 +203,7 @@ export async function startMind(
       prompts: createPromptLibrary({
         thoughtBudgetTokens: config.mind.promptBudgetTokens,
         maxBeliefs: config.mind.maxBeliefs,
+        thoughtVersion: config.mind.thoughtVersion,
       }),
       validator: createOutputValidator({
         worldBorderRadius: config.bounds.worldBorderRadius,
