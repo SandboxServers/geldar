@@ -3,8 +3,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { McpConfig } from '../config.ts';
 import { FakeTokenStore } from '../fakes/stores.fakes.ts';
-import type { MissReason, PlayerRecord, RateDecision, RateLimiter } from '../ports.ts';
-import { tokenDigest } from './auth.ts';
+import type {
+  MissReason,
+  PlayerRecord,
+  RateDecision,
+  RateLimiter,
+  ResolvedToken,
+} from '../ports.ts';
+import { MISS_CACHE_MS, MissCache, tokenDigest } from './auth.ts';
 import type { FrontDoor } from './front.ts';
 import { createFrontDoor } from './front.ts';
 
@@ -55,7 +61,13 @@ function player(playerId: string, status: PlayerRecord['status'] = 'active'): Pl
 /** A store that counts the explanations asked for, and can be made to fail when asked. */
 class ExplainSpy extends FakeTokenStore {
   calls = 0;
+  lookups = 0;
   failExplain = false;
+
+  override async resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null> {
+    this.lookups += 1;
+    return super.resolve(tokenHash, nowMs);
+  }
 
   override async explainMiss(tokenHash: Uint8Array, nowMs: number): Promise<MissReason> {
     this.calls += 1;
@@ -252,5 +264,39 @@ describe('refusal reasons in the log', () => {
     expect(store.calls).toBe(0);
     await send('/p/aa', { Authorization: `Bearer ${UNKNOWN}` });
     expect(store.calls).toBe(1);
+  });
+
+  it('answers a repeated refused bearer from the miss cache, with no second lookup', async () => {
+    for (let i = 0; i < 3; i++) await send('/p/aa', { Authorization: `Bearer ${UNKNOWN}` });
+    expect(store.lookups).toBe(1);
+    expect(store.calls).toBe(1);
+  });
+
+  it('asks the store why for one uncached miss in eight, not for each', async () => {
+    for (let i = 0; i < 16; i++) {
+      await send('/p/aa', { Authorization: `Bearer ${UNKNOWN}-${i}-0123456789abcdef` });
+    }
+    expect(store.lookups).toBe(16);
+    expect(store.calls).toBe(2);
+  });
+});
+
+describe('MissCache', () => {
+  const DIGEST = new Uint8Array([1, 2, 3]);
+
+  it('remembers a refused digest until its window closes, then forgets it', () => {
+    const misses = new MissCache();
+    misses.remember(DIGEST, 'token_revoked', 0);
+    expect(misses.get(DIGEST, MISS_CACHE_MS - 1)).toBe('token_revoked');
+    expect(misses.get(DIGEST, MISS_CACHE_MS)).toBeUndefined();
+  });
+
+  it('clears itself rather than grow past its bound', () => {
+    const misses = new MissCache();
+    for (let i = 0; i < 1024; i++)
+      misses.remember(new Uint8Array([i >> 8, i & 255]), 'unknown_token', 0);
+    misses.remember(DIGEST, 'token_expired', 0);
+    expect(misses.get(new Uint8Array([0, 0]), 0)).toBeUndefined();
+    expect(misses.get(DIGEST, 0)).toBe('token_expired');
   });
 });

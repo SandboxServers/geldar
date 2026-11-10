@@ -17,7 +17,7 @@ export type ToolHandler = (input: unknown, ctx: ToolContext) => unknown | Promis
 /** A handler for every tool in the contract, keyed by tool name. */
 export type ToolHandlers = Record<McpToolName, ToolHandler>;
 
-/** Largest tool result, in bytes of JSON text. */
+/** Largest tool result, in bytes of JSON text: the default, the real server passes `sovereign.mcp.max_result_bytes`. */
 export const MAX_RESULT_BYTES = 16_384;
 
 const MAX_INVALID_INPUT_CHARS = 600;
@@ -68,6 +68,7 @@ export async function callTool(
   ctx: ToolContext,
   log: (m: string) => void = () => {},
   fault = 'the mock failed',
+  maxResultBytes = MAX_RESULT_BYTES,
 ): Promise<ToolResponse> {
   if (!(MCP_TOOL_NAMES as readonly string[]).includes(name)) {
     log(`unknown_tool: ${JSON.stringify(name.slice(0, 80))}`);
@@ -98,7 +99,7 @@ export async function callTool(
   }
 
   const text = JSON.stringify(result);
-  if (Buffer.byteLength(text) > MAX_RESULT_BYTES) {
+  if (Buffer.byteLength(text) > maxResultBytes) {
     log(`result_too_large from ${tool}: ${Buffer.byteLength(text)} bytes`);
     return failure(`result_too_large: ${tool}`);
   }

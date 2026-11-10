@@ -82,7 +82,18 @@ invalid. Environment: `GELDAR_SHARD`, `GELDAR_NATS_URL`, `POSTGRES_HOST`, `POSTG
 `GELDAR_MCP_DB_PASSWORD_FILE`, `GELDAR_MCP_PEPPER_FILE`, `GELDAR_MCP_PUBLIC_HOST` (a DNS name
 only; no IP literal, `localhost`, `*.local`, `*.internal` or userinfo; may be unset in local mode
 with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` only with
-`GELDAR_MCP_IN_CONTAINER=1`).
+`GELDAR_MCP_IN_CONTAINER=1`). `GELDAR_MCP_TRUSTED_PROXIES` (comma-separated IPs or ranges) replaces
+`sovereign.mcp.trusted_proxies`, and `GELDAR_MCP_CLIENT_IP_HEADER` replaces
+`sovereign.mcp.client_ip_header`. The Caddy deployment sets the header to `x-geldar-client-ip`
+and names Caddy's container address as the trusted proxy; without a trusted proxy the header is
+never read. The default header is `cf-connecting-ip`; `x-forwarded-for` is also accepted.
+
+The shard's `sovereign.mcp` limits are: `wait_cap_seconds` (wait's clamp), `max_body_bytes`
+(request body), `max_result_bytes` (tool result after trimming), and `presence.lease_seconds` and
+`presence.hibernate_after_seconds`. `shard/rules` reports their effective values from the loaded
+shard, not the defaults. When `max_connections` or `max_connections_per_address` is left out, both
+are derived from `owner_cap_owner`: per address 4 times the owner cap (80 at 20), and the listener
+total 4 owners' worth of that (320 at 20).
 
 ## Hosting
 
@@ -118,7 +129,9 @@ be up first.
 ./geldar.ps1 db migrate --set-role-password geldar_mcp --password-file compose/secrets/postgres-mcp.txt
                                            # 3. the geldar_mcp role is NOLOGIN until this runs; mcp up fails on database auth before it
 ./geldar.ps1 mcp up                        # 4. init, build and start the container on 127.0.0.1:8788
-./geldar.ps1 mcp-tokens owner add <owner>  # 5. then: player add, and token mint --out <file outside the repo>
+./geldar.ps1 mcp-tokens owner add <owner> [--cap N]  # 5. the cap defaults to sovereign.owner_cap_default in shards/phase0.yaml (3)
+./geldar.ps1 mcp-tokens owner set-cap <owner> <N>     # raise or lower a cap later (0 to 50)
+                                           # then: player add, and token mint --out <file outside the repo>
 ./geldar.ps1 mcp status                    # prints "down" when it is not running
 ./geldar.ps1 mcp logs
 ./geldar.ps1 mcp smoke                     # the stub client case against /p/ag-test-01 (needs GELDAR_MCP_TEST_TOKEN_FILE)
@@ -136,6 +149,12 @@ print with no arguments. `mcp-tokens init` writes `compose/secrets/postgres-mcp.
 password) and `compose/secrets/mcp-token-pepper.txt` (the token pepper); `compose/mcp.yml` mounts them under
 the same names in `/run/secrets/`. The repo-checks test in `tools/repo-checks/src/mcp-overlay.test.ts` fails
 if the two drift apart.
+
+The owner cap counts an owner's players that are not retired, in this shard's database (one database
+per shard). Migration 0006 enforces it in the database, so direct SQL cannot pass it: a new or
+re-activated player over the cap is refused. Lowering a cap does not retire anyone; an owner who is
+over a lowered cap has every token refused at auth until the cap is raised or a player is retired. The
+owner_cap_owner value (20, decision 0052) is not read by `owner add`: give that owner `--cap 20`.
 
 ### Later: the public tunnel (not run)
 

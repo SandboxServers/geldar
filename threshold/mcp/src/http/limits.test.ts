@@ -53,6 +53,33 @@ describe('failed-auth bucket key', () => {
   });
 });
 
+/** Only the global failed-auth bucket is capped, at CAP; every address bucket allows. */
+class GlobalCapLimiter implements RateLimiter {
+  private used = 0;
+
+  take(bucket: string): RateDecision {
+    if (bucket !== 'auth-failed:global') return { allowed: true, retryAfterMs: 0 };
+    if (this.used >= CAP) return { allowed: false, retryAfterMs: 1500 };
+    this.used += 1;
+    return { allowed: true, retryAfterMs: 0 };
+  }
+
+  peek(bucket: string): RateDecision {
+    if (bucket !== 'auth-failed:global' || this.used < CAP)
+      return { allowed: true, retryAfterMs: 0 };
+    return { allowed: false, retryAfterMs: 1500 };
+  }
+}
+
+describe('global failed-auth bucket', () => {
+  it('refuses a fresh address once the global bucket is empty, before any token lookup', () => {
+    const limits = new FrontLimits(new GlobalCapLimiter());
+    expect(limits.failedAuth('198.51.100.1', 0)).toBeUndefined();
+    expect(limits.failedAuth('198.51.100.2', 0)).toBeUndefined();
+    expect(limits.authBlocked('198.51.100.3', 0)).toBeDefined();
+  });
+});
+
 describe('effective-address slot key', () => {
   it('counts two addresses in the same /64 against one cap', () => {
     const limits = new FrontLimits(new AddressCapLimiter());

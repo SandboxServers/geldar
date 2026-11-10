@@ -188,6 +188,10 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_players_ended') THEN
     RAISE EXCEPTION 'schema check: the mcp_players_ended trigger is missing';
   END IF;
+  -- 0006: the owner cap is a trigger, so direct SQL cannot pass it.
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_players_owner_cap') THEN
+    RAISE EXCEPTION 'schema check: the mcp_players_owner_cap trigger is missing';
+  END IF;
 
   -- A password may have been set (ALTER ROLE ... LOGIN PASSWORD), so this checks privileges only.
   IF NOT EXISTS (
@@ -218,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0005, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0006, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);

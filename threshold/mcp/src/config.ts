@@ -4,6 +4,16 @@ import { isIP } from 'node:net';
 import { dirname, join } from 'node:path';
 import { parse } from 'yaml';
 
+/**
+ * The request header a trusted proxy's client address is read from: a single-valued header name
+ * (default `cf-connecting-ip`; the Caddy deployment sets `x-geldar-client-ip`), or the mode
+ * `x-forwarded-for`, read rightmost-untrusted-hop style.
+ */
+export type ClientIpHeader = string;
+
+const DEFAULT_CLIENT_IP_HEADER: ClientIpHeader = 'cf-connecting-ip';
+const HEADER_NAME = /^[a-z0-9-]{1,64}$/;
+
 /** One sovereign ranger as the shard file lists it (`sovereign.players`). */
 export interface PlayerConfig {
   /** The launcher player id from the URL path, such as ag-jason-01. */
@@ -26,8 +36,10 @@ export interface SovereignConfig {
   ownerCapOwner: number;
   /** The MCP's plain HTTP port. */
   port: number;
-  /** Proxies whose CF-Connecting-IP names the client: exact IPs or CIDR ranges. Empty trusts none. */
+  /** Proxies whose forwarded header names the client: exact IPs or CIDR ranges. Empty trusts none. */
   trustedProxies: string[];
+  /** The header a trusted proxy's client address is read from (see `ClientIpHeader`). */
+  clientIpHeader: ClientIpHeader;
   /** The most open connections the listener holds at once. */
   maxConnections: number;
   /** The most open connections, and open POST requests, one client address holds at once. */
@@ -85,12 +97,16 @@ export interface McpConfig {
     port: number;
     /** The `Host` values the server accepts: the public host when set, then the dev hosts. */
     allowedHosts: string[];
-    /** Proxies whose CF-Connecting-IP names the client (exact IPs or CIDR ranges). Empty trusts none. */
+    /** Proxies whose forwarded header names the client (exact IPs or CIDR ranges). Empty trusts none. */
     trustedProxies: string[];
+    /** The header a trusted proxy's client address is read from. */
+    clientIpHeader: ClientIpHeader;
     /** The most open connections the listener holds at once. */
     maxConnections: number;
     /** The most open connections, and open POST requests, one client address holds at once. */
     maxConnectionsPerAddress: number;
+    /** The largest POST body the front door reads (413 above it). */
+    maxBodyBytes: number;
     /** The public DNS name, or null in local mode. */
     publicHost: string | null;
   };
@@ -115,6 +131,19 @@ const HOST_TOKEN = /^[a-z0-9.-]+$/;
 const DEFAULT_DEV_HOSTS = 'host.docker.internal,127.0.0.1,localhost';
 /** Used when the shard file leaves `rate_limits.handshake_per_minute` out: above the 60 calls a minute. */
 const HANDSHAKE_PER_MINUTE_DEFAULT = 300;
+/** Open requests one agent may hold (a `wait` holds one). The caps are multiples of this. */
+const OPEN_PER_AGENT = 4;
+/** Owners the listener's total cap is sized for when `max_connections` is left out. */
+const OWNERS_SIZED_FOR = 4;
+
+/**
+ * The connection caps when the shard file leaves them out, derived from the owner's own cap: one
+ * address carries an owner's agents behind the tunnel, and the listener carries several owners.
+ */
+export function derivedCaps(ownerCapOwner: number): { perAddress: number; global: number } {
+  const perAddress = Math.max(1, OPEN_PER_AGENT * ownerCapOwner);
+  return { perAddress, global: perAddress * OWNERS_SIZED_FOR };
+}
 
 /** The repository root: the nearest directory above this file that holds pnpm-workspace.yaml. */
 export function repoRoot(): string {
@@ -204,21 +233,24 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
   if (start !== 'on_demand' && start !== 'always') {
     throw new Error(`sovereign.presence.start must be on_demand or always, not '${start}'`);
   }
+  const ownerCapOwner = int(block, 'owner_cap_owner', 'sovereign', 0, 50);
+  const caps = derivedCaps(ownerCapOwner);
   return {
     allowed: bool(block, 'allowed', 'sovereign'),
     harnesses,
     ownerCapDefault: int(block, 'owner_cap_default', 'sovereign', 0, 50),
-    ownerCapOwner: int(block, 'owner_cap_owner', 'sovereign', 0, 50),
+    ownerCapOwner,
     port: int(mcp, 'port', 'sovereign.mcp', 1, 65535),
     trustedProxies: proxyList(mcp, 'trusted_proxies', 'sovereign.mcp'),
-    maxConnections: optionalInt(mcp, 'max_connections', 'sovereign.mcp', 1, 4096, 256),
+    clientIpHeader: headerName(mcp.client_ip_header, 'sovereign.mcp.client_ip_header'),
+    maxConnections: optionalInt(mcp, 'max_connections', 'sovereign.mcp', 1, 4096, caps.global),
     maxConnectionsPerAddress: optionalInt(
       mcp,
       'max_connections_per_address',
       'sovereign.mcp',
       1,
       4096,
-      32,
+      caps.perAddress,
     ),
     waitCapSeconds: int(mcp, 'wait_cap_seconds', 'sovereign.mcp', 1, 240),
     keepaliveSeconds: int(mcp, 'keepalive_seconds', 'sovereign.mcp', 1, 240),
@@ -316,14 +348,30 @@ function httpConfig(env: Env, sovereign: SovereignConfig): McpConfig['http'] {
       'GELDAR_MCP_PUBLIC_HOST is unset and GELDAR_MCP_DEV_HOSTS is empty: no Host would be accepted',
     );
   }
+  const trustedProxies =
+    env.GELDAR_MCP_TRUSTED_PROXIES === undefined
+      ? sovereign.trustedProxies
+      : envProxyList(env.GELDAR_MCP_TRUSTED_PROXIES);
+  // A public host means traffic arrives through a proxy; with no proxy named, every client would
+  // share the proxy's address and its buckets.
+  if (publicHost !== null && trustedProxies.length === 0) {
+    throw new Error(
+      'GELDAR_MCP_PUBLIC_HOST is set and no trusted proxy is named (GELDAR_MCP_TRUSTED_PROXIES or sovereign.mcp.trusted_proxies): the public host needs its proxy trusted',
+    );
+  }
   return {
     bind,
     port: sovereign.port,
     allowedHosts: publicHost === null ? devHosts : [publicHost, ...devHosts],
     publicHost,
-    trustedProxies: sovereign.trustedProxies,
+    trustedProxies,
+    clientIpHeader:
+      env.GELDAR_MCP_CLIENT_IP_HEADER === undefined
+        ? sovereign.clientIpHeader
+        : headerName(env.GELDAR_MCP_CLIENT_IP_HEADER, 'GELDAR_MCP_CLIENT_IP_HEADER'),
     maxConnections: sovereign.maxConnections,
     maxConnectionsPerAddress: sovereign.maxConnectionsPerAddress,
+    maxBodyBytes: sovereign.maxBodyBytes,
   };
 }
 
@@ -449,19 +497,43 @@ function optionalInt(
 /** The `trusted_proxies` list: each entry an IP address or an IP range (`10.0.0.0/8`). Absent trusts none. */
 function proxyList(block: Doc, key: string, where: string): string[] {
   if (block[key] === undefined) return [];
-  return list(block, key, where).map((entry, index) => {
+  return proxyEntries(list(block, key, where), `${where}.${key}`);
+}
+
+/** GELDAR_MCP_TRUSTED_PROXIES: comma-separated IPs or ranges, checked like the yaml list. Empty is none. */
+function envProxyList(raw: string): string[] {
+  const entries = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+  return proxyEntries(entries, 'GELDAR_MCP_TRUSTED_PROXIES');
+}
+
+function proxyEntries(entries: readonly unknown[], label: string): string[] {
+  return entries.map((entry, index) => {
     if (typeof entry === 'string' && /\/0+$/.test(entry)) {
       throw new Error(
-        `${where}.${key}[${index}] has prefix length 0, which would trust every peer; name a narrower range`,
+        `${label}[${index}] has prefix length 0, which would trust every peer; name a narrower range`,
       );
     }
     if (typeof entry !== 'string' || !validProxyEntry(entry)) {
       throw new Error(
-        `${where}.${key}[${index}] must be an IP address or an IP range such as 10.0.0.0/8, not '${String(entry)}'`,
+        `${label}[${index}] must be an IP address or an IP range such as 10.0.0.0/8, not '${String(entry)}'`,
       );
     }
     return entry;
   });
+}
+
+/** A header name for `client_ip_header`: lowercase letters, digits and hyphens. Absent is the default. */
+function headerName(raw: unknown, label: string): ClientIpHeader {
+  if (raw === undefined) return DEFAULT_CLIENT_IP_HEADER;
+  if (typeof raw !== 'string' || !HEADER_NAME.test(raw)) {
+    throw new Error(
+      `${label} must be a lowercase header name such as x-geldar-client-ip, not '${String(raw)}'`,
+    );
+  }
+  return raw;
 }
 
 function validProxyEntry(entry: string): boolean {

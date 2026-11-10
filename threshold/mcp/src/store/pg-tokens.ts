@@ -28,18 +28,33 @@ export interface TokenRow {
   display_name: string;
   harness: string;
   status: string;
+  /** Players of the owner that are not retired, the player's own included. */
+  owner_players: number;
+  /** The owner's cap now; a lowered cap refuses at once, without a NOTIFY. */
+  player_cap: number;
   expires_at: Date;
   revoked_at: Date | null;
 }
 
-const RESOLVE_SQL = `SELECT t.token_id, t.token_hash, t.expires_at, t.revoked_at,
-  p.player_id, p.life_id, p.owner_id, p.display_name, p.harness, p.status
+/** The table state a revocation NOTIFY is checked against: the payload alone never ends a session. */
+const REVOKE_STATE_SQL = `SELECT t.revoked_at, p.status
 FROM mcp_tokens t JOIN mcp_players p ON p.player_id = t.player_id
+WHERE t.token_id = $1 AND t.player_id = $2`;
+
+const RESOLVE_SQL = `SELECT t.token_id, t.token_hash, t.expires_at, t.revoked_at,
+  p.player_id, p.life_id, p.owner_id, p.display_name, p.harness, p.status,
+  o.player_cap,
+  (SELECT count(*)::int FROM mcp_players x WHERE x.owner_id = p.owner_id AND x.status <> 'retired')
+    AS owner_players
+FROM mcp_tokens t
+JOIN mcp_players p ON p.player_id = t.player_id
+JOIN mcp_owners o ON o.owner_id = p.owner_id
 WHERE t.token_hash = $1`;
 
 /**
- * The resolved token when the row is active: not revoked, not expired, the player active and
- * the harness enabled. Null for anything else, including a harness the config does not list.
+ * The resolved token when the row is active: not revoked, not expired, the player active, the
+ * owner within its cap and the harness enabled. Null for anything else, including a harness the
+ * config does not list.
  */
 export function activeToken(
   row: TokenRow,
@@ -49,6 +64,7 @@ export function activeToken(
   if (row.revoked_at !== null) return null;
   if (row.expires_at.getTime() <= nowMs) return null;
   if (row.status !== 'active') return null;
+  if (row.owner_players > row.player_cap) return null;
   if (harnesses[row.harness] !== true) return null;
   return {
     tokenId: row.token_id,
@@ -282,9 +298,23 @@ export class PgTokenStore implements TokenStore {
 
   private handleNotification(channel: string, payload: string | undefined): void {
     if (channel !== REVOKE_CHANNEL) return;
-    const revoked = parseRevocation(payload);
-    if (revoked === null) return;
-    this.fire(revoked);
+    const hint = parseRevocation(payload);
+    if (hint === null) return;
+    // Any database role may NOTIFY this channel (the read-only geldar_glass can), so the payload is
+    // only a hint. A failed read ends nothing here; the next resolve still refuses a revoked token.
+    this.confirm(hint).catch(() => undefined);
+  }
+
+  /** Fires the hint only when the table shows its token revoked or its player not active. */
+  private async confirm(hint: Revocation): Promise<void> {
+    const { rows } = await this.pool.query<{ revoked_at: Date | null; status: string }>(
+      REVOKE_STATE_SQL,
+      [hint.tokenId, hint.playerId],
+    );
+    const state = rows[0];
+    if (state === undefined) return;
+    if (state.revoked_at === null && state.status === 'active') return;
+    this.fire(hint);
   }
 
   /** Drops the cached hit for the token, then calls each listener (one failure does not stop the rest). */
@@ -334,6 +364,7 @@ export function missReason(
   if (row.revoked_at !== null) return 'token_revoked';
   if (row.expires_at.getTime() <= nowMs) return 'token_expired';
   if (row.status !== 'active') return 'player_not_active';
+  if (row.owner_players > row.player_cap) return 'owner_over_cap';
   if (harnesses[row.harness] !== true) return 'harness_disabled';
   return 'unknown_token';
 }

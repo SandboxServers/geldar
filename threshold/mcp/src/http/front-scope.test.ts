@@ -3,6 +3,7 @@ import {
   BODY_LIMIT,
   CALLS_PER_MINUTE,
   CapLimiter,
+  CONFIG,
   call,
   FAILED_AUTH_PER_MINUTE,
   type FrontRig,
@@ -30,6 +31,16 @@ describe('body and batch limits', () => {
     const pad = 'a'.repeat(BODY_LIMIT + 1 - head.length - tail.length);
     const reply = await rig.send('/p/aa', { body: `${head}${pad}${tail}` });
     expect(reply.status).toBe(413);
+  });
+
+  it('refuses a body one byte over the configured max_body_bytes, and accepts one of exactly that size', async () => {
+    await rig.restart({ http: { ...CONFIG, maxBodyBytes: 2048 } });
+    const head = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"';
+    const tail = '"}}';
+    const over = 'a'.repeat(2048 + 1 - head.length - tail.length);
+    const exact = 'a'.repeat(2048 - head.length - tail.length);
+    expect((await rig.send('/p/aa', { body: `${head}${over}${tail}` })).status).toBe(413);
+    expect((await rig.send('/p/aa', { body: `${head}${exact}${tail}` })).status).not.toBe(413);
   });
 
   it('accepts a body of exactly 64 KiB', async () => {
@@ -75,8 +86,8 @@ describe('scoping and limits', () => {
   });
 
   it('shares the owner budget across players and refuses past it', async () => {
-    // Each openSession's initialize also draws on the owner, so two sessions leave three for the calls.
-    rig.limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 5 : 1000));
+    // Initialize draws no owner token, so the owner's three are all for the calls that follow.
+    rig.limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 3 : 1000));
     await rig.restart();
     const sidA = await rig.openSession('/p/aa', TOKEN_A);
     const sidB = await rig.openSession('/p/bb', TOKEN_B);
@@ -123,10 +134,11 @@ describe('scoping and limits', () => {
     };
     const wrong = { body: INIT, headers: { Authorization: 'Bearer wrong-token-0123456789wrong' } };
     for (let i = 0; i < FAILED_AUTH_PER_MINUTE; i += 1) await rig.send('/p/aa', wrong);
-    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+    // The refused token is remembered after its first lookup, so the repeats cost no lookup at all.
+    expect(lookups).toBe(1);
     const reply = await rig.send('/p/aa', wrong);
     expect(reply.status).toBe(429);
-    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+    expect(lookups).toBe(1);
   });
 
   it('holds at most 4 open requests per player and refuses the 5th', async () => {

@@ -31,10 +31,10 @@ function defaultsDoc(): Record<string, any> {
 }
 
 describe('connection limits in the shard file', () => {
-  it('defaults max_connections to 256 and max_connections_per_address to 32 when absent', () => {
+  it('defaults max_connections to 320 and max_connections_per_address to 80 when absent', () => {
     const config = parseMcpConfig(defaultsDoc(), { env: ENV });
-    expect(config.http.maxConnections).toBe(256);
-    expect(config.http.maxConnectionsPerAddress).toBe(32);
+    expect(config.http.maxConnections).toBe(320);
+    expect(config.http.maxConnectionsPerAddress).toBe(80);
   });
 
   it('reads explicit values from the shard file', () => {
@@ -104,7 +104,7 @@ function closedWithin(socket: Socket, ms: number): Promise<boolean> {
 }
 
 describe('connection limits in the front door', () => {
-  it('refuses a 33rd connection from one address under the default config', async () => {
+  it('refuses an 81st connection from one address under the default config', async () => {
     const config = parseMcpConfig(defaultsDoc(), { env: ENV });
     door = createFrontDoor({
       http: { ...config.http, port: 0 },
@@ -117,7 +117,7 @@ describe('connection limits in the front door', () => {
     });
     const port = await door.listen(0);
     const held: Socket[] = [];
-    for (let i = 0; i < 32; i++) held.push(await open(port));
+    for (let i = 0; i < 80; i++) held.push(await open(port));
     const extra = connect({ host: '127.0.0.1', port });
     sockets.push(extra);
     expect(await closedWithin(extra, 2000)).toBe(true);

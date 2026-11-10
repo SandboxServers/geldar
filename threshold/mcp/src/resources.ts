@@ -37,6 +37,9 @@ export interface ShardRules {
   chatRadius: number;
   waitCapSeconds: number;
   tickRate: number;
+  maxBodyBytes: number;
+  maxResultBytes: number;
+  presence: { leaseSeconds: number; hibernateAfterSeconds: number };
 }
 
 export interface ResourceDeps {
@@ -46,14 +49,19 @@ export interface ResourceDeps {
 }
 
 /**
- * The shard rules as the `shard/rules` resource shows them. A Minecraft day is 24000 ticks; at
- * `tickRate` ticks a second it is `24000 / tickRate` seconds (1200 at the normal 20).
+ * The shard rules as the `shard/rules` resource shows them: the effective values from the loaded
+ * config, not the defaults. A Minecraft day is 24000 ticks; at `tickRate` ticks a second it is
+ * `24000 / tickRate` seconds (1200 at the normal 20).
  */
 export function shardRulesOf(shard: ShardRules): Record<string, number> {
   return {
     chat_radius: shard.chatRadius,
     wait_cap_seconds: shard.waitCapSeconds,
     day_length_seconds: (24000 / shard.tickRate / 20) * 20,
+    max_body_bytes: shard.maxBodyBytes,
+    max_result_bytes: shard.maxResultBytes,
+    'presence.lease_seconds': shard.presence.leaseSeconds,
+    'presence.hibernate_after_seconds': shard.presence.hibernateAfterSeconds,
   };
 }
 

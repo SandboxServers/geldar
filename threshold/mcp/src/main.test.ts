@@ -17,9 +17,11 @@ import {
   type NatsLink,
   pepperBytes,
   postgresPassword,
+  shardRules,
   startMcp,
   tokenBucketLimiter,
 } from './main.ts';
+import { shardRulesOf } from './resources.ts';
 import type { PgAgentStore } from './store/pg-agents.ts';
 
 /** A password and a pepper no log line may ever carry. */
@@ -131,6 +133,24 @@ describe('loadStartConfig', () => {
     expect((failure as Error).message).toContain(
       'sovereign allowed requires identity_mode: watched',
     );
+  });
+
+  it('shard/rules reports the effective limits from the loaded shard, not the defaults', async () => {
+    const file = shardCopy((text) =>
+      text
+        .replace(/^(\s*)wait_cap_seconds: 240/m, '$1wait_cap_seconds: 120')
+        .replace(/^(\s*)max_body_bytes: 65536/m, '$1max_body_bytes: 32768')
+        .replace(/^(\s*)max_result_bytes: 16384/m, '$1max_result_bytes: 8192')
+        .replace(/^(\s*)lease_seconds: 60/m, '$1lease_seconds: 45')
+        .replace(/^(\s*)hibernate_after_seconds: 600/m, '$1hibernate_after_seconds: 300'),
+    );
+    const config = await loadStartConfig(file, ENV);
+    const rules = shardRulesOf(shardRules(config));
+    expect(rules.wait_cap_seconds).toBe(120);
+    expect(rules.max_body_bytes).toBe(32768);
+    expect(rules.max_result_bytes).toBe(8192);
+    expect(rules['presence.lease_seconds']).toBe(45);
+    expect(rules['presence.hibernate_after_seconds']).toBe(300);
   });
 });
 

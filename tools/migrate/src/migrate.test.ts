@@ -21,6 +21,7 @@ describe('listMigrations', () => {
       '0003_mcp_sleep_marks.sql',
       '0004_mcp_sleep_marks_grants.sql',
       '0005_glass_reader.sql',
+      '0006_owner_cap_trigger.sql',
     ]);
   });
 

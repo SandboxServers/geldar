@@ -29,7 +29,14 @@ const PLAYER: PlayerRecord = {
   harness: 'claude-code',
   status: 'active',
 };
-const SHARD = { chatRadius: 16, waitCapSeconds: 60, tickRate: 20 };
+const SHARD = {
+  chatRadius: 16,
+  waitCapSeconds: 60,
+  tickRate: 20,
+  maxBodyBytes: 65536,
+  maxResultBytes: 16384,
+  presence: { leaseSeconds: 60, hibernateAfterSeconds: 600 },
+};
 
 /** Lines that say or imply humans are watching, in any case (decision 0059). */
 const OBSERVER = /watch|observ|audience|humans are/i;
@@ -56,11 +63,22 @@ describe('shard rules', () => {
     expect(shardRulesOf({ ...SHARD, tickRate: 10 }).day_length_seconds).toBe(2400);
   });
 
-  it('shows the chat radius and the wait cap as set', () => {
-    expect(shardRulesOf(SHARD)).toEqual({
+  it('shows the effective value of each limit, not a default', () => {
+    const tuned = {
+      ...SHARD,
+      waitCapSeconds: 45,
+      maxBodyBytes: 4096,
+      maxResultBytes: 2048,
+      presence: { leaseSeconds: 90, hibernateAfterSeconds: 300 },
+    };
+    expect(shardRulesOf(tuned)).toEqual({
       chat_radius: 16,
-      wait_cap_seconds: 60,
+      wait_cap_seconds: 45,
       day_length_seconds: 1200,
+      max_body_bytes: 4096,
+      max_result_bytes: 2048,
+      'presence.lease_seconds': 90,
+      'presence.hibernate_after_seconds': 300,
     });
   });
 });
