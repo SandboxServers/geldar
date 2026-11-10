@@ -214,3 +214,169 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **index lines to add** (ops merge step): `index: | [0082](0082-<slug>.md) | <title> | Proposed |`. Also, for the later packets, the slot list in the worknote: "C1-03 uncomments `golem-body`", and so on.
 
 **On cap**: session 1 ends at a committed `colo.yml` that passes `config`; session 2 starts from the worknote. If the slots cannot be validated without the later images, leave them commented and say so.
+
+---
+
+## Card C1-03: Body-host image (and the Mind-host image)
+
+- **id**: C1-03
+- **title**: `golem/Dockerfile` for the Body on the node; `animus/Dockerfile.mind` for the Mind on the Record/Mind host
+- **wave**: C1
+- **lane**: C
+- **status**: B
+- **depends-on**: P1-C1-00 (contract merged). The compose wiring waits for C1-02's slot.
+- **size**: M
+- **decisions**: 0083 (one record: the image contents, base-image pins, and what is never baked in)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-03.md`
+
+**Scope rule from decision 0078 (proposed)**: its recommendation puts the Mind for Adam-class agents on the Record/Mind host. This card builds that image as well. If the owner rejects 0078, the Mind image is left unbuilt and the worknote says so; the Body image is built either way.
+
+**may-edit**
+- `golem/Dockerfile` and `golem/Dockerfile.dockerignore` (new). Use `eventsink/Dockerfile` and `eventsink/Dockerfile.dockerignore` as the house pattern.
+- `animus/Dockerfile.mind` and `animus/Dockerfile.mind.dockerignore` (new).
+- `golem/src/image.test.ts` (new; the same kind of test as `threshold/mcp-mock/src/image.test.ts`, which checks the image's pins and ignores).
+- `animus/src/image.test.ts` (new, for the Mind image).
+- `docs/decisions/0083-*.md` (new record).
+
+**must-not-edit**: `compose/*` and `shards/*` (C1-02 wires the slot), `contract/`, `geldar.ps1`, `package.json`, `pnpm-lock.yaml`, `docs/spec.md`, `docs/decisions/README.md`.
+
+**Steps**
+1. Read `eventsink/Dockerfile` and `threshold/mcp/Dockerfile` (21 lines). Copy the layout: a pinned Node base, a non-root user, `node` as the entry command, no shell scripts that read secrets at build time.
+2. Pin the base image by digest (`image@sha256:...`). Look up the digest from the registry on the day of writing; record the release date. The release-age check (P1-C1-00) must pass for it.
+3. `golem/Dockerfile`: builds the Body (`golem/` package) with its production dependencies only. The entry point is the Body's existing start script. No `GELDAR_NATS_PASSWORD` or any credential is in an `ENV` or `ARG` line; credentials arrive as the file path `GELDAR_NATS_PASSWORD_FILE` at run time (the convention in `compose/nats-auth.yml`).
+4. `animus/Dockerfile.mind`: the same shape for the Mind (`animus/`). It needs its model endpoint as configuration, not baked in.
+5. Both `.dockerignore` files exclude `node_modules`, `.git`, `compose/secrets`, `*.env`, and test fixtures. The image tests read the Dockerfile and the ignore file as text and check: a digest pin is present; no `ARG` or `ENV` name matches `PASSWORD` or `TOKEN` (the value may be a file path); the user is not root; the ignore file lists `compose/secrets`.
+6. Build both images on the desktop (`docker build -f golem/Dockerfile -t geldar-body:c1 .` from the repo root). Record the image ID in the worknote. The build is not pushed anywhere.
+7. Run each image's start command with no secrets set and confirm it exits with a clear "missing configuration" message, not a stack trace (a one-off `docker run --rm`; no shard is touched).
+
+**Error behaviour**: an image with no `NATS` password file configured exits non-zero and names the missing variable.
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run golem/src/image.test.ts animus/src/image.test.ts`
+- `docker build -f golem/Dockerfile .` and `docker build -f animus/Dockerfile.mind .` both exit 0 (commands recorded with image IDs)
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- Full `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit (it does not build images; the build commands above are the image gate).
+
+**Revert-check (name the test and the line)**
+- In `golem/Dockerfile`, replace the digest pin with a plain tag (`node:<tag>`). `golem/src/image.test.ts`, the digest-pin case, must fail. Restore.
+- In `golem/Dockerfile`, add `ENV GELDAR_NATS_PASSWORD=x`. The no-credential case in the same test must fail. Restore.
+
+**Commit plan**
+1. `C1-03: Body-host image and its ignore file, pinned base`
+2. `C1-03: Mind-host image and its ignore file, pinned base`
+3. `C1-03: image tests (pins, no baked credentials, non-root)`
+4. `C1-03: record 0083 for the image contents`
+
+**index line to add**: `index: | [0083](0083-<slug>.md) | <title> | Proposed |`. For C1-02: "uncomment the `golem-body` slot with the image name `geldar-body`". Also write the image digest so the deploy packet (C1-04) can read it.
+
+**On cap**: the Body image is committed alone if the Mind image is blocked; the report says which.
+
+---
+
+## Card C1-04: non-PowerShell deploy by pull
+
+- **id**: C1-04
+- **title**: Deploy tooling for Linux: shell scripts, root-only env files generated on the node, no secret in the repo
+- **wave**: C1
+- **lane**: D
+- **status**: B/O (the build and its tests are B; running on the node needs the deploy account, which is an owner item)
+- **depends-on**: P1-C1-00 (for the shard-config keys and the release-age check on pins)
+- **size**: M
+- **decisions**: 0084 (one record: deploy by pull, env-file location and ownership, what the scripts never print)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-04.md`
+
+**may-edit**
+- `deploy/` (new directory): `deploy/README.md`, `deploy/bin/` (shell scripts), `deploy/env/` (templates only, no values), `deploy/test/` (tests).
+- `deploy/test/` tests are TypeScript (Vitest), so they run on the desktop and in CI. The scripts themselves are POSIX `sh` and are run in CI on Linux.
+- `.gitignore`: add the env-file patterns only (for example `/etc/geldar` is never in the repo; add `deploy/env/*.env` so a generated file cannot be committed by accident).
+- `docs/decisions/0084-*.md` (new record).
+
+**must-not-edit**: `geldar.ps1` (the Windows path stays as it is), `compose/*` and `shards/*` (C1-02), `.github/workflows/*` (an index line asks the integration owner to add a Linux job), `contract/`, `package.json`, `pnpm-lock.yaml`, `docs/spec.md`.
+
+**Steps**
+1. Write `deploy/bin/pull.sh`: records the current image digests from `compose/colo.yml` into `/var/lib/geldar/state/deployed.txt`, runs `docker compose -f compose/colo.yml pull`, then `docker compose ... up -d --wait`. It refuses to run as a user without the `docker` group, and it never runs `down -v`.
+2. Write `deploy/bin/env-init.sh`: creates `/etc/geldar/` (mode 0750, owner root, group docker) and one env file per service, mode 0600, owner root. It generates random values with `openssl rand` for internal tokens and writes them only to those files. It never echoes a value, and it refuses to overwrite an existing file (the same rule as `mcp-tokens init`).
+3. Write `deploy/bin/rollback.sh`: reads `deployed.txt`'s previous entry and redeploys those digests. It does not pull new images.
+4. Write `deploy/README.md` with the steps as commands, and the owner's part: the deploy account, its docker membership, and the place the env files are copied to.
+5. Tests in `deploy/test/`: (a) run each script with `sh -n` (syntax); (b) run `env-init.sh` with `GELDAR_ROOT_DIR` pointing at a temp directory (the script takes its root from that variable so the test never writes under `/etc`); check modes and that no value appears in stdout; (c) run `pull.sh` with a fake `docker` on `PATH` that records its arguments; check the order (pull, then up with `--wait`) and that `down -v` never appears.
+6. `deploy/test/no-secrets.test.ts`: scan `deploy/` and `compose/colo.yml` for high-entropy strings and for `PASSWORD=`, `TOKEN=` with a value. Fail on any match.
+
+**Error behaviour**: `env-init.sh` exits 1 and names the file when one exists; `pull.sh` exits 1 if `deployed.txt` cannot be written (it does not deploy without a record of what it replaced).
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run deploy/test`
+- `sh -n deploy/bin/*.sh` (run in CI, and via `wsl` on the desktop if installed; if not, record "not run: no POSIX shell on the desktop" in the report)
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- Full `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit.
+
+**Revert-check (name the test and the line)**
+- In `deploy/bin/env-init.sh`, change the mode from `0600` to `0644`. The mode case in `deploy/test/env-init.test.ts` must fail. Restore.
+- In `deploy/bin/pull.sh`, replace `up -d --wait` with `up -d --force-recreate --volumes`. The order-and-flags case must fail (the `--volumes` flag is refused). Restore.
+
+**Commit plan**
+1. `C1-04: deploy pull and rollback scripts with tests`
+2. `C1-04: env-init writes root-only env files, never echoes values`
+3. `C1-04: no-secrets scan over deploy/ and compose/colo.yml`
+4. `C1-04: record 0084 for deploy by pull`
+
+**index line to add**: `index: | [0084](0084-<slug>.md) | <title> | Proposed |`. Also for the integration owner: "add a Linux CI job that runs `sh -n` and `deploy/test`" (the CI file is not in this card).
+
+**Live step (O, owner)**: a deploy account in the docker group on the node, and the env files written by `env-init.sh` with `sudo`. The owner runs them; the agent does not. Stop if `docker` on the node is not the expected version or the account can read `/etc/geldar` as a non-owner.
+
+**On cap**: commit the scripts that pass; the rollback script can wait for C1-10.
+
+---
+
+## Card C1-05a: append-only journals, reset creates a new shard, journal spacing
+
+- **id**: C1-05a
+- **title**: Journals and receipts append-only (migration); the adam reset creates a new shard instead of deleting rows; the journal spacing bucket
+- **wave**: C1
+- **lane**: E
+- **status**: B
+- **depends-on**: P1-C1-00
+- **size**: M
+- **decisions**: 0085 (one record: append-only tables, the reset rule, the spacing bucket)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-05a.md`
+
+**may-edit**
+- `sql/0007_journals_append_only.sql` (new migration; each migration inserts its own `schema_migrations` row, as `sql/0006_owner_cap_trigger.sql` does).
+- `sql/test/check-schema.sql` (add the assertions for the new triggers).
+- `golem/test/live/adam-reset.test.ts` and `golem/test/live/adam-case.ts` (the reset path). Find any `DELETE` in the reset path with `grep -rn "DELETE" golem/test/live`.
+- The reset path in `geldar.ps1` (the `adam` verb's reset action) only if the reset is driven there; locate with `grep -n "reset" geldar.ps1`. If it is, this card owns that edit; C1-02 has already merged, so take the current file.
+- The spacing bucket: locate with `grep -rn "spacing\|bucket" golem tools threshold --include=*.ts`. Edit the file that implements it.
+- `docs/decisions/0085-*.md` (new record).
+
+**must-not-edit**: `sql/0001_*` to `sql/0006_*` (applied migrations are never edited, as 0006 says); `tools/migrate/src/migrate.ts` (the runner stays as it is); `contract/`; `compose/*`; `docs/spec.md`; `docs/decisions/README.md`.
+
+**Steps**
+1. Read `sql/0006_owner_cap_trigger.sql` (its header explains the pattern) and `sql/test/check-schema.sql`. Identify the journal and receipt tables (`grep -n "journal\|receipt" sql/0002_sovereign_mcp.sql sql/0003_mcp_sleep_marks.sql`).
+2. `sql/0007_journals_append_only.sql`: a trigger function that raises `journal rows are append-only` on `UPDATE` and `DELETE` for each journal and receipt table, and the trigger on each table. The migration inserts its own row in `schema_migrations`.
+3. The reset path: where it deletes journal rows, replace the delete with: create a new shard id, copy nothing, and write a reset marker record (a new row in the shard table, if the schema has one; otherwise the marker is the new shard id in the config). The old rows stay.
+4. The spacing bucket: journal entries that fall in the same spacing bucket are not written twice. The bucket is a time window read from the config (not a constant in code); its default is recorded in the worknote with the reason.
+5. Assertions in `sql/test/check-schema.sql`: an `UPDATE` and a `DELETE` on each table raise the error; an `INSERT` succeeds.
+6. Integration test for the reset: `golem/test/live/adam-reset.test.ts` asserts no `DELETE` statement runs and that the reset produces a new shard id. This test is a live-style test; it runs against the local compose stack on the desktop, not the node.
+
+**Error behaviour**: an attempted delete on a journal table fails with the trigger's message; the reset never fails silently (if it cannot create the new shard, it stops and does not fall back to deleting).
+
+**Acceptance checks**
+- `psql -h 127.0.0.1 -U postgres -d <db> -v ON_ERROR_STOP=1 -f sql/0007_journals_append_only.sql` on a fresh database, then `sql/test/check-schema.sql` (the same two commands CI runs at `.github/workflows/ci.yml` lines 141 to 147).
+- `./geldar.ps1 pnpm vitest run golem/test/live/adam-reset.test.ts` (on the desktop stack).
+- `./geldar.ps1 pnpm vitest run <spacing test file>`
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- Full `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit.
+
+**Revert-check (name the test and the line)**
+- In `sql/0007_journals_append_only.sql`, comment out the `DELETE` trigger for the journal table. The `check-schema.sql` assertion "DELETE on the journal raises" must fail. Restore.
+- In the reset path, put back the `DELETE` statement. The reset test's "no DELETE runs" assertion must fail. Restore.
+
+**Commit plan**
+1. `C1-05a: migration 0007, journals and receipts append-only`
+2. `C1-05a: schema assertions for append-only tables`
+3. `C1-05a: adam reset creates a new shard instead of deleting rows`
+4. `C1-05a: journal spacing bucket, read from config`
+5. `C1-05a: record 0085 for append-only journals`
+
+**index line to add**: `index: | [0085](0085-<slug>.md) | <title> | Proposed |`. For C1-05b: "the backup manifest depends on the append-only rule; C1-05b runs after this merges."
+
+**On cap**: the migration and its assertions are the first commit to land; the reset rule can follow in the same packet if it fits, otherwise it is written up in the worknote for the next session.
