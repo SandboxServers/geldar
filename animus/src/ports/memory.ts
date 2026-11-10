@@ -223,6 +223,8 @@ export interface MemoryStore {
   replaceGoals(lifeId: string, goals: Reflection['goals']): Promise<void>;
   /** Records the world day of the life's last completed sleep. */
   setLastSleepDay(lifeId: string, day: number): Promise<void>;
+  /** Records the world day a life first thought, once: a birth day already set is kept. */
+  setBornDay(lifeId: string, day: number): Promise<void>;
   /**
    * Applies one reflection's writes in one transaction: the memories, the resolved commitments,
    * the retired beliefs, the relationships, the goals and the life's last sleep day. On any failure

@@ -194,6 +194,20 @@ describe('ThinkingLoop: the model plans', () => {
     });
   });
 
+  it('fixes the birth day at the first thought of a life that has none', async () => {
+    const rig = await makeRig([VALID_THOUGHT], {
+      snapshot: makeSnapshot({
+        world_time: { day: 5, time_of_day: 'day', ticks: 1000, weather: 'clear' },
+      }),
+    });
+    const agent = rig.store.agents.get(LIFE);
+    if (agent === undefined) throw new Error('the fixture life is missing');
+    rig.store.agents.set(LIFE, { ...agent, bornDay: null });
+
+    await rig.loop.handle(makeDecision('idle'));
+    expect((await rig.store.loadDeterministic(LIFE, 0)).agent.bornDay).toBe(5);
+  });
+
   it('runs a decision from the attention controller through attach', async () => {
     const rig = await makeRig([VALID_THOUGHT]);
     const detach = rig.loop.attach();

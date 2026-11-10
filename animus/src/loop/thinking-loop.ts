@@ -171,7 +171,10 @@ export class ThinkingLoop {
         error_code: 'timeout',
       }),
     );
-    // A life with no sleep and no birth day counts from now, not from day 0 of the world.
+    // A life with no sleep and no birth day counts from now, not from day 0 of the world; its first
+    // thought fixes that day as its birth day, so the tiredness clock starts there.
+    if (memory.agent.bornDay === null)
+      await this.deps.memory.setBornDay(lifeId, raw.world_time.day);
     const lastSleep = memory.agent.lastSleepDay ?? memory.agent.bornDay ?? raw.world_time.day;
     const snapshot: Snapshot = {
       ...raw,

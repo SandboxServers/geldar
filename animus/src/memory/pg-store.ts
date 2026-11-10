@@ -330,6 +330,15 @@ export class PgMemoryStore implements MemoryStore {
     await this.setSleepDay(this.pool, lifeId, day);
   }
 
+  async setBornDay(lifeId: string, day: number): Promise<void> {
+    // Write-once: COALESCE keeps the birth day already set; zero rows means no such life.
+    const result = await this.pool.query(
+      'UPDATE agents SET born_day = COALESCE(born_day, $2) WHERE agent_id = $1',
+      [lifeId, day],
+    );
+    if ((result.rowCount ?? 0) === 0) throw new Error(`no agent ${lifeId}`);
+  }
+
   /**
    * Embeds up to `limit` active memories that have no vector yet (oldest first) and stores the
    * vectors. Returns how many were filled; throws when the embedder fails, leaving the rest.

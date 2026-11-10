@@ -273,6 +273,13 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     agent.lastSleepDay = day;
   }
 
+  /** As the Postgres store: the first day kept, an unknown life throws. */
+  async setBornDay(lifeId: string, day: number): Promise<void> {
+    const agent = this.agents.get(lifeId);
+    if (agent === undefined) throw new Error(`no agent ${lifeId}`);
+    if (agent.bornDay === null) agent.bornDay = day;
+  }
+
   /**
    * Runs the same steps as `PgMemoryStore.commitReflection`. A step that throws restores every
    * table to its state before the call, as the rolled-back transaction would.

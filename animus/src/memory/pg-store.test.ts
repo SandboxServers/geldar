@@ -59,6 +59,18 @@ describe('PgMemoryStore', () => {
     expect(calls[0]?.params).toContain('tag@sha256:x@t0.7@ollama');
   });
 
+  it('setBornDay keeps a birth day already set and names a life that does not exist', async () => {
+    const { pool, calls } = fakePool(() => ({ rowCount: 1 }));
+    await new PgMemoryStore(pool).setBornDay('ag_kestrel_01', 4);
+    expect(calls[0]?.sql).toContain('COALESCE(born_day, $2)');
+    expect(calls[0]?.params).toEqual(['ag_kestrel_01', 4]);
+
+    const none = fakePool(() => ({ rowCount: 0 }));
+    await expect(new PgMemoryStore(none.pool).setBornDay('ag_x', 4)).rejects.toThrow(
+      'no agent ag_x',
+    );
+  });
+
   it('writes the vector as a bound [..]::vector literal and never splices values', async () => {
     const { pool, calls } = fakePool(() => ({ rows: [{ memory_id: '7' }] }));
     const ids = await new PgMemoryStore(pool).writeMemories('ag_kestrel_01', [memory], [vec()]);
