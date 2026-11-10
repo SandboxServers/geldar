@@ -41,12 +41,34 @@ export function isLockfile(path: string): boolean {
 
 /** The pin rule for one file, by its path; a file no rule covers returns no problems. */
 export function checkPins(path: string, text: string): string[] {
-  if (isManifestFile(path)) return checkExactDependencies(path, text);
+  if (isManifestFile(path)) {
+    const root = path === 'package.json' ? checkPackageManagerHash(path, text) : [];
+    return [...checkExactDependencies(path, text), ...root];
+  }
   if (isDockerfile(path)) return checkDockerfileFrom(path, text);
   if (isComposeImageFile(path)) return checkComposeImageDigests(path, text);
   if (isLockfile(path)) return checkLockfileSources(path, text);
   if (isWorkflowFile(path)) return checkActionPins(path, text);
   return [];
+}
+
+/**
+ * The root `packageManager` names pnpm at an exact version with a sha512, so
+ * corepack (used by the Dockerfiles) verifies the download. Invalid JSON is
+ * reported by checkExactDependencies, not here.
+ */
+export function checkPackageManagerHash(path: string, text: string): string[] {
+  let manifest: { packageManager?: unknown };
+  try {
+    manifest = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  const value = manifest.packageManager;
+  if (typeof value === 'string' && /^pnpm@\d+\.\d+\.\d+\+sha512\.[0-9a-f]{128}$/.test(value)) {
+    return [];
+  }
+  return [`${path}: packageManager is ${JSON.stringify(value)}; pin pnpm with a +sha512 hash`];
 }
 
 /** Every dependency range in a manifest is an exact version or a `workspace:` link. */

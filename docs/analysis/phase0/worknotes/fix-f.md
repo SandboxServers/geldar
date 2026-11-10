@@ -38,3 +38,10 @@ Branch fix/f-supply-chain, base wave6-main. Date of work: 2026-11-10.
   - `pnpm-lock.yaml` has no tarball, git, directory, or file sources.
 - Age (14 days) is not checked offline. Manual step: `npm view <pkg> time --json` for each direct and overridden package before a lockfile change.
 - `threshold/mcp-mock/compose.example.yml` was a tag-only ghcr image; pinned to `main`'s digest `sha256:615c9160...7d97` (resolved with `docker buildx imagetools inspect`, our own image).
+## Item 3: Docker base and pnpm (done; local build not run)
+
+- `eventsink/Dockerfile`: `node:22.23-alpine` (Node 22.23.4, pushed 2026-11-05, floating) is now `node:22.23.2-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85`, the .nvmrc patch. Resolved with `docker buildx imagetools inspect node:22.23.2-alpine`; the amd64 image's Created date is 2026-09-17 (older than 14 days).
+- `package.json` `packageManager` is `pnpm@12.15.0+sha512.<hex>`; the hash is the registry tarball integrity (`npm view pnpm@12.15.0 dist.integrity`, base64 to hex). pnpm 12.15.0 was published 2026-10-21.
+- `threshold/mcp/Dockerfile` and `threshold/mcp-mock/Dockerfile`: `npm install -g pnpm@12.15.0` replaced by `corepack enable`, which uses the verified packageManager.
+- `checkPackageManagerHash` in `pin-rules.ts` fails the check when the root packageManager has no sha512.
+- Not run: a local `docker build` (Docker 29.1.3 is present). CI builds the images in item 5.

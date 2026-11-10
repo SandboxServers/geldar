@@ -5,6 +5,7 @@ import {
   checkDockerfileFrom,
   checkExactDependencies,
   checkLockfileSources,
+  checkPackageManagerHash,
   checkPins,
   isComposeImageFile,
   isDockerfile,
@@ -39,6 +40,24 @@ describe('checkExactDependencies', () => {
 
   it('reports a manifest that is not JSON', () => {
     expect(checkExactDependencies('package.json', '{')).toHaveLength(1);
+  });
+});
+
+describe('checkPackageManagerHash', () => {
+  it('accepts pnpm at an exact version with a sha512', () => {
+    const text = JSON.stringify({ packageManager: `pnpm@12.15.0+sha512.${'c'.repeat(128)}` });
+    expect(checkPackageManagerHash('package.json', text)).toEqual([]);
+  });
+
+  it('reports a pnpm pin without a hash', () => {
+    const text = JSON.stringify({ packageManager: 'pnpm@12.15.0' });
+    expect(checkPackageManagerHash('package.json', text)).toHaveLength(1);
+  });
+
+  it('is checked for the root manifest only', () => {
+    const text = JSON.stringify({ packageManager: 'pnpm@12.15.0' });
+    expect(checkPins('tools/adam-cli/package.json', text)).toEqual([]);
+    expect(checkPins('package.json', text)).toHaveLength(1);
   });
 });
 
