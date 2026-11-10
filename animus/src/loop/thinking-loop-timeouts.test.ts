@@ -93,6 +93,39 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     expect(second.outcome).toBe('planned');
   });
 
+  it('ends a cycle whose profile load never returns', async () => {
+    const logs: Line[] = [];
+    const rig = await makeRig([{ text: VALID_THOUGHT }], {
+      loop: { stepTimeoutMs: STEP_MS },
+      deps: { log: (line) => logs.push(line) },
+    });
+    rig.store.loadDeterministic = hangFirst(rig.store.loadDeterministic.bind(rig.store));
+
+    const first = await rig.loop.handle(makeDecision('idle'));
+    expect(first.outcome).toBe('model_error');
+    expect(aborts(logs)).toEqual(['memory']);
+
+    const second = await rig.loop.handle(makeDecision('idle'));
+    expect(second.outcome).toBe('planned');
+  });
+
+  it('ends a cycle whose plan send never returns as a fallback hold, and the next wake thinks', async () => {
+    const logs: Line[] = [];
+    const rig = await makeRig([{ text: VALID_THOUGHT }, { text: VALID_THOUGHT }], {
+      loop: { stepTimeoutMs: STEP_MS },
+      deps: { log: (line) => logs.push(line) },
+    });
+    rig.body.submitPlan = hangFirst(rig.body.submitPlan.bind(rig.body));
+
+    const first = await rig.loop.handle(makeDecision('idle'));
+    expect(first.outcome).toBe('fallback_hold');
+    expect(aborts(logs)).toEqual(['plan_submit']);
+
+    const second = await rig.loop.handle(makeDecision('idle'));
+    expect(second.outcome).toBe('planned');
+    expect(rig.attention.settled).toEqual(['fallback_hold', 'planned']);
+  });
+
   it('ends a cycle whose Thinker never answers, at the job deadline plus the step limit', async () => {
     const logs: Line[] = [];
     const rig = await makeRig([{ text: VALID_THOUGHT }], {

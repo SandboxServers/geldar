@@ -83,6 +83,7 @@ export class ThinkingLoop {
       body: deps.body,
       lifeId: options.lifeId,
       tickMs: 1000 / options.tickRate,
+      stepMs: this.stepMs,
       now: this.now,
       report: this.report,
       log: (line) => this.log(line),
@@ -134,8 +135,9 @@ export class ThinkingLoop {
         elapsed_ms: this.elapsed(),
       });
       reportFailure(this.report, error, 'cycle_failed');
+      // A send that hung means the Body never got the plan: the thought settles as a fallback hold.
       result = {
-        outcome: 'model_error',
+        outcome: reason === 'plan_submit' ? 'fallback_hold' : 'model_error',
         thoughtId: null,
         plan: null,
         ack: null,
@@ -195,7 +197,7 @@ export class ThinkingLoop {
     const tick = raw.world_time.ticks;
 
     // 2. The profile and the memory.
-    const load = this.deps.memory.loadDeterministic(lifeId, tick);
+    const load = bounded(this.deps.memory.loadDeterministic(lifeId, tick), this.stepMs, 'memory');
     const memory = await withinLimit(load, this.options.memoryTimeoutMs, () =>
       this.log({
         event: 'memory_load_timeout',

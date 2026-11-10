@@ -5,6 +5,7 @@
  */
 import { type PlanAck, type PlanMessage, validatePlanMessage } from '@geldar/contract';
 import { type BodyLink, BodyLinkError } from '../ports/index.ts';
+import { bounded } from './cycle-await.ts';
 import { planExpiredBy } from './plan.ts';
 import { type FailureReport, reportFailure } from './thought-journal.ts';
 
@@ -14,6 +15,8 @@ export interface SubmitContext {
   lifeId: string;
   /** The wall-clock length of one world tick, `1000 / tick_rate`. */
   tickMs: number;
+  /** The limit of one awaited send; a send that runs past it ends the cycle as `plan_submit`. */
+  stepMs: number;
   now: () => number;
   report: FailureReport;
   log: (line: Record<string, unknown>) => void;
@@ -76,7 +79,7 @@ async function submit(ctx: SubmitContext, plan: PlanMessage): Promise<PlanAck | 
   }
   for (let attempt = 1; ; attempt++) {
     try {
-      return await ctx.body.submitPlan(plan);
+      return await bounded(ctx.body.submitPlan(plan), ctx.stepMs, 'plan_submit');
     } catch (error) {
       if (!(error instanceof BodyLinkError)) throw error;
       if (error.code !== 'timeout' || attempt >= 2) {
