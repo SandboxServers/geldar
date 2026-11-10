@@ -267,6 +267,7 @@ describe('tokenBucketLimiter', () => {
       failedAuthPerMinute: 30,
       actMinSeconds: 2,
       sayMinSeconds: 3,
+      handshakePerMinute: 300,
     };
     const count = (bucket: string): number => {
       const limiter = tokenBucketLimiter(bucketRules(limits));
@@ -290,6 +291,7 @@ describe('tokenBucketLimiter', () => {
         failedAuthPerMinute: 30,
         actMinSeconds: 2,
         sayMinSeconds: 3,
+        handshakePerMinute: 300,
       }),
     );
     expect(limiter.take('act:ag_jason', 0).allowed).toBe(true);

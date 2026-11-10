@@ -53,6 +53,15 @@ export class FrontLimits {
     return undefined;
   }
 
+  /**
+   * Takes one token from the player's handshake bucket, which carries initialize, resources/read
+   * and the other non-call methods at its own, higher rate. Seconds to wait, or undefined.
+   */
+  handshake(playerId: string, nowMs: number): number | undefined {
+    const decision = this.limiter.take(`handshake:${playerId}`, nowMs);
+    return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
+  }
+
   /** Counts one more open request for the player; false when the player is at its cap. */
   acquire(playerId: string): boolean {
     const count = this.open.get(playerId) ?? 0;

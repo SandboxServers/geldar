@@ -65,6 +65,11 @@ function isToolCall(body: unknown): boolean {
     : false;
 }
 
+function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefined {
+  if (retryAfterSec === undefined) return undefined;
+  return { status: 429, message: 'rate_limited', retryAfterSec };
+}
+
 /**
  * The HTTP front of the real MCP server: bearer auth through the token store, Host and Origin
  * checks, body and batch limits, the call and failed-auth budgets, and revocation.
@@ -119,10 +124,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
       const player = players.get(res.req);
       if (player === undefined) return { status: 401, message: 'unauthorized' };
-      if (!isToolCall(body)) return undefined;
-      const retryAfterSec = gates.call(playerId, player.ownerId, now());
-      if (retryAfterSec === undefined) return undefined;
-      return { status: 429, message: 'rate_limited', retryAfterSec };
+      // Every other method (initialize, resources/read, ...) takes from the cheaper handshake bucket.
+      if (!isToolCall(body)) return refusedRateLimit(gates.handshake(playerId, now()));
+      return refusedRateLimit(gates.call(playerId, player.ownerId, now()));
     },
   });
 

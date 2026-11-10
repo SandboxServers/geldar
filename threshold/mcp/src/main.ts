@@ -110,6 +110,7 @@ export function bucketRules(
     | 'callsPerMinute'
     | 'ownerCallsPerMinute'
     | 'failedAuthPerMinute'
+    | 'handshakePerMinute'
     | 'actMinSeconds'
     | 'sayMinSeconds'
   >,
@@ -121,6 +122,7 @@ export function bucketRules(
     if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
     if (bucket.startsWith('auth-failed:address:')) return perMinute(limits.failedAuthPerMinute);
     if (bucket === 'auth-failed:global') return perMinute(GLOBAL_FAILED_AUTH_PER_MINUTE);
+    if (bucket.startsWith('handshake:')) return perMinute(limits.handshakePerMinute);
     if (bucket.startsWith('act:')) return spaced(limits.actMinSeconds);
     if (bucket.startsWith('say:')) return spaced(limits.sayMinSeconds);
     return perMinute(limits.callsPerMinute);
