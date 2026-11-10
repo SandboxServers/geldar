@@ -218,10 +218,73 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0004, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0005, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
 END
 $mcp$;
+
+-- Migration 0005 (wave 6 section 4 item 11): the read-only role geldar_glass. It reads exactly the
+-- five tables Glass reads, writes nothing, holds no sequence and cannot read the MCP's tables.
+-- Privileges only: a password may have been set by `migrate --set-role-password geldar_glass`.
+DO $glass$
+DECLARE
+  glass_tables TEXT[] := ARRAY['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+  t TEXT;
+  rel RECORD;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'geldar_glass' AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+  ) THEN
+    RAISE EXCEPTION 'schema check: role geldar_glass is missing or is superuser, createdb or createrole';
+  END IF;
+
+  FOREACH t IN ARRAY glass_tables LOOP
+    IF NOT has_table_privilege('geldar_glass', t, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT %', t;
+    END IF;
+    IF has_table_privilege('geldar_glass', t, 'INSERT')
+       OR has_table_privilege('geldar_glass', t, 'UPDATE')
+       OR has_table_privilege('geldar_glass', t, 'DELETE')
+       OR has_table_privilege('geldar_glass', t, 'TRUNCATE')
+       OR has_table_privilege('geldar_glass', t, 'REFERENCES')
+       OR has_table_privilege('geldar_glass', t, 'TRIGGER') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can write %', t;
+    END IF;
+  END LOOP;
+
+  -- Exactly the five tables: no SELECT on any other table in the public schema.
+  FOR rel IN
+    SELECT c.relname FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+  LOOP
+    IF rel.relname <> ALL (glass_tables)
+       AND has_table_privilege('geldar_glass', rel.relname, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can read % (not a Glass table)', rel.relname;
+    END IF;
+  END LOOP;
+
+  -- No sequence grant of any kind.
+  FOR rel IN
+    SELECT c.relname FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'S'
+  LOOP
+    IF has_sequence_privilege('geldar_glass', rel.relname, 'USAGE')
+       OR has_sequence_privilege('geldar_glass', rel.relname, 'SELECT')
+       OR has_sequence_privilege('geldar_glass', rel.relname, 'UPDATE') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass has a privilege on sequence %', rel.relname;
+    END IF;
+  END LOOP;
+
+  IF has_schema_privilege('geldar_glass', 'public', 'CREATE') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass can CREATE in schema public';
+  END IF;
+
+  RAISE NOTICE 'schema check passed: role geldar_glass reads % tables and writes none', array_length(glass_tables, 1);
+END
+$glass$;
