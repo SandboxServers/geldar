@@ -50,6 +50,8 @@ services:
     #   command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
     #   volumes:
     #     - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+    #     # The tunnel credentials stay outside the repo: an operator-made file under compose/secrets (gitignored).
+    #     - ./secrets/cloudflared-credentials.json:/etc/cloudflared/credentials.json:ro
     #   read_only: true
     #   cap_drop: [ALL]
     #   security_opt: ["no-new-privileges:true"]

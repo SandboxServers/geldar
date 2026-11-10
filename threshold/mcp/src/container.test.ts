@@ -112,7 +112,7 @@ describe('compose/cloudflared/config.example.yml', () => {
 
   it('routes only /p/<player> to the MCP on loopback', () => {
     const [route] = config.ingress;
-    expect(route?.service).toBe('http://127.0.0.1:8788');
+    expect(route?.service).toBe('http://geldar-mcp:8788');
     const re = new RegExp(route?.path ?? '');
     expect(re.test('/p/ag-test-01')).toBe(true);
     expect(re.test('/p/a')).toBe(false);
@@ -151,14 +151,25 @@ describe('compose/mcp.yml', () => {
 });
 
 /** Workspace package name to its directory, read from each package.json (the runtime resolves these by name). */
-const workspaceDirs = ['animus', 'contract', 'threshold/mcp', 'threshold/mcp-mock', 'tools/repo-checks'];
+const workspaceDirs = [
+  'animus',
+  'contract',
+  'threshold/mcp',
+  'threshold/mcp-mock',
+  'tools/repo-checks',
+];
 const workspaceByName = new Map(
-  workspaceDirs.map((dir) => [(JSON.parse(read(`${dir}/package.json`)) as { name: string }).name, dir]),
+  workspaceDirs.map((dir) => [
+    (JSON.parse(read(`${dir}/package.json`)) as { name: string }).name,
+    dir,
+  ]),
 );
 
 /** The module specifiers a source file names in import, export-from or dynamic import statements. */
 function specifiersOf(source: string): string[] {
-  return [...source.matchAll(/(?:\bfrom\s+|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)].map((m) => m[1] as string);
+  return [...source.matchAll(/(?:\bfrom\s+|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)].map(
+    (m) => m[1] as string,
+  );
 }
 
 /** Every repo file the runtime entry reaches: relative imports and workspace packages, followed transitively. */
@@ -174,13 +185,17 @@ function reachableFrom(entry: string): Set<string> {
       } else if (spec.startsWith('@geldar/')) {
         const [scope, name, ...rest] = spec.split('/');
         const dir = workspaceByName.get(`${scope}/${name}`);
-        if (dir === undefined) throw new Error(`${file} imports an unknown workspace package: ${spec}`);
+        if (dir === undefined)
+          throw new Error(`${file} imports an unknown workspace package: ${spec}`);
         if (rest.length > 0) {
           queue.push(posix.join(dir, rest.join('/')));
         } else {
-          const pkg = JSON.parse(read(`${dir}/package.json`)) as { exports?: Record<string, string> };
+          const pkg = JSON.parse(read(`${dir}/package.json`)) as {
+            exports?: Record<string, string>;
+          };
           const entryFile = pkg.exports?.['.'];
-          if (typeof entryFile !== 'string') throw new Error(`${dir} has no string exports["."] entry`);
+          if (typeof entryFile !== 'string')
+            throw new Error(`${dir} has no string exports["."] entry`);
           queue.push(posix.join(dir, entryFile));
         }
       }
@@ -208,11 +223,18 @@ describe('the image holds everything the runtime reads or imports', () => {
 });
 
 describe('compose/mcp.yml healthcheck', () => {
-  const overlay = parse(read('compose/mcp.yml')) as { services: Record<string, Record<string, unknown>> };
+  const overlay = parse(read('compose/mcp.yml')) as {
+    services: Record<string, Record<string, unknown>>;
+  };
   const mcp = overlay.services['geldar-mcp'] as Record<string, unknown>;
 
   it('declares a TCP probe of the published port so a crash loop is visible to up --wait', () => {
-    const hc = mcp.healthcheck as { test: string[]; interval: string; retries: number; start_period: string };
+    const hc = mcp.healthcheck as {
+      test: string[];
+      interval: string;
+      retries: number;
+      start_period: string;
+    };
     expect(hc.test.join(' ')).toMatch(/8788/);
     expect(hc.test.join(' ')).toMatch(/connect/);
     expect(hc.retries).toBeGreaterThan(0);
@@ -223,13 +245,18 @@ describe('compose/mcp.yml healthcheck', () => {
 
 describe('geldar.ps1 Wave M block', () => {
   const script = read('geldar.ps1');
-  const block = script.slice(script.indexOf('function Invoke-Mcp'), script.indexOf('switch ($Command)'));
+  const block = script.slice(
+    script.indexOf('function Invoke-Mcp'),
+    script.indexOf('switch ($Command)'),
+  );
 
   it('saves and restores in a finally every environment variable it sets', () => {
     const names = [...block.matchAll(/\$env:(\w+)\s*=/gi)].map((m) => m[1] as string);
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
-      expect(block, `${name} is saved before it is set`).toMatch(new RegExp(`\\$saved = @\\{[^}]*\\b${name} = \\$env:${name}\\b`));
+      expect(block, `${name} is saved before it is set`).toMatch(
+        new RegExp(`\\$saved = @\\{[^}]*\\b${name} = \\$env:${name}\\b`),
+      );
       const at = block.indexOf(`$env:${name} =`);
       const finallyAt = block.indexOf('finally', at);
       expect(finallyAt, `${name} has a finally`).toBeGreaterThan(at);
