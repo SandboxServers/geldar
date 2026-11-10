@@ -152,3 +152,11 @@ Facts a finisher needs: the 8 wired handlers take `ToolCall { playerId, lifeId }
 
 Left for 11b: main.ts, cli.ts, golem extraServe wiring, image build test, e2e.
 WM-11a complete; 11b left: main.ts, cli.ts, golem extraServe wiring, image build test, e2e
+
+## WM-11b
+
+part 1 done: main, cli, pg-agents; left: golem extraServe wiring, image build test (ops), e2e with a scripted stub client; known gaps: sleep cursor column, startup lives resolved lazily
+
+Known gap for the owner: the sleep cursor has no column, so `PgAgentStore.read` returns cursor 0 and `write` keeps only the day. A sleep cursor column would need a migration 0003.
+
+Correction to the line above: the living lives are no longer a startup snapshot. `lazyLifeRegistry` (threshold/mcp/src/main.ts) reads them on first use and again after 5 s, and each life's speech identity (name, game_account) is read the same way, so a life added while the server runs is picked up within 5 s.
