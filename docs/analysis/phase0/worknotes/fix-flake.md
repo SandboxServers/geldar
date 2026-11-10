@@ -12,4 +12,6 @@ Branch `fix/flaky-tests` from `phase0/integration`. Worktree `.claude/worktrees/
 
 | 4 | lantern-local/test/thinker.test.ts (+ thinker.fakes.ts helper) | reconnect tests dial fixed port 1; drain test sleeps 400 ms, asserts with Date.now(); until deadline 3 s | refusedWsUrl() (bound then released ephemeral port); until 10 s on reconnect waits; drain test asserts the 990 ms lower bound, no fixed sleep | pending | done: drain delay ignored fails 1 test | pending | pending |
 
-Remaining: golem adam-stack 600 ms assertion, repo-checks cli timing, mcp-tokens typecheck.
+| 5 | golem/test/live/adam-stack.test.ts | 600 ms ready bound: the Body's own ready wait shares it, so a slow Body fails the test naming the wrong process | READY_BOUND_MS 5000 with a 15 s test timeout; message regex built from the bound | pending | done: awaits wait removed fails 1 test | pending | pending |
+
+Remaining: repo-checks cli timing, mcp-tokens typecheck.
