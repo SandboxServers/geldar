@@ -45,8 +45,8 @@ function promptsWith(edit: (text: string) => string): string {
     writeFileSync(join(dir, file), readFileSync(join(root, file)));
   }
   writeFileSync(
-    join(dir, 'thought/v2.md'),
-    edit(readFileSync(join(root, 'thought/v2.md'), 'utf8')),
+    join(dir, 'thought/v4.md'),
+    edit(readFileSync(join(root, 'thought/v4.md'), 'utf8')),
   );
   return dir;
 }
@@ -96,9 +96,9 @@ function commitmentRow(text: string, dueTick: number | null): MemoryRow {
 
 describe('prompt library', () => {
   it('records the version id as kind@n+sha256 of the first 12 hex of the file', () => {
-    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v2.md'));
+    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v4.md'));
     const hex = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
-    expect(library.thoughtVersion).toBe(`thought@2+sha256:${hex}`);
+    expect(library.thoughtVersion).toBe(`thought@4+sha256:${hex}`);
     expect(library.reflectionVersion).toMatch(/^reflection@2\+sha256:[0-9a-f]{12}$/);
     expect(library.bodyApiVersion).toMatch(/^body-api@1\+sha256:[0-9a-f]{12}$/);
     expect(library.render('thought', sampleThoughtVars()).templateVersion).toBe(
@@ -106,8 +106,8 @@ describe('prompt library', () => {
     );
   });
 
-  it('makes thought v2 the default and keeps v1 loadable', () => {
-    expect(DEFAULT_THOUGHT_VERSION).toBe(2);
+  it('makes thought v4 the default and keeps v1 loadable', () => {
+    expect(DEFAULT_THOUGHT_VERSION).toBe(4);
     const v1 = createPromptLibrary({ thoughtVersion: 1 });
     expect(v1.thoughtVersion).toMatch(/^thought@1\+sha256:[0-9a-f]{12}$/);
     expect(v1.render('thought', sampleThoughtVars()).templateVersion).toBe(v1.thoughtVersion);
@@ -115,14 +115,21 @@ describe('prompt library', () => {
     expect(system).not.toContain('You know only what you have seen');
   });
 
-  it('loads thought v3 on request with the data rule in block 1, and keeps v2 the default', () => {
-    const v3 = createPromptLibrary({ thoughtVersion: 3 });
-    expect(v3.thoughtVersion).toMatch(/^thought@3\+sha256:[0-9a-f]{12}$/);
-    expect(DEFAULT_THOUGHT_VERSION).toBe(2);
-    expect(library.thoughtVersion).toMatch(/^thought@2\+sha256:[0-9a-f]{12}$/);
-    const system = v3.render('thought', sampleThoughtVars()).messages[0]?.content as string;
-    expect(system).toContain(DATA_RULE);
-    expect(system).toContain('You know only what you have seen');
+  it('loads thought v3 and v4 on request with the data rule in block 1', () => {
+    for (const version of [3, 4]) {
+      const loaded = createPromptLibrary({ thoughtVersion: version });
+      expect(loaded.thoughtVersion).toMatch(new RegExp(`^thought@${version}\\+sha256:[0-9a-f]{12}$`));
+      const system = loaded.render('thought', sampleThoughtVars()).messages[0]?.content as string;
+      expect(system).toContain(DATA_RULE);
+      expect(system).toContain('You know only what you have seen');
+    }
+    expect(library.thoughtVersion).toMatch(/^thought@4\+sha256:[0-9a-f]{12}$/);
+  });
+
+  it('keeps the observer, makers and credit wording out of thought v4 (decisions 0058, 0059)', () => {
+    const v4 = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v4.md'), 'utf8');
+    expect(v4).not.toMatch(/observer|makers|credit|limited/i);
+    expect(v4).toContain('not a command you must obey');
   });
 
   it('makes thought v3 exactly v2 plus the one data line after the anti-loop rule', () => {
@@ -133,7 +140,7 @@ describe('prompt library', () => {
   });
 
   it('fits thought v3 in num_ctx with the default thought budget and the output cap', () => {
-    const system = createPromptLibrary({ thoughtVersion: 3 }).render('thought', sampleThoughtVars())
+    const system = createPromptLibrary({ thoughtVersion: 4 }).render('thought', sampleThoughtVars())
       .messages[0]?.content as string;
     expect(
       DEFAULT_THOUGHT_BUDGET_TOKENS + promptCost(system) + OUTPUT_RESERVE_TOKENS,
@@ -151,6 +158,7 @@ describe('prompt library', () => {
     const pinned: Record<string, string> = {
       'thought/v2.md': '12b59d391c2dab0578f77a4f3dc1997047c282bf4a2221fb4bebb273228629f5',
       'thought/v3.md': 'd52dba9b426dc87ed11940bebad61e365bd3d1784db99101126778a6f3da3379',
+      'thought/v4.md': 'c9a3d767f9099ef0de8a4a7d8b96d4ac62da0d169538129d1bd8d8c29f86533e',
       'reflection/v1.md': 'bdbceaba069f87a944c1230ea314cc59cdeed4a132bc6a9c1283e483625cbcf8',
       'reflection/v2.md': '18f3117ccf6bd8b0da693c65121d0622381e7e584d6dc898e58caa19ecdbc127',
       'body-api/v1.json': 'f943151a1af44dbd717239c088f56a157f5b3b1154aac7cb5f70bc19c8c89c2f',
@@ -243,7 +251,7 @@ describe('prompt library', () => {
   it('has no timestamps or counts in blocks 1 to 4', () => {
     const system = library.render('thought', sampleThoughtVars()).messages[0]?.content as string;
     expect(system).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(system).not.toMatch(/Thinking credits|Days since/);
+    expect(system).not.toMatch(/Strength left for thinking|Days since/);
   });
 
   it('golden: the render of the sample snapshot', () => {
@@ -259,7 +267,7 @@ describe('prompt library', () => {
       (none)
       People nearby and what you think of them: see the lines marked person in QUOTED WORLD TEXT.
 
-      You have been alive 3 days. Days since you slept: 1. Thinking credits: 90.
+      You have been alive 3 days. Days since you slept: 1. Strength left for thinking: 90.
       Why you were woken: idle
       Recent thoughts, oldest first:
       (none)

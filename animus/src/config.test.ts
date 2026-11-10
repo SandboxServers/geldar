@@ -32,7 +32,17 @@ describe('animus config: the start-up waits', () => {
       maxBeliefs: 40,
       maxCommitments: 10,
       memoryTimeoutS: 10,
+      thoughtVersion: 4,
     });
+  });
+
+  it('selects the thought template version from mind.thought_version', () => {
+    const doc = approvedDoc();
+    expect(parseAnimusConfig(doc).mind.thoughtVersion).toBe(4);
+    doc.mind.thought_version = 3;
+    expect(parseAnimusConfig(doc).mind.thoughtVersion).toBe(3);
+    doc.mind.thought_version = 0;
+    expect(() => parseAnimusConfig(doc)).toThrow('mind.thought_version');
   });
 
   it('defaults them when absent and rejects a bad value', () => {
@@ -46,6 +56,7 @@ describe('animus config: the start-up waits', () => {
       maxBeliefs: 40,
       maxCommitments: 10,
       memoryTimeoutS: 10,
+      thoughtVersion: 4,
     });
     doc.mind.thinker_wait_s = -1;
     expect(() => parseAnimusConfig(doc)).toThrow('mind.thinker_wait_s');

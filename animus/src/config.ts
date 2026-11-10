@@ -65,6 +65,8 @@ export interface AnimusConfig {
     maxBeliefs: number;
     /** Open commitments loaded and shown, earliest due first (`mind.max_commitments`). */
     maxCommitments: number;
+    /** The thought template version, `thought/vN.md` (`mind.thought_version`; 1 to 4 exist). */
+    thoughtVersion: number;
     /** How long a memory load may take before the Mind gives up (`mind.memory_timeout_s`). */
     memoryTimeoutS: number;
   };
@@ -208,6 +210,8 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
       promptBudgetTokens: optionalInt(mind, 'prompt_budget_tokens', 'mind', 2500, 1000),
       maxBeliefs: optionalInt(mind, 'max_beliefs', 'mind', 40, 1),
       maxCommitments: optionalInt(mind, 'max_commitments', 'mind', 10, 1),
+      // 4: the default thought template (prompts/thought/v4.md, library.ts DEFAULT_THOUGHT_VERSION).
+      thoughtVersion: optionalInt(mind, 'thought_version', 'mind', 4, 1),
       memoryTimeoutS: optionalInt(mind, 'memory_timeout_s', 'mind', 10, 1),
     },
     thought,
