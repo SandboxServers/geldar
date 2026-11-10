@@ -28,7 +28,13 @@ export interface IntentStartDeps {
   agents: (radius: number) => string[];
   tick: () => number;
   setState(a: ActiveIntent, state: IntentState, detail?: string): void;
-  end(a: ActiveIntent, state: IntentState, detail: string, wake?: WakeReason): Promise<void>;
+  end(
+    a: ActiveIntent,
+    state: IntentState,
+    detail: string,
+    wake?: WakeReason,
+    keepCheckpoint?: boolean,
+  ): Promise<void>;
   current(): ActiveIntent | null;
   install(a: ActiveIntent): void;
 }
@@ -59,7 +65,9 @@ export async function startIntentRun(
 ): Promise<IntentDisposition> {
   const { runtime } = deps;
   const old = deps.current();
-  if (old) await deps.end(old, 'cancelled', `replaced by ${id}`);
+  // Its checkpoint stays until the new intent's checkpoint overwrites it, so a kill in between
+  // leaves a checkpoint, never none. If the new intent fails before it runs, it ends and deletes it.
+  if (old) await deps.end(old, 'cancelled', `replaced by ${id}`, undefined, true);
 
   const controller = new AbortController();
   const view = runtime.view;

@@ -67,6 +67,19 @@ describe('checkpointing the running intent', () => {
     await b.stop();
   });
 
+  it('a replacing intent overwrites the checkpoint of the one it replaces, with no delete before', async () => {
+    const kv = buckets();
+    const b = await boot(kv);
+    await startIntent(b, 1);
+    await b.body.checkpoints?.flush();
+    const deletesBefore = kv.checkpoints.deletes;
+    await startIntent(b, 2);
+    await b.body.checkpoints?.flush();
+    expect(kv.checkpoints.deletes).toBe(deletesBefore);
+    expect(parseEntry(kv.checkpoints.peek(LIFE) ?? '')?.intent_id).toBe(fakeId('in', 2));
+    await b.stop();
+  });
+
   it('keeps the checkpoint when the Body stops, since that is a restart and not an end', async () => {
     const kv = buckets();
     const b = await boot(kv);

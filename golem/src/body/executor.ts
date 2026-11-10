@@ -318,6 +318,7 @@ export class IntentExecutor {
     detail: string,
     wake?: WakeReason,
     fromStep = false,
+    keepCheckpoint = false,
   ): Promise<void> {
     if (a.ended) return;
     a.ended = true;
@@ -330,7 +331,8 @@ export class IntentExecutor {
     // A step that ends its own intent is the step in flight: waiting for it would wait forever.
     if (!fromStep) await a.stepping;
     this.setState(a, state, detail);
-    if (!this.stopping) this.tellObserver((o) => o.ended(a.id));
+    // A replaced intent keeps its checkpoint until the new intent overwrites it (one key per life).
+    if (!this.stopping && !keepCheckpoint) this.tellObserver((o) => o.ended(a.id));
     if (wake) {
       this.runtime.sink.wake({ reason: wake, tick: this.tick(), intentId: a.id, detail });
     }
@@ -459,7 +461,8 @@ export class IntentExecutor {
         agents: this.agents,
         tick: () => this.tick(),
         setState: (a, state, detail) => this.setState(a, state, detail),
-        end: (a, state, detail, wake) => this.end(a, state, detail, wake),
+        end: (a, state, detail, wake, keepCheckpoint) =>
+          this.end(a, state, detail, wake, false, keepCheckpoint),
         current: () => this.active,
         install: (a) => {
           this.active = a;
