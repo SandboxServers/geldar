@@ -2,15 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { latencyMeasure, percentile } from '../src/calls.ts';
 import type { ThoughtRow, Verdict } from '../src/types.ts';
 import { PENDING } from '../src/types.ts';
-import { thought } from './fixture.ts';
+import { MIN_MS, T0, thought } from './fixture.ts';
 
 const WIN = 'window';
 const P95_MAX = 15000;
 const HARD = 25000;
 
-/** A called thought with the given latency; the id carries the index so rows stay distinct. */
+/** A called thought with the given latency; the id carries the index so rows stay distinct. The
+ * i-th call is i minutes after T0, so `n` calls span n-1 minutes. */
 const took = (i: number, ms: number): ThoughtRow =>
-  thought(`t${i}`, { called: true, latencyMs: ms });
+  thought(`t${i}`, { called: true, latencyMs: ms, atMs: T0 + i * MIN_MS });
 /** `n` thoughts at `ms` each. */
 const many = (n: number, ms: number): ThoughtRow[] =>
   Array.from({ length: n }, (_, i) => took(i, ms));
@@ -58,9 +59,29 @@ const cases: Case[] = [
   },
   {
     name: 'an errored call is excluded from latency and counted apart',
-    thoughts: [...many(19, 1000), thought('e1', { called: true, errored: true, latencyMs: 90000 })],
+    thoughts: [...many(20, 1000), thought('e1', { called: true, errored: true, latencyMs: 90000 })],
     verdict: 'PASS',
-    values: { samples: 19, max_ms: 1000, errored_calls: 1 },
+    values: { samples: 20, max_ms: 1000, errored_calls: 1 },
+  },
+  {
+    name: 'fewer than 20 timed calls cannot PASS: UNKNOWN',
+    thoughts: many(19, 1000),
+    verdict: 'UNKNOWN',
+    values: { samples: 19 },
+  },
+  {
+    name: '20 calls inside 10 minutes cannot PASS: UNKNOWN',
+    thoughts: Array.from({ length: 20 }, (_, i) =>
+      thought(`t${i}`, { called: true, latencyMs: 1000, atMs: T0 + (i % 9) * MIN_MS }),
+    ),
+    verdict: 'UNKNOWN',
+    values: { samples: 20 },
+  },
+  {
+    name: 'a FAIL stands on a few calls: 3 calls over the hard limit FAIL',
+    thoughts: [took(0, 26000), took(1, 1000), took(2, 1000)],
+    verdict: 'FAIL',
+    values: { over_hard_limit: 1 },
   },
   {
     name: 'no thoughts is UNKNOWN',

@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { receiptMeasure } from '../src/intents.ts';
 import type { ActionRow, ReceiptRow, Verdict } from '../src/types.ts';
-import { action, receipt } from './fixture.ts';
+import { MIN_MS, T0, action, receipt } from './fixture.ts';
 
 const WIN = 'window';
+
+/** `n` completed actions, the i-th with its prepared and committed receipts i minutes after T0. */
+const spread = (n: number) => {
+  const actions: ActionRow[] = [];
+  const receipts: ReceiptRow[] = [];
+  for (let i = 0; i < n; i++) {
+    actions.push(action(`b${i}`, { state: 'completed' }));
+    receipts.push(receipt(`b${i}`, 'prepared', T0 + i * MIN_MS));
+    receipts.push(receipt(`b${i}`, 'committed', T0 + i * MIN_MS));
+  }
+  return { actions, receipts };
+};
 
 interface Case {
   name: string;
@@ -13,17 +25,26 @@ interface Case {
   noteHas?: string;
 }
 
+const enough = spread(20);
+
 const cases: Case[] = [
   {
     name: 'every terminal action has one final receipt PASS',
-    actions: [action('a1', { state: 'completed' }), action('a2', { state: 'failed' })],
-    receipts: [
-      receipt('a1', 'prepared'),
-      receipt('a1', 'committed'),
-      receipt('a2', 'prepared'),
-      receipt('a2', 'aborted'),
-    ],
+    actions: enough.actions,
+    receipts: enough.receipts,
     verdict: 'PASS',
+  },
+  {
+    name: 'fewer than 20 terminal actions cannot PASS: UNKNOWN',
+    actions: spread(19).actions,
+    receipts: spread(19).receipts,
+    verdict: 'UNKNOWN',
+  },
+  {
+    name: 'twenty terminal actions inside one minute cannot PASS: UNKNOWN',
+    actions: enough.actions,
+    receipts: enough.receipts.map((r) => ({ ...r, atMs: T0 })),
+    verdict: 'UNKNOWN',
   },
   {
     name: 'one terminal action without a final receipt FAIL, naming its id',
@@ -41,8 +62,8 @@ const cases: Case[] = [
   },
   {
     name: 'an action that is not terminal yet is not counted',
-    actions: [action('a1', { state: 'completed' }), action('a2', { state: 'running' })],
-    receipts: [receipt('a1', 'prepared'), receipt('a1', 'committed')],
+    actions: [...enough.actions, action('r1', { state: 'running' })],
+    receipts: [...enough.receipts, receipt('r1', 'prepared'), receipt('r1', 'committed')],
     verdict: 'PASS',
   },
   {

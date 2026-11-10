@@ -100,7 +100,7 @@ exports[`the report renderers > the JSON report matches its snapshot 1`] = `
     },
     {
       "id": "latency",
-      "note": "p95 compared with 15000 ms",
+      "note": "too few calls to pass: 2 of 20 samples over 1 of 10 minutes",
       "title": "Thought latency (p95 under the criterion)",
       "values": {
         "errored_calls": 0,
@@ -110,7 +110,7 @@ exports[`the report renderers > the JSON report matches its snapshot 1`] = `
         "p95_ms": 2400,
         "samples": 2
       },
-      "verdict": "PASS",
+      "verdict": "UNKNOWN",
       "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
     },
     {
@@ -174,7 +174,7 @@ exports[`the report renderers > the Markdown report matches its snapshot 1`] = `
 | Body restart mid-intent resumed from checkpoint | UNKNOWN |
 | Model floor (smallest model that passed) | UNKNOWN |
 | Inference calls per useful minute | UNKNOWN |
-| Thought latency (p95 under the criterion) | PASS |
+| Thought latency (p95 under the criterion) | UNKNOWN |
 | Continuous operation across restarts | UNKNOWN |
 
 ## Survival: 5 consecutive in-game days
@@ -252,9 +252,9 @@ exports[`the report renderers > the Markdown report matches its snapshot 1`] = `
 
 ## Thought latency (p95 under the criterion)
 
-- Verdict: **PASS**
+- Verdict: **UNKNOWN**
 - Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
-- Note: p95 compared with 15000 ms
+- Note: too few calls to pass: 2 of 20 samples over 1 of 10 minutes
 
 | Value | Number |
 | --- | --- |
