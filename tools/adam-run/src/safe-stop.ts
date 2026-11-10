@@ -25,6 +25,19 @@ export const SERVICE_MARKERS = [
   'animus/src/main.ts',
   'lantern-local/src/main.ts',
 ] as const;
+/** The entry marker of each service, in the form `adam up` gives it in the process command line. */
+export const SERVICE_ENTRY: Record<Service, string> = {
+  body: 'golem/src/adam/main.ts',
+  animus: 'animus/src/main.ts',
+  'lantern-local': 'lantern-local/src/main.ts',
+};
+
+/** Whether the process table holds the service's entry point (the probe that `observe` reports as `alive`). */
+export function serviceAlive(service: Service, table: ProcessView[]): boolean {
+  return table.some((p) =>
+    p.commandLine.replace(/\\/g, '/').replace(/"/g, '').includes(SERVICE_ENTRY[service]),
+  );
+}
 /** The stop order: the reverse of the start order. */
 export const STOP_ORDER: readonly Service[] = ['lantern-local', 'animus', 'body'];
 export const GRACEFUL_WAIT_MS = 5_000;

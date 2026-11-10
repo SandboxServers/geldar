@@ -9,7 +9,13 @@ import {
   scenario,
 } from '../test/fakes.ts';
 import { type ProcessView, runPaths } from './ports.ts';
-import { ownership, type SafeStopDeps, type SafeStopInput, safeStop } from './safe-stop.ts';
+import {
+  ownership,
+  type SafeStopDeps,
+  type SafeStopInput,
+  safeStop,
+  serviceAlive,
+} from './safe-stop.ts';
 
 const RUN_DIR = '.geldar/runs/run-1';
 const OWNED_AT = new Date(START_MS + 2 * MIN).toISOString();
@@ -44,6 +50,31 @@ const proc = (pid: number, startedAt: string, commandLine: string): ProcessView 
   pid,
   startedAt,
   commandLine,
+});
+
+describe('serviceAlive', () => {
+  // `adam up` spawns each entry from its package directory, so Windows shows the absolute path (see the adam-cli test).
+  it('finds each service by its package entry in the process table', () => {
+    const table = [
+      proc(
+        1,
+        OWNED_AT,
+        '"C:\\Program Files\\nodejs\\node.exe" C:\\repo\\golem\\src\\adam\\main.ts',
+      ),
+    ];
+    expect(serviceAlive('body', table)).toBe(true);
+    expect(serviceAlive('animus', table)).toBe(false);
+  });
+
+  it('finds the Mind and the Lantern by their entries too', () => {
+    const table = [
+      proc(2, OWNED_AT, 'node C:/repo/animus/src/main.ts'),
+      proc(3, OWNED_AT, 'node C:/repo/lantern-local/src/main.ts'),
+    ];
+    expect(serviceAlive('animus', table)).toBe(true);
+    expect(serviceAlive('lantern-local', table)).toBe(true);
+    expect(serviceAlive('body', table)).toBe(false);
+  });
 });
 
 describe('ownership', () => {

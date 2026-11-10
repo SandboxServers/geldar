@@ -176,7 +176,7 @@ describe('the supervisor and reporter argument arrays', () => {
     const files = createFileStore(runDir);
     files.write(
       join(runDir, 'manifest.json'),
-      JSON.stringify({ startedAt: '2026-11-10T00:00:00.000Z' }),
+      JSON.stringify({ started_at: '2026-11-10T00:00:00.000Z' }),
     );
     const { runner, calls } = recordingRunner();
     await createReporter(
@@ -188,6 +188,7 @@ describe('the supervisor and reporter argument arrays', () => {
       () => 'ag_smoke_01',
       'smoke',
     ).reportRun('run-1');
+    expect(calls[0]?.args).toContain('2026-11-10T00:00:00.000Z');
     expect(calls[0]?.args).toContain('--life');
     expect(calls[0]?.args).toContain('ag_smoke_01');
     expect(calls[0]?.args).toContain('--out');

@@ -15,7 +15,7 @@ import {
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { BodyOwner, ProcessFacts } from './body-restart.ts';
-import { type ProcRow, procState, SERVICES, type Service, stopOrder } from './procs.ts';
+import { entryPath, type ProcRow, procState, SERVICES, type Service, stopOrder } from './procs.ts';
 
 const execFileAsync = promisify(execFile);
 
@@ -60,7 +60,7 @@ export function startService(service: Service, env: Record<string, string>): Bod
   const fd = openSync(logFile(service), 'a');
   const startedAt = new Date().toISOString();
   try {
-    const child = spawn(process.execPath, [service.entry], {
+    const child = spawn(process.execPath, [entryPath(service, ROOT)], {
       cwd: join(ROOT, service.dir),
       env: { ...process.env, ...env },
       detached: true,

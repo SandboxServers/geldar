@@ -33,7 +33,7 @@ import {
   type Service,
   type Supervisor,
 } from './ports.ts';
-import { SERVICE_MARKERS } from './safe-stop.ts';
+import { serviceAlive } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
 import { classifyShardEdit, mindLifeOf, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
 import { parsePrepared, WORLD_VOLUME_ENV, type WorldVolumes } from './world-volume.ts';
@@ -218,11 +218,7 @@ export function createSampler(deps: SamplerDeps): Sampler {
       const atMs = deps.clock.nowMs();
       const lifeId = deps.lifeId();
       const procs = deps.processes.list();
-      const running = (service: Service): boolean =>
-        procs.some((p) => {
-          const line = p.commandLine.replace(/\\/g, '/');
-          return SERVICE_MARKERS.some((m) => line.includes(m)) && line.includes(service);
-        });
+      const running = (service: Service): boolean => serviceAlive(service, procs);
       const states = await composePs();
       const stackUp = (name: string): boolean => states[name] === 'running';
       const gpu = await deps.runner.exec('nvidia-smi', [
@@ -328,15 +324,15 @@ export function createReporter(
   const paths = runPaths(runDir);
   return {
     async reportRun() {
-      const manifest = JSON.parse(files.read(paths.manifest) ?? '{}') as { startedAt?: string };
-      if (manifest.startedAt === undefined)
-        throw new Error('report: manifest.json has no startedAt');
+      const manifest = JSON.parse(files.read(paths.manifest) ?? '{}') as { started_at?: string };
+      if (manifest.started_at === undefined)
+        throw new Error('report: manifest.json has no started_at');
       const res = await runner.exec('node', [
         join(repoRoot, 'tools', 'adam-report', 'src', 'cli.ts'),
         '--life',
         lifeOf(profile),
         '--from',
-        manifest.startedAt,
+        manifest.started_at,
         '--to',
         new Date(clock.nowMs()).toISOString(),
         '--manifest',
@@ -352,7 +348,7 @@ export function createReporter(
 }
 
 /** The file names in a folder; none when the folder is missing. */
-function listDir(dir: string): string[] {
+export function listDir(dir: string): string[] {
   try {
     return readdirSync(dir);
   } catch {
