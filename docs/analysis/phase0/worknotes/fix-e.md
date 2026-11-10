@@ -120,3 +120,22 @@ NOT DONE (stopped for context):
 - Step 2a: TPS rule (`tps` is always null in adapters.ts). Not started; the reader or the rule removal is open.
 - Step 2b: `bodyConnected` is only "process alive" (adapters.ts). Not started.
 - Items 9-12 not started.
+
+## Session 6: adam-run TPS and Body signal (steps 2a and 2b)
+
+- 2a TPS (e8a1c11): the plugin's `server_tps` events carry `world_tick` and `at`, both granted to geldar_glass.
+  The payload (the TPS figure) is NOT granted to geldar_glass, so the reader does not use it. `tick-rate.ts` takes
+  ticks per second over the newest contiguous stretch of server_tps events in the last 5 minutes, bounded by the run
+  start (a stretch breaks at a gap over 60 s; the newest event must be within 60 s; the span must be at least 60 s).
+  No grant was widened. The three docs' claim that the TPS rule fires is now true; no doc edit was needed.
+  Tests: tick-rate.test.ts (7) and adapters.test.ts "the sampler tick rate" (3). Revert check: `tps: null` put back;
+  the adapters test "reads the TPS from the world ticks" fails; restored from the commit.
+- 2b Body (b808ea8): `bodyConnected` is now the Body's own events (intent, action, receipt, reflex_fired, wake,
+  speech of the life, in `events`, bounded by the run start). Connected means one within 60 s before the sample.
+  The process probe stays in `alive.body`. The Body-kill reconnect wait (sequence.ts) reads `alive.body`, so its
+  meaning is unchanged. Tests: adapters.test.ts "the sampler Body signal" (3) and abort.test.ts (hung Body for
+  5 minutes fires; 4 minutes does not). Revert check: `bodyConnected: alive.body` on the one line; 2 sampler tests
+  fail; restored from the commit.
+- Risk for the live run (not tested here): a run that starts with a Body that writes no Body event for 5 minutes
+  reads as a hung Body and aborts. Check the Body's event cadence in the first live run before relying on the rule.
+- Not run: `./geldar.ps1 check` results below.
