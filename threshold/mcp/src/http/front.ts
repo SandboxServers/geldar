@@ -22,6 +22,8 @@ export interface FrontDoorOptions {
   pepper: Uint8Array;
   store: TokenStore;
   limiter: RateLimiter;
+  /** One agent's fair share of the owner's calls a minute (`ownerShare`). Default 0: no sibling reserve. */
+  agentShare?: number;
   /** Builds the MCP server for one new session. */
   createSession: (playerId: string, signal: AbortSignal) => McpServer;
   /** Receives each log line after `frontLog` has cut it to safe fields. Default: JSON on stderr. */
@@ -108,7 +110,7 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
  */
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
-  const gates = new FrontLimits(options.limiter);
+  const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
   // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
   const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';

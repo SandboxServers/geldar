@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { derivedCaps } from '../config.ts';
 import { bucketRules, tokenBucketLimiter } from '../main.ts';
 import type { RateDecision, RateLimiter } from '../ports.ts';
-import { FrontLimits } from './limits.ts';
+import { FrontLimits, ownerShare } from './limits.ts';
 
 const LIMITS = {
   callsPerMinute: 60,
@@ -18,7 +18,10 @@ const ADDRESS = '203.0.113.7';
 
 /** A real token bucket table, sized by the production rules, so the shares are the shipped numbers. */
 function realLimits(): FrontLimits {
-  return new FrontLimits(tokenBucketLimiter(bucketRules(LIMITS, OWNER_CAP)));
+  return new FrontLimits(
+    tokenBucketLimiter(bucketRules(LIMITS, OWNER_CAP)),
+    ownerShare(LIMITS.ownerCallsPerMinute, OWNER_CAP),
+  );
 }
 
 /** Records each take in order; a bucket for which `isEmpty` is true refuses. */
@@ -67,12 +70,11 @@ describe('twenty agents of one owner behind one address', () => {
 });
 
 describe('owner-first call order', () => {
-  it('an owner refusal takes no player token', () => {
+  it('an owner refusal takes no token at all', () => {
     const limiter = new RecordingLimiter((bucket) => bucket === `owner:${OWNER}`);
     const limits = new FrontLimits(limiter);
     expect(limits.call('agent-0', OWNER, 0)).toBeDefined();
-    expect(limiter.taken).toEqual([`owner-agent:${OWNER}:agent-0`, `owner:${OWNER}`]);
-    expect(limiter.taken).not.toContain('player:agent-0');
+    expect(limiter.taken).toEqual([]);
   });
 
   it('takes the owner token before the player token on a served call', () => {
@@ -92,17 +94,39 @@ describe('per-agent reserved share of the owner bucket', () => {
     expect(rule(`owner:${OWNER}`)).toEqual({ capacity: 600, perMinute: 600 });
   });
 
-  it('stops a noisy agent at its share, so its siblings keep theirs', () => {
+  it('gives a lone agent its full player rate, past its share, while the pool has room', () => {
     const limits = realLimits();
+    let served = 0;
+    for (let i = 0; i < 100; i++) if (limits.call('lone', OWNER, 0) === undefined) served++;
+    expect(served).toBe(60);
+  });
+
+  it('refuses a noisy agent past its share while siblings are active, so they keep theirs', () => {
+    const limits = realLimits();
+    // Nineteen siblings each make one call, so each holds a share of the pool from now on.
+    for (let sibling = 0; sibling < 19; sibling++) {
+      expect(limits.call(`sibling-${sibling}`, OWNER, 0)).toBeUndefined();
+    }
     let noisyServed = 0;
     for (let i = 0; i < 100; i++) if (limits.call('noisy', OWNER, 0) === undefined) noisyServed++;
     expect(noisyServed).toBe(30);
-    // The noisy agent's refusals never reached the owner's pool, so the 19 siblings have 570 left.
+    // The pool now holds exactly the 19 siblings' unused shares: 19 times 29.
     for (let sibling = 0; sibling < 19; sibling++) {
-      for (let i = 0; i < 30; i++) {
+      for (let i = 1; i < 30; i++) {
         expect(limits.call(`sibling-${sibling}`, OWNER, 0)).toBeUndefined();
       }
     }
+  });
+
+  it('stops reserving for siblings that have been quiet for a minute', () => {
+    const limits = realLimits();
+    for (let sibling = 0; sibling < 19; sibling++) limits.call(`sibling-${sibling}`, OWNER, 0);
+    // A minute later the pool and the buckets have refilled and the siblings no longer count.
+    let served = 0;
+    for (let i = 0; i < 100; i++) {
+      if (limits.call('noisy', OWNER, 61_000) === undefined) served++;
+    }
+    expect(served).toBe(60);
   });
 
   it('keeps the owner rate when no cap is given', () => {

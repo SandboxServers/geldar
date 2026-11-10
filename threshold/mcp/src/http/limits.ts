@@ -1,8 +1,19 @@
-import type { RateLimiter } from '../ports.ts';
+import type { RateDecision, RateLimiter } from '../ports.ts';
 import { clientKey } from './auth.ts';
 
 /** Most requests one player may have open at once (a `wait` holds one). */
 export const MAX_OPEN_PER_PLAYER = 4;
+
+/** A sibling agent that called this recently (ms) still holds its share of the owner's pool. */
+const ACTIVE_MS = 60_000;
+
+/**
+ * One agent's fair share of its owner's calls a minute: the owner rate split across the owner cap,
+ * at least one call a minute. It is a guaranteed minimum, not a limit: see `FrontLimits.call`.
+ */
+export function ownerShare(ownerCallsPerMinute: number, agentsPerOwner: number): number {
+  return Math.max(1, Math.floor(ownerCallsPerMinute / Math.max(1, agentsPerOwner)));
+}
 
 /** Seconds to wait before a bucket has a token again: at least one, rounded up. */
 function retrySeconds(retryAfterMs: number): number {
@@ -19,9 +30,14 @@ export class FrontLimits {
   private readonly open = new Map<string, number>();
   private readonly openByAddress = new Map<string, number>();
   private readonly openByOwner = new Map<string, number>();
+  /** Per owner, each agent's last call time: the agents that count as active siblings. */
+  private readonly lastCall = new Map<string, Map<string, number>>();
+  private readonly share: number;
 
-  constructor(limiter: RateLimiter) {
+  /** `share` is `ownerShare(...)`; 0 (the default) reserves nothing for siblings. */
+  constructor(limiter: RateLimiter, share = 0) {
     this.limiter = limiter;
+    this.share = share;
   }
 
   /**
@@ -52,19 +68,49 @@ export class FrontLimits {
   }
 
   /**
-   * Takes one call for the player. The order is the agent's reserved share of the owner's bucket,
-   * then the owner's bucket, then the player's own. Each refusal stops before the later takes: an
-   * agent over its share never drains the owner's pool, and an owner refusal never burns the
-   * player's token. Seconds to wait, or undefined.
+   * Takes one call for the player. The owner's pool is checked first, so a refusal takes nothing.
+   * The agent's own share is a guaranteed minimum: while it has share tokens its call takes one
+   * from the share and one from the pool. Past its share, the agent may still take from the pool
+   * when the pool keeps at least one share per active sibling after the take, so a lone agent
+   * reaches its player rate. Only a nearly empty pool refuses an agent over its share, which keeps
+   * the siblings' shares for them. The player's own bucket is taken last. Seconds to wait, or
+   * undefined.
    */
   call(playerId: string, ownerId: string, nowMs: number): number | undefined {
+    const reserved = this.siblingReserve(playerId, ownerId, nowMs);
+    this.noteCall(playerId, ownerId, nowMs);
+    const pool = this.limiter.peek(`owner:${ownerId}`, nowMs);
+    if (!pool.allowed) return retrySeconds(pool.retryAfterMs);
     const share = this.limiter.take(`owner-agent:${ownerId}:${playerId}`, nowMs);
-    if (!share.allowed) return retrySeconds(share.retryAfterMs);
+    if (!share.allowed && !spareAfterTake(pool, reserved)) return retrySeconds(share.retryAfterMs);
     const byOwner = this.limiter.take(`owner:${ownerId}`, nowMs);
     if (!byOwner.allowed) return retrySeconds(byOwner.retryAfterMs);
     const byPlayer = this.limiter.take(`player:${playerId}`, nowMs);
     if (!byPlayer.allowed) return retrySeconds(byPlayer.retryAfterMs);
     return undefined;
+  }
+
+  /** Pool tokens the other active agents of the owner hold, one share each. Drops stale entries. */
+  private siblingReserve(playerId: string, ownerId: string, nowMs: number): number {
+    const agents = this.lastCall.get(ownerId);
+    if (agents === undefined) return 0;
+    let active = 0;
+    for (const [agent, at] of agents) {
+      if (nowMs - at >= ACTIVE_MS) agents.delete(agent);
+      else if (agent !== playerId) active++;
+    }
+    if (agents.size === 0) this.lastCall.delete(ownerId);
+    return active * this.share;
+  }
+
+  /** Records that the agent called the owner's pool at `nowMs`. */
+  private noteCall(playerId: string, ownerId: string, nowMs: number): void {
+    let agents = this.lastCall.get(ownerId);
+    if (agents === undefined) {
+      agents = new Map();
+      this.lastCall.set(ownerId, agents);
+    }
+    agents.set(playerId, nowMs);
   }
 
   /**
@@ -110,6 +156,12 @@ export class FrontLimits {
   releaseAddress(address: string): void {
     freeSlot(this.openByAddress, clientKey(address));
   }
+}
+
+/** True when the pool still holds `reserved` tokens after one more take. An unknown count reserves nothing. */
+function spareAfterTake(pool: RateDecision, reserved: number): boolean {
+  if (pool.remaining === undefined) return reserved === 0;
+  return pool.remaining - 1 >= reserved;
 }
 
 /** Adds one to the key's count unless it is at the cap. */

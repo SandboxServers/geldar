@@ -187,6 +187,8 @@ export interface RateDecision {
   allowed: boolean;
   /** Milliseconds until the bucket has a token again; 0 when allowed. */
   retryAfterMs: number;
+  /** Whole tokens left in the bucket after this decision, when the limiter reports them. */
+  remaining?: number;
 }
 
 /** Token buckets by key: a player's calls, an owner's calls, a failed-auth address. */

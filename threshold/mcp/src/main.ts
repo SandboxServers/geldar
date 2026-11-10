@@ -17,6 +17,7 @@ import {
   streamSubjects,
 } from './events/stream.ts';
 import { createFrontDoor, type FrontDoor, type FrontDoorOptions } from './http/front.ts';
+import { ownerShare } from './http/limits.ts';
 import { safeLogLine } from './http/log.ts';
 import type { KeepAlive, RateDecision, RateLimiter } from './ports.ts';
 import { type BucketManager, KvPresenceStore, openPresenceBucket } from './presence.ts';
@@ -121,7 +122,7 @@ export function bucketRules(
   const perMinute = (n: number): BucketRule => ({ capacity: n, perMinute: n });
   const spaced = (seconds: number): BucketRule =>
     seconds > 0 ? { capacity: 1, perMinute: 60 / seconds } : perMinute(limits.callsPerMinute);
-  const share = Math.max(1, Math.floor(limits.ownerCallsPerMinute / Math.max(1, agentsPerOwner)));
+  const share = ownerShare(limits.ownerCallsPerMinute, agentsPerOwner);
   return (bucket) => {
     if (bucket.startsWith('owner-agent:')) return perMinute(share);
     if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
@@ -169,11 +170,13 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
     take(bucket: string, nowMs: number): RateDecision {
       if (buckets.size >= sweepAt) sweep(nowMs);
       const { tokens, decision } = read(bucket, nowMs);
-      buckets.set(bucket, { tokens: decision.allowed ? tokens - 1 : tokens, atMs: nowMs });
-      return decision;
+      const left = decision.allowed ? tokens - 1 : tokens;
+      buckets.set(bucket, { tokens: left, atMs: nowMs });
+      return { ...decision, remaining: Math.floor(left) };
     },
     peek(bucket: string, nowMs: number): RateDecision {
-      return read(bucket, nowMs).decision;
+      const { tokens, decision } = read(bucket, nowMs);
+      return { ...decision, remaining: Math.floor(tokens) };
     },
   };
 }
@@ -347,6 +350,10 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       pepper,
       store: tokens,
       limiter,
+      agentShare: ownerShare(
+        config.sovereign.rateLimits.ownerCallsPerMinute,
+        config.sovereign.ownerCapOwner,
+      ),
       createSession: (playerId, signal) => createWorldSession(sessionDeps, playerId, signal),
       log: (line) => ports.log(line),
       now,
