@@ -31,7 +31,7 @@ import {
 } from './ports.ts';
 import { checkPreconditions } from './preconditions.ts';
 import { safeStop } from './safe-stop.ts';
-import { type Preflight, type RunInput, runSequence } from './sequence.ts';
+import { type Preflight, type RunInput, type RunOutcome, runSequence } from './sequence.ts';
 import { MINUTE_MS } from './status-log.ts';
 import {
   createWorldVolumes,
@@ -379,20 +379,27 @@ export async function runCli(
     plannedRestartAtMs: a.restartAtHours === null ? null : now + a.restartAtHours * 60 * MINUTE_MS,
     bodyKillAtMs: a.bodyKillAfterMinutes === null ? null : now + a.bodyKillAfterMinutes * MINUTE_MS,
   };
-  const outcome = await runSequence(
-    {
-      clock: h.clock,
-      files,
-      processes: h.processes,
-      sampler: h.sampler(a.profile),
-      supervisor: h.supervisor,
-      reporter: h.reporter(runDir, a.profile),
-      preflight: h.preflight(a.profile, runDir),
-      criteria: h.criteria,
-      stopRequested: () => files.read(join(runDir, STOP_FILE)) !== null,
-    },
-    input,
-  );
+  const sampler = h.sampler(a.profile);
+  let outcome: RunOutcome;
+  try {
+    outcome = await runSequence(
+      {
+        clock: h.clock,
+        files,
+        processes: h.processes,
+        sampler,
+        supervisor: h.supervisor,
+        reporter: h.reporter(runDir, a.profile),
+        preflight: h.preflight(a.profile, runDir),
+        criteria: h.criteria,
+        stopRequested: () => files.read(join(runDir, STOP_FILE)) !== null,
+      },
+      input,
+    );
+  } finally {
+    // The SQL connection must not outlive the run: an open socket keeps the process alive.
+    await sampler.close?.().catch(() => undefined);
+  }
   const detail =
     outcome.status === 'aborted'
       ? ` (${outcome.rule})`

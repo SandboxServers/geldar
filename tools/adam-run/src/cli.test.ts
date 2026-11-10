@@ -434,6 +434,22 @@ describe('a prepared-only folder', () => {
       'adam-run-manifest/1',
     );
   });
+
+  it('closes the sampler when the run ends, so no SQL socket keeps the process alive', async () => {
+    const out = capture();
+    const { h } = harness();
+    const make = h.sampler;
+    let closed = 0;
+    h.sampler = (p) => {
+      const s = make(p);
+      s.close = async () => {
+        closed++;
+      };
+      return s;
+    };
+    await runCli(['32b', 'start', '--run-id', RUN, '--hours', '0.02'], REPO, h, out.log);
+    expect(closed).toBe(1);
+  });
 });
 
 describe('report', () => {

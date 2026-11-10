@@ -104,6 +104,8 @@ export interface Observation {
 export interface Sampler {
   /** One sample. `runStartMs` is when the run began: deaths are counted from it, not from the life's birth. */
   observe(runStartMs: number): Promise<Observation>;
+  /** Releases the SQL connection when the run ends, so the process can exit. */
+  close?(): Promise<void>;
 }
 
 /** The files a run writes, under its run folder (`.geldar/runs/<run-id>`). */
