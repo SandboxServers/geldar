@@ -15,7 +15,11 @@ const FILES: MigrationFile[] = [
 describe('listMigrations', () => {
   it('lists the real sql directory in name order, without the test scripts', async () => {
     const files = await listMigrations(SQL_DIR);
-    expect(files.map((file) => file.name)).toEqual(['0001_init.sql', '0002_sovereign_mcp.sql']);
+    expect(files.map((file) => file.name)).toEqual([
+      '0001_init.sql',
+      '0002_sovereign_mcp.sql',
+      '0003_mcp_sleep_marks.sql',
+    ]);
   });
 
   const dirs: string[] = [];
