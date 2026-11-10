@@ -62,7 +62,7 @@
     },
     "ActInput": {
       "type": "object",
-      "description": "Act: say, run up to six actions, or start or replace your intent. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
+      "description": "Act: say, up to 6 actions, or set intent. Needs intent, actions or say. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
       "properties": {
         "reasoning": {
           "type": "string",
@@ -84,11 +84,6 @@
           "items": { "$ref": "thought.schema.json#/$defs/Action" }
         }
       },
-      "anyOf": [
-        { "required": ["intent"], "properties": { "intent": {} } },
-        { "required": ["actions"], "properties": { "actions": {} } },
-        { "required": ["say"], "properties": { "say": { "type": "string" } } }
-      ],
       "additionalProperties": false
     },
     "ActResult": {
