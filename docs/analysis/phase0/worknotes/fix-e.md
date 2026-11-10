@@ -87,3 +87,19 @@ Each needs a test that fails when its line is reverted.
 ## Step 3
 
 This entry is the record. Items 8-12 remain not started.
+
+## Session 4: adam-report honesty (step 1 of the follow-up)
+
+Committed, one commit per criterion group, each with a revert check:
+- calls is INFO, not PASS (5575861). Revert: `calls.ts` verdict set to PASS; 3 tests fail; restored clean.
+- latency and receipts: a PASS needs 20 samples over 10 minutes (latency) or 20 terminal actions with receipts over
+  10 minutes (receipts); below that, UNKNOWN. FAIL is unchanged (2120f65). Revert: sample floor 0 fails 1 latency test;
+  span floor 0 fails 1 receipts test; both restored.
+- model_floor: INFO for an allowed tier (8B, 32B, qwen3:8b, qwen3:32b, my choice; the owner confirms), UNKNOWN for any
+  other value (e41870a). Revert: allowed-set check disabled; 1 test fails; restored.
+
+NOT DONE (stopped for context):
+- continuity restarts from status.log (`restart_stack` planned, `body_kill` body; `at` is ISO). A pure parser in a new
+  file, wired in cli.ts, plus a test. config.ts still sets restarts to [].
+- report header: aborted (an `abort` line), partial (no `end` or `ended` line), window length in hours (render.ts).
+- Step 2 items 8 and 9 not started.
