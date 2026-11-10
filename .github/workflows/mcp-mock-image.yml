@@ -1,7 +1,7 @@
-# Builds the mcp-mock image, runs the image test against the loaded image, and only then
-# pushes :main and :sha-<commit> to GHCR on main (never on pull requests or other refs). The first push
-# creates a private package; making it public is an owner action, not done here.
-# Unsigned, no SBOM, no provenance attestation (owner ruling).
+# Builds the mcp-mock image and runs the image test against the loaded image on every PR and on main.
+# Only the publish job, which needs the test job and runs only on main, holds packages: write, and it
+# pushes :main and :sha-<commit> to GHCR. The first push creates a private package; making it public
+# is an owner action, not done here. Unsigned, no SBOM, no provenance attestation (owner ruling).
 name: mcp-mock-image
 
 on:
@@ -38,9 +38,6 @@ jobs:
     name: image
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,27 +68,44 @@ jobs:
           GELDAR_IMAGE_TESTS: '1'
           MOCK_IMAGE: ghcr.io/sandboxservers/geldar-mcp-mock:main
         run: pnpm vitest run threshold/mcp-mock/src/image.test.ts
-      # Everything below runs only after the test passed: a failing test never publishes.
+
+  publish:
+    name: publish (main only)
+    # Runs only after the image test passed: a failing test never publishes.
+    needs: image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: push the tested image
+      # Rebuilt from the same commit, Dockerfile and build cache as the tested image. The image
+      # job's local image is not shared across jobs, so this is a rebuild, not a copy of the tested bytes.
+      - name: build and push
         id: push
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         env:
-          REPO: ghcr.io/sandboxservers/geldar-mcp-mock
-          SHA: ${{ github.sha }}
-        run: |
-          # The image loaded by the build step above is the one the test ran against: push that exact image.
-          docker push "$REPO:main"
-          docker push "$REPO:sha-$SHA"
-          ref=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$REPO:main" | grep -F "$REPO@" | head -n 1)
-          echo "digest=${ref#*@}" >> "$GITHUB_OUTPUT"
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: threshold/mcp-mock/Dockerfile
+          push: true
+          provenance: false
+          tags: |
+            ghcr.io/sandboxservers/geldar-mcp-mock:main
+            ghcr.io/sandboxservers/geldar-mcp-mock:sha-${{ github.sha }}
+          cache-from: type=gha
       - name: write the digest to the step summary
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: echo "digest $DIGEST" >> "$GITHUB_STEP_SUMMARY"
