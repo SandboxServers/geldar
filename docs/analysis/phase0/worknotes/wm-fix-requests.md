@@ -68,3 +68,9 @@ Today `wait.ts:99-103` takes `head` from the life's own events only (`log.head(l
 ### (c) The replay catch-up bound
 
 The replay catch-up bound is the constant `REPLAY_CATCHUP_MS = 30000` in `threshold/mcp/src/cli.ts:206`. It has no config key. A change to it is a code change, not a shard setting.
+
+
+## R4
+
+- journal quota (per-player rate/size cap in tools/journal.ts) is a request to the tools owner: 60 calls/min x 4000 chars is about 240 KB/min.
+- wantBody is redundant with touch: both write the same record (awake, desired_body up, stamped now), so the bound-call path could drop the wantBody call.

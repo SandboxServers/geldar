@@ -117,20 +117,48 @@ export class FakeBody implements BodyGateway {
   }
 }
 
-/** An in-memory KV bucket for the presence store; `puts` keeps every write, in order. */
+/**
+ * An in-memory KV bucket for the presence store, with NATS KV's revisions: every write takes the
+ * next revision, and `update` refuses a key that is no longer at the revision it is given.
+ * `puts` keeps every write, in order.
+ */
 export class MemoryPresenceBucket implements PresenceBucket {
   readonly values = new Map<string, string>();
   readonly puts: { key: string; value: string }[] = [];
+  private readonly revisions = new Map<string, number>();
+  private lastRevision = 0;
 
-  async get(key: string): Promise<{ string(): string } | null> {
+  async get(key: string): Promise<{ string(): string; revision: number } | null> {
     const value = this.values.get(key);
-    return value === undefined ? null : { string: () => value };
+    if (value === undefined) return null;
+    const revision = this.revisions.get(key) ?? 0;
+    return { string: () => value, revision };
   }
 
   async put(key: string, value: string): Promise<number> {
+    return this.store(key, value);
+  }
+
+  async keys(): Promise<AsyncIterable<string>> {
+    const snapshot = [...this.values.keys()];
+    return (async function* () {
+      yield* snapshot;
+    })();
+  }
+
+  async update(key: string, value: string, revision: number): Promise<number> {
+    if ((this.revisions.get(key) ?? 0) !== revision) {
+      throw new Error(`wrong last revision for ${key}`);
+    }
+    return this.store(key, value);
+  }
+
+  private store(key: string, value: string): number {
     this.values.set(key, value);
     this.puts.push({ key, value });
-    return this.puts.length;
+    this.lastRevision++;
+    this.revisions.set(key, this.lastRevision);
+    return this.lastRevision;
   }
 }
 

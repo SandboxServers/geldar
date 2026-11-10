@@ -41,6 +41,8 @@ export function parsePresence(value: string, lifeId: string): PresenceRecord | n
 export async function watchPresence(options: PresenceWatchOptions): Promise<void> {
   const { lifeId, handlers, signal, log } = options;
   const iterator = options.entries[Symbol.asyncIterator]();
+  // The last state logged; a repeat of it (the MCP rewrites the record on every call) is not logged.
+  let logged: string | undefined;
   const aborted = new Promise<IteratorResult<string | null>>((resolve) => {
     signal.addEventListener('abort', () => resolve({ done: true, value: undefined }), {
       once: true,
@@ -56,12 +58,16 @@ export async function watchPresence(options: PresenceWatchOptions): Promise<void
         log({ event: 'presence_ignored', life_id: lifeId });
         continue;
       }
-      log({
-        event: 'presence',
-        life_id: lifeId,
-        state: record.state,
-        desired_body: record.desired_body,
-      });
+      const state = `${record.state}/${record.desired_body}`;
+      if (state !== logged) {
+        logged = state;
+        log({
+          event: 'presence',
+          life_id: lifeId,
+          state: record.state,
+          desired_body: record.desired_body,
+        });
+      }
       if (record.desired_body === 'up') await handlers.up();
       else await handlers.down();
     }

@@ -54,6 +54,27 @@ describe('watchPresence', () => {
     expect(logs.some((line) => line.event === 'presence_ignored')).toBe(true);
   });
 
+  it('logs a presence line only when the state changes, but still acts on every record', async () => {
+    const calls: string[] = [];
+    const logs: Record<string, unknown>[] = [];
+    await watchPresence({
+      lifeId: LIFE,
+      entries: values([record('up'), record('up'), record('up'), record('down'), record('down')]),
+      handlers: {
+        async up() {
+          calls.push('up');
+        },
+        async down() {
+          calls.push('down');
+        },
+      },
+      signal: new AbortController().signal,
+      log: (line) => logs.push(line),
+    });
+    expect(calls).toEqual(['up', 'up', 'up', 'down', 'down']);
+    expect(logs.filter((line) => line.event === 'presence')).toHaveLength(2);
+  });
+
   it('ends at once when the signal aborts, even with no entry pending', async () => {
     const controller = new AbortController();
     const never = (async function* () {
