@@ -1,19 +1,16 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
-import { loadAnimusConfig, parseAnimusConfig, repoRoot } from './config.ts';
+import { loadAnimusConfig, parseAnimusConfig } from './config.ts';
+import { committedShardDoc, loadCommittedConfig } from './phase0-shard.fixture.ts';
 import { DEFAULT_THOUGHT_BUDGET_TOKENS } from './prompts/library.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: the tests edit arbitrary nested keys of the parsed YAML
 type Doc = any;
 
 const REAL_DIGEST = `sha256:${'a'.repeat(64)}`;
-const FILE = join(repoRoot(), 'shards', 'phase0.yaml');
 
 /** The Phase 0 shard file, parsed fresh so a test can break one key. */
 function shardDoc(): Doc {
-  return parse(readFileSync(FILE, 'utf8')) as Doc;
+  return committedShardDoc();
 }
 
 /** The shard file with every placeholder replaced by a real value. */
@@ -27,7 +24,7 @@ function approvedDoc(): Doc {
 
 describe('animus config: the start-up waits', () => {
   it('reads the snapshot retry and the Thinker wait from the shard file', async () => {
-    const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+    const config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
     expect(config.mind).toEqual({
       snapshotRetryS: 60,
       thinkerWaitS: 20,
@@ -85,7 +82,7 @@ describe('animus config: the start-up waits', () => {
 
 describe('animus config', () => {
   it('reads the output validator bounds from the shard file, so a shard value changes them', async () => {
-    const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+    const config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
     expect(config.bounds).toEqual({
       worldBorderRadius: 1500,
       maxWorldTicks: 240000,
@@ -105,7 +102,7 @@ describe('animus config', () => {
   });
 
   it('reads the Phase 0 shard file when placeholders are allowed', async () => {
-    const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+    const config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
     expect(config.shard).toBe('phase0');
     expect(config.agent).toMatchObject({ name: 'Adam', username: 'ag_adam_03', tier: 'strong' });
     expect(config.thinker).toEqual({

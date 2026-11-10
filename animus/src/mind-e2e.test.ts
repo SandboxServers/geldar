@@ -9,12 +9,13 @@
 import type { PlanMessage, Snapshot } from '@geldar/contract';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ManualTiming } from './attention/timing.fakes.ts';
-import { type AnimusConfig, loadAnimusConfig } from './config.ts';
+import type { AnimusConfig } from './config.ts';
 import { FakeBodyLink, FakeEventPublisher, FakeEventSource } from './fakes/body.fakes.ts';
 import { FakeEmbedder, FakeMemoryStore } from './fakes/memory.fakes.ts';
 import { FakeModelClient } from './fakes/model.fakes.ts';
 import { intentEvent, makeSnapshot, VALID_THOUGHT } from './loop/loop-fixtures.ts';
 import { Mind } from './mind.ts';
+import { loadCommittedConfig } from './phase0-shard.fixture.ts';
 import type { MindEvent, ModelClient, ModelCompletion, ModelJob } from './ports/index.ts';
 import { createPromptLibrary } from './prompts/index.ts';
 import { agent, event, reflection } from './reflection/reflection.fixtures.ts';
@@ -51,7 +52,7 @@ class CountingModel implements ModelClient {
 
 let config: AnimusConfig;
 beforeEach(async () => {
-  config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+  config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
 });
 
 interface World {

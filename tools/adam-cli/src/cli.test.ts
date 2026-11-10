@@ -5,12 +5,25 @@ import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import { run, selectInFile } from './cli.ts';
 
-const REAL = join(import.meta.dirname, '..', '..', '..', 'shards', 'phase0.yaml');
+/**
+ * The select keys of the committed strong life, written inline. The test never reads the live shard
+ * file: `adam select` rewrites those keys in the working tree, and a run tree must not fail on that.
+ */
+const SHARD_TEXT = `shard: phase0
+mind:
+  agent:
+    name: Adam
+    username: ag_adam_03
+    tier: strong
+    personality_seed: "curious and patient; careful after dark"
+  run_tier: strong
+  lives: { strong: ag_adam_03, fast: ag_adam_04, smoke: ag_smoke_01 }
+`;
 
-/** A copy of the real shard file in a temp dir, so the test never edits the checked-in one. */
+/** A shard file in a temp dir, so the test never edits the checked-in one. */
 function copyShard(): string {
   const file = join(mkdtempSync(join(tmpdir(), 'adam-select-')), 'phase0.yaml');
-  writeFileSync(file, readFileSync(REAL, 'utf8'));
+  writeFileSync(file, SHARD_TEXT);
   return file;
 }
 
