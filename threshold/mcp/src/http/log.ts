@@ -1,4 +1,25 @@
+import { MCP_TOOL_NAMES } from '@geldar/contract';
 import { REFUSAL_REASONS, type RefusalReason } from '../ports.ts';
+
+/**
+ * The closed outcome codes of a `tool_call` line: `ok`, `internal` (any fault that is not a tool's own
+ * code), or one of the codes the tools raise. The contract has no list of tool error codes, so this one is kept here.
+ */
+export const TOOL_OUTCOMES = [
+  'ok',
+  'internal',
+  'unknown_player',
+  'body_unavailable',
+  'rate_limited',
+  'no_book',
+  'not_available',
+  'sleep_refused',
+  'unreadable',
+  'bad_cursor',
+  'bad_max_seconds',
+  'session_superseded',
+  'wait_replaced',
+] as const;
 
 /** A fixed refusal or outcome template: lowercase words joined by underscores. */
 const TEMPLATE = /^[a-z][a-z_]{0,60}$/;
@@ -28,6 +49,18 @@ export function safeLogLine(line: Record<string, unknown>): Record<string, strin
   }
   if (typeof line.status === 'number') out.status = line.status;
   if (typeof line.reason === 'string' && isRefusalReason(line.reason)) out.reason = line.reason;
+  if (typeof line.tool === 'string' && (MCP_TOOL_NAMES as readonly string[]).includes(line.tool)) {
+    out.tool = line.tool;
+  }
+  if (
+    typeof line.outcome === 'string' &&
+    (TOOL_OUTCOMES as readonly string[]).includes(line.outcome)
+  ) {
+    out.outcome = line.outcome;
+  }
+  if (typeof line.duration_ms === 'number' && Number.isFinite(line.duration_ms)) {
+    out.duration_ms = Math.max(0, Math.round(line.duration_ms));
+  }
   if (typeof line.error === 'string') out.error = errorTemplate(line.error);
   if (typeof line.cause === 'string') out.cause = causeText(line.cause);
   if (typeof line.suppressed === 'number') out.suppressed = line.suppressed;
