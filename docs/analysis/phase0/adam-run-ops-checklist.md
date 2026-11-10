@@ -26,9 +26,9 @@ Every SQL in these protocols is a `SELECT`. Nothing else is run against the data
 9. **Never retry** an aborted run. Only the orchestrator dispatches a second run.
 10. **Backup folder.** Pick one folder outside the repo, on the same disk, before the run. Write its path into `ops-log.md`.
 
-## 1. Before dispatch: the open point that blocks start
+## 1. Before dispatch: the tier select's edit
 
-`adam-run start` refuses a dirty tree (its clean-tree check is the whole-tree `git status`, see `tools/adam-run/src/adapters.ts`). `adam select` rewrites `shards/phase0.yaml`, which makes the tree dirty. As the code stands, the sequence "select, then start" is refused. The orchestrator must settle this before dispatch (owner item O-1 in [adam-run-owner-decisions.md](adam-run-owner-decisions.md)). Until it is settled, no run starts.
+`adam select` rewrites `shards/phase0.yaml`, which makes the tree dirty. `adam-run start` accepts that edit and no other: only `mind.run_tier`, `mind.agent.username` and `mind.agent.tier` may differ from the committed file, with the values select writes (code in `tools/adam-run/src/shard-edit.ts`). Any other changed key, any comment or layout change, and any other dirty path refuse the start. The start records the edit in `manifest.json` under `shard_edit`. So "select, then start" is the normal sequence. The owner has not ruled on this choice (owner item O-1 in [adam-run-owner-decisions.md](adam-run-owner-decisions.md)); a ruling that changes it is made before dispatch.
 
 ## 2. Preconditions (tick each one; a failed tick stops the run)
 
