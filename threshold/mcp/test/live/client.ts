@@ -81,8 +81,24 @@ export function runId(): string {
   return `${Date.now().toString(36).slice(-6)}${Math.floor(Math.random() * 36 ** 2).toString(36)}`;
 }
 
-/** The text a tool returned as structured content, or an empty object. */
+/**
+ * The object a tool returned: its structured content, or else the JSON of its text part, since the mock
+ * registry sends one JSON text part and no structured content. An empty object when neither is an object.
+ */
 export function structuredOf(result: unknown): Record<string, unknown> {
-  const structured = (result as { structuredContent?: Record<string, unknown> }).structuredContent;
-  return structured ?? {};
+  const { structuredContent, content } = result as {
+    structuredContent?: Record<string, unknown>;
+    content?: { type?: string; text?: unknown }[];
+  };
+  if (structuredContent !== undefined) return structuredContent;
+  const text = content?.find((part) => part.type === 'text')?.text;
+  if (typeof text !== 'string') return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }

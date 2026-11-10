@@ -9,6 +9,11 @@ export interface RunState {
   wakeOn: string[] | null;
   /** When the running intent was accepted, in epoch milliseconds, or null. */
   startedMs: number | null;
+  /**
+   * The id of the last intent this life saw end. The Body follows an intent's end with a wake for the
+   * same intent; that wake is no second end. Undefined until an intent ends.
+   */
+  lastEndedId?: string | undefined;
 }
 
 /** The per-life state the mapper reads and writes. */
@@ -22,6 +27,8 @@ export interface MapContext {
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 const NEW_AGENT = /^new_agent_within_(\d+)$/;
 const DAMAGE_WAKES = new Set(['unexpected_damage', 'reflex_danger']);
+/** The Body's detail for an intent that reached its limits (the intent event's detail is plain text). */
+const LIMIT_DETAIL = /^max_(world_ticks|block_operations)\b/;
 
 /**
  * Maps one Mind event to the player-facing events it becomes (spec 5.15.3, the mapping table).
@@ -48,18 +55,18 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
     case 'intent': {
       const p = event.payload;
       if (p.state === 'accepted') {
-        ctx.runs.set(event.lifeId, { wakeOn: p.wake_on ?? null, startedMs: base.atMs });
+        ctx.runs.set(event.lifeId, {
+          wakeOn: p.wake_on ?? null,
+          startedMs: base.atMs,
+          lastEndedId: run.lastEndedId,
+        });
         return [];
       }
       if (!TERMINAL_STATES.has(p.state)) return [];
-      ctx.runs.set(event.lifeId, { wakeOn: null, startedMs: null });
-      return [
-        {
-          ...base,
-          kind: 'intent_finished',
-          outcome: p.state === 'completed' ? 'completed' : 'failed',
-        },
-      ];
+      const repeat = run.lastEndedId !== undefined && run.lastEndedId === p.intent_id;
+      ctx.runs.set(event.lifeId, { wakeOn: null, startedMs: null, lastEndedId: p.intent_id });
+      if (repeat) return [];
+      return [{ ...base, kind: 'intent_finished', outcome: endOutcome(p.state, p.detail) }];
     }
     case 'plan_result': {
       // The internal entry is what `say` reads for its confirmation. No player view shows it.
@@ -81,14 +88,36 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
       ];
     }
     case 'wake':
-      return mapWake(event.payload.reason, base, event.lifeId, ctx);
+      return mapWake(
+        event.payload.reason,
+        event.payload.intent_id ?? null,
+        base,
+        event.lifeId,
+        ctx,
+      );
     default:
       return [];
   }
 }
 
+/**
+ * The player's outcome of an intent that ended in `state`. The contract's wake reasons are the only
+ * ends the player can be woken with: a limit ends the run as intent_run_too_long, any other failure as
+ * precondition_failed. The contract has no reason for a cancelled or interrupted intent, so both wake as
+ * a failure: the agent still hears that its intent is over.
+ */
+function endOutcome(
+  state: string,
+  detail: string | undefined,
+): 'completed' | 'failed' | 'limit_reached' {
+  if (state === 'completed') return 'completed';
+  if (state === 'failed' && LIMIT_DETAIL.test(detail ?? '')) return 'limit_reached';
+  return 'failed';
+}
+
 function mapWake(
   reason: string,
+  intentId: string | null,
   base: { seq: number; tick: number; atMs: number; wakeOn: string[] | null },
   lifeId: string,
   ctx: MapContext,
@@ -97,6 +126,13 @@ function mapWake(
   if (reason === 'no_plan') {
     ctx.runs.set(lifeId, { wakeOn: null, startedMs: null });
     return [{ ...base, kind: 'intent_finished', outcome: 'failed' }];
+  }
+  if (reason === 'limit_reached') {
+    // The intent's own terminal event normally reported this end: the same intent is no second end.
+    const run = ctx.runs.get(lifeId);
+    if (intentId !== null && run?.lastEndedId === intentId) return [];
+    ctx.runs.set(lifeId, { wakeOn: null, startedMs: null, lastEndedId: intentId ?? undefined });
+    return [{ ...base, kind: 'intent_finished', outcome: 'limit_reached' }];
   }
   const near = NEW_AGENT.exec(reason);
   // An agent coming close is only news while a running intent lists it in wake_on.

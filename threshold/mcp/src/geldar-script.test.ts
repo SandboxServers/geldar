@@ -50,6 +50,27 @@ describe('geldar.ps1 reads its arguments from $args', () => {
   });
 });
 
+describe('geldar.ps1 mcp-tokens database environment', () => {
+  // The case body from its label up to the next case, so the checks cannot match another command.
+  const block = /^ {2}'mcp-tokens' \{([\s\S]*?)^ {2}'db' \{/m.exec(script)?.[1] ?? '';
+
+  it('sets PGPASSWORD from compose/secrets/postgres.txt and the other PG* variables for the child only', () => {
+    expect(block).toMatch(/Join-Path \$Root 'compose\/secrets\/postgres\.txt'/);
+    expect(block).toMatch(/\$env:PGPASSWORD = \(Get-Content -Raw -Path \$passwordFile\)\.Trim\(\)/);
+    for (const name of ['PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE']) {
+      expect(block, name).toMatch(new RegExp(`\\$env:${name} = '[^']+'`));
+    }
+    expect(block).toMatch(/\$pgNames = 'PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE', 'PGPASSWORD'/);
+    expect(block).toMatch(
+      /finally \{\s*foreach \(\$name in \$pgNames\) \{ \[Environment\]::SetEnvironmentVariable\(\$name, \$saved\[\$name\]\) \}\s*\}/,
+    );
+  });
+
+  it('never prints the password', () => {
+    expect(block).not.toMatch(/Write-(Host|Output)|\becho\b|Out-Host/);
+  });
+});
+
 describe.skipIf(!hasPwsh)('geldar.ps1 invoked by pwsh', () => {
   it('prints the help and exits 0 when it has no arguments', () => {
     const { status, output } = runScript([]);
