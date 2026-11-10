@@ -181,7 +181,7 @@ export function buildManifest(input: ManifestInput): Manifest {
         tag: pin.tag,
         pinned_digest: pin.digest,
         observed_digest: observed,
-        matches: observed === pin.digest,
+        matches: observed !== null && digestsMatch(observed, pin.digest),
       };
     }),
     bench:
