@@ -13,11 +13,11 @@ Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist
 
 ## 1. Before start
 
-1. Work through the preconditions in the checklist, section 2 (P1 to P13), with life `ag_adam_01`. Section 1 of the checklist (owner item O-1, the dirty-tree point) must be settled first.
+1. Work through the preconditions in the checklist, section 2 (P1 to P13), with life `ag_adam_01`. Section 1 of the checklist covers the tier select's edit of the shard file (owner item O-1, now implemented; see step 4).
 2. **Fresh world volume.** Run `./geldar.ps1 adam-run 32b prepare-volume --run-id <run-id>`. Pick the run id now and write it in `ops-log.md`. The command creates a new, empty, labelled volume and records it in `.geldar/runs/<run-id>/manifest.json`. It deletes and reuses nothing. Note the printed volume name.
 3. Set the volume for this shell and restart the host side on it:
    `$env:GELDAR_WORLD_VOLUME = '<name from step 2>'`, then `./geldar.ps1 adam down`, then `./geldar.ps1 adam up`. The harness refuses to start if the volume is not the recorded, empty, unused one.
-4. **Select the tier.** `./geldar.ps1 adam select --model strong`. Expected output: `selected: life ag_adam_01 (strong)`. Then `git status --short` prints only `shards/phase0.yaml`.
+4. **Select the tier.** `./geldar.ps1 adam select --model strong`. Expected output: `selected: life ag_adam_01 (strong)`. Then `git status --short` prints only `shards/phase0.yaml`. The select's edit is the only change start accepts: it may change only `mind.run_tier`, `mind.agent.username` and `mind.agent.tier`, with the values select writes. Any other change to that file, or any other dirty path, refuses the start. Do not edit the file by hand.
 5. **Benchmark gate.** The gate is the newest `bench-results/*.json`. Its `meta.commit` must equal `git rev-parse --short HEAD`, and it must show 100% at 20 TPS. Written by OPS-0 at this HEAD (`--runs 10`, D-P0-18). Otherwise the start is refused.
 6. **Seed.** `shards/phase0.yaml` holds the shard seed (8675309, equal to `SEED` in `compose/phase0.yml`). Record it in `ops-log.md`. The 8B run uses the same seed.
 7. **Whitelist the life.** After `shard up phase0`, run
@@ -47,7 +47,7 @@ Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist
    - `rcon-cli whitelist list` still lists `ag_adam_01` (the volume is kept, so it normally does). If it does not, whitelist it again, and record that.
    - Record the restart time in `ops-log.md` and check that `manifest.json` records the restart.
 6. **End.** Not before T0+24:00. Then `./geldar.ps1 adam-run 32b stop --run-id <run-id>`, then `./geldar.ps1 adam status` (all `stopped`).
-7. **Restore the shard file.** `git checkout -- shards/phase0.yaml`, then `git status --short` prints nothing.
+7. **Restore the shard file.** After the stop, `git checkout -- shards/phase0.yaml` (this drops the select's edit; the manifest keeps the record in `shard_edit`), then `git status --short` prints nothing.
 8. **Report.** `./geldar.ps1 adam-run 32b report --run-id <run-id>`. It writes `run-report.json` and `run-report.md` into `.geldar/runs/<run-id>/`. Read the verdict of each criterion (checklist section 7).
 9. **Back up.** Copy `manifest.json`, `status.log`, any `abort.json`, and `ops-log.md` to the backup folder. Export the rows (checklist section 6). Copy no log into the repo.
 

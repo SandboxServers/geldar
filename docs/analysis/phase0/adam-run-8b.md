@@ -33,7 +33,7 @@ The 8B run writes to its own volume, made by the harness, never the 32B volume.
 
 ## 4. Steps, in order
 
-1. **Select the tier:** `./geldar.ps1 adam select --model fast`. Then `git status --short` prints only `shards/phase0.yaml`.
+1. **Select the tier:** `./geldar.ps1 adam select --model fast`. Then `git status --short` prints only `shards/phase0.yaml`. The start in step 3 accepts that edit and no other: only `mind.run_tier`, `mind.agent.username` and `mind.agent.tier` may differ from the committed file, with the values select writes. The start records the edit in `manifest.json` under `shard_edit`.
 2. **Benchmark gate:** the newest `bench-results/*.json` must have `meta.commit` equal to `git rev-parse --short HEAD` and 100% at 20 TPS (checklist P2).
 3. **Start the run** (T0 is when this returns):
 
@@ -49,7 +49,7 @@ The 8B run writes to its own volume, made by the harness, never the 32B volume.
    The intent that was `running` is still `running`, and its `body_generation` is one higher. Record the times and the generation before and after in `ops-log.md`. If it did not resume, record it and tell the orchestrator at once. A Body that dies on its own is not restarted automatically: run `./geldar.ps1 adam restart-body`, then check again.
 7. **Planned whole-stack restart** (`--restart-at-hours 12`). The harness restarts the stack and keeps the volumes. Ops checks `adam status` (three processes running), that no intent is `accepted` again from scratch, and that the whitelist still lists `ag_adam_02`. Records the restart time.
 8. **End:** not before T0+24:00. `./geldar.ps1 adam-run 8b stop --run-id <run-id>`, then `./geldar.ps1 adam status` (all `stopped`).
-9. **Restore the shard file:** `git checkout -- shards/phase0.yaml`, then `git status --short` prints nothing.
+9. **Restore the shard file:** after the stop, `git checkout -- shards/phase0.yaml` (this drops the select's edit; the manifest keeps the record in `shard_edit`), then `git status --short` prints nothing.
 10. **Report:** `./geldar.ps1 adam-run 8b report --run-id <run-id>`. It writes `run-report.json` and `run-report.md` into `.geldar/runs/<run-id>/`.
 11. **Back up:** `manifest.json`, `status.log`, any `abort.json`, `ops-log.md`, and the life's rows, into the backup folder. Copy no log into the repo.
 
