@@ -233,3 +233,55 @@ what it accepts. A run that stops at the limit is a pass: it ended, and the wake
 - `./geldar.ps1 mcp smoke`, after the image is rebuilt from `threshold/mcp/src` (the mapper change is in
   `697f555`). A run that ends `intent_run_too_long` or `precondition_failed` is a pass. The trace of each
   wait is printed on failure.
+
+## L5
+
+### Smoke 6: the failed act and the eight `none` waits
+
+- The act intent was accepted at 09:33:04.88 and failed at 09:33:11.35 with detail `blocked: No path to the
+  goal!`. The Body then woke the Mind with reason `action_failed` for the same intent. The MCP replay consumer
+  acked every event (0 pending), and the mapper turns the failed intent into `intent_finished` with outcome
+  `failed`, which wakes a wait as `precondition_failed`.
+- The live case still traced `wake_reason none; no events` for all 8 waits.
+
+### Cause: the live client read a field the server never sends (fixed)
+
+- The mock registry (`threshold/mcp-mock/src/registry.ts`) returns each tool result as one JSON text part,
+  `content: [{ type: 'text', text }]`. Nothing in the repo sets `structuredContent`. The live client read
+  `waited.structuredContent`, so it was always undefined, and the trace printed `none` with no events
+  whatever the wait returned.
+- `structuredOf` (`threshold/mcp/test/live/client.ts`) now reads the JSON of the text part when there is no
+  structured content, and the stub case uses it. The `wake-corpus` and `revoke-kill-hibernate` live cases use
+  the same helper and were reading `{}` as well, so they now see the real result.
+- `threshold/mcp/test/live/structured-of.test.ts` feeds the failed-act pair
+  (`threshold/mcp/test/fixtures/real-body-action-failed.json`) through the stream, the mapper and `wait`, then
+  reads the result the way the registry sends it. Without the client fix it fails (`wake_reason` undefined);
+  with the text read mutated it fails the same way. Both checks ran before the commit.
+
+### Not the cause: `action_failed`, the cursor, the mapper
+
+- `action_failed` is in the Body wake schema (`contract/schemas/wake-event.schema.json`). `mapWake` maps it to no
+  player event, which is correct: the failed intent's own terminal event carries the end. It is not in the
+  MCP `McpWakeReason` list and does not need to be: a failed intent wakes as `precondition_failed`
+  (`finishReason` in `threshold/mcp-mock/src/sim/wake.ts`).
+- The wait reads from the caller's cursor. Replayed from cursor 0, the failed intent comes back as an
+  `intent_finished` event with the `precondition_failed` wake. No cursor fault was found.
+
+### Deviation: the fixture pair is reconstructed
+
+- The state, detail, reason and times are the smoke 6 values recorded in this packet. The ids, ticks and the
+  envelope are test ids that satisfy the contract patterns. The live rows were not copied, so the fixture
+  proves the path, not the exact live bytes.
+
+### What ops must capture on the next live run
+
+1. The events rows for the failed act: `source_event_id`, `intent_id`, `tick`, `world_tick`, the exact payloads
+   of the `intent` (failed) and `wake` (`action_failed`) rows, and their `at` values. Replace the test ids in
+   `real-body-action-failed.json` with them, in a separate commit.
+2. The `content` text of the 8 wait results of that run, or the new trace. This confirms each wait's
+   `wake_reason` is read and shows whether any wait saw the failure.
+
+### What ops must re-run
+
+- `./geldar.ps1 mcp smoke`, after the image is rebuilt from this branch. A run that ends `precondition_failed`
+  or `intent_run_too_long` is a pass, and the trace now prints each wait's reason.
