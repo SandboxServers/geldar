@@ -232,8 +232,8 @@ export async function runCli(
   }
   const a = parsed.args;
   const runsDir = join(repoRoot, '.geldar', 'runs');
-  // status and report read an existing run: with no --run-id they take the profile's newest folder.
-  const readsRun = a.command === 'status' || a.command === 'report';
+  // status, report and stop read an existing run: with no --run-id they take the profile's newest folder.
+  const readsRun = a.command === 'status' || a.command === 'report' || a.command === 'stop';
   const latest = latestRunId(h.runFolders(), a.profile);
   if (a.runId === null && readsRun && latest === null) {
     log(`adam-run: no ${a.profile} run under ${runsDir}`);

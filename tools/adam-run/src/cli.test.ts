@@ -217,6 +217,33 @@ describe('status and report without --run-id', () => {
     expect(await runCli(['smoke', 'report'], REPO, h, out.log)).toBe(0);
     expect(seen).toEqual(['smoke-20261110T121408Z']);
   });
+
+  it('stop with no --run-id asks the newest folder of the profile to stop, as status and report do', async () => {
+    const out = capture();
+    const { h, files } = harness({
+      runFolders: folders,
+      processes: [
+        {
+          pid: 777,
+          startedAt: '2026-11-10T12:14:08.000Z',
+          commandLine:
+            'node C:/repo/tools/adam-run/src/cli.ts smoke start --run-id smoke-20261110T121408Z',
+        },
+      ],
+    });
+    files.write(runPaths(NEW).manifest, JSON.stringify({ started_at: '2026-11-10T12:14:08Z' }));
+    files.write(
+      join(NEW, 'run.pid.json'),
+      JSON.stringify({
+        pid: 777,
+        startedAt: '2026-11-10T12:14:08.000Z',
+        runId: 'smoke-20261110T121408Z',
+      }),
+    );
+    expect(await runCli(['smoke', 'stop'], REPO, h, out.log)).toBe(0);
+    expect(files.read(join(NEW, 'stop-request.json'))).not.toBeNull();
+    expect(files.read(join(OLD, 'stop-request.json'))).toBeNull();
+  });
 });
 
 describe('a run aborted before it started', () => {
