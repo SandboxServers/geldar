@@ -5,6 +5,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseItems, TestControl } from './test-control.ts';
 
+/** The whole-tree scans read every file under src; vitest's 5 s default is too tight under parallel load on Windows. */
+const SCAN_TIMEOUT_MS = 30_000;
+
 /** The RCON layer: only the bench, the arena and the live fixtures may reach it. */
 const FORBIDDEN = [
   join(import.meta.dirname, 'rcon.ts'),
@@ -294,42 +297,54 @@ describe('TestControl', () => {
     expect(sent).toEqual(['gamerule advance_time true']);
   });
 
-  it('keeps RCON and test control out of every src file except the bench, arena and control files', async () => {
-    const files = (await tsFilesUnder(import.meta.dirname)).filter(
-      (file) =>
-        !file.endsWith('.test.ts') &&
-        !CONTROL_USERS.some((user) => file === user || file.startsWith(user + sep)),
-    );
-    expect(files.length).toBeGreaterThan(10);
-    for (const file of files) {
-      expect(await reachesForbidden(file), file).toBeUndefined();
-    }
-  });
-
-  it('lets only the player and removal files whitelist over RCON, and no other players file', async () => {
-    const players = join(import.meta.dirname, 'players');
-    const admitted = CONTROL_USERS.filter((user) => user.startsWith(players + sep)).sort();
-    expect(admitted).toEqual([
-      join(players, 'life-removal.ts'),
-      join(players, 'main.ts'),
-      join(players, 'whitelist.ts'),
-    ]);
-    const reaching: string[] = [];
-    for (const file of await tsFilesUnder(players)) {
-      if (!file.endsWith('.test.ts') && (await reachesForbidden(file)) !== undefined) {
-        reaching.push(file);
+  it(
+    'keeps RCON and test control out of every src file except the bench, arena and control files',
+    async () => {
+      const files = (await tsFilesUnder(import.meta.dirname)).filter(
+        (file) =>
+          !file.endsWith('.test.ts') &&
+          !CONTROL_USERS.some((user) => file === user || file.startsWith(user + sep)),
+      );
+      expect(files.length).toBeGreaterThan(10);
+      for (const file of files) {
+        expect(await reachesForbidden(file), file).toBeUndefined();
       }
-    }
-    expect(reaching.sort()).toEqual(admitted);
-  });
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
-  it('keeps the arena and the bench out of src/actions as well', async () => {
-    const forbidden = await forbiddenForActions();
-    const actions = await tsFilesUnder(join(import.meta.dirname, 'actions'));
-    for (const file of actions.filter((f) => !f.endsWith('.test.ts'))) {
-      expect(await reachesForbidden(file, forbidden), file).toBeUndefined();
-    }
-  });
+  it(
+    'lets only the player and removal files whitelist over RCON, and no other players file',
+    async () => {
+      const players = join(import.meta.dirname, 'players');
+      const admitted = CONTROL_USERS.filter((user) => user.startsWith(players + sep)).sort();
+      expect(admitted).toEqual([
+        join(players, 'life-removal.ts'),
+        join(players, 'main.ts'),
+        join(players, 'whitelist.ts'),
+      ]);
+      const reaching: string[] = [];
+      for (const file of await tsFilesUnder(players)) {
+        if (!file.endsWith('.test.ts') && (await reachesForbidden(file)) !== undefined) {
+          reaching.push(file);
+        }
+      }
+      expect(reaching.sort()).toEqual(admitted);
+    },
+    SCAN_TIMEOUT_MS,
+  );
+
+  it(
+    'keeps the arena and the bench out of src/actions as well',
+    async () => {
+      const forbidden = await forbiddenForActions();
+      const actions = await tsFilesUnder(join(import.meta.dirname, 'actions'));
+      for (const file of actions.filter((f) => !f.endsWith('.test.ts'))) {
+        expect(await reachesForbidden(file, forbidden), file).toBeUndefined();
+      }
+    },
+    SCAN_TIMEOUT_MS,
+  );
 
   it('catches a file that imports the RCON layer, directly, dynamically or transitively', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'guard-'));

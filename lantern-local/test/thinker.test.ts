@@ -4,7 +4,7 @@ import {
   DEFAULT_BACKOFF_MAX_MS,
   jitteredDelay,
 } from '../src/thinker.ts';
-import { type FakeMind, type FakeOllama, until } from './thinker.fakes.ts';
+import { type FakeMind, type FakeOllama, refusedWsUrl, until } from './thinker.fakes.ts';
 import { answer, type Rig, startRig } from './thinker.fixture.ts';
 
 let rig: Rig;
@@ -31,8 +31,12 @@ describe('reconnect backoff', () => {
   });
 
   it('doubles each failed attempt up to the cap, and logs each with its delay', async () => {
-    launch({ wsUrl: 'ws://127.0.0.1:1/v1/thinker/stream', random: () => 1 });
-    await until(() => logs.filter((l) => l.startsWith('reconnecting')).length >= 4, 'four retries');
+    launch({ wsUrl: await refusedWsUrl(), random: () => 1 });
+    await until(
+      () => logs.filter((l) => l.startsWith('reconnecting')).length >= 4,
+      'four retries',
+      10_000,
+    );
     expect(logs.filter((l) => l.startsWith('reconnecting')).slice(0, 4)).toEqual([
       'reconnecting in 30 ms',
       'reconnecting in 60 ms',
@@ -44,8 +48,8 @@ describe('reconnect backoff', () => {
   });
 
   it('applies the jitter to the delay', async () => {
-    launch({ wsUrl: 'ws://127.0.0.1:1/v1/thinker/stream', random: () => 0 });
-    await until(() => logs.some((l) => l.startsWith('reconnecting')), 'a retry');
+    launch({ wsUrl: await refusedWsUrl(), random: () => 0 });
+    await until(() => logs.some((l) => l.startsWith('reconnecting')), 'a retry', 10_000);
     expect(logs.find((l) => l.startsWith('reconnecting'))).toBe('reconnecting in 15 ms');
   });
 
@@ -124,9 +128,10 @@ describe('connection', () => {
     launch();
     await mind.next('hello');
     mind.push({ type: 'drain', reconnect_after_seconds: 1 });
-    await new Promise((r) => setTimeout(r, 400));
-    expect(mind.connections).toBe(1);
-    await until(() => mind.connections === 2, 'the reconnect after the delay');
+    const drained = Date.now();
+    await until(() => mind.connections === 2, 'the reconnect after the delay', 10_000);
+    // A timer never fires early; load can only make the reconnect later, so only the lower bound is asserted.
+    expect(Date.now() - drained).toBeGreaterThanOrEqual(990);
   });
 
   it('sends goodbye{shutdown} on stop', async () => {

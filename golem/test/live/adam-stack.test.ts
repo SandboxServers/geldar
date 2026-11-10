@@ -21,6 +21,14 @@ import {
 const dir = mkdtempSync(join(tmpdir(), 'adam-stack-'));
 const running: HostProcess[] = [];
 
+/**
+ * The ready bound for the tests that wait out a never-ready process. It is generous: the Body must
+ * still print its ready line inside it on a loaded host, and the timeout names the process that never
+ * got ready either way. The test timeout covers the bound plus process start-up and teardown.
+ */
+const READY_BOUND_MS = 5_000;
+const WAIT_TEST_MS = 15_000;
+
 /** A script that logs `ready <name>` and then idles until it is killed. */
 function idleScript(name: string): string {
   const file = join(dir, `${name}.mjs`);
@@ -192,38 +200,50 @@ describe('AdamStack', () => {
     expect(stack.processes[0]?.running).toBe(false);
   });
 
-  it('stops what it started when a process never gets ready', async () => {
-    const stack = new AdamStack([
-      specFor('adam-body'),
-      { ...specFor('animus'), ready: /never printed/ },
-    ]);
-    await expect(stack.start(600)).rejects.toThrow(/timed out after 600 ms waiting for animus/);
-    expect(stack.processes.every((p) => !p.running)).toBe(true);
-  });
+  it(
+    'stops what it started when a process never gets ready',
+    async () => {
+      const stack = new AdamStack([
+        specFor('adam-body'),
+        { ...specFor('animus'), ready: /never printed/ },
+      ]);
+      await expect(stack.start(READY_BOUND_MS)).rejects.toThrow(
+        new RegExp(`timed out after ${READY_BOUND_MS} ms waiting for animus`),
+      );
+      expect(stack.processes.every((p) => !p.running)).toBe(true);
+    },
+    WAIT_TEST_MS,
+  );
 
-  it('waits for animus to log thinker_connected before it counts as started', async () => {
-    const lantern = {
-      ...specFor('lantern-local'),
-      awaits: { process: 'animus', pattern: /ready never-logged/ },
-    };
-    const stack = new AdamStack([specFor('adam-body'), specFor('animus'), lantern]);
-    await expect(stack.start(600)).rejects.toThrow(/timed out after 600 ms waiting for animus/);
-    expect(stack.processes.map((p) => p.spec.name)).toEqual([
-      'adam-body',
-      'animus',
-      'lantern-local',
-    ]);
-    expect(stack.processes.every((p) => !p.running)).toBe(true);
+  it(
+    'waits for animus to log thinker_connected before it counts as started',
+    async () => {
+      const lantern = {
+        ...specFor('lantern-local'),
+        awaits: { process: 'animus', pattern: /ready never-logged/ },
+      };
+      const stack = new AdamStack([specFor('adam-body'), specFor('animus'), lantern]);
+      await expect(stack.start(READY_BOUND_MS)).rejects.toThrow(
+        new RegExp(`timed out after ${READY_BOUND_MS} ms waiting for animus`),
+      );
+      expect(stack.processes.map((p) => p.spec.name)).toEqual([
+        'adam-body',
+        'animus',
+        'lantern-local',
+      ]);
+      expect(stack.processes.every((p) => !p.running)).toBe(true);
 
-    const ok = new AdamStack([
-      specFor('adam-body'),
-      specFor('animus'),
-      { ...lantern, awaits: { process: 'animus', pattern: /ready animus/ } },
-    ]);
-    await ok.start(10_000);
-    running.push(...ok.processes);
-    expect(ok.processes).toHaveLength(3);
-  });
+      const ok = new AdamStack([
+        specFor('adam-body'),
+        specFor('animus'),
+        { ...lantern, awaits: { process: 'animus', pattern: /ready animus/ } },
+      ]);
+      await ok.start(10_000);
+      running.push(...ok.processes);
+      expect(ok.processes).toHaveLength(3);
+    },
+    WAIT_TEST_MS,
+  );
 });
 
 /** A fake database that records the query and hands back canned rows. */
