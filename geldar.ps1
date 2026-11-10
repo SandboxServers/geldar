@@ -73,9 +73,11 @@ function Invoke-Check {
     Invoke-Step 'test (vitest)' { pnpm test }
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue) {
+    # An override (rcon-host.yml) only adds to a shard file, so it is checked merged with phase0.yml.
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'rcon-host.yml' }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
+    Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)' { docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     if (Test-Path plugin/build.gradle.kts) {
       $gradlew = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
       Push-Location plugin
