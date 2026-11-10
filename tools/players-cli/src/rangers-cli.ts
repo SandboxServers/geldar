@@ -28,6 +28,7 @@ import {
   rangerState,
   selectRangers,
 } from './rangers.ts';
+import { type LogFs, PRODUCTION_LOG_FS, tailLines } from './rangers-logs.ts';
 import { readPresence } from './rangers-presence.ts';
 import { type ProcessOps, productionOps, stopRangerProcess } from './rangers-process.ts';
 
@@ -40,7 +41,7 @@ export const USAGE = `usage: ./geldar.ps1 players <up|down|status|logs> [--playe
   down    stop the named ranger's Body (or all of them)
   status  print each ranger's process (PID, resident memory) and its presence record (awake, dim or
           hibernating); "presence: unknown" when NATS cannot be read; prints "down" when none runs
-  logs    print the last 200 lines of each ranger's log (or the one named)
+  logs    print the last 200 lines of each ranger's log, read from its last 64 KB (or the one named)
 `;
 
 /** Parses the arguments after the verb: `--player <id>` only. */
@@ -186,12 +187,15 @@ export interface RangerDeps {
   ops: ProcessOps;
   /** The directory of the PID and log files. */
   runDir: string;
+  /** The file calls `logs` makes. */
+  logFs: LogFs;
 }
 
 const PRODUCTION_DEPS: RangerDeps = {
   readPresence: (lifeIds) => readPresence(process.env.GELDAR_NATS_URL, lifeIds),
   ops: productionOps(),
   runDir: RUN_DIR,
+  logFs: PRODUCTION_LOG_FS,
 };
 
 /** Runs one command and returns the exit code. Status exits 0 whether or not anything runs. */
@@ -226,8 +230,8 @@ export async function runRangersCli(
     }
     if (verb === 'logs') {
       const lines = rangers.flatMap((ranger) =>
-        existsSync(logFile(dir, ranger))
-          ? readFileSync(logFile(dir, ranger), 'utf8').split('\n').slice(-200)
+        deps.logFs.exists(logFile(dir, ranger))
+          ? tailLines(deps.logFs, logFile(dir, ranger), 200)
           : [`${ranger.playerId}: no log yet`],
       );
       return { code: 0, lines };

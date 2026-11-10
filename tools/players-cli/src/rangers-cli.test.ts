@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatPidFile, type Presence, type Ranger } from './rangers.ts';
 import { eachRanger, parseOptions, runRangersCli, USAGE } from './rangers-cli.ts';
+import type { LogFs } from './rangers-logs.ts';
 import type { ProcessIdentity, ProcessOps } from './rangers-process.ts';
 
 const SHARD = `
@@ -170,5 +171,29 @@ describe('eachRanger', () => {
       failed: false,
     }));
     expect(result).toEqual({ code: 0, lines: ['ag-jason-01 ok', 'ag-test-01 ok'] });
+  });
+});
+
+describe('logs', () => {
+  it('reads only the last 64 KB of a 10 MB log, and prints the last 200 lines', async () => {
+    const text = `${Array.from({ length: 200_000 }, (_, n) => `log line ${n} ${'x'.repeat(40)}`).join('\n')}\n`;
+    let bytesRead = 0;
+    const logFs: LogFs = {
+      exists: () => true,
+      size: () => text.length,
+      read: (_path, start, length) => {
+        const part = text.slice(start, start + length);
+        bytesRead += part.length;
+        return part;
+      },
+      rename: () => {
+        throw new Error('logs must not rename a log');
+      },
+    };
+    const result = await runRangersCli(['logs'], SHARD, { runDir, logFs });
+    expect(result.code).toBe(0);
+    expect(result.lines).toHaveLength(200);
+    expect(result.lines.at(-1)).toBe(`log line 199999 ${'x'.repeat(40)}`);
+    expect(bytesRead).toBeLessThanOrEqual(64 * 1024);
   });
 });
