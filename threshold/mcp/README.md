@@ -123,9 +123,10 @@ Each step is a `./geldar.ps1` command. The shard (`./geldar.ps1 shard up phase0`
 ```
 
 `mcp-tokens` and `db` are passthroughs to `tools/mcp-tokens` and `tools/migrate`; their usage lines
-print with no arguments. Open item (owner): `compose/mcp.yml` names the secret files `mcp-db.txt` and
-`mcp-pepper.txt`, but `mcp-tokens init` writes `postgres-mcp.txt` and `mcp-token-pepper.txt`. The
-names must agree before `mcp up` can start the container.
+print with no arguments. `mcp-tokens init` writes `compose/secrets/postgres-mcp.txt` (the MCP's Postgres
+password) and `compose/secrets/mcp-token-pepper.txt` (the token pepper); `compose/mcp.yml` mounts them under
+the same names in `/run/secrets/`. The repo-checks test in `tools/repo-checks/src/mcp-overlay.test.ts` fails
+if the two drift apart.
 
 ### Later: the public tunnel (not run)
 
