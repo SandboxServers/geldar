@@ -46,7 +46,7 @@ import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts'
 import { createWaitState, type WaitError, type WaitState, wait } from './tools/wait.ts';
 
 /** The fixed messages the handlers add. None echoes world text or names an observer (decision 0059). */
-export const BODY_UNAVAILABLE_MESSAGE = 'Your body did not answer. Try again.' as const;
+export const BODY_UNAVAILABLE_MESSAGE = 'Your body is waking. Try again in a few seconds.' as const;
 export const UNKNOWN_PLAYER_MESSAGE = 'No player is bound to this session.' as const;
 
 /** How often the world settles the presence of every life it has seen (dim, then hibernate). */

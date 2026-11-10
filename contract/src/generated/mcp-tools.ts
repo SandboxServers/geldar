@@ -9,11 +9,11 @@ export const mcpToolSchemas: Record<
   { description: string; input: Record<string, unknown>; result: Record<string, unknown> }
 > = {
   "act": {
-    "description": "Act: say, run up to six actions, or start or replace your intent. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
+    "description": "Act: say, up to 6 actions, or set intent. Needs intent, actions or say. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Act: say, run up to six actions, or start or replace your intent. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
+      "description": "Act: say, up to 6 actions, or set intent. Needs intent, actions or say. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
       "properties": {
         "reasoning": {
           "type": "string",
@@ -45,34 +45,6 @@ export const mcpToolSchemas: Record<
           }
         }
       },
-      "anyOf": [
-        {
-          "required": [
-            "intent"
-          ],
-          "properties": {
-            "intent": {}
-          }
-        },
-        {
-          "required": [
-            "actions"
-          ],
-          "properties": {
-            "actions": {}
-          }
-        },
-        {
-          "required": [
-            "say"
-          ],
-          "properties": {
-            "say": {
-              "type": "string"
-            }
-          }
-        }
-      ],
       "additionalProperties": false,
       "$defs": {
         "Action": {
@@ -2660,25 +2632,7 @@ export const mcpToolSchemas: Record<
           "type": "string",
           "maxLength": 8192
         }
-      },
-      "oneOf": [
-        {
-          "required": [
-            "skill_id"
-          ],
-          "properties": {
-            "skill_id": {}
-          }
-        },
-        {
-          "required": [
-            "text"
-          ],
-          "properties": {
-            "text": {}
-          }
-        }
-      ]
+      }
     },
     "result": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

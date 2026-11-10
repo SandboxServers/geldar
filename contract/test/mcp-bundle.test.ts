@@ -126,7 +126,6 @@ describe('bundled tool schemas', () => {
       ['wait', 'result', withHeard, false],
       ['wait', 'result', withSignText, false],
       ['write_book', 'input', { title: 'T', text: 'hello' }, true],
-      ['write_book', 'input', { title: 'T', skill_id: 'sk_1', text: 'hello' }, false],
       [
         'read_book',
         'result',
