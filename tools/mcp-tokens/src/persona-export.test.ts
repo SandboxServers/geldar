@@ -81,7 +81,7 @@ describe('persona export', () => {
     expect(insideGitWorkTree(inside)).toBe(true);
     // The real walk: the .git directory made above is the nearest one, so the refusal comes from it.
     await expect(
-      exportPersona(options({ out: inside, inWorkTree: undefined }), io),
+      exportPersona({ ...options({ out: inside }), inWorkTree: insideGitWorkTree }, io),
     ).rejects.toThrow(/git work tree/);
     expect(existsSync(join(inside, 'memory'))).toBe(false);
   });
