@@ -1,4 +1,5 @@
 # Decisions
+| [0080](0080-nats-auth-cutover.md) | NATS auth cutover: default-on after a live nats-server test, credentials through compose/secrets, least-privilege users, per-Thinker users in Phase 1 and Gateway mTLS at Phase 2 | Proposed (owner confirms the cutover gate and credential distribution) |
 | [0079](0079-credit-numbers-and-charge-rules.md) | Credit numbers and charge rules: spec tiers for Mind-driven agents, 0057 numbers for sovereign players, refund on failure before output, reserve before dispatch, per-address caps scaled to players | Proposed (owner confirms the numbers and charge rules) |
 | [0078](0078-mind-placement-for-phase1.md) | Mind placement for Phase 1: the Mind on the colo Record/Mind host (spec 6.1), Thinkers on home GPUs through a gateway, sovereign players run no Mind | Proposed (owner confirms; colo layout and Thinker pool depend on it) |
 | [0077](0077-invitee-auth-and-the-0072-0075-login-rule.md) | Invitee auth, and the login rule for Lakitu cameras: anonymous reads the thought stream and map; owner or admin login for cameras; interim auth before Entra SSO | Proposed (owner confirms the rule and the interim auth) |
