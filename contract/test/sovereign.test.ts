@@ -35,13 +35,20 @@ const presence = {
 const dayNight = { phase: 'dusk', tick: 12000 };
 
 describe('sovereign call event payload', () => {
-  it('accepts a valid call and rejects a token field, a bad tool or an oversized journal', () => {
+  it('accepts a valid call and rejects a token field, a bad tool or a bad outcome', () => {
     expect(validateSovereignCallPayload(call).ok).toBe(true);
     expect(validateSovereignCallPayload({ ...call, token: 'gmcp-x' }).ok).toBe(false);
     expect(validateSovereignCallPayload({ ...call, session: 'abc' }).ok).toBe(false);
     expect(validateSovereignCallPayload({ ...call, tool: 'teleport' }).ok).toBe(false);
-    expect(validateSovereignCallPayload({ ...call, journal: 'x'.repeat(2001) }).ok).toBe(false);
     expect(validateSovereignCallPayload({ ...call, outcome: 'maybe' }).ok).toBe(false);
+  });
+
+  it('carries a journal length and hash, never the journal text', () => {
+    const withJournal = { ...call, journal_chars: 5, journal_sha256: '9e6651cf50e512da' };
+    expect(validateSovereignCallPayload(withJournal).ok).toBe(true);
+    expect(validateSovereignCallPayload({ ...call, journal: 'Dusk.' }).ok).toBe(false);
+    expect(validateSovereignCallPayload({ ...withJournal, journal_chars: 4001 }).ok).toBe(false);
+    expect(validateSovereignCallPayload({ ...withJournal, journal_sha256: 'ABC' }).ok).toBe(false);
   });
 
   it('accepts a call with no thought, reasoning, say or journal', () => {

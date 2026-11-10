@@ -6,12 +6,17 @@ import { readFileSync } from 'node:fs';
  * The plugin (P0-11, NatsEventPublisher.java) creates the same stream, and whichever starts first
  * wins. stream-config.test.ts fails if the plugin source, plugin/README.md or the eventsink
  * README stops matching this constant, so change them together.
+ *
+ * `maxBytes` caps the stored bytes (JetStream `max_bytes`); when the cap is reached the oldest
+ * messages go first. It applies when the stream is created: an existing stream keeps its limits
+ * until an operator edits it (see the eventsink README).
  */
 export const STREAM_CONFIG = {
   name: 'GELDAR_EVENTS',
   subjects: ['geldar.*.*'],
   storage: 'file',
   retentionDays: 30,
+  maxBytes: 2 * 1024 * 1024 * 1024,
 } as const;
 
 /** The durable pull consumer's name. */

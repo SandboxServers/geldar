@@ -175,6 +175,7 @@ public final class NatsEventPublisher implements EventPublisher {
                     .storageType(StorageType.File)
                     .retentionPolicy(RetentionPolicy.Limits)
                     .maxAge(Duration.ofDays(30))
+                    .maxBytes(2147483648L)
                     .build());
             log.info("Created JetStream stream " + STREAM);
         }

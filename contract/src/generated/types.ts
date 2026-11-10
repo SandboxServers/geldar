@@ -7211,9 +7211,13 @@ export interface SovereignCallPayload {
    */
   say?: string;
   /**
-   * The player's own journal text, as written.
+   * How many characters of journal text the call wrote. The text itself is kept in the journal table, never in this event.
    */
-  journal?: string;
+  journal_chars?: number;
+  /**
+   * The first 16 hex characters of the SHA-256 of the journal text as kept, to match the call to its journal row.
+   */
+  journal_sha256?: string;
   latency_ms: number;
 }
 

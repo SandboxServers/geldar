@@ -199,6 +199,7 @@ export async function ensureStream(jsm: JetStreamManager): Promise<void> {
       storage: StorageType.File,
       retention: RetentionPolicy.Limits,
       max_age: STREAM_CONFIG.retentionDays * 24 * 3600 * 1_000_000_000,
+      max_bytes: STREAM_CONFIG.maxBytes,
     });
   } catch (error) {
     // The plugin may have created it between the two calls.

@@ -144,6 +144,7 @@ beforeEach(async () => {
     failedAuthPerMinute: 30,
     actMinSeconds: 0,
     sayMinSeconds: 0,
+    journalMinSeconds: 5,
     handshakePerMinute: HANDSHAKE_PER_MINUTE,
   });
   taken = [];
@@ -230,6 +231,7 @@ describe('bucketRules for the handshake bucket', () => {
       failedAuthPerMinute: 30,
       actMinSeconds: 0,
       sayMinSeconds: 0,
+      journalMinSeconds: 5,
       handshakePerMinute: 300,
     });
     expect(rule('handshake:aa')).toEqual({ capacity: 300, perMinute: 300 });

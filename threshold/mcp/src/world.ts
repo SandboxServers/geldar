@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { newId } from '@geldar/animus/src/ids.ts';
 import { buildPlan } from '@geldar/animus/src/loop/plan.ts';
 import type { OutputValidator } from '@geldar/animus/src/ports/index.ts';
@@ -59,8 +60,8 @@ const WAIT_MESSAGES: Record<WaitError, string> = {
   wait_replaced: 'A newer wait for this player replaced this one.',
 };
 
-/** The most journal characters a `sovereign_call` record keeps (the payload's own limit). */
-const RECORD_JOURNAL_LIMIT = 2000;
+/** The refusal of a journal line inside the player's journal spacing (`journal_min_seconds`). */
+const JOURNAL_RATE_MESSAGE = 'Journal lines are spaced. Wait, then write again.';
 
 /** The thought a sleep plan carries: one `sleep` action and no words. */
 const SLEEP_THOUGHT = { reasoning: 'sleep', actions: [{ do: 'sleep' }] } as Thought;
@@ -198,11 +199,19 @@ function sleepPlanOf(expiresAfterTicks: number) {
     buildPlan({ thought: SLEEP_THOUGHT, thoughtId: newId('th'), snapshot, expiresAfterTicks });
 }
 
-/** Mirrors one journal line and records the call (spec 5.15.3: journal publishes a sovereign_call). */
+/**
+ * Mirrors one journal line and records the call (spec 5.15.3: journal publishes a sovereign_call). A line
+ * inside the player's journal spacing is refused before anything is written or recorded.
+ */
 async function journalAndRecord(deps: Wired, call: ToolCall, text: string) {
   const started = deps.now();
+  if (!deps.limiter.take(`journal:${call.lifeId}`, started).allowed) {
+    throw new ToolError('rate_limited', JOURNAL_RATE_MESSAGE);
+  }
   const result = await journalTool(deps, call, { text });
   const balance = await deps.budget.balance(call.lifeId, started);
+  // The event carries the length and a hash of the kept text, never the text (the journal table has it).
+  const kept = text.slice(0, JOURNAL_LINE_LIMIT);
   const record: SovereignCallPayload = {
     player_id: call.playerId,
     tool: 'journal',
@@ -212,7 +221,8 @@ async function journalAndRecord(deps: Wired, call: ToolCall, text: string) {
     credits_charged: 0,
     budget_remaining: Math.max(0, Math.floor(balance)),
     latency_ms: Math.max(0, deps.now() - started),
-    journal: text.slice(0, RECORD_JOURNAL_LIMIT),
+    journal_chars: kept.length,
+    journal_sha256: createHash('sha256').update(kept).digest('hex').slice(0, 16),
   };
   await deps.recorder.record(record);
   return result;

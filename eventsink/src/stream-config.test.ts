@@ -16,6 +16,7 @@ describe('stream definition agrees across the plugin and the sink', () => {
     for (const subject of STREAM_CONFIG.subjects) expect(java).toContain(`.subjects("${subject}")`);
     expect(java).toContain('.storageType(StorageType.File)');
     expect(java).toContain(`.maxAge(Duration.ofDays(${STREAM_CONFIG.retentionDays}))`);
+    expect(java).toContain(`.maxBytes(${STREAM_CONFIG.maxBytes}L)`);
   });
 
   it('matches the stream described in plugin/README.md', () => {
@@ -32,5 +33,6 @@ describe('stream definition agrees across the plugin and the sink', () => {
     expect(readme).toContain(`| subjects | \`${STREAM_CONFIG.subjects[0]}\` |`);
     expect(readme).toContain(`| storage | ${STREAM_CONFIG.storage} |`);
     expect(readme).toContain(`\`max_age\` ${STREAM_CONFIG.retentionDays} days`);
+    expect(readme).toContain(`\`max_bytes\` ${STREAM_CONFIG.maxBytes} bytes`);
   });
 });
