@@ -21,6 +21,7 @@ import {
 } from './control-chars.ts';
 import { checkDecisionIndex } from './decision-index.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
+import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
@@ -144,6 +145,13 @@ for (const file of [...tracked, ...untracked].filter((f) => isComposeFile(f.path
 
 for (const file of [...tracked, ...untracked].filter((f) => isWorkflowFile(f.path))) {
   for (const problem of checkWorkflowYaml(file.path, file.text)) {
+    console.log(`error: ${problem}`);
+    failed = true;
+  }
+}
+
+for (const file of [...tracked, ...untracked].filter((f) => isShardFile(f.path))) {
+  for (const problem of checkSovereignIdentity(file.path, file.text)) {
     console.log(`error: ${problem}`);
     failed = true;
   }
