@@ -174,7 +174,6 @@ async function connectNats(
   return {
     request: natsRequestTransport(nc),
     buckets: {
-      open: (name) => kvm.open(name) as never,
       create: (name) => kvm.create(name) as never,
     },
     publishCall: async (msgId, payload) => {
