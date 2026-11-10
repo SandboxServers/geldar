@@ -1,5 +1,8 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  BODY,
+  entryPath,
   formatStatus,
   isLifeId,
   latencySql,
@@ -22,6 +25,14 @@ describe('PID files', () => {
     expect(procState('77\n', () => false)).toBe('stale');
     expect(procState('garbage', () => true)).toBe('stale');
     expect(procState('77\n', (pid) => pid === 77)).toBe('running');
+  });
+});
+
+describe('entry point', () => {
+  // A relative entry leaves the package directory out of the command line, so the adam-run probe never finds the service.
+  it('spawns each service from its absolute entry, so the process table shows its package', () => {
+    const path = entryPath(BODY, join('C:', 'repo'));
+    expect(path.replace(/\\/g, '/')).toBe('C:/repo/golem/src/adam/main.ts');
   });
 });
 
