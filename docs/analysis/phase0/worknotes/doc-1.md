@@ -32,4 +32,4 @@ Branch `docs/public-polish`, from `origin/main`. Docs and config only; no code c
 - Contact link to `docs/` in `ISSUE_TEMPLATE/config.yml`: needs the repository URL; left out.
 - The brief named an `ops` docs folder; none exists. Ops procedures are the `.claude/skills/` files, linked from `docs/README.md`.
 - The live-smoke claim in the README (sovereign-player MCP against the real Body) is taken from the merged live-4 and live-5 work (PR #29, PR #30, `docs/mcp-live` commits). RESUME.md at the time said no live step had run; the owner should confirm before publishing.
-- `docs/spec.md` and the campaign docs name the owner in prose (for example "Steven's colocation rack"). They are public once the repo is. Not edited (spec must not be edited by this packet); owner to decide whether to scrub them.
+- `docs/spec.md` and the campaign docs name the owner in prose (one example is a personal name in spec section 1). They are public once the repo is. Not edited (spec must not be edited by this packet); owner to decide whether to scrub them. The spec has many such occurrences (about 30 lines, including the owner table and the node inventory).
