@@ -170,7 +170,15 @@ export function lifeTables(): DbTables {
         latency_ms: null,
       },
     ],
-    intents: [{ intent_id: 'in-1', state: 'completed', started_tick: 100, ended_tick: 900, end_reason: null }],
+    intents: [
+      {
+        intent_id: 'in-1',
+        state: 'completed',
+        started_tick: 100,
+        ended_tick: 900,
+        end_reason: null,
+      },
+    ],
     actions: [
       {
         action_id: 'ac-1',

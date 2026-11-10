@@ -34,8 +34,9 @@ const ACTIONS_SQL = `SELECT action_id, intent_id, body_generation, state, kind,
   FROM actions WHERE life_id = $1 ORDER BY action_id`;
 const RECEIPTS_SQL = `SELECT action_id, phase, at FROM receipts
   WHERE life_id = $1 AND at IS NOT NULL ORDER BY receipt_id`;
-const EVENTS_SQL = `SELECT type, world_day, at FROM events
-  WHERE agent_id = $1 AND type IN ('death', 'sleep') AND at >= $2 AND at <= $3 ORDER BY at, event_id`;
+// Only the columns the grant to geldar_glass covers (W6-09 excludes payload). source_event_id is unique, so it orders the rows.
+export const EVENTS_SQL = `SELECT type, world_day, at FROM events
+  WHERE agent_id = $1 AND type IN ('death', 'sleep') AND at >= $2 AND at <= $3 ORDER BY at, source_event_id`;
 
 const BEGIN_READ_ONLY = 'BEGIN READ ONLY';
 

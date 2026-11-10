@@ -93,8 +93,18 @@ describe('report determinism', () => {
     writeFileSync(criteriaPath, CRITERIA_YAML, 'utf8');
     writeFileSync(manifestPath, MANIFEST_JSON, 'utf8');
     const argv = (out: string) => [
-      '--life', 'life-1', '--from', '2026-11-10T00:00:00Z', '--to', '2026-11-11T00:00:00Z',
-      '--manifest', manifestPath, '--criteria', criteriaPath, '--out', out,
+      '--life',
+      'life-1',
+      '--from',
+      '2026-11-10T00:00:00Z',
+      '--to',
+      '2026-11-11T00:00:00Z',
+      '--manifest',
+      manifestPath,
+      '--criteria',
+      criteriaPath,
+      '--out',
+      out,
     ];
     const tables = lifeTables();
     const outA = path.join(work, 'a');

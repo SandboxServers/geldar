@@ -43,16 +43,29 @@ describe('the adam-report command line', () => {
 
   /** The full, valid argument list. A test removes or changes one flag from it. */
   const validArgv = (): string[] => [
-    '--life', 'life-1', '--from', FROM, '--to', TO,
-    '--manifest', manifestPath, '--criteria', criteriaPath, '--out', out,
+    '--life',
+    'life-1',
+    '--from',
+    FROM,
+    '--to',
+    TO,
+    '--manifest',
+    manifestPath,
+    '--criteria',
+    criteriaPath,
+    '--out',
+    out,
   ];
 
-  const depsWith = (tables = lifeTables(), failOn?: string): RunDeps => ({
-    env: {},
-    connect: connect.mockImplementation(() => fakeDb(tables, failOn)),
-    now: () => new Date('2026-11-10T10:00:00.000Z'),
-    log: (line) => logs.push(line),
-  });
+  const depsWith = (tables = lifeTables(), failOn?: string): RunDeps => {
+    connect.mockImplementation(() => fakeDb(tables, failOn));
+    return {
+      env: {},
+      connect: connect as RunDeps['connect'],
+      now: () => new Date('2026-11-10T10:00:00.000Z'),
+      log: (line) => logs.push(line),
+    };
+  };
 
   beforeEach(() => {
     work = mkdtempSync(path.join(tmpdir(), 'adam-cli-'));

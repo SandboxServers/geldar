@@ -21,7 +21,11 @@ function series(hours: number, days: number, stepMs = 30 * MIN_MS): ThoughtRow[]
 const PLANNED: Restart = { atMs: T0 + HOUR, kind: 'planned' };
 const BODY: Restart = { atMs: T0 + 2 * HOUR, kind: 'body' };
 
-function measure(thoughts: ThoughtRow[], restarts: Restart[] = [PLANNED, BODY], gap = GAP_LIMIT) {
+function measure(
+  thoughts: ThoughtRow[],
+  restarts: Restart[] = [PLANNED, BODY],
+  gap: number | null = GAP_LIMIT,
+) {
   return continuityMeasure(
     {
       thoughts,
