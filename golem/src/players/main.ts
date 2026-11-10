@@ -27,7 +27,7 @@ import { registryFromConfig } from '../registry.ts';
 import { parsePlayerConfig } from './player-config.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
-import { admitLife } from './whitelist.ts';
+import { admitLifeOverRcon } from './whitelist.ts';
 
 /** Serves more on the player's bot next to the Body (the book server, wired in WM-11). */
 export type ExtraServe = (bot: Bot) => { stop(): Promise<void> | void };
@@ -112,11 +112,6 @@ export async function runPlayer(
   const nc = await connect({ servers: natsUrl, name: `player-${playerId}`, timeout: 5_000 });
   const restartKv = await openRestartKv(natsUrl);
   const presence = await new Kvm(jetstream(nc)).open(PRESENCE_BUCKET);
-  const rcon = await RconClient.connect({
-    host: stack.rconHost,
-    port: stack.rconPort,
-    password: await readRconPassword(stack),
-  });
   const server = natsRequestServer(nc);
   const bodyEnv: AdamBodyEnv = {
     config,
@@ -135,7 +130,17 @@ export async function runPlayer(
     });
   const session = new PlayerSession({
     lifeId,
-    admit: (id) => admitLife(rcon, id),
+    // A fresh RCON connection per admission, closed right after: no command socket stays open.
+    admit: (id) =>
+      admitLifeOverRcon(
+        async () =>
+          RconClient.connect({
+            host: stack.rconHost,
+            port: stack.rconPort,
+            password: await readRconPassword(stack),
+          }),
+        id,
+      ),
     connect: () => {
       const manager = new ConnectionManager({
         host: stack.mcHost,
@@ -167,7 +172,6 @@ export async function runPlayer(
   });
   // The watch has ended, so no `up` is in progress: stop the Body, then the connections.
   await session.down();
-  await rcon.close();
   await restartKv.close();
   await nc.close();
   log({ event: 'player_stopped' });
