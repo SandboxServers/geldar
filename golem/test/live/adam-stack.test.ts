@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   AdamStack,
+  actionsOf,
   adamProcessSpecs,
   auditWorldText,
+  describeActions,
   HostProcess,
   type IntentRow,
   intentFate,
@@ -260,6 +262,30 @@ describe('database reads', () => {
         goal: null,
       },
     ]);
+  });
+
+  it('maps action rows and describes them for a failure message', async () => {
+    const db = fakeDb([
+      {
+        action_id: 'ac_9',
+        intent_id: 'in_1',
+        body_generation: '3',
+        state: 'completed',
+        kind: 'goto',
+      },
+    ]);
+    const rows = await actionsOf(db, 'ag_adam_02');
+    expect(rows).toEqual([
+      {
+        action_id: 'ac_9',
+        intent_id: 'in_1',
+        body_generation: 3,
+        state: 'completed',
+        kind: 'goto',
+      },
+    ]);
+    expect(describeActions(rows)).toBe('ac_9 goto completed gen 3');
+    expect(describeActions([])).toBe('no actions');
   });
 });
 
