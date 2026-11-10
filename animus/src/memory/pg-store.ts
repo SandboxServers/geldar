@@ -122,6 +122,8 @@ function agentRow(r: any): AgentRow {
 export interface PgMemoryStoreOptions {
   /** Embeds relationship memories on write and backfills missing vectors. */
   embedder?: Embedder;
+  /** The newest active beliefs `loadDeterministic` returns (`mind.max_beliefs`). */
+  maxBeliefs?: number;
 }
 
 /**
@@ -131,10 +133,12 @@ export interface PgMemoryStoreOptions {
 export class PgMemoryStore implements MemoryStore {
   private readonly pool: PgPool;
   private readonly embedder: Embedder | undefined;
+  private readonly maxBeliefs: number;
 
   constructor(pool: PgPool, options: PgMemoryStoreOptions = {}) {
     this.pool = pool;
     this.embedder = options.embedder;
+    this.maxBeliefs = options.maxBeliefs ?? 40;
   }
 
   async ensureAgent(agent: AgentRow): Promise<void> {
@@ -180,8 +184,8 @@ export class PgMemoryStore implements MemoryStore {
       this.pool.query(
         `SELECT ${MEMORY_COLUMNS} FROM memories
          WHERE agent_id = $1 AND kind = 'semantic' AND COALESCE(active, true)
-         ORDER BY memory_id DESC`,
-        [lifeId],
+         ORDER BY memory_id DESC LIMIT $2`,
+        [lifeId, this.maxBeliefs],
       ),
       this.pool.query(
         `SELECT ${MEMORY_COLUMNS} FROM memories

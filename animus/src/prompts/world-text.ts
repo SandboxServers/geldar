@@ -43,6 +43,8 @@ export type WorldTextValue = string | number | boolean | null;
 export interface WorldTextLine {
   kind: WorldTextKind;
   fields: Record<string, WorldTextValue>;
+  /** A longer cap for this line's strings than {@link MAX_ITEM_CHARS} (the day digest). */
+  maxChars?: number;
 }
 
 // Code point ranges JSON leaves raw that still need escaping: the angle brackets, DEL and the C1
@@ -111,15 +113,57 @@ export function stableJson(value: unknown, maxString: number = MAX_ITEM_CHARS): 
 
 /** One line of the section: `- kind {json}`. */
 export function renderWorldLine(line: WorldTextLine): string {
-  return `- ${line.kind} ${stableJson(line.fields)}`;
+  return `- ${line.kind} ${stableJson(line.fields, line.maxChars)}`;
 }
 
-/** The whole section, header and footer included. `(none)` when there are no lines. */
-export function renderWorldText(lines: WorldTextLine[]): string {
-  const shown = lines.slice(0, MAX_WORLD_LINES).map(renderWorldLine);
-  if (shown.length === 0) shown.push('(none)');
-  if (lines.length > MAX_WORLD_LINES) {
-    shown.push(`(${lines.length - MAX_WORLD_LINES} more lines not shown)`);
+/** Room kept for the count line `(N more lines not shown)`. */
+const COUNT_NOTE_RESERVE = 48;
+
+/**
+ * When the budget is short, the lines kept first: the speech to the agent and its plan, then the
+ * rest in their given order, then the heard lines, newest first (smallest age).
+ */
+function keepOrder(lines: WorldTextLine[]): number[] {
+  const rank = (line: WorldTextLine): number => {
+    if (line.kind === 'wake_speech' || line.kind === 'plan') return 0;
+    return line.kind === 'heard' ? 2 : 1;
+  };
+  const age = (line: WorldTextLine): number => {
+    const v = line.fields.age_seconds;
+    return typeof v === 'number' ? v : 0;
+  };
+  return lines
+    .map((line, i) => ({ i, rank: rank(line), age: line.kind === 'heard' ? age(line) : 0 }))
+    .sort((a, b) => a.rank - b.rank || a.age - b.age || a.i - b.i)
+    .map((x) => x.i);
+}
+
+/**
+ * The whole section, header and footer included, at most `budget` characters (UTF-16 units). Lines
+ * past the budget or {@link MAX_WORLD_LINES} are not shown and counted: the oldest `heard` lines go
+ * first, the speech and plan lines last. `(none)` when there are no lines.
+ */
+export function renderWorldText(
+  lines: WorldTextLine[],
+  budget: number = Number.POSITIVE_INFINITY,
+): string {
+  const rendered = lines.map(renderWorldLine);
+  const frame = WORLD_TEXT_HEADER.length + WORLD_TEXT_FOOTER.length + 2 + COUNT_NOTE_RESERVE;
+  const kept = new Set<number>();
+  let used = frame;
+  for (const i of keepOrder(lines)) {
+    if (kept.size >= MAX_WORLD_LINES) break;
+    const cost = (rendered[i] ?? '').length + 1;
+    if (used + cost > budget) {
+      if (lines[i]?.kind === 'heard') break;
+      continue;
+    }
+    kept.add(i);
+    used += cost;
   }
+  const shown = rendered.filter((_, i) => kept.has(i));
+  if (shown.length === 0) shown.push('(none)');
+  const dropped = lines.length - kept.size;
+  if (dropped > 0) shown.push(`(${dropped} more lines not shown)`);
   return [WORLD_TEXT_HEADER, ...shown, WORLD_TEXT_FOOTER].join('\n');
 }

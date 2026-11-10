@@ -12,6 +12,7 @@ import type {
 import { renderBodyApi } from './body-api.ts';
 import { reflectionDecodeSchema, thoughtDecodeSchema } from './decode-schema.ts';
 import {
+  DEFAULT_MAX_BELIEFS,
   relationshipLines,
   renderBeliefs,
   renderCommitments,
@@ -22,6 +23,20 @@ import {
 import { renderSnapshot } from './render-snapshot.ts';
 import { fill, loadTemplate, type ParsedTemplate, refuseUnknownSlots } from './template.ts';
 import { renderWorldText, stableJson, type WorldTextLine } from './world-text.ts';
+
+/** The default budget of the thought's user message, in characters (`mind.prompt_budget_chars`). */
+export const DEFAULT_THOUGHT_BUDGET_CHARS = 12_000;
+
+/** The longest day digest a reflection shows, in characters: the whole digest, not one line of it. */
+const MAX_DIGEST_CHARS = 8192;
+
+/** The size limits of the prompts. */
+export interface PromptLimits {
+  /** Characters of the thought's user message; the quoted world text gets what is left. */
+  thoughtBudgetChars: number;
+  /** Beliefs shown in a prompt, newest first (`mind.max_beliefs`). */
+  maxBeliefs: number;
+}
 
 /** The slots each block of the thought template may use. */
 const THOUGHT_SLOTS: Record<number, string[]> = {
@@ -58,6 +73,10 @@ export interface PromptLibraryOptions {
   promptsDir?: string;
   /** The template version to load. Only 1 exists. */
   version?: number;
+  /** See {@link PromptLimits.thoughtBudgetChars}. */
+  thoughtBudgetChars?: number;
+  /** See {@link PromptLimits.maxBeliefs}. */
+  maxBeliefs?: number;
 }
 
 /** Loads and hashes the templates now; throws on an unknown slot, a missing block or a bad file. */
@@ -85,7 +104,18 @@ export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptL
   if (degradedText === undefined) throw new Error('reflection template has no degraded variant');
   refuseUnknownSlots(degradedText, new Set(['memories_max']), 'reflection variant degraded');
 
-  return new TemplatePromptLibrary(thought, reflection, bodyApi, bodyApiVersion, degradedText);
+  const limits: PromptLimits = {
+    thoughtBudgetChars: options.thoughtBudgetChars ?? DEFAULT_THOUGHT_BUDGET_CHARS,
+    maxBeliefs: options.maxBeliefs ?? DEFAULT_MAX_BELIEFS,
+  };
+  return new TemplatePromptLibrary(
+    thought,
+    reflection,
+    bodyApi,
+    bodyApiVersion,
+    degradedText,
+    limits,
+  );
 }
 
 class TemplatePromptLibrary implements PromptLibrary {
@@ -96,6 +126,7 @@ class TemplatePromptLibrary implements PromptLibrary {
   private readonly reflection: ParsedTemplate;
   private readonly bodyApi: string;
   private readonly degradedText: string;
+  private readonly limits: PromptLimits;
 
   constructor(
     thought: ParsedTemplate,
@@ -103,12 +134,14 @@ class TemplatePromptLibrary implements PromptLibrary {
     bodyApi: string,
     bodyApiVersion: string,
     degradedText: string,
+    limits: PromptLimits,
   ) {
     this.thought = thought;
     this.reflection = reflection;
     this.bodyApi = bodyApi;
     this.bodyApiVersion = bodyApiVersion;
     this.degradedText = degradedText;
+    this.limits = limits;
     this.thoughtVersion = thought.version;
     this.reflectionVersion = reflection.version;
   }
@@ -120,8 +153,13 @@ class TemplatePromptLibrary implements PromptLibrary {
     vars: ThoughtPromptVars | ReflectionPromptVars,
   ): PromptRender {
     return kind === 'thought'
-      ? renderThought(this.thought, this.bodyApi, vars as ThoughtPromptVars)
-      : renderReflection(this.reflection, this.degradedText, vars as ReflectionPromptVars);
+      ? renderThought(this.thought, this.bodyApi, vars as ThoughtPromptVars, this.limits)
+      : renderReflection(
+          this.reflection,
+          this.degradedText,
+          vars as ReflectionPromptVars,
+          this.limits,
+        );
   }
 }
 
@@ -162,7 +200,12 @@ function block(
   return fill(t.blocks.get(n) as string, values, `${label} block ${n}`);
 }
 
-function renderThought(t: ParsedTemplate, bodyApi: string, vars: ThoughtPromptVars): PromptRender {
+function renderThought(
+  t: ParsedTemplate,
+  bodyApi: string,
+  vars: ThoughtPromptVars,
+  limits: PromptLimits,
+): PromptRender {
   checkIdentity(vars.agent.name, vars.agent.personalitySeed);
   const snap = renderSnapshot(vars.snapshot);
   const world: WorldTextLine[] = [
@@ -189,7 +232,7 @@ function renderThought(t: ParsedTemplate, bodyApi: string, vars: ThoughtPromptVa
     skill_index: 'none yet. You have not learned any skills.',
     goal_stack: renderGoals(vars.goals),
     commitments: renderCommitments(vars.dueCommitments),
-    beliefs: renderBeliefs(vars.beliefs),
+    beliefs: renderBeliefs(vars.beliefs, limits.maxBeliefs),
     memories: renderEpisodic(vars.episodic),
     days: String(vars.snapshot.world_time.day),
     days_since_sleep: String(self.days_since_sleep),
@@ -201,8 +244,14 @@ function renderThought(t: ParsedTemplate, bodyApi: string, vars: ThoughtPromptVa
         ? 'none, you are not pursuing anything right now.'
         : 'see the plan line in QUOTED WORLD TEXT.',
     snapshot: snap.text,
-    quoted_world_text: renderWorldText(world),
+    quoted_world_text: '',
   };
+  // The user message is blocks 5 and 6; the quoted section gets the room the budget leaves.
+  const withoutWorld = [5, 6].map((n) => block(t, n, values, 'thought')).join('\n\n');
+  values.quoted_world_text = renderWorldText(
+    world,
+    limits.thoughtBudgetChars - withoutWorld.length,
+  );
   const system = [1, 2, 3, 4].map((n) => block(t, n, values, 'thought')).join('\n\n');
   const user = [5, 6].map((n) => block(t, n, values, 'thought')).join('\n\n');
   return finish(t, system, user, schema);
@@ -212,6 +261,7 @@ function renderReflection(
   t: ParsedTemplate,
   degradedText: string,
   vars: ReflectionPromptVars,
+  limits: PromptLimits,
 ): PromptRender {
   checkIdentity(vars.agent.name, vars.agent.personalitySeed);
   const schema = reflectionDecodeSchema(vars.degraded);
@@ -227,13 +277,19 @@ function renderReflection(
     day: String(vars.day),
     journal_today: renderJournal(vars.journal),
     goal_stack: renderGoals(vars.goals),
-    beliefs: renderBeliefs(vars.beliefs),
+    beliefs: renderBeliefs(vars.beliefs, limits.maxBeliefs),
     memories: renderEpisodic(vars.episodic),
     quoted_world_text: renderWorldText([
       ...relationshipLines(vars.relationships, 'relationship', 20),
       ...(vars.digest.trim() === ''
         ? []
-        : [{ kind: 'day_digest', fields: { text: vars.digest } } satisfies WorldTextLine]),
+        : [
+            {
+              kind: 'day_digest',
+              fields: { text: vars.digest },
+              maxChars: MAX_DIGEST_CHARS,
+            } satisfies WorldTextLine,
+          ]),
     ]),
   };
   const system = [1, 2].map((n) => block(t, n, values, 'reflection')).join('\n\n');

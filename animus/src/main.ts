@@ -200,7 +200,10 @@ export async function startMind(
       store: db.store,
       journal: db.journal,
       embedder,
-      prompts: createPromptLibrary(),
+      prompts: createPromptLibrary({
+        thoughtBudgetChars: config.mind.promptBudgetChars,
+        maxBeliefs: config.mind.maxBeliefs,
+      }),
       validator: createOutputValidator(),
       onError: (error) => log({ event: 'handler_failed', life_id: lifeId, error: String(error) }),
     });
@@ -234,7 +237,7 @@ export const realStack: MindStack = {
     const pool = await openPool(config);
     await pool.query('SELECT 1');
     return {
-      store: new PgMemoryStore(pool, { embedder }),
+      store: new PgMemoryStore(pool, { embedder, maxBeliefs: config.mind.maxBeliefs }),
       journal: new PgJournal(pool),
       close: () => pool.end(),
     };

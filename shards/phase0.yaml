@@ -41,6 +41,8 @@ mind:
     warm_timeout_s: 180          # seconds one pinned model may take to load before its warm-up fails (lantern-local)
   snapshot_retry_s: 60           # the Mind retries a snapshot request for this long while the Body is not up
   thinker_wait_s: 20             # a thought waits this long for a Thinker to connect, then retries once
+  prompt_budget_chars: 12000     # characters of a thought's user message; the quoted world text gets the rest, the oldest heard lines go first
+  max_beliefs: 40                # the newest active beliefs loaded and shown in a prompt
   thought:
     max_tokens: 600             # output cap of a standard thought
     temperature: 0.7
