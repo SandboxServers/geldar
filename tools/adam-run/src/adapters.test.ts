@@ -175,6 +175,61 @@ describe('the sampler reads only this run', () => {
   });
 });
 
+describe('the sampler tick rate', () => {
+  const START = Date.UTC(2026, 10, 10, 9);
+  const NOW = START + 5 * 60_000;
+  /** server_tps rows as pg returns them: at as a Date, world_tick as a string (BIGINT). */
+  const rows = (tpsRate: number) =>
+    Array.from({ length: 16 }, (_, i) => ({
+      at: new Date(NOW - (15 - i) * 20_000),
+      world_tick: String(1000 + i * 20 * tpsRate),
+    }));
+  const observeWith = async (tk: Record<string, unknown>[]) => {
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: text.includes("type = 'server_tps'") ? tk : [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes: new FakeProcesses(),
+      clock: { nowMs: () => NOW, sleep: async () => undefined },
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    const obs = await sampler.observe(START);
+    const i = texts.findIndex((t) => t.includes("type = 'server_tps'"));
+    return { obs, text: texts[i] ?? '', values: params[i] ?? [] };
+  };
+
+  it('reads the TPS from the world ticks of the server_tps events, not from a constant', async () => {
+    const { obs, text } = await observeWith(rows(20));
+    expect(obs.tps).toBeCloseTo(20, 6);
+    expect(text).toContain('FROM events');
+    expect(text).toContain('world_tick');
+    const slow = await observeWith(rows(12));
+    expect(slow.obs.tps).toBeCloseTo(12, 6);
+  });
+
+  it('is null when the server_tps events give no rate, so the TPS rule skips', async () => {
+    const { obs } = await observeWith([]);
+    expect(obs.tps).toBeNull();
+  });
+
+  it('reads the server_tps events from the run start, never before it', async () => {
+    const { values } = await observeWith(rows(20));
+    expect(values).toEqual([new Date(START)]);
+  });
+});
+
 describe('the forbidden-flags rule', () => {
   it('no adapter or CLI source contains a volume-removing or pruning command', () => {
     const forbidden = ['down -v', '--volumes', 'rm -f', 'volume rm', 'prune'];

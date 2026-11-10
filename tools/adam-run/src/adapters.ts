@@ -40,6 +40,7 @@ import type { LifeRows } from './preconditions.ts';
 import { serviceAlive } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
 import { classifyShardEdit, mindLifeOf, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
+import { TICK_WINDOW_MS, type TickPoint, tickRate } from './tick-rate.ts';
 import { parsePrepared, WORLD_VOLUME_ENV, type WorldVolumes } from './world-volume.ts';
 
 const COMPOSE_FILE = 'compose/phase0.yml';
@@ -234,7 +235,7 @@ export interface SamplerDeps {
   repoRoot: string;
 }
 
-/** One status sample. TPS is null: no reader of the Golem's tick rate exists yet, so the TPS rule skips. */
+/** One status sample. TPS is null when the server_tps events of the last 5 minutes do not give a rate (see tick-rate.ts). */
 export function createSampler(deps: SamplerDeps): Sampler {
   const composePs = async (): Promise<Record<string, string>> => {
     const res = await deps.runner.exec('docker', [
@@ -299,8 +300,16 @@ export function createSampler(deps: SamplerDeps): Sampler {
           "SELECT intent_id FROM intents WHERE life_id = $1 AND state IN ('accepted','running') AND thought_id IN (SELECT thought_id FROM thoughts WHERE life_id = $1 AND at >= $2) ORDER BY started_tick DESC NULLS LAST LIMIT 1",
           [lifeId, since],
         );
-        return { t: t.rows[0], p95: p95.rows[0], d: d.rows[0], i: i.rows[0] };
+        // The shard's tick counter from its server_tps events (no agent on those rows), read from the run start.
+        const tk = await q.query(
+          "SELECT at, world_tick FROM events WHERE type = 'server_tps' AND at >= $1 ORDER BY at",
+          [new Date(Math.max(runStartMs, atMs - TICK_WINDOW_MS))],
+        );
+        return { t: t.rows[0], p95: p95.rows[0], d: d.rows[0], i: i.rows[0], tk: tk.rows };
       });
+      const tickPoints = (sql.tk ?? []).flatMap((r): TickPoint[] =>
+        r.at instanceof Date ? [{ atMs: r.at.getTime(), tick: Number(r.world_tick) }] : [],
+      );
       const lastAt = sql.t?.last;
       const p95 = sql.p95?.p;
       const alive: Record<Probe, boolean> = {
@@ -318,7 +327,7 @@ export function createSampler(deps: SamplerDeps): Sampler {
         alive,
         thoughts: Number(sql.t?.n ?? 0),
         lastThoughtAtMs: lastAt instanceof Date ? lastAt.getTime() : null,
-        tps: null,
+        tps: tickRate(tickPoints, atMs),
         latencyP95Ms: p95 === null || p95 === undefined ? null : Number(p95),
         activeIntentId: sql.i?.intent_id === undefined ? null : String(sql.i.intent_id),
         deaths: Number(sql.d?.n ?? 0),
