@@ -114,6 +114,7 @@ The harness watches these rules (`tools/adam-run/src/abort.ts`, thresholds in `t
 | `no-thought` | No thought for 10 minutes |
 | `disk` | Free disk under 10 GB |
 | `death` | A death in the run (`deathFailsRun` is true; see owner item O-2) |
+| `life_ended` | The life died. The run ends `ended (life_ended)`, not `aborted`. It is a finding, not an infrastructure failure (see the paragraph below). |
 | `gpu` | The GPU is not visible to the host |
 | `error` | `adam up`, the sampler, a restart or a Body kill failed |
 | `operator_stop` | `adam-run stop` was run from another shell |
@@ -126,6 +127,8 @@ The harness watches these rules (`tools/adam-run/src/abort.ts`, thresholds in `t
 4. Write to `ops-log.md`: the time, the rule, the value measured, each step.
 5. **Do not retry.** Do not start the same life again, and do not start the other model. Report to the orchestrator and wait.
 6. Never delete a volume or a file to clear an abort.
+
+**A life that ended (`life_ended`).** A run or smoke that ends `ended (life_ended)` is not an infrastructure failure. The harness stopped the run cleanly after a death, so the stack is not broken and no host process needs fixing. The report shows survival FAIL with the death time. Read that as the result. Exit runs never retry automatically, and nobody restarts the same life: the life is spent (`ag_adam_03`, `ag_adam_04`, `ag_smoke_01` each once). The report CLI works with the glass password file. Run it with `compose/secrets/postgres-glass.txt` present (P14), or with `GELDAR_GLASS_PG_PASSWORD_FILE` set to its path. The secrets junction must exist for the whole run, from start until the report is written, not only at start.
 
 ## 6. What to record
 
