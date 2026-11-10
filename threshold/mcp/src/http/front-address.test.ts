@@ -72,6 +72,8 @@ function tokenRow(): TokenRow {
     display_name: 'AA',
     harness: 'test',
     status: 'active',
+    owner_players: 1,
+    player_cap: 3,
     expires_at: new Date(Date.now() + 86_400_000),
     revoked_at: null,
   };
