@@ -58,3 +58,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0051](0051-adam-identity-and-model-pins.md) | Adam's identity and the Phase 0 model pins | Accepted (owner; seed needs approval) |
 | [0052](0052-per-owner-sovereign-player-cap-raised-to-20.md) | The per-owner cap on sovereign players is raised to 20 for the owner; the real Geldar MCP is built alongside wave 6 | Accepted (owner) |
 | [0058](0058-the-character-knowledge-boundary-and-thought-v2.md) | Characters honour the in-world knowledge of the character, not the model's training data; thought prompt v2 carries the knowledge, sleep and anti-loop rules | Accepted (owner) |
+| [0059](0059-identity-mode-is-about-human-observation-not-agent-belief.md) | `identity_mode` governs whether humans may observe a shard; the agents are never told they are watched | Accepted (owner) |
