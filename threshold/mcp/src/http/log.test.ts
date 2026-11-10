@@ -65,6 +65,11 @@ describe('safeLogLine cause redaction', () => {
     expect(kept.endsWith('[redacted]')).toBe(true);
   });
 
+  it('keeps the count of suppressed presence lines', () => {
+    const out = safeLogLine({ event: 'presence_error', cause: 'Error: kv down', suppressed: 29 });
+    expect(out).toEqual({ event: 'presence_error', cause: 'Error: kv down', suppressed: 29 });
+  });
+
   it('keeps only the first line of a multi-line cause', () => {
     const kept = causeOf('first line here\nsecret=abc on the second line');
     expect(kept).toBe('first line here');

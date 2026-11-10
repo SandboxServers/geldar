@@ -8,6 +8,7 @@ import {
 } from '@geldar/mcp-mock';
 import type { RunState } from '../events/mapper.ts';
 import { fitResult, toPlayerEvents, WORLD_TEXT_NOTE, worldText } from '../events/present.ts';
+import { causeOf } from '../presence-write.ts';
 import { toPlayView } from '../play-view.ts';
 import type {
   BodyGateway,
@@ -59,6 +60,8 @@ export interface WaitDeps {
   config: WakeConfig;
   state: WaitState;
   touchPresence?: TouchPresence;
+  /** Receives a failed touch as `presence_error`; the wait goes on without it. */
+  presenceLog?: (line: Record<string, unknown>) => void;
   keepAliveMs?: number;
   pollMs?: number;
 }
@@ -135,8 +138,9 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   const touch = async (): Promise<void> => {
     try {
       await deps.touchPresence?.(lifeId);
-    } catch {
+    } catch (err) {
       // presence is best effort; a failed touch never ends a wait
+      deps.presenceLog?.({ event: 'presence_error', cause: causeOf(err) });
     }
   };
   await touch();

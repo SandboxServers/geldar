@@ -27,6 +27,7 @@ export function safeLogLine(line: Record<string, unknown>): Record<string, strin
   if (typeof line.status === 'number') out.status = line.status;
   if (typeof line.error === 'string') out.error = errorTemplate(line.error);
   if (typeof line.cause === 'string') out.cause = causeText(line.cause);
+  if (typeof line.suppressed === 'number') out.suppressed = line.suppressed;
   return out;
 }
 

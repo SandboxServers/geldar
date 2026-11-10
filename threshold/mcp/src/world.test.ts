@@ -281,6 +281,24 @@ describe('the settle timer', () => {
     world.close();
   });
 
+  it('logs a settle fault as settle_error, and again only after a minute', async () => {
+    const fx = worldFixture([PLAYER]);
+    await fx.deps.presence.wantBody(PLAYER.lifeId, fx.clock.nowMs());
+    fx.deps.presence.settle = async () => {
+      throw new Error('kv down');
+    };
+    const logged: Record<string, unknown>[] = [];
+    const world = createWorld({ ...fx.deps, log: (line) => logged.push(line) });
+    await passSeconds(fx.clock, 60);
+    const first = logged.filter((line) => line.event === 'settle_error');
+    expect(first).toEqual([{ event: 'settle_error', cause: 'Error: kv down' }]);
+    await passSeconds(fx.clock, 60);
+    const again = logged.filter((line) => line.event === 'settle_error');
+    expect(again).toHaveLength(2);
+    expect(Number(again[1]?.suppressed)).toBeGreaterThan(0);
+    world.close();
+  });
+
   it('stops settling once close runs', async () => {
     const { world, tools, bucket, clock, deps } = wired();
     await run(tools, 'look');
