@@ -51,8 +51,13 @@ describe('ensureStream', () => {
         name: STREAM_CONFIG.name,
         subjects: [...STREAM_CONFIG.subjects],
         max_age: STREAM_CONFIG.retentionDays * 24 * 3600 * 1_000_000_000,
+        max_bytes: STREAM_CONFIG.maxBytes,
       }),
     );
+  });
+
+  it('caps the stream at 2 GiB of stored bytes by default', () => {
+    expect(STREAM_CONFIG.maxBytes).toBe(2 * 1024 * 1024 * 1024);
   });
 
   it('accepts a stream the plugin created between the info and the add', async () => {

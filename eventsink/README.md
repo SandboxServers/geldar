@@ -50,7 +50,13 @@ The same definition is created by the Geldar-Core plugin (P0-11, see `plugin/REA
 | name | `GELDAR_EVENTS` |
 | subjects | `geldar.*.*` |
 | storage | file |
-| retention | limits, `max_age` 30 days |
+| retention | limits: `max_age` 30 days and `max_bytes` 2147483648 bytes (2 GiB), oldest messages go first at the byte cap |
+
+The byte cap bounds the JetStream stream only. Both creators call create and skip it when the stream exists, so a changed constant does not reach a stream that is already there; an operator applies it with `nats stream edit GELDAR_EVENTS --max-bytes=<bytes>` (and `--max-age` for the age).
+
+### Retention of the Postgres `events` table (open follow-up)
+
+The sink writes every event to the Postgres `events` table and nothing prunes it. The stream caps above do not touch that table. Open, not in Phase 0: choose a pruning policy (age, row count, or a copy-out first) and write its job before the table's growth matters.
 
 ## Configuration
 
