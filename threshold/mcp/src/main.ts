@@ -170,6 +170,10 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     const nats = await ports.connectNats(config.nats.url);
     closers.push(() => nats.drain());
     log({ event: 'nats_connected' });
+    // The LISTEN connection starts before anything serves a request, so a revoke ends sessions at once.
+    await tokens.start();
+    closers.push(() => tokens.stop());
+    log({ event: 'revoke_listening' });
 
     const presence = new KvPresenceStore(await openPresenceBucket(nats.buckets), now);
     const body = new NatsBodyGateway({ transport: nats.request, shard: config.shard });

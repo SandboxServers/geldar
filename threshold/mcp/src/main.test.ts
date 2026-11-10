@@ -42,6 +42,22 @@ function shardCopy(edit: (text: string) => string): string {
   return file;
 }
 
+/** The LISTEN connection fake: records the LISTEN and the end, the two steps the server must run. */
+function fakeListener(order: string[]): Client {
+  const listener = {
+    on: () => listener,
+    connect: async () => {},
+    query: async (sql: string) => {
+      order.push(sql.startsWith('LISTEN') ? 'revoke.listen' : 'revoke.other');
+      return { rows: [] };
+    },
+    end: async () => {
+      order.push('revoke.stop');
+    },
+  };
+  return listener as unknown as Client;
+}
+
 /** Fakes for every outside port. `order` records what happened, in order; nothing listens or connects. */
 function fakePorts(order: string[], logs: string[]): McpPorts {
   const nats: NatsLink = {
@@ -82,7 +98,7 @@ function fakePorts(order: string[], logs: string[]): McpPorts {
       order.push('nats.connect');
       return nats;
     },
-    openRevokeListener: () => ({}) as Client,
+    openRevokeListener: () => fakeListener(order),
     keepAlive: { start: () => () => undefined },
     clock: new FakeClock(1_000_000),
     log: (line) => logs.push(JSON.stringify(line)),
@@ -125,18 +141,25 @@ describe('startMcp', () => {
       'secret:pepper',
       'pool.open',
       'nats.connect',
+      'revoke.listen',
       'replay',
       'listen',
     ]);
   });
 
-  it('stops in order: stop accepting, drain the consumer, drain NATS, then close the pool', async () => {
+  it('stops in order: stop accepting, drain the consumer, stop the revoke listener, drain NATS, then close the pool', async () => {
     const order: string[] = [];
     const config = await loadStartConfig(SHARD_FILE, ENV);
     const running = await startMcp(config, fakePorts(order, []));
     order.length = 0;
     await running.stop();
-    expect(order).toEqual(['front.close', 'replay.stop', 'nats.drain', 'pool.end']);
+    expect(order).toEqual([
+      'front.close',
+      'replay.stop',
+      'revoke.stop',
+      'nats.drain',
+      'pool.end',
+    ]);
   });
 
   it('closes what it opened when a later step fails, then rethrows', async () => {
@@ -152,7 +175,7 @@ describe('startMcp', () => {
     });
     const config = await loadStartConfig(SHARD_FILE, ENV);
     await expect(startMcp(config, ports)).rejects.toThrow('address in use');
-    expect(order.slice(-3)).toEqual(['replay.stop', 'nats.drain', 'pool.end']);
+    expect(order.slice(-4)).toEqual(['replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
   it('keeps the password and the pepper out of every log line', async () => {
