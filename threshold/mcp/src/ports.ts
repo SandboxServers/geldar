@@ -1,0 +1,135 @@
+import type {
+  BookReply,
+  PlanAck,
+  PlanMessage,
+  PresenceRecord,
+  Snapshot,
+  SovereignCallPayload,
+} from '@geldar/contract';
+import type { SimEvent } from '@geldar/mcp-mock';
+
+export type { Clock } from '@geldar/mcp-mock';
+
+/** A sovereign player as the MCP reads it: the `mcp_players` row joined to its owner. */
+export interface PlayerRecord {
+  /** The launcher player id from the URL path, such as ag-jason-01. */
+  playerId: string;
+  /** The game account and registry key, such as ag_jason_01. */
+  lifeId: string;
+  ownerId: string;
+  /** The in-universe display name, such as Jason. */
+  displayName: string;
+  harness: string;
+  status: 'active' | 'paused' | 'retired';
+}
+
+/** The token a presented Bearer resolved to, and the player it belongs to. */
+export interface ResolvedToken {
+  tokenId: string;
+  player: PlayerRecord;
+}
+
+/** Hashed per-player Bearer tokens (spec 5.15.3; the hash is HMAC with the pepper). */
+export interface TokenStore {
+  /**
+   * The token whose hash matches, when it is active: not expired, not revoked, its player
+   * active and its harness enabled. Null for anything else.
+   */
+  resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null>;
+  /** Records a use of the token. A store may skip the write so it happens at most once a minute. */
+  touch(tokenId: string, nowMs: number): Promise<void>;
+  /** Calls the listener for every token revoked from now on. Returns the unsubscribe function. */
+  onRevoke(listener: (revoked: { tokenId: string; playerId: string }) => void): () => void;
+}
+
+/** Looks up sovereign players by their launcher id. */
+export interface PlayerDirectory {
+  /** The player with this id, or null. */
+  find(playerId: string): Promise<PlayerRecord | null>;
+}
+
+/** Credits per life: accrued in real time, reserved before each dispatch, refunded on refusal. */
+export interface BudgetLedger {
+  /** The credits the life holds at nowMs, after accrual. */
+  balance(lifeId: string, nowMs: number): Promise<number>;
+  /** Takes the credits when the life can pay; `ok` is false and nothing is taken otherwise. */
+  reserve(
+    lifeId: string,
+    credits: number,
+    nowMs: number,
+  ): Promise<{ ok: boolean; remaining: number }>;
+  /** Gives credits back. Returns the new balance. */
+  refund(lifeId: string, credits: number): Promise<number>;
+}
+
+/**
+ * The Body channel: each request goes to one life's Body over NATS. Every method rejects with
+ * `BodyUnavailable` when the Body does not answer in time.
+ */
+export interface BodyGateway {
+  /** The Body's current snapshot. */
+  snapshot(lifeId: string): Promise<Snapshot>;
+  /** Hands a plan to the Body; the Body's acknowledgement comes back. */
+  submitPlan(lifeId: string, plan: PlanMessage): Promise<PlanAck>;
+  /** The carried written book, or `no_book`. */
+  book(lifeId: string): Promise<BookReply>;
+}
+
+/** The error a `BodyGateway` rejects with when its Body does not answer. */
+export class BodyUnavailable extends Error {
+  override name = 'BodyUnavailable';
+}
+
+/** The per-life event log that `wait` reads (spec 5.15.3: the cursor is the stream sequence). */
+export interface PlayerEventLog {
+  /** Appends one event for a life. A sequence already held is ignored. */
+  append(lifeId: string, event: SimEvent): Promise<void>;
+  /** The events after the cursor, in order, and how many were lost before the ring's start. */
+  since(lifeId: string, cursor: number): Promise<{ events: SimEvent[]; dropped: number }>;
+}
+
+/** Presence records in the `geldar-presence` bucket: one per life. */
+export interface PresenceStore {
+  /** The record for a life, or null when none is written yet. */
+  read(lifeId: string): Promise<PresenceRecord | null>;
+  /** Asks for the life's Body to be up; the supervisor acts on it. */
+  wantBody(lifeId: string, nowMs: number): Promise<void>;
+}
+
+/** Writes one `sovereign_call` event per tool call. Holds no world text beyond the payload's limits. */
+export interface CallRecorder {
+  record(call: SovereignCallPayload): Promise<void>;
+}
+
+/** One journal line a player wrote, with the time it was written. */
+export interface JournalEntry {
+  at: number;
+  text: string;
+}
+
+/** The journal mirror in Postgres, capped per life at 4000 characters a line. */
+export interface JournalStore {
+  /** Appends a line for a life. */
+  append(lifeId: string, text: string, atMs: number): Promise<void>;
+  /** The newest `limit` lines, oldest first. */
+  recent(lifeId: string, limit: number): Promise<JournalEntry[]>;
+}
+
+/** The answer of a rate limiter for one bucket. */
+export interface RateDecision {
+  allowed: boolean;
+  /** Milliseconds until the bucket has a token again; 0 when allowed. */
+  retryAfterMs: number;
+}
+
+/** Token buckets by key: a player's calls, an owner's calls, a failed-auth address. */
+export interface RateLimiter {
+  /** Takes one token from the bucket when there is one. */
+  take(bucket: string, nowMs: number): RateDecision;
+}
+
+/** Periodic ticks for an open `wait`, so its stream never idles past a proxy. */
+export interface KeepAlive {
+  /** Calls tick every intervalMs until the returned function stops the timer. */
+  start(intervalMs: number, tick: () => void): () => void;
+}

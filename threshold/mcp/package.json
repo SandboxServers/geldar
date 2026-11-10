@@ -1,0 +1,28 @@
+{
+  "name": "@geldar/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The real Geldar MCP server for sovereign players: the mock's contract served from the Body channel.",
+  "exports": {
+    ".": "./src/config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@geldar/animus": "workspace:*",
+    "@geldar/contract": "workspace:*",
+    "@geldar/mcp-mock": "workspace:*",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/kv": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
+    "pg": "8.23.1",
+    "yaml": "2.9.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}

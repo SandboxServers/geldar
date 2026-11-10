@@ -1,0 +1,14 @@
+{
+  "name": "@geldar/mcp-tokens",
+  "private": true,
+  "description": "The mcp-tokens CLI: owners, sovereign players and their hashed per-player Bearer tokens (spec 5.15.5).",
+  "type": "module",
+  "dependencies": {
+    "@geldar/mcp": "workspace:*",
+    "pg": "8.23.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}
