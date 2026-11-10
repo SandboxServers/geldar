@@ -216,7 +216,7 @@ export function formatStatus(rows: readonly RangerRow[]): string[] {
       state === 'down'
         ? 'down'
         : state === 'unknown'
-          ? `unknown (${reason ?? 'cannot verify'})`
+          ? `unknown pid ${pid ?? 'none'} (${reason ?? 'cannot verify'})`
           : `${state} pid ${pid ?? 'none'} ${rss}`;
     return `${ranger.playerId} ${process} (life ${ranger.lifeId}) ${formatPresence(presence)}`;
   });

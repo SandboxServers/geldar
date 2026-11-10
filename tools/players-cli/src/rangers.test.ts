@@ -204,6 +204,22 @@ describe('formatStatus', () => {
     expect(line).toBe('ag-jason-01 online pid 99 rss unknown (life ag_jason_01) presence: unknown');
   });
 
+  it('prints an unknown ranger with the PID it could not verify and the reason', () => {
+    const [line] = formatStatus([
+      {
+        ranger: JASON,
+        state: 'unknown',
+        pid: 42,
+        reason: 'start time unreadable',
+        rssMb: null,
+        presence: unknown,
+      },
+    ]);
+    expect(line).toBe(
+      'ag-jason-01 unknown pid 42 (start time unreadable) (life ag_jason_01) presence: unknown',
+    );
+  });
+
   it('prints a dead process as stale, and a known record even with no process', () => {
     const lines = formatStatus([
       { ranger: JASON, state: 'stale', pid: 7, rssMb: null, presence: awake },
