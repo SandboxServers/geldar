@@ -6,7 +6,9 @@
  */
 import { execFile, execFileSync } from 'node:child_process';
 import {
+  accessSync,
   appendFileSync,
+  constants,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -332,6 +334,35 @@ export function glassPasswordFile(
   );
 }
 
+/**
+ * The secret files a start needs (compose/phase0.yml mounts the first three; the glass file is the reader's): the
+ * shard's Postgres, the RCON password, the Velocity forwarding secret, and the glass reader's password.
+ */
+export function startSecretPaths(
+  repoRoot: string,
+  env: Record<string, string | undefined>,
+): string[] {
+  const dir = join(repoRoot, 'compose', 'secrets');
+  return [
+    join(dir, 'postgres.txt'),
+    glassPasswordFile(repoRoot, env),
+    join(dir, 'rcon.txt'),
+    join(dir, 'velocity-forwarding.txt'),
+  ];
+}
+
+/** The paths that are missing or cannot be read. Only access is checked: no file is opened, so no contents are read. */
+export function unreadablePaths(paths: string[]): string[] {
+  return paths.filter((p) => {
+    try {
+      accessSync(p, constants.R_OK);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+}
+
 /** The variables adam-report reads (tools/adam-report/src/db.ts): the glass role, its password file, and the DB address. */
 function reportEnv(
   passwordFile: string,
@@ -471,6 +502,7 @@ export function createPreflight(opts: {
           worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
           mind: mindLifeOf(shardYaml),
+          secretsMissing: unreadablePaths(startSecretPaths(opts.repoRoot, opts.env)),
         },
         shardConfigSha256: sha256Hex(shardYaml),
         shardCommittedSha256,

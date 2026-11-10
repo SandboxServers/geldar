@@ -11,6 +11,8 @@ import {
   createSupervisor,
   readOnly,
   type SqlClient,
+  startSecretPaths,
+  unreadablePaths,
 } from './adapters.ts';
 import type { ExecResult, Runner } from './ports.ts';
 import type { WorldVolumes } from './world-volume.ts';
@@ -20,12 +22,16 @@ const SRC = [join(import.meta.dirname, 'adapters.ts'), join(import.meta.dirname,
 /** A runner that records every call and answers with a fixed exit code. */
 function recordingRunner(code = 0): {
   runner: Runner;
-  calls: { file: string; args: readonly string[]; env?: Record<string, string | undefined> }[];
+  calls: {
+    file: string;
+    args: readonly string[];
+    env?: Record<string, string | undefined> | undefined;
+  }[];
 } {
   const calls: {
     file: string;
     args: readonly string[];
-    env?: Record<string, string | undefined>;
+    env?: Record<string, string | undefined> | undefined;
   }[] = [];
   return {
     calls,
@@ -261,6 +267,27 @@ describe('the supervisor and reporter argument arrays', () => {
       ).reportRun('run-1'),
     ).rejects.toThrow(/postgres-glass\.txt/);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('the start checks the secret files exist and are readable, never their contents', () => {
+  it('lists the missing secret files by path, and the present ones are not listed', () => {
+    const repo = repoWithGlassSecret(); // only postgres-glass.txt exists
+    const shard = join(repo, 'compose', 'secrets');
+    writeFileSync(join(shard, 'postgres.txt'), 'pg-value\n');
+    const missing = unreadablePaths(startSecretPaths(repo, {}));
+    expect(missing).toEqual([join(shard, 'rcon.txt'), join(shard, 'velocity-forwarding.txt')]);
+    expect(missing.join('\n')).not.toContain(GLASS_SECRET);
+    expect(missing.join('\n')).not.toContain('pg-value');
+  });
+
+  it('takes the glass file from GELDAR_GLASS_PG_PASSWORD_FILE when the environment names one', () => {
+    const repo = repoWithGlassSecret();
+    const env = { GELDAR_GLASS_PG_PASSWORD_FILE: join(repo, 'nowhere', 'glass.txt') };
+    expect(startSecretPaths(repo, env)).toContain(join(repo, 'nowhere', 'glass.txt'));
+    expect(unreadablePaths(startSecretPaths(repo, env))).toContain(
+      join(repo, 'nowhere', 'glass.txt'),
+    );
   });
 });
 

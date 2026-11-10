@@ -39,6 +39,8 @@ export interface PreconditionFacts {
   lifeId: string;
   /** The Mind's life as `shards/phase0.yaml` names it now: the username, the agent tier and the run tier. */
   mind: MindLife;
+  /** The secret files a start needs that are missing or unreadable, as paths. Absent means none were checked. */
+  secretsMissing?: string[];
 }
 
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
@@ -91,6 +93,11 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   if (f.shardEdit.kind === 'refused') {
     missing.push(
       `clean tree: ${SHARD_PATH} is changed beyond the tier select (${f.shardEdit.reason}${f.shardEdit.keys.length > 0 ? `: ${f.shardEdit.keys.join(', ')}` : ''}); only the tier select may change it`,
+    );
+  }
+  for (const path of f.secretsMissing ?? []) {
+    missing.push(
+      `secret file ${path} is missing or unreadable; the run worktree needs compose/secrets (a junction to the checkout that holds the secrets)`,
     );
   }
   const gate = checkBench(f.bench, f.headSha);

@@ -52,6 +52,21 @@ describe('checkPreconditions', () => {
     expect(checkPreconditions(good)).toEqual({ ok: true });
   });
 
+  it('refuses, listing each missing secret file by path, and accepts when none is missing', () => {
+    const verdict = checkPreconditions({
+      ...good,
+      secretsMissing: ['/wt/compose/secrets/postgres.txt', '/wt/compose/secrets/rcon.txt'],
+    });
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing).toHaveLength(2);
+    expect(verdict.missing[0]).toContain(
+      'secret file /wt/compose/secrets/postgres.txt is missing or unreadable',
+    );
+    expect(verdict.missing[1]).toContain('/wt/compose/secrets/rcon.txt');
+    expect(checkPreconditions({ ...good, secretsMissing: [] })).toEqual({ ok: true });
+  });
+
   it('compares the bench file with the short form of the full HEAD sha git reports', () => {
     expect(checkPreconditions({ ...good, headSha: FULL_HEAD })).toEqual({ ok: true });
   });
