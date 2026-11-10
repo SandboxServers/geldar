@@ -5,8 +5,9 @@ The real MCP server for sovereign players. It serves the same 14 tools as the mo
 ranger's Body over NATS, with per-player bearer tokens, a Postgres budget and a durable event log.
 The wave plan is `docs/analysis/phase0/waveM-packets.md`; the spec is section 5.15.
 
-Status: skeleton (WM-01). Config, ports, fakes, the play view and the import check exist. The
-HTTP front door, stores, tools and Body gateway arrive in WM-02 to WM-06.
+Status: code complete (WM-01 to WM-12). The HTTP front door, stores, tools, Body gateway and CLI
+exist and have tests. Review fixes are in progress (the Wave M fix packets). The live runs against
+a real shard and a real Body are owed to ops; nothing here has been run live yet.
 
 ## Layout
 
@@ -27,11 +28,10 @@ threshold/mcp/
       world.fakes.ts   FakeBody: scripted events, snapshots, plans and books
 ```
 
-Planned by later packets (not yet present): `src/store/**` (WM-02), `src/http/**` (WM-03),
-`src/events/**` and `src/tools/wait.ts` (WM-04), `src/tools/{act,say}.ts`, `src/budget/**`,
-`src/record/**` (WM-05), `src/tools/{look,status,sleep,journal,read-book,unavailable}.ts` and
-`src/resources.ts` (WM-06), `src/body-gateway.ts`, `presence.ts`, `world.ts`, `main.ts`, `cli.ts`,
-`index.ts` (WM-11). The `Dockerfile`, its dockerignore and the hosting section are WM-10.
+The tree above is the WM-01 skeleton. The later packets added `src/store/**` (WM-02), `src/http/**`
+(WM-03), `src/events/**` and `src/tools/wait.ts` (WM-04), `src/budget/**` and `src/record/**` (WM-05),
+the read tools and `src/resources.ts` (WM-06), `src/body-gateway.ts`, `presence.ts`, `world.ts`,
+`main.ts`, `cli.ts` and `index.ts` (WM-11). The `Dockerfile` and its dockerignore are WM-10.
 
 Tools that read or write outside this package: `tools/migrate` (WM-02), `tools/mcp-tokens`
 (WM-09), `tools/players-cli` (WM-12). `golem/src/books/**` (WM-07) and `golem/src/players/**`
@@ -61,7 +61,7 @@ request, which WM-11 applies.
 
 The mock is the contract's reference. The real server keeps its tool names, schemas and
 vocabulary, and changes what sits behind them. The right-hand column is the target design; the
-packets in the ownership table deliver it, and this skeleton delivers none of it yet.
+packets in the ownership table deliver it.
 
 | Area | Mock (`threshold/mcp-mock`) | Real (`threshold/mcp`) |
 |---|---|---|
@@ -86,9 +86,9 @@ with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` 
 
 ## Hosting
 
-Status: built and not run. The image builds from the repo root (`threshold/mcp/Dockerfile`), and
-`compose/mcp.yml` overlays it on the stack. Its entry point, `src/cli.ts`, arrives in WM-11, so the
-container has nothing to start until then. Nothing here is secret: every value below is a placeholder.
+Status: built, and its entry point (`src/cli.ts`) exists. The image builds from the repo root
+(`threshold/mcp/Dockerfile`), and `compose/mcp.yml` overlays it on the stack. It has not been run
+against a live shard yet; that run is owed to ops. Nothing here is secret: every value below is a placeholder.
 
 ### Local use (loopback)
 
@@ -109,13 +109,16 @@ a commit, a log or a chat. The DB password and the pepper are Docker secret file
 
 ### Run (commands)
 
-Each step is a `./geldar.ps1` command. The shard (`./geldar.ps1 shard up phase0`) must be up first.
+Each step is a `./geldar.ps1` command, in this order. The shard (`./geldar.ps1 shard up phase0`) must
+be up first.
 
 ```
-./geldar.ps1 mcp-tokens init               # the pepper and the MCP's own Postgres password (never overwritten)
-./geldar.ps1 db migrate --dry-run          # then without --dry-run; back up the live volume first
-./geldar.ps1 mcp-tokens owner add <owner>  # then: player add, and token mint --out <file outside the repo>
-./geldar.ps1 mcp up                        # init, build and start the container on 127.0.0.1:8788
+./geldar.ps1 mcp-tokens init               # 1. the pepper and the MCP's own Postgres password (never overwritten)
+./geldar.ps1 db migrate --dry-run          # 2. then without --dry-run; back up the live volume first
+./geldar.ps1 db migrate --set-role-password geldar_mcp --password-file compose/secrets/postgres-mcp.txt
+                                           # 3. the geldar_mcp role is NOLOGIN until this runs; mcp up fails on database auth before it
+./geldar.ps1 mcp up                        # 4. init, build and start the container on 127.0.0.1:8788
+./geldar.ps1 mcp-tokens owner add <owner>  # 5. then: player add, and token mint --out <file outside the repo>
 ./geldar.ps1 mcp status                    # prints "down" when it is not running
 ./geldar.ps1 mcp logs
 ./geldar.ps1 mcp smoke                     # the stub client case against /p/ag-test-01 (needs GELDAR_MCP_TEST_TOKEN_FILE)
