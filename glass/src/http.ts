@@ -196,10 +196,18 @@ async function serveRoute(
   if (!deps.hub.attach(res)) sendJson(res, 503, { error: 'too many streams' });
 }
 
+/** The Host values Glass answers to. A name that another site controls is not one of them. */
+const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i;
+
 /** The request listener. It never sends a database error or a stack trace to the client. */
 export function createHandler(deps: GlassHandlerDeps) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+    // DNS rebinding: a page on another site can name its own host, and then reach this port.
+    if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
+      sendJson(res, 421, { error: 'misdirected request' });
+      return;
+    }
     const file = STATIC_FILES.get(pathOf(req.url));
     if (file !== undefined) {
       if (req.method !== 'GET') {
