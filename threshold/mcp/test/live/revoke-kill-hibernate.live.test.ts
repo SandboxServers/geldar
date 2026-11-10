@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { connectAs, geldar, readTokenFile, runId, structuredOf } from './client.ts';
 import { liveEnabled } from './gate.ts';
+import { assertTestPlayer } from './guards.ts';
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 const env = (name: string): string => {
@@ -26,7 +27,7 @@ const presenceOf = (status: string, id: string): string | undefined =>
 
 describe.skipIf(!liveEnabled())('revoke (f), kill mid-intent (g), hibernate (h)', () => {
   it('(f) a revoke during a wait ends the wait, and the next call with that token is a 401', async () => {
-    const player = env('GELDAR_LIVE_REVOKE_PLAYER');
+    const player = assertTestPlayer(env('GELDAR_LIVE_REVOKE_PLAYER'));
     const tokenId = env('GELDAR_LIVE_REVOKE_TOKEN_ID');
     const token = readTokenFile('GELDAR_LIVE_REVOKE_TOKEN_FILE');
     const client = await connectAs(player, token);
@@ -47,7 +48,7 @@ describe.skipIf(!liveEnabled())('revoke (f), kill mid-intent (g), hibernate (h)'
   }, 120_000);
 
   it('(g) a ranger Body killed mid-intent comes back at generation +1, and the next act is accepted', async () => {
-    const ranger = env('GELDAR_LIVE_RANGER');
+    const ranger = assertTestPlayer(env('GELDAR_LIVE_RANGER'));
     const client = await connectAs(ranger, readTokenFile('GELDAR_LIVE_RANGER_TOKEN_FILE'));
     const goal = `gather_kill_${runId()}`;
     try {
@@ -91,7 +92,7 @@ describe.skipIf(!liveEnabled())('revoke (f), kill mid-intent (g), hibernate (h)'
   }, 300_000);
 
   it('(h) after hibernation the next call brings the Body back within 20 s', async () => {
-    const ranger = env('GELDAR_LIVE_RANGER');
+    const ranger = assertTestPlayer(env('GELDAR_LIVE_RANGER'));
     const client = await connectAs(ranger, readTokenFile('GELDAR_LIVE_RANGER_TOKEN_FILE'));
     try {
       // The lease lapses on its own (override 60 s). The Body process stays up while hibernating, so poll the
