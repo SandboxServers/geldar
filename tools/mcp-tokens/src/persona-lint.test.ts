@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { personaMarks } from './persona-lint.ts';
+import { personaHits, personaMarks } from './persona-lint.ts';
 import { checkSeed, type Seed } from './players.ts';
 
 const seed = (identity: string, goals = ''): Seed => ({ identity, goals });
@@ -35,5 +35,17 @@ describe('persona lint', () => {
     );
     expect(personaMarks(`${clean.identity}\n${clean.goals}`)).toEqual([]);
     expect(() => checkSeed(clean)).not.toThrow();
+  });
+
+  it('reports each hit with its line number and the matched text', () => {
+    const text =
+      'Brave and kind.\nYou are an AI.\nYour harness pays 90 credits.\nHumans watch you.';
+    expect(personaHits(text)).toEqual([
+      { mark: 'software', line: 2, matched: 'AI' },
+      { mark: 'meta', line: 3, matched: 'harness' },
+      { mark: 'meta', line: 3, matched: 'credits' },
+      { mark: 'watched', line: 4, matched: 'Humans watch you' },
+    ]);
+    expect(personaHits('Put an Observer block by the Echo Shard.')).toEqual([]);
   });
 });
