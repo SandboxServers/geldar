@@ -26,11 +26,11 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
   ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
 #>
-[CmdletBinding()]
-param(
-  [Parameter(Position = 0)] [string] $Command = 'help',
-  [Parameter(Position = 1, ValueFromRemainingArguments = $true)] [string[]] $Rest = @()
-)
+# No param block, on purpose. A named parameter here makes PowerShell's binder read `--out` as an ambiguous prefix
+# of the common parameters (-OutVariable, -OutBuffer), and `-v` as -Verbose. Every argument is read from $args:
+# the first is the command, the rest are its arguments, passed on verbatim.
+$Command = if ($args.Count -gt 0) { [string] $args[0] } else { 'help' }
+$Rest = if ($args.Count -gt 1) { [string[]] $args[1..($args.Count - 1)] } else { @() }
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
