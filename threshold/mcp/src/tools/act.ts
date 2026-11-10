@@ -76,7 +76,7 @@ const PLAYER_REASON: Record<string, string> = {
 };
 
 /** The reason the player is told for a Body refusal: a public code, never the Body's internal word. */
-function playerReason(reason: string | undefined): string {
+export function playerReason(reason: string | undefined): string {
   if (reason === undefined) return 'invalid_plan';
   return PLAYER_REASON[reason] ?? reason;
 }

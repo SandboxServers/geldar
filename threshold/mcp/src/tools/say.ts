@@ -17,7 +17,7 @@ import {
   type PresenceStore,
   type RateLimiter,
 } from '../ports.ts';
-import { ActToolError, type Caller, submitThought } from './act.ts';
+import { ActToolError, type Caller, playerReason, submitThought } from './act.ts';
 
 /** How long `say` waits for the Body's `plan_result` before it reports `unconfirmed`. */
 export const SAY_CONFIRM_MS = 5000;
@@ -112,7 +112,7 @@ export async function sayTool(deps: SayDeps, caller: Caller, text: string): Prom
     const sent = await submitThought(deps, caller.lifeId, judged.value);
     if (!sent.ack.accepted) {
       const remaining = await deps.budget.refund(caller.lifeId, batchCost(['say']));
-      const reason = sent.ack.rejection?.reason ?? 'invalid_plan';
+      const reason = playerReason(sent.ack.rejection?.reason);
       return finish(
         deps,
         caller,

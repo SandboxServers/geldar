@@ -162,6 +162,14 @@ describe('say: confirmation', () => {
     expect(await balance(h)).toBe(3);
     expect(h.body.plans).toHaveLength(1);
   });
+
+  it('reports a wrong_life refusal as invalid_plan, never the Body word, and refunds', async () => {
+    const h = harness();
+    h.body.rejectNextPlan(CALLER.lifeId, { reason: 'wrong_life', detail: 'life' });
+    const result = await say(h, 'Hello there');
+    expect(result).toMatchObject({ spoken: false, reason: 'invalid_plan' });
+    expect(await balance(h)).toBe(3);
+  });
 });
 
 describe('say: refusals before the Body', () => {
