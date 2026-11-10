@@ -33,6 +33,8 @@ export interface PreconditionFacts {
   prepared: PreparedRecord | null;
   /** The recorded volume's state now, or null when there is no record to inspect. */
   volume: VolumeState | null;
+  /** The named volumes the running Paper container mounts at its world path, or null when no Paper container runs. */
+  paperVolumes: string[] | null;
   /** The value of GELDAR_WORLD_VOLUME in the environment, or undefined when it is unset. */
   worldVolumeEnv: string | undefined;
   /** The life id the run would use. */
@@ -83,21 +85,28 @@ export function allowedLoaded(profile: Profile, pins: PinnedModel[]): string[] {
   return [PROFILE_MODEL[profile], ...(embedding ? [embedding.tag] : [])];
 }
 
-/** The 32B and 8B runs write to the volume that `prepare-volume` made: it must be the recorded, empty, unused one. */
+/**
+ * The 32B and 8B runs write to the volume that `prepare-volume` made. Paper has been writing to it since the stack was
+ * recreated, so start checks that the volume is labelled and that the running Paper mounts exactly it. The emptiness
+ * check belongs to `prepare-volume`, which makes the volume.
+ */
 function worldVolumeProblems(f: PreconditionFacts): string[] {
   if (f.prepared === null) {
     return ['world volume: the run folder holds no prepared volume; run prepare-volume first'];
   }
   const name = f.prepared.worldVolume;
+  const recreate = `recreate the compose stack with GELDAR_WORLD_VOLUME=${name}`;
   const problems: string[] = [];
   if (f.volume === null || !f.volume.exists) {
     problems.push(`world volume ${name} does not exist; run prepare-volume again`);
-  } else {
-    if (!f.volume.labelled) problems.push(`world volume ${name} is not labelled by compose`);
-    if (!f.volume.empty) problems.push(`world volume ${name} is not empty; use a new run id`);
-    if (f.volume.usedBy.length > 0) {
-      problems.push(`world volume ${name} is mounted by ${f.volume.usedBy.length} container(s)`);
-    }
+  } else if (!f.volume.labelled) {
+    problems.push(`world volume ${name} is not labelled by compose`);
+  }
+  if (f.paperVolumes === null) {
+    problems.push(`Paper is not running; ${recreate}, then wait for Paper`);
+  } else if (f.paperVolumes.length !== 1 || f.paperVolumes[0] !== name) {
+    const mounted = f.paperVolumes.length === 0 ? 'no volume' : f.paperVolumes.join(', ');
+    problems.push(`Paper mounts ${mounted} at /data, not ${name}; ${recreate}`);
   }
   if (f.worldVolumeEnv !== name) {
     problems.push(

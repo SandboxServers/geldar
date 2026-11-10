@@ -26,7 +26,7 @@ The 8B run writes to its own volume, made by the harness, never the 32B volume.
 
 1. Pick the run id, and write it in `ops-log.md`.
 2. `./geldar.ps1 adam-run 8b prepare-volume --run-id <run-id>`. It creates a new, empty, labelled volume and records it in `.geldar/runs/<run-id>/manifest.json`. It deletes and reuses nothing.
-3. Write the printed volume name in `ops-log.md`. Set `$env:GELDAR_WORLD_VOLUME = '<name>'` in the shell, then `./geldar.ps1 adam down`, then `./geldar.ps1 adam up`.
+3. Write the printed volume name in `ops-log.md`. Set `$env:GELDAR_WORLD_VOLUME = '<name>'` in the shell, then `docker compose -f compose/phase0.yml -p geldar-phase0 up -d --wait`. Do not use `adam down` and `adam up` for this: they do not recreate Paper, so Paper would keep the old volume. Start refuses unless the running Paper mounts exactly that volume at `/data`.
 4. Whitelist the life by hand (nothing in the repo does it): `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T paper rcon-cli whitelist add ag_adam_04`, then `... rcon-cli whitelist list` must show it.
 
 **Never delete the 32B volume** to make room. If disk is short, that is abort rule `disk` (checklist section 5), and the orchestrator decides.

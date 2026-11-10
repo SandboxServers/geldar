@@ -555,6 +555,7 @@ export function createPreflight(opts: {
           : parsePrepared(opts.files.read(runPaths(opts.runDir).manifest));
       const volume =
         prepared === null ? null : await opts.worldVolumes.inspect(prepared.worldVolume);
+      const paperVolumes = prepared === null ? null : await opts.worldVolumes.paperVolumes();
       const tags = (await fetchJson('/api/tags')) as {
         models?: { name: string; digest: string }[];
       };
@@ -574,6 +575,7 @@ export function createPreflight(opts: {
           loadedModels: (ps.models ?? []).map((m) => m.name),
           prepared,
           volume,
+          paperVolumes,
           worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
           lifeRows: await countLifeRows(opts.sql, LIFE_ID[opts.profile]),

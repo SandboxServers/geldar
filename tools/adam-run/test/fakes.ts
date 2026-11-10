@@ -217,10 +217,15 @@ export class FakeProcesses implements Processes {
 export class FakeWorldVolumes implements WorldVolumes {
   readonly volumes = new Map<string, VolumeState>();
   readonly calls: string[] = [];
+  /** The volumes the running Paper mounts at /data, or null for no running Paper. Tests set it. */
+  paper: string[] | null = null;
   async inspect(name: string): Promise<VolumeState> {
     this.calls.push(`inspect:${name}`);
     const found = this.volumes.get(name);
     return { ...(found ?? { exists: false, labelled: false, empty: false, usedBy: [] }) };
+  }
+  async paperVolumes(): Promise<string[] | null> {
+    return this.paper === null ? null : [...this.paper];
   }
   async create(name: string, runId: string): Promise<void> {
     this.calls.push(`create:${name}:${runId}`);
@@ -275,6 +280,7 @@ export function passingPreflight(
                 },
           volume:
             profile === 'smoke' ? null : { exists: true, labelled: true, empty: true, usedBy: [] },
+          paperVolumes: profile === 'smoke' ? null : [FAKE_WORLD_VOLUME],
           worldVolumeEnv: FAKE_WORLD_VOLUME,
           lifeId: LIFE_ID[profile],
           lifeRows: over.lifeRows === undefined ? { thoughts: 0, intents: 0 } : over.lifeRows,

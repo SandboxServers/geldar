@@ -37,6 +37,7 @@ const good: PreconditionFacts = {
   loadedModels: [],
   prepared: prepared(),
   volume: FRESH,
+  paperVolumes: [VOLUME],
   worldVolumeEnv: VOLUME,
   lifeId: 'ag_adam_04',
   lifeRows: { thoughts: 0, intents: 0 },
@@ -51,6 +52,11 @@ const withBench = (json: unknown): PreconditionFacts => ({
 describe('checkPreconditions', () => {
   it('accepts a complete, clean, matching 8B run', () => {
     expect(checkPreconditions(good)).toEqual({ ok: true });
+  });
+
+  it('accepts the prepared volume while Paper mounts it and it holds data', () => {
+    const inUse = { ...FRESH, empty: false, usedBy: ['paper-container'] };
+    expect(checkPreconditions({ ...good, volume: inUse })).toEqual({ ok: true });
   });
 
   it('refuses, listing each missing secret file by path, and accepts when none is missing', () => {
@@ -173,15 +179,21 @@ describe('checkPreconditions', () => {
       'is not labelled by compose',
     ],
     [
-      'a recorded volume that already holds data',
-      { ...good, volume: { ...FRESH, empty: false } },
-      'is not empty',
+      'Paper mounting the old default volume, not the prepared one',
+      { ...good, paperVolumes: ['geldar-phase0_paper-data'] },
+      `Paper mounts geldar-phase0_paper-data at /data, not ${VOLUME}`,
     ],
     [
-      'a recorded volume a container mounts',
-      { ...good, volume: { ...FRESH, usedBy: ['c1'] } },
-      'mounted by 1 container',
+      'Paper mounting no volume at /data',
+      { ...good, paperVolumes: [] },
+      `Paper mounts no volume at /data, not ${VOLUME}`,
     ],
+    [
+      'Paper mounting two volumes',
+      { ...good, paperVolumes: [VOLUME, 'other'] },
+      `Paper mounts ${VOLUME}, other at /data, not ${VOLUME}`,
+    ],
+    ['no Paper container running', { ...good, paperVolumes: null }, 'Paper is not running'],
     [
       'GELDAR_WORLD_VOLUME unset',
       { ...good, worldVolumeEnv: undefined },

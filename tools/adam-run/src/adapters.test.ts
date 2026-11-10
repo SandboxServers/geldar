@@ -484,6 +484,7 @@ describe('the preflight facts', () => {
     const worldVolumes: WorldVolumes = {
       inspect: async () => ({ exists: true, labelled: true, empty: true, usedBy: [] }),
       create: async () => {},
+      paperVolumes: async () => ['geldar-phase0-world-run-1'],
     };
     vi.stubGlobal(
       'fetch',
@@ -505,6 +506,7 @@ describe('the preflight facts', () => {
       expect(facts.bench).toEqual({ file: benchName, text: '{"meta":{}}' });
       expect(facts.prepared?.worldVolume).toBe('geldar-phase0-world-run-1');
       expect(facts.volume?.exists).toBe(true);
+      expect(facts.paperVolumes).toEqual(['geldar-phase0-world-run-1']);
       expect(facts.worldVolumeEnv).toBe('geldar-phase0-world-run-1');
       expect(facts.mind).toEqual({ username: 'ag_adam_04', tier: 'fast', runTier: 'fast' });
     } finally {

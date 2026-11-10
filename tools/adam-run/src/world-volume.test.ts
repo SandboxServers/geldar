@@ -22,9 +22,20 @@ interface FakeVolume {
 class FakeDocker implements Runner {
   readonly volumes = new Map<string, FakeVolume>();
   readonly calls: string[][] = [];
+  /** The running Paper containers and their mounts, as `docker ps` and `docker inspect` report them. */
+  readonly paper: { id: string; mounts: { Type: string; Name: string; Destination: string }[] }[] =
+    [];
   async exec(file: string, args: readonly string[]): Promise<ExecResult> {
     this.calls.push([file, ...args]);
     const ok = (stdout = ''): ExecResult => ({ code: 0, stdout, stderr: '' });
+    if (args[0] === 'ps' && args.includes('label=com.docker.compose.service=paper')) {
+      return ok(this.paper.map((p) => `${p.id}\n`).join(''));
+    }
+    if (args[0] === 'inspect') {
+      const found = this.paper.find((p) => p.id === args[args.length - 1]);
+      if (found === undefined) return { code: 1, stdout: '', stderr: 'No such container' };
+      return ok(`${JSON.stringify(found.mounts)}\n`);
+    }
     if (args[0] === 'volume' && args[1] === 'inspect') {
       const vol = this.volumes.get(args[4] ?? '');
       if (vol === undefined) return { code: 1, stdout: '', stderr: 'Error: No such volume: x' };
@@ -115,6 +126,33 @@ describe('createWorldVolumes.create', () => {
   });
 });
 
+describe('createWorldVolumes.paperVolumes', () => {
+  const data = (name: string) => ({ Type: 'volume', Name: name, Destination: '/data' });
+  const bind = { Type: 'bind', Name: '', Destination: '/geldar/paper-entrypoint.sh' };
+
+  it('is null when no Paper container runs', async () => {
+    expect(await createWorldVolumes(new FakeDocker()).paperVolumes()).toBeNull();
+  });
+
+  it('names the volume Paper mounts at /data, not the other mounts', async () => {
+    const docker = new FakeDocker();
+    docker.paper.push({ id: 'paper1', mounts: [data('geldar-phase0-world-run-1'), bind] });
+    expect(await createWorldVolumes(docker).paperVolumes()).toEqual(['geldar-phase0-world-run-1']);
+  });
+
+  it('reports the old default volume when Paper still mounts it', async () => {
+    const docker = new FakeDocker();
+    docker.paper.push({ id: 'paper1', mounts: [data('geldar-phase0_paper-data')] });
+    expect(await createWorldVolumes(docker).paperVolumes()).toEqual(['geldar-phase0_paper-data']);
+  });
+
+  it('refuses when two Paper containers run', async () => {
+    const docker = new FakeDocker();
+    docker.paper.push({ id: 'a', mounts: [] }, { id: 'b', mounts: [] });
+    await expect(createWorldVolumes(docker).paperVolumes()).rejects.toThrow('2 Paper containers');
+  });
+});
+
 describe('prepareWorldVolume', () => {
   const RUN = 'run-1';
   const RUN_DIR = '/repo/.geldar/runs/run-1';
@@ -170,6 +208,7 @@ describe('prepareWorldVolume', () => {
       RUN_DIR,
     );
     expect(text).toContain("$env:GELDAR_WORLD_VOLUME = 'geldar-phase0-world-run-1'");
+    expect(text).toContain('docker compose -f compose/phase0.yml -p geldar-phase0 up -d --wait');
     expect(text).toContain('adam-run 8b start --run-id run-1');
   });
 });
