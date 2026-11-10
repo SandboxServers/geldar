@@ -19,6 +19,7 @@ import {
   type PresenceStore,
   type RateLimiter,
 } from '../ports.ts';
+import { bestEffortPresence } from '../presence-write.ts';
 
 /** A tool failure the player sees: a code and a fixed message, never echoing world text. */
 export class ActToolError extends Error {
@@ -48,6 +49,8 @@ export interface ActDeps {
   clock: Clock;
   /** `plan.expires_after_ticks` from the config. */
   expiresAfterTicks: number;
+  /** Receives the cause of a presence write that failed; the refusal stands without it. */
+  log?: (line: Record<string, unknown>) => void;
 }
 
 /** The `act` input as the tool receives it, before the contract's union narrows it. */
@@ -182,14 +185,15 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     throw new ActToolError('rate_limited', 'Too many acts in a short time. Wait, then try again.');
   }
   const slots = slotsOf(input);
-  const judged = deps.validator.parseThought(JSON.stringify(input));
+  const thoughtInput = withReasoning(input);
+  const judged = deps.validator.parseThought(JSON.stringify(thoughtInput));
   let refused: (string | undefined)[] = judged.ok
     ? slots.map(() => undefined)
     : refusalsOf(judged.errors, slots);
   // A partial batch is sent as the thought of its survivors, which must pass the schema on its own.
   let thought: Thought | undefined = judged.ok
     ? judged.value
-    : reducedThought(input, slots, refused);
+    : reducedThought(thoughtInput, slots, refused);
   if (!judged.ok && thought !== undefined) {
     const checked = deps.validator.parseThought(JSON.stringify(thought));
     if (checked.ok) {
@@ -249,7 +253,9 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     if (reserved)
       remaining = await deps.budget.refund(caller.lifeId, batchCost(kindsOf(survivors)));
     if (!(err instanceof BodyUnavailable)) throw err;
-    await deps.presence.wantBody(caller.lifeId, deps.clock.nowMs());
+    await bestEffortPresence(deps.log, () =>
+      deps.presence.wantBody(caller.lifeId, deps.clock.nowMs()),
+    );
     outcome = 'error';
     await recordCall(deps, callPayload(caller, input, result, remaining, started, deps, outcome));
     throw new ActToolError(
@@ -273,6 +279,14 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
 /** The charged kinds of a list of slots, in order. */
 function kindsOf(list: Slot[]): ChargedItem[] {
   return list.map((slot) => slot.kind);
+}
+
+/** The stand-in reasoning for a call that gave none: the thought requires it, the act input does not. */
+const ACT_REASONING = 'act';
+
+/** The input as the thought schema reads it. The recorded call keeps the player's own input. */
+function withReasoning(input: ActArgs): ActArgs {
+  return input.reasoning === undefined ? { ...input, reasoning: ACT_REASONING } : input;
 }
 
 /**

@@ -295,6 +295,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       wake,
       expiresAfterTicks: config.plan.expiresAfterTicks,
       laws: [],
+      log,
     });
     closers.push(async () => world.close());
 

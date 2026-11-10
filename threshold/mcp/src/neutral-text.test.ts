@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
+import { safeLogLine } from './http/log.ts';
 import type { PlayerRecord } from './ports.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
@@ -121,5 +122,108 @@ describe('the player reads nothing about the world being a mock', () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+/** A credential-looking canary that no log line may carry. */
+const CANARY = 'canary-7Qz9xLm2Vb4nKp8sWd1';
+
+describe('the operator sees the cause of a fault, never a secret', () => {
+  it('logs the cause of a tool fault with the token redacted', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const boom = (real: WorldSessionDeps['tools']): WorldSessionDeps['tools'] => ({
+      ...real,
+      look: () => {
+        throw new Error(`the store refused Bearer ${CANARY}`);
+      },
+    });
+    const deps = {
+      ...worldDeps(boom, false),
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await client.callTool({ name: 'look', arguments: {} });
+      expect(JSON.stringify(reply)).toContain(`internal_error: ${NEUTRAL_FAULT}`);
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'tool_log');
+    expect(fault?.player_id).toBe(PLAYER.playerId);
+    expect(String(fault?.cause)).toContain('the store refused');
+    expect(JSON.stringify(lines)).not.toContain(CANARY.slice(0, 12));
+  });
+
+  it('logs the cause of a resource fault', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const deps = {
+      ...worldDeps(undefined, true),
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      expect(await readOrError(client, 'geldar://shard/rules')).toContain(NEUTRAL_FAULT);
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain('the shard store is down');
+  });
+});
+
+describe('a database fault reaches the player as the neutral text, with its cause logged', () => {
+  const refusal = 'connect ECONNREFUSED 127.0.0.1:5432';
+  const denied = 'permission denied for table mcp_journal';
+
+  it('reads the neutral fault when the profile read throws', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const base = worldDeps(undefined, false);
+    const profiles = {
+      profile: async () => {
+        throw new Error(refusal);
+      },
+    };
+    const deps = {
+      ...base,
+      resources: { ...base.resources, profiles },
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await readOrError(client, 'geldar://player/self');
+      expect(reply).toContain(NEUTRAL_FAULT);
+      expect(reply).not.toContain('ECONNREFUSED');
+      expect(await readOrError(client, 'geldar://shard/rules')).not.toContain(NEUTRAL_FAULT);
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain(refusal);
+  });
+
+  it('reads the neutral fault when the journal read throws, and logs the cause', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const base = worldDeps(undefined, false);
+    const journal = {
+      append: async () => {},
+      recent: async () => {
+        throw new Error(denied);
+      },
+    };
+    const deps = {
+      ...base,
+      resources: { ...base.resources, journal },
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await readOrError(client, 'geldar://player/journal/recent');
+      expect(reply).toContain(NEUTRAL_FAULT);
+      expect(reply).not.toContain('permission denied');
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain(denied);
   });
 });

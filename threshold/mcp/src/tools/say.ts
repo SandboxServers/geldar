@@ -17,6 +17,7 @@ import {
   type PresenceStore,
   type RateLimiter,
 } from '../ports.ts';
+import { bestEffortPresence } from '../presence-write.ts';
 import { ActToolError, type Caller, playerReason, submitThought } from './act.ts';
 
 /** How long `say` waits for the Body's `plan_result` before it reports `unconfirmed`. */
@@ -39,6 +40,8 @@ export interface SayDeps {
   events: PlayerEventLog;
   clock: Clock;
   expiresAfterTicks: number;
+  /** Receives the cause of a presence write that failed; the refusal stands without it. */
+  log?: (line: Record<string, unknown>) => void;
 }
 
 /** The `plan_result` the Body wrote for a thought, if it has arrived (the mapper's internal entry). */
@@ -164,7 +167,9 @@ export async function sayTool(deps: SayDeps, caller: Caller, text: string): Prom
   } catch (err) {
     if (!(err instanceof BodyUnavailable)) throw err;
     await deps.budget.refund(caller.lifeId, batchCost(['say']));
-    await deps.presence.wantBody(caller.lifeId, deps.clock.nowMs());
+    await bestEffortPresence(deps.log, () =>
+      deps.presence.wantBody(caller.lifeId, deps.clock.nowMs()),
+    );
     throw new ActToolError(
       'body_unavailable',
       'Your body is not reachable right now. Try again soon.',

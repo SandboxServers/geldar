@@ -92,7 +92,7 @@ export function createWorldSession(
         request.params.name,
         request.params.arguments,
         { playerId, signal },
-        (m) => deps.log?.({ event: 'tool_log', player_id: playerId, message: m.slice(0, 300) }),
+        (m) => deps.log?.({ event: 'tool_log', player_id: playerId, cause: m }),
         PLAYER_FAULT,
       );
       return { ...response };

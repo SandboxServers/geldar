@@ -219,3 +219,18 @@ describe('say: body unavailable and the record', () => {
     expect(call?.thought_id).toMatch(/^th_/);
   });
 });
+
+describe('say: a presence fault keeps the refusal', () => {
+  it('still refuses body_unavailable when wantBody throws, and logs the cause', async () => {
+    const h = harness();
+    const logged: Record<string, unknown>[] = [];
+    h.deps.log = (line) => logged.push(line);
+    h.presence.wantBody = async () => {
+      throw new Error('kv down');
+    };
+    h.body.setOffline(CALLER.lifeId, true);
+    await expect(say(h, 'Hello')).rejects.toBeInstanceOf(ActToolError);
+    expect(await balance(h)).toBe(3);
+    expect(logged).toEqual([{ event: 'presence_error', cause: 'Error: kv down' }]);
+  });
+});

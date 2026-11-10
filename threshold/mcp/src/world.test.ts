@@ -334,3 +334,42 @@ describe('every bound call keeps the presence right', () => {
     world.close();
   });
 });
+
+/** A world whose presence store fails every write, with the log sink kept for inspection. */
+function wiredWithFailingPresence() {
+  const fx = worldFixture([PLAYER, OTHER]);
+  fx.budget.seed(PLAYER.lifeId, 37, 0);
+  fx.deps.presence.touch = async () => {
+    throw new Error('kv down');
+  };
+  fx.deps.presence.wantBody = async () => {
+    throw new Error('kv down');
+  };
+  const logged: Record<string, unknown>[] = [];
+  const world = createWorld({ ...fx.deps, log: (line) => logged.push(line) });
+  return { ...fx, world, tools: world.tools, logged };
+}
+
+describe('a presence fault does not take down a tool', () => {
+  it('still mirrors a journal line and answers status when presence touch throws', async () => {
+    const { world, tools, journal, logged } = wiredWithFailingPresence();
+    const journalReply = await run(tools, 'journal', { text: 'Dusk.' });
+    expect(journalReply.isError, journalReply.text).toBe(false);
+    expect((await journal.recent(PLAYER.lifeId, 10)).map((e) => e.text)).toEqual(['Dusk.']);
+    const status = await run(tools, 'status');
+    expect(status.isError, status.text).toBe(false);
+    expect(logged).toContainEqual({ event: 'presence_error', cause: 'Error: kv down' });
+    world.close();
+  });
+
+  it('answers look with body_unavailable, not internal_error, when the Body is unreachable', async () => {
+    const { world, tools, body, logged } = wiredWithFailingPresence();
+    body.setOffline(PLAYER.lifeId, true);
+    const reply = await run(tools, 'look');
+    expect(reply.isError).toBe(true);
+    expect(reply.text.startsWith('body_unavailable: ')).toBe(true);
+    expect(reply.text).not.toContain('kv down');
+    expect(logged).toContainEqual({ event: 'presence_error', cause: 'Error: kv down' });
+    world.close();
+  });
+});

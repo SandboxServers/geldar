@@ -82,7 +82,7 @@ export async function sleepTool(deps: SleepDeps, call: ToolCall): Promise<SleepR
   const ack = await deps.body.submitPlan(call.lifeId, deps.buildSleepPlan(call.lifeId, snapshot));
   if (!ack.accepted) {
     // The Body's detail is free text: it never leaves the server, so the player gets a fixed message.
-    throw new ToolError('sleep_refused', 'the Body refused the sleep');
+    throw new ToolError('sleep_refused', 'Your body would not sleep.');
   }
   const { events, dropped } = await deps.events.since(call.lifeId, mark.cursor);
   const digested = digest(events);

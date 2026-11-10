@@ -154,6 +154,21 @@ describe('act: refunds', () => {
   });
 });
 
+describe('act: a presence fault keeps the refusal', () => {
+  it('still refuses body_unavailable when wantBody throws, and logs the cause', async () => {
+    const h = harness();
+    const logged: Record<string, unknown>[] = [];
+    h.deps.log = (line) => logged.push(line);
+    h.presence.wantBody = async () => {
+      throw new Error('kv down');
+    };
+    h.body.setOffline(CALLER.lifeId, true);
+    await expect(act(h, { actions: [GOTO] })).rejects.toBeInstanceOf(ActToolError);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+    expect(logged).toEqual([{ event: 'presence_error', cause: 'Error: kv down' }]);
+  });
+});
+
 describe('act: stale snapshot retry', () => {
   it('retries once with a fresh snapshot and sends the plan when the retry is accepted', async () => {
     const h = harness();
@@ -296,5 +311,30 @@ describe('act: Body reasons as public codes', () => {
     const result = await act(h, { actions: [GOTO] });
     expect(result.rejected).toEqual([{ index: 0, reason: 'stale_snapshot' }]);
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+  });
+});
+
+describe('act: reasoning is optional in the input', () => {
+  it('sends a say given alone', async () => {
+    const h = harness();
+    const result = await actTool(h.deps, CALLER, { say: 'hi' });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+  });
+
+  it('sends a list of actions given alone', async () => {
+    const h = harness();
+    const result = await actTool(h.deps, CALLER, { actions: [GOTO] });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+  });
+
+  it('sends nothing for an empty input and charges nothing', async () => {
+    const h = harness();
+    const result = await actTool(h.deps, CALLER, {});
+    expect(result).toEqual({ accepted: [], rejected: [], budget_remaining_thoughts: 3 });
+    expect(h.body.plans).toHaveLength(0);
   });
 });

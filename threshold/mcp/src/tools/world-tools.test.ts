@@ -116,7 +116,7 @@ describe('sleep', () => {
     w.body.rejectNextPlan(LIFE, { reason: 'invalid_plan', detail });
     await expect(sleepTool(deps(w), CALL)).rejects.toMatchObject({
       code: 'sleep_refused',
-      message: 'the Body refused the sleep',
+      message: 'Your body would not sleep.',
     });
   });
 
