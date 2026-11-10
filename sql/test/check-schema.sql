@@ -204,12 +204,22 @@ BEGIN
      OR has_column_privilege('geldar_mcp', 'agents', 'last_sleep_day', 'SELECT') THEN
     RAISE EXCEPTION 'schema check: geldar_mcp can write agents or read last_sleep_day';
   END IF;
+  -- 0004: the sleep mark is written in three columns only, so its key cannot be rewritten.
+  IF has_table_privilege('geldar_mcp', 'mcp_sleep_marks', 'UPDATE')
+     OR has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'life_id', 'UPDATE') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can UPDATE the life_id of mcp_sleep_marks';
+  END IF;
+  IF NOT (has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'last_sleep_day', 'UPDATE')
+     AND has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'sleep_cursor', 'UPDATE')
+     AND has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'updated_at', 'UPDATE')) THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp cannot UPDATE the three sleep mark columns';
+  END IF;
 
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0003, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0004, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
