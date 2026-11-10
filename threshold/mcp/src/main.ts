@@ -306,6 +306,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
     );
     const world = createWorld({
+      maxResultBytes: config.sovereign.maxResultBytes,
       players: new PgPlayerDirectory(pool),
       body,
       budget: new PgBudgetLedger(pool, config.sovereign.budget),

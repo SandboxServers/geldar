@@ -86,6 +86,8 @@ export interface WorldDeps {
   wake: WakeConfig;
   /** `plan.expires_after_ticks` from the config. */
   expiresAfterTicks: number;
+  /** `sovereign.mcp.max_result_bytes`: the largest `wait` result after trimming. Default 16384. */
+  maxResultBytes?: number | undefined;
   /** The laws in force, as sign lines, for `status`. */
   laws: readonly string[];
   /** Receives the cause of a presence write that failed; the call goes on without it. */
@@ -159,6 +161,7 @@ function bound(deps: Wired, run: Run): ToolHandler {
 async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: ToolContext) {
   const outcome = await wait(
     {
+      maxResultBytes: deps.maxResultBytes,
       clock: deps.clock,
       keepAlive: { start: () => () => undefined },
       log: deps.events,

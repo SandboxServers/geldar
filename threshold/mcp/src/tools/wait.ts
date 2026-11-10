@@ -22,6 +22,8 @@ import { causeOf } from '../presence-write.ts';
 
 /** The longest `wait` the Scriptorium constraint allows, in seconds (spec 5.15.3). */
 export const MAX_WAIT_SECONDS = 240;
+/** The largest `wait` result after trimming, in bytes (`sovereign.mcp.max_result_bytes`). */
+export const MAX_RESULT_BYTES = 16_384;
 /** How often an open `wait` writes a keepalive so its stream does not idle past a proxy. */
 export const KEEPALIVE_MS = 20_000;
 /** The shortest wait the contract allows, in seconds (mcp-play.schema.json, max_seconds minimum). */
@@ -48,6 +50,8 @@ export type TouchPresence = (lifeId: string) => Promise<void>;
 
 /** What `wait` needs from the rest of the server. */
 export interface WaitDeps {
+  /** The largest result after trimming (`sovereign.mcp.max_result_bytes`). Default 16384. */
+  maxResultBytes?: number | undefined;
   clock: Clock;
   keepAlive: KeepAlive;
   log: WaitLog;
@@ -218,5 +222,8 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     },
     note: WORLD_TEXT_NOTE,
   };
-  return { ok: true, result: fitResult(result, undefined, wakingSeqs) };
+  return {
+    ok: true,
+    result: fitResult(result, deps.maxResultBytes ?? MAX_RESULT_BYTES, wakingSeqs),
+  };
 }

@@ -224,6 +224,18 @@ describe('wait max_seconds cap', () => {
     expect(clock.nowMs()).toBe(240_000);
   });
 
+  it('trims the result to the configured max_result_bytes', async () => {
+    const { clock, log, deps } = setup({ maxResultBytes: 2048 });
+    const p = wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 60 });
+    await flush();
+    await log.append(LIFE, speech(1, 0, true, 'y'.repeat(4000)));
+    await advance(clock, 1);
+    const out = await p;
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(Buffer.byteLength(JSON.stringify(out.result))).toBeLessThanOrEqual(2048);
+  });
+
   it('allows a max_seconds of exactly 240', async () => {
     const { clock, deps } = setup();
     let settled = false;
