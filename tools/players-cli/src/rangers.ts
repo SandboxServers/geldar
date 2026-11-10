@@ -68,6 +68,15 @@ export interface PidRecord {
 
 export const PID_FORMAT = 2;
 
+/** The start time a PID file holds when the platform could not report the process's start (never a real time). */
+export const UNKNOWN_START = 'unknown';
+
+/**
+ * What the process check says of a PID file's process: `dead` (no such process); `owned` (the ranger's Body);
+ * `mismatch` (readable, and another process); `unverifiable` (alive, and its identity cannot be read).
+ */
+export type Verdict = 'owned' | 'dead' | 'mismatch' | 'unverifiable';
+
 /** The text a ranger's Body process must show on its command line for `down` to stop it. */
 export const rangerMarker = (playerId: string): string => `players/main.ts --player ${playerId}`;
 
@@ -101,22 +110,45 @@ export function parsePidFile(text: string): PidFile {
   return { kind: 'old', pid: parsePid(text) };
 }
 
-/** online: the PID file names a live process; stale: it names a dead one, or is an old file; down: no file. */
-export type RangerState = 'online' | 'stale' | 'down';
+/**
+ * online: the PID file names the ranger's Body; stale: it names a dead process, another process, or is an old
+ * file; unknown: it names a live process whose identity cannot be read, so neither `up` nor `down` may act;
+ * down: no file.
+ */
+export type RangerState = 'online' | 'stale' | 'unknown' | 'down';
 
-/** The state of one ranger from its PID file text (null when there is none) and a liveness check. */
+export interface RangerProcessState {
+  state: RangerState;
+  pid: number | null;
+  /** Set for `unknown` only: why the process cannot be verified. */
+  reason?: string;
+}
+
+/**
+ * The state of one ranger from its PID file text (null when there is none) and the process verdict on the file's
+ * record. An old file's PID is reported as stale with its PID, so `up` refuses to start over a live one.
+ */
 export function rangerState(
   pidText: string | null,
-  isAlive: (pid: number) => boolean,
-): { state: RangerState; pid: number | null } {
+  verify: (record: PidRecord) => Verdict,
+): RangerProcessState {
   if (pidText === null) return { state: 'down', pid: null };
   const file = parsePidFile(pidText);
-  const pid = file.kind === 'current' ? file.record.pid : file.pid;
-  if (pid === null) return { state: 'stale', pid: null };
-  // An old file's live PID is reported as stale with its PID, so `up` refuses to start over it.
-  return file.kind === 'current' && isAlive(pid)
-    ? { state: 'online', pid }
-    : { state: 'stale', pid };
+  if (file.kind === 'old') return { state: 'stale', pid: file.pid };
+  const { pid, started } = file.record;
+  switch (verify(file.record)) {
+    case 'owned':
+      return { state: 'online', pid };
+    case 'dead':
+    case 'mismatch':
+      return { state: 'stale', pid };
+    case 'unverifiable':
+      return {
+        state: 'unknown',
+        pid,
+        reason: started === UNKNOWN_START ? 'start time unreadable' : `cannot verify pid ${pid}`,
+      };
+  }
 }
 
 /**
@@ -165,21 +197,27 @@ export interface RangerRow {
   ranger: Ranger;
   state: RangerState;
   pid: number | null;
+  reason?: string;
   rssMb: number | null;
   presence: Presence;
 }
 
 /**
- * One status line per ranger: the process (online, stale or down), its PID and RSS, and the presence. A Body
- * stays online while hibernating, so presence is what says whether it is awake. Prints `down` only when no
+ * One status line per ranger: the process (online, stale, unknown or down), its PID and RSS, and the presence. A
+ * Body stays online while hibernating, so presence is what says whether it is awake. Prints `down` only when no
  * process runs and the bucket is known to hold no record for any ranger; an unreachable NATS still prints
  * `presence: unknown` per ranger.
  */
 export function formatStatus(rows: readonly RangerRow[]): string[] {
   if (rows.every((row) => row.state === 'down' && row.presence.kind === 'none')) return ['down'];
-  return rows.map(({ ranger, state, pid, rssMb, presence }) => {
+  return rows.map(({ ranger, state, pid, reason, rssMb, presence }) => {
     const rss = rssMb === null ? 'rss unknown' : `rss ${rssMb} MB`;
-    const process = state === 'down' ? 'down' : `${state} pid ${pid ?? 'none'} ${rss}`;
+    const process =
+      state === 'down'
+        ? 'down'
+        : state === 'unknown'
+          ? `unknown (${reason ?? 'cannot verify'})`
+          : `${state} pid ${pid ?? 'none'} ${rss}`;
     return `${ranger.playerId} ${process} (life ${ranger.lifeId}) ${formatPresence(presence)}`;
   });
 }

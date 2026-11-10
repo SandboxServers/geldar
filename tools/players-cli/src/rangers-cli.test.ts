@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatPidFile, type Presence, type Ranger } from './rangers.ts';
-import { eachRanger, parseOptions, runRangersCli, USAGE } from './rangers-cli.ts';
+import { eachRanger, parseOptions, probeStart, runRangersCli, USAGE } from './rangers-cli.ts';
 import type { LogFs } from './rangers-logs.ts';
 import type { ProcessIdentity, ProcessOps } from './rangers-process.ts';
 
@@ -24,6 +24,7 @@ function fakeOps(identity: ProcessIdentity | null, exitsOn: 'graceful' | 'never'
   const calls: string[] = [];
   let running = true;
   const ops: ProcessOps = {
+    platform: 'linux',
     alive: () => running,
     identity: () => identity,
     graceful: (pid) => {
@@ -144,6 +145,103 @@ describe('down', () => {
     expect(result).toEqual({ code: 0, lines: ['ag-jason-01 down (old pid file removed)'] });
     expect(calls).toEqual([]);
     expect(existsSync(pidPath())).toBe(false);
+  });
+});
+
+describe('unverifiable processes', () => {
+  const RECORD_TEXT = () => formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER });
+
+  it('down keeps the PID file, exits 1 and signals nothing when the identity cannot be read', async () => {
+    writeFileSync(pidPath(), RECORD_TEXT());
+    const { ops, calls } = fakeOps(null, 'graceful');
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    expect(result.code).toBe(1);
+    expect(result.lines[0]).toContain('not stopped: pid 4242 cannot be verified');
+    expect(calls).toEqual([]);
+    expect(existsSync(pidPath())).toBe(true);
+  });
+
+  it('status shows unknown, not online, when the identity cannot be read', async () => {
+    writeFileSync(pidPath(), RECORD_TEXT());
+    const { ops } = fakeOps(null, 'never');
+    const result = await runRangersCli(['status'], SHARD, {
+      ops,
+      runDir,
+      readPresence: async () => new Map(),
+    });
+    expect(result.lines[0]).toContain('ag-jason-01 unknown (cannot verify pid 4242)');
+  });
+
+  it('status shows a reused PID as stale, and up would start over it', async () => {
+    writeFileSync(pidPath(), RECORD_TEXT());
+    const reused: ProcessIdentity = { started: 'start-1', commandLine: 'node other-tool.js' };
+    const { ops } = fakeOps(reused, 'never');
+    const result = await runRangersCli(['status'], SHARD, {
+      ops,
+      runDir,
+      readPresence: async () => new Map(),
+    });
+    expect(result.lines[0]).toContain('ag-jason-01 stale pid 4242');
+  });
+
+  it('up refuses a ranger whose process cannot be verified, and starts no second Body', async () => {
+    writeFileSync(pidPath(), RECORD_TEXT());
+    const { ops } = fakeOps(null, 'never');
+    const result = await runRangersCli(['up'], SHARD, { ops, runDir });
+    expect(result.code).toBe(1);
+    expect(result.lines[0]).toContain('not started: pid 4242 cannot be verified');
+    expect(existsSync(pidPath())).toBe(true);
+  });
+
+  it('a file whose start time is unknown shows unknown, and down refuses it', async () => {
+    writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'unknown', marker: MARKER }));
+    const { ops, calls } = fakeOps(BODY, 'graceful');
+    const status = await runRangersCli(['status'], SHARD, {
+      ops,
+      runDir,
+      readPresence: async () => new Map(),
+    });
+    expect(status.lines[0]).toContain('unknown (start time unreadable)');
+    const down = await runRangersCli(['down'], SHARD, { ops, runDir });
+    expect(down.code).toBe(1);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('probeStart', () => {
+  /** An identity probe that returns each queued answer in turn, and counts its sleeps. */
+  function probeOps(answers: Array<ProcessIdentity | null>) {
+    let sleeps = 0;
+    const queue = [...answers];
+    const ops = {
+      platform: 'linux',
+      alive: () => true,
+      identity: () => queue.shift() ?? null,
+      graceful: () => {},
+      force: () => {},
+      sleep: async () => {
+        sleeps += 1;
+      },
+    } satisfies ProcessOps;
+    return { ops, sleeps: () => sleeps };
+  }
+
+  it('returns the start time at once when the first probe reads it, without waiting', async () => {
+    const { ops, sleeps } = probeOps([BODY]);
+    expect(await probeStart(4242, ops)).toBe('start-1');
+    expect(sleeps()).toBe(0);
+  });
+
+  it('retries once after a short wait when the first probe fails', async () => {
+    const { ops, sleeps } = probeOps([null, BODY]);
+    expect(await probeStart(4242, ops)).toBe('start-1');
+    expect(sleeps()).toBe(1);
+  });
+
+  it('stores unknown, never an empty start time, when both probes fail', async () => {
+    const { ops, sleeps } = probeOps([null, null]);
+    expect(await probeStart(4242, ops)).toBe('unknown');
+    expect(sleeps()).toBe(1);
   });
 });
 
