@@ -54,4 +54,10 @@ describe('checkSkinPath', () => {
       'must be under skins/',
     );
   });
+
+  it('refuses a PNG in a repo directory whose name starts with two dots', () => {
+    expect(() => checkSkinPath(join(REPO, '..x', 'jason.png'), REPO)).toThrow(
+      'must be under skins/',
+    );
+  });
 });
