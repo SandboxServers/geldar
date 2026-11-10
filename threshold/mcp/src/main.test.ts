@@ -13,8 +13,8 @@ import {
   lazyLifeRegistry,
   loadStartConfig,
   type McpPorts,
-  pepperBytes,
   type NatsLink,
+  pepperBytes,
   startMcp,
   tokenBucketLimiter,
 } from './main.ts';
@@ -155,13 +155,7 @@ describe('startMcp', () => {
     const running = await startMcp(config, fakePorts(order, []));
     order.length = 0;
     await running.stop();
-    expect(order).toEqual([
-      'front.close',
-      'replay.stop',
-      'revoke.stop',
-      'nats.drain',
-      'pool.end',
-    ]);
+    expect(order).toEqual(['front.close', 'replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
   it('closes what it opened when a later step fails, then rethrows', async () => {
