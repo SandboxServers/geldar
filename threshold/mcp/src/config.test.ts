@@ -53,6 +53,16 @@ describe('loadMcpConfig', () => {
     );
   });
 
+  it('refuses a trusted proxy range with prefix length 0, which would trust every peer', () => {
+    for (const entry of ['0.0.0.0/0', '::/0']) {
+      const doc = shardDoc();
+      doc.sovereign.mcp.trusted_proxies = [entry];
+      expect(() => parseMcpConfig(doc, { env: ENV })).toThrow(
+        'has prefix length 0, which would trust every peer',
+      );
+    }
+  });
+
   it('refuses a non-loopback bind without the container flag', () => {
     expect(() =>
       parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_BIND: '0.0.0.0' } }),
