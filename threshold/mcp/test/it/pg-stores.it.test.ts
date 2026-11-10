@@ -7,7 +7,9 @@
 import { randomBytes } from 'node:crypto';
 import type { ClientConfig, Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PgAgentStore } from '../../src/store/pg-agents.ts';
 import { PgBudgetLedger } from '../../src/store/pg-budget.ts';
+import { PgJournalStore } from '../../src/store/pg-journal.ts';
 import { PgTokenStore } from '../../src/store/pg-tokens.ts';
 import { integrationEnabled } from '../live/gate.ts';
 import {
@@ -138,6 +140,31 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
     }
   });
 
+  it('pausing a player ends its open session within one second', async () => {
+    const seeded = await seedPlayer(admin, freshSuffix());
+    const hash = randomBytes(32);
+    const tokenId = await insertToken(admin, seeded.playerId, hash, '1 day');
+    const store = new PgTokenStore(mcp, { 'it-on': true }, listenConfig());
+    const notices: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((notice) => notices.push(notice));
+    await store.start();
+    try {
+      expect(await store.resolve(hash, Date.now()), 'the hit before the pause').not.toBeNull();
+      await admin.query("UPDATE mcp_players SET status = 'paused' WHERE player_id = $1", [
+        seeded.playerId,
+      ]);
+      const deadline = Date.now() + 1_000;
+      while (notices.length === 0 && Date.now() < deadline) await sleep(50);
+      expect(notices, 'the session end for the paused player').toContainEqual({
+        tokenId,
+        playerId: seeded.playerId,
+      });
+      expect(await store.resolve(hash, Date.now()), 'the token after the pause').toBeNull();
+    } finally {
+      await store.stop();
+    }
+  });
+
   it('ten parallel reserves never overspend the balance', async () => {
     const seeded = await seedPlayer(admin, freshSuffix());
     // One credit per real hour: no accrual lands inside the test, so the balance moves only by
@@ -169,10 +196,10 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
     for (let round = 0; round < 5; round += 1) {
       const seeded = await seedPlayer(admin, freshSuffix());
       const now = Date.now();
-      await admin.query(
-        'UPDATE mcp_budget SET credits = 100, accrued_at = $2 WHERE life_id = $1',
-        [seeded.lifeId, new Date(now - 3_600_000)],
-      );
+      await admin.query('UPDATE mcp_budget SET credits = 100, accrued_at = $2 WHERE life_id = $1', [
+        seeded.lifeId,
+        new Date(now - 3_600_000),
+      ]);
       const [reserved] = await Promise.all([
         ledger.reserve(seeded.lifeId, 50, now),
         ledger.balance(seeded.lifeId, now),
@@ -210,6 +237,39 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
       expect(touched.rowCount, 'last_used_at updated').toBe(1);
       expect(journaled.rowCount, 'journal row inserted').toBe(1);
     });
+
+    it('upserts its sleep mark, but may not write agents or read its last_sleep_day', async () => {
+      const seeded = await seedPlayer(admin, freshSuffix());
+      const store = new PgAgentStore(mcp);
+      await store.write(seeded.lifeId, { lastSleepDay: 6, cursor: 12 });
+      await store.write(seeded.lifeId, { lastSleepDay: 7, cursor: 15 });
+      expect(await store.read(seeded.lifeId), 'the mark as last written').toEqual({
+        lastSleepDay: 7,
+        cursor: 15,
+      });
+      await expect(
+        mcp.query('UPDATE agents SET last_sleep_day = 8 WHERE agent_id = $1', [seeded.lifeId]),
+      ).rejects.toThrow(/permission denied/);
+      await expect(mcp.query('SELECT last_sleep_day FROM agents LIMIT 1')).rejects.toThrow(
+        /permission denied/,
+      );
+    });
+
+    it('keeps the newest 1000 journal lines of a life, oldest first to go', async () => {
+      const seeded = await seedPlayer(admin, freshSuffix());
+      const journal = new PgJournalStore(mcp);
+      for (let i = 0; i < 1001; i += 1) await journal.append(seeded.lifeId, `line ${i}`, i);
+      const count = await mcp.query<{ n: string }>(
+        'SELECT count(*) AS n FROM mcp_journal WHERE life_id = $1',
+        [seeded.lifeId],
+      );
+      expect(count.rows[0]?.n, 'rows kept').toBe('1000');
+      const oldest = await mcp.query<{ text: string }>(
+        'SELECT text FROM mcp_journal WHERE life_id = $1 ORDER BY id ASC LIMIT 1',
+        [seeded.lifeId],
+      );
+      expect(oldest.rows[0]?.text, 'the first line was trimmed').toBe('line 1');
+    }, 30_000);
 
     it('refuses a read of thoughts', async () => {
       await expect(mcp.query('SELECT 1 FROM thoughts LIMIT 1')).rejects.toMatchObject(
