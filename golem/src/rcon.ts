@@ -83,7 +83,11 @@ export class RconClient {
     } catch (error) {
       client.abort(error as Error);
       if ((error as NodeJS.ErrnoException).code === 'ECONNREFUSED') {
-        throw new Error('shard not up: run ./geldar.ps1 shard up phase0', { cause: error });
+        // phase0.yml does not publish RCON, so a refused connect is either a shard that is down or the override missing.
+        throw new Error(
+          'shard not up, or RCON is not published to the host (compose/rcon-host.yml): run ./geldar.ps1 shard up phase0 --rcon-host',
+          { cause: error },
+        );
       }
       throw error;
     }

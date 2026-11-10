@@ -89,9 +89,8 @@ services:
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
       # The image copies /plugins into /data/plugins on start. Build the jar first: cd plugin; ./gradlew build
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
-    ports:
-      # Ops and the benchmark only. The game port (25565) is deliberately not published.
-      - "127.0.0.1:25575:25575"
+    # No ports: the game port (25565) and RCON (25575) are not published to the host. Host-run tools that
+    # need RCON start the shard with compose/rcon-host.yml (./geldar.ps1 shard up phase0 --rcon-host).
     healthcheck:
       <<: *mc-health
       # Healthy only when the server is up AND Geldar-Core enabled in this server process: a plugin that failed to

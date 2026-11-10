@@ -53,8 +53,10 @@ describe('geldar.ps1 reads its arguments from $args', () => {
 describe('geldar.ps1 shard secret files', () => {
   // The function body from its header up to the next top-level function, so the checks stay inside it.
   const body =
-    /^function Initialize-ShardSecrets\(\[string\] \$Shard\) \{([\s\S]*?)^\}$/m.exec(script)?.[1] ?? '';
-  const acl = /^function Set-OwnerOnlyAcl\(\[string\] \$Path\) \{([\s\S]*?)^\}$/m.exec(script)?.[1] ?? '';
+    /^function Initialize-ShardSecrets\(\[string\] \$Shard\) \{([\s\S]*?)^\}$/m.exec(script)?.[1] ??
+    '';
+  const acl =
+    /^function Set-OwnerOnlyAcl\(\[string\] \$Path\) \{([\s\S]*?)^\}$/m.exec(script)?.[1] ?? '';
 
   it('defines Set-OwnerOnlyAcl with inheritance off and the current account granted full control', () => {
     expect(acl).toMatch(/icacls \$Path \/inheritance:r \/grant:r "\$\{user\}:F"/);
@@ -69,6 +71,32 @@ describe('geldar.ps1 shard secret files', () => {
 
   it('applies the owner-only ACL to an existing secret file before skipping it', () => {
     expect(body).toMatch(/Set-OwnerOnlyAcl \$path\r?\n {6}continue\r?\n {4}\}/);
+  });
+});
+
+describe('RCON is published to the host only through compose/rcon-host.yml', () => {
+  const phase0 = readFileSync(resolve(repo, 'compose/phase0.yml'), 'utf8');
+  const override = readFileSync(resolve(repo, 'compose/rcon-host.yml'), 'utf8');
+
+  it('phase0.yml does not publish 25575 to the host', () => {
+    const published = phase0
+      .split('\n')
+      .filter((line) => /25575/.test(line) && !line.trim().startsWith('#'));
+    expect(published).toEqual([]);
+  });
+
+  it('rcon-host.yml publishes 127.0.0.1:25575 for the paper service and nothing else', () => {
+    expect(override).toMatch(
+      /\nservices:\n {2}paper:\n {4}ports:\n {6}- "127\.0\.0\.1:25575:25575"\n$/,
+    );
+  });
+
+  it('shard up adds the override with --rcon-host and hints at it when the flag is missing', () => {
+    expect(script).toMatch(/\$rconHost = @\(\$extra\) -contains '--rcon-host'/);
+    expect(script).toMatch(/Join-Path \$Root 'compose\/rcon-host\.yml'/);
+    expect(script).toMatch(
+      /if \(-not \$rconHost\) \{ Write-Host "hint: RCON 25575 is not published to the host\. /,
+    );
   });
 });
 
