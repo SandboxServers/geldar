@@ -75,4 +75,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0067](0067-nats-accounts-and-least-privilege.md) | NATS accounts and least-privilege users, opt-in until the stack is cut over | Accepted provisionally (orchestrator, owner may revise) |
 | [0069](0069-no-plan-wake-is-not-a-failure.md) | A no_plan wake with no intent is a neutral wake, not a failed intent; the player event type list gains `wake` | Accepted (fix-perception) |
 | [0070](0070-phase1-is-the-colo-first-shard.md) | Phase 1 is the colo-first shard: final environment, invite-only, not announced | Accepted (owner) |
+| [0071](0071-public-endpoints-and-ports.md) | The public Minecraft endpoint is a new TCP port with an SRV record; HTTPS ingress is the shared Caddy, reloaded and never restarted | Accepted (owner) |
 >
