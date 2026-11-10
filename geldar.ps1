@@ -79,7 +79,8 @@ function Invoke-Check {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
-    Invoke-Step 'docker compose config (phase0.yml + nats-auth.yml)' { docker compose -f $natsBase -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
+    $natsMcp = Join-Path $Root 'compose/mcp.yml'
+    Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
     if (Test-Path plugin/build.gradle.kts) {
       $gradlew = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
       Push-Location plugin

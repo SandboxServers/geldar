@@ -1,9 +1,45 @@
-# Opt-in NATS auth overlay (decision 0067). Untested against a live server.
-# Use with: docker compose -f compose/phase0.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
-# The server config is written by ./geldar.ps1 shard nats-auth phase0 and is git-ignored.
-# Components do not read the credentials yet, so this overlay is not a working stack on its own.
+# Opt-in NATS auth overlay (decision 0067). UNTESTED AGAINST A LIVE SERVER: no nats-server binary
+# was available when this was written, so the permission lists and the reads below are checked by
+# reading, not by a connection.
+# Use with the MCP file too (its geldar-mcp entry needs its base):
+#   docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
+# Before that, write the server config and the per-user password files (git-ignored, owner-only):
+#   ./geldar.ps1 shard nats-auth phase0
+# Each container reads its own password from a file mounted at /run/secrets/nats-<user>.txt and
+# names its user in GELDAR_NATS_USER (the TypeScript and Java connect paths read these; see
+# contract/src/nats-connect.ts). Host-run components (golem Body, animus) are not in compose: give
+# them GELDAR_NATS_USER=body or mind and GELDAR_NATS_PASSWORD_FILE=compose/secrets/nats-<user>.txt.
 services:
   nats:
     command: ["-c", "/etc/nats/nats-auth.conf", "-m", "8222"]
     volumes:
       - ./secrets/nats-auth.conf:/etc/nats/nats-auth.conf:ro
+  paper:
+    environment:
+      GELDAR_NATS_USER: paper
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-paper.txt
+    secrets: [nats-paper.txt]
+  velocity:
+    environment:
+      GELDAR_NATS_USER: velocity
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-velocity.txt
+    secrets: [nats-velocity.txt]
+  eventsink:
+    environment:
+      GELDAR_NATS_USER: eventsink
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-eventsink.txt
+    secrets: [nats-eventsink.txt]
+  geldar-mcp:
+    environment:
+      GELDAR_NATS_USER: mcp
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mcp.txt
+    secrets: [nats-mcp.txt]
+secrets:
+  nats-paper.txt:
+    file: ./secrets/nats-paper.txt
+  nats-velocity.txt:
+    file: ./secrets/nats-velocity.txt
+  nats-eventsink.txt:
+    file: ./secrets/nats-eventsink.txt
+  nats-mcp.txt:
+    file: ./secrets/nats-mcp.txt

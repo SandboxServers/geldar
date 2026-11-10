@@ -34,3 +34,16 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
   Its doc comment says "three subjects"; the code does not match it. The decision record follows the code.
 - The MCP replay filter is `geldar.*.player.>` per `docs/spec.md:1040`; the call site in
   `threshold/mcp/src/cli.ts` was not re-read, so confirm before the overlay ships.
+
+## Status (second session)
+
+- Step 0: `fix/a1-admission-nats` merged (clean, no conflicts); `check` passed.
+- Step 1 (`702ef75`): `connectNats` reads `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD_FILE` (or the
+  options `user`/`pass`); unset stays unauthenticated. Tests: 11 in `contract/src/nats-connect.test.ts`.
+- Step 2 (`889ef37`): `NatsEventPublisher` (user `paper`) and `RegistryClient` (user `velocity`) read
+  the same two settings from the environment or a system property. JUnit: 5 cases each.
+- Step 3: `compose/nats-auth.yml` passes `GELDAR_NATS_USER` and a mounted password file to `paper`,
+  `velocity`, `eventsink` and `geldar-mcp`. The overlay is **untested against a live server**. It
+  needs `compose/mcp.yml` as well (the `geldar-mcp` entry has no image of its own). The check now
+  validates `phase0.yml + mcp.yml + nats-auth.yml`. Host-run Body (`body`) and Mind (`mind`) take the
+  same two variables from their environment; they are not in compose.
