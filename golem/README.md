@@ -31,18 +31,18 @@ Two NATS KV buckets hold the Body's working memory, both keyed by `life_id` (dec
 
 ## Players (sovereign rangers, ./geldar.ps1 players)
 
-One detached Body process per sovereign player named in \shards/phase0.yaml\, each with a 320 MB heap cap
-(\--max-old-space-size=320\). The entry point is \src/players/main.ts\ with \--player <player-id>\; the Body reads the
+One detached Body process per sovereign player named in `shards/phase0.yaml`, each with a 320 MB heap cap
+(`--max-old-space-size=320`). The entry point is `src/players/main.ts` with `--player <player-id>`; the Body reads the
 shard config itself and uses the life id it names.
 
-\\\
+```
 ./geldar.ps1 players up                 # all configured players; a running one is left alone
 ./geldar.ps1 players up --player ag-jason-01
 ./geldar.ps1 players status             # online, PID and RSS per player; prints "down" when none runs
 ./geldar.ps1 players logs --player ag-jason-01
 ./geldar.ps1 players down
-\\\
+```
 
-PID files and logs live under \.geldar/players/\ (git-ignored). \logs\ prints the last 200 lines; it does not follow.
-The player hosts need NATS (\GELDAR_NATS_URL\) and the shard's RCON secret, and the whitelist entries are written
+PID files and logs live under `.geldar/players/` (git-ignored). `logs` prints the last 200 lines; it does not follow.
+The player hosts need NATS (`GELDAR_NATS_URL`) and the shard's RCON secret, and the whitelist entries are written
 by the host, not by this command.
