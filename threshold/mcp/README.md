@@ -129,7 +129,9 @@ be up first.
 ./geldar.ps1 db migrate --set-role-password geldar_mcp --password-file compose/secrets/postgres-mcp.txt
                                            # 3. the geldar_mcp role is NOLOGIN until this runs; mcp up fails on database auth before it
 ./geldar.ps1 mcp up                        # 4. init, build and start the container on 127.0.0.1:8788
-./geldar.ps1 mcp-tokens owner add <owner>  # 5. then: player add, and token mint --out <file outside the repo>
+./geldar.ps1 mcp-tokens owner add <owner> [--cap N]  # 5. the cap defaults to sovereign.owner_cap_default in shards/phase0.yaml (3)
+./geldar.ps1 mcp-tokens owner set-cap <owner> <N>     # raise or lower a cap later (0 to 50)
+                                           # then: player add, and token mint --out <file outside the repo>
 ./geldar.ps1 mcp status                    # prints "down" when it is not running
 ./geldar.ps1 mcp logs
 ./geldar.ps1 mcp smoke                     # the stub client case against /p/ag-test-01 (needs GELDAR_MCP_TEST_TOKEN_FILE)
@@ -141,6 +143,12 @@ print with no arguments. `mcp-tokens init` writes `compose/secrets/postgres-mcp.
 password) and `compose/secrets/mcp-token-pepper.txt` (the token pepper); `compose/mcp.yml` mounts them under
 the same names in `/run/secrets/`. The repo-checks test in `tools/repo-checks/src/mcp-overlay.test.ts` fails
 if the two drift apart.
+
+The owner cap counts an owner's players that are not retired, in this shard's database (one database
+per shard). Migration 0006 enforces it in the database, so direct SQL cannot pass it: a new or
+re-activated player over the cap is refused. Lowering a cap does not retire anyone; an owner who is
+over a lowered cap has every token refused at auth until the cap is raised or a player is retired. The
+owner_cap_owner value (20, decision 0052) is not read by `owner add`: give that owner `--cap 20`.
 
 ### Later: the public tunnel (not run)
 
