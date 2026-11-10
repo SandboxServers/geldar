@@ -167,16 +167,18 @@ export async function setPlayerStatus(
   sql: Sql,
   playerId: string,
   action: PlayerAction,
-): Promise<void> {
+): Promise<string> {
   if (!PLAYER_ID.test(playerId)) throw new Error('player id must look like ag-name-01');
   const rule = FROM_STATUS[action];
+  let life = '';
   await transaction(sql, async () => {
     const result = await sql.query(
-      'UPDATE mcp_players SET status = $2 WHERE player_id = $1 AND status = ANY($3) RETURNING player_id',
+      'UPDATE mcp_players SET status = $2 WHERE player_id = $1 AND status = ANY($3) RETURNING player_id, life_id',
       [playerId, rule.to, rule.from],
     );
     if (result.rows.length === 0)
       throw new Error(`cannot ${action} ${playerId} from its current status`);
+    life = String((result.rows[0] as { life_id: unknown }).life_id);
     if (action === 'retire') {
       await sql.query(
         'UPDATE mcp_tokens SET revoked_at = now() WHERE player_id = $1 AND revoked_at IS NULL',
@@ -184,6 +186,7 @@ export async function setPlayerStatus(
       );
     }
   });
+  return life;
 }
 
 /** Runs `work` between BEGIN and COMMIT, and rolls back if it throws. */
