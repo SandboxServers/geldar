@@ -9,11 +9,11 @@ export const mcpToolSchemas: Record<
   { description: string; input: Record<string, unknown>; result: Record<string, unknown> }
 > = {
   "act": {
-    "description": "Act: say something, run up to six immediate actions in order, and start or replace your intent. Give at least one of intent, actions or say.",
+    "description": "Act: say, run up to six actions, or start or replace your intent. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Act: say something, run up to six immediate actions in order, and start or replace your intent. Give at least one of intent, actions or say.",
+      "description": "Act: say, run up to six actions, or start or replace your intent. An intent must carry limits. Minimal valid intent: {\"goal\":\"gather_oak_log\",\"program\":\"gather\",\"arguments\":{\"block\":\"oak_log\",\"count\":12},\"wake_on\":[\"goal_completed\"],\"limits\":{\"max_world_ticks\":2400,\"max_block_operations\":64}}",
       "properties": {
         "reasoning": {
           "type": "string",
