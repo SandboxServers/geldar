@@ -11,7 +11,7 @@ const SECRET_LIKE =
 /** An `Authorization` or `Cookie` header in the cause: the rest of the line is credential text. */
 const AUTH_LINE = /(?:authorization|cookie)\s*:\s*\S.*/gi;
 /** The userinfo of a connection string, `scheme://user:password@host`: the scheme is kept. */
-const USERINFO = /(:\/\/)[^\/\s:@]+:[^@\s]+@/g;
+const USERINFO = /(:\/\/)[^/\s:@]+:[^@\s]+@/g;
 
 /**
  * Keeps only the fields a request log line may carry: the event, the player id from the URL,

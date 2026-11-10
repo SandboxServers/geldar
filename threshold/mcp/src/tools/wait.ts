@@ -8,7 +8,6 @@ import {
 } from '@geldar/mcp-mock';
 import type { RunState } from '../events/mapper.ts';
 import { fitResult, toPlayerEvents, WORLD_TEXT_NOTE, worldText } from '../events/present.ts';
-import { causeOf } from '../presence-write.ts';
 import { toPlayView } from '../play-view.ts';
 import type {
   BodyGateway,
@@ -19,6 +18,7 @@ import type {
   SleepMarks,
 } from '../ports.ts';
 import { BodyUnavailable } from '../ports.ts';
+import { causeOf } from '../presence-write.ts';
 
 /** The longest `wait` the Scriptorium constraint allows, in seconds (spec 5.15.3). */
 export const MAX_WAIT_SECONDS = 240;
