@@ -1,14 +1,21 @@
 #!/usr/bin/env node
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initSecretFiles, SECRET_DIR } from './secret-files.ts';
+import { Client } from 'pg';
+import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
+import { initSecretFiles, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
+
+/** The shard config that says whether sovereign players are allowed, and with which harnesses. */
+export const SHARD_FILE = join(REPO_ROOT, 'shards', 'phase0.yaml');
 
 export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
 
   init [--force --i-understand]         create the pepper and the Postgres password files
   owner add <id> [--cap N]              add an owner (default cap 3, at most 50)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
-  player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h> [--seed-file <f>]
+  player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
+                                        [--identity-file <f> [--goals-file <f>]]
   player pause|resume|retire <id>
   token mint <player> --out <file>      write a new token to a file only you can read
   token list [--player <id>]            list tokens (never their hashes or values)
@@ -64,28 +71,132 @@ export async function runInit(parsed: Parsed, io: Io, dir: string = SECRET_DIR):
   }
 }
 
-/** Where the secret files live; tests point this at a temporary directory. */
+/** A database session: the query surface plus end(). */
+export interface SqlSession extends Sql {
+  end(): Promise<void>;
+}
+
+/** Where the files and the database are; tests point these at temporary places and a fake. */
 export interface Env {
   secretDir: string;
+  shardFile: string;
+  connect: () => Promise<SqlSession>;
+}
+
+export async function connectPg(): Promise<SqlSession> {
+  const client = new Client();
+  await client.connect();
+  return {
+    query: async (text, values) => client.query(text, values),
+    end: () => client.end(),
+  };
+}
+
+export const DEFAULT_ENV: Env = {
+  secretDir: SECRET_DIR,
+  shardFile: SHARD_FILE,
+  connect: connectPg,
+};
+
+/** The value of a flag that must be present and take a value. */
+function requireFlag(parsed: Parsed, name: string): string {
+  const value = parsed.flags.get(name);
+  if (typeof value !== 'string') throw new Error(`${name} is required`);
+  return value;
+}
+
+function optionalFlag(parsed: Parsed, name: string): string | undefined {
+  const value = parsed.flags.get(name);
+  if (value === true) throw new Error(`${name} needs a value`);
+  return value;
+}
+
+async function withSql(env: Env, work: (sql: Sql) => Promise<void>): Promise<void> {
+  const sql = await env.connect();
+  try {
+    await work(sql);
+  } finally {
+    await sql.end();
+  }
+}
+
+async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
+  const [verb, id, value] = args;
+  if (verb === 'add' && id !== undefined && args.length === 2) {
+    const cap = optionalFlag(parsed, '--cap');
+    await withSql(env, (sql) =>
+      addOwner(sql, id, cap === undefined ? DEFAULT_OWNER_CAP : parseCap(cap)),
+    );
+    io.out(`added owner ${id}`);
+    return;
+  }
+  if (verb === 'set-cap' && id !== undefined && value !== undefined && args.length === 3) {
+    await withSql(env, (sql) => setOwnerCap(sql, id, parseCap(value)));
+    io.out(`owner ${id} cap set to ${value}`);
+    return;
+  }
+  throw new Error(USAGE);
+}
+
+async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
+  const [verb, id] = args;
+  if (verb === 'add' && id !== undefined && args.length === 2) {
+    const shard = await loadSovereignShard(env.shardFile);
+    const identityPath = optionalFlag(parsed, '--identity-file');
+    const goalsPath = optionalFlag(parsed, '--goals-file');
+    if (goalsPath !== undefined && identityPath === undefined)
+      throw new Error('--goals-file needs --identity-file');
+    const player = {
+      playerId: id,
+      owner: requireFlag(parsed, '--owner'),
+      life: requireFlag(parsed, '--life'),
+      name: requireFlag(parsed, '--name'),
+      harness: requireFlag(parsed, '--harness'),
+      ...(identityPath === undefined
+        ? {}
+        : {
+            seed: await readSeedFiles(
+              resolve(identityPath),
+              goalsPath === undefined ? undefined : resolve(goalsPath),
+            ),
+          }),
+    };
+    await withSql(env, (sql) => addPlayer(sql, player, shard));
+    io.out(`added player ${id} (life ${player.life}, owner ${player.owner})`);
+    return;
+  }
+  const action = verb === 'pause' || verb === 'resume' || verb === 'retire' ? verb : undefined;
+  if (action !== undefined && id !== undefined && args.length === 2) {
+    await withSql(env, (sql) => setPlayerStatus(sql, id, action));
+    io.out(`player ${id}: ${action}`);
+    return;
+  }
+  throw new Error(USAGE);
 }
 
 /** Runs one command; returns the process exit code. Errors become a line on stderr, never a stack. */
 export async function run(
   argv: readonly string[],
   io: Io,
-  env: Env = { secretDir: SECRET_DIR },
+  env: Env = DEFAULT_ENV,
 ): Promise<number> {
   const parsed = parseArgs(argv);
   const [command, ...rest] = parsed.positional;
   try {
     if (command === 'init' && rest.length === 0) {
       await runInit(parsed, io, env.secretDir);
-      return 0;
+    } else if (command === 'owner') {
+      await runOwner(parsed, io, env, rest);
+    } else if (command === 'player') {
+      await runPlayer(parsed, io, env, rest);
+    } else {
+      io.err(USAGE);
+      return 2;
     }
-    io.err(USAGE);
-    return 2;
+    return 0;
   } catch (error) {
-    io.err(error instanceof Error ? error.message : String(error));
+    const message = error instanceof Error ? error.message : String(error);
+    io.err(message);
     return 1;
   }
 }

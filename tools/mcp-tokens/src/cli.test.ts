@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type Io, parseArgs, run } from './cli.ts';
+import { type Env, type Io, parseArgs, run } from './cli.ts';
 import { PEPPER_FILE } from './secret-files.ts';
 
 const dirs: string[] = [];
@@ -24,6 +24,15 @@ async function harness(): Promise<{ io: Io; out: string[]; err: string[]; secret
   };
 }
 
+/** The environment for a test: the temporary secret directory and no database. */
+function envOf(h: { secretDir: string }): Env {
+  return {
+    secretDir: h.secretDir,
+    shardFile: join(h.secretDir, '..', 'phase0.yaml'),
+    connect: () => Promise.reject(new Error('no database in this test')),
+  };
+}
+
 describe('parseArgs', () => {
   it('splits positional words from flags, and takes a value after a value flag', () => {
     const parsed = parseArgs(['owner', 'add', 'jo', '--cap', '20', '--all']);
@@ -40,7 +49,7 @@ describe('parseArgs', () => {
 describe('init', () => {
   it('creates the secret files and prints their paths, never their contents', async () => {
     const h = await harness();
-    const code = await run(['init'], h.io, { secretDir: h.secretDir });
+    const code = await run(['init'], h.io, envOf(h));
     expect(code).toBe(0);
     expect(h.out.map((line) => line.split(' ')[0])).toEqual(['created', 'created']);
     const pepper = (await readFile(join(h.secretDir, PEPPER_FILE), 'utf8')).trim();
@@ -50,9 +59,9 @@ describe('init', () => {
 
   it('refuses --force without --i-understand and leaves the pepper alone', async () => {
     const h = await harness();
-    await run(['init'], h.io, { secretDir: h.secretDir });
+    await run(['init'], h.io, envOf(h));
     const before = await readFile(join(h.secretDir, PEPPER_FILE), 'utf8');
-    const code = await run(['init', '--force'], h.io, { secretDir: h.secretDir });
+    const code = await run(['init', '--force'], h.io, envOf(h));
     expect(code).toBe(1);
     expect(h.err.join('\n')).toContain('--i-understand');
     expect(await readFile(join(h.secretDir, PEPPER_FILE), 'utf8')).toBe(before);
@@ -60,9 +69,9 @@ describe('init', () => {
 
   it('re-creates the files with --force --i-understand', async () => {
     const h = await harness();
-    await run(['init'], h.io, { secretDir: h.secretDir });
+    await run(['init'], h.io, envOf(h));
     const before = await readFile(join(h.secretDir, PEPPER_FILE), 'utf8');
-    const code = await run(['init', '--force', '--i-understand'], h.io, { secretDir: h.secretDir });
+    const code = await run(['init', '--force', '--i-understand'], h.io, envOf(h));
     expect(code).toBe(0);
     expect(h.out.slice(-2).map((line) => line.split(' ')[0])).toEqual(['replaced', 'replaced']);
     expect(await readFile(join(h.secretDir, PEPPER_FILE), 'utf8')).not.toBe(before);
@@ -70,7 +79,7 @@ describe('init', () => {
 
   it('prints the usage and exits 2 for an unknown command', async () => {
     const h = await harness();
-    expect(await run(['frobnicate'], h.io, { secretDir: h.secretDir })).toBe(2);
+    expect(await run(['frobnicate'], h.io, envOf(h))).toBe(2);
     expect(h.err.join('\n')).toContain('usage:');
   });
 });
