@@ -46,6 +46,12 @@ describe('geldar.ps1 glass and adam-run block', () => {
     expect(dispatch).toBeGreaterThan(adamRun);
   });
 
+  it('lists prepare-volume in both adam-run usage lines, with the other commands', () => {
+    const usage = 'adam-run <32b|8b|smoke> start|status|stop|report|prepare-volume [args]';
+    expect(SCRIPT.split(usage).length - 1).toBe(2);
+    expect(SCRIPT).not.toContain('start|status|stop|report [args]');
+  });
+
   it('dispatches glass and adam-run with the remaining arguments', () => {
     expect(SCRIPT).toContain("'glass' { Invoke-GlassCtl $Rest }");
     expect(SCRIPT).toContain("'adam-run' { Invoke-AdamRun $Rest }");

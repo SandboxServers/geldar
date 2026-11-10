@@ -31,6 +31,7 @@ const input: ManifestInput = {
   shardConfigSha256: 'x'.repeat(64),
   pins: readPins(SHARD_YAML),
   observedDigests: { 'qwen3:8b': 'sha256:bbb', 'qwen3:32b': 'sha256:other' },
+  bench: null,
   criteriaSha256: 'y'.repeat(64),
 };
 
@@ -72,6 +73,20 @@ describe('buildManifest', () => {
     ['smoke', LIFE_ID.smoke],
   ] as const)('the %s profile runs life %s', (profile, life) => {
     expect(buildManifest({ ...input, profile }).life_id).toBe(life);
+  });
+
+  it('records the bench file, its commit and the 20 TPS rows, and null when there is no gate', () => {
+    expect(buildManifest(input).bench).toBeNull();
+    const bench = {
+      file: '20261110T024026Z-eba101b.json',
+      commit: 'eba101b',
+      tps20: [{ scenario: 'food', successPct: 100 }],
+    };
+    expect(buildManifest({ ...input, bench }).bench).toEqual({
+      file: '20261110T024026Z-eba101b.json',
+      commit: 'eba101b',
+      tps20: [{ scenario: 'food', success_pct: 100 }],
+    });
   });
 
   it('records the observed digest, and null for a tag Ollama does not have', () => {

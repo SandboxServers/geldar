@@ -32,11 +32,18 @@ import { checkPreconditions } from './preconditions.ts';
 import { safeStop } from './safe-stop.ts';
 import { type Preflight, type RunInput, runSequence } from './sequence.ts';
 import { MINUTE_MS } from './status-log.ts';
+import {
+  createWorldVolumes,
+  parsePrepared,
+  preparedText,
+  prepareWorldVolume,
+  type WorldVolumes,
+} from './world-volume.ts';
 
 export const USAGE =
-  'usage: adam-run <32b|8b|smoke> <start|status|stop|report> [--run-id <id>] [--hours <n>] ' +
+  'usage: adam-run <32b|8b|smoke> <start|status|stop|report|prepare-volume> [--run-id <id>] [--hours <n>] ' +
   '[--restart-at-hours <n>] [--body-kill-after-minutes <n>] [--dry-run]';
-const COMMANDS = ['start', 'status', 'stop', 'report'] as const;
+const COMMANDS = ['start', 'status', 'stop', 'report', 'prepare-volume'] as const;
 type Command = (typeof COMMANDS)[number];
 const VALUE_FLAGS = ['--run-id', '--hours', '--restart-at-hours', '--body-kill-after-minutes'];
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
@@ -71,6 +78,9 @@ export function parseArgs(argv: string[]): ParseResult {
     return fail(`unknown profile "${profile ?? ''}"`);
   if (!(COMMANDS as readonly string[]).includes(command ?? ''))
     return fail(`unknown command "${command ?? ''}"`);
+  if (command === 'prepare-volume' && profile === 'smoke') {
+    return fail('prepare-volume is for 32b and 8b; the smoke run uses no world volume');
+  }
   const args: Args = {
     profile: profile as Profile,
     command: command as Command,
@@ -125,7 +135,9 @@ export interface Harness {
   /** The file store of the run folder, and of the runs root (for the gate file and the 8B marker). */
   runFiles(runDir: string): FileStore;
   runsFiles: FileStore;
-  preflight(profile: Profile, runsDir: string): Preflight;
+  /** The Docker port of the world volume (`prepare-volume`, and the precondition check). */
+  worldVolumes: WorldVolumes;
+  preflight(profile: Profile, runDir: string): Preflight;
   reporter(runDir: string, profile: Profile): Reporter;
   criteria: AbortCriteria;
   criteriaText: string;
@@ -159,6 +171,9 @@ function liveOwner(h: Harness, runDir: string): PidRecord | null {
 
 function runState(h: Harness, runDir: string): { state: string; last: string } {
   const files = h.runFiles(runDir);
+  if (parsePrepared(files.read(runPaths(runDir).manifest)) !== null) {
+    return { state: 'prepared', last: 'no run yet: the folder holds a prepared world volume only' };
+  }
   const lines = (files.read(runPaths(runDir).status) ?? '')
     .trim()
     .split('\n')
@@ -219,6 +234,10 @@ export async function runCli(
       log(`the run is already ${st.state}; nothing to stop`);
       return 0;
     }
+    if (st.state === 'prepared') {
+      log('the folder holds a prepared world volume only; no run to stop, no safe stop run');
+      return 0;
+    }
     const manifest = JSON.parse(files.read(runPaths(runDir).manifest) ?? '{}') as {
       startedAt?: string;
     };
@@ -236,9 +255,26 @@ export async function runCli(
     return outcome.exitCode;
   }
 
+  if (a.command === 'prepare-volume') {
+    const res = await prepareWorldVolume(
+      { volumes: h.worldVolumes, files, nowMs: h.clock.nowMs() },
+      { profile: a.profile, runId, runDir },
+    );
+    if (!res.ok) {
+      log(`adam-run: prepare-volume refused: ${res.error}`);
+      return 1;
+    }
+    log(preparedText(res.record, runDir));
+    return 0;
+  }
+
   if (a.command === 'report') {
     if (files.read(runPaths(runDir).manifest) === null) {
       log(`adam-run: no run at ${runDir}`);
+      return 1;
+    }
+    if (parsePrepared(files.read(runPaths(runDir).manifest)) !== null) {
+      log(`adam-run: ${runDir} holds a prepared world volume only; there is no run to report`);
       return 1;
     }
     try {
@@ -252,7 +288,7 @@ export async function runCli(
   }
 
   // start
-  const pre = await h.preflight(a.profile, runsDir).gather();
+  const pre = await h.preflight(a.profile, runDir).gather();
   const verdict = checkPreconditions(pre.facts);
   const hours = a.hours ?? DEFAULT_HOURS[a.profile];
   const now = h.clock.nowMs();
@@ -273,7 +309,9 @@ export async function runCli(
     return 0;
   }
   // The rest of this function is the real start path; the dry run returns above and makes no supervisor call.
-  if (liveOwner(h, runDir) !== null || files.read(runPaths(runDir).manifest) !== null) {
+  const held = files.read(runPaths(runDir).manifest);
+  // A prepared record is accepted: the run manifest replaces it when the sequence writes the manifest.
+  if (liveOwner(h, runDir) !== null || (held !== null && parsePrepared(held) === null)) {
     log(`adam-run: start refused: ${runDir} already holds a run`);
     return 1;
   }
@@ -296,7 +334,7 @@ export async function runCli(
       sampler: h.sampler(a.profile),
       supervisor: h.supervisor,
       reporter: h.reporter(runDir, a.profile),
-      preflight: h.preflight(a.profile, runsDir),
+      preflight: h.preflight(a.profile, runDir),
       criteria: h.criteria,
       stopRequested: () => files.read(join(runDir, STOP_FILE)) !== null,
     },
@@ -316,6 +354,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
     'utf8',
   );
   const criteria = JSON.parse(criteriaText) as AbortCriteria;
+  const worldVolumes = createWorldVolumes(runner);
   return {
     clock,
     processes,
@@ -331,14 +370,16 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
       }),
     runFiles: (dir) => createFileStore(dir),
     runsFiles: createFileStore(join(repoRoot, '.geldar', 'runs')),
-    preflight: (profile, runsDir) =>
+    preflight: (profile, runDir) =>
       createPreflight({
         runner,
         repoRoot,
-        runsDir,
+        runDir,
         profile,
         criteriaText,
-        files: createFileStore(runsDir),
+        files: createFileStore(runDir),
+        worldVolumes,
+        env,
       }),
     reporter: (runDir, profile) =>
       createReporter(
@@ -352,6 +393,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
       ),
     criteria,
     criteriaText,
+    worldVolumes,
   };
 }
 

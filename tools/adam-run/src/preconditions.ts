@@ -1,34 +1,46 @@
 /**
  * The gate before `start`. It takes the facts the CLI collected (git, the benchmark gate file, the pins, Ollama,
- * the fresh-volume marker) and returns every missing item, each with what to do about it. Pure.
+ * the prepared world volume) and returns every missing item, each with what to do about it. Pure.
  */
-import { LIFE_ID, type PinnedModel, PROFILE_MODEL, type Profile } from './manifest.ts';
-
-export interface GateRecord {
-  sha: string;
-  date: string;
-  result: 'pass' | 'fail';
-  rates: { tps: number; percent: number }[];
-}
+import { type BenchFile, checkBench } from './bench-gate.ts';
+import {
+  digestsMatch,
+  LIFE_ID,
+  type PinnedModel,
+  PROFILE_MODEL,
+  type Profile,
+  tagKey,
+} from './manifest.ts';
+import type { PreparedRecord, VolumeState } from './world-volume.ts';
 
 export interface PreconditionFacts {
   profile: Profile;
   headSha: string;
   cleanTree: boolean;
-  /** The text of `.geldar/runs/benchmark-gate.json`, or null when the file is missing. */
-  gateJson: string | null;
+  /** The newest `bench-results/*.json` and its text, or null when the folder holds no result. */
+  bench: BenchFile | null;
   pins: PinnedModel[];
   /** The digest Ollama reports for each tag, or null when the tag is not pulled. */
   observedDigests: Record<string, string | null>;
   /** The models Ollama has loaded now (`ollama ps`). */
   loadedModels: string[];
-  /** The text of `fresh-volume.json` (8B profile only), or null when missing. */
-  freshVolumeJson: string | null;
+  /** The prepared record in the run folder's manifest.json, or null when the folder holds none. */
+  prepared: PreparedRecord | null;
+  /** The recorded volume's state now, or null when there is no record to inspect. */
+  volume: VolumeState | null;
+  /** The value of GELDAR_WORLD_VOLUME in the environment, or undefined when it is unset. */
+  worldVolumeEnv: string | undefined;
   /** The life id the run would use. */
   lifeId: string;
 }
 
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
+
+/** The digest Ollama reports for a pin's tag, matching `tag` and `tag:latest` alike. */
+function observedFor(observed: Record<string, string | null>, tag: string): string | null {
+  const entry = Object.entries(observed).find(([name]) => tagKey(name) === tagKey(tag));
+  return entry?.[1] ?? null;
+}
 
 /** The models that may stay loaded: the profile's chat model, and the CPU-only embedding model. */
 export function allowedLoaded(profile: Profile, pins: PinnedModel[]): string[] {
@@ -38,26 +50,25 @@ export function allowedLoaded(profile: Profile, pins: PinnedModel[]): string[] {
   return [PROFILE_MODEL[profile], ...(embedding ? [embedding.tag] : [])];
 }
 
-function gateProblems(gateJson: string | null, headSha: string): string[] {
-  if (gateJson === null) {
-    return [
-      'benchmark gate: .geldar/runs/benchmark-gate.json is missing; run OPS-0 (the 20 TPS benchmark) first',
-    ];
+/** The 32B and 8B runs write to the volume that `prepare-volume` made: it must be the recorded, empty, unused one. */
+function worldVolumeProblems(f: PreconditionFacts): string[] {
+  if (f.prepared === null) {
+    return ['world volume: the run folder holds no prepared volume; run prepare-volume first'];
   }
-  let gate: GateRecord;
-  try {
-    gate = JSON.parse(gateJson) as GateRecord;
-  } catch {
-    return ['benchmark gate: benchmark-gate.json is not valid JSON; re-run OPS-0'];
-  }
+  const name = f.prepared.worldVolume;
   const problems: string[] = [];
-  if (gate.result !== 'pass')
-    problems.push(`benchmark gate: result is ${String(gate.result)}, not pass`);
-  const at20 = gate.rates?.some((r) => r.tps === 20 && r.percent === 100) ?? false;
-  if (!at20) problems.push('benchmark gate: no reading at 20 TPS with 100%');
-  if (gate.sha !== headSha) {
+  if (f.volume === null || !f.volume.exists) {
+    problems.push(`world volume ${name} does not exist; run prepare-volume again`);
+  } else {
+    if (!f.volume.labelled) problems.push(`world volume ${name} is not labelled by compose`);
+    if (!f.volume.empty) problems.push(`world volume ${name} is not empty; use a new run id`);
+    if (f.volume.usedBy.length > 0) {
+      problems.push(`world volume ${name} is mounted by ${f.volume.usedBy.length} container(s)`);
+    }
+  }
+  if (f.worldVolumeEnv !== name) {
     problems.push(
-      `benchmark gate: recorded at ${gate.sha}, HEAD is ${headSha}; re-run OPS-0 at HEAD`,
+      `GELDAR_WORLD_VOLUME is ${f.worldVolumeEnv ?? 'unset'}, not ${name}; set it to ${name}`,
     );
   }
   return problems;
@@ -67,12 +78,13 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   const missing: string[] = [];
   if (!f.cleanTree)
     missing.push('clean tree: the working tree has uncommitted changes; commit or remove them');
-  missing.push(...gateProblems(f.gateJson, f.headSha));
+  const gate = checkBench(f.bench, f.headSha);
+  if (!gate.ok) missing.push(...gate.problems);
   for (const pin of f.pins) {
-    const observed = f.observedDigests[pin.tag] ?? null;
+    const observed = observedFor(f.observedDigests, pin.tag);
     if (observed === null) {
       missing.push(`model pin ${pin.tag}: Ollama does not have it; pull it at the pinned digest`);
-    } else if (observed !== pin.digest) {
+    } else if (!digestsMatch(observed, pin.digest)) {
       missing.push(
         `model pin ${pin.tag}: Ollama reports ${observed}, shards/phase0.yaml pins ${pin.digest}`,
       );
@@ -81,14 +93,10 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   if (f.lifeId !== LIFE_ID[f.profile]) {
     missing.push(`life id: profile ${f.profile} runs ${LIFE_ID[f.profile]}, not ${f.lifeId}`);
   }
-  if (f.profile === '8b' && f.freshVolumeJson === null) {
-    missing.push(
-      'fresh world volume: fresh-volume.json is missing; create the 8B world volume first',
-    );
-  }
+  if (f.profile !== 'smoke') missing.push(...worldVolumeProblems(f));
   const allowed = allowedLoaded(f.profile, f.pins);
   for (const loaded of f.loadedModels) {
-    if (!allowed.includes(loaded)) {
+    if (!allowed.some((a) => tagKey(a) === tagKey(loaded))) {
       missing.push(
         `GPU: ${loaded} is loaded in Ollama; unload it (expected only ${allowed.join(', ')})`,
       );

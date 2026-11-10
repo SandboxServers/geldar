@@ -5,6 +5,7 @@
  * ports: the clock and sleep decide the time, so a 3-hour run takes milliseconds in the tests.
  */
 import { type AbortCriteria, evaluateAbort, type Sample } from './abort.ts';
+import { checkBench } from './bench-gate.ts';
 import { buildManifest, type Profile, writeManifest } from './manifest.ts';
 import {
   type Clock,
@@ -38,7 +39,7 @@ export interface PreflightFacts {
   criteriaSha256: string;
 }
 
-/** Gathers the facts the gate needs: git, the gate file, the pins, Ollama, the fresh-volume marker. */
+/** Gathers the facts the gate needs: git, the gate file, the pins, Ollama, the prepared world volume. */
 export interface Preflight {
   gather(): Promise<PreflightFacts>;
 }
@@ -126,6 +127,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
 
   const startMs = clock.nowMs();
   const f = gathered.facts;
+  const benchGate = checkBench(f.bench, f.headSha);
   writeManifest(
     files,
     input.runDir,
@@ -140,6 +142,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
       shardConfigSha256: gathered.shardConfigSha256,
       pins: f.pins,
       observedDigests: f.observedDigests,
+      bench: benchGate.ok ? benchGate.summary : null,
       criteriaSha256: gathered.criteriaSha256,
     }),
   );

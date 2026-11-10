@@ -1,17 +1,19 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createClock,
   createFileStore,
   createGlassClient,
+  createPreflight,
   createReporter,
   createSupervisor,
   readOnly,
   type SqlClient,
 } from './adapters.ts';
 import type { ExecResult, Runner } from './ports.ts';
+import type { WorldVolumes } from './world-volume.ts';
 
 const SRC = [join(import.meta.dirname, 'adapters.ts'), join(import.meta.dirname, 'cli.ts')];
 
@@ -190,5 +192,61 @@ describe('the supervisor and reporter argument arrays', () => {
     expect(calls[0]?.args).toContain('ag_smoke_01');
     expect(calls[0]?.args).toContain('--out');
     expect(calls[0]?.args).toContain(runDir);
+  });
+});
+
+describe('the preflight facts', () => {
+  it('reads the newest bench result from bench-results/ and the prepared volume from the run folder', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'adam-repo-'));
+    const runDir = join(repoRoot, '.geldar', 'runs', 'run-1');
+    mkdirSync(join(repoRoot, 'shards'));
+    writeFileSync(
+      join(repoRoot, 'shards', 'phase0.yaml'),
+      'model_pins:\n  qwen3:8b:\n    digest: sha256:bbb\n',
+    );
+    mkdirSync(join(repoRoot, 'bench-results'));
+    const benchName = '20261110T024026Z-eba101b.json';
+    writeFileSync(join(repoRoot, 'bench-results', benchName), '{"meta":{}}');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(
+      join(runDir, 'manifest.json'),
+      JSON.stringify({
+        schema: 'adam-run-prepared/1',
+        profile: '8b',
+        runId: 'run-1',
+        worldVolume: 'geldar-phase0-world-run-1',
+        preparedAt: '2026-11-10T00:00:00Z',
+      }),
+    );
+    const runner: Runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: 'eba101b\n', stderr: '' }),
+    } as Runner;
+    const worldVolumes: WorldVolumes = {
+      inspect: async () => ({ exists: true, labelled: true, empty: true, usedBy: [] }),
+      create: async () => {},
+    };
+    vi.stubGlobal(
+      'fetch',
+      async () => new Response(JSON.stringify({ models: [] }), { status: 200 }),
+    );
+    try {
+      const preflight = createPreflight({
+        runner,
+        repoRoot,
+        runDir,
+        profile: '8b',
+        criteriaText: '{}',
+        files: createFileStore(runDir),
+        worldVolumes,
+        env: { GELDAR_WORLD_VOLUME: 'geldar-phase0-world-run-1' },
+      });
+      const { facts } = await preflight.gather();
+      expect(facts.bench).toEqual({ file: benchName, text: '{"meta":{}}' });
+      expect(facts.prepared?.worldVolume).toBe('geldar-phase0-world-run-1');
+      expect(facts.volume?.exists).toBe(true);
+      expect(facts.worldVolumeEnv).toBe('geldar-phase0-world-run-1');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

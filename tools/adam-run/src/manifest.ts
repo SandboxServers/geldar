@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { parse } from 'yaml';
+import type { BenchSummary } from './bench-gate.ts';
 import type { FileStore } from './ports.ts';
 
 export const PROFILES = ['32b', '8b', 'smoke'] as const;
@@ -34,6 +35,26 @@ export interface PinnedModel {
 
 export function sha256Hex(data: string | Buffer): string {
   return createHash('sha256').update(data).digest('hex');
+}
+
+/**
+ * The hex part of a digest. Pins carry `sha256:<hex>`; Ollama's `/api/tags` gives bare `<hex>`. Both reduce to the
+ * same lowercase hex, which is compared in full (never a prefix).
+ */
+export function digestHex(digest: string): string {
+  return digest
+    .trim()
+    .toLowerCase()
+    .replace(/^sha256:/, '');
+}
+
+export function digestsMatch(a: string, b: string): boolean {
+  return digestHex(a) === digestHex(b);
+}
+
+/** A tag without its default `:latest`: Ollama lists `nomic-embed-text:latest` for the pin `nomic-embed-text`. */
+export function tagKey(tag: string): string {
+  return tag.endsWith(':latest') ? tag.slice(0, -':latest'.length) : tag;
 }
 
 /** The pins of `shards/phase0.yaml`: every `model_pins` entry, and the embedding model. Throws when a pin is missing. */
@@ -67,7 +88,15 @@ export interface ManifestInput {
   pins: PinnedModel[];
   /** The digest Ollama reports for each tag, or null when the tag is not pulled. */
   observedDigests: Record<string, string | null>;
+  /** The gate that passed: the bench file, its commit and the 20 TPS rows. Null when none was read. */
+  bench: BenchSummary | null;
   criteriaSha256: string;
+}
+
+export interface ManifestBench {
+  file: string;
+  commit: string;
+  tps20: { scenario: string; success_pct: number | null }[];
 }
 
 export interface ManifestPin {
@@ -86,6 +115,7 @@ export interface Manifest {
   git: { sha: string; clean: boolean };
   shard_config_sha256: string;
   model_pins: ManifestPin[];
+  bench: ManifestBench | null;
   criteria_sha256: string;
   tps_target: number;
   started_at: string;
@@ -110,6 +140,17 @@ export function buildManifest(input: ManifestInput): Manifest {
         matches: observed === pin.digest,
       };
     }),
+    bench:
+      input.bench === null
+        ? null
+        : {
+            file: input.bench.file,
+            commit: input.bench.commit,
+            tps20: input.bench.tps20.map((row) => ({
+              scenario: row.scenario,
+              success_pct: row.successPct,
+            })),
+          },
     criteria_sha256: input.criteriaSha256,
     tps_target: TPS_TARGET,
     started_at: input.startedAt,

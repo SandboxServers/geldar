@@ -16,6 +16,10 @@ import type {
   Supervisor,
 } from '../src/ports.ts';
 import type { Preflight, PreflightFacts } from '../src/sequence.ts';
+import { PREPARED_SCHEMA, type VolumeState, type WorldVolumes } from '../src/world-volume.ts';
+
+/** The world volume the fake gate reports as prepared and selected through GELDAR_WORLD_VOLUME. */
+const FAKE_WORLD_VOLUME = 'geldar-phase0-world-run-1';
 
 export const MIN = 60_000;
 export const START_MS = Date.parse('2026-11-10T00:00:00Z');
@@ -206,6 +210,24 @@ export class FakeProcesses implements Processes {
   }
 }
 
+/**
+ * The Docker volume port in memory. `create` makes a labelled, empty, unused volume, as the real create does. The port
+ * has no remove method, so a test cannot see a deletion; `calls` records every call for the reuse checks.
+ */
+export class FakeWorldVolumes implements WorldVolumes {
+  readonly volumes = new Map<string, VolumeState>();
+  readonly calls: string[] = [];
+  async inspect(name: string): Promise<VolumeState> {
+    this.calls.push(`inspect:${name}`);
+    const found = this.volumes.get(name);
+    return { ...(found ?? { exists: false, labelled: false, empty: false, usedBy: [] }) };
+  }
+  async create(name: string, runId: string): Promise<void> {
+    this.calls.push(`create:${name}:${runId}`);
+    this.volumes.set(name, { exists: true, labelled: true, empty: true, usedBy: [] });
+  }
+}
+
 export class FakeReporter implements Reporter {
   readonly runs: string[] = [];
   fail = false;
@@ -217,11 +239,10 @@ export class FakeReporter implements Reporter {
 
 /** Facts that pass every precondition for the profile: a clean tree, a gate at HEAD, the profile's life id. */
 export function passingPreflight(profile: Profile, over: { cleanTree?: boolean } = {}): Preflight {
-  const gate = {
-    sha: 'abc123',
-    date: '2026-11-09',
-    result: 'pass',
-    rates: [{ tps: 20, percent: 100 }],
+  const bench = {
+    meta: { commit: 'abc123' },
+    truncated: false,
+    summary: [{ scenario: 'food', tps: 20, successPct: 100 }],
   };
   return {
     async gather(): Promise<PreflightFacts> {
@@ -230,11 +251,23 @@ export function passingPreflight(profile: Profile, over: { cleanTree?: boolean }
           profile,
           headSha: 'abc123',
           cleanTree: over.cleanTree ?? true,
-          gateJson: JSON.stringify(gate),
+          bench: { file: '20261109T000000Z-abc123.json', text: JSON.stringify(bench) },
           pins: [],
           observedDigests: {},
           loadedModels: [],
-          freshVolumeJson: null,
+          prepared:
+            profile === 'smoke'
+              ? null
+              : {
+                  schema: PREPARED_SCHEMA,
+                  profile,
+                  runId: 'run-1',
+                  worldVolume: FAKE_WORLD_VOLUME,
+                  preparedAt: '2026-11-10T00:00:00Z',
+                },
+          volume:
+            profile === 'smoke' ? null : { exists: true, labelled: true, empty: true, usedBy: [] },
+          worldVolumeEnv: FAKE_WORLD_VOLUME,
           lifeId: LIFE_ID[profile],
         },
         shardConfigSha256: 'a'.repeat(64),
