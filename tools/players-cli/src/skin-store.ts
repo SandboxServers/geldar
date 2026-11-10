@@ -1,6 +1,6 @@
+import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
-import { connect } from '@nats-io/transport-node';
 import type { SignedTexture } from './mineskin.ts';
 
 /** The JetStream KV bucket the Velocity identity plugin watches for skins. Keys are life ids; values are JSON. */
@@ -42,9 +42,9 @@ export async function putSkin(
 export async function openSkinBucket(
   natsUrl: string,
 ): Promise<{ kv: SkinKv; close: () => Promise<void> }> {
-  let nc: Awaited<ReturnType<typeof connect>>;
+  let nc: Awaited<ReturnType<typeof connectNats>>;
   try {
-    nc = await connect({ servers: natsUrl, timeout: CONNECT_TIMEOUT_MS, reconnect: false });
+    nc = await connectNats({ servers: natsUrl, name: 'players-cli', timeout: CONNECT_TIMEOUT_MS });
   } catch {
     throw new Error('NATS could not be reached at GELDAR_NATS_URL');
   }

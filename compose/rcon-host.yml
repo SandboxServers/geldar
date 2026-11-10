@@ -1,0 +1,9 @@
+# Publishes Paper's RCON port (25575) to the host loopback, for the tools that run on the host: golem
+# players and bench, and the removal step of adam-cli, mcp-tokens and players-cli. phase0.yml does not publish
+# it, so the shard's control port is closed to the host unless this file is used. Start with it:
+#   ./geldar.ps1 shard up phase0 --rcon-host
+# Without this file, a host tool fails with an error that names this file.
+services:
+  paper:
+    ports:
+      - "127.0.0.1:25575:25575"

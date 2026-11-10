@@ -224,6 +224,9 @@ importers:
 
   contract:
     dependencies:
+      '@nats-io/transport-node':
+        specifier: 3.4.0
+        version: 3.4.0
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -444,6 +447,9 @@ importers:
 
   tools/players-cli:
     dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../../contract
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0

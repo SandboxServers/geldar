@@ -10,7 +10,7 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 setup                 Install workspace dependencies (frozen lockfile)
   ./geldar.ps1 pnpm <args...>        Run pnpm with the pinned version on PATH, nested calls included
   ./geldar.ps1 check                 Every check CI runs, in CI's order
-  ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy
+  ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy (--rcon-host publishes RCON to the host)
   ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
   ./geldar.ps1 shard status <name>   Show container health
@@ -73,9 +73,11 @@ function Invoke-Check {
     Invoke-Step 'test (vitest)' { pnpm test }
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue) {
+    # An override (rcon-host.yml) only adds to a shard file, so it is checked merged with phase0.yml.
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'rcon-host.yml' }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
+    Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)' { docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     if (Test-Path plugin/build.gradle.kts) {
       $gradlew = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
       Push-Location plugin
@@ -115,8 +117,20 @@ function Assert-PluginsEnabled([string] $Shard, [string[]] $Compose) {
   }
 }
 
+# The owner-only step of tools/mcp-tokens/src/secret-files.ts (restrictToOwner): inheritance off, and the
+# current account gets full control. On Windows the file mode is not enforced, so this is the real guard.
+# Best effort: a failure is warned about, names the path and never fails the command.
+function Set-OwnerOnlyAcl([string] $Path) {
+  if (-not $IsWindows) { return }
+  $user = $env:USERNAME
+  if (-not $user) { Write-Warning "USERNAME is not set; $Path keeps its default permissions"; return }
+  & icacls $Path /inheritance:r /grant:r "${user}:F" *> $null
+  if ($LASTEXITCODE -ne 0) { Write-Warning "icacls could not restrict $Path; check its permissions by hand" }
+}
+
 # Writes the shard's Docker secret files (spec 6.7) when they are missing. Each holds
 # 32 random URL-safe characters with no newline. Existing files are never overwritten.
+# Each file gets the owner-only ACL (Set-OwnerOnlyAcl) before its secret is written.
 function Initialize-ShardSecrets([string] $Shard) {
   Get-ComposeFile $Shard | Out-Null
   $dir = Join-Path $Root 'compose/secrets'
@@ -127,6 +141,7 @@ function Initialize-ShardSecrets([string] $Shard) {
     if (Test-Path $path) {
       # An empty file is what a crash between create and write leaves behind; refuse to guess.
       if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
+      Set-OwnerOnlyAcl $path
       continue
     }
     # 64 symbols and 256 byte values: the modulo is unbiased.
@@ -142,8 +157,10 @@ function Initialize-ShardSecrets([string] $Shard) {
       # The winner may not have written its secret yet: give it one short retry before calling the file empty.
       if ((Get-Item $path).Length -eq 0) { Start-Sleep -Milliseconds 500 }
       if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
+      Set-OwnerOnlyAcl $path
       continue
     }
+    Set-OwnerOnlyAcl $path
     try {
       $data = [Text.Encoding]::ASCII.GetBytes($secret)
       $stream.Write($data, 0, $data.Length)
@@ -157,13 +174,24 @@ function Initialize-ShardSecrets([string] $Shard) {
 function Invoke-Shard([string[]] $ShardArgs) {
   $action, $shard, $extra = $ShardArgs
   $file = Get-ComposeFile $shard
-  $compose = @('compose', '-f', $file, '-p', "geldar-$shard")
+  # --rcon-host adds compose/rcon-host.yml, which publishes RCON to the host loopback for the host-run tools.
+  $rconHost = @($extra) -contains '--rcon-host'
+  $files = @('-f', $file)
+  if ($rconHost) { $files += @('-f', (Join-Path $Root 'compose/rcon-host.yml')) }
+  $compose = @('compose') + $files + @('-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }
-    'up' { Assert-PluginJar $shard; Initialize-ShardSecrets $shard; Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }; Invoke-Step "start shard $shard" { docker @compose up -d --wait }; Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose } }
+    'up' {
+      Assert-PluginJar $shard
+      Initialize-ShardSecrets $shard
+      Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }
+      Invoke-Step "start shard $shard" { docker @compose up -d --wait }
+      Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose }
+      if (-not $rconHost) { Write-Host "hint: RCON 25575 is not published to the host. Host tools that use it (golem players and bench, the removal of adam-cli, mcp-tokens and players-cli) need: ./geldar.ps1 shard up $shard --rcon-host" }
+    }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }
-    'logs' { Invoke-Step "logs of shard $shard" { docker @compose logs --tail 200 @extra } }
+    'logs' { Invoke-Step "logs of shard $shard" { docker @compose logs --tail 200 @($extra | Where-Object { $_ -ne '--rcon-host' }) } }
     default { throw "Unknown shard action '$action'. Use up, down, status, logs or secrets." }
   }
 }
@@ -261,7 +289,7 @@ Usage: ./geldar.ps1 <command> [args]
   ./geldar.ps1 setup                 Install workspace dependencies (frozen lockfile)
   ./geldar.ps1 pnpm <args...>        Run pnpm with the pinned version on PATH, nested calls included
   ./geldar.ps1 check                 Every check CI runs, in CI's order
-  ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy
+  ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy (--rcon-host publishes RCON to the host)
   ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
   ./geldar.ps1 shard status <name>   Show container health

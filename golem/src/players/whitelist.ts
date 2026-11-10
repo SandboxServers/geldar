@@ -42,3 +42,24 @@ export async function admitLifeOverRcon(
     await rcon.close();
   }
 }
+
+/** Removes `lifeId` from the whitelist. Resolves for "Removed" and "not whitelisted"; throws otherwise. */
+export async function removeLife(rcon: CommandSource, lifeId: string): Promise<void> {
+  const reply = await new TestControl(rcon).whitelistRemove(lifeId);
+  if (!/Removed|not whitelisted/i.test(reply)) {
+    throw new Error(`whitelist remove ${lifeId} got an unexpected reply: ${reply}`);
+  }
+}
+
+/** Opens an RCON connection for one removal and closes it after, removed or not (threat model rule 9). */
+export async function removeLifeOverRcon(
+  open: () => Promise<AdmissionRcon>,
+  lifeId: string,
+): Promise<void> {
+  const rcon = await open();
+  try {
+    await removeLife(rcon, lifeId);
+  } finally {
+    await rcon.close();
+  }
+}

@@ -67,6 +67,19 @@ describe('checkpointing the running intent', () => {
     await b.stop();
   });
 
+  it('a replacing intent overwrites the checkpoint of the one it replaces, with no delete before', async () => {
+    const kv = buckets();
+    const b = await boot(kv);
+    await startIntent(b, 1);
+    await b.body.checkpoints?.flush();
+    const deletesBefore = kv.checkpoints.deletes;
+    await startIntent(b, 2);
+    await b.body.checkpoints?.flush();
+    expect(kv.checkpoints.deletes).toBe(deletesBefore);
+    expect(parseEntry(kv.checkpoints.peek(LIFE) ?? '')?.intent_id).toBe(fakeId('in', 2));
+    await b.stop();
+  });
+
   it('keeps the checkpoint when the Body stops, since that is a restart and not an end', async () => {
     const kv = buckets();
     const b = await boot(kv);
@@ -185,6 +198,22 @@ describe('restartBody', () => {
     expect(b.made).toHaveLength(0);
     expect(kv.checkpoints.peek(LIFE)).toBeUndefined();
     await b.stop();
+  });
+
+  it('closes the intent of an expired or unknown-program checkpoint as interrupted', async () => {
+    const kv = buckets();
+    kv.checkpoints.seed(LIFE, entry({ expires_tick: 500, intent_id: 'in_lost' }));
+    const expired = await boot(kv, { tick: 500 });
+    expect(
+      expired.records.intents.map((c) => [c.intentId, c.bodyGeneration, c.state, c.detail]),
+    ).toEqual([['in_lost', expired.generation, 'interrupted', 'body_restarted']]);
+    await expired.stop();
+    kv.checkpoints.seed(LIFE, entry({ program: 'mystery', intent_id: 'in_other' }));
+    const unknown = await boot(kv);
+    expect(unknown.records.intents.map((c) => [c.intentId, c.state, c.detail])).toEqual([
+      ['in_other', 'interrupted', 'body_restarted'],
+    ]);
+    await unknown.stop();
   });
 
   it('ignores a checkpoint whose program is not registered, and one that is not an entry', async () => {

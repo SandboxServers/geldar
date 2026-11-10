@@ -18,7 +18,7 @@ import {
 /** An in-memory stand-in for the tables the commands touch; it answers only those statements. */
 class FakeSql implements Sql {
   owners = new Map<string, number>();
-  players: Array<{ player_id: string; owner_id: string; status: string }> = [];
+  players: Array<{ player_id: string; owner_id: string; life_id: string; status: string }> = [];
   agents: string[] = [];
   budgets: string[] = [];
   revokedFor: string[] = [];
@@ -55,6 +55,7 @@ class FakeSql implements Sql {
       this.players.push({
         player_id: String(values[0]),
         owner_id: String(values[1]),
+        life_id: String(values[2]),
         status: 'active',
       });
       return { rows: [] };
@@ -68,7 +69,7 @@ class FakeSql implements Sql {
       const allowed = values[2] as string[];
       if (player === undefined || !allowed.includes(player.status)) return { rows: [] };
       player.status = String(values[1]);
-      return { rows: [{ player_id: player.player_id }] };
+      return { rows: [{ player_id: player.player_id, life_id: player.life_id }] };
     }
     if (text.startsWith('UPDATE mcp_tokens')) {
       this.revokedFor.push(String(values[0]));
@@ -164,7 +165,9 @@ describe('player add checks', () => {
     await addOwner(sql, 'jo');
     await addPlayer(sql, player(1), SHARD);
     expect(sql.agents).toEqual(['ag_jo_01']);
-    expect(sql.players).toEqual([{ player_id: 'ag-jo-01', owner_id: 'jo', status: 'active' }]);
+    expect(sql.players).toEqual([
+      { player_id: 'ag-jo-01', owner_id: 'jo', life_id: 'ag_jo_01', status: 'active' },
+    ]);
     expect(sql.budgets).toEqual(['ag_jo_01']);
   });
 
@@ -255,7 +258,7 @@ describe('player status', () => {
     expect(sql.players[0]?.status).toBe('paused');
     await expect(setPlayerStatus(sql, 'ag-jo-01', 'pause')).rejects.toThrow('cannot pause');
     await setPlayerStatus(sql, 'ag-jo-01', 'resume');
-    await setPlayerStatus(sql, 'ag-jo-01', 'retire');
+    expect(await setPlayerStatus(sql, 'ag-jo-01', 'retire')).toBe('ag_jo_01');
     expect(sql.players[0]?.status).toBe('retired');
     expect(sql.revokedFor).toEqual(['ag-jo-01']);
   });
