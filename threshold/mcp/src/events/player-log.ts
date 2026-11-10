@@ -54,11 +54,15 @@ export class RingEventLog implements PlayerEventLog {
     if (ring.events.some((e) => e.seq === event.seq && e.kind === event.kind)) return;
     let at = ring.events.length;
     while (at > 0 && (ring.events[at - 1]?.seq ?? 0) > event.seq) at--;
+    // Older than everything a full ring holds: it would be the first to leave, so it is not kept.
+    if (at === 0 && ring.events.length >= this.capacity) {
+      recordEviction(ring, event.seq);
+      return;
+    }
     ring.events.splice(at, 0, event);
     if (ring.events.length > this.capacity) {
       const gone = ring.events.shift();
-      if (gone !== undefined) ring.evicted.push(gone.seq);
-      if (ring.evicted.length > BACKFILL_LIMIT) ring.evicted.shift();
+      if (gone !== undefined) recordEviction(ring, gone.seq);
     }
   }
 
@@ -92,6 +96,13 @@ export class RingEventLog implements PlayerEventLog {
     }
     return ring;
   }
+}
+
+/** Records a seq that left the ring, once, keeping the list at most BACKFILL_LIMIT long. */
+function recordEviction(ring: LifeRing, seq: number): void {
+  if (ring.evicted.includes(seq)) return;
+  ring.evicted.push(seq);
+  if (ring.evicted.length > BACKFILL_LIMIT) ring.evicted.shift();
 }
 
 /** The events in sequence order, one per seq and kind; the sort is stable, so a sequence keeps its order. */

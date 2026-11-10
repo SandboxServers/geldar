@@ -96,6 +96,18 @@ describe('RingEventLog', () => {
     expect((await log.since(LIFE, 0)).events.map((e) => e.seq)).toEqual([4, 5, 7]);
   });
 
+  it('ignores an event older than a full ring holds, without changing the ring or counting it again', async () => {
+    const log = new RingEventLog({ capacity: 3 });
+    await fill(log, 1, 5);
+    const before = await log.since(LIFE, 0);
+    expect(before.dropped).toBe(2);
+    await log.append(LIFE, ev(1));
+    await log.append(LIFE, ev(2));
+    const after = await log.since(LIFE, 0);
+    expect(after.dropped).toBe(2);
+    expect(after.events.map((e) => e.seq)).toEqual([3, 4, 5]);
+  });
+
   it('keeps each life in its own ring', async () => {
     const log = new RingEventLog();
     await log.append(LIFE, ev(1));
