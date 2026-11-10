@@ -157,7 +157,13 @@ async function up(args: string[]): Promise<void> {
     await stopAll();
     throw new Refusal(`${dead.join(', ')} exited at start; the rest was stopped`);
   }
-  console.log(`up: life ${life}; see ./geldar.ps1 adam status`);
+  console.log(upLine(readFileSync(file, 'utf8')));
+}
+
+/** The last line of `up`: the life the Mind selects now (its username), which is not always a `mind.lives` entry. */
+export function upLine(source: string): string {
+  const selected = (parse(source) as { mind: { agent: { username: string } } }).mind.agent.username;
+  return `up: life ${selected}; see ./geldar.ps1 adam status`;
 }
 
 async function lastLatency(shard: string, life: string): Promise<number | null> {

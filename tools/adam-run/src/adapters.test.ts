@@ -11,6 +11,8 @@ import {
   createSupervisor,
   readOnly,
   type SqlClient,
+  startSecretPaths,
+  unreadablePaths,
 } from './adapters.ts';
 import type { ExecResult, Runner } from './ports.ts';
 import type { WorldVolumes } from './world-volume.ts';
@@ -20,14 +22,22 @@ const SRC = [join(import.meta.dirname, 'adapters.ts'), join(import.meta.dirname,
 /** A runner that records every call and answers with a fixed exit code. */
 function recordingRunner(code = 0): {
   runner: Runner;
-  calls: { file: string; args: readonly string[] }[];
+  calls: {
+    file: string;
+    args: readonly string[];
+    env?: Record<string, string | undefined> | undefined;
+  }[];
 } {
-  const calls: { file: string; args: readonly string[] }[] = [];
+  const calls: {
+    file: string;
+    args: readonly string[];
+    env?: Record<string, string | undefined> | undefined;
+  }[] = [];
   return {
     calls,
     runner: {
-      exec: async (file, args): Promise<ExecResult> => {
-        calls.push({ file, args: [...args] });
+      exec: async (file, args, env): Promise<ExecResult> => {
+        calls.push({ file, args: [...args], env });
         return { code, stdout: '', stderr: '' };
       },
     },
@@ -157,6 +167,27 @@ describe('the supervisor and reporter argument arrays', () => {
     await expect(createSupervisor(runner, '/repo').up()).rejects.toThrow(/adam up exited 3/);
   });
 
+  it('a failing supervisor call carries the last lines of the child stderr, redacted', async () => {
+    const stderr = Array.from({ length: 25 }, (_, i) => `stderr line ${i + 1}`).join('\n');
+    const runner: Runner = {
+      exec: async (): Promise<ExecResult> => ({
+        code: 1,
+        stdout: '',
+        stderr: `${stderr}\nPOSTGRES_PASSWORD=do-not-print-me`,
+      }),
+    };
+    const err = await createSupervisor(runner, '/repo')
+      .up()
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    const message = (err as Error).message;
+    expect(message.startsWith('adam up exited 1: ')).toBe(true);
+    expect(message).toContain('stderr line 25');
+    expect(message).not.toContain('stderr line 5 ');
+    expect(message).toContain('POSTGRES_PASSWORD=<redacted>');
+    expect(message).not.toContain('do-not-print-me');
+  });
+
   it('the Body kill runs adam-cli restart-body through node, with an argument array', async () => {
     const { runner, calls } = recordingRunner();
     await createSupervisor(runner, '/repo').restartBody();
@@ -181,12 +212,13 @@ describe('the supervisor and reporter argument arrays', () => {
     const { runner, calls } = recordingRunner();
     await createReporter(
       runner,
-      '/repo',
+      repoWithGlassSecret(),
       runDir,
       files,
       createClock(),
       () => 'ag_smoke_01',
       'smoke',
+      {},
     ).reportRun('run-1');
     expect(calls[0]?.args).toContain('2026-11-10T00:00:00.000Z');
     expect(calls[0]?.args).toContain('--life');
@@ -194,7 +226,90 @@ describe('the supervisor and reporter argument arrays', () => {
     expect(calls[0]?.args).toContain('--out');
     expect(calls[0]?.args).toContain(runDir);
   });
+
+  it('the reporter gives adam-report the glass password file path and the read-only DB address, never the password', async () => {
+    const repo = repoWithGlassSecret();
+    const runDir = reportRunDir();
+    const { runner, calls } = recordingRunner();
+    await createReporter(
+      runner,
+      repo,
+      runDir,
+      createFileStore(runDir),
+      createClock(),
+      () => 'ag_smoke_01',
+      'smoke',
+      {},
+    ).reportRun('run-1');
+    expect(calls[0]?.env).toMatchObject({
+      GELDAR_REPORT_DB_PASSWORD_FILE: join(repo, 'compose', 'secrets', 'postgres-glass.txt'),
+      GELDAR_REPORT_DB_USER: 'geldar_glass',
+      POSTGRES_HOST: '127.0.0.1',
+      POSTGRES_PORT: '5432',
+      POSTGRES_DB: 'geldar',
+    });
+    expect(JSON.stringify(calls)).not.toContain(GLASS_SECRET);
+  });
+
+  it('the reporter refuses, naming the missing glass password file, and runs nothing', async () => {
+    const runDir = reportRunDir();
+    const { runner, calls } = recordingRunner();
+    await expect(
+      createReporter(
+        runner,
+        join(runDir, 'no-repo'),
+        runDir,
+        createFileStore(runDir),
+        createClock(),
+        () => 'ag_smoke_01',
+        'smoke',
+        {},
+      ).reportRun('run-1'),
+    ).rejects.toThrow(/postgres-glass\.txt/);
+    expect(calls).toEqual([]);
+  });
 });
+
+describe('the start checks the secret files exist and are readable, never their contents', () => {
+  it('lists the missing secret files by path, and the present ones are not listed', () => {
+    const repo = repoWithGlassSecret(); // only postgres-glass.txt exists
+    const shard = join(repo, 'compose', 'secrets');
+    writeFileSync(join(shard, 'postgres.txt'), 'pg-value\n');
+    const missing = unreadablePaths(startSecretPaths(repo, {}));
+    expect(missing).toEqual([join(shard, 'rcon.txt'), join(shard, 'velocity-forwarding.txt')]);
+    expect(missing.join('\n')).not.toContain(GLASS_SECRET);
+    expect(missing.join('\n')).not.toContain('pg-value');
+  });
+
+  it('takes the glass file from GELDAR_GLASS_PG_PASSWORD_FILE when the environment names one', () => {
+    const repo = repoWithGlassSecret();
+    const env = { GELDAR_GLASS_PG_PASSWORD_FILE: join(repo, 'nowhere', 'glass.txt') };
+    expect(startSecretPaths(repo, env)).toContain(join(repo, 'nowhere', 'glass.txt'));
+    expect(unreadablePaths(startSecretPaths(repo, env))).toContain(
+      join(repo, 'nowhere', 'glass.txt'),
+    );
+  });
+});
+
+const GLASS_SECRET = 'glass-secret-value-7731';
+
+/** A repo root whose compose/secrets/postgres-glass.txt holds a value the tests must never see printed. */
+function repoWithGlassSecret(): string {
+  const repo = mkdtempSync(join(tmpdir(), 'adam-run-repo-'));
+  mkdirSync(join(repo, 'compose', 'secrets'), { recursive: true });
+  writeFileSync(join(repo, 'compose', 'secrets', 'postgres-glass.txt'), `${GLASS_SECRET}\n`);
+  return repo;
+}
+
+/** A run folder with a manifest that has a start time, which the reporter needs. */
+function reportRunDir(): string {
+  const runDir = mkdtempSync(join(tmpdir(), 'adam-run-rep-'));
+  createFileStore(runDir).write(
+    join(runDir, 'manifest.json'),
+    JSON.stringify({ started_at: '2026-11-10T00:00:00.000Z' }),
+  );
+  return runDir;
+}
 
 describe('the preflight facts', () => {
   it('reads the newest bench result from bench-results/ and the prepared volume from the run folder', async () => {

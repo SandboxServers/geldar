@@ -48,8 +48,11 @@ Every SQL in these protocols is a `SELECT`. Nothing else is run against the data
 | P11 | No stale host processes | `./geldar.ps1 adam status` | `body`, `animus` and `lantern-local` each show `stopped`. If one is stale, `./geldar.ps1 adam down`, then check again. |
 | P12 | Clean journal for the life, and the life is unused | Section 4, C9, with the run's life id (`ag_adam_03`, `ag_adam_04` or `ag_smoke_01`) | `thoughts`, `intents` and `agents` rows are all `0` for the run's life. The life has no rows in any table for an earlier run (decision 0064). A non-zero count stops the run. Nobody deletes rows. |
 | P13 | Harness present | `./geldar.ps1` (no arguments) | The usage lists `adam-run <32b\|8b\|smoke> start\|status\|stop\|report\|prepare-volume`. |
+| P14 | Secrets junction in the run worktree | `Test-Path compose\secrets\postgres.txt`, `rcon.txt`, `velocity-forwarding.txt` and `compose\secrets\postgres-glass.txt` (each `True`) | All four are `True`. The `compose/secrets` folder is a junction to the checkout that holds the secrets. Ops checks that the files exist and never opens them. A missing file stops the start and names the path. |
 
 The harness repeats P1 to P6 and the life check at `start`, and refuses on any failure. A refusal is a stop, not a retry.
+
+**The secrets junction stays for the whole run.** P14 must hold from the start through the report, not only at start. Do not remove or re-create `compose/secrets` during a run, because `report` needs `compose/secrets/postgres-glass.txt`. If a file is missing at any check, stop, write it in `ops-log.md`, and report to the orchestrator. Do not retry.
 
 ## 3. Commands (every name below is in the usage or in `tools/adam-run/src/cli.ts`)
 
@@ -62,7 +65,7 @@ The harness repeats P1 to P6 and the life check at `start`, and refuses on any f
 | Start the run (foreground) | `./geldar.ps1 adam-run <32b\|8b> start --run-id <run-id> --hours 24 --restart-at-hours 12 --body-kill-after-minutes <n>` |
 | Run status | `./geldar.ps1 adam-run <32b\|8b> status --run-id <run-id>` |
 | Safe stop | `./geldar.ps1 adam-run <32b\|8b> stop --run-id <run-id>` |
-| Report | `./geldar.ps1 adam-run <32b\|8b> report --run-id <run-id>` |
+| Report | `./geldar.ps1 adam-run <32b\|8b> report --run-id <run-id>`. Needs `compose/secrets/postgres-glass.txt` (P14), or `GELDAR_GLASS_PG_PASSWORD_FILE` set to its path. |
 | Host processes | `./geldar.ps1 adam status`, `./geldar.ps1 adam logs body` |
 | Restart only the Body | `./geldar.ps1 adam restart-body` (the adam CLI's `restart-body`) |
 | Stop the host processes | `./geldar.ps1 adam down` |

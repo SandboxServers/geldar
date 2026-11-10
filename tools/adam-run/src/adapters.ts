@@ -6,7 +6,9 @@
  */
 import { execFile, execFileSync } from 'node:child_process';
 import {
+  accessSync,
   appendFileSync,
+  constants,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -17,6 +19,7 @@ import {
 import { dirname, join, resolve, sep } from 'node:path';
 import pg from 'pg';
 import { newestBenchFile } from './bench-gate.ts';
+import { stderrTail } from './child-error.ts';
 import { LIFE_ID, type PinnedModel, type Profile, readPins, sha256Hex } from './manifest.ts';
 import {
   type Clock,
@@ -82,12 +85,17 @@ export function createClock(): Clock {
 /** Runs one program with an argument array. A missing program is a non-zero exit, not a throw. */
 export function createRunner(cwd: string): Runner {
   return {
-    exec: (file, args) =>
+    exec: (file, args, env) =>
       new Promise<ExecResult>((done) => {
         execFile(
           file,
           [...args],
-          { cwd, windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+          {
+            cwd,
+            windowsHide: true,
+            maxBuffer: 64 * 1024 * 1024,
+            env: env === undefined ? undefined : { ...process.env, ...env },
+          },
           (err, stdout, stderr) => {
             const code = err === null ? 0 : typeof err.code === 'number' ? err.code : 1;
             done({ code, stdout: String(stdout), stderr: String(stderr) });
@@ -280,7 +288,9 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
   const adam = (args: string[]): Promise<ExecResult> =>
     runner.exec('node', [join(repoRoot, 'tools', 'adam-cli', 'src', 'cli.ts'), ...args]);
   const check = (res: ExecResult, what: string): void => {
-    if (res.code !== 0) throw new Error(`${what} exited ${res.code}`);
+    if (res.code === 0) return;
+    const tail = stderrTail(res.stderr);
+    throw new Error(`${what} exited ${res.code}${tail === '' ? '' : `: ${tail}`}`);
   };
   return {
     async up() {
@@ -311,6 +321,62 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
   };
 }
 
+/**
+ * The glass password file: GELDAR_GLASS_PG_PASSWORD_FILE when set, else compose/secrets/postgres-glass.txt under the
+ * repo root. Only the path is returned; the file is never read here.
+ */
+export function glassPasswordFile(
+  repoRoot: string,
+  env: Record<string, string | undefined>,
+): string {
+  return (
+    env.GELDAR_GLASS_PG_PASSWORD_FILE ?? join(repoRoot, 'compose', 'secrets', 'postgres-glass.txt')
+  );
+}
+
+/**
+ * The secret files a start needs (compose/phase0.yml mounts the first three; the glass file is the reader's): the
+ * shard's Postgres, the RCON password, the Velocity forwarding secret, and the glass reader's password.
+ */
+export function startSecretPaths(
+  repoRoot: string,
+  env: Record<string, string | undefined>,
+): string[] {
+  const dir = join(repoRoot, 'compose', 'secrets');
+  return [
+    join(dir, 'postgres.txt'),
+    glassPasswordFile(repoRoot, env),
+    join(dir, 'rcon.txt'),
+    join(dir, 'velocity-forwarding.txt'),
+  ];
+}
+
+/** The paths that are missing or cannot be read. Only access is checked: no file is opened, so no contents are read. */
+export function unreadablePaths(paths: string[]): string[] {
+  return paths.filter((p) => {
+    try {
+      accessSync(p, constants.R_OK);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/** The variables adam-report reads (tools/adam-report/src/db.ts): the glass role, its password file, and the DB address. */
+function reportEnv(
+  passwordFile: string,
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  return {
+    GELDAR_REPORT_DB_PASSWORD_FILE: passwordFile,
+    GELDAR_REPORT_DB_USER: 'geldar_glass',
+    POSTGRES_HOST: '127.0.0.1',
+    POSTGRES_PORT: env.GELDAR_GLASS_PG_PORT ?? '5432',
+    POSTGRES_DB: env.GELDAR_GLASS_PG_DB ?? 'geldar',
+  };
+}
+
 /** Calls the W6-12 report generator on the run folder, writing run-report.json and run-report.md there. */
 export function createReporter(
   runner: Runner,
@@ -320,6 +386,7 @@ export function createReporter(
   clock: Clock,
   lifeOf: (profile: Profile) => string,
   profile: Profile,
+  env: Record<string, string | undefined>,
 ): Reporter {
   const paths = runPaths(runDir);
   return {
@@ -327,21 +394,28 @@ export function createReporter(
       const manifest = JSON.parse(files.read(paths.manifest) ?? '{}') as { started_at?: string };
       if (manifest.started_at === undefined)
         throw new Error('report: manifest.json has no started_at');
-      const res = await runner.exec('node', [
-        join(repoRoot, 'tools', 'adam-report', 'src', 'cli.ts'),
-        '--life',
-        lifeOf(profile),
-        '--from',
-        manifest.started_at,
-        '--to',
-        new Date(clock.nowMs()).toISOString(),
-        '--manifest',
-        paths.manifest,
-        '--out',
-        runDir,
-        '--format',
-        'both',
-      ]);
+      const passwordFile = glassPasswordFile(repoRoot, env);
+      if (!existsSync(passwordFile))
+        throw new Error(`report: glass password file is missing: ${passwordFile}`);
+      const res = await runner.exec(
+        'node',
+        [
+          join(repoRoot, 'tools', 'adam-report', 'src', 'cli.ts'),
+          '--life',
+          lifeOf(profile),
+          '--from',
+          manifest.started_at,
+          '--to',
+          new Date(clock.nowMs()).toISOString(),
+          '--manifest',
+          paths.manifest,
+          '--out',
+          runDir,
+          '--format',
+          'both',
+        ],
+        reportEnv(passwordFile, env),
+      );
       if (res.code !== 0) throw new Error(`adam-report exited ${res.code}`);
     },
   };
@@ -428,6 +502,7 @@ export function createPreflight(opts: {
           worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
           mind: mindLifeOf(shardYaml),
+          secretsMissing: unreadablePaths(startSecretPaths(opts.repoRoot, opts.env)),
         },
         shardConfigSha256: sha256Hex(shardYaml),
         shardCommittedSha256,
