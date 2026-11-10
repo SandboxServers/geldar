@@ -5,6 +5,8 @@ seed: 8675309                    # compose/phase0.yml SEED must equal this; keep
 tick_rate: 20                    # dilation only after 5.14 tests pass
 world_border_radius: 1500        # spec 5.1: diameter 3000 in the world border command
 population_target: 1
+# Phase 0 runs on a single local watched shard; sovereign players require it (spec 5.15.8; owner decision 2026-11-09).
+identity_mode: watched           # unwatched | watched
 reflexes:                        # one flag per spec 5.2 reflex; enabled: false turns all off
   enabled: true
   eat: true
