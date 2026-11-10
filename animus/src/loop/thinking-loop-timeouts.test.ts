@@ -76,6 +76,17 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     expect(second.outcome).toBe('planned');
   });
 
+  it('records a suppressed wakeup for a cycle that was aborted', async () => {
+    const rig = await makeRig([{ text: VALID_THOUGHT }], {
+      loop: { stepTimeoutMs: STEP_MS },
+    });
+    rig.store.journalSince = hangFirst(rig.store.journalSince.bind(rig.store));
+
+    const first = await rig.loop.handle(makeDecision('idle'));
+    expect(first.outcome).toBe('model_error');
+    expect(rig.store.suppressed.map((row) => row.eventTypes)).toEqual([['idle']]);
+  });
+
   it('counts a thought row write that never returns as a journal error, and still sends the plan', async () => {
     const logs: Line[] = [];
     const rig = await makeRig([{ text: VALID_THOUGHT }, { text: VALID_THOUGHT }], {

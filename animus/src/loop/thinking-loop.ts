@@ -135,6 +135,14 @@ export class ThinkingLoop {
         elapsed_ms: this.elapsed(),
       });
       reportFailure(this.report, error, 'cycle_failed');
+      // The wake is still on record, as a lost wake; a hung journal here must not reject the cycle.
+      if (error instanceof CycleAborted) {
+        await bounded(
+          recordLostWake(this.deps.journal, decision.reason, this.iso(), this.report),
+          this.stepMs,
+          'journal',
+        ).catch(() => undefined);
+      }
       // A send that hung means the Body never got the plan: the thought settles as a fallback hold.
       result = {
         outcome: reason === 'plan_submit' ? 'fallback_hold' : 'model_error',
