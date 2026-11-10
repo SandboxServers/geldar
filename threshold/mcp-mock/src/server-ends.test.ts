@@ -41,6 +41,15 @@ describe('endPlayerSessions after a response has ended', () => {
         }
         return result;
       });
+    // Every write made to an ended response; the guard must keep this list empty.
+    const writesAfterEnd: boolean[] = [];
+    const realWrite = ServerResponse.prototype.write;
+    const writeSpy = vi
+      .spyOn(ServerResponse.prototype, 'write')
+      .mockImplementation(function (this: ServerResponse, ...args: unknown[]) {
+        if (this.writableEnded) writesAfterEnd.push(true);
+        return Reflect.apply(realWrite, this, args);
+      });
     const errors: unknown[] = [];
     const onError = (error: unknown) => errors.push(error);
     process.on('uncaughtException', onError);
@@ -49,9 +58,11 @@ describe('endPlayerSessions after a response has ended', () => {
       expect(res.status).toBe(403);
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(fired).toBe(true);
+      expect(writesAfterEnd).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       process.off('uncaughtException', onError);
+      writeSpy.mockRestore();
       spy.mockRestore();
     }
   }, 10_000);
