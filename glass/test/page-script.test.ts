@@ -6,7 +6,13 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Window } from 'happy-dom';
+import {
+  type Element,
+  type HTMLButtonElement,
+  type HTMLInputElement,
+  type HTMLSelectElement,
+  Window,
+} from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const PUBLIC = new URL('../public/', import.meta.url);
@@ -35,7 +41,9 @@ class FakeSource {
   onerror: (() => void) | null = null;
   closed = false;
   private listeners = new Map<string, (ev: { data: string }) => void>();
-  constructor(public url: string) {
+  url: string;
+  constructor(url: string) {
+    this.url = url;
     sources.push(this);
   }
   addEventListener(type: string, fn: (ev: { data: string }) => void): void {
@@ -78,15 +86,12 @@ async function boot(pages: Pages): Promise<Window> {
   sources = [];
   vi.stubGlobal('document', win.document);
   vi.stubGlobal('EventSource', FakeSource);
-  vi.stubGlobal(
-    'window',
-    {
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
-      clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
-    } as unknown as Window,
-  );
+  vi.stubGlobal('window', {
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+    clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+  } as unknown as Window);
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
@@ -101,8 +106,10 @@ async function boot(pages: Pages): Promise<Window> {
   );
   const path = fileURLToPath(new URL('../src/render-model.ts', import.meta.url));
   void path;
-  const rewritten = APP_JS.replace(/'\/js\/(render-[a-z]+)\.ts'/g, (_m, name: string) =>
-    `'${pathToFileURL(fileURLToPath(new URL(`../src/${name}.ts`, import.meta.url))).href}'`,
+  const rewritten = APP_JS.replace(
+    /'\/js\/(render-[a-z]+)\.ts'/g,
+    (_m, name: string) =>
+      `'${pathToFileURL(fileURLToPath(new URL(`../src/${name}.ts`, import.meta.url))).href}'`,
   );
   // A fresh module per boot: the script runs at import, and the data URL includes a run counter.
   const source = `${rewritten}\n//run ${++runs}`;
@@ -231,7 +238,9 @@ describe('the page script', () => {
     expect(APP_JS).not.toMatch(/method\s*:|sendBeacon|XMLHttpRequest|\bPOST\b|\bPUT\b|\bDELETE\b/);
     const text = win.document.body.textContent;
     expect(text).toContain('Read-only. For human observers only.');
-    expect(text).not.toMatch(/you are being (watched|observed)|agents? (are|is) (being )?(watched|observed|told)|the audience/i);
+    expect(text).not.toMatch(
+      /you are being (watched|observed)|agents? (are|is) (being )?(watched|observed|told)|the audience/i,
+    );
     for (const url of fetchUrls) expect(url.startsWith('/api/')).toBe(true);
   });
 });

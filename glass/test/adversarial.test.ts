@@ -4,7 +4,7 @@
  * test data. Each canary is a host the test never contacts (canary.invalid, reserved by RFC 2606),
  * and each global canary is one the payload would set if it ran.
  */
-import { Window } from 'happy-dom';
+import { type Element, Window } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Row } from '../src/render-model.ts';
 import { display, toView } from '../src/render-model.ts';
@@ -137,9 +137,9 @@ describe('adversarial fixtures through the page', () => {
       const { win, doc } = newPage();
       for (const field of TEXT_FIELDS) {
         const row = renderRow(doc, toView(rowWith(field, value, 1)), () => {});
-        doc.body.appendChild(row as never);
+        win.document.body.appendChild(row as never);
       }
-      const all = [...doc.body.querySelectorAll('*')] as Element[];
+      const all = [...win.document.body.querySelectorAll('*')] as Element[];
       for (const el of all) {
         expect(PAGE_TAGS.has(el.tagName), `tag ${el.tagName}`).toBe(true);
         for (const attr of [...el.attributes]) {
@@ -150,10 +150,11 @@ describe('adversarial fixtures through the page', () => {
         }
       }
       expect(
-        doc.body.querySelectorAll('script,img,iframe,link,base,meta,style,form,object,embed')
-          .length,
+        win.document.body.querySelectorAll(
+          'script,img,iframe,link,base,meta,style,form,object,embed',
+        ).length,
       ).toBe(0);
-      expect(doc.body.textContent).toContain(display(value).slice(0, 200));
+      expect(win.document.body.textContent).toContain(display(value).slice(0, 200));
       expect(fetchSpy).not.toHaveBeenCalled();
       expect((globalThis as { __glassCanary?: unknown }).__glassCanary).toBeUndefined();
       expect((win as unknown as { __glassCanary?: unknown }).__glassCanary).toBeUndefined();

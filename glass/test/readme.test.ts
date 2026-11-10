@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { SECURITY_HEADERS } from '../src/http.ts';
 
-const README = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'README.md'), 'utf8');
+const README = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'README.md'),
+  'utf8',
+);
 
 describe('the Glass README', () => {
   it('quotes the Content-Security-Policy string the code sends, exactly', () => {

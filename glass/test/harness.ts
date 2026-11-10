@@ -47,7 +47,7 @@ export async function startGlass(
     bufferFrames: 100,
     pollMs: 20,
     heartbeatMs: 15_000,
-    start: async () => ({ cursor_at: '2026-11-10T00:00:00.000Z', thought_id: '' }),
+    start: async () => ({ at: '2026-11-10T00:00:00.000Z', id: '' }),
     // The stream's rows arrive once, on the first poll after a client attaches.
     fetch: async () => {
       const out = pending;

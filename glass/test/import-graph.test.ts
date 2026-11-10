@@ -21,11 +21,15 @@ const BUILTINS = new Set(builtinModules.map((name) => name.replace(/^node:/, '')
 
 /** Relative imports that leave glass, per file. Only the integration test sets up a database. */
 const OUTSIDE_ALLOWED: Record<string, string[]> = {
-  'test/glass.it.test.ts': ['../../tools/migrate/src/migrate.ts', '../../tools/migrate/src/scram.ts'],
+  'test/glass.it.test.ts': [
+    '../../tools/migrate/src/migrate.ts',
+    '../../tools/migrate/src/scram.ts',
+  ],
 };
 
 /** Statements the shipped source may send. Anything else that starts a statement is a violation. */
-const WRITE_LEADING = /^(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY|COMMIT|MERGE|CALL|DO|LOCK|VACUUM|REINDEX|REFRESH|CLUSTER)\b/;
+const WRITE_LEADING =
+  /^(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY|COMMIT|MERGE|CALL|DO|LOCK|VACUUM|REINDEX|REFRESH|CLUSTER)\b/;
 const STRING_LITERAL = /`((?:[^`\\]|\\.)*)`|'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"/g;
 const IMPORT_SPEC =
   /(?:import|export)\s+(?:[^'"`;]*?\sfrom\s+)?['"]([^'"\n]+)['"]|import\s*\(\s*['"]([^'"\n]+)['"]\s*\)|require\(\s*['"]([^'"\n]+)['"]\s*\)/g;
@@ -43,13 +47,17 @@ export function importViolations(rel: string, text: string): string[] {
     if (spec === '' || spec.startsWith('/') || spec.startsWith('data:')) continue;
     if (spec.startsWith('node:') || spec.startsWith('.')) {
       if (spec.startsWith('node:')) continue;
-      const target = relative(GLASS, resolve(GLASS, rel, '..', spec)).split(sep).join('/');
+      const target = relative(GLASS, resolve(GLASS, rel, '..', spec))
+        .split(sep)
+        .join('/');
       const inside = !target.startsWith('..') && !target.startsWith('/');
-      if (!inside && !(OUTSIDE_ALLOWED[rel] ?? []).includes(spec)) out.push(`${spec}: leaves glass`);
+      if (!inside && !(OUTSIDE_ALLOWED[rel] ?? []).includes(spec))
+        out.push(`${spec}: leaves glass`);
       continue;
     }
     const pkg = packageOf(spec);
-    if (!ALLOWED_PACKAGES.has(pkg) && !BUILTINS.has(pkg)) out.push(`${spec}: not an allowed package`);
+    if (!ALLOWED_PACKAGES.has(pkg) && !BUILTINS.has(pkg))
+      out.push(`${spec}: not an allowed package`);
   }
   return out;
 }
@@ -130,7 +138,7 @@ describe('the SQL the shipped Glass source can send', () => {
   });
 
   it('flags a planted write statement and passes SELECT, BEGIN READ ONLY and SET', () => {
-    expect(sqlViolations("db.query(`DELETE FROM thoughts`)")).toHaveLength(1);
+    expect(sqlViolations('db.query(`DELETE FROM thoughts`)')).toHaveLength(1);
     expect(sqlViolations("db.query('INSERT INTO agents VALUES (1)')")).toHaveLength(1);
     expect(sqlViolations('db.query(`BEGIN READ ONLY`)')).toEqual([]);
     expect(sqlViolations("db.query('SET statement_timeout = 5000')")).toEqual([]);

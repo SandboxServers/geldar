@@ -2,7 +2,7 @@
  * The read-only contract, end to end over a real loopback socket: every path and method, the Host
  * check, the bind check, and the security headers on every kind of reply.
  */
-import { request as httpRequest, type ClientRequest } from 'node:http';
+import { type ClientRequest, request as httpRequest } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { assertLoopback, type GlassConfig } from '../src/config.ts';
 import { SECURITY_HEADERS } from '../src/http.ts';
@@ -12,7 +12,12 @@ import { type Running, send, startGlass } from './harness.ts';
 
 /** A stream request whose socket stays open until the test destroys it. */
 function openStream(port: number): ClientRequest {
-  const req = httpRequest({ host: '127.0.0.1', port, path: '/api/stream', headers: { Host: `127.0.0.1:${port}` } });
+  const req = httpRequest({
+    host: '127.0.0.1',
+    port,
+    path: '/api/stream',
+    headers: { Host: `127.0.0.1:${port}` },
+  });
   req.on('error', () => undefined);
   req.end();
   return req;
@@ -24,10 +29,7 @@ const UNKNOWN_PATHS = ['/nope', '/api', '/api/thoughts/', '/api/agents/x/y'];
 
 /** Every route path with each `:param` filled in, plus the page paths. */
 function knownPaths(): string[] {
-  return [
-    ...ROUTES.map((r) => r.path.replace(/:[a-z]+/g, 'x1')),
-    ...PAGE_PATHS,
-  ];
+  return [...ROUTES.map((r) => r.path.replace(/:[a-z]+/g, 'x1')), ...PAGE_PATHS];
 }
 
 const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
@@ -67,20 +69,34 @@ describe('the Glass read-only route contract', () => {
   it('sends only SELECT statements for every GET, and none for the page', async () => {
     running = await startGlass([{ thought_id: 't1', agent_id: 'a1', at: '2026-11-10T00:00:00Z' }]);
     const { port } = running;
-    for (const path of ['/api/agents', '/api/thoughts', '/api/thoughts/t1', '/api/receipts?action_id=a1']) {
+    for (const path of [
+      '/api/agents',
+      '/api/thoughts',
+      '/api/thoughts/t1',
+      '/api/receipts?action_id=a1',
+    ]) {
       const reply = await send(port, { method: 'GET', path, host: `127.0.0.1:${port}` });
       expect(reply.status, path).toBe(200);
     }
     const sent = running.recorder.statements;
     expect(sent.length).toBeGreaterThan(0);
     for (const text of sent) expect(text.trimStart().toUpperCase()).toMatch(/^SELECT\b/);
-    expect(sent.join('\n')).not.toMatch(/\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT)\b/i);
+    expect(sent.join('\n')).not.toMatch(
+      /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT)\b/i,
+    );
   });
 
   it('refuses a Host header that is not loopback, on every kind of path (DNS rebinding)', async () => {
     running = await startGlass();
     const { port } = running;
-    const hosts = ['evil.example', `evil.example:${port}`, '127.0.0.2', '10.0.0.5', '192.168.1.9:8787', 'localhost.evil.example'];
+    const hosts = [
+      'evil.example',
+      `evil.example:${port}`,
+      '127.0.0.2',
+      '10.0.0.5',
+      '192.168.1.9:8787',
+      'localhost.evil.example',
+    ];
     for (const host of hosts) {
       for (const path of ['/', '/api/agents', '/api/stream', '/app.js']) {
         const reply = await send(port, { method: 'GET', path, host });
@@ -93,7 +109,11 @@ describe('the Glass read-only route contract', () => {
   it('serves the same paths to each loopback Host spelling', async () => {
     running = await startGlass();
     for (const host of LOOPBACK_HOSTS) {
-      const reply = await send(running.port, { method: 'GET', path: '/api/agents', host: `${host}:${running.port}` });
+      const reply = await send(running.port, {
+        method: 'GET',
+        path: '/api/agents',
+        host: `${host}:${running.port}`,
+      });
       expect(reply.status, host).toBe(200);
     }
   });
@@ -114,7 +134,9 @@ describe('the Glass read-only route contract', () => {
     for (const req of cases) {
       const reply = await send(port, req);
       for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-        expect(reply.headers[name.toLowerCase()], `${name} on ${req.method} ${req.path}`).toBe(value);
+        expect(reply.headers[name.toLowerCase()], `${name} on ${req.method} ${req.path}`).toBe(
+          value,
+        );
       }
       expect(reply.headers['access-control-allow-origin'], req.path).toBeUndefined();
     }
@@ -128,9 +150,15 @@ describe('the Glass read-only route contract', () => {
       open.push(openStream(port));
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
-    const refused = await send(port, { method: 'GET', path: '/api/stream', host: `127.0.0.1:${port}` });
+    const refused = await send(port, {
+      method: 'GET',
+      path: '/api/stream',
+      host: `127.0.0.1:${port}`,
+    });
     expect(refused.status).toBe(503);
-    expect(refused.headers['content-security-policy']).toBe(SECURITY_HEADERS['Content-Security-Policy']);
+    expect(refused.headers['content-security-policy']).toBe(
+      SECURITY_HEADERS['Content-Security-Policy'],
+    );
     expect(hub.stats().clients).toBe(8);
     for (const req of open) req.destroy();
   });
@@ -147,8 +175,20 @@ describe('the Glass bind check', () => {
   });
 
   it('refuses every bind address but 127.0.0.1, IPv6 loopback and wildcards included', () => {
-    for (const host of ['::1', '0.0.0.0', '::', '', 'localhost', '127.0.0.2', '10.0.0.5', '192.168.1.9', '::ffff:127.0.0.1']) {
-      expect(() => assertLoopback(host), `host ${JSON.stringify(host)}`).toThrow(/127\.0\.0\.1 only/);
+    for (const host of [
+      '::1',
+      '0.0.0.0',
+      '::',
+      '',
+      'localhost',
+      '127.0.0.2',
+      '10.0.0.5',
+      '192.168.1.9',
+      '::ffff:127.0.0.1',
+    ]) {
+      expect(() => assertLoopback(host), `host ${JSON.stringify(host)}`).toThrow(
+        /127\.0\.0\.1 only/,
+      );
     }
   });
 
