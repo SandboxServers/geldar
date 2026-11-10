@@ -118,7 +118,9 @@ describe('prompt library', () => {
   it('loads thought v3 and v4 on request with the data rule in block 1', () => {
     for (const version of [3, 4]) {
       const loaded = createPromptLibrary({ thoughtVersion: version });
-      expect(loaded.thoughtVersion).toMatch(new RegExp(`^thought@${version}\\+sha256:[0-9a-f]{12}$`));
+      expect(loaded.thoughtVersion).toMatch(
+        new RegExp(`^thought@${version}\\+sha256:[0-9a-f]{12}$`),
+      );
       const system = loaded.render('thought', sampleThoughtVars()).messages[0]?.content as string;
       expect(system).toContain(DATA_RULE);
       expect(system).toContain('You know only what you have seen');
