@@ -200,6 +200,24 @@ function latestRunId(folders: string[], profile: Profile): string | null {
   );
 }
 
+/** The manifest's start time, or undefined when the manifest is missing or holds none. */
+function startedAtOf(manifestText: string | null): string | undefined {
+  if (manifestText === null) return undefined;
+  return (JSON.parse(manifestText) as { started_at?: string }).started_at;
+}
+
+/** The rule and reason of an abort before the start. No sample was taken, so every criterion is UNKNOWN. */
+function abortedBeforeStartText(abortText: string, criteria: AbortCriteria): string {
+  const rec = JSON.parse(abortText) as { rule?: string; reason?: string };
+  return [
+    'state: aborted before the run started',
+    `rule: ${rec.rule ?? 'unknown'}`,
+    `reason: ${rec.reason ?? 'none recorded'}`,
+    'criteria (no sample was taken, so all are UNKNOWN):',
+    ...Object.keys(criteria).map((k) => `  ${k}: UNKNOWN`),
+  ].join('\n');
+}
+
 /** Runs the CLI with the given harness. Returns the exit code: 0 done, 1 refused or failed, 2 usage. */
 export async function runCli(
   argv: string[],
@@ -225,6 +243,19 @@ export async function runCli(
   const runId = a.runId ?? (readsRun ? latest : null) ?? newId;
   const runDir = join(runsDir, runId);
   const files = h.runFiles(runDir);
+
+  // A run aborted before its manifest had a start time: the abort record is all there is.
+  const abortText = files.read(runPaths(runDir).abort);
+  const beforeStart =
+    abortText !== null && startedAtOf(files.read(runPaths(runDir).manifest)) === undefined;
+  if (beforeStart && (a.command === 'status' || a.command === 'report')) {
+    log(abortedBeforeStartText(abortText, h.criteria));
+    return 0;
+  }
+  if (beforeStart && a.command === 'stop') {
+    log('the run is already aborted; nothing to stop');
+    return 0;
+  }
 
   if (a.command === 'status') {
     if (files.read(runPaths(runDir).manifest) === null) {

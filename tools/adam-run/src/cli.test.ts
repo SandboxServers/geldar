@@ -219,6 +219,41 @@ describe('status and report without --run-id', () => {
   });
 });
 
+describe('a run aborted before it started', () => {
+  const abortRecord = JSON.stringify({
+    schema: 'adam-run-abort/1',
+    rule: 'error',
+    reason: 'adam up failed: boom',
+    at: '2026-11-10T00:00:01.000Z',
+    exitCode: 0,
+  });
+
+  it('status and report print the rule and reason, every criterion UNKNOWN, and call no reporter', async () => {
+    const out = capture();
+    const seen: string[] = [];
+    const { h, files } = harness({ reporter: { reportRun: async (id) => void seen.push(id) } });
+    files.write(runPaths(RUN_DIR).abort, abortRecord);
+    expect(await runCli(['smoke', 'status', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('rule: error');
+    expect(out.text()).toContain('reason: adam up failed: boom');
+    expect(out.text()).toContain('tpsMin: UNKNOWN');
+    expect(await runCli(['smoke', 'report', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).not.toContain('no startedAt');
+    expect(seen).toEqual([]);
+  });
+
+  it('stop says the run is already aborted and signals nothing', async () => {
+    const out = capture();
+    const { h, files, signals, calls } = harness({ processes: [] });
+    files.write(runPaths(RUN_DIR).abort, abortRecord);
+    expect(await runCli(['smoke', 'stop', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('already aborted');
+    expect(signals).toEqual([]);
+    expect(calls).toEqual([]);
+    expect(files.read(join(RUN_DIR, 'stop-request.json'))).toBeNull();
+  });
+});
+
 describe('stop', () => {
   it('reads started_at from the manifest, so a service started in this run is owned and signalled', async () => {
     const out = capture();
