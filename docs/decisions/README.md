@@ -67,3 +67,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0060](0060-persona-size-limits.md) | Persona files are not artificially size-limited (identity 8192 bytes, goals 4096); the prompt fit is open for Wave M | Accepted (owner) |
 | [0061](0061-phase-0-exit-criteria-readings.md) | Readings of the Phase 0 exit criteria (survival, useful minute, latency, 24 hours, model floor) and the read-only Glass role | Accepted provisionally (orchestrator, owner may revise) |
 | [0062](0062-no-settled-credits-in-phase-0.md) | No settled-credits value reaches the reflection in Phase 0; the completed reflection keeps its reserved cost, and E-8 is deferred | Accepted provisionally (orchestrator, owner may revise) |
+| [0063](0063-phase-0-has-no-stuck-signal.md) | Phase 0 has no `stuck` signal (AD-11); the exit runs measure whether intents complete, and the watchdog is a Phase 1 item | Accepted provisionally (orchestrator, owner may revise) |
