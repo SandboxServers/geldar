@@ -79,7 +79,8 @@ export interface Manifest {
   tpsTarget: number;
 }
 
-export type Verdict = 'PASS' | 'FAIL' | 'UNKNOWN';
+/** INFO is a recorded value with no threshold to pass or fail against; it is never a PASS. */
+export type Verdict = 'PASS' | 'FAIL' | 'UNKNOWN' | 'INFO';
 
 export type Value = number | string | boolean | null;
 

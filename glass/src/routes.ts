@@ -3,7 +3,7 @@
  * path gets 405, and an unknown path gets 404. routes.test.ts enumerates this table.
  */
 
-export type RouteName = 'agents' | 'thoughts' | 'thought' | 'receipts' | 'stream';
+export type RouteName = 'agents' | 'thoughts' | 'thought' | 'receipts' | 'stats' | 'stream';
 
 export interface RouteEntry {
   method: 'GET';
@@ -16,6 +16,7 @@ export const ROUTES: readonly RouteEntry[] = [
   { method: 'GET', path: '/api/thoughts', name: 'thoughts' },
   { method: 'GET', path: '/api/thoughts/:id', name: 'thought' },
   { method: 'GET', path: '/api/receipts', name: 'receipts' },
+  { method: 'GET', path: '/api/stats', name: 'stats' },
   { method: 'GET', path: '/api/stream', name: 'stream' },
 ];
 

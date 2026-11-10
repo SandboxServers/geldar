@@ -33,17 +33,43 @@ export interface PreconditionFacts {
   prepared: PreparedRecord | null;
   /** The recorded volume's state now, or null when there is no record to inspect. */
   volume: VolumeState | null;
+  /** The named volumes the running Paper container mounts at its world path, or null when no Paper container runs. */
+  paperVolumes: string[] | null;
   /** The value of GELDAR_WORLD_VOLUME in the environment, or undefined when it is unset. */
   worldVolumeEnv: string | undefined;
   /** The life id the run would use. */
   lifeId: string;
+  /** The thoughts and intents rows the life already holds, or null when Postgres could not be read. */
+  lifeRows: LifeRows | null;
   /** The Mind's life as `shards/phase0.yaml` names it now: the username, the agent tier and the run tier. */
   mind: MindLife;
   /** The secret files a start needs that are missing or unreadable, as paths. Absent means none were checked. */
   secretsMissing?: string[];
 }
 
+export interface LifeRows {
+  thoughts: number;
+  intents: number;
+}
+
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
+
+/**
+ * A run's life must hold no journal rows yet: decision 0064 keeps every row, so a life that has any is used up and the
+ * run needs a fresh life id.
+ */
+function freshLifeProblems(f: PreconditionFacts): string[] {
+  if (f.lifeRows === null) {
+    return [
+      `life ${f.lifeId}: Postgres could not be read to check the life is unused; start the stack and retry`,
+    ];
+  }
+  const { thoughts, intents } = f.lifeRows;
+  if (thoughts === 0 && intents === 0) return [];
+  return [
+    `life ${f.lifeId} already has ${thoughts} thoughts and ${intents} intents; a fresh life id is needed (decision 0064; journals are never deleted)`,
+  ];
+}
 
 /** The digest Ollama reports for a pin's tag, matching `tag` and `tag:latest` alike. */
 function observedFor(observed: Record<string, string | null>, tag: string): string | null {
@@ -59,21 +85,28 @@ export function allowedLoaded(profile: Profile, pins: PinnedModel[]): string[] {
   return [PROFILE_MODEL[profile], ...(embedding ? [embedding.tag] : [])];
 }
 
-/** The 32B and 8B runs write to the volume that `prepare-volume` made: it must be the recorded, empty, unused one. */
+/**
+ * The 32B and 8B runs write to the volume that `prepare-volume` made. Paper has been writing to it since the stack was
+ * recreated, so start checks that the volume is labelled and that the running Paper mounts exactly it. The emptiness
+ * check belongs to `prepare-volume`, which makes the volume.
+ */
 function worldVolumeProblems(f: PreconditionFacts): string[] {
   if (f.prepared === null) {
     return ['world volume: the run folder holds no prepared volume; run prepare-volume first'];
   }
   const name = f.prepared.worldVolume;
+  const recreate = `recreate the compose stack with GELDAR_WORLD_VOLUME=${name}`;
   const problems: string[] = [];
   if (f.volume === null || !f.volume.exists) {
     problems.push(`world volume ${name} does not exist; run prepare-volume again`);
-  } else {
-    if (!f.volume.labelled) problems.push(`world volume ${name} is not labelled by compose`);
-    if (!f.volume.empty) problems.push(`world volume ${name} is not empty; use a new run id`);
-    if (f.volume.usedBy.length > 0) {
-      problems.push(`world volume ${name} is mounted by ${f.volume.usedBy.length} container(s)`);
-    }
+  } else if (!f.volume.labelled) {
+    problems.push(`world volume ${name} is not labelled by compose`);
+  }
+  if (f.paperVolumes === null) {
+    problems.push(`Paper is not running; ${recreate}, then wait for Paper`);
+  } else if (f.paperVolumes.length !== 1 || f.paperVolumes[0] !== name) {
+    const mounted = f.paperVolumes.length === 0 ? 'no volume' : f.paperVolumes.join(', ');
+    problems.push(`Paper mounts ${mounted} at /data, not ${name}; ${recreate}`);
   }
   if (f.worldVolumeEnv !== name) {
     problems.push(
@@ -115,6 +148,7 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   if (f.lifeId !== LIFE_ID[f.profile]) {
     missing.push(`life id: profile ${f.profile} runs ${LIFE_ID[f.profile]}, not ${f.lifeId}`);
   }
+  missing.push(...freshLifeProblems(f));
   // The Mind runs the shard file's life and tier: a run whose profile names another one would run the wrong model.
   const select = `adam select --model ${f.profile === 'smoke' ? 'smoke' : PROFILE_TIER[f.profile]}`;
   if (f.mind.username !== LIFE_ID[f.profile]) {

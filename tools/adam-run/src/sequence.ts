@@ -32,9 +32,13 @@ import {
 export const RESTART_WAIT_MS = 10 * MINUTE_MS;
 /** How long the Body may take to reconnect after a harness kill. Shorter than the `body` abort window, so it is the one that fires. */
 export const BODY_WAIT_MS = 4 * MINUTE_MS;
+/** Consecutive sampler failures tolerated before the run aborts; each failure is a status.log line meanwhile. */
+export const MAX_SAMPLER_FAILURES = 5;
 
 export interface PreflightFacts {
   facts: PreconditionFacts;
+  /** The world seed the shard file names; the run manifest records it. */
+  seed: number;
   shardConfigSha256: string;
   /** The digest of the committed shard file when the working copy differs from it; null when it does not. */
   shardCommittedSha256: string | null;
@@ -64,7 +68,6 @@ export interface RunInput {
   /** The run folder, `.geldar/runs/<run-id>`. */
   runDir: string;
   profile: Profile;
-  seed: number;
   durationMs: number;
   /** The planned stack restart, as an epoch time, or null for none. */
   plannedRestartAtMs: number | null;
@@ -144,7 +147,9 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     buildManifest({
       runId: input.runId,
       profile: input.profile,
-      seed: input.seed,
+      seed: gathered.seed,
+      // The prepared record is replaced by this manifest; the volume name it held moves here.
+      worldVolume: f.prepared?.worldVolume ?? null,
       startedAt: new Date(startMs).toISOString(),
       plannedRestartAt:
         input.plannedRestartAtMs === null ? null : new Date(input.plannedRestartAtMs).toISOString(),
@@ -167,6 +172,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
   );
 
   let last: Observation | null = null;
+  let samplerFailures = 0;
   let bodyKills = 0;
   let reportFailed = false;
 
@@ -212,7 +218,23 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
   try {
     await supervisor.up();
   } catch (err) {
-    return abortWith('error', `adam up failed: ${message(err)}`);
+    // The safe stop runs `adam down`, which ends every service on the machine. A run whose `adam up` failed did not
+    // bring the stack up, so it stops nothing: a second start must never end the first run's services.
+    const now = clock.nowMs();
+    const reason = `adam up failed: ${message(err)}`;
+    appendStatus(
+      files,
+      paths.status,
+      harnessLine(
+        last,
+        now,
+        startMs,
+        'abort',
+        `error: ${reason}; no safe stop: this run brought no services up`,
+      ),
+    );
+    await report(now);
+    return { status: 'aborted', rule: 'error', reason, safeStopExit: 0, bodyKills, reportFailed };
   }
 
   const history: Sample[] = [];
@@ -244,8 +266,27 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     try {
       obs = await sampler.observe(startMs);
     } catch (err) {
-      return abortWith('error', `the sampler failed: ${message(err)}`);
+      // One bad minute is a gap in status.log; only a run of failures in a row ends the run.
+      samplerFailures++;
+      if (samplerFailures >= MAX_SAMPLER_FAILURES)
+        return abortWith(
+          'error',
+          `the sampler failed ${samplerFailures} times in a row: ${message(err)}`,
+        );
+      appendStatus(
+        files,
+        paths.status,
+        harnessLine(
+          last,
+          now,
+          startMs,
+          'sampler_failed',
+          `${message(err)} (failure ${samplerFailures} of ${MAX_SAMPLER_FAILURES})`,
+        ),
+      );
+      continue;
     }
+    samplerFailures = 0;
     last = obs;
     appendStatus(files, paths.status, statusLine(obs, minuteOf(now, startMs)));
     if (restartDue) {
@@ -282,7 +323,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
 
     // Checked before the kill below: the sample of the kill tick was taken before the kill, so it must not count.
     if (bodyDeadline !== null) {
-      if (obs.bodyConnected) bodyDeadline = null;
+      if (obs.alive.body) bodyDeadline = null;
       else if (now >= bodyDeadline)
         return abortWith('body_not_recovered', 'the Body did not reconnect after the kill');
     }

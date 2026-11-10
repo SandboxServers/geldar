@@ -84,6 +84,15 @@ export function readPins(shardYaml: string): PinnedModel[] {
   return out;
 }
 
+/** The world seed of `shards/phase0.yaml`, the one the Paper server and the compose SEED must equal. Throws when it is missing. */
+export function readSeed(shardYaml: string): number {
+  const seed = (parse(shardYaml) as { seed?: unknown } | null)?.seed;
+  if (typeof seed !== 'number' || !Number.isInteger(seed)) {
+    throw new Error('shards/phase0.yaml has no integer seed');
+  }
+  return seed;
+}
+
 /** What `adam-cli select` changed in the shard file before the start, with the file's digest before and after. */
 export interface ShardEditInput {
   changes: { key: string; from: string; to: string }[];
@@ -95,6 +104,8 @@ export interface ManifestInput {
   runId: string;
   profile: Profile;
   seed: number;
+  /** The world volume prepare-volume made for this run, or null for a smoke run. */
+  worldVolume: string | null;
   startedAt: string;
   plannedRestartAt: string | null;
   git: { sha: string; clean: boolean };
@@ -134,6 +145,7 @@ export interface Manifest {
   profile: Profile;
   life_id: string;
   seed: number;
+  world_volume: string | null;
   git: { sha: string; clean: boolean };
   shard_config_sha256: string;
   shard_edit: ManifestShardEdit | null;
@@ -152,6 +164,7 @@ export function buildManifest(input: ManifestInput): Manifest {
     profile: input.profile,
     life_id: LIFE_ID[input.profile],
     seed: input.seed,
+    world_volume: input.worldVolume,
     git: { sha: input.git.sha, clean: input.git.clean },
     shard_config_sha256: input.shardConfigSha256,
     shard_edit:
@@ -168,7 +181,7 @@ export function buildManifest(input: ManifestInput): Manifest {
         tag: pin.tag,
         pinned_digest: pin.digest,
         observed_digest: observed,
-        matches: observed === pin.digest,
+        matches: observed !== null && digestsMatch(observed, pin.digest),
       };
     }),
     bench:

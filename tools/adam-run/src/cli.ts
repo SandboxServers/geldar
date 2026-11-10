@@ -30,8 +30,8 @@ import {
   type Supervisor,
 } from './ports.ts';
 import { checkPreconditions } from './preconditions.ts';
-import { safeStop } from './safe-stop.ts';
-import { type Preflight, type RunInput, runSequence } from './sequence.ts';
+import { SERVICE_MARKERS, safeStop } from './safe-stop.ts';
+import { type Preflight, type RunInput, type RunOutcome, runSequence } from './sequence.ts';
 import { MINUTE_MS } from './status-log.ts';
 import {
   createWorldVolumes,
@@ -152,7 +152,11 @@ interface PidRecord {
   runId: string;
 }
 
-/** A live run owns the folder when its pid, its command line and its start time all match the pid file. */
+/**
+ * A live run owns the folder when its pid, its command line and its start time all match the pid file. The run id is
+ * not in the command line when the operator started the run without --run-id: the id is generated inside, after the
+ * process has started. The marker, the pid and the start time identify the process all the same.
+ */
 function liveOwner(h: Harness, runDir: string): PidRecord | null {
   const text = h.runFiles(runDir).read(join(runDir, PID_FILE));
   if (text === null) return null;
@@ -167,7 +171,7 @@ function liveOwner(h: Harness, runDir: string): PidRecord | null {
   if (found === undefined || Number.isNaN(recorded)) return null;
   const line = found.commandLine.replace(/\\/g, '/');
   const started = Date.parse(found.startedAt);
-  const sameRun = line.includes(RUN_MARKER) && line.includes(rec.runId);
+  const sameRun = line.includes(RUN_MARKER);
   const sameStart = Math.abs(started - recorded) < 2 * MINUTE_MS;
   return sameRun && sameStart ? rec : null;
 }
@@ -368,31 +372,47 @@ export async function runCli(
     log(`adam-run: start refused: ${runDir} already holds a run`);
     return 1;
   }
+  // The stack is one shared set of services: a start while another run's services are alive would share them.
+  const others = h.processes
+    .list()
+    .filter((p) => SERVICE_MARKERS.some((m) => p.commandLine.includes(m)));
+  if (others.length > 0) {
+    log(
+      `adam-run: start refused: ${others.length} service process(es) of another run are alive (pids ${others.map((p) => p.pid).join(', ')})`,
+    );
+    return 1;
+  }
   const rec: PidRecord = { pid: process.pid, startedAt: new Date(now).toISOString(), runId };
   files.write(join(runDir, PID_FILE), JSON.stringify(rec));
   const input: RunInput = {
     runId,
     runDir,
     profile: a.profile,
-    seed: 0,
     durationMs: hours * 60 * MINUTE_MS,
     plannedRestartAtMs: a.restartAtHours === null ? null : now + a.restartAtHours * 60 * MINUTE_MS,
     bodyKillAtMs: a.bodyKillAfterMinutes === null ? null : now + a.bodyKillAfterMinutes * MINUTE_MS,
   };
-  const outcome = await runSequence(
-    {
-      clock: h.clock,
-      files,
-      processes: h.processes,
-      sampler: h.sampler(a.profile),
-      supervisor: h.supervisor,
-      reporter: h.reporter(runDir, a.profile),
-      preflight: h.preflight(a.profile, runDir),
-      criteria: h.criteria,
-      stopRequested: () => files.read(join(runDir, STOP_FILE)) !== null,
-    },
-    input,
-  );
+  const sampler = h.sampler(a.profile);
+  let outcome: RunOutcome;
+  try {
+    outcome = await runSequence(
+      {
+        clock: h.clock,
+        files,
+        processes: h.processes,
+        sampler,
+        supervisor: h.supervisor,
+        reporter: h.reporter(runDir, a.profile),
+        preflight: h.preflight(a.profile, runDir),
+        criteria: h.criteria,
+        stopRequested: () => files.read(join(runDir, STOP_FILE)) !== null,
+      },
+      input,
+    );
+  } finally {
+    // The SQL connection must not outlive the run: an open socket keeps the process alive.
+    await sampler.close?.().catch(() => undefined);
+  }
   const detail =
     outcome.status === 'aborted'
       ? ` (${outcome.rule})`
@@ -439,6 +459,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
         criteriaText,
         files: createFileStore(runDir),
         worldVolumes,
+        sql: createGlassClient(env),
         env,
       }),
     reporter: (runDir, profile) =>

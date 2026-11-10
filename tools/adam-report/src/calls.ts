@@ -9,6 +9,10 @@ import {
 
 const MINUTE_MS = 60_000;
 
+/** A latency PASS needs this many timed calls spread over this span; below it the PASS is UNKNOWN. */
+export const MIN_LATENCY_SAMPLES = 20;
+export const MIN_LATENCY_SPAN_MS = 10 * MINUTE_MS;
+
 /** The outcome of one row, derived from the columns (the thoughts table has no outcome column). */
 export function outcomeOf(t: ThoughtRow): string {
   if (!t.called) return 'tired';
@@ -89,12 +93,12 @@ export function callsMeasure(input: CallsInput, windowText: string): Measure {
   values.per_useful_minute_total = ratio(called.length, useful);
   values.per_useful_minute_thoughts = ratio(thoughts, useful);
   values.per_useful_minute_reflections = ratio(reflections, useful);
-  // Spec 10 records this number and gives no threshold for it. A computed value is recorded as PASS
-  // so it is not read as a failure; the note says the number has no threshold.
+  // Spec 10 records this number and gives no threshold for it, so it is INFO: not a PASS that
+  // reads as a judged result, and not a FAIL. The note says the number has no threshold.
   return {
     id: 'calls',
     title: 'Inference calls per useful minute',
-    verdict: 'PASS',
+    verdict: 'INFO',
     window: windowText,
     values,
     note: 'recorded, no threshold in the spec',
@@ -111,10 +115,10 @@ export interface LatencyInput {
 export function latencyMeasure(input: LatencyInput, windowText: string): Measure {
   // An errored call has no answer to time: it is counted apart and kept out of the latency.
   const errored = input.thoughts.filter((t) => t.called && t.errored).length;
-  const samples = input.thoughts
-    .filter((t) => t.called && !t.errored && t.latencyMs !== null)
-    .map((t) => t.latencyMs as number)
-    .sort((a, b) => a - b);
+  const timed = input.thoughts.filter((t) => t.called && !t.errored && t.latencyMs !== null);
+  const samples = timed.map((t) => t.latencyMs as number).sort((a, b) => a - b);
+  const times = timed.map((t) => t.atMs);
+  const spanMs = times.length === 0 ? 0 : Math.max(...times) - Math.min(...times);
   const title = 'Thought latency (p95 under the criterion)';
   if (samples.length === 0) {
     return {
@@ -146,6 +150,15 @@ export function latencyMeasure(input: LatencyInput, windowText: string): Measure
   values.over_hard_limit = over;
   let verdict: Verdict = (p95 ?? 0) < input.p95MaxMs ? 'PASS' : 'FAIL';
   if (over > 0) verdict = 'FAIL';
+  // A PASS from a few calls in one minute is not evidence. A FAIL stands whatever the sample.
+  if (
+    verdict === 'PASS' &&
+    (samples.length < MIN_LATENCY_SAMPLES || spanMs < MIN_LATENCY_SPAN_MS)
+  ) {
+    const minutes = Math.floor(spanMs / MINUTE_MS);
+    const note = `too few calls to pass: ${samples.length} of ${MIN_LATENCY_SAMPLES} samples over ${minutes} of ${MIN_LATENCY_SPAN_MS / MINUTE_MS} minutes`;
+    return { id: 'latency', title, verdict: 'UNKNOWN', window: windowText, values, note };
+  }
   const note =
     over > 0 ? `${over} thought(s) past the hard limit` : `p95 compared with ${input.p95MaxMs} ms`;
   return { id: 'latency', title, verdict, window: windowText, values, note };

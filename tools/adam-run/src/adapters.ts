@@ -13,6 +13,8 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   statfsSync,
   writeFileSync,
 } from 'node:fs';
@@ -20,7 +22,14 @@ import { dirname, join, resolve, sep } from 'node:path';
 import pg from 'pg';
 import { newestBenchFile } from './bench-gate.ts';
 import { stderrTail } from './child-error.ts';
-import { LIFE_ID, type PinnedModel, type Profile, readPins, sha256Hex } from './manifest.ts';
+import {
+  LIFE_ID,
+  type PinnedModel,
+  type Profile,
+  readPins,
+  readSeed,
+  sha256Hex,
+} from './manifest.ts';
 import {
   type Clock,
   type ExecResult,
@@ -36,9 +45,11 @@ import {
   type Service,
   type Supervisor,
 } from './ports.ts';
+import type { LifeRows } from './preconditions.ts';
 import { serviceAlive } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
 import { classifyShardEdit, mindLifeOf, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
+import { TICK_WINDOW_MS, type TickPoint, tickRate } from './tick-rate.ts';
 import { parsePrepared, WORLD_VOLUME_ENV, type WorldVolumes } from './world-volume.ts';
 
 const COMPOSE_FILE = 'compose/phase0.yml';
@@ -63,9 +74,21 @@ export function createFileStore(runDir: string): FileStore {
       return existsSync(full) ? readFileSync(full, 'utf8') : null;
     },
     write: (path, text) => {
+      // Write a sibling temp file, then rename it over the target, so a failed write leaves the old file whole.
       const full = inside(path);
       mkdirSync(dirname(full), { recursive: true });
-      writeFileSync(full, text, 'utf8');
+      const temp = `${full}.tmp`;
+      try {
+        writeFileSync(temp, text, 'utf8');
+        renameSync(temp, full);
+      } catch (error) {
+        try {
+          rmSync(temp, { force: true });
+        } catch {
+          // Not a file we can remove; the write error is the one to report.
+        }
+        throw error;
+      }
     },
     append: (path, text) => {
       const full = inside(path);
@@ -85,7 +108,7 @@ export function createClock(): Clock {
 /** Runs one program with an argument array. A missing program is a non-zero exit, not a throw. */
 export function createRunner(cwd: string): Runner {
   return {
-    exec: (file, args, env) =>
+    exec: (file, args, env, timeoutMs = EXEC_TIMEOUT_MS) =>
       new Promise<ExecResult>((done) => {
         execFile(
           file,
@@ -94,9 +117,18 @@ export function createRunner(cwd: string): Runner {
             cwd,
             windowsHide: true,
             maxBuffer: 64 * 1024 * 1024,
+            timeout: timeoutMs,
             env: env === undefined ? undefined : { ...process.env, ...env },
           },
           (err, stdout, stderr) => {
+            if (err?.killed) {
+              done({
+                code: TIMEOUT_CODE,
+                stdout: String(stdout),
+                stderr: `timed out after ${timeoutMs} ms`,
+              });
+              return;
+            }
             const code = err === null ? 0 : typeof err.code === 'number' ? err.code : 1;
             done({ code, stdout: String(stdout), stderr: String(stderr) });
           },
@@ -105,6 +137,12 @@ export function createRunner(cwd: string): Runner {
   };
 }
 
+/** A child that runs past its timeout is killed; 124 is the exit code of the `timeout` command for the same case. */
+const TIMEOUT_CODE = 124;
+/** Every program but `adam up` gets 60 s; `adam up` waits for Paper and gets 600 s. */
+export const EXEC_TIMEOUT_MS = 60_000;
+export const ADAM_UP_TIMEOUT_MS = 600_000;
+
 const PS_PROCESSES =
   "Get-CimInstance Win32_Process | Select-Object ProcessId,@{n='StartedAt';e={$_.CreationDate.ToUniversalTime().ToString('o')}},CommandLine | ConvertTo-Json -Compress";
 
@@ -112,10 +150,12 @@ const PS_PROCESSES =
 export function createProcesses(): Processes {
   return {
     list(): ProcessView[] {
+      // A timeout throws, and the sampler counts that as a failed sample.
       const out = execFileSync('powershell', ['-NoProfile', '-Command', PS_PROCESSES], {
         encoding: 'utf8',
         windowsHide: true,
         maxBuffer: 64 * 1024 * 1024,
+        timeout: EXEC_TIMEOUT_MS,
       });
       const parsed: unknown = out.trim() === '' ? [] : JSON.parse(out);
       const rows = (Array.isArray(parsed) ? parsed : [parsed]) as Record<string, unknown>[];
@@ -139,6 +179,7 @@ export function createProcesses(): Processes {
 /** The rows a SQL client returns. The glass client and the test fake both fit this. */
 export interface SqlClient {
   query(text: string, params: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
+  close?(): Promise<void>;
 }
 
 /** Runs the reads inside one READ ONLY transaction with the statement timeout; rolls back on any error. */
@@ -157,26 +198,51 @@ export async function readOnly<T>(client: SqlClient, fn: (q: SqlClient) => Promi
 
 /**
  * The glass reader: the geldar_glass role, the password read from a file here and never logged. The connection is
- * opened on the first query.
+ * opened on the first query, dropped on any error (the next query reconnects) and closed by `close`.
  */
 export function createGlassClient(env: Record<string, string | undefined>): SqlClient {
   const passwordFile =
     env.GELDAR_GLASS_PG_PASSWORD_FILE ?? join('compose', 'secrets', 'postgres-glass.txt');
   let client: pg.Client | null = null;
+  const drop = (c: pg.Client): void => {
+    if (client === c) client = null;
+    c.end().catch(() => undefined);
+  };
+  const open = async (): Promise<pg.Client> => {
+    const next = new pg.Client({
+      host: '127.0.0.1',
+      port: Number(env.GELDAR_GLASS_PG_PORT ?? 5432),
+      user: 'geldar_glass',
+      database: env.GELDAR_GLASS_PG_DB ?? 'geldar',
+      password: readFileSync(passwordFile, 'utf8').trim(),
+      connectionTimeoutMillis: 10_000,
+    });
+    // A dropped connection (a Postgres restart) is an 'error' event, not a crash: the next query reconnects.
+    next.on('error', () => drop(next));
+    try {
+      await next.connect();
+    } catch (err) {
+      drop(next);
+      throw err;
+    }
+    return next;
+  };
   return {
     async query(text, params) {
-      if (client === null) {
-        client = new pg.Client({
-          host: '127.0.0.1',
-          port: Number(env.GELDAR_GLASS_PG_PORT ?? 5432),
-          user: 'geldar_glass',
-          database: env.GELDAR_GLASS_PG_DB ?? 'geldar',
-          password: readFileSync(passwordFile, 'utf8').trim(),
-        });
-        await client.connect();
+      if (client === null) client = await open();
+      const current = client;
+      try {
+        const res = await current.query(text, params);
+        return { rows: res.rows as Record<string, unknown>[] };
+      } catch (err) {
+        drop(current);
+        throw err;
       }
-      const res = await client.query(text, params);
-      return { rows: res.rows as Record<string, unknown>[] };
+    },
+    async close() {
+      const current = client;
+      client = null;
+      if (current !== null) await current.end();
     },
   };
 }
@@ -190,7 +256,10 @@ export interface SamplerDeps {
   repoRoot: string;
 }
 
-/** One status sample. TPS is null: no reader of the Golem's tick rate exists yet, so the TPS rule skips. */
+/** A Body event within this long before a sample counts the Body as connected at that sample. */
+export const BODY_EVENT_GRACE_MS = 60_000;
+
+/** One status sample. TPS is null when the server_tps events of the last 5 minutes do not give a rate (see tick-rate.ts). */
 export function createSampler(deps: SamplerDeps): Sampler {
   const composePs = async (): Promise<Record<string, string>> => {
     const res = await deps.runner.exec('docker', [
@@ -235,25 +304,49 @@ export function createSampler(deps: SamplerDeps): Sampler {
       ]);
       const disk = statfsSync(deps.repoRoot);
       const sql = await readOnly(deps.sql, async (q) => {
+        // Every row is bounded by the run start: a life keeps its rows after a run ends, so a rerun must not read them.
+        const since = new Date(runStartMs);
         const t = await q.query(
-          'SELECT count(*)::int AS n, max(at) AS last FROM thoughts WHERE life_id = $1',
-          [lifeId],
+          'SELECT count(*)::int AS n, max(at) AS last FROM thoughts WHERE life_id = $1 AND at >= $2',
+          [lifeId, since],
         );
         const p95 = await q.query(
-          "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p FROM thoughts WHERE life_id = $1 AND at > now() - interval '30 minutes'",
-          [lifeId],
+          "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p FROM thoughts WHERE life_id = $1 AND at >= $2 AND at > now() - interval '30 minutes'",
+          [lifeId, since],
         );
         // Death events, not agents.died_at: nothing in the repo writes died_at, so it would always read 0.
         const d = await q.query(
           "SELECT count(*)::int AS n FROM events WHERE agent_id = $1 AND type = 'death' AND at >= $2",
           [lifeId, new Date(runStartMs)],
         );
+        // Intents carry no time: the run's intents are those a thought of this run made.
         const i = await q.query(
-          "SELECT intent_id FROM intents WHERE life_id = $1 AND state IN ('accepted','running') ORDER BY started_tick DESC NULLS LAST LIMIT 1",
-          [lifeId],
+          "SELECT intent_id FROM intents WHERE life_id = $1 AND state IN ('accepted','running') AND thought_id IN (SELECT thought_id FROM thoughts WHERE life_id = $1 AND at >= $2) ORDER BY started_tick DESC NULLS LAST LIMIT 1",
+          [lifeId, since],
         );
-        return { t: t.rows[0], p95: p95.rows[0], d: d.rows[0], i: i.rows[0] };
+        // The shard's tick counter from its server_tps events (no agent on those rows), read from the run start.
+        const tk = await q.query(
+          "SELECT at, world_tick FROM events WHERE type = 'server_tps' AND at >= $1 ORDER BY at",
+          [new Date(Math.max(runStartMs, atMs - TICK_WINDOW_MS))],
+        );
+        // The Body's own events for the life. A Body that is alive but hung writes none; the process probe cannot tell.
+        const b = await q.query(
+          "SELECT max(at) AS last FROM events WHERE agent_id = $1 AND type IN ('intent', 'action', 'receipt', 'reflex_fired', 'wake', 'speech') AND at >= $2",
+          [lifeId, since],
+        );
+        return {
+          t: t.rows[0],
+          p95: p95.rows[0],
+          d: d.rows[0],
+          i: i.rows[0],
+          tk: tk.rows,
+          b: b.rows[0],
+        };
       });
+      const bodyLast = sql.b?.last;
+      const tickPoints = (sql.tk ?? []).flatMap((r): TickPoint[] =>
+        r.at instanceof Date ? [{ atMs: r.at.getTime(), tick: Number(r.world_tick) }] : [],
+      );
       const lastAt = sql.t?.last;
       const p95 = sql.p95?.p;
       const alive: Record<Probe, boolean> = {
@@ -271,23 +364,32 @@ export function createSampler(deps: SamplerDeps): Sampler {
         alive,
         thoughts: Number(sql.t?.n ?? 0),
         lastThoughtAtMs: lastAt instanceof Date ? lastAt.getTime() : null,
-        tps: null,
+        tps: tickRate(tickPoints, atMs),
         latencyP95Ms: p95 === null || p95 === undefined ? null : Number(p95),
         activeIntentId: sql.i?.intent_id === undefined ? null : String(sql.i.intent_id),
         deaths: Number(sql.d?.n ?? 0),
         gpuPresent: gpu.code === 0 && gpu.stdout.trim() !== '',
         diskFreeGb: (Number(disk.bavail) * Number(disk.bsize)) / 1e9,
-        bodyConnected: alive.body,
+        // The Body's events, not its process: the process stays in alive.body. Connected means an event in the last grace.
+        bodyConnected: bodyLast instanceof Date && atMs - bodyLast.getTime() <= BODY_EVENT_GRACE_MS,
         errorsSinceLast: 0,
       };
+    },
+    async close(): Promise<void> {
+      await deps.sql.close?.();
     },
   };
 }
 
 /** The supervisor actions, through the repo's own adam CLI and a compose restart that never touches the data volumes. */
 export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
-  const adam = (args: string[]): Promise<ExecResult> =>
-    runner.exec('node', [join(repoRoot, 'tools', 'adam-cli', 'src', 'cli.ts'), ...args]);
+  const adam = (args: string[], timeoutMs?: number): Promise<ExecResult> =>
+    runner.exec(
+      'node',
+      [join(repoRoot, 'tools', 'adam-cli', 'src', 'cli.ts'), ...args],
+      undefined,
+      timeoutMs,
+    );
   const check = (res: ExecResult, what: string): void => {
     if (res.code === 0) return;
     const tail = stderrTail(res.stderr);
@@ -295,7 +397,7 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
   };
   return {
     async up() {
-      check(await adam(['up']), 'adam up');
+      check(await adam(['up'], ADAM_UP_TIMEOUT_MS), 'adam up');
     },
     async restartStack() {
       check(
@@ -431,6 +533,24 @@ export function listDir(dir: string): string[] {
   }
 }
 
+/** The thoughts and intents rows a life holds, read once and the client closed; null when Postgres cannot be read. */
+export async function countLifeRows(sql: SqlClient, lifeId: string): Promise<LifeRows | null> {
+  try {
+    const row = await readOnly(sql, async (q) => {
+      const res = await q.query(
+        'SELECT (SELECT count(*)::int FROM thoughts WHERE life_id = $1) AS t, (SELECT count(*)::int FROM intents WHERE life_id = $1) AS i',
+        [lifeId],
+      );
+      return res.rows[0];
+    });
+    return { thoughts: Number(row?.t ?? 0), intents: Number(row?.i ?? 0) };
+  } catch {
+    return null;
+  } finally {
+    await sql.close?.().catch(() => undefined);
+  }
+}
+
 /** The gate's facts: git, the newest bench result, the pins, the Ollama tags and loaded models, the prepared volume. */
 export function createPreflight(opts: {
   runner: Runner;
@@ -440,6 +560,7 @@ export function createPreflight(opts: {
   criteriaText: string;
   files: FileStore;
   worldVolumes: WorldVolumes;
+  sql: SqlClient;
   env: Record<string, string | undefined>;
 }): Preflight {
   const fetchJson = async (path: string): Promise<Record<string, unknown>> => {
@@ -481,6 +602,7 @@ export function createPreflight(opts: {
           : parsePrepared(opts.files.read(runPaths(opts.runDir).manifest));
       const volume =
         prepared === null ? null : await opts.worldVolumes.inspect(prepared.worldVolume);
+      const paperVolumes = prepared === null ? null : await opts.worldVolumes.paperVolumes();
       const tags = (await fetchJson('/api/tags')) as {
         models?: { name: string; digest: string }[];
       };
@@ -500,11 +622,14 @@ export function createPreflight(opts: {
           loadedModels: (ps.models ?? []).map((m) => m.name),
           prepared,
           volume,
+          paperVolumes,
           worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
+          lifeRows: await countLifeRows(opts.sql, LIFE_ID[opts.profile]),
           mind: mindLifeOf(shardYaml),
           secretsMissing: unreadablePaths(startSecretPaths(opts.repoRoot, opts.env)),
         },
+        seed: readSeed(shardYaml),
         shardConfigSha256: sha256Hex(shardYaml),
         shardCommittedSha256,
         criteriaSha256: sha256Hex(opts.criteriaText),

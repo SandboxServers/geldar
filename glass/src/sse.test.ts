@@ -217,4 +217,65 @@ describe('the SSE hub', () => {
     expect(b.writableEnded).toBe(true);
     expect(hub.stats().clients).toBe(0);
   });
+
+  it('keeps a newline in a thought id from starting a new SSE field', async () => {
+    const hub = new SseHub({
+      maxClients: 1,
+      bufferFrames: 10,
+      pollMs: 1000,
+      heartbeatMs: 15000,
+      start: async () => ({ at: 'x', id: '' }),
+      fetch: async () => [row('t1\nevent: injected', '1')],
+    });
+    const res = new FakeRes();
+    attach(hub, res);
+    await vi.advanceTimersByTimeAsync(1000);
+    const frame = res.writes.find((w) => w.startsWith('event: thought')) ?? '';
+    const lines = frame.split('\n');
+    expect(lines.filter((l) => l.startsWith('event:'))).toEqual(['event: thought']);
+    expect(lines[1]).toBe('id: t1event: injected');
+  });
+
+  it('logs a poll error at most once a minute, with its code and nothing from the message', async () => {
+    const log = vi.fn();
+    const err = Object.assign(new Error('password=hunter2 at db.internal'), { code: '57014' });
+    const hub = new SseHub({
+      maxClients: 1,
+      bufferFrames: 10,
+      pollMs: 1000,
+      heartbeatMs: 15000,
+      start: async () => ({ at: 'x', id: '' }),
+      fetch: async () => {
+        throw err;
+      },
+      log,
+    });
+    attach(hub, new FakeRes());
+    await vi.advanceTimersByTimeAsync(11_000);
+    expect(hub.stats().pollErrors).toBeGreaterThan(1);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith({ event: 'glass_poll_error', code: '57014' });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('hunter2');
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(log).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs an error code that is not a plain token as unknown', async () => {
+    const log = vi.fn();
+    const bad = Object.assign(new Error('x'), { code: 'bad\nevent: y' });
+    const hub = new SseHub({
+      maxClients: 1,
+      bufferFrames: 10,
+      pollMs: 1000,
+      heartbeatMs: 15000,
+      start: async () => ({ at: 'x', id: '' }),
+      fetch: async () => {
+        throw bad;
+      },
+      log,
+    });
+    attach(hub, new FakeRes());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(log).toHaveBeenCalledWith({ event: 'glass_poll_error', code: 'unknown' });
+  });
 });

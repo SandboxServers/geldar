@@ -134,6 +134,20 @@ describe('evaluateAbort', () => {
       last: 30,
     },
     {
+      name: 'a hung Body (no events, process alive) for 5 minutes fires',
+      rule: 'body',
+      bad: { bodyConnected: false },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'a hung Body (no events, process alive) for 4 minutes does not',
+      rule: '',
+      bad: { bodyConnected: false },
+      from: 26,
+      last: 30,
+    },
+    {
       name: 'GPU absent fires at once',
       rule: 'gpu',
       bad: { gpuPresent: false },
@@ -196,9 +210,9 @@ describe('evaluateAbort', () => {
     expect(evaluateAbort(h, now, c)).toBeNull();
   });
 
-  it('a death already counted at the start does not fire again', () => {
+  it('a death counted before the first sample still fires life_ended (deaths are counted from the run start)', () => {
     const h = run(30, 0, { deaths: 2 });
-    expect(evaluateAbort(h, now, criteria)).toBeNull();
+    expect(evaluateAbort(h, now, criteria)).toMatchObject({ rule: 'life_ended' });
   });
 
   it('a null TPS or p95 (not reported yet) never fires the TPS or latency rule', () => {

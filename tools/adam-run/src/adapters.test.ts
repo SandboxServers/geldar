@@ -1,16 +1,20 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeClock, FakeProcesses } from '../test/fakes.ts';
 import {
+  ADAM_UP_TIMEOUT_MS,
+  countLifeRows,
   createClock,
   createFileStore,
   createGlassClient,
   createPreflight,
   createReporter,
+  createRunner,
   createSampler,
   createSupervisor,
+  EXEC_TIMEOUT_MS,
   readOnly,
   type SqlClient,
   startSecretPaths,
@@ -61,6 +65,45 @@ function recordingSql(failOn?: string): { sql: SqlClient; texts: string[] } {
   };
 }
 
+describe('the start reads the life rows', () => {
+  it('counts the life thoughts and intents in one read-only transaction, then closes the client', async () => {
+    const texts: string[] = [];
+    const values: unknown[][] = [];
+    let closed = false;
+    const sql: SqlClient = {
+      query: async (text, params) => {
+        texts.push(text);
+        values.push(params);
+        return { rows: [{ t: 3, i: 2 }] };
+      },
+      close: async () => {
+        closed = true;
+      },
+    };
+    expect(await countLifeRows(sql, 'ag_adam_04')).toEqual({ thoughts: 3, intents: 2 });
+    expect(texts[0]).toBe('BEGIN READ ONLY');
+    expect(texts[texts.length - 1]).toBe('COMMIT');
+    expect(texts[2]).toContain('FROM thoughts');
+    expect(texts[2]).toContain('FROM intents');
+    expect(values[2]).toEqual(['ag_adam_04']);
+    expect(closed).toBe(true);
+  });
+
+  it('returns null when Postgres cannot be read, and still closes the client', async () => {
+    let closed = false;
+    const sql: SqlClient = {
+      query: async () => {
+        throw new Error('connection refused');
+      },
+      close: async () => {
+        closed = true;
+      },
+    };
+    expect(await countLifeRows(sql, 'ag_adam_04')).toBeNull();
+    expect(closed).toBe(true);
+  });
+});
+
 describe('the sampler death count', () => {
   it('counts death events of the life since the run start, never agents.died_at', async () => {
     const START = Date.UTC(2026, 10, 10, 9);
@@ -90,6 +133,155 @@ describe('the sampler death count', () => {
     expect(texts[i]).toContain('FROM events');
     expect(texts.join('\n')).not.toContain('died_at');
     expect(params[i]).toEqual(['ag_adam_04', new Date(START)]);
+  });
+});
+
+describe('the sampler reads only this run', () => {
+  it('the thought count, the latency and the active intent are bounded by the run start', async () => {
+    const START = Date.UTC(2026, 10, 10, 9);
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes: new FakeProcesses(),
+      clock: new FakeClock(),
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    await sampler.observe(START);
+    const since = [new Date(START)];
+    const count = texts.findIndex((t) => t.includes('count(*)::int AS n, max(at)'));
+    expect(texts[count]).toContain('at >= $2');
+    expect(params[count]).toEqual(['ag_adam_04', ...since]);
+    const p95 = texts.findIndex((t) => t.includes('percentile_cont'));
+    expect(texts[p95]).toContain('at >= $2');
+    expect(params[p95]).toEqual(['ag_adam_04', ...since]);
+    const intent = texts.findIndex((t) => t.includes('FROM intents'));
+    expect(texts[intent]).toContain(
+      'thought_id IN (SELECT thought_id FROM thoughts WHERE life_id = $1 AND at >= $2)',
+    );
+    expect(params[intent]).toEqual(['ag_adam_04', ...since]);
+  });
+});
+
+describe('the sampler tick rate', () => {
+  const START = Date.UTC(2026, 10, 10, 9);
+  const NOW = START + 5 * 60_000;
+  /** server_tps rows as pg returns them: at as a Date, world_tick as a string (BIGINT). */
+  const rows = (tpsRate: number) =>
+    Array.from({ length: 16 }, (_, i) => ({
+      at: new Date(NOW - (15 - i) * 20_000),
+      world_tick: String(1000 + i * 20 * tpsRate),
+    }));
+  const observeWith = async (tk: Record<string, unknown>[]) => {
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: text.includes("type = 'server_tps'") ? tk : [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes: new FakeProcesses(),
+      clock: { nowMs: () => NOW, sleep: async () => undefined },
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    const obs = await sampler.observe(START);
+    const i = texts.findIndex((t) => t.includes("type = 'server_tps'"));
+    return { obs, text: texts[i] ?? '', values: params[i] ?? [] };
+  };
+
+  it('reads the TPS from the world ticks of the server_tps events, not from a constant', async () => {
+    const { obs, text } = await observeWith(rows(20));
+    expect(obs.tps).toBeCloseTo(20, 6);
+    expect(text).toContain('FROM events');
+    expect(text).toContain('world_tick');
+    const slow = await observeWith(rows(12));
+    expect(slow.obs.tps).toBeCloseTo(12, 6);
+  });
+
+  it('is null when the server_tps events give no rate, so the TPS rule skips', async () => {
+    const { obs } = await observeWith([]);
+    expect(obs.tps).toBeNull();
+  });
+
+  it('reads the server_tps events from the run start, never before it', async () => {
+    const { values } = await observeWith(rows(20));
+    expect(values).toEqual([new Date(START)]);
+  });
+});
+
+describe('the sampler Body signal', () => {
+  const START = Date.UTC(2026, 10, 10, 9);
+  const NOW = START + 30 * 60_000;
+  /** Observes with the Body's process alive and the newest Body event of the life at `last` (or none). */
+  const observeBody = async (last: Date | null) => {
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: text.includes('type IN') ? [{ last }] : [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const processes = new FakeProcesses();
+    processes.table = [{ pid: 7, startedAt: 'x', commandLine: 'node golem/src/adam/main.ts' }];
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes,
+      clock: { nowMs: () => NOW, sleep: async () => undefined },
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    const obs = await sampler.observe(START);
+    const i = texts.findIndex((t) => t.includes('type IN'));
+    return { obs, text: texts[i] ?? '', values: params[i] ?? [] };
+  };
+
+  it('a Body with recent events is connected; a Body that is alive but silent is not', async () => {
+    const live = await observeBody(new Date(NOW - 10_000));
+    expect(live.obs.alive.body).toBe(true);
+    expect(live.obs.bodyConnected).toBe(true);
+    const hung = await observeBody(new Date(NOW - 5 * 60_000));
+    expect(hung.obs.alive.body).toBe(true);
+    expect(hung.obs.bodyConnected).toBe(false);
+  });
+
+  it('no Body event of the life since the run start is not connected', async () => {
+    const { obs } = await observeBody(null);
+    expect(obs.alive.body).toBe(true);
+    expect(obs.bodyConnected).toBe(false);
+  });
+
+  it('reads the Body events of this life only, from the run start', async () => {
+    const { text, values } = await observeBody(null);
+    expect(text).toContain('agent_id = $1');
+    expect(text).toContain('FROM events');
+    expect(values).toEqual(['ag_adam_04', new Date(START)]);
   });
 });
 
@@ -126,6 +318,20 @@ describe('the run-folder file store', () => {
     writeFileSync(join(runDir, 'x.txt'), 'y');
     expect(files.read(join(runDir, 'x.txt'))).toBe('y');
   });
+
+  it('replaces a file by rename, and a failing write leaves the previous file whole', () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'adam-run-'));
+    const files = createFileStore(runDir);
+    const path = join(runDir, 'manifest.json');
+    files.write(path, 'first\n');
+    files.write(path, 'second\n');
+    expect(files.read(path)).toBe('second\n');
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+    // A directory where the temp file goes makes the write fail before the rename.
+    mkdirSync(`${path}.tmp`);
+    expect(() => files.write(path, 'third\n')).toThrow();
+    expect(files.read(path)).toBe('second\n');
+  });
 });
 
 describe('the read-only SQL reads', () => {
@@ -160,6 +366,34 @@ describe('the read-only SQL reads', () => {
     );
     expect(err).toBeInstanceOf(Error);
     expect(String((err as Error).message)).not.toContain('not-a-real-secret-xyz');
+  });
+});
+
+describe('timeouts on the child processes', () => {
+  it('a child past its timeout is killed and reads as a failed exec, not a hang', async () => {
+    const res = await createRunner(process.cwd()).exec(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 30000)'],
+      undefined,
+      300,
+    );
+    expect(res.code).toBe(124);
+    expect(res.stderr).toContain('timed out');
+  }, 15_000);
+
+  it('adam up waits up to 600 s; every other call gets the 60 s default', async () => {
+    const seen: Array<number | undefined> = [];
+    const runner: Runner = {
+      exec: async (_file, _args, _env, timeoutMs) => {
+        seen.push(timeoutMs);
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const sup = createSupervisor(runner, '/repo');
+    await sup.up();
+    await sup.restartStack();
+    expect(seen).toEqual([ADAM_UP_TIMEOUT_MS, undefined]);
+    expect(EXEC_TIMEOUT_MS).toBe(60_000);
   });
 });
 
@@ -352,7 +586,7 @@ describe('the preflight facts', () => {
     mkdirSync(join(repoRoot, 'shards'));
     writeFileSync(
       join(repoRoot, 'shards', 'phase0.yaml'),
-      'model_pins:\n  qwen3:8b:\n    digest: sha256:bbb\nmind:\n  run_tier: fast\n  agent:\n    username: ag_adam_04\n    tier: fast\n',
+      'seed: 8675309\nmodel_pins:\n  qwen3:8b:\n    digest: sha256:bbb\nmind:\n  run_tier: fast\n  agent:\n    username: ag_adam_04\n    tier: fast\n',
     );
     mkdirSync(join(repoRoot, 'bench-results'));
     const benchName = '20261110T024026Z-eba101b.json';
@@ -374,6 +608,7 @@ describe('the preflight facts', () => {
     const worldVolumes: WorldVolumes = {
       inspect: async () => ({ exists: true, labelled: true, empty: true, usedBy: [] }),
       create: async () => {},
+      paperVolumes: async () => ['geldar-phase0-world-run-1'],
     };
     vi.stubGlobal(
       'fetch',
@@ -388,12 +623,16 @@ describe('the preflight facts', () => {
         criteriaText: '{}',
         files: createFileStore(runDir),
         worldVolumes,
+        sql: recordingSql().sql,
         env: { GELDAR_WORLD_VOLUME: 'geldar-phase0-world-run-1' },
       });
-      const { facts } = await preflight.gather();
+      const gathered = await preflight.gather();
+      const { facts } = gathered;
       expect(facts.bench).toEqual({ file: benchName, text: '{"meta":{}}' });
       expect(facts.prepared?.worldVolume).toBe('geldar-phase0-world-run-1');
+      expect(gathered.seed).toBe(8675309);
       expect(facts.volume?.exists).toBe(true);
+      expect(facts.paperVolumes).toEqual(['geldar-phase0-world-run-1']);
       expect(facts.worldVolumeEnv).toBe('geldar-phase0-world-run-1');
       expect(facts.mind).toEqual({ username: 'ag_adam_04', tier: 'fast', runTier: 'fast' });
     } finally {

@@ -26,10 +26,21 @@ describe('model floor measure', () => {
     expect(m.values).toEqual({});
   });
 
-  it('echoes the owner recorded floor, and never computes it from the rows', () => {
+  it('echoes an allowed owner recorded floor as INFO, and never computes it from the rows', () => {
     const m = floorFor('8B');
-    expect(m.verdict).toBe('PASS');
+    expect(m.verdict).toBe('INFO');
     expect(m.values).toEqual({ floor: '8B' });
     expect(m.note).toBe('recorded by the owner in the criteria file');
+  });
+
+  it('accepts the model tag spelling of an allowed tier', () => {
+    expect(floorFor('qwen3:32b').verdict).toBe('INFO');
+  });
+
+  it('is UNKNOWN, not a PASS, for a recorded value outside the allowed tiers', () => {
+    const m = floorFor('smallest passing');
+    expect(m.verdict).toBe('UNKNOWN');
+    expect(m.values).toEqual({ recorded: 'smallest passing' });
+    expect(m.note).toContain('not an allowed floor tier');
   });
 });

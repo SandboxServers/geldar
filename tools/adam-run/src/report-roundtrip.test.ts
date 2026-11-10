@@ -29,6 +29,7 @@ const input: ManifestInput = {
   runId: 'smoke-rt-1',
   profile: 'smoke',
   seed: 7,
+  worldVolume: null,
   startedAt: '2026-11-10T09:00:00.000Z',
   plannedRestartAt: null,
   git: { sha: 'abc1234def5678', clean: true },

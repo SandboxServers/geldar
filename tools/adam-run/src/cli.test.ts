@@ -244,6 +244,35 @@ describe('status and report without --run-id', () => {
     expect(files.read(join(NEW, 'stop-request.json'))).not.toBeNull();
     expect(files.read(join(OLD, 'stop-request.json'))).toBeNull();
   });
+
+  it('a run started without --run-id is live to status and stop: its pid, start time and marker match', async () => {
+    const out = capture();
+    const { h, files, calls } = harness({
+      runFolders: folders,
+      processes: [
+        {
+          pid: 888,
+          startedAt: '2026-11-10T12:14:08.000Z',
+          commandLine: 'node C:/repo/tools/adam-run/src/cli.ts smoke start',
+        },
+      ],
+    });
+    files.write(runPaths(NEW).manifest, JSON.stringify({ started_at: '2026-11-10T12:14:08Z' }));
+    files.write(runPaths(NEW).status, '{"event":"sample"}\n');
+    files.write(
+      join(NEW, 'run.pid.json'),
+      JSON.stringify({
+        pid: 888,
+        startedAt: '2026-11-10T12:14:08.000Z',
+        runId: 'smoke-20261110T121408Z',
+      }),
+    );
+    expect(await runCli(['smoke', 'status'], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('state: running');
+    expect(await runCli(['smoke', 'stop'], REPO, h, out.log)).toBe(0);
+    expect(files.read(join(NEW, 'stop-request.json'))).not.toBeNull();
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('a run aborted before it started', () => {
@@ -433,6 +462,41 @@ describe('a prepared-only folder', () => {
     expect(JSON.parse(files.read(runPaths(RUN_DIR).manifest) ?? '{}').schema).toBe(
       'adam-run-manifest/1',
     );
+  });
+
+  it('closes the sampler when the run ends, so no SQL socket keeps the process alive', async () => {
+    const out = capture();
+    const { h } = harness();
+    const make = h.sampler;
+    let closed = 0;
+    h.sampler = (p) => {
+      const s = make(p);
+      s.close = async () => {
+        closed++;
+      };
+      return s;
+    };
+    await runCli(['32b', 'start', '--run-id', RUN, '--hours', '0.02'], REPO, h, out.log);
+    expect(closed).toBe(1);
+  });
+
+  it('refuses a start while service processes of another run are alive, and starts nothing', async () => {
+    const out = capture();
+    const { h, files } = harness({
+      processes: [
+        {
+          pid: 4242,
+          startedAt: '2026-11-10T00:00:00Z',
+          commandLine: 'node golem/src/adam/main.ts',
+        },
+      ],
+    });
+    files.write(runPaths(RUN_DIR).manifest, preparedJson('32b', RUN));
+    expect(
+      await runCli(['32b', 'start', '--run-id', RUN, '--hours', '0.02'], REPO, h, out.log),
+    ).toBe(1);
+    expect(out.text()).toContain('another run are alive');
+    expect(files.read(runPaths(RUN_DIR).manifest)).toBe(preparedJson('32b', RUN));
   });
 });
 

@@ -1,16 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { ROUTES, resolveRoute } from './routes.ts';
 
-const PATHS = ['/api/agents', '/api/thoughts', '/api/thoughts/abc', '/api/receipts', '/api/stream'];
+const PATHS = [
+  '/api/agents',
+  '/api/thoughts',
+  '/api/thoughts/abc',
+  '/api/receipts',
+  '/api/stats',
+  '/api/stream',
+];
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'TRACE'];
 
 describe('the route table', () => {
-  it('lists exactly the five routes, all GET', () => {
+  it('lists exactly the six routes, all GET', () => {
     expect(ROUTES.map((r) => `${r.method} ${r.path}`)).toEqual([
       'GET /api/agents',
       'GET /api/thoughts',
       'GET /api/thoughts/:id',
       'GET /api/receipts',
+      'GET /api/stats',
       'GET /api/stream',
     ]);
   });

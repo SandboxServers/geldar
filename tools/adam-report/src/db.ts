@@ -27,13 +27,17 @@ const THOUGHTS_SQL = `SELECT thought_id, at, world_day, world_tick, wake_reason,
   (model_input IS NOT NULL AND raw_output IS NULL) AS errored,
   latency_ms
   FROM thoughts WHERE life_id = $1 AND at >= $2 AND at <= $3 ORDER BY at, thought_id`;
+// A life keeps its rows after a run ends, so intents and actions are bounded by the window too. Intents carry no
+// time: they belong to the window when a thought in the window made them. Actions belong through their intent.
+const WINDOW_INTENTS = `SELECT intent_id FROM intents WHERE life_id = $1 AND thought_id IN
+  (SELECT thought_id FROM thoughts WHERE life_id = $1 AND at >= $2 AND at <= $3)`;
 const INTENTS_SQL = `SELECT intent_id, state, started_tick, ended_tick, end_reason
-  FROM intents WHERE life_id = $1 ORDER BY intent_id`;
+  FROM intents WHERE life_id = $1 AND intent_id IN (${WINDOW_INTENTS}) ORDER BY intent_id`;
 const ACTIONS_SQL = `SELECT action_id, intent_id, body_generation, state, kind,
   CASE WHEN kind = 'place' THEN args->>'block' END AS place_block
-  FROM actions WHERE life_id = $1 ORDER BY action_id`;
+  FROM actions WHERE life_id = $1 AND intent_id IN (${WINDOW_INTENTS}) ORDER BY action_id`;
 const RECEIPTS_SQL = `SELECT action_id, phase, at FROM receipts
-  WHERE life_id = $1 AND at IS NOT NULL ORDER BY receipt_id`;
+  WHERE life_id = $1 AND at IS NOT NULL AND at >= $2 AND at <= $3 ORDER BY receipt_id`;
 // Only the columns the grant to geldar_glass covers (W6-09 excludes payload). source_event_id is unique, so it orders the rows.
 export const EVENTS_SQL = `SELECT type, world_day, at FROM events
   WHERE agent_id = $1 AND type IN ('death', 'sleep') AND at >= $2 AND at <= $3 ORDER BY at, source_event_id`;
@@ -102,9 +106,9 @@ async function readRows(
   };
   const span = [win.lifeId, win.from, win.to];
   const thoughts = (await run(THOUGHTS_SQL, span)).map(thoughtRow);
-  const intents = (await run(INTENTS_SQL, [win.lifeId])).map(intentRow);
-  const actions = (await run(ACTIONS_SQL, [win.lifeId])).map(actionRow);
-  const receipts = (await run(RECEIPTS_SQL, [win.lifeId])).map(receiptRow);
+  const intents = (await run(INTENTS_SQL, span)).map(intentRow);
+  const actions = (await run(ACTIONS_SQL, span)).map(actionRow);
+  const receipts = (await run(RECEIPTS_SQL, span)).map(receiptRow);
   const events = (await run(EVENTS_SQL, span)).map(eventRow);
   return { thoughts, intents, actions, receipts, events };
 }

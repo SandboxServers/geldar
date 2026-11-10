@@ -15,6 +15,7 @@ import {
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import type { BodyOwner, ProcessFacts } from './body-restart.ts';
+import { readSince, rotateLog, sizeOf, tailOf } from './log-files.ts';
 import { entryPath, type ProcRow, procState, SERVICES, type Service, stopOrder } from './procs.ts';
 
 const execFileAsync = promisify(execFile);
@@ -57,6 +58,7 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  */
 export function startService(service: Service, env: Record<string, string>): BodyOwner {
   mkdirSync(RUN_DIR, { recursive: true });
+  rotateLog(logFile(service));
   const fd = openSync(logFile(service), 'a');
   const startedAt = new Date().toISOString();
   try {
@@ -118,23 +120,17 @@ export async function stopAll(): Promise<void> {
 
 /** The last `lines` lines of a service's log. */
 export function tailLines(service: Service, lines: number): string {
-  if (!existsSync(logFile(service))) return '';
-  return readFileSync(logFile(service), 'utf8')
-    .split(/\r?\n/)
-    .slice(-lines - 1)
-    .join('\n');
+  return tailOf(logFile(service), lines);
 }
 
 /** Follows a log: prints what is appended, until the process is stopped. */
 export async function followLog(service: Service): Promise<never> {
-  let shown = existsSync(logFile(service)) ? readFileSync(logFile(service)).length : 0;
+  let shown = sizeOf(logFile(service));
   for (;;) {
     await sleep(500);
-    if (!existsSync(logFile(service))) continue;
-    const data = readFileSync(logFile(service));
-    if (data.length < shown) shown = 0;
-    if (data.length > shown) process.stdout.write(data.subarray(shown).toString('utf8'));
-    shown = data.length;
+    const { text, end } = readSince(logFile(service), shown);
+    if (text !== '') process.stdout.write(text);
+    shown = end;
   }
 }
 
@@ -189,11 +185,10 @@ export function lookupProcess(pid: number): ProcessFacts | null {
 
 /** The length of a service's log file (0 when there is none). */
 export function logSize(service: Service): number {
-  return existsSync(logFile(service)) ? readFileSync(logFile(service)).length : 0;
+  return sizeOf(logFile(service));
 }
 
 /** The log text appended after `offset` bytes. */
 export function logSince(service: Service, offset: number): string {
-  if (!existsSync(logFile(service))) return '';
-  return readFileSync(logFile(service)).subarray(offset).toString('utf8');
+  return readSince(logFile(service), offset).text;
 }

@@ -74,10 +74,12 @@ export interface ExecResult {
  * `env` adds variables to the child's inherited environment; none means the child inherits it unchanged.
  */
 export interface Runner {
+  /** A child running past `timeoutMs` (default 60 s) is killed and returns code 124: a failed sample, not a hang. */
   exec(
     file: string,
     args: readonly string[],
     env?: Record<string, string | undefined>,
+    timeoutMs?: number,
   ): Promise<ExecResult>;
 }
 
@@ -104,6 +106,8 @@ export interface Observation {
 export interface Sampler {
   /** One sample. `runStartMs` is when the run began: deaths are counted from it, not from the life's birth. */
   observe(runStartMs: number): Promise<Observation>;
+  /** Releases the SQL connection when the run ends, so the process can exit. */
+  close?(): Promise<void>;
 }
 
 /** The files a run writes, under its run folder (`.geldar/runs/<run-id>`). */

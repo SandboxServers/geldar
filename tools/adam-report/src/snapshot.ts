@@ -1,13 +1,16 @@
+import type { RunStatus } from './status-run.ts';
 import type { Criteria, LiteSnapshot, Manifest, RunData } from './types.ts';
 
 /**
  * Everything the pure report functions read: the manifest, the criteria and the rows already
  * loaded for one life. Nothing below this file touches the database; db.ts builds this value.
+ * `status` is what status.log says (cli.ts reads it); absent, the run is treated as having no lines.
  */
 export interface Snapshot {
   manifest: Manifest;
   criteria: Criteria;
   data: RunData;
+  status?: RunStatus;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>

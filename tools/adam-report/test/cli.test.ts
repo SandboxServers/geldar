@@ -144,6 +144,43 @@ describe('the adam-report command line', () => {
     expect(logs).toHaveLength(2);
   });
 
+  it('restarts and the run state come from status.log beside the manifest', async () => {
+    writeFileSync(
+      path.join(work, 'status.log'),
+      [
+        JSON.stringify({ minute: 0, at: FROM, alive: {} }),
+        JSON.stringify({ minute: 10, at: FROM, event: 'restart_stack', detail: 'planned' }),
+        JSON.stringify({ minute: 20, at: FROM, event: 'body_kill', detail: 'intent x' }),
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    expect(await run(validArgv(), depsWith())).toBe(0);
+    const json = JSON.parse(readFileSync(path.join(out, 'run-report.json'), 'utf8'));
+    const continuity = json.measures.find((m: { id: string }) => m.id === 'continuity');
+    expect(continuity.values).toMatchObject({ planned_restarts: 1, body_restarts: 1 });
+    expect(json.manifest.restarts.map((r: { kind: string }) => r.kind)).toEqual([
+      'planned',
+      'body',
+    ]);
+    expect(json.run).toEqual({ aborted: false, partial: true });
+    const md = readFileSync(path.join(out, 'run-report.md'), 'utf8');
+    expect(md).toContain('- Run: not aborted, partial (no end line in status.log)');
+  });
+
+  it('a status.log with an abort line and an end line is an aborted, complete run', async () => {
+    writeFileSync(
+      path.join(work, 'status.log'),
+      `${JSON.stringify({ minute: 3, at: FROM, event: 'abort', detail: 'x' })}\n${JSON.stringify({ minute: 4, at: FROM, event: 'end' })}\n`,
+      'utf8',
+    );
+    expect(await run(validArgv(), depsWith())).toBe(0);
+    const json = JSON.parse(readFileSync(path.join(out, 'run-report.json'), 'utf8'));
+    expect(json.run).toEqual({ aborted: true, partial: false });
+    const md = readFileSync(path.join(out, 'run-report.md'), 'utf8');
+    expect(md).toContain('- Run: aborted, complete');
+  });
+
   it('a verdict of FAIL does not change the exit code', async () => {
     const tables = lifeTables();
     tables.events = [{ type: 'death', world_day: 0, at: new Date(T0 + 60_000) }];

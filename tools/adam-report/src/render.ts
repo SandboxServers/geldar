@@ -48,6 +48,8 @@ export function renderMarkdown(report: Report, generatedAt: string): string {
     `- Generated at: ${generatedAt}`,
     `- Life: ${report.lifeId}`,
     `- Query window: ${report.window.from} to ${report.window.to} (${report.window.thoughtRows} thought rows)`,
+    `- Window length: ${report.window.hours} hours`,
+    `- Run: ${report.run.aborted ? 'aborted' : 'not aborted'}, ${report.run.partial ? 'partial (no end line in status.log)' : 'complete'}`,
     `- Git sha: ${report.manifest.gitSha}`,
     `- World seed: ${report.manifest.worldSeed}`,
     `- Shard config hash: ${report.manifest.shardConfigHash}`,

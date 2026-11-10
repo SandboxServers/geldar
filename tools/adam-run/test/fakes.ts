@@ -20,6 +20,8 @@ import { PREPARED_SCHEMA, type VolumeState, type WorldVolumes } from '../src/wor
 
 /** The world volume the fake gate reports as prepared and selected through GELDAR_WORLD_VOLUME. */
 const FAKE_WORLD_VOLUME = 'geldar-phase0-world-run-1';
+/** The seed the fake gate reads from the shard file, as `shards/phase0.yaml` names it. */
+const FAKE_SEED = 8675309;
 
 export const MIN = 60_000;
 export const START_MS = Date.parse('2026-11-10T00:00:00Z');
@@ -217,10 +219,15 @@ export class FakeProcesses implements Processes {
 export class FakeWorldVolumes implements WorldVolumes {
   readonly volumes = new Map<string, VolumeState>();
   readonly calls: string[] = [];
+  /** The volumes the running Paper mounts at /data, or null for no running Paper. Tests set it. */
+  paper: string[] | null = null;
   async inspect(name: string): Promise<VolumeState> {
     this.calls.push(`inspect:${name}`);
     const found = this.volumes.get(name);
     return { ...(found ?? { exists: false, labelled: false, empty: false, usedBy: [] }) };
+  }
+  async paperVolumes(): Promise<string[] | null> {
+    return this.paper === null ? null : [...this.paper];
   }
   async create(name: string, runId: string): Promise<void> {
     this.calls.push(`create:${name}:${runId}`);
@@ -240,7 +247,11 @@ export class FakeReporter implements Reporter {
 /** Facts that pass every precondition for the profile: a clean tree, a gate at HEAD, the profile's life id. */
 export function passingPreflight(
   profile: Profile,
-  over: { otherChanges?: string[]; shardEdit?: import('../src/shard-edit.ts').ShardEdit } = {},
+  over: {
+    otherChanges?: string[];
+    shardEdit?: import('../src/shard-edit.ts').ShardEdit;
+    lifeRows?: import('../src/preconditions.ts').LifeRows | null;
+  } = {},
 ): Preflight {
   const bench = {
     meta: { commit: 'abc123' },
@@ -271,14 +282,17 @@ export function passingPreflight(
                 },
           volume:
             profile === 'smoke' ? null : { exists: true, labelled: true, empty: true, usedBy: [] },
+          paperVolumes: profile === 'smoke' ? null : [FAKE_WORLD_VOLUME],
           worldVolumeEnv: FAKE_WORLD_VOLUME,
           lifeId: LIFE_ID[profile],
+          lifeRows: over.lifeRows === undefined ? { thoughts: 0, intents: 0 } : over.lifeRows,
           mind: {
             username: LIFE_ID[profile],
             tier: PROFILE_TIER[profile],
             runTier: PROFILE_TIER[profile],
           },
         },
+        seed: FAKE_SEED,
         shardConfigSha256: 'a'.repeat(64),
         shardCommittedSha256: null,
         criteriaSha256: 'b'.repeat(64),

@@ -26,6 +26,7 @@ const input: ManifestInput = {
   runId: 'r1',
   profile: '8b',
   seed: 8675309,
+  worldVolume: 'geldar-phase0-world-r1',
   startedAt: '2026-11-10T00:00:00.000Z',
   plannedRestartAt: '2026-11-10T12:00:00.000Z',
   git: { sha: 'eba101b', clean: true },
@@ -134,6 +135,20 @@ describe('buildManifest', () => {
         matches: false,
       },
     ]);
+  });
+
+  it('matches a bare-hex Ollama digest against a sha256: pin, and rejects another digest', () => {
+    const m = buildManifest({
+      ...input,
+      observedDigests: { 'qwen3:8b': 'bbb', 'qwen3:32b': 'aaa' },
+    });
+    expect(m.model_pins.map((p) => [p.tag, p.matches])).toEqual([
+      ['qwen3:32b', true],
+      ['qwen3:8b', true],
+      ['nomic-embed-text', false],
+    ]);
+    const other = buildManifest({ ...input, observedDigests: { 'qwen3:8b': 'ddd' } });
+    expect(other.model_pins.find((p) => p.tag === 'qwen3:8b')?.matches).toBe(false);
   });
 
   it('carries the sha, the clean flag, the seed, the restart time and the TPS target', () => {

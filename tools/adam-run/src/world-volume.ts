@@ -14,6 +14,9 @@ export const WORLD_VOLUME_ENV = 'GELDAR_WORLD_VOLUME';
 /** The compose labels that let compose adopt a volume it did not create (compose refuses an unlabelled one). */
 const LABEL_PROJECT = 'com.docker.compose.project';
 const LABEL_VOLUME = 'com.docker.compose.volume';
+const LABEL_SERVICE = 'com.docker.compose.service';
+/** Where compose/phase0.yml mounts the Paper data volume in the container. */
+const PAPER_WORLD_PATH = '/data';
 /** The compose volume key of the Paper data volume. */
 const COMPOSE_VOLUME_KEY = 'paper-data';
 /** The image of the emptiness check: its `ls` runs read-only over the volume. Pinned in compose/phase0.yml. */
@@ -44,6 +47,8 @@ export interface VolumeState {
 export interface WorldVolumes {
   inspect(name: string): Promise<VolumeState>;
   create(name: string, runId: string): Promise<void>;
+  /** The named volumes the running Paper container mounts at its world path, or null when no Paper container runs. */
+  paperVolumes(): Promise<string[] | null>;
 }
 
 const MISSING: VolumeState = { exists: false, labelled: false, empty: false, usedBy: [] };
@@ -120,6 +125,41 @@ export function createWorldVolumes(runner: Runner): WorldVolumes {
           .filter((id) => id !== ''),
       };
     },
+    async paperVolumes() {
+      const ids = await runner.exec('docker', [
+        'ps',
+        '--filter',
+        `label=${LABEL_PROJECT}=${COMPOSE_PROJECT}`,
+        '--filter',
+        `label=${LABEL_SERVICE}=paper`,
+        '--format',
+        '{{.ID}}',
+      ]);
+      if (ids.code !== 0) throw new Error(`docker ps for the Paper container exited ${ids.code}`);
+      const found = ids.stdout
+        .split('\n')
+        .map((id) => id.trim())
+        .filter((id) => id !== '');
+      if (found.length === 0) return null;
+      if (found.length > 1) {
+        throw new Error(`${found.length} Paper containers run; stop the extra ones`);
+      }
+      const mounts = await runner.exec('docker', [
+        'inspect',
+        '--format',
+        '{{json .Mounts}}',
+        found[0] ?? '',
+      ]);
+      if (mounts.code !== 0) throw new Error(`docker inspect of Paper exited ${mounts.code}`);
+      const list = (JSON.parse(mounts.stdout.trim() || '[]') ?? []) as {
+        Type: string;
+        Name: string;
+        Destination: string;
+      }[];
+      return list
+        .filter((m) => m.Type === 'volume' && m.Destination === PAPER_WORLD_PATH)
+        .map((m) => m.Name);
+    },
     async create(name, runId) {
       const res = await runner.exec('docker', [
         'volume',
@@ -179,10 +219,10 @@ export function preparedText(rec: PreparedRecord, runDir: string): string {
   return [
     `prepared ${rec.profile} world volume ${rec.worldVolume} (empty, labelled for ${COMPOSE_PROJECT})`,
     `record: ${runDir}/manifest.json (run ${rec.runId})`,
-    'to use it, stop the stack, set the variable in this shell, start the stack again:',
-    '  ./geldar.ps1 adam down',
+    'to use it, set the variable in this shell and recreate the compose stack so Paper mounts the volume',
+    '(adam down and adam up do not recreate the stack):',
     `  $env:${WORLD_VOLUME_ENV} = '${rec.worldVolume}'`,
-    '  ./geldar.ps1 adam up',
+    `  docker compose -f compose/phase0.yml -p ${COMPOSE_PROJECT} up -d --wait`,
     `then: ./geldar.ps1 adam-run ${rec.profile} start --run-id ${rec.runId}`,
   ].join('\n');
 }

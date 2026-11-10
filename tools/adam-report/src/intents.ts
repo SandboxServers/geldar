@@ -2,6 +2,9 @@ import type { ActionRow, IntentRow, Measure, ReceiptRow, ThoughtRow, Value } fro
 
 const TERMINAL_ACTION = new Set(['completed', 'failed', 'cancelled']);
 const FINAL_PHASE = new Set(['committed', 'aborted']);
+/** A receipts PASS needs this many terminal actions with receipts spread over this span. */
+export const MIN_RECEIPT_ACTIONS = 20;
+export const MIN_RECEIPT_SPAN_MS = 10 * 60_000;
 
 /** Maps each action id to its intent id, for actions that have one. */
 export function intentByAction(actions: ActionRow[]): Map<string, string> {
@@ -151,5 +154,13 @@ export function receiptMeasure(
       verdict: 'FAIL',
       note: `economic action ${noPreparedIds[0]} has no prepared receipt`,
     };
+  // A PASS from a few actions in one minute is not evidence. The gate is on PASS only; a FAIL stands.
+  const times = receipts.map((r) => r.atMs);
+  const spanMs = times.length === 0 ? 0 : Math.max(...times) - Math.min(...times);
+  if (terminal.length < MIN_RECEIPT_ACTIONS || spanMs < MIN_RECEIPT_SPAN_MS) {
+    const minutes = Math.floor(spanMs / 60_000);
+    const note = `too few actions to pass: ${terminal.length} of ${MIN_RECEIPT_ACTIONS} terminal, receipts over ${minutes} of ${MIN_RECEIPT_SPAN_MS / 60_000} minutes`;
+    return { ...base, verdict: 'UNKNOWN', note };
+  }
   return { ...base, verdict: 'PASS', note: 'one final receipt per terminal action' };
 }

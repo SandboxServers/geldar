@@ -47,7 +47,6 @@ function rig(
     runId: 'run-1',
     runDir: RUN_DIR,
     profile,
-    seed: 7,
     durationMs: 30 * MIN,
     plannedRestartAtMs: null,
     bodyKillAtMs: null,
@@ -76,6 +75,20 @@ const samples = (lines: Line[]): Line[] => lines.filter((l) => l.event === undef
 const events = (lines: Line[], event: string): Line[] => lines.filter((l) => l.event === event);
 
 describe('runSequence', () => {
+  it('records the seed the shard file names in the run manifest, not a placeholder', async () => {
+    const r = rig('smoke', {});
+    await runSequence(r.deps, r.run);
+    const manifest = JSON.parse(r.files.read(runPaths(RUN_DIR).manifest) ?? '{}');
+    expect(manifest.seed).toBe(8675309);
+  });
+
+  it('carries the prepared world volume into the run manifest that replaces its record', async () => {
+    const r = rig('8b', {});
+    await runSequence(r.deps, r.run);
+    const manifest = JSON.parse(r.files.read(runPaths(RUN_DIR).manifest) ?? '{}');
+    expect(manifest.world_volume).toBe('geldar-phase0-world-run-1');
+  });
+
   it('runs 30 simulated minutes with a restart and a Body kill, then reports', async () => {
     const r = rig(
       'smoke',
@@ -205,6 +218,45 @@ describe('runSequence', () => {
     expect(r.sup.calls.slice(-3)).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
     expect(r.reporter.runs).toEqual(['run-1']);
     expect(r.lines().at(-1)).toMatchObject({ event: 'abort' });
+  });
+
+  it('a failed adam up runs no safe stop, so a second start cannot end the first run', async () => {
+    const r = rig('smoke', {}, { durationMs: 60 * MIN });
+    r.deps.supervisor.up = async () => {
+      throw new Error('adam up: the stack is already running');
+    };
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'aborted', rule: 'error', safeStopExit: 0 });
+    expect(r.sup.calls).toEqual([]);
+    expect(r.lines().at(-1)).toMatchObject({ event: 'abort' });
+  });
+
+  it('a failed sample is a status line and the run goes on', async () => {
+    const r = rig('smoke', {}, { durationMs: 60 * MIN });
+    const inner = r.deps.sampler;
+    let calls = 0;
+    r.deps.sampler = {
+      observe: async (startMs) => {
+        calls++;
+        if (calls === 3 || calls === 4) throw new Error('the query timed out');
+        return inner.observe(startMs);
+      },
+    };
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'completed' });
+    expect(r.lines().filter((l) => l.event === 'sampler_failed')).toHaveLength(2);
+  });
+
+  it('five sampler failures in a row abort the run, with the first four on status.log', async () => {
+    const r = rig('smoke', {}, { durationMs: 60 * MIN });
+    r.deps.sampler = {
+      observe: async () => {
+        throw new Error('the stack is gone');
+      },
+    };
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'aborted', rule: 'error' });
+    expect(r.lines().filter((l) => l.event === 'sampler_failed')).toHaveLength(4);
   });
 
   const ABORTS: [string, number, Partial<Scenario>, string][] = [
