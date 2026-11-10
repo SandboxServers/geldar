@@ -140,6 +140,22 @@ function outcomes(w: World): string[] {
 }
 
 describe('the Mind end to end with fakes', () => {
+  it('a say-only thought with nothing running wakes the Mind again, with no external event', async () => {
+    const w = await world();
+    const { time, mind, script, store, body } = w;
+    script.script(SAY_THOUGHT, SAY_THOUGHT);
+    mind.start();
+    await mind.settled();
+    expect(store.thoughts.map((t) => t.wakeReason)).toEqual(['mind_start']);
+    time.advance(59_000);
+    await mind.settled();
+    expect(store.thoughts).toHaveLength(1);
+    time.advance(1_000);
+    await mind.settled();
+    expect(store.thoughts.map((t) => t.wakeReason)).toEqual(['mind_start', 'idle']);
+    expect(body.plans.at(-1)?.thought.say).toBe('Hello, Eve.');
+  });
+
   it('runs twenty cycles: plans, idle, speech, sleep, fallback and a Body restart', async () => {
     const w = await world();
     const { source, time, mind, script, store, body } = w;

@@ -15,7 +15,14 @@ import type {
 } from '../ports/index.ts';
 import { type CommitmentLookup, classifySpeech, type SpeechIdentity } from './classify.ts';
 import { type Candidate, ConversationDigest, type DigestEntry, PendingWakes } from './coalesce.ts';
-import { type CandidateReason, isSpacingExempt, priorityOf, rankOf } from './policy.ts';
+import {
+  type CandidateReason,
+  isAddressed,
+  isFiller,
+  isSpacingExempt,
+  priorityOf,
+  rankOf,
+} from './policy.ts';
 import { type Clock, type Scheduler, systemTiming } from './timing.ts';
 
 /** What the controller needs to know about one life. */
@@ -38,6 +45,11 @@ export interface AttentionOptions {
    * (the Body publishes the intent state first and the wake just after). Default 250 ms.
    */
   idleSettleMs?: number;
+  /**
+   * With no intent running and no thought in flight, the Mind is woken as `idle` after this long
+   * (after a hold or a say-only thought nothing else would wake it). Default 60 s.
+   */
+  idleWatchdogMs?: number;
 }
 
 /** The terminal intent states. */
@@ -53,12 +65,18 @@ export class Attention implements AttentionController {
   private readonly scheduler: Scheduler;
   private readonly isCounterparty: CommitmentLookup;
   private readonly idleSettleMs: number;
+  private readonly idleWatchdogMs: number;
   private readonly wokenIntents = new Set<string>();
   private inFlight = false;
   private lastWakeMs: number | null = null;
+  /** The newest tick an addressed wake has been decided on; a later copy of it is a duplicate. */
+  private lastAddressedTick: number | null = null;
   private activeIntent: string | null = null;
+  /** The agent died: this life's controller stays quiet, so no idle watchdog is armed again. */
+  private ended = false;
   private cancelSpacing: (() => void) | null = null;
   private cancelFallback: (() => void) | null = null;
+  private cancelIdle: (() => void) | null = null;
   private readonly cancelSettle = new Set<() => void>();
 
   private readonly options: AttentionOptions;
@@ -69,6 +87,7 @@ export class Attention implements AttentionController {
     this.scheduler = options.scheduler ?? systemTiming.scheduler;
     this.isCounterparty = options.isCounterparty ?? (() => false);
     this.idleSettleMs = options.idleSettleMs ?? 250;
+    this.idleWatchdogMs = options.idleWatchdogMs ?? 60_000;
   }
 
   onDecision(callback: (decision: WakeDecision) => void): () => void {
@@ -95,13 +114,27 @@ export class Attention implements AttentionController {
   thoughtStarted(): void {
     this.inFlight = true;
     this.disarmFallback();
+    this.disarmIdle();
   }
 
   thoughtSettled(_outcome: ThoughtOutcome): void {
     this.inFlight = false;
+    // Idle and fallback wakes were for a thought that has now happened; they are stale.
+    this.pending.retain((c) => !isFiller(c.reason));
     for (const c of this.pending.ranked()) c.recorded = false;
     if (this.activeIntent !== null) this.armFallback(this.activeIntent);
     this.evaluate();
+    if (!this.inFlight && this.activeIntent === null) this.armIdle();
+  }
+
+  /** Stops every timer; a stopped controller emits nothing more. */
+  stop(): void {
+    this.cancelSpacing?.();
+    this.cancelSpacing = null;
+    this.disarmFallback();
+    this.disarmIdle();
+    for (const cancel of this.cancelSettle) cancel();
+    this.cancelSettle.clear();
   }
 
   onEvent(event: MindEvent): void {
@@ -183,8 +216,26 @@ export class Attention implements AttentionController {
     }
     if (this.activeIntent !== id) {
       this.activeIntent = id;
+      this.disarmIdle();
       this.armFallback(id);
     }
+  }
+
+  /** With nothing running and no thought in flight, wake `idle` after the watchdog period. */
+  private armIdle(): void {
+    this.disarmIdle();
+    if (this.ended) return;
+    this.cancelIdle = this.scheduler.after(this.idleWatchdogMs, () => {
+      this.cancelIdle = null;
+      if (this.inFlight || this.activeIntent !== null) return;
+      this.addCandidate('idle', null, []);
+      this.evaluate();
+    });
+  }
+
+  private disarmIdle(): void {
+    this.cancelIdle?.();
+    this.cancelIdle = null;
   }
 
   /** After the settle window, an ended intent with no Body wake and no successor means `idle`. */
@@ -219,6 +270,17 @@ export class Attention implements AttentionController {
     intentId: string | null,
     events: MindEvent[],
   ): void {
+    // The other copy of an addressed line that a thought has already been woken for: no second thought.
+    if (isAddressed(reason) && this.lastAddressedTick !== null) {
+      if (events.length > 0 && events.every((e) => e.tick <= (this.lastAddressedTick ?? -1))) {
+        this.record(
+          [...new Set(events.map((e) => e.type))],
+          'duplicate',
+          intentId ?? this.activeIntent,
+        );
+        return;
+      }
+    }
     const { candidate, merged } = this.pending.add(reason, intentId, events);
     if (merged) this.recordCandidate(candidate, 'duplicate');
   }
@@ -261,10 +323,14 @@ export class Attention implements AttentionController {
       priority: priorityOf(best.rank),
     };
     this.lastWakeMs = this.clock.nowMs();
+    if (isAddressed(best.reason)) {
+      this.lastAddressedTick = Math.max(...events.map((e) => e.tick));
+    }
     this.inFlight = true;
     this.cancelSpacing?.();
     this.cancelSpacing = null;
     this.disarmFallback();
+    this.disarmIdle();
     for (const callback of [...this.decisions]) {
       try {
         callback(decision);
@@ -286,15 +352,13 @@ export class Attention implements AttentionController {
 
   /** A death clears everything the old life was waiting on. */
   private clearState(): void {
+    this.ended = true;
     this.pending.take();
     this.digest.clear();
     this.activeIntent = null;
+    this.lastAddressedTick = null;
     this.wokenIntents.clear();
-    this.cancelSpacing?.();
-    this.cancelSpacing = null;
-    this.disarmFallback();
-    for (const cancel of this.cancelSettle) cancel();
-    this.cancelSettle.clear();
+    this.stop();
   }
 
   private recordCandidate(c: Candidate, reason: SuppressionReason, mark = false): void {

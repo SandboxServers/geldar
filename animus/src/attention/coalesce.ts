@@ -3,7 +3,7 @@
  * that arrive before a decision merge into one pending set.
  */
 import type { DigestEntry, MindEvent } from '../ports/index.ts';
-import { type CandidateReason, rankOf } from './policy.ts';
+import { type CandidateReason, isAddressed, rankOf } from './policy.ts';
 
 export type { DigestEntry };
 
@@ -69,14 +69,17 @@ export class PendingWakes {
 
   /**
    * Adds a candidate. When one with the same reason and intent is pending, the events merge into it
-   * and the result says so (`merged`), so the caller can record the duplicate.
+   * and the result says so (`merged`), so the caller can record the duplicate. The two addressed
+   * reasons are one wake: a pending one of either kind takes the other's events.
    */
   add(
     reason: CandidateReason,
     intentId: string | null,
     events: MindEvent[],
   ): { candidate: Candidate; merged: boolean } {
-    const same = this.items.find((c) => c.reason === reason && c.intentId === intentId);
+    const same =
+      this.items.find((c) => c.reason === reason && c.intentId === intentId) ??
+      (isAddressed(reason) ? this.items.find((c) => isAddressed(c.reason)) : undefined);
     if (same) {
       same.events.push(...events);
       return { candidate: same, merged: true };
@@ -104,6 +107,11 @@ export class PendingWakes {
   /** Drops the candidates with this reason (an idle candidate that is no longer true). */
   drop(reason: CandidateReason): void {
     this.items = this.items.filter((c) => c.reason !== reason);
+  }
+
+  /** Keeps only the candidates the predicate accepts; the rest are dropped without a record. */
+  retain(keep: (c: Candidate) => boolean): void {
+    this.items = this.items.filter(keep);
   }
 
   /** The pending candidates, most urgent first; arrival order breaks ties. */
