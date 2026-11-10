@@ -89,6 +89,7 @@ export class Mind {
       config: config.attention,
       tickRate: config.tickRate,
       journal: deps.journal,
+      ...(deps.log ? { log: deps.log } : {}),
       ...(deps.timing ? { clock: deps.timing.clock, scheduler: deps.timing.scheduler } : {}),
     });
     const options = loopOptionsFromConfig(config, deps.versions);

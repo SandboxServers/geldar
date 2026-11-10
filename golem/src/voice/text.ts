@@ -16,7 +16,7 @@ function isHidden(code: number): boolean {
     (code >= 0x7f && code <= 0x9f) ||
     (code >= 0x200b && code <= 0x200f) ||
     (code >= 0x2028 && code <= 0x202e) ||
-    (code >= 0x2060 && code <= 0x2069) ||
+    (code >= 0x2060 && code <= 0x206f) ||
     code === 0xfeff ||
     code === 0x00ad || // soft hyphen
     code === 0x034f || // combining grapheme joiner
@@ -24,9 +24,17 @@ function isHidden(code: number): boolean {
     code === 0x115f ||
     code === 0x1160 || // Hangul fillers
     code === 0x180e || // Mongolian vowel separator
+    (code >= 0x180b && code <= 0x180d) || // Mongolian free variation selectors
+    code === 0x180f || // Mongolian free variation selector four
+    (code >= 0x17b4 && code <= 0x17b5) || // Khmer vowel inherent marks
     code === 0x3164 || // Hangul filler
+    code === 0xffa0 || // halfwidth Hangul filler
+    (code >= 0xfff0 && code <= 0xfffb) || // specials and interlinear annotation
     (code >= 0xfe00 && code <= 0xfe0f) || // variation selectors
-    (code >= 0xe0000 && code <= 0xe007f) // tag characters
+    (code >= 0xe0000 && code <= 0xe007f) || // tag characters
+    (code >= 0xe0100 && code <= 0xe01ef) || // variation selectors supplement
+    (code >= 0x1bca0 && code <= 0x1bca3) || // shorthand format controls
+    (code >= 0x1d173 && code <= 0x1d17a) // musical symbol format controls
   );
 }
 

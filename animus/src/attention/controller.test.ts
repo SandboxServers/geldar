@@ -234,6 +234,20 @@ describe('fallback and idle', () => {
   });
 });
 
+describe('an idle wake across a thought', () => {
+  it('an intent that ends during a long thought wakes idle at the settle, not a minute later', () => {
+    r.attention.thoughtStarted();
+    r.attention.onEvent(intent('in_1', 'running'));
+    r.attention.onEvent(intent('in_1', 'completed'));
+    r.time.advance(250);
+    expect(r.decisions).toHaveLength(0);
+    r.time.advance(120_000);
+    expect(r.decisions).toHaveLength(0);
+    r.attention.thoughtSettled('planned');
+    expect(r.decisions.map((d) => d.reason)).toEqual(['idle']);
+  });
+});
+
 describe('idle watchdog and stop', () => {
   it('after a say-only or held thought with no intent, wakes idle after the watchdog period', () => {
     r.attention.thoughtStarted();
@@ -328,6 +342,54 @@ describe('one addressed line, one thought', () => {
     expect(r.decisions).toHaveLength(2);
     expect(r.decisions[1]?.events).toHaveLength(2);
   });
+
+  it('a directly_addressed wake whose tick is greater than the speech tick still folds into the thought', () => {
+    r.attention.start();
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    r.attention.onEvent(speech('Steve', 'Adam, hi', 5));
+    r.attention.onEvent(wake('directly_addressed', 9, null));
+    expect(r.decisions).toHaveLength(2);
+    expect(r.decisions[1]).toMatchObject({ reason: 'speech_addressed' });
+    expect(r.store.suppressed.map((s) => s.reason)).toEqual(['duplicate']);
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    expect(r.decisions).toHaveLength(2);
+  });
+
+  it('two chat lines from different speakers in the same second give two thoughts', () => {
+    r.attention.start();
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    r.attention.onEvent(speech('Steve', 'Adam, hi', 5));
+    r.attention.thoughtSettled('planned');
+    r.time.advance(1_000);
+    r.attention.onEvent(speech('Eve', 'Adam, hey', 5));
+    r.time.advance(20_000);
+    expect(r.decisions.map((d) => d.reason)).toEqual([
+      'mind_start',
+      'speech_addressed',
+      'speech_addressed',
+    ]);
+    expect(r.store.suppressed.map((s) => s.reason)).not.toContain('duplicate');
+  });
+
+  it('a directly_addressed wake more than 3 s after the speech line is a second thought', () => {
+    r.attention.start();
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    r.attention.onEvent(speech('Steve', 'Adam, hi', 5));
+    r.attention.thoughtSettled('planned');
+    r.time.advance(4_000);
+    r.attention.onEvent(wake('directly_addressed', 5, null));
+    r.time.advance(20_000);
+    expect(r.decisions.map((d) => d.reason)).toEqual([
+      'mind_start',
+      'speech_addressed',
+      'directly_addressed',
+    ]);
+    expect(r.store.suppressed.map((s) => s.reason)).not.toContain('duplicate');
+  });
 });
 
 describe('death and sleep', () => {
@@ -353,6 +415,28 @@ describe('death and sleep', () => {
 });
 
 describe('robustness', () => {
+  it('a failed suppression record is logged with the life id and an error code', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const journal = Object.assign(Object.create(r.store), {
+      recordSuppressed: () => Promise.reject(new Error('db down')),
+    });
+    const attention = new Attention({
+      lifeId: LIFE,
+      identity: ME,
+      config: { minWakeupSpacingS: 20, fallbackWakeupTicks: 6000, overheardToDigest: true },
+      tickRate: 20,
+      journal,
+      log: (line) => lines.push(line),
+      clock: r.time,
+      scheduler: r.time,
+    });
+    attention.onEvent(speech('Bob', 'chatter'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(lines).toEqual([
+      expect.objectContaining({ life_id: LIFE, code: 'suppression_record_failed' }),
+    ]);
+  });
+
   it('ignores other lives and survives a failing subscriber', () => {
     r.attention.onDecision(() => {
       throw new Error('boom');
