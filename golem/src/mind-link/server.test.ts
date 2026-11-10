@@ -28,7 +28,7 @@ class MemoryPublisher implements EventPublisher {
   }
 }
 
-function rig(tick = 10) {
+function rig(tick = 10, build: typeof snapshotFrom = snapshotFrom) {
   const transport = new FakeRequestServer();
   const executor = new StubExecutor();
   const voice = new FakeVoice();
@@ -46,7 +46,7 @@ function rig(tick = 10) {
     perception: new FakePerception(),
     ears,
     voice,
-    buildSnapshot: snapshotFrom,
+    buildSnapshot: build,
     tick: () => tick,
     publisher,
     log: (line) => logs.push(line),
@@ -106,6 +106,19 @@ describe('MindLinkServer snapshots', () => {
     expect((await t.snapshot()).events_since_last_thought).toEqual([]);
   });
 
+  it('keeps the events of a snapshot that is not built, and sends them with the next one', async () => {
+    let broken = true;
+    const t = rig(10, (options) => {
+      if (broken) throw new Error('perception down');
+      return snapshotFrom(options);
+    });
+    t.ears.queued = [{ type: 'wake' }];
+    expect(await t.snapshot()).toBeNull();
+    broken = false;
+    expect((await t.snapshot()).events_since_last_thought).toEqual([{ type: 'wake' }]);
+    expect((await t.snapshot()).events_since_last_thought).toEqual([]);
+  });
+
   it('does not answer a request for another life, and logs it', async () => {
     const t = rig();
     const body = await t.transport.request(
@@ -138,6 +151,23 @@ describe('MindLinkServer snapshots', () => {
     );
     await t.server.idle();
     t.executor.intentState = 'running';
+    expect((await t.snapshot()).current_plan).toEqual({
+      goal: 'find_water',
+      action: 'travel',
+      status: 'running',
+    });
+  });
+
+  it('reports a resumed intent as current_plan, though no plan of this process started it', async () => {
+    const t = rig();
+    t.executor.intentState = 'running';
+    t.executor.runningIntent = {
+      goal: 'find_water',
+      program: 'travel',
+      arguments: {},
+      wake_on: [],
+      limits: { max_world_ticks: 100, max_block_operations: 10 },
+    } as never;
     expect((await t.snapshot()).current_plan).toEqual({
       goal: 'find_water',
       action: 'travel',

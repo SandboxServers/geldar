@@ -8,21 +8,21 @@ const DIGEST: Snapshot['events_since_last_thought'] = [
 ] as unknown as Snapshot['events_since_last_thought'];
 
 describe('composeEars', () => {
-  it('reads heard from the chat ears and drains events from the digest, each once', () => {
-    let drained = 0;
+  it('reads heard from the chat ears and passes peek and ack to the digest', () => {
+    const acked: number[] = [];
     const ears = composeEars(
       { heard: () => HEARD },
       {
-        drainEvents: () => {
-          drained++;
-          return DIGEST;
+        peekEvents: () => DIGEST,
+        ackEvents: (count) => {
+          acked.push(count);
         },
       },
     );
     expect(ears.heard()).toBe(HEARD);
-    expect(ears.heard()).toBe(HEARD);
-    expect(drained).toBe(0);
-    expect(ears.drainEvents()).toBe(DIGEST);
-    expect(drained).toBe(1);
+    expect(ears.peekEvents()).toBe(DIGEST);
+    expect(acked).toEqual([]);
+    ears.ackEvents(1);
+    expect(acked).toEqual([1]);
   });
 });

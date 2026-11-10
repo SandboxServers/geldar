@@ -71,7 +71,10 @@ export function natsRequestServer(nc: NatsConnection): RequestServer {
 }
 
 /** The part of the executor the server uses. */
-export type PlanExecutor = Pick<IntentExecutor, 'submit' | 'intentId' | 'intentState'>;
+export type PlanExecutor = Pick<
+  IntentExecutor,
+  'submit' | 'intentId' | 'intentState' | 'runningIntent'
+>;
 
 /** What a `MindLinkServer` is built from. */
 export interface MindLinkServerOptions {
@@ -103,7 +106,6 @@ export class MindLinkServer {
   private readonly acks = new Map<string, PlanAck>();
   private readonly running = new Set<Promise<void>>();
   private readonly stops: Array<() => void> = [];
-  private lastIntent: { goal: string; program: string } | null = null;
 
   constructor(options: MindLinkServerOptions) {
     this.opts = options;
@@ -149,6 +151,8 @@ export class MindLinkServer {
       return;
     }
     const revision = this.opts.revision.next();
+    // Peeked, not drained: the events leave the queue only once the snapshot has been sent.
+    const events = this.opts.ears.peekEvents();
     let snapshot: Snapshot;
     try {
       snapshot = this.opts.buildSnapshot({
@@ -161,7 +165,7 @@ export class MindLinkServer {
           : {}),
         ...(this.opts.daysSinceSleep ? { daysSinceSleep: this.opts.daysSinceSleep() } : {}),
         heard: this.opts.ears.heard(),
-        events: this.opts.ears.drainEvents(),
+        events,
         surroundings: this.opts.perception.surroundings(),
         unlockedRecipes: this.opts.perception.unlockedRecipes(),
         currentPlan: this.currentPlan(),
@@ -176,13 +180,15 @@ export class MindLinkServer {
       return;
     }
     reply(JSON.stringify(snapshot));
+    this.opts.ears.ackEvents(events.length);
   }
 
-  /** What the agent is doing now: the intent the last accepted plan started, while it runs. */
+  /** What the agent is doing now: the running intent, whether a plan started it or a restart resumed it. */
   private currentPlan(): Snapshot['current_plan'] {
     const state = this.opts.executor.intentState;
-    if (state === null || this.lastIntent === null) return null;
-    return { goal: this.lastIntent.goal, action: this.lastIntent.program, status: state };
+    const intent = this.opts.executor.runningIntent;
+    if (state === null || intent === null) return null;
+    return { goal: intent.goal, action: intent.program, status: state };
   }
 
   private onPlan(data: string, reply: (body: string) => void): void {
@@ -269,9 +275,6 @@ export class MindLinkServer {
       ...(plan.intent_id !== undefined ? { intentId: plan.intent_id } : {}),
     };
     const result = await this.opts.executor.submit(plan.thought, envelope);
-    if (result.intent === 'started' && plan.thought.intent) {
-      this.lastIntent = { goal: plan.thought.intent.goal, program: plan.thought.intent.program };
-    }
     let said = false;
     const text = plan.thought.say;
     if (result.rejection === null && typeof text === 'string' && text.trim() !== '') {

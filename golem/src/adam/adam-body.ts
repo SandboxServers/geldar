@@ -56,7 +56,10 @@ export interface RunningAdamBody {
   stop(): Promise<void>;
 }
 
-/** Wires and starts the Body on `bot`. */
+/**
+ * Wires and starts the Body on `bot`. A start that throws, or a bot that ends during it, leaves no
+ * Body behind: a live bot is quit, so the connection makes a fresh one for the supervisor.
+ */
 export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<RunningAdamBody> {
   const { config, log } = env;
   const revision = new SnapshotRevision();
@@ -76,8 +79,19 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     worldTick: tick,
     log,
   });
-  let recent: RecentEvents | null = null;
-  const restarted = await (env.restart ?? restartBody)({
+  // Listens before the awaited restart, so a bot that ends during the start is seen.
+  let gone = false;
+  let end: (reason: string) => void = () => undefined;
+  const ended = new Promise<string>((resolve) => {
+    end = resolve;
+  });
+  const onEnd = (reason?: string): void => {
+    gone = true;
+    end(`bot ended: ${reason ?? 'unknown'}`);
+  };
+  bot.once('end', onEnd);
+  const wrapped: { recent: RecentEvents | null } = { recent: null };
+  const restarting = (env.restart ?? restartBody)({
     lifeId: config.lifeId,
     bot,
     ticks: (listener) => watchWorldTicks(bot, listener),
@@ -87,13 +101,36 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     timeScale: config.timeScale,
     nats: { publisher: env.publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
-      recent = new RecentEvents(inner);
-      return recent;
+      const made = new RecentEvents(inner);
+      wrapped.recent = made;
+      return made;
     },
     ...(env.noPlanWaitMs === undefined ? {} : { noPlanWaitMs: env.noPlanWaitMs }),
     log,
+  }).then(async (body) => {
+    if (wrapped.recent !== null) return body;
+    await body.stop();
+    throw new Error('the Body did not wrap its record sink');
   });
-  const digest = recent as RecentEvents | null;
+  let restarted: RestartedBody;
+  try {
+    restarted = await Promise.race([
+      restarting,
+      ended.then((reason) => {
+        throw new Error(`bot ended during start: ${reason}`);
+      }),
+    ]);
+  } catch (error) {
+    bot.off('end', onEnd);
+    // A restart that finishes after the failure is stopped, so its timers do not outlive it.
+    void restarting.then(
+      (late) => late.stop(),
+      () => undefined,
+    );
+    if (!gone) bot.quit();
+    throw error;
+  }
+  const digest = wrapped.recent;
   if (digest === null) throw new Error('the Body did not wrap its record sink');
   const { executor } = restarted.body;
   const chatEars = new BotEars({
@@ -132,12 +169,6 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   });
   link.start();
 
-  let end: (reason: string) => void = () => undefined;
-  const ended = new Promise<string>((resolve) => {
-    end = resolve;
-  });
-  const onEnd = (reason?: string): void => end(`bot ended: ${reason ?? 'unknown'}`);
-  bot.once('end', onEnd);
   return {
     lifeId: config.lifeId,
     generation: restarted.generation,
@@ -149,6 +180,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       bot.off('end', onEnd);
       bot.off('health', onHealth);
       detachEars();
+      // The executor goes first: it ends the running intent, so a plan the link awaits can finish.
+      await restarted.body.executor.stop();
       await link.stop();
       await restarted.stop();
     },

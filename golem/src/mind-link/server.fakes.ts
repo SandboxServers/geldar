@@ -1,6 +1,7 @@
 /** Test doubles for the `MindLinkServer`: a request server a test calls by hand, a stub executor. */
 import type { PlanMessage, Snapshot } from '@geldar/contract';
 import type { SubmitResult } from '../body/executor.ts';
+import type { Intent } from '../body/executor-types.ts';
 import type { SnapshotOptions } from '../snapshot.ts';
 import type { PlanExecutor, RequestServer } from './server.ts';
 
@@ -46,6 +47,8 @@ export class FakeRequestServer implements RequestServer {
 export class StubExecutor implements PlanExecutor {
   intentId: string | null = null;
   intentState: PlanExecutor['intentState'] = null;
+  /** Set by a started plan, as the real executor does; a test may set it for a resumed intent. */
+  runningIntent: Intent | null = null;
   readonly submitted: unknown[] = [];
   result: SubmitResult = { rejection: null, actions: [], failedAt: null, intent: 'none' };
   /** When set, `submit` waits for it before it answers. */
@@ -54,6 +57,8 @@ export class StubExecutor implements PlanExecutor {
   async submit(thought: unknown): Promise<SubmitResult> {
     this.submitted.push(thought);
     if (this.gate !== null) await this.gate;
+    const intent = (thought as { intent?: Intent | null }).intent;
+    if (this.result.intent === 'started' && intent) this.runningIntent = intent;
     return this.result;
   }
 }

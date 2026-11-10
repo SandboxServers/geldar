@@ -89,6 +89,12 @@ describe('hostile text', () => {
     expect(cleanLine('one\r\ntwo\n\nthree')).toBe('one two three');
   });
 
+  it('cleanLine removes invisible characters a model can still read', () => {
+    const tag = String.fromCodePoint(0xe0041, 0xe0042);
+    const hidden = ['­', '͏', '؜', 'ᅟ', 'ᅠ', '᠎', 'ㅤ', '️', tag];
+    for (const ch of hidden) expect(cleanLine(`a${ch}b`)).toBe('ab');
+  });
+
   it('the voice neutralises hostile text before it is sent or published', async () => {
     const t = setup();
     for (const text of corpus) {
@@ -239,15 +245,19 @@ describe('ears', () => {
       players: { pike: { username: 'pike', uuid: 'uuid-pike' } },
     };
     t.ears.onPlayerChatPacket(bot as never, {
-      senderUuid: 'uuid-pike',
+      sender: 'uuid-pike',
       plainMessage: 'Adam, hi',
-      networkName: { type: 'string', value: 'pike' },
+      senderName: { type: 'string', value: 'pike' },
     });
-    t.ears.onPlayerChatPacket(bot as never, { senderUuid: 'uuid-adam', plainMessage: 'echo' });
     t.ears.onPlayerChatPacket(bot as never, {
-      senderUuid: 'uuid-new',
+      sender: 'uuid-adam',
+      plainMessage: 'echo',
+      senderName: { type: 'string', value: 'Adam' },
+    });
+    t.ears.onPlayerChatPacket(bot as never, {
+      sender: 'uuid-new',
       plainMessage: 'named only',
-      networkName: { type: 'compound', value: { text: { type: 'string', value: 'wren' } } },
+      senderName: { type: 'compound', value: { text: { type: 'string', value: 'wren' } } },
     });
     t.ears.onPlayerChatPacket(bot as never, 'garbage');
     expect(t.ears.heard().map((l) => `${l.from}:${l.text}`)).toEqual([
