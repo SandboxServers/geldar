@@ -84,6 +84,35 @@ describe('mapMindEvent', () => {
     expect(failed).toMatchObject([{ kind: 'intent_finished', outcome: 'failed' }]);
   });
 
+  it('ends a limit once: the limit wake for an intent already ended is no second event', () => {
+    const ctx = ctxWith();
+    const end = { intent_id: 'i3', state: 'failed', detail: 'max_world_ticks reached' };
+    expect(mapMindEvent(event('intent', end), 1, ctx)).toMatchObject([
+      { kind: 'intent_finished', outcome: 'limit_reached' },
+    ]);
+    const wake = event('wake', { reason: 'limit_reached', tick: 100, intent_id: 'i3' });
+    expect(mapMindEvent(wake, 2, ctx)).toEqual([]);
+    expect(mapMindEvent(event('intent', end), 3, ctx)).toEqual([]);
+    const lost = event('wake', { reason: 'limit_reached', tick: 100, intent_id: 'i4' });
+    expect(mapMindEvent(lost, 4, ctx)).toMatchObject([
+      { kind: 'intent_finished', outcome: 'limit_reached' },
+    ]);
+  });
+
+  it('maps a failure that is not a limit to failed, and a cancelled or interrupted intent to failed', () => {
+    const ctx = ctxWith();
+    const reasons = [
+      { intent_id: 'i5', state: 'failed', detail: 'no oak_log within reach' },
+      { intent_id: 'i6', state: 'cancelled', detail: 'replaced' },
+      { intent_id: 'i7', state: 'interrupted', detail: 'interrupted: restart' },
+    ];
+    reasons.forEach((payload, i) => {
+      expect(mapMindEvent(event('intent', payload), i + 1, ctx)).toMatchObject([
+        { kind: 'intent_finished', outcome: 'failed' },
+      ]);
+    });
+  });
+
   it('maps an immediate-only plan result with actions to intent_finished, and ignores an empty one', () => {
     const ctx = ctxWith();
     const action = { action_id: 'a1', do: 'wait' };

@@ -7,22 +7,54 @@
  * The request bodies come from live-requests.ts, which a unit test checks against the contract (ActInput, WaitInput).
  */
 import { describe, expect, it } from 'vitest';
-import { connectAs, readTokenFile, TEST_PLAYER } from './client.ts';
+import { connectAs, geldar, readTokenFile, structuredOf, TEST_PLAYER } from './client.ts';
 import { liveEnabled } from './gate.ts';
 import { actCall, lookCall, WAIT_SECONDS, waitCall } from './live-requests.ts';
+import { describeWaits, traceOf, type WaitTrace } from './live-trace.ts';
+import { attemptOf, waitForWake } from './live-wake.ts';
 
 /** Waits of WAIT_SECONDS each: 8 of 25 s is 200 s, past the intent's 2400-tick limit (about 120 s). */
 const WAIT_STEPS = 8;
+/**
+ * The contract's terminal wake reasons: an intent's end wakes as goal_completed (completed), precondition_failed
+ * (failed, cancelled or interrupted) or intent_run_too_long (a limit). The intent may end in any of these outcomes.
+ * The case asserts that the end is reported, not that the intent succeeds.
+ */
 const ENDS = ['goal_completed', 'precondition_failed', 'intent_run_too_long'];
 
+/**
+ * The presence state of the test player, as `players status` prints it, for a wake timeout. It needs
+ * GELDAR_NATS_URL; without it the message says the record was not read.
+ */
+function presenceState(): string {
+  if ((process.env.GELDAR_NATS_URL ?? '').trim() === '') {
+    return 'The presence record was not read (GELDAR_NATS_URL is not set).';
+  }
+  const line = geldar('players', 'status')
+    .split('\n')
+    .find((text) => text.includes(TEST_PLAYER));
+  const state = line?.match(/presence: (\w+)/)?.[1];
+  return `The presence record is ${state ?? 'not printed by players status'}.`;
+}
+
 describe.skipIf(!liveEnabled())('MCP stub client: look, act gather oak_log, wait', () => {
-  it('answers look, takes an act, and each wait returns within its bound until the intent ends', async () => {
+  it('wakes the Body from any presence state, answers look, takes an act, and each wait returns within its bound until the intent ends', async () => {
     const client = await connectAs(TEST_PLAYER, readTokenFile('GELDAR_MCP_TEST_TOKEN_FILE'));
     try {
       const names = (await client.listTools()).tools.map((tool) => tool.name);
       expect(names, `tools seen: ${names.join(', ')}`).toEqual(
         expect.arrayContaining(['look', 'act', 'wait']),
       );
+
+      // A hibernated life answers body_unavailable until the Body is up; that is the wake signal here only.
+      await waitForWake({
+        attempt: async () => attemptOf(await client.callTool(lookCall())),
+        clock: {
+          now: () => Date.now(),
+          sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+        },
+        describeState: presenceState,
+      });
 
       const looked = await client.callTool(lookCall());
       expect(looked.isError, `look failed: ${JSON.stringify(looked).slice(0, 300)}`).not.toBe(true);
@@ -32,26 +64,34 @@ describe.skipIf(!liveEnabled())('MCP stub client: look, act gather oak_log, wait
 
       let cursor: unknown;
       let ended = false;
+      const traces: WaitTrace[] = [];
       for (let step = 0; step < WAIT_STEPS && !ended; step += 1) {
         const started = Date.now();
         const waited = await client.callTool(waitCall(cursor));
         const elapsed = Date.now() - started;
-        expect(waited.isError, `wait failed: ${JSON.stringify(waited).slice(0, 300)}`).not.toBe(
-          true,
-        );
+        expect(
+          waited.isError,
+          `wait failed: ${JSON.stringify(waited).slice(0, 300)}\n${describeWaits(traces)}`,
+        ).not.toBe(true);
         expect(
           elapsed,
-          `wait ${step} ran ${elapsed} ms, past its ${WAIT_SECONDS} s bound`,
+          `wait ${step} ran ${elapsed} ms, past its ${WAIT_SECONDS} s bound\n${describeWaits(traces)}`,
         ).toBeLessThanOrEqual((WAIT_SECONDS + 10) * 1000);
-        const structured = waited.structuredContent as
-          | { cursor?: unknown; wake_reason?: string }
-          | undefined;
+        const structured = structuredOf(waited) as {
+          cursor?: unknown;
+          wake_reason?: string;
+          events?: unknown;
+        };
+        traces.push(traceOf(step, structured));
         cursor = structured?.cursor ?? cursor;
         ended = ENDS.includes(structured?.wake_reason ?? '');
       }
-      expect(ended, 'the intent did not end within the bounded waits').toBe(true);
+      expect(
+        ended,
+        `the intent did not end within the bounded waits\n${describeWaits(traces)}`,
+      ).toBe(true);
     } finally {
       await client.close();
     }
-  }, 300_000);
+  }, 420_000);
 });

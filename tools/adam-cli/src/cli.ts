@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
+import { restartBody } from './body-restart.ts';
 import { adamEnv, loopbackProblems, parseComposePs, parseEnvFile, shardProblems } from './env.ts';
 import {
   compare,
@@ -19,21 +20,27 @@ import {
   readTierTags,
   type Tier,
 } from './pins.ts';
-import { formatStatus, isLifeId, latencySql, parseLatency, SERVICES } from './procs.ts';
+import { BODY, formatStatus, isLifeId, latencySql, parseLatency, SERVICES } from './procs.ts';
 import {
   compose,
   followLog,
+  isAlive,
   logFile,
+  logSince,
+  logSize,
+  lookupProcess,
   ROOT,
+  readOwner,
   readRows,
   startAll,
+  startService,
   stopAll,
   tailLines,
 } from './run.ts';
 import { recordDigests, selectLife } from './yaml-edit.ts';
 
 const USAGE =
-  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast | down | status | logs [body|animus|lantern-local] [--follow] | models [--record]';
+  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast | down | status | logs [body|animus|lantern-local] [--follow] | models [--record] | restart-body';
 
 class Refusal extends Error {}
 
@@ -237,6 +244,31 @@ async function logs(args: string[]): Promise<void> {
   if (args.includes('--follow') && picked.length === 1 && only !== undefined) await followLog(only);
 }
 
+/**
+ * `restart-body`: ends only the Body (verified by its owner record) and starts a fresh one with the command and the
+ * environment `adam up` gives it. animus and lantern-local keep running.
+ */
+async function restartBodyCommand(): Promise<void> {
+  const env = runEnv();
+  const message = await restartBody(
+    {
+      adamUp: () => readRows().some((r) => r.state === 'running'),
+      owner: () => readOwner(BODY),
+      lookup: lookupProcess,
+      alive: isAlive,
+      signal: (pid, signal) => process.kill(pid, signal),
+      spawn: (service, serviceEnv) => startService(service, serviceEnv),
+      env: () => env,
+      logSize: () => logSize(BODY),
+      logSince: (offset) => logSince(BODY, offset),
+      sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+      now: () => Date.now(),
+    },
+    { graceMs: 15_000, readyMs: 120_000, pollMs: 500 },
+  );
+  console.log(message);
+}
+
 /** Runs one command; returns the exit code. */
 export async function run(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
@@ -259,6 +291,9 @@ export async function run(argv: string[]): Promise<number> {
         return 0;
       case 'models':
         await models(args);
+        return 0;
+      case 'restart-body':
+        await restartBodyCommand();
         return 0;
       default:
         console.error(USAGE);

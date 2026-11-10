@@ -108,7 +108,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | WM-process | M | Apply the wave M retro actions | packet-coder | Shipped | wave M test, review and retro | |
 | W6-01 | 6 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | packet-coder | Ready | — | |
 | W6-02 | 6 | Validator bounds read from shard config (BC-11); redact a private address from a worknote (E-16) | packet-coder | Ready | — | |
-| W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Ready | section 4 item 7 (provisional) | |
+| W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Shipped | section 4 item 7 (provisional) | decision 0063 |
 | W6-04 | 6 | Velocity marker ordering (diagnose first) | packet-coder | Ready | — | |
 | W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | Ready | section 4 item 8 (provisional) | |
 | W6-06 | 6 | Warm every pinned model before advertising it (cold load) | packet-coder | Ready | — | |

@@ -7,7 +7,7 @@ feeds Glass back into any agent's prompt or plan. Glass has **no authentication 
 loopback bind is the only access control, so the port must not be published outside the host.
 
 The package is `@geldar/glass` (`glass/`). It is Node 22 and TypeScript, using `node:http` and
-`pg`. The page that people look at is a separate packet (W6-10); this package serves the data.
+`pg`. The page that people look at is in `glass/public`, and this package serves it with the data.
 
 ## Routes
 
@@ -27,11 +27,21 @@ nothing in the API interprets it as HTML.
 
 Headers on every response:
 
-- `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'`
+- `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`
 - `X-Content-Type-Options: nosniff`
 - `Referrer-Policy: no-referrer`
 
+The policy lets the page run only its own script and style from this origin. It forbids inline
+script and style, images, base-URI changes, form posts, and framing by any other site. The test
+`glass/test/readme.test.ts` compares this line with the code, so the two cannot drift apart.
+
 There is no CORS header, so a page on another origin cannot read the API.
+
+**Host check.** Glass answers only to a `Host` header that names loopback: `127.0.0.1`, `localhost`
+or `[::1]`, with an optional port. Any other value, and a missing header, gets `421 Misdirected
+Request` and a JSON error, on every route. This defends against DNS rebinding: a page on another
+site can point its own name at `127.0.0.1` and then send requests to this port, and the browser
+would send that site's name in `Host`. The check refuses those requests before any route runs.
 
 ## Configuration
 
@@ -103,7 +113,15 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
 - **No secrets in output.** Responses and logs carry no connection string, no password file path
   and no token. Postgres errors are not sent to clients; they receive `internal error`.
 - **Loopback only, no auth in Phase 0.** Anyone who can reach the port can read every thought.
-  Do not publish the port, and do not bind it to any other address.
+  Do not publish the port, and do not bind it to any other address. Other local users on the same
+  machine can reach the port too; Phase 0 has no per-user access control. The `Host` check above
+  stops DNS rebinding from a browser; it does not stop a local process that sends its own `Host`.
+- **Framing and injection in the page.** The CSP above blocks inline script, so an injected
+  attribute or tag cannot run. The page builds its rows with `textContent` only (`glass/src/render-view.ts`).
+  The adversarial corpus (`glass/test/corpus.ts`) runs through the API, the stream and the page.
+- **Model input and raw replies.** The role grant lets Glass read `thoughts.model_input` and
+  `thoughts.raw_output`. Together these are the full prompt and the raw reply of each thought, and
+  they can contain world text. Glass shows them to humans only; no agent reads Glass.
 
 ## Tests
 

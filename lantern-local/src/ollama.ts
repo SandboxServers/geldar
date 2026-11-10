@@ -84,6 +84,40 @@ export function ollamaWarm(baseUrl: string): WarmFn {
 }
 
 /**
+ * Makes the keep-alive call for the embedder: one `POST /api/embed` with `keep_alive` 30 m (decision 0051)
+ * and, when the shard says `on_cpu`, `num_gpu` 0, the same options the animus embedder loads it with.
+ */
+export function ollamaEmbedPing(
+  baseUrl: string,
+  model: string,
+  onCpu: boolean,
+): (signal: AbortSignal) => Promise<void> {
+  return async (signal) => {
+    const body: Record<string, unknown> = {
+      model,
+      input: 'Reply with one word.',
+      keep_alive: '30m',
+    };
+    if (onCpu) body.options = { num_gpu: 0 };
+    let res: Response;
+    try {
+      res = await fetch(new URL('/api/embed', baseUrl), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        signal,
+      });
+    } catch (err) {
+      if (signal.aborted) throw err;
+      throw new OllamaError('model_unavailable', 'Ollama is not reachable');
+    }
+    if (res.status === 404) throw new OllamaError('model_unavailable', 'model not found in Ollama');
+    if (!res.ok) throw new OllamaError('internal', `Ollama answered ${res.status}`);
+    await res.json();
+  };
+}
+
+/**
  * Makes a {@link ChatFn} that talks to the Ollama at `baseUrl`. With `think` on, the reasoning can spend
  * the whole output cap before any answer text (the cap counts thinking tokens), so an empty answer is
  * retried once with thinking off; an answer still empty is an error, not an empty completion.

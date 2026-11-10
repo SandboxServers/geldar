@@ -1,0 +1,37 @@
+{
+  "note": "The live smoke 6 pair for a failed act (agent ag_test_01): the intent failed at 09:33:11.35 with detail 'blocked: No path to the goal!', then the Body woke the Mind with reason action_failed for the same intent. The state, detail, reason and times are the values recorded in the L5 notes for live smoke 6, not a verbatim copy of the rows. The source_event_id values, the shard, the ticks and the intent_id are test ids that satisfy the contract patterns. Oldest first.",
+  "events": [
+    {
+      "source_event_id": "ev_AF000000000000000000000001",
+      "at": "2026-11-10T09:33:11.350+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2061000,
+      "type": "intent",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "tick": 2061000,
+        "state": "failed",
+        "detail": "blocked: No path to the goal!",
+        "life_id": "ag_test_01",
+        "intent_id": "in_AF000000000000000000000003",
+        "body_generation": 2
+      }
+    },
+    {
+      "source_event_id": "ev_AF000000000000000000000002",
+      "at": "2026-11-10T09:33:11.352+00:00",
+      "shard": "phase0",
+      "world_day": 85,
+      "world_tick": 2061000,
+      "type": "wake",
+      "agent_id": "ag_test_01",
+      "payload": {
+        "tick": 2061000,
+        "detail": "blocked: No path to the goal!",
+        "reason": "action_failed",
+        "intent_id": "in_AF000000000000000000000003"
+      }
+    }
+  ]
+}

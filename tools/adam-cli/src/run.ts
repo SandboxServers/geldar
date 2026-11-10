@@ -2,7 +2,7 @@
  * The side effects of `adam up|down|status|logs`: PID files and logs under `.geldar/adam/`,
  * spawning and stopping the host processes. Loopback only (decision 0050).
  */
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import {
   closeSync,
   existsSync,
@@ -14,6 +14,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import type { BodyOwner, ProcessFacts } from './body-restart.ts';
 import { type ProcRow, procState, SERVICES, type Service, stopOrder } from './procs.ts';
 
 const execFileAsync = promisify(execFile);
@@ -25,6 +26,8 @@ export const RUN_DIR = join(ROOT, '.geldar', 'adam');
 
 export const pidFile = (s: Service): string => join(RUN_DIR, `${s.name}.pid`);
 export const logFile = (s: Service): string => join(RUN_DIR, `${s.name}.log`);
+/** The owner record beside the PID file: the PID, the spawn time and the entry point (`restart-body` checks it). */
+export const ownerFile = (s: Service): string => join(RUN_DIR, `${s.name}.owner.json`);
 
 /** True when a process with this PID exists (a permission error still means it exists). */
 export function isAlive(pid: number): boolean {
@@ -52,9 +55,10 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * Starts one service as a detached background Node process running its TypeScript entry point
  * from its package directory; its output goes to its log file. Returns the PID.
  */
-export function startService(service: Service, env: Record<string, string>): number {
+export function startService(service: Service, env: Record<string, string>): BodyOwner {
   mkdirSync(RUN_DIR, { recursive: true });
   const fd = openSync(logFile(service), 'a');
+  const startedAt = new Date().toISOString();
   try {
     const child = spawn(process.execPath, [service.entry], {
       cwd: join(ROOT, service.dir),
@@ -65,8 +69,10 @@ export function startService(service: Service, env: Record<string, string>): num
     });
     child.unref();
     if (child.pid === undefined) throw new Error(`${service.name} did not start`);
+    const owner: BodyOwner = { pid: child.pid, startedAt, entry: service.entry };
     writeFileSync(pidFile(service), `${child.pid}\n`);
-    return child.pid;
+    writeFileSync(ownerFile(service), `${JSON.stringify(owner)}\n`);
+    return owner;
   } finally {
     closeSync(fd);
   }
@@ -75,8 +81,8 @@ export function startService(service: Service, env: Record<string, string>): num
 /** Starts the services in order; after a short wait, returns the names of those already dead. */
 export async function startAll(env: Record<string, string>, settleMs = 3_000): Promise<string[]> {
   for (const service of SERVICES) {
-    const pid = startService(service, env);
-    console.log(`started ${service.name} (pid ${pid}), log ${logFile(service)}`);
+    const owner = startService(service, env);
+    console.log(`started ${service.name} (pid ${owner.pid}), log ${logFile(service)}`);
   }
   await sleep(settleMs);
   return readRows()
@@ -92,6 +98,7 @@ export async function stopService(service: Service, graceMs = 15_000): Promise<s
   const text = existsSync(pidFile(service)) ? readFileSync(pidFile(service), 'utf8') : null;
   const row = readRows().find((r) => r.name === service.name);
   rmSync(pidFile(service), { force: true });
+  rmSync(ownerFile(service), { force: true });
   if (text === null) return 'not running';
   if (row?.state !== 'running' || row.pid === null) return 'stale PID file removed';
   process.kill(row.pid, 'SIGTERM');
@@ -143,4 +150,50 @@ export async function compose(shard: string, args: string[]): Promise<string> {
     },
   );
   return stdout;
+}
+
+/** The owner record of a service, or null when there is none or it does not parse. */
+export function readOwner(service: Service): BodyOwner | null {
+  if (!existsSync(ownerFile(service))) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(ownerFile(service), 'utf8')) as Partial<BodyOwner>;
+    const ok =
+      Number.isInteger(parsed.pid) &&
+      typeof parsed.startedAt === 'string' &&
+      typeof parsed.entry === 'string';
+    return ok ? (parsed as BodyOwner) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The Windows process table entry for one PID (the PID is a number, so nothing is injected). */
+export function lookupProcess(pid: number): ProcessFacts | null {
+  const query = `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Select-Object ProcessId,@{n='StartedAt';e={$_.CreationDate.ToUniversalTime().ToString('o')}},CommandLine | ConvertTo-Json -Compress`;
+  const out = execFileSync('powershell', ['-NoProfile', '-Command', query], {
+    encoding: 'utf8',
+    windowsHide: true,
+  }).trim();
+  if (out === '') return null;
+  const row = JSON.parse(out) as {
+    ProcessId: number;
+    StartedAt: string;
+    CommandLine?: string | null;
+  };
+  return {
+    pid: Number(row.ProcessId),
+    startedAt: String(row.StartedAt),
+    commandLine: String(row.CommandLine ?? ''),
+  };
+}
+
+/** The length of a service's log file (0 when there is none). */
+export function logSize(service: Service): number {
+  return existsSync(logFile(service)) ? readFileSync(logFile(service)).length : 0;
+}
+
+/** The log text appended after `offset` bytes. */
+export function logSince(service: Service, offset: number): string {
+  if (!existsSync(logFile(service))) return '';
+  return readFileSync(logFile(service)).subarray(offset).toString('utf8');
 }

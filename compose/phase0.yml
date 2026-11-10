@@ -165,5 +165,8 @@ secrets:
 volumes:
   postgres-data:
   nats-data:
+  # The world volume. GELDAR_WORLD_VOLUME selects another one (`adam-run <profile> prepare-volume` makes a fresh,
+  # empty one); unset, it is the existing volume, as compose names it by default.
   paper-data:
+    name: ${GELDAR_WORLD_VOLUME:-geldar-phase0_paper-data}
   velocity-data:

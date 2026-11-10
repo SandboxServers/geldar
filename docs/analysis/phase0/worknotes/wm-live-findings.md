@@ -130,3 +130,158 @@ Two fixes in threshold/mcp: the presence bucket is created before it is used, an
 2. Mint a fresh token. The token file is an env line, so write the new token into it.
 3. `./geldar.ps1 mcp smoke`.
 4. Confirm the startup log has no `settle_error` line.
+
+## L3
+
+### Hibernated start: `players up` alone leaves no Body
+
+- After a run, the settle moves the presence record to hibernating or down. The player host obeys the
+  record, so `./geldar.ps1 players up` alone starts no Body.
+- The designed wake is the first MCP call. The live case now has a wake phase
+  (`threshold/mcp/test/live/live-wake.ts`) that brings the Body up before the scenario, and fails with
+  a pointer to `players logs` and `players status` if it does not.
+
+### PowerShell binder: `--out` (fixed)
+
+- Finding: `geldar.ps1` had a `[CmdletBinding()]` param block. PowerShell read `--out` as an ambiguous
+  prefix of `-OutVariable` and `-OutBuffer`, so `mcp-tokens token mint ... --out <file>` failed before
+  the CLI ran.
+- Fix (commit `13da18f`): the script has no param block. `$Command` and `$Rest` are read from `$args`,
+  with the same meaning for every command. The guard is `threshold/mcp/src/geldar-script.test.ts`; it
+  also runs the script under pwsh when pwsh exists and checks that the CLI's own error comes back.
+- Bare flags through the pass-through, measured with `pwsh -File` (exit code, first output line). On
+  origin/main, then on this branch:
+  - `pnpm -v`: main exit 2, prints the script's help text; branch exit 0, prints the pnpm version.
+  - `pnpm exec node -e 1`: main exit 1, `parameter 'e' is ambiguous`; branch exit 0.
+  - `pnpm -C threshold/mcp exec tsc --noEmit`: main exit 0 but runs nothing (prints the help text); branch
+    runs tsc and exits 0.
+  - `pnpm --filter @geldar/mcp exec vitest run`: exit 0 on both.
+  No form that worked on main fails on the branch. Not covered: forms outside these four.
+- Fixed: the no-argument usage. `geldar.ps1` now prints its usage from `Show-Usage` (commit `b658744`) with
+  `help`, `-h` and `--help`; an unknown command prints an error, the usage, and exits 2. The guard checks
+  that the usage names every case of the dispatch switch.
+
+### Leftover tokens policy
+
+- Not decided. The brief named a policy, but no rule was given and none exists in the repo.
+- Proposed for ops to confirm: each smoke run mints one token into a file outside the repo. At cleanup,
+  revoke that token with the mcp-tokens CLI and delete the file. Do not leave a token minted for a test
+  in use.
+
+### What ops runs next
+
+1. Mint a token: `./geldar.ps1 mcp-tokens token mint ag-test-01 --out <file outside the repo>`. The
+   wrapper now passes `--out` through.
+2. `./geldar.ps1 mcp up`.
+3. `./geldar.ps1 players up --player ag-test-01`. Do not wait for the Body to join.
+4. `./geldar.ps1 mcp smoke`. Its wake phase brings the Body up; allow up to 120 s.
+5. The negative HTTP checks.
+6. Cleanup, per the leftover tokens policy above.
+
+## L4
+
+### Evidence from the live run
+
+- The intent `gather_oak_log`, count 12, ended `failed` at `max_world_ticks` with zero actions. The Body
+  did nothing for its whole limit.
+- The MCP consumer delivered 7 messages to the player. The live case waited for an end and none reached
+  it as a terminal wake.
+- The per-wait output of that run was not saved, so the exact cursor sequence is not on record. The
+  mechanism below is the one the fix commit (`697f555`) names: a wait whose cursor was past the failure saw
+  only the limit wake, which mapped to no player event, so it timed out.
+
+### Trace: Mind event to wait to live case, before and after (`697f555`)
+
+| Mind event | Mapper before (`cfbaa0b`) | Wait result before | Mapper after (`697f555`) | Wait result after | Live case reaction |
+| --- | --- | --- | --- | --- | --- |
+| intent terminal `failed`, detail `max_world_ticks reached` | intent_finished `failed` | wake `precondition_failed` (the reason for any failure) | intent_finished `limit_reached` | wake `intent_run_too_long` | before: a `precondition_failed` wake ended the case only if a wait saw it; after: the end is named for its limit |
+| wake `limit_reached` for the same intent | no event | none: the wait times out | no second event (deduped by `lastEndedId`) | none | nothing to end on; the terminal event already ended the run |
+| intent terminal `completed` | intent_finished `completed` | wake `goal_completed` | unchanged | `goal_completed` | ends the case |
+| intent terminal `failed`, other detail (e.g. `no oak_log within reach`) | intent_finished `failed` | `precondition_failed` | unchanged | `precondition_failed` | ends the case |
+| intent terminal `cancelled` or `interrupted` | intent_finished `failed` | `precondition_failed` | unchanged | `precondition_failed` | ends the case |
+| a second terminal event for an intent already ended | intent_finished again | a second end | dropped (`lastEndedId`) | one end | one end |
+
+The live case's end check (`stub-client.live.test.ts`) accepts exactly the contract's terminal wake reasons:
+`goal_completed`, `precondition_failed`, `intent_run_too_long`. Those lists were already in place at
+`697f555`, so this packet changed what the case prints on failure (`live-trace.ts`, commit `dbf76c0`), not
+what it accepts. A run that stops at the limit is a pass: it ended, and the wake says why.
+
+### Where the end was lost
+
+- The Body's failure at its limit was reported as a plain failure, so the wake named `precondition_failed`
+  for an intent that had run out of ticks. The contract's reason for a limit is `intent_run_too_long`.
+- The Body's limit wake (`limit_reached`) mapped to no player event. A wait from a cursor after the failure
+  had nothing to return, and the case timed out at its bound.
+
+### Deviation: cancelled and interrupted have no contract wake reason
+
+- The contract's wake list (`contract/schemas/mcp-common.schema.json`, `wake_reason`) has no reason for a
+  cancelled or interrupted intent. Both wake as `precondition_failed`, so the agent hears that its intent is
+  over, but not why it stopped.
+- Extending the closed list needs a decision record. Follow-up: write the record before any change to the
+  contract enum.
+
+### Open: the Body's `gather` did nothing at spawn
+
+- The Body's `gather` made zero actions in 2260 ticks at spawn (19.5, 79, 85.5), then ran to its limit.
+- Open question for a later packet: is there an oak tree within the Body's perception range from that
+  spot? If not, should `gather` end at once with a failed precondition (`no oak_log in range`) instead of
+  idling to `max_world_ticks`? That needs the Body's perception radius and a look at its precondition checks.
+
+### What ops must re-run
+
+- `./geldar.ps1 mcp smoke`, after the image is rebuilt from `threshold/mcp/src` (the mapper change is in
+  `697f555`). A run that ends `intent_run_too_long` or `precondition_failed` is a pass. The trace of each
+  wait is printed on failure.
+
+## L5
+
+### Smoke 6: the failed act and the eight `none` waits
+
+- The act intent was accepted at 09:33:04.88 and failed at 09:33:11.35 with detail `blocked: No path to the
+  goal!`. The Body then woke the Mind with reason `action_failed` for the same intent. The MCP replay consumer
+  acked every event (0 pending), and the mapper turns the failed intent into `intent_finished` with outcome
+  `failed`, which wakes a wait as `precondition_failed`.
+- The live case still traced `wake_reason none; no events` for all 8 waits.
+
+### Cause: the live client read a field the server never sends (fixed)
+
+- The mock registry (`threshold/mcp-mock/src/registry.ts`) returns each tool result as one JSON text part,
+  `content: [{ type: 'text', text }]`. Nothing in the repo sets `structuredContent`. The live client read
+  `waited.structuredContent`, so it was always undefined, and the trace printed `none` with no events
+  whatever the wait returned.
+- `structuredOf` (`threshold/mcp/test/live/client.ts`) now reads the JSON of the text part when there is no
+  structured content, and the stub case uses it. The `wake-corpus` and `revoke-kill-hibernate` live cases use
+  the same helper and were reading `{}` as well, so they now see the real result.
+- `threshold/mcp/test/live/structured-of.test.ts` feeds the failed-act pair
+  (`threshold/mcp/test/fixtures/real-body-action-failed.json`) through the stream, the mapper and `wait`, then
+  reads the result the way the registry sends it. Without the client fix it fails (`wake_reason` undefined);
+  with the text read mutated it fails the same way. Both checks ran before the commit.
+
+### Not the cause: `action_failed`, the cursor, the mapper
+
+- `action_failed` is in the Body wake schema (`contract/schemas/wake-event.schema.json`). `mapWake` maps it to no
+  player event, which is correct: the failed intent's own terminal event carries the end. It is not in the
+  MCP `McpWakeReason` list and does not need to be: a failed intent wakes as `precondition_failed`
+  (`finishReason` in `threshold/mcp-mock/src/sim/wake.ts`).
+- The wait reads from the caller's cursor. Replayed from cursor 0, the failed intent comes back as an
+  `intent_finished` event with the `precondition_failed` wake. No cursor fault was found.
+
+### Deviation: the fixture pair is reconstructed
+
+- The state, detail, reason and times are the smoke 6 values recorded in this packet. The ids, ticks and the
+  envelope are test ids that satisfy the contract patterns. The live rows were not copied, so the fixture
+  proves the path, not the exact live bytes.
+
+### What ops must capture on the next live run
+
+1. The events rows for the failed act: `source_event_id`, `intent_id`, `tick`, `world_tick`, the exact payloads
+   of the `intent` (failed) and `wake` (`action_failed`) rows, and their `at` values. Replace the test ids in
+   `real-body-action-failed.json` with them, in a separate commit.
+2. The `content` text of the 8 wait results of that run, or the new trace. This confirms each wait's
+   `wake_reason` is read and shows whether any wait saw the failure.
+
+### What ops must re-run
+
+- `./geldar.ps1 mcp smoke`, after the image is rebuilt from this branch. A run that ends `precondition_failed`
+  or `intent_run_too_long` is a pass, and the trace now prints each wait's reason.

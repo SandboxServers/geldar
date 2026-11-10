@@ -2,7 +2,9 @@
  * The HTTP handler: security headers on every response, the route table, the query parameters, and
  * the JSON bodies. Agent-authored text leaves as JSON data; the page (a later packet) escapes it.
  */
+import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { stripTypeScriptTypes } from 'node:module';
 import {
   getThought,
   listAgents,
@@ -22,10 +24,47 @@ export const MODEL_INPUT_CAP_BYTES = 64 * 1024;
 /** Headers on every response, the API and the stream alike, including 404 and 405. */
 export const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
-    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };
+
+interface StaticFile {
+  body: string;
+  type: string;
+}
+
+const JS = 'text/javascript; charset=utf-8';
+const PUBLIC = new URL('../public/', import.meta.url);
+const SOURCE = new URL('./', import.meta.url);
+
+/** Reads one page file at load. The browser gets the render modules as JavaScript, types stripped. */
+function staticFile(dir: URL, name: string, type: string, strip = false): StaticFile {
+  const raw = readFileSync(new URL(name, dir), 'utf8');
+  return { body: strip ? stripTypeScriptTypes(raw) : raw, type };
+}
+
+/**
+ * The page and its scripts, keyed by URL path. A request selects an entry here; no path from the
+ * request names a file. Writes to these paths get 405.
+ */
+const STATIC_FILES: ReadonlyMap<string, StaticFile> = new Map([
+  ['/', staticFile(PUBLIC, 'index.html', 'text/html; charset=utf-8')],
+  ['/app.css', staticFile(PUBLIC, 'app.css', 'text/css; charset=utf-8')],
+  ['/app.js', staticFile(PUBLIC, 'app.js', JS)],
+  ['/js/render-model.ts', staticFile(SOURCE, 'render-model.ts', JS, true)],
+  ['/js/render-view.ts', staticFile(SOURCE, 'render-view.ts', JS, true)],
+  ['/js/render-stream.ts', staticFile(SOURCE, 'render-stream.ts', JS, true)],
+]);
+
+/** The path of a request target, or an empty string when it does not parse. */
+function pathOf(url: string | undefined): string {
+  try {
+    return new URL(url ?? '/', 'http://glass.invalid').pathname;
+  } catch {
+    return '';
+  }
+}
 
 export interface GlassHandlerDeps {
   db: SqlClient;
@@ -157,10 +196,29 @@ async function serveRoute(
   if (!deps.hub.attach(res)) sendJson(res, 503, { error: 'too many streams' });
 }
 
+/** The Host values Glass answers to. A name that another site controls is not one of them. */
+const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i;
+
 /** The request listener. It never sends a database error or a stack trace to the client. */
 export function createHandler(deps: GlassHandlerDeps) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+    // DNS rebinding: a page on another site can name its own host, and then reach this port.
+    if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
+      sendJson(res, 421, { error: 'misdirected request' });
+      return;
+    }
+    const file = STATIC_FILES.get(pathOf(req.url));
+    if (file !== undefined) {
+      if (req.method !== 'GET') {
+        res.setHeader('Allow', 'GET');
+        sendJson(res, 405, { error: 'method not allowed' });
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-cache' });
+      res.end(file.body);
+      return;
+    }
     const route = resolveRoute(req.method, req.url);
     if (route.status === 'not-found') {
       sendJson(res, 404, { error: 'not found' });
