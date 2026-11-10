@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { dirname, join } from 'node:path';
 import { parse } from 'yaml';
 
@@ -25,6 +26,12 @@ export interface SovereignConfig {
   ownerCapOwner: number;
   /** The MCP's plain HTTP port. */
   port: number;
+  /** Proxies whose CF-Connecting-IP names the client: exact IPs or CIDR ranges. Empty trusts none. */
+  trustedProxies: string[];
+  /** The most open connections the listener holds at once. */
+  maxConnections: number;
+  /** The most open connections, and open POST requests, one client address holds at once. */
+  maxConnectionsPerAddress: number;
   /** The most seconds one `wait` may block; `wait`'s max_seconds is clamped to this. */
   waitCapSeconds: number;
   /** The interval between keepalive notifications on an open wait. */
@@ -78,6 +85,12 @@ export interface McpConfig {
     port: number;
     /** The `Host` values the server accepts: the public host when set, then the dev hosts. */
     allowedHosts: string[];
+    /** Proxies whose CF-Connecting-IP names the client (exact IPs or CIDR ranges). Empty trusts none. */
+    trustedProxies: string[];
+    /** The most open connections the listener holds at once. */
+    maxConnections: number;
+    /** The most open connections, and open POST requests, one client address holds at once. */
+    maxConnectionsPerAddress: number;
     /** The public DNS name, or null in local mode. */
     publicHost: string | null;
   };
@@ -141,7 +154,7 @@ export function parseMcpConfig(doc: unknown, options: LoadOptions = {}): McpConf
   const plan = map(map(mind.plan, 'mind.plan'), 'mind.plan');
   const chat = map(root.chat, 'chat');
   const sovereign = sovereignConfig(map(root.sovereign, 'sovereign'), agentUsername);
-  const http = httpConfig(env, sovereign.port);
+  const http = httpConfig(env, sovereign);
   return {
     shard,
     tickRate: int(root, 'tick_rate', 'shard file', 1, 200),
@@ -197,6 +210,16 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
     ownerCapDefault: int(block, 'owner_cap_default', 'sovereign', 0, 50),
     ownerCapOwner: int(block, 'owner_cap_owner', 'sovereign', 0, 50),
     port: int(mcp, 'port', 'sovereign.mcp', 1, 65535),
+    trustedProxies: proxyList(mcp, 'trusted_proxies', 'sovereign.mcp'),
+    maxConnections: optionalInt(mcp, 'max_connections', 'sovereign.mcp', 1, 4096, 256),
+    maxConnectionsPerAddress: optionalInt(
+      mcp,
+      'max_connections_per_address',
+      'sovereign.mcp',
+      1,
+      4096,
+      32,
+    ),
     waitCapSeconds: int(mcp, 'wait_cap_seconds', 'sovereign.mcp', 1, 240),
     keepaliveSeconds: int(mcp, 'keepalive_seconds', 'sovereign.mcp', 1, 240),
     maxBodyBytes: int(mcp, 'max_body_bytes', 'sovereign.mcp', 1024, 1_048_576),
@@ -275,7 +298,7 @@ function players(entries: unknown[], agentUsername: string): PlayerConfig[] {
 }
 
 /** Builds the HTTP settings from the environment: bind address, public host and the Host allow-list. */
-function httpConfig(env: Env, port: number): McpConfig['http'] {
+function httpConfig(env: Env, sovereign: SovereignConfig): McpConfig['http'] {
   const inContainer = containerFlag(env.GELDAR_MCP_IN_CONTAINER);
   const bind = envText(env, 'GELDAR_MCP_BIND', '127.0.0.1');
   if (bind === '0.0.0.0') {
@@ -295,9 +318,12 @@ function httpConfig(env: Env, port: number): McpConfig['http'] {
   }
   return {
     bind,
-    port,
+    port: sovereign.port,
     allowedHosts: publicHost === null ? devHosts : [publicHost, ...devHosts],
     publicHost,
+    trustedProxies: sovereign.trustedProxies,
+    maxConnections: sovereign.maxConnections,
+    maxConnectionsPerAddress: sovereign.maxConnectionsPerAddress,
   };
 }
 
@@ -406,4 +432,37 @@ function list(block: Doc, key: string, where: string): unknown[] {
   const value = field(block, key, where);
   if (!Array.isArray(value)) throw new Error(`${where}.${key} must be a list`);
   return value;
+}
+
+/** An optional integer: the fallback when the key is absent, else the same range check as `int`. */
+function optionalInt(
+  block: Doc,
+  key: string,
+  where: string,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  return block[key] === undefined ? fallback : int(block, key, where, min, max);
+}
+
+/** The `trusted_proxies` list: each entry an IP address or an IP range (`10.0.0.0/8`). Absent trusts none. */
+function proxyList(block: Doc, key: string, where: string): string[] {
+  if (block[key] === undefined) return [];
+  return list(block, key, where).map((entry, index) => {
+    if (typeof entry !== 'string' || !validProxyEntry(entry)) {
+      throw new Error(
+        `${where}.${key}[${index}] must be an IP address or an IP range such as 10.0.0.0/8, not '${String(entry)}'`,
+      );
+    }
+    return entry;
+  });
+}
+
+function validProxyEntry(entry: string): boolean {
+  const [ip = '', bits, extra] = entry.split('/');
+  const family = isIP(ip);
+  if (family === 0 || extra !== undefined) return false;
+  if (bits === undefined) return true;
+  return /^\d{1,3}$/.test(bits) && Number(bits) <= (family === 6 ? 128 : 32);
 }

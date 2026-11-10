@@ -233,6 +233,12 @@ export class PgTokenStore implements TokenStore {
   private pruneIfFull<V>(map: Map<string, V>): void {
     if (map.size >= MAX_CACHE_ENTRIES) map.clear();
   }
+
+  /** True when the hash has a live entry in the hit cache. Reads the cache only, never queries. */
+  isCachedHit(tokenHash: Uint8Array, nowMs: number): boolean {
+    const cached = this.hits.get(Buffer.from(tokenHash).toString('hex'));
+    return cached !== undefined && cached.untilMs > nowMs;
+  }
 }
 
 /** The NOTIFY payload: `{"token_id": ..., "player_id": ...}`. Anything else is ignored. */

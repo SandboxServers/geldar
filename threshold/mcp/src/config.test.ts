@@ -31,6 +31,9 @@ describe('loadMcpConfig', () => {
       port: 8788,
       allowedHosts: ['host.docker.internal', '127.0.0.1', 'localhost'],
       publicHost: null,
+      trustedProxies: [],
+      maxConnections: 256,
+      maxConnectionsPerAddress: 32,
     });
     expect(config.nats.url).toBe('nats://127.0.0.1:4222');
     expect(config.postgres.user).toBe('geldar_mcp');

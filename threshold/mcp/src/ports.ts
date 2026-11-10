@@ -38,6 +38,11 @@ export interface TokenStore {
   resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null>;
   /** Records a use of the token. A store may skip the write so it happens at most once a minute. */
   touch(tokenId: string, nowMs: number): Promise<void>;
+  /**
+   * Says whether the hash is already a cached hit, without a query. Optional: a store without a
+   * cache answers false. The front door skips the failed-auth check for a cached hit.
+   */
+  isCachedHit?(tokenHash: Uint8Array, nowMs: number): boolean;
   /** Calls the listener for every token revoked from now on. Returns the unsubscribe function. */
   onRevoke(listener: (revoked: { tokenId: string; playerId: string }) => void): () => void;
 }

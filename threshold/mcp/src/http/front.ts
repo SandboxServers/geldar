@@ -4,7 +4,7 @@ import { createMockHttp } from '@geldar/mcp-mock';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
 import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
-import { verifyBearer } from './auth.ts';
+import { clientAddress, parseBearer, tokenDigest, trustedProxies, verifyBearer } from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
 
@@ -20,7 +20,7 @@ export interface FrontDoorOptions {
   log?: (line: Record<string, string | number>) => void;
   /** Clock in milliseconds. Default Date.now. */
   now?: () => number;
-  /** Test seam: the request timeout and the per-address connection cap. Defaults: 30 s and 16. */
+  /** Test seam: the request timeout and the per-address cap. Defaults: 30 s and the config's cap. */
   limits?: { requestTimeoutMs?: number; maxConnectionsPerAddress?: number };
 }
 
@@ -36,8 +36,10 @@ export const BODY_LIMIT_BYTES = 64 * 1024;
 const HEADERS_TIMEOUT_MS = 10_000;
 // Receiving one whole request; a held response is not cut, the timeout ends at the request's end.
 const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_CONNECTIONS = 128;
-const MAX_CONNECTIONS_PER_ADDRESS = 16;
+// Defaults for the config keys max_connections and max_connections_per_address (phase0.yaml). Behind
+// the tunnel one address carries every player, so 32 per address fits about eight players' requests.
+const MAX_CONNECTIONS = 256;
+const MAX_CONNECTIONS_PER_ADDRESS = 32;
 
 function stderrSink(line: Record<string, string | number>): void {
   process.stderr.write(`${JSON.stringify(line)}\n`);
@@ -65,6 +67,10 @@ function isToolCall(body: unknown): boolean {
     : false;
 }
 
+function tooManyOpen(): Refusal {
+  return { status: 429, message: 'too_many_open_requests', retryAfterSec: 1 };
+}
+
 function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefined {
   if (retryAfterSec === undefined) return undefined;
   return { status: 429, message: 'rate_limited', retryAfterSec };
@@ -77,6 +83,12 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
   const gates = new FrontLimits(options.limiter);
+  // Only a peer on the trusted list may name the client in CF-Connecting-IP. An empty list trusts none.
+  const trusted = trustedProxies(options.http.trustedProxies ?? []);
+  const maxPerAddress =
+    options.limits?.maxConnectionsPerAddress ??
+    options.http.maxConnectionsPerAddress ??
+    MAX_CONNECTIONS_PER_ADDRESS;
   // Authenticated requests, so the call hook can read the owner of the player it serves.
   const players = new WeakMap<IncomingMessage, PlayerRecord>();
   let port = options.http.port;
@@ -88,9 +100,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     log: frontLog(options.log ?? stderrSink),
     maxBodyBytes: BODY_LIMIT_BYTES,
     limits: {
-      maxConnections: MAX_CONNECTIONS,
-      maxConnectionsPerAddress:
-        options.limits?.maxConnectionsPerAddress ?? MAX_CONNECTIONS_PER_ADDRESS,
+      maxConnections: options.http.maxConnections ?? MAX_CONNECTIONS,
+      maxConnectionsPerAddress: maxPerAddress,
       headersTimeoutMs: HEADERS_TIMEOUT_MS,
       requestTimeoutMs: options.limits?.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
     },
@@ -99,9 +110,14 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
-      const address = req.socket.remoteAddress ?? 'unknown';
-      // An address out of failed-auth tokens is refused before any token lookup reaches the database.
-      const blockedSec = gates.authBlocked(address, now());
+      const address = clientAddress(req, trusted);
+      // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
+      // bearer is refused before the lookup while its address is out of failed-auth tokens.
+      const token = parseBearer(header);
+      const cached =
+        token !== null &&
+        (options.store.isCachedHit?.(tokenDigest(options.pepper, token), now()) ?? false);
+      const blockedSec = cached ? undefined : gates.authBlocked(address, now());
       if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
       const verdict = await verifyBearer(options.store, options.pepper, playerId, header, now());
       if (verdict.outcome === 'ok') {
@@ -112,12 +128,20 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
       return { outcome: verdict.outcome };
     },
-    // Takes the open slot before the body is read, so a slow body holds one like any open request.
-    beforeBody(playerId, _req, res): Refusal | undefined {
+    // Takes the open slots before the body is read, so a slow body holds one like any open request.
+    // The per-address slot is taken here, after the headers, because the connection cap sees only the
+    // peer: behind a tunnel that is the proxy for every client.
+    beforeBody(playerId, req, res): Refusal | undefined {
+      const address = clientAddress(req, trusted);
+      if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
       if (!gates.acquire(playerId)) {
-        return { status: 429, message: 'too_many_open_requests', retryAfterSec: 1 };
+        gates.releaseAddress(address);
+        return tooManyOpen();
       }
-      res.once('close', () => gates.release(playerId));
+      res.once('close', () => {
+        gates.release(playerId);
+        gates.releaseAddress(address);
+      });
       return undefined;
     },
     onToolCall(playerId, body, res): Refusal | undefined {

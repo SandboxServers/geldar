@@ -476,8 +476,8 @@ describe('connection limits', () => {
     expect(reply.text).toContain('ok');
   });
 
-  it('lets one address hold no more than its default cap of 16 connections', async () => {
-    const held = Array.from({ length: 16 }, () => connect({ host: '127.0.0.1', port }));
+  it('lets one address hold no more than its default cap of 32 connections', async () => {
+    const held = Array.from({ length: 32 }, () => connect({ host: '127.0.0.1', port }));
     await Promise.all(held.map((s) => new Promise((resolve) => s.once('connect', resolve))));
     const extra = connect({ host: '127.0.0.1', port });
     const closed = await new Promise<boolean>((resolve) => {
