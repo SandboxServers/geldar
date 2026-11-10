@@ -1,9 +1,8 @@
 #!/usr/bin/env node
-import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
-import { migrate, setRolePassword } from './migrate.ts';
+import { migrate, readPasswordFile, setRolePassword } from './migrate.ts';
 
 const USAGE = `usage: node tools/migrate/src/cli.ts [--dry-run] [--sql-dir <dir>]
        node tools/migrate/src/cli.ts --set-role-password geldar_mcp --password-file <file>
@@ -53,9 +52,8 @@ async function main(argv: readonly string[]): Promise<void> {
   const pool = new Pool();
   try {
     if (options.role !== undefined && options.passwordFile !== undefined) {
-      // The file holds the password only; its trailing newline is not part of it.
-      const password = (await readFile(options.passwordFile, 'utf8')).replace(/\r?\n$/, '');
-      await setRolePassword(pool, options.role, password, log);
+      const password = await readPasswordFile(options.passwordFile);
+      await setRolePassword(pool, options.role, password, { dryRun: options.dryRun, log });
       return;
     }
     await migrate(pool, { sqlDir: options.sqlDir, dryRun: options.dryRun, log });

@@ -1,6 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Pool, PoolClient } from 'pg';
+import { scramVerifier } from './scram.ts';
 
 /** The migration that a database created before the runner already has (decision D-P0-11). */
 export const BASELINE_VERSION = '0001';
@@ -52,9 +53,8 @@ export function needsBaseline(hasLedger: boolean, hasAgents: boolean): boolean {
 
 async function tableExists(client: PoolClient, name: string): Promise<boolean> {
   const result = await client.query<{ present: boolean }>(
-    `SELECT EXISTS (SELECT 1 FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_name = $1) AS present`,
-    [name],
+    'SELECT to_regclass($1) IS NOT NULL AS present',
+    [`public.${name}`],
   );
   return result.rows[0]?.present === true;
 }
@@ -129,23 +129,41 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The one role this tool sets a password for: the MCP's login (decision 0026). */
+const PASSWORD_ROLE = 'geldar_mcp';
+
 /**
- * Sets the password of a role and lets it log in. The value is escaped with the driver's
- * escapeLiteral (ALTER ROLE takes no parameters) and is never logged.
+ * Reads a password file as UTF-8, without a leading byte-order mark and one trailing newline.
+ * Windows editors add the mark; Postgres would take it as part of the password.
+ */
+export async function readPasswordFile(path: string): Promise<string> {
+  const text = await readFile(path, 'utf8');
+  return text.replace(/^﻿/, '').replace(/\r?\n$/, '');
+}
+
+/**
+ * Sets the password of geldar_mcp and lets it log in. The client computes a SCRAM-SHA-256
+ * verifier and sends only that: the plaintext never reaches the server or the log. With dryRun
+ * it checks the password and reports, and connects to nothing.
  */
 export async function setRolePassword(
   pool: Pool,
   role: string,
   password: string,
-  log: (line: string) => void,
+  options: { dryRun: boolean; log: (line: string) => void },
 ): Promise<void> {
-  if (!/^[a-z_][a-z0-9_]*$/.test(role)) throw new Error(`role name is not allowed: ${role}`);
+  if (role !== PASSWORD_ROLE) throw new Error(`only ${PASSWORD_ROLE} takes a password here`);
   if (password.length === 0) throw new Error('the password file is empty');
+  const verifier = scramVerifier(password);
+  if (options.dryRun) {
+    options.log(`dry run: the password of ${role} would be set; nothing was run`);
+    return;
+  }
   const client = await pool.connect();
   try {
-    const sql = `ALTER ROLE ${role} WITH LOGIN PASSWORD ${client.escapeLiteral(password)}`;
+    const sql = `ALTER ROLE ${role} WITH LOGIN PASSWORD ${client.escapeLiteral(verifier)}`;
     await client.query(sql);
-    log(`password set for role ${role}`);
+    options.log(`password set for role ${role}`);
   } finally {
     client.release();
   }
