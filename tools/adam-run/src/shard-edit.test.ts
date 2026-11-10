@@ -56,6 +56,17 @@ describe('classifyShardEdit', () => {
     expect(edit).toMatchObject({ kind: 'refused', keys: ['mind.run_tier'] });
   });
 
+  it('refuses a select whose agent tier was not rewritten to run_tier', () => {
+    const edit = classifyShardEdit(
+      COMMITTED,
+      SELECTED.replace('    tier: fast', '    tier: strong'),
+    );
+    expect(edit).toMatchObject({
+      kind: 'refused',
+      keys: ['mind.agent.username', 'mind.run_tier'],
+    });
+  });
+
   it('refuses a comment or layout change that moves no key', () => {
     const edit = classifyShardEdit(COMMITTED, `${COMMITTED}# an extra note\n`);
     expect(edit).toEqual({ kind: 'refused', keys: [], reason: 'only comments or layout differ' });
