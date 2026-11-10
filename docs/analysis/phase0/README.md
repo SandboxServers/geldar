@@ -71,19 +71,19 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-17 | 4 | Intent, action and receipt records to NATS and Postgres | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-14 | |
 | P0-18 | 4 | Body restart resumes from its checkpoint | packet-coder | Shipped (wave review 3 rounds, merged to wave4) | P0-16a, P0-16b, P0-17 | |
 | W4-process | 4 | Apply the wave 4 retro actions | packet-coder | Writing (after the benchmark re-record) | wave 4 test, review and retro | |
-| P0-19 | 5 | Recipe discovery: find why vanilla recipe unlocking did not fire, make unlocking work (or a plugin unlock), remove the grant, scenarios without `recipe give` (decision 0048) | packet-coder | Ready (first packet after wave 4) | wave 4 | |
-| P0-20 | 5 | Mind contract and Body sense interfaces (unblocker 1) | packet-coder | Ready | wave 4 | |
-| P0-21 | 5 | `animus/` skeleton: ports, config, ids, fakes (unblocker 2) | packet-coder | BlockedDependency | P0-20 | |
-| P0-22 | 5 | `lantern-local/`: local Thinker (Appendix H to Ollama) | packet-coder | BlockedDependency | P0-20 | |
-| P0-23 | 5 | Body perception: authorized surroundings and unlocked recipes | packet-coder | BlockedDependency | P0-20 | |
-| P0-24 | 5 | Body ears, voice, `wait`, recent events | packet-coder | BlockedDependency | P0-20 | |
-| P0-25 | 5 | Thinker hub and model client (animus side of Appendix H) | packet-coder | BlockedDependency | P0-21 | |
-| P0-26 | 5 | Body-Mind channel over NATS (both ends) | packet-coder | BlockedDependency | P0-21 | |
-| P0-27 | 5 | Attention controller | packet-coder | BlockedDependency | P0-21 | |
-| P0-28 | 5 | Memory store and embedder (Postgres, pgvector) | packet-coder | BlockedDependency | P0-21 | |
-| P0-29 | 5 | Prompts v1, renderer, output validators | packet-coder | BlockedDependency | P0-21 | |
-| P0-30 | 5 | Thinking loop (5.3.4) | packet-coder | BlockedDependency | P0-21 | |
-| P0-31 | 5 | Sleep reflection (5.4) | packet-coder | BlockedDependency | P0-21 | |
+| P0-19 | 5 | Recipe discovery: find why vanilla recipe unlocking did not fire, make unlocking work (or a plugin unlock), remove the grant, scenarios without `recipe give` (decision 0048) | packet-coder | Shipped (merged to wave5) | wave 4 | |
+| P0-20 | 5 | Mind contract and Body sense interfaces (unblocker 1) | packet-coder | Shipped (merged to wave5) | wave 4 | |
+| P0-21 | 5 | `animus/` skeleton: ports, config, ids, fakes (unblocker 2) | packet-coder | Shipped (merged to wave5) | P0-20 | |
+| P0-22 | 5 | `lantern-local/`: local Thinker (Appendix H to Ollama) | packet-coder | Shipped (merged to wave5) | P0-20 | |
+| P0-23 | 5 | Body perception: authorized surroundings and unlocked recipes | packet-coder | Shipped (merged to wave5) | P0-20 | |
+| P0-24 | 5 | Body ears, voice, `wait`, recent events | packet-coder | Shipped (merged to wave5) | P0-20 | |
+| P0-25 | 5 | Thinker hub and model client (animus side of Appendix H) | packet-coder | Shipped (merged to wave5) | P0-21 | |
+| P0-26 | 5 | Body-Mind channel over NATS (both ends) | packet-coder | Shipped (merged to wave5) | P0-21 | |
+| P0-27 | 5 | Attention controller | packet-coder | Shipped (merged to wave5) | P0-21 | |
+| P0-28 | 5 | Memory store and embedder (Postgres, pgvector) | packet-coder | Shipped (merged to wave5) | P0-21 | |
+| P0-29 | 5 | Prompts v1, renderer, output validators | packet-coder | Shipped (merged to wave5) | P0-21 | |
+| P0-30 | 5 | Thinking loop (5.3.4) | packet-coder | Shipped (merged to wave5) | P0-21 | |
+| P0-31 | 5 | Sleep reflection (5.4) | packet-coder | Shipped (merged to wave5) | P0-21 | |
 | P0-32a | 5 | Integration A: merge fan-out B, apply interface requests, Mind composition, body-api cross-check | packet-coder | Ready | P0-19, P0-22 to P0-31 | |
 | P0-32b | 5 | Integration B: Mind main, Adam Body process and supervision, in-process e2e | packet-coder | BlockedDependency | P0-32a | |
 | P0-33 | 5 | `./geldar.ps1 adam` and the Mind live cases | packet-coder | BlockedDependency | P0-32 | |
