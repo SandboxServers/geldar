@@ -52,6 +52,30 @@ export function caseSetup(kind: AdamCaseKind): string[] {
   return commands;
 }
 
+/** The item ids in a `data get entity <name> Inventory` reply (`minecraft:` stripped), in reply order. */
+export function inventoryItems(reply: string): string[] {
+  return [...reply.matchAll(/id:\s*"minecraft:([a-z_]+)"/g)].map((m) => m[1] ?? '');
+}
+
+/**
+ * Throws unless the inventory reply holds exactly the items the case's `caseSetup` gives: none for
+ * every case but sleep, which holds one bed. A reply that is not an inventory is a failed read.
+ */
+export function checkCaseInventory(kind: AdamCaseKind, reply: string): void {
+  if (!reply.includes('has the following entity data')) {
+    throw new Error(`could not read ${ADAM_LIFE_ID}'s inventory: ${reply.trim()}`);
+  }
+  const expected = kind === 'sleep' ? ['white_bed'] : [];
+  const found = inventoryItems(reply);
+  const same = found.length === expected.length && found.every((item, i) => item === expected[i]);
+  if (!same) {
+    throw new Error(
+      `the ${kind} case set up Adam's inventory wrong before the Mind started: ` +
+        `holds [${found.join(', ') || 'nothing'}], expected [${expected.join(', ') || 'nothing'}]`,
+    );
+  }
+}
+
 /**
  * An accepted plan in the case: `via` is `intent` when the Body recorded an intent made from a valid
  * thought (`id` is that thought), `action` when an action of the case completed (`id` is the action).
@@ -132,10 +156,12 @@ export async function checkEightBillionLife(config: AdamConfig): Promise<void> {
 
 /**
  * Runs `fn` with Adam's stack up. The world is reset the standard way (`resetBot`, with the time
- * the case's kind needs); once Adam's Body is up, the kind's `caseSetup` commands empty his inventory
- * (and give the sleep case its bed). The chatter and Adam are whitelisted, Adam is moved into the
- * arena, and everything is stopped and restored afterwards, even on failure. The chatter starts
- * silent: a case that needs it to speak calls `ac.chatter.speak()` once Adam has acted.
+ * the case's kind needs); Adam is whitelisted; then the Body starts, and before the Mind starts the
+ * kind's `caseSetup` commands run (empty his inventory, give the sleep case its bed), Adam is moved
+ * into the arena, and his inventory is read back and must hold exactly the case's items. Only then
+ * do animus and lantern-local start, so the Mind's first look sees the case's world. Everything is
+ * stopped and restored afterwards, even on failure. The chatter starts silent: a case that needs it
+ * to speak calls `ac.chatter.speak()` once Adam has acted.
  */
 export async function withAdamCase(
   opts: { slot: number; kind: AdamCaseKind },
@@ -195,10 +221,14 @@ export async function withAdamCase(
           ].join('\n'),
       };
       try {
-        await stack.start();
-        for (const command of caseSetup(opts.kind)) await live.ctl.command(command);
-        const { x, y, z } = live.arena.center;
-        await live.ctl.tp(ADAM_LIFE_ID, x + 1, y + 1, z + 1);
+        // The Body, then the case's world, then the Mind: the Mind's first thought sees the setup.
+        await stack.start(120_000, async () => {
+          for (const command of caseSetup(opts.kind)) await live.ctl.command(command);
+          const { x, y, z } = live.arena.center;
+          await live.ctl.tp(ADAM_LIFE_ID, x + 1, y + 1, z + 1);
+          const reply = await live.ctl.command(`data get entity ${ADAM_LIFE_ID} Inventory`);
+          checkCaseInventory(opts.kind, reply);
+        });
         await fn(ac);
       } finally {
         await stack.stop();

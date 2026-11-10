@@ -199,23 +199,32 @@ export class AdamStack {
   }
 
   /**
-   * Starts each process and waits for its ready line, in order, and for the lines a spec says to
-   * wait for in another process (animus's `thinker_connected`); stops what it started on failure.
+   * Starts the Body (the first spec) and waits for its ready line, then runs `afterBody`, then starts
+   * the Mind processes in order, waiting for their ready lines and for the lines a spec says to wait
+   * for in another process (animus's `thinker_connected`). `afterBody` runs before the Mind starts,
+   * so the world it sets up is in place when the Mind first looks. Stops what it started on failure.
    */
-  async start(readyTimeoutMs = 120_000): Promise<void> {
+  async start(readyTimeoutMs = 120_000, afterBody?: () => Promise<void>): Promise<void> {
     try {
-      for (const spec of this.specs) {
-        const proc = new HostProcess(spec);
-        this.processes.push(proc);
-        await proc.waitForLog(spec.ready, readyTimeoutMs);
-        if (spec.awaits !== undefined) {
-          const other = this.processes.find((p) => p.spec.name === spec.awaits?.process);
-          await other?.waitForLog(spec.awaits.pattern, readyTimeoutMs);
-        }
-      }
+      const [body, ...mind] = this.specs;
+      if (body === undefined) throw new Error('no process specs to start');
+      await this.launch(body, readyTimeoutMs);
+      if (afterBody !== undefined) await afterBody();
+      for (const spec of mind) await this.launch(spec, readyTimeoutMs);
     } catch (error) {
       await this.stop().catch(() => undefined);
       throw error;
+    }
+  }
+
+  /** Starts one process and waits for its ready line, and for its `awaits` line in another process. */
+  private async launch(spec: ProcessSpec, readyTimeoutMs: number): Promise<void> {
+    const proc = new HostProcess(spec);
+    this.processes.push(proc);
+    await proc.waitForLog(spec.ready, readyTimeoutMs);
+    if (spec.awaits !== undefined) {
+      const other = this.processes.find((p) => p.spec.name === spec.awaits?.process);
+      await other?.waitForLog(spec.awaits.pattern, readyTimeoutMs);
     }
   }
 

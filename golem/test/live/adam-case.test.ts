@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type AdamCaseKind, caseSetup, caseTime, planEvidence } from './adam-case.ts';
+import {
+  type AdamCaseKind,
+  caseSetup,
+  caseTime,
+  checkCaseInventory,
+  inventoryItems,
+  planEvidence,
+} from './adam-case.ts';
 import { type ActionRow, ADAM_LIFE_ID, type IntentRow, type ThoughtRow } from './adam-stack.ts';
 
 const KINDS: AdamCaseKind[] = ['smoke', 'chatter', 'restart', 'sleep'];
@@ -49,6 +56,41 @@ describe('the case setup', () => {
       expect(commands[0]).toBe(`time set ${caseTime(kind)}`);
       expect(commands[1]).toBe(`clear ${ADAM_LIFE_ID}`);
     }
+  });
+});
+
+describe('the case inventory check', () => {
+  const EMPTY = `${ADAM_LIFE_ID} has the following entity data: []`;
+  const BED = `${ADAM_LIFE_ID} has the following entity data: [{Slot:0b,id:"minecraft:white_bed",count:1}]`;
+  const LOG = `${ADAM_LIFE_ID} has the following entity data: [{Slot:0b,id: "minecraft:oak_log",count:3}]`;
+
+  it('reads the item ids out of the NBT reply', () => {
+    expect(inventoryItems(BED)).toEqual(['white_bed']);
+    expect(inventoryItems(LOG)).toEqual(['oak_log']);
+    expect(inventoryItems(EMPTY)).toEqual([]);
+  });
+
+  it('accepts an empty inventory for every case but sleep, which holds exactly one bed', () => {
+    for (const kind of KINDS.filter((k) => k !== 'sleep')) {
+      expect(() => checkCaseInventory(kind, EMPTY)).not.toThrow();
+    }
+    expect(() => checkCaseInventory('sleep', BED)).not.toThrow();
+  });
+
+  it('fails with what Adam holds when the setup left something behind', () => {
+    expect(() => checkCaseInventory('smoke', BED)).toThrow(
+      /holds \[white_bed\], expected \[nothing\]/,
+    );
+    expect(() => checkCaseInventory('sleep', EMPTY)).toThrow(
+      /holds \[nothing\], expected \[white_bed\]/,
+    );
+    expect(() => checkCaseInventory('sleep', LOG)).toThrow(/before the Mind started/);
+  });
+
+  it('fails when the reply is not an inventory at all', () => {
+    expect(() => checkCaseInventory('smoke', 'No entity was found')).toThrow(
+      /could not read ag_adam_02's inventory: No entity was found/,
+    );
   });
 });
 

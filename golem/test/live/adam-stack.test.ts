@@ -159,6 +159,39 @@ describe('AdamStack', () => {
     expect(stops.at(-1)).toBe('adam-body');
   });
 
+  it('runs afterBody after the Body is ready and before animus starts', async () => {
+    const stack = new AdamStack([
+      specFor('adam-body'),
+      specFor('animus'),
+      specFor('lantern-local'),
+    ]);
+    const calls: string[] = [];
+    await stack.start(10_000, async () => {
+      // Body start, then setup: only the Body has been started when the setup runs.
+      calls.push(
+        `setup with ${stack.processes.map((p) => `${p.spec.name}:${p.running}`).join(',')}`,
+      );
+    });
+    running.push(...stack.processes);
+    expect(calls).toEqual(['setup with adam-body:true']);
+    expect(stack.processes.map((p) => p.spec.name)).toEqual([
+      'adam-body',
+      'animus',
+      'lantern-local',
+    ]);
+  });
+
+  it('starts no Mind process when afterBody fails, and stops the Body', async () => {
+    const stack = new AdamStack([specFor('adam-body'), specFor('animus')]);
+    await expect(
+      stack.start(10_000, async () => {
+        throw new Error('the bed is missing');
+      }),
+    ).rejects.toThrow('the bed is missing');
+    expect(stack.processes.map((p) => p.spec.name)).toEqual(['adam-body']);
+    expect(stack.processes[0]?.running).toBe(false);
+  });
+
   it('stops what it started when a process never gets ready', async () => {
     const stack = new AdamStack([
       specFor('adam-body'),
