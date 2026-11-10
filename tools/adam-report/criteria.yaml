@@ -1,0 +1,25 @@
+# Criteria for the Adam run report (W6-12). Every threshold and definition is a key.
+# A key with value null is not yet answered by the owner: the measure that needs it
+# prints "not computed: definition pending" and never a guessed number.
+#
+# Values marked "provisional" are the orchestrator's readings in decision 0061 (the owner
+# may revise them). Values marked "spec" come from spec section 10.
+
+# Survival window in consecutive in-game days (provisional, decision 0061 item 1; spec 10).
+survival_days: 5
+# A death inside the window fails the run (provisional, decision 0061 item 1).
+death_fails_run: true
+# Thought latency: p95 must be under this many ms (provisional, decision 0061 item 4).
+latency_p95_max_ms: 15000
+# Hard limit for each single thought, in ms (provisional, decision 0061 item 4).
+latency_hard_limit_ms: 25000
+# Continuous operation required, in real hours (provisional, decision 0061 item 5).
+continuous_hours: 24
+# Distinct world days required for the 24 h run to contain the 5-day segment (spec 10).
+continuous_world_days: 5
+# Real seconds without a thought that counts as a gap. Not answered by the owner.
+max_gap_seconds: null
+# Completed intents with zero model calls during them (spec 10: at least three).
+intents_without_call_min: 3
+# Model floor verdict, recorded by the owner after the 8B and 32B runs (provisional, decision 0061 item 6).
+model_floor_verdict: null
