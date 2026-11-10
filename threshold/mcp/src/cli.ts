@@ -2,7 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { natsRequestTransport } from '@geldar/animus/src/link/nats-body-link.ts';
 import { RealClock } from '@geldar/mcp-mock';
-import { AckPolicy, DeliverPolicy, jetstream, jetstreamManager } from '@nats-io/jetstream';
+import {
+  AckPolicy,
+  DeliverPolicy,
+  type JetStreamClient,
+  type JetStreamManager,
+  jetstream,
+  jetstreamManager,
+} from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
 import { connect } from '@nats-io/transport-node';
 import { Client, Pool } from 'pg';
@@ -127,7 +134,7 @@ export function containerPorts(shard: string): McpPorts {
     readSecret: async (path) => (await readFile(path, 'utf8')).trim(),
     openPool: (options: PgOptions) => new Pool({ ...options, max: 10 }),
     openRevokeListener: (config) => new Client(config),
-    connectNats: (url) => connectNats(url, shard),
+    connectNats: (url) => connectNats(url, shard, stderrLog),
     keepAlive: {
       start(intervalMs, tick) {
         const handle = setInterval(tick, intervalMs);
@@ -136,13 +143,21 @@ export function containerPorts(shard: string): McpPorts {
       },
     },
     clock: new RealClock(),
-    log: (line) =>
-      process.stderr.write(`${JSON.stringify({ ts: new Date().toISOString(), ...line })}\n`),
+    log: stderrLog,
   };
 }
 
+/** One line of JSON on stderr, stamped with the time. */
+export function stderrLog(line: Record<string, string | number>): void {
+  process.stderr.write(`${JSON.stringify({ ts: new Date().toISOString(), ...line })}\n`);
+}
+
 /** The NATS link: one connection, the presence KV manager, request/reply, the call publisher and the replay. */
-async function connectNats(url: string, shard: string): Promise<NatsLink> {
+async function connectNats(
+  url: string,
+  shard: string,
+  log: (line: Record<string, string | number>) => void,
+): Promise<NatsLink> {
   const nc = await connect({ servers: url, name: 'geldar-mcp' });
   const js = jetstream(nc);
   const jsm = await jetstreamManager(nc);
@@ -156,7 +171,21 @@ async function connectNats(url: string, shard: string): Promise<NatsLink> {
     publishCall: async (msgId, payload) => {
       await js.publish(`geldar.${shard}.sovereign_call`, JSON.stringify(payload), { msgID: msgId });
     },
-    replay: async (subjects, fromIso, onMessage) => {
+    replay: (subjects, fromIso, onMessage) =>
+      startReplay(jetStreamReplay(js, jsm), subjects, fromIso, onMessage, {
+        log,
+        waitMs: REPLAY_CATCHUP_MS,
+      }),
+    drain: async () => {
+      await nc.drain();
+    },
+  };
+}
+
+/** The replay consumer on GELDAR_EVENTS: from the start time, on the subjects, explicit acks. */
+function jetStreamReplay(js: JetStreamClient, jsm: JetStreamManager): ReplaySource {
+  return {
+    async open(subjects, fromIso) {
       const info = await jsm.consumers.add('GELDAR_EVENTS', {
         deliver_policy: DeliverPolicy.StartTime,
         opt_start_time: fromIso,
@@ -166,21 +195,155 @@ async function connectNats(url: string, shard: string): Promise<NatsLink> {
       });
       const consumer = await js.consumers.get('GELDAR_EVENTS', info.name);
       const messages = await consumer.consume();
-      void (async () => {
-        for await (const message of messages) {
-          try {
-            await onMessage(message.seq, message.json());
-          } finally {
-            message.ack();
-          }
-        }
-      })();
-      return { stop: async () => messages.stop() };
-    },
-    drain: async () => {
-      await nc.drain();
+      return { pending: info.num_pending, messages, stop: () => messages.stop() };
     },
   };
+}
+
+/** How many deliveries of one stream message are tried before it is dropped (drop after three). */
+export const MAX_STREAM_ATTEMPTS = 3;
+/** How long the front door waits for the replay to catch up before it listens anyway. */
+export const REPLAY_CATCHUP_MS = 30_000;
+
+/** One delivered stream message: its sequence, its body and the acknowledgement. */
+export interface StreamMessage {
+  seq: number;
+  json(): unknown;
+  ack(): void;
+  nak(): void;
+}
+
+/** Counts of what the stream loop set aside: unparsable bodies, failed handlings and dropped messages. */
+export interface StreamLoopCounters {
+  malformed: number;
+  failed: number;
+  dropped: number;
+}
+
+/** The replay consumer as the replay needs it: what it holds at creation, and its messages. */
+export interface ReplaySource {
+  open(
+    subjects: string[],
+    fromIso: string,
+  ): Promise<{ pending: number; messages: AsyncIterable<StreamMessage>; stop(): Promise<void> }>;
+}
+
+/**
+ * Reads the stream until the iterator ends. A body that is not JSON is counted and acked. A handler
+ * that throws is retried by a nak, and dropped and acked after MAX_STREAM_ATTEMPTS deliveries. The
+ * loop never rejects: a throw is logged and the next message is read. `onSettled` runs after each
+ * message is acked or naked, so a caller can count the messages it has seen.
+ */
+export async function runStreamLoop(
+  messages: AsyncIterable<StreamMessage>,
+  onMessage: (seq: number, raw: unknown) => Promise<void>,
+  counters: StreamLoopCounters,
+  log: (line: Record<string, string | number>) => void,
+  onSettled?: () => void,
+): Promise<void> {
+  const attempts = new Map<number, number>();
+  try {
+    for await (const message of messages) {
+      try {
+        await settleOne(message, onMessage, counters, log, attempts);
+      } catch (error) {
+        log({ event: 'stream_message_unsettled', seq: message.seq, error: nameOf(error) });
+      } finally {
+        onSettled?.();
+      }
+    }
+  } catch (error) {
+    log({ event: 'stream_loop_stopped', error: nameOf(error) });
+  }
+}
+
+async function settleOne(
+  message: StreamMessage,
+  onMessage: (seq: number, raw: unknown) => Promise<void>,
+  counters: StreamLoopCounters,
+  log: (line: Record<string, string | number>) => void,
+  attempts: Map<number, number>,
+): Promise<void> {
+  let raw: unknown;
+  try {
+    raw = message.json();
+  } catch {
+    counters.malformed++;
+    log({ event: 'stream_message_malformed', seq: message.seq });
+    message.ack();
+    return;
+  }
+  try {
+    await onMessage(message.seq, raw);
+    attempts.delete(message.seq);
+    message.ack();
+  } catch (error) {
+    const tries = (attempts.get(message.seq) ?? 0) + 1;
+    counters.failed++;
+    if (tries < MAX_STREAM_ATTEMPTS) {
+      attempts.set(message.seq, tries);
+      log({
+        event: 'stream_message_retry',
+        seq: message.seq,
+        attempt: tries,
+        error: nameOf(error),
+      });
+      message.nak();
+      return;
+    }
+    attempts.delete(message.seq);
+    counters.dropped++;
+    log({
+      event: 'stream_message_dropped',
+      seq: message.seq,
+      attempts: tries,
+      error: nameOf(error),
+    });
+    message.ack();
+  }
+}
+
+/**
+ * Starts the replay and resolves once it has caught up: the consumer has settled the messages it held
+ * at creation, or `waitMs` has passed (logged as a timeout). The loop keeps reading after that. The
+ * front door listens only after this resolves, so a cursor is checked against a replayed head.
+ */
+export async function startReplay(
+  source: ReplaySource,
+  subjects: string[],
+  fromIso: string,
+  onMessage: (seq: number, raw: unknown) => Promise<void>,
+  options: { log: (line: Record<string, string | number>) => void; waitMs: number },
+): Promise<{ stop(): Promise<void> }> {
+  const { log, waitMs } = options;
+  const replay = await source.open(subjects, fromIso);
+  const counters: StreamLoopCounters = { malformed: 0, failed: 0, dropped: 0 };
+  let settled = 0;
+  let markCaughtUp: () => void = () => {};
+  const caughtUp = new Promise<'caught_up'>((resolve) => {
+    markCaughtUp = () => resolve('caught_up');
+  });
+  if (replay.pending <= 0) markCaughtUp();
+  void runStreamLoop(replay.messages, onMessage, counters, log, () => {
+    settled++;
+    if (settled >= replay.pending) markCaughtUp();
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<'timed_out'>((resolve) => {
+    timer = setTimeout(() => resolve('timed_out'), waitMs);
+  });
+  const outcome = await Promise.race([caughtUp, timedOut]);
+  clearTimeout(timer);
+  if (outcome === 'timed_out') {
+    log({ event: 'replay_catchup_timeout', settled, pending: replay.pending, waitMs });
+  } else {
+    log({ event: 'replay_caught_up', settled });
+  }
+  return { stop: () => replay.stop() };
+}
+
+function nameOf(error: unknown): string {
+  return error instanceof Error ? error.name : 'unknown';
 }
 
 /** The entry point when this file runs as the container's command. */
