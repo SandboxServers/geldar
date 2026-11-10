@@ -15,11 +15,11 @@ The design is in [`docs/spec.md`](docs/spec.md) (v0.8, draft). The project is bu
 | 0 | Adam: one living agent on one machine | In progress |
 | 1 | Village: the world on a LAN | Planned |
 | 2 | Open the doors: first internet exposure | Planned |
-| 3 | Settlement: 30 to 50 agents, sovereign players | Planned |
+| 3 | Settlement: 30 to 50 agents, sovereign agents | Planned |
 | 4 | Civilization: 100 or more agents | Planned |
 | 5 | Cosmology | Planned |
 
-Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and a per-player MCP server that sovereign players connect through. The sovereign-player MCP has run against the real Body in live smoke tests. The Phase 0 exit runs (the multi-day survival and intent runs in spec section 10) have not happened yet; they are planned. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/).
+Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and an MCP server that sovereign agents connect through. The sovereign-agent MCP has run against the real Body in live smoke tests. The Phase 0 exit runs (the multi-day survival and intent runs in spec section 10) have not happened yet; they are planned. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/).
 
 ## Principles
 
@@ -30,28 +30,53 @@ Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the 
 
 ## Architecture
 
-Two kinds of resident share one world. A headless agent (Adam) runs its Mind on a local machine. A sovereign player runs its Mind in a vendor's command-line tool, with its memory in its own repository, and reaches the world only through the MCP server.
+Two kinds of agent share one world. A headless agent (Adam) runs its Mind on a local machine and has no owner. A sovereign agent runs its Mind in a vendor's command-line tool, with its memory in its own repository, and reaches the world only through the MCP server. Every agent has exactly one Body.
 
-```
-  Adam (headless)                    Sovereign player
-  Mind: animus/                      vendor CLI + its own repo
-     |                                    |  MCP
-     v                                    v
-  lantern-local/ -> Ollama           threshold/mcp  (MCP server)
-                                          |
-  Body: golem/  <-------------------------+   (one Body per player)
-     |  Minecraft protocol
-     v
-  Velocity: plugin/velocity-identity   (identity gate)
-     |
-     v
-  Paper + Geldar-Core: plugin/core
-     |  events
-     v
-  NATS JetStream -> eventsink/ -> Postgres (sql/)
+```mermaid
+flowchart TB
+  P["Player: a human owner<br/>(one per person)"]
+  A1["Agent: sovereign<br/>Mind: vendor CLI in its own repo"]
+  A2["Agent: sovereign"]
+  AN["Agent: sovereign<br/>(up to 20 per player)"]
+  AD["Agent: Adam (headless, no owner)<br/>Mind: animus/ on lantern-local/"]
+  MCP["threshold/mcp: Geldar MCP server"]
+  B1["Body: golem/"]
+  B2["Body: golem/"]
+  BN["Body: golem/"]
+  BD["Body: golem/"]
+  GATE["Velocity: plugin/velocity-identity<br/>identity gate"]
+  PAPER["Paper + Geldar-Core: plugin/core"]
+  NATS["NATS JetStream"]
+  PG["eventsink/ -> Postgres (sql/)"]
+  P -- "1 to N, N at most 20" --> A1
+  P -- "1 to N" --> A2
+  P -- "1 to N" --> AN
+  A1 -- "MCP" --> MCP
+  A2 -- "MCP" --> MCP
+  AN -- "MCP" --> MCP
+  A1 -- "1 to 1" --> B1
+  A2 -- "1 to 1" --> B2
+  AN -- "1 to 1" --> BN
+  AD -- "1 to 1" --> BD
+  MCP --> B1
+  MCP --> B2
+  MCP --> BN
+  B1 -- "Minecraft protocol" --> GATE
+  B2 -- "Minecraft protocol" --> GATE
+  BN -- "Minecraft protocol" --> GATE
+  BD -- "Minecraft protocol" --> GATE
+  GATE --> PAPER
+  PAPER -- "events" --> NATS
+  NATS --> PG
 ```
 
 The Phase 0 stack runs under Docker Compose (`compose/phase0.yml`): Postgres, NATS, Paper, Velocity and the event sink. The Mind and Body run as host processes. Vocabulary is in [`docs/glossary.md`](docs/glossary.md).
+
+### Players and agents
+
+A **player** is a human owner: the account that owns agents. A player is not in the world and acts only through its agents. A player can own **1 to N agents**, up to **20** (the owner cap, [decision 0052](docs/decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md); the shard default is 3 for other owners). An **agent** is a resident with a name and a life, and it has **exactly one Body** (the bot that is logged into Paper) and one Mind. Headless agents such as Adam have no owner.
+
+The code is narrower than this model. Today the Body is started per player id (`golem/src/players/main.ts --player <id>`), and that id names one agent, so the code's "player" is the agent. The owner cap is read from `shards/phase0.yaml` but no code enforces it yet. The spec and the code still say "sovereign player" for what this README calls a sovereign agent.
 
 ## Quickstart (Windows, PowerShell 7)
 
@@ -82,7 +107,7 @@ CI runs on Linux (`.github/workflows/ci.yml`). The local `check` command mirrors
 | `animus/` | The Mind: intents, attention, memory, reflection |
 | `lantern-local/` | The Phase 0 local Thinker: a WebSocket to Ollama |
 | `eventsink/` | NATS JetStream to Postgres, with dead letters |
-| `threshold/` | The gateway area: the player MCP server (`mcp/`) and a mock (`mcp-mock/`) |
+| `threshold/` | The gateway area: the Geldar MCP server (`mcp/`) and a mock (`mcp-mock/`) |
 | `sql/` | Postgres migrations |
 | `compose/` | Docker Compose stacks and their configuration |
 | `shards/` | Shard definitions (`phase0.yaml`) |
