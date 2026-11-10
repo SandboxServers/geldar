@@ -6,8 +6,8 @@
  * stop the run and leave the checkpoint. Every restart is logged as one JSON line.
  */
 import { pathToFileURL } from 'node:url';
+import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
-import { connect } from '@nats-io/transport-node';
 import type { Bot } from 'mineflayer';
 import { type BackoffPolicy, DEFAULT_BACKOFF, nextDelayMs } from '../backoff.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
@@ -183,7 +183,7 @@ export async function main(): Promise<void> {
   const stack = loadStackConfig();
   const natsUrl = stack.natsUrl ?? '';
   assertLoopbackNatsUrl(natsUrl);
-  const nc = await connect({ servers: natsUrl, name: 'adam-body', timeout: 5_000 });
+  const nc = await connectNats({ servers: natsUrl, name: 'adam-body', timeout: 5_000 });
   const restartKv = await openRestartKv(natsUrl);
   const env: AdamBodyEnv = {
     config,

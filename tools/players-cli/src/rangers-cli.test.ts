@@ -97,11 +97,59 @@ describe('runRangersCli', () => {
   });
 });
 
+const noRemoval = async (): Promise<string[]> => [];
+
+/** A removal fake that records the lives it was asked to retire. */
+function recordingRemoval(): {
+  removeLife: (lifeId: string) => Promise<string[]>;
+  lives: string[];
+} {
+  const lives: string[] = [];
+  return {
+    lives,
+    async removeLife(lifeId) {
+      lives.push(lifeId);
+      return [`registry key ${lifeId}: deleted`, `whitelist ${lifeId}: removed`];
+    },
+  };
+}
+
 describe('down', () => {
+  it('removes the stopped life from the registry and whitelist after its Body exits', async () => {
+    writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
+    const { ops } = fakeOps(BODY, 'graceful');
+    const removal = recordingRemoval();
+    const result = await runRangersCli(['down'], SHARD, {
+      ops,
+      runDir,
+      removeLife: removal.removeLife,
+    });
+    expect(removal.lives).toEqual(['ag_jason_01']);
+    expect(result.code).toBe(0);
+    expect(result.lines).toEqual([
+      'ag-jason-01 stopped (graceful, pid 4242)',
+      'registry key ag_jason_01: deleted',
+      'whitelist ag_jason_01: removed',
+    ]);
+  });
+
+  it('keeps the life in the registry and whitelist when its Body survives the stop', async () => {
+    writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
+    const { ops } = fakeOps(BODY, 'never');
+    const removal = recordingRemoval();
+    const result = await runRangersCli(['down'], SHARD, {
+      ops,
+      runDir,
+      removeLife: removal.removeLife,
+    });
+    expect(result.code).toBe(1);
+    expect(removal.lives).toEqual([]);
+  });
+
   it('removes the PID file only after the Body has exited', async () => {
     writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
     const { ops, calls } = fakeOps(BODY, 'graceful');
-    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(result.code).toBe(0);
     expect(result.lines).toEqual(['ag-jason-01 stopped (graceful, pid 4242)']);
     expect(calls).toEqual(['graceful 4242']);
@@ -111,7 +159,7 @@ describe('down', () => {
   it('keeps the PID file and exits 1 when the Body survives the stop', async () => {
     writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
     const { ops } = fakeOps(BODY, 'never');
-    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(result.code).toBe(1);
     expect(result.lines[0]).toContain('not stopped: pid 4242 is still running');
     expect(existsSync(pidPath())).toBe(true);
@@ -121,7 +169,7 @@ describe('down', () => {
     writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
     const reused: ProcessIdentity = { started: 'start-1', commandLine: 'node other-tool.js' };
     const { ops, calls } = fakeOps(reused, 'graceful');
-    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(calls).toEqual([]);
     expect(result.lines[0]).toContain('not killed');
     expect(existsSync(pidPath())).toBe(false);
@@ -130,7 +178,7 @@ describe('down', () => {
   it('treats an old bare-PID file as stale: a live PID is never killed, and the file is kept', async () => {
     writeFileSync(pidPath(), '4242\n');
     const { ops, calls } = fakeOps(BODY, 'graceful');
-    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(calls).toEqual([]);
     expect(result.code).toBe(1);
     expect(existsSync(pidPath())).toBe(true);
@@ -141,7 +189,7 @@ describe('down', () => {
     writeFileSync(pidPath(), '4242\n');
     const { ops, calls } = fakeOps(null, 'never');
     ops.alive = () => false;
-    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(result).toEqual({ code: 0, lines: ['ag-jason-01 down (old pid file removed)'] });
     expect(calls).toEqual([]);
     expect(existsSync(pidPath())).toBe(false);
@@ -154,7 +202,7 @@ describe('unverifiable processes', () => {
   it('down keeps the PID file, exits 1 and signals nothing when the identity cannot be read', async () => {
     writeFileSync(pidPath(), RECORD_TEXT());
     const { ops, calls } = fakeOps(null, 'graceful');
-    const result = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const result = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(result.code).toBe(1);
     expect(result.lines[0]).toContain('not stopped: pid 4242 cannot be verified');
     expect(calls).toEqual([]);
@@ -202,7 +250,7 @@ describe('unverifiable processes', () => {
       readPresence: async () => new Map(),
     });
     expect(status.lines[0]).toContain('unknown pid 4242 (start time unreadable)');
-    const down = await runRangersCli(['down'], SHARD, { ops, runDir });
+    const down = await runRangersCli(['down'], SHARD, { ops, runDir, removeLife: noRemoval });
     expect(down.code).toBe(1);
     expect(calls).toEqual([]);
   });

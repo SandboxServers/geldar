@@ -4,10 +4,12 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 
 /**
@@ -16,10 +18,18 @@ import java.util.regex.Pattern;
  * unsynced, and the gate stays closed until a sync completes. Each (re)watch replays the whole
  * bucket into a fresh map that replaces the old one only at the end of the replay, so keys deleted
  * while the watch was down do not survive; a lost watch makes the registry unsynced again (fail closed).
+ * NATS expires a key by TTL without sending a delete to watchers, so each entry also records when it was
+ * last received, and {@link #find} treats an entry older than the maximum age as absent.
  */
 public class LifeRegistry implements RegistryClient.Feed {
     /** One registered life. */
     public record Entry(String lifeId, String registeredAt) {}
+
+    /**
+     * The longest an entry stays admissible after it was last received. The bucket's TTL is 60 s and the
+     * Body rewrites its key every 20 s, so a live key is always received again well inside this age.
+     */
+    public static final Duration DEFAULT_MAX_AGE = Duration.ofSeconds(90);
 
     /** A Minecraft username as the proxy accepts it. */
     private static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
@@ -27,10 +37,25 @@ public class LifeRegistry implements RegistryClient.Feed {
     /** A bucket key: a username already in lowercase, so two keys never name the same player. */
     private static final Pattern CANONICAL_KEY = Pattern.compile("[a-z0-9_]{1,16}");
 
-    private volatile Map<String, Entry> entries = new ConcurrentHashMap<>();
+    /** An entry with the local nanotime it was last received (a put, or a replay that ended with it). */
+    private record Stamped(Entry entry, long receivedAtNanos) {}
+
+    private final LongSupplier clock;
+    private final long maxAgeNanos;
+    private volatile Map<String, Stamped> entries = new ConcurrentHashMap<>();
     /** The map being built by a replay in progress, or null. Guarded by {@code this}. */
-    private Map<String, Entry> replay;
+    private Map<String, Stamped> replay;
     private volatile boolean synced;
+
+    public LifeRegistry() {
+        this(System::nanoTime, DEFAULT_MAX_AGE);
+    }
+
+    /** A registry with its own clock and maximum entry age (a fake clock in tests). */
+    LifeRegistry(LongSupplier clock, Duration maxAge) {
+        this.clock = clock;
+        this.maxAgeNanos = maxAge.toNanos();
+    }
 
     /** True for a plain username: 1 to 16 ASCII letters, digits or underscores. */
     public static boolean isValidUsername(String username) {
@@ -55,10 +80,10 @@ public class LifeRegistry implements RegistryClient.Feed {
         if (key == null || !CANONICAL_KEY.matcher(key).matches()) {
             return;
         }
-        Map<String, Entry> target = replay != null ? replay : entries;
+        Map<String, Stamped> target = replay != null ? replay : entries;
         Optional<Entry> entry = parse(value);
         if (entry.isPresent()) {
-            target.put(key, entry.get());
+            target.put(key, new Stamped(entry.get(), clock.getAsLong()));
         } else {
             target.remove(key);
         }
@@ -96,9 +121,19 @@ public class LifeRegistry implements RegistryClient.Feed {
         return synced;
     }
 
-    /** The registered life for this username, empty when unknown or revoked. */
+    /**
+     * The registered life for this username, empty when unknown, revoked, or not received within the maximum
+     * age (its TTL has run out on the bucket, and no delete came).
+     */
     public Optional<Entry> find(String username) {
-        return isValidUsername(username) ? Optional.ofNullable(entries.get(key(username))) : Optional.empty();
+        if (!isValidUsername(username)) {
+            return Optional.empty();
+        }
+        Stamped stamped = entries.get(key(username));
+        if (stamped == null || clock.getAsLong() - stamped.receivedAtNanos() > maxAgeNanos) {
+            return Optional.empty();
+        }
+        return Optional.of(stamped.entry());
     }
 
     /** Parses {@code {"life_id": "...", "registered_at": "..."}}; both fields must be non-empty strings. */

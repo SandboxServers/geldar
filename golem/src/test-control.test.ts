@@ -19,6 +19,9 @@ const CONTROL_USERS = [
   // Threat-model rule 9 and the WM-08 packet: the player host whitelists a life over RCON before connect.
   join(import.meta.dirname, 'players', 'whitelist.ts'),
   join(import.meta.dirname, 'players', 'main.ts'),
+  // The operator removal path (`players down`, `adam stop`, `mcp-tokens retire`) removes the whitelist
+  // entry over RCON with the same password file; see players/life-removal.ts.
+  join(import.meta.dirname, 'players', 'life-removal.ts'),
 ];
 
 /** What actions must not reach: the RCON layer, the arena builder and the bench. */
@@ -303,10 +306,14 @@ describe('TestControl', () => {
     }
   });
 
-  it('lets only the two player files whitelist over RCON, and no third players file', async () => {
+  it('lets only the player and removal files whitelist over RCON, and no other players file', async () => {
     const players = join(import.meta.dirname, 'players');
     const admitted = CONTROL_USERS.filter((user) => user.startsWith(players + sep)).sort();
-    expect(admitted).toEqual([join(players, 'main.ts'), join(players, 'whitelist.ts')]);
+    expect(admitted).toEqual([
+      join(players, 'life-removal.ts'),
+      join(players, 'main.ts'),
+      join(players, 'whitelist.ts'),
+    ]);
     const reaching: string[] = [];
     for (const file of await tsFilesUnder(players)) {
       if (!file.endsWith('.test.ts') && (await reachesForbidden(file)) !== undefined) {

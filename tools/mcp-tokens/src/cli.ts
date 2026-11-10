@@ -2,6 +2,7 @@
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
+import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
@@ -101,6 +102,8 @@ export interface Env {
   secretDir: string;
   shardFile: string;
   connect: () => Promise<SqlSession>;
+  /** Deletes a retired life's registry key and whitelist entry; defaults to the golem removal. */
+  removeLife?: (lifeId: string) => Promise<string[]>;
 }
 
 export async function connectPg(): Promise<SqlSession> {
@@ -187,8 +190,19 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
   }
   const action = verb === 'pause' || verb === 'resume' || verb === 'retire' ? verb : undefined;
   if (action !== undefined && id !== undefined && args.length === 2) {
-    await withSql(env, (sql) => setPlayerStatus(sql, id, action));
+    let life = '';
+    await withSql(env, async (sql) => {
+      life = await setPlayerStatus(sql, id, action);
+    });
     io.out(`player ${id}: ${action}`);
+    if (action === 'retire') {
+      // Never fails the retire: the removal reports each step, and a failure names the manual command.
+      const removeLife = env.removeLife ?? ((lifeId: string) => removeLifeFromShard(lifeId));
+      for (const line of await removeLife(life).catch((error: unknown) => [
+        `life ${life}: removal failed (${error instanceof Error ? error.message : String(error)})`,
+      ]))
+        io.out(line);
+    }
     return;
   }
   throw new Error(USAGE);

@@ -22,6 +22,7 @@ import {
   type Tier,
 } from './pins.ts';
 import { BODY, formatStatus, isLifeId, latencySql, parseLatency, SERVICES } from './procs.ts';
+import { retireSelected } from './retire.ts';
 import {
   compose,
   followLog,
@@ -188,6 +189,14 @@ async function lastLatency(shard: string, life: string): Promise<number | null> 
   }
 }
 
+/** After `down`: retires the selected life from the registry and whitelist, printing each step. */
+async function retireAfterStop(): Promise<void> {
+  const file = shardFile(process.env);
+  const source = existsSync(file) ? readFileSync(file, 'utf8') : null;
+  const anyRunning = readRows().some((r) => r.state === 'running');
+  for (const line of await retireSelected(source, anyRunning)) console.log(line);
+}
+
 async function status(): Promise<void> {
   const rows = readRows();
   let life = 'unknown';
@@ -289,6 +298,7 @@ export async function run(argv: string[]): Promise<number> {
         return 0;
       case 'down':
         await stopAll();
+        await retireAfterStop();
         return 0;
       case 'status':
         await status();
