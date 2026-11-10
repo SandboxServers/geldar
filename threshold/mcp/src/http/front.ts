@@ -20,6 +20,8 @@ export interface FrontDoorOptions {
   log?: (line: Record<string, string | number>) => void;
   /** Clock in milliseconds. Default Date.now. */
   now?: () => number;
+  /** Test seam: the request timeout and the per-address connection cap. Defaults: 30 s and 16. */
+  limits?: { requestTimeoutMs?: number; maxConnectionsPerAddress?: number };
 }
 
 export interface FrontDoor {
@@ -32,7 +34,10 @@ export interface FrontDoor {
 /** The largest POST body the front door reads (413 above it). */
 export const BODY_LIMIT_BYTES = 64 * 1024;
 const HEADERS_TIMEOUT_MS = 10_000;
+// Receiving one whole request; a held response is not cut, the timeout ends at the request's end.
+const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_CONNECTIONS = 128;
+const MAX_CONNECTIONS_PER_ADDRESS = 16;
 
 function stderrSink(line: Record<string, string | number>): void {
   process.stderr.write(`${JSON.stringify(line)}\n`);
@@ -79,9 +84,12 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     maxBodyBytes: BODY_LIMIT_BYTES,
     limits: {
       maxConnections: MAX_CONNECTIONS,
+      maxConnectionsPerAddress:
+        options.limits?.maxConnectionsPerAddress ?? MAX_CONNECTIONS_PER_ADDRESS,
       headersTimeoutMs: HEADERS_TIMEOUT_MS,
-      requestTimeoutMs: 0,
+      requestTimeoutMs: options.limits?.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
     },
+    closeRefused: true,
     hostAllowed: (host) => hostAccepted(options.http.allowedHosts, port, host),
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
@@ -99,14 +107,18 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
       return { outcome: verdict.outcome };
     },
-    onToolCall(playerId, body, res): Refusal | undefined {
-      if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
-      const player = players.get(res.req);
-      if (player === undefined) return { status: 401, message: 'unauthorized' };
+    // Takes the open slot before the body is read, so a slow body holds one like any open request.
+    beforeBody(playerId, _req, res): Refusal | undefined {
       if (!gates.acquire(playerId)) {
         return { status: 429, message: 'too_many_open_requests', retryAfterSec: 1 };
       }
       res.once('close', () => gates.release(playerId));
+      return undefined;
+    },
+    onToolCall(playerId, body, res): Refusal | undefined {
+      if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
+      const player = players.get(res.req);
+      if (player === undefined) return { status: 401, message: 'unauthorized' };
       if (!isToolCall(body)) return undefined;
       const retryAfterSec = gates.call(playerId, player.ownerId, now());
       if (retryAfterSec === undefined) return undefined;
