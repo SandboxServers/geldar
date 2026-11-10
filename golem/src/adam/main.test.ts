@@ -147,5 +147,15 @@ describe('the Body supervisor', () => {
     await r.supervisor.run();
     expect(r.bodies).toHaveLength(0);
     expect(r.logs.some((l) => l.event === 'body_fatal')).toBe(true);
+    expect(r.supervisor.fatal).toBe(true);
+  });
+
+  it('does not mark a stopped run as fatal', async () => {
+    const r = rig();
+    const done = r.supervisor.run();
+    await r.started(1);
+    await r.supervisor.stop();
+    await done;
+    expect(r.supervisor.fatal).toBe(false);
   });
 });

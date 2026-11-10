@@ -55,6 +55,8 @@ const defaultSleep = (ms: number, signal: AbortSignal): Promise<void> =>
 export class BodySupervisor {
   /** How many runs have been started. */
   starts = 0;
+  /** True once a fatal connection error (a kick or ban) ended the loop; the caller then exits non-zero. */
+  fatal = false;
   private readonly opts: SupervisorOptions;
   private readonly abort = new AbortController();
   private current: RunningAdamBody | null = null;
@@ -114,6 +116,7 @@ export class BodySupervisor {
       } catch (error) {
         this.current = null;
         if ((error as { fatal?: unknown }).fatal === true) {
+          this.fatal = true;
           log({ event: 'body_fatal', error: String(error) });
           return;
         }
@@ -211,6 +214,7 @@ export async function main(): Promise<void> {
   process.once('SIGINT', () => onSignal('SIGINT'));
   process.once('SIGTERM', () => onSignal('SIGTERM'));
   await done;
+  if (supervisor.fatal) process.exitCode = 1;
   await manager.stop();
   await restartKv.close();
   await nc.close();
