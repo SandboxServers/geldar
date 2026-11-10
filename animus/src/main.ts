@@ -103,7 +103,7 @@ export function agentRow(config: AnimusConfig, now: Date = new Date()): AgentRow
     tier: config.agent.tier,
     personalitySeed: config.agent.personalitySeed,
     bornAt: now.toISOString(),
-    bornDay: 0,
+    bornDay: null,
     budgetRemaining: null,
     budgetDaily: null,
     lastSleepDay: null,

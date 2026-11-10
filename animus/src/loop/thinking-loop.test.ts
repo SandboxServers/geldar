@@ -203,6 +203,37 @@ describe('ThinkingLoop: the model plans', () => {
     expect(logged?.error_code).toBeTypeOf('string');
   });
 
+  it('logs a loop_error and fails the thought when the memory load never returns', async () => {
+    const lines: Record<string, unknown>[] = [];
+    const rig = await makeRig([VALID_THOUGHT], {
+      loop: { memoryTimeoutMs: 20 },
+      deps: { log: (line) => lines.push(line) },
+    });
+    rig.store.loadDeterministic = () => new Promise<never>(() => undefined);
+    const result = await rig.loop.handle(makeDecision());
+    expect(result.outcome).toBe('model_error');
+    expect(rig.body.plans).toHaveLength(0);
+    expect(lines.find((l) => l.event === 'loop_error')).toBeDefined();
+  });
+
+  it('counts days since sleep from now when the life has neither a sleep nor a birth day', async () => {
+    const rig = await makeRig([VALID_THOUGHT], {
+      snapshot: makeSnapshot({
+        world_time: { day: 5, time_of_day: 'day', ticks: 1000, weather: 'clear' },
+      }),
+    });
+    const load = rig.store.loadDeterministic.bind(rig.store);
+    rig.store.loadDeterministic = async (lifeId, tick) => {
+      const memory = await load(lifeId, tick);
+      return { ...memory, agent: { ...memory.agent, lastSleepDay: null, bornDay: null } };
+    };
+    await rig.loop.handle(makeDecision('idle'));
+    const vars = rig.prompts.renders[0]?.vars;
+    expect(vars && 'snapshot' in vars ? vars.snapshot.self : null).toMatchObject({
+      days_since_sleep: 0,
+    });
+  });
+
   it('runs a decision from the attention controller through attach', async () => {
     const rig = await makeRig([VALID_THOUGHT]);
     const detach = rig.loop.attach();

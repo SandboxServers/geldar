@@ -89,6 +89,20 @@ interface Cycle {
   errorCode?: string;
 }
 
+/**
+ * Waits for `work`, and fails after `ms` when a limit is set. A late result is dropped, never left
+ * as an unhandled rejection; the timer is cleared as soon as `work` settles.
+ */
+function withinLimit<T>(work: Promise<T>, ms: number | undefined): Promise<T> {
+  if (ms === undefined) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const limit = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
+  });
+  work.catch(() => undefined);
+  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
+}
+
 /** The Body refused a plan because it expired before it was sent; the loop decides, not the Body. */
 function expiredRefusal(thoughtId: string): PlanAck {
   return {
@@ -209,8 +223,10 @@ export class ThinkingLoop {
     const tick = raw.world_time.ticks;
 
     // 2. The profile and the memory.
-    const memory = await this.deps.memory.loadDeterministic(lifeId, tick);
-    const lastSleep = memory.agent.lastSleepDay ?? memory.agent.bornDay ?? 0;
+    const load = this.deps.memory.loadDeterministic(lifeId, tick);
+    const memory = await withinLimit(load, this.options.memoryTimeoutMs);
+    // A life with no sleep and no birth day counts from now, not from day 0 of the world.
+    const lastSleep = memory.agent.lastSleepDay ?? memory.agent.bornDay ?? raw.world_time.day;
     const snapshot: Snapshot = {
       ...raw,
       self: {
