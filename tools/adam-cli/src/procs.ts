@@ -13,13 +13,16 @@ export interface Service {
   entry: string;
 }
 
+/** The Body: its entry point is the command-line marker `restart-body` checks before it signals it. */
+export const BODY: Service = { name: 'body', dir: 'golem', entry: 'src/adam/main.ts' };
+
 /**
  * In start order. The Body comes first so it can answer the Mind's first plan; `down` stops in
  * the reverse order, so the Body is last and writes its checkpoint after the Mind has stopped
  * sending it plans.
  */
 export const SERVICES: readonly Service[] = [
-  { name: 'body', dir: 'golem', entry: 'src/adam/main.ts' },
+  BODY,
   { name: 'animus', dir: 'animus', entry: 'src/main.ts' },
   { name: 'lantern-local', dir: 'lantern-local', entry: 'src/main.ts' },
 ];

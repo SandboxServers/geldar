@@ -155,12 +155,18 @@ describe('the supervisor and reporter argument arrays', () => {
     await expect(createSupervisor(runner, '/repo').up()).rejects.toThrow(/adam up exited 3/);
   });
 
-  it('the Body kill is refused until adam-cli has a per-service stop', async () => {
+  it('the Body kill runs adam-cli restart-body through node, with an argument array', async () => {
     const { runner, calls } = recordingRunner();
+    await createSupervisor(runner, '/repo').killBody();
+    expect(calls.map((c) => [c.file, c.args.slice(1)])).toEqual([['node', ['restart-body']]]);
+    expect(calls[0]?.args[0]).toBe(join('/repo', 'tools', 'adam-cli', 'src', 'cli.ts'));
+  });
+
+  it('a refused Body restart throws, so the sequence aborts', async () => {
+    const { runner } = recordingRunner(1);
     await expect(createSupervisor(runner, '/repo').killBody()).rejects.toThrow(
-      /no per-service Body stop/,
+      /restart-body exited 1/,
     );
-    expect(calls).toHaveLength(0);
   });
 
   it('the reporter passes the run folder and the manifest to adam-report', async () => {

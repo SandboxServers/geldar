@@ -301,8 +301,8 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
       );
     },
     async killBody() {
-      // adam-cli has no per-service Body stop yet: this stays an error until the ops step adds one.
-      throw new Error('killBody: adam-cli has no per-service Body stop');
+      // `restart-body` ends only the Body and starts a fresh one: nothing else restarts a killed Body process.
+      check(await adam(['restart-body']), 'adam restart-body');
     },
     async stop(service) {
       // adam-cli's `down` stops the whole stack, so this is one call for every service in the stop order.
