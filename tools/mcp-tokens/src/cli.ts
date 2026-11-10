@@ -5,6 +5,16 @@ import { Client } from 'pg';
 import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import { initSecretFiles, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
+import {
+  checkOutPath,
+  DEFAULT_GRACE_MINUTES,
+  listTokens,
+  mintTokenFile,
+  parseGrace,
+  revokePlayerTokens,
+  revokeToken,
+  rotateTokenFile,
+} from './tokens.ts';
 
 /** The shard config that says whether sovereign players are allowed, and with which harnesses. */
 export const SHARD_FILE = join(REPO_ROOT, 'shards', 'phase0.yaml');
@@ -174,6 +184,55 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
   throw new Error(USAGE);
 }
 
+async function runToken(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
+  const [verb, target] = args;
+  if (verb === 'mint' && target !== undefined && args.length === 2) {
+    const out = requireFlag(parsed, '--out');
+    checkOutPath(out);
+    await withSql(env, async (sql) => {
+      const tokenId = await mintTokenFile(sql, env.secretDir, target, out);
+      io.out(`minted ${tokenId} for ${target} to ${resolve(out)}`);
+    });
+    return;
+  }
+  if (verb === 'list' && args.length === 1) {
+    const player = optionalFlag(parsed, '--player');
+    await withSql(env, async (sql) => {
+      for (const line of await listTokens(sql, player)) io.out(line);
+    });
+    return;
+  }
+  if (verb === 'revoke' && target !== undefined && args.length === 2) {
+    await withSql(env, async (sql) => {
+      await revokeToken(sql, target);
+      io.out(`revoked ${target}`);
+    });
+    return;
+  }
+  if (verb === 'revoke' && args.length === 1 && parsed.flags.has('--all')) {
+    const player = requireFlag(parsed, '--player');
+    await withSql(env, async (sql) => {
+      const count = await revokePlayerTokens(sql, player);
+      io.out(`revoked ${count} token(s) of ${player}`);
+    });
+    return;
+  }
+  if (verb === 'rotate' && target !== undefined && args.length === 2) {
+    const out = requireFlag(parsed, '--out');
+    const grace = optionalFlag(parsed, '--grace-minutes');
+    const minutes = grace === undefined ? DEFAULT_GRACE_MINUTES : parseGrace(grace);
+    checkOutPath(out);
+    await withSql(env, async (sql) => {
+      const tokenId = await rotateTokenFile(sql, env.secretDir, target, out, minutes);
+      io.out(
+        `rotated ${target}: new ${tokenId} written to ${resolve(out)}; old tokens expire within ${minutes} min`,
+      );
+    });
+    return;
+  }
+  throw new Error(USAGE);
+}
+
 /** Runs one command; returns the process exit code. Errors become a line on stderr, never a stack. */
 export async function run(
   argv: readonly string[],
@@ -189,6 +248,8 @@ export async function run(
       await runOwner(parsed, io, env, rest);
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
+    } else if (command === 'token') {
+      await runToken(parsed, io, env, rest);
     } else {
       io.err(USAGE);
       return 2;

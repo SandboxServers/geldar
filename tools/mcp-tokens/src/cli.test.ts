@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Env, type Io, parseArgs, run } from './cli.ts';
-import { PEPPER_FILE } from './secret-files.ts';
+import { PEPPER_FILE, REPO_ROOT } from './secret-files.ts';
 
 const dirs: string[] = [];
 
@@ -32,6 +32,46 @@ function envOf(h: { secretDir: string }): Env {
     connect: () => Promise.reject(new Error('no database in this test')),
   };
 }
+
+/** A session that knows the statements `token mint` sends: one active player, no tokens yet. */
+function tokenSession(calls: string[]): Env['connect'] {
+  return async () => ({
+    query: async (text: string) => {
+      calls.push(text);
+      if (text.startsWith('SELECT status')) return { rows: [{ status: 'active' }] };
+      if (text.includes('count(*)')) return { rows: [{ n: 0 }] };
+      return { rows: [] };
+    },
+    end: async () => {},
+  });
+}
+
+describe('token commands', () => {
+  it('mints to a file and keeps the token out of stdout and stderr (canary scan)', async () => {
+    const h = await harness();
+    const out = join(h.secretDir, '..', 'jo.env');
+    await run(['init'], h.io, envOf(h));
+    const calls: string[] = [];
+    const env = { ...envOf(h), connect: tokenSession(calls) };
+    expect(await run(['token', 'mint', 'ag-jo-01', '--out', out], h.io, env)).toBe(0);
+    const token = (await readFile(out, 'utf8')).match(/gmcp-[0-9a-f]{64}/)?.[0] ?? '';
+    expect(token).toMatch(/^gmcp-/);
+    const printed = [...h.out, ...h.err].join('\n');
+    expect(printed).toMatch(/minted tk_/);
+    expect(printed).not.toContain(token);
+    expect(printed).not.toContain('gmcp-');
+    expect(calls.join('\n')).not.toContain(token);
+  });
+
+  it('refuses an --out path inside the repo before it connects to the database', async () => {
+    const h = await harness();
+    const inside = join(REPO_ROOT, 'leak.env');
+    const env = { ...envOf(h), connect: () => Promise.reject(new Error('must not connect')) };
+    expect(await run(['token', 'mint', 'ag-jo-01', '--out', inside], h.io, env)).toBe(1);
+    expect(h.err.join('\n')).toContain('outside the repo');
+    expect(h.err.join('\n')).not.toContain('must not connect');
+  });
+});
 
 describe('parseArgs', () => {
   it('splits positional words from flags, and takes a value after a value flag', () => {
