@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { posix } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildManifest,
@@ -122,7 +122,7 @@ describe('writeManifest', () => {
   it('writes manifest.json under the run directory and the text round-trips', () => {
     const store = memoryStore();
     writeManifest(store, '/runs/r1', buildManifest(input));
-    const text = store.files.get(join('/runs/r1', 'manifest.json'));
+    const text = store.files.get(posix.join('/runs/r1', 'manifest.json'));
     expect(text).toBeDefined();
     expect(JSON.parse(text ?? '{}').run_id).toBe('r1');
   });
@@ -135,7 +135,7 @@ describe('writeManifest', () => {
       DATABASE_URL: 'postgres://geldar:canary-pw-7f3a@127.0.0.1:5432/geldar',
     };
     writeManifest(store, '/runs/r1', buildManifest(input));
-    const text = store.files.get(join('/runs/r1', 'manifest.json')) ?? '';
+    const text = store.files.get(posix.join('/runs/r1', 'manifest.json')) ?? '';
     for (const [key, value] of Object.entries(env)) {
       expect(text, `manifest must not contain ${key}`).not.toContain(value);
     }

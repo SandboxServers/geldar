@@ -4,7 +4,7 @@
  * environment value, a password, a token or a connection string.
  */
 import { createHash } from 'node:crypto';
-import { join } from 'node:path';
+import { posix } from 'node:path';
 import { parse } from 'yaml';
 import type { FileStore } from './ports.ts';
 
@@ -118,5 +118,5 @@ export function buildManifest(input: ManifestInput): Manifest {
 }
 
 export function writeManifest(store: FileStore, runDir: string, manifest: Manifest): void {
-  store.write(join(runDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  store.write(posix.join(runDir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 }

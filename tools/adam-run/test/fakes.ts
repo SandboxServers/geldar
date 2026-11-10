@@ -3,6 +3,7 @@
  * `Scenario` is the fake stack's health: a test changes it from `onObserve` at the minute it wants.
  */
 import type { AbortCriteria } from '../src/abort.ts';
+import { LIFE_ID, type Profile } from '../src/manifest.ts';
 import type {
   Clock,
   FileStore,
@@ -14,6 +15,7 @@ import type {
   Service,
   Supervisor,
 } from '../src/ports.ts';
+import type { Preflight, PreflightFacts } from '../src/sequence.ts';
 
 export const MIN = 60_000;
 export const START_MS = Date.parse('2026-11-10T00:00:00Z');
@@ -211,4 +213,33 @@ export class FakeReporter implements Reporter {
     this.runs.push(runId);
     if (this.fail) throw new Error('the report could not be written');
   }
+}
+
+/** Facts that pass every precondition for the profile: a clean tree, a gate at HEAD, the profile's life id. */
+export function passingPreflight(profile: Profile, over: { cleanTree?: boolean } = {}): Preflight {
+  const gate = {
+    sha: 'abc123',
+    date: '2026-11-09',
+    result: 'pass',
+    rates: [{ tps: 20, percent: 100 }],
+  };
+  return {
+    async gather(): Promise<PreflightFacts> {
+      return {
+        facts: {
+          profile,
+          headSha: 'abc123',
+          cleanTree: over.cleanTree ?? true,
+          gateJson: JSON.stringify(gate),
+          pins: [],
+          observedDigests: {},
+          loadedModels: [],
+          freshVolumeJson: null,
+          lifeId: LIFE_ID[profile],
+        },
+        shardConfigSha256: 'a'.repeat(64),
+        criteriaSha256: 'b'.repeat(64),
+      };
+    },
+  };
 }

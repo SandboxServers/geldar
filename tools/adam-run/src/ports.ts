@@ -2,6 +2,7 @@
  * The ports the run protocol uses. The real adapters live in `adapters.ts`; the tests pass fakes, so no test sleeps,
  * starts a process or touches the disk.
  */
+import { posix } from 'node:path';
 
 /** The services the protocol watches and stops. Start order: body, animus, lantern-local (as `./geldar.ps1 adam up`). */
 export const PROBES = [
@@ -100,8 +101,8 @@ export interface Sampler {
 /** The files a run writes, under its run folder (`.geldar/runs/<run-id>`). */
 export function runPaths(runDir: string): { manifest: string; status: string; abort: string } {
   return {
-    manifest: `${runDir}/manifest.json`,
-    status: `${runDir}/status.log`,
-    abort: `${runDir}/abort.json`,
+    manifest: posix.join(runDir, 'manifest.json'),
+    status: posix.join(runDir, 'status.log'),
+    abort: posix.join(runDir, 'abort.json'),
   };
 }

@@ -7,11 +7,11 @@ import { type FileStore, type Observation, PROBES, type Probe } from './ports.ts
 export interface StatusLine {
   minute: number;
   at: string;
-  alive: Record<Probe, boolean>;
-  thoughts: number;
+  alive: Record<Probe, boolean | null>;
+  thoughts: number | null;
   last_thought_at: string | null;
   tps: number | null;
-  errors_since_last: number;
+  errors_since_last: number | null;
   /** Set on the harness's own lines: `restart_stack`, `body_kill`, `abort`, `safe_stop`, `report_failed`, `end`. */
   event?: string;
   detail?: string;
@@ -45,6 +45,27 @@ export function statusLine(
   if (event !== undefined) line.event = event;
   if (detail !== undefined) line.detail = detail;
   return line;
+}
+
+/** A harness line written before the first sample (the sampler failed, or `adam up` did): every measure is null. */
+export function eventOnlyLine(
+  atMs: number,
+  minute: number,
+  event: string,
+  detail: string,
+): StatusLine {
+  const alive = Object.fromEntries(PROBES.map((p) => [p, null])) as Record<Probe, null>;
+  return {
+    minute,
+    at: new Date(atMs).toISOString(),
+    alive,
+    thoughts: null,
+    last_thought_at: null,
+    tps: null,
+    errors_since_last: null,
+    event,
+    detail,
+  };
 }
 
 /** Appends one line. The store has no rewrite for this file, so an earlier line can never change. */
