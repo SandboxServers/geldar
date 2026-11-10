@@ -160,3 +160,16 @@ part 1 done: main, cli, pg-agents; left: golem extraServe wiring, image build te
 Known gap for the owner: the sleep cursor has no column, so `PgAgentStore.read` returns cursor 0 and `write` keeps only the day. A sleep cursor column would need a migration 0003.
 
 Correction to the line above: the living lives are no longer a startup snapshot. `lazyLifeRegistry` (threshold/mcp/src/main.ts) reads them on first use and again after 5 s, and each life's speech identity (name, game_account) is read the same way, so a life added while the server runs is picked up within 5 s.
+
+WM-11b part 2 (partial, not complete):
+
+- Done: the golem book wiring (commit `53f8ff6`). `bookServe` in `golem/src/players/main.ts` serves the WM-07 book subject for the bound life through `startPlayerBody`'s `extraServe`; `runPlayer` uses it when no `extraServe` is passed. Tests in `golem/src/players/main.test.ts`: the bound life is answered, another life is not, and the subject is gone after stop. Revert check: the life check in `serveBooks` mutated to `if (request === null) return;` fails `ignores a request for another life` and `does not answer a book request that names another life`; restored from backup, `git diff --stat` empty.
+- Not done: the threshold/mcp e2e (scripted stub client through `startMcp`). It needs an SQL router for the token, agent, budget, journal and player stores, and schema-valid snapshot and plan replies on the NATS transport. The e2e revert checks (another player's token, revoked token) are owed with it. WM-11 is not complete (code).
+- Check: `./geldar.ps1 check` exit 0 ("All checks passed") after `53f8ff6`. No rerun was needed.
+- Owed to ops, not run here:
+  1. Image build: `docker build -f threshold/mcp/Dockerfile .`, then `compose/mcp.yml` up with the real config (WM-10 item 2).
+  2. IT against the dev Postgres for the WM-02 stores (`pg-tokens`, `pg-budget`, `pg-agents`, `pg-journal`, `pg-players`).
+  3. WM-09 CLI round trips on the dev Postgres: mint then resolve, revoke then 401, rotate and the grace window (WM-09 item d).
+  4. A real NATS run of the gateway: snapshot, plan and book requests, the stream replay, and the presence bucket creation.
+  5. A live case for the `extraServe` path against a running player Body (WM-08 item c).
+  6. The e2e still to write (above), then its revert checks.
