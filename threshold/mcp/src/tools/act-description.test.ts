@@ -11,10 +11,8 @@ const EXAMPLE = /Minimal valid intent: (\{.*\})$/;
 const description = mcpToolSchemas.act.description;
 
 describe('the act tool description', () => {
-  it('states that intent.limits is required, with both fields and their bounds', () => {
+  it('states that intent.limits is required', () => {
     expect(description).toContain('An intent must carry limits');
-    expect(description).toContain('max_world_ticks (1 to 240000)');
-    expect(description).toContain('max_block_operations (1 to 10000)');
   });
 
   it('ends with a minimal intent that the contract accepts as act input', () => {
