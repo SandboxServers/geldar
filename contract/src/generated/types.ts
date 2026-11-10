@@ -366,6 +366,10 @@ export interface PlaySurroundings {
    * The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded.
    */
   block_above_feet?: string;
+  /**
+   * True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it.
+   */
+  enclosed?: boolean;
   notable_blocks: {
     type: string;
     x: number;
@@ -10591,6 +10595,10 @@ export interface SnapshotSurroundings {
    * The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded.
    */
   block_above_feet?: string;
+  /**
+   * True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it.
+   */
+  enclosed?: boolean;
   notable_blocks: {
     type: string;
     x: number;

@@ -127,13 +127,15 @@ describe('toPlayView', () => {
     expect(result.ok ? [] : result.errors).toEqual([]);
   });
 
-  it('passes standing_on and block_above_feet through to the look result', () => {
+  it('passes standing_on, block_above_feet and enclosed through to the look result', () => {
     const snapshot = hostileSnapshot();
     snapshot.surroundings.standing_on = 'oak_leaves';
     snapshot.surroundings.block_above_feet = 'air';
+    snapshot.surroundings.enclosed = true;
     const view = toPlayView(snapshot, { budget: 37, daysSinceSleep: 2 });
     expect(view.snapshot.surroundings.standing_on).toBe('oak_leaves');
     expect(view.snapshot.surroundings.block_above_feet).toBe('air');
+    expect(view.snapshot.surroundings.enclosed).toBe(true);
 
     const result = validateToolResult('look', {
       snapshot: view.snapshot,
