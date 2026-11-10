@@ -226,6 +226,38 @@ describe('PgTokenStore LISTEN connection', () => {
     await store.stop();
   });
 
+  it('a drop during catch-up keeps the earliest loss, so the next start catches up from it', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const listeners: FakeListener[] = [];
+    let dropOnCatchUp = false;
+    const pool = new FakePool((text) => {
+      if (dropOnCatchUp && text.includes('revoked_at >=')) {
+        dropOnCatchUp = false;
+        listeners[1]?.emit('end');
+      }
+      return { rows: [] };
+    });
+    const store = new PgTokenStore(pool.asPool(), HARNESSES, {}, () => {
+      const listener = new FakeListener();
+      listeners.push(listener);
+      return listener.asClient();
+    });
+    await store.start();
+    listeners[0]?.emit('end');
+    dropOnCatchUp = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners, 'the reconnect dropped during its catch-up').toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners).toHaveLength(3);
+    const catchUps = pool.sent.filter((sent) => sent.text.includes('revoked_at >='));
+    expect(catchUps.map((sent) => sent.values[0])).toEqual([
+      new Date(NOW - 60_000),
+      new Date(NOW - 60_000),
+    ]);
+    await store.stop();
+  });
+
   it('a drop while connecting is seen, and the connection is re-opened', async () => {
     vi.useFakeTimers();
     const { store, listeners } = storeWith([]);

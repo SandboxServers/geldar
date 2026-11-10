@@ -166,13 +166,16 @@ export class PgTokenStore implements TokenStore {
       this.hits.clear();
       // A NOTIFY sent while the connection was down is lost: fire what that gap hid. LISTEN is
       // already in place, so nothing revoked from here on is missed.
-      if (this.lostAtMs !== null) await this.catchUp(this.lostAtMs);
+      const since = this.lostAtMs;
+      if (since !== null) await this.catchUp(since);
     } catch (error) {
       if (this.listenClient === listener) this.listenClient = null;
       await listener.end().catch(() => undefined);
       throw error;
     }
-    this.lostAtMs = null;
+    // A drop during catch-up has already replaced this connection: the gap is not closed, so the
+    // next start() catches up from the same earliest loss.
+    if (this.listenClient === listener) this.lostAtMs = null;
   }
 
   /**
