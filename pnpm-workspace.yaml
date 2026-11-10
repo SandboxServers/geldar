@@ -14,7 +14,23 @@ packages:
 # Exact versions only: `pnpm add foo` writes "1.2.3", never "^1.2.3".
 saveExact: true
 
+# Install only versions published at least 14 days ago (decision 0005), so a
+# fresh release cannot enter the lockfile on a resolve. Minutes: 14 * 24 * 60.
+minimumReleaseAge: 20160
+
 overrides:
   # Transitives newer than the two-week floor (decision 0005): pin the newest older release.
   semver: 7.8.5
   tslib: 2.8.1
+  # Lockfile transitives published under 14 days ago on 2026-11-10 (fix-f item 1).
+  hono: 4.13.14
+  express-rate-limit: 8.7.1
+  jose: 6.2.13
+  ip-address: 10.7.5
+  "@hono/node-server": 2.1.5
+  vite: 8.3.5
+  tinybench: 6.2.2
+  rolldown: 1.2.15
+  "@types/estree": 1.0.9
+  encodeurl: 2.0.0
+  qs: 6.17.0
