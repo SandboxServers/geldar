@@ -105,7 +105,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | WM-11 | M | Integration: the NATS gateway, presence, main, end to end | packet-coder | Shipped (merged to wave-m-main) | WM-02 to WM-10 | |
 | WM-12 | M | Run commands, docs and live cases (written, not run) | packet-coder | Shipped (merged to wave-m-main) | WM-11 | |
 | WM-13 | M | Player skins (MineSkin V2 upload, stored skin on login) | packet-coder | Shipped (merged to wave-m-main) | WM-01, velocity-identity plugin | |
-| WM-process | M | Apply the wave M retro actions | packet-coder | BlockedDependency | wave M test, review and retro | |
+| WM-process | M | Apply the wave M retro actions | packet-coder | Shipped | wave M test, review and retro | |
 
 Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md`, [retro/wave-3.md](retro/wave-3.md) and [retro/wave-4.md](retro/wave-4.md) are written.
 
