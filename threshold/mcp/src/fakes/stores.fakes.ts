@@ -7,6 +7,7 @@ import type {
   JournalEntry,
   JournalStore,
   KeepAlive,
+  MissReason,
   PlayerDirectory,
   PlayerEventLog,
   PlayerRecord,
@@ -69,6 +70,17 @@ export class FakeTokenStore implements TokenStore {
       return !token.revoked && nowMs < token.expiresAtMs && token.player.status === 'active';
     }
     return false;
+  }
+
+  /** Why `resolve` refused the digest, by the checks the Postgres store makes, in the same order. */
+  async explainMiss(tokenHash: Uint8Array, nowMs: number): Promise<MissReason> {
+    for (const token of this.tokens.values()) {
+      if (!digestEqual(token.tokenHash, tokenHash)) continue;
+      if (token.revoked) return 'token_revoked';
+      if (nowMs >= token.expiresAtMs) return 'token_expired';
+      if (token.player.status !== 'active') return 'player_not_active';
+    }
+    return 'unknown_token';
   }
 
   onRevoke(listener: (r: { tokenId: string; playerId: string }) => void): () => void {

@@ -1,12 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { BlockList, isIP } from 'node:net';
-import type { PlayerRecord, TokenStore } from '../ports.ts';
+import type { MissReason, PlayerRecord, RefusalReason, TokenStore } from '../ports.ts';
 
-/** `ok` with the token and player it resolved to, or the refusal. */
+/** `ok` with the token and player it resolved to, or the refusal with its log-only reason. */
 export type BearerVerdict =
   | { outcome: 'ok'; tokenId: string; player: PlayerRecord }
-  | { outcome: 'unauthorized' | 'forbidden' };
+  | { outcome: 'unauthorized' | 'forbidden'; reason: RefusalReason };
 
 /**
  * Exactly `Bearer `, one space, then a token of the allowed shape. A lowercase scheme, a double
@@ -45,12 +45,38 @@ export async function verifyBearer(
   nowMs: number,
 ): Promise<BearerVerdict> {
   const token = parseBearer(header);
-  if (token === null) return { outcome: 'unauthorized' };
-  const resolved = await store.resolve(tokenDigest(pepper, token), nowMs);
-  if (resolved === null) return { outcome: 'unauthorized' };
-  if (!sameText(resolved.player.playerId, playerId)) return { outcome: 'forbidden' };
+  if (token === null) return { outcome: 'unauthorized', reason: shapeReason(header) };
+  const digest = tokenDigest(pepper, token);
+  const resolved = await store.resolve(digest, nowMs);
+  // The store is asked why only here, after a miss: a hit never pays for the explanation.
+  if (resolved === null) {
+    return { outcome: 'unauthorized', reason: await explainMiss(store, digest, nowMs) };
+  }
+  if (!sameText(resolved.player.playerId, playerId)) {
+    return { outcome: 'forbidden', reason: 'wrong_player' };
+  }
   await store.touch(resolved.tokenId, nowMs).catch(() => undefined);
   return { outcome: 'ok', tokenId: resolved.tokenId, player: resolved.player };
+}
+
+/** Why a header holds no usable bearer: none at all, another scheme, or a token of a wrong shape. */
+function shapeReason(header: string | undefined): RefusalReason {
+  if (header === undefined) return 'no_header';
+  return header.startsWith('Bearer ') ? 'token_shape' : 'malformed_scheme';
+}
+
+/** The store's reason for a miss. A store without `explainMiss` says `unknown_token`; a failure is `internal`. */
+async function explainMiss(
+  store: TokenStore,
+  digest: Uint8Array,
+  nowMs: number,
+): Promise<MissReason> {
+  if (store.explainMiss === undefined) return 'unknown_token';
+  try {
+    return await store.explainMiss(digest, nowMs);
+  } catch {
+    return 'internal';
+  }
 }
 
 /** Says whether a TCP peer address is a trusted proxy. */

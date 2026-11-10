@@ -14,7 +14,7 @@ export type SessionEndReason = 'session_revoked';
 
 /** The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. */
 export type AuthDecision =
-  | { outcome: AuthResult }
+  | { outcome: AuthResult; reason?: string }
   | { outcome: 'limited'; retryAfterSec: number }
   | { outcome: 'unavailable' };
 
@@ -97,6 +97,8 @@ interface LogContext {
   event: string;
   playerId: string | undefined;
   error: string | undefined;
+  /** A refusal's log-only reason: never sent to the client. */
+  reason?: string;
 }
 
 class BodyTooLarge extends Error {}
@@ -304,6 +306,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
         ...(ctx.playerId !== undefined ? { player_id: ctx.playerId } : {}),
         status: res.statusCode,
         ...(ctx.error !== undefined ? { error: ctx.error } : {}),
+        ...(ctx.reason !== undefined ? { reason: ctx.reason } : {}),
       });
     });
 
@@ -347,6 +350,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       res.writeHead(429, { 'Retry-After': String(decision.retryAfterSec), ...close }).end();
       return;
     }
+    if ('reason' in decision && decision.reason !== undefined) ctx.reason = decision.reason;
     if (decision.outcome === 'unauthorized') {
       ctx.event = 'unauthorized';
       res.writeHead(401, { 'WWW-Authenticate': 'Bearer', ...close }).end();

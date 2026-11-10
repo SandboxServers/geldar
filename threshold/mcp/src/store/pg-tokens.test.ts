@@ -3,6 +3,7 @@ import { FakeListener, FakePool } from './pg-fakes.ts';
 import {
   activeToken,
   listenerConfig,
+  missReason,
   PgTokenStore,
   parseRevocation,
   type TokenRow,
@@ -48,6 +49,39 @@ function revocation(payload: string): { channel: string; payload: string } {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('missReason and explainMiss', () => {
+  it('names the first check a row fails, in the order activeToken makes them', () => {
+    const both = { revoked_at: new Date(NOW - 1), expires_at: new Date(NOW - 1), status: 'paused' };
+    expect(missReason(row(both), NOW, HARNESSES)).toBe('token_revoked');
+    const expired = { expires_at: new Date(NOW - 1), status: 'paused', harness: 'unlisted' };
+    expect(missReason(row(expired), NOW, HARNESSES)).toBe('token_expired');
+    expect(missReason(row({ status: 'paused' }), NOW, HARNESSES)).toBe('player_not_active');
+    expect(missReason(row({ harness: 'retired_harness' }), NOW, HARNESSES)).toBe(
+      'harness_disabled',
+    );
+  });
+
+  it('gives a reason for every row activeToken refuses', () => {
+    const refused = [
+      row({ revoked_at: new Date(NOW - 1) }),
+      row({ expires_at: new Date(NOW) }),
+      row({ status: 'retired' }),
+      row({ harness: 'unlisted' }),
+    ];
+    for (const refusedRow of refused) {
+      expect(activeToken(refusedRow, NOW, HARNESSES)).toBeNull();
+      expect(missReason(refusedRow, NOW, HARNESSES)).not.toBe('unknown_token');
+    }
+  });
+
+  it('explains a stored digest that is refused, and says unknown for one not stored', async () => {
+    const { store } = storeWith([row({ revoked_at: new Date(NOW - 1) })]);
+    expect(await store.explainMiss(HASH, NOW)).toBe('token_revoked');
+    const { store: empty } = storeWith([]);
+    expect(await empty.explainMiss(HASH, NOW)).toBe('unknown_token');
+  });
 });
 
 describe('activeToken', () => {

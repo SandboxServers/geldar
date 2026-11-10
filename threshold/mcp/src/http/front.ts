@@ -169,7 +169,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       }
       const retryAfterSec = gates.failedAuth(address, now());
       if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
-      return { outcome: verdict.outcome };
+      return { outcome: verdict.outcome, reason: verdict.reason };
     },
     // Takes the open slots before the body is read, so a slow body holds one like any open request.
     // The per-address slot is taken here, after the headers, because the connection cap sees only the

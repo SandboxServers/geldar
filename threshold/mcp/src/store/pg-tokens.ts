@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Client, type ClientConfig, type Pool } from 'pg';
-import type { ResolvedToken, TokenStore } from '../ports.ts';
+import type { MissReason, ResolvedToken, TokenStore } from '../ports.ts';
 
 /** How long a token that resolved stays cached (spec 5.15.3). A miss is never cached. */
 export const HIT_CACHE_MS = 5_000;
@@ -311,6 +311,31 @@ export class PgTokenStore implements TokenStore {
     const cached = this.hits.get(Buffer.from(tokenHash).toString('hex'));
     return cached !== undefined && cached.untilMs > nowMs;
   }
+
+  /** Why `resolve` returned null for the digest. Called only after a null, so a hit never pays. */
+  async explainMiss(tokenHash: Uint8Array, nowMs: number): Promise<MissReason> {
+    const { rows } = await this.pool.query<TokenRow>(RESOLVE_SQL, [Buffer.from(tokenHash)]);
+    const row = rows[0];
+    if (row === undefined || row.token_hash.length !== tokenHash.length) return 'unknown_token';
+    if (!timingSafeEqual(row.token_hash, tokenHash)) return 'unknown_token';
+    return missReason(row, nowMs, this.harnesses);
+  }
+}
+
+/**
+ * Why `activeToken` refused a row: the first failing check, in the same order. A row that would
+ * resolve now (a change landed after the lookup) is reported as `unknown_token`.
+ */
+export function missReason(
+  row: TokenRow,
+  nowMs: number,
+  harnesses: Readonly<Record<string, boolean>>,
+): MissReason {
+  if (row.revoked_at !== null) return 'token_revoked';
+  if (row.expires_at.getTime() <= nowMs) return 'token_expired';
+  if (row.status !== 'active') return 'player_not_active';
+  if (harnesses[row.harness] !== true) return 'harness_disabled';
+  return 'unknown_token';
 }
 
 /** The NOTIFY payload: `{"token_id": ..., "player_id": ...}`. Anything else is ignored. */
