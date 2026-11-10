@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -82,6 +82,11 @@ describe('threshold/mcp/Dockerfile', () => {
     for (const line of fromLines) expect(line).toMatch(/@sha256:[0-9a-f]{64}\b/);
   });
 
+  it('starts the server: the entrypoint takes the start subcommand and cli.ts exits 2 without it', () => {
+    expect(dockerfile).toMatch(/^ENTRYPOINT \["node", "src\/cli\.ts"\]$/m);
+    expect(dockerfile).toMatch(/^CMD \["start"\]$/m);
+  });
+
   it('runs the final stage as a numeric non-root user', () => {
     expect(dockerfile).toMatch(/^USER 1000:1000$/m);
     expect(dockerfile).not.toMatch(/^USER root$/m);
@@ -142,5 +147,76 @@ describe('compose/mcp.yml', () => {
     }
     expect(env.GELDAR_MCP_DB_PASSWORD_FILE).toMatch(/^\/run\/secrets\//);
     expect(overlay.secrets['postgres-mcp.txt']?.file).toMatch(/^\.\/secrets\//);
+  });
+});
+
+/** Workspace package name to its directory, read from each package.json (the runtime resolves these by name). */
+const workspaceDirs = ['animus', 'contract', 'threshold/mcp', 'threshold/mcp-mock', 'tools/repo-checks'];
+const workspaceByName = new Map(
+  workspaceDirs.map((dir) => [(JSON.parse(read(`${dir}/package.json`)) as { name: string }).name, dir]),
+);
+
+/** The module specifiers a source file names in import, export-from or dynamic import statements. */
+function specifiersOf(source: string): string[] {
+  return [...source.matchAll(/(?:\bfrom\s+|\bimport\s*\(?\s*)['"]([^'"]+)['"]/g)].map((m) => m[1] as string);
+}
+
+/** Every repo file the runtime entry reaches: relative imports and workspace packages, followed transitively. */
+function reachableFrom(entry: string): Set<string> {
+  const seen = new Set<string>();
+  const queue = [entry];
+  for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const spec of specifiersOf(read(file))) {
+      if (spec.startsWith('.')) {
+        queue.push(posix.join(posix.dirname(file), spec));
+      } else if (spec.startsWith('@geldar/')) {
+        const [scope, name, ...rest] = spec.split('/');
+        const dir = workspaceByName.get(`${scope}/${name}`);
+        if (dir === undefined) throw new Error(`${file} imports an unknown workspace package: ${spec}`);
+        if (rest.length > 0) {
+          queue.push(posix.join(dir, rest.join('/')));
+        } else {
+          const pkg = JSON.parse(read(`${dir}/package.json`)) as { exports?: Record<string, string> };
+          const entryFile = pkg.exports?.['.'];
+          if (typeof entryFile !== 'string') throw new Error(`${dir} has no string exports["."] entry`);
+          queue.push(posix.join(dir, entryFile));
+        }
+      }
+    }
+  }
+  return seen;
+}
+
+describe('the image holds everything the runtime reads or imports', () => {
+  const entry = 'threshold/mcp/src/cli.ts';
+
+  it('keeps the shard file the default config path reads, and the workspace root marker', () => {
+    for (const path of ['shards/phase0.yaml', 'pnpm-workspace.yaml']) {
+      expect(excluded(path), path).toBe(false);
+    }
+  });
+
+  it('keeps every file reached from src/cli.ts through relative and workspace imports', () => {
+    const reached = reachableFrom(entry);
+    expect(reached.has('tools/repo-checks/src/identity-mode.ts')).toBe(true);
+    expect(reached.has('threshold/mcp-mock/src/index.ts')).toBe(true);
+    expect(reached.size).toBeGreaterThan(20);
+    for (const file of reached) expect(excluded(file), file).toBe(false);
+  });
+});
+
+describe('compose/mcp.yml healthcheck', () => {
+  const overlay = parse(read('compose/mcp.yml')) as { services: Record<string, Record<string, unknown>> };
+  const mcp = overlay.services['geldar-mcp'] as Record<string, unknown>;
+
+  it('declares a TCP probe of the published port so a crash loop is visible to up --wait', () => {
+    const hc = mcp.healthcheck as { test: string[]; interval: string; retries: number; start_period: string };
+    expect(hc.test.join(' ')).toMatch(/8788/);
+    expect(hc.test.join(' ')).toMatch(/connect/);
+    expect(hc.retries).toBeGreaterThan(0);
+    expect(hc.start_period).toMatch(/^\d+s$/);
+    expect(hc.interval).toMatch(/^\d+s$/);
   });
 });

@@ -9,6 +9,10 @@
 !animus/src
 !threshold/mcp
 !threshold/mcp-mock
+# The runtime reads the shard file (cli.ts, config.ts) and imports one repo-checks module (main.ts). Nothing else
+# of tools/ or shards/ is needed; the shard file holds no secret (secrets come from /run/secrets).
+!shards/phase0.yaml
+!tools/repo-checks/src/identity-mode.ts
 # The re-include above also matches every installed package.json; drop installed trees.
 **/node_modules/**
 **/node_modules

@@ -33,6 +33,14 @@ services:
     mem_limit: 512m
     pids_limit: 128
     restart: unless-stopped
+    # A TCP connect to the published port inside the container. There is no unauthenticated health route, so
+    # `up --wait` waits for this probe and a crash loop shows as unhealthy instead of hiding behind the restart policy.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('node:net').connect(8788, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 60s
     # The public move (decision 0053, deferred until the colo move) adds a disabled cloudflared profile here,
     # built from compose/cloudflared/config.example.yml. It stays commented until that decision is taken:
     #
