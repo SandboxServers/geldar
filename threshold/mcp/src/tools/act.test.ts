@@ -2,6 +2,7 @@ import { createOutputValidator } from '@geldar/animus/src/validate/index.ts';
 import { validateSovereignCallPayload } from '@geldar/contract';
 import { FakeClock } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
+import { batchCost } from '../budget/cost.ts';
 import {
   FakeBudgetLedger,
   FakePresenceStore,
@@ -197,6 +198,103 @@ describe('act: refusals and the record', () => {
     const h = harness(3, new ScriptedRateLimiter([{ allowed: false, retryAfterMs: 500 }]));
     await expect(act(h, { actions: [GOTO] })).rejects.toMatchObject({ code: 'rate_limited' });
     expect(h.body.plans).toHaveLength(0);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+  });
+});
+
+describe('act: partial batches', () => {
+  const LONG_SAY = 'x'.repeat(300);
+  const BAD_INTENT = { goal: 'collect_wood' };
+
+  it('sends the valid actions when the say is too long, and charges only for what is sent', async () => {
+    const h = harness();
+    const result = await act(h, { say: LONG_SAY, actions: [GOTO, MINE] });
+    expect(result.accepted).toEqual([1, 2]);
+    expect(result.rejected).toEqual([{ index: 0, reason: 'schema' }]);
+    expect(h.body.plans).toHaveLength(1);
+    expect(h.body.plans[0]?.plan.thought.actions).toHaveLength(2);
+    expect(result.budget_remaining_thoughts).toBe(3 - batchCost(['action', 'action']));
+    expect(h.recorder.calls[0]?.credits_charged).toBe(2);
+  });
+
+  it('sends the valid actions when the intent is bad, and charges only for what is sent', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [GOTO, MINE], intent: BAD_INTENT });
+    expect(result.accepted).toEqual([0, 1]);
+    expect(result.rejected).toHaveLength(1);
+    expect(result.rejected[0]?.index).toBe(2);
+    expect(h.body.plans).toHaveLength(1);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(
+      3 - batchCost(['action', 'action']),
+    );
+  });
+
+  it('sends nothing and charges nothing when the say and the intent are both bad', async () => {
+    const h = harness();
+    const result = await act(h, { say: LONG_SAY, intent: BAD_INTENT });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected.map((r) => r.index)).toEqual([0, 1]);
+    expect(result.rejected[0]?.reason).toBe('schema');
+    expect(result.rejected[1]?.reason).toBeTypeOf('string');
+    expect(h.body.plans).toHaveLength(0);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+  });
+
+  it('sends nothing when the say is bad and one action is bad, with the valid action refused as a batch', async () => {
+    const h = harness();
+    const result = await act(h, {
+      say: LONG_SAY,
+      actions: [GOTO, { do: 'fly', target: 'moon' }],
+    });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema' },
+      { index: 1, reason: 'batch_rejected' },
+      { index: 2, reason: 'not_allowed' },
+    ]);
+    expect(h.body.plans).toHaveLength(0);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+  });
+
+  it('leaves an all-good thought unchanged: every item accepted and charged once', async () => {
+    const h = harness();
+    const result = await act(h, { say: 'Hi', actions: [GOTO], intent: INTENT });
+    expect(result.accepted).toEqual([0, 1, 2]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+    expect(h.body.plans[0]?.plan.thought.actions).toHaveLength(1);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(
+      3 - batchCost(['say', 'action', 'intent']),
+    );
+  });
+});
+
+describe('act: refunds after the reserve', () => {
+  it('refunds the reserve when a non-Body error is thrown after it, and passes the error on', async () => {
+    const h = harness();
+    h.body.submitPlan = async () => {
+      throw new Error('boom');
+    };
+    await expect(act(h, { actions: [GOTO, MINE] })).rejects.toThrow('boom');
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+    expect(h.recorder.calls).toHaveLength(0);
+  });
+});
+
+describe('act: Body reasons as public codes', () => {
+  it('reports a wrong_life refusal as invalid_plan', async () => {
+    const h = harness();
+    h.body.rejectNextPlan(CALLER.lifeId, { reason: 'wrong_life', detail: 'life' });
+    const result = await act(h, { actions: [GOTO] });
+    expect(result.rejected).toEqual([{ index: 0, reason: 'invalid_plan' }]);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+  });
+
+  it('reports a stale_generation refusal as stale_snapshot', async () => {
+    const h = harness();
+    h.body.rejectNextPlan(CALLER.lifeId, { reason: 'stale_generation', detail: 'gen' });
+    const result = await act(h, { actions: [GOTO] });
+    expect(result.rejected).toEqual([{ index: 0, reason: 'stale_snapshot' }]);
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
   });
 });
