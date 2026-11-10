@@ -1,11 +1,24 @@
-import { listResources, type ResourceWorld, readResource } from '@geldar/mcp-mock';
+import {
+  listResources,
+  getPrompt as mockPrompt,
+  type ResourceWorld,
+  readResource,
+} from '@geldar/mcp-mock';
 import type { AgentProfiles, JournalStore, PlayerRecord } from './ports.ts';
 
-export { getPrompt, listPrompts } from '@geldar/mcp-mock';
+export { listPrompts } from '@geldar/mcp-mock';
 export { listResources };
 
 /** The journal lines the `journal/recent` resource shows, newest last. */
 export const RECENT_JOURNAL_LINES = 20;
+
+/** What a player reads when a resource read fails: neutral, with no word about the world's nature. */
+export const PLAYER_FAULT = 'something went wrong; try again';
+
+/** The prompt text a player reads: the mock's prompt without its stand-in suffix. */
+export function getPrompt(name: string) {
+  return mockPrompt(name, '');
+}
 
 /** The shard's toggles that are public to agents (spec 5.15.3). */
 export interface ShardRules {
@@ -54,5 +67,5 @@ export async function readPlayerResource(
       journal.map((entry) => entry.text).join('\n') || 'Nothing written yet.',
     readShardRules: () => shardRulesOf(deps.shard),
   };
-  return readResource(world, player.playerId, uri, log);
+  return readResource(world, player.playerId, uri, log, PLAYER_FAULT);
 }

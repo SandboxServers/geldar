@@ -43,10 +43,10 @@ async function* feed(
   }
 }
 
-/** A message redelivered after each nak, as JetStream does, until it is acked. */
+/** A message redelivered after each nak, as JetStream does, until it is acked or 10 deliveries. */
 async function* redelivering(m: StreamMessage & { acked: number; naked: number }) {
   let deliveries = 0;
-  while (deliveries === 0 || (m.naked >= deliveries && m.acked === 0)) {
+  while (deliveries < 10 && (deliveries === 0 || (m.naked >= deliveries && m.acked === 0))) {
     deliveries++;
     yield m;
   }

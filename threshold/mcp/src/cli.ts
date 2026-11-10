@@ -195,7 +195,7 @@ function jetStreamReplay(js: JetStreamClient, jsm: JetStreamManager): ReplaySour
       });
       const consumer = await js.consumers.get('GELDAR_EVENTS', info.name);
       const messages = await consumer.consume();
-      return { pending: info.num_pending, messages, stop: () => messages.stop() };
+      return { pending: info.num_pending, messages, stop: async () => messages.stop() };
     },
   };
 }
