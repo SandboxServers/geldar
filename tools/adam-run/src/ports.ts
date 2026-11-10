@@ -4,7 +4,15 @@
  */
 
 /** The services the protocol watches and stops. Start order: body, animus, lantern-local (as `./geldar.ps1 adam up`). */
-export const PROBES = ['animus', 'body', 'lantern-local', 'ollama', 'postgres', 'nats', 'paper'] as const;
+export const PROBES = [
+  'animus',
+  'body',
+  'lantern-local',
+  'ollama',
+  'postgres',
+  'nats',
+  'paper',
+] as const;
 export type Probe = (typeof PROBES)[number];
 
 /** The Golem-side services the protocol stops, in stop order: the reverse of the start order, so the Body is last. */
@@ -37,6 +45,7 @@ export interface Processes {
   signal(pid: number, force: boolean): void;
 }
 
+/** The supervisor actions. The Body is restarted by the supervisor after `killBody`; the protocol only waits for it. */
 export interface Supervisor {
   /** The existing start path: `./geldar.ps1 adam up`. Never used for live cases. */
   up(): Promise<void>;
@@ -44,9 +53,24 @@ export interface Supervisor {
   restartStack(): Promise<void>;
   /** A harness-injected Body kill, used mid-intent. The moment is recorded by the caller. */
   killBody(): Promise<void>;
-  /** Starts the Body again after a kill; it resumes from its checkpoint. */
-  startBody(): Promise<void>;
+  /** Stops one service through the existing stop path. */
   stop(service: Service): Promise<void>;
+}
+
+/** The report step (W6-12). It reads the run folder; the protocol calls it after a complete run and after an abort. */
+export interface Reporter {
+  reportRun(runId: string): Promise<void>;
+}
+
+export interface ExecResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+/** Runs one program with an argument array, never a shell string. The adapters use it for `ollama`, `nvidia-smi`, `pg`. */
+export interface Runner {
+  exec(file: string, args: readonly string[]): Promise<ExecResult>;
 }
 
 /** One status sample. Missing measures are null, never zero. */
@@ -71,4 +95,13 @@ export interface Observation {
 
 export interface Sampler {
   observe(): Promise<Observation>;
+}
+
+/** The files a run writes, under its run folder (`.geldar/runs/<run-id>`). */
+export function runPaths(runDir: string): { manifest: string; status: string; abort: string } {
+  return {
+    manifest: `${runDir}/manifest.json`,
+    status: `${runDir}/status.log`,
+    abort: `${runDir}/abort.json`,
+  };
 }
