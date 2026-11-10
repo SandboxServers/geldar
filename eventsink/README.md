@@ -8,9 +8,21 @@ Copies world events from NATS JetStream into Postgres `events` (spec section 7, 
 - Each message is validated with the generated `@geldar/contract` `WorldEvent` validator, and its subject must be `geldar.<shard>.<type>` matching the event.
 - Valid messages are written in small batches with `INSERT ... ON CONFLICT (source_event_id) DO NOTHING` in one statement, and acked only after it commits. Redelivery and duplicates are harmless.
 - A batch that holds `intent`, `action` or `receipt` events runs in one transaction: the `events` insert, then the projection of those events (see Projection below), then commit. If either part fails the whole batch rolls back (a client whose ROLLBACK also fails is destroyed, not returned to the pool), so a row in a query table always has its `events` row. A batch with no such type keeps the single INSERT.
-- An invalid message is published to `geldar.<shard>.dlq` (body below) and then acked: never lost, never retried forever. The DLQ subject is inside the stream's `geldar.*.*`, so the sink acks and skips `*.dlq` messages itself.
-- A connection or timeout error naks the batch with backoff (1 s doubling to 30 s); a failed DLQ publish naks too. A permanent database error (SQLSTATE class 22 or 23, such as a NUL in jsonb or an out-of-range integer) retries the batch row by row and dead-letters only the rejected rows. The consumer's `max_deliver` is 20 and counts every delivery, including ones that failed only because Postgres was down; JetStream stops redelivering after the 20th and says nothing, so a transient failure on the 20th delivery is dead-lettered instead of retrying (reason `database unavailable after 20 deliveries`). With the backoff that is about 7.5 minutes of outage before events start landing in the DLQ.
-- A dead letter body is `{ reason, subject, data, data_bytes, data_truncated }`; data is cut to 8 KB. Every nak (with the event ids) and every dead letter is logged.
+- An invalid message (poison) is published to `geldar.<shard>.dlq` (body below) and then acked. The DLQ subject is inside the stream's `geldar.*.*`, so the sink acks and skips `*.dlq` messages itself.
+- A transient error (connection, timeout, Postgres unavailable) never dead-letters an event. The batch is naked with backoff (1 s doubling to 30 s) on every delivery, and the consumer's `max_deliver` is -1 (no cap), so an outage of any length keeps the events in the stream until Postgres returns. A failed DLQ publish naks too. `ensureConsumer` lifts the cap on a consumer created earlier with `max_deliver` 20.
+- A permanent database error (SQLSTATE class 22 or 23, such as a NUL in jsonb or an out-of-range integer) retries the batch row by row and dead-letters only the rejected rows.
+- A dead letter body is `{ reason, subject, data, data_bytes, data_truncated }`; data is cut to 8 KB (`data_truncated` is true when it was). Every nak (with the event ids) is logged, and every dead letter logs an `ALERT dead letter published to <dlq subject> for subject=<subject> reason=<reason>` line on stderr.
+
+### Dead letters and replay
+
+A dead letter is poison: the sink will not store that event as sent. Dead letters stay in `GELDAR_EVENTS` for the stream's 30-day `max_age`, so replay them before they expire. There is no replay command; these are the steps.
+
+1. List them with the NATS CLI: `nats stream view GELDAR_EVENTS --subject "geldar.phase0.dlq"` (run `nats stream view --help` first if the flags differ in your CLI version). Each body's `reason` says why it was rejected.
+2. Fix the cause. For a bad payload, correct the producer. For a rejected row (SQLSTATE 22 or 23), the event as stored cannot be written; fix the schema or drop it.
+3. Re-publish an event whose body has `data_truncated` false to its original `subject` with its `data` unchanged (`nats pub <subject> <data>`). The consumer validates it again and stores it. A body with `data_truncated` true cannot be replayed from the DLQ: its data was cut, so restore it from the producer's source or record it as lost.
+4. A dead letter that is still invalid is dead-lettered again. Its body starts with the same `reason`, so check the new entry before repeating.
+
+The sink ignores its own dead letters (bodies without a `source_event_id`), so replaying the DLQ itself does not loop.
 - Only *.dlq bodies without a source_event_id are skipped; an event of type dlq with an id is stored like any other.
 - After 5 failed fetches in a row the stream and consumer are re-created if missing; after 20 the process exits so compose restarts it.
 - SIGINT and SIGTERM stop fetching, finish the batch in hand, drain NATS and close the pool.
