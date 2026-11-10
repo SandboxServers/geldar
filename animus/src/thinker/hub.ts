@@ -120,8 +120,11 @@ export class ThinkerHub {
     server.on('error', (err) => this.opts.log(`hub error: ${err.message}`));
     server.on('connection', (socket) => {
       const id = `local-${++this.counter}`;
-      if (this.sessions.size >= this.opts.maxConnections) {
-        this.opts.log(`${id}: refused, too many connections`);
+      // Only welcomed Thinkers count toward the cap; an unwelcomed socket ends at the hello timeout.
+      if (this.welcomed.size >= this.opts.maxConnections) {
+        // A refused socket can still raise `error` (a bad frame); with no listener that crashes the Mind.
+        socket.on('error', () => {});
+        this.opts.log(`${id}: refused, too many welcomed Thinkers`);
         socket.close(1013, 'too many connections');
         return;
       }

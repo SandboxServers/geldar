@@ -147,7 +147,10 @@ const FRAME_VALIDATORS = new Map<string, ValidateFunction>([
 export function validateThinkerFrame(value: unknown): ValidationResult<ThinkerFrame> {
   if (validateThinkerFrameSchema(value)) {
     const format = (value as { response_format?: unknown }).response_format;
-    if (format !== undefined && JSON.stringify(format).length > MAX_RESPONSE_FORMAT_BYTES) {
+    if (
+      format !== undefined &&
+      new TextEncoder().encode(JSON.stringify(format)).length > MAX_RESPONSE_FORMAT_BYTES
+    ) {
       return {
         ok: false,
         errors: [`/response_format must serialize to at most ${MAX_RESPONSE_FORMAT_BYTES} bytes`],

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ThinkerHub } from './hub.ts';
+import { MAX_PAYLOAD, type ThinkerHub } from './hub.ts';
 import { FakeThinker, MODEL, pause, startHub, until } from './thinker.fakes.ts';
 
 let hub: ThinkerHub | undefined;
@@ -136,6 +136,25 @@ describe('ThinkerHub frames', () => {
 });
 
 describe('ThinkerHub liveness', () => {
+  it('refuses a ninth welcomed Thinker, and an oversize frame on it does not crash the Mind', async () => {
+    hub = await startHub();
+    for (let i = 0; i < 8; i += 1) await (await connected()).hello();
+    expect(hub.stats()).toHaveLength(8);
+    const ninth = await connected();
+    // A frame over the cap makes the socket raise `error`; the refused socket must have a listener.
+    ninth.send('x'.repeat(MAX_PAYLOAD + 1));
+    await pause(100);
+    expect(hub.stats()).toHaveLength(8);
+    expect(hub.stats().every((s) => s.state === 'ready')).toBe(true);
+  });
+
+  it('does not count an unwelcomed socket toward the cap', async () => {
+    hub = await startHub({ maxConnections: 1 });
+    await connected();
+    await (await connected()).hello();
+    expect(hub.stats().filter((s) => s.state === 'ready')).toHaveLength(1);
+  });
+
   it('marks a connection down when its heartbeat is older than 45 s, and up again on a heartbeat', async () => {
     let now = 1_000_000;
     hub = await startHub({ now: () => now });

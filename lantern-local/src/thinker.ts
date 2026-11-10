@@ -2,8 +2,22 @@ import { MAX_COMPLETION_TEXT, MAX_FRAME_BYTES, validateThinkerFrame } from '@gel
 import type { AdvertisedModel } from './models.ts';
 import { type ChatFn, OllamaError, type OllamaErrorCode, type WarmFn } from './ollama.ts';
 
-/** The advertised `max_tokens` of every model: the schema caps a job at 32768 and the Mind asks far less. */
-export const ADVERTISED_MAX_TOKENS = 1024;
+/**
+ * The advertised `max_tokens` of every model: the schema caps a job at 32768; the Mind asks at most
+ * 1200 (the sleep reflection, `shards/phase0.yaml`), so this must stay at or above that.
+ */
+export const ADVERTISED_MAX_TOKENS = 2048;
+
+/** How long before a job's deadline the timeout is sent, so the Mind receives it in time. */
+export const TIMEOUT_MARGIN_MS = 500;
+
+/** Longest text of a log line that echoes a peer's frame; longer text is cut and JSON-escaped. */
+const LOG_TEXT_CHARS = 120;
+
+/** A peer-supplied string as one log field: JSON-escaped (no raw newlines), cut to a fixed length. */
+export function logText(text: string): string {
+  return JSON.stringify(text).slice(0, LOG_TEXT_CHARS);
+}
 
 /** The first reconnect delay and its cap: a hub that starts late is found within seconds. */
 export const DEFAULT_BACKOFF_INITIAL_MS = 250;
@@ -26,6 +40,16 @@ export interface ThinkerOptions {
    * pinned model is advertised at once.
    */
   warm?: WarmFn;
+  /**
+   * The names to warm, in order: the run tier's model, then any others. Without it every model is
+   * warmed in `models` order. A name that is not in `models` is skipped.
+   */
+  warmNames?: string[];
+  /**
+   * Re-checks the pinned digests against Ollama before each dial and returns the names still
+   * matching. Without it the start-up check stands for the life of the process.
+   */
+  recheck?: () => Promise<string[]>;
   version: string;
   heartbeatMs?: number;
   /** How long to wait for `welcome` after `hello`. Appendix H and the card say 10 s. */
@@ -57,14 +81,20 @@ export class LocalThinker {
   /** How many `welcome` frames this Thinker has accepted, across reconnects. */
   welcomes = 0;
 
-  private readonly opts: Required<Omit<ThinkerOptions, 'log' | 'warm'>> & {
+  private readonly opts: Required<
+    Omit<ThinkerOptions, 'log' | 'warm' | 'warmNames' | 'recheck'>
+  > & {
     log: (line: string) => void;
     warm?: WarmFn;
+    warmNames?: string[];
+    recheck?: () => Promise<string[]>;
   };
   private readonly byName = new Map<string, AdvertisedModel>();
   private readonly inFlight = new Map<string, InFlight>();
   /** The models that answered their warm-up on the latest attempt: the ones `hello` advertises. */
   private advertised: AdvertisedModel[] = [];
+  /** The models that answered the warm-up, once it has succeeded: the process warms only once. */
+  private warmed: AdvertisedModel[] | undefined;
   private socket: WebSocket | null = null;
   private serving = false;
   private accepted = new Set<string>();
@@ -114,28 +144,51 @@ export class LocalThinker {
   }
 
   /**
-   * One connection attempt: warms the pinned models, then dials the Mind with the ones that answered.
-   * With none warm it advertises nothing and retries after the backoff.
+   * One connection attempt: warms the pinned models once per process, re-checks their digests, then
+   * dials the Mind with the ones that still match. A failed dial does not warm again.
    */
   private async connect(): Promise<void> {
     if (this.stopped) return;
-    const warmed = await this.warmModels();
-    if (this.stopped) return;
-    if (warmed.length === 0) {
-      this.opts.log('no pinned model warmed; advertising nothing and retrying');
-      this.scheduleReconnect();
-      return;
+    if (this.warmed === undefined) {
+      const warmed = await this.warmModels();
+      if (this.stopped) return;
+      if (warmed.length === 0) {
+        this.opts.log('no pinned model warmed; advertising nothing and retrying');
+        this.scheduleReconnect();
+        return;
+      }
+      this.warmed = warmed;
     }
-    this.advertised = warmed;
+    if (this.opts.recheck === undefined) {
+      this.advertised = this.warmed;
+    } else {
+      let current: string[];
+      try {
+        current = await this.opts.recheck();
+      } catch (err) {
+        this.opts.log(`digest re-check failed: ${err instanceof Error ? err.message : 'unknown'}`);
+        this.scheduleReconnect();
+        return;
+      }
+      if (this.stopped) return;
+      this.advertised = this.warmed.filter((m) => current.includes(m.name));
+      if (this.advertised.length === 0) {
+        this.opts.log('no warmed model still matches its pinned digest; retrying');
+        this.scheduleReconnect();
+        return;
+      }
+    }
     this.dial();
   }
 
-  /** Loads each pinned model in turn with a one-token call; returns the ones that answered in time. */
+  /** Loads the pinned models in turn with a one-token call; returns the ones that answered in time. */
   private async warmModels(): Promise<AdvertisedModel[]> {
     const warm = this.opts.warm;
-    if (warm === undefined) return [...this.opts.models];
+    const names = this.opts.warmNames ?? this.opts.models.map((m) => m.name);
+    const order = names.flatMap((name) => this.opts.models.filter((m) => m.name === name));
+    if (warm === undefined) return order;
     const warmed: AdvertisedModel[] = [];
-    for (const pin of this.opts.models) {
+    for (const pin of order) {
       if (this.stopped) break;
       this.opts.log(`warming ${pin.name}`);
       const started = Date.now();
@@ -202,7 +255,7 @@ export class LocalThinker {
       if (socket.readyState !== WebSocket.OPEN) end('connection failed');
     });
     socket.addEventListener('close', (event) => {
-      end(`closed (code ${event.code}, reason '${event.reason}')`);
+      end(`closed (code ${event.code}, reason ${logText(event.reason)})`);
     });
   }
 
@@ -240,7 +293,7 @@ export class LocalThinker {
     }
     const checked = validateThinkerFrame(json);
     if (!checked.ok) {
-      this.drop(`invalid frame: ${checked.errors[0] ?? 'unknown'}`);
+      this.drop(`invalid frame: ${logText(checked.errors[0] ?? 'unknown')}`);
       return;
     }
     const frame = checked.value;
@@ -317,10 +370,14 @@ export class LocalThinker {
       timedOut: false,
     };
     this.inFlight.set(id, entry);
-    const timer = setTimeout(() => {
-      entry.timedOut = true;
-      entry.controller.abort();
-    }, remaining);
+    // The timeout must reach the Mind before the deadline, or the Mind refuses it as late (BC-4).
+    const timer = setTimeout(
+      () => {
+        entry.timedOut = true;
+        entry.controller.abort();
+      },
+      Math.max(1, remaining - TIMEOUT_MARGIN_MS),
+    );
     const started = Date.now();
     const socket = this.socket;
     try {
@@ -386,7 +443,9 @@ export class LocalThinker {
     if (socket === null || socket !== this.socket || socket.readyState !== WebSocket.OPEN) return;
     const checked = validateThinkerFrame(frame);
     if (!checked.ok) {
-      this.opts.log(`refused to send an invalid outbound frame: ${checked.errors[0] ?? 'unknown'}`);
+      this.opts.log(
+        `refused to send an invalid outbound frame: ${logText(checked.errors[0] ?? 'unknown')}`,
+      );
       return;
     }
     socket.send(JSON.stringify(frame));

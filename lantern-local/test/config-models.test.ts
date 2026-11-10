@@ -2,9 +2,23 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadConfig, PLACEHOLDER_DIGEST } from '../src/config.ts';
+import { loadConfig, PLACEHOLDER_DIGEST, warmOrder } from '../src/config.ts';
 import { discoverModels, selectModels } from '../src/models.ts';
 import { FakeOllama, GOOD_DIGEST, pin } from './thinker.fakes.ts';
+
+describe('warmOrder', () => {
+  const pins = [pin('qwen3:32b'), pin('qwen3:8b')];
+  const tiers = { strong: ['qwen3:32b'], fast: ['qwen3:8b'] };
+
+  it('warms only the run tier models when mind.run_tier names a tier', () => {
+    expect(warmOrder({ run_tier: 'fast' }, tiers, pins)).toEqual(['qwen3:8b']);
+  });
+
+  it('warms every pin with the strong tier last when no run tier is known', () => {
+    expect(warmOrder({}, tiers, pins)).toEqual(['qwen3:8b', 'qwen3:32b']);
+    expect(warmOrder({ run_tier: 'missing' }, tiers, pins)).toEqual(['qwen3:8b', 'qwen3:32b']);
+  });
+});
 
 function shardFile(digest: string, warmTimeoutS: number | string = 180): string {
   const file = join(mkdtempSync(join(tmpdir(), 'lantern-')), 'shard.yaml');

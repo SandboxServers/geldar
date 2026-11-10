@@ -20,6 +20,11 @@ async function main(): Promise<number> {
     models: advertised,
     chat: ollamaChat(config.ollamaUrl),
     warm: ollamaWarm(config.ollamaUrl),
+    warmNames: config.warmNames,
+    recheck: async () => {
+      const { advertised: current } = await discoverModels(config.ollamaUrl, config.pins);
+      return current.map((m) => m.name);
+    },
     version: thinkerVersion(),
     heartbeatMs: config.heartbeatMs,
     warmTimeoutMs: config.warmTimeoutMs,
