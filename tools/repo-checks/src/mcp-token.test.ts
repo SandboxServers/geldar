@@ -15,11 +15,7 @@ describe('findMcpTokens', () => {
   });
 
   it('passes the prefix alone, a 63-character hex run and a string in upper case', () => {
-    const text = [
-      'gmcp-',
-      `gmcp-${'ab'.repeat(31)}a`,
-      `gmcp-${'AB'.repeat(32)}`,
-    ].join('\n');
+    const text = ['gmcp-', `gmcp-${'ab'.repeat(31)}a`, `gmcp-${'AB'.repeat(32)}`].join('\n');
     expect(findMcpTokens('a.md', text)).toEqual([]);
   });
 
