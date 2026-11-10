@@ -30,7 +30,7 @@ import {
   type Supervisor,
 } from './ports.ts';
 import { checkPreconditions } from './preconditions.ts';
-import { safeStop } from './safe-stop.ts';
+import { SERVICE_MARKERS, safeStop } from './safe-stop.ts';
 import { type Preflight, type RunInput, type RunOutcome, runSequence } from './sequence.ts';
 import { MINUTE_MS } from './status-log.ts';
 import {
@@ -366,6 +366,16 @@ export async function runCli(
   // A prepared record is accepted: the run manifest replaces it when the sequence writes the manifest.
   if (liveOwner(h, runDir) !== null || (held !== null && parsePrepared(held) === null)) {
     log(`adam-run: start refused: ${runDir} already holds a run`);
+    return 1;
+  }
+  // The stack is one shared set of services: a start while another run's services are alive would share them.
+  const others = h.processes
+    .list()
+    .filter((p) => SERVICE_MARKERS.some((m) => p.commandLine.includes(m)));
+  if (others.length > 0) {
+    log(
+      `adam-run: start refused: ${others.length} service process(es) of another run are alive (pids ${others.map((p) => p.pid).join(', ')})`,
+    );
     return 1;
   }
   const rec: PidRecord = { pid: process.pid, startedAt: new Date(now).toISOString(), runId };

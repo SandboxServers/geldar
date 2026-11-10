@@ -450,6 +450,25 @@ describe('a prepared-only folder', () => {
     await runCli(['32b', 'start', '--run-id', RUN, '--hours', '0.02'], REPO, h, out.log);
     expect(closed).toBe(1);
   });
+
+  it('refuses a start while service processes of another run are alive, and starts nothing', async () => {
+    const out = capture();
+    const { h, files } = harness({
+      processes: [
+        {
+          pid: 4242,
+          startedAt: '2026-11-10T00:00:00Z',
+          commandLine: 'node golem/src/adam/main.ts',
+        },
+      ],
+    });
+    files.write(runPaths(RUN_DIR).manifest, preparedJson('32b', RUN));
+    expect(
+      await runCli(['32b', 'start', '--run-id', RUN, '--hours', '0.02'], REPO, h, out.log),
+    ).toBe(1);
+    expect(out.text()).toContain('another run are alive');
+    expect(files.read(runPaths(RUN_DIR).manifest)).toBe(preparedJson('32b', RUN));
+  });
 });
 
 describe('report', () => {

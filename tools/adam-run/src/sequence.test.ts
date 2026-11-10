@@ -207,6 +207,17 @@ describe('runSequence', () => {
     expect(r.lines().at(-1)).toMatchObject({ event: 'abort' });
   });
 
+  it('a failed adam up runs no safe stop, so a second start cannot end the first run', async () => {
+    const r = rig('smoke', {}, { durationMs: 60 * MIN });
+    r.deps.supervisor.up = async () => {
+      throw new Error('adam up: the stack is already running');
+    };
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'aborted', rule: 'error', safeStopExit: 0 });
+    expect(r.sup.calls).toEqual([]);
+    expect(r.lines().at(-1)).toMatchObject({ event: 'abort' });
+  });
+
   it('a failed sample is a status line and the run goes on', async () => {
     const r = rig('smoke', {}, { durationMs: 60 * MIN });
     const inner = r.deps.sampler;

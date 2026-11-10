@@ -215,7 +215,23 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
   try {
     await supervisor.up();
   } catch (err) {
-    return abortWith('error', `adam up failed: ${message(err)}`);
+    // The safe stop runs `adam down`, which ends every service on the machine. A run whose `adam up` failed did not
+    // bring the stack up, so it stops nothing: a second start must never end the first run's services.
+    const now = clock.nowMs();
+    const reason = `adam up failed: ${message(err)}`;
+    appendStatus(
+      files,
+      paths.status,
+      harnessLine(
+        last,
+        now,
+        startMs,
+        'abort',
+        `error: ${reason}; no safe stop: this run brought no services up`,
+      ),
+    );
+    await report(now);
+    return { status: 'aborted', rule: 'error', reason, safeStopExit: 0, bodyKills, reportFailed };
   }
 
   const history: Sample[] = [];
