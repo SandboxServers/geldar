@@ -120,11 +120,16 @@ export function receiptMeasure(
     set.add(r.phase);
     phases.set(r.actionId, set);
   }
-  const badFinalIds = terminal.filter((a) => finals.get(a.actionId) !== 1).map((a) => a.actionId);
+  // Sorted, so the note names the same action whatever the order of the input rows.
+  const badFinalIds = terminal
+    .filter((a) => finals.get(a.actionId) !== 1)
+    .map((a) => a.actionId)
+    .sort();
   const economic = actions.filter((a) => phases.has(a.actionId));
   const noPreparedIds = economic
     .filter((a) => !phases.get(a.actionId)?.has('prepared'))
-    .map((a) => a.actionId);
+    .map((a) => a.actionId)
+    .sort();
   const values: Record<string, Value> = {
     actions_total: actions.length,
     terminal_actions: terminal.length,

@@ -1,3 +1,4 @@
+import type { ClientFactory } from '../src/db.ts';
 import type {
   ActionRow,
   Criteria,
@@ -121,4 +122,83 @@ export function criteria(o: Partial<Criteria> = {}): Criteria {
     modelFloorVerdict: null,
     ...o,
   };
+}
+
+/** Rows shaped as the loader's SELECTs return them (snake_case columns), keyed by table. */
+export type DbTables = Partial<
+  Record<'thoughts' | 'intents' | 'actions' | 'receipts' | 'events', Record<string, unknown>[]>
+>;
+
+/** One life's rows: three thoughts, one completed intent, one action with a committed receipt, one sleep. */
+export function lifeTables(): DbTables {
+  return {
+    thoughts: [
+      {
+        thought_id: 'th-1',
+        at: new Date(T0),
+        world_day: 0,
+        world_tick: 100,
+        wake_reason: 'timer',
+        snapshot: snap({ hunger: 18 }),
+        called: true,
+        parsed_ok: true,
+        errored: false,
+        latency_ms: 1200,
+      },
+      {
+        thought_id: 'th-2',
+        at: new Date(T0 + MIN_MS),
+        world_day: 0,
+        world_tick: 1300,
+        wake_reason: 'event',
+        snapshot: snap(),
+        called: true,
+        parsed_ok: true,
+        errored: false,
+        latency_ms: 2400,
+      },
+      {
+        thought_id: 'th-3',
+        at: new Date(T0 + 2 * MIN_MS),
+        world_day: 0,
+        world_tick: 2600,
+        wake_reason: 'timer',
+        snapshot: null,
+        called: false,
+        parsed_ok: false,
+        errored: false,
+        latency_ms: null,
+      },
+    ],
+    intents: [{ intent_id: 'in-1', state: 'completed', started_tick: 100, ended_tick: 900, end_reason: null }],
+    actions: [
+      {
+        action_id: 'ac-1',
+        intent_id: 'in-1',
+        body_generation: 1,
+        state: 'completed',
+        kind: 'mine',
+        place_block: null,
+      },
+    ],
+    receipts: [{ action_id: 'ac-1', phase: 'committed', at: new Date(T0 + MIN_MS) }],
+    events: [{ type: 'sleep', world_day: 0, at: new Date(T0 + MIN_MS) }],
+  };
+}
+
+/**
+ * A ClientFactory that answers the loader's SELECTs from `tables`, keyed by the table after FROM.
+ * `failOn` names a table whose SELECT rejects, so a test can check the read-error path.
+ */
+export function fakeDb(tables: DbTables, failOn?: string): ClientFactory {
+  return () => ({
+    connect: async () => undefined,
+    query: async (text: string) => {
+      const table = /FROM (\w+)/.exec(text)?.[1];
+      if (table === undefined) return { rows: [] };
+      if (table === failOn) throw new Error(`fake database error on ${table}`);
+      return { rows: tables[table as keyof DbTables] ?? [] };
+    },
+    end: async () => undefined,
+  });
 }
