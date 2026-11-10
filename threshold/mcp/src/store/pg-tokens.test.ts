@@ -206,6 +206,67 @@ describe('PgTokenStore LISTEN connection', () => {
     await store.stop();
   });
 
+  it('after a reconnect, fires the revocations the gap hid and clears the hit cache', async () => {
+    vi.useFakeTimers();
+    let rows: TokenRow[] = [row()];
+    const { pool, store, listeners } = storeWith(() => rows);
+    const seen: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((revoked) => seen.push(revoked));
+    await store.start();
+    expect(await store.resolve(HASH, NOW)).not.toBeNull();
+    const before = pool.sent.length;
+    listeners[0]?.emit('end');
+    rows = [row({ token_id: 'tk_9', player_id: 'ag-jason-01' })];
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(seen, 'the revocation the gap hid').toEqual([
+      { tokenId: 'tk_9', playerId: 'ag-jason-01' },
+    ]);
+    await store.resolve(HASH, NOW);
+    expect(pool.sent.length, 'the cache was cleared: resolve queried again').toBe(before + 2);
+    await store.stop();
+  });
+
+  it('a drop while connecting is seen, and the connection is re-opened', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = storeWith([]);
+    const pending = store.start();
+    listeners[0]?.emit('end');
+    await pending;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners).toHaveLength(2);
+    await store.stop();
+  });
+
+  it('stop during an in-flight start ends that connection, and start rejects', async () => {
+    const { store, listeners } = storeWith([]);
+    const pending = store.start();
+    await store.stop();
+    await expect(pending).rejects.toThrow('stopped during start');
+    expect(listeners).toHaveLength(1);
+    expect(listeners[0]?.ended).toBe(true);
+  });
+
+  it('does not cache a hit that a revocation overtook while its row was being read', async () => {
+    const listeners: FakeListener[] = [];
+    const pool = new FakePool(() => {
+      listeners[0]?.emit(
+        'notification',
+        revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
+      );
+      return { rows: [row()] };
+    });
+    const store = new PgTokenStore(pool.asPool(), HARNESSES, {}, () => {
+      const listener = new FakeListener();
+      listeners.push(listener);
+      return listener.asClient();
+    });
+    await store.start();
+    expect(await store.resolve(HASH, NOW)).not.toBeNull();
+    await store.resolve(HASH, NOW);
+    expect(pool.sent, 'the second resolve queried: nothing was cached').toHaveLength(2);
+    await store.stop();
+  });
+
   it('stop ends the connection and does not reconnect', async () => {
     vi.useFakeTimers();
     const { store, listeners } = storeWith([]);
