@@ -149,10 +149,17 @@ Two fixes in threshold/mcp: the presence bucket is created before it is used, an
 - Fix (commit `13da18f`): the script has no param block. `$Command` and `$Rest` are read from `$args`,
   with the same meaning for every command. The guard is `threshold/mcp/src/geldar-script.test.ts`; it
   also runs the script under pwsh when pwsh exists and checks that the CLI's own error comes back.
-- Open: a bare flag through the pass-through (`./geldar.ps1 pnpm -v`) now reaches pnpm and fails with
-  `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL`. At HEAD it printed nothing. Not fixed in L3.
-- Open: `Get-Help` does not read the comment block at the top of `geldar.ps1` in this environment. The
-  no-argument usage now prints only the script name (before the fix it printed the syntax line).
+- Bare flags through the pass-through, measured with `pwsh -File` (exit code, first output line). On
+  origin/main, then on this branch:
+  - `pnpm -v`: main exit 2, prints the script's help text; branch exit 0, prints the pnpm version.
+  - `pnpm exec node -e 1`: main exit 1, `parameter 'e' is ambiguous`; branch exit 0.
+  - `pnpm -C threshold/mcp exec tsc --noEmit`: main exit 0 but runs nothing (prints the help text); branch
+    runs tsc and exits 0.
+  - `pnpm --filter @geldar/mcp exec vitest run`: exit 0 on both.
+  No form that worked on main fails on the branch. Not covered: forms outside these four.
+- Fixed: the no-argument usage. `geldar.ps1` now prints its usage from `Show-Usage` (commit `b658744`) with
+  `help`, `-h` and `--help`; an unknown command prints an error, the usage, and exits 2. The guard checks
+  that the usage names every case of the dispatch switch.
 
 ### Leftover tokens policy
 

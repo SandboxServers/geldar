@@ -35,12 +35,15 @@ describe('geldar.ps1 reads its arguments from $args', () => {
   });
 
   it('prints a usage from Show-Usage that names every command of the dispatch switch', () => {
-    const usage = /function Show-Usage \{\s*Write-Output @'\r?\n([\s\S]*?)\r?\n'@/.exec(script)?.[1] ?? '';
+    const usage =
+      /function Show-Usage \{\s*Write-Output @'\r?\n([\s\S]*?)\r?\n'@/.exec(script)?.[1] ?? '';
     expect(usage).toContain('Usage: ./geldar.ps1');
     const dispatch = script.slice(script.indexOf('switch ($Command) {'));
-    const labels = [...dispatch.matchAll(/^ {2}'([a-z-]+)' \{/gm)].map((match) => match[1]);
+    const labels = [...dispatch.matchAll(/^ {2}'([a-z-]+)' \{/gm)].map((match) => match[1] ?? '');
     const commands = labels.filter((label) => !['help', '-h', '--help'].includes(label));
-    expect(commands).toEqual(expect.arrayContaining(['players', 'mcp-tokens', 'db', 'setup', 'check', 'shard']));
+    expect(commands).toEqual(
+      expect.arrayContaining(['players', 'mcp-tokens', 'db', 'setup', 'check', 'shard']),
+    );
     for (const command of commands) {
       expect(usage, command).toMatch(new RegExp(`\\b${command}\\b`));
     }
