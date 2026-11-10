@@ -19,6 +19,7 @@ import {
   formatPidFile,
   formatStatus,
   listRangers,
+  type PidRecord,
   type Presence,
   parsePidFile,
   type Ranger,
@@ -27,10 +28,16 @@ import {
   rangerMarker,
   rangerState,
   selectRangers,
+  UNKNOWN_START,
 } from './rangers.ts';
 import { type LogFs, PRODUCTION_LOG_FS, rotateLog, tailLines } from './rangers-logs.ts';
 import { readPresence } from './rangers-presence.ts';
-import { type ProcessOps, productionOps, stopRangerProcess } from './rangers-process.ts';
+import {
+  type ProcessOps,
+  productionOps,
+  stopRangerProcess,
+  verifyProcess,
+} from './rangers-process.ts';
 
 export const REPO_ROOT = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 export const RUN_DIR = join(REPO_ROOT, '.geldar', 'players');
@@ -60,7 +67,21 @@ function readPidText(dir: string, ranger: Ranger): string | null {
   return existsSync(pidFile(dir, ranger)) ? readFileSync(pidFile(dir, ranger), 'utf8') : null;
 }
 
-const isAlive = (pid: number): boolean => productionOps().alive(pid);
+/** The process verdict on a PID file's record, for this ranger's Body: the marker is computed fresh here. */
+const verifierFor = (ranger: Ranger, ops: ProcessOps) => (record: PidRecord) =>
+  verifyProcess(record, rangerMarker(ranger.playerId), ops);
+
+/**
+ * The start time of a process just spawned. A probe that fails is retried once after a short wait; if it still
+ * fails the start time is `unknown`, which status shows and `up` and `down` refuse as unverifiable.
+ */
+export async function probeStart(pid: number, ops: ProcessOps): Promise<string> {
+  const first = ops.identity(pid)?.started;
+  if (first) return first;
+  await ops.sleep(START_PROBE_RETRY_MS);
+  return ops.identity(pid)?.started || UNKNOWN_START;
+}
+const START_PROBE_RETRY_MS = 300;
 
 /** Resident memory in MB, or null when the platform tool cannot say. Only the number leaves this function. */
 function rssMb(pid: number): number | null {
@@ -92,13 +113,31 @@ export interface RangerLine {
   failed: boolean;
 }
 
-function start(dir: string, ranger: Ranger, logFs: LogFs): RangerLine {
-  const state = rangerState(readPidText(dir, ranger), isAlive);
+async function start(
+  dir: string,
+  ranger: Ranger,
+  logFs: LogFs,
+  ops: ProcessOps,
+): Promise<RangerLine> {
+  const text = readPidText(dir, ranger);
+  const state = rangerState(text, verifierFor(ranger, ops));
   if (state.state === 'online') {
     return { line: `${ranger.playerId} already running (pid ${state.pid})`, failed: false };
   }
+  // A live process whose identity cannot be read may be the Body: starting a second one could collide on the name.
+  if (state.state === 'unknown') {
+    return {
+      line: `${ranger.playerId} not started: pid ${state.pid} cannot be verified (${state.reason}); stop it by hand or retry`,
+      failed: true,
+    };
+  }
   // An old PID file names a live process that cannot be verified: starting over it could collide on the name.
-  if (state.state === 'stale' && state.pid !== null && isAlive(state.pid)) {
+  if (
+    text !== null &&
+    parsePidFile(text).kind === 'old' &&
+    state.pid !== null &&
+    ops.alive(state.pid)
+  ) {
     return {
       line: `${ranger.playerId} not started: an old pid file names live pid ${state.pid}; stop it by hand and delete ${pidFile(dir, ranger)}`,
       failed: true,
@@ -118,8 +157,7 @@ function start(dir: string, ranger: Ranger, logFs: LogFs): RangerLine {
     });
     child.unref();
     if (child.pid === undefined) throw new RangerError(`could not start ${ranger.playerId}`);
-    // An unreadable start time is stored empty: `down` then refuses to stop the process, and says why.
-    const started = productionOps().identity(child.pid)?.started ?? '';
+    const started = await probeStart(child.pid, ops);
     const record = { pid: child.pid, started, marker: rangerMarker(ranger.playerId) };
     writeFileSync(pidFile(dir, ranger), formatPidFile(record));
     return {
@@ -146,8 +184,9 @@ async function stop(dir: string, ranger: Ranger, ops: ProcessOps): Promise<Range
     unlinkSync(pidFile(dir, ranger));
     return { line: `${ranger.playerId} down (old pid file removed)`, failed: false };
   }
-  const result = await stopRangerProcess(file.record, ops);
-  if (result.kind === 'failed') {
+  const result = await stopRangerProcess(file.record, rangerMarker(ranger.playerId), ops);
+  // An unverifiable process keeps its PID file: the file is the only record of which PID to stop by hand.
+  if (result.kind === 'failed' || result.kind === 'unverifiable') {
     return { line: `${ranger.playerId} not stopped: ${result.reason}`, failed: true };
   }
   unlinkSync(pidFile(dir, ranger));
@@ -157,7 +196,7 @@ async function stop(dir: string, ranger: Ranger, ops: ProcessOps): Promise<Range
       failed: false,
     };
   }
-  const note = result.kind === 'refused' ? result.reason : 'stale pid file removed';
+  const note = result.kind === 'mismatch' ? result.reason : 'stale pid file removed';
   return { line: `${ranger.playerId} down (${note})`, failed: false };
 }
 
@@ -214,14 +253,14 @@ export async function runRangersCli(
   try {
     const rangers = selectRangers(listRangers(shardYaml), options.playerId);
     if (verb === 'up')
-      return await eachRanger(rangers, async (ranger) => start(dir, ranger, deps.logFs));
+      return await eachRanger(rangers, (ranger) => start(dir, ranger, deps.logFs, deps.ops));
     if (verb === 'down') {
       return await eachRanger(rangers, (ranger) => stop(dir, ranger, deps.ops));
     }
     if (verb === 'status') {
       const presence = await deps.readPresence(rangers.map((ranger) => ranger.lifeId));
       const rows = rangers.map((ranger) => {
-        const state = rangerState(readPidText(dir, ranger), isAlive);
+        const state = rangerState(readPidText(dir, ranger), verifierFor(ranger, deps.ops));
         return {
           ranger,
           ...state,

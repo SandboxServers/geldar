@@ -6,6 +6,7 @@
  * GELDAR_LIVE_REVOKE_TOKEN_ID (a throwaway player and its token, so the test token is not revoked);
  * GELDAR_LIVE_RANGER and GELDAR_LIVE_RANGER_TOKEN_FILE (one ranger for g and h). The hibernation case needs the
  * override of 60 s set by the operator. Each run uses a unique goal name, and the cases wait in bounded steps.
+ * Presence reads NATS: `./geldar.ps1 players status` defaults GELDAR_NATS_URL to nats://127.0.0.1:4222 when it is unset.
  */
 import { describe, expect, it } from 'vitest';
 import { connectAs, geldar, readTokenFile, runId, structuredOf } from './client.ts';

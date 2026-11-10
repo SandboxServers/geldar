@@ -71,19 +71,33 @@ describe('parsePid and rangerState', () => {
     expect(parsePid('12abc')).toBeNull();
   });
 
-  it('reports online for a live PID, stale for a dead one, down without a file', () => {
-    const alive = (pid: number) => pid === 4242;
-    const current = (pid: number) =>
-      formatPidFile({ pid, started: 'start-1', marker: 'players/main.ts --player ag-x' });
-    expect(rangerState(current(4242), alive)).toEqual({ state: 'online', pid: 4242 });
-    expect(rangerState(current(7), alive)).toEqual({ state: 'stale', pid: 7 });
-    expect(rangerState(null, alive)).toEqual({ state: 'down', pid: null });
+  it('reports online only for the owned process; stale for dead or reused; unknown when unverifiable', () => {
+    const current = (pid: number, started = 'start-1') =>
+      formatPidFile({ pid, started, marker: 'players/main.ts --player ag-x' });
+    const verify = (record: { pid: number }) => {
+      if (record.pid === 4242) return 'owned' as const;
+      if (record.pid === 9) return 'unverifiable' as const;
+      return record.pid === 8 ? ('mismatch' as const) : ('dead' as const);
+    };
+    expect(rangerState(current(4242), verify)).toEqual({ state: 'online', pid: 4242 });
+    expect(rangerState(current(7), verify)).toEqual({ state: 'stale', pid: 7 });
+    expect(rangerState(current(8), verify)).toEqual({ state: 'stale', pid: 8 });
+    expect(rangerState(current(9), verify)).toEqual({
+      state: 'unknown',
+      pid: 9,
+      reason: 'cannot verify pid 9',
+    });
+    expect(rangerState(current(9, 'unknown'), verify)).toEqual({
+      state: 'unknown',
+      pid: 9,
+      reason: 'start time unreadable',
+    });
+    expect(rangerState(null, verify)).toEqual({ state: 'down', pid: null });
   });
 
   it('reads a bare-PID file from before format 2 as old: never online, and the PID is kept', () => {
-    const alive = () => true;
     expect(parsePidFile('4242\n')).toEqual({ kind: 'old', pid: 4242 });
-    expect(rangerState('4242\n', alive)).toEqual({ state: 'stale', pid: 4242 });
+    expect(rangerState('4242\n', () => 'owned')).toEqual({ state: 'stale', pid: 4242 });
     expect(parsePidFile('not a pid')).toEqual({ kind: 'old', pid: null });
   });
 
