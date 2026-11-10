@@ -189,6 +189,21 @@ export function pepperBytes(text: string): Buffer {
   return bytes;
 }
 
+/**
+ * The Postgres password from its file's text, read as `tools/migrate` reads it: a leading byte-order
+ * mark and one trailing LF or CRLF are removed. Edge whitespace is refused, not trimmed, so the
+ * password the runner set is the one this server sends. The message never names the password.
+ */
+export function postgresPassword(text: string): string {
+  const password = text.replace(/^﻿/, '').replace(/\r?\n$/, '');
+  if (/^\s|\s$/.test(password)) {
+    throw new ConfigRejected(
+      'the Postgres password must not start or end with whitespace: remove the extra spaces or tabs from its file',
+    );
+  }
+  return password;
+}
+
 /** How long a read of the living lives or of one life's identity is reused. */
 export const LIFE_CACHE_MS = 5_000;
 
@@ -230,7 +245,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
   const closers: Array<() => Promise<void>> = [];
   try {
     log({ event: 'mcp_start', shard: config.shard });
-    const password = (await ports.readSecret(config.postgres.passwordFile)).trim();
+    const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
     const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
     const { host, port, database, user } = config.postgres;
     const pgOptions: PgOptions = { host, port, database, user, password };

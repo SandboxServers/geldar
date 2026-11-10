@@ -66,6 +66,23 @@ describe('setRolePassword', () => {
   });
 });
 
+/**
+ * The password-file table. threshold/mcp/src/main.test.ts holds the same rows for the server's
+ * reader: both must agree. `null` means the input is refused.
+ */
+const PASSWORD_FILE_TABLE: ReadonlyArray<readonly [string, string | null]> = [
+  ['﻿pencil\r\n', 'pencil'],
+  ['pencil\n', 'pencil'],
+  ['pencil', 'pencil'],
+  ['pen cil\n', 'pen cil'],
+  ['﻿pencil', 'pencil'],
+  ['pencil\r\n\r\n', null],
+  [' pencil\n', null],
+  ['﻿ pencil', null],
+  ['pencil \n', null],
+  ['pencil\t', null],
+];
+
 describe('readPasswordFile', () => {
   const dirs: string[] = [];
   afterEach(async () => {
@@ -110,6 +127,17 @@ describe('readPasswordFile', () => {
 
   it('refuses a trailing tab', async () => {
     await expect(readPasswordFile(await fileWith('pencil\t'))).rejects.toThrow('whitespace');
+  });
+
+  it('reads the password file the way the server does, row for row', async () => {
+    for (const [input, expected] of PASSWORD_FILE_TABLE) {
+      const read = readPasswordFile(await fileWith(input));
+      if (expected === null) {
+        await expect(read, JSON.stringify(input)).rejects.toThrow('whitespace');
+      } else {
+        await expect(read, JSON.stringify(input)).resolves.toBe(expected);
+      }
+    }
   });
 });
 

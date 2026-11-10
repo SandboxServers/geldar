@@ -15,6 +15,7 @@ import {
   type McpPorts,
   type NatsLink,
   pepperBytes,
+  postgresPassword,
   startMcp,
   tokenBucketLimiter,
 } from './main.ts';
@@ -205,6 +206,49 @@ describe('pepper', () => {
     const failure = await startMcp(config, ports).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(ConfigRejected);
     expect(order).not.toContain('pool.open');
+  });
+});
+
+/**
+ * The password-file table. tools/migrate/src/role-password.test.ts holds the same rows with the
+ * same expected results: the runner and the server must read one file the same way.
+ * `null` means the input is refused.
+ */
+const PASSWORD_FILE_TABLE: ReadonlyArray<readonly [string, string | null]> = [
+  ['﻿pencil\r\n', 'pencil'],
+  ['pencil\n', 'pencil'],
+  ['pencil', 'pencil'],
+  ['pen cil\n', 'pen cil'],
+  ['﻿pencil', 'pencil'],
+  ['pencil\r\n\r\n', null],
+  [' pencil\n', null],
+  ['﻿ pencil', null],
+  ['pencil \n', null],
+  ['pencil\t', null],
+];
+
+describe('postgresPassword', () => {
+  it('reads the password file the way the migration runner does, row for row', () => {
+    for (const [input, expected] of PASSWORD_FILE_TABLE) {
+      if (expected === null) {
+        expect(() => postgresPassword(input), JSON.stringify(input)).toThrow(ConfigRejected);
+      } else {
+        expect(postgresPassword(input), JSON.stringify(input)).toBe(expected);
+      }
+    }
+  });
+
+  it('names the rule, never the password, when it refuses', () => {
+    const error = (() => {
+      try {
+        postgresPassword(` ${CANARY_PASSWORD}`);
+      } catch (caught) {
+        return caught;
+      }
+      return undefined;
+    })();
+    expect(error).toBeInstanceOf(ConfigRejected);
+    expect(String((error as Error).message)).not.toContain(CANARY_PASSWORD);
   });
 });
 
