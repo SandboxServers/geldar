@@ -19,6 +19,7 @@ describe('listMigrations', () => {
       '0001_init.sql',
       '0002_sovereign_mcp.sql',
       '0003_mcp_sleep_marks.sql',
+      '0004_mcp_sleep_marks_grants.sql',
     ]);
   });
 
