@@ -123,3 +123,121 @@ Reading order for a coder: the card, the two pre-wave decisions it names ([0078]
 - `./geldar.ps1 check` exit 0.
 
 **Index line to add (handoff):** `index: | [0117](0117-books-and-skills-copy-stamp-and-learned-from.md) | Books and skills: copy stamp and learned_from | Proposed |`
+
+---
+
+### P1-C4-02b procedure library: the mechanism demo (inference reduction)
+
+- **id:** P1-C4-02b
+- **wave:** C4
+- **lane:** B
+- **depends-on:** P1-C4-02a
+- **status:** B (the scenario runs on the desktop; the node run is C4-08's)
+- **decisions:** 0118
+- **size:** M (about 40k)
+- **may-edit:** `golem/src/books/**` (library lookup in the prompt path), `animus/src/prompts/**` only for a skill-library slot (no new wording; the slot shows the skill text, see 0058), `tools/adam-run/**` (the mechanism-demo scenario; create `mechanism-demo.ts` and its test), `tools/adam-report/**` (the metric report), `docs/analysis/phase1/worknotes/P1-C4-02b.md`.
+- **must-not-edit:** section 0 list; `plugin/**`; `sql/**` (02a owns the schema).
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C4-02b.md`
+- **commit:** per item (1 library slot, 2 demo scenario, 3 metric report).
+
+**Metric (defined here; the spec does not define it).**
+
+- *Useful autonomous minute:* a real minute in which at least one durable intent step completes with a receipt. Owner question 1 asks for confirmation.
+- *Inference calls per useful autonomous minute:* model calls made by the agent in a scenario window, divided by its useful minutes in that window. Reported for each agent, and for the baseline.
+- *Mechanism claim:* agent B, holding book B-1 and no other source, executes the skill with fewer calls per useful minute than B's own baseline on the same task with no book, and the drop comes from the library (B's prompts carry the skill text, not a re-derivation).
+
+**Harness scenario.** Author A and learner B on one shard, same pinned model configuration (0051 fixes the models). Task T: craft a stone pickaxe from a chest of cobble and sticks, after a Body restart and one chatter interruption. Five runs with the book (B holds B-1) and five runs without it (B starts from zero skills). Each run is a fresh life with a seeded world; same seed for both arms.
+
+**Numbered steps**
+
+1. Add the library lookup: at prompt build, B's private library entries for the current task are placed in a fixed slot. No new prompt wording; the slot carries the skill's text and nothing else.
+2. Scenario `mechanism-demo` in `tools/adam-run`: arms, seeds, the restart at step 2 of T, the interruption at step 3, and the receipts the run must produce.
+3. Metric report in `tools/adam-report`: calls per useful minute per arm, the ratio, and the `learned_from` chain from the journal.
+
+**Acceptance checks (pass bar; owner confirms the numbers, the proposal is [J])**
+
+- B with the book: calls per useful minute at most 50% of B's no-book baseline, median of five runs, and all five runs complete T.
+- A: its inference calls per useful minute fall in the window after the book is written (the sign the procedure reduces inference for the author too). Report only; not a pass criterion.
+- Every B run's journal shows `skill.acquired` with `learned_from` = B-1 and no `skill.invented` event for T.
+- Test `mechanism-demo: the book arm completes T after restart and interruption`. Revert-check: remove the library slot from the prompt build. The test must fail (B re-derives, calls go up); restore.
+- Test `mechanism-demo: the metric counts only receipt-backed steps as useful`. Revert-check: count every intent tick as useful. The test must fail; restore.
+- Knowledge-boundary scan on the slot text (`contract/test/agent-visible-text.test.ts`).
+- `./geldar.ps1 check` exit 0.
+
+**Index line to add (handoff):** `index: | [0118](0118-mechanism-demo-metric-and-pass-bar.md) | Mechanism demo: metric and pass bar | Proposed |`
+
+---
+
+### P1-C4-03 sleep reflection and hibernation (Thinker offline for an hour, zero deaths)
+
+- **id:** P1-C4-03
+- **wave:** C4
+- **lane:** C
+- **depends-on:** P1-C4-00, C3-02 (honest sleep mark; this card changes the same `golem/src/body` files)
+- **status:** B (the one-hour live run is an O step, C4-08)
+- **decisions:** 0119
+- **size:** L (two sessions; the hibernation state machine plus the reflection path)
+- **may-edit:** `animus/src/reflection/**`, `animus/src/loop/**` (the reflection trigger and the fatigue rule), `animus/src/thinker/**` (the Thinker-offline signal), `golem/src/body/**` (dim, hibernate, resume; the shelter path uses the enclosed-space rule of 0074, not a bed), `golem/src/mind-link/**`, `docs/analysis/phase1/worknotes/P1-C4-03.md`.
+- **must-not-edit:** section 0 list; `lantern-local/**` (the local Thinker is not changed); `animus/src/prompts/**` (C4-06 owns wording); `threshold/**`.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C4-03.md`
+- **commit:** per item (1 reflection once per in-game day and digest, 2 hibernation state, 3 resume, 4 the one-hour simulated test).
+
+**Numbered steps**
+
+1. Reflection (spec 5.4): `sleep()` on a bed the server confirms triggers reflection at most once per in-game day; repeated sleep neither re-runs it nor refills credits. The Mind runs one longer thought over the deterministic digest. Keep the fatigue rule as written (degraded reflection after 3 in-game days) and cite 0074 for the shelter definition.
+2. Hibernation (spec 3 glossary, 5.2, and the Thinker path at spec line 248): dim after the 45-second deadline with no completion; hibernate after ten minutes without a mind: shelter in an enclosed space, seal, log out. The server writes `hibernation.state`.
+3. Resume: when a Thinker returns and the agent's model has a Thinker, the agent logs in at its sealed position and emits `resumed`. No intent is dropped; durable intents resume from checkpoint.
+4. No death while hibernating: the Body never takes a damaging action while dim or hibernating (a test asserts the action set is empty of attacks and moves).
+5. Simulated test with an injected clock: the Thinker is taken offline for 60 simulated minutes.
+
+**Acceptance checks**
+
+- Pass (simulated): zero deaths across all agents in the scenario; every agent is `hibernating` before minute 10 of the outage and `resumed` within one minute of the Thinker's return; every receipt chain stays unbroken.
+- Live hour (O, C4-08): the same check with the real desktop Thinker switched off for one hour on the node's test shard. Recorded in the worknote.
+- Test `hibernation: an agent with no mind for ten minutes shelters and logs out`. Revert-check: remove the ten-minute transition in the Body state machine. The test must fail; restore.
+- Test `reflection: a second sleep in the same in-game day does not re-run reflection`. Revert-check: drop the once-per-day guard in `animus/src/reflection`. The test must fail; restore.
+- Test `hibernation: a hibernating agent takes no damaging action`.
+- Knowledge-boundary scan on any new status text the agent reads (`dim`, `hibernating`).
+- `./geldar.ps1 check` exit 0.
+
+**Index line to add (handoff):** `index: | [0119](0119-hibernation-and-reflection-in-phase1.md) | Hibernation and sleep reflection for Phase 1 | Proposed |`
+
+---
+
+### P1-C4-04 credits allowance: reserve-before-dispatch and failed-reflection refund (needs 0079)
+
+- **id:** P1-C4-04
+- **wave:** C4
+- **lane:** D
+- **depends-on:** P1-C4-00, and decision 0079 confirmed by the owner (the numbers in the tier table are the gate; the mechanism can be built with the values as shard config keys)
+- **status:** B (numbers O)
+- **decisions:** 0120
+- **size:** M (about 40k)
+- **may-edit:** `animus/src/ports/admission.ts`, `animus/src/loop/admission.ts` (reserve before dispatch), `animus/src/reflection/**` (refund rule), `animus/test/**` (admission tests), `golem/src/players/**` (per-address failed-auth cap scaling, if the cap lives there; verify the path first), `docs/analysis/phase1/worknotes/P1-C4-04.md`.
+- **must-not-edit:** section 0 list; `plugin/**`; `threshold/**` (the public MCP caps are C2's; this card only reads them); `contract/**` (the event shapes came in C4-00).
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C4-04.md`
+- **commit:** per item (1 reserve before dispatch, 2 refund on failure before output, 3 caps scaled per address, 4 tier table as config).
+
+**Numbers (Proposed in 0079; the owner confirms before the value is set in a shard config).**
+
+- Mind-driven agents, spec 5.7 line 642 (credits per real hour): frontier 6, heavy 6, strong 8, fast 8, tiny 6. Cap 24 hours' worth (line 643). Standard thought 1 credit, high-effort 3, reflection 2 once per in-game day (line 644).
+- Sovereign players keep 0057: 30 per real hour, cap 240, free `wait`, `look`, `read_book`, `status`.
+- Per-address failed auth: 0057 gives 30 per minute per player and 300 global per minute. Proposed: the per-address cap is the per-player value times the players on that address (a 15-player address gets 450 a minute), tested with 15 agents on one address.
+
+**Numbered steps**
+
+1. Reserve before dispatch: the admission reservation is taken before a thought is sent to a Thinker (the Phase 2 gate, now in Phase 1 per 0079).
+2. Refund on failure: if the Mind fails before any Thinker output reaches the agent, release the reservation (`credit.refunded`). Once output is delivered, the charge settles even if the reflection is discarded (0079 C-A; 0062 keeps the completed-reflection rule).
+3. Allowance per real hour (accrual), capped at 24 hours' worth. Accrual is computed from real time, not ticks.
+4. Per-address failed-auth cap scales with players on the address.
+
+**Acceptance checks**
+
+- Test `admission: a reservation is taken before dispatch`. Revert-check: move the reserve call after dispatch in `animus/src/loop/admission.ts`. The test must fail; restore.
+- Test `admission: a Thinker failure before output refunds the reserve`. Revert-check: make `release()` a no-op on failure. The test must fail; restore.
+- Test `admission: a delivered-then-discarded reflection settles its cost`.
+- Test `admission: fifteen agents on one address share the scaled failed-auth cap`. Revert-check: use the per-player cap for the address. The test must fail; restore.
+- The tier values are read from shard config, not hard-coded; a test loads the 0079 values and asserts the table (the values are Proposed until the owner confirms).
+- `./geldar.ps1 check` exit 0.
+
+**Index line to add (handoff):** `index: | [0120](0120-credit-reserve-and-refund-rules.md) | Credits: reserve before dispatch, refund on failure | Proposed |`
