@@ -186,6 +186,8 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
   try {
     const survivorThought = judged.ok ? judged.value : reducedThought(input, slots, refused);
     const kinds = survivors.map((slot) => slot.kind);
+    // All-or-nothing: the whole surviving batch is reserved at once. A short balance refuses every
+    // surviving item with `budget_exhausted`; nothing is taken and nothing is sent.
     const reserve =
       survivors.length === 0
         ? undefined
