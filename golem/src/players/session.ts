@@ -26,6 +26,8 @@ export interface PlayerSessionOptions {
 
 interface ActiveSession {
   supervisor: BodySupervisor;
+  /** Ends the current run at once, even one still starting (see `up`). */
+  stopRun(reason: string): void;
   /** Settles once the supervisor has ended and the connection is closed. */
   done: Promise<void>;
 }
@@ -54,13 +56,23 @@ export class PlayerSession {
       return;
     }
     const connection = this.opts.connect();
+    // The supervisor listens for a stop only once a run has started, so a `down` during the start
+    // would wait for the bot to end. This run-level stop settles the run's `ended` at once instead.
+    let stopRun: (reason: string) => void = () => undefined;
+    const stopping = new Promise<string>((resolve) => {
+      stopRun = resolve;
+    });
     const supervisor = new BodySupervisor({
       acquire: connection.acquire,
-      start: (bot) => this.opts.body(bot),
+      start: async (bot) => {
+        const run = await this.opts.body(bot);
+        return { ...run, ended: Promise.race([run.ended, stopping]) };
+      },
       log,
     });
     const active: ActiveSession = {
       supervisor,
+      stopRun,
       done: supervisor
         .run()
         .then(() => connection.close())
@@ -78,6 +90,7 @@ export class PlayerSession {
     const active = this.active;
     if (active === null) return;
     this.active = null;
+    active.stopRun('stop requested');
     await active.supervisor.stop();
     await active.done;
     this.opts.log({ event: 'player_down', life_id: this.opts.lifeId });
