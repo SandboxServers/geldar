@@ -15,6 +15,7 @@ import {
 } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import {
   formatPidFile,
   formatStatus,
@@ -230,6 +231,8 @@ export interface RangerDeps {
   runDir: string;
   /** The file calls `logs` makes. */
   logFs: LogFs;
+  /** Deletes a stopped life's registry key and whitelist entry; returns one status line per step. */
+  removeLife(lifeId: string): Promise<string[]>;
 }
 
 const PRODUCTION_DEPS: RangerDeps = {
@@ -237,6 +240,7 @@ const PRODUCTION_DEPS: RangerDeps = {
   ops: productionOps(),
   runDir: RUN_DIR,
   logFs: PRODUCTION_LOG_FS,
+  removeLife: (lifeId) => removeLifeFromShard(lifeId),
 };
 
 /** Runs one command and returns the exit code. Status exits 0 whether or not anything runs. */
@@ -255,7 +259,14 @@ export async function runRangersCli(
     if (verb === 'up')
       return await eachRanger(rangers, (ranger) => start(dir, ranger, deps.logFs, deps.ops));
     if (verb === 'down') {
-      return await eachRanger(rangers, (ranger) => stop(dir, ranger, deps.ops));
+      const stopped = await eachRanger(rangers, (ranger) => stop(dir, ranger, deps.ops));
+      const removed: string[] = [];
+      // A life whose Body is still running keeps its key and whitelist entry.
+      for (const ranger of rangers) {
+        if (readPidText(dir, ranger) === null)
+          removed.push(...(await deps.removeLife(ranger.lifeId)));
+      }
+      return { code: stopped.code, lines: [...stopped.lines, ...removed] };
     }
     if (verb === 'status') {
       const presence = await deps.readPresence(rangers.map((ranger) => ranger.lifeId));
