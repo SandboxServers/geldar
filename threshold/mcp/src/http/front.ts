@@ -4,7 +4,14 @@ import { createMockHttp } from '@geldar/mcp-mock';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
 import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
-import { clientAddress, parseBearer, tokenDigest, trustedProxies, verifyBearer } from './auth.ts';
+import {
+  type BearerVerdict,
+  clientAddress,
+  parseBearer,
+  tokenDigest,
+  trustedProxies,
+  verifyBearer,
+} from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
 
@@ -119,7 +126,17 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         (options.store.isCachedHit?.(tokenDigest(options.pepper, token), now()) ?? false);
       const blockedSec = cached ? undefined : gates.authBlocked(address, now());
       if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
-      const verdict = await verifyBearer(options.store, options.pepper, playerId, header, now());
+      let verdict: BearerVerdict;
+      try {
+        verdict = await verifyBearer(options.store, options.pepper, playerId, header, now());
+      } catch (error) {
+        // A failing store is a 503 with no detail; the log keeps only the error's class name.
+        frontLog(options.log ?? stderrSink)({
+          event: 'auth_unavailable',
+          error: (error as Error).constructor.name,
+        });
+        return { outcome: 'unavailable' };
+      }
       if (verdict.outcome === 'ok') {
         players.set(req, verdict.player);
         return { outcome: 'ok' };

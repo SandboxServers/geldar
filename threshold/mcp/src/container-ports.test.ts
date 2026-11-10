@@ -32,3 +32,25 @@ describe('containerPorts pepper', () => {
     expect((await pepperFrom(text)).equals(Buffer.from(expected, 'utf8'))).toBe(true);
   });
 });
+
+describe('containerPorts pool', () => {
+  it('opens the pool with a connection timeout, a query timeout and a statement timeout', async () => {
+    const pool = containerPorts('phase0').openPool({
+      host: '127.0.0.1',
+      port: 5432,
+      database: 'geldar',
+      user: 'mcp',
+      password: 'unused',
+    });
+    try {
+      expect((pool as unknown as { options: object }).options).toMatchObject({
+        max: 10,
+        connectionTimeoutMillis: 5000,
+        query_timeout: 5000,
+        statement_timeout: 5000,
+      });
+    } finally {
+      await pool.end();
+    }
+  });
+});

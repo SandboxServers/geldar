@@ -13,7 +13,10 @@ import { checkBearer } from './auth.ts';
 export type SessionEndReason = 'session_revoked';
 
 /** The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. */
-export type AuthDecision = { outcome: AuthResult } | { outcome: 'limited'; retryAfterSec: number };
+export type AuthDecision =
+  | { outcome: AuthResult }
+  | { outcome: 'limited'; retryAfterSec: number }
+  | { outcome: 'unavailable' };
 
 /** A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint. */
 export interface Refusal {
@@ -341,6 +344,11 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     if (decision.outcome === 'forbidden') {
       ctx.event = 'forbidden';
       res.writeHead(403, close).end();
+      return;
+    }
+    if (decision.outcome === 'unavailable') {
+      ctx.event = 'unavailable';
+      res.writeHead(503, { 'Content-Type': 'text/plain', ...close }).end('service unavailable');
       return;
     }
 
