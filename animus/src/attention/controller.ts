@@ -60,6 +60,9 @@ const ENDED = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 /** The real-time window in which the other copy of one addressed line (speech or wake) is folded. */
 const ADDRESSED_FOLD_MS = 3000;
 
+/** How long the first damage of a burst waits for the rest of it, so one burst is one wake. */
+const DAMAGE_BURST_MS = 1000;
+
 /** Which source an addressed candidate came from: a chat line, or the Body's wake for it. */
 type AddressedKind = 'speech' | 'wake';
 
@@ -93,6 +96,11 @@ export class Attention implements AttentionController {
   private cancelFallback: (() => void) | null = null;
   private cancelIdle: (() => void) | null = null;
   private readonly cancelSettle = new Set<() => void>();
+  /** The damage events of the burst being collected, and the window that closes it. */
+  private damageEvents: MindEvent[] = [];
+  private cancelDamage: (() => void) | null = null;
+  /** The last Body `unexpected_damage` wake for an intent, and when it arrived. */
+  private damageWake: { intentId: string; atMs: number } | null = null;
 
   private readonly options: AttentionOptions;
 
@@ -153,6 +161,9 @@ export class Attention implements AttentionController {
     this.disarmIdle();
     for (const cancel of this.cancelSettle) cancel();
     this.cancelSettle.clear();
+    this.cancelDamage?.();
+    this.cancelDamage = null;
+    this.damageEvents = [];
   }
 
   onEvent(event: MindEvent): void {
@@ -165,6 +176,8 @@ export class Attention implements AttentionController {
   }
 
   private handle(event: MindEvent): void {
+    // After a death this life's controller is quiet: no thought, no idle, no reflection.
+    if (this.ended) return;
     switch (event.type) {
       case 'death':
         this.clearState();
@@ -181,10 +194,51 @@ export class Attention implements AttentionController {
       case 'intent':
         this.handleIntent(event);
         return;
+      case 'damage':
+        this.handleDamage(event);
+        return;
       default:
-        // Actions, plan results, reflexes and damage reach the Mind through the Body's own wakes.
+        // Actions, plan results and reflexes reach the Mind through the Body's own wakes.
         return;
     }
+  }
+
+  /**
+   * Health fell. With no intent running the Body watches no `wake_on`, so nothing else wakes the
+   * Mind for it. The first damage opens a short window; the damage that arrives in it is one wake.
+   */
+  private handleDamage(event: MindEvent): void {
+    if (this.ended) return;
+    this.damageEvents.push(event);
+    if (this.cancelDamage !== null) return;
+    this.cancelDamage = this.scheduler.after(DAMAGE_BURST_MS, () => {
+      this.cancelDamage = null;
+      const events = this.damageEvents;
+      this.damageEvents = [];
+      if (this.foldDamage(events)) return;
+      this.addCandidate('unexpected_damage', this.activeIntent, events);
+      this.evaluate();
+    });
+  }
+
+  /**
+   * True when the closed burst is already covered, so it opens no thought of its own: a thought is in
+   * flight, or the Body woke for the active intent for this damage within the burst window.
+   */
+  private foldDamage(events: MindEvent[]): boolean {
+    const types = [...new Set(events.map((e) => e.type))];
+    if (this.inFlight) {
+      this.record(types, 'coalesced_in_flight', this.activeIntent);
+      return true;
+    }
+    const wake = this.damageWake;
+    if (wake !== null && wake.intentId === this.activeIntent) {
+      if (this.clock.nowMs() - wake.atMs <= DAMAGE_BURST_MS) {
+        this.record(types, 'duplicate', this.activeIntent);
+        return true;
+      }
+    }
+    return false;
   }
 
   private handleSpeech(event: MindEvent & { type: 'speech' }): void {
@@ -217,6 +271,9 @@ export class Attention implements AttentionController {
       // the Mind: it cannot be ranked, so the intent carries on and the wake is only recorded.
       this.record(['wake'], 'intent_running', intentId);
       return;
+    }
+    if (reason === 'unexpected_damage' && intentId !== null) {
+      this.damageWake = { intentId, atMs: this.clock.nowMs() };
     }
     this.addCandidate(reason as CandidateReason, intentId, [event]);
     this.evaluate();
@@ -260,7 +317,7 @@ export class Attention implements AttentionController {
   private settleIdle(intentId: string, event: MindEvent, endedInFlight: boolean): void {
     const cancel = this.scheduler.after(this.idleSettleMs, () => {
       this.cancelSettle.delete(cancel);
-      if (this.wokenIntents.has(intentId) || this.activeIntent !== null) return;
+      if (this.ended || this.wokenIntents.has(intentId) || this.activeIntent !== null) return;
       // The intent ended during a thought that is still running: that thought cannot have seen it,
       // so the idle wake is kept for the thought's settle instead of being dropped as stale.
       if (endedInFlight && this.inFlight) this.idleHeld = true;
@@ -386,6 +443,7 @@ export class Attention implements AttentionController {
     this.lastAddressedAtMs = null;
     this.lastAddressedKind = null;
     this.idleHeld = false;
+    this.damageWake = null;
     this.wokenIntents.clear();
     this.stop();
   }

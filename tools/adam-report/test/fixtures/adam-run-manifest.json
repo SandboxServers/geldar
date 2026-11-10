@@ -1,0 +1,87 @@
+{
+  "schema": "adam-run-manifest/1",
+  "run_id": "smoke-w6-20-a",
+  "profile": "smoke",
+  "life_id": "ag_smoke_01",
+  "seed": 0,
+  "git": {
+    "sha": "20a644ff305718d136261ac92950152336b723f3",
+    "clean": false
+  },
+  "shard_config_sha256": "35cd37cd2e666a92e11f4a8c231dccc5256792f8ba6cb01f3aea1cfc4b28caa6",
+  "shard_edit": {
+    "changes": [
+      {
+        "key": "mind.agent.tier",
+        "from": "\"strong\"",
+        "to": "\"fast\""
+      },
+      {
+        "key": "mind.agent.username",
+        "from": "\"ag_adam_03\"",
+        "to": "\"ag_smoke_01\""
+      },
+      {
+        "key": "mind.run_tier",
+        "from": "\"strong\"",
+        "to": "\"fast\""
+      }
+    ],
+    "sha256_before": "b7e5a69cccad795e94e750fdf965703eea296a36ca6a1802d063a739ae199497",
+    "sha256_after": "35cd37cd2e666a92e11f4a8c231dccc5256792f8ba6cb01f3aea1cfc4b28caa6"
+  },
+  "model_pins": [
+    {
+      "tag": "qwen3:32b",
+      "pinned_digest": "sha256:030ee887880fc378860c2dd35101da424377520441ae4bfe7be6deff8ade7840",
+      "observed_digest": "030ee887880fc378860c2dd35101da424377520441ae4bfe7be6deff8ade7840",
+      "matches": false
+    },
+    {
+      "tag": "qwen3:8b",
+      "pinned_digest": "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+      "observed_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+      "matches": false
+    },
+    {
+      "tag": "nomic-embed-text",
+      "pinned_digest": "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+      "observed_digest": null,
+      "matches": false
+    }
+  ],
+  "bench": {
+    "file": "20261110T132521Z-20a644f.json",
+    "commit": "20a644f",
+    "tps20": [
+      {
+        "scenario": "wood-to-stone-tools",
+        "success_pct": 100
+      },
+      {
+        "scenario": "food",
+        "success_pct": 100
+      },
+      {
+        "scenario": "shelter",
+        "success_pct": 100
+      },
+      {
+        "scenario": "bed",
+        "success_pct": 100
+      },
+      {
+        "scenario": "chest",
+        "success_pct": 100
+      },
+      {
+        "scenario": "blocked-path",
+        "success_pct": 100
+      }
+    ]
+  },
+  "criteria_sha256": "49de62b721b6738f8b3f6a94700131bc92c6a020bc2392790813ec1edcadfbbc",
+  "tps_target": 20,
+  "started_at": "2026-11-10T14:08:12.606Z",
+  "planned_restart_at": null
+}

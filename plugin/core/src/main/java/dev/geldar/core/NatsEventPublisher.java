@@ -12,10 +12,15 @@ import io.nats.client.api.StreamConfiguration;
 import io.nats.client.impl.Headers;
 import io.nats.client.support.NatsJetStreamConstants;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import java.util.logging.Logger;
 
 /**
@@ -85,10 +90,49 @@ public final class NatsEventPublisher implements EventPublisher {
         return new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
     }
 
+    /**
+     * Adds the NATS user and password of decision 0067 when they are set: {@code GELDAR_NATS_USER}
+     * and {@code GELDAR_NATS_PASSWORD_FILE} (a file holding the password), read by {@code setting}.
+     * Unset, the connection stays unauthenticated. Errors name a setting or a path, never a password.
+     */
+    static Options.Builder withCredentials(Options.Builder builder, Function<String, String> setting) {
+        String user = setting.apply("GELDAR_NATS_USER");
+        String passwordFile = setting.apply("GELDAR_NATS_PASSWORD_FILE");
+        if (isBlank(user) && isBlank(passwordFile)) return builder;
+        if (isBlank(user)) throw new IllegalStateException("GELDAR_NATS_PASSWORD_FILE is set but GELDAR_NATS_USER is not");
+        if (isBlank(passwordFile)) throw new IllegalStateException("GELDAR_NATS_USER is set but GELDAR_NATS_PASSWORD_FILE is not");
+        String password;
+        try {
+            password = Files.readString(Path.of(passwordFile), StandardCharsets.UTF_8).trim();
+        } catch (IOException | InvalidPathException e) {
+            throw new IllegalStateException("cannot read the NATS password file named by GELDAR_NATS_PASSWORD_FILE: " + passwordFile);
+        }
+        if (password.isEmpty()) throw new IllegalStateException("the NATS password file named by GELDAR_NATS_PASSWORD_FILE is empty");
+        return builder.userInfo(user, password);
+    }
+
+    /** A setting from the environment, else from the system property of the same name. */
+    static String setting(String name) {
+        String value = System.getenv(name);
+        return value != null ? value : System.getProperty(name);
+    }
+
+    /** The connect options, with credentials when configured; read on each attempt, inside its try. */
+    Options connectOptions() {
+        return withCredentials(
+                        Options.builder().server(url).connectionTimeout(Duration.ofSeconds(5)),
+                        NatsEventPublisher::setting)
+                .build();
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private void run() {
         long backoffMs = 500;
         while (running) {
-            try (Connection nc = Nats.connect(Options.builder().server(url).connectionTimeout(Duration.ofSeconds(5)).build())) {
+            try (Connection nc = Nats.connect(connectOptions())) {
                 JetStream js = nc.jetStream();
                 ensureStream(nc.jetStreamManagement());
                 connected = true;
@@ -131,6 +175,7 @@ public final class NatsEventPublisher implements EventPublisher {
                     .storageType(StorageType.File)
                     .retentionPolicy(RetentionPolicy.Limits)
                     .maxAge(Duration.ofDays(30))
+                    .maxBytes(2147483648L)
                     .build());
             log.info("Created JetStream stream " + STREAM);
         }

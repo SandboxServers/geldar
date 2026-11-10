@@ -106,25 +106,29 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | WM-12 | M | Run commands, docs and live cases (written, not run) | packet-coder | Shipped (merged to wave-m-main) | WM-11 | |
 | WM-13 | M | Player skins (MineSkin V2 upload, stored skin on login) | packet-coder | Shipped (merged to wave-m-main) | WM-01, velocity-identity plugin | |
 | WM-process | M | Apply the wave M retro actions | packet-coder | Shipped | wave M test, review and retro | |
-| W6-01 | 6 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | packet-coder | Ready | — | |
-| W6-02 | 6 | Validator bounds read from shard config (BC-11); redact a private address from a worknote (E-16) | packet-coder | Ready | — | |
-| W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Ready | section 4 item 7 (provisional) | |
-| W6-04 | 6 | Velocity marker ordering (diagnose first) | packet-coder | Ready | — | |
-| W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | Ready | section 4 item 8 (provisional) | |
-| W6-06 | 6 | Warm every pinned model before advertising it (cold load) | packet-coder | Ready | — | |
-| W6-07 | 6 | Split three files over 500 lines (`pg-store.ts`, mock `server.ts`, `front.test.ts`) | packet-coder | Ready | — | |
-| W6-08 | 6 | Investigate `intent_link_gave_up` (read-only, needs the 32B logs from ops) | packet-coder | Ready | ops logs | |
-| W6-09 | 6 | `glass/` Thought Stream server: loopback, read-only API and SSE; owns migration `sql/0005_glass_reader.sql` (read-only role) | packet-coder | Ready | — | |
-| W6-10 | 6 | `glass/` page: escaped rendering, filters, per-agent view | packet-coder | BlockedDependency | W6-09 | |
-| W6-11 | 6 | Glass security: adversarial fixtures, read-only route test, XSS review | packet-coder | BlockedDependency | W6-10, W6-13 | |
-| W6-12 | 6 | Adam run report generator (JSON and Markdown, read-only DB) | packet-coder | Ready | — | |
-| W6-13 | 6 | Run protocol script `adam-run` and `glass up` | packet-coder | BlockedDependency | W6-09, W6-12 | |
-| W6-14 | 6 | Run protocol documents, 32B and 8B | packet-coder | Ready | section 4 items 1 to 6 (provisional) | |
-| W6-20 | 6 | Campaign review: Body and Golem (read-only) | reviewer | BlockedDependency | all coder packets, OPS-2 | |
-| W6-21 | 6 | Campaign review: Mind, memory and prompts (read-only) | reviewer | BlockedDependency | all coder packets, OPS-2 | |
-| W6-22 | 6 | Campaign review: contract, sql, infra, Glass security, secrets (read-only) | reviewer | BlockedDependency | all coder packets | |
-| W6-23 | 6 | Campaign retro (all waves and both runs) | packet-coder | BlockedDependency | W6-20 to W6-22, OPS-3 | |
-| W6-24 | 6 | Apply the campaign retro actions | packet-coder | BlockedDependency | W6-23 | |
+| W6-01 | 6 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | packet-coder | Done | — | |
+| W6-02 | 6 | Validator bounds read from shard config (BC-11); redact a private address from a worknote (E-16) | packet-coder | Done | — | |
+| W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Done | section 4 item 7 (provisional) | decision 0063 |
+| W6-04 | 6 | Velocity marker ordering (diagnose first) | packet-coder | Done | — | |
+| W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | Done | section 4 item 8 (provisional) | |
+| W6-06 | 6 | Warm every pinned model before advertising it (cold load) | packet-coder | Done | — | |
+| W6-07 | 6 | Split three files over 500 lines (`pg-store.ts`, mock `server.ts`, `front.test.ts`) | packet-coder | Done | — | |
+| W6-08 | 6 | Investigate `intent_link_gave_up` (read-only, needs the 32B logs from ops) | packet-coder | Not done (unverified) | none: no branch, merge or worknote in git | |
+| W6-09 | 6 | `glass/` Thought Stream server: loopback, read-only API and SSE; owns migration `sql/0005_glass_reader.sql` (read-only role) | packet-coder | Done | — | |
+| W6-10 | 6 | `glass/` page: escaped rendering, filters, per-agent view | packet-coder | Done | W6-09 | |
+| W6-11 | 6 | Glass security: adversarial fixtures, read-only route test, XSS review | packet-coder | Done | W6-10, W6-13 | |
+| W6-12 | 6 | Adam run report generator (JSON and Markdown, read-only DB) | packet-coder | Done | — | |
+| W6-13 | 6 | Run protocol script `adam-run` and `glass up` | packet-coder | Done | W6-09, W6-12 | |
+| W6-14 | 6 | Run protocol documents, 32B and 8B | packet-coder | Done | section 4 items 1 to 6 (provisional) | |
+| W6-20 | 6 | Campaign review: Body and Golem (read-only) | reviewer | Done | all coder packets, OPS-2 | |
+| W6-21 | 6 | Campaign review: Mind, memory and prompts (read-only) | reviewer | Done | all coder packets, OPS-2 | |
+| W6-22 | 6 | Campaign review: contract, sql, infra, Glass security, secrets (read-only) | reviewer | Done | all coder packets | |
+| W6-23 | 6 | Campaign retro (all waves and both runs) | packet-coder | Done | W6-20 to W6-22, OPS-3 | |
+| W6-24 | 6 | Apply the campaign retro actions | packet-coder | Done | W6-23 | |
+| W6-25 | 6 | adam-run ops fixes (secrets, report, up line, stop) | packet-coder | Done | — | |
+| W6-26 | 6 | Why the Mind stopped waking after 16:25:16Z (smoke-w6-25-a) | packet-coder | Done | — | |
+
+**Campaign status (2026-11-10):** W6-01 to W6-26 done except W6-08 (not done, unverified; see its row). OPS-0 (benchmark gate, 20 TPS at 100%) done: GATE PASS at several commits, last full pass at 403a9cc and 98d5394; the final clean rebench at 57576f6 was stopped by the owner. OPS-1 (20-minute smoke) run, not a pass: ended by `life_ended` (smoke-w6-25-a, 8B Adam died to a zombie about 6 minutes in) and harness bugs fixed afterwards (smoke-w6-20-a aborted on a process-probe bug); no clean pass. OPS-2 (32B), OPS-3 (8B) and OPS-4 (final gate) deferred by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md), not run. Fix rounds A to F done (see [known-gaps.md](known-gaps.md)). Campaign retro: pending. Decision numbers run through 0068; next free is 0069.
 
 Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md`, [retro/wave-3.md](retro/wave-3.md) and [retro/wave-4.md](retro/wave-4.md) are written.
 

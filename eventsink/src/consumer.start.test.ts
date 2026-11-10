@@ -27,7 +27,11 @@ const EVENT: WorldEvent = {
 function fakeJsm() {
   return {
     streams: { info: vi.fn(async () => ({})), add: vi.fn(async () => ({})) },
-    consumers: { info: vi.fn(async () => ({})), add: vi.fn(async () => ({})) },
+    consumers: {
+      info: vi.fn(async () => ({ config: { max_deliver: MAX_DELIVER } })),
+      add: vi.fn(async () => ({})),
+      update: vi.fn(async () => ({})),
+    },
   };
 }
 
@@ -47,8 +51,13 @@ describe('ensureStream', () => {
         name: STREAM_CONFIG.name,
         subjects: [...STREAM_CONFIG.subjects],
         max_age: STREAM_CONFIG.retentionDays * 24 * 3600 * 1_000_000_000,
+        max_bytes: STREAM_CONFIG.maxBytes,
       }),
     );
+  });
+
+  it('caps the stream at 2 GiB of stored bytes by default', () => {
+    expect(STREAM_CONFIG.maxBytes).toBe(2 * 1024 * 1024 * 1024);
   });
 
   it('accepts a stream the plugin created between the info and the add', async () => {
@@ -68,10 +77,21 @@ describe('ensureStream', () => {
 });
 
 describe('ensureConsumer', () => {
-  it('does nothing when the durable consumer exists', async () => {
+  it('does nothing when the durable consumer exists with the unlimited cap', async () => {
     const jsm = fakeJsm();
     await ensureConsumer(jsm as never);
     expect(jsm.consumers.add).not.toHaveBeenCalled();
+    expect(jsm.consumers.update).not.toHaveBeenCalled();
+  });
+
+  it('lifts the redelivery cap on a consumer created with the old max_deliver of 20', async () => {
+    const jsm = fakeJsm();
+    jsm.consumers.info.mockResolvedValueOnce({ config: { max_deliver: 20 } });
+    await ensureConsumer(jsm as never);
+    expect(jsm.consumers.add).not.toHaveBeenCalled();
+    expect(jsm.consumers.update).toHaveBeenCalledWith(STREAM_CONFIG.name, CONSUMER_NAME, {
+      max_deliver: MAX_DELIVER,
+    });
   });
 
   it('creates the durable consumer with explicit acks and the max_deliver cap', async () => {

@@ -49,7 +49,14 @@ function deps(keepAlive: KeepAlive): WorldSessionDeps {
     resources: {
       profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 3 }) },
       journal: fx.journal,
-      shard: { chatRadius: 16, waitCapSeconds: 240, tickRate: 20 },
+      shard: {
+        chatRadius: 16,
+        waitCapSeconds: 240,
+        tickRate: 20,
+        maxBodyBytes: 65536,
+        maxResultBytes: 16384,
+        presence: { leaseSeconds: 60, hibernateAfterSeconds: 600 },
+      },
     },
     keepAlive,
     keepaliveMs: KEEPALIVE_MS,

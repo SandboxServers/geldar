@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { loadAnimusConfig } from './config.ts';
 import { FakeBodyLink, FakeEventPublisher, FakeEventSource } from './fakes/body.fakes.ts';
 import { FakeEmbedder, FakeMemoryStore } from './fakes/memory.fakes.ts';
 import { makeSnapshot, VALID_THOUGHT } from './loop/loop-fixtures.ts';
 import { agentRow, checkOllamaEmbedder, type LogLine, type MindStack, startMind } from './main.ts';
+import { loadCommittedConfig } from './phase0-shard.fixture.ts';
 import type { AgentRow, ModelClient } from './ports/index.ts';
 
-const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+const config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
 
 /** A stack of fakes that writes every open and close to `calls`. */
 function fakeStack(calls: string[], failAt?: string): MindStack {
@@ -78,7 +78,7 @@ describe('the Mind process', () => {
     await running.stop();
     expect(calls.slice(6)).toEqual(['stop consumer', 'close nats', 'drain thinkers', 'close pool']);
     expect(lines.every((l) => typeof l.event === 'string')).toBe(true);
-    expect(lines.some((l) => l.event === 'mind_started' && l.life_id === 'ag_adam_01')).toBe(true);
+    expect(lines.some((l) => l.event === 'mind_started' && l.life_id === 'ag_adam_03')).toBe(true);
   });
 
   it('closes what is open and rethrows when a step fails, and never opens the later ones', async () => {
@@ -92,9 +92,9 @@ describe('the Mind process', () => {
   it('builds the agent row from the pinned model config, the tier, the seed and the game account', () => {
     const row = agentRow(config, new Date('2026-11-09T10:00:00.000Z'));
     expect(row).toMatchObject({
-      agentId: 'ag_adam_01',
-      gameAccount: 'ag_adam_01',
-      lifeSeq: 1,
+      agentId: 'ag_adam_03',
+      gameAccount: 'ag_adam_03',
+      lifeSeq: 3,
       tier: config.agent.tier,
       personalitySeed: config.agent.personalitySeed,
       shard: config.shard,

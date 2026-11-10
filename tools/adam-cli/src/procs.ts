@@ -2,6 +2,7 @@
  * The host processes of an Adam run: what they are, their PID files and the status report.
  * The parsing and formatting here are pure; the process calls live in `run.ts`.
  */
+import { join } from 'node:path';
 
 /** One host process of the run. */
 export interface Service {
@@ -13,16 +14,27 @@ export interface Service {
   entry: string;
 }
 
+/** The Body: its entry point is the command-line marker `restart-body` checks before it signals it. */
+export const BODY: Service = { name: 'body', dir: 'golem', entry: 'src/adam/main.ts' };
+
 /**
  * In start order. The Body comes first so it can answer the Mind's first plan; `down` stops in
  * the reverse order, so the Body is last and writes its checkpoint after the Mind has stopped
  * sending it plans.
  */
 export const SERVICES: readonly Service[] = [
-  { name: 'body', dir: 'golem', entry: 'src/adam/main.ts' },
+  BODY,
   { name: 'animus', dir: 'animus', entry: 'src/main.ts' },
   { name: 'lantern-local', dir: 'lantern-local', entry: 'src/main.ts' },
 ];
+
+/**
+ * The entry as the spawn gives it to Node: absolute, so the process command line shows the package
+ * directory (`golem/src/adam/main.ts`), which the adam-run probe matches. A relative entry shows only `src/main.ts`.
+ */
+export function entryPath(service: Service, root: string): string {
+  return join(root, service.dir, service.entry);
+}
 
 /** The services in stop order: the reverse of the start order, so the Body is last. */
 export function stopOrder(): Service[] {

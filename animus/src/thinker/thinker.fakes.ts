@@ -63,12 +63,16 @@ export class FakeThinker {
     this.socket?.send(typeof frame === 'string' ? frame : JSON.stringify(frame));
   }
 
-  /** Sends a hello offering the given models (name, max_concurrent), then waits for the welcome. */
-  async hello(models: Array<[string, number]> = [[MODEL, 1]]): Promise<Frame> {
+  /**
+   * Sends a hello offering the given models (name, max_concurrent), then waits for the welcome.
+   * `token` is sent only when given, as a Thinker with no token file does.
+   */
+  async hello(models: Array<[string, number]> = [[MODEL, 1]], token?: string): Promise<Frame> {
     this.send({
       type: 'hello',
       thinker_version: '1.0.0',
       models: models.map(([name, max]) => ({ name, max_concurrent: max, max_tokens: 1024 })),
+      ...(token === undefined ? {} : { token }),
     });
     return this.next('welcome');
   }

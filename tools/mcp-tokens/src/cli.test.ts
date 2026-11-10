@@ -135,3 +135,69 @@ describe('init', () => {
     expect(h.err.join('\n')).toContain('usage:');
   });
 });
+
+/** A session that answers the retire statements: the player is active and owns life ag_jo_01. */
+function retireSession(): Env['connect'] {
+  return async () => ({
+    query: async (text: string) => {
+      if (text.startsWith('UPDATE mcp_players'))
+        return { rows: [{ player_id: 'ag-jo-01', life_id: 'ag_jo_01' }] };
+      return { rows: [] };
+    },
+    end: async () => {},
+  });
+}
+
+describe('player retire', () => {
+  it('retires the player, then removes its life and prints each step', async () => {
+    const h = await harness();
+    const removed: string[] = [];
+    const env = {
+      ...envOf(h),
+      connect: retireSession(),
+      removeLife: async (lifeId: string) => {
+        removed.push(lifeId);
+        return ['registry key ag_jo_01: deleted', 'whitelist ag_jo_01: removed'];
+      },
+    };
+    expect(await run(['player', 'retire', 'ag-jo-01'], h.io, env)).toBe(0);
+    expect(removed).toEqual(['ag_jo_01']);
+    expect(h.out).toEqual([
+      'player ag-jo-01: retire',
+      'registry key ag_jo_01: deleted',
+      'whitelist ag_jo_01: removed',
+    ]);
+  });
+
+  it('still retires and exits 0 when NATS and RCON are down, and prints the manual commands', async () => {
+    const h = await harness();
+    const env = {
+      ...envOf(h),
+      connect: retireSession(),
+      removeLife: async () => [
+        'registry key ag_jo_01: not deleted (NATS is unreachable); run: nats kv del geldar-life-registry ag_jo_01',
+        'whitelist ag_jo_01: not removed (connect ECONNREFUSED); run: docker compose -f compose/phase0.yml exec paper rcon-cli whitelist remove ag_jo_01',
+      ],
+    };
+    expect(await run(['player', 'retire', 'ag-jo-01'], h.io, env)).toBe(0);
+    expect(h.out.join('\n')).toContain('nats kv del geldar-life-registry ag_jo_01');
+    expect(h.out.join('\n')).toContain('rcon-cli whitelist remove ag_jo_01');
+    expect(h.err).toEqual([]);
+  });
+
+  it('exits 0 when the removal itself throws, and names the life for the manual steps', async () => {
+    const h = await harness();
+    const env = {
+      ...envOf(h),
+      connect: retireSession(),
+      removeLife: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    };
+    expect(await run(['player', 'retire', 'ag-jo-01'], h.io, env)).toBe(0);
+    expect(h.out).toEqual([
+      'player ag-jo-01: retire',
+      'life ag_jo_01: removal failed (ECONNREFUSED)',
+    ]);
+  });
+});

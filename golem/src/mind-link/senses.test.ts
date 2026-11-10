@@ -107,13 +107,16 @@ describe('shards/phase0.yaml Mind blocks', () => {
 
   it('has the blocks of decisions 0049 to 0051 with the pinned values', async () => {
     const doc = parse(await readFile(file, 'utf8')) as ShardDoc;
-    expect(doc.mind.agent.username).toBe('ag_adam_01');
+    // username and run_tier are rewritten by `adam select`; only their shape is checked here.
+    expect(Object.values(doc.mind.lives as Record<string, string>)).toContain(
+      doc.mind.agent.username,
+    );
+    expect(['strong', 'fast']).toContain(doc.mind.run_tier);
     expect(doc.mind.thinker).toMatchObject({ host: '127.0.0.1', port: 7410, heartbeat_s: 15 });
     expect(doc.mind.thought).toMatchObject({ max_tokens: 600, deadline_s: 25, reasoning: 'off' });
     expect(doc.mind.reflection).toMatchObject({ max_tokens: 1200, reasoning: 'on' });
     expect(doc.mind.admission.max_thoughts_per_real_hour).toBe(120);
     expect(doc.mind.plan.expires_after_ticks).toBe(1200);
-    expect(doc.mind.run_tier).toBe('strong');
     for (const tag of ['qwen3:32b', 'qwen3:8b']) {
       expect(doc.model_pins[tag]).toMatchObject({
         num_ctx: 8192,

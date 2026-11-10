@@ -26,6 +26,11 @@ export const DEFAULT_BACKOFF_MAX_MS = 5000;
 /** The time one pinned model may take to load in its warm-up; a cold 32B load from disk takes minutes. */
 export const DEFAULT_WARM_TIMEOUT_MS = 180_000;
 
+/** The keep-alive ping interval, and the cold-start rule: a job at least this slow on a model idle this long. */
+export const DEFAULT_KEEP_ALIVE_PING_MS = 600_000;
+export const DEFAULT_COLD_AFTER_IDLE_MS = 600_000;
+export const DEFAULT_SLOW_FIRST_TOKEN_MS = 5_000;
+
 /** The delay before a reconnect: `baseMs` less up to half of it at random, so Thinkers do not step together. */
 export function jitteredDelay(baseMs: number, random: () => number): number {
   return Math.floor(baseMs * (0.5 + 0.5 * random()));
@@ -33,6 +38,8 @@ export function jitteredDelay(baseMs: number, random: () => number): number {
 
 export interface ThinkerOptions {
   wsUrl: string;
+  /** Sent in the hello when the Mind's hub has a token (GELDAR_THINKER_TOKEN_FILE); never logged. */
+  token?: string | undefined;
   models: AdvertisedModel[];
   chat: ChatFn;
   /**
@@ -56,6 +63,20 @@ export interface ThinkerOptions {
   helloTimeoutMs?: number;
   /** How long each pinned model's warm-up call may take before the model is left unadvertised. */
   warmTimeoutMs?: number;
+  /** How often each advertised model gets a one-token call; the calls are skipped while a job runs on it. */
+  keepAlivePingMs?: number;
+  /**
+   * The chat models the keep-alive ping and the cold re-warm may touch: the run tier's models only, so
+   * two chat models are never kept resident together. Undefined means every advertised model.
+   */
+  keepWarmNames?: string[] | undefined;
+  /** Logged once at start; main sets it when no chat model may be kept warm. */
+  keepWarmWarning?: string | undefined;
+  /** One call that keeps the embedder resident; it is pinged on every keep-alive tick. */
+  pingEmbedder?: ((signal: AbortSignal) => Promise<void>) | undefined;
+  /** A job that takes `slowFirstTokenMs` or more on a model idle `coldAfterIdleMs` or more re-warms it. */
+  coldAfterIdleMs?: number;
+  slowFirstTokenMs?: number;
   /** Reconnect backoff: first delay and the cap; it doubles each failed attempt. */
   backoffInitialMs?: number;
   backoffMaxMs?: number;
@@ -82,11 +103,25 @@ export class LocalThinker {
   welcomes = 0;
 
   private readonly opts: Required<
-    Omit<ThinkerOptions, 'log' | 'warm' | 'warmNames' | 'recheck'>
+    Omit<
+      ThinkerOptions,
+      | 'log'
+      | 'warm'
+      | 'warmNames'
+      | 'recheck'
+      | 'keepWarmNames'
+      | 'keepWarmWarning'
+      | 'pingEmbedder'
+      | 'token'
+    >
   > & {
     log: (line: string) => void;
+    token?: string | undefined;
     warm?: WarmFn;
     warmNames?: string[];
+    keepWarmNames?: string[] | undefined;
+    keepWarmWarning?: string | undefined;
+    pingEmbedder?: ((signal: AbortSignal) => Promise<void>) | undefined;
     recheck?: () => Promise<string[]>;
   };
   private readonly byName = new Map<string, AdvertisedModel>();
@@ -105,12 +140,20 @@ export class LocalThinker {
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private reconnectTimer: NodeJS.Timeout | undefined;
   private nextDelayMs: number | undefined;
+  /** When each model last answered a warm, ping or job call: the idle time the cold-start rule reads. */
+  private readonly lastUsed = new Map<string, number>();
+  private readonly pingAborts = new Set<AbortController>();
+  private pingTimer: NodeJS.Timeout | undefined;
+  private pinging = false;
 
   constructor(options: ThinkerOptions) {
     this.opts = {
       heartbeatMs: 15_000,
       helloTimeoutMs: 10_000,
       warmTimeoutMs: DEFAULT_WARM_TIMEOUT_MS,
+      keepAlivePingMs: DEFAULT_KEEP_ALIVE_PING_MS,
+      coldAfterIdleMs: DEFAULT_COLD_AFTER_IDLE_MS,
+      slowFirstTokenMs: DEFAULT_SLOW_FIRST_TOKEN_MS,
       backoffInitialMs: DEFAULT_BACKOFF_INITIAL_MS,
       backoffMaxMs: DEFAULT_BACKOFF_MAX_MS,
       random: Math.random,
@@ -123,6 +166,9 @@ export class LocalThinker {
 
   /** Starts the connection loop; it keeps reconnecting until {@link stop}. */
   start(): void {
+    if (this.opts.keepWarmWarning !== undefined) this.opts.log(this.opts.keepWarmWarning);
+    this.pingTimer = setInterval(() => void this.pingIdle(), this.opts.keepAlivePingMs);
+    this.pingTimer.unref();
     void this.connect();
   }
 
@@ -130,7 +176,9 @@ export class LocalThinker {
   async stop(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.reconnectTimer);
+    clearInterval(this.pingTimer);
     this.warmAbort?.abort();
+    for (const controller of this.pingAborts) controller.abort();
     const socket = this.socket;
     if (socket !== null && socket.readyState === WebSocket.OPEN) {
       this.send({ type: 'goodbye', reason: 'shutdown' });
@@ -217,6 +265,66 @@ export class LocalThinker {
     return { warmed, complete: warmed.length === order.length };
   }
 
+  /** The keep-alive tick: one one-token call per advertised model that no job is running on. */
+  private async pingIdle(): Promise<void> {
+    if (this.pinging) return;
+    this.pinging = true;
+    try {
+      for (const pin of this.advertised) {
+        if (this.stopped) return;
+        const busy = [...this.inFlight.values()].some((job) => job.model === pin.name);
+        if (!busy && this.keepsWarm(pin.name)) await this.touch(pin, 'keep-alive ping');
+      }
+      const embed = this.opts.pingEmbedder;
+      if (embed !== undefined && !this.stopped) {
+        await this.guarded('keep-alive ping failed embedder', embed);
+      }
+    } finally {
+      this.pinging = false;
+    }
+  }
+
+  /** Whether the keep-alive ping and the cold re-warm may touch this chat model (see `keepWarmNames`). */
+  private keepsWarm(name: string): boolean {
+    const names = this.opts.keepWarmNames;
+    return names === undefined || names.includes(name);
+  }
+
+  /** One one-token call that marks the model used; a failure is logged, never thrown, and stop() aborts it. */
+  private async touch(pin: AdvertisedModel, why: string): Promise<void> {
+    const warm = this.opts.warm;
+    if (warm === undefined || this.stopped) return;
+    if (await this.guarded(`${why} failed ${pin.name}`, (signal) => warm(pin, signal))) {
+      this.lastUsed.set(pin.name, Date.now());
+    }
+  }
+
+  /**
+   * Runs one keep-alive call with the warm-up timeout and registers it so stop() aborts it. A failure
+   * is logged under `label` and returns false; it is never thrown.
+   */
+  private async guarded(
+    label: string,
+    call: (signal: AbortSignal) => Promise<void>,
+  ): Promise<boolean> {
+    const controller = new AbortController();
+    this.pingAborts.add(controller);
+    const timer = setTimeout(() => controller.abort(), this.opts.warmTimeoutMs);
+    try {
+      await call(controller.signal);
+      return true;
+    } catch (err) {
+      if (!this.stopped) {
+        const reason = err instanceof OllamaError ? err.message : 'unexpected failure';
+        this.opts.log(`${label}: ${controller.signal.aborted ? 'no answer in time' : reason}`);
+      }
+      return false;
+    } finally {
+      clearTimeout(timer);
+      this.pingAborts.delete(controller);
+    }
+  }
+
   private dial(): void {
     if (this.stopped) return;
     this.opts.log(`connecting to ${this.opts.wsUrl}`);
@@ -233,6 +341,7 @@ export class LocalThinker {
           max_concurrent: m.maxConcurrent,
           max_tokens: ADVERTISED_MAX_TOKENS,
         })),
+        ...(this.opts.token === undefined ? {} : { token: this.opts.token }),
       });
       this.helloTimer = setTimeout(() => {
         this.opts.log('no welcome within the hello timeout; reconnecting');
@@ -404,6 +513,21 @@ export class LocalThinker {
       };
       const result = await this.opts.chat(request, entry.controller.signal);
       if (entry.controller.signal.aborted) throw new DOMException('aborted', 'AbortError');
+      // A slow job on a model that sat idle is the cold-load signature: re-warm it after this answer.
+      const lastUsed = this.lastUsed.get(pin.name);
+      const idle = lastUsed === undefined ? 0 : started - lastUsed;
+      const took = Date.now() - started;
+      this.lastUsed.set(pin.name, Date.now());
+      if (
+        idle >= this.opts.coldAfterIdleMs &&
+        took >= this.opts.slowFirstTokenMs &&
+        this.keepsWarm(pin.name)
+      ) {
+        this.opts.log(
+          `cold start: job ${id} took ${took} ms after ${idle} ms idle; re-warming ${pin.name}`,
+        );
+        void this.touch(pin, 're-warm');
+      }
       this.opts.log(
         `job ${id} done in ${Date.now() - started} ms: ${result.promptTokens} in, ${result.completionTokens} out, ${result.text.length} chars`,
       );

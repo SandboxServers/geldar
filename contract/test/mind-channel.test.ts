@@ -56,6 +56,17 @@ describe('Reflection', () => {
     ).toBe(true);
   });
 
+  it('accepts an optional due_tick on a belief, and rejects a negative or fractional one', () => {
+    const belief = { belief: 'two loaves to Pike', kind: 'commitment' };
+    expect(validateReflection({ ...reflection, beliefs_add: [belief] }).ok).toBe(true);
+    const due = { ...reflection, beliefs_add: [{ ...belief, due_tick: 9000 }] };
+    expect(validateReflection(due).ok).toBe(true);
+    const negative = { ...reflection, beliefs_add: [{ ...belief, due_tick: -1 }] };
+    expect(validateReflection(negative).ok).toBe(false);
+    const fractional = { ...reflection, beliefs_add: [{ ...belief, due_tick: 1.5 }] };
+    expect(validateReflection(fractional).ok).toBe(false);
+  });
+
   it('rejects over-cap, bad enum, bad trust and extra properties', () => {
     expect(validateReflection({ ...reflection, memories_to_keep: Array(9).fill('x') }).ok).toBe(
       false,

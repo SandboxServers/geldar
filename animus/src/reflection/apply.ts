@@ -61,8 +61,8 @@ function clampTrust(trust: number): number {
 
 /**
  * The provenance a statement may carry. An `observation` stands only on a matching own
- * observation in the digest; when it matches nothing of its own but something heard, or an
- * existing report belief, it stays a `report`.
+ * observation in the digest. Anything else, heard, reported or matching nothing, is a `report`:
+ * the guard fails closed, so a reworded claim cannot be promoted by the words it avoids.
  */
 export function guardProvenance(
   text: string,
@@ -71,11 +71,7 @@ export function guardProvenance(
 ): Provenance {
   if (claimed !== 'observation') return claimed;
   if (context.digest.ownObservations.some((o) => sameStatement(o, text))) return 'observation';
-  const heard = context.digest.heard.some((h) => sameStatement(h, text));
-  const reported = context.beliefs.some(
-    (b) => b.provenance === 'report' && sameStatement(b.text, text),
-  );
-  return heard || reported ? 'report' : 'observation';
+  return 'report';
 }
 
 /** Embeds `texts`; when the embedder fails, every text gets null and is stored for backfill. */
@@ -120,6 +116,7 @@ export async function applyReflection(
       provenance: guardProvenance(b.belief, b.kind, context),
       subject: null,
       text: b.belief,
+      dueTick: b.kind === 'commitment' ? (b.due_tick ?? null) : null,
     });
   }
   if (!context.degraded) {

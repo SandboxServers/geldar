@@ -7,8 +7,9 @@
  */
 import { pathToFileURL } from 'node:url';
 import type { WorldEvent } from '@geldar/contract';
+import { connectNats } from '@geldar/contract/nats';
+import { thinkerToken } from '@geldar/contract/thinker-token';
 import { jetstream } from '@nats-io/jetstream';
-import { connect } from '@nats-io/transport-node';
 import { type AnimusConfig, loadAnimusConfig } from './config.ts';
 import { NatsBodyLink, natsRequestTransport } from './link/nats-body-link.ts';
 import { jetStreamEventStream, NatsEventSource } from './link/nats-event-source.ts';
@@ -203,6 +204,7 @@ export async function startMind(
       prompts: createPromptLibrary({
         thoughtBudgetTokens: config.mind.promptBudgetTokens,
         maxBeliefs: config.mind.maxBeliefs,
+        thoughtVersion: config.mind.thoughtVersion,
       }),
       validator: createOutputValidator({
         worldBorderRadius: config.bounds.worldBorderRadius,
@@ -253,6 +255,7 @@ export const realStack: MindStack = {
   async startHub(config, log) {
     const hub = new ThinkerHub({
       config,
+      token: thinkerToken(),
       log: (line) => log({ event: 'thinker', line }),
       onThinker: ({ kind, id, models }) =>
         log({
@@ -271,7 +274,7 @@ export const realStack: MindStack = {
     };
   },
   async openLink(config, log) {
-    const nc = await connect({ servers: config.natsUrl, name: 'animus', timeout: 5_000 });
+    const nc = await connectNats({ servers: config.natsUrl, name: 'animus', timeout: 5_000 });
     const js = jetstream(nc);
     const source = new NatsEventSource({
       stream: jetStreamEventStream(js),

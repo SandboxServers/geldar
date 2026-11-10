@@ -187,12 +187,13 @@ function reachableFrom(entry: string): Set<string> {
         const dir = workspaceByName.get(`${scope}/${name}`);
         if (dir === undefined)
           throw new Error(`${file} imports an unknown workspace package: ${spec}`);
+        const pkg = JSON.parse(read(`${dir}/package.json`)) as {
+          exports?: Record<string, string>;
+        };
         if (rest.length > 0) {
-          queue.push(posix.join(dir, rest.join('/')));
+          // A subpath such as @geldar/contract/nats resolves through package.json exports.
+          queue.push(posix.join(dir, pkg.exports?.[`./${rest.join('/')}`] ?? rest.join('/')));
         } else {
-          const pkg = JSON.parse(read(`${dir}/package.json`)) as {
-            exports?: Record<string, string>;
-          };
           const entryFile = pkg.exports?.['.'];
           if (typeof entryFile !== 'string')
             throw new Error(`${dir} has no string exports["."] entry`);
@@ -217,6 +218,7 @@ describe('the image holds everything the runtime reads or imports', () => {
     const reached = reachableFrom(entry);
     expect(reached.has('tools/repo-checks/src/identity-mode.ts')).toBe(true);
     expect(reached.has('threshold/mcp-mock/src/index.ts')).toBe(true);
+    expect(reached.has('contract/src/nats-connect.ts')).toBe(true);
     expect(reached.size).toBeGreaterThan(20);
     for (const file of reached) expect(excluded(file), file).toBe(false);
   });

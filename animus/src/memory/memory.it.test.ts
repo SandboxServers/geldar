@@ -146,6 +146,13 @@ describe.skipIf(!run)('memory over live Postgres', () => {
     });
   });
 
+  it('setBornDay is write-once: a later call keeps the birth day already set', async () => {
+    // LIFE was created with bornDay 1 in beforeAll; the COALESCE in setBornDay must keep it.
+    await store.setBornDay(LIFE, 5);
+    const { agent: loaded } = await store.loadDeterministic(LIFE, 0);
+    expect(loaded.bornDay).toBe(1);
+  });
+
   it.skipIf(process.env.GELDAR_OLLAMA !== '1')(
     'backfills a NULL embedding through Ollama',
     async () => {

@@ -27,6 +27,8 @@ export interface LoopOptions {
   thinkerWaitMs?: number;
   /** How long the memory load may take before the thought fails; absent means no limit. */
   memoryTimeoutMs?: number;
+  /** The longest one cycle step may wait on a dependency; absent means `STEP_TIMEOUT_MS`. */
+  stepTimeoutMs?: number;
 }
 
 /** The loop's options from the loaded configuration; `bodyVersion` is the Body build's version. */

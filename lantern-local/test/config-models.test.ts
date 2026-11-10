@@ -14,19 +14,24 @@ describe('warmOrder', () => {
     expect(warmOrder({ run_tier: 'fast' }, tiers, pins)).toEqual(['qwen3:8b']);
   });
 
-  it('warms every pin with the strong tier last when no run tier is known', () => {
-    expect(warmOrder({}, tiers, pins)).toEqual(['qwen3:8b', 'qwen3:32b']);
-    expect(warmOrder({ run_tier: 'missing' }, tiers, pins)).toEqual(['qwen3:8b', 'qwen3:32b']);
+  it('warms nothing when no run tier is known and two chat tiers could both need VRAM', () => {
+    expect(warmOrder({}, tiers, pins)).toEqual([]);
+    expect(warmOrder({ run_tier: 'missing' }, tiers, pins)).toEqual([]);
+  });
+
+  it('warms the only configured chat tier when no run tier is known', () => {
+    expect(warmOrder({}, { fast: ['qwen3:8b'] }, pins)).toEqual(['qwen3:8b']);
   });
 });
 
-function shardFile(digest: string, warmTimeoutS: number | string = 180): string {
+function shardFile(digest: string, warmTimeoutS: number | string = 180, pingS?: number): string {
   const file = join(mkdtempSync(join(tmpdir(), 'lantern-')), 'shard.yaml');
+  const ping = pingS === undefined ? '' : `, keep_alive_ping_s: ${pingS}`;
   writeFileSync(
     file,
     [
       'mind:',
-      `  thinker: { host: 127.0.0.1, port: 7410, name: local, heartbeat_s: 15, warm_timeout_s: ${warmTimeoutS} }`,
+      `  thinker: { host: 127.0.0.1, port: 7410, name: local, heartbeat_s: 15, warm_timeout_s: ${warmTimeoutS}${ping} }`,
       'model_pins:',
       '  "qwen3:8b":',
       `    digest: "${digest}"`,
@@ -51,6 +56,10 @@ describe('loadConfig', () => {
 
   it('reads the warm-up timeout and refuses one that is not a whole number of seconds of at least 1', () => {
     expect(loadConfig({ file: shardFile(GOOD_DIGEST, 90), env: {} }).warmTimeoutMs).toBe(90_000);
+    expect(loadConfig({ file: shardFile(GOOD_DIGEST), env: {} }).keepAlivePingMs).toBe(600_000);
+    expect(loadConfig({ file: shardFile(GOOD_DIGEST, 180, 90), env: {} }).keepAlivePingMs).toBe(
+      90_000,
+    );
     expect(() => loadConfig({ file: shardFile(GOOD_DIGEST, 0), env: {} })).toThrow(
       /warm_timeout_s must be an integer of at least 1/,
     );

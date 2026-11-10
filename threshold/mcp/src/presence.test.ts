@@ -210,6 +210,28 @@ describe('KvPresenceStore', () => {
     expect(validatePresenceRecord(stored(bucket)).ok).toBe(true);
   });
 
+  it('uses the configured awake and hibernate windows instead of the defaults', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = new KvPresenceStore(bucket, () => now.ms, {
+      awakeMs: 30_000,
+      hibernateMs: 90_000,
+    });
+    await store.touch(LIFE);
+
+    now.ms = T0 + 29_999;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'awake', desired_body: 'up' });
+
+    now.ms = T0 + 30_000;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'dim', desired_body: 'up' });
+
+    now.ms = T0 + 60_000;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'dim', desired_body: 'up' });
+
+    now.ms = T0 + 90_000;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'hibernating', desired_body: 'down' });
+  });
+
   it('keeps the last touch time when it settles, so the record keeps aging', async () => {
     const bucket = new FakeBucket();
     const now = { ms: T0 };
@@ -307,5 +329,16 @@ describe('presenceAt', () => {
     expect(presenceAt(T0, T0 - 1_000)).toEqual({ state: 'awake', desired_body: 'up' });
     expect(presenceAt(T0, T0 + 600_000 - 1)).toEqual({ state: 'dim', desired_body: 'up' });
     expect(presenceAt(T0, T0 + 600_000)).toEqual({ state: 'hibernating', desired_body: 'down' });
+  });
+
+  it('takes the awake and hibernate windows it is given', () => {
+    const windows = { awakeMs: 5_000, hibernateMs: 20_000 };
+    expect(presenceAt(T0, T0 + 4_999, windows)).toEqual({ state: 'awake', desired_body: 'up' });
+    expect(presenceAt(T0, T0 + 5_000, windows)).toEqual({ state: 'dim', desired_body: 'up' });
+    expect(presenceAt(T0, T0 + 19_999, windows)).toEqual({ state: 'dim', desired_body: 'up' });
+    expect(presenceAt(T0, T0 + 20_000, windows)).toEqual({
+      state: 'hibernating',
+      desired_body: 'down',
+    });
   });
 });

@@ -49,6 +49,6 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       await client.end();
     }
     const passed = notices.filter((text) => text.startsWith('schema check passed'));
-    expect(passed, 'one NOTICE per check block that passed').toHaveLength(2);
+    expect(passed, 'one NOTICE per check block that passed').toHaveLength(3);
   });
 });

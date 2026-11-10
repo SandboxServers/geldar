@@ -2,17 +2,23 @@ package dev.geldar.identity;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.nats.client.Connection;
 import io.nats.client.JetStreamApiException;
+import io.nats.client.Options;
 import io.nats.client.api.ApiResponse;
 import io.nats.client.api.KeyValueOperation;
 import io.nats.client.support.JsonParser;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -20,7 +26,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.helpers.NOPLogger;
 
 class RegistryClientTest {
@@ -208,5 +216,43 @@ class RegistryClientTest {
     private static JetStreamApiException apiError(int code) throws Exception {
         var json = JsonParser.parse("{\"error\":{\"code\":404,\"err_code\":" + code + ",\"description\":\"x\"}}");
         return new JetStreamApiException(new ApiResponse<Object>(json) {});
+    }
+
+    private static Function<String, String> settings(Map<String, String> values) {
+        return values::get;
+    }
+
+    @Test
+    void connectsUnauthenticatedWhenNoCredentialIsSet() {
+        Options options = RegistryClient.withCredentials(Options.builder().server("nats://127.0.0.1:4222"), settings(Map.of())).build();
+        assertNull(options.getUsername());
+        assertNull(options.getPassword());
+    }
+
+    @Test
+    void readsTheUserAndTheTrimmedPasswordFileWhenSet(@TempDir Path dir) throws IOException {
+        Path file = Files.writeString(dir.resolve("velocity.txt"), "pw-from-file\n");
+        Map<String, String> values = Map.of("GELDAR_NATS_USER", "velocity", "GELDAR_NATS_PASSWORD_FILE", file.toString());
+        Options options = RegistryClient.withCredentials(Options.builder().server("nats://127.0.0.1:4222"), settings(values)).build();
+        assertEquals("velocity", options.getUsername());
+        assertEquals("pw-from-file", options.getPassword());
+    }
+
+    @Test
+    void failsWithANamedSettingWhenOnlyOneOfTheTwoIsSet() {
+        Map<String, String> passwordOnly = Map.of("GELDAR_NATS_PASSWORD_FILE", "x.txt");
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> RegistryClient.withCredentials(Options.builder(), settings(passwordOnly)));
+        assertTrue(error.getMessage().contains("GELDAR_NATS_USER"));
+    }
+
+    @Test
+    void failsOnAMissingPasswordFileWithoutEchoingAnything(@TempDir Path dir) {
+        Path missing = dir.resolve("missing.txt");
+        Map<String, String> values = Map.of("GELDAR_NATS_USER", "velocity", "GELDAR_NATS_PASSWORD_FILE", missing.toString());
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> RegistryClient.withCredentials(Options.builder(), settings(values)));
+        assertTrue(error.getMessage().contains("GELDAR_NATS_PASSWORD_FILE"));
+        assertFalse(error.getMessage().contains("pw-"));
     }
 }

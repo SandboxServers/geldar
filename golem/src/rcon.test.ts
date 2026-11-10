@@ -174,13 +174,15 @@ describe('RconClient', () => {
     }
   });
 
-  it('says the shard is not up when nothing listens', async () => {
+  it('names the override file when nothing listens, so a host tool does not fail with a bare refusal', async () => {
     fake = await startFake('pw');
     const port = fake.port;
     await fake.close();
     fake = undefined;
     await expect(
       RconClient.connect({ host: '127.0.0.1', port, password: 'pw', timeoutMs: 2000 }),
-    ).rejects.toThrow('shard not up: run ./geldar.ps1 shard up phase0');
+    ).rejects.toThrow(
+      'shard not up, or RCON is not published to the host (compose/rcon-host.yml): run ./geldar.ps1 shard up phase0 --rcon-host',
+    );
   });
 });

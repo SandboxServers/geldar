@@ -23,16 +23,29 @@ describe('mcp-mock-image workflow', () => {
   });
 
   it('tests the loaded image before it logs in or pushes', () => {
-    const test = workflow.indexOf('name: image test');
-    const login = workflow.indexOf('docker/login-action');
-    const push = workflow.indexOf('docker push');
-    expect(test).toBeGreaterThan(-1);
+    // Scoped to publish: the image job is the pull request gate and has its own build and test.
+    const publish = workflow.slice(workflow.indexOf('\n  publish:'));
+    const build = publish.indexOf('name: build');
+    const test = publish.indexOf('name: image test');
+    const login = publish.indexOf('docker/login-action');
+    const push = publish.indexOf('docker push');
+    expect(build).toBeGreaterThan(-1);
+    expect(test).toBeGreaterThan(build);
     expect(login).toBeGreaterThan(test);
     expect(push).toBeGreaterThan(login);
     // The build that precedes the test loads the image and never pushes.
-    const beforeTest = workflow.slice(workflow.indexOf('name: build'), test);
+    const beforeTest = publish.slice(build, test);
     expect(beforeTest).toContain('load: true');
     expect(beforeTest).not.toMatch(/push:/);
+  });
+
+  it('keeps packages write and every push out of the pull request image job', () => {
+    const image = workflow.slice(workflow.indexOf('\n  image:'), workflow.indexOf('\n  publish:'));
+    expect(image).toContain('name: image test');
+    expect(image).not.toContain('packages: write');
+    expect(image).not.toContain('docker/login-action');
+    expect(image).not.toContain('docker push');
+    expect(workflow.slice(workflow.indexOf('\n  publish:'))).toContain('packages: write');
   });
 
   it('serialises runs per ref without cancelling a publish', () => {
@@ -71,7 +84,8 @@ describe('mcp-mock-image workflow', () => {
 
   it('does not upload a build-record artifact from the build step', () => {
     const steps = workflow.split('uses: docker/build-push-action@').slice(1);
-    expect(steps).toHaveLength(1);
+    // One build per job: the image job's PR build and publish's own build before its push.
+    expect(steps).toHaveLength(2);
     for (const step of steps) {
       const head = step.slice(0, step.indexOf('with:'));
       expect(head).toContain("DOCKER_BUILD_RECORD_UPLOAD: 'false'");

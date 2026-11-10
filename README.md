@@ -12,14 +12,14 @@ The design is in [`docs/spec.md`](docs/spec.md) (v0.8, draft). The project is bu
 
 | Phase | Name | Status |
 |---|---|---|
-| 0 | Adam: one living agent on one machine | In progress |
+| 0 | Adam: one living agent on one machine | Closed as proof of life; the exit runs are deferred ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)) |
 | 1 | Village: the world on a LAN | Planned |
 | 2 | Open the doors: first internet exposure | Planned |
 | 3 | Settlement: 30 to 50 agents, sovereign agents | Planned |
 | 4 | Civilization: 100 or more agents | Planned |
 | 5 | Cosmology | Planned |
 
-Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and an MCP server that sovereign agents connect through. The sovereign-agent MCP has run against the real Body in live smoke tests. The Phase 0 exit runs (the multi-day survival and intent runs in spec section 10) have not happened yet; they are planned. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/).
+Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and an MCP server that sovereign agents connect through. The sovereign-agent MCP has run against the real Body in live smoke tests. The Body benchmark passed at 20 TPS, 100%, and live Adam smokes ran against the real Body and a local model. Phase 0 is closed as proof of life: the owner waived the spec's section 10 exit runs and deferred them ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)), so five-day survival, the 24-hour run and the 8B run were not performed. The next work is scaling (more agents per player, up to 20; sovereign players and rangers); the phase plan is for the owner to set. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/), and the resume card is [`docs/analysis/phase0/RESUME.md`](docs/analysis/phase0/RESUME.md).
 
 ## Principles
 
@@ -75,6 +75,25 @@ The Phase 0 stack runs under Docker Compose (`compose/phase0.yml`): Postgres, NA
 ### Players and agents
 
 A **player** is a human owner: the account that owns agents. A player is not in the world and acts only through its agents. A player can own **1 to N agents**, up to **20** (the owner cap, [decision 0052](docs/decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md); the shard default is 3 for other owners). An **agent** is a resident with a name and a life, and it has **exactly one Body** (the bot that is logged into Paper) and one Mind. Headless agents such as Adam have no owner.
+
+## Opt-in NATS auth (UNTESTED against a live nats-server)
+
+Off by default: the shard's NATS accepts any local client. The overlay (decision 0067, threat model section 3) gives each component its own user with per-subject allow lists. It has not been run against a live `nats-server`; treat it as unverified until the checks below pass.
+
+```powershell
+./geldar.ps1 shard nats-auth phase0   # writes compose/secrets/nats-<user>.txt, thinker-token.txt, nats-auth.conf (git-ignored, owner-only; never overwritten)
+docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
+```
+
+The users are `body`, `mind`, `eventsink`, `mcp`, `velocity`, `paper` and `ops` (`ops` may do everything). The overlay gives the containers (`paper`, `velocity`, `eventsink`, `geldar-mcp`) their user and password file. Host-run components are not in compose; set these before starting them, each pointing at its generated file under `compose/secrets/`:
+
+- Body (golem): `GELDAR_NATS_USER=body`, `GELDAR_NATS_PASSWORD_FILE` = `nats-body.txt`.
+- Mind (animus): `GELDAR_NATS_USER=mind`, `GELDAR_NATS_PASSWORD_FILE` = `nats-mind.txt`, `GELDAR_THINKER_TOKEN_FILE` = `thinker-token.txt`.
+- lantern-local: `GELDAR_THINKER_TOKEN_FILE` = `thinker-token.txt` only. It does not connect to NATS, so it has no NATS user.
+
+Before relying on it, verify against a live server: (1) the JetStream API permissions (`$JS.API.>`, `$JS.ACK.>`, `_INBOX.>`) cover every consumer and pull the components use; (2) the KV bucket permissions per component (`$KV.<bucket>.>`) match what each one reads and writes; (3) the plan and book subject permissions for Body, Mind and the MCP, and the MCP's replay subscription, which the lists do not grant yet. Until then, a failure here may be a permission list, not a bug in the component.
+
+## Working here
 
 The code is narrower than this model. Today the Body is started per player id (`golem/src/players/main.ts --player <id>`), and that id names one agent, so the code's "player" is the agent. The owner cap is read from `shards/phase0.yaml` but no code enforces it yet. The spec and the code still say "sovereign player" for what this README calls a sovereign agent.
 

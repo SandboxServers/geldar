@@ -2,7 +2,9 @@
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
-import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
+import { addOwner, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { markText, personaMarks } from './persona-lint.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
 import {
@@ -25,7 +27,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   owner add <id> [--cap N]              add an owner (default cap 3, at most 50)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
-                                        [--identity-file <f> [--goals-file <f>]]
+                                        [--identity-file <f> [--goals-file <f>]] [--allow-meta]
   player pause|resume|retire <id>
   token mint <player> --out <file>      write a new token to a file only you can read
   token list [--player <id>]            list tokens (never their hashes or values)
@@ -41,7 +43,7 @@ export interface Io {
 }
 
 /** Flags that take no value. Every other --flag takes the next argument. */
-const SWITCHES = new Set(['--force', '--i-understand', '--all']);
+const SWITCHES = new Set(['--force', '--i-understand', '--all', '--allow-meta']);
 
 export interface Parsed {
   positional: string[];
@@ -101,6 +103,8 @@ export interface Env {
   secretDir: string;
   shardFile: string;
   connect: () => Promise<SqlSession>;
+  /** Deletes a retired life's registry key and whitelist entry; defaults to the golem removal. */
+  removeLife?: (lifeId: string) => Promise<string[]>;
 }
 
 export async function connectPg(): Promise<SqlSession> {
@@ -144,9 +148,9 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   const [verb, id, value] = args;
   if (verb === 'add' && id !== undefined && args.length === 2) {
     const cap = optionalFlag(parsed, '--cap');
-    await withSql(env, (sql) =>
-      addOwner(sql, id, cap === undefined ? DEFAULT_OWNER_CAP : parseCap(cap)),
-    );
+    const ownerCap =
+      cap === undefined ? (await loadSovereignShard(env.shardFile)).ownerCapDefault : parseCap(cap);
+    await withSql(env, (sql) => addOwner(sql, id, ownerCap));
     io.out(`added owner ${id}`);
     return;
   }
@@ -166,29 +170,48 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
     const goalsPath = optionalFlag(parsed, '--goals-file');
     if (goalsPath !== undefined && identityPath === undefined)
       throw new Error('--goals-file needs --identity-file');
+    const allowMeta = parsed.flags.has('--allow-meta');
     const player = {
       playerId: id,
       owner: requireFlag(parsed, '--owner'),
       life: requireFlag(parsed, '--life'),
       name: requireFlag(parsed, '--name'),
       harness: requireFlag(parsed, '--harness'),
+      allowMeta,
       ...(identityPath === undefined
         ? {}
         : {
             seed: await readSeedFiles(
               resolve(identityPath),
               goalsPath === undefined ? undefined : resolve(goalsPath),
+              allowMeta,
             ),
           }),
     };
+    const marks =
+      player.seed === undefined
+        ? []
+        : personaMarks(`${player.seed.identity}\n${player.seed.goals}`);
+    if (allowMeta && marks.length > 0) io.err(`warning: kept a persona that ${markText(marks)}`);
     await withSql(env, (sql) => addPlayer(sql, player, shard));
     io.out(`added player ${id} (life ${player.life}, owner ${player.owner})`);
     return;
   }
   const action = verb === 'pause' || verb === 'resume' || verb === 'retire' ? verb : undefined;
   if (action !== undefined && id !== undefined && args.length === 2) {
-    await withSql(env, (sql) => setPlayerStatus(sql, id, action));
+    let life = '';
+    await withSql(env, async (sql) => {
+      life = await setPlayerStatus(sql, id, action);
+    });
     io.out(`player ${id}: ${action}`);
+    if (action === 'retire') {
+      // Never fails the retire: the removal reports each step, and a failure names the manual command.
+      const removeLife = env.removeLife ?? ((lifeId: string) => removeLifeFromShard(lifeId));
+      for (const line of await removeLife(life).catch((error: unknown) => [
+        `life ${life}: removal failed (${error instanceof Error ? error.message : String(error)})`,
+      ]))
+        io.out(line);
+    }
     return;
   }
   throw new Error(USAGE);

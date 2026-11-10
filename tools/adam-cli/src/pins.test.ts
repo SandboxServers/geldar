@@ -31,7 +31,11 @@ describe('shard file readers', () => {
     ]);
     expect(readTierTags(shardDoc, 'strong')).toEqual(['qwen3:32b']);
     expect(readTierTags(shardDoc, 'fast')).toEqual(['qwen3:8b']);
-    expect(readLives(shardDoc)).toEqual({ strong: 'ag_adam_01', fast: 'ag_adam_02' });
+    expect(readLives(shardDoc)).toEqual({
+      strong: 'ag_adam_03',
+      fast: 'ag_adam_04',
+      smoke: 'ag_smoke_01',
+    });
     expect(typeof readSeed(shardDoc)).toBe('string');
   });
 });

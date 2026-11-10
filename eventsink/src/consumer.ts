@@ -42,10 +42,11 @@ export const DLQ_DATA_LIMIT = 8192;
 const DLQ_REASON_LIMIT = 2000;
 
 /**
- * Server-side redelivery cap. Every delivery counts, including ones that failed only because the
- * database was down, so the last delivery dead-letters instead of naking (see `retryOrDeadLetter`).
+ * Server-side redelivery cap: -1 means unlimited. A transient failure (database down, connection
+ * or timeout error) is always naked and redelivered, never dead-lettered, so an outage of any
+ * length loses no event. Every message ends in an ack: stored, or dead-lettered as poison.
  */
-export const MAX_DELIVER = 20;
+export const MAX_DELIVER = -1;
 
 /** Nak delay for the nth delivery: 1 s, 2 s, 4 s ... capped at 30 s. */
 export function nakDelayMs(deliveryCount: number): number {
@@ -93,12 +94,12 @@ async function deadLetter(
   deps: BatchDeps,
   log: (line: string) => void,
 ): Promise<void> {
+  const dlq = dlqSubject(message.subject);
   try {
-    await deps.publishDlq(
-      dlqSubject(message.subject),
-      dlqBody(reason, message.subject, message.data),
+    await deps.publishDlq(dlq, dlqBody(reason, message.subject, message.data));
+    log(
+      `eventsink: ALERT dead letter published to ${dlq} for subject=${message.subject} reason=${reason.slice(0, 300)}`,
     );
-    log(`eventsink: dead letter subject=${message.subject} reason=${reason.slice(0, 300)}`);
     message.ack();
   } catch (error) {
     log(`eventsink: DLQ publish failed subject=${message.subject}: ${String(error)}`);
@@ -107,25 +108,10 @@ async function deadLetter(
 }
 
 /**
- * Handles a transient write failure for one message: nak with backoff, except on the last
- * delivery the server allows. JetStream stops redelivering after `MAX_DELIVER` and says nothing,
- * so that delivery dead-letters the event instead of losing it.
+ * A transient failure (database down, connection or timeout) for one message: nak with capped
+ * backoff. Never dead-letters: the event waits for the database however long the outage lasts.
  */
-async function retryOrDeadLetter(
-  message: SinkMessage,
-  error: unknown,
-  deps: BatchDeps,
-  log: (line: string) => void,
-): Promise<void> {
-  if (message.deliveryCount >= MAX_DELIVER) {
-    await deadLetter(
-      message,
-      `database unavailable after ${message.deliveryCount} deliveries: ${String(error)}`,
-      deps,
-      log,
-    );
-    return;
-  }
+function retryLater(message: SinkMessage): void {
   message.nak(nakDelayMs(message.deliveryCount));
 }
 
@@ -149,7 +135,7 @@ async function insertRowByRow(
         );
       } else {
         log(`eventsink: write failed, nak ${event.source_event_id}: ${String(error)}`);
-        await retryOrDeadLetter(message, error, deps, log);
+        retryLater(message);
       }
     }
   }
@@ -160,9 +146,8 @@ async function insertRowByRow(
  * - Own dead letters (`geldar.<shard>.dlq` bodies without a `source_event_id`) are acked and skipped.
  * - Invalid messages are published to the DLQ with the reason, then acked; a DLQ failure naks.
  * - Valid ones are inserted in one transaction and acked only after it commits. A connection or
- *   timeout error naks them all (dead-letters those on their last delivery); a permanent error (SQLSTATE 22 or 23)
- *   retries row by row and
- *   dead-letters only the rows the database rejects.
+ *   timeout error naks them all, however many deliveries that takes. A permanent error (SQLSTATE
+ *   22 or 23) retries row by row and dead-letters only the rows the database rejects.
  */
 export async function handleBatch(
   messages: readonly SinkMessage[],
@@ -193,7 +178,7 @@ export async function handleBatch(
     }
     const ids = valid.map((v) => v.event.source_event_id).join(',');
     log(`eventsink: write failed, nak ${valid.length} events [${ids}]: ${String(error)}`);
-    for (const { message } of valid) await retryOrDeadLetter(message, error, deps, log);
+    for (const { message } of valid) retryLater(message);
     return;
   }
   for (const { message } of valid) message.ack();
@@ -214,6 +199,7 @@ export async function ensureStream(jsm: JetStreamManager): Promise<void> {
       storage: StorageType.File,
       retention: RetentionPolicy.Limits,
       max_age: STREAM_CONFIG.retentionDays * 24 * 3600 * 1_000_000_000,
+      max_bytes: STREAM_CONFIG.maxBytes,
     });
   } catch (error) {
     // The plugin may have created it between the two calls.
@@ -223,17 +209,25 @@ export async function ensureStream(jsm: JetStreamManager): Promise<void> {
   }
 }
 
-/** Creates the durable consumer if it does not exist. */
+/**
+ * Creates the durable consumer if it does not exist, and lifts the redelivery cap on one created
+ * with an older `max_deliver` (an outage longer than the cap would otherwise lose events).
+ */
 export async function ensureConsumer(jsm: JetStreamManager): Promise<void> {
-  await jsm.consumers.info(STREAM_CONFIG.name, CONSUMER_NAME).catch(() =>
-    jsm.consumers.add(STREAM_CONFIG.name, {
+  const existing = await jsm.consumers.info(STREAM_CONFIG.name, CONSUMER_NAME).catch(() => null);
+  if (existing === null) {
+    await jsm.consumers.add(STREAM_CONFIG.name, {
       durable_name: CONSUMER_NAME,
       ack_policy: AckPolicy.Explicit,
       filter_subject: STREAM_CONFIG.subjects[0],
       ack_wait: 30 * 1_000_000_000,
       max_deliver: MAX_DELIVER,
-    }),
-  );
+    });
+    return;
+  }
+  if (existing.config?.max_deliver !== MAX_DELIVER) {
+    await jsm.consumers.update(STREAM_CONFIG.name, CONSUMER_NAME, { max_deliver: MAX_DELIVER });
+  }
 }
 
 /** Adapts a JetStream message to the interface above. */

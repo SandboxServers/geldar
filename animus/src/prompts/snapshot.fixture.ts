@@ -5,7 +5,7 @@ import type { ThoughtPromptVars } from '../ports/index.ts';
 export function sampleSnapshot(over: Partial<Snapshot> = {}): Snapshot {
   return {
     snapshot_id: 'sn_01ARZ3NDEKTSV4RRFFQ69G5FAV',
-    agent_id: 'ag_adam_01',
+    agent_id: 'ag_adam_03',
     shard: 'phase0',
     revision: 7,
     body_generation: 1,
@@ -44,7 +44,7 @@ export function sampleThoughtVars(snapshot: Snapshot = sampleSnapshot()): Though
   return {
     agent: {
       name: 'Adam',
-      lifeId: 'ag_adam_01',
+      lifeId: 'ag_adam_03',
       personalitySeed: 'curious, careful, slow to trust',
     },
     snapshot,

@@ -29,13 +29,19 @@ function worldDeps(
   const fx = worldFixture([PLAYER]);
   fx.budget.seed(PLAYER.lifeId, 37, 0);
   const real = createWorld(fx.deps).tools;
-  const healthy = { chatRadius: 16, waitCapSeconds: 240, tickRate: 20 };
+  const limits = {
+    waitCapSeconds: 240,
+    tickRate: 20,
+    maxBodyBytes: 65536,
+    maxResultBytes: 16384,
+    presence: { leaseSeconds: 60, hibernateAfterSeconds: 600 },
+  };
+  const healthy = { chatRadius: 16, ...limits };
   const broken = {
     get chatRadius(): number {
       throw new Error('the shard store is down');
     },
-    waitCapSeconds: 240,
-    tickRate: 20,
+    ...limits,
   };
   return {
     tools: tools ? tools(real) : real,

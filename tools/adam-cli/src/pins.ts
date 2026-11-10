@@ -72,11 +72,18 @@ export function readTierTags(doc: unknown, tier: Tier): string[] {
   return tags as string[];
 }
 
-/** The life id of each tier, from `mind.lives`. */
-export function readLives(doc: unknown): Record<Tier, string> {
+/** A key of `mind.lives`: the two model tiers, and the smoke life (which runs on the fast tier). */
+export type LifeKey = Tier | 'smoke';
+
+/** The life id of each key, from `mind.lives`. */
+export function readLives(doc: unknown): Record<LifeKey, string> {
   const mind = map(map(doc, 'shard file').mind, 'mind');
   const lives = map(mind.lives, 'mind.lives');
-  return { strong: text(lives, 'strong', 'mind.lives'), fast: text(lives, 'fast', 'mind.lives') };
+  return {
+    strong: text(lives, 'strong', 'mind.lives'),
+    fast: text(lives, 'fast', 'mind.lives'),
+    smoke: text(lives, 'smoke', 'mind.lives'),
+  };
 }
 
 /** `mind.agent.personality_seed`. */

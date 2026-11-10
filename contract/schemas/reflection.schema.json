@@ -53,6 +53,11 @@
               "commitment",
               "preference"
             ]
+          },
+          "due_tick": {
+            "description": "For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.",
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

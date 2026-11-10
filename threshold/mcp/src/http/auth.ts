@@ -35,7 +35,8 @@ function sameText(a: string, b: string): boolean {
 /**
  * Verifies a presented bearer for the player named in the URL. The store matches the digest and
  * refuses revoked, expired or inactive tokens (null). The token must then resolve to the URL's
- * player, or the answer is `forbidden`. An unknown player is `unauthorized`, as before.
+ * player, or the answer is `forbidden`. An unknown player is `unauthorized`, as before. A digest
+ * the `misses` cache remembers as refused is answered without a store lookup.
  */
 export async function verifyBearer(
   store: TokenStore,
@@ -43,14 +44,21 @@ export async function verifyBearer(
   playerId: string,
   header: string | undefined,
   nowMs: number,
+  misses: MissCache,
 ): Promise<BearerVerdict> {
   const token = parseBearer(header);
   if (token === null) return { outcome: 'unauthorized', reason: shapeReason(header) };
   const digest = tokenDigest(pepper, token);
+  const remembered = misses.get(digest, nowMs);
+  if (remembered !== undefined) return { outcome: 'unauthorized', reason: remembered };
   const resolved = await store.resolve(digest, nowMs);
-  // The store is asked why only here, after a miss: a hit never pays for the explanation.
   if (resolved === null) {
-    return { outcome: 'unauthorized', reason: await explainMiss(store, digest, nowMs) };
+    // The store is asked why only for some misses (see MissCache), and the answer is remembered.
+    const reason = misses.shouldExplain()
+      ? await explainMiss(store, digest, nowMs)
+      : 'unknown_token';
+    misses.remember(digest, reason, nowMs);
+    return { outcome: 'unauthorized', reason };
   }
   if (!sameText(resolved.player.playerId, playerId)) {
     return { outcome: 'forbidden', reason: 'wrong_player' };
@@ -76,6 +84,51 @@ async function explainMiss(
     return await store.explainMiss(digest, nowMs);
   } catch {
     return 'internal';
+  }
+}
+
+/** How long a refused digest is remembered: a repeat within it skips the store (spec 5.15.3). */
+export const MISS_CACHE_MS = 5_000;
+/** Most refused digests remembered at once; the table is cleared when it is full. */
+const MISS_CACHE_MAX = 1024;
+/** One uncached miss in this many asks the store why, so a flood of bad bearers costs about one query each. */
+const EXPLAIN_EVERY = 8;
+
+/**
+ * Refused bearers the front door remembers for a few seconds, keyed by token digest. A repeated
+ * bad bearer is answered from here, with the reason it got the first time, so it costs no lookup.
+ * A token issued during the window is refused until it expires from here. Holds at most
+ * MISS_CACHE_MAX digests. Only the first of every EXPLAIN_EVERY uncached misses asks the store
+ * why; the others log `unknown_token`. The reason is for the log only, never the answer.
+ */
+export class MissCache {
+  private readonly entries = new Map<string, { reason: MissReason; untilMs: number }>();
+  private uncached = 0;
+
+  /** The reason remembered for the digest, or undefined when it is not remembered or has expired. */
+  get(digest: Uint8Array, nowMs: number): MissReason | undefined {
+    const key = Buffer.from(digest).toString('hex');
+    const entry = this.entries.get(key);
+    if (entry === undefined) return undefined;
+    if (entry.untilMs > nowMs) return entry.reason;
+    this.entries.delete(key);
+    return undefined;
+  }
+
+  /** Whether this uncached miss should ask the store why. Counts every call. */
+  shouldExplain(): boolean {
+    const explain = this.uncached % EXPLAIN_EVERY === 0;
+    this.uncached += 1;
+    return explain;
+  }
+
+  /** Remembers a refused digest for MISS_CACHE_MS. */
+  remember(digest: Uint8Array, reason: MissReason, nowMs: number): void {
+    if (this.entries.size >= MISS_CACHE_MAX) this.entries.clear();
+    this.entries.set(Buffer.from(digest).toString('hex'), {
+      reason,
+      untilMs: nowMs + MISS_CACHE_MS,
+    });
   }
 }
 
@@ -134,14 +187,49 @@ export function trustedProxies(entries: readonly string[]): ProxyTrust {
   };
 }
 
+/** The mode that reads `X-Forwarded-For` rightmost-untrusted-hop style; any other name is single-valued. */
+export const FORWARDED_FOR = 'x-forwarded-for';
+
+/** The effective client address, and a warning when a trusted proxy sent no usable address. */
+export interface ClientAddress {
+  address: string;
+  warning?: 'header_missing' | 'header_malformed';
+}
+
 /**
- * The address a request is judged by: the TCP peer, unless the peer is a trusted proxy and sent
- * a `CF-Connecting-IP` that is an IP literal. A header from any other peer is ignored.
+ * The address a request is judged by. The TCP peer, unless the peer is a trusted proxy: then the
+ * named header (one IP literal), or `X-Forwarded-For` walked from the right past trusted hops. A
+ * header from any other peer is ignored. A trusted peer whose header is absent or not an IP
+ * literal gets the peer address and a warning, so a misconfigured proxy shows in the log.
  */
-export function clientAddress(req: IncomingMessage, trusted: ProxyTrust): string {
+export function clientAddress(
+  req: IncomingMessage,
+  trusted: ProxyTrust,
+  header: string,
+): ClientAddress {
   const peer = req.socket.remoteAddress ?? 'unknown';
-  if (!trusted(peer)) return peer;
-  const header = req.headers['cf-connecting-ip'];
-  const claimed = typeof header === 'string' ? header.trim() : '';
-  return isIP(claimed) === 0 ? peer : claimed;
+  if (!trusted(peer)) return { address: peer };
+  const raw = req.headers[header];
+  if (raw === undefined) return { address: peer, warning: 'header_missing' };
+  if (header === FORWARDED_FOR) return forwardedAddress(String(raw), peer, trusted);
+  const claimed = typeof raw === 'string' ? raw.trim() : '';
+  return isIP(claimed) === 0
+    ? { address: peer, warning: 'header_malformed' }
+    : { address: claimed };
+}
+
+/** The first hop from the right that is not a trusted proxy; malformed hops fall back to the peer. */
+function forwardedAddress(value: string, peer: string, trusted: ProxyTrust): ClientAddress {
+  const hops = value
+    .split(',')
+    .map((hop) => hop.trim())
+    .filter((hop) => hop !== '');
+  if (hops.length === 0) return { address: peer, warning: 'header_missing' };
+  for (let index = hops.length - 1; index >= 0; index--) {
+    const hop = hops[index] ?? '';
+    if (isIP(hop) === 0) return { address: peer, warning: 'header_malformed' };
+    if (!trusted(hop)) return { address: hop };
+  }
+  // Every hop is a trusted proxy: the client is the leftmost one.
+  return { address: hops[0] ?? peer };
 }

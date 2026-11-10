@@ -17,7 +17,7 @@ import { jetPublish, NatsPublisher } from './nats-publisher.ts';
 
 const enabled = process.env.GELDAR_IT === '1';
 const SHARD = 'phaseitlink';
-const LIFE = 'ag_adam_01';
+const LIFE = 'ag_adam_03';
 
 describe.skipIf(!enabled)('the Mind side of the Body-Mind channel against live NATS', () => {
   it('asks a fake Body for a snapshot and a plan ack, and reports a missing Body', async () => {

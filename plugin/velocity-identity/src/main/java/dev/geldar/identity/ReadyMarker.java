@@ -7,8 +7,9 @@ import java.nio.file.Path;
 import java.util.function.Supplier;
 
 /**
- * The readiness marker the Velocity healthcheck reads (compose/phase0.yml). Written when the identity plugin
- * initializes and removed when the proxy shuts down. The file holds this JVM's pid and its start time (field 22
+ * The readiness marker the Velocity healthcheck reads (compose/phase0.yml). {@link ReadinessFeed} writes it only
+ * while the life registry is synced (NATS connected and the bucket replayed), removes it when the sync is lost, and
+ * removes it when the proxy shuts down. The file holds this JVM's pid and its start time (field 22
  * of /proc/self/stat), so a marker that an earlier proxy left in /tmp, which a container restart keeps, never
  * matches the running proxy: the healthcheck compares both values with /proc/&lt;pid&gt;/stat. The rolling proxy
  * log is not consulted.

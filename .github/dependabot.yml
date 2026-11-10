@@ -33,6 +33,35 @@ updates:
       prefix: "chore(security)"
     labels: [dependencies, security]
 
+  # Dependabot's docker-compose ecosystem reads only files named docker-compose.yml or compose.yml;
+  # compose/phase0.yml is not, so its image digests are not updated (see docs/analysis/phase0/worknotes/fix-f.md).
+  - package-ecosystem: docker-compose
+    directory: /compose
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
+
+  - package-ecosystem: docker
+    directory: /threshold/mcp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
+
+  - package-ecosystem: docker
+    directory: /threshold/mcp-mock
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(security)"
+    labels: [dependencies, security]
+
   - package-ecosystem: gradle
     directory: /plugin
     schedule:

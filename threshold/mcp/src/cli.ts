@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { natsRequestTransport } from '@geldar/animus/src/link/nats-body-link.ts';
+import { connectNats } from '@geldar/contract/nats';
 import { RealClock } from '@geldar/mcp-mock';
 import { jetstream, jetstreamManager } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
-import { connect } from '@nats-io/transport-node';
 import { Client, Pool } from 'pg';
 import { repoRoot } from './config.ts';
 import { safeLogLine } from './http/log.ts';
@@ -137,7 +137,7 @@ export function containerPorts(shard: string): McpPorts {
         statement_timeout: 5000,
       }),
     openRevokeListener: (config) => new Client(config),
-    connectNats: (url) => connectNats(url, shard, stderrLog),
+    connectNats: (url) => openNatsLink(url, shard, stderrLog),
     keepAlive: {
       start(intervalMs, tick) {
         const handle = setInterval(tick, intervalMs);
@@ -156,12 +156,12 @@ export function stderrLog(line: Record<string, string | number>): void {
 }
 
 /** The NATS link: one connection, the presence KV manager, request/reply, the call publisher and the replay. */
-async function connectNats(
+async function openNatsLink(
   url: string,
   shard: string,
   log: (line: Record<string, string | number>) => void,
 ): Promise<NatsLink> {
-  const nc = await connect({ servers: url, name: 'geldar-mcp' });
+  const nc = await connectNats({ servers: url, name: 'geldar-mcp' });
   const js = jetstream(nc);
   const jsm = await jetstreamManager(nc);
   const kvm = new Kvm(nc);

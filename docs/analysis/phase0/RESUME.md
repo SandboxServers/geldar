@@ -1,26 +1,40 @@
 # Phase 0 — resume card
 
-Read this, then [README.md](README.md) (the ledger), [overnight-decisions.md](overnight-decisions.md) and the retros in [retro/](retro/) before acting. Rewrite at every wave boundary; 40 lines at most.
+Read this, then [README.md](README.md) (the ledger), [known-gaps.md](known-gaps.md) (the Phase 1 backlog), [overnight-decisions.md](overnight-decisions.md) and the retros in [retro/](retro/) before acting. Rewrite at every phase boundary; 40 lines at most.
 
-**State (Wave M closing, 2026-11-10):** the Wave M code is complete on `wave-m-main`: WM-01 to WM-13 are merged. Three review rounds ran; every finding is fixed or recorded. `./geldar.ps1 check` is green. The integration cases are green against the dev Postgres (MCP: 30 passed; non-MCP: 4 passed, 1 skipped by design). The MCP image builds (86 MB).
+**State (Phase 0 closed as proof of life, 2026-11-10):** the owner closed Phase 0 by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md). The spec section 10 exit criteria are waived by the owner, not met.
 
-**Next:** (1) the Wave M PR to `main`, merged when CI is green. (2) Wave 6: `glass/` Thought Stream, the Adam runs, the campaign review and the full campaign retro. The Wave M retro and `WM-process` follow the PR; `WM-process` waits for the retro actions.
+**Done on `phase0/integration` (83b0922):** Wave 6 (W6-01 to W6-26 except W6-08, see below), fix rounds A to F, and the wave M live fixes (`697f555`, `cfbaa0b`, `80cc758`). W6-08 (investigate `intent_link_gave_up`) is not done and unverified: it has no branch, no merge and no worknote. W6-15 to W6-19 have branches merged into `phase0/integration` but no ledger rows. The Body benchmark (OPS-0) passed at 20 TPS, 100% at several commits (last full pass 403a9cc and 98d5394); the final clean rebench at 57576f6 was stopped by the owner (bench-results.md). OPS-1 (20-minute smoke) was run, not passed: smoke-w6-20-a aborted on a process-probe bug; smoke-w6-25-a ended when the 8B Adam died to a zombie about 6 minutes in, and the harness treated the death as a stall (since fixed as `life_ended`). No clean pass exists. The campaign retro is pending.
 
-**Live steps still owed (nothing run against the live stack yet):**
-- Start the MCP container against the live stack: `./geldar.ps1 mcp up`, after the runbook steps.
-- Rangers connect and play: `./geldar.ps1 players up`.
-- Tunnel: set `sovereign.mcp.trusted_proxies` to the tunnel's address first (see the threat model); without it all tunnel traffic shares one bucket.
-- MineSkin upload: needs the owner's explicit yes. The key and the PNGs are present locally; nothing has been uploaded.
-- A real NATS run of the gateway.
+**Open (not in code or not decided):**
+- Body: an abandoned action gets no `aborted` receipt, and the `prepared` receipt is not implemented (decision 0020; W6-26; adam-run-owner-decisions.md).
+- Body crash reconciliation is partial: no-checkpoint case and running actions are open.
+- `gather` made no action at spawn in one live run (L4 open question in wm-live-findings.md).
+- Cancelled and interrupted have no wake reason in the contract.
+- Owner cap: 3 in the spec (5.15.6) against 20 in decision 0052; `owner add` needs `--cap 20`.
+- NATS auth overlay (`compose/nats-auth.yml`, decision 0067) is untested against a live `nats-server`.
 
-**Owner items still open:** decision 0060 verification (maximal personas against `num_ctx` 8192); the WM-10b NATS user; sleep cursor semantics; the outcome-unknown contract code; the spec edit for observer disclosure (0059); the BC-10 v3 line; the uuid override; cleanup of the Wave M worktree directories.
+**Next phase:** scaling. More agents per player (up to 20 per player), the sovereign players and rangers. The Phase 1 backlog is in known-gaps.md; the phase plan is not written yet and the owner will set it.
 
-**Owner rulings in force:** reviews and live tests once per wave at its end (up to 5 rounds with fix rounds); `W<N>-process` after the retro; plan packets to fan out early; merge a green PR that meets its exit criteria and keep going; a full campaign retro at the end; the benchmark gate is 20 TPS at 100% (10 and 5 TPS rows informational). No time dilation (0047); recipes are discovered (0048); identity mode is about human observation, never agent belief (0059); persona files are not artificially limited (0060).
+**Deferred by decision 0066:** the exit runs: OPS-2 (32B, `ag_adam_03`), OPS-3 (8B, `ag_adam_04`) and OPS-4 (final gate); the 24-hour run; the 5-day survival. The 32B protocol and the restart steps are documented and unexercised.
 
-**Side track:** the Scriptorium corpus (SC-61a to d) is done; the mock image digest was sent to the Scriptorium orchestrator. Next free decision number: 0061.
+**Owner items still open:**
+- MineSkin upload: yes or no (the key and the PNGs are present locally; nothing uploaded).
+- Public MCP topology (decision 0053): `sovereign.mcp.trusted_proxies` value for the tunnel, and the client header.
+- Per-component NATS credentials (fix-a2; see known-gaps.md).
+- Sleep cursor column.
+- Cancelled and interrupted wake reason (above).
+- Spec edits (for the owner; the orchestrator does not edit `docs/spec.md`): player and agent terms in 2a and 3; owner cap 3 vs 20 (5.15.6); the observers sentence (~1584, removed in prompt v4, decision 0068); about 30 lines with personal names.
+- BC-10 v3 default switch; the `uuid` pnpm override.
+- Journal deletion: `golem/test/live/adam-reset.ts` deletes rows of `ag_adam_02` before each live case; decision 0064 says append-only (O-10 to O-15 in adam-run-owner-decisions.md).
+- The `wave6` shards edit: `shards/phase0.yaml` select.
+- Recreate `.claude/agents/ops.md`.
+- Decision 0060 verification (maximal personas against `num_ctx` 8192).
 
-**Worktrees:** packet worktrees remain under `.claude/worktrees/`, one per packet (copy useful `.claude/reports/` to `worknotes/` first; never `git worktree prune`; do not touch `scriptorium-decisions`). Create worktrees from the repo root, not a subdirectory.
+**Owner rulings in force:** reviews and live tests once per wave at its end; `W<N>-process` after the retro; a full campaign retro at the end; the benchmark gate is 20 TPS at 100% (10 and 5 TPS rows informational); no time dilation (0047); recipes are discovered (0048); identity mode is about human observation, never agent belief (0059); persona files are not artificially limited (0060).
 
-**Process rules that mattered:** coders edit only inside their worktree and commit per item; reviewers return findings inline and the orchestrator records them in `worknotes/wave<N>-review-<r>.md`; only the orchestrator runs live tests (in the background); live cases print state in failure messages; always `</dev/null` on scripted git.
+**Worktrees:** packet worktrees remain under `.claude/worktrees/` (never `git worktree prune`; do not touch `scriptorium-decisions`). Leftover folders from Phase 0 are owner items to clean up. Create worktrees from the repo root, not a subdirectory.
+
+**Next free decision number:** 0069 (0068 is prompt v4 and agent-visible text).
 
 **Machine:** about 20 GB free after closing Firefox and ChatGPT; at most about six agents at once.

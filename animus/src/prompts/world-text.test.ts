@@ -49,7 +49,7 @@ function speech(from: string, text: string): MindEvent {
   return {
     type: 'speech',
     eventId: 'ev1',
-    lifeId: 'ag_adam_01',
+    lifeId: 'ag_adam_03',
     tick: 1,
     day: 1,
     at: '2026-11-09T00:00:00.000Z',
@@ -92,7 +92,7 @@ describe('hostile text corpus', () => {
       };
       vars.relationships = [
         {
-          agentId: 'ag_adam_01',
+          agentId: 'ag_adam_03',
           otherId: item.text.slice(0, 32),
           impression: item.text,
           trust: 90,
@@ -174,7 +174,7 @@ describe('invisible code points', () => {
 function memoryHeavyVars() {
   const belief = (i: number): MemoryRow => ({
     memoryId: i,
-    agentId: 'ag_adam_01',
+    agentId: 'ag_adam_03',
     kind: 'semantic',
     provenance: 'observation',
     subject: null,

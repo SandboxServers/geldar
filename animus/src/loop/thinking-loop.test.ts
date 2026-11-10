@@ -437,6 +437,25 @@ describe('ThinkingLoop: admission', () => {
   });
 });
 
+describe('ThinkingLoop: a log sink that throws', () => {
+  it('still settles the thought it started', async () => {
+    let thrown = false;
+    const rig = await makeRig([{ text: VALID_THOUGHT }], {
+      deps: {
+        log: (line) => {
+          if (line.event !== 'thought_started' || thrown) return;
+          thrown = true;
+          throw new Error('sink down');
+        },
+      },
+    });
+
+    const result = await rig.loop.handle(makeDecision('idle'));
+    expect(result.outcome).toBe('model_error');
+    expect(rig.attention.calls).toEqual(['started', 'settled']);
+  });
+});
+
 describe('ThinkingLoop: effort', () => {
   it('is minimal with reasoning off when nothing is wrong', async () => {
     const rig = await makeRig([VALID_THOUGHT]);

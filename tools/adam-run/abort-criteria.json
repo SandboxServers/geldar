@@ -1,0 +1,12 @@
+{
+  "_comment": "Abort thresholds of ./geldar.ps1 adam-run (W6-13). Times are milliseconds. tpsMin and latencyP95MaxMs follow decision 0061 and spec 10; the rest are the harness's own windows, set by the orchestrator.",
+  "tpsMin": 19.5,
+  "tpsWindowMs": 300000,
+  "latencyP95MaxMs": 15000,
+  "latencyWindowMs": 1800000,
+  "serviceDownMs": 300000,
+  "bodyDisconnectedMs": 300000,
+  "noThoughtMs": 600000,
+  "diskMinGb": 10,
+  "deathFailsRun": true
+}

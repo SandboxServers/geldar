@@ -3,7 +3,11 @@
   "private": true,
   "description": "The mcp-tokens CLI: owners, sovereign players and their hashed per-player Bearer tokens (spec 5.15.5).",
   "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
   "dependencies": {
+    "@geldar/contract": "workspace:*",
     "@geldar/mcp": "workspace:*",
     "pg": "8.23.1",
     "yaml": "2.9.1"

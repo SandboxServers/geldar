@@ -66,3 +66,11 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0059](0059-identity-mode-is-about-human-observation-not-agent-belief.md) | `identity_mode` governs whether humans may observe a shard; the agents are never told they are watched | Accepted (owner) |
 | [0060](0060-persona-size-limits.md) | Persona files are not artificially size-limited (identity 8192 bytes, goals 4096); the prompt fit is open for Wave M | Accepted (owner) |
 | [0061](0061-phase-0-exit-criteria-readings.md) | Readings of the Phase 0 exit criteria (survival, useful minute, latency, 24 hours, model floor) and the read-only Glass role | Accepted provisionally (orchestrator, owner may revise) |
+| [0062](0062-no-settled-credits-in-phase-0.md) | No settled-credits value reaches the reflection in Phase 0; the completed reflection keeps its reserved cost, and E-8 is deferred | Accepted provisionally (orchestrator, owner may revise) |
+| [0063](0063-phase-0-has-no-stuck-signal.md) | Phase 0 has no `stuck` signal (AD-11); the exit runs measure whether intents complete, and the watchdog is a Phase 1 item | Accepted provisionally (orchestrator, owner may revise) |
+| [0064](0064-exit-run-lives.md) | The exit runs use fresh lives (`ag_adam_03` 32B, `ag_adam_04` 8B) and fresh volumes; the smoke run has its own life (`ag_smoke_01`); journals are append-only | Accepted provisionally (orchestrator, owner may revise) |
+| [0065](0065-damage-wakes-the-mind.md) | Damage wakes the Mind when no intent is running; death still ends the life | Accepted provisionally (orchestrator, owner may revise) |
+| [0066](0066-phase0-closed-as-proof-of-life.md) | Phase 0 is closed as proof of life; the spec's section 10 exit criteria are waived by the owner and the exit runs are deferred | Accepted (owner) |
+| [0068](0068-prompt-v4-and-agent-visible-text.md) | Nothing an agent reads may say humans watch it or reveal the shard, harness or credits; prompt v4 is the default and released templates are immutable; persona lint with `--allow-meta` | Proposed (fix-c; owner amends the spec line ~1584) |
+| [0067](0067-nats-accounts-and-least-privilege.md) | NATS accounts and least-privilege users, opt-in until the stack is cut over | Accepted provisionally (orchestrator, owner may revise) |
+>

@@ -47,13 +47,15 @@ describe('a pepper the CLI wrote, digested by the CLI and checked by the server'
     const token = mintToken();
     const cli = hashToken(await readPepper(dir), token);
     const server = tokenDigest(await serverPepper(dir), token);
-    expect(server.equals(cli)).toBe(true);
+    expect(Buffer.compare(server, cli)).toBe(0);
   });
 
   it('strips one CRLF to the same key as a plain file', async () => {
     const dir = await secretsWith(`${KEY}\r\n`);
     const token = mintToken();
-    expect(tokenDigest(await serverPepper(dir), token).equals(hashToken(KEY, token))).toBe(true);
+    expect(Buffer.compare(tokenDigest(await serverPepper(dir), token), hashToken(KEY, token))).toBe(
+      0,
+    );
   });
 
   it('keeps a trailing space in the key in both implementations', async () => {
@@ -61,9 +63,9 @@ describe('a pepper the CLI wrote, digested by the CLI and checked by the server'
     const token = mintToken();
     expect(await readPepper(dir)).toBe(`${KEY} `);
     expect((await serverPepper(dir)).toString('utf8')).toBe(`${KEY} `);
-    expect(tokenDigest(await serverPepper(dir), token).equals(hashToken(`${KEY} `, token))).toBe(
-      true,
-    );
+    expect(
+      Buffer.compare(tokenDigest(await serverPepper(dir), token), hashToken(`${KEY} `, token)),
+    ).toBe(0);
   });
 
   it('refuses a 31-byte pepper in both implementations', async () => {

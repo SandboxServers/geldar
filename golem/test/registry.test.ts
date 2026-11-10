@@ -5,6 +5,7 @@ import { loadConfig } from '../src/config.ts';
 import { ConnectionManager } from '../src/connection.ts';
 import {
   type BotRegistry,
+  HEARTBEAT_MS,
   LifeRegistration,
   lifeIdFor,
   type OpenedRegistry,
@@ -96,6 +97,60 @@ describe('LifeRegistration', () => {
     await reg.unregister('Bot');
     expect(open).toHaveBeenCalledTimes(1);
     expect(log.filter((l) => l.startsWith('delete'))).toEqual(['delete bot']);
+  });
+
+  it('re-puts the key every HEARTBEAT_MS until unregister, so the TTL never lapses', async () => {
+    vi.useFakeTimers();
+    try {
+      const log: string[] = [];
+      const reg = new LifeRegistration(async () => fakeKv(log));
+      await reg.register('Bot');
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+      expect(log.filter((l) => l.startsWith('put bot'))).toHaveLength(4);
+      await reg.unregister('Bot');
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+      expect(log.filter((l) => l.startsWith('put bot'))).toHaveLength(4);
+      expect(log.at(-1)).toBe('delete bot');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports a failed heartbeat, reopens on the next beat, and stops beating on close', async () => {
+    vi.useFakeTimers();
+    try {
+      const log: string[] = [];
+      const errors: string[] = [];
+      let down = false;
+      const reg = new LifeRegistration(
+        async () => ({
+          kv: {
+            put: async (key: string) => {
+              if (down) throw new Error('nats gone');
+              log.push(`put ${key}`);
+            },
+            delete: async () => undefined,
+          },
+          close: async () => {
+            log.push('close');
+          },
+        }),
+        undefined,
+        (username, error) => errors.push(`${username}: ${(error as Error).message}`),
+      );
+      await reg.register('Bot');
+      down = true;
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+      expect(errors).toEqual(['Bot: nats gone']);
+      down = false;
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+      expect(log.filter((l) => l === 'put bot')).toHaveLength(2);
+      await reg.close();
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS * 3);
+      expect(log.filter((l) => l === 'put bot')).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fails every register with the open error while NATS is down, then recovers', async () => {

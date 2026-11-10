@@ -6,7 +6,7 @@ import { Attention } from './controller.ts';
 import { BODY_WAKE_REASONS } from './policy.ts';
 import { ManualTiming } from './timing.fakes.ts';
 
-const LIFE = 'ag_adam_01';
+const LIFE = 'ag_adam_03';
 const ME = { name: 'Adam', username: 'Adam_B0T' };
 
 let seq = 0;
@@ -404,6 +404,15 @@ describe('death and sleep', () => {
     r.attention.thoughtSettled('planned');
     r.time.advance(600_000);
     expect(r.decisions).toHaveLength(1);
+  });
+
+  it('after a death, an intent end and a Body wake give no thought', () => {
+    r.attention.onEvent(intent('in_1', 'running'));
+    r.attention.onEvent(plain('death'));
+    r.attention.onEvent(intent('in_1', 'interrupted'));
+    r.attention.onEvent(wake('goal_completed'));
+    r.time.advance(600_000);
+    expect(r.decisions).toHaveLength(0);
   });
 
   it('a sleep event emits ReflectionDue and does not wake', () => {

@@ -1,4 +1,5 @@
 import type { GoalRow, JournalEntry, MemoryRow, RelationshipRow } from '../ports/index.ts';
+import { wakeWording } from './wake-wording.ts';
 import { jsonString, promptCost, type WorldTextLine } from './world-text.ts';
 
 /** How many people get their impression shown; the rest are named only. */
@@ -55,7 +56,7 @@ export function episodicLines(rows: readonly MemoryRow[]): string[] {
 
 /** One journal entry as a short line: when, why woken, and what the thought said. */
 function journalLine(entry: JournalEntry): string {
-  const head = `- day ${entry.worldDay} tick ${entry.worldTick}, woken by ${entry.wakeReason.replace(/[^a-z_]/g, '?')}`;
+  const head = `- day ${entry.worldDay} tick ${entry.worldTick} (woken because ${wakeWording(entry.wakeReason)})`;
   const t = entry.parsed;
   if (t === null) return `${head}: (the answer was rejected)`;
   const parts: string[] = [`reasoning ${jsonString(t.reasoning, 240)}`];

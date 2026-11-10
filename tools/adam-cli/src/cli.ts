@@ -1,5 +1,5 @@
 /**
- * The command line behind `./geldar.ps1 adam`: `up [--model strong|fast]`, `select --model ...`, `down`, `status`,
+ * The command line behind `./geldar.ps1 adam`: `up [--model strong|fast]`, `select --model strong|fast|smoke`, `down`, `status`,
  * `logs [service] [--follow]` and `models [--record]`. Run with `node tools/adam-cli/src/cli.ts`.
  * Exit codes: 0 done, 1 a refusal or failure with the reason printed, 2 bad usage.
  */
@@ -7,10 +7,12 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
+import { restartBody } from './body-restart.ts';
 import { adamEnv, loopbackProblems, parseComposePs, parseEnvFile, shardProblems } from './env.ts';
 import {
   compare,
   installedFromTags,
+  type LifeKey,
   type PinRow,
   preflightProblems,
   readLives,
@@ -19,21 +21,28 @@ import {
   readTierTags,
   type Tier,
 } from './pins.ts';
-import { formatStatus, isLifeId, latencySql, parseLatency, SERVICES } from './procs.ts';
+import { BODY, formatStatus, isLifeId, latencySql, parseLatency, SERVICES } from './procs.ts';
+import { retireSelected } from './retire.ts';
 import {
   compose,
   followLog,
+  isAlive,
   logFile,
+  logSince,
+  logSize,
+  lookupProcess,
   ROOT,
+  readOwner,
   readRows,
   startAll,
+  startService,
   stopAll,
   tailLines,
 } from './run.ts';
 import { recordDigests, selectLife } from './yaml-edit.ts';
 
 const USAGE =
-  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast | down | status | logs [body|animus|lantern-local] [--follow] | models [--record]';
+  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast|smoke | down | status | logs [body|animus|lantern-local] [--follow] | models [--record] | restart-body';
 
 class Refusal extends Error {}
 
@@ -85,20 +94,20 @@ function applyLife(file: string, source: string, tier: Tier, life: string): void
   }
 }
 
-/** `select --model strong|fast`: only the rewrite; checks nothing and starts nothing. */
+/** `select --model strong|fast|smoke`: only the rewrite; checks nothing and starts nothing. */
 function select(args: string[]): void {
   const wanted = argValue(args, '--model');
-  if (wanted !== 'strong' && wanted !== 'fast')
-    throw new Refusal('select needs --model strong|fast');
+  if (wanted !== 'strong' && wanted !== 'fast' && wanted !== 'smoke')
+    throw new Refusal('select needs --model strong|fast|smoke');
   selectInFile(shardFile(runEnv()), wanted);
 }
 
-/** Points the shard file at a tier's life, from its `mind.lives` table; returns the life id. */
-export function selectInFile(file: string, tier: Tier): string {
+/** Points the shard file at a life from its `mind.lives` table; the smoke life runs on the fast tier. */
+export function selectInFile(file: string, key: LifeKey): string {
   const source = readFileSync(file, 'utf8');
-  const life = readLives(parse(source))[tier];
-  applyLife(file, source, tier, life);
-  console.log(`selected: life ${life} (${tier})`);
+  const life = readLives(parse(source))[key];
+  applyLife(file, source, key === 'smoke' ? 'fast' : key, life);
+  console.log(`selected: life ${life} (${key})`);
   return life;
 }
 
@@ -149,7 +158,13 @@ async function up(args: string[]): Promise<void> {
     await stopAll();
     throw new Refusal(`${dead.join(', ')} exited at start; the rest was stopped`);
   }
-  console.log(`up: life ${life}; see ./geldar.ps1 adam status`);
+  console.log(upLine(readFileSync(file, 'utf8')));
+}
+
+/** The last line of `up`: the life the Mind selects now (its username), which is not always a `mind.lives` entry. */
+export function upLine(source: string): string {
+  const selected = (parse(source) as { mind: { agent: { username: string } } }).mind.agent.username;
+  return `up: life ${selected}; see ./geldar.ps1 adam status`;
 }
 
 async function lastLatency(shard: string, life: string): Promise<number | null> {
@@ -172,6 +187,14 @@ async function lastLatency(shard: string, life: string): Promise<number | null> 
   } catch {
     return null;
   }
+}
+
+/** After `down`: retires the selected life from the registry and whitelist, printing each step. */
+async function retireAfterStop(): Promise<void> {
+  const file = shardFile(process.env);
+  const source = existsSync(file) ? readFileSync(file, 'utf8') : null;
+  const anyRunning = readRows().some((r) => r.state === 'running');
+  for (const line of await retireSelected(source, anyRunning)) console.log(line);
 }
 
 async function status(): Promise<void> {
@@ -237,6 +260,31 @@ async function logs(args: string[]): Promise<void> {
   if (args.includes('--follow') && picked.length === 1 && only !== undefined) await followLog(only);
 }
 
+/**
+ * `restart-body`: ends only the Body (verified by its owner record) and starts a fresh one with the command and the
+ * environment `adam up` gives it. animus and lantern-local keep running.
+ */
+async function restartBodyCommand(): Promise<void> {
+  const env = runEnv();
+  const message = await restartBody(
+    {
+      adamUp: () => readRows().some((r) => r.state === 'running'),
+      owner: () => readOwner(BODY),
+      lookup: lookupProcess,
+      alive: isAlive,
+      signal: (pid, signal) => process.kill(pid, signal),
+      spawn: (service, serviceEnv) => startService(service, serviceEnv),
+      env: () => env,
+      logSize: () => logSize(BODY),
+      logSince: (offset) => logSince(BODY, offset),
+      sleep: (ms) => new Promise((done) => setTimeout(done, ms)),
+      now: () => Date.now(),
+    },
+    { graceMs: 15_000, readyMs: 120_000, pollMs: 500 },
+  );
+  console.log(message);
+}
+
 /** Runs one command; returns the exit code. */
 export async function run(argv: string[]): Promise<number> {
   const [command, ...args] = argv;
@@ -250,6 +298,7 @@ export async function run(argv: string[]): Promise<number> {
         return 0;
       case 'down':
         await stopAll();
+        await retireAfterStop();
         return 0;
       case 'status':
         await status();
@@ -259,6 +308,9 @@ export async function run(argv: string[]): Promise<number> {
         return 0;
       case 'models':
         await models(args);
+        return 0;
+      case 'restart-body':
+        await restartBodyCommand();
         return 0;
       default:
         console.error(USAGE);

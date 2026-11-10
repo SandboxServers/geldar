@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./nats": "./src/nats-connect.ts",
+    "./thinker-token": "./src/thinker-token.ts"
   },
   "scripts": {
     "generate": "node scripts/generate.ts",
@@ -15,6 +17,7 @@
     "json-schema-to-typescript": "16.0.0"
   },
   "dependencies": {
+    "@nats-io/transport-node": "3.4.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
   }

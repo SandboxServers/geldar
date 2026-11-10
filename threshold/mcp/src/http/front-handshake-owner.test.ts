@@ -169,16 +169,16 @@ afterEach(async () => {
   await door.close();
 });
 
-describe('front door: owner bucket for non-call methods', () => {
-  it('refuses resources/read with 429 when the owner bucket is empty, though the handshake has room', async () => {
+describe('front door: handshake traffic draws no call token', () => {
+  it('serves resources/read though the owner bucket is empty, taking only the handshake token', async () => {
     const session = await openSession();
     limiter.empty.add('owner:owner-1');
 
-    const refused = await send('POST', resourceRead(2), { 'mcp-session-id': session });
+    const served = await send('POST', resourceRead(2), { 'mcp-session-id': session });
 
-    expect(refused.status).toBe(429);
-    expect(refused.headers['retry-after']).toBeDefined();
-    expect(limiter.taken.slice(-2)).toEqual(['handshake:aa', 'owner:owner-1']);
+    expect(served.status).not.toBe(429);
+    expect(limiter.taken.slice(-1)).toEqual(['handshake:aa']);
+    expect(limiter.taken).not.toContain('owner:owner-1');
   });
 });
 

@@ -112,7 +112,7 @@ export class Mind {
               model: options.model,
               settings: config.reflection,
               fatigueDays: config.memory.fatigueDays,
-              fatigueRule: deps.fatigueRule ?? true,
+              fatigueRule: deps.fatigueRule ?? config.memory.fatigueRule,
               stamp: {
                 schemaVersion: deps.versions.schema,
                 mindVersion: deps.versions.mind,

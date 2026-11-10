@@ -129,8 +129,11 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The one role this tool sets a password for: the MCP's login (decision 0026). */
-const PASSWORD_ROLE = 'geldar_mcp';
+/**
+ * The only roles this tool sets a password for: the MCP's login (decision 0026) and the Glass's
+ * read-only login (wave 6 item 10, migration 0005). Any other role is refused before connecting.
+ */
+const PASSWORD_ROLES: ReadonlySet<string> = new Set(['geldar_mcp', 'geldar_glass']);
 
 /**
  * Reads a password file as UTF-8, without a leading byte-order mark and one trailing newline.
@@ -162,8 +165,9 @@ export function passwordStatement(
 }
 
 /**
- * Sets the password of geldar_mcp and lets it log in. The client computes a SCRAM-SHA-256
- * verifier and sends only that: the plaintext never reaches the server or the log. With dryRun
+ * Sets the password of a role in PASSWORD_ROLES and lets it log in. The client computes a
+ * SCRAM-SHA-256 verifier and sends only that: the plaintext never reaches the server or the log.
+ * With dryRun
  * it checks the password and reports, and connects to nothing.
  */
 export async function setRolePassword(
@@ -172,7 +176,9 @@ export async function setRolePassword(
   password: string,
   options: { dryRun: boolean; log: (line: string) => void },
 ): Promise<void> {
-  if (role !== PASSWORD_ROLE) throw new Error(`only ${PASSWORD_ROLE} takes a password here`);
+  if (!PASSWORD_ROLES.has(role)) {
+    throw new Error(`only ${[...PASSWORD_ROLES].join(' or ')} takes a password here`);
+  }
   if (password.length === 0) throw new Error('the password file is empty');
   const verifier = scramVerifier(password);
   if (options.dryRun) {

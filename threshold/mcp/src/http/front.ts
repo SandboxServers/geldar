@@ -7,6 +7,7 @@ import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
 import {
   type BearerVerdict,
   clientAddress,
+  MissCache,
   parseBearer,
   tokenDigest,
   trustedProxies,
@@ -21,6 +22,8 @@ export interface FrontDoorOptions {
   pepper: Uint8Array;
   store: TokenStore;
   limiter: RateLimiter;
+  /** One agent's fair share of the owner's calls a minute (`ownerShare`). Default 0: no sibling reserve. */
+  agentShare?: number;
   /** Builds the MCP server for one new session. */
   createSession: (playerId: string, signal: AbortSignal) => McpServer;
   /** Receives each log line after `frontLog` has cut it to safe fields. Default: JSON on stderr. */
@@ -43,10 +46,10 @@ export const BODY_LIMIT_BYTES = 64 * 1024;
 const HEADERS_TIMEOUT_MS = 10_000;
 // Receiving one whole request; a held response is not cut, the timeout ends at the request's end.
 const REQUEST_TIMEOUT_MS = 30_000;
-// Defaults for the config keys max_connections and max_connections_per_address (phase0.yaml). Behind
-// the tunnel one address carries every player, so 32 per address fits about eight players' requests.
-const MAX_CONNECTIONS = 256;
-const MAX_CONNECTIONS_PER_ADDRESS = 32;
+// Fallbacks for a caller that passes no cap: the config derives the real ones from owner_cap_owner (20):
+// 4 open requests per agent times the owner cap per address, and that times 4 owners for the listener.
+const MAX_CONNECTIONS = 320;
+const MAX_CONNECTIONS_PER_ADDRESS = 80;
 
 function stderrSink(line: Record<string, string | number>): void {
   process.stderr.write(`${JSON.stringify(line)}\n`);
@@ -107,9 +110,14 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
  */
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
-  const gates = new FrontLimits(options.limiter);
-  // Only a peer on the trusted list may name the client in CF-Connecting-IP. An empty list trusts none.
+  const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
+  // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
+  const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';
+  const addressOf = (req: IncomingMessage): string =>
+    clientAddress(req, trusted, clientIpHeader).address;
+  // Refused bearers, remembered for a few seconds so a repeat does not cost a store lookup.
+  const misses = new MissCache();
   const maxPerAddress =
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
@@ -123,7 +131,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     tokens: new Map(),
     createSession: options.createSession,
     log: frontLog(options.log ?? stderrSink),
-    maxBodyBytes: BODY_LIMIT_BYTES,
+    maxBodyBytes: options.http.maxBodyBytes ?? BODY_LIMIT_BYTES,
     limits: {
       maxConnections: options.http.maxConnections ?? MAX_CONNECTIONS,
       maxConnectionsPerAddress: maxPerAddress,
@@ -138,9 +146,14 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
-      const address = clientAddress(req, trusted);
+      const client = clientAddress(req, trusted, clientIpHeader);
+      // A trusted proxy that sent no usable address is logged, not refused: the peer is used.
+      if (client.warning !== undefined) {
+        frontLog(options.log ?? stderrSink)({ event: `client_${client.warning}` });
+      }
+      const address = client.address;
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
-      // bearer is refused before the lookup while its address is out of failed-auth tokens.
+      // bearer is refused before the lookup while its address or the global bucket is out of tokens.
       const token = parseBearer(header);
       const cached =
         token !== null &&
@@ -149,7 +162,14 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
       let verdict: BearerVerdict;
       try {
-        verdict = await verifyBearer(options.store, options.pepper, playerId, header, now());
+        verdict = await verifyBearer(
+          options.store,
+          options.pepper,
+          playerId,
+          header,
+          now(),
+          misses,
+        );
       } catch (error) {
         // A failing store is a 503 with no detail; the log keeps only the error's class name.
         frontLog(options.log ?? stderrSink)({
@@ -175,21 +195,28 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     // The per-address slot is taken here, after the headers, because the connection cap sees only the
     // peer: behind a tunnel that is the proxy for every client.
     beforeBody(playerId, req, res): Refusal | undefined {
-      const address = clientAddress(req, trusted);
+      const address = addressOf(req);
+      const ownerId = players.get(req)?.ownerId ?? playerId;
       if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
+      if (!gates.acquireOwner(ownerId, maxPerAddress)) {
+        gates.releaseAddress(address);
+        return tooManyOpen();
+      }
       if (!gates.acquire(playerId)) {
+        gates.releaseOwner(ownerId);
         gates.releaseAddress(address);
         return tooManyOpen();
       }
       const held = releaseOnClose(res, () => {
         gates.release(playerId);
+        gates.releaseOwner(ownerId);
         gates.releaseAddress(address);
       });
       return held ? undefined : clientGone();
     },
     // A GET stream takes the per-address slot only: a player's streams are not counted as its POSTs.
     beforeStream(_playerId, req, res): Refusal | undefined {
-      const address = clientAddress(req, trusted);
+      const address = addressOf(req);
       if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
       const held = releaseOnClose(res, () => gates.releaseAddress(address));
       return held ? undefined : clientGone();
@@ -198,13 +225,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
       const player = players.get(res.req);
       if (player === undefined) return { status: 401, message: 'unauthorized' };
-      // Every other method (initialize, resources/read, ...) takes from the cheaper handshake bucket
-      // and from its owner's bucket, so a player's non-call traffic cannot outrun the owner's budget.
-      if (!isToolCall(body)) {
-        const waitSec = gates.handshake(playerId, now());
-        if (waitSec !== undefined) return refusedRateLimit(waitSec);
-        return refusedRateLimit(gates.owner(player.ownerId, now()));
-      }
+      // Every other method (initialize, resources/read, ...) takes only from the handshake bucket:
+      // handshake traffic draws no call token, so it cannot use up an agent's or an owner's calls.
+      if (!isToolCall(body)) return refusedRateLimit(gates.handshake(playerId, now()));
       return refusedRateLimit(gates.call(playerId, player.ownerId, now()));
     },
   });

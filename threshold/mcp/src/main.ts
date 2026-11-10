@@ -17,6 +17,7 @@ import {
   streamSubjects,
 } from './events/stream.ts';
 import { createFrontDoor, type FrontDoor, type FrontDoorOptions } from './http/front.ts';
+import { ownerShare } from './http/limits.ts';
 import { safeLogLine } from './http/log.ts';
 import type { KeepAlive, RateDecision, RateLimiter } from './ports.ts';
 import { type BucketManager, KvPresenceStore, openPresenceBucket } from './presence.ts';
@@ -101,8 +102,10 @@ export interface BucketRule {
 export const GLOBAL_FAILED_AUTH_PER_MINUTE = 300;
 
 /**
- * The rule for each bucket, by name: the front door's `player:`, `owner:`, `auth-failed:` buckets
- * and the tools' `act:` and `say:` buckets, whose minimum spacing is one token per N seconds.
+ * The rule for each bucket, by name: the front door's `player:`, `owner:`, `owner-agent:`,
+ * `auth-failed:` buckets and the tools' `act:`, `say:` and `journal:` buckets, whose minimum spacing is one
+ * token per N seconds. `agentsPerOwner` is the owner's cap: each agent's reserved share of the
+ * owner's calls is the owner rate split that many ways (at least one call a minute).
  */
 export function bucketRules(
   limits: Pick<
@@ -113,18 +116,23 @@ export function bucketRules(
     | 'handshakePerMinute'
     | 'actMinSeconds'
     | 'sayMinSeconds'
+    | 'journalMinSeconds'
   >,
+  agentsPerOwner = 1,
 ): (bucket: string) => BucketRule {
   const perMinute = (n: number): BucketRule => ({ capacity: n, perMinute: n });
   const spaced = (seconds: number): BucketRule =>
     seconds > 0 ? { capacity: 1, perMinute: 60 / seconds } : perMinute(limits.callsPerMinute);
+  const share = ownerShare(limits.ownerCallsPerMinute, agentsPerOwner);
   return (bucket) => {
+    if (bucket.startsWith('owner-agent:')) return perMinute(share);
     if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
     if (bucket.startsWith('auth-failed:address:')) return perMinute(limits.failedAuthPerMinute);
     if (bucket === 'auth-failed:global') return perMinute(GLOBAL_FAILED_AUTH_PER_MINUTE);
     if (bucket.startsWith('handshake:')) return perMinute(limits.handshakePerMinute);
     if (bucket.startsWith('act:')) return spaced(limits.actMinSeconds);
     if (bucket.startsWith('say:')) return spaced(limits.sayMinSeconds);
+    if (bucket.startsWith('journal:')) return spaced(limits.journalMinSeconds);
     return perMinute(limits.callsPerMinute);
   };
 }
@@ -164,11 +172,13 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
     take(bucket: string, nowMs: number): RateDecision {
       if (buckets.size >= sweepAt) sweep(nowMs);
       const { tokens, decision } = read(bucket, nowMs);
-      buckets.set(bucket, { tokens: decision.allowed ? tokens - 1 : tokens, atMs: nowMs });
-      return decision;
+      const left = decision.allowed ? tokens - 1 : tokens;
+      buckets.set(bucket, { tokens: left, atMs: nowMs });
+      return { ...decision, remaining: Math.floor(left) };
     },
     peek(bucket: string, nowMs: number): RateDecision {
-      return read(bucket, nowMs).decision;
+      const { tokens, decision } = read(bucket, nowMs);
+      return { ...decision, remaining: Math.floor(tokens) };
     },
   };
 }
@@ -281,7 +291,11 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     closers.push(() => tokens.stop());
     log({ event: 'revoke_listening' });
 
-    const presence = new KvPresenceStore(await openPresenceBucket(nats.buckets), now);
+    const windows = {
+      awakeMs: config.sovereign.presence.leaseSeconds * 1000,
+      hibernateMs: config.sovereign.presence.hibernateAfterSeconds * 1000,
+    };
+    const presence = new KvPresenceStore(await openPresenceBucket(nats.buckets), now, windows);
     const body = new NatsBodyGateway({ transport: nats.request, shard: config.shard });
     const events = new RingEventLog();
     const runs = new Map<string, RunState>();
@@ -290,8 +304,12 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       intentRunTooLongMs: config.sovereign.wake.intentRunTooLongSeconds * 1000,
     };
     const recorder = new SovereignCallRecorder({ publish: (id, p) => nats.publishCall(id, p) });
-    const limiter = tokenBucketLimiter(bucketRules(config.sovereign.rateLimits));
+    const limiter = tokenBucketLimiter(
+      bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
+    );
     const world = createWorld({
+      maxResultBytes: config.sovereign.maxResultBytes,
+      waitCapSeconds: config.sovereign.waitCapSeconds,
       players: new PgPlayerDirectory(pool),
       body,
       budget: new PgBudgetLedger(pool, config.sovereign.budget),
@@ -333,6 +351,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       resources: { profiles: agents, journal: new PgJournalStore(pool), shard: shardRules(config) },
       keepAlive: ports.keepAlive,
       keepaliveMs: config.sovereign.keepaliveSeconds * 1000,
+      maxResultBytes: config.sovereign.maxResultBytes,
       log,
     };
     const front = (ports.frontDoor ?? createFrontDoor)({
@@ -340,6 +359,10 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       pepper,
       store: tokens,
       limiter,
+      agentShare: ownerShare(
+        config.sovereign.rateLimits.ownerCallsPerMinute,
+        config.sovereign.ownerCapOwner,
+      ),
       createSession: (playerId, signal) => createWorldSession(sessionDeps, playerId, signal),
       log: (line) => ports.log(line),
       now,
@@ -374,10 +397,16 @@ async function stopInOrder(
 }
 
 /** The shard rules the `shard/rules` resource shows, from the loaded config. */
-function shardRules(config: McpConfig) {
+export function shardRules(config: McpConfig) {
   return {
     chatRadius: config.chat.radius,
     waitCapSeconds: config.sovereign.waitCapSeconds,
     tickRate: config.tickRate,
+    maxBodyBytes: config.sovereign.maxBodyBytes,
+    maxResultBytes: config.sovereign.maxResultBytes,
+    presence: {
+      leaseSeconds: config.sovereign.presence.leaseSeconds,
+      hibernateAfterSeconds: config.sovereign.presence.hibernateAfterSeconds,
+    },
   };
 }
