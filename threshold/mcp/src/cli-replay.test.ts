@@ -283,6 +283,7 @@ describe('startReplay waits for the replay to catch up', () => {
         sleep: async (ms) => {
           sleeps.push(ms);
         },
+        now: () => 0,
       },
     );
     expect(opened).toBe(1);
@@ -309,9 +310,71 @@ describe('startReplay waits for the replay to catch up', () => {
         sleep: async (ms) => {
           sleeps.push(ms);
         },
+        now: () => 0,
       },
     );
     expect(sleeps).toEqual([1000, 2000, 4000, 8000, 16000]);
+    expect(exits).toEqual([1]);
+  });
+
+  it('exits non-zero at the fifth failure when each reopened consumer ends at once', async () => {
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    let opened = 0;
+    await runStreamLoop(
+      feed(),
+      async () => {},
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          return feed();
+        },
+        stopping: () => false,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => 0,
+      },
+    );
+    expect(opened).toBe(5);
+    expect(sleeps).toEqual([1000, 2000, 4000, 8000, 16000]);
+    expect(exits).toEqual([1]);
+  });
+
+  it('resets the failures after a reopened consumer runs 60 s, so the next wait is 1 s again', async () => {
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    const plan = ['flap', 'flap', 'flap', 'long'];
+    let clock = 0;
+    let opened = 0;
+    await runStreamLoop(
+      feed(),
+      async () => {},
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          if (plan.shift() !== 'long') return feed();
+          return (async function* () {
+            clock += 60_000;
+          })();
+        },
+        stopping: () => false,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => clock,
+      },
+    );
+    expect(opened).toBe(9);
+    expect(sleeps).toEqual([1000, 2000, 4000, 8000, 1000, 2000, 4000, 8000, 16000]);
     expect(exits).toEqual([1]);
   });
 

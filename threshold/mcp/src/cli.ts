@@ -210,6 +210,8 @@ export const REPLAY_CATCHUP_MS = 30_000;
 export const RESTART_ATTEMPTS = 5;
 /** How many first deliveries of stream sequences the replay remembers when it counts settled messages. */
 const SEEN_LIMIT = 10_000;
+/** How long a reopened consumer must stay open before its failures are forgotten, in ms. */
+const HEALTHY_MS = 60_000;
 
 /** One delivered stream message: its sequence, its body and the acknowledgement; a nak may set a delay. */
 export interface StreamMessage {
@@ -225,6 +227,8 @@ export interface StreamRestart {
   stopping(): boolean;
   exit(code: number): void;
   sleep(ms: number): Promise<void>;
+  /** Milliseconds on a clock that only moves forward; a consumer open for HEALTHY_MS resets the failures. */
+  now(): number;
 }
 
 /** Counts of what the stream loop set aside: unparsable bodies, failed handlings and dropped messages. */
@@ -258,10 +262,14 @@ export async function runStreamLoop(
   restart?: StreamRestart,
 ): Promise<void> {
   const attempts = new Map<number, number>();
+  const failures = { count: 0 };
   let current = messages;
+  let openedAt = restart?.now() ?? 0;
   for (;;) {
+    let delivered = false;
     try {
       for await (const message of current) {
+        delivered = true;
         try {
           await settleOne(message, onMessage, counters, log, attempts);
         } catch (error) {
@@ -274,35 +282,43 @@ export async function runStreamLoop(
       log({ event: 'stream_loop_stopped', ...errorFields(error) });
     }
     if (restart === undefined || restart.stopping()) return;
-    const next = await reopenOrExit(restart, log);
+    if (delivered || restart.now() - openedAt >= HEALTHY_MS) failures.count = 0;
+    const next = await reopenOrExit(restart, failures, log);
     if (next === null) return;
     current = next;
+    openedAt = restart.now();
   }
 }
 
 /**
- * Reopens the consumer after an unexpected end, waiting 1 s, 2 s, 4 s, 8 s and then 16 s before each
- * of RESTART_ATTEMPTS tries. When every try fails it asks the process to exit non-zero (so the container
- * restarts) and resolves null; a stop request during the wait resolves null without an exit.
+ * Reopens the consumer after an unexpected end. Each try adds one to `failures.count`, which a healthy
+ * run resets (see runStreamLoop), so a consumer that keeps ending right after a reopen keeps counting.
+ * The tries wait 1 s, 2 s, 4 s, 8 s and then 16 s. At RESTART_ATTEMPTS failures it asks the process to
+ * exit non-zero (so the container restarts) and resolves null; a stop request during a wait resolves
+ * null without an exit.
  */
 async function reopenOrExit(
   restart: StreamRestart,
+  failures: { count: number },
   log: (line: Record<string, string | number>) => void,
 ): Promise<AsyncIterable<StreamMessage> | null> {
-  for (let attempt = 1; attempt <= RESTART_ATTEMPTS; attempt++) {
-    await restart.sleep(Math.min(30_000, 1_000 * 2 ** (attempt - 1)));
+  for (;;) {
+    if (failures.count >= RESTART_ATTEMPTS) {
+      log({ event: 'stream_loop_exhausted', attempts: RESTART_ATTEMPTS });
+      restart.exit(1);
+      return null;
+    }
+    failures.count++;
+    await restart.sleep(Math.min(30_000, 1_000 * 2 ** (failures.count - 1)));
     if (restart.stopping()) return null;
     try {
       const messages = await restart.reopen();
-      log({ event: 'stream_loop_reopened', attempt });
+      log({ event: 'stream_loop_reopened', attempt: failures.count });
       return messages;
     } catch (error) {
-      log({ event: 'stream_loop_reopen_failed', attempt, ...errorFields(error) });
+      log({ event: 'stream_loop_reopen_failed', attempt: failures.count, ...errorFields(error) });
     }
   }
-  log({ event: 'stream_loop_exhausted', attempts: RESTART_ATTEMPTS });
-  restart.exit(1);
-  return null;
 }
 
 async function settleOne(
@@ -372,6 +388,8 @@ export async function startReplay(
     exit?: (code: number) => void;
     /** Waits between reopen attempts; defaults to a timer. */
     sleep?: (ms: number) => Promise<void>;
+    /** Reads the clock for the healthy-run check; defaults to Date.now. */
+    now?: () => number;
   },
 ): Promise<{ stop(): Promise<void> }> {
   const { log, waitMs } = options;
@@ -395,6 +413,7 @@ export async function startReplay(
     stopping: () => stopping,
     exit: options.exit ?? ((code) => process.exit(code)),
     sleep: options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
+    now: options.now ?? (() => Date.now()),
   };
   void runStreamLoop(
     replay.messages,
