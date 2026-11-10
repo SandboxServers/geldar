@@ -18,7 +18,12 @@ export interface SseOptions {
   start: () => Promise<ThoughtCursor>;
   /** Thoughts after a cursor, oldest first. Each row carries `cursor_at` and `thought_id`. */
   fetch: (after: ThoughtCursor) => Promise<Row[]>;
+  /** Receives one line per poll error at most once a minute: the event name and a sanitized error code. */
+  log?: (entry: { event: 'glass_poll_error'; code: string }) => void;
 }
+
+/** At most one `glass_poll_error` line per this many milliseconds. */
+const ERROR_LOG_MS = 60_000;
 
 export interface SseStats {
   clients: number;
@@ -36,10 +41,21 @@ interface Client {
   closed: boolean;
 }
 
+/** An SSE field value on one line: a CR, LF or NUL in it would end the line or the field early, so it is removed. */
+function sseField(value: string): string {
+  return value.replace(/[\r\n\0]/g, '');
+}
+
+/** A database or network error code when it is a plain token; anything else is 'unknown'. */
+function errorCode(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[A-Za-z0-9_]{1,32}$/.test(code) ? code : 'unknown';
+}
+
 /** The SSE body for one thought: the row without its cursor column, JSON on one data line. */
 function thoughtFrame(row: Row): string {
   const { cursor_at: _cursor, ...payload } = row;
-  const id = String(row.thought_id ?? '');
+  const id = sseField(String(row.thought_id ?? ''));
   return `event: thought\nid: ${id}\ndata: ${JSON.stringify(payload)}\n\n`;
 }
 
@@ -52,6 +68,7 @@ export class SseHub {
   private polling = false;
   /** Bumped when the hub stops, so a poll that was in flight cannot deliver to a later stream. */
   private generation = 0;
+  private lastErrorLogMs = Number.NEGATIVE_INFINITY;
 
   private readonly options: SseOptions;
 
@@ -131,12 +148,23 @@ export class SseHub {
         this.broadcast(thoughtFrame(row));
         this.cursor = { at: String(row.cursor_at ?? ''), id: String(row.thought_id ?? '') };
       }
-    } catch {
-      // The error text can name the database, so it is counted, not sent or logged here.
-      if (generation === this.generation) this.counters.pollErrors += 1;
+    } catch (err) {
+      // The error text can name the database, so only its code is logged, and not more than once a minute.
+      if (generation === this.generation) {
+        this.counters.pollErrors += 1;
+        this.logPollError(err);
+      }
     } finally {
       this.polling = false;
     }
+  }
+
+  private logPollError(err: unknown): void {
+    const { log } = this.options;
+    const now = Date.now();
+    if (log === undefined || now - this.lastErrorLogMs < ERROR_LOG_MS) return;
+    this.lastErrorLogMs = now;
+    log({ event: 'glass_poll_error', code: errorCode(err) });
   }
 
   private heartbeat(): void {
