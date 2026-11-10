@@ -111,3 +111,31 @@ Branch `fix/a1-admission-nats` from `wave6-main`. One commit per item, in priori
 - `./geldar.ps1 check`: exit 0 (349 test files passed, 15 skipped; 3828 tests passed, 59 skipped).
   The first run failed only on the override's standalone compose config, fixed in 61a03f2. No
   flaky test failed, so no re-run was needed beyond that one.
+
+## Item 4: Body crash reconciliation (steps 1-2)
+
+- Step 1, commit 8728c60: `recover` (golem/src/body/restart.ts, `closeLostIntent`) emits an
+  `interrupted` end event with detail `body_restarted` for the checkpoint's intent when a restart
+  discards an expired or unknown-program checkpoint. The record id carries the tick, so a repeat at
+  the same tick dedupes. Test: `restart.test.ts`, "closes the intent of an expired or unknown-program
+  checkpoint as interrupted". Mutation: removing the expired-branch call fails it (confirmed, restored
+  from a scratchpad copy).
+- Step 2, commit e391ed4: a replacing intent no longer deletes the life's checkpoint. `startIntentRun`
+  (golem/src/body/executor-intent.ts) ends the old intent with `keepCheckpoint`, and `Executor.end`
+  (golem/src/body/executor.ts) skips the observer `ended` call. The new intent's checkpoint overwrites
+  the one per-life key; an intent that fails before it runs ends and deletes it as before. Test:
+  `restart.test.ts`, "a replacing intent overwrites the checkpoint of the one it replaces". Mutation
+  (dropping the `true`): fails with deletes 1, expected 0 (confirmed, restored).
+- Deviation, no-checkpoint case (open): with no checkpoint, the Body does not know the previous intent
+  id, so a previous generation's lost end event leaves its projection row open. Only the DB knows the
+  id. Closing it needs a `body_started` event (contract/ schema and generator, a projection rule in
+  eventsink/src/projection.ts that closes older-generation non-final intents of the life). That is
+  about 30 files, so it is not in this packet. Location: golem/src/body/restart.ts `recover`, the
+  `no_checkpoint` return.
+- Deviation, running actions (open): the lost intent's action rows stay `running`; action ids are not
+  in the checkpoint. Location: golem/src/body/executor-action.ts.
+- Open follow-up (spec/decision 0020): the two-phase `prepared` receipt is NOT implemented.
+  executor-action.ts writes the action `accepted`, `running`, the effect, then `committed` or
+  `aborted` (around lines 60-93), with no `prepared` receipt. It matters when economic actions arrive.
+- `./geldar.ps1 check`: exit 0 on the first run (349 test files passed, 15 skipped; 3830 tests passed,
+  59 skipped). No flaky test failed, so no re-run was needed.
