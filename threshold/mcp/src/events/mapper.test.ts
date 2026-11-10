@@ -94,6 +94,7 @@ describe('mapMindEvent', () => {
       actions: [action],
     });
     expect(mapMindEvent(ok, 1, ctx)).toMatchObject([
+      { kind: 'plan_result', thought_id: 't' },
       { kind: 'intent_finished', outcome: 'completed' },
     ]);
     const bad = event('plan_result', {
@@ -103,6 +104,7 @@ describe('mapMindEvent', () => {
       actions: [action],
     });
     expect(mapMindEvent(bad, 2, ctx)).toMatchObject([
+      { kind: 'plan_result', thought_id: 't' },
       { kind: 'intent_finished', outcome: 'failed' },
     ]);
     const none = event('plan_result', {
@@ -111,7 +113,7 @@ describe('mapMindEvent', () => {
       failed_at: null,
       actions: [],
     });
-    expect(mapMindEvent(none, 3, ctx)).toEqual([]);
+    expect(mapMindEvent(none, 3, ctx)).toMatchObject([{ kind: 'plan_result', thought_id: 't' }]);
   });
 
   it('maps a no_plan wake to a failed intent and clears the run', () => {

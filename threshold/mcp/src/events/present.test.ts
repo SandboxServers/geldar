@@ -2,6 +2,20 @@ import type { SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { fitResult, toPlayerEvents, WORLD_TEXT_NOTE, worldText } from './present.ts';
 
+it('never shows a plan_result entry to the player, in events or in world text', () => {
+  const internal: SimEvent = {
+    seq: 3,
+    tick: 3,
+    atMs: 3,
+    kind: 'plan_result',
+    wakeOn: null,
+    thought_id: 'th_1',
+    said: true,
+  };
+  expect(toPlayerEvents([internal])).toEqual([]);
+  expect(worldText([internal])).toEqual({});
+});
+
 function line(seq: number, text: string): SimEvent {
   return {
     seq,

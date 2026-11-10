@@ -26,7 +26,8 @@ export interface WakeEvent {
     | 'proposal'
     | 'day_night'
     | 'intent_finished'
-    | 'reflex';
+    | 'reflex'
+    | 'plan_result';
   /** For speech: was the agent addressed directly? */
   addressed?: boolean;
   /** For agent_approached: how far away the other agent is. */

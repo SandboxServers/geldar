@@ -35,8 +35,13 @@ export class RingEventLog implements PlayerEventLog {
   async append(lifeId: string, event: SimEvent): Promise<void> {
     const ring = this.ringOf(lifeId);
     const newest = ring.events[ring.events.length - 1];
-    // A sequence already held is ignored: the stream redelivers after a restart.
-    if (newest !== undefined && event.seq <= newest.seq) return;
+    // A sequence already held is ignored: the stream redelivers after a restart. One stream message
+    // may map to two entries of different kinds (a plan_result), so a kind not yet held at that seq is kept.
+    if (newest !== undefined && event.seq < newest.seq) return;
+    if (newest !== undefined && event.seq === newest.seq) {
+      const held = ring.events.some((e) => e.seq === event.seq && e.kind === event.kind);
+      if (held) return;
+    }
     ring.events.push(event);
     if (ring.events.length > this.capacity) {
       const gone = ring.events.shift();

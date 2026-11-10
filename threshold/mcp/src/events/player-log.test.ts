@@ -22,6 +22,15 @@ describe('RingEventLog', () => {
     expect(got.dropped).toBe(0);
   });
 
+  it('keeps two kinds that one stream message maps to at the same sequence', async () => {
+    const log = new RingEventLog();
+    await log.append(LIFE, { ...ev(1), kind: 'plan_result', thought_id: 'th_1', said: true });
+    await log.append(LIFE, { ...ev(1), kind: 'intent_finished', outcome: 'completed' });
+    await log.append(LIFE, { ...ev(1), kind: 'intent_finished', outcome: 'failed' });
+    const got = await log.since(LIFE, 0);
+    expect(got.events.map((e) => e.kind)).toEqual(['plan_result', 'intent_finished']);
+  });
+
   it('counts exactly the events that left the ring when there is no backfill', async () => {
     const log = new RingEventLog({ capacity: 3 });
     await fill(log, 1, 5);

@@ -16,6 +16,10 @@ export interface SimEvent extends WakeEvent {
   name?: string;
   /** For proposal: the proposal id. */
   id?: string;
+  /** For plan_result: the thought it answers. Internal: no player-facing view shows it. */
+  thought_id?: string;
+  /** For plan_result: whether the thought's say text was spoken. Internal, as thought_id. */
+  said?: boolean;
 }
 
 /** How many events the log keeps. */

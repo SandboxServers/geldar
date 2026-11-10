@@ -41,14 +41,14 @@ export interface SayDeps {
   expiresAfterTicks: number;
 }
 
-/** The `plan_result` the Body wrote for a thought, if it has arrived. */
+/** The `plan_result` the Body wrote for a thought, if it has arrived (the mapper's internal entry). */
 export function planResultFor(
   events: readonly object[],
   thoughtId: string,
 ): { said: boolean } | undefined {
   for (const event of events) {
-    const e = event as { type?: unknown; thought_id?: unknown; said?: unknown };
-    if (e.type === 'plan_result' && e.thought_id === thoughtId && typeof e.said === 'boolean') {
+    const e = event as { kind?: unknown; thought_id?: unknown; said?: unknown };
+    if (e.kind === 'plan_result' && e.thought_id === thoughtId && typeof e.said === 'boolean') {
       return { said: e.said };
     }
   }

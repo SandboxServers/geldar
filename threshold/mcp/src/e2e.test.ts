@@ -221,7 +221,7 @@ function planResultEvent(seq: number, thoughtId: string): SimEvent {
     seq,
     tick: seq,
     atMs: 0,
-    type: 'plan_result',
+    kind: 'plan_result',
     thought_id: thoughtId,
     said: true,
   } as unknown as SimEvent;

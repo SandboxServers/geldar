@@ -1,7 +1,11 @@
+import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
+import { eventOf } from '@geldar/animus/src/link/link.fixtures.ts';
 import { createOutputValidator } from '@geldar/animus/src/validate/index.ts';
 import { validateSovereignCallPayload } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
+import { RingEventLog } from '../events/player-log.ts';
+import { handleStreamMessage } from '../events/stream.ts';
 import {
   FakeBudgetLedger,
   FakePlayerEventLog,
@@ -73,7 +77,7 @@ function replyOnce(h: Harness, said: boolean, thoughtId?: string): void {
     const event = {
       seq: 1,
       tick: 0,
-      type: 'plan_result',
+      kind: 'plan_result',
       thought_id: thoughtId ?? plan.plan.thought_id,
       said,
     } as unknown as SimEvent;
@@ -94,6 +98,38 @@ describe('say: confirmation', () => {
     expect(await balance(h)).toBe(2);
     expect(h.recorder.calls[0]?.outcome).toBe('ok');
     expect(h.recorder.calls[0]?.credits_charged).toBe(1);
+  });
+
+  it('reads the confirmation from a contract plan_result streamed through handleStreamMessage', async () => {
+    const h = harness();
+    const ring = new RingEventLog();
+    const counters = { invalid: 0 };
+    const stream = {
+      map: { identity: {} as SpeechIdentity, runs: new Map() },
+      log: ring,
+      lives: () => [],
+    };
+    let written = false;
+    h.clock.beforeSleep = async () => {
+      const plan = h.body.plans[0];
+      if (written || plan === undefined) return;
+      written = true;
+      const raw = {
+        ...eventOf('plan_result', 1, CALLER.lifeId),
+        payload: {
+          thought_id: plan.plan.thought_id,
+          intent: 'none',
+          failed_at: null,
+          actions: [],
+          said: true,
+        },
+      };
+      await handleStreamMessage(1, raw, stream, counters);
+    };
+    const result = await sayTool({ ...h.deps, events: ring }, CALLER, 'Hello there');
+    expect(counters.invalid).toBe(0);
+    expect(result).toEqual({ spoken: true, budget_remaining_thoughts: 2 });
+    expect(await balance(h)).toBe(2);
   });
 
   it('reports unconfirmed when no plan_result for its thought comes in time, and keeps the credit', async () => {

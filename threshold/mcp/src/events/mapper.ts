@@ -62,9 +62,17 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
       ];
     }
     case 'plan_result': {
+      // The internal entry is what `say` reads for its confirmation. No player view shows it.
       const p = event.payload;
-      if (p.intent !== 'none' || p.actions.length === 0) return [];
+      const internal: SimEvent = {
+        ...base,
+        kind: 'plan_result',
+        thought_id: p.thought_id,
+        said: p.said,
+      };
+      if (p.intent !== 'none' || p.actions.length === 0) return [internal];
       return [
+        internal,
         {
           ...base,
           kind: 'intent_finished',
