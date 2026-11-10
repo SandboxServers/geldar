@@ -41,7 +41,7 @@ export class FrontLimits {
    * this check for a cached hit, so authenticated traffic is never blocked by failed-auth state.
    */
   authBlocked(address: string, nowMs: number): number | undefined {
-    const decision = this.limiter.peek?.(`auth-failed:address:${address}`, nowMs);
+    const decision = this.limiter.peek(`auth-failed:address:${address}`, nowMs);
     if (decision === undefined || decision.allowed) return undefined;
     return retrySeconds(decision.retryAfterMs);
   }

@@ -161,8 +161,8 @@ export interface RateDecision {
 export interface RateLimiter {
   /** Takes one token from the bucket when there is one. */
   take(bucket: string, nowMs: number): RateDecision;
-  /** Says whether the bucket has a token, without taking one. Optional: a limiter without it skips the pre-check. */
-  peek?(bucket: string, nowMs: number): RateDecision;
+  /** Says whether the bucket has a token, without taking one. The failed-auth pre-check depends on it. */
+  peek(bucket: string, nowMs: number): RateDecision;
 }
 
 /** Periodic ticks for an open `wait`, so its stream never idles past a proxy. */

@@ -157,6 +157,9 @@ beforeEach(async () => {
         taken.push(bucket);
         return limiter.take(bucket, nowMs);
       },
+      peek(bucket, nowMs) {
+        return limiter.peek(bucket, nowMs);
+      },
     },
     createSession: () => makeServer(),
     log: () => undefined,

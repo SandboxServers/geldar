@@ -60,11 +60,23 @@ async function startWithDownStore(logs: Record<string, string | number>[]): Prom
     store,
     limiter: open,
     createSession: () =>
-      new McpServer({ name: 'unavailable-test', version: '0.0.0' }, { capabilities: { tools: {} } }),
+      new McpServer(
+        { name: 'unavailable-test', version: '0.0.0' },
+        { capabilities: { tools: {} } },
+      ),
     log: (line) => logs.push(line),
   });
   return door.listen(0);
 }
+
+describe('RateLimiter', () => {
+  it('requires peek: a limiter without it fails the type check, so the pre-check cannot fail open', () => {
+    // If peek is optional again, this line stops being an error and `tsc` fails on the unused directive.
+    // @ts-expect-error peek is required
+    const withoutPeek: RateLimiter = { take: () => ({ allowed: true, retryAfterMs: 0 }) };
+    expect(typeof withoutPeek.take).toBe('function');
+  });
+});
 
 describe('front door when the token store fails', () => {
   it('answers 503 with a generic body, never the database error, and logs only the class', async () => {

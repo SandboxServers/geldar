@@ -242,6 +242,11 @@ export class ScriptedRateLimiter implements RateLimiter {
     this.taken.push({ bucket, nowMs });
     return this.script.shift() ?? { allowed: true, retryAfterMs: 0 };
   }
+
+  /** Answers with the next scripted decision without consuming it, and records nothing. */
+  peek(_bucket: string, _nowMs: number): RateDecision {
+    return this.script[0] ?? { allowed: true, retryAfterMs: 0 };
+  }
 }
 
 /** A `KeepAlive` that never ticks by itself: a test calls `fire` to tick every open timer. */
