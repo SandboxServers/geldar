@@ -99,6 +99,8 @@ describe('damage with an intent running', () => {
     expect(r.decisions.map((d) => d.reason)).toEqual(['unexpected_damage']);
     r.attention.thoughtSettled('planned');
     r.time.advance(1_000);
+    // Past the 20 s spacing too: a damage candidate that was not folded would be emitted by then.
+    r.time.advance(30_000);
     expect(r.decisions).toHaveLength(1);
   });
 
