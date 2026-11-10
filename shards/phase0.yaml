@@ -107,8 +107,9 @@ sovereign:
     keepalive_seconds: 25        # a notification on an open wait's stream, so the stream never idles past a proxy
     max_body_bytes: 65536        # the largest request body the MCP reads
     max_result_bytes: 16384      # the largest tool result, after trimming
-    max_connections: 256         # the most open connections the listener holds at once
-    max_connections_per_address: 32  # the most open POSTs and GET streams one client address holds; a non-proxy peer is also capped at this many sockets
+    # max_connections and max_connections_per_address are derived from owner_cap_owner when left out:
+    # 4 open requests per agent times the owner cap per address (80 at 20), and 4 owners' worth in total.
+    # Set either key to override. A non-proxy peer is also capped at the per-address count in sockets.
     trusted_proxies: []          # cloudflared's container address (IP or CIDR); its CF-Connecting-IP names the client
     replay_minutes: 60           # how long a replayed or revoked token stays under watch
   wake:

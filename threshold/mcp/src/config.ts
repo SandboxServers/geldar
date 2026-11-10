@@ -129,6 +129,19 @@ const HOST_TOKEN = /^[a-z0-9.-]+$/;
 const DEFAULT_DEV_HOSTS = 'host.docker.internal,127.0.0.1,localhost';
 /** Used when the shard file leaves `rate_limits.handshake_per_minute` out: above the 60 calls a minute. */
 const HANDSHAKE_PER_MINUTE_DEFAULT = 300;
+/** Open requests one agent may hold (a `wait` holds one). The caps are multiples of this. */
+const OPEN_PER_AGENT = 4;
+/** Owners the listener's total cap is sized for when `max_connections` is left out. */
+const OWNERS_SIZED_FOR = 4;
+
+/**
+ * The connection caps when the shard file leaves them out, derived from the owner's own cap: one
+ * address carries an owner's agents behind the tunnel, and the listener carries several owners.
+ */
+export function derivedCaps(ownerCapOwner: number): { perAddress: number; global: number } {
+  const perAddress = Math.max(1, OPEN_PER_AGENT * ownerCapOwner);
+  return { perAddress, global: perAddress * OWNERS_SIZED_FOR };
+}
 
 /** The repository root: the nearest directory above this file that holds pnpm-workspace.yaml. */
 export function repoRoot(): string {
@@ -218,22 +231,24 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
   if (start !== 'on_demand' && start !== 'always') {
     throw new Error(`sovereign.presence.start must be on_demand or always, not '${start}'`);
   }
+  const ownerCapOwner = int(block, 'owner_cap_owner', 'sovereign', 0, 50);
+  const caps = derivedCaps(ownerCapOwner);
   return {
     allowed: bool(block, 'allowed', 'sovereign'),
     harnesses,
     ownerCapDefault: int(block, 'owner_cap_default', 'sovereign', 0, 50),
-    ownerCapOwner: int(block, 'owner_cap_owner', 'sovereign', 0, 50),
+    ownerCapOwner,
     port: int(mcp, 'port', 'sovereign.mcp', 1, 65535),
     trustedProxies: proxyList(mcp, 'trusted_proxies', 'sovereign.mcp'),
     clientIpHeader: headerName(mcp.client_ip_header, 'sovereign.mcp.client_ip_header'),
-    maxConnections: optionalInt(mcp, 'max_connections', 'sovereign.mcp', 1, 4096, 256),
+    maxConnections: optionalInt(mcp, 'max_connections', 'sovereign.mcp', 1, 4096, caps.global),
     maxConnectionsPerAddress: optionalInt(
       mcp,
       'max_connections_per_address',
       'sovereign.mcp',
       1,
       4096,
-      32,
+      caps.perAddress,
     ),
     waitCapSeconds: int(mcp, 'wait_cap_seconds', 'sovereign.mcp', 1, 240),
     keepaliveSeconds: int(mcp, 'keepalive_seconds', 'sovereign.mcp', 1, 240),

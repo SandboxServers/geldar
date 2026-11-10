@@ -33,11 +33,28 @@ describe('loadMcpConfig', () => {
       publicHost: null,
       trustedProxies: [],
       clientIpHeader: 'cf-connecting-ip',
-      maxConnections: 256,
-      maxConnectionsPerAddress: 32,
+      maxConnections: 320,
+      maxConnectionsPerAddress: 80,
     });
     expect(config.nats.url).toBe('nats://127.0.0.1:4222');
     expect(config.postgres.user).toBe('geldar_mcp');
+  });
+
+  it('derives the connection caps from owner_cap_owner when the shard file leaves them out', () => {
+    const doc = shardDoc();
+    doc.sovereign.owner_cap_owner = 5;
+    const config = parseMcpConfig(doc, { env: ENV });
+    expect(config.http.maxConnectionsPerAddress).toBe(20);
+    expect(config.http.maxConnections).toBe(80);
+  });
+
+  it('keeps an explicit connection cap over the derived one', () => {
+    const doc = shardDoc();
+    doc.sovereign.mcp.max_connections_per_address = 7;
+    doc.sovereign.mcp.max_connections = 9;
+    const config = parseMcpConfig(doc, { env: ENV });
+    expect(config.http.maxConnectionsPerAddress).toBe(7);
+    expect(config.http.maxConnections).toBe(9);
   });
 
   it('names the missing key when a sovereign key is absent', () => {

@@ -75,8 +75,8 @@ describe('scoping and limits', () => {
   });
 
   it('shares the owner budget across players and refuses past it', async () => {
-    // Each openSession's initialize also draws on the owner, so two sessions leave three for the calls.
-    rig.limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 5 : 1000));
+    // Initialize draws no owner token, so the owner's three are all for the calls that follow.
+    rig.limiter = new CapLimiter((bucket) => (bucket.startsWith('owner:') ? 3 : 1000));
     await rig.restart();
     const sidA = await rig.openSession('/p/aa', TOKEN_A);
     const sidB = await rig.openSession('/p/bb', TOKEN_B);

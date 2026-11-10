@@ -101,8 +101,10 @@ export interface BucketRule {
 export const GLOBAL_FAILED_AUTH_PER_MINUTE = 300;
 
 /**
- * The rule for each bucket, by name: the front door's `player:`, `owner:`, `auth-failed:` buckets
- * and the tools' `act:` and `say:` buckets, whose minimum spacing is one token per N seconds.
+ * The rule for each bucket, by name: the front door's `player:`, `owner:`, `owner-agent:`,
+ * `auth-failed:` buckets and the tools' `act:` and `say:` buckets, whose minimum spacing is one
+ * token per N seconds. `agentsPerOwner` is the owner's cap: each agent's reserved share of the
+ * owner's calls is the owner rate split that many ways (at least one call a minute).
  */
 export function bucketRules(
   limits: Pick<
@@ -114,11 +116,14 @@ export function bucketRules(
     | 'actMinSeconds'
     | 'sayMinSeconds'
   >,
+  agentsPerOwner = 1,
 ): (bucket: string) => BucketRule {
   const perMinute = (n: number): BucketRule => ({ capacity: n, perMinute: n });
   const spaced = (seconds: number): BucketRule =>
     seconds > 0 ? { capacity: 1, perMinute: 60 / seconds } : perMinute(limits.callsPerMinute);
+  const share = Math.max(1, Math.floor(limits.ownerCallsPerMinute / Math.max(1, agentsPerOwner)));
   return (bucket) => {
+    if (bucket.startsWith('owner-agent:')) return perMinute(share);
     if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
     if (bucket.startsWith('auth-failed:address:')) return perMinute(limits.failedAuthPerMinute);
     if (bucket === 'auth-failed:global') return perMinute(GLOBAL_FAILED_AUTH_PER_MINUTE);
@@ -290,7 +295,9 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       intentRunTooLongMs: config.sovereign.wake.intentRunTooLongSeconds * 1000,
     };
     const recorder = new SovereignCallRecorder({ publish: (id, p) => nats.publishCall(id, p) });
-    const limiter = tokenBucketLimiter(bucketRules(config.sovereign.rateLimits));
+    const limiter = tokenBucketLimiter(
+      bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
+    );
     const world = createWorld({
       players: new PgPlayerDirectory(pool),
       body,

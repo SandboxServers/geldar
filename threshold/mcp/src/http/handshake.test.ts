@@ -182,7 +182,7 @@ async function openSession(token = TOKEN_A): Promise<string> {
 describe('the handshake bucket', () => {
   it('takes initialize and resources/read from the handshake bucket until it is empty', async () => {
     const session = await openSession();
-    expect(taken).toEqual(['handshake:aa', 'owner:owner-1']);
+    expect(taken).toEqual(['handshake:aa']);
 
     const second = await send(port, resourceRead(2), { 'mcp-session-id': session });
     const third = await send(port, resourceRead(3), { 'mcp-session-id': session });
@@ -217,8 +217,8 @@ describe('the handshake bucket', () => {
 
     const other = await send(port, INIT, {}, TOKEN_B, '/p/bb');
     expect(other.status).not.toBe(429);
-    // The handshake is taken first, then the owner's bucket, so the handshake is second from last.
-    expect(taken.at(-2)).toBe('handshake:bb');
+    // Handshake traffic takes only its own handshake token, so that token is the last one taken.
+    expect(taken.at(-1)).toBe('handshake:bb');
   });
 });
 

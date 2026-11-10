@@ -44,10 +44,10 @@ export const BODY_LIMIT_BYTES = 64 * 1024;
 const HEADERS_TIMEOUT_MS = 10_000;
 // Receiving one whole request; a held response is not cut, the timeout ends at the request's end.
 const REQUEST_TIMEOUT_MS = 30_000;
-// Defaults for the config keys max_connections and max_connections_per_address (phase0.yaml). Behind
-// the tunnel one address carries every player, so 32 per address fits about eight players' requests.
-const MAX_CONNECTIONS = 256;
-const MAX_CONNECTIONS_PER_ADDRESS = 32;
+// Fallbacks for a caller that passes no cap: the config derives the real ones from owner_cap_owner (20):
+// 4 open requests per agent times the owner cap per address, and that times 4 owners for the listener.
+const MAX_CONNECTIONS = 320;
+const MAX_CONNECTIONS_PER_ADDRESS = 80;
 
 function stderrSink(line: Record<string, string | number>): void {
   process.stderr.write(`${JSON.stringify(line)}\n`);
@@ -194,13 +194,20 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     // peer: behind a tunnel that is the proxy for every client.
     beforeBody(playerId, req, res): Refusal | undefined {
       const address = addressOf(req);
+      const ownerId = players.get(req)?.ownerId ?? playerId;
       if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
+      if (!gates.acquireOwner(ownerId, maxPerAddress)) {
+        gates.releaseAddress(address);
+        return tooManyOpen();
+      }
       if (!gates.acquire(playerId)) {
+        gates.releaseOwner(ownerId);
         gates.releaseAddress(address);
         return tooManyOpen();
       }
       const held = releaseOnClose(res, () => {
         gates.release(playerId);
+        gates.releaseOwner(ownerId);
         gates.releaseAddress(address);
       });
       return held ? undefined : clientGone();
@@ -216,13 +223,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
       const player = players.get(res.req);
       if (player === undefined) return { status: 401, message: 'unauthorized' };
-      // Every other method (initialize, resources/read, ...) takes from the cheaper handshake bucket
-      // and from its owner's bucket, so a player's non-call traffic cannot outrun the owner's budget.
-      if (!isToolCall(body)) {
-        const waitSec = gates.handshake(playerId, now());
-        if (waitSec !== undefined) return refusedRateLimit(waitSec);
-        return refusedRateLimit(gates.owner(player.ownerId, now()));
-      }
+      // Every other method (initialize, resources/read, ...) takes only from the handshake bucket:
+      // handshake traffic draws no call token, so it cannot use up an agent's or an owner's calls.
+      if (!isToolCall(body)) return refusedRateLimit(gates.handshake(playerId, now()));
       return refusedRateLimit(gates.call(playerId, player.ownerId, now()));
     },
   });

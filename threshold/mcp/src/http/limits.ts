@@ -18,6 +18,7 @@ export class FrontLimits {
   private readonly limiter: RateLimiter;
   private readonly open = new Map<string, number>();
   private readonly openByAddress = new Map<string, number>();
+  private readonly openByOwner = new Map<string, number>();
 
   constructor(limiter: RateLimiter) {
     this.limiter = limiter;
@@ -50,27 +51,29 @@ export class FrontLimits {
     return undefined;
   }
 
-  /** Takes one call from the player's bucket and one from the owner's. Seconds to wait, or undefined. */
+  /**
+   * Takes one call for the player. The order is the agent's reserved share of the owner's bucket,
+   * then the owner's bucket, then the player's own. Each refusal stops before the later takes: an
+   * agent over its share never drains the owner's pool, and an owner refusal never burns the
+   * player's token. Seconds to wait, or undefined.
+   */
   call(playerId: string, ownerId: string, nowMs: number): number | undefined {
-    const byPlayer = this.limiter.take(`player:${playerId}`, nowMs);
-    if (!byPlayer.allowed) return retrySeconds(byPlayer.retryAfterMs);
+    const share = this.limiter.take(`owner-agent:${ownerId}:${playerId}`, nowMs);
+    if (!share.allowed) return retrySeconds(share.retryAfterMs);
     const byOwner = this.limiter.take(`owner:${ownerId}`, nowMs);
     if (!byOwner.allowed) return retrySeconds(byOwner.retryAfterMs);
+    const byPlayer = this.limiter.take(`player:${playerId}`, nowMs);
+    if (!byPlayer.allowed) return retrySeconds(byPlayer.retryAfterMs);
     return undefined;
   }
 
   /**
    * Takes one token from the player's handshake bucket, which carries initialize, resources/read
-   * and the other non-call methods at its own, higher rate. Seconds to wait, or undefined.
+   * and the other non-call methods at its own, higher rate. They take no call token. Seconds to
+   * wait, or undefined.
    */
   handshake(playerId: string, nowMs: number): number | undefined {
     const decision = this.limiter.take(`handshake:${playerId}`, nowMs);
-    return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
-  }
-
-  /** Takes one token from the owner's bucket, the one tool calls share. Seconds to wait, or undefined. */
-  owner(ownerId: string, nowMs: number): number | undefined {
-    const decision = this.limiter.take(`owner:${ownerId}`, nowMs);
     return decision.allowed ? undefined : retrySeconds(decision.retryAfterMs);
   }
 
@@ -82,6 +85,16 @@ export class FrontLimits {
   /** Counts one open request for the player as closed. */
   release(playerId: string): void {
     freeSlot(this.open, playerId);
+  }
+
+  /** Counts one more open request for the owner, across its agents and addresses; false at the cap. */
+  acquireOwner(ownerId: string, cap: number): boolean {
+    return takeSlot(this.openByOwner, ownerId, cap);
+  }
+
+  /** Counts one open request for the owner as closed. */
+  releaseOwner(ownerId: string): void {
+    freeSlot(this.openByOwner, ownerId);
   }
 
   /**
