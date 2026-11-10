@@ -226,9 +226,41 @@ export function registryFromConfig(cfg: GolemConfig): BotRegistry | undefined {
 }
 
 /**
- * Deletes a life's registry key over one NATS connection, for the tools that retire a life
- * (`players down`, `adam stop`, `mcp-tokens retire`). A missing key is not an error. Throws when
- * NATS or the bucket cannot be reached; the caller reports it.
+ * The keys whose entry names `lifeId` in its `life_id`. The Body writes its entry under the
+ * lowercase username, which is the life id only when the username already is one (`GolemBench`
+ * is written as `golembench`), so the removal cannot derive the key from the life id alone.
+ */
+async function keysForLife(
+  kv: Awaited<ReturnType<Kvm['open']>>,
+  lifeId: string,
+): Promise<string[]> {
+  const found: string[] = [];
+  for await (const key of await kv.keys()) {
+    const entry = await kv.get(key);
+    if (entry === null) continue;
+    let value: unknown;
+    try {
+      value = entry.json();
+    } catch {
+      continue;
+    }
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'life_id' in value &&
+      value.life_id === lifeId
+    ) {
+      found.push(key);
+    }
+  }
+  return found;
+}
+
+/**
+ * Deletes a life's registry keys over one NATS connection, for the tools that retire a life
+ * (`players down`, `adam stop`, `mcp-tokens retire`). The key of the life id itself is always
+ * deleted, and so is every other key whose entry names the life. A missing key is not an error.
+ * Throws when NATS or the bucket cannot be reached; the caller reports it.
  */
 export async function removeRegistryKey(natsUrl: string, lifeId: string): Promise<void> {
   const nc = await connect({
@@ -239,7 +271,8 @@ export async function removeRegistryKey(natsUrl: string, lifeId: string): Promis
   });
   try {
     const kv = await new Kvm(jetstream(nc)).open(REGISTRY_BUCKET);
-    await kv.delete(registryKey(lifeId));
+    const keys = new Set([registryKey(lifeId), ...(await keysForLife(kv, lifeId))]);
+    for (const key of keys) await kv.delete(key);
   } finally {
     await nc.close().catch(() => undefined);
   }
