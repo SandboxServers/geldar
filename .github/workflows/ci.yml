@@ -221,6 +221,7 @@ jobs:
           threshold/mcp/test/it/scram-login.it.test.ts
           threshold/mcp/test/it/schema-check.it.test.ts
           tools/mcp-tokens/test/cli.it.test.ts
+          tools/mcp-tokens/test/owner-cap.it.test.ts
           animus/src/memory/memory.it.test.ts
           glass/test/glass.it.test.ts
           tools/adam-report/test/report.it.test.ts
