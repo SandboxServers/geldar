@@ -2,12 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { FakeClock, FakeProcesses } from '../test/fakes.ts';
 import {
   createClock,
   createFileStore,
   createGlassClient,
   createPreflight,
   createReporter,
+  createSampler,
   createSupervisor,
   readOnly,
   type SqlClient,
@@ -58,6 +60,38 @@ function recordingSql(failOn?: string): { sql: SqlClient; texts: string[] } {
     },
   };
 }
+
+describe('the sampler death count', () => {
+  it('counts death events of the life since the run start, never agents.died_at', async () => {
+    const START = Date.UTC(2026, 10, 10, 9);
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: text.includes("type = 'death'") ? [{ n: 2 }] : [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes: new FakeProcesses(),
+      clock: new FakeClock(),
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    const obs = await sampler.observe(START);
+    expect(obs.deaths).toBe(2);
+    const i = texts.findIndex((t) => t.includes("type = 'death'"));
+    expect(texts[i]).toContain('FROM events');
+    expect(texts.join('\n')).not.toContain('died_at');
+    expect(params[i]).toEqual(['ag_adam_04', new Date(START)]);
+  });
+});
 
 describe('the forbidden-flags rule', () => {
   it('no adapter or CLI source contains a volume-removing or pruning command', () => {

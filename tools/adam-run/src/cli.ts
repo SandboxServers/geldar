@@ -183,9 +183,10 @@ function runState(h: Harness, runDir: string): { state: string; last: string } {
     .filter((l) => l !== '');
   const last = lines.at(-1) ?? 'no status line yet';
   if (files.read(runPaths(runDir).abort) !== null) return { state: 'aborted', last };
-  if (lines.length > 0 && (JSON.parse(last) as { event?: string }).event === 'end') {
-    return { state: 'finished', last };
-  }
+  const event = lines.length > 0 ? (JSON.parse(last) as { event?: string }).event : undefined;
+  if (event === 'end') return { state: 'finished', last };
+  // Written only for a life that died: a survival FAIL, terminal, never retried.
+  if (event === 'ended') return { state: 'ended (life_ended)', last };
   return { state: liveOwner(h, runDir) === null ? 'stopped' : 'running', last };
 }
 
@@ -281,7 +282,7 @@ export async function runCli(
       return 0;
     }
     const st = runState(h, runDir);
-    if (st.state === 'finished' || st.state === 'aborted') {
+    if (st.state === 'finished' || st.state === 'aborted' || st.state === 'ended (life_ended)') {
       log(`the run is already ${st.state}; nothing to stop`);
       return 0;
     }
@@ -391,7 +392,13 @@ export async function runCli(
     },
     input,
   );
-  log(`run ${runId}: ${outcome.status}${outcome.status === 'aborted' ? ` (${outcome.rule})` : ''}`);
+  const detail =
+    outcome.status === 'aborted'
+      ? ` (${outcome.rule})`
+      : outcome.status === 'ended'
+        ? ` (${outcome.reason})`
+        : '';
+  log(`run ${runId}: ${outcome.status}${detail}`);
   return outcome.status === 'completed' ? 0 : 1;
 }
 

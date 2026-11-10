@@ -222,7 +222,7 @@ export function createSampler(deps: SamplerDeps): Sampler {
     }
   };
   return {
-    async observe(): Promise<Observation> {
+    async observe(runStartMs: number): Promise<Observation> {
       const atMs = deps.clock.nowMs();
       const lifeId = deps.lifeId();
       const procs = deps.processes.list();
@@ -243,9 +243,10 @@ export function createSampler(deps: SamplerDeps): Sampler {
           "SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p FROM thoughts WHERE life_id = $1 AND at > now() - interval '30 minutes'",
           [lifeId],
         );
+        // Death events, not agents.died_at: nothing in the repo writes died_at, so it would always read 0.
         const d = await q.query(
-          'SELECT count(*)::int AS n FROM agents WHERE agent_id = $1 AND died_at IS NOT NULL',
-          [lifeId],
+          "SELECT count(*)::int AS n FROM events WHERE agent_id = $1 AND type = 'death' AND at >= $2",
+          [lifeId, new Date(runStartMs)],
         );
         const i = await q.query(
           "SELECT intent_id FROM intents WHERE life_id = $1 AND state IN ('accepted','running') ORDER BY started_tick DESC NULLS LAST LIMIT 1",

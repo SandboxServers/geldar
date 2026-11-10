@@ -76,6 +76,14 @@ export type RunOutcome =
   | { status: 'refused'; missing: string[] }
   | { status: 'completed'; bodyKills: number; reportFailed: boolean }
   | {
+      /** The life died: a survival result, not a fault of the harness. Terminal; never retried automatically. */
+      status: 'ended';
+      reason: 'life_ended';
+      safeStopExit: 0 | 1;
+      bodyKills: number;
+      reportFailed: boolean;
+    }
+  | {
       status: 'aborted';
       rule: string;
       reason: string;
@@ -175,7 +183,8 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     }
   };
 
-  const abortWith = async (rule: string, reason: string): Promise<RunOutcome> => {
+  /** The safe stop, the report, then one terminal line: `abort` for a fault, `ended` for a life that died. */
+  const finish = async (event: 'abort' | 'ended', rule: string, reason: string): Promise<0 | 1> => {
     const now = clock.nowMs();
     const stop = await safeStop(
       { clock, files, processes: deps.processes, supervisor },
@@ -185,22 +194,19 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     appendStatus(
       files,
       paths.status,
-      harnessLine(
-        last,
-        now,
-        startMs,
-        'abort',
-        `${rule}: ${reason}; safe stop exit ${stop.exitCode}`,
-      ),
+      harnessLine(last, now, startMs, event, `${rule}: ${reason}; safe stop exit ${stop.exitCode}`),
     );
-    return {
-      status: 'aborted',
-      rule,
-      reason,
-      safeStopExit: stop.exitCode,
-      bodyKills,
-      reportFailed,
-    };
+    return stop.exitCode;
+  };
+
+  const abortWith = async (rule: string, reason: string): Promise<RunOutcome> => {
+    const safeStopExit = await finish('abort', rule, reason);
+    return { status: 'aborted', rule, reason, safeStopExit, bodyKills, reportFailed };
+  };
+
+  const endWithLife = async (rule: string, reason: string): Promise<RunOutcome> => {
+    const safeStopExit = await finish('ended', rule, reason);
+    return { status: 'ended', reason: 'life_ended', safeStopExit, bodyKills, reportFailed };
   };
 
   try {
@@ -236,7 +242,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
 
     let obs: Observation;
     try {
-      obs = await sampler.observe();
+      obs = await sampler.observe(startMs);
     } catch (err) {
       return abortWith('error', `the sampler failed: ${message(err)}`);
     }
@@ -252,7 +258,11 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     history.push(toSample(obs));
 
     const fired = evaluateAbort(history, now, deps.criteria);
-    if (fired !== null) return abortWith(fired.rule, fired.reason);
+    if (fired !== null) {
+      return fired.rule === 'life_ended'
+        ? endWithLife(fired.rule, fired.reason)
+        : abortWith(fired.rule, fired.reason);
+    }
     if (deps.stopRequested?.())
       return abortWith('operator_stop', 'a stop was requested from another shell');
 
