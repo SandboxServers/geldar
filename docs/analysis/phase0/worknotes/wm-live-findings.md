@@ -74,3 +74,26 @@ Each refusal and strip line was reverted in turn, and the pepper test files fail
 - `./geldar.ps1 mcp smoke` against the existing token for ag-test-01. No re-mint is needed: the
   token file is correct, only the reader was wrong. If the smoke still returns 401, the next suspect
   is e2 (the container's mounted shard file).
+
+## L1c
+
+Two fixes in threshold/mcp: the presence bucket is created before it is used, and a missing GELDAR_EVENTS stream is waited for.
+
+### Presence bucket: `settle_error` with a stream error
+
+- Root cause: the MCP called `kvm.open` on the presence bucket. `Kvm.open` binds a name to a handle and never checks that the backing stream exists, so the first settle failed when the bucket had not been created yet.
+- Fix (commit 0d6988f): `openPresenceBucket` (`threshold/mcp/src/presence.ts`) calls `kvm.create`, which creates the bucket when it is missing.
+- No history or TTL option is set anywhere in the repo for this bucket (checked by search, outside docs). The player host and `create` therefore share the default options.
+- `Kvm.create` does not compare options. A bucket that already exists with different options is used as found, and nothing is logged.
+
+### GELDAR_EVENTS: waited for, not created
+
+- `GELDAR_EVENTS` is created by eventsink (`ensureStream` in `eventsink/src/consumer.ts`) and by the Geldar-Core plugin (decision 0041). The MCP does not create it.
+- `untilStreamExists` (`threshold/mcp/src/replay-source.ts`) waits for it: 1 s doubling to 30 s between tries, one waiting line at most a minute, and `StreamWaitTimeout` after 5 minutes. `reopenOrExit` (`threshold/mcp/src/cli.ts`) exits 1 on that timeout and does not count it toward the five failures.
+
+### What ops re-runs
+
+1. Rebuild the MCP image (the change is in `threshold/mcp/src`).
+2. Mint a fresh token. The token file is an env line, so write the new token into it.
+3. `./geldar.ps1 mcp smoke`.
+4. Confirm the startup log has no `settle_error` line.
