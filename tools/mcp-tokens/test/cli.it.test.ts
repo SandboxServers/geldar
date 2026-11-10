@@ -12,7 +12,6 @@ import { Client, type Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PgTokenStore } from '../../../threshold/mcp/src/store/pg-tokens.ts';
 import { hashToken } from '../../../threshold/mcp/src/store/token-hash.ts';
-import { integrationEnabled } from '../../../threshold/mcp/test/live/gate.ts';
 import {
   adminConfig,
   createScratchDatabase,
@@ -22,6 +21,7 @@ import {
   scratchPool,
   seedPlayer,
 } from '../../../threshold/mcp/test/it/scratch-db.ts';
+import { integrationEnabled } from '../../../threshold/mcp/test/live/gate.ts';
 import { type Env, type Io, run, type SqlSession } from '../src/cli.ts';
 import { initSecretFiles, readPepper } from '../src/secret-files.ts';
 
