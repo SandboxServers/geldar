@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run as runAdamReport } from '@geldar/adam-report/src/cli.ts';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type Clock, createFileStore, createReporter } from './adapters.ts';
+import { createFileStore, createReporter } from './adapters.ts';
 import { buildManifest, type ManifestInput, writeManifest } from './manifest.ts';
-import type { ExecResult, Runner } from './ports.ts';
+import type { Clock, ExecResult, Runner } from './ports.ts';
 
 const REPORT_CLI = /adam-report[\\/]src[\\/]cli\.ts$/;
 const NOW_MS = Date.parse('2026-11-10T10:00:00.000Z');
