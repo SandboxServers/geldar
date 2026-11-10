@@ -17,6 +17,7 @@ const BOXES: Record<string, 'block' | 'empty'> = {
   wall_torch: 'empty',
   stone: 'block',
   dirt: 'block',
+  white_bed: 'block',
 };
 
 interface FakeOptions {
@@ -26,6 +27,10 @@ interface FakeOptions {
   items?: string[];
   /** Where the bot stands. */
   at?: Vec3;
+  /** Where the bot faces, in radians (0 faces +z). */
+  yaw?: number;
+  /** Other entities, each standing at the position given. */
+  entities?: Vec3[];
   /** The name written to the target on a placement; defaults to the held item. */
   placedAs?: string;
   /** Thrown by `placeBlock` instead of placing. */
@@ -35,6 +40,7 @@ interface FakeOptions {
 interface FakeBot {
   bot: Bot;
   placeBlock: ReturnType<typeof vi.fn>;
+  look: ReturnType<typeof vi.fn>;
 }
 
 function key(p: Vec3): string {
@@ -46,7 +52,10 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
   const world = new Map(Object.entries(options.blocks ?? {}));
   let held: { name: string; count: number } | null = null;
   const bot = {
-    entity: { position: options.at ?? new Vec3(0.5, 64, 0.5) },
+    entity: { position: options.at ?? new Vec3(0.5, 64, 0.5), yaw: options.yaw ?? 0 },
+    entities: Object.fromEntries(
+      (options.entities ?? []).map((position, i) => [String(i + 1), { position }]),
+    ),
     get heldItem() {
       return held;
     },
@@ -59,6 +68,7 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
     equip: vi.fn(async (stack: { name: string; count: number }) => {
       held = stack;
     }),
+    look: vi.fn(async () => undefined),
     blockAt: (p: Vec3) => {
       const name = world.get(key(p)) ?? 'air';
       return { name, position: p, boundingBox: BOXES[name] };
@@ -68,7 +78,7 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
       world.set(key(reference.position.plus(face)), options.placedAs ?? held?.name ?? 'air');
     }),
   };
-  return { bot: bot as unknown as Bot, placeBlock: bot.placeBlock };
+  return { bot: bot as unknown as Bot, placeBlock: bot.placeBlock, look: bot.look };
 }
 
 /** Runs the `place` handler with a fresh abort signal. */
@@ -114,26 +124,92 @@ describe('place', () => {
     expect(face).toEqual(new Vec3(0, 1, 0));
   });
 
-  it('refuses a colliding block at feet as inside the bot', async () => {
-    const fake = fakeBot({ blocks: { '0,63,0': 'stone' }, items: ['dirt'] });
+  it('moves a colliding block at feet to the free cell the bot faces', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '0,63,1': 'stone' },
+      items: ['dirt'],
+    });
+    const outcome = await place(fake, 'dirt', 'feet');
+    expect(outcome.status).toBe('completed');
+    const [reference, face] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }, Vec3];
+    expect(reference.position).toEqual(new Vec3(0, 63, 1));
+    expect(face).toEqual(new Vec3(0, 1, 0));
+  });
+
+  it('moves a target at the bot head cell beside the bot too', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '0,63,1': 'stone' },
+      items: ['dirt'],
+    });
+    const outcome = await place(fake, 'dirt', { x: 0, y: 65, z: 0 });
+    expect(outcome.status).toBe('completed');
+    const [reference] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }];
+    expect(reference.position).toEqual(new Vec3(0, 63, 1));
+  });
+
+  it('skips a neighbor that an entity stands in', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '0,63,1': 'stone', '1,63,0': 'stone' },
+      items: ['dirt'],
+      entities: [new Vec3(0.5, 64, 1.5)],
+    });
+    const outcome = await place(fake, 'dirt', 'feet');
+    expect(outcome.status).toBe('completed');
+    const [reference] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }];
+    expect(reference.position).toEqual(new Vec3(1, 63, 0));
+  });
+
+  it('fails with the no-space message when every neighbor is a solid block', async () => {
+    const fake = fakeBot({
+      blocks: {
+        '0,63,0': 'stone',
+        '0,64,1': 'stone',
+        '1,64,0': 'stone',
+        '-1,64,0': 'stone',
+        '0,64,-1': 'stone',
+      },
+      items: ['dirt'],
+    });
     const outcome = await place(fake, 'dirt', 'feet');
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'target is inside the bot',
+      message: 'no free space next to you: step to open ground or name a position',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
 
-  it('refuses a target that is inside the bot body', async () => {
-    const fake = fakeBot({ blocks: { '0,63,0': 'stone', '0,65,0': 'stone' }, items: ['dirt'] });
-    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
+  it('fails with the no-space message when every neighbor holds an entity', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '0,63,1': 'stone', '1,63,0': 'stone', '-1,63,0': 'stone' },
+      items: ['dirt'],
+      entities: [
+        new Vec3(0.5, 64, 1.5),
+        new Vec3(1.5, 64, 0.5),
+        new Vec3(-0.5, 64, 0.5),
+        new Vec3(0.5, 64, -0.5),
+      ],
+    });
+    const outcome = await place(fake, 'dirt', 'feet');
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'target is inside the bot',
+      message: 'no free space next to you: step to open ground or name a position',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('places a bed second half one further in the same direction', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '0,63,1': 'stone', '0,64,2': 'stone', '1,63,0': 'stone' },
+      items: ['white_bed'],
+    });
+    const outcome = await place(fake, 'white_bed', 'feet');
+    expect(outcome.status).toBe('completed');
+    const [reference, face] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }, Vec3];
+    expect(reference.position).toEqual(new Vec3(1, 63, 0));
+    expect(face).toEqual(new Vec3(0, 1, 0));
+    expect(fake.look).toHaveBeenCalledWith(-Math.PI / 2, 0, true);
   });
 
   it('refuses a target that is occupied', async () => {
@@ -142,7 +218,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'target occupied',
+      message: 'target is occupied: name an empty position or mine the block first',
     });
   });
 
@@ -202,41 +278,55 @@ describe('place', () => {
     expect(face).toEqual(new Vec3(-1, 0, 0));
   });
 
-  it('fails as blocked when the placed block is not confirmed', async () => {
+  it('fails as blocked with a what-to-do message when the block does not appear', async () => {
     const fake = fakeBot({ blocks: { '2,63,0': 'stone' }, items: ['dirt'], placedAs: 'air' });
     const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message:
+        'the block did not appear at the target: stand on solid ground and choose a block position next to you',
+    });
   });
 
-  it('fails as blocked when there is nothing solid to place against', async () => {
+  it('fails as blocked with a fixed message when there is nothing solid to place against', async () => {
     const fake = fakeBot({ items: ['dirt'] });
     const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'nothing to place against',
+      message: 'no solid block to place against: name a position next to a solid block',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
 
-  it('maps a placement timeout to timeout', async () => {
+  it('maps a placement timeout to timeout with a fixed message', async () => {
     const fake = fakeBot({
       blocks: { '2,63,0': 'stone' },
       items: ['dirt'],
       placeError: 'Bot did not answer the placement',
     });
     const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'timeout' });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'timeout',
+      message: 'the server did not answer the placement: try again',
+    });
   });
 
-  it('maps a refused placement to blocked', async () => {
+  it('maps a refused placement to blocked with a fixed message', async () => {
     const fake = fakeBot({
       blocks: { '2,63,0': 'stone' },
       items: ['dirt'],
-      placeError: 'Server refused to place dirt',
+      placeError: 'Server refused to place dirt at (2, 64, 0): the block is still air',
     });
     const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message:
+        'the server refused: stand on solid ground within reach and choose a block position next to you',
+    });
   });
 
   it('rethrows other placement errors', async () => {
