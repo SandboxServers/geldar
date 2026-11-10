@@ -5,8 +5,8 @@
  * a new connection, because a manager cannot be restarted after `stop`.
  */
 import type { Bot } from 'mineflayer';
-import { BodySupervisor, type SupervisorOptions } from '../adam/main.ts';
 import type { RunningAdamBody } from '../adam/adam-body.ts';
+import { BodySupervisor, type SupervisorOptions } from '../adam/main.ts';
 
 /** One connection of the player: the bot source for the supervisor, and its close. */
 export interface PlayerConnection {

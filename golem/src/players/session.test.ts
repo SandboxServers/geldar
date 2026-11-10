@@ -77,9 +77,7 @@ describe('PlayerSession', () => {
     expect(closes.count).toBe(1);
 
     await session.up();
-    await vi.waitFor(() =>
-      expect(logs.filter((l) => l.event === 'body_started')).toHaveLength(2),
-    );
+    await vi.waitFor(() => expect(logs.filter((l) => l.event === 'body_started')).toHaveLength(2));
     await session.down();
 
     const generations = logs
@@ -98,7 +96,7 @@ describe('PlayerSession', () => {
     await session.up();
     await vi.waitFor(() => expect(starts).toHaveLength(1));
     const stopping = session.down();
-    starts[0](runFor(1));
+    starts[0]?.(runFor(1));
     await stopping;
     expect(session.running).toBe(false);
     expect(closes.count).toBe(1);
