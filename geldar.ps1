@@ -30,7 +30,7 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
 # of the common parameters (-OutVariable, -OutBuffer), and `-v` as -Verbose. Every argument is read from $args:
 # the first is the command, the rest are its arguments, passed on verbatim.
 $Command = if ($args.Count -gt 0) { [string] $args[0] } else { 'help' }
-$Rest = if ($args.Count -gt 1) { [string[]] $args[1..($args.Count - 1)] } else { @() }
+$Rest = [string[]] @($args | Select-Object -Skip 1)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest

@@ -30,9 +30,7 @@ describe('geldar.ps1 reads its arguments from $args', () => {
     expect(script).toMatch(
       /^\$Command = if \(\$args\.Count -gt 0\) \{ \[string\] \$args\[0\] \} else \{ 'help' \}$/m,
     );
-    expect(script).toMatch(
-      /^\$Rest = if \(\$args\.Count -gt 1\) \{ \[string\[\]\] \$args\[1\.\.\(\$args\.Count - 1\)\] \} else \{ @\(\) \}$/m,
-    );
+    expect(script).toMatch(/^\$Rest = \[string\[\]\] @\(\$args \| Select-Object -Skip 1\)$/m);
     expect(script.indexOf('$Command = if')).toBeLessThan(script.indexOf('switch ($Command)'));
   });
 });
@@ -58,5 +56,11 @@ describe.skipIf(!hasPwsh)('geldar.ps1 invoked by pwsh', () => {
     expect(status).not.toBe(0);
     expect(output).not.toMatch(/ambiguous|cannot be found that matches/i);
     expect(output).toContain('--out must be outside the repo');
+  }, 60_000);
+
+  it('passes a single argument through to pnpm as one argument', () => {
+    const { status, output } = runScript(['pnpm', '-v']);
+    expect(status).toBe(0);
+    expect(output).toMatch(/^\d+\.\d+\.\d+/m);
   }, 60_000);
 });
