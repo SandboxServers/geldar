@@ -27,3 +27,14 @@ Branch fix/f-supply-chain, base wave6-main. Date of work: 2026-11-10.
 - The lockfile diff touches only these packages, their rolldown binding variants, and @oxc-project/types (0.156.0 to 0.155.0, rolldown's dependency).
 - No package could not be downgraded; no peer range broke.
 - Lookup command used: `npm view <pkg> time --json`, then pick the newest version at or before the cutoff.
+
+## Item 2: pin-rule checks (done)
+
+- `tools/repo-checks/src/pin-rules.ts` (wired into `cli.ts`, run by `check:repo`):
+  - package.json dependency ranges (`dependencies`, `devDependencies`, `optionalDependencies`) are exact or `workspace:`; peer ranges are exempt.
+  - Dockerfile `FROM` names a digest, `scratch`, or an earlier stage.
+  - Compose service images have a digest, except services with `build:`.
+  - Workflow `uses:` is a local path, a `docker://` digest, or a full 40-hex commit SHA.
+  - `pnpm-lock.yaml` has no tarball, git, directory, or file sources.
+- Age (14 days) is not checked offline. Manual step: `npm view <pkg> time --json` for each direct and overridden package before a lockfile change.
+- `threshold/mcp-mock/compose.example.yml` was a tag-only ghcr image; pinned to `main`'s digest `sha256:615c9160...7d97` (resolved with `docker buildx imagetools inspect`, our own image).
