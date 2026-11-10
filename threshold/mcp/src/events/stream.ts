@@ -41,8 +41,9 @@ export interface StreamCounters {
  * is checked against the contract envelope first, and an invalid one is counted and dropped without
  * a throw. The raw body is already parsed: a body that is not JSON never gets here (the stream loop in
  * cli.ts counts it). A store error (`lives()` or a log append) throws to that loop, which retries the
- * message and drops it after three tries. A Mind event goes to its life's log as the mapper maps it; a `day_night` event fans out
- * to every life. A `sovereign_call` is not a player event, so it is skipped.
+ * message with a delay and drops it after four tries. A Mind event goes to its life's log as the mapper
+ * maps it; a `day_night` event fans out to every life. A `sovereign_call` is not a player event, so it
+ * is skipped.
  */
 export async function handleStreamMessage(
   seq: number,

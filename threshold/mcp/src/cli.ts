@@ -200,17 +200,31 @@ function jetStreamReplay(js: JetStreamClient, jsm: JetStreamManager): ReplaySour
   };
 }
 
-/** How many deliveries of one stream message are tried before it is dropped (drop after three). */
-export const MAX_STREAM_ATTEMPTS = 3;
+/** How many deliveries of one stream message are tried before it is dropped (drop after four). */
+export const MAX_STREAM_ATTEMPTS = 4;
+/** The redelivery delay after the first, second and third failed try, in ms. */
+export const STREAM_RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 /** How long the front door waits for the replay to catch up before it listens anyway. */
 export const REPLAY_CATCHUP_MS = 30_000;
+/** How many consecutive failed reopens of the replay consumer are tried before the process exits. */
+export const RESTART_ATTEMPTS = 5;
+/** How many first deliveries of stream sequences the replay remembers when it counts settled messages. */
+const SEEN_LIMIT = 10_000;
 
-/** One delivered stream message: its sequence, its body and the acknowledgement. */
+/** One delivered stream message: its sequence, its body and the acknowledgement; a nak may set a delay. */
 export interface StreamMessage {
   seq: number;
   json(): unknown;
   ack(): void;
-  nak(): void;
+  nak(delayMs?: number): void;
+}
+
+/** What the stream loop needs to reopen the consumer when its messages end without a stop request. */
+export interface StreamRestart {
+  reopen(): Promise<AsyncIterable<StreamMessage>>;
+  stopping(): boolean;
+  exit(code: number): void;
+  sleep(ms: number): Promise<void>;
 }
 
 /** Counts of what the stream loop set aside: unparsable bodies, failed handlings and dropped messages. */
@@ -230,31 +244,65 @@ export interface ReplaySource {
 
 /**
  * Reads the stream until the iterator ends. A body that is not JSON is counted and acked. A handler
- * that throws is retried by a nak, and dropped and acked after MAX_STREAM_ATTEMPTS deliveries. The
- * loop never rejects: a throw is logged and the next message is read. `onSettled` runs after each
- * message is acked or naked, so a caller can count the messages it has seen.
+ * that throws is retried by a nak with a delay, and dropped and acked after MAX_STREAM_ATTEMPTS
+ * deliveries. The loop never rejects: a throw is logged and the next message is read. `onSettled`
+ * runs after each message is acked or naked, with its sequence. When the iterator ends or throws
+ * without a stop request, `restart` reopens the consumer; without `restart` the loop returns.
  */
 export async function runStreamLoop(
   messages: AsyncIterable<StreamMessage>,
   onMessage: (seq: number, raw: unknown) => Promise<void>,
   counters: StreamLoopCounters,
   log: (line: Record<string, string | number>) => void,
-  onSettled?: () => void,
+  onSettled?: (seq: number) => void,
+  restart?: StreamRestart,
 ): Promise<void> {
   const attempts = new Map<number, number>();
-  try {
-    for await (const message of messages) {
-      try {
-        await settleOne(message, onMessage, counters, log, attempts);
-      } catch (error) {
-        log({ event: 'stream_message_unsettled', seq: message.seq, error: nameOf(error) });
-      } finally {
-        onSettled?.();
+  let current = messages;
+  for (;;) {
+    try {
+      for await (const message of current) {
+        try {
+          await settleOne(message, onMessage, counters, log, attempts);
+        } catch (error) {
+          log({ event: 'stream_message_unsettled', seq: message.seq, ...errorFields(error) });
+        } finally {
+          onSettled?.(message.seq);
+        }
       }
+    } catch (error) {
+      log({ event: 'stream_loop_stopped', ...errorFields(error) });
     }
-  } catch (error) {
-    log({ event: 'stream_loop_stopped', error: nameOf(error) });
+    if (restart === undefined || restart.stopping()) return;
+    const next = await reopenOrExit(restart, log);
+    if (next === null) return;
+    current = next;
   }
+}
+
+/**
+ * Reopens the consumer after an unexpected end, waiting 1 s, 2 s, 4 s, 8 s and then 16 s before each
+ * of RESTART_ATTEMPTS tries. When every try fails it asks the process to exit non-zero (so the container
+ * restarts) and resolves null; a stop request during the wait resolves null without an exit.
+ */
+async function reopenOrExit(
+  restart: StreamRestart,
+  log: (line: Record<string, string | number>) => void,
+): Promise<AsyncIterable<StreamMessage> | null> {
+  for (let attempt = 1; attempt <= RESTART_ATTEMPTS; attempt++) {
+    await restart.sleep(Math.min(30_000, 1_000 * 2 ** (attempt - 1)));
+    if (restart.stopping()) return null;
+    try {
+      const messages = await restart.reopen();
+      log({ event: 'stream_loop_reopened', attempt });
+      return messages;
+    } catch (error) {
+      log({ event: 'stream_loop_reopen_failed', attempt, ...errorFields(error) });
+    }
+  }
+  log({ event: 'stream_loop_exhausted', attempts: RESTART_ATTEMPTS });
+  restart.exit(1);
+  return null;
 }
 
 async function settleOne(
@@ -282,13 +330,15 @@ async function settleOne(
     counters.failed++;
     if (tries < MAX_STREAM_ATTEMPTS) {
       attempts.set(message.seq, tries);
+      const delayMs = STREAM_RETRY_DELAYS_MS[tries - 1] ?? 0;
       log({
         event: 'stream_message_retry',
         seq: message.seq,
         attempt: tries,
-        error: nameOf(error),
+        delay_ms: delayMs,
+        ...errorFields(error),
       });
-      message.nak();
+      message.nak(delayMs);
       return;
     }
     attempts.delete(message.seq);
@@ -297,7 +347,8 @@ async function settleOne(
       event: 'stream_message_dropped',
       seq: message.seq,
       attempts: tries,
-      error: nameOf(error),
+      dropped_total: counters.dropped,
+      ...errorFields(error),
     });
     message.ack();
   }
@@ -305,29 +356,58 @@ async function settleOne(
 
 /**
  * Starts the replay and resolves once it has caught up: the consumer has settled the messages it held
- * at creation, or `waitMs` has passed (logged as a timeout). The loop keeps reading after that. The
- * front door listens only after this resolves, so a cursor is checked against a replayed head.
+ * at creation (a redelivery is not counted again), or `waitMs` has passed (logged as a timeout). The
+ * loop keeps reading after that, and reopens the consumer if its messages end without a stop. The front
+ * door listens only after this resolves, so a cursor is checked against a replayed head.
  */
 export async function startReplay(
   source: ReplaySource,
   subjects: string[],
   fromIso: string,
   onMessage: (seq: number, raw: unknown) => Promise<void>,
-  options: { log: (line: Record<string, string | number>) => void; waitMs: number },
+  options: {
+    log: (line: Record<string, string | number>) => void;
+    waitMs: number;
+    /** Ends the process when the consumer cannot be reopened; defaults to `process.exit`. */
+    exit?: (code: number) => void;
+    /** Waits between reopen attempts; defaults to a timer. */
+    sleep?: (ms: number) => Promise<void>;
+  },
 ): Promise<{ stop(): Promise<void> }> {
   const { log, waitMs } = options;
   const replay = await source.open(subjects, fromIso);
   const counters: StreamLoopCounters = { malformed: 0, failed: 0, dropped: 0 };
   let settled = 0;
+  const seen = new Set<number>();
   let markCaughtUp: () => void = () => {};
   const caughtUp = new Promise<'caught_up'>((resolve) => {
     markCaughtUp = () => resolve('caught_up');
   });
   if (replay.pending <= 0) markCaughtUp();
-  void runStreamLoop(replay.messages, onMessage, counters, log, () => {
-    settled++;
-    if (settled >= replay.pending) markCaughtUp();
-  });
+  let stopping = false;
+  let stopCurrent = replay.stop;
+  const restart: StreamRestart = {
+    reopen: async () => {
+      const next = await source.open(subjects, fromIso);
+      stopCurrent = next.stop;
+      return next.messages;
+    },
+    stopping: () => stopping,
+    exit: options.exit ?? ((code) => process.exit(code)),
+    sleep: options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms))),
+  };
+  void runStreamLoop(
+    replay.messages,
+    onMessage,
+    counters,
+    log,
+    (seq) => {
+      if (!firstDelivery(seen, seq)) return;
+      settled++;
+      if (settled >= replay.pending) markCaughtUp();
+    },
+    restart,
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<'timed_out'>((resolve) => {
     timer = setTimeout(() => resolve('timed_out'), waitMs);
@@ -339,11 +419,29 @@ export async function startReplay(
   } else {
     log({ event: 'replay_caught_up', settled });
   }
-  return { stop: () => replay.stop() };
+  return {
+    stop: async () => {
+      stopping = true;
+      await stopCurrent();
+    },
+  };
 }
 
-function nameOf(error: unknown): string {
-  return error instanceof Error ? error.name : 'unknown';
+/** Whether `seq` is seen for the first time; the set keeps only the newest SEEN_LIMIT sequences. */
+function firstDelivery(seen: Set<number>, seq: number): boolean {
+  if (seen.has(seq)) return false;
+  seen.add(seq);
+  if (seen.size > SEEN_LIMIT) seen.delete(seen.values().next().value as number);
+  return true;
+}
+
+/** The log fields of an error: its name, and its `code` when it has one (a pg or NATS failure). */
+function errorFields(error: unknown): Record<string, string | number> {
+  if (!(error instanceof Error)) return { error: 'unknown' };
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' || typeof code === 'number'
+    ? { error: error.name, code }
+    : { error: error.name };
 }
 
 /** The entry point when this file runs as the container's command. */
