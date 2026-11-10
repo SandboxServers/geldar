@@ -79,3 +79,21 @@ Sources: the fix rounds A to F and the W6 packets (worknotes), decisions [0053](
 | Spec 2a and 3 use "player" and "agent" with different meanings. | `docs/spec.md` 2a, 3 | S (owner) |
 | About 30 lines of the spec carry personal names. The repo is public, so the owner should replace them. | `docs/spec.md` | S (owner) |
 | The retro for Wave 6 and the exit retro are pending. | [wave-m retro](retro/wave-m.md), [README.md](README.md) | S |
+
+## Corrections to earlier claims
+
+Earlier notes and the first version of this list stated the following. The truth after the fix rounds and the Phase 0 close is in the right-hand column.
+
+| Earlier claim | Truth | Pointer |
+|---|---|---|
+| The owner cap is 3 (spec 5.15.6) or 20 (decision 0052), with nothing enforcing it. | The cap is enforced in the database by migration `sql/0006_owner_cap_trigger.sql`. `owner add` takes `sovereign.owner_cap_default` (3) unless `--cap` is given, so the owner needs `owner add --cap 20`. Spec 5.15.6 still says 3 (owner edit). | [fix-b](worknotes/fix-b.md) item 5, [README.md](../../../threshold/mcp/README.md) |
+| The TPS rule was not real in the harness. | The TPS rule is real: it reads `server_tps` events from the Body (`tick-rate.ts`). It has not run in a live run. | [fix-e](worknotes/fix-e.md), `tick-rate.ts` |
+| The report gave each criterion a pass or fail verdict. | A criterion is UNKNOWN when there are not enough samples. An UNKNOWN is not a pass. | `tools/adam-run` report generator |
+| Receipts cover every action. | Receipts cover only plan actions. The `prepared` receipt is not implemented, so abandoned reflex actions get no `aborted` receipt. | [0020](../../decisions/0020-receipts.md), `golem/src/body/executor-action.ts` |
+| Journals are append-only. | Append-only is policy plus partial grants. `adam-reset` deletes the rows of `ag_adam_02` before each live case (decision 0064 says append-only; O-10 to O-15 are open). | [0056](../../decisions/0056-first-migration-runner-and-least-privilege-grants.md), [adam-run-owner-decisions.md](adam-run-owner-decisions.md) |
+| The observers sentence is in the agent prompt. | The sentence was removed from prompt v4 (the default, decision 0068). `docs/spec.md` around line 1584 still says it. OWNER EDIT NEEDED. | [0068](../../decisions/0068-prompt-v4-and-agent-visible-text.md) |
+| Persona lint at `player add` and at seed update is not written. | Lint runs at `player add`, and `--allow-meta` keeps a flagged line with a warning (`tools/mcp-tokens/src/persona-lint.ts`). There is no seed update command, so lint at seed update does not apply. | [threshold/mcp README](../../../threshold/mcp/README.md) |
+| The smoke run (OPS-1) is done, and so is W6-08. | OPS-1 has no clean pass (see the smoke row above). W6-08 has no branch, merge or worknote and is not done. | [README.md](README.md), [RESUME.md](RESUME.md) |
+| CI does not run the integration tests against Postgres. | CI now runs the owner-cap integration cases in a Postgres job (`83b0922`). A CI run result was not checked here. | `.github/workflows`, [fix-f](worknotes/fix-f.md) |
+| Bench evidence is in the repo. | Bench evidence is local: `bench-results/` is git-ignored, and copies are under `bench-runs/`. | [bench-results.md](bench-results.md) |
+| Spec 2a and 3 are consistent in their terms. | They use "player" and "agent" with different meanings (owner edit). About 30 lines of the spec carry personal names (owner edit). | `docs/spec.md` 2a, 3 |
