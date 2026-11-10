@@ -100,24 +100,41 @@ describe('RCON is published to the host only through compose/rcon-host.yml', () 
   });
 });
 
-describe('geldar.ps1 mcp-tokens database environment', () => {
-  // The case body from its label up to the next case, so the checks cannot match another command.
-  const block = /^ {2}'mcp-tokens' \{([\s\S]*?)^ {2}'db' \{/m.exec(script)?.[1] ?? '';
+describe('geldar.ps1 database environment (mcp-tokens and db)', () => {
+  // The helper body from its header up to the next top-level function, so the checks stay inside it.
+  const helper =
+    /^function Invoke-PgNode\(\[string\] \$Script, \[string\[\]\] \$ScriptArgs\) \{([\s\S]*?)^\}$/m.exec(
+      script,
+    )?.[1] ?? '';
+  // The case bodies from their labels up to the next case, so the checks cannot match another command.
+  const mcpTokensCase = /^ {2}'mcp-tokens' \{([\s\S]*?)^ {2}'db' \{/m.exec(script)?.[1] ?? '';
+  const dbCase = /^ {2}'db' \{([\s\S]*?)^ {2}'mcp' \{/m.exec(script)?.[1] ?? '';
 
   it('sets PGPASSWORD from compose/secrets/postgres.txt and the other PG* variables for the child only', () => {
-    expect(block).toMatch(/Join-Path \$Root 'compose\/secrets\/postgres\.txt'/);
-    expect(block).toMatch(/\$env:PGPASSWORD = \(Get-Content -Raw -Path \$passwordFile\)\.Trim\(\)/);
+    expect(helper).toMatch(/Join-Path \$Root 'compose\/secrets\/postgres\.txt'/);
+    expect(helper).toMatch(
+      /\$env:PGPASSWORD = \(Get-Content -Raw -Path \$passwordFile\)\.Trim\(\)/,
+    );
     for (const name of ['PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE']) {
-      expect(block, name).toMatch(new RegExp(`\\$env:${name} = '[^']+'`));
+      expect(helper, name).toMatch(new RegExp(`\\$env:${name} = '[^']+'`));
     }
-    expect(block).toMatch(/\$pgNames = 'PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE', 'PGPASSWORD'/);
-    expect(block).toMatch(
+    expect(helper).toMatch(/\$pgNames = 'PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE', 'PGPASSWORD'/);
+    expect(helper).toMatch(
       /finally \{\s*foreach \(\$name in \$pgNames\) \{ \[Environment\]::SetEnvironmentVariable\(\$name, \$saved\[\$name\]\) \}\s*\}/,
     );
   });
 
   it('never prints the password', () => {
-    expect(block).not.toMatch(/Write-(Host|Output)|\becho\b|Out-Host/);
+    expect(helper).not.toMatch(/Write-(Host|Output)|\becho\b|Out-Host/);
+  });
+
+  it('runs the mcp-tokens CLI through the helper', () => {
+    expect(mcpTokensCase).toMatch(/Invoke-PgNode 'tools\/mcp-tokens\/src\/cli\.ts' \$Rest/);
+  });
+
+  it('runs the db migrate CLI through the helper, so the password is loaded', () => {
+    expect(dbCase).toMatch(/Invoke-PgNode 'tools\/migrate\/src\/cli\.ts' \$extra/);
+    expect(dbCase).not.toMatch(/Invoke-Node/);
   });
 });
 
