@@ -33,6 +33,18 @@ describe('geldar.ps1 reads its arguments from $args', () => {
     expect(script).toMatch(/^\$Rest = \[string\[\]\] @\(\$args \| Select-Object -Skip 1\)$/m);
     expect(script.indexOf('$Command = if')).toBeLessThan(script.indexOf('switch ($Command)'));
   });
+
+  it('prints a usage from Show-Usage that names every command of the dispatch switch', () => {
+    const usage = /function Show-Usage \{\s*Write-Output @'\r?\n([\s\S]*?)\r?\n'@/.exec(script)?.[1] ?? '';
+    expect(usage).toContain('Usage: ./geldar.ps1');
+    const dispatch = script.slice(script.indexOf('switch ($Command) {'));
+    const labels = [...dispatch.matchAll(/^ {2}'([a-z-]+)' \{/gm)].map((match) => match[1]);
+    const commands = labels.filter((label) => !['help', '-h', '--help'].includes(label));
+    expect(commands).toEqual(expect.arrayContaining(['players', 'mcp-tokens', 'db', 'setup', 'check', 'shard']));
+    for (const command of commands) {
+      expect(usage, command).toMatch(new RegExp(`\\b${command}\\b`));
+    }
+  });
 });
 
 describe.skipIf(!hasPwsh)('geldar.ps1 invoked by pwsh', () => {
@@ -62,5 +74,21 @@ describe.skipIf(!hasPwsh)('geldar.ps1 invoked by pwsh', () => {
     const { status, output } = runScript(['pnpm', '-v']);
     expect(status).toBe(0);
     expect(output).toMatch(/^\d+\.\d+\.\d+/m);
+  }, 60_000);
+
+  it('prints the usage with no arguments, and exits 0', () => {
+    const { status, output } = runScript([]);
+    expect(status).toBe(0);
+    expect(output).toContain('Usage: ./geldar.ps1');
+    for (const word of ['setup', 'check', 'shard', 'mcp-tokens']) {
+      expect(output).toContain(word);
+    }
+  }, 60_000);
+
+  it('prints an error and the usage for an unknown command, and exits non-zero', () => {
+    const { status, output } = runScript(['no-such-command']);
+    expect(status).not.toBe(0);
+    expect(output).toContain("Unknown command 'no-such-command'");
+    expect(output).toContain('Usage: ./geldar.ps1');
   }, 60_000);
 });
