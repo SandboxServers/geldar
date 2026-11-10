@@ -130,44 +130,59 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     if (!gone) bot.quit();
     throw error;
   }
-  const digest = wrapped.recent;
-  if (digest === null) throw new Error('the Body did not wrap its record sink');
-  const { executor } = restarted.body;
-  const chatEars = new BotEars({
-    username: config.lifeId,
-    displayName: config.displayName,
-    executor: { notifyAddressed: (from) => executor.notifyAddressed(from) },
-    events: speech,
-    log,
-  });
-  const detachEars = chatEars.attach(bot);
-  const voice = new BotVoice({
-    username: config.lifeId,
-    send: (line) => bot.chat(line),
-    connected: () => bot.entity !== undefined,
-    events: speech,
-    rateLimitSeconds: config.rateLimitSeconds,
-    maxChars: config.maxChars,
-  });
-  // No record carries health, so the digest learns of a drop from the bot's own event.
-  const onHealth = (): void => digest.noteHealth(bot.health, tick());
-  bot.on('health', onHealth);
-  const link = new MindLinkServer({
-    shard: config.shard,
-    lifeId: config.lifeId,
-    bodyGeneration: restarted.generation,
-    revision,
-    server: env.server,
-    executor,
-    perception: createPerception(bot),
-    ears: composeEars(chatEars, digest),
-    voice,
-    buildSnapshot: (options) => buildSnapshot(bot, options),
-    tick,
-    publisher: env.publisher,
-    log,
-  });
-  link.start();
+  const { executor, runtime } = restarted.body;
+  // Wired after the restart: a throw here stops the restarted Body and quits the bot, as above.
+  let detachEars: () => void = () => undefined;
+  let onHealth: (() => void) | undefined;
+  let link: MindLinkServer | undefined;
+  try {
+    const digest = wrapped.recent;
+    if (digest === null) throw new Error('the Body did not wrap its record sink');
+    const chatEars = new BotEars({
+      username: config.lifeId,
+      displayName: config.displayName,
+      executor: { notifyAddressed: (from) => executor.notifyAddressed(from) },
+      events: speech,
+      log,
+    });
+    detachEars = chatEars.attach(bot);
+    const voice = new BotVoice({
+      username: config.lifeId,
+      send: (line) => bot.chat(line),
+      connected: () => bot.entity !== undefined,
+      events: speech,
+      rateLimitSeconds: config.rateLimitSeconds,
+      maxChars: config.maxChars,
+    });
+    // No record carries health, so the digest learns of a drop from the bot's own event.
+    onHealth = (): void => digest.noteHealth(bot.health, tick());
+    bot.on('health', onHealth);
+    link = new MindLinkServer({
+      shard: config.shard,
+      lifeId: config.lifeId,
+      bodyGeneration: restarted.generation,
+      revision,
+      server: env.server,
+      executor,
+      perception: createPerception(bot),
+      ears: composeEars(chatEars, digest),
+      voice,
+      buildSnapshot: (options) => buildSnapshot(bot, options),
+      tick,
+      publisher: env.publisher,
+      log,
+    });
+    link.start();
+  } catch (error) {
+    bot.off('end', onEnd);
+    if (onHealth !== undefined) bot.off('health', onHealth);
+    detachEars();
+    await restarted.stop().catch((stopError: unknown) => {
+      log(`restarted Body did not stop after a failed start: ${String(stopError)}`);
+    });
+    if (!gone) bot.quit();
+    throw error;
+  }
 
   return {
     lifeId: config.lifeId,
@@ -178,11 +193,14 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     fail: (reason) => end(reason),
     async stop() {
       bot.off('end', onEnd);
-      bot.off('health', onHealth);
+      if (onHealth !== undefined) bot.off('health', onHealth);
       detachEars();
-      // The executor goes first: it ends the running intent, so a plan the link awaits can finish.
-      await restarted.body.executor.stop();
-      await link.stop();
+      // No new plan is accepted from here on. Then the executor and the running action end, so a
+      // plan the link awaits can finish; only after that is the link waited for.
+      link?.stopServing();
+      await executor.stop();
+      await runtime.cancelAction();
+      await link?.idle();
       await restarted.stop();
     },
   };

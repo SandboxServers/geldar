@@ -52,13 +52,18 @@ interface Rig {
   addressed: string[];
   stops: string[];
   served: string[];
+  /** Sends a request to a subject as NATS would: nothing is delivered once it is unserved. */
+  deliver(subject: string, data: string): Promise<string | undefined>;
 }
+
+type Handler = (data: string, reply: (body: string) => void) => Promise<void>;
 
 function rig(): Rig {
   const options: RestartBodyOptions[] = [];
   const addressed: string[] = [];
   const stops: string[] = [];
   const served: string[] = [];
+  const handlers = new Map<string, Handler>();
   const inner = {
     intentChanged: vi.fn(),
     actionChanged: vi.fn(),
@@ -67,12 +72,23 @@ function rig(): Rig {
     wake: vi.fn(),
   };
   const server: RequestServer = {
-    serve: (subject) => {
+    serve: (subject, handler) => {
       served.push(subject);
+      handlers.set(subject, handler);
       return () => {
+        handlers.delete(subject);
         stops.push(`unserve ${subject}`);
       };
     },
+  };
+  const deliver = async (subject: string, data: string): Promise<string | undefined> => {
+    const handler = handlers.get(subject);
+    if (handler === undefined) return undefined;
+    let reply: string | undefined;
+    await handler(data, (body) => {
+      reply = body;
+    });
+    return reply;
   };
   const env: AdamBodyEnv = {
     config: config(),
@@ -96,6 +112,11 @@ function rig(): Rig {
               stops.push('executor.stop');
             },
           },
+          runtime: {
+            cancelAction: async () => {
+              stops.push('runtime.cancelAction');
+            },
+          },
         } as unknown as RestartedBody['body'],
         stop: async () => {
           stops.push('restarted.stop');
@@ -103,7 +124,7 @@ function rig(): Rig {
       };
     },
   };
-  return { env, options, inner, addressed, stops, served };
+  return { env, options, inner, addressed, stops, served, deliver };
 }
 
 describe('startAdamBody', () => {
@@ -193,10 +214,43 @@ describe('startAdamBody', () => {
     expect(quit).not.toHaveBeenCalled();
   });
 
-  it('stops the executor before the link waits for running plans', async () => {
+  it('quits the bot and stops the restarted Body when the link cannot start', async () => {
+    const quit = vi.fn();
+    const bot = Object.assign(fakeBot(), { quit });
+    const r = rig();
+    r.env.server = {
+      serve: () => {
+        throw new Error('nats unavailable');
+      },
+    };
+    await expect(startAdamBody(r.env, bot)).rejects.toThrow('nats unavailable');
+    expect(quit).toHaveBeenCalledTimes(1);
+    expect(r.stops).toEqual(['restarted.stop']);
+    expect(bot.listenerCount('end')).toBe(0);
+    expect(bot.listenerCount('health')).toBe(0);
+    expect(bot.listenerCount('chat')).toBe(0);
+  });
+
+  it('unserves first, then stops the executor and the action, then the Body', async () => {
     const r = rig();
     const running = await startAdamBody(r.env, fakeBot());
     await running.stop();
-    expect(r.stops[0]).toBe('executor.stop');
+    expect(r.stops).toEqual([
+      `unserve ${r.served[0]}`,
+      `unserve ${r.served[1]}`,
+      'executor.stop',
+      'runtime.cancelAction',
+      'restarted.stop',
+    ]);
+  });
+
+  it('accepts no plan once stopping has begun, though the stop is still running', async () => {
+    const r = rig();
+    const running = await startAdamBody(r.env, fakeBot());
+    const stopping = running.stop();
+    for (const subject of r.served) {
+      expect(await r.deliver(subject, '{}')).toBeUndefined();
+    }
+    await stopping;
   });
 });
