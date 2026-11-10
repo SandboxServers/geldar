@@ -10,10 +10,19 @@ describe('isCapped', () => {
     expect(isCapped('compose/phase0.yml')).toBe(true);
   });
 
-  it('exempts markdown, generated output and the lockfile', () => {
+  it('caps JSON, TOML and XML config as well', () => {
+    expect(isCapped('contract/schemas/thought.schema.json')).toBe(true);
+    expect(isCapped('plugin/gradle/libs.versions.toml')).toBe(true);
+    expect(isCapped('plugin/src/main/resources/plugin.xml')).toBe(true);
+  });
+
+  it('exempts markdown, generated output, bench runs and lock files by name', () => {
     expect(isCapped('docs/spec.md')).toBe(false);
     expect(isCapped('contract/generated/types.ts')).toBe(false);
     expect(isCapped('pnpm-lock.yaml')).toBe(false);
+    expect(isCapped('tools/x/package-lock.json')).toBe(false);
+    expect(isCapped('plugin/gradle/verification-metadata.xml')).toBe(false);
+    expect(isCapped('docs/analysis/phase0/bench-runs/20261109T130949Z-5aa8a83.json')).toBe(false);
   });
 });
 
