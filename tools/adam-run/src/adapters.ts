@@ -20,7 +20,14 @@ import { dirname, join, resolve, sep } from 'node:path';
 import pg from 'pg';
 import { newestBenchFile } from './bench-gate.ts';
 import { stderrTail } from './child-error.ts';
-import { LIFE_ID, type PinnedModel, type Profile, readPins, sha256Hex } from './manifest.ts';
+import {
+  LIFE_ID,
+  type PinnedModel,
+  type Profile,
+  readPins,
+  readSeed,
+  sha256Hex,
+} from './manifest.ts';
 import {
   type Clock,
   type ExecResult,
@@ -608,6 +615,7 @@ export function createPreflight(opts: {
           mind: mindLifeOf(shardYaml),
           secretsMissing: unreadablePaths(startSecretPaths(opts.repoRoot, opts.env)),
         },
+        seed: readSeed(shardYaml),
         shardConfigSha256: sha256Hex(shardYaml),
         shardCommittedSha256,
         criteriaSha256: sha256Hex(opts.criteriaText),

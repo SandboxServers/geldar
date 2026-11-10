@@ -20,6 +20,8 @@ import { PREPARED_SCHEMA, type VolumeState, type WorldVolumes } from '../src/wor
 
 /** The world volume the fake gate reports as prepared and selected through GELDAR_WORLD_VOLUME. */
 const FAKE_WORLD_VOLUME = 'geldar-phase0-world-run-1';
+/** The seed the fake gate reads from the shard file, as `shards/phase0.yaml` names it. */
+const FAKE_SEED = 8675309;
 
 export const MIN = 60_000;
 export const START_MS = Date.parse('2026-11-10T00:00:00Z');
@@ -290,6 +292,7 @@ export function passingPreflight(
             runTier: PROFILE_TIER[profile],
           },
         },
+        seed: FAKE_SEED,
         shardConfigSha256: 'a'.repeat(64),
         shardCommittedSha256: null,
         criteriaSha256: 'b'.repeat(64),

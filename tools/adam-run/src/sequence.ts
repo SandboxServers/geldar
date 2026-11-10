@@ -37,6 +37,8 @@ export const MAX_SAMPLER_FAILURES = 5;
 
 export interface PreflightFacts {
   facts: PreconditionFacts;
+  /** The world seed the shard file names; the run manifest records it. */
+  seed: number;
   shardConfigSha256: string;
   /** The digest of the committed shard file when the working copy differs from it; null when it does not. */
   shardCommittedSha256: string | null;
@@ -66,7 +68,6 @@ export interface RunInput {
   /** The run folder, `.geldar/runs/<run-id>`. */
   runDir: string;
   profile: Profile;
-  seed: number;
   durationMs: number;
   /** The planned stack restart, as an epoch time, or null for none. */
   plannedRestartAtMs: number | null;
@@ -146,7 +147,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     buildManifest({
       runId: input.runId,
       profile: input.profile,
-      seed: input.seed,
+      seed: gathered.seed,
       startedAt: new Date(startMs).toISOString(),
       plannedRestartAt:
         input.plannedRestartAtMs === null ? null : new Date(input.plannedRestartAtMs).toISOString(),

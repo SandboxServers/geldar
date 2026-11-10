@@ -84,6 +84,15 @@ export function readPins(shardYaml: string): PinnedModel[] {
   return out;
 }
 
+/** The world seed of `shards/phase0.yaml`, the one the Paper server and the compose SEED must equal. Throws when it is missing. */
+export function readSeed(shardYaml: string): number {
+  const seed = (parse(shardYaml) as { seed?: unknown } | null)?.seed;
+  if (typeof seed !== 'number' || !Number.isInteger(seed)) {
+    throw new Error('shards/phase0.yaml has no integer seed');
+  }
+  return seed;
+}
+
 /** What `adam-cli select` changed in the shard file before the start, with the file's digest before and after. */
 export interface ShardEditInput {
   changes: { key: string; from: string; to: string }[];

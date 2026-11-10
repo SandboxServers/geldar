@@ -388,7 +388,6 @@ export async function runCli(
     runId,
     runDir,
     profile: a.profile,
-    seed: 0,
     durationMs: hours * 60 * MINUTE_MS,
     plannedRestartAtMs: a.restartAtHours === null ? null : now + a.restartAtHours * 60 * MINUTE_MS,
     bodyKillAtMs: a.bodyKillAfterMinutes === null ? null : now + a.bodyKillAfterMinutes * MINUTE_MS,

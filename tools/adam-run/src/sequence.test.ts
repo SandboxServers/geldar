@@ -47,7 +47,6 @@ function rig(
     runId: 'run-1',
     runDir: RUN_DIR,
     profile,
-    seed: 7,
     durationMs: 30 * MIN,
     plannedRestartAtMs: null,
     bodyKillAtMs: null,
@@ -76,6 +75,13 @@ const samples = (lines: Line[]): Line[] => lines.filter((l) => l.event === undef
 const events = (lines: Line[], event: string): Line[] => lines.filter((l) => l.event === event);
 
 describe('runSequence', () => {
+  it('records the seed the shard file names in the run manifest, not a placeholder', async () => {
+    const r = rig('smoke', {});
+    await runSequence(r.deps, r.run);
+    const manifest = JSON.parse(r.files.read(runPaths(RUN_DIR).manifest) ?? '{}');
+    expect(manifest.seed).toBe(8675309);
+  });
+
   it('runs 30 simulated minutes with a restart and a Body kill, then reports', async () => {
     const r = rig(
       'smoke',

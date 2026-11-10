@@ -572,7 +572,7 @@ describe('the preflight facts', () => {
     mkdirSync(join(repoRoot, 'shards'));
     writeFileSync(
       join(repoRoot, 'shards', 'phase0.yaml'),
-      'model_pins:\n  qwen3:8b:\n    digest: sha256:bbb\nmind:\n  run_tier: fast\n  agent:\n    username: ag_adam_04\n    tier: fast\n',
+      'seed: 8675309\nmodel_pins:\n  qwen3:8b:\n    digest: sha256:bbb\nmind:\n  run_tier: fast\n  agent:\n    username: ag_adam_04\n    tier: fast\n',
     );
     mkdirSync(join(repoRoot, 'bench-results'));
     const benchName = '20261110T024026Z-eba101b.json';
@@ -612,9 +612,11 @@ describe('the preflight facts', () => {
         sql: recordingSql().sql,
         env: { GELDAR_WORLD_VOLUME: 'geldar-phase0-world-run-1' },
       });
-      const { facts } = await preflight.gather();
+      const gathered = await preflight.gather();
+      const { facts } = gathered;
       expect(facts.bench).toEqual({ file: benchName, text: '{"meta":{}}' });
       expect(facts.prepared?.worldVolume).toBe('geldar-phase0-world-run-1');
+      expect(gathered.seed).toBe(8675309);
       expect(facts.volume?.exists).toBe(true);
       expect(facts.paperVolumes).toEqual(['geldar-phase0-world-run-1']);
       expect(facts.worldVolumeEnv).toBe('geldar-phase0-world-run-1');
