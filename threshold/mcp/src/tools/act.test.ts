@@ -154,6 +154,21 @@ describe('act: refunds', () => {
   });
 });
 
+describe('act: a presence fault keeps the refusal', () => {
+  it('still refuses body_unavailable when wantBody throws, and logs the cause', async () => {
+    const h = harness();
+    const logged: Record<string, unknown>[] = [];
+    h.deps.log = (line) => logged.push(line);
+    h.presence.wantBody = async () => {
+      throw new Error('kv down');
+    };
+    h.body.setOffline(CALLER.lifeId, true);
+    await expect(act(h, { actions: [GOTO] })).rejects.toBeInstanceOf(ActToolError);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
+    expect(logged).toEqual([{ event: 'presence_error', cause: 'Error: kv down' }]);
+  });
+});
+
 describe('act: stale snapshot retry', () => {
   it('retries once with a fresh snapshot and sends the plan when the retry is accepted', async () => {
     const h = harness();
