@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
-import { initSecretFiles, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
+import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
 import {
   checkOutPath,
   DEFAULT_GRACE_MINUTES,
@@ -78,8 +78,18 @@ export async function runInit(parsed: Parsed, io: Io, dir: string = SECRET_DIR):
   if (parsed.flags.has('--i-understand') && !force) throw new Error('--i-understand needs --force');
   for (const report of await initSecretFiles(dir, { force })) {
     io.out(`${report.action} ${resolve(dir, report.file)}`);
+    if (report.file === PASSWORD_FILE && report.action === 'replaced') {
+      io.err(PASSWORD_REWRITE_WARNING);
+    }
   }
 }
+
+/** Printed when the Postgres password file is rewritten: the database role keeps its old password. */
+export const PASSWORD_REWRITE_WARNING = [
+  'WARNING: postgres-mcp.txt was rewritten, but the geldar_mcp database role password did NOT change.',
+  'The MCP cannot log in until the role is set to the new password. Run:',
+  '  db migrate --set-role-password geldar_mcp --password-file compose/secrets/postgres-mcp.txt',
+].join('\n');
 
 /** A database session: the query surface plus end(). */
 export interface SqlSession extends Sql {
