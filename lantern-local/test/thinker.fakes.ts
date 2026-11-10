@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { createServer as createNetServer, type AddressInfo } from 'node:net';
+import { type AddressInfo, createServer as createNetServer } from 'node:net';
 import { type WebSocket, WebSocketServer } from 'ws';
 import type { ModelPin } from '../src/config.ts';
 
