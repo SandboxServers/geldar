@@ -5,7 +5,7 @@ const kvmCreate = vi.hoisted(() => vi.fn());
 const natsClose = vi.hoisted(() => vi.fn(async () => undefined));
 
 vi.mock('@nats-io/transport-node', () => ({
-  connect: async () => ({ close: natsClose }),
+  connect: async () => ({ close: natsClose, closed: () => new Promise(() => undefined) }),
 }));
 vi.mock('@nats-io/jetstream', () => ({ jetstream: () => ({}) }));
 vi.mock('@nats-io/kv', () => ({

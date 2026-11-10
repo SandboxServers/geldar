@@ -1,5 +1,5 @@
 /** Entry point: connect to Postgres and NATS, run the consumer, drain on SIGINT/SIGTERM. */
-import { connect } from '@nats-io/transport-node';
+import { connectNats } from '@geldar/contract/nats';
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';
@@ -16,7 +16,7 @@ const pool = new pg.Pool({
 });
 // An idle client dropping must not crash the process; the next query reconnects.
 pool.on('error', (error) => console.error('eventsink: idle postgres client error', error));
-const nc = await connect({ servers: config.natsUrl, name: 'eventsink', maxReconnectAttempts: -1 });
+const nc = await connectNats({ servers: config.natsUrl, name: 'eventsink' });
 const consumer = await startConsumer(nc, pgEventWriter(pool), {
   ...config,
   onFatal: (error) => {

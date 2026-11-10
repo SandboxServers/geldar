@@ -2,9 +2,10 @@
  * Reads the presence record of each ranger's life from the `geldar-presence` bucket, for `players status`. The
  * MCP writes the records; this only reads them. Any failure to reach NATS makes every life `unknown`.
  */
+
+import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
-import { connect } from '@nats-io/transport-node';
 import { type Presence, parsePresenceRecord } from './rangers.ts';
 
 /** The JetStream KV bucket of presence records; the same name as the contract's PRESENCE_BUCKET. */
@@ -18,9 +19,9 @@ export async function readPresence(
 ): Promise<Map<string, Presence>> {
   const unknown = new Map<string, Presence>(lifeIds.map((id) => [id, { kind: 'unknown' }]));
   if (natsUrl === undefined || natsUrl.trim() === '') return unknown;
-  let nc: Awaited<ReturnType<typeof connect>>;
+  let nc: Awaited<ReturnType<typeof connectNats>>;
   try {
-    nc = await connect({ servers: natsUrl, timeout: CONNECT_TIMEOUT_MS, reconnect: false });
+    nc = await connectNats({ servers: natsUrl, name: 'players-cli', timeout: CONNECT_TIMEOUT_MS });
   } catch {
     return unknown;
   }

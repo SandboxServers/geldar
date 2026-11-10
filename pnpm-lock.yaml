@@ -433,6 +433,9 @@ importers:
 
   tools/players-cli:
     dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../../contract
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0

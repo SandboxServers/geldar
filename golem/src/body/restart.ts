@@ -1,6 +1,6 @@
+import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
-import { connect } from '@nats-io/transport-node';
 import {
   type BodyKv,
   CHECKPOINT_BUCKET,
@@ -90,12 +90,10 @@ export async function openRestartKv(
 ): Promise<{ kv: RestartBodyOptions['kv']; close(): Promise<void> }> {
   assertLoopbackNatsUrl(natsUrl);
   let tries = 0;
-  const nc = await connect({
+  const nc = await connectNats({
     servers: natsUrl,
     name: 'golem-restart',
     timeout: CONNECT_TIMEOUT_MS,
-    reconnect: true,
-    maxReconnectAttempts: -1,
     reconnectDelayHandler: () => Math.min(1_000 * 2 ** tries++, 15_000),
   });
   void (async () => {

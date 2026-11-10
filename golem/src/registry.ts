@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
+import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
-import { connect } from '@nats-io/transport-node';
 import type { GolemConfig } from './config.ts';
 
 /** The JetStream KV bucket the Velocity identity plugin watches; Golem creates it. */
@@ -74,14 +74,9 @@ function hostAndPort(natsUrl: string): string {
 
 /** Opens NATS and creates the bucket if it is missing. Throws a clear error when unreachable. */
 export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistry> {
-  let nc: Awaited<ReturnType<typeof connect>>;
+  let nc: Awaited<ReturnType<typeof connectNats>>;
   try {
-    nc = await connect({
-      servers: natsUrl,
-      name: 'golem',
-      timeout: CONNECT_TIMEOUT_MS,
-      reconnect: false,
-    });
+    nc = await connectNats({ servers: natsUrl, name: 'golem', timeout: CONNECT_TIMEOUT_MS });
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -263,11 +258,10 @@ async function keysForLife(
  * Throws when NATS or the bucket cannot be reached; the caller reports it.
  */
 export async function removeRegistryKey(natsUrl: string, lifeId: string): Promise<void> {
-  const nc = await connect({
+  const nc = await connectNats({
     servers: natsUrl,
     name: 'geldar-tools',
     timeout: CONNECT_TIMEOUT_MS,
-    reconnect: false,
   });
   try {
     const kv = await new Kvm(jetstream(nc)).open(REGISTRY_BUCKET);
