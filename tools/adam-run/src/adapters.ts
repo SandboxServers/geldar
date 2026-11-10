@@ -35,6 +35,7 @@ import {
 } from './ports.ts';
 import { SERVICE_MARKERS } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
+import { classifyShardEdit, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
 import { parsePrepared, WORLD_VOLUME_ENV, type WorldVolumes } from './world-volume.ts';
 
 const COMPOSE_FILE = 'compose/phase0.yml';
@@ -382,6 +383,20 @@ export function createPreflight(opts: {
       if (head.code !== 0 || status.code !== 0)
         throw new Error('git could not report HEAD or the tree');
       const shardYaml = readFileSync(join(opts.repoRoot, 'shards', 'phase0.yaml'), 'utf8');
+      // The shard file may carry the tier select's edit; any other change to the tree is refused by the gate.
+      const changed = status.stdout
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line) => line.slice(3).trim());
+      const otherChanges = changed.filter((path) => path !== SHARD_PATH);
+      let shardEdit: ShardEdit = { kind: 'none' };
+      let shardCommittedSha256: string | null = null;
+      if (changed.includes(SHARD_PATH)) {
+        const committed = await opts.runner.exec('git', ['show', `HEAD:${SHARD_PATH}`]);
+        if (committed.code !== 0) throw new Error(`git could not read the committed ${SHARD_PATH}`);
+        shardEdit = classifyShardEdit(committed.stdout, shardYaml);
+        shardCommittedSha256 = sha256Hex(committed.stdout);
+      }
       const pins: PinnedModel[] = readPins(shardYaml);
       const benchDir = join(opts.repoRoot, 'bench-results');
       const benchFile = newestBenchFile(listDir(benchDir));
@@ -405,7 +420,8 @@ export function createPreflight(opts: {
         facts: {
           profile: opts.profile,
           headSha: head.stdout.trim(),
-          cleanTree: status.stdout.trim() === '',
+          otherChanges,
+          shardEdit,
           bench:
             benchFile === null || benchText === null ? null : { file: benchFile, text: benchText },
           pins,
@@ -417,6 +433,7 @@ export function createPreflight(opts: {
           lifeId: LIFE_ID[opts.profile],
         },
         shardConfigSha256: sha256Hex(shardYaml),
+        shardCommittedSha256,
         criteriaSha256: sha256Hex(opts.criteriaText),
       };
     },

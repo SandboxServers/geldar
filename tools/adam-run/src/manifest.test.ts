@@ -29,6 +29,7 @@ const input: ManifestInput = {
   plannedRestartAt: '2026-11-10T12:00:00.000Z',
   git: { sha: 'eba101b', clean: true },
   shardConfigSha256: 'x'.repeat(64),
+  shardEdit: null,
   pins: readPins(SHARD_YAML),
   observedDigests: { 'qwen3:8b': 'sha256:bbb', 'qwen3:32b': 'sha256:other' },
   bench: null,
@@ -86,6 +87,23 @@ describe('buildManifest', () => {
       file: '20261110T024026Z-eba101b.json',
       commit: 'eba101b',
       tps20: [{ scenario: 'food', success_pct: 100 }],
+    });
+  });
+
+  it('records the select edit with the shard digest before and after, and null when none was made', () => {
+    expect(buildManifest(input).shard_edit).toBeNull();
+    const shardEdit = {
+      changes: [
+        { key: 'mind.agent.tier', from: '"strong"', to: '"fast"' },
+        { key: 'mind.run_tier', from: '"strong"', to: '"fast"' },
+      ],
+      sha256Before: 'c'.repeat(64),
+      sha256After: 'd'.repeat(64),
+    };
+    expect(buildManifest({ ...input, shardEdit }).shard_edit).toEqual({
+      changes: shardEdit.changes,
+      sha256_before: 'c'.repeat(64),
+      sha256_after: 'd'.repeat(64),
     });
   });
 

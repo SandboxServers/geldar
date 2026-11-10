@@ -26,7 +26,7 @@ function rig(
   profile: Profile,
   over: Partial<Scenario>,
   input: Partial<RunInput> = {},
-  preflightOver: { cleanTree?: boolean } = {},
+  preflightOver: { otherChanges?: string[] } = {},
 ) {
   const clock = new FakeClock();
   const s = scenario(LIFE_ID[profile], over);
@@ -142,7 +142,7 @@ describe('runSequence', () => {
   });
 
   it('refuses to start when the precheck fails, and writes and starts nothing', async () => {
-    const r = rig('smoke', {}, {}, { cleanTree: false });
+    const r = rig('smoke', {}, {}, { otherChanges: ['animus/src/x.ts'] });
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'refused' });
     expect(r.sup.calls).toEqual([]);

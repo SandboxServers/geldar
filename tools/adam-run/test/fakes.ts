@@ -238,7 +238,10 @@ export class FakeReporter implements Reporter {
 }
 
 /** Facts that pass every precondition for the profile: a clean tree, a gate at HEAD, the profile's life id. */
-export function passingPreflight(profile: Profile, over: { cleanTree?: boolean } = {}): Preflight {
+export function passingPreflight(
+  profile: Profile,
+  over: { otherChanges?: string[]; shardEdit?: import('../src/shard-edit.ts').ShardEdit } = {},
+): Preflight {
   const bench = {
     meta: { commit: 'abc123' },
     truncated: false,
@@ -250,7 +253,8 @@ export function passingPreflight(profile: Profile, over: { cleanTree?: boolean }
         facts: {
           profile,
           headSha: 'abc123',
-          cleanTree: over.cleanTree ?? true,
+          otherChanges: over.otherChanges ?? [],
+          shardEdit: over.shardEdit ?? { kind: 'none' },
           bench: { file: '20261109T000000Z-abc123.json', text: JSON.stringify(bench) },
           pins: [],
           observedDigests: {},
@@ -271,6 +275,7 @@ export function passingPreflight(profile: Profile, over: { cleanTree?: boolean }
           lifeId: LIFE_ID[profile],
         },
         shardConfigSha256: 'a'.repeat(64),
+        shardCommittedSha256: null,
         criteriaSha256: 'b'.repeat(64),
       };
     },

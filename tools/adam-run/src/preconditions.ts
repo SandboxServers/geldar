@@ -11,12 +11,16 @@ import {
   type Profile,
   tagKey,
 } from './manifest.ts';
+import { SHARD_PATH, type ShardEdit } from './shard-edit.ts';
 import type { PreparedRecord, VolumeState } from './world-volume.ts';
 
 export interface PreconditionFacts {
   profile: Profile;
   headSha: string;
-  cleanTree: boolean;
+  /** Changed or untracked paths in the working tree, other than `shards/phase0.yaml`. Empty when none. */
+  otherChanges: string[];
+  /** What changed in `shards/phase0.yaml`: nothing, the tier select's three keys, or something a start refuses. */
+  shardEdit: ShardEdit;
   /** The newest `bench-results/*.json` and its text, or null when the folder holds no result. */
   bench: BenchFile | null;
   pins: PinnedModel[];
@@ -76,8 +80,16 @@ function worldVolumeProblems(f: PreconditionFacts): string[] {
 
 export function checkPreconditions(f: PreconditionFacts): Verdict {
   const missing: string[] = [];
-  if (!f.cleanTree)
-    missing.push('clean tree: the working tree has uncommitted changes; commit or remove them');
+  if (f.otherChanges.length > 0) {
+    missing.push(
+      `clean tree: uncommitted changes in ${f.otherChanges.join(', ')}; commit or remove them`,
+    );
+  }
+  if (f.shardEdit.kind === 'refused') {
+    missing.push(
+      `clean tree: ${SHARD_PATH} is changed beyond the tier select (${f.shardEdit.reason}${f.shardEdit.keys.length > 0 ? `: ${f.shardEdit.keys.join(', ')}` : ''}); only the tier select may change it`,
+    );
+  }
   const gate = checkBench(f.bench, f.headSha);
   if (!gate.ok) missing.push(...gate.problems);
   for (const pin of f.pins) {

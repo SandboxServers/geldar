@@ -45,7 +45,7 @@ function recordingSupervisor(calls: string[]): Supervisor {
 }
 
 function harness(
-  opts: { processes?: ProcessView[]; cleanTree?: boolean; reporter?: Reporter } = {},
+  opts: { processes?: ProcessView[]; otherChanges?: string[]; reporter?: Reporter } = {},
 ) {
   const clock = new FakeClock();
   const files = new MemoryFiles();
@@ -68,7 +68,7 @@ function harness(
     runFiles: () => files,
     runsFiles: files,
     preflight: (profile: Profile) =>
-      passingPreflight(profile, { cleanTree: opts.cleanTree ?? true }),
+      passingPreflight(profile, { otherChanges: opts.otherChanges ?? [] }),
     reporter: () => reporter,
     criteria: CRITERIA,
     criteriaText: '{}',
@@ -165,7 +165,7 @@ describe('start', () => {
 
   it('refuses with the missing items and starts nothing when the tree is dirty', async () => {
     const out = capture();
-    const { h, calls, files } = harness({ cleanTree: false });
+    const { h, calls, files } = harness({ otherChanges: ['animus/src/x.ts'] });
     const code = await runCli(['smoke', 'start', '--run-id', RUN], REPO, h, out.log);
     expect(code).toBe(1);
     expect(out.text()).toContain('start refused:');
