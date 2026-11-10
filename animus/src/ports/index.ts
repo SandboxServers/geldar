@@ -33,6 +33,7 @@ export type {
   MemoryStore,
   NewMemory,
   Provenance,
+  ReflectionWrites,
   RelationshipRow,
   SuppressedWakeup,
   ThoughtRow,

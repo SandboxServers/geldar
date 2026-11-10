@@ -59,6 +59,9 @@ export interface MindDeps {
   onError?: (error: unknown) => void;
 }
 
+/** Vectors filled in per `backfillEmbeddings` call. */
+const BACKFILL_BATCH = 50;
+
 /** The Mind of one life. */
 export class Mind {
   readonly attention: Attention;
@@ -96,35 +99,37 @@ export class Mind {
       admission: this.admission,
       thinking: () => this.running > 0,
       run: (input) =>
-        reflectOnce(
-          {
-            shard: config.shard,
-            agent: {
-              name: config.agent.name,
-              lifeId: this.lifeId,
-              personalitySeed: config.agent.personalitySeed,
+        this.backfilled(() =>
+          reflectOnce(
+            {
+              shard: config.shard,
+              agent: {
+                name: config.agent.name,
+                lifeId: this.lifeId,
+                personalitySeed: config.agent.personalitySeed,
+              },
+              model: options.model,
+              settings: config.reflection,
+              fatigueDays: config.memory.fatigueDays,
+              fatigueRule: deps.fatigueRule ?? true,
+              stamp: {
+                schemaVersion: deps.versions.schema,
+                mindVersion: deps.versions.mind,
+                bodyVersion: deps.versions.body,
+                modelConfig: options.modelConfig,
+                effort: config.reflection.reasoning === 'on' ? 'high' : 'minimal',
+              },
+              store: deps.store,
+              journal: deps.journal,
+              embedder: deps.embedder,
+              models: deps.model,
+              prompts: deps.prompts,
+              validator: deps.validator,
+              publisher: deps.publisher,
+              now: () => new Date(now()),
             },
-            model: options.model,
-            settings: config.reflection,
-            fatigueDays: config.memory.fatigueDays,
-            fatigueRule: deps.fatigueRule ?? true,
-            stamp: {
-              schemaVersion: deps.versions.schema,
-              mindVersion: deps.versions.mind,
-              bodyVersion: deps.versions.body,
-              modelConfig: options.modelConfig,
-              effort: config.reflection.reasoning === 'on' ? 'high' : 'minimal',
-            },
-            store: deps.store,
-            journal: deps.journal,
-            embedder: deps.embedder,
-            models: deps.model,
-            prompts: deps.prompts,
-            validator: deps.validator,
-            publisher: deps.publisher,
-            now: () => new Date(now()),
-          },
-          input,
+            input,
+          ),
         ),
     });
     this.loop = new ThinkingLoop(
@@ -203,6 +208,25 @@ export class Mind {
         this.work.delete(tracked);
       });
     this.work.add(tracked);
+  }
+
+  /** Fills in vectors the embedder missed. A failure is reported; the Mind keeps going. */
+  private async backfill(): Promise<void> {
+    try {
+      await this.deps.store.backfillEmbeddings(BACKFILL_BATCH);
+    } catch (error) {
+      (this.deps.onError ?? ((e: unknown) => console.error(e)))(error);
+    }
+  }
+
+  /** Runs `work` between two backfills, so a reflection's memories get their vectors. */
+  private async backfilled<T>(work: () => Promise<T>): Promise<T> {
+    await this.backfill();
+    try {
+      return await work();
+    } finally {
+      await this.backfill();
+    }
   }
 
   /** The loop's body link, which also gives the reflection the inventory of every snapshot. */

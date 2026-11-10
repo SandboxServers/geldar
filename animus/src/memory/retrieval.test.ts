@@ -129,7 +129,8 @@ describe('relationships', () => {
   it('keeps six in full and names the rest, for visible agents only', async () => {
     const { store, retriever } = await setup();
     const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    // Each name is a real agents row, so the store writes a relationships row.
+    const ids = names.map((n) => `ag_${n}_01`);
+    // Each name is a real agents row, so the store writes a relationships row keyed by its id.
     for (const [i, n] of names.entries()) {
       await store.ensureAgent({ ...agent, agentId: `ag_${n}_01`, name: n, gameAccount: `${n}_01` });
       await store.upsertRelationships(
@@ -140,9 +141,11 @@ describe('relationships', () => {
     }
     await store.ensureAgent({ ...agent, agentId: 'ag_z_01', name: 'z', gameAccount: 'z_01' });
     await store.upsertRelationships(LIFE, [{ name: 'z', impression: 'far away', trust: 100 }], 1);
-    const got = await retriever.retrieve(request({ visibleAgents: names }));
-    expect(got.relationships.map((r) => r.otherId)).toEqual(['h', 'g', 'f', 'e', 'd', 'c']);
-    expect(got.relationshipsNamedOnly).toEqual(['b', 'a']);
+    const got = await retriever.retrieve(request({ visibleAgents: ids }));
+    expect(got.relationships.map((r) => r.otherId)).toEqual(
+      ['h', 'g', 'f', 'e', 'd', 'c'].map((n) => `ag_${n}_01`),
+    );
+    expect(got.relationshipsNamedOnly).toEqual(['ag_b_01', 'ag_a_01']);
   });
 });
 

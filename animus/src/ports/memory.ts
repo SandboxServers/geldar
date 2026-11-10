@@ -99,8 +99,27 @@ export interface DeterministicMemory {
   relationships: RelationshipRow[];
   /** Active semantic memories (beliefs), newest first. */
   beliefs: MemoryRow[];
-  /** Active, unresolved memories whose `dueTick` is at or before the tick asked for, oldest first. */
+  /**
+   * Active, unresolved commitments (provenance `commitment`) whose `dueTick` is null or at or before
+   * the tick asked for, oldest first.
+   */
   dueCommitments: MemoryRow[];
+}
+
+/** What one applied reflection writes; `commitReflection` stores all of it or none of it. */
+export interface ReflectionWrites {
+  /** The world day: the `last_sleep_day` it sets, and the `last_seen_day` of relationship rows. */
+  day: number;
+  memories: NewMemory[];
+  /** One per memory: its vector, or null when the embedder failed (filled in by `backfillEmbeddings`). */
+  embeddings: (number[] | null)[];
+  /** Texts of the active beliefs to retire. */
+  deactivate: string[];
+  /** Memory ids of the commitments to resolve. */
+  resolve: number[];
+  relationships: Reflection['relationship_updates'];
+  /** The new goals, the first is rank 0; null keeps the current goals (a degraded reflection). */
+  goals: Reflection['goals'] | null;
 }
 
 /** Row of `thoughts`: one model call and its outcome. */
@@ -190,7 +209,11 @@ export interface MemoryStore {
   resolveCommitment(lifeId: string, memoryId: number): Promise<boolean>;
   /** Marks the active beliefs whose text equals one of `beliefs` as inactive; returns how many. */
   deactivateBeliefs(lifeId: string, beliefs: string[]): Promise<number>;
-  /** Inserts or updates one row per update, keyed by (life, other party). */
+  /**
+   * Inserts or updates one row per update whose name resolves to an agent, keyed by (life, other
+   * party). Any other name becomes a semantic memory with subject `relationship:<name>`; the earlier
+   * active memory with that subject is retired first, so one name keeps one active memory.
+   */
   upsertRelationships(
     lifeId: string,
     updates: Reflection['relationship_updates'],
@@ -200,6 +223,13 @@ export interface MemoryStore {
   replaceGoals(lifeId: string, goals: Reflection['goals']): Promise<void>;
   /** Records the world day of the life's last completed sleep. */
   setLastSleepDay(lifeId: string, day: number): Promise<void>;
+  /**
+   * Applies one reflection's writes in one transaction: the memories, the resolved commitments,
+   * the retired beliefs, the relationships, the goals and the life's last sleep day. On any failure
+   * it writes nothing, so the next sleep runs the reflection again. Returns how many beliefs were
+   * retired.
+   */
+  commitReflection(lifeId: string, writes: ReflectionWrites): Promise<number>;
 }
 
 /** The record of thoughts and suppressed wakes. */

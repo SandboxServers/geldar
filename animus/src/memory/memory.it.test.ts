@@ -7,6 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadAnimusConfig } from '../config.ts';
 import { FakeEmbedder } from '../fakes/memory.fakes.ts';
 import type { AgentRow } from '../ports/index.ts';
+import { type ApplyContext, applyReflection } from '../reflection/apply.ts';
+import { reflection } from '../reflection/reflection.fixtures.ts';
 import { OllamaEmbedder } from './embedder-ollama.ts';
 import { PgJournal } from './journal.ts';
 import { openPool, PgMemoryStore } from './pg-store.ts';
@@ -32,6 +34,17 @@ const agent = (agentId: string, name: string): AgentRow => ({
   budgetRemaining: null,
   budgetDaily: null,
   lastSleepDay: null,
+});
+
+/** The context an apply of a reflection on LIFE needs, with no digest observations. */
+const applyContext = (over: Partial<ApplyContext> = {}): ApplyContext => ({
+  lifeId: LIFE,
+  day: 1,
+  thoughtId: 'th_it',
+  degraded: false,
+  digest: { ownObservations: [], heard: [] },
+  beliefs: [],
+  ...over,
 });
 
 describe.skipIf(!run)('memory over live Postgres', () => {
@@ -74,18 +87,19 @@ describe.skipIf(!run)('memory over live Postgres', () => {
       texts.map((text) => ({ ...base, kind: 'episodic', text })),
       vectors,
     );
-    const [due] = await store.writeMemories(
-      LIFE,
-      [
-        {
-          ...base,
-          kind: 'episodic',
-          provenance: 'commitment',
-          text: 'meet at sunset',
-          dueTick: 100,
-        },
-      ],
-      await embedder.embed(['meet at sunset'], 'document'),
+    const goals = [
+      { goal: 'build', why: 'shelter' },
+      { goal: 'eat', why: 'hunger' },
+    ];
+    await applyReflection(
+      { store, embedder },
+      reflection({
+        memories_to_keep: [],
+        beliefs_add: [{ belief: 'meet at sunset', kind: 'commitment' }] as never,
+        relationship_updates: [{ name: 'someone unknown', impression: 'odd', trust: 40 }],
+        goals: goals as never,
+      }),
+      applyContext(),
     );
     await store.replaceGoals(LIFE, [
       { goal: 'build', why: 'shelter' },
@@ -102,15 +116,26 @@ describe.skipIf(!run)('memory over live Postgres', () => {
 
     const loaded = await store.loadDeterministic(LIFE, 200);
     expect(loaded.goals.map((g) => g.goal)).toEqual(['build', 'eat']);
-    expect(loaded.dueCommitments.map((m) => m.memoryId)).toEqual([due]);
+    expect(loaded.dueCommitments.map((m) => m.text)).toEqual(['meet at sunset']);
     expect(loaded.relationships.map((r) => r.otherId)).toEqual([OTHER]);
-    expect(loaded.beliefs.map((b) => b.subject)).toEqual(['relationship:someone unknown']);
+    expect(loaded.beliefs.map((b) => b.subject)).toContain('relationship:someone unknown');
 
     const [query] = await embedder.embed(['found iron'], 'document');
     const nearest = await store.searchEpisodic(LIFE, query ?? [], 1);
     expect(nearest[0]?.text).toBe('found iron');
 
-    expect(await store.deactivateBeliefs(LIFE, ['someone unknown: odd (trust 40)'])).toBe(1);
+    const removed = await applyReflection(
+      { store, embedder },
+      reflection({
+        memories_to_keep: [],
+        beliefs_add: [],
+        beliefs_remove: ['meet at sunset'],
+        goals: goals as never,
+      }),
+      applyContext({ beliefs: loaded.beliefs }),
+    );
+    expect(removed.beliefsRemoved).toBe(1);
+    expect((await store.loadDeterministic(LIFE, 200)).dueCommitments).toEqual([]);
     await new PgJournal(pool).recordSuppressed({
       lifeId: LIFE,
       at: new Date().toISOString(),

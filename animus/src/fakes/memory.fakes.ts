@@ -10,6 +10,7 @@ import type {
   MemoryRow,
   MemoryStore,
   NewMemory,
+  ReflectionWrites,
   RelationshipRow,
   SuppressedWakeup,
   ThoughtRow,
@@ -58,6 +59,12 @@ function cosine(a: number[], b: number[]): number {
   return na === 0 || nb === 0 ? 0 : dot / Math.sqrt(na * nb);
 }
 
+/** Replaces the entries of `target` with those of `source`. */
+function refill<K, V>(target: Map<K, V>, source: Map<K, V>): void {
+  target.clear();
+  for (const [key, value] of source) target.set(key, value);
+}
+
 interface StoredMemory {
   row: MemoryRow;
   /** Null until written or backfilled; a memory without a vector is not found by a search. */
@@ -99,8 +106,13 @@ export class FakeMemoryStore implements MemoryStore, Journal {
       relationships: [...this.relationships.values()].filter((r) => r.agentId === lifeId),
       beliefs: active.filter((m) => m.kind === 'semantic').reverse(),
       dueCommitments: active
-        .filter((m) => !m.resolved && m.dueTick !== null && m.dueTick <= nowTick)
-        .sort((a, b) => (a.dueTick ?? 0) - (b.dueTick ?? 0)),
+        .filter(
+          (m) =>
+            m.provenance === 'commitment' &&
+            !m.resolved &&
+            (m.dueTick === null || m.dueTick <= nowTick),
+        )
+        .sort((a, b) => (a.dueTick ?? -1) - (b.dueTick ?? -1)),
     };
   }
 
@@ -129,7 +141,7 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     embeddings: (number[] | null)[],
   ): Promise<number[]> {
     if (memories.length !== embeddings.length) {
-      throw new Error(` memories but ${embeddings.length} embeddings`);
+      throw new Error(`${memories.length} memories but ${embeddings.length} embeddings`);
     }
     if (embeddings.some((e) => e !== null && e.length !== DIMS)) {
       throw new Error(`every embedding must have ${DIMS} numbers`);
@@ -191,19 +203,47 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     return count;
   }
 
+  /** As `PgMemoryStore`: a name that resolves to another life's agent row gets a relationship row. */
   async upsertRelationships(
     lifeId: string,
     updates: { name: string; impression: string; trust: number }[],
     day: number,
   ): Promise<void> {
     for (const update of updates) {
-      this.relationships.set(`${lifeId}|${update.name}`, {
-        agentId: lifeId,
-        otherId: update.name,
-        impression: update.impression,
-        trust: update.trust,
-        lastSeenDay: day,
-      });
+      const otherId = this.resolveAgent(update.name, lifeId);
+      if (otherId !== undefined) {
+        this.relationships.set(`${lifeId}|${otherId}`, {
+          agentId: lifeId,
+          otherId,
+          impression: update.impression,
+          trust: update.trust,
+          lastSeenDay: day,
+        });
+        continue;
+      }
+      const subject = `relationship:${update.name}`;
+      for (const { row } of this.memories) {
+        if (row.agentId === lifeId && row.active && row.subject === subject) row.active = false;
+      }
+      const text = `${update.name}: ${update.impression} (trust ${update.trust})`;
+      const vector =
+        this.embedder === undefined ? null : await this.embedder.embed([text], 'document');
+      await this.writeMemoriesPartial(
+        lifeId,
+        [
+          {
+            kind: 'semantic',
+            provenance: 'interpretation',
+            subject,
+            text,
+            createdDay: day,
+            sourceThought: null,
+            sourceAgent: null,
+            dueTick: null,
+          },
+        ],
+        [vector?.[0] ?? null],
+      );
     }
   }
 
@@ -218,6 +258,26 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     const agent = this.agents.get(lifeId);
     if (agent === undefined) throw new Error(`no agent ${lifeId}`);
     agent.lastSleepDay = day;
+  }
+
+  /**
+   * Runs the same steps as `PgMemoryStore.commitReflection`. A step that throws restores every
+   * table to its state before the call, as the rolled-back transaction would.
+   */
+  async commitReflection(lifeId: string, writes: ReflectionWrites): Promise<number> {
+    const restore = this.snapshot();
+    try {
+      await this.writeMemoriesPartial(lifeId, writes.memories, writes.embeddings);
+      for (const memoryId of writes.resolve) await this.resolveCommitment(lifeId, memoryId);
+      const retired = await this.deactivateBeliefs(lifeId, writes.deactivate);
+      await this.upsertRelationships(lifeId, writes.relationships, writes.day);
+      if (writes.goals !== null) await this.replaceGoals(lifeId, writes.goals);
+      await this.setLastSleepDay(lifeId, writes.day);
+      return retired;
+    } catch (error) {
+      restore();
+      throw error;
+    }
   }
 
   async recordThought(row: ThoughtRow): Promise<void> {
@@ -259,6 +319,30 @@ export class FakeMemoryStore implements MemoryStore, Journal {
       wakeReason: t.wakeReason,
       parsed: t.wakeReason === 'reflection' ? null : (t.parsed as Thought | null),
     }));
+  }
+
+  /** The agent a name resolves to: by `name` or `game_account`, the latest life first. */
+  private resolveAgent(name: string, lifeId: string): string | undefined {
+    const found = [...this.agents.values()]
+      .filter((a) => a.agentId !== lifeId && (a.name === name || a.gameAccount === name))
+      .sort((a, b) => b.lifeSeq - a.lifeSeq)[0];
+    return found?.agentId;
+  }
+
+  /** Copies the tables; the returned function puts the copies back. */
+  private snapshot(): () => void {
+    const memories = this.memories.map((m) => ({ row: { ...m.row }, embedding: m.embedding }));
+    const agents = new Map([...this.agents].map(([id, a]) => [id, { ...a }] as const));
+    const relationships = new Map(this.relationships);
+    const goals = new Map(this.goals);
+    const nextMemoryId = this.nextMemoryId;
+    return () => {
+      this.memories.splice(0, this.memories.length, ...memories);
+      refill(this.agents, agents);
+      refill(this.relationships, relationships);
+      refill(this.goals, goals);
+      this.nextMemoryId = nextMemoryId;
+    };
   }
 
   private activeRows(lifeId: string): MemoryRow[] {
