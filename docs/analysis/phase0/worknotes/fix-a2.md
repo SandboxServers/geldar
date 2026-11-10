@@ -4,7 +4,7 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
 
 ## Items
 
-1. Decision record `docs/decisions/0066-nats-accounts-and-least-privilege.md`: done.
+1. Decision record `docs/decisions/0067-nats-accounts-and-least-privilege.md`: done.
 2. Opt-in overlay (generated `compose/secrets/nats-auth.conf`, `compose/nats-auth.yml`, per-component
    `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD` reads): not started.
 3. Thinker socket shared secret (`animus/src/thinker/hub.ts`, `lantern-local/src/thinker.ts`): not started.

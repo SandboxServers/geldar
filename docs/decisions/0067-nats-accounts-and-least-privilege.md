@@ -1,4 +1,4 @@
-# 0066. NATS accounts and least-privilege users, opt-in until the stack is cut over
+# 0067. NATS accounts and least-privilege users, opt-in until the stack is cut over
 
 - Status: Accepted provisionally (orchestrator, owner may revise)
 - Date: 2026-11-10
