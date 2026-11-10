@@ -138,7 +138,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
       startedAt: new Date(startMs).toISOString(),
       plannedRestartAt:
         input.plannedRestartAtMs === null ? null : new Date(input.plannedRestartAtMs).toISOString(),
-      git: { sha: f.headSha, clean: f.cleanTree },
+      git: { sha: f.headSha, clean: f.otherChanges.length === 0 && f.shardEdit.kind === 'none' },
       shardConfigSha256: gathered.shardConfigSha256,
       pins: f.pins,
       observedDigests: f.observedDigests,

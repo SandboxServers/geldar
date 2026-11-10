@@ -29,7 +29,8 @@ const BENCH_FILE = '20261110T024026Z-eba101b.json';
 const good: PreconditionFacts = {
   profile: '8b',
   headSha: SHA,
-  cleanTree: true,
+  otherChanges: [],
+  shardEdit: { kind: 'none' },
   bench: { file: BENCH_FILE, text: JSON.stringify(benchResult()) },
   pins: [{ tag: 'qwen3:8b', digest: 'sha256:bbb' }],
   observedDigests: { 'qwen3:8b': 'sha256:bbb' },
@@ -54,8 +55,37 @@ describe('checkPreconditions', () => {
     expect(checkPreconditions({ ...good, headSha: FULL_HEAD })).toEqual({ ok: true });
   });
 
+  it('accepts a tree whose only change is the tier select in shards/phase0.yaml', () => {
+    const select = {
+      kind: 'select' as const,
+      changes: [{ key: 'mind.run_tier', from: '"strong"', to: '"fast"' }],
+    };
+    expect(checkPreconditions({ ...good, shardEdit: select })).toEqual({ ok: true });
+  });
+
+  it('refuses a changed shards/phase0.yaml that is not a plain tier select', () => {
+    const refused = {
+      kind: 'refused' as const,
+      keys: ['model_pins.qwen3:8b.digest'],
+      reason: 'the tier select writes no such key',
+    };
+    const verdict = checkPreconditions({ ...good, shardEdit: refused });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok)
+      expect(verdict.missing[0]).toMatch(/^clean tree: .*model_pins\.qwen3:8b\.digest/);
+  });
+
   it.each<[string, PreconditionFacts, string]>([
-    ['a dirty tree', { ...good, cleanTree: false }, 'clean tree'],
+    ['a dirty tree', { ...good, otherChanges: ['animus/src/x.ts'] }, 'clean tree'],
+    [
+      'a select edit next to a code change',
+      {
+        ...good,
+        otherChanges: ['animus/src/x.ts'],
+        shardEdit: { kind: 'select', changes: [] },
+      },
+      'animus/src/x.ts',
+    ],
     ['no bench result file', { ...good, bench: null }, 'no bench-results/*.json file'],
     [
       'a bench file that is not JSON',
