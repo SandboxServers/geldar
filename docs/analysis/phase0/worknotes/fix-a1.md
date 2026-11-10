@@ -22,3 +22,26 @@ Branch `fix/a1-admission-nats` from `wave6-main`. One commit per item, in priori
   - Not done: deleting the key and the Paper whitelist entry from `players down` and `adam stop`,
     and whitelist removal in `tools/mcp-tokens retire`.
 - Items 2 to 5 are not started.
+
+## Step 1: mcp-tokens retire (commit 60c0d57)
+
+- `player retire` now takes the life id from the status update and runs the golem removal
+  (`removeLifeFromShard`): the registry key over NATS, then the Paper whitelist entry over RCON.
+  Each step prints its outcome; a failed or unreachable step prints the exact manual command. The
+  command exits 0 even when the removal throws.
+- Tests: `tools/mcp-tokens/src/cli.test.ts` (reachable, unreachable with manual commands, throwing
+  removal) and `players.test.ts` (retire returns the life id). `golem/test/registry-remove.test.ts`
+  covers `removeRegistryKey` (lowercase key, NATS closed on success and on both failures).
+- Mutation check: `tools/mcp-tokens/src/cli.ts` with the removal's rejection rethrown; the
+  throwing-removal test failed; the file was restored from a scratchpad backup and matched it.
+- Open: `removeRegistryKey` deletes `registryKey(lifeId)`. The key is the lowercase username, which
+  equals the life id only for bots whose username is already a life id. Other usernames keep their
+  key after retire, and the manual command has the same gap.
+
+## Step 2: nats connect() watcher (not started)
+
+- Not started in this session: the stop came from the context budget. Planned: a `nats-link`
+  workspace package with `connectNats(url, name, hooks)` that sets `maxReconnectAttempts: -1`, drops
+  `reconnect: false`, and exits non-zero on an unplanned `closed()`. Call sites to replace:
+  golem registry (2), golem players main, golem adam main, golem body restart, animus main,
+  eventsink main, threshold/mcp cli, tools/players-cli (skin-store, rangers-presence).
