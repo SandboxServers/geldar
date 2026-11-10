@@ -8,3 +8,12 @@ Branch fix/c-knowledge-boundary, from wave6-main. Items in priority order.
 4. Wake reasons rendered to the model (raw mind_start, fallback, idle, unexpected_damage) mapped to plain wording: TODO. The library golden snapshot still shows "Why you were woken: idle" and must change with it.
 5. Persona lint at `player add` and seed update, with `--allow-meta`, documented in threshold/mcp README: TODO, not started.
 6. Decision record: docs/decisions/0068-prompt-v4-and-agent-visible-text.md (coordinator ruling: 0068, not the next free number; 0066 and 0067 are taken on other branches), plus its row in docs/decisions/README.md. Must list the spec line docs/spec.md ~1584 ("observers can read it") for the owner to amend. TODO, not started.
+
+## Session: items 2 and 3 (contract text, look projection, wait cursor)
+
+Item 2 DONE in 7b2ff53. Descriptions an agent reads reworded (colo sandbox, colo's mirror, agent life, Minecraft item ID, written by other agents; watchdog in snapshot stuck). The untrusted note now reads "written by others in the world" (schema const, look.ts, test and mock copies). contract/test/agent-visible-text.test.ts scans the MCP tool list and agent-facing schemas for the marker words; the allow-list is empty and documented. Mutation check: putting "colo" back in mcp-world DefineSkillInput fails the scan; restored, tree clean.
+
+Item 3 NOT committed (stopped on context). Findings for the next session:
+- The look projection needs a PlaySnapshot without snapshot_id, shard, body_generation and world_time.ticks. The schema cannot express it through allOf with additionalProperties false, and contract/scripts/generator.ts resolveRef only accepts `#/$defs/<Name>` refs, so a pointer into snapshot.schema.json#/properties/... fails generation. Either extend resolveRef or move self, surroundings and world_time into $defs in snapshot.schema.json (type names change; check types.ts consumers).
+- play-view.ts toPlayView currently spreads the snapshot (line ~52); it must build an explicit object and return the new PlaySnapshot type.
+- The wait cursor is the shard-wide JetStream sequence (threshold/mcp/src/events/player-log.ts RingEventLog.since and head; mcp-mock sim/events.ts). Plan: a per-life counter kept in the ring, mapping stream seq to the counter, so the cursor is opaque and per-life; replay and dedupe keep using seq internally.
