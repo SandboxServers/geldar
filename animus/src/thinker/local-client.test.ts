@@ -231,6 +231,16 @@ describe('LocalThinkerClient', () => {
     await pause(30);
     expect(t.received.filter((f) => f.type === 'job')).toEqual([]);
   });
+
+  it('refuses a job above the advertised max_tokens, sending nothing', async () => {
+    const { client, t } = await setup();
+    const over = job({ maxTokens: 1025 });
+    const err = await failure(client.complete(over, new AbortController().signal));
+    expect(err.code).toBe('internal');
+    expect(err.message).toMatch(/^bad_request/);
+    await pause(30);
+    expect(t.received.filter((f) => f.type === 'job')).toEqual([]);
+  });
 });
 
 describe('LocalThinkerClient concurrency', () => {

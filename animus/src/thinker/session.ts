@@ -123,9 +123,17 @@ export class ThinkerSession {
   /**
    * Sends one job. The returned promise settles with the Thinker's answer, or rejects with the
    * `ModelError` that {@link cancel}, an `error` frame or a closed socket produced. Throws a
-   * `ModelError('internal')` when the job does not make a valid frame.
+   * `ModelError('internal')` when the job does not make a valid frame, or asks for more tokens than
+   * the model's advertised `max_tokens` (the message starts `bad_request`; no such error code exists).
    */
   submit(job: ModelJob): { jobId: string; result: Promise<JobResult> } {
+    const offer = this.accepted.get(job.model);
+    if (offer !== undefined && job.maxTokens > offer.maxTokens) {
+      throw new ModelError(
+        'internal',
+        `bad_request: max_tokens ${job.maxTokens} is above the ${offer.maxTokens} ${job.model} offers`,
+      );
+    }
     const jobId = newId('jb');
     const frame = {
       type: 'job',

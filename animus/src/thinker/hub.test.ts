@@ -155,6 +155,28 @@ describe('ThinkerHub liveness', () => {
     expect(hub.stats().filter((s) => s.state === 'ready')).toHaveLength(1);
   });
 
+  it('welcomes no more than maxConnections when a burst of sockets all say hello', async () => {
+    let connects = 0;
+    hub = await startHub({
+      maxConnections: 2,
+      onThinker: (e) => {
+        if (e.kind === 'connected') connects += 1;
+      },
+    });
+    for (let i = 0; i < 6; i += 1) {
+      const t = new FakeThinker();
+      thinkers.push(t);
+      await t.connect(hub as ThinkerHub);
+    }
+    // Every hello lands together, after every socket has passed the connect-time check. Refused
+    // sockets never get a welcome, so their hello waits out the timeout; nothing awaits it.
+    for (const t of thinkers) void t.hello().catch(() => undefined);
+    await pause(300);
+    expect(connects).toBe(2);
+    expect(hub.stats()).toHaveLength(2);
+    expect(hub.stats().every((s) => s.state === 'ready')).toBe(true);
+  });
+
   it('marks a connection down when its heartbeat is older than 45 s, and up again on a heartbeat', async () => {
     let now = 1_000_000;
     hub = await startHub({ now: () => now });
