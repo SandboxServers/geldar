@@ -8,7 +8,9 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
 2. Opt-in overlay (generated `compose/secrets/nats-auth.conf`, `compose/nats-auth.yml`, per-component
    `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD` reads): not started.
 3. Thinker socket shared secret (`animus/src/thinker/hub.ts`, `lantern-local/src/thinker.ts`): not started.
-4. Connect-path tests and a static no-credentials guard test: not started.
+4. Static no-credentials guard `tools/repo-checks/src/no-credentials.test.ts`: done (3 tests). It
+   fails when a tracked `probe-cred.txt` holds a `nats://user:pass@` URL (planted, confirmed, removed
+   from the index). Connect-path tests for the env reads: not started (no env reads exist yet).
 5. `docs/threat-model.md` and overlay docs: not started.
 
 ## Facts gathered (for later items)
