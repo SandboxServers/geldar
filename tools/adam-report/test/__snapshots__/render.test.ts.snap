@@ -1,0 +1,290 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the report renderers > the JSON report matches its snapshot 1`] = `
+"{
+  "generatedAt": "2026-11-10T10:00:00.000Z",
+  "lifeId": "life-1",
+  "manifest": {
+    "gitSha": "abc1234",
+    "modelTags": [
+      {
+        "digest": "sha256:aa",
+        "tag": "model-a"
+      },
+      {
+        "digest": "sha256:bb",
+        "tag": "model-b"
+      }
+    ],
+    "restarts": [],
+    "shardConfigHash": "cfg-1",
+    "startTime": "2026-11-10T12:00:00.000Z",
+    "tpsTarget": 20,
+    "worldSeed": "seed-1"
+  },
+  "measures": [
+    {
+      "id": "survival",
+      "note": "thoughts cover 1 of 5 days",
+      "title": "Survival: 5 consecutive in-game days",
+      "values": {
+        "beds_present": 0,
+        "days_covered": 1,
+        "deaths": 0,
+        "food_eaten_days": 1,
+        "slept_days": 1,
+        "stone_pickaxe_days": 0
+      },
+      "verdict": "UNKNOWN",
+      "window": "world days 0 to 4 (5 days from the first thought)"
+    },
+    {
+      "id": "intents",
+      "note": "1 against a minimum of 3",
+      "title": "Intents completed without a model call",
+      "values": {
+        "completed": 1,
+        "completed_without_model_call": 1,
+        "completed_without_tick_range": 0,
+        "intents_total": 1,
+        "interrupted_by_chatter": 0
+      },
+      "verdict": "FAIL",
+      "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
+    },
+    {
+      "id": "receipts",
+      "note": "economic action ac-1 has no prepared receipt",
+      "title": "Every action has a receipt",
+      "values": {
+        "actions_total": 1,
+        "economic_actions": 1,
+        "economic_without_prepared": 1,
+        "terminal_actions": 1,
+        "terminal_without_one_final_receipt": 0
+      },
+      "verdict": "FAIL",
+      "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
+    },
+    {
+      "id": "resume",
+      "note": "no Body restart in the run",
+      "title": "Body restart mid-intent resumed from checkpoint",
+      "values": {
+        "body_restarts": 0,
+        "checkpoint_resumes": 0
+      },
+      "verdict": "UNKNOWN",
+      "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
+    },
+    {
+      "id": "model_floor",
+      "note": "not computed: definition pending",
+      "title": "Model floor (smallest model that passed)",
+      "values": {},
+      "verdict": "UNKNOWN",
+      "window": "criteria file"
+    },
+    {
+      "id": "calls",
+      "note": "no useful minute in the window",
+      "title": "Inference calls per useful minute",
+      "values": {
+        "model_calls_total": 2,
+        "reflection_calls": 0,
+        "thought_calls": 2,
+        "useful_minutes": 0
+      },
+      "verdict": "UNKNOWN",
+      "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
+    },
+    {
+      "id": "latency",
+      "note": "p95 compared with 15000 ms",
+      "title": "Thought latency (p95 under the criterion)",
+      "values": {
+        "errored_calls": 0,
+        "max_ms": 2400,
+        "over_hard_limit": 0,
+        "p50_ms": 1200,
+        "p95_ms": 2400,
+        "samples": 2
+      },
+      "verdict": "PASS",
+      "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
+    },
+    {
+      "id": "continuity",
+      "note": "gap threshold pending: not computed",
+      "title": "Continuous operation across restarts",
+      "values": {
+        "body_restarts": 0,
+        "longest_gap_seconds": 60,
+        "planned_restarts": 0,
+        "run_hours": 0.03,
+        "world_days": 1
+      },
+      "verdict": "UNKNOWN",
+      "window": "2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)"
+    }
+  ],
+  "outcomes": {
+    "ok": 2,
+    "tired": 1
+  },
+  "runId": "run-1",
+  "schema": "adam-run-report/1",
+  "window": {
+    "from": "2026-11-10T12:00:00.000Z",
+    "thoughtRows": 3,
+    "to": "2026-11-10T12:02:00.000Z"
+  }
+}
+"
+`;
+
+exports[`the report renderers > the Markdown report matches its snapshot 1`] = `
+"# Adam run report: run-1
+
+- Generated at: 2026-11-10T10:00:00.000Z
+- Life: life-1
+- Query window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Git sha: abc1234
+- World seed: seed-1
+- Shard config hash: cfg-1
+- Start: 2026-11-10T12:00:00.000Z
+- TPS target: 20
+
+## Model tags
+
+- model-a (digest sha256:aa)
+- model-b (digest sha256:bb)
+
+## Restarts
+
+- none recorded
+
+## Exit criteria
+
+| Criterion | Verdict |
+| --- | --- |
+| Survival: 5 consecutive in-game days | UNKNOWN |
+| Intents completed without a model call | FAIL |
+| Every action has a receipt | FAIL |
+| Body restart mid-intent resumed from checkpoint | UNKNOWN |
+| Model floor (smallest model that passed) | UNKNOWN |
+| Inference calls per useful minute | UNKNOWN |
+| Thought latency (p95 under the criterion) | PASS |
+| Continuous operation across restarts | UNKNOWN |
+
+## Survival: 5 consecutive in-game days
+
+- Verdict: **UNKNOWN**
+- Window: world days 0 to 4 (5 days from the first thought)
+- Note: thoughts cover 1 of 5 days
+
+| Value | Number |
+| --- | --- |
+| beds_present | 0 |
+| days_covered | 1 |
+| deaths | 0 |
+| food_eaten_days | 1 |
+| slept_days | 1 |
+| stone_pickaxe_days | 0 |
+
+## Intents completed without a model call
+
+- Verdict: **FAIL**
+- Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Note: 1 against a minimum of 3
+
+| Value | Number |
+| --- | --- |
+| completed | 1 |
+| completed_without_model_call | 1 |
+| completed_without_tick_range | 0 |
+| intents_total | 1 |
+| interrupted_by_chatter | 0 |
+
+## Every action has a receipt
+
+- Verdict: **FAIL**
+- Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Note: economic action ac-1 has no prepared receipt
+
+| Value | Number |
+| --- | --- |
+| actions_total | 1 |
+| economic_actions | 1 |
+| economic_without_prepared | 1 |
+| terminal_actions | 1 |
+| terminal_without_one_final_receipt | 0 |
+
+## Body restart mid-intent resumed from checkpoint
+
+- Verdict: **UNKNOWN**
+- Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Note: no Body restart in the run
+
+| Value | Number |
+| --- | --- |
+| body_restarts | 0 |
+| checkpoint_resumes | 0 |
+
+## Model floor (smallest model that passed)
+
+- Verdict: **UNKNOWN**
+- Window: criteria file
+- Note: not computed: definition pending
+
+## Inference calls per useful minute
+
+- Verdict: **UNKNOWN**
+- Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Note: no useful minute in the window
+
+| Value | Number |
+| --- | --- |
+| model_calls_total | 2 |
+| reflection_calls | 0 |
+| thought_calls | 2 |
+| useful_minutes | 0 |
+
+## Thought latency (p95 under the criterion)
+
+- Verdict: **PASS**
+- Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Note: p95 compared with 15000 ms
+
+| Value | Number |
+| --- | --- |
+| errored_calls | 0 |
+| max_ms | 2400 |
+| over_hard_limit | 0 |
+| p50_ms | 1200 |
+| p95_ms | 2400 |
+| samples | 2 |
+
+## Continuous operation across restarts
+
+- Verdict: **UNKNOWN**
+- Window: 2026-11-10T12:00:00.000Z to 2026-11-10T12:02:00.000Z (3 thought rows)
+- Note: gap threshold pending: not computed
+
+| Value | Number |
+| --- | --- |
+| body_restarts | 0 |
+| longest_gap_seconds | 60 |
+| planned_restarts | 0 |
+| run_hours | 0.03 |
+| world_days | 1 |
+
+## Outcome histogram
+
+| Outcome | Count |
+| --- | --- |
+| ok | 2 |
+| tired | 1 |
+
+"
+`;

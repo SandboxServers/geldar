@@ -1,0 +1,16 @@
+{
+  "name": "@geldar/adam-report",
+  "private": true,
+  "description": "The Adam run report generator: reads one life from Postgres in a read-only transaction and writes run-report.json and run-report.md.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pg": "8.23.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}
