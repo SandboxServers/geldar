@@ -72,6 +72,12 @@ Golem reads these from the environment (`golem/src/config.ts`): `GELDAR_MC_HOST`
 
 The Phase 0 stack now runs the Velocity identity gate: a bot is admitted only if Golem registered its username in NATS first. The bench CLI and the live lane default `GELDAR_NATS_URL` to `nats://127.0.0.1:4222` when it is unset; any other Golem run needs it set, or the gate denies the bot and Golem stops with a message naming `GELDAR_NATS_URL`. See `golem/README.md`.
 
+## Adam and live cases
+
+- `adam up` holds port 7410 (the Mind's Thinker socket). Never run `adam up` or `adam up --help` before a live case: the live cases start their own Mind and Body, and a held port makes them fail to bind.
+- The live cases are 8B-only. The 32B run is manual: `adam up --model strong` once, with no live cases alongside it. Stop it with `adam down` when done.
+- `adam select` rewrites the life selection in `shards/phase0.yaml`. Restore the committed file (check `git diff`) before any commit or merge.
+
 ## Secrets and volumes
 
 Build the plugin jars (`cd plugin; ./gradlew build`) before `shard up`; the shard-up check refuses to start without them. When you copy `compose/secrets/` between worktrees, copy all of it or none: a mix gives a password mismatch. A password mismatch means the volume was initialised with another secret (a Postgres volume keeps the first password), so use the secrets that created the volume. `GELDAR_NATS_URL` defaults to the loopback NATS (`nats://127.0.0.1:4222`) for the bench CLI and the live lane.

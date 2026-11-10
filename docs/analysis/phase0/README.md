@@ -87,7 +87,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-32a | 5 | Integration A: merge fan-out B, apply interface requests, Mind composition, body-api cross-check | packet-coder | Ready | P0-19, P0-22 to P0-31 | |
 | P0-32b | 5 | Integration B: Mind main, Adam Body process and supervision, in-process e2e | packet-coder | BlockedDependency | P0-32a | |
 | P0-33 | 5 | `./geldar.ps1 adam` and the Mind live cases | packet-coder | BlockedDependency | P0-32 | |
-| W5-process | 5 | Apply the wave 5 retro actions | packet-coder | BlockedDependency | wave 5 test, review and retro | |
+| W5-process | 5 | Apply the wave 5 retro actions | packet-coder | Shipped | wave 5 test, review and retro | |
 | P0-11 | 3 | Geldar-Core plugin: Gradle/Paper skeleton, event export to NATS | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-06 | |
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-03, P0-05 | |
 | P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-11 | |

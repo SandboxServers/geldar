@@ -12,6 +12,7 @@ The design is [docs/spec.md](docs/spec.md). Current work is Phase 0 ("Adam", spe
 - **Files: soft cap 500 lines, hard cap 700** (code and config; Markdown and generated code are exempt). Split along natural seams; no `utils.ts` or `helpers.ts` dumping grounds. `pnpm check:repo` enforces the hard cap.
 - **LF line endings everywhere** (`.gitattributes`), except `*.bat`/`*.cmd`.
 - **No secrets, account names, or public or private-network IPs in the repo** (`127.0.0.1` is fine). It is public. `.env` files are gitignored; commit a `.env.example`.
+- **Live runs start their own stack.** Live cases start their own Mind and Body, so never run `adam up` (or `adam up --help`) before them: `adam up` holds port 7410, the Thinker socket. The live cases are 8B-only. The 32B run is manual: `adam up --model strong` once, with no live cases.
 - **Principle 1 holds in code too:** nothing we build lets a human act inside the world (spec section 2).
 
 ## Commands
