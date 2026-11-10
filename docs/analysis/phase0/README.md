@@ -105,7 +105,26 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | WM-11 | M | Integration: the NATS gateway, presence, main, end to end | packet-coder | Shipped (merged to wave-m-main) | WM-02 to WM-10 | |
 | WM-12 | M | Run commands, docs and live cases (written, not run) | packet-coder | Shipped (merged to wave-m-main) | WM-11 | |
 | WM-13 | M | Player skins (MineSkin V2 upload, stored skin on login) | packet-coder | Shipped (merged to wave-m-main) | WM-01, velocity-identity plugin | |
-| WM-process | M | Apply the wave M retro actions | packet-coder | BlockedDependency | wave M test, review and retro | |
+| WM-process | M | Apply the wave M retro actions | packet-coder | Shipped | wave M test, review and retro | |
+| W6-01 | 6 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | packet-coder | Ready | — | |
+| W6-02 | 6 | Validator bounds read from shard config (BC-11); redact a private address from a worknote (E-16) | packet-coder | Ready | — | |
+| W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Ready | section 4 item 7 (provisional) | |
+| W6-04 | 6 | Velocity marker ordering (diagnose first) | packet-coder | Ready | — | |
+| W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | Ready | section 4 item 8 (provisional) | |
+| W6-06 | 6 | Warm every pinned model before advertising it (cold load) | packet-coder | Ready | — | |
+| W6-07 | 6 | Split three files over 500 lines (`pg-store.ts`, mock `server.ts`, `front.test.ts`) | packet-coder | Ready | — | |
+| W6-08 | 6 | Investigate `intent_link_gave_up` (read-only, needs the 32B logs from ops) | packet-coder | Ready | ops logs | |
+| W6-09 | 6 | `glass/` Thought Stream server: loopback, read-only API and SSE; owns migration `sql/0005_glass_reader.sql` (read-only role) | packet-coder | Ready | — | |
+| W6-10 | 6 | `glass/` page: escaped rendering, filters, per-agent view | packet-coder | BlockedDependency | W6-09 | |
+| W6-11 | 6 | Glass security: adversarial fixtures, read-only route test, XSS review | packet-coder | BlockedDependency | W6-10, W6-13 | |
+| W6-12 | 6 | Adam run report generator (JSON and Markdown, read-only DB) | packet-coder | Ready | — | |
+| W6-13 | 6 | Run protocol script `adam-run` and `glass up` | packet-coder | BlockedDependency | W6-09, W6-12 | |
+| W6-14 | 6 | Run protocol documents, 32B and 8B | packet-coder | Ready | section 4 items 1 to 6 (provisional) | |
+| W6-20 | 6 | Campaign review: Body and Golem (read-only) | reviewer | BlockedDependency | all coder packets, OPS-2 | |
+| W6-21 | 6 | Campaign review: Mind, memory and prompts (read-only) | reviewer | BlockedDependency | all coder packets, OPS-2 | |
+| W6-22 | 6 | Campaign review: contract, sql, infra, Glass security, secrets (read-only) | reviewer | BlockedDependency | all coder packets | |
+| W6-23 | 6 | Campaign retro (all waves and both runs) | packet-coder | BlockedDependency | W6-20 to W6-22, OPS-3 | |
+| W6-24 | 6 | Apply the campaign retro actions | packet-coder | BlockedDependency | W6-23 | |
 
 Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md`, [retro/wave-3.md](retro/wave-3.md) and [retro/wave-4.md](retro/wave-4.md) are written.
 
@@ -116,7 +135,7 @@ Later waves, sliced when wave 2 closes (spec section 10 "Build" line):
 - **Wave 3, world to record** (the Phase 0 wave; not "Scriptorium Wave 3", which is already merged to main: the mock Geldar MCP world, PRs #5 to #15): Geldar-Core plugin (Gradle, Paper API) with event export to NATS `geldar.<shard>.<type>`; `eventsink/` NATS → Postgres (idempotent on `source_event_id`); the Velocity bot-ingress identity plugin (Appendix F, P0-13), which reads registrations from a NATS JetStream key-value bucket that Golem writes before connecting, standing in for the production supervisor. Packet IDs for this wave: P0-11 to P0-13. Obligations carried in: P0-11 must make the Geldar-Core plugin grant all recipes on join ([0032](../../decisions/0032-table-crafting-and-recipe-book.md)); `compose/phase0.yml` sets `ENFORCE_WHITELIST` on and Golem whitelists its bots over RCON, so P0-13 must keep that working or replace it.
 - **Wave 4, the Body lives:** reflexes (spec 5.2 table), the intent executor with preconditions, wake conditions, limits and checkpoints, action records and receipts, Body restart resuming from checkpoint.
 - **Wave 5, the Mind** (the plan and cards are in [wave5-packets.md](wave5-packets.md)): `lantern-local/` (Appendix H over a local WebSocket to Ollama), `animus/` thinking loop (5.3.4), attention controller (5.3.2), memory and sleep reflection (5.4), first versioned prompts in `prompts/` (Appendix B).
-- **Wave 6, watch and run Adam:** `glass/` Thought Stream v0, then the Adam runs on Qwen3 32B and 8B against the exit criteria above, and the campaign review.
+- **Wave 6, watch and run Adam:** the plan is [wave6-packets.md](wave6-packets.md). `glass/` Thought Stream v0, the wave 5 and M review fixes, the run harness and protocols, the Adam runs on Qwen3 32B and 8B against the exit criteria above (gated by the benchmark), then the campaign review and retro.
 
 ## Cross-packet notes (wave 1 and wave 2 review)
 
