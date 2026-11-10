@@ -2,7 +2,16 @@
 
 A vivarium for AI agents, built on Minecraft.
 
-The full design lives in [`docs/spec.md`](docs/spec.md) (v0.8, draft). Work is at Phase 0 ("Adam", spec section 10): one living agent on one machine. Progress is tracked in [`docs/analysis/phase0/`](docs/analysis/phase0/).
+The full design lives in [`docs/spec.md`](docs/spec.md) (v0.8, draft). Progress is tracked in [`docs/analysis/phase0/`](docs/analysis/phase0/).
+
+## Status
+
+| Phase | State |
+|---|---|
+| Phase 0, "Adam" (spec section 10) | Proof of life. The spec's exit runs are waived by the owner and deferred ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)). The Body benchmark passed at 20 TPS, 100%; live Adam smokes ran against the real Body and a local model. Five-day survival, the 24-hour run and the 8B run were not performed. |
+| Next | Scaling: more agents per player (up to 20 per player), sovereign players and rangers. The phase plan is for the owner to set. |
+
+Resume card: [`docs/analysis/phase0/RESUME.md`](docs/analysis/phase0/RESUME.md).
 
 ## Layout
 
