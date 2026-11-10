@@ -36,7 +36,7 @@ const cases: Case[] = [
     name: 'thoughts and reflections separately, with the total as the headline',
     thoughts: base(),
     receipts: useful(),
-    verdict: 'PASS',
+    verdict: 'INFO',
     values: {
       model_calls_total: 4,
       thought_calls: 3,
@@ -51,14 +51,14 @@ const cases: Case[] = [
     name: 'an errored call (model call made) is counted as a call',
     thoughts: [...base(), thought('e1', { atMs: T0 + 8 * MIN_MS, latencyMs: 1000, errored: true })],
     receipts: useful(),
-    verdict: 'PASS',
+    verdict: 'INFO',
     values: { model_calls_total: 5, per_useful_minute_total: 2.5 },
   },
   {
     name: 'a tired cycle is not a model call',
     thoughts: [...base(), thought('q1', { atMs: T0 + 9 * MIN_MS, called: false, latencyMs: null })],
     receipts: useful(),
-    verdict: 'PASS',
+    verdict: 'INFO',
     values: { model_calls_total: 4 },
   },
   {

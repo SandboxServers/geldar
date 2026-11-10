@@ -89,12 +89,12 @@ export function callsMeasure(input: CallsInput, windowText: string): Measure {
   values.per_useful_minute_total = ratio(called.length, useful);
   values.per_useful_minute_thoughts = ratio(thoughts, useful);
   values.per_useful_minute_reflections = ratio(reflections, useful);
-  // Spec 10 records this number and gives no threshold for it. A computed value is recorded as PASS
-  // so it is not read as a failure; the note says the number has no threshold.
+  // Spec 10 records this number and gives no threshold for it, so it is INFO: not a PASS that
+  // reads as a judged result, and not a FAIL. The note says the number has no threshold.
   return {
     id: 'calls',
     title: 'Inference calls per useful minute',
-    verdict: 'PASS',
+    verdict: 'INFO',
     window: windowText,
     values,
     note: 'recorded, no threshold in the spec',
