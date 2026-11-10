@@ -213,6 +213,9 @@ importers:
 
   contract:
     dependencies:
+      '@nats-io/transport-node':
+        specifier: 3.4.0
+        version: 3.4.0
       ajv:
         specifier: 8.20.0
         version: 8.20.0
@@ -399,6 +402,8 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+
+  tools/glass-ctl: {}
 
   tools/mcp-tokens:
     dependencies:
