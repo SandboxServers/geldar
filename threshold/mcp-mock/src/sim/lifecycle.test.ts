@@ -47,7 +47,8 @@ describe('lookTool', () => {
     const b = lookTool(hub, ctx);
     expect(a.untrusted_world_text.speech?.map((s) => s.text)).toEqual(['seen']);
     expect(b.untrusted_world_text).toEqual(a.untrusted_world_text);
-    expect((a.snapshot.world_time as { ticks: number }).ticks).toBe(1000);
+    expect(a.snapshot.world_time).not.toHaveProperty('ticks');
+    expect(a.snapshot.world_time.day).toBe(0);
     expect(validateToolResult('look', a).ok).toBe(true);
     // A look before a wait leaves that wait's speech intact.
     const r = await waitTool(hub, ctx, { cursor: 'c_0', max_seconds: 5 });

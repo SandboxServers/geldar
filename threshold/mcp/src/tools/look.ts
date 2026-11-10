@@ -32,8 +32,7 @@ export async function lookTool(deps: LookDeps, call: ToolCall): Promise<LookResu
     daysSinceSleep: snapshot.world_time.day - mark.lastSleepDay,
   });
   return {
-    // The play view has no heard lines, so it is the PlaySnapshot the generated type describes.
-    snapshot: view.snapshot as unknown as LookResult['snapshot'],
+    snapshot: view.snapshot,
     untrusted_world_text: view.untrusted,
     note: WORLD_TEXT_NOTE,
   };

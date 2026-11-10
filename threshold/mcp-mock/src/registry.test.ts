@@ -201,19 +201,20 @@ describe('callTool', () => {
     expect(seen?.input).toEqual({ text: 'hi' });
   });
 
-  it('gives each look and wait a different snapshot id, in a fixed order', async () => {
-    const id = async (h: ToolHandlers, name: 'look' | 'wait') => {
+  it('answers look and wait with a play snapshot, the same in a fixed order', async () => {
+    const view = async (h: ToolHandlers, name: 'look' | 'wait') => {
       const res = await callTool(h, name, name === 'wait' ? { max_seconds: 5 } : {}, ctx);
-      return (JSON.parse(res.content[0]?.text ?? '') as { snapshot: { snapshot_id: string } })
-        .snapshot.snapshot_id;
+      return (JSON.parse(res.content[0]?.text ?? '') as { snapshot: Record<string, unknown> })
+        .snapshot;
     };
     const h = createFakeHandlers();
-    const a = await id(h, 'look');
-    const b = await id(h, 'wait');
-    expect(a).not.toBe(b);
+    const a = await view(h, 'look');
+    const b = await view(h, 'wait');
+    expect(a).not.toHaveProperty('snapshot_id');
+    expect(b).not.toHaveProperty('shard');
     const h2 = createFakeHandlers();
-    expect(await id(h2, 'look')).toBe(a);
-    expect(await id(h2, 'wait')).toBe(b);
+    expect(await view(h2, 'look')).toEqual(a);
+    expect(await view(h2, 'wait')).toEqual(b);
   });
 
   it('caps the result size', async () => {

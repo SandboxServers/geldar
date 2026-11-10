@@ -355,18 +355,68 @@ export interface UntrustedWorldText {
   };
 }
 
+export interface PlaySurroundings {
+  blocks_summary: string;
+  notable_blocks: {
+    type: string;
+    x: number;
+    y: number;
+    z: number;
+  }[];
+  entities: {
+    type: string;
+    distance: number;
+    direction: string;
+  }[];
+  agents: {
+    name: string;
+    distance: number;
+    held_item: string | null;
+    health_estimate: string;
+  }[];
+}
+
 export interface PlaySnapshot {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  agent_id: string;
+  /**
+   * The snapshot revision the attention controller compares plans against (spec 5.3.2).
+   */
+  revision: number;
+  world_time: PlayWorldTime;
+  self: SnapshotSelf;
+  surroundings: PlaySurroundings;
   /**
    * @maxItems 0
    */
-  heard?: [];
-  surroundings?: {
-    notable_blocks?: {
-      [k: string]: unknown;
-    }[];
-    [k: string]: unknown;
-  };
-  [k: string]: unknown;
+  heard: [];
+  /**
+   * @maxItems 0
+   */
+  events_since_last_thought: [];
+  /**
+   * Null when the agent has no plan.
+   */
+  current_plan?: {
+    goal: string;
+    action: string;
+    status: string;
+  } | null;
+  /**
+   * Null unless the Body reports a repeating action, with the repeat count.
+   */
+  stuck?: {
+    action: string;
+    repeat_count: number;
+  } | null;
+}
+
+export interface PlayWorldTime {
+  day: number;
+  time_of_day: "dawn" | "day" | "dusk" | "night";
+  weather: "clear" | "rain" | "thunder";
 }
 
 export type ActInput =
@@ -6838,6 +6888,17 @@ export interface SnapshotRequest {
   reason: string;
 }
 
+export type SnapshotPlan = {
+  goal: string;
+  action: string;
+  status: string;
+} | null;
+
+export type SnapshotStuck = {
+  action: string;
+  repeat_count: number;
+} | null;
+
 export interface Snapshot {
   snapshot_id: string;
   /**
@@ -6853,55 +6914,9 @@ export interface Snapshot {
    * The Body's generation (restart counter) the snapshot was built in. Optional so older Bodies and the mock stay valid.
    */
   body_generation?: number;
-  world_time: {
-    day: number;
-    time_of_day: "dawn" | "day" | "dusk" | "night";
-    ticks: number;
-    weather: "clear" | "rain" | "thunder";
-  };
-  self: {
-    position: SelfPosition;
-    health: number;
-    hunger: number;
-    armor: number;
-    /**
-     * Null when the hand is empty.
-     */
-    held_item: string | null;
-    inventory: ItemStack[];
-    effects: string[];
-    budget_remaining_thoughts: number;
-    days_since_sleep: number;
-    /**
-     * Item names the agent can craft because it has unlocked their recipes (spec 5.2, decision 0048). Optional: a Body without recipe knowledge omits it.
-     *
-     * @maxItems 1500
-     *
-     * Items: An item ID without its namespace prefix, such as iron_ingot.
-     */
-    unlocked_recipes?: string[];
-  };
-  surroundings: {
-    blocks_summary: string;
-    notable_blocks: {
-      type: string;
-      x: number;
-      y: number;
-      z: number;
-      text?: string;
-    }[];
-    entities: {
-      type: string;
-      distance: number;
-      direction: string;
-    }[];
-    agents: {
-      name: string;
-      distance: number;
-      held_item: string | null;
-      health_estimate: string;
-    }[];
-  };
+  world_time: SnapshotWorldTime;
+  self: SnapshotSelf;
+  surroundings: SnapshotSurroundings;
   /**
    * @maxItems 50
    */
@@ -6919,21 +6934,60 @@ export interface Snapshot {
     type: string;
     [k: string]: unknown;
   }[];
+  current_plan?: SnapshotPlan;
+  stuck?: SnapshotStuck;
+}
+
+export interface SnapshotWorldTime {
+  day: number;
+  time_of_day: "dawn" | "day" | "dusk" | "night";
+  ticks: number;
+  weather: "clear" | "rain" | "thunder";
+}
+
+export interface SnapshotSelf {
+  position: SelfPosition;
+  health: number;
+  hunger: number;
+  armor: number;
   /**
-   * Null when the agent has no plan.
+   * Null when the hand is empty.
    */
-  current_plan?: {
-    goal: string;
-    action: string;
-    status: string;
-  } | null;
+  held_item: string | null;
+  inventory: ItemStack[];
+  effects: string[];
+  budget_remaining_thoughts: number;
+  days_since_sleep: number;
   /**
-   * Null unless the Body reports a repeating action, with the repeat count.
+   * Item names the agent can craft because it has unlocked their recipes (spec 5.2, decision 0048). Optional: a Body without recipe knowledge omits it.
+   *
+   * @maxItems 1500
+   *
+   * Items: An item ID without its namespace prefix, such as iron_ingot.
    */
-  stuck?: {
-    action: string;
-    repeat_count: number;
-  } | null;
+  unlocked_recipes?: string[];
+}
+
+export interface SnapshotSurroundings {
+  blocks_summary: string;
+  notable_blocks: {
+    type: string;
+    x: number;
+    y: number;
+    z: number;
+    text?: string;
+  }[];
+  entities: {
+    type: string;
+    distance: number;
+    direction: string;
+  }[];
+  agents: {
+    name: string;
+    distance: number;
+    held_item: string | null;
+    health_estimate: string;
+  }[];
 }
 
 export interface SovereignCallPayload {

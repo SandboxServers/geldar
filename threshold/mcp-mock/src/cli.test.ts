@@ -139,7 +139,7 @@ describe('cli', () => {
         }),
       );
       const result = (await client.callTool({ name: 'look' })) as { content: { text: string }[] };
-      ids.push(/sn_\w+/.exec(result.content[0]?.text ?? '')?.[0] ?? 'none');
+      ids.push(/"agent_id":\s*"([^"]+)"/.exec(result.content[0]?.text ?? '')?.[1] ?? 'none');
       await client.close();
     }
     expect(ids[0]).not.toBe('none');

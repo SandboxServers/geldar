@@ -73,7 +73,9 @@ describe('snapshotOf', () => {
     const b = snapshotOf(sim, hub.scenario);
     expect(a.agent_id).toBe('ag_kestrel_01');
     expect(b.revision).toBe(a.revision + 1);
-    expect(b.snapshot_id).not.toBe(a.snapshot_id);
+    expect(a).not.toHaveProperty('snapshot_id');
+    expect(a).not.toHaveProperty('shard');
+    expect(a.world_time).not.toHaveProperty('ticks');
     expect(a.heard).toEqual([]);
     for (const agent of a.surroundings.agents) expect(agent.name).toMatch(/^[A-Za-z0-9_]{3,16}$/);
     expect(a.surroundings.agents.map((x) => x.distance)).toEqual([5, 10]);

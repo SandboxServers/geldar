@@ -20,10 +20,8 @@ const addFormats = ajvFormatsModule.default;
 /** A valid wait result, copied from mcp-play.test.ts. */
 const WAIT_RESULT = {
   snapshot: {
-    snapshot_id: 'sn_01HZX3V9Q4M2K8R7T6Y5W4E3D2',
     agent_id: 'ag_kestrel_01',
-    shard: 'baseline',
-    world_time: { day: 14, time_of_day: 'dusk', ticks: 12400, weather: 'clear' },
+    world_time: { day: 14, time_of_day: 'dusk', weather: 'clear' },
     self: {
       position: { x: 120, y: 64, z: -45, biome: 'plains' },
       health: 14,

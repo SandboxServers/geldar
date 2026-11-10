@@ -67,6 +67,20 @@ describe('toPlayView', () => {
     expect(view.snapshot.surroundings.notable_blocks).toHaveLength(2);
   });
 
+  it('drops the identifiers and raw ticks, and keeps the day and time of day', () => {
+    const snapshot = hostileSnapshot();
+    Object.assign(snapshot, { body_generation: 7 });
+    const view = toPlayView(snapshot, { budget: 37, daysSinceSleep: 2 });
+
+    for (const key of ['snapshot_id', 'shard', 'body_generation']) {
+      expect(view.snapshot).not.toHaveProperty(key);
+    }
+    expect(view.snapshot.world_time).toEqual({ day: 3, time_of_day: 'dusk', weather: 'clear' });
+    expect(view.snapshot.agent_id).toBe('ag_ranger_01');
+    expect(view.snapshot.revision).toBe(4);
+    expect(allStrings(view.snapshot).some((s) => s.startsWith('sn_'))).toBe(false);
+  });
+
   it('sets the budget and days since sleep from the options', () => {
     const view = toPlayView(hostileSnapshot(), { budget: 37, daysSinceSleep: 2 });
 

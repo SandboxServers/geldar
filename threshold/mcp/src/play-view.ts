@@ -1,9 +1,11 @@
 /**
  * The play view of a snapshot: what the `look` tool returns (spec 5.15.3, the design table).
  * World text (heard lines and sign text) leaves the snapshot and goes to `untrusted_world_text`,
- * so the snapshot part carries no text written by other agents or players.
+ * so the snapshot part carries no text written by other agents or players. The snapshot part
+ * also drops the identifiers and counters an agent has no use for: snapshot_id, shard,
+ * body_generation and the raw world ticks (the day and time of day stay).
  */
-import type { Snapshot, UntrustedWorldText } from '@geldar/contract';
+import type { LookResult, Snapshot, UntrustedWorldText } from '@geldar/contract';
 
 /** Heard lines kept in the play view, newest first (the design table). */
 export const PLAY_SPEECH_LIMIT = 40;
@@ -11,6 +13,7 @@ export const PLAY_SPEECH_LIMIT = 40;
 /** Sign texts kept in the play view (the `signs` maxItems of the contract). */
 export const PLAY_SIGN_LIMIT = 20;
 
+type PlaySnapshot = LookResult['snapshot'];
 type Signs = NonNullable<UntrustedWorldText['signs']>;
 
 /** Values the Threshold fills in from Postgres; the snapshot from the Body does not know them. */
@@ -21,19 +24,16 @@ export interface PlayViewOptions {
   daysSinceSleep: number;
 }
 
-/**
- * `snapshot` is a Snapshot with no heard lines and no text on notable blocks; it validates as the
- * `snapshot` of `LookResult` (PlaySnapshot), which the generated types describe only loosely.
- */
 export interface PlayView {
-  snapshot: Snapshot;
+  snapshot: PlaySnapshot;
   untrusted: UntrustedWorldText;
 }
 
 /**
- * Splits a Body snapshot into the play view. The snapshot part has no `heard` lines, no
- * `events_since_last_thought` (the player event log is the source) and no text on notable
- * blocks. `budget` and `daysSinceSleep` replace the Body's values.
+ * Splits a Body snapshot into the play view. The snapshot part is built field by field, so a
+ * field added to the Body's snapshot does not reach agents until it is named here. It has no
+ * `heard` lines, no `events_since_last_thought` (the player event log is the source) and no text
+ * on notable blocks. `budget` and `daysSinceSleep` replace the Body's values.
  */
 export function toPlayView(snapshot: Snapshot, options: PlayViewOptions): PlayView {
   const speech = [...snapshot.heard]
@@ -48,10 +48,14 @@ export function toPlayView(snapshot: Snapshot, options: PlayViewOptions): PlayVi
     notableBlocks.push(block);
   }
 
-  const playSnapshot: Snapshot = {
-    ...snapshot,
-    heard: [],
-    events_since_last_thought: [],
+  const playSnapshot: PlaySnapshot = {
+    agent_id: snapshot.agent_id,
+    revision: snapshot.revision,
+    world_time: {
+      day: snapshot.world_time.day,
+      time_of_day: snapshot.world_time.time_of_day,
+      weather: snapshot.world_time.weather,
+    },
     self: {
       ...snapshot.self,
       budget_remaining_thoughts: options.budget,
@@ -61,6 +65,10 @@ export function toPlayView(snapshot: Snapshot, options: PlayViewOptions): PlayVi
       ...snapshot.surroundings,
       notable_blocks: notableBlocks,
     },
+    heard: [],
+    events_since_last_thought: [],
+    ...(snapshot.current_plan === undefined ? {} : { current_plan: snapshot.current_plan }),
+    ...(snapshot.stuck === undefined ? {} : { stuck: snapshot.stuck }),
   };
 
   return {

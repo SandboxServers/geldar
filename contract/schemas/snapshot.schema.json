@@ -30,7 +30,41 @@
       "type": "integer",
       "minimum": 0
     },
-    "world_time": {
+    "world_time": { "$ref": "#/$defs/SnapshotWorldTime" },
+    "self": { "$ref": "#/$defs/SnapshotSelf" },
+    "surroundings": { "$ref": "#/$defs/SnapshotSurroundings" },
+    "heard": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "text", "age_seconds"],
+        "properties": {
+          "from": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "text": { "type": "string", "maxLength": 256 },
+          "age_seconds": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "events_since_last_thought": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "description": "Event payloads are typed in later packets, so this object only fixes its type name and allows other properties.",
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "pattern": "^[a-z][a-z_]{0,47}$" }
+        }
+      }
+    },
+    "current_plan": { "$ref": "#/$defs/SnapshotPlan" },
+    "stuck": { "$ref": "#/$defs/SnapshotStuck" }
+  },
+  "$defs": {
+    "SnapshotWorldTime": {
       "type": "object",
       "additionalProperties": false,
       "required": ["day", "time_of_day", "ticks", "weather"],
@@ -41,7 +75,7 @@
         "weather": { "type": "string", "enum": ["clear", "rain", "thunder"] }
       }
     },
-    "self": {
+    "SnapshotSelf": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -83,7 +117,7 @@
         }
       }
     },
-    "surroundings": {
+    "SnapshotSurroundings": {
       "type": "object",
       "additionalProperties": false,
       "required": ["blocks_summary", "notable_blocks", "entities", "agents"],
@@ -135,34 +169,7 @@
         }
       }
     },
-    "heard": {
-      "type": "array",
-      "maxItems": 50,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["from", "text", "age_seconds"],
-        "properties": {
-          "from": { "type": "string", "minLength": 1, "maxLength": 32 },
-          "text": { "type": "string", "maxLength": 256 },
-          "age_seconds": { "type": "integer", "minimum": 0 }
-        }
-      }
-    },
-    "events_since_last_thought": {
-      "type": "array",
-      "maxItems": 100,
-      "items": {
-        "description": "Event payloads are typed in later packets, so this object only fixes its type name and allows other properties.",
-        "type": "object",
-        "additionalProperties": true,
-        "required": ["type"],
-        "properties": {
-          "type": { "type": "string", "pattern": "^[a-z][a-z_]{0,47}$" }
-        }
-      }
-    },
-    "current_plan": {
+    "SnapshotPlan": {
       "description": "Null when the agent has no plan.",
       "anyOf": [
         {
@@ -178,7 +185,7 @@
         { "type": "null" }
       ]
     },
-    "stuck": {
+    "SnapshotStuck": {
       "description": "Null unless the Body reports a repeating action, with the repeat count.",
       "anyOf": [
         {
