@@ -138,4 +138,18 @@ NOT DONE (stopped for context):
   fail; restored from the commit.
 - Risk for the live run (not tested here): a run that starts with a Body that writes no Body event for 5 minutes
   reads as a hung Body and aborts. Check the Body's event cadence in the first live run before relying on the rule.
-- Not run: `./geldar.ps1 check` results below.
+- Glass hardening (7623bb6): SSE thought ids strip CR, LF and NUL; a poll error logs `glass_poll_error` with its
+  code (or `unknown`) at most once a minute, never the message; the pool has a 5 s connect timeout; `close()` is
+  idempotent. Tests: sse.test.ts (3) and server.test.ts (2). Revert checks: the sanitizing line, the `if (closed)`
+  guard and the connect timeout each fail their test; restored from a backup.
+- Glass stats (ab7b066): `GET /api/stats` returns the hub counters, GET only, loopback and Host guards as other routes,
+  no database call. `main.ts` stop() calls `close()`. Test: http.test.ts stats test (200 body, 405 with Allow: GET
+  for every other method). Revert check: the stats branch disabled; the test fails; restored.
+- Check (`./geldar.ps1 check`, run once, 2026-11-10): exit 1. Glass vitest 148 passed, glass typecheck clean.
+  Failures are on files this branch did not change (no diff to 4998651 under tools/ or golem/):
+  - Biome lint: about 20 files in glass/test, golem, threshold and lantern-local, including
+    golem/src/perception/notable-blocks.ts (last changed in 526d294).
+  - vitest: tools/adam-run sequence.test.ts (25 of 26) and cli.test.ts (4 of 39) fail. Cause: the bench-gate fixture
+    records commit `abc123` (6 characters), which the gate's 7-character rule refuses before the test's own assertion.
+    Same 29 failures on an immediate rerun of tools/adam-run. Not fixed here (out of this packet's scope; recorded).
+  - Known flaky timing tests did not fail in this run; no re-run was needed for them.
