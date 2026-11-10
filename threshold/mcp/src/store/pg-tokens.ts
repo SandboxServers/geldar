@@ -244,14 +244,16 @@ export class PgTokenStore implements TokenStore {
   }
 
   /**
-   * Fires the revocations since `sinceMs`, and every token of a player that is not active (its
-   * status change sent a NOTIFY the gap may have hidden).
+   * Fires the tokens revoked since `sinceMs`, and the live tokens of a player that is not active
+   * (its status change sent a NOTIFY the gap may have hidden). A token already revoked, or expired,
+   * needs no second notice: the first branch covers the revoked ones, the second the live ones.
    */
   private async catchUp(sinceMs: number): Promise<void> {
     const { rows } = await this.pool.query<{ token_id: string; player_id: string }>(
       `SELECT t.token_id, t.player_id FROM mcp_tokens t JOIN mcp_players p
         ON p.player_id = t.player_id
-       WHERE t.revoked_at >= $1 OR p.status <> 'active'`,
+       WHERE t.revoked_at >= $1
+          OR (p.status <> 'active' AND t.revoked_at IS NULL AND t.expires_at > now())`,
       [new Date(sinceMs - CATCH_UP_MARGIN_MS)],
     );
     for (const row of rows) this.fire({ tokenId: row.token_id, playerId: row.player_id });

@@ -88,13 +88,40 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
     if (database !== '') await dropScratchDatabase(database).catch(() => undefined);
   });
 
-  /** The LISTEN connection as the server opens it: the geldar_mcp role on the scratch database. */
-  function listenConfig(): ClientConfig {
-    return { ...adminConfig(database), options: '-c role=geldar_mcp' };
+  /**
+   * The LISTEN connection as the server opens it: the geldar_mcp role on the scratch database. The
+   * application_name lets a case find, and terminate, its own listener.
+   */
+  function listenConfig(applicationName = 'geldar-it-listen'): ClientConfig {
+    return {
+      ...adminConfig(database),
+      options: '-c role=geldar_mcp',
+      application_name: applicationName,
+    };
   }
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Terminates the named LISTEN backend, then waits until it is gone: the store is now between
+   * connections, so a change made next is a NOTIFY the gap hides.
+   */
+  async function dropListener(applicationName: string): Promise<void> {
+    await admin.query(
+      'SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1',
+      [applicationName],
+    );
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      const { rows } = await admin.query<{ n: string }>(
+        'SELECT count(*)::text AS n FROM pg_stat_activity WHERE application_name = $1',
+        [applicationName],
+      );
+      if (rows[0]?.n === '0') return;
+      await sleep(20);
+    }
   }
 
   describe('token states', () => {
@@ -160,6 +187,54 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
         playerId: seeded.playerId,
       });
       expect(await store.resolve(hash, Date.now()), 'the token after the pause').toBeNull();
+    } finally {
+      await store.stop();
+    }
+  });
+
+  it('a revocation made while the LISTEN connection is down is fired on reconnect', async () => {
+    const seeded = await seedPlayer(admin, freshSuffix());
+    const hash = randomBytes(32);
+    const tokenId = await insertToken(admin, seeded.playerId, hash, '1 day');
+    const name = `it-listen-${freshSuffix()}`;
+    const store = new PgTokenStore(mcp, { 'it-on': true }, listenConfig(name));
+    const notices: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((notice) => notices.push(notice));
+    await store.start();
+    try {
+      await dropListener(name);
+      await admin.query('UPDATE mcp_tokens SET revoked_at = now() WHERE token_id = $1', [tokenId]);
+      const deadline = Date.now() + 10_000;
+      while (notices.length === 0 && Date.now() < deadline) await sleep(50);
+      expect(notices, 'the revocation the gap hid, fired after reconnect').toContainEqual({
+        tokenId,
+        playerId: seeded.playerId,
+      });
+    } finally {
+      await store.stop();
+    }
+  });
+
+  it('a pause made while the LISTEN connection is down is fired on reconnect', async () => {
+    const seeded = await seedPlayer(admin, freshSuffix());
+    const hash = randomBytes(32);
+    const tokenId = await insertToken(admin, seeded.playerId, hash, '1 day');
+    const name = `it-listen-${freshSuffix()}`;
+    const store = new PgTokenStore(mcp, { 'it-on': true }, listenConfig(name));
+    const notices: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((notice) => notices.push(notice));
+    await store.start();
+    try {
+      await dropListener(name);
+      await admin.query("UPDATE mcp_players SET status = 'paused' WHERE player_id = $1", [
+        seeded.playerId,
+      ]);
+      const deadline = Date.now() + 10_000;
+      while (notices.length === 0 && Date.now() < deadline) await sleep(50);
+      expect(notices, 'the session end the gap hid, fired after reconnect').toContainEqual({
+        tokenId,
+        playerId: seeded.playerId,
+      });
     } finally {
       await store.stop();
     }

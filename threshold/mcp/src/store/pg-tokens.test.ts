@@ -344,6 +344,22 @@ function pingingStore(mode: 'fail' | 'hang' | 'ok') {
 }
 
 describe('PgTokenStore liveness', () => {
+  it('the catch-up asks for the tokens revoked since the loss, and the live tokens of inactive players', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const { pool, store, listeners } = storeWith([]);
+    await store.start();
+    listeners[0]?.emit('end');
+    await vi.advanceTimersByTimeAsync(1_000);
+    const catchUp = pool.sent.find((sent) => sent.text.includes('revoked_at >='));
+    expect(catchUp?.text).toContain('WHERE t.revoked_at >= $1');
+    expect(catchUp?.text).toContain(
+      "OR (p.status <> 'active' AND t.revoked_at IS NULL AND t.expires_at > now())",
+    );
+    expect(catchUp?.values).toEqual([new Date(NOW - 60_000)]);
+    await store.stop();
+  });
+
   it('the LISTEN config keeps the Postgres options and turns TCP keepalive on', () => {
     expect(listenerConfig({ host: 'db', user: 'geldar_mcp' })).toEqual({
       host: 'db',
