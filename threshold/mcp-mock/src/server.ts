@@ -278,6 +278,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     const open = openResponses.get(player) ?? new Set<ServerResponse>();
     openResponses.set(player, open);
     open.add(res);
+    // A write-after-end error has no other listener; without this it would crash the process.
+    res.on('error', () => undefined);
     res.on('close', () => {
       open.delete(res);
       if (open.size === 0 && openResponses.get(player) === open) openResponses.delete(player);
@@ -490,6 +492,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
         id: null,
       });
       for (const res of [...(openResponses.get(playerId) ?? [])]) {
+        // Ended but not yet closed: a write now would emit ERR_STREAM_WRITE_AFTER_END.
+        if (res.writableEnded || res.destroyed) continue;
         if (!res.headersSent) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.write(frame);
