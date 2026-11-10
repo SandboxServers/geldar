@@ -2,7 +2,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { type FetchFn, SigningError, uploadSkin } from './mineskin.ts';
+import { type FetchFn, type SignedTexture, SigningError, uploadSkin } from './mineskin.ts';
 import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
 import { openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
@@ -58,13 +58,15 @@ export async function runCli(argv: readonly string[], deps: CliDeps): Promise<nu
       );
       return 0;
     }
-    const texture = await deps.upload(png, flags.model, await deps.readKey());
+    // NATS first: an unset URL or an unopenable bucket must not spend a MineSkin generation.
     const url = deps.natsUrl();
     if (url === undefined || url.trim() === '') {
-      throw new RosterError('GELDAR_NATS_URL is not set; the skin was signed but not stored');
+      throw new RosterError('GELDAR_NATS_URL is not set; nothing was uploaded or stored');
     }
     const { kv, close } = await deps.openBucket(url);
+    let texture: SignedTexture;
     try {
+      texture = await deps.upload(png, flags.model, await deps.readKey());
       await putSkin(kv, roster.lifeId, texture, deps.now());
     } finally {
       await close();
