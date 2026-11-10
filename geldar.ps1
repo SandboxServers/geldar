@@ -21,6 +21,10 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 adam down|status     Stop them (the Body last) or show their state and the last thought's latency
   ./geldar.ps1 adam logs [service] [--follow]  Tail body, animus or lantern-local under .geldar/adam/
   ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
+  ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
+  ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
+  ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
+  ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
 #>
 [CmdletBinding()]
 param(
@@ -187,7 +191,56 @@ function Invoke-Adam([string[]] $AdamArgs) {
   finally { Pop-Location }
 }
 
+# players, mcp, mcp-tokens and db (WM-12) are thin: the logic is in tools/players-cli, threshold/mcp, tools/mcp-tokens
+# and tools/migrate, and each CLI's exit code is this command's exit code.
+$McpCompose = @('compose', '-f', (Join-Path $Root 'compose/phase0.yml'), '-f', (Join-Path $Root 'compose/mcp.yml'), '-p', 'geldar-phase0')
+
+function Invoke-Node([string] $Script, [string[]] $ScriptArgs) {
+  Push-Location $Root
+  try {
+    node (Join-Path $Root $Script) @ScriptArgs
+    exit $LASTEXITCODE
+  }
+  finally { Pop-Location }
+}
+
+function Invoke-Mcp([string[]] $McpArgs) {
+  $action, $extra = $McpArgs
+  Push-Location $Root
+  try {
+    switch ($action) {
+      # `mcp-tokens init` writes the MCP's secret files when they are missing and never overwrites them.
+      'up' {
+        Invoke-Step 'create the MCP secret files (mcp-tokens init, never overwrites)' { node (Join-Path $Root 'tools/mcp-tokens/src/cli.ts') init }
+        Invoke-Step 'build the MCP image' { docker @McpCompose build geldar-mcp }
+        Invoke-Step 'start the MCP on loopback (127.0.0.1:8788)' { docker @McpCompose up -d --wait geldar-mcp }
+      }
+      'down' { Invoke-Step 'stop the MCP (its volumes and the shard are kept)' { docker @McpCompose stop geldar-mcp } }
+      'status' {
+        $running = docker @McpCompose ps --status running -q geldar-mcp
+        if ($LASTEXITCODE -ne 0 -or -not $running) { Write-Host 'down' } else { docker @McpCompose ps geldar-mcp }
+      }
+      'logs' { Invoke-Step 'logs of the MCP' { docker @McpCompose logs --tail 200 geldar-mcp @extra } }
+      # The stub client case (threshold/mcp/test/live) against 127.0.0.1:8788/p/ag-test-01 with the test token file.
+      'smoke' {
+        $env:GELDAR_IT = '1'
+        $env:GELDAR_MCP_LIVE = '1'
+        Invoke-Step 'MCP smoke (stub client, ag-test-01)' { pnpm --dir (Join-Path $Root 'threshold/mcp') exec vitest run test/live/stub-client.live.test.ts }
+      }
+      default { throw "Unknown mcp action '$action'. Use up, down, status, logs or smoke." }
+    }
+  } finally { Pop-Location }
+}
+
 switch ($Command) {
+  'players' { Invoke-Node 'tools/players-cli/src/rangers-cli.ts' $Rest }
+  'mcp-tokens' { Invoke-Node 'tools/mcp-tokens/src/cli.ts' $Rest }
+  'db' {
+    $action, $extra = $Rest
+    if ($action -ne 'migrate') { throw "Unknown db action '$action'. Use: ./geldar.ps1 db migrate [args]" }
+    Invoke-Node 'tools/migrate/src/cli.ts' $extra
+  }
+  'mcp' { Invoke-Mcp $Rest }
   'setup' { Push-Location $Root; try { Invoke-Step 'pnpm install' { pnpm install --frozen-lockfile } } finally { Pop-Location } }
   'pnpm' { Push-Location $Root; try { pnpm @Rest; exit $LASTEXITCODE } finally { Pop-Location } }
   'check' { Invoke-Check }
