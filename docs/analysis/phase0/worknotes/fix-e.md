@@ -103,3 +103,20 @@ NOT DONE (stopped for context):
   file, wired in cli.ts, plus a test. config.ts still sets restarts to [].
 - report header: aborted (an `abort` line), partial (no `end` or `ended` line), window length in hours (render.ts).
 - Step 2 items 8 and 9 not started.
+
+## Session 5: adam-report continuity and header; adam-run abort baseline
+
+Committed, each with a revert check:
+- status.log parser (e948d37): `src/status-run.ts` reads planned restarts (`restart_stack`), Body kills (`body_kill`)
+  with their `at`, the `abort` line and the `end` line. Revert (body_kill mapped to planned): 2 tests fail; restored.
+- continuity and header (3a6c363): cli.ts reads status.log beside manifest.json and sets the restarts; the report
+  header states `Run: aborted|not aborted, partial|complete` and `Window length: N hours`. Render snapshots updated.
+  Revert (restarts forced to []): 1 cli test fails; restored. Revert (aborted text): cli test fails; restored.
+- adam-run lifeEnded baseline (9530bdf): `last.deaths > 0`, since deaths are counted from the run start. The old
+  test "a death already counted at the start does not fire again" encoded the bug and now asserts life_ended.
+  Revert: 1 test fails; restored.
+
+NOT DONE (stopped for context):
+- Step 2a: TPS rule (`tps` is always null in adapters.ts). Not started; the reader or the rule removal is open.
+- Step 2b: `bodyConnected` is only "process alive" (adapters.ts). Not started.
+- Items 9-12 not started.
