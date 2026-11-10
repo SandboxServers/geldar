@@ -3,6 +3,7 @@ import type { Bot } from 'mineflayer';
 import type { Perception } from '../mind-link/senses.ts';
 import { summarizeBlocks } from './blocks-summary.ts';
 import { observeEntities } from './entities.ts';
+import { footing } from './footing.ts';
 import { knownNotableBlocks } from './notable-blocks.ts';
 import { unlockedRecipes } from './recipes.ts';
 import { RememberedBlocks } from './remembered.ts';
@@ -24,6 +25,7 @@ export function createPerception(bot: Bot): Perception {
       return {
         blocks_summary: summarizeBlocks(bot.entity.position, notable),
         notable_blocks: notable,
+        ...footing(bot),
         ...observeEntities(bot),
       };
     },

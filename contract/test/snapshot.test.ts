@@ -60,6 +60,26 @@ describe('validateSnapshot', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('accepts standing_on and block_above_feet, air included, and leaves them optional', () => {
+    const value = mutable();
+    const surroundings = value.surroundings as Record<string, unknown>;
+    surroundings.standing_on = 'oak_leaves';
+    surroundings.block_above_feet = 'air';
+    expect(validateSnapshot(value).ok).toBe(true);
+    delete surroundings.standing_on;
+    delete surroundings.block_above_feet;
+    expect(validateSnapshot(value).ok).toBe(true);
+  });
+
+  it('rejects a footing name that is not a block name', () => {
+    const value = mutable();
+    (value.surroundings as Record<string, unknown>).standing_on = 'Oak Leaves';
+    const result = validateSnapshot(value);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.includes('/surroundings/standing_on'))).toBe(true);
+  });
+
   it('rejects health above 20 and names the path', () => {
     const value = mutable();
     (value.self as Record<string, unknown>).health = 21;

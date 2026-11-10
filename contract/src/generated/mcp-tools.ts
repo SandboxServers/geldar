@@ -995,6 +995,16 @@ export const mcpToolSchemas: Record<
             "blocks_summary": {
               "type": "string"
             },
+            "standing_on": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,64}$",
+              "description": "The block name under the feet (floor of y minus 1); air when there is none. Absent when the chunk is not loaded."
+            },
+            "block_above_feet": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,64}$",
+              "description": "The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded."
+            },
             "notable_blocks": {
               "type": "array",
               "items": {
@@ -2247,6 +2257,16 @@ export const mcpToolSchemas: Record<
           "properties": {
             "blocks_summary": {
               "type": "string"
+            },
+            "standing_on": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,64}$",
+              "description": "The block name under the feet (floor of y minus 1); air when there is none. Absent when the chunk is not loaded."
+            },
+            "block_above_feet": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,64}$",
+              "description": "The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded."
             },
             "notable_blocks": {
               "type": "array",
