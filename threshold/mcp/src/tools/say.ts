@@ -56,16 +56,6 @@ export function planResultFor(
 }
 
 /**
- * The life's stream cursor at call time: the newest sequence the log holds, 0 when it holds none.
- * Taken before the plan is sent, so the poll only reads what the Body writes after it.
- * TODO(WM-11): take `PlayerLog.head()` from WM-04 instead once that branch lands.
- */
-async function headCursor(deps: SayDeps, lifeId: string): Promise<number> {
-  const { events } = await deps.events.since(lifeId, 0);
-  return events.reduce((max, event) => Math.max(max, event.seq), 0);
-}
-
-/**
  * Waits for the `plan_result` of a thought, polling the life's event log for events after `cursor`,
  * for at most `SAY_CONFIRM_MS`.
  */
@@ -117,7 +107,8 @@ export async function sayTool(deps: SayDeps, caller: Caller, text: string): Prom
     );
   }
   try {
-    const cursor = await headCursor(deps, caller.lifeId);
+    // The start cursor is the log's head before the plan is sent, so the poll reads only what follows.
+    const cursor = deps.events.head(caller.lifeId);
     const sent = await submitThought(deps, caller.lifeId, judged.value);
     if (!sent.ack.accepted) {
       const remaining = await deps.budget.refund(caller.lifeId, batchCost(['say']));

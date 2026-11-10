@@ -952,7 +952,8 @@ export const mcpToolSchemas: Record<
               "description": "Set for written books; identifies the book the agent can read.",
               "type": "string",
               "minLength": 1,
-              "maxLength": 64
+              "maxLength": 64,
+              "pattern": "^bk_[a-z0-9_]{1,61}$"
             }
           }
         },
@@ -2236,7 +2237,8 @@ export const mcpToolSchemas: Record<
               "description": "Set for written books; identifies the book the agent can read.",
               "type": "string",
               "minLength": 1,
-              "maxLength": 64
+              "maxLength": 64,
+              "pattern": "^bk_[a-z0-9_]{1,61}$"
             }
           }
         },

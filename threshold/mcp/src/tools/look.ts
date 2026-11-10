@@ -1,7 +1,6 @@
 import type { LookResult } from '@geldar/contract';
 import { toPlayView } from '../play-view.ts';
-import type { BodyGateway, BudgetLedger } from '../ports.ts';
-import type { SleepMarks } from './sleep.ts';
+import type { BodyGateway, BudgetLedger, SleepMarks } from '../ports.ts';
 
 /** The note every result that shows the world carries (spec 5.15.3, decision 0034). */
 export const WORLD_TEXT_NOTE =

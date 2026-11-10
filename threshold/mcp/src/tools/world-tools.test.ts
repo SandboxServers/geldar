@@ -8,10 +8,11 @@ import {
   RecordingCallRecorder,
 } from '../fakes/stores.fakes.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
+import type { SleepMark, SleepMarks } from '../ports.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './journal.ts';
 import { lookTool, type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
 import { readBookTool } from './read-book.ts';
-import { SLEEP_EVENT_LIMIT, type SleepMark, type SleepMarks, sleepTool } from './sleep.ts';
+import { SLEEP_EVENT_LIMIT, sleepTool } from './sleep.ts';
 import { STATUS_LAW_LIMIT, statusTool } from './status.ts';
 import { NOT_AVAILABLE_MESSAGE, type NotAvailableTool, notAvailableTool } from './unavailable.ts';
 

@@ -7,27 +7,12 @@ import type {
 } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 import { ToolError } from '@geldar/mcp-mock';
-import type { BodyGateway, JournalStore, PlayerEventLog } from '../ports.ts';
+import type { BodyGateway, JournalStore, PlayerEventLog, SleepMarks } from '../ports.ts';
 import { type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
 
 /** The most events a `sleep` result lists, and the most speech lines it carries. */
 export const SLEEP_EVENT_LIMIT = 100;
 export const SLEEP_SPEECH_LIMIT = 40;
-
-/** One life's sleep mark: the day of the last sleep and the event cursor it read up to. */
-export interface SleepMark {
-  /** The world day of the last sleep; the birth day before the first. */
-  lastSleepDay: number;
-  /** The stream sequence the last sleep digested up to; 0 before the first. */
-  cursor: number;
-}
-
-/** The sleep marks of each life (Postgres in the real server). */
-export interface SleepMarks {
-  /** The life's mark; a life with no sleep yet reads its birth day and cursor 0. */
-  read(lifeId: string): Promise<SleepMark>;
-  write(lifeId: string, mark: SleepMark): Promise<void>;
-}
 
 export interface SleepDeps {
   body: BodyGateway;

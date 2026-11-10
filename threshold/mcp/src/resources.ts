@@ -1,21 +1,11 @@
 import { listResources, type ResourceWorld, readResource } from '@geldar/mcp-mock';
-import type { JournalStore, PlayerRecord } from './ports.ts';
+import type { AgentProfiles, JournalStore, PlayerRecord } from './ports.ts';
 
 export { getPrompt, listPrompts } from '@geldar/mcp-mock';
 export { listResources };
 
 /** The journal lines the `journal/recent` resource shows, newest last. */
 export const RECENT_JOURNAL_LINES = 20;
-
-/** The per-life facts of the `self` resource, from the `agents` row of the life. */
-export interface AgentProfile {
-  personality_seed: string;
-  born_day: number;
-}
-
-export interface AgentProfiles {
-  profile(lifeId: string): Promise<AgentProfile>;
-}
 
 /** The shard's toggles that are public to agents (spec 5.15.3). */
 export interface ShardRules {

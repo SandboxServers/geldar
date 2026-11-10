@@ -105,12 +105,12 @@ describe('wait', () => {
   it('starts a keepalive with the interval and stops it when the wait ends', async () => {
     const { clock, deps, keepAliveStop } = setup();
     const onKeepAlive = vi.fn();
-    const p = wait(deps, { lifeId: LIFE, maxSeconds: 3, onKeepAlive });
+    const p = wait(deps, { lifeId: LIFE, maxSeconds: 5, onKeepAlive });
     expect(deps.keepAlive.start).toHaveBeenCalledWith(20_000, expect.any(Function));
     const tick = vi.mocked(deps.keepAlive.start).mock.calls[0]?.[1];
     tick?.();
     expect(onKeepAlive).toHaveBeenCalledTimes(1);
-    await advance(clock, 3);
+    await advance(clock, 5);
     await p;
     expect(keepAliveStop).toHaveBeenCalledTimes(1);
   });
@@ -132,9 +132,9 @@ describe('wait', () => {
     const { clock, deps } = setup();
     const first = wait(deps, { lifeId: LIFE, maxSeconds: 60 });
     await flush();
-    const second = wait(deps, { lifeId: LIFE, maxSeconds: 2 });
+    const second = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
     await expect(first).resolves.toEqual({ ok: false, error: 'wait_replaced' });
-    await advance(clock, 2);
+    await advance(clock, 5);
     expect((await second).ok).toBe(true);
   });
 
@@ -163,8 +163,8 @@ describe('wait', () => {
   it('touches presence when the wait opens and when it closes', async () => {
     const touchPresence = vi.fn(async () => {});
     const { clock, deps } = setup({ touchPresence });
-    const p = wait(deps, { lifeId: LIFE, maxSeconds: 1 });
-    await advance(clock, 1);
+    const p = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
     await p;
     expect(touchPresence.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(touchPresence).toHaveBeenCalledWith(LIFE);
@@ -202,10 +202,22 @@ describe('wait max_seconds cap', () => {
     expect(clock.nowMs()).toBe(240_000);
   });
 
-  it.each([0, -5])('returns at once with timeout for a max_seconds of %i', async (maxSeconds) => {
+  it.each([0, -5, 4, 2.5, Number.NaN, undefined])(
+    'refuses a max_seconds of %s at once, before any wait opens',
+    async (maxSeconds) => {
+      const { clock, deps } = setup();
+      const out = await wait(deps, { lifeId: LIFE, maxSeconds: maxSeconds as number });
+      expect(out).toEqual({ ok: false, error: 'bad_max_seconds' });
+      expect(clock.nowMs()).toBe(0);
+      expect(deps.keepAlive.start).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts the minimum of 5 seconds', async () => {
     const { clock, deps } = setup();
-    const out = await wait(deps, { lifeId: LIFE, maxSeconds });
+    const p = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
+    const out = await p;
     expect(out.ok && out.result.wake_reason).toBe('timeout');
-    expect(clock.nowMs()).toBe(0);
   });
 });

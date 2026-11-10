@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { PresenceRecord, SovereignCallPayload } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 import type {
@@ -46,7 +47,7 @@ export class FakeTokenStore implements TokenStore {
 
   async resolve(tokenHash: Uint8Array, nowMs: number): Promise<ResolvedToken | null> {
     for (const token of this.tokens.values()) {
-      if (!equalBytes(token.tokenHash, tokenHash)) continue;
+      if (!digestEqual(token.tokenHash, tokenHash)) continue;
       const active =
         !token.revoked && nowMs < token.expiresAtMs && token.player.status === 'active';
       return active ? { tokenId: token.tokenId, player: token.player } : null;
@@ -163,11 +164,21 @@ export class FakePlayerEventLog implements PlayerEventLog {
     const dropped = (this.evicted.get(lifeId) ?? []).filter((seq) => seq > cursor).length;
     return { events, dropped };
   }
+
+  head(lifeId: string): number {
+    return (this.rings.get(lifeId) ?? []).reduce((max, e) => Math.max(max, e.seq), 0);
+  }
 }
 
 /** In-memory `PresenceStore`: `wantBody` writes an awake record that wants the Body up. */
 export class FakePresenceStore implements PresenceStore {
   readonly records = new Map<string, PresenceRecord>();
+  /** How many times each life was touched, for assertions. */
+  readonly touches = new Map<string, number>();
+
+  async touch(lifeId: string): Promise<void> {
+    this.touches.set(lifeId, (this.touches.get(lifeId) ?? 0) + 1);
+  }
 
   async read(lifeId: string): Promise<PresenceRecord | null> {
     return this.records.get(lifeId) ?? null;
@@ -244,9 +255,8 @@ export class FakeKeepAlive implements KeepAlive {
   }
 }
 
-function equalBytes(a: Uint8Array, b: Uint8Array): boolean {
+/** Compares two digests in constant time; unequal lengths never match. */
+function digestEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= (a[i] ?? 0) ^ (b[i] ?? 0);
-  return diff === 0;
+  return timingSafeEqual(a, b);
 }

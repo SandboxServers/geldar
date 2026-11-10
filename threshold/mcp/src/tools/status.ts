@@ -1,8 +1,6 @@
 import type { StatusResult, UntrustedWorldText } from '@geldar/contract';
-import type { BodyGateway, BudgetLedger } from '../ports.ts';
-import type { AgentProfiles } from '../resources.ts';
+import type { AgentProfiles, BodyGateway, BudgetLedger, SleepMarks } from '../ports.ts';
 import { type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
-import type { SleepMarks } from './sleep.ts';
 
 /** The most law lines `status` shows (the `signs` maxItems of the contract). */
 export const STATUS_LAW_LIMIT = 20;

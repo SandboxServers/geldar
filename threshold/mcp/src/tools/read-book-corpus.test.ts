@@ -3,9 +3,9 @@ import { type CorpusItem, loadCorpus, type Scenario } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { FakeJournalStore, FakePlayerEventLog } from '../fakes/stores.fakes.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
+import type { SleepMark, SleepMarks } from '../ports.ts';
 import type { ToolCall } from './look.ts';
 import { readBookTool } from './read-book.ts';
-import type { SleepMark, SleepMarks } from './sleep.ts';
 import { sleepTool } from './sleep.ts';
 
 /**

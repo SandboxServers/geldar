@@ -86,6 +86,8 @@ export interface PlayerEventLog {
   append(lifeId: string, event: SimEvent): Promise<void>;
   /** The events after the cursor, in order, and how many were lost before the ring's start. */
   since(lifeId: string, cursor: number): Promise<{ events: SimEvent[]; dropped: number }>;
+  /** The newest sequence the life holds, 0 when none. A `say` takes its start cursor here. */
+  head(lifeId: string): number;
 }
 
 /** Presence records in the `geldar-presence` bucket: one per life. */
@@ -94,6 +96,34 @@ export interface PresenceStore {
   read(lifeId: string): Promise<PresenceRecord | null>;
   /** Asks for the life's Body to be up; the supervisor acts on it. */
   wantBody(lifeId: string, nowMs: number): Promise<void>;
+  /** Marks the life as watched now: an open `wait` calls it when it opens, on each poll and when it closes. */
+  touch(lifeId: string): Promise<void>;
+}
+
+/** One life's sleep mark: the day of the last sleep and the event cursor it read up to. */
+export interface SleepMark {
+  /** The world day of the last sleep; the birth day before the first. */
+  lastSleepDay: number;
+  /** The stream sequence the last sleep digested up to; 0 before the first. */
+  cursor: number;
+}
+
+/** The sleep marks of each life (Postgres in the real server). */
+export interface SleepMarks {
+  /** The life's mark; a life with no sleep yet reads its birth day and cursor 0. */
+  read(lifeId: string): Promise<SleepMark>;
+  write(lifeId: string, mark: SleepMark): Promise<void>;
+}
+
+/** The per-life facts of the `self` resource, from the `agents` row of the life. */
+export interface AgentProfile {
+  personality_seed: string;
+  born_day: number;
+}
+
+/** The agent profile of each life. */
+export interface AgentProfiles {
+  profile(lifeId: string): Promise<AgentProfile>;
 }
 
 /** Writes one `sovereign_call` event per tool call. Holds no world text beyond the payload's limits. */

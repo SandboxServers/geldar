@@ -15,6 +15,8 @@ import { BodyUnavailable } from '../ports.ts';
 export const MAX_WAIT_SECONDS = 240;
 /** How often an open `wait` writes a keepalive so its stream does not idle past a proxy. */
 export const KEEPALIVE_MS = 20_000;
+/** The shortest wait the contract allows, in seconds (mcp-play.schema.json, max_seconds minimum). */
+export const MIN_WAIT_SECONDS = 5;
 /** How often an open `wait` rechecks the policy while nothing else wakes it. */
 export const POLL_MS = 1_000;
 
@@ -32,10 +34,7 @@ export interface WaitLog extends PlayerEventLog {
   head(lifeId: string): number;
 }
 
-/**
- * Optional: marks the player's presence as touched. The presence store has no touch yet (an
- * interface request for WM-11), so the dependency is left out until it exists.
- */
+/** Marks the life's presence as touched; the server wires it to PresenceStore.touch. */
 export type TouchPresence = (lifeId: string) => Promise<void>;
 
 /** What `wait` needs from the rest of the server. */
@@ -65,7 +64,12 @@ export interface WaitRequest {
   onKeepAlive?: () => void;
 }
 
-export type WaitError = 'bad_cursor' | 'body_unavailable' | 'session_superseded' | 'wait_replaced';
+export type WaitError =
+  | 'bad_cursor'
+  | 'bad_max_seconds'
+  | 'body_unavailable'
+  | 'session_superseded'
+  | 'wait_replaced';
 
 export type WaitOutcome = { ok: true; result: WaitResult } | { ok: false; error: WaitError };
 
@@ -88,6 +92,10 @@ export function createWaitState(): WaitState {
 export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcome> {
   const { clock, log, state } = deps;
   const { lifeId } = req;
+  // max_seconds: an integer from MIN_WAIT_SECONDS up; NaN, a missing value and a fraction are refused
+  if (!Number.isInteger(req.maxSeconds) || req.maxSeconds < MIN_WAIT_SECONDS) {
+    return { ok: false, error: 'bad_max_seconds' };
+  }
   const head = log.head(lifeId);
   let from = head;
   if (req.cursor !== undefined) {
@@ -96,7 +104,7 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     from = decoded;
   }
 
-  const seconds = Math.min(MAX_WAIT_SECONDS, Math.max(0, Math.floor(req.maxSeconds)));
+  const seconds = Math.min(MAX_WAIT_SECONDS, req.maxSeconds);
   const deadline = clock.nowMs() + seconds * 1000;
   const interests: readonly string[] = req.interests ?? ALL_INTERESTS;
   const control = new AbortController();
