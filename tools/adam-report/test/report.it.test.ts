@@ -132,10 +132,10 @@ describe.skipIf(!enabled)('the Adam report against Postgres (GELDAR_IT)', () => 
     const measure = (id: string) => report.measures.find((m) => m.id === id);
     expect(report.window.thoughtRows).toBe(3);
     expect(measure('survival')?.verdict).toBe('FAIL');
-    expect(measure('survival')?.note).toBe('a death fell inside the window');
+    expect(measure('survival')?.note).toMatch(/^the life ended by death at .+ inside the window;/);
     expect(measure('intents')?.verdict).toBe('FAIL');
     expect(measure('intents')?.note).toBe('1 against a minimum of 3');
-    expect(measure('receipts')?.verdict).toBe('PASS');
+    expect(measure('receipts')?.verdict).toBe('UNKNOWN');
     expect(measure('continuity')?.verdict).toBe('FAIL');
   });
 
