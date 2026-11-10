@@ -1,5 +1,6 @@
 import { type Thought, validateThought } from '@geldar/contract';
 import type { OutputResult } from '../ports/index.ts';
+import { focusActionErrors } from './action-focus.ts';
 import {
   type Bounds,
   checkPosition,
@@ -118,6 +119,8 @@ export function parseThoughtOutput(
   if (!errors.empty) return { ok: false, errors: errors.errors };
   const schema = validateThought(read.value);
   if (!schema.ok) {
+    const focused = focusActionErrors(read.value, splitSchemaMessage(schema.errors[0] ?? '').path);
+    if (focused !== undefined) return { ok: false, errors: focused };
     for (const message of schema.errors) {
       const { path, detail } = splitSchemaMessage(message);
       errors.add('schema', path, detail);

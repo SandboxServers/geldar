@@ -4,6 +4,7 @@
  * engine's constrained decoder can compile them. They steer the engine; the validators in
  * `../validate/` are the control and check every output against the full contract schema.
  */
+import { ACTION_FIELDS } from '../validate/action-shapes.ts';
 
 const POSITION = {
   type: 'object',
@@ -43,41 +44,46 @@ export function thoughtDecodeSchema(): Record<string, unknown> {
         required: ['goal', 'program', 'arguments', 'wake_on', 'limits'],
         additionalProperties: false,
       },
-      actions: {
-        type: 'array',
-        maxItems: 6,
-        items: {
-          type: 'object',
-          properties: {
-            do: {
-              enum: [
-                'goto',
-                'mine',
-                'craft',
-                'place',
-                'eat',
-                'sleep',
-                'open',
-                'deposit',
-                'withdraw',
-                'attack',
-                'wait',
-              ],
-            },
-            target: { anyOf: [POSITION, { type: 'string', maxLength: 64 }] },
-            block: { type: 'string', maxLength: 64 },
-            item: { type: 'string', maxLength: 64 },
-            count: { type: 'integer', minimum: 1, maximum: 256 },
-            at: { anyOf: [POSITION, { enum: ['feet'] }] },
-            seconds: { type: 'integer', minimum: 1, maximum: 600 },
-          },
-          required: ['do'],
-          additionalProperties: false,
-        },
-      },
+      actions: { type: 'array', maxItems: 6, items: actionUnion() },
     },
     required: ['reasoning'],
     additionalProperties: false,
+  };
+}
+
+/** The schema of one field of one verb. Only `place` takes `feet` for `at` (contract thought.schema.json). */
+function actionField(verb: string, field: string): Record<string, unknown> {
+  switch (field) {
+    case 'target':
+      return { anyOf: [POSITION, { type: 'string', maxLength: 64 }] };
+    case 'at':
+      return verb === 'place' ? { anyOf: [POSITION, { const: 'feet' }] } : POSITION;
+    case 'block':
+    case 'item':
+      return { type: 'string', maxLength: 64 };
+    case 'count':
+      return { type: 'integer', minimum: 1, maximum: 256 };
+    case 'seconds':
+      return { type: 'integer', minimum: 1, maximum: 600 };
+    default:
+      return {};
+  }
+}
+
+/**
+ * The Action union as one variant per verb (`oneOf`, each with a `do` const): a variant has the
+ * verb's own fields, all required, and nothing else. Engines that compile a schema into a grammar
+ * can enforce the shapes this way; a loose `do`-only object cannot be enforced.
+ */
+function actionUnion(): Record<string, unknown> {
+  return {
+    oneOf: Object.entries(ACTION_FIELDS).map(([verb, fields]) => {
+      const properties: Record<string, unknown> = { do: { const: verb } };
+      for (const field of fields) {
+        if (field !== 'do') properties[field] = actionField(verb, field);
+      }
+      return { type: 'object', properties, required: [...fields], additionalProperties: false };
+    }),
   };
 }
 
