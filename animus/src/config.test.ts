@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { loadAnimusConfig, parseAnimusConfig, repoRoot } from './config.ts';
+import { DEFAULT_THOUGHT_BUDGET_TOKENS } from './prompts/library.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: the tests edit arbitrary nested keys of the parsed YAML
 type Doc = any;
@@ -30,7 +31,7 @@ describe('animus config: the start-up waits', () => {
     expect(config.mind).toEqual({
       snapshotRetryS: 60,
       thinkerWaitS: 20,
-      promptBudgetChars: 12000,
+      promptBudgetTokens: DEFAULT_THOUGHT_BUDGET_TOKENS,
       maxBeliefs: 40,
       memoryTimeoutS: 10,
     });
@@ -43,7 +44,7 @@ describe('animus config: the start-up waits', () => {
     expect(parseAnimusConfig(doc).mind).toEqual({
       snapshotRetryS: 60,
       thinkerWaitS: 20,
-      promptBudgetChars: 12000,
+      promptBudgetTokens: DEFAULT_THOUGHT_BUDGET_TOKENS,
       maxBeliefs: 40,
       memoryTimeoutS: 10,
     });
@@ -53,12 +54,12 @@ describe('animus config: the start-up waits', () => {
 
   it('reads the prompt budget and the belief limit, and rejects a value out of range', () => {
     const doc = approvedDoc();
-    doc.mind.prompt_budget_chars = 12000;
+    doc.mind.prompt_budget_tokens = 4000;
     doc.mind.max_beliefs = 40;
-    expect(parseAnimusConfig(doc).mind.promptBudgetChars).toBe(12000);
-    doc.mind.prompt_budget_chars = 999;
-    expect(() => parseAnimusConfig(doc)).toThrow('mind.prompt_budget_chars');
-    doc.mind.prompt_budget_chars = 12000;
+    expect(parseAnimusConfig(doc).mind.promptBudgetTokens).toBe(4000);
+    doc.mind.prompt_budget_tokens = 999;
+    expect(() => parseAnimusConfig(doc)).toThrow('mind.prompt_budget_tokens');
+    doc.mind.prompt_budget_tokens = 4000;
     doc.mind.max_beliefs = 0;
     expect(() => parseAnimusConfig(doc)).toThrow('mind.max_beliefs');
   });

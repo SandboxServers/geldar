@@ -113,8 +113,20 @@ describe('hostile text', () => {
     ['U+1D17A', 0x1d17a],
     ['U+E0100', 0xe0100],
     ['U+E01EF', 0xe01ef],
+    ['U+E0FFF', 0xe0fff],
   ])('cleanLine removes the invisible code point %s', (_name, code) => {
     expect(cleanLine(`a${String.fromCodePoint(code)}b`)).toBe('ab');
+  });
+
+  it('cleanLine removes every default-ignorable and format code point, by property', () => {
+    const ignorable = /^[\p{Default_Ignorable_Code_Point}\p{Cf}]$/u;
+    const kept: string[] = [];
+    for (let cp = 0x20; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const ch = String.fromCodePoint(cp);
+      if (ignorable.test(ch) && cleanLine(`a${ch}b`) !== 'ab') kept.push(cp.toString(16));
+    }
+    expect(kept).toEqual([]);
   });
 
   it('the voice neutralises hostile text before it is sent or published', async () => {

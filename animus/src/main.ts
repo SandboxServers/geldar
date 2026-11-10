@@ -201,7 +201,7 @@ export async function startMind(
       journal: db.journal,
       embedder,
       prompts: createPromptLibrary({
-        thoughtBudgetChars: config.mind.promptBudgetChars,
+        thoughtBudgetTokens: config.mind.promptBudgetTokens,
         maxBeliefs: config.mind.maxBeliefs,
       }),
       validator: createOutputValidator({
