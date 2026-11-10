@@ -4,34 +4,19 @@
  * player's token file (GELDAR_MCP_TEST_TOKEN_FILE, outside the repo). Run it with `./geldar.ps1 mcp smoke`.
  * Deterministic: the case names the intent itself and waits in bounded steps; no model chooses anything. It asserts
  * that each tool answers and that the wait returns within its bound. The token is read, never printed.
- * Open: the argument shapes come from contract/schemas/mcp-play.schema.json (ActInput, WaitInput); check them on the first run.
+ * The act shape is contract/schemas/mcp-play.schema.json (ActInput) with thought.schema.json (Intent).
  */
-import { readFileSync } from 'node:fs';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { describe, expect, it } from 'vitest';
+import { connectAs, readTokenFile, TEST_PLAYER } from './client.ts';
+import { liveEnabled } from './gate.ts';
 
-const PLAYER = 'ag-test-01';
 const WAIT_SECONDS = 25;
 const WAIT_STEPS = 4;
-const liveEnabled = process.env.GELDAR_IT === '1' && process.env.GELDAR_MCP_LIVE === '1';
+const ENDS = ['goal_completed', 'precondition_failed', 'intent_run_too_long'];
 
-function readToken(): string {
-  const file = process.env.GELDAR_MCP_TEST_TOKEN_FILE;
-  if (file === undefined || file.trim() === '') {
-    throw new Error('GELDAR_MCP_TEST_TOKEN_FILE is not set: point it at the ag-test-01 token file');
-  }
-  return readFileSync(file, 'utf8').trim();
-}
-
-describe.skipIf(!liveEnabled)('MCP stub client: look, act gather oak_log, wait', () => {
-  it('answers look, takes an act, and each wait returns within its bound', async () => {
-    const url = new URL(`${process.env.GELDAR_MCP_URL ?? 'http://127.0.0.1:8788'}/p/${PLAYER}`);
-    const client = new Client({ name: 'geldar-stub-client', version: '0.0.0' });
-    const transport = new StreamableHTTPClientTransport(url, {
-      requestInit: { headers: { Authorization: `Bearer ${readToken()}` } },
-    });
-    await client.connect(transport);
+describe.skipIf(!liveEnabled())('MCP stub client: look, act gather oak_log, wait', () => {
+  it('answers look, takes an act, and each wait returns within its bound until the intent ends', async () => {
+    const client = await connectAs(TEST_PLAYER, readTokenFile('GELDAR_MCP_TEST_TOKEN_FILE'));
     try {
       const names = (await client.listTools()).tools.map((tool) => tool.name);
       expect(names, `tools seen: ${names.join(', ')}`).toEqual(
@@ -43,12 +28,21 @@ describe.skipIf(!liveEnabled)('MCP stub client: look, act gather oak_log, wait',
 
       const acted = await client.callTool({
         name: 'act',
-        arguments: { reasoning: 'stub client case', intent: { kind: 'gather', target: 'oak_log' } },
+        arguments: {
+          reasoning: 'stub client case',
+          intent: {
+            goal: 'gather_oak_log',
+            program: 'gather',
+            arguments: { block: 'oak_log', count: 12 },
+            wake_on: ['goal_completed', 'precondition_failed'],
+          },
+        },
       });
       expect(acted.isError, `act failed: ${JSON.stringify(acted).slice(0, 300)}`).not.toBe(true);
 
       let cursor: unknown;
-      for (let step = 0; step < WAIT_STEPS; step += 1) {
+      let ended = false;
+      for (let step = 0; step < WAIT_STEPS && !ended; step += 1) {
         const started = Date.now();
         const waited = await client.callTool({
           name: 'wait',
@@ -65,9 +59,13 @@ describe.skipIf(!liveEnabled)('MCP stub client: look, act gather oak_log, wait',
           elapsed,
           `wait ${step} ran ${elapsed} ms, past its ${WAIT_SECONDS} s bound`,
         ).toBeLessThanOrEqual((WAIT_SECONDS + 10) * 1000);
-        const structured = waited.structuredContent as { cursor?: unknown } | undefined;
+        const structured = waited.structuredContent as
+          | { cursor?: unknown; wake_reason?: string }
+          | undefined;
         cursor = structured?.cursor ?? cursor;
+        ended = ENDS.includes(structured?.wake_reason ?? '');
       }
+      expect(ended, 'the intent did not end within the bounded waits').toBe(true);
     } finally {
       await client.close();
     }
