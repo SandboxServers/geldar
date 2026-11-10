@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import { type WebSocket, WebSocketServer } from 'ws';
 import type { ModelPin } from '../src/config.ts';
 
@@ -143,6 +143,18 @@ export class FakeMind {
     }
     throw new Error(`no ${type} frame within ${timeoutMs} ms; saw ${JSON.stringify(this.frames)}`);
   }
+}
+
+/**
+ * A ws URL whose port nothing listens on. The port is bound on loopback and released again, so a
+ * connect is refused at once, without depending on what a fixed low port (such as 1) does on the host.
+ */
+export async function refusedWsUrl(): Promise<string> {
+  const probe = createNetServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return `ws://127.0.0.1:${port}/v1/thinker/stream`;
 }
 
 /** Polls until the condition holds. */
