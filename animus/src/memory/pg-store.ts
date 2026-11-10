@@ -285,13 +285,21 @@ export class PgMemoryStore implements MemoryStore {
     const literals = writes.embeddings.map((e) =>
       e === null ? null : toVectorLiteral(e, EMBEDDING_DIMS),
     );
+    // The embedder runs before the transaction opens, so a slow model holds no row locks.
+    const relationshipVectors = await this.embedRelationships(writes.relationships);
     return inTransaction(this.pool, async (client) => {
       for (const [i, memory] of writes.memories.entries()) {
         await this.insertMemory(client, lifeId, memory, literals[i] ?? null);
       }
       for (const memoryId of writes.resolve) await this.resolveIn(client, lifeId, memoryId);
       const retired = await this.retireBeliefs(client, lifeId, writes.deactivate);
-      await this.writeRelationships(client, lifeId, writes.relationships, writes.day);
+      await this.writeRelationships(
+        client,
+        lifeId,
+        writes.relationships,
+        writes.day,
+        relationshipVectors,
+      );
       if (writes.goals !== null) await this.writeGoals(client, lifeId, writes.goals);
       await this.setSleepDay(client, lifeId, writes.day);
       return retired;
@@ -308,8 +316,9 @@ export class PgMemoryStore implements MemoryStore {
     updates: { name: string; impression: string; trust: number }[],
     day: number,
   ): Promise<void> {
+    const vectors = await this.embedRelationships(updates);
     await inTransaction(this.pool, (client) =>
-      this.writeRelationships(client, lifeId, updates, day),
+      this.writeRelationships(client, lifeId, updates, day, vectors),
     );
   }
 
@@ -370,13 +379,28 @@ export class PgMemoryStore implements MemoryStore {
     return (result.rowCount ?? 0) > 0;
   }
 
+  /**
+   * One batched embedding of the relationship texts that may become semantic memories, made before
+   * the transaction. Entry i is the vector of update i, or undefined when the embedder failed.
+   */
+  private async embedRelationships(
+    updates: { name: string; impression: string; trust: number }[],
+  ): Promise<(number[] | undefined)[]> {
+    if (updates.length === 0) return [];
+    const vectors = await this.tryEmbed(
+      updates.map((u) => `${u.name}: ${u.impression} (trust ${u.trust})`),
+    );
+    return updates.map((_, i) => vectors[i]);
+  }
+
   private async writeRelationships(
     client: SqlClient,
     lifeId: string,
     updates: { name: string; impression: string; trust: number }[],
     day: number,
+    vectors: readonly (number[] | undefined)[],
   ): Promise<void> {
-    for (const update of updates) {
+    for (const [i, update] of updates.entries()) {
       const found = await client.query(
         `SELECT agent_id FROM agents WHERE (name = $1 OR game_account = $1) AND agent_id <> $2
          ORDER BY life_seq DESC LIMIT 1`,
@@ -402,7 +426,7 @@ export class PgMemoryStore implements MemoryStore {
         [lifeId, subject],
       );
       const text = `${update.name}: ${update.impression} (trust ${update.trust})`;
-      const [embedding] = await this.tryEmbed([text]);
+      const embedding = vectors[i];
       const memory: NewMemory = {
         kind: 'semantic',
         provenance: 'interpretation',

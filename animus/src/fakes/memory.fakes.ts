@@ -239,8 +239,8 @@ export class FakeMemoryStore implements MemoryStore, Journal {
         if (row.agentId === lifeId && row.active && row.subject === subject) row.active = false;
       }
       const text = `${update.name}: ${update.impression} (trust ${update.trust})`;
-      const vector =
-        this.embedder === undefined ? null : await this.embedder.embed([text], 'document');
+      // As the Pg store's tryEmbed: a failed embedder leaves the memory without a vector.
+      const vector = await this.embedder?.embed([text], 'document').catch(() => []);
       await this.writeMemoriesPartial(
         lifeId,
         [

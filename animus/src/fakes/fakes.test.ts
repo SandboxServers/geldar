@@ -219,6 +219,20 @@ describe('FakeMemoryStore', () => {
     expect(store.suppressed).toHaveLength(1);
   });
 
+  it('keeps a relationship memory when the embedder fails, as the Pg store does', async () => {
+    const down = {
+      dims: 768,
+      embed: async (): Promise<number[][]> => {
+        throw new Error('model down');
+      },
+    };
+    const store = new FakeMemoryStore(down);
+    await store.ensureAgent(AGENT);
+    await store.upsertRelationships(LIFE, [{ name: 'Steve', impression: 'curious', trust: 60 }], 2);
+    const loaded = await store.loadDeterministic(LIFE, 10);
+    expect(loaded.beliefs.map((m) => m.text)).toEqual(['Steve: curious (trust 60)']);
+  });
+
   it('loads 40 beliefs without commitments, and the 10 most overdue commitments, then the next 10', async () => {
     const store = new FakeMemoryStore(undefined, { maxBeliefs: 40, maxCommitments: 10 });
     await store.ensureAgent(AGENT);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadAnimusConfig } from '../config.ts';
-import type { AgentRow, NewMemory, ThoughtRow } from '../ports/index.ts';
+import type { AgentRow, NewMemory, ReflectionWrites, ThoughtRow } from '../ports/index.ts';
 import { PgJournal } from './journal.ts';
 import { PgMemoryStore, type PgPool, poolConfig, type SqlResult } from './pg-store.ts';
 
@@ -135,6 +135,66 @@ describe('PgMemoryStore', () => {
       'Steve: curious (trust 60)',
     ]);
     expect(insert?.params[5]).toBeNull();
+  });
+
+  it('embeds the relationship texts in one call, before the transaction opens', async () => {
+    const { pool, calls } = fakePool();
+    const seen: { texts: string[]; begun: boolean }[] = [];
+    const embedder = {
+      dims: 768,
+      embed: async (texts: string[]) => {
+        seen.push({ texts, begun: calls.some((c) => c.sql === 'BEGIN') });
+        return texts.map(() => vec());
+      },
+    };
+    await new PgMemoryStore(pool, { embedder }).upsertRelationships(
+      'l',
+      [
+        { name: 'Steve', impression: 'curious', trust: 60 },
+        { name: 'Mara', impression: 'kind', trust: 70 },
+      ],
+      3,
+    );
+    expect(seen).toEqual([
+      { texts: ['Steve: curious (trust 60)', 'Mara: kind (trust 70)'], begun: false },
+    ]);
+  });
+
+  describe('commitReflection', () => {
+    const writes: ReflectionWrites = {
+      day: 3,
+      memories: [],
+      embeddings: [],
+      deactivate: [],
+      resolve: [],
+      relationships: [],
+      goals: [{ goal: 'a', why: 'x' }],
+    };
+
+    it('runs its writes in one transaction, goals before the sleep day', async () => {
+      const { pool, calls } = fakePool((sql) =>
+        sql.startsWith('UPDATE agents') ? { rowCount: 1 } : {},
+      );
+      await new PgMemoryStore(pool).commitReflection('l', writes);
+      const sqls = calls.map((c) => c.sql);
+      expect(sqls[0]).toBe('BEGIN');
+      expect(sqls.at(-1)).toBe('COMMIT');
+      expect(sqls.findIndex((s) => s.startsWith('DELETE FROM goals'))).toBeLessThan(
+        sqls.findIndex((s) => s.startsWith('UPDATE agents')),
+      );
+    });
+
+    it('rolls back and runs nothing after a failed write', async () => {
+      const { pool, calls } = fakePool((sql) => {
+        if (sql.startsWith('DELETE FROM goals')) throw new Error('boom');
+        return {};
+      });
+      await expect(new PgMemoryStore(pool).commitReflection('l', writes)).rejects.toThrow('boom');
+      const sqls = calls.map((c) => c.sql);
+      expect(sqls.at(-1)).toBe('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+      expect(sqls.some((s) => s.startsWith('UPDATE agents'))).toBe(false);
+    });
   });
 
   it('replaces goals in one transaction, rank 0 first', async () => {
