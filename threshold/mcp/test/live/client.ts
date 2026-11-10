@@ -18,13 +18,35 @@ export function mcpBase(): string {
   return process.env.GELDAR_MCP_URL ?? 'http://127.0.0.1:8788';
 }
 
+/** The variable `mcp-tokens token mint` writes in a token file: one line, `GELDAR_MCP_TOKEN=<token>`. */
+export const TOKEN_VARIABLE = 'GELDAR_MCP_TOKEN';
+
+/**
+ * The bearer in a token file's text. The file is the `VARIABLE=value` line that `mcp-tokens` writes;
+ * the value after `=` is the token. A bare token (no such line) is accepted as is. A UTF-8 byte-order
+ * mark and CRLF line ends are ignored. The whole line is never sent: a `VARIABLE=` prefix would be
+ * part of the bearer and every such request is refused as an unknown token.
+ */
+export function parseTokenFile(text: string): string {
+  const lines = text
+    .replace(/^﻿/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  const assigned = lines.find((line) => line.startsWith(`${TOKEN_VARIABLE}=`));
+  const token =
+    assigned === undefined ? (lines[0] ?? '') : assigned.slice(TOKEN_VARIABLE.length + 1);
+  if (token === '') throw new Error('the token file holds no token');
+  return token.trim();
+}
+
 /** Reads a token file named by env. The value is returned to the caller and never logged. */
 export function readTokenFile(envName: string): string {
   const file = process.env[envName];
   if (file === undefined || file.trim() === '') {
     throw new Error(`${envName} is not set: point it at a token file outside the repo`);
   }
-  return readFileSync(file, 'utf8').trim();
+  return parseTokenFile(readFileSync(file, 'utf8'));
 }
 
 /** Connects an MCP client to one player's endpoint with that player's bearer token. */

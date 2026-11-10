@@ -119,9 +119,16 @@ export async function initSecretFiles(
   return reports;
 }
 
-/** The pepper as text, without its trailing newline. Refuses a file too short to be a key. */
+/**
+ * The pepper as text, without its one trailing newline. Refuses a file that starts with a UTF-8
+ * byte-order mark, and a file too short to be a key. The server applies the same rule (pepperBytes).
+ */
 export async function readPepper(dir: string): Promise<string> {
-  const text = (await readFile(join(dir, PEPPER_FILE), 'utf8')).replace(/\r?\n$/, '');
+  const raw = await readFile(join(dir, PEPPER_FILE), 'utf8');
+  if (raw.startsWith('﻿')) {
+    throw new Error(`${PEPPER_FILE} starts with a byte-order mark; rewrite it without one`);
+  }
+  const text = raw.replace(/\r?\n$/, '');
   if (Buffer.byteLength(text, 'utf8') < MIN_PEPPER_BYTES) {
     throw new Error(`${PEPPER_FILE} is missing or too short; run init first`);
   }

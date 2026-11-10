@@ -1,3 +1,5 @@
+import { REFUSAL_REASONS, type RefusalReason } from '../ports.ts';
+
 /** A fixed refusal or outcome template: lowercase words joined by underscores. */
 const TEMPLATE = /^[a-z][a-z_]{0,60}$/;
 /** A failure class name, such as `TypeError`: the message after the colon is never kept. */
@@ -25,10 +27,16 @@ export function safeLogLine(line: Record<string, unknown>): Record<string, strin
     out.player_id = line.player_id;
   }
   if (typeof line.status === 'number') out.status = line.status;
+  if (typeof line.reason === 'string' && isRefusalReason(line.reason)) out.reason = line.reason;
   if (typeof line.error === 'string') out.error = errorTemplate(line.error);
   if (typeof line.cause === 'string') out.cause = causeText(line.cause);
   if (typeof line.suppressed === 'number') out.suppressed = line.suppressed;
   return out;
+}
+
+/** True for one of the closed refusal reasons; any other text is dropped, never kept. */
+function isRefusalReason(value: string): value is RefusalReason {
+  return (REFUSAL_REASONS as readonly string[]).includes(value);
 }
 
 /**

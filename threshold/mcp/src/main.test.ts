@@ -67,7 +67,6 @@ function fakePorts(order: string[], logs: string[]): McpPorts {
   const nats: NatsLink = {
     request: (() => Promise.reject(new Error('not used'))) as never,
     buckets: {
-      open: async () => new MemoryPresenceBucket(),
       create: async () => new MemoryPresenceBucket(),
     } as never,
     publishCall: async () => {},

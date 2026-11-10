@@ -67,27 +67,49 @@ class FakeBucket implements PresenceBucket {
   }
 }
 
-/** A bucket manager with buckets that exist only once created, and a log of its calls. */
+/**
+ * What a bound name with no stream behind it does: `Kvm.open` only binds, so the first read fails
+ * with `stream not found`, as NATS reports a missing `KV_<bucket>` stream.
+ */
+class UnbackedBucket implements PresenceBucket {
+  async get(): Promise<never> {
+    throw new Error('stream not found');
+  }
+  async put(): Promise<never> {
+    throw new Error('stream not found');
+  }
+  async keys(): Promise<never> {
+    throw new Error('stream not found');
+  }
+  async update(): Promise<never> {
+    throw new Error('stream not found');
+  }
+}
+
+/**
+ * A bucket manager that behaves as the NATS `Kvm` does: `open` only binds a name, and `create`
+ * makes a missing bucket or reuses an existing one. `calls` logs each call.
+ */
 class FakeManager implements BucketManager {
   readonly calls: string[] = [];
   readonly buckets = new Map<string, FakeBucket>();
 
-  async open(name: string): Promise<PresenceBucket> {
+  open(name: string): Promise<PresenceBucket> {
     this.calls.push(`open:${name}`);
-    const bucket = this.buckets.get(name);
-    if (bucket === undefined) throw new Error(`no bucket ${name}`);
-    return bucket;
+    return Promise.resolve(this.buckets.get(name) ?? new UnbackedBucket());
   }
 
   async create(name: string): Promise<PresenceBucket> {
     this.calls.push(`create:${name}`);
+    const existing = this.buckets.get(name);
+    if (existing !== undefined) return existing;
     const bucket = new FakeBucket();
     this.buckets.set(name, bucket);
     return bucket;
   }
 }
 
-function storeAt(bucket: FakeBucket, nowRef: { ms: number }): KvPresenceStore {
+function storeAt(bucket: PresenceBucket, nowRef: { ms: number }): KvPresenceStore {
   return new KvPresenceStore(bucket, () => nowRef.ms);
 }
 
@@ -96,19 +118,30 @@ function stored(bucket: FakeBucket): unknown {
 }
 
 describe('openPresenceBucket', () => {
-  it('creates the presence bucket when the host has not yet opened it', async () => {
+  it('creates the presence bucket before anything uses it, when it is missing', async () => {
     const manager = new FakeManager();
-    await openPresenceBucket(manager);
-    expect(manager.calls).toEqual([`open:${PRESENCE_BUCKET}`, `create:${PRESENCE_BUCKET}`]);
-    expect(manager.buckets.has(PRESENCE_BUCKET)).toBe(true);
+    const bucket = await openPresenceBucket(manager);
+    expect(manager.calls).toEqual([`create:${PRESENCE_BUCKET}`]);
+    expect(manager.buckets.get(PRESENCE_BUCKET)).toBe(bucket);
   });
 
-  it('opens the existing bucket and creates nothing when it is there already', async () => {
+  it('uses the bucket that exists and creates no second one', async () => {
     const manager = new FakeManager();
-    await openPresenceBucket(manager);
-    manager.calls.length = 0;
-    await openPresenceBucket(manager);
-    expect(manager.calls).toEqual([`open:${PRESENCE_BUCKET}`]);
+    const first = await openPresenceBucket(manager);
+    const second = await openPresenceBucket(manager);
+    expect(second).toBe(first);
+    expect(manager.buckets.size).toBe(1);
+  });
+
+  it('lets a touch and a settle run on the bucket it returns, with no stream error', async () => {
+    const manager = new FakeManager();
+    const bucket = await openPresenceBucket(manager);
+    const now = { ms: T0 };
+    await storeAt(bucket, now).touch(LIFE);
+    now.ms = T0 + 700_000;
+    await expect(storeAt(bucket, now).settle(LIFE)).resolves.toMatchObject({
+      state: 'hibernating',
+    });
   });
 });
 

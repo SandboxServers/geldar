@@ -29,25 +29,24 @@ export interface PresenceBucket {
 /** How many times `settle` reads and decides again after a lost compare-and-set write. */
 export const SETTLE_ATTEMPTS = 3;
 
-/** Opens or creates a KV bucket by name; the NATS `Kvm` satisfies it. */
+/**
+ * Creates a KV bucket by name, or reuses it when it exists; the NATS `Kvm` satisfies it. `open` is
+ * not used: NATS `Kvm.open` only binds the name, so it succeeds for a bucket with no stream behind it.
+ */
 export interface BucketManager {
-  open(name: string): Promise<PresenceBucket>;
   create(name: string): Promise<PresenceBucket>;
 }
 
 /**
- * Opens the presence bucket, creating it first when it is not there. The MCP starts before the
- * player host, which opens the same bucket and fails when it is missing, so the MCP creates it.
+ * Returns the presence bucket, creating it with the default options when it is not there. The MCP
+ * starts before the player host, which opens the same bucket with the default options, so the MCP
+ * creates it first. An existing bucket is used as it is, whatever its options.
  */
-export async function openPresenceBucket(
+export function openPresenceBucket(
   manager: BucketManager,
   name: string = PRESENCE_BUCKET,
 ): Promise<PresenceBucket> {
-  try {
-    return await manager.open(name);
-  } catch {
-    return manager.create(name);
-  }
+  return manager.create(name);
 }
 
 /** The presence record in a stored value, or null when it is not JSON or not a valid record. */

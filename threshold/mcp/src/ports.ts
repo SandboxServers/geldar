@@ -29,6 +29,33 @@ export interface ResolvedToken {
   player: PlayerRecord;
 }
 
+/**
+ * The closed list of reasons a 401 or 403 may carry in its log line. A reason never reaches the
+ * response, which is identical for every reason; a token, a digest or any part of them never does.
+ */
+export const REFUSAL_REASONS = [
+  'no_header',
+  'malformed_scheme',
+  'token_shape',
+  'unknown_token',
+  'token_revoked',
+  'token_expired',
+  'player_not_active',
+  'harness_disabled',
+  'owner_retired',
+  'wrong_player',
+  'address_blocked',
+  'internal',
+] as const;
+
+export type RefusalReason = (typeof REFUSAL_REASONS)[number];
+
+/** The reasons a token store can explain for a digest it did not resolve. */
+export type MissReason = Exclude<
+  RefusalReason,
+  'no_header' | 'malformed_scheme' | 'token_shape' | 'wrong_player' | 'address_blocked'
+>;
+
 /** Hashed per-player Bearer tokens (spec 5.15.3; the hash is HMAC with the pepper). */
 export interface TokenStore {
   /**
@@ -45,6 +72,11 @@ export interface TokenStore {
   isCachedHit?(tokenHash: Uint8Array, nowMs: number): boolean;
   /** Calls the listener for every token revoked from now on. Returns the unsubscribe function. */
   onRevoke(listener: (revoked: { tokenId: string; playerId: string }) => void): () => void;
+  /**
+   * Why `resolve` returned null for this digest, for the log only. Optional: a store without it
+   * is logged as `unknown_token`. Called only after a null, so a successful lookup never pays for it.
+   */
+  explainMiss?(tokenHash: Uint8Array, nowMs: number): Promise<MissReason>;
 }
 
 /** Looks up sovereign players by their launcher id. */

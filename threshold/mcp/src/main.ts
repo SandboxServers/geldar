@@ -177,11 +177,14 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
 export const PEPPER_MIN_BYTES = 32;
 
 /**
- * The pepper bytes from its file's text, read as `tools/mcp-tokens` reads it: one trailing LF or
- * CRLF is removed and nothing else, so a minted token verifies here. The message names the rule,
- * never the pepper.
+ * The pepper bytes from its file's text, read as `tools/mcp-tokens` reads it: a file that starts
+ * with a byte-order mark is refused; one trailing LF or CRLF is removed and nothing else, so a
+ * minted token verifies here. The message names the rule, never the pepper.
  */
 export function pepperBytes(text: string): Buffer {
+  if (text.startsWith('﻿')) {
+    throw new ConfigRejected('pepper file starts with a byte-order mark; rewrite it without one');
+  }
   const bytes = Buffer.from(text.replace(/\r?\n$/, ''), 'utf8');
   if (bytes.length < PEPPER_MIN_BYTES) {
     throw new ConfigRejected(`pepper is shorter than ${PEPPER_MIN_BYTES} bytes`);
