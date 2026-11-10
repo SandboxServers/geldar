@@ -792,7 +792,7 @@ Output: findings as file:line, severity (block, fix, note), and one line of evid
 - `compose/nats-auth.yml` (C1-06a): the schedule gives it to C1-06a, but conventions give `compose/*` to C1-02. The wave gate must name one owner.
 - `pnpm-lock.yaml` (C1-05b): the new `tools/backup` package needs an importer entry; conventions give the lockfile to C1-07 alone. Decide whether C1-05b adds its entry or C1-07 does.
 - `replay_minutes` (C1-07): the schedule places the key in `shards/phase0.yaml`, which C1-02 owns. The card defaults to 60 in code and asks C1-02 for the key.
-- Decision 0087 is shared by C1-06a and C1-06b; no spare number is left in the C1 block for a 0090-style extra. Decision 0081 to 0089 are all allocated, so C1-09 has no number.
+- Decision 0087 is shared by C1-06a and C1-06b (C1-06b cites it and adds no record). Decisions 0081 to 0089 are all allocated, so C1-09 has no reserved number; any record it needs gets a number from the owner.
 - Stale plan line: `plan.md` line 39 says `players down` does not clear the registry or whitelist. The code clears both for a stopped life. C1-08 re-verifies before any change.
 - The 60-minute replay window is not in the repo (C1-07 step 1 records how the window is computed today).
 - Node addresses, account names and telemetry targets stay out of the repo. The cards use placeholders.
