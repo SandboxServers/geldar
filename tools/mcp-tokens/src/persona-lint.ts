@@ -21,13 +21,46 @@ const META = /^(?:harness(?:es)?|shards?|colos?|credits?)$/i;
 
 export type PersonaMark = 'watched' | 'software' | 'meta';
 
+const MARK_ORDER: readonly PersonaMark[] = ['watched', 'software', 'meta'];
+
+/** One marked match: its mark, the 1-based line it starts on, and the matched text. */
+export interface PersonaHit {
+  mark: PersonaMark;
+  line: number;
+  matched: string;
+}
+
+function globalCopy(pattern: RegExp): RegExp {
+  return new RegExp(
+    pattern.source,
+    pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+  );
+}
+
+/** Every marked match in a persona text, in line order. The same patterns as personaMarks. */
+export function personaHits(text: string): PersonaHit[] {
+  const hits: PersonaHit[] = [];
+  const lineAt = (index: number): number => text.slice(0, index).split('\n').length;
+  for (const pattern of WATCHED) {
+    for (const found of text.matchAll(globalCopy(pattern))) {
+      hits.push({ mark: 'watched', line: lineAt(found.index ?? 0), matched: found[0] });
+    }
+  }
+  for (const found of text.matchAll(globalCopy(SOFTWARE))) {
+    hits.push({ mark: 'software', line: lineAt(found.index ?? 0), matched: found[0] });
+  }
+  text.split('\n').forEach((line, index) => {
+    for (const word of markedWords(line)) {
+      if (META.test(word)) hits.push({ mark: 'meta', line: index + 1, matched: word });
+    }
+  });
+  return hits.sort((a, b) => a.line - b.line);
+}
+
 /** The marks a persona text carries; an empty list when it is clean. */
 export function personaMarks(text: string): PersonaMark[] {
-  const marks: PersonaMark[] = [];
-  if (WATCHED.some((pattern) => pattern.test(text))) marks.push('watched');
-  if (SOFTWARE.test(text)) marks.push('software');
-  if (markedWords(text).some((word) => META.test(word))) marks.push('meta');
-  return marks;
+  const found = new Set(personaHits(text).map((hit) => hit.mark));
+  return MARK_ORDER.filter((mark) => found.has(mark));
 }
 
 const WHAT: Record<PersonaMark, string> = {

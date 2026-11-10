@@ -134,6 +134,12 @@ describe('init', () => {
     expect(await run(['frobnicate'], h.io, envOf(h))).toBe(2);
     expect(h.err.join('\n')).toContain('usage:');
   });
+
+  it('dispatches persona export and refuses a missing --out before reading the draft', async () => {
+    const h = await harness();
+    expect(await run(['persona', 'export', 'zack'], h.io, envOf(h))).toBe(1);
+    expect(h.err.join('\n')).toContain('--out is required');
+  });
 });
 
 /** A session that answers the retire statements: the player is active and owns life ag_jo_01. */
