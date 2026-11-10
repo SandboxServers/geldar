@@ -136,7 +136,8 @@ describe('createWorldVolumes.paperVolumes', () => {
 
   it('names the volume Paper mounts at /data, not the other mounts', async () => {
     const docker = new FakeDocker();
-    docker.paper.push({ id: 'paper1', mounts: [data('geldar-phase0-world-run-1'), bind] });
+    const other = { Type: 'volume', Name: 'geldar-phase0-cache', Destination: '/cache' };
+    docker.paper.push({ id: 'paper1', mounts: [data('geldar-phase0-world-run-1'), other, bind] });
     expect(await createWorldVolumes(docker).paperVolumes()).toEqual(['geldar-phase0-world-run-1']);
   });
 
