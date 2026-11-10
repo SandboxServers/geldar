@@ -1,3 +1,4 @@
+import { markedWords } from '@geldar/contract';
 import { callTool, type FakeClock, type ToolContext, type ToolHandlers } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import {
@@ -409,6 +410,14 @@ describe('a presence fault does not take down a tool', () => {
     expect(status.isError, status.text).toBe(false);
     expect(logged).toContainEqual({ event: 'presence_error', cause: 'Error: kv down' });
     world.close();
+  });
+
+  it('tells the player in-world that the body is waking, with no marker words', async () => {
+    const { tools, body } = rig();
+    body.setOffline(PLAYER.lifeId, true);
+    const reply = await run(tools, 'look');
+    expect(reply.text).toBe('body_unavailable: Your body is waking. Try again in a few seconds.');
+    expect(markedWords(reply.text)).toEqual([]);
   });
 
   it('answers look with body_unavailable, not internal_error, when the Body is unreachable', async () => {
