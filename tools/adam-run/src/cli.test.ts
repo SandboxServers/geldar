@@ -242,6 +242,15 @@ describe('a run aborted before it started', () => {
     expect(seen).toEqual([]);
   });
 
+  it('report on its own prints the reason and every criterion UNKNOWN', async () => {
+    const out = capture();
+    const { h, files } = harness();
+    files.write(runPaths(RUN_DIR).abort, abortRecord);
+    expect(await runCli(['smoke', 'report', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('reason: adam up failed: boom');
+    for (const k of Object.keys(CRITERIA)) expect(out.text()).toContain(`  ${k}: UNKNOWN`);
+  });
+
   it('stop says the run is already aborted and signals nothing', async () => {
     const out = capture();
     const { h, files, signals, calls } = harness({ processes: [] });
