@@ -47,3 +47,13 @@ skins/
 
 # The real public tunnel config (the template is compose/cloudflared/config.example.yml; decision 0053)
 compose/cloudflared/config.yml
+compose/cloudflared/*.json
+
+# Keys, certificates and cloud credentials: never committed, wherever they sit
+*.pem
+*.key
+**/credentials.json
+
+# Local agent tool state (per-user settings and session data)
+.agents/
+.codex/

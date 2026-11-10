@@ -4,6 +4,9 @@ export const MINESKIN_KEY = /msk_[A-Za-z0-9_-]{20,}/;
 /** A skin PNG by name, anywhere in the tree: skins are fan art whose creators keep their rights. */
 export const SKIN_PNG_PATH = /(^|\/)skins\/.*\.png$/i;
 
+/** Any PNG outside docs/: the repo keeps images only under docs/, so a PNG elsewhere is a skin or a leak until shown otherwise. */
+export const PNG_OUTSIDE_DOCS = /^(?!docs\/).*\.png$/i;
+
 export interface TrackedFile {
   path: string;
   content: string | null;
@@ -22,7 +25,7 @@ export interface Leak {
 export function findLeaks(files: readonly TrackedFile[]): Leak[] {
   const leaks: Leak[] = [];
   for (const file of files) {
-    if (SKIN_PNG_PATH.test(file.path)) {
+    if (SKIN_PNG_PATH.test(file.path) || PNG_OUTSIDE_DOCS.test(file.path)) {
       leaks.push({ path: file.path, rule: 'skin-png' });
     }
     if (file.content !== null && MINESKIN_KEY.test(file.content)) {

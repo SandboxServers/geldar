@@ -1,5 +1,6 @@
 # Build context is the repo root (compose sets it): the sink needs the workspace's contract package.
-FROM node:22.23-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
+# Node is the .nvmrc patch (22.23.2); the digest was pushed 2026-09-17, older than the 14-day floor.
+FROM node:22.23.2-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./

@@ -4,7 +4,7 @@
 # Pin the image by digest in real use: ghcr.io/sandboxservers/geldar-mcp-mock@sha256:<digest>
 services:
   geldar-mcp-mock:
-    image: ghcr.io/sandboxservers/geldar-mcp-mock:main
+    image: ghcr.io/sandboxservers/geldar-mcp-mock:main@sha256:615c9160842ed46655dca33f561eaed83b69a5e80dd4076ad8c61c898d0e7d97
     ports: ["127.0.0.1:8787:8787"]
     volumes:
       - type: bind

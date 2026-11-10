@@ -25,6 +25,7 @@ import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { findMcpTokens } from './mcp-token.ts';
+import { checkPins } from './pin-rules.ts';
 import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
 
 /** Every path below is relative to the repo root, wherever the CLI runs from. */
@@ -155,6 +156,13 @@ for (const file of [...tracked, ...untracked]) {
 
 for (const file of [...tracked, ...untracked].filter((f) => isWorkflowFile(f.path))) {
   for (const problem of checkWorkflowYaml(file.path, file.text)) {
+    console.log(`error: ${problem}`);
+    failed = true;
+  }
+}
+
+for (const file of [...tracked, ...untracked]) {
+  for (const problem of checkPins(file.path, file.text)) {
     console.log(`error: ${problem}`);
     failed = true;
   }
