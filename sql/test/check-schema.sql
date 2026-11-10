@@ -218,10 +218,120 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0004, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0005, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
 END
 $mcp$;
+
+-- Migration 0005 (wave 6 section 4 item 11): the read-only role geldar_glass. It reads exactly the
+-- Glass tables and columns, writes nothing, holds no sequence and cannot read the MCP's tables.
+-- Privileges only: a password may have been set by `migrate --set-role-password geldar_glass`.
+DO $glass$
+DECLARE
+  glass_tables TEXT[] := ARRAY['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+  glass_table_grants TEXT[] := ARRAY['thoughts', 'actions', 'receipts', 'intents'];
+  agents_columns TEXT[] := ARRAY['agent_id', 'name', 'life_seq', 'shard', 'mode', 'tier', 'born_day', 'died_at', 'death_cause'];
+  events_columns TEXT[] := ARRAY['type', 'agent_id', 'world_day', 'world_tick', 'at', 'source_event_id'];
+  t TEXT;
+  rel RECORD;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'geldar_glass' AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+  ) THEN
+    RAISE EXCEPTION 'schema check: role geldar_glass is missing or is superuser, createdb or createrole';
+  END IF;
+
+  FOREACH t IN ARRAY glass_tables LOOP
+    IF t = ANY (glass_table_grants) AND NOT has_table_privilege('geldar_glass', t, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT %', t;
+    END IF;
+    IF has_table_privilege('geldar_glass', t, 'INSERT')
+       OR has_table_privilege('geldar_glass', t, 'UPDATE')
+       OR has_table_privilege('geldar_glass', t, 'DELETE')
+       OR has_table_privilege('geldar_glass', t, 'TRUNCATE')
+       OR has_table_privilege('geldar_glass', t, 'REFERENCES')
+       OR has_table_privilege('geldar_glass', t, 'TRIGGER') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can write %', t;
+    END IF;
+  END LOOP;
+
+  -- Exactly the five tables: no SELECT on any other table in the public schema.
+  FOR rel IN
+    SELECT c.relname FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+  LOOP
+    IF rel.relname <> ALL (glass_tables)
+       AND has_table_privilege('geldar_glass', rel.relname, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can read % (not a Glass table)', rel.relname;
+    END IF;
+  END LOOP;
+
+  -- No sequence grant of any kind.
+  FOR rel IN
+    SELECT c.relname FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'S'
+  LOOP
+    IF has_sequence_privilege('geldar_glass', rel.relname, 'USAGE')
+       OR has_sequence_privilege('geldar_glass', rel.relname, 'SELECT')
+       OR has_sequence_privilege('geldar_glass', rel.relname, 'UPDATE') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass has a privilege on sequence %', rel.relname;
+    END IF;
+  END LOOP;
+
+  -- events: SELECT on exactly the six granted columns (raw world text in payload is not one of them),
+  -- no table-level SELECT, no write of any kind.
+  IF has_table_privilege('geldar_glass', 'events', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass has table-level SELECT on events';
+  END IF;
+  IF has_table_privilege('geldar_glass', 'events', 'INSERT')
+     OR has_table_privilege('geldar_glass', 'events', 'UPDATE')
+     OR has_table_privilege('geldar_glass', 'events', 'DELETE') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass can write events';
+  END IF;
+  FOR rel IN
+    SELECT a.attname FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'events' AND a.attnum > 0 AND NOT a.attisdropped
+  LOOP
+    IF rel.attname = ANY (events_columns) THEN
+      IF NOT has_column_privilege('geldar_glass', 'events', rel.attname, 'SELECT') THEN
+        RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT events.%', rel.attname;
+      END IF;
+    ELSIF has_column_privilege('geldar_glass', 'events', rel.attname, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can read events.% (not granted)', rel.attname;
+    END IF;
+  END LOOP;
+
+  -- agents: SELECT on exactly the nine Glass columns, never personality_seed; no table-level SELECT.
+  IF has_table_privilege('geldar_glass', 'agents', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass has table-level SELECT on agents';
+  END IF;
+  FOR rel IN
+    SELECT a.attname FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'agents' AND a.attnum > 0 AND NOT a.attisdropped
+  LOOP
+    IF rel.attname = ANY (agents_columns) THEN
+      IF NOT has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
+        RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT agents.%', rel.attname;
+      END IF;
+    ELSIF has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
+      RAISE EXCEPTION 'schema check: geldar_glass can read agents.% (not granted)', rel.attname;
+    END IF;
+  END LOOP;
+
+  IF has_schema_privilege('geldar_glass', 'public', 'CREATE') THEN
+    RAISE EXCEPTION 'schema check: geldar_glass can CREATE in schema public';
+  END IF;
+
+  RAISE NOTICE 'schema check passed: role geldar_glass reads its Glass tables and columns and writes none';
+END
+$glass$;
