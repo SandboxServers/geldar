@@ -1,0 +1,17 @@
+{
+  "name": "@geldar/adam-run",
+  "private": true,
+  "description": "The Adam run protocol: writes the run manifest, samples the stack once a minute, applies the abort rules and runs the safe stop. Behind ./geldar.ps1 adam-run.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@geldar/adam-report": "workspace:*",
+    "pg": "8.23.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}
