@@ -188,5 +188,67 @@ Index line to add: the schema change for `contract/schemas/mcp-world.schema.json
 
 ---
 
-<!-- next: C2-06 -->
+### C2-06: external port scan tool and the expected-ports test (0071, 0072 exit check)
+
+- `wave`: C2. `lane`: F. `depends-on`: C2-00. Schedule decision: none reserved (0096 belongs to C2-07; ask the orchestrator if a record is needed). `status`: B for the tool and its tests; the live scan is O (run from outside the node, in C2-07). `size`: S.
+- `may-edit`: `tools/portscan/` (new package: source, tests, a README), `docs/analysis/phase1/worknotes/C2-06.md`.
+- `must-not-edit`: `docs/spec.md`, `geldar.ps1`, `tools/repo-checks/src/cli.ts` (the registry is C2-07's), `compose/*`, `shards/*`, `package.json` (the new package is added by an index line; the lockfile change is made by C2-07 or the ops merge step), `contract/`.
+- `checks`: `./geldar.ps1 pnpm --filter @geldar/portscan typecheck` (after the package is registered; until then `./geldar.ps1 pnpm exec vitest run tools/portscan`); `./geldar.ps1 check`.
+- `worknote`: `docs/analysis/phase1/worknotes/C2-06.md`.
+- `commit`: `feat(portscan): TCP scan that must match the expected port list exactly`.
+- `on-cap`: commit what passes, write the rest, stop.
+
+Steps:
+1. The scanner takes a target host and a range (default 1 to 65535, TCP only, since Minecraft Java is TCP and the UDP check is an owner request). It connects with a timeout and a fixed rate, so it does not look like an attack on the node.
+2. The connector is injected. The tests use a fake connector that reports a fixed open set; no test opens a socket.
+3. The verdict is exact-set equality: every open port must be in the expected list and every expected port must be open. An extra open port fails. A missing expected port fails.
+4. The expected list is read from a file or argument supplied at run time (the ops runbook holds the real list, 0071 item 3). The repo holds only synthetic fixtures. No real port of the Minecraft endpoint is written into the repo by this card.
+5. Output is a JSON report with the target, time, range, the open set and the verdict. It contains no host name beyond the target argument, no banner, and nothing read from a service.
+
+Acceptance: tests cover exact match (pass), one extra open port (fail), one missing expected port (fail), and a closed-range run (pass). The report contains no banner field.
+Revert-check: in the verdict function, change the extra-port test to ignore extras; the "extra open port fails" test must fail. Restore.
+Index line to add: none. The workspace entry for `package.json` (`tools/portscan`) goes to C2-07 in its worknote, as "workspace: tools/portscan".
+
+---
+
+## 3. Cards: integration (owner and ops)
+
+### C2-07: integration, public deploy, scan, live run (O)
+
+- `wave`: C2. `lane`: A. `depends-on`: C2-01, C2-02, C2-03, C2-04, C2-05, C2-06 (all merged to the wave branch), and the owner confirmation of 0077 and 0080. Schedule decision 0096. `status`: O (owner and node access). `size`: L (two sessions; the second is the live steps).
+- `may-edit`: `compose/mcp.yml`, `compose/phase0.yml` (the new velocity TCP publish, and the NATS default-on change under 0080), `compose/velocity/velocity.toml` (only the whitelist and forwarding keys C2-02 names), `compose/nats-auth.yml` (only if 0080 changes it), `shards/phase0.yaml` (the `public` block values), `geldar.ps1` (new commands: the public up, Caddy validate and reload, and scan), `tools/repo-checks/src/` (the registry entries for the new checks and the port-list test), `package.json` and the lockfile (one change, adding the `tools/portscan` workspace), `deploy/caddy/` (the reload wiring only), `docs/analysis/phase1/worknotes/C2-07.md`, and the golem `view.ts` only if the look change needs it (not expected).
+- `must-not-edit`: `docs/spec.md`, `contract/` (already merged in C2-00; any later change is a new unblocker), the Paper plugin, the ops runbook's real values (the runbook is written by the owner or ops, not committed with real addresses).
+- `decisions`: 0096 only. It records the public topology as built, the NATS default-on flip (0080 point), and the reload procedure.
+- `checks`: `./geldar.ps1 check` with the integration case-count floor (conventions 4.2 item 1); `docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml config --quiet`; the port-list test from C2-06 against the fixture list; the live steps below.
+- `worknote`: `docs/analysis/phase1/worknotes/C2-07.md`, with the live record (live step 9, and section 5.2).
+- `commit`: one commit for the desktop wiring (`feat(compose): public surfaces wired behind Caddy (0096)`), one for the NATS flip after 0080 is confirmed, one for the record of the live run (worknote only).
+- `on-cap`: the desktop items commit; the live items stay in the worknote as "not run" with the reason.
+
+Steps (desktop, session 1):
+1. Wire compose: the velocity TCP publish on the chosen port (bound to the host interface the UniFi forward uses, not `0.0.0.0` on the node's other services); the MCP overlay publish stays on loopback for Caddy to reach.
+2. Add the `public` config values to `shards/phase0.yaml` (trusted proxy is the Caddy peer; client-IP header from C2-00; rate limits; kill switch off).
+3. Register the new repo checks in `tools/repo-checks/src/cli.ts`: the Caddy snippet check (C2-04), the look key test (C2-05), the port-list fixture test (C2-06).
+4. Add the `geldar.ps1` commands: `public-validate` (runs `caddy validate` on the snippet, read-only), `public-reload` (runs `caddy reload` only), `public-scan` (runs the C2-06 tool against the runbook list). Add each command's help text in the same change, and write the index line for the ops merge step.
+5. Flip the NATS overlay to default-on only if 0080 is confirmed. If not confirmed, leave `nats-auth` opt-in and record that in 0096.
+6. Run `./geldar.ps1 check`; confirm the case-count floor.
+
+Steps (live, session 2; every step needs the owner's go):
+1. Pre-gates. Stop unless all hold: 0077 and 0080 are Accepted; C2-01..C2-06 are merged; the C2-R1..R4 reviews have no open high finding; the Glass delay value and the BlueMap rate-limit ruling are recorded.
+2. Read-only first, on the node, with the owner's deploy account: `docker compose ps` and `ss -ltn` (listening ports only). Confirm the chosen Minecraft TCP port is free and is not forwarded elsewhere at the edge. Stop if it is taken.
+3. DNS (owner or an ops agent the owner has authorised for this step, with `az`): read the current records first with a read-only `az network dns record-set list` for the zone. Create `glass`, `map`, `mcp`, `play` and the `_minecraft._tcp` SRV record only if absent. Stop if a name already points somewhere unexpected. Subscription and account identifiers stay in the owner's terminal, not in the worknote.
+4. UniFi (owner): create the TCP forward for the chosen Minecraft port to the node, and nothing else. The existing 18443 forward is not changed (0071 item 4).
+5. Caddy, read-only then reload: `caddy validate` on the combined config; `caddy adapt` to see the result. Stop on any error. Then `caddy reload` only. Never `systemctl restart caddy`, never a container restart of the shared Caddy (0071 item 6).
+6. Start the shard services with `docker compose -f compose/phase0.yml -f compose/mcp.yml [-f compose/nats-auth.yml] up -d <named services>`. Do not run `adam up`, and do not run `adam up --help` on the node. Watch `docker compose logs --tail` for the MCP, Velocity and Glass services. Stop on a crash loop.
+7. External scan from a host outside the node's network: `./geldar.ps1 public-scan` with the runbook list. Expectation: the open set equals the expected list exactly (the Minecraft TCP port, the 18443 placeholder and HTTPS as the runbook names them, and nothing else). Stop on any extra port: close the UniFi forward for it, do not fix forward.
+8. Public checks from outside: HEAD and GET on `glass`, `map`, `mcp` answer with the CSP headers; a POST to Glass and BlueMap is refused; a request without a token to `mcp` is refused with the same body as an unknown token.
+9. Real-client live run through the public URL, step by step as in section 5.2. Record: the client name and version, the tool list it saw, one look, one say, one wait, and the outcome. The bearer token is never pasted into the worknote, a log or a chat.
+10. Rollback, in order, if any stop condition fires: `caddy reload` with the previous snippet; remove the UniFi forward; set `GELDAR_GLASS_ENABLED` off and the BlueMap kill switch on; stop the public services only (not the shard).
+
+Stop conditions (any one stops the live steps and goes to the report): a port not in the expected list open from outside; a DNS name pointing elsewhere; `caddy validate` failure; a 500 from any public route; a token visible in any log; a real-client run that fails a tool the mock passed.
+Revert-check: the NATS flip and the Velocity publish are each reverted in the compose file and the compose config check must still pass; the scan list test must fail when one expected port is removed from the fixture.
+
+---
+
+<!-- next: section 4 reviews -->
+
 
