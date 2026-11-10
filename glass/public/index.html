@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glass: Thought Stream</title>
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Glass: Thought Stream</h1>
+      <p class="banner" role="note">
+        Read-only. For human observers only. Nothing you do on this page reaches the agents.
+      </p>
+      <p id="status" class="status" aria-live="polite">Connecting...</p>
+    </header>
+    <main>
+      <section class="filters" aria-label="Filters">
+        <label>Agent <select id="f-agent"></select></label>
+        <label>Outcome
+          <select id="f-outcome">
+            <option value="">Any</option>
+            <option value="parsed">Parsed</option>
+            <option value="unparsed">Unparsed</option>
+          </select>
+        </label>
+        <label>Template version <input id="f-template" type="text" maxlength="64" /></label>
+        <label>Time range
+          <select id="f-range">
+            <option value="0">All loaded</option>
+            <option value="3600000">Last hour</option>
+            <option value="86400000">Last day</option>
+          </select>
+        </label>
+        <label>Keyword <input id="f-keyword" type="search" maxlength="200" /></label>
+        <button id="pause" type="button">Pause live feed</button>
+        <p class="hint">Filters apply to the thoughts loaded on this page (at most 2000).</p>
+      </section>
+      <section aria-label="Thoughts">
+        <ol id="thoughts"></ol>
+        <button id="older" type="button">Load older</button>
+      </section>
+      <div id="detail" aria-live="polite"></div>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

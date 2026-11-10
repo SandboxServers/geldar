@@ -136,7 +136,7 @@ describe('the Glass HTTP handler', () => {
   it('answers 404 for every unknown path, whatever the method', async () => {
     const port = await start({ db: noQueries, hub: endingHub });
     for (const path of [
-      '/',
+      '/index.html',
       '/api',
       '/api/',
       '/api/nope',
@@ -147,6 +147,93 @@ describe('the Glass HTTP handler', () => {
       expect((await send(port, 'GET', path)).status, path).toBe(404);
       expect((await send(port, 'POST', path)).status, path).toBe(404);
     }
+  });
+
+  it('serves the page at / with the CSP, and no inline script, style or handler', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    const reply = await send(port, 'GET', '/');
+    expect(reply.status).toBe(200);
+    expect(reply.headers['content-type']).toBe('text/html; charset=utf-8');
+    expect(reply.headers['content-security-policy']).toBe(
+      SECURITY_HEADERS['Content-Security-Policy'],
+    );
+    expect(reply.body).toContain('<script type="module" src="/app.js"></script>');
+    expect(reply.body).not.toMatch(/<script(?![^>]*\ssrc=)/i);
+    expect(reply.body).not.toMatch(/<style|\sstyle=/i);
+    expect(reply.body).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+
+  it('serves the page assets and the render modules as JavaScript with types stripped', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    const types: Record<string, RegExp> = {
+      '/app.js': /^text\/javascript/,
+      '/app.css': /^text\/css/,
+      '/js/render-model.ts': /^text\/javascript/,
+      '/js/render-view.ts': /^text\/javascript/,
+      '/js/render-stream.ts': /^text\/javascript/,
+    };
+    for (const [path, type] of Object.entries(types)) {
+      const reply = await send(port, 'GET', path);
+      expect(reply.status, path).toBe(200);
+      expect(reply.headers['content-type'], path).toMatch(type);
+      expect(reply.headers['content-security-policy'], path).toBe(
+        SECURITY_HEADERS['Content-Security-Policy'],
+      );
+      expect(reply.body, path).not.toMatch(/^export interface|^interface /m);
+    }
+    const view = await send(port, 'GET', '/js/render-view.ts');
+    expect(view.body).toContain('export function renderRow');
+    expect(view.body).toContain("from './render-model.ts'");
+  });
+
+  it('refuses every write to a page path with 405 and Allow: GET', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    for (const path of ['/', '/app.js', '/app.css', '/js/render-view.ts']) {
+      for (const method of WRITE_METHODS) {
+        const reply = await send(port, method, path);
+        expect(reply.status, `${method} ${path}`).toBe(405);
+        expect(reply.headers.allow, `${method} ${path}`).toBe('GET');
+      }
+    }
+  });
+
+  it('does not serve a file that is not in the page table', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    for (const path of [
+      '/js/render-fixtures.ts',
+      '/js/../http.ts',
+      '/public/index.html',
+      '/app.js/x',
+    ]) {
+      expect((await send(port, 'GET', path)).status, path).toBe(404);
+    }
+  });
+
+  it('answers 404 to traversal, encoded, backslash and null-byte paths', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    const hostile = [
+      '/js/../../package.json',
+      '/js/%2e%2e/%2e%2e/package.json',
+      '/js/..%2F..%2Fpackage.json',
+      '/js/%2e%2e%5c%2e%2e%5cpackage.json',
+      '/js\\..\\..\\package.json',
+      '/app.js%00.html',
+      '/js/render-model.ts%00',
+      '/js/render-model.test.ts',
+      '/js/render-stream.test.ts',
+      '/%2e%2e/package.json',
+    ];
+    for (const path of hostile) {
+      const reply = await send(port, 'GET', path);
+      expect(reply.status, path).toBe(404);
+      expect(reply.body, path).not.toContain('"scripts"');
+    }
+  });
+
+  it('pins the exact CSP: the page and its scripts only, nothing framed or re-based', async () => {
+    expect(SECURITY_HEADERS['Content-Security-Policy']).toBe(
+      "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
   });
 
   it('lists the routes, all GET, and serves a GET to each one', async () => {
