@@ -1,0 +1,53 @@
+# The Geldar MCP server in a hardened container (spec 6.2, 6.5, 8.6; decisions 0021 and 0050).
+# Run with the stack: docker compose -f compose/phase0.yml -f compose/mcp.yml up -d geldar-mcp
+# This file is checked alone (`docker compose config`), so it names no service from phase0.yml. Postgres and NATS
+# are reached by name on the stack network; the MCP retries its start-up dependencies (WM-11 start-up order).
+# The secret files are created by the MCP's own commands (WM-12); they are gitignored with compose/secrets/.
+services:
+  geldar-mcp:
+    build:
+      context: ..
+      dockerfile: threshold/mcp/Dockerfile
+    image: geldar-mcp:local
+    environment:
+      GELDAR_SHARD: phase0
+      GELDAR_NATS_URL: nats://nats:4222
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/mcp-db
+      GELDAR_MCP_PEPPER_FILE: /run/secrets/mcp-pepper
+      # Only inside the container may the server bind 0.0.0.0; the port is still published on loopback alone.
+      GELDAR_MCP_IN_CONTAINER: "1"
+      GELDAR_MCP_BIND: 0.0.0.0
+      # No public host yet (decision 0053 defers it). The dev hosts are the Host values local clients send.
+      GELDAR_MCP_DEV_HOSTS: host.docker.internal,127.0.0.1,localhost
+    secrets: [mcp-db, mcp-pepper]
+    ports:
+      - "127.0.0.1:8788:8788"
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+    pids_limit: 128
+    restart: unless-stopped
+    # The public move (decision 0053, deferred until the colo move) adds a disabled cloudflared profile here,
+    # built from compose/cloudflared/config.example.yml. It stays commented until that decision is taken:
+    #
+    # cloudflared:
+    #   image: cloudflare/cloudflared:<tag>@sha256:<digest>
+    #   profiles: ["public"]
+    #   command: ["tunnel", "--config", "/etc/cloudflared/config.yml", "run"]
+    #   volumes:
+    #     - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+    #   read_only: true
+    #   cap_drop: [ALL]
+    #   security_opt: ["no-new-privileges:true"]
+
+secrets:
+  mcp-db:
+    file: ./secrets/mcp-db.txt
+  mcp-pepper:
+    file: ./secrets/mcp-pepper.txt
