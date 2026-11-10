@@ -34,7 +34,8 @@ export function parseTokenFile(text: string): string {
     .map((line) => line.trim())
     .filter((line) => line !== '');
   const assigned = lines.find((line) => line.startsWith(`${TOKEN_VARIABLE}=`));
-  const token = assigned === undefined ? (lines[0] ?? '') : assigned.slice(TOKEN_VARIABLE.length + 1);
+  const token =
+    assigned === undefined ? (lines[0] ?? '') : assigned.slice(TOKEN_VARIABLE.length + 1);
   if (token === '') throw new Error('the token file holds no token');
   return token.trim();
 }
