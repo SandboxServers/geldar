@@ -41,3 +41,6 @@ compose/secrets/
 # Gradle output for the Paper plugin
 plugin/**/build/
 plugin/.gradle/
+
+# Player skins (third-party fan art; never committed)
+skins/
