@@ -251,6 +251,16 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     const pgOptions: PgOptions = { host, port, database, user, password };
     const pool = ports.openPool(pgOptions);
     closers.push(() => pool.end());
+    // The pool emits 'error' when an idle client is dropped (a Postgres restart, a statement_timeout
+    // kill). With no listener that is an uncaught exception; the pool replaces the client itself.
+    pool.on('error', (error: Error) => {
+      const code = (error as { code?: unknown }).code;
+      log({
+        event: 'postgres_pool_error',
+        error: error.name,
+        ...(typeof code === 'string' ? { cause: code } : {}),
+      });
+    });
     log({ event: 'postgres_open' });
 
     const harnesses = config.sovereign.harnesses;

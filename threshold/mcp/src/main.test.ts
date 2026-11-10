@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -84,6 +85,7 @@ function fakePorts(order: string[], logs: string[]): McpPorts {
   };
   const pool = {
     query: async () => ({ rows: [] }),
+    on: () => undefined,
     end: async () => {
       order.push('pool.end');
     },
@@ -173,6 +175,30 @@ describe('startMcp', () => {
     const config = await loadStartConfig(SHARD_FILE, ENV);
     await expect(startMcp(config, ports)).rejects.toThrow('address in use');
     expect(order.slice(-4)).toEqual(['replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
+  });
+
+  it('logs a pool error with its class and code, not its message, and keeps running', async () => {
+    const order: string[] = [];
+    const logs: string[] = [];
+    const pool = Object.assign(new EventEmitter(), {
+      end: async () => {
+        order.push('pool.end');
+      },
+    }) as unknown as Pool;
+    const ports = { ...fakePorts(order, logs), openPool: () => pool };
+    const running = await startMcp(await loadStartConfig(SHARD_FILE, ENV), ports);
+    const dropped = Object.assign(new Error('terminating connection due to administrator command'), {
+      code: '57P01',
+    });
+    expect(() => pool.emit('error', dropped)).not.toThrow();
+    const line = logs.find((text) => text.includes('postgres_pool_error'));
+    expect(JSON.parse(line ?? '{}')).toEqual({
+      event: 'postgres_pool_error',
+      error: 'Error',
+      cause: '57P01',
+    });
+    expect(logs.join('\n')).not.toContain('terminating connection');
+    await running.stop();
   });
 
   it('keeps the password and the pepper out of every log line', async () => {
