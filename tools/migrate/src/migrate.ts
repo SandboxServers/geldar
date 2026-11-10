@@ -138,7 +138,7 @@ const PASSWORD_ROLE = 'geldar_mcp';
  */
 export async function readPasswordFile(path: string): Promise<string> {
   const text = await readFile(path, 'utf8');
-  return text.replace(/^﻿/, '').replace(/\r?\n$/, '');
+  return text.replace(/^\uFEFF/, '').replace(/\r?\n$/, '');
 }
 
 /**

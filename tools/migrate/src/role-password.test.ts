@@ -80,7 +80,7 @@ describe('readPasswordFile', () => {
   }
 
   it('strips a UTF-8 byte-order mark and one trailing CRLF', async () => {
-    expect(await readPasswordFile(await fileWith('﻿pencil\r\n'))).toBe('pencil');
+    expect(await readPasswordFile(await fileWith('\uFEFFpencil\r\n'))).toBe('pencil');
   });
 
   it('strips one trailing LF and keeps everything else', async () => {
