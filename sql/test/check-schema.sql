@@ -161,12 +161,13 @@ BEGIN
 END
 $$;
 
--- Migration 0002 (not in spec Appendix D): the sovereign MCP tables, the revocation
--- trigger, the geldar_mcp role with its grants, and the migration ledger.
+-- Migrations 0002 and 0003 (not in spec Appendix D): the sovereign MCP tables, the revocation
+-- and player-ended triggers, the geldar_mcp role with its grants, and the migration ledger.
 DO $mcp$
 DECLARE
   mcp_expected TEXT[] := ARRAY[
-    'schema_migrations', 'mcp_owners', 'mcp_players', 'mcp_tokens', 'mcp_budget', 'mcp_journal'
+    'schema_migrations', 'mcp_owners', 'mcp_players', 'mcp_tokens', 'mcp_budget', 'mcp_journal',
+    'mcp_sleep_marks'
   ];
   missing TEXT[];
   ledger TEXT[];
@@ -184,19 +185,31 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_tokens_revoked') THEN
     RAISE EXCEPTION 'schema check: the mcp_tokens_revoked trigger is missing';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_players_ended') THEN
+    RAISE EXCEPTION 'schema check: the mcp_players_ended trigger is missing';
+  END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar_mcp' AND NOT rolcanlogin) THEN
-    RAISE EXCEPTION 'schema check: role geldar_mcp is missing or can log in';
+  -- A password may have been set (ALTER ROLE ... LOGIN PASSWORD), so this checks privileges only.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'geldar_mcp' AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+  ) THEN
+    RAISE EXCEPTION 'schema check: role geldar_mcp is missing or is superuser, createdb or createrole';
   END IF;
   IF has_table_privilege('geldar_mcp', 'thoughts', 'SELECT')
      OR has_table_privilege('geldar_mcp', 'memories', 'SELECT') THEN
     RAISE EXCEPTION 'schema check: geldar_mcp can read thoughts or memories';
   END IF;
+  IF has_table_privilege('geldar_mcp', 'agents', 'UPDATE')
+     OR has_column_privilege('geldar_mcp', 'agents', 'last_sleep_day', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can write agents or read last_sleep_day';
+  END IF;
 
-  SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations
-  WHERE version IN ('0001', '0002');
-  IF ledger IS DISTINCT FROM ARRAY['0001', '0002'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 and 0002, found %', ledger;
+  -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
+  -- recorded by the runner and by 0002.
+  SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0003, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);

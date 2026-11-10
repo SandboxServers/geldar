@@ -14,6 +14,7 @@ A live database is migrated with `tools/migrate` (decision D-P0-11, now resolved
 - `node tools/migrate/src/cli.ts --dry-run` lists what would apply and changes nothing.
 - `node tools/migrate/src/cli.ts` applies each pending `NNNN_*.sql` in name order, one transaction per file, and records it in `schema_migrations`. A second run does nothing. It takes an advisory lock, so two runners cannot race.
 - A database that has `agents` but no `schema_migrations` predates the runner: it is baselined as `0001` and only the later files run.
+- Each migration inserts its own row: `INSERT INTO schema_migrations (version) VALUES ('NNNN') ON CONFLICT DO NOTHING;`. The runner records it too, so the row is there either way. `0001` is the exception: it predates the ledger, and `0002` creates the table with its row. `tools/migrate/src/ledger.test.ts` fails when a later file lacks its row, and `sql/test/check-schema.sql` asserts that every migration is in the ledger.
 - Connection settings come from the standard `PG*` variables (`PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGPASSWORD`).
 - `node tools/migrate/src/cli.ts --set-role-password geldar_mcp --password-file <file>` sets the password of the `geldar_mcp` role and lets it log in. The value is escaped and never logged; keep the file out of the repo.
 
