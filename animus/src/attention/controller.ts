@@ -99,6 +99,8 @@ export class Attention implements AttentionController {
   /** The damage events of the burst being collected, and the window that closes it. */
   private damageEvents: MindEvent[] = [];
   private cancelDamage: (() => void) | null = null;
+  /** The last Body `unexpected_damage` wake for an intent, and when it arrived. */
+  private damageWake: { intentId: string; atMs: number } | null = null;
 
   private readonly options: AttentionOptions;
 
@@ -211,9 +213,30 @@ export class Attention implements AttentionController {
       this.cancelDamage = null;
       const events = this.damageEvents;
       this.damageEvents = [];
+      if (this.foldDamage(events)) return;
       this.addCandidate('unexpected_damage', this.activeIntent, events);
       this.evaluate();
     });
+  }
+
+  /**
+   * True when the closed burst is already covered, so it opens no thought of its own: a thought is in
+   * flight, or the Body woke for the active intent for this damage within the burst window.
+   */
+  private foldDamage(events: MindEvent[]): boolean {
+    const types = [...new Set(events.map((e) => e.type))];
+    if (this.inFlight) {
+      this.record(types, 'coalesced_in_flight', this.activeIntent);
+      return true;
+    }
+    const wake = this.damageWake;
+    if (wake !== null && wake.intentId === this.activeIntent) {
+      if (this.clock.nowMs() - wake.atMs <= DAMAGE_BURST_MS) {
+        this.record(types, 'duplicate', this.activeIntent);
+        return true;
+      }
+    }
+    return false;
   }
 
   private handleSpeech(event: MindEvent & { type: 'speech' }): void {
@@ -246,6 +269,9 @@ export class Attention implements AttentionController {
       // the Mind: it cannot be ranked, so the intent carries on and the wake is only recorded.
       this.record(['wake'], 'intent_running', intentId);
       return;
+    }
+    if (reason === 'unexpected_damage' && intentId !== null) {
+      this.damageWake = { intentId, atMs: this.clock.nowMs() };
     }
     this.addCandidate(reason as CandidateReason, intentId, [event]);
     this.evaluate();
@@ -415,6 +441,7 @@ export class Attention implements AttentionController {
     this.lastAddressedAtMs = null;
     this.lastAddressedKind = null;
     this.idleHeld = false;
+    this.damageWake = null;
     this.wokenIntents.clear();
     this.stop();
   }
