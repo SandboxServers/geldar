@@ -10,7 +10,7 @@ Wave 5 put Adam, a sovereign player with a real life (decision 0051), on the liv
 
 - **8B live cases: green.** Lifecycle 3 of 3, smoke 1 of 1, chatter 2 of 2.
 - **32B manual run: clean.** An 8-minute run with `adam up` (10 thoughts, p50 3728 ms, 0 invalid). This run is recorded only in the orchestrator's summary; no worknote holds its raw output (see "Could not verify").
-- **20 TPS benchmark gate: PASS, all cells 5 of 5 at 20, 10 and 5 TPS.** The worknote [wave5-adam-smoke-2.md](../worknotes/wave5-adam-smoke-2.md) records the 20 TPS gate PASS on commit `35e16c0` (raw file `bench-results/20261109T233614Z-35e16c0.json`, 18 rows 5 of 5). The orchestrator's summary names `898b9b9`. Both are on the branch; cite the worknote's commit until the two are reconciled.
+- **20 TPS benchmark gate: PASS, all cells 5 of 5 at 20, 10 and 5 TPS.** The gate PASS is attributed to commit `898b9b9` (raw file `bench-results/20261110T024026Z-898b9b9.json`). The earlier PASS on `35e16c0` (raw file `bench-results/20261109T233614Z-35e16c0.json`, 18 rows 5 of 5, recorded in the worknote [wave5-adam-smoke-2.md](../worknotes/wave5-adam-smoke-2.md)) is the previous run.
 
 ## Review rounds
 
@@ -113,6 +113,10 @@ Each lesson gives the cause, the impact and what changes.
 - **Impact:** a second review round was needed for each area.
 - **Change:** keep the convention that each behaviour change has a test that fails without it, and that resource limits are tested at both the first and the last allowed attempt (wave 4 action A6).
 
+### 15. Background wait monitors left stale notifications after the work had finished
+
+- **Cause:** ops started wait-monitors in the background and did not end them when the work finished. **Impact:** about ten stale "still running" notifications arrived after the work was done, which is noise cost for the orchestrator to read and dismiss. **Change:** suggest that ops finish with no leftover background monitors, checked before the final report.
+
 ## Decisions made in this segment
 
 - **Rangers as sovereign players:** six Power Rangers characters are sovereign players in the Wave M start. The per-owner sovereign-player cap was raised to 20 (decision 0052).
@@ -152,7 +156,7 @@ Each lesson gives the cause, the impact and what changes.
 
 - **32B 8-minute run:** the figures (10 thoughts, p50 3728 ms, 0 invalid) are from the orchestrator's brief. No worknote holds the run's output. Re-run and record before citing.
 - **8B live counts (3/3, 1/1, 2/2):** from the brief. The worknotes do not record them.
-- **Benchmark commit:** the worknote names `35e16c0`; the brief names `898b9b9`. Reconcile before citing.
+- **Benchmark commit:** reconciled. The 20 TPS gate PASS is attributed to `898b9b9` (raw file `bench-results/20261110T024026Z-898b9b9.json`). `35e16c0` is the earlier PASS run; the worknote still names it for that earlier run.
 - **Decision 0060:** no file exists under `docs/decisions/` for persona size limits.
 - **Smoke-case scope:** the brief says decision 0051 makes the 32B smoke case 8B-only. The decision file does not state this in those words.
 - **The flaky vitest failure:** not identified in any worknote.
