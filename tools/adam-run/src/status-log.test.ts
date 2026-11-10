@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { type FileStore, type Observation, PROBES } from './ports.ts';
 import { appendStatus, type StatusLine, statusLine } from './status-log.ts';
-import { PROBES, type FileStore, type Observation } from './ports.ts';
 
 const obs = (atMs: number, tps: number | null): Observation => ({
   atMs,
@@ -34,7 +34,11 @@ describe('statusLine', () => {
   it('writes every probe, the thought count and the last thought time', () => {
     const line = statusLine(obs(120_000, 20), 2);
     expect(Object.keys(line.alive).sort()).toEqual([...PROBES].sort());
-    expect(line).toMatchObject({ minute: 2, thoughts: 4, last_thought_at: '1970-01-01T00:01:55.000Z' });
+    expect(line).toMatchObject({
+      minute: 2,
+      thoughts: 4,
+      last_thought_at: '1970-01-01T00:01:55.000Z',
+    });
   });
 
   it('marks a harness event on its own line', () => {
@@ -50,7 +54,12 @@ describe('appendStatus', () => {
     const beforeSecond = store.text();
     appendStatus(store, 'status.log', statusLine(obs(120_000, 19.8), 2));
     expect(store.text().startsWith(beforeSecond)).toBe(true);
-    expect(store.text().split('\n').filter((l) => l !== '')).toHaveLength(2);
+    expect(
+      store
+        .text()
+        .split('\n')
+        .filter((l) => l !== ''),
+    ).toHaveLength(2);
   });
 
   it('writes one JSON object per line', () => {

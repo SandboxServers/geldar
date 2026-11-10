@@ -1,6 +1,5 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { FileStore } from './ports.ts';
 import {
   buildManifest,
   LIFE_ID,
@@ -9,6 +8,7 @@ import {
   sha256Hex,
   writeManifest,
 } from './manifest.ts';
+import type { FileStore } from './ports.ts';
 
 const SHARD_YAML = `
 model_pins:
@@ -47,7 +47,11 @@ function memoryStore(): FileStore & { files: Map<string, string> } {
 
 describe('readPins', () => {
   it.each([
-    ['model_pins entries and the embedding model', SHARD_YAML, ['qwen3:32b', 'qwen3:8b', 'nomic-embed-text']],
+    [
+      'model_pins entries and the embedding model',
+      SHARD_YAML,
+      ['qwen3:32b', 'qwen3:8b', 'nomic-embed-text'],
+    ],
     ['no embedding block', 'model_pins:\n  "qwen3:8b":\n    digest: "sha256:bbb"\n', ['qwen3:8b']],
   ])('reads %s', (_name, yaml, tags) => {
     expect(readPins(yaml).map((p) => p.tag)).toEqual(tags);
@@ -73,9 +77,24 @@ describe('buildManifest', () => {
   it('records the observed digest, and null for a tag Ollama does not have', () => {
     const m = buildManifest(input);
     expect(m.model_pins).toEqual([
-      { tag: 'qwen3:32b', pinned_digest: 'sha256:aaa', observed_digest: 'sha256:other', matches: false },
-      { tag: 'qwen3:8b', pinned_digest: 'sha256:bbb', observed_digest: 'sha256:bbb', matches: true },
-      { tag: 'nomic-embed-text', pinned_digest: 'sha256:ccc', observed_digest: null, matches: false },
+      {
+        tag: 'qwen3:32b',
+        pinned_digest: 'sha256:aaa',
+        observed_digest: 'sha256:other',
+        matches: false,
+      },
+      {
+        tag: 'qwen3:8b',
+        pinned_digest: 'sha256:bbb',
+        observed_digest: 'sha256:bbb',
+        matches: true,
+      },
+      {
+        tag: 'nomic-embed-text',
+        pinned_digest: 'sha256:ccc',
+        observed_digest: null,
+        matches: false,
+      },
     ]);
   });
 
@@ -93,7 +112,9 @@ describe('buildManifest', () => {
 
 describe('sha256Hex', () => {
   it('matches the known vector for "abc"', () => {
-    expect(sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    expect(sha256Hex('abc')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
   });
 });
 

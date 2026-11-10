@@ -17,7 +17,8 @@ const good: PreconditionFacts = {
   pins: [{ tag: 'qwen3:8b', digest: 'sha256:bbb' }],
   observedDigests: { 'qwen3:8b': 'sha256:bbb' },
   loadedModels: [],
-  freshVolumeJson: '{"volume":"geldar-8b","created_at":"2026-11-10T00:00:00Z","life_id":"ag_adam_02"}',
+  freshVolumeJson:
+    '{"volume":"geldar-8b","created_at":"2026-11-10T00:00:00Z","life_id":"ag_adam_02"}',
   lifeId: 'ag_adam_02',
 };
 
@@ -36,17 +37,33 @@ describe('checkPreconditions', () => {
     ['no benchmark gate file', { ...good, gateJson: null }, 'benchmark-gate.json is missing'],
     ['a gate file that is not JSON', { ...good, gateJson: '{' }, 'not valid JSON'],
     ['a failed gate', withGate({ result: 'fail' }), 'result is fail'],
-    ['a gate with no 100% at 20 TPS', withGate({ rates: [{ tps: 20, percent: 99 }] }), 'no reading at 20 TPS'],
+    [
+      'a gate with no 100% at 20 TPS',
+      withGate({ rates: [{ tps: 20, percent: 99 }] }),
+      'no reading at 20 TPS',
+    ],
     ['a gate at another sha', withGate({ sha: 'deadbee' }), 'recorded at deadbee'],
-    ['a missing model pin', { ...good, observedDigests: {} }, 'model pin qwen3:8b: Ollama does not have it'],
+    [
+      'a missing model pin',
+      { ...good, observedDigests: {} },
+      'model pin qwen3:8b: Ollama does not have it',
+    ],
     [
       'a digest that differs from the pin',
       { ...good, observedDigests: { 'qwen3:8b': 'sha256:zzz' } },
       'Ollama reports sha256:zzz',
     ],
     ['the wrong life id for 8B', { ...good, lifeId: 'ag_adam_01' }, 'profile 8b runs ag_adam_02'],
-    ['no fresh-volume marker for 8B', { ...good, freshVolumeJson: null }, 'fresh-volume.json is missing'],
-    ['a model loaded that is not expected', { ...good, loadedModels: ['qwen3:32b'] }, 'qwen3:32b is loaded'],
+    [
+      'no fresh-volume marker for 8B',
+      { ...good, freshVolumeJson: null },
+      'fresh-volume.json is missing',
+    ],
+    [
+      'a model loaded that is not expected',
+      { ...good, loadedModels: ['qwen3:32b'] },
+      'qwen3:32b is loaded',
+    ],
   ])('refuses %s, and says what is missing', (_name, facts, text) => {
     const verdict = checkPreconditions(facts);
     expect(verdict.ok).toBe(false);
