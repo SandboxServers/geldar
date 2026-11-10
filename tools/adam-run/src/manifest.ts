@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { parse } from 'yaml';
+import type { BenchSummary } from './bench-gate.ts';
 import type { FileStore } from './ports.ts';
 
 export const PROFILES = ['32b', '8b', 'smoke'] as const;
@@ -41,7 +42,10 @@ export function sha256Hex(data: string | Buffer): string {
  * same lowercase hex, which is compared in full (never a prefix).
  */
 export function digestHex(digest: string): string {
-  return digest.trim().toLowerCase().replace(/^sha256:/, '');
+  return digest
+    .trim()
+    .toLowerCase()
+    .replace(/^sha256:/, '');
 }
 
 export function digestsMatch(a: string, b: string): boolean {
@@ -84,7 +88,15 @@ export interface ManifestInput {
   pins: PinnedModel[];
   /** The digest Ollama reports for each tag, or null when the tag is not pulled. */
   observedDigests: Record<string, string | null>;
+  /** The gate that passed: the bench file, its commit and the 20 TPS rows. Null when none was read. */
+  bench: BenchSummary | null;
   criteriaSha256: string;
+}
+
+export interface ManifestBench {
+  file: string;
+  commit: string;
+  tps20: { scenario: string; success_pct: number | null }[];
 }
 
 export interface ManifestPin {
@@ -103,6 +115,7 @@ export interface Manifest {
   git: { sha: string; clean: boolean };
   shard_config_sha256: string;
   model_pins: ManifestPin[];
+  bench: ManifestBench | null;
   criteria_sha256: string;
   tps_target: number;
   started_at: string;
@@ -127,6 +140,17 @@ export function buildManifest(input: ManifestInput): Manifest {
         matches: observed === pin.digest,
       };
     }),
+    bench:
+      input.bench === null
+        ? null
+        : {
+            file: input.bench.file,
+            commit: input.bench.commit,
+            tps20: input.bench.tps20.map((row) => ({
+              scenario: row.scenario,
+              success_pct: row.successPct,
+            })),
+          },
     criteria_sha256: input.criteriaSha256,
     tps_target: TPS_TARGET,
     started_at: input.startedAt,

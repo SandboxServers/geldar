@@ -2,6 +2,7 @@
  * The gate before `start`. It takes the facts the CLI collected (git, the benchmark gate file, the pins, Ollama,
  * the fresh-volume marker) and returns every missing item, each with what to do about it. Pure.
  */
+import { type BenchFile, checkBench } from './bench-gate.ts';
 import {
   digestsMatch,
   LIFE_ID,
@@ -11,19 +12,12 @@ import {
   tagKey,
 } from './manifest.ts';
 
-export interface GateRecord {
-  sha: string;
-  date: string;
-  result: 'pass' | 'fail';
-  rates: { tps: number; percent: number }[];
-}
-
 export interface PreconditionFacts {
   profile: Profile;
   headSha: string;
   cleanTree: boolean;
-  /** The text of `.geldar/runs/benchmark-gate.json`, or null when the file is missing. */
-  gateJson: string | null;
+  /** The newest `bench-results/*.json` and its text, or null when the folder holds no result. */
+  bench: BenchFile | null;
   pins: PinnedModel[];
   /** The digest Ollama reports for each tag, or null when the tag is not pulled. */
   observedDigests: Record<string, string | null>;
@@ -51,36 +45,12 @@ export function allowedLoaded(profile: Profile, pins: PinnedModel[]): string[] {
   return [PROFILE_MODEL[profile], ...(embedding ? [embedding.tag] : [])];
 }
 
-function gateProblems(gateJson: string | null, headSha: string): string[] {
-  if (gateJson === null) {
-    return [
-      'benchmark gate: .geldar/runs/benchmark-gate.json is missing; run OPS-0 (the 20 TPS benchmark) first',
-    ];
-  }
-  let gate: GateRecord;
-  try {
-    gate = JSON.parse(gateJson) as GateRecord;
-  } catch {
-    return ['benchmark gate: benchmark-gate.json is not valid JSON; re-run OPS-0'];
-  }
-  const problems: string[] = [];
-  if (gate.result !== 'pass')
-    problems.push(`benchmark gate: result is ${String(gate.result)}, not pass`);
-  const at20 = gate.rates?.some((r) => r.tps === 20 && r.percent === 100) ?? false;
-  if (!at20) problems.push('benchmark gate: no reading at 20 TPS with 100%');
-  if (gate.sha !== headSha) {
-    problems.push(
-      `benchmark gate: recorded at ${gate.sha}, HEAD is ${headSha}; re-run OPS-0 at HEAD`,
-    );
-  }
-  return problems;
-}
-
 export function checkPreconditions(f: PreconditionFacts): Verdict {
   const missing: string[] = [];
   if (!f.cleanTree)
     missing.push('clean tree: the working tree has uncommitted changes; commit or remove them');
-  missing.push(...gateProblems(f.gateJson, f.headSha));
+  const gate = checkBench(f.bench, f.headSha);
+  if (!gate.ok) missing.push(...gate.problems);
   for (const pin of f.pins) {
     const observed = observedFor(f.observedDigests, pin.tag);
     if (observed === null) {

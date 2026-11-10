@@ -217,11 +217,10 @@ export class FakeReporter implements Reporter {
 
 /** Facts that pass every precondition for the profile: a clean tree, a gate at HEAD, the profile's life id. */
 export function passingPreflight(profile: Profile, over: { cleanTree?: boolean } = {}): Preflight {
-  const gate = {
-    sha: 'abc123',
-    date: '2026-11-09',
-    result: 'pass',
-    rates: [{ tps: 20, percent: 100 }],
+  const bench = {
+    meta: { commit: 'abc123' },
+    truncated: false,
+    summary: [{ scenario: 'food', tps: 20, successPct: 100 }],
   };
   return {
     async gather(): Promise<PreflightFacts> {
@@ -230,7 +229,7 @@ export function passingPreflight(profile: Profile, over: { cleanTree?: boolean }
           profile,
           headSha: 'abc123',
           cleanTree: over.cleanTree ?? true,
-          gateJson: JSON.stringify(gate),
+          bench: { file: '20261109T000000Z-abc123.json', text: JSON.stringify(bench) },
           pins: [],
           observedDigests: {},
           loadedModels: [],

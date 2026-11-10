@@ -9,12 +9,14 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   statfsSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import pg from 'pg';
+import { newestBenchFile } from './bench-gate.ts';
 import { LIFE_ID, type PinnedModel, type Profile, readPins, sha256Hex } from './manifest.ts';
 import {
   type Clock,
@@ -347,7 +349,16 @@ export function createReporter(
   };
 }
 
-/** The gate's facts: git, the benchmark gate file, the pins, the Ollama tags and loaded models, the 8B marker. */
+/** The file names in a folder; none when the folder is missing. */
+function listDir(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** The gate's facts: git, the newest bench result, the pins, the Ollama tags and loaded models, the 8B marker. */
 export function createPreflight(opts: {
   runner: Runner;
   repoRoot: string;
@@ -369,6 +380,9 @@ export function createPreflight(opts: {
         throw new Error('git could not report HEAD or the tree');
       const shardYaml = readFileSync(join(opts.repoRoot, 'shards', 'phase0.yaml'), 'utf8');
       const pins: PinnedModel[] = readPins(shardYaml);
+      const benchDir = join(opts.repoRoot, 'bench-results');
+      const benchFile = newestBenchFile(listDir(benchDir));
+      const benchText = benchFile === null ? null : opts.files.read(join(benchDir, benchFile));
       const tags = (await fetchJson('/api/tags')) as {
         models?: { name: string; digest: string }[];
       };
@@ -380,7 +394,8 @@ export function createPreflight(opts: {
           profile: opts.profile,
           headSha: head.stdout.trim(),
           cleanTree: status.stdout.trim() === '',
-          gateJson: opts.files.read(join(opts.runsDir, 'benchmark-gate.json')),
+          bench:
+            benchFile === null || benchText === null ? null : { file: benchFile, text: benchText },
           pins,
           observedDigests,
           loadedModels: (ps.models ?? []).map((m) => m.name),
