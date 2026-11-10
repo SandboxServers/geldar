@@ -255,6 +255,19 @@ describe('a run aborted before it started', () => {
     exitCode: 0,
   });
 
+  it('a life that ended shows state ended (life_ended), not aborted, even with the safe stop abort record', async () => {
+    const out = capture();
+    const { h, files } = harness();
+    files.write(
+      runPaths(RUN_DIR).manifest,
+      JSON.stringify({ started_at: '2026-11-10T09:00:00.000Z' }),
+    );
+    files.write(runPaths(RUN_DIR).abort, abortRecord);
+    files.write(runPaths(RUN_DIR).status, `${JSON.stringify({ event: 'ended', minute: 5 })}\n`);
+    expect(await runCli(['smoke', 'status', '--run-id', RUN], REPO, h, out.log)).toBe(0);
+    expect(out.text()).toContain('state: ended (life_ended)');
+  });
+
   it('status and report print the rule and reason, every criterion UNKNOWN, and call no reporter', async () => {
     const out = capture();
     const seen: string[] = [];

@@ -182,11 +182,12 @@ function runState(h: Harness, runDir: string): { state: string; last: string } {
     .split('\n')
     .filter((l) => l !== '');
   const last = lines.at(-1) ?? 'no status line yet';
-  if (files.read(runPaths(runDir).abort) !== null) return { state: 'aborted', last };
   const event = lines.length > 0 ? (JSON.parse(last) as { event?: string }).event : undefined;
   if (event === 'end') return { state: 'finished', last };
-  // Written only for a life that died: a survival FAIL, terminal, never retried.
+  // Written only for a life that died: a survival FAIL, terminal, never retried. Checked before the abort record,
+  // because the safe stop writes that record for an ended life too.
   if (event === 'ended') return { state: 'ended (life_ended)', last };
+  if (files.read(runPaths(runDir).abort) !== null) return { state: 'aborted', last };
   return { state: liveOwner(h, runDir) === null ? 'stopped' : 'running', last };
 }
 
