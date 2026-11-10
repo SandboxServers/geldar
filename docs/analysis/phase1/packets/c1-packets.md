@@ -380,3 +380,108 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **index line to add**: `index: | [0085](0085-<slug>.md) | <title> | Proposed |`. For C1-05b: "the backup manifest depends on the append-only rule; C1-05b runs after this merges."
 
 **On cap**: the migration and its assertions are the first commit to land; the reset rule can follow in the same packet if it fits, otherwise it is written up in the worknote for the next session.
+
+## Card C1-05b: backup v1 (checkpoint), destination pluggable
+
+- **id**: C1-05b
+- **title**: Backup v1 per 0076: a coordinated checkpoint (Postgres, NATS KV and JetStream, world directory), manifest with checksums, encryption, restore to a scratch shard
+- **wave**: C1
+- **lane**: E
+- **status**: B/O (built and tested on the desktop; the real destination and key handling are owner steps, C1-10)
+- **depends-on**: P1-C1-00 (manifest schema), C1-05a (append-only journals; a replayable backup needs it)
+- **size**: L (two sessions; the first ends after commit 2)
+- **decisions**: 0086 (one record: backup v1 scope, the flush sequence, manifest, encryption choice, destination config)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-05b.md`
+
+**may-edit**
+- `tools/backup/` (new package: `package.json`, `tsconfig.json`, `src/`, `test/`). Use only dependencies already in `pnpm-lock.yaml`.
+- `pnpm-lock.yaml`: only the importer entry for `tools/backup`, added by `pnpm install` for the new package. This is a second lockfile edit in C1 and departs from the single-owner rule (section 3); the wave gate records it (see "Conflicts" in the wave section).
+- `docs/decisions/0086-*.md` (new record; the index line goes in the worknote).
+
+**must-not-edit**: `docs/spec.md`; `docs/decisions/README.md`; `geldar.ps1` and `compose/*` (C1-02; the `backup` verb is an index line); `shards/*`; `contract/` (C1-00's manifest schema is consumed, not changed); `sql/0001_*` to `sql/0007_*`; root `package.json`; `golem/` and `animus/` (read only).
+
+**Steps**
+1. Read decision 0076 and its owner status. If the owner has not confirmed 0076, build the code behind a destination of `none`, which refuses to run, and record the stop in the worknote.
+2. Locate the inputs: Postgres connection (`grep -rn "DATABASE_URL" compose shards tools --include=*.ts --include=*.yml`), the NATS KV and stream names (`grep -rln "KeyValue\|jetstream" threshold golem --include=*.ts`), the world volume (`tools/adam-run/src/world-volume.ts`), and the RCON client (`grep -rln "rcon" tools golem --include=*.ts`). Write the list in the worknote.
+3. `tools/backup/src/checkpoint.ts`, in this order: RCON `save-off`; RCON `save-all flush`, waiting for the server's "Saved the game" line with a timeout; `pg_dump --format=custom --serializable-deferrable` into a staging directory; export the NATS KV buckets and JetStream streams with the nats CLI from the digest already pinned in compose; copy the world directory; `save-on` in a `finally` block, so saving always comes back on.
+4. Manifest: the schema from C1-00 (`checkpoint_id`, `image_digest`, `created_at`, `parts` of `{name, sha256, bytes}` with names `postgres`, `nats`, `world`). No manifest is written when any part fails, so no partial checkpoint exists.
+5. Encryption behind an adapter: `age` or `gpg` (owner question; the card does not pick silently). The key path comes from an environment variable naming a root-only file. No key material in the repo or logs.
+6. Destination: a local-directory adapter first. The destination is read from `tools/backup/backup.config.json` (git-ignored) with `kind: none | local`. Other kinds are later packets.
+7. `tools/backup/src/restore.ts`: restore to a scratch compose project (its own project name, database name, NATS volume and world directory). It never writes to the live names. Verify: checksums against the manifest; table row counts from the dump; NATS KV key count; world file count. The scratch project starts and its health check answers.
+8. Tests: unit tests for checksum refusal, `none` refusal, live-name refusal, and encryption round trip. One integration test `tools/backup/test/checkpoint.it.test.ts` runs the full cycle against the desktop stack into a temporary destination and restores to scratch. It is an `.it.test.ts`, so the integration floor counts it.
+
+**Error behaviour**: a flush that is not confirmed stops the run and runs `save-on`. A checksum mismatch refuses the restore and names the part. Restore never falls back to live names.
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run tools/backup` (unit, desktop)
+- `./geldar.ps1 pnpm vitest run tools/backup/test/checkpoint.it.test.ts` (desktop stack; needs Docker)
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit
+
+**Revert-check**
+- In `tools/backup/src/checkpoint.ts`, remove the `save-on` from the `finally` block. The test "saving comes back on when the copy fails" must fail. Restore.
+- In `restore.ts`, remove the checksum comparison. The test "a tampered world part is refused" must fail. Restore.
+- Remove the `save-all flush` call. The test "flush confirmed before the copy" must fail. Restore.
+
+**Commit plan** (session 1 ends after 2)
+1. `C1-05b: tools/backup skeleton, destination config, refusal when none`
+2. `C1-05b: save-off, flush, dump, NATS and world copy with save-on in finally`
+3. `C1-05b: manifest with checksums and encryption round trip`
+4. `C1-05b: restore to a scratch project with verification`
+5. `C1-05b: record 0086 for backup v1`
+
+**index line to add**: `index: | [0086](0086-backup-v1-checkpoint.md) | Backup v1: checkpoint scope, flush sequence, manifest, encryption | Proposed |`. For C1-02: the `backup` verb and its help text. For C1-07: the importer entry in `pnpm-lock.yaml`, if the merge order requires it.
+
+**On cap**: commits 1 and 2 are the first useful state. Restore (step 7) is the stop point: if the session ends there, the worknote lists the restore steps as not done and the report marks restore as not run.
+
+## Card C1-06a: NATS auth overlay, live test
+
+- **id**: C1-06a
+- **title**: Live nats-server test of the opt-in accounts overlay for every role; revoked user refused; shard isolation; the `*` per-life subjects replaced
+- **wave**: C1
+- **lane**: F
+- **status**: B
+- **depends-on**: P1-C1-00
+- **size**: S
+- **decisions**: 0087 (one record: the overlay's live-test rules and subject scoping; shared with C1-06b, which cites it and adds no record)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-06a.md`
+
+**may-edit**
+- `compose/nats-auth.yml`. Ownership conflict: C1-02 owns `compose/*`, but the schedule names this card as the owner of this one file. The wave gate decides (see "Conflicts"). Until it is decided, edits to this file are made here and nowhere else in `compose/`.
+- `threshold/mcp/test/nats-auth.it.test.ts` (new live test; the MCP package already holds the NATS test setup).
+- The subject generator, wherever it lives: `grep -rn "\*" geldar.ps1 tools/mcp-tokens/src threshold/mcp/src --include=*.ts --include=*.ps1 | grep -i "subject\|nats"`. If it lives in `geldar.ps1`, this card writes an index line for C1-02 instead of editing it.
+- `docs/decisions/0087-*.md` (new record).
+
+**must-not-edit**: `docs/spec.md`; `docs/decisions/README.md`; `geldar.ps1`; `compose/phase0.yml` and the other compose files; `shards/*`; `contract/`; root `package.json` and `pnpm-lock.yaml`; `golem/src`, `animus/src`, `eventsink/src` (C1-06b owns their connect code).
+
+**Steps**
+1. Read decision 0067 and 0080. Read the overlay `compose/nats-auth.yml` (users, server config, password file mounts) and the generator. Record each role's publish and subscribe subjects in the worknote: body, mind, velocity, eventsink, mcp.
+2. Start `nats-server` from the digest in the overlay, with the overlay on, under a scratch compose project name, bound to loopback.
+3. For each role: connect with its password file; publish and subscribe on its allowed subjects; a publish outside them is refused with a permissions violation.
+4. Revoked user: remove that user from the generated config, reload the server (`nats-server --signal reload`), and check that a connect with its old password is refused.
+5. Shard isolation: a user of shard A cannot publish or subscribe on shard B's subjects. The shard name is in every subject.
+6. Replace the `*` per-life subjects. Lives are not known when the file is written, so scope each role to its shard prefix and its subject class (for example `geldar.<shard>.body.>`), and leave the life part to the application check. Record the exact subject table in 0087.
+7. A unit test asserts that the generated server config contains no bare `*` subject token.
+
+**Error behaviour**: a missing password file stops the overlay start with a named error. A reload that fails leaves the old config in place and reports it.
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run threshold/mcp/test/nats-auth.it.test.ts` (desktop, Docker)
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit
+
+**Revert-check**
+- In the generated config, put back a `*` per-life subject. The test "no bare wildcard subject" must fail. Restore.
+- Remove the reload step in the revocation test path. The test "revoked user refused" must fail, because the old password still connects. Restore.
+- Remove the shard prefix from one role's subject. The isolation test must fail. Restore.
+
+**Commit plan**
+1. `C1-06a: live harness for the overlay, one role connects`
+2. `C1-06a: every role connects and is refused outside its subjects`
+3. `C1-06a: revoked user refused after reload; shard isolation test`
+4. `C1-06a: per-life subjects scoped without bare wildcards`
+5. `C1-06a: record 0087 for the overlay's live rules`
+
+**index line to add**: `index: | [0087](0087-nats-overlay-live-rules.md) | NATS overlay: live test rules and subject scoping | Proposed |`. If the generator is in `geldar.ps1`: an index line for C1-02 with the replacement subject table.
+
+**On cap**: commits 1 and 2 first. The revocation test (step 4) can move to the worknote for the next session.
