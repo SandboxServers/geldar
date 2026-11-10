@@ -362,6 +362,7 @@ describe('startReplay waits for the replay to catch up', () => {
           opened++;
           if (plan.shift() !== 'long') return feed();
           return (async function* () {
+            yield* [];
             clock += 60_000;
           })();
         },
