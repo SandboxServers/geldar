@@ -179,7 +179,7 @@
       ]
     },
     "stuck": {
-      "description": "Null unless the Body's watchdog reports a repeating action (the watchdog injects a stuck event with the repeat count).",
+      "description": "Null unless the Body reports a repeating action, with the repeat count.",
       "anyOf": [
         {
           "type": "object",

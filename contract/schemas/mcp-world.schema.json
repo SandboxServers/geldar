@@ -59,7 +59,7 @@
     },
     "DefineSkillInput": {
       "type": "object",
-      "description": "Create a Body skill from code that runs in the colo sandbox. Returns the test result.",
+      "description": "Create a Body skill from code that runs in a sandbox. Returns the test result.",
       "additionalProperties": false,
       "required": ["name", "description", "code"],
       "properties": {
@@ -187,7 +187,7 @@
     },
     "JournalInput": {
       "type": "object",
-      "description": "Append an entry to the colo's mirror of this player's journal.",
+      "description": "Append an entry to this player's journal.",
       "additionalProperties": false,
       "required": ["text"],
       "properties": {
