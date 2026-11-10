@@ -224,3 +224,23 @@ export function registryFromConfig(cfg: GolemConfig): BotRegistry | undefined {
       ),
   );
 }
+
+/**
+ * Deletes a life's registry key over one NATS connection, for the tools that retire a life
+ * (`players down`, `adam stop`, `mcp-tokens retire`). A missing key is not an error. Throws when
+ * NATS or the bucket cannot be reached; the caller reports it.
+ */
+export async function removeRegistryKey(natsUrl: string, lifeId: string): Promise<void> {
+  const nc = await connect({
+    servers: natsUrl,
+    name: 'geldar-tools',
+    timeout: CONNECT_TIMEOUT_MS,
+    reconnect: false,
+  });
+  try {
+    const kv = await new Kvm(jetstream(nc)).open(REGISTRY_BUCKET);
+    await kv.delete(registryKey(lifeId));
+  } finally {
+    await nc.close().catch(() => undefined);
+  }
+}
