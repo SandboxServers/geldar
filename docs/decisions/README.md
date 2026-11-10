@@ -78,4 +78,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0071](0071-public-endpoints-and-ports.md) | The public Minecraft endpoint is a new TCP port with an SRV record; HTTPS ingress is the shared Caddy, reloaded and never restarted | Accepted (owner) |
 | [0072](0072-glass-and-bluemap-are-public.md) | Glass and BlueMap are public, read-only, and hardened before exposure | Accepted (owner) |
 | [0073](0073-spec-is-never-edited.md) | docs/spec.md is never edited by agents; decision records amend it, with the open amendments listed | Accepted (owner) |
+| [0075](0075-glass-is-a-lakitu-camera.md) | The Glass gets Lakitu cameras: free-fly, collision-bound, invisible in the world, targeted by login | Proposed (anonymous versus login cameras pending owner) |
 >
