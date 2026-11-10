@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { checkPreconditions, type PreconditionFacts } from './preconditions.ts';
+import { PREPARED_SCHEMA, type PreparedRecord, type VolumeState } from './world-volume.ts';
 
 const SHA = 'eba101b';
+const VOLUME = 'geldar-phase0-world-run-1';
+const prepared = (profile: PreparedRecord['profile'] = '8b'): PreparedRecord => ({
+  schema: PREPARED_SCHEMA,
+  profile,
+  runId: 'run-1',
+  worldVolume: VOLUME,
+  preparedAt: '2026-11-10T00:00:00Z',
+});
+/** A fresh volume: it exists, compose labels it, it is empty and no container mounts it. */
+const FRESH: VolumeState = { exists: true, labelled: true, empty: true, usedBy: [] };
 const FULL_HEAD = 'eba101b2f00dcafe1234567890abcdef12345678';
 /** A complete bench result at HEAD: one 20 TPS row per scenario, all at 100%. */
 const benchResult = (over: { commit?: string; truncated?: boolean; pct?: number } = {}) => ({
@@ -23,8 +34,9 @@ const good: PreconditionFacts = {
   pins: [{ tag: 'qwen3:8b', digest: 'sha256:bbb' }],
   observedDigests: { 'qwen3:8b': 'sha256:bbb' },
   loadedModels: [],
-  freshVolumeJson:
-    '{"volume":"geldar-8b","created_at":"2026-11-10T00:00:00Z","life_id":"ag_adam_02"}',
+  prepared: prepared(),
+  volume: FRESH,
+  worldVolumeEnv: VOLUME,
   lifeId: 'ag_adam_02',
 };
 
@@ -69,9 +81,39 @@ describe('checkPreconditions', () => {
     ],
     ['the wrong life id for 8B', { ...good, lifeId: 'ag_adam_01' }, 'profile 8b runs ag_adam_02'],
     [
-      'no fresh-volume marker for 8B',
-      { ...good, freshVolumeJson: null },
-      'fresh-volume.json is missing',
+      'no prepared volume in the run folder',
+      { ...good, prepared: null, volume: null },
+      'run prepare-volume first',
+    ],
+    [
+      'a recorded volume that does not exist',
+      { ...good, volume: { ...FRESH, exists: false } },
+      `world volume ${VOLUME} does not exist`,
+    ],
+    [
+      'a recorded volume compose did not label',
+      { ...good, volume: { ...FRESH, labelled: false } },
+      'is not labelled by compose',
+    ],
+    [
+      'a recorded volume that already holds data',
+      { ...good, volume: { ...FRESH, empty: false } },
+      'is not empty',
+    ],
+    [
+      'a recorded volume a container mounts',
+      { ...good, volume: { ...FRESH, usedBy: ['c1'] } },
+      'mounted by 1 container',
+    ],
+    [
+      'GELDAR_WORLD_VOLUME unset',
+      { ...good, worldVolumeEnv: undefined },
+      `GELDAR_WORLD_VOLUME is unset, not ${VOLUME}`,
+    ],
+    [
+      'GELDAR_WORLD_VOLUME naming another volume',
+      { ...good, worldVolumeEnv: 'geldar-phase0_paper-data' },
+      'GELDAR_WORLD_VOLUME is geldar-phase0_paper-data',
     ],
     [
       'a model loaded that is not expected',
@@ -122,14 +164,29 @@ describe('checkPreconditions', () => {
     expect(checkPreconditions(facts)).toEqual({ ok: true });
   });
 
-  it('the 32B profile needs no fresh-volume marker and runs ag_adam_01', () => {
+  it('the 32B profile checks its prepared volume too, and runs ag_adam_01', () => {
     const facts: PreconditionFacts = {
       ...good,
       profile: '32b',
       lifeId: 'ag_adam_01',
-      freshVolumeJson: null,
+      prepared: prepared('32b'),
       pins: [{ tag: 'qwen3:32b', digest: 'sha256:aaa' }],
       observedDigests: { 'qwen3:32b': 'sha256:aaa' },
+    };
+    expect(checkPreconditions(facts)).toEqual({ ok: true });
+    const verdict = checkPreconditions({ ...facts, prepared: null, volume: null });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.missing.join('\n')).toContain('run prepare-volume first');
+  });
+
+  it('the smoke profile needs no prepared volume and runs ag_smoke_01', () => {
+    const facts: PreconditionFacts = {
+      ...good,
+      profile: 'smoke',
+      lifeId: 'ag_smoke_01',
+      prepared: null,
+      volume: null,
+      worldVolumeEnv: undefined,
     };
     expect(checkPreconditions(facts)).toEqual({ ok: true });
   });

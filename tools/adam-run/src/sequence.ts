@@ -39,7 +39,7 @@ export interface PreflightFacts {
   criteriaSha256: string;
 }
 
-/** Gathers the facts the gate needs: git, the gate file, the pins, Ollama, the fresh-volume marker. */
+/** Gathers the facts the gate needs: git, the gate file, the pins, Ollama, the prepared world volume. */
 export interface Preflight {
   gather(): Promise<PreflightFacts>;
 }

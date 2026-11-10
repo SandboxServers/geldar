@@ -35,6 +35,7 @@ import {
 } from './ports.ts';
 import { SERVICE_MARKERS } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
+import { parsePrepared, WORLD_VOLUME_ENV, type WorldVolumes } from './world-volume.ts';
 
 const COMPOSE_FILE = 'compose/phase0.yml';
 const COMPOSE_PROJECT = 'geldar-phase0';
@@ -358,14 +359,16 @@ function listDir(dir: string): string[] {
   }
 }
 
-/** The gate's facts: git, the newest bench result, the pins, the Ollama tags and loaded models, the 8B marker. */
+/** The gate's facts: git, the newest bench result, the pins, the Ollama tags and loaded models, the prepared volume. */
 export function createPreflight(opts: {
   runner: Runner;
   repoRoot: string;
-  runsDir: string;
+  runDir: string;
   profile: Profile;
   criteriaText: string;
   files: FileStore;
+  worldVolumes: WorldVolumes;
+  env: Record<string, string | undefined>;
 }): Preflight {
   const fetchJson = async (path: string): Promise<Record<string, unknown>> => {
     const res = await fetch(`${OLLAMA}${path}`, { signal: AbortSignal.timeout(5000) });
@@ -382,7 +385,16 @@ export function createPreflight(opts: {
       const pins: PinnedModel[] = readPins(shardYaml);
       const benchDir = join(opts.repoRoot, 'bench-results');
       const benchFile = newestBenchFile(listDir(benchDir));
-      const benchText = benchFile === null ? null : opts.files.read(join(benchDir, benchFile));
+      // The bench folder sits outside the run folder, so it is read through a store rooted there.
+      const benchText =
+        benchFile === null ? null : createFileStore(benchDir).read(join(benchDir, benchFile));
+      // Smoke runs use no world volume. 32B and 8B read the record prepare-volume wrote to the run folder.
+      const prepared =
+        opts.profile === 'smoke'
+          ? null
+          : parsePrepared(opts.files.read(runPaths(opts.runDir).manifest));
+      const volume =
+        prepared === null ? null : await opts.worldVolumes.inspect(prepared.worldVolume);
       const tags = (await fetchJson('/api/tags')) as {
         models?: { name: string; digest: string }[];
       };
@@ -399,7 +411,9 @@ export function createPreflight(opts: {
           pins,
           observedDigests,
           loadedModels: (ps.models ?? []).map((m) => m.name),
-          freshVolumeJson: opts.files.read(join(opts.runsDir, 'fresh-volume.json')),
+          prepared,
+          volume,
+          worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
         },
         shardConfigSha256: sha256Hex(shardYaml),

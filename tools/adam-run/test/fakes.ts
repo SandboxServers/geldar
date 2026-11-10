@@ -16,7 +16,10 @@ import type {
   Supervisor,
 } from '../src/ports.ts';
 import type { Preflight, PreflightFacts } from '../src/sequence.ts';
-import type { VolumeState, WorldVolumes } from '../src/world-volume.ts';
+import { PREPARED_SCHEMA, type VolumeState, type WorldVolumes } from '../src/world-volume.ts';
+
+/** The world volume the fake gate reports as prepared and selected through GELDAR_WORLD_VOLUME. */
+const FAKE_WORLD_VOLUME = 'geldar-phase0-world-run-1';
 
 export const MIN = 60_000;
 export const START_MS = Date.parse('2026-11-10T00:00:00Z');
@@ -252,7 +255,19 @@ export function passingPreflight(profile: Profile, over: { cleanTree?: boolean }
           pins: [],
           observedDigests: {},
           loadedModels: [],
-          freshVolumeJson: null,
+          prepared:
+            profile === 'smoke'
+              ? null
+              : {
+                  schema: PREPARED_SCHEMA,
+                  profile,
+                  runId: 'run-1',
+                  worldVolume: FAKE_WORLD_VOLUME,
+                  preparedAt: '2026-11-10T00:00:00Z',
+                },
+          volume:
+            profile === 'smoke' ? null : { exists: true, labelled: true, empty: true, usedBy: [] },
+          worldVolumeEnv: FAKE_WORLD_VOLUME,
           lifeId: LIFE_ID[profile],
         },
         shardConfigSha256: 'a'.repeat(64),

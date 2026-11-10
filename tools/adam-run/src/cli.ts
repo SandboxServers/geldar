@@ -137,7 +137,7 @@ export interface Harness {
   runsFiles: FileStore;
   /** The Docker port of the world volume (`prepare-volume`, and the precondition check). */
   worldVolumes: WorldVolumes;
-  preflight(profile: Profile, runsDir: string): Preflight;
+  preflight(profile: Profile, runDir: string): Preflight;
   reporter(runDir: string, profile: Profile): Reporter;
   criteria: AbortCriteria;
   criteriaText: string;
@@ -288,7 +288,7 @@ export async function runCli(
   }
 
   // start
-  const pre = await h.preflight(a.profile, runsDir).gather();
+  const pre = await h.preflight(a.profile, runDir).gather();
   const verdict = checkPreconditions(pre.facts);
   const hours = a.hours ?? DEFAULT_HOURS[a.profile];
   const now = h.clock.nowMs();
@@ -334,7 +334,7 @@ export async function runCli(
       sampler: h.sampler(a.profile),
       supervisor: h.supervisor,
       reporter: h.reporter(runDir, a.profile),
-      preflight: h.preflight(a.profile, runsDir),
+      preflight: h.preflight(a.profile, runDir),
       criteria: h.criteria,
       stopRequested: () => files.read(join(runDir, STOP_FILE)) !== null,
     },
@@ -354,6 +354,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
     'utf8',
   );
   const criteria = JSON.parse(criteriaText) as AbortCriteria;
+  const worldVolumes = createWorldVolumes(runner);
   return {
     clock,
     processes,
@@ -369,14 +370,16 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
       }),
     runFiles: (dir) => createFileStore(dir),
     runsFiles: createFileStore(join(repoRoot, '.geldar', 'runs')),
-    preflight: (profile, runsDir) =>
+    preflight: (profile, runDir) =>
       createPreflight({
         runner,
         repoRoot,
-        runsDir,
+        runDir,
         profile,
         criteriaText,
-        files: createFileStore(runsDir),
+        files: createFileStore(runDir),
+        worldVolumes,
+        env,
       }),
     reporter: (runDir, profile) =>
       createReporter(
@@ -390,7 +393,7 @@ export function realHarness(repoRoot: string, env: Record<string, string | undef
       ),
     criteria,
     criteriaText,
-    worldVolumes: createWorldVolumes(runner),
+    worldVolumes,
   };
 }
 
