@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { newId } from '@geldar/animus/src/ids.ts';
 import { buildPlan } from '@geldar/animus/src/loop/plan.ts';
 import type { OutputValidator } from '@geldar/animus/src/ports/index.ts';
@@ -59,8 +60,6 @@ const WAIT_MESSAGES: Record<WaitError, string> = {
   wait_replaced: 'A newer wait for this player replaced this one.',
 };
 
-/** The most journal characters a `sovereign_call` record keeps (the payload's own limit). */
-const RECORD_JOURNAL_LIMIT = 2000;
 /** The refusal of a journal line inside the player's journal spacing (`journal_min_seconds`). */
 const JOURNAL_RATE_MESSAGE = 'Journal lines are spaced. Wait, then write again.';
 
@@ -211,6 +210,8 @@ async function journalAndRecord(deps: Wired, call: ToolCall, text: string) {
   }
   const result = await journalTool(deps, call, { text });
   const balance = await deps.budget.balance(call.lifeId, started);
+  // The event carries the length and a hash of the kept text, never the text (the journal table has it).
+  const kept = text.slice(0, JOURNAL_LINE_LIMIT);
   const record: SovereignCallPayload = {
     player_id: call.playerId,
     tool: 'journal',
@@ -220,7 +221,8 @@ async function journalAndRecord(deps: Wired, call: ToolCall, text: string) {
     credits_charged: 0,
     budget_remaining: Math.max(0, Math.floor(balance)),
     latency_ms: Math.max(0, deps.now() - started),
-    journal: text.slice(0, RECORD_JOURNAL_LIMIT),
+    journal_chars: kept.length,
+    journal_sha256: createHash('sha256').update(kept).digest('hex').slice(0, 16),
   };
   await deps.recorder.record(record);
   return result;

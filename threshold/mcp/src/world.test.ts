@@ -103,7 +103,22 @@ describe('the read-only handlers', () => {
     expect(JSON.parse(reply.text)).toEqual({ ok: true, mirrored_chars: 5 });
     expect((await journal.recent(PLAYER.lifeId, 10)).map((e) => e.text)).toEqual(['Dusk.']);
     expect(recorder.calls).toHaveLength(1);
-    expect(recorder.calls[0]).toMatchObject({ tool: 'journal', outcome: 'ok', journal: 'Dusk.' });
+    expect(recorder.calls[0]).toMatchObject({
+      tool: 'journal',
+      outcome: 'ok',
+      journal_chars: 5,
+      journal_sha256: '9e6651cf50e512da',
+    });
+  });
+
+  it('records a journal call without the journal text, even for a long line', async () => {
+    const { tools, recorder } = rig();
+    const line = `Secret plan ${'x'.repeat(3000)}`;
+    await run(tools, 'journal', { text: line });
+    const [call] = recorder.calls;
+    expect(call).not.toHaveProperty('journal');
+    expect(JSON.stringify(call)).not.toContain('Secret plan');
+    expect(call?.journal_chars).toBe(line.length);
   });
 
   it('refuses a journal line inside its spacing: nothing is written and no call is recorded', async () => {

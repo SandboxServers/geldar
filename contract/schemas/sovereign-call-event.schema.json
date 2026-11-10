@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/sovereign-call-event.schema.json",
   "title": "SovereignCallPayload",
-  "description": "Payload of a WorldEvent of type `sovereign_call` (spec 5.15.3, 5.7): one MCP tool call by a sovereign player, with what was accepted, rejected and charged. It carries the player's own reasoning, say and journal text, never world text, and no token or session field. Events only, no table. The MCP publishes it and the sink writes it to `events`.",
+  "description": "Payload of a WorldEvent of type `sovereign_call` (spec 5.15.3, 5.7): one MCP tool call by a sovereign player, with what was accepted, rejected and charged. It carries the player's own reasoning and say text, never journal text (only its length and a short hash), never world text, and no token or session field. Events only, no table. The MCP publishes it and the sink writes it to `events`.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -78,10 +78,16 @@
       "type": "string",
       "maxLength": 256
     },
-    "journal": {
-      "description": "The player's own journal text, as written.",
+    "journal_chars": {
+      "description": "How many characters of journal text the call wrote. The text itself is kept in the journal table, never in this event.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4000
+    },
+    "journal_sha256": {
+      "description": "The first 16 hex characters of the SHA-256 of the journal text as kept, to match the call to its journal row.",
       "type": "string",
-      "maxLength": 2000
+      "pattern": "^[0-9a-f]{16}$"
     },
     "latency_ms": { "type": "integer", "minimum": 0 }
   }
