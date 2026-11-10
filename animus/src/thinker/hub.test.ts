@@ -111,6 +111,53 @@ describe('ThinkerHub handshake', () => {
   });
 });
 
+describe('ThinkerHub token (GELDAR_THINKER_TOKEN_FILE)', () => {
+  const TOKEN = 'token-for-tests-only';
+
+  it('accepts a hello that carries the right token', async () => {
+    hub = await startHub({ token: TOKEN });
+    const t = await connected();
+    const welcome = await t.hello([[MODEL, 1]], TOKEN);
+    expect(welcome.thinker).toBe('test-thinker');
+    expect(hub.stats()).toMatchObject([{ id: 'local-1', state: 'ready' }]);
+  });
+
+  it('refuses a hello with a wrong token and closes it without a welcome', async () => {
+    hub = await startHub({ token: TOKEN });
+    const t = await connected();
+    t.send({
+      type: 'hello',
+      thinker_version: '1.0.0',
+      models: [{ name: MODEL, max_concurrent: 1, max_tokens: 1024 }],
+      token: 'token-for-tests-nope',
+    });
+    expect(await t.closed()).toBe(1008);
+    expect(t.received.some((f) => f.type === 'welcome')).toBe(false);
+    await until(() => hub?.stats().length === 0, 'the refused session is gone');
+  });
+
+  it('refuses a hello that carries no token when one is configured', async () => {
+    hub = await startHub({ token: TOKEN });
+    const t = await connected();
+    t.send({
+      type: 'hello',
+      thinker_version: '1.0.0',
+      models: [{ name: MODEL, max_concurrent: 1, max_tokens: 1024 }],
+    });
+    expect(await t.closed()).toBe(1008);
+    expect(t.received.some((f) => f.type === 'welcome')).toBe(false);
+    expect(await hub.waitForThinker(MODEL, 10)).toBe(false);
+  });
+
+  it('is open when no token is configured, with or without one offered', async () => {
+    hub = await startHub();
+    const a = await connected();
+    const b = await connected();
+    expect((await a.hello()).thinker).toBe('test-thinker');
+    expect((await b.hello([[MODEL, 1]], TOKEN)).thinker).toBe('test-thinker');
+  });
+});
+
 describe('ThinkerHub frames', () => {
   it('drops non-JSON, invalid and colo-only frames and counts each', async () => {
     hub = await startHub();

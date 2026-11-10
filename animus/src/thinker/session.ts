@@ -10,6 +10,7 @@ import {
   type ThinkerFrame,
   validateThinkerFrame,
 } from '@geldar/contract';
+import { tokenMatches } from '@geldar/contract/thinker-token';
 import type { RawData, WebSocket } from 'ws';
 import { newId } from '../ids.ts';
 import { ModelError, type ModelJob } from '../ports/model.ts';
@@ -27,6 +28,8 @@ export interface SessionContext {
   now: () => number;
   /** How long a connection may stay silent before `hello`. */
   helloTimeoutMs: number;
+  /** When set, a `hello` must carry this token (GELDAR_THINKER_TOKEN_FILE); unset means open. */
+  token?: string;
   log: (line: string) => void;
   /** Called once when the socket has closed. */
   onClosed: (session: ThinkerSession) => void;
@@ -251,6 +254,12 @@ export class ThinkerSession {
 
   private onHello(frame: Frame<'hello'>): void {
     clearTimeout(this.helloTimer);
+    if (this.ctx.token !== undefined && !tokenMatches(this.ctx.token, frame.token)) {
+      // Never the offered token, never the expected one: the line says only that it was refused.
+      this.ctx.log(`${this.id}: refused on hello, token missing or wrong`);
+      this.socket.close(1008, 'unauthorized');
+      return;
+    }
     this.state = 'ready';
     this.lastSeenMs = this.ctx.now();
     this.thinkerVersion = frame.thinker_version;

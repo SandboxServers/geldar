@@ -27,6 +27,8 @@ export interface HubOptions {
   drainReconnectS?: number;
   /** Connections beyond this are closed at once. */
   maxConnections?: number;
+  /** The shared secret a `hello` must carry; unset means open (GELDAR_THINKER_TOKEN_FILE). */
+  token?: string;
   now?: () => number;
   /** Called when a Thinker has been welcomed (with the models accepted) and when it is gone. */
   onThinker?: (event: { kind: 'connected' | 'disconnected'; id: string; models: string[] }) => void;
@@ -46,7 +48,7 @@ export interface SessionStats {
 
 /** The server half of Appendix H. */
 export class ThinkerHub {
-  private readonly opts: Required<Omit<HubOptions, 'port' | 'log' | 'onThinker'>> & {
+  private readonly opts: Required<Omit<HubOptions, 'port' | 'log' | 'onThinker' | 'token'>> & {
     log: (l: string) => void;
   };
   private readonly onThinker: NonNullable<HubOptions['onThinker']>;
@@ -57,8 +59,10 @@ export class ThinkerHub {
   private readonly waiters = new Set<{ model: string; done: (connected: boolean) => void }>();
   private server: WebSocketServer | null = null;
   private counter = 0;
+  private readonly token: string | undefined;
 
   constructor(options: HubOptions) {
+    this.token = options.token;
     this.opts = {
       helloTimeoutMs: 10_000,
       staleAfterMs: 45_000,
@@ -136,6 +140,7 @@ export class ThinkerHub {
         pinnedModels: new Set(Object.keys(this.opts.config.modelPins)),
         now: this.opts.now,
         helloTimeoutMs: this.opts.helloTimeoutMs,
+        token: this.token,
         log: this.opts.log,
         onClosed: (closed) => {
           this.sessions.delete(closed.id);
