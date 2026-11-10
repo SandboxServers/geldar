@@ -53,3 +53,37 @@ fails when its line is reverted.
   preflight fact in adapters.ts gather, checkPreconditions in preconditions.ts and the fake in test/fakes.ts.
   Stopped for context. Decision 0064 wording still to be applied: "a fresh life id is needed".
 - Items 6-12 not started.
+## Session 3: fresh-volume start gate (step 1 of the wave-6 follow-up)
+
+- Committed as dff3983 and 00153ad. Start no longer reads the prepared volume as empty and unmounted. It inspects the
+  running Paper container (`paperVolumes`, `docker ps` by the compose service label, then `docker inspect` Mounts) and
+  refuses unless Paper mounts exactly the prepared volume at /data. The empty and unused check stays at prepare-volume.
+- The 8B and 32B runbooks and `preparedText` now recreate the stack with `docker compose -f compose/phase0.yml -p
+  geldar-phase0 up -d --wait` after setting GELDAR_WORLD_VOLUME. `adam down` and `adam up` do not recreate Paper.
+- Tests: preconditions.test.ts (Paper on the old default, on no volume, on two volumes, not running; Paper on the
+  prepared volume passes), world-volume.test.ts (paperVolumes: null, prepared, old default, two containers refused;
+  preparedText names the compose recreate), adapters.test.ts (facts carry paperVolumes).
+- Revert checks: the Paper-mount condition replaced by `false` makes 3 preconditions tests fail. The `/data` filter in
+  paperVolumes removed made the first version of the test pass (its only other mount was a bind), so the test gained a
+  named volume at /cache; with the filter removed, that test fails. Both restored, `git diff --stat` clean.
+- adam-run: typecheck clean, 233 tests pass.
+
+## Step 2 (adam-report honesty): NOT STARTED, design decided
+
+Nothing committed for step 2. Plan, one commit per measure:
+1. calls (calls.ts): add `INFO` to `Verdict` (types.ts); `calls` returns INFO, not PASS, with the note "recorded, no
+   threshold in the spec". Render snapshot update.
+2. latency (calls.ts latencyMeasure) and receipts (intents.ts receiptMeasure): UNKNOWN below a minimum sample count
+   and minimum span (chosen values to be written in the commit message).
+3. model_floor (report.ts modelFloor): echo as INFO only when the value is in an allowed set (proposed: qwen3:8b,
+   qwen3:32b, to confirm against the criteria file); otherwise UNKNOWN.
+4. continuity restarts: parse `status.log` next to the manifest (JSON lines; `restart_stack` is planned, `body_kill` is
+   body; see adam-run sequence.ts lines 293 and 345). Pure parser in a new adam-report file. Missing file means no
+   restarts and a note, not a PASS.
+5. report header (render.ts): status line from status.log (`abort` line -> aborted, no `end` line -> partial) and the
+   window length in hours.
+Each needs a test that fails when its line is reverted.
+
+## Step 3
+
+This entry is the record. Items 8-12 remain not started.
