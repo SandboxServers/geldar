@@ -63,8 +63,9 @@ Plain values come from the environment. The password comes from a file.
 
 ## Running it
 
-Glass has no compose service yet. The `./geldar.ps1 glass up` command arrives with packet W6-13.
-Until then, start it by hand from the repository root, with the variables above set:
+`./geldar.ps1 glass up|down|status|logs` runs Glass detached on `127.0.0.1:8787` (the logic is in `tools/glass-ctl`). `status` probes the thoughts API. It needs the password file described under "The `geldar_glass` role" below.
+
+To run it in the foreground instead, start it by hand from the repository root, with the variables above set:
 
 ```powershell
 ./geldar.ps1 pnpm --filter @geldar/glass start
@@ -95,7 +96,7 @@ password from a file in `compose/secrets/`:
 ```
 
 The password file is `compose/secrets/postgres-glass.txt`. It is gitignored with the rest of
-`compose/secrets/`. Create it with the password on one line. The migrate tool drops a leading byte-order mark and one
+`compose/secrets/`. No command creates it today: `./geldar.ps1 shard secrets` makes only the `postgres`, `rcon` and `velocity-forwarding` files. The owner creates it by hand: a random ASCII password on one line, written to that file with the owner-only ACL (the way `shard secrets` writes its files). Then run the `--set-role-password` command above. Never commit or paste the password. The migrate tool drops a leading byte-order mark and one
 trailing newline, and refuses a password that starts or ends with whitespace, because Glass trims
 its file and would otherwise authenticate differently. The migrate tool stores the password only as
 a SCRAM-SHA-256 verifier. The password itself is never printed.
