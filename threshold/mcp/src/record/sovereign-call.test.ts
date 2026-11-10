@@ -1,6 +1,10 @@
 import type { SovereignCallPayload } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
-import { SovereignCallRecorder, type SovereignCallSink, sovereignCallMsgId } from './sovereign-call.ts';
+import {
+  SovereignCallRecorder,
+  type SovereignCallSink,
+  sovereignCallMsgId,
+} from './sovereign-call.ts';
 
 const BASE: SovereignCallPayload = {
   player_id: 'ag-jason-01',
@@ -31,7 +35,9 @@ describe('sovereign_call record', () => {
   it('publishes a call that validates, under the derived id', async () => {
     const sink = new CollectingSink();
     await new SovereignCallRecorder(sink).record(BASE);
-    expect(sink.published).toEqual([{ msgId: 'sovereign_call:th_01HZX00000000000000000000A', payload: BASE }]);
+    expect(sink.published).toEqual([
+      { msgId: 'sovereign_call:th_01HZX00000000000000000000A', payload: BASE },
+    ]);
   });
 
   it('gives a call with no plan a fresh id each time', () => {

@@ -4,8 +4,9 @@
  * reasoning, never world text. The NATS message id is derived from the thought id, so a
  * redelivered event dedups in the stream.
  */
-import { type SovereignCallPayload, validateSovereignCallPayload } from '@geldar/contract';
+
 import { newId } from '@geldar/animus/src/ids.ts';
+import { type SovereignCallPayload, validateSovereignCallPayload } from '@geldar/contract';
 import type { CallRecorder } from '../ports.ts';
 
 /** Publishes one validated payload under its message id. WM-11 wires this to NATS. */
