@@ -42,3 +42,12 @@ migration ledger.
   MCP stack and Postgres. Run it with the stack up (`./geldar.ps1 mcp up`):
   `$env:GELDAR_IT = '1'; ./geldar.ps1 pnpm --dir threshold/mcp exec vitest run test/it`.
 - Request for R1 `main.ts`: none needed. `PgAgentStore` kept its constructor.
+
+
+## R3a
+
+The contract has no outcome-unknown code. When an `act` call's `submitPlan` times out after the
+Body may have received the plan, the reserve is refunded and the call is reported with the closest
+existing code. The plan may still run. This is a known low-severity gap: the player is told the
+plan was refused while the Body may act on it. Closing it needs a contract code for an unknown
+outcome, which is out of scope for this packet.

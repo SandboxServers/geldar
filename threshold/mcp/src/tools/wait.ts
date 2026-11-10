@@ -8,7 +8,15 @@ import {
 } from '@geldar/mcp-mock';
 import type { RunState } from '../events/mapper.ts';
 import { fitResult, toPlayerEvents, WORLD_TEXT_NOTE, worldText } from '../events/present.ts';
-import type { BodyGateway, Clock, KeepAlive, PlayerEventLog } from '../ports.ts';
+import { toPlayView } from '../play-view.ts';
+import type {
+  BodyGateway,
+  BudgetLedger,
+  Clock,
+  KeepAlive,
+  PlayerEventLog,
+  SleepMarks,
+} from '../ports.ts';
 import { BodyUnavailable } from '../ports.ts';
 
 /** The longest `wait` the Scriptorium constraint allows, in seconds (spec 5.15.3). */
@@ -43,6 +51,9 @@ export interface WaitDeps {
   keepAlive: KeepAlive;
   log: WaitLog;
   body: Pick<BodyGateway, 'snapshot'>;
+  /** The balance and the sleep mark that the play view of the snapshot reports, as `look` does. */
+  budget: Pick<BudgetLedger, 'balance'>;
+  sleeps: Pick<SleepMarks, 'read'>;
   /** The running intent per life, as the event mapper keeps it. */
   runs: Map<string, RunState>;
   config: WakeConfig;
@@ -172,9 +183,17 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   }
 
   // The Body must answer for the snapshot; without it nothing is acknowledged.
-  let snapshot: WaitResult['snapshot'];
+  // The snapshot goes out as a play view, as `look` sends it: no heard lines, no sign text, and the
+  // balance and days since sleep from the server. Speech comes from the event log only.
+  let view: ReturnType<typeof toPlayView>;
   try {
-    snapshot = (await deps.body.snapshot(lifeId)) as unknown as WaitResult['snapshot'];
+    const body = await deps.body.snapshot(lifeId);
+    const budget = await deps.budget.balance(lifeId, clock.nowMs());
+    const mark = await deps.sleeps.read(lifeId);
+    view = toPlayView(body, {
+      budget: Math.floor(budget),
+      daysSinceSleep: body.world_time.day - mark.lastSleepDay,
+    });
   } catch (err) {
     if (err instanceof BodyUnavailable) return { ok: false, error: 'body_unavailable' };
     throw err;
@@ -184,12 +203,15 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
 
   const since = await log.since(lifeId, from);
   const result: WaitResult = {
-    snapshot,
+    snapshot: view.snapshot as unknown as WaitResult['snapshot'],
     events: toPlayerEvents(since.events),
     cursor: encodeCursor(log.head(lifeId)),
     wake_reason: reason,
     dropped_events: since.dropped,
-    untrusted_world_text: worldText(since.events, { wakingSeqs }),
+    untrusted_world_text: {
+      ...worldText(since.events, { wakingSeqs }),
+      ...(view.untrusted.signs?.length ? { signs: view.untrusted.signs } : {}),
+    },
     note: WORLD_TEXT_NOTE,
   };
   return { ok: true, result: fitResult(result, undefined, wakingSeqs) };
