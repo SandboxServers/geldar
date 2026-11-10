@@ -46,3 +46,13 @@ shard config itself and uses the life id it names.
 PID files and logs live under `.geldar/players/` (git-ignored). `logs` prints the last 200 lines; it does not follow.
 The player hosts need NATS (`GELDAR_NATS_URL`) and the shard's RCON secret, and the whitelist entries are written
 by the host, not by this command.
+
+A sovereign player's skin is set with the players CLI, which is not in the `players` block above. It checks
+`GELDAR_NATS_URL` and opens the skin bucket before it spends a MineSkin generation. The skin PNG goes under the
+repo's gitignored `skins/` directory, or outside the repo; pass an absolute path, because the command runs in the
+package directory:
+
+```
+./geldar.ps1 pnpm --filter @geldar/players-cli exec node src/cli.ts skin set ag-jason-01 "<absolute path to skins/jason.png>" --model slim
+./geldar.ps1 pnpm --filter @geldar/players-cli exec node src/cli.ts skin set ag-jason-01 "<absolute path to skins/jason.png>" --check-only
+```
