@@ -88,26 +88,33 @@ export class ReflectionTrigger {
       this.pending = due;
       return { ran: false, reason: 'busy' };
     }
-    // Hold the slot before the first await, so a second due cannot slip in while we load.
+    // Claim the slot before the first await: attention holds every wake while it is taken, so no
+    // thought can start while the reflection loads. Every exit below settles it again.
     this.inFlight = true;
-    let started = false;
-    let outcome: ThoughtOutcome = 'model_error';
+    this.deps.attention.thoughtStarted();
+    let outcome: ThoughtOutcome = 'fallback_hold';
     try {
       const { agent } = await this.deps.store.loadDeterministic(due.lifeId, due.event.tick);
+      if (this.deps.thinking?.() === true) {
+        this.pending = due;
+        return { ran: false, reason: 'busy' };
+      }
       if (agent.lastSleepDay !== null && agent.lastSleepDay >= due.day) {
+        this.pending = null;
         return { ran: false, reason: 'already_slept' };
       }
       const reservation = this.deps.admission.reserve(REFLECTION_COST);
       if (reservation === null) return { ran: false, reason: 'not_admitted' };
       this.pending = null;
-      started = true;
-      this.deps.attention.thoughtStarted();
       return await this.runReserved(due, reservation, (o) => {
         outcome = o;
       });
+    } catch (error) {
+      outcome = 'model_error';
+      throw error;
     } finally {
       this.inFlight = false;
-      if (started) this.deps.attention.thoughtSettled(outcome);
+      this.deps.attention.thoughtSettled(outcome);
     }
   }
 

@@ -30,7 +30,12 @@ describe('ReflectionTrigger', () => {
     expect(again).toEqual({ ran: false, reason: 'already_slept' });
     expect(w.models.jobs).toHaveLength(1);
     expect(w.admission.asked).toEqual([2]);
-    expect(w.attention.calls).toHaveLength(2);
+    expect(w.attention.calls).toEqual([
+      'started',
+      'settled:fallback_hold',
+      'started',
+      'settled:fallback_hold',
+    ]);
     const next = await w.trigger.handle(due(4, 25000));
     expect(next).toMatchObject({ ran: true });
     expect(w.models.jobs).toHaveLength(2);
@@ -40,7 +45,46 @@ describe('ReflectionTrigger', () => {
     const w = await world([reflection()], { grant: false });
     expect(await w.trigger.handle(due(3))).toEqual({ ran: false, reason: 'not_admitted' });
     expect(w.models.jobs).toHaveLength(0);
-    expect(w.attention.calls).toEqual([]);
+    // The slot was claimed before the admission check, so the refusal settles it.
+    expect(w.attention.calls).toEqual(['started', 'settled:fallback_hold']);
+  });
+
+  it('a thought that starts while the reflection loads gives the slot back without running', async () => {
+    const w = await world([reflection()]);
+    let polls = 0;
+    const slot = new ReflectionTrigger({
+      lifeId: LIFE,
+      store: w.store,
+      attention: w.attention,
+      admission: { reserve: (cost) => ({ cost, settle() {}, release() {} }) },
+      run: async () => {
+        throw new Error('must not run');
+      },
+      thinking: () => ++polls > 1,
+    });
+    expect(await slot.handle(due(3))).toEqual({ ran: false, reason: 'busy' });
+    expect(w.attention.calls).toEqual(['started', 'settled:fallback_hold']);
+    expect(w.models.jobs).toHaveLength(0);
+  });
+
+  it('an already-slept due leaves nothing held for resume', async () => {
+    const w = await world([reflection()]);
+    expect(await w.trigger.handle(due(3, 1000))).toMatchObject({ ran: true });
+    let busy = true;
+    const slot = new ReflectionTrigger({
+      lifeId: LIFE,
+      store: w.store,
+      attention: w.attention,
+      admission: { reserve: (cost) => ({ cost, settle() {}, release() {} }) },
+      run: async () => {
+        throw new Error('must not run');
+      },
+      thinking: () => busy,
+    });
+    expect(await slot.handle(due(3, 1200))).toEqual({ ran: false, reason: 'busy' });
+    busy = false;
+    expect(await slot.handle(due(3, 1200))).toEqual({ ran: false, reason: 'already_slept' });
+    expect(await slot.resume()).toBeNull();
   });
 
   it('holds a due reflection while the slot is taken and runs it on resume', async () => {

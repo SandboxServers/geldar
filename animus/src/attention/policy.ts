@@ -72,3 +72,19 @@ export function priorityOf(rank: number): 0 | 1 | 2 {
 export function isSpacingExempt(reason: string): boolean {
   return SPACING_EXEMPT.has(reason);
 }
+
+/**
+ * The two reasons one addressed chat line can carry: the Body's `directly_addressed` wake and the
+ * Mind's own `speech_addressed` classification of the same speech event. They are one wake.
+ */
+const ADDRESSED: ReadonlySet<string> = new Set(['directly_addressed', 'speech_addressed']);
+
+/** Whether the reason is one of the two addressed reasons (see `ADDRESSED`). */
+export function isAddressed(reason: string): boolean {
+  return ADDRESSED.has(reason);
+}
+
+/** Whether the reason is an idle or fallback wake: nothing happened, so a thought makes it stale. */
+export function isFiller(reason: string): boolean {
+  return reason === 'idle' || reason === 'fallback';
+}

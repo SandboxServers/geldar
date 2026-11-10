@@ -171,6 +171,8 @@ export class Mind {
     this.detach = [];
     this.loop.stop();
     await this.settled();
+    // After the work in hand: a thought that settles late must not re-arm the idle watchdog.
+    this.attention.stop();
   }
 
   /** Resolves when every thought and reflection started so far has ended (for stop and tests). */

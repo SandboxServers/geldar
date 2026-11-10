@@ -234,6 +234,102 @@ describe('fallback and idle', () => {
   });
 });
 
+describe('idle watchdog and stop', () => {
+  it('after a say-only or held thought with no intent, wakes idle after the watchdog period', () => {
+    r.attention.thoughtStarted();
+    r.attention.thoughtSettled('fallback_hold');
+    r.time.advance(59_999);
+    expect(r.decisions).toHaveLength(0);
+    r.time.advance(1);
+    expect(r.decisions).toHaveLength(1);
+    expect(r.decisions[0]).toMatchObject({ reason: 'idle', priority: 0, events: [] });
+  });
+
+  it('stands down when an intent starts before the watchdog fires', () => {
+    r.attention.thoughtSettled('planned');
+    r.time.advance(30_000);
+    r.attention.onEvent(intent('in_1', 'running'));
+    r.time.advance(120_000);
+    expect(r.decisions).toHaveLength(0);
+  });
+
+  it('a second idle wake follows the first after another period, not before', () => {
+    r.attention.thoughtStarted();
+    r.attention.thoughtSettled('model_error');
+    r.time.advance(60_000);
+    r.attention.thoughtStarted();
+    r.attention.thoughtSettled('invalid_output');
+    r.time.advance(59_000);
+    expect(r.decisions).toHaveLength(1);
+    r.time.advance(1_000);
+    expect(r.decisions).toHaveLength(2);
+  });
+
+  it('stop() cancels the idle watchdog, the fallback and every settle timer', () => {
+    r.attention.thoughtSettled('planned');
+    r.attention.onEvent(intent('in_1', 'running'));
+    r.attention.onEvent(intent('in_1', 'completed'));
+    r.attention.stop();
+    r.time.advance(600_000);
+    expect(r.decisions).toHaveLength(0);
+    expect(r.time.pending).toBe(0);
+  });
+
+  it('a fallback held behind a thought that outlasts it is dropped on settle', () => {
+    r.attention.thoughtStarted();
+    r.attention.onEvent(intent('in_1', 'running'));
+    r.time.advance(300_000);
+    expect(r.decisions).toHaveLength(0);
+    r.attention.thoughtSettled('planned');
+    expect(r.decisions).toHaveLength(0);
+    r.time.advance(300_000);
+    expect(r.decisions.map((d) => d.reason)).toEqual(['fallback']);
+  });
+});
+
+describe('one addressed line, one thought', () => {
+  it('a speech line then its directly_addressed wake make one thought', () => {
+    r.attention.start();
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    r.attention.onEvent(speech('Steve', 'Adam, hi', 5));
+    r.attention.onEvent(wake('directly_addressed', 5, null));
+    expect(r.decisions).toHaveLength(2);
+    expect(r.decisions[1]).toMatchObject({ reason: 'speech_addressed' });
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    expect(r.decisions).toHaveLength(2);
+    r.attention.onEvent(speech('Steve', 'Adam, again', 9));
+    expect(r.decisions).toHaveLength(3);
+  });
+
+  it('a directly_addressed wake then the speech line make one thought', () => {
+    r.attention.start();
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    r.attention.onEvent(wake('directly_addressed', 7, null));
+    r.attention.onEvent(speech('Steve', 'Adam, hi', 7));
+    expect(r.decisions).toHaveLength(2);
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    expect(r.decisions).toHaveLength(2);
+  });
+
+  it('both copies held behind one thought merge into one wake', () => {
+    r.attention.start();
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    r.attention.thoughtStarted();
+    r.attention.onEvent(speech('Steve', 'Adam, hi', 3));
+    r.attention.onEvent(wake('directly_addressed', 3, null));
+    expect(r.decisions).toHaveLength(1);
+    r.attention.thoughtSettled('planned');
+    r.time.advance(20_000);
+    expect(r.decisions).toHaveLength(2);
+    expect(r.decisions[1]?.events).toHaveLength(2);
+  });
+});
+
 describe('death and sleep', () => {
   it('a death clears pending wakes, digest and timers', () => {
     r.attention.onEvent(intent('in_1', 'running'));
