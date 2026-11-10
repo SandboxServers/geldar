@@ -2,7 +2,14 @@
  * The gate before `start`. It takes the facts the CLI collected (git, the benchmark gate file, the pins, Ollama,
  * the fresh-volume marker) and returns every missing item, each with what to do about it. Pure.
  */
-import { LIFE_ID, type PinnedModel, PROFILE_MODEL, type Profile } from './manifest.ts';
+import {
+  digestsMatch,
+  LIFE_ID,
+  type PinnedModel,
+  PROFILE_MODEL,
+  type Profile,
+  tagKey,
+} from './manifest.ts';
 
 export interface GateRecord {
   sha: string;
@@ -29,6 +36,12 @@ export interface PreconditionFacts {
 }
 
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
+
+/** The digest Ollama reports for a pin's tag, matching `tag` and `tag:latest` alike. */
+function observedFor(observed: Record<string, string | null>, tag: string): string | null {
+  const entry = Object.entries(observed).find(([name]) => tagKey(name) === tagKey(tag));
+  return entry?.[1] ?? null;
+}
 
 /** The models that may stay loaded: the profile's chat model, and the CPU-only embedding model. */
 export function allowedLoaded(profile: Profile, pins: PinnedModel[]): string[] {
@@ -69,10 +82,10 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
     missing.push('clean tree: the working tree has uncommitted changes; commit or remove them');
   missing.push(...gateProblems(f.gateJson, f.headSha));
   for (const pin of f.pins) {
-    const observed = f.observedDigests[pin.tag] ?? null;
+    const observed = observedFor(f.observedDigests, pin.tag);
     if (observed === null) {
       missing.push(`model pin ${pin.tag}: Ollama does not have it; pull it at the pinned digest`);
-    } else if (observed !== pin.digest) {
+    } else if (!digestsMatch(observed, pin.digest)) {
       missing.push(
         `model pin ${pin.tag}: Ollama reports ${observed}, shards/phase0.yaml pins ${pin.digest}`,
       );
@@ -88,7 +101,7 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
   }
   const allowed = allowedLoaded(f.profile, f.pins);
   for (const loaded of f.loadedModels) {
-    if (!allowed.includes(loaded)) {
+    if (!allowed.some((a) => tagKey(a) === tagKey(loaded))) {
       missing.push(
         `GPU: ${loaded} is loaded in Ollama; unload it (expected only ${allowed.join(', ')})`,
       );

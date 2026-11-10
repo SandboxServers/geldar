@@ -36,6 +36,23 @@ export function sha256Hex(data: string | Buffer): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
+/**
+ * The hex part of a digest. Pins carry `sha256:<hex>`; Ollama's `/api/tags` gives bare `<hex>`. Both reduce to the
+ * same lowercase hex, which is compared in full (never a prefix).
+ */
+export function digestHex(digest: string): string {
+  return digest.trim().toLowerCase().replace(/^sha256:/, '');
+}
+
+export function digestsMatch(a: string, b: string): boolean {
+  return digestHex(a) === digestHex(b);
+}
+
+/** A tag without its default `:latest`: Ollama lists `nomic-embed-text:latest` for the pin `nomic-embed-text`. */
+export function tagKey(tag: string): string {
+  return tag.endsWith(':latest') ? tag.slice(0, -':latest'.length) : tag;
+}
+
 /** The pins of `shards/phase0.yaml`: every `model_pins` entry, and the embedding model. Throws when a pin is missing. */
 export function readPins(shardYaml: string): PinnedModel[] {
   const doc = parse(shardYaml) as Record<string, unknown> | null;

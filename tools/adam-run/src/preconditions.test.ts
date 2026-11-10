@@ -80,6 +80,34 @@ describe('checkPreconditions', () => {
     expect(checkPreconditions(facts)).toEqual({ ok: true });
   });
 
+  it('matches a bare-hex Ollama digest to a sha256: pin, in both directions and in upper case', () => {
+    const bare = { ...good, observedDigests: { 'qwen3:8b': 'bbb' } };
+    expect(checkPreconditions(bare)).toEqual({ ok: true });
+    const pinBare = { ...good, pins: [{ tag: 'qwen3:8b', digest: 'bbb' }] };
+    expect(checkPreconditions(pinBare)).toEqual({ ok: true });
+    const upper = { ...good, observedDigests: { 'qwen3:8b': 'SHA256:BBB' } };
+    expect(checkPreconditions(upper)).toEqual({ ok: true });
+  });
+
+  it('refuses a real digest mismatch, and a prefix of the pinned digest', () => {
+    const other = { ...good, observedDigests: { 'qwen3:8b': 'ccc' } };
+    expect(checkPreconditions(other).ok).toBe(false);
+    const prefix = { ...good, observedDigests: { 'qwen3:8b': 'bb' } };
+    const verdict = checkPreconditions(prefix);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.missing.join('\n')).toContain('Ollama reports bb');
+  });
+
+  it('finds the embedding pin under the :latest tag Ollama lists', () => {
+    const facts = {
+      ...good,
+      pins: [...good.pins, { tag: 'nomic-embed-text', digest: 'sha256:ccc' }],
+      observedDigests: { ...good.observedDigests, 'nomic-embed-text:latest': 'ccc' },
+      loadedModels: ['qwen3:8b', 'nomic-embed-text:latest'],
+    };
+    expect(checkPreconditions(facts)).toEqual({ ok: true });
+  });
+
   it('the 32B profile needs no fresh-volume marker and runs ag_adam_01', () => {
     const facts: PreconditionFacts = {
       ...good,
