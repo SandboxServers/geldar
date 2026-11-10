@@ -349,6 +349,26 @@ describe('jobs', () => {
     expect((body.options as Record<string, unknown>).stop).toBeUndefined();
   });
 
+  it('retries once without thinking when the reasoning leaves no answer text', async () => {
+    ollama.handler = (req, res) =>
+      ollama.reply(res, req.body.think === true ? { message: { content: '' } } : answer);
+    await ready();
+    mind.push(mind.job({ reasoning: 'on', max_tokens: 1200 }));
+    const done = await mind.next('completion');
+    expect(done).toMatchObject({ type: 'completion', text: '{"ok":true}' });
+    expect(ollama.requests.map((r) => r.body.think)).toEqual([true, false]);
+    expect(ollama.requests[1]?.body.options).toMatchObject({ num_predict: 1200 });
+  });
+
+  it('answers internal, not an empty completion, when the retry is empty too', async () => {
+    ollama.handler = (_r, res) => ollama.reply(res, { message: { content: '  ' } });
+    await ready();
+    mind.push(mind.job({ reasoning: 'on' }));
+    const failed = await mind.next('error');
+    expect(failed).toMatchObject({ code: 'internal', message: 'Ollama gave no answer text' });
+    expect(ollama.requests).toHaveLength(2);
+  });
+
   it('answers timeout and aborts the HTTP call when the deadline passes mid-call', async () => {
     ollama.handler = () => {};
     await ready();

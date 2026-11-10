@@ -67,7 +67,7 @@ export function buildChatBody(request: ChatRequest): Record<string, unknown> {
  * `num_ctx` and `keep_alive`, so the model is resident with the configuration it will be served with.
  */
 export function ollamaWarm(baseUrl: string): WarmFn {
-  const chat = ollamaChat(baseUrl);
+  const chat = ollamaRequest(baseUrl);
   return async (pin, signal) => {
     await chat(
       {
@@ -83,8 +83,24 @@ export function ollamaWarm(baseUrl: string): WarmFn {
   };
 }
 
-/** Makes a {@link ChatFn} that talks to the Ollama at `baseUrl`. */
+/**
+ * Makes a {@link ChatFn} that talks to the Ollama at `baseUrl`. With `think` on, the reasoning can spend
+ * the whole output cap before any answer text (the cap counts thinking tokens), so an empty answer is
+ * retried once with thinking off; an answer still empty is an error, not an empty completion.
+ */
 export function ollamaChat(baseUrl: string): ChatFn {
+  const request1 = ollamaRequest(baseUrl);
+  return async (request, signal) => {
+    const first = await request1(request, signal);
+    if (first.text.trim() !== '') return first;
+    const second = await request1({ ...request, think: false }, signal);
+    if (second.text.trim() !== '') return second;
+    throw new OllamaError('internal', 'Ollama gave no answer text');
+  };
+}
+
+/** One `POST /api/chat` call with no retry; the empty answer is returned as it came. */
+function ollamaRequest(baseUrl: string): ChatFn {
   return async (request, signal) => {
     let res: Response;
     try {
