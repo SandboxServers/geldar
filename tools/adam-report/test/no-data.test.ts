@@ -48,6 +48,7 @@ describe('a run with no data at all', () => {
   it('never reports a PASS by default, and writes the window as empty', () => {
     const report = computeReport({ manifest: manifest(), criteria: criteria(), data: NO_DATA });
     expect(report.measures.some((m) => m.verdict === 'PASS')).toBe(false);
-    expect(report.window).toEqual({ from: '', to: '', thoughtRows: 0 });
+    expect(report.window).toEqual({ from: '', to: '', thoughtRows: 0, hours: 0 });
+    expect(report.run).toEqual({ aborted: false, partial: true });
   });
 });

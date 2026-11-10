@@ -71,7 +71,8 @@ export const MANIFEST_SCHEMA = 'adam-run-manifest/1';
 
 /**
  * Parses the manifest.json that `adam-run` writes. adam-run is the writer; this reader follows its field names.
- * adam-run records no restart, so `restarts` is empty: `planned_restart_at` is a plan, not a restart record.
+ * adam-run records no restart here, so `restarts` is empty: `planned_restart_at` is a plan, not a restart record.
+ * The restarts are read from status.log by cli.ts (status-run.ts).
  * Throws on a missing or malformed field, and on any other schema.
  */
 export function parseManifest(text: string): Manifest {

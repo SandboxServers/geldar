@@ -1,10 +1,11 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCriteria, parseManifest } from './config.ts';
 import { type ClientFactory, loadRunData, pgClientFactory, pgConfigFromEnv } from './db.ts';
 import { renderMarkdown, stableJson } from './render.ts';
 import { computeReport } from './report.ts';
+import { parseStatusLog } from './status-run.ts';
 
 export const USAGE =
   'usage: adam-report --life <id> --from <iso> --to <iso> --manifest <file> --out <dir> [--criteria <file>] [--format md|json|both]';
@@ -113,7 +114,11 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
   let report: ReturnType<typeof computeReport>;
   let generatedAt: string;
   try {
-    const manifest = parseManifest(readFileSync(args.manifest, 'utf8'));
+    const parsed = parseManifest(readFileSync(args.manifest, 'utf8'));
+    // status.log sits beside manifest.json in the run directory (tools/adam-run/src/ports.ts runPaths).
+    const statusFile = path.join(path.dirname(args.manifest), 'status.log');
+    const status = parseStatusLog(existsSync(statusFile) ? readFileSync(statusFile, 'utf8') : '');
+    const manifest = { ...parsed, restarts: status.restarts };
     const criteria = parseCriteria(readFileSync(args.criteria, 'utf8'));
     const factory = deps.connect(deps.env);
     const data = await loadRunData(
@@ -121,7 +126,7 @@ export async function run(argv: string[], deps: RunDeps): Promise<number> {
       { lifeId: args.lifeId, from: args.from, to: args.to },
       deps.signal,
     );
-    report = computeReport({ manifest, criteria, data });
+    report = computeReport({ manifest, criteria, data, status });
     generatedAt = deps.now().toISOString();
   } catch (err) {
     deps.log(`adam-report: ${err instanceof Error ? err.message : String(err)}`);

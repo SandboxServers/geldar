@@ -14,8 +14,10 @@ export interface Report {
   schema: typeof REPORT_SCHEMA;
   runId: string;
   lifeId: string;
-  /** The query window: the first and last thought of the life (ISO 8601, UTC). */
-  window: { from: string; to: string; thoughtRows: number };
+  /** The query window: the first and last thought of the life (ISO 8601, UTC), and its length in hours. */
+  window: { from: string; to: string; thoughtRows: number; hours: number };
+  /** From status.log: an abort line makes the run aborted; no end line makes the window partial. */
+  run: { aborted: boolean; partial: boolean };
   manifest: {
     worldSeed: string;
     gitSha: string;
@@ -67,6 +69,11 @@ export function computeReport(input: ReportInput): Report {
   const times = thoughts.map((t) => t.atMs);
   const from = times.length === 0 ? '' : new Date(Math.min(...times)).toISOString();
   const to = times.length === 0 ? '' : new Date(Math.max(...times)).toISOString();
+  const hours =
+    times.length === 0
+      ? 0
+      : Math.round(((Math.max(...times) - Math.min(...times)) / 3_600_000) * 100) / 100;
+  const status = input.status ?? { restarts: [], aborted: false, ended: false };
   const windowText = `${from} to ${to} (${thoughts.length} thought rows)`;
   const intentMap = intentByAction(actions);
   const bodyRestarts = manifest.restarts.filter((r) => r.kind === 'body').length;
@@ -114,7 +121,8 @@ export function computeReport(input: ReportInput): Report {
     schema: REPORT_SCHEMA,
     runId: manifest.runId,
     lifeId: manifest.lifeId,
-    window: { from, to, thoughtRows: thoughts.length },
+    window: { from, to, thoughtRows: thoughts.length, hours },
+    run: { aborted: status.aborted, partial: !status.ended },
     manifest: {
       worldSeed: manifest.worldSeed,
       gitSha: manifest.gitSha,
