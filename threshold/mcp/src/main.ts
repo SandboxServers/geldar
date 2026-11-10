@@ -395,10 +395,16 @@ async function stopInOrder(
 }
 
 /** The shard rules the `shard/rules` resource shows, from the loaded config. */
-function shardRules(config: McpConfig) {
+export function shardRules(config: McpConfig) {
   return {
     chatRadius: config.chat.radius,
     waitCapSeconds: config.sovereign.waitCapSeconds,
     tickRate: config.tickRate,
+    maxBodyBytes: config.sovereign.maxBodyBytes,
+    maxResultBytes: config.sovereign.maxResultBytes,
+    presence: {
+      leaseSeconds: config.sovereign.presence.leaseSeconds,
+      hibernateAfterSeconds: config.sovereign.presence.hibernateAfterSeconds,
+    },
   };
 }
