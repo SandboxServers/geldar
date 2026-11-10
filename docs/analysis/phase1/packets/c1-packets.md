@@ -679,3 +679,120 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **index line to add**: for C1-02, the internal bind address and the mount for the world directory, read only.
 
 **On cap**: commit 1 and 2 are the minimum. The test is the gate, so it cannot be skipped.
+
+## Card C1-10: deploy to the node, restore test, first ranger, smoke and load (ops)
+
+- **id**: C1-10
+- **title**: Owner and ops checklist: deploy the colo shard to the node, restore-test on a scratch shard, first ranger over loopback or a tunnel, a clean 20-minute smoke, a load check against the production game server and CI
+- **wave**: C1
+- **lane**: ops (not a fan-out lane)
+- **status**: O (needs the node, the deploy account and the owner)
+- **depends-on**: C1-02 to C1-09 merged; owner confirms 0076, 0078, 0080
+- **size**: L (two sessions, plus the wall-clock smoke)
+- **decisions**: none reserved
+- **worknote**: `docs/analysis/phase1/worknotes/C1-10.md`; checklist in `docs/analysis/phase1/runbooks/c1-bringup.md` (new)
+
+**Not a coding card.** It writes the checklist and records what ran. An agent does not run any step on the node. An operator runs each step, with the output pasted into the worknote.
+
+**Required access (owner supplies; none of it goes in the repo)**: a deploy account on the node that can run Docker; the backup destination and the root-only encryption key file (0076); the telemetry endpoint, or an explicit decision to run without one; read access to the production game server's own health numbers; the Caddy host, for reload only. The node address is kept in the owner's notes, never in a file in the repo.
+
+**Steps**
+0. Gate: all wave gates green (section "Wave C1 gates"). Owner has confirmed 0076, 0078 and 0080. The backup destination accepts a test write.
+1. Read-only first: `docker version`, `docker compose ls`, `docker stats --no-stream` (the baseline), `ss -ltn` (listening ports; every one must be loopback or the intended public port). Record the production game server's latency baseline with a read-only probe the owner names.
+2. Deploy by pull, with the C1-04 scripts. The env file is generated root-only. Nothing secret is printed.
+3. Restore test: a checkpoint from C1-05b is restored to a scratch project. The manifests and the row counts match. The scratch project is removed afterwards.
+4. First ranger: a real MCP client over loopback or an SSH tunnel. `initialize`; `tools/list` returns 14 tools with no top-level `oneOf`, `anyOf` or `allOf`; wake Body; `look` shows the surroundings; `act` gather; `wait`. Paste the call names and result shapes (no tokens) into the worknote.
+5. Clean 20-minute smoke: no container restart, no error-level log line, memory under 90 percent of each limit in `docker stats`, free disk above 20 percent.
+6. Load check against the production game server and the CI runners, at a level the owner sets. Re-run the latency probe during the load.
+7. Caddy: `caddy reload` only. Never restart the shared Caddy.
+
+**Stop conditions** (any one stops the load, then goes to rollback):
+- the production game server's latency probe rises above the owner's threshold on two consecutive samples;
+- any container restarts during the smoke;
+- any memory limit is above 90 percent;
+- free disk falls below 20 percent;
+- a listening port is not on the intended list.
+
+**Rollback**
+1. Stop the colo project only: `docker compose -p <colo-project> down`. Never touch the production game server's project.
+2. Restore the previous Caddy site file from its backup, then `caddy reload`.
+3. Remove the scratch restore project. Keep the checkpoint and the logs.
+4. Write the stop and its reason into the worknote before any retry.
+
+**Acceptance checks**: the worknote holds each step's command, its output summary, and the stop conditions with the values seen. The C1 retro (section "Wave C1 gates") cites it.
+
+**On cap**: the checklist is the deliverable. A run that stops at a stop condition is a valid result; it is reported as `blocked`, not retried.
+
+---
+
+## Wave C1 gates, lanes, ledger rows and owner questions
+
+### Lanes
+
+```
+A  C1-00 (unblocker, contract) -> C1-02 (integration: compose, shards, geldar.ps1)
+B  C1-01 (refactors, flaky tests; no dependency)    C1-09 (BlueMap, internal)
+C  C1-03 (images)                                   C1-07 (metrics, replay bound)
+D  C1-04 (deploy by pull)                           C1-08 (crash hygiene)
+E  C1-05a (append-only journals) -> C1-05b (backup v1)
+F  C1-06a (NATS overlay live test) -> C1-06b (component credentials)
+ops  C1-10 (node; after C1-02 to C1-09 merge and the owner's confirmations)
+```
+
+Maximum six agents at once. Lanes C and D run alongside E and F. Only C1-00 and C1-02 touch shared files (section 0).
+
+### Wave-boundary gates
+
+1. Full `pwsh -NoProfile -File ./geldar.ps1 check`, with the integration case-count floor from `tools/repo-checks/src/integration-floor.json` (C1-00). The floor only ever rises. A count below it fails the gate.
+2. One read-only review per surface, each with the brief template below: deploy tooling (C1-04), backups (C1-05b), NATS auth (C1-06a and C1-06b), images and compose (C1-02, C1-03, C1-09). One fix round, aimed only at the review findings.
+3. One real-client live run, step by step, on the node (C1-10 step 4): a ranger over loopback or a tunnel. Pass: `initialize`; `tools/list` shows all 14 tools with no top-level combinator; wake Body; `look` shows the surroundings; `act` gather; `wait`. The transcript (no tokens) goes in the worknote.
+4. Retro in `retro/wave-c1.md`.
+5. Provisional decisions 0081 to 0089 each get an owner confirmation or a superseding record.
+
+**Review brief template** (one per surface; read-only; no edits):
+
+```
+Surface: <deploy tooling | backups | NATS auth | images and compose>
+Worktree: <absolute path>, commit <sha>
+Read: the cards for the surface in c1-packets.md; decisions <list>; the diff since the wave base.
+Look for: secrets or account names in any tracked file; a public port not in the intended list; a test that cannot fail; a fallback that allows on error; a file over 700 lines.
+Do not: edit files, run a live probe, restart any service.
+Output: findings as file:line, severity (block, fix, note), and one line of evidence each. Max 15 findings.
+```
+
+### Ledger rows (for pasting later; the ledger README is not edited here)
+
+| id | title | lane | depends | status |
+|---|---|---|---|---|
+| C1-00 | Contract for the colo shard, repo gates | A | none | B |
+| C1-01 | Split over-500 files, quarantine flaky tests | B | none | B |
+| C1-02 | Integration: colo compose, shard config, geldar.ps1 | A | C1-00 | B/O |
+| C1-03 | Body-host and Mind-host images | C | C1-00 | B |
+| C1-04 | Non-PowerShell deploy by pull | D | C1-00 | B/O |
+| C1-05a | Append-only journals, reset creates a new shard | E | C1-00 | B |
+| C1-05b | Backup v1 per 0076 | E | C1-00, C1-05a | B/O |
+| C1-06a | NATS overlay live test | F | C1-00 | B |
+| C1-06b | Component credential reads | F | C1-06a | B |
+| C1-07 | Metrics exporters, replay bound | C | C1-00 | B/O |
+| C1-08 | Crash hygiene | D | C1-00 | B |
+| C1-09 | BlueMap pinned, internal | B | C1-00 | B |
+| C1-10 | Node deploy, restore test, first ranger, smoke, load | ops | C1-02 to C1-09 | O |
+
+### Owner questions gating the wave
+
+- Confirm 0076 (backup scope), 0078 (Mind placement) and 0080 (NATS cutover). C1-05b and C1-06a wait on the first two.
+- Deploy account on the node with Docker (C1-04, C1-10).
+- Backup destination, and how the encryption key is handled: `age` or `gpg`, and where the root-only key file lives (C1-05b).
+- Telemetry endpoint. None exists in the repo; C1-07 stays off until one is named.
+- Where Adam-class agents think before the C4 gateway: a desktop Thinker over VPN, or `api-minds` (0078).
+
+### Conflicts found while writing these cards (resolve before dispatch)
+
+- Schedule ids: the schedule and the owner's brief write `P1-C1-xx` for the unblocker and `C1-xx` for the rest. The cards use `C1-xx` throughout, as C1-01 to C1-05a already do.
+- `compose/nats-auth.yml` (C1-06a): the schedule gives it to C1-06a, but conventions give `compose/*` to C1-02. The wave gate must name one owner.
+- `pnpm-lock.yaml` (C1-05b): the new `tools/backup` package needs an importer entry; conventions give the lockfile to C1-07 alone. Decide whether C1-05b adds its entry or C1-07 does.
+- `replay_minutes` (C1-07): the schedule places the key in `shards/phase0.yaml`, which C1-02 owns. The card defaults to 60 in code and asks C1-02 for the key.
+- Decision 0087 is shared by C1-06a and C1-06b; no spare number is left in the C1 block for a 0090-style extra. Decision 0081 to 0089 are all allocated, so C1-09 has no number.
+- Stale plan line: `plan.md` line 39 says `players down` does not clear the registry or whitelist. The code clears both for a stopped life. C1-08 re-verifies before any change.
+- The 60-minute replay window is not in the repo (C1-07 step 1 records how the window is computed today).
+- Node addresses, account names and telemetry targets stay out of the repo. The cards use placeholders.
