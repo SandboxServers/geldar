@@ -220,6 +220,13 @@ describe('guardProvenance', () => {
     ).toBe('report');
   });
 
+  it('keeps a reworded claim with no digest match a report, not an observation', () => {
+    const digest = { ownObservations: ['saw Pike stole the bread from the chest'], heard: [] };
+    expect(guardProvenance('The cave holds iron ore', 'observation', { digest, beliefs: [] })).toBe(
+      'report',
+    );
+  });
+
   it('keeps an existing report belief a report', () => {
     const beliefs = [{ provenance: 'report', text: 'Pike stole the bread' }] as MemoryRow[];
     expect(

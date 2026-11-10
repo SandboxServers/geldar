@@ -74,6 +74,13 @@ describe('animus config: the start-up waits', () => {
     doc.mind.max_commitments = 0;
     expect(() => parseAnimusConfig(doc)).toThrow('mind.max_commitments');
   });
+
+  it('reads memory.fatigue_rule (default on) so the fatigue switch comes from the config', () => {
+    const doc = approvedDoc();
+    expect(parseAnimusConfig(doc).memory.fatigueRule).toBe(true);
+    doc.memory.fatigue_rule = false;
+    expect(parseAnimusConfig(doc).memory.fatigueRule).toBe(false);
+  });
 });
 
 describe('animus config', () => {
