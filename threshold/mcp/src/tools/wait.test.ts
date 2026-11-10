@@ -170,3 +170,42 @@ describe('wait', () => {
     expect(touchPresence).toHaveBeenCalledWith(LIFE);
   });
 });
+
+describe('wait max_seconds cap', () => {
+  it('serves a max_seconds above 240 as 240 seconds, not the requested 1000', async () => {
+    const { clock, deps } = setup();
+    let settled = false;
+    const p = wait(deps, { lifeId: LIFE, maxSeconds: 1000 }).then((out) => {
+      settled = true;
+      return out;
+    });
+    await advance(clock, 240);
+    expect(settled).toBe(true);
+    const out = await p;
+    expect(out.ok && out.result.wake_reason).toBe('timeout');
+    expect(clock.nowMs()).toBe(240_000);
+  });
+
+  it('allows a max_seconds of exactly 240', async () => {
+    const { clock, deps } = setup();
+    let settled = false;
+    const p = wait(deps, { lifeId: LIFE, maxSeconds: 240 }).then((out) => {
+      settled = true;
+      return out;
+    });
+    await advance(clock, 239);
+    expect(settled).toBe(false);
+    await advance(clock, 1);
+    expect(settled).toBe(true);
+    const out = await p;
+    expect(out.ok && out.result.wake_reason).toBe('timeout');
+    expect(clock.nowMs()).toBe(240_000);
+  });
+
+  it.each([0, -5])('returns at once with timeout for a max_seconds of %i', async (maxSeconds) => {
+    const { clock, deps } = setup();
+    const out = await wait(deps, { lifeId: LIFE, maxSeconds });
+    expect(out.ok && out.result.wake_reason).toBe('timeout');
+    expect(clock.nowMs()).toBe(0);
+  });
+});
