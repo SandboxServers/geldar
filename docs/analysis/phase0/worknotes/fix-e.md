@@ -35,3 +35,21 @@ fails when its line is reverted.
 
 - `cli.ts` `if (others.length > 0)` mutated to `> 999`: `cli.test.ts` "refuses a start while service processes of another run are alive" fails (expected 0 to be 1). Restored; clean.
 - `sequence.ts` failed `adam up` path: one line `await finish('abort', 'error', reason);` added before `await report(now);`. `sequence.test.ts` "a failed adam up runs no safe stop" fails (supervisor calls `stop:lantern-local` recorded). Restored; clean.
+
+## Items B and C (findings 4 and 5), session 2
+
+- B (be88e95): `liveOwner` drops the run-id match. A process started without `--run-id` has the marker, pid and
+  start time only; the run id is generated after start, so it cannot be in the command line. The packet's
+  "always include --run-id in the spawned process" is not possible for an operator-started process (`geldar.ps1`
+  passes the args through unchanged). Test: "a run started without --run-id is live to status and stop" (cli.test.ts).
+  Revert-check: run-id match restored on the one line; that test fails. Restored.
+- C1 (1f41c01): sampler count, latency and active intent take rows from the run start (`at >= $2`; intents via the
+  thoughts of the run). Test: "the sampler reads only this run" (adapters.test.ts). Revert-check: the count query's
+  `at >= $2` removed (the diff shows 2 lines: the SQL and its params); that test fails. Restored.
+- C2 (4479a3a): report intents, actions and receipts bound to the window. Test: "loadRunData reads only the window"
+  (adam-report test/db.test.ts). Revert-check: receipt window removed; that test fails. Restored.
+  Not run: `test/report.it.test.ts` needs Postgres and skips here; its query expectations were not re-checked.
+- C3 NOT DONE: the start precondition (refuse when the life already has thoughts or intents rows) needs a new
+  preflight fact in adapters.ts gather, checkPreconditions in preconditions.ts and the fake in test/fakes.ts.
+  Stopped for context. Decision 0064 wording still to be applied: "a fresh life id is needed".
+- Items 6-12 not started.
