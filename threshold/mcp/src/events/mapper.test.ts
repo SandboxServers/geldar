@@ -154,6 +154,14 @@ describe('mapMindEvent', () => {
     expect(ctx.runs.get(LIFE)?.startedMs).toBeNull();
   });
 
+  it('maps a no_plan wake with no intent to a neutral wake, never an intent end', () => {
+    const ctx = ctxWith({ wakeOn: null, startedMs: 0 });
+    const wake = event('wake', { reason: 'no_plan', tick: 1, intent_id: null });
+    const out = mapMindEvent(wake, 1, ctx);
+    expect(out).toEqual([expect.objectContaining({ kind: 'wake', seq: 1 })]);
+    expect(out.some((e) => e.kind === 'intent_finished')).toBe(false);
+  });
+
   it('maps reflex_fired and plugin sleep to reflex entries', () => {
     const ctx = ctxWith();
     expect(mapMindEvent(event('reflex_fired', { item: 'bread' }), 1, ctx)).toMatchObject([

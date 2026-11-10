@@ -200,7 +200,8 @@ export interface McpPlayerEvent {
     | "proposal"
     | "day_night"
     | "intent_finished"
-    | "reflex";
+    | "reflex"
+    | "wake";
   tick: number;
   text: string;
 }
@@ -357,6 +358,14 @@ export interface UntrustedWorldText {
 
 export interface PlaySurroundings {
   blocks_summary: string;
+  /**
+   * The block name under the feet (floor of y minus 1); air when there is none. Absent when the chunk is not loaded.
+   */
+  standing_on?: string;
+  /**
+   * The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded.
+   */
+  block_above_feet?: string;
   notable_blocks: {
     type: string;
     x: number;
@@ -10574,6 +10583,14 @@ export interface SnapshotSelf {
 
 export interface SnapshotSurroundings {
   blocks_summary: string;
+  /**
+   * The block name under the feet (floor of y minus 1); air when there is none. Absent when the chunk is not loaded.
+   */
+  standing_on?: string;
+  /**
+   * The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded.
+   */
+  block_above_feet?: string;
   notable_blocks: {
     type: string;
     x: number;

@@ -19,7 +19,8 @@ describe('authorized notable blocks', () => {
     world.set('stone', 5, 65, 0);
     const perception = createPerception(world.bot);
     expect(perception.surroundings().notable_blocks).toEqual([]);
-    expect(perception.surroundings().blocks_summary).toBe('');
+    // The wall is stone, which is not a notable kind but is counted: the summary says so, no chest.
+    expect(perception.surroundings().blocks_summary).toBe('1 stone nearby');
 
     world.clear(5, 65, 0);
     const seen = perception.surroundings();
@@ -142,8 +143,9 @@ describe('authorized notable blocks', () => {
     expect(result.notable_blocks).toHaveLength(64);
     expect(result.notable_blocks.some((b) => b.type === 'red_bed')).toBe(true);
     // Per kind group: at most 32 candidates each, so no more than 64 water and lava together.
-    expect(world.findCalls.every((call) => call.count === 32 && call.maxDistance === 16)).toBe(
-      true,
-    );
+    // The counts of natural blocks make their own call (radius 8); only the notable calls are checked.
+    const notable = world.findCalls.filter((call) => call.maxDistance === 16);
+    expect(notable.length).toBeGreaterThan(0);
+    expect(notable.every((call) => call.count === 32)).toBe(true);
   });
 });

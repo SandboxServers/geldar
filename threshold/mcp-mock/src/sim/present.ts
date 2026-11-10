@@ -62,6 +62,9 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
       case 'reflex':
         out.push({ ...base, type: 'reflex', text: 'Your body ate on its own.' });
         break;
+      case 'wake':
+        out.push({ ...base, type: 'wake', text: 'You wake with nothing underway.' });
+        break;
     }
   }
   return out;

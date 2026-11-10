@@ -123,6 +123,8 @@ function mapWake(
   ctx: MapContext,
 ): SimEvent[] {
   if (DAMAGE_WAKES.has(reason)) return [{ ...base, kind: 'damage', amount: 0 }];
+  // A restarted Body with nothing to resume: the player never had an intent, so no intent ended.
+  if (reason === 'no_plan' && intentId === null) return [{ ...base, kind: 'wake' }];
   if (reason === 'no_plan') {
     ctx.runs.set(lifeId, { wakeOn: null, startedMs: null });
     return [{ ...base, kind: 'intent_finished', outcome: 'failed' }];

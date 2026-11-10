@@ -34,6 +34,7 @@ const EVENT_TEXT: Record<McpPlayerEvent['type'], string> = {
   day_night: 'The day turned.',
   intent_finished: 'A task you set finished.',
   reflex: 'Your body acted on its own.',
+  wake: 'You wake with nothing underway.',
 };
 
 /** Maps a sim event kind to a player event type; unknown kinds are not digested. */
