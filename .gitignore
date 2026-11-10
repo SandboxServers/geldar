@@ -44,3 +44,6 @@ plugin/.gradle/
 
 # Player skins (third-party fan art; never committed)
 skins/
+
+# The real public tunnel config (the template is compose/cloudflared/config.example.yml; decision 0053)
+compose/cloudflared/config.yml

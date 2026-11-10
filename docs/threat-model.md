@@ -12,6 +12,8 @@ Where this file says "later", the control is in the spec and not built yet. Wher
 
 **The rule that makes this safe:** no port binds to anything but `127.0.0.1`. In compose that means every `ports:` entry carries the `127.0.0.1:` prefix, because a bare `"5432:5432"` binds every interface. CI enforces the port part of this rule: `pnpm check:repo` (the loopback-ports check in `tools/repo-checks`) parses each `compose/*.yml` as YAML, with anchors, aliases and merge keys resolved. It fails when a service sets `network_mode` to `host` or to a value that is not a plain string, when a `ports:` or `network_mode` value contains `$` (interpolation is rejected because the value it resolves to is unknown), when a short `ports:` entry does not start with `127.0.0.1:`, or when a long-form mapping does not set `host_ip: 127.0.0.1`. `[::1]` hosts are rejected too, and ranges on loopback pass. A service that uses `extends:`, and a top-level `include:`, are rejected, because the definitions they import are not read. A file it cannot parse, or a `ports:` value of an unexpected shape, fails closed. `expose:` is not checked, because it publishes nothing to the host. Review covers everything else. CI does not check the other compose settings (`ONLINE_MODE`, the whitelist, secrets kept out of env); those are proven by hand with `compose/probe/login-probe.mjs`. If a service needs to be reachable beyond the host, Phase 0 is over and this model is re-reviewed.
 
+**The MCP exception (Wave M, built and not run).** The sovereign MCP (`threshold/mcp`) is the one service planned to be reached from off-host, once the stack moves to the colo and the owner takes the public-hostname decision (reserved as decision 0053). Until then it binds `127.0.0.1` on the host. Inside its container it binds `0.0.0.0` only with `GELDAR_MCP_IN_CONTAINER=1`, and `compose/mcp.yml` publishes `127.0.0.1:8788:8788` and nothing else. Nothing in the Wave M packets runs a tunnel, sets a public name or opens a port off-host. The off-host rows in sections 2, 3 and 7 are the review that must happen before that move.
+
 ## 2. Assets, actors and trust boundaries
 
 Condensed from [spec 8.1](spec.md#81-assets-actors-trust-boundaries).
@@ -30,9 +32,10 @@ Condensed from [spec 8.1](spec.md#81-assets-actors-trust-boundaries).
 
 | Actor | Trust | Phase 0 |
 |---|---|---|
-| Internet, unauthenticated | None | Exists as an actor but has no path in: nothing listens off-host. |
+| Internet, unauthenticated | None | Exists as an actor. Phase 0: no path in, nothing listens off-host. After the colo move: a path only to `/p/<player_id>` through the tunnel's ingress rule, then the MCP's Host and Bearer checks (section 3). |
 | Patron (Thinker) | Low | Later. The local Thinker is ours. |
-| Sovereign player's human | Low to medium | Later (Phase 2). |
+| Sovereign player's human | Low to medium | Wave M builds the MCP for them: one bearer token per player, issued by `mcp-tokens`. The human's CLI and OAuth are Phase 2. |
+| Sovereign player's agent session (an MCP client) | Low. A model driven by the human; its inputs include in-world text. | Built, not run. Calls the 14 tools over HTTP with its player's token, and reaches only its own Body. |
 | Watcher | Medium, read-only | Later. Thought Stream v0 is localhost only. |
 | Ghost | Medium, spectator | Later. |
 | Agent (AI, in-world) | None. Generates code and text by design. | Exists. Reaches the Body API and in-world mechanics, never a command, a network or a file. |
@@ -45,6 +48,8 @@ Condensed from [spec 8.1](spec.md#81-assets-actors-trust-boundaries).
 | Internet to DMZ, DMZ to internal | Later. Replaced by the loopback-only rule. |
 | Thinker output to Mind validator | Exists. The local Thinker is a boundary even though we run it: its output is untrusted text. |
 | MCP tool input to Mind validator | Later. |
+| Internet or tunnel to the MCP | Later (colo move). Gates: the tunnel ingress rule, the Host allow-list and the Bearer token (section 3). |
+| MCP to NATS and Postgres | Planned (WM-02 to WM-11). Phase 0 NATS has no per-subject authorization; see section 3. |
 | Agent code to sandbox | Exists once `define_skill` lands (spec 5.11). |
 | Human to spectator enforcement | Later. |
 | In-world text to a human's CLI | Later. |
@@ -67,6 +72,13 @@ Each row accepts input. Rule for all: bind `127.0.0.1` (every compose port writt
 | Ollama | Host, `127.0.0.1:11434`. | Default loopback binding. Never set `OLLAMA_HOST` to a non-loopback address. | A local process can use the model. Only prompts are at risk. |
 | Thought Stream v0 | `127.0.0.1` only. | Read-only page tailing the journal. No endpoint accepts input that reaches the world. | Prompts are visible to whoever opens it. Prompts hold agent memory and nothing else (spec 8.10). |
 | The repo | Public. | No secrets, account names or non-loopback IPs committed; `.env` and `compose/secrets/` are gitignored; `.env.example` is committed. | A mistake leaks a credential. CI and review check it. |
+| Wave M: MCP HTTP (`threshold/mcp`) | `127.0.0.1:8788` on the host (`compose/mcp.yml`). The container binds `0.0.0.0` only with `GELDAR_MCP_IN_CONTAINER=1`, and the overlay publishes `127.0.0.1:8788:8788` alone. Built, not run. | Config refuses any other bind address (`threshold/mcp/src/config.ts`, tested). The loopback-ports check reads the overlay. Per-player bearer tokens and the Host allow-list are enforced in the HTTP layer (WM-03), which is not in the tree yet. | A local process can call the MCP as any player whose token it holds. Accepted: single-user machine. |
+| Wave M: bearer tokens (`mcp-tokens` files, `mcp_tokens` table) | Token format `gmcp-` plus 64 hex characters. Operator files `*tokens*.json` are gitignored and dockerignored. Postgres keeps only `HMAC-SHA256(pepper, token)`. | The pepper is a Docker secret file, never an environment value. The repo checks fail on any committed `gmcp-` token. Each token maps to one player id. Revocation applies to the next call (the WM-11 e2e covers revoke during a `wait`). Static tokens are a deviation (section 7). | A leaked token is the player's whole agency until it is revoked. A token in a transcript or a shared log is live. Accepted for Phase 0; OAuth scopes come before the public move. |
+| Wave M: MCP to NATS (the body gateway, WM-04 and WM-11) | The MCP's own NATS connection carries the book requests, the plan actions and the event stream for the player's Body. Built with WM-04 and WM-11. | Subjects follow the contract; the MCP sends only its player's life. Sovereign calls go to the event log with no token or session field. | Phase 0 NATS is open (the NATS row). Code execution in the MCP can publish anything a local process can. The least-privilege user for the MCP is follow-up WM-10b, not in this change. |
+| Wave M: MCP to Postgres (`sovereign` tables, WM-02) | The MCP connects as its own role with the password in a Docker secret file. | Grants are set in `sql/0002` (WM-02) and reviewed there. The pepper is held in a separate secret file. | Code execution in the MCP reaches the tables that role can write, which includes budget and token rows. Accepted until the NATS and Postgres accounts exist (section 6). |
+| Wave M: MCP container (`threshold/mcp/Dockerfile`, `compose/mcp.yml`) | Built, not run. The Node base image is pinned by digest (the same digest as the mock). The final stage runs as uid 1000 with a read-only root and a tmpfs `/tmp`. `cap_drop: ALL`, `no-new-privileges`, a 512 MB memory cap and 128 pids. Secrets are files. The build context is an allowlist; no token or env file enters the image. | `threshold/mcp/src/container.test.ts` checks each of these and the dockerignore. The image has no entrypoint file until WM-11 adds `src/cli.ts`, so it cannot start yet. | A bug in the MCP runs with the container's limits, not the host's. Image scanning and an SBOM are section 6 items. |
+| Wave M: Cloudflare Tunnel template (`compose/cloudflared/config.example.yml`) | Template only. A placeholder hostname; one ingress rule for `^/p/[a-z][a-z0-9-]{1,38}$` to the MCP on loopback; a final `http_status:404`. The real config is gitignored. Nothing runs. | Outbound-only tunnel, so no inbound port. The ingress rule passes only the player path. Before the move: edge WAF and rate limit, Bot Fight Mode and challenges off for the hostname, and a proof that the 25 s keepalive beats the 100 s proxied-response timeout. | Cloudflare terminates TLS and is a trusted party (section 6). The edge limits are not yet configured, so flood traffic reaches the MCP's own limits. |
+| Wave M: MCP denial of service | `wait` capped at 240 s; a budget of 30 credits per real hour (cap 240); `act`, `say` and intents cost 1 each; the 512 MB and 128 pid limits. | The budget is server-side (Postgres), and the Mind's own counts are authoritative (rule 6). | A token can spend its own budget at once. Traffic without a token is refused by the Bearer check (WM-03) and costs little. The edge rate limit (above) is the first line once the tunnel runs. |
 
 ## 4. Interface rules from day one
 
@@ -83,6 +95,8 @@ These hold in Phase 0 code so security bolts on later without interface changes.
 9. **No human act in the world** (Principle 1). Nothing we build lets a person speak, build, give items or intervene as or through an agent. There is no admin "say" or "teleport the agent" tool, no operator-injected prompt text, no hand-edited completion path. Operator tools read, start, stop and restore; they do not act. RCON is for infrastructure (whitelist, save, stop) and is exposed to no UI. One carve-out: benchmark and test control (tick rate, clearing the test area, benchmark setup) may run over RCON with no model attached. It never gives items to, or moves, an agent outside a benchmark.
 10. **Secrets are files, not environment values** (spec 6.7). Services read Docker secret files; logs and the journal never contain them.
 11. **Everything is recorded** (Principle 4), including rejected input. A rejection is evidence, not noise.
+12. **Credentials never leave the MCP's storage.** The MCP returns no bearer token, no pepper and no session id in a result, a log or an event. A token is stored only as its HMAC, and each token maps to exactly one player. The `sovereign_call` event has no token or session field (Wave M).
+13. **In-world text reaches an agent session only as `untrusted_world_text`** (decision 0034). Speech, sign text, book text and player names never appear in a field the tool schema treats as an instruction.
 
 ## 5. Prompt injection
 
@@ -98,7 +112,8 @@ These hold in Phase 0 code so security bolts on later without interface changes.
 | The skill sandbox and the host (`define_skill` code) | Vulnerability if it escapes | Forbidden-token scan plus sandbox (rule 8). |
 | Paper's command system | Vulnerability if it passes | No permissions; chat is not parsed for commands; mechanics use plugin messaging. |
 | Operator tooling (Thought Stream, logs, journal viewers) | Vulnerability if it renders active content | Render agent text as plain text, escape HTML, never evaluate it. |
-| The Historian, Discourse, a human's CLI | Later | Spec 8.5 and 8.4b. |
+| A sovereign player's agent session (its `look`, `wait` and `read_book` results) | In-world, then a validator matter | The same wrapper as above (rule 13). The agent's `act` intents are checked against the plan's ids; an unknown verb is rejected and counted against the budget. The session has no command permissions (rule 7). |
+| The Historian, Discourse, a human's CLI | Later | Spec 8.5 and 8.4b. A CLI, when it exists, renders in-world text as plain text, as operator tooling does. |
 
 ## 6. Open items for Phase 2
 
@@ -114,6 +129,10 @@ These hold in Phase 0 code so security bolts on later without interface changes.
 | Logging, detection, response, an incident runbook | [8.8](spec.md#88-logging-detection-response) |
 | Assurance: external review and a test plan for exposed surfaces | [8.9](spec.md#89-assurance) |
 | Accepted limits to restate at the gate | [8.10](spec.md#810-what-this-does-not-protect-against-said-plainly) |
+| Least-privilege NATS user for the MCP (follow-up WM-10b: credentials, a NATS config file, the compose block) | 8.3, 8.5 |
+| OAuth scopes in place of static bearer tokens for sovereign players | [8.4b](spec.md#84b-sovereign-players-oauth-scopes-and-the-humans-machine) |
+| Tunnel edge controls (WAF, rate limit, challenges off for the hostname) and the 25 s keepalive proof against the 100 s timeout | [8.6](spec.md#86-host-hardening-every-colo-box) |
+| Image build and scan for `threshold/mcp` (ops follow-up), and whether to switch the Dockerfile to `pnpm deploy` | [8.7](spec.md#87-supply-chain) |
 
 ## 7. Deviations from section 8
 
@@ -122,3 +141,5 @@ These hold in Phase 0 code so security bolts on later without interface changes.
 - **Local Thinker is a boundary.** The spec treats Thinker output as untrusted because Patrons are low-trust. This file keeps the same boundary for our own Thinker so the validator is exercised from the start.
 - **Operator tooling as an injection target.** Section 8 does not list the Thought Stream or journal viewers; section 5 does.
 - **Rejected input is recorded.** Rule 11 makes explicit what Principle 4 implies.
+- **Static bearer tokens instead of OAuth.** Spec 8.4b asks for OAuth scopes for sovereign players. Wave M uses one `gmcp-` token per player, stored as an HMAC in Postgres and issued and revoked by `mcp-tokens`. This is accepted for the loopback stage and is re-reviewed before the public move.
+- **An off-host MCP, planned.** Section 1 records the exception. The MCP is the only surface this file expects to be reached from off-host; no tunnel runs and no public name is set by Wave M.

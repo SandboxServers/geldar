@@ -31,7 +31,7 @@ Planned by later packets (not yet present): `src/store/**` (WM-02), `src/http/**
 `src/events/**` and `src/tools/wait.ts` (WM-04), `src/tools/{act,say}.ts`, `src/budget/**`,
 `src/record/**` (WM-05), `src/tools/{look,status,sleep,journal,read-book,unavailable}.ts` and
 `src/resources.ts` (WM-06), `src/body-gateway.ts`, `presence.ts`, `world.ts`, `main.ts`, `cli.ts`,
-`index.ts` (WM-11), `Dockerfile` and the hosting section (WM-10).
+`index.ts` (WM-11). The `Dockerfile`, its dockerignore and the hosting section are WM-10.
 
 Tools that read or write outside this package: `tools/migrate` (WM-02), `tools/mcp-tokens`
 (WM-09), `tools/players-cli` (WM-12). `golem/src/books/**` (WM-07) and `golem/src/players/**`
@@ -83,6 +83,48 @@ invalid. Environment: `GELDAR_SHARD`, `GELDAR_NATS_URL`, `POSTGRES_HOST`, `POSTG
 only; no IP literal, `localhost`, `*.local`, `*.internal` or userinfo; may be unset in local mode
 with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` only with
 `GELDAR_MCP_IN_CONTAINER=1`).
+
+## Hosting
+
+Status: built and not run. The image builds from the repo root (`threshold/mcp/Dockerfile`), and
+`compose/mcp.yml` overlays it on the stack. Its entry point, `src/cli.ts`, arrives in WM-11, so the
+container has nothing to start until then. Nothing here is secret: every value below is a placeholder.
+
+### Local use (loopback)
+
+```
+docker compose -f compose/phase0.yml -f compose/mcp.yml up -d geldar-mcp
+```
+
+The overlay publishes `127.0.0.1:8788` and nothing else. A client on the host calls
+`http://127.0.0.1:8788/p/<player_id>`. A container on the same PC (Docker Desktop) calls
+`http://host.docker.internal:8788/p/<player_id>`, which reaches the host's loopback; the Host header
+it sends must be in `GELDAR_MCP_DEV_HOSTS`, which the overlay sets to
+`host.docker.internal,127.0.0.1,localhost`.
+
+Each request sends `Authorization: Bearer <token>`. The token is the player's value from the
+`mcp-tokens` file, which lives outside the repo (`<tokens-file>`). Never paste a token into a README,
+a commit, a log or a chat. The DB password and the pepper are Docker secret files in
+`compose/secrets/` (gitignored); the container reads them from `/run/secrets/`.
+
+### Later: the public tunnel (not run)
+
+The public name is owner decision 0053, reserved and not taken. When it is taken, these are the steps:
+
+1. Pick the hostname (placeholder `mcp.<your-domain>`) and set `GELDAR_MCP_PUBLIC_HOST` to it.
+   It must be a DNS name, not an IP literal.
+2. Copy `compose/cloudflared/config.example.yml` to `compose/cloudflared/config.yml` (gitignored),
+   and replace the hostname placeholder and `<tunnel-id>`.
+3. Uncomment the `cloudflared` block in `compose/mcp.yml`. It runs only under the `public` profile,
+   with the image pinned by tag and digest.
+4. In Cloudflare, for that hostname: turn Bot Fight Mode and challenges off (they break Bearer
+   clients), add a WAF rule and a rate limit for `/p/*`, and let no other path reach the tunnel.
+5. Prove the keepalive: a 240 s `wait` must receive its 25 s keepalives before Cloudflare's 100 s
+   proxied-response timeout.
+6. Re-review `docs/threat-model.md` sections 2, 3 and 7 before the first request from off-host.
+
+Alternative: Tailscale Funnel needs no domain, but it has no edge limits, so the MCP's own limits
+carry all of the load. A port-forward on the home router is rejected: it exposes the home network.
 
 ## Dependency pins
 

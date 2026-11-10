@@ -1,0 +1,20 @@
+# Allowlist: nothing enters the build context unless named here.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.nvmrc
+!**/package.json
+!contract
+!animus/src
+!threshold/mcp
+!threshold/mcp-mock
+# The re-include above also matches every installed package.json; drop installed trees.
+**/node_modules/**
+**/node_modules
+**/*.test.ts
+threshold/mcp-mock/test-support
+threshold/mcp/test-support
+**/.env*
+**/*tokens*.json
+**/secrets

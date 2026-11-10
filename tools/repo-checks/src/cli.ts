@@ -4,7 +4,7 @@
  * working tree (an unstaged edit or an untracked file; CRLF pairs there are
  * left to git's conversion, a lone CR is not), on a
  * compose port that does not bind to loopback, on a workflow that is not valid
- * YAML or repeats a key, or on a decision record that
+ * YAML or repeats a key, on a sovereign MCP bearer token in any text file, or on a decision record that
  * `docs/decisions/README.md` does not index. Line caps cover
  * untracked, not-ignored files too, so a new file fails locally before it is
  * staged. Untracked CRLF needs no check: `.gitattributes`
@@ -24,6 +24,7 @@ import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
+import { findMcpTokens } from './mcp-token.ts';
 import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
 
 /** Every path below is relative to the repo root, wherever the CLI runs from. */
@@ -138,6 +139,15 @@ for (const file of [...tracked, ...untracked].filter((f) => isComposeFile(f.path
   for (const port of findPublicPorts(file.path, file.text)) {
     console.log(
       `error: ${port.path} service ${port.service}: ${port.reason} (docs/threat-model.md section 1)`,
+    );
+    failed = true;
+  }
+}
+
+for (const file of [...tracked, ...untracked]) {
+  for (const location of findMcpTokens(file.path, file.text)) {
+    console.log(
+      `error: ${location}: an MCP bearer token is committed; revoke it and remove it (docs/threat-model.md section 3)`,
     );
     failed = true;
   }
