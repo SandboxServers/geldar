@@ -1,0 +1,287 @@
+/**
+ * `act` (spec 5.15.3, Appendix K): one thought holding say, actions and intent, validated by the
+ * Mind's validator, charged per accepted item, and handed to the Body as one plan. The result
+ * indices are flat: say first, then the actions in order, then the intent. The action list is
+ * atomic: one bad action rejects every action, the bad ones with their code, the rest `batch_rejected`.
+ */
+
+import { newId } from '@geldar/animus/src/ids.ts';
+import { buildPlan } from '@geldar/animus/src/loop/plan.ts';
+import type { OutputError, OutputValidator } from '@geldar/animus/src/ports/index.ts';
+import type { ActResult, PlanAck, SovereignCallPayload, Thought } from '@geldar/contract';
+import { batchCost, type ChargedItem } from '../budget/cost.ts';
+import {
+  type BodyGateway,
+  BodyUnavailable,
+  type BudgetLedger,
+  type CallRecorder,
+  type Clock,
+  type PresenceStore,
+  type RateLimiter,
+} from '../ports.ts';
+
+/** A tool failure the player sees: a code and a fixed message, never echoing world text. */
+export class ActToolError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'ActToolError';
+    this.code = code;
+  }
+}
+
+/** Who is calling: the player from the URL and the life it maps to. */
+export interface Caller {
+  playerId: string;
+  lifeId: string;
+}
+
+/** Everything `act` needs from the outside. */
+export interface ActDeps {
+  body: BodyGateway;
+  budget: BudgetLedger;
+  presence: PresenceStore;
+  limiter: RateLimiter;
+  recorder: CallRecorder;
+  validator: OutputValidator;
+  clock: Clock;
+  /** `plan.expires_after_ticks` from the config. */
+  expiresAfterTicks: number;
+}
+
+/** The `act` input as the tool receives it, before the contract's union narrows it. */
+export interface ActArgs {
+  reasoning?: string;
+  say?: string | null;
+  intent?: unknown;
+  actions?: unknown[];
+}
+
+/** One item of the flat result list. `at` is the action's position in the list. */
+interface Slot {
+  kind: ChargedItem;
+  at: number;
+}
+
+const ACTION_PATH = /^\/actions\/(\d+)(\/|$)/;
+const SAY_PATH = /^\/say(\/|$)/;
+const INTENT_PATH = /^\/intent(\/|$)/;
+const ACTIONS_LIST_PATH = /^\/actions$/;
+
+/** The items of a thought, in result order: say, each action, intent. */
+export function slotsOf(args: ActArgs): Slot[] {
+  const slots: Slot[] = [];
+  if (args.say != null) slots.push({ kind: 'say', at: -1 });
+  const list = Array.isArray(args.actions) ? args.actions : [];
+  for (let at = 0; at < list.length; at++) slots.push({ kind: 'action', at });
+  if (args.intent !== undefined) slots.push({ kind: 'intent', at: -1 });
+  return slots;
+}
+
+/**
+ * The reason each slot is refused by the validator, or undefined when it passes. A failure on the
+ * whole thought refuses everything; one bad action refuses the whole action list (atomic).
+ */
+export function refusalsOf(errors: OutputError[], slots: Slot[]): (string | undefined)[] {
+  let whole: string | undefined;
+  let say: string | undefined;
+  let intent: string | undefined;
+  let list: string | undefined;
+  const actions = new Map<number, string>();
+  for (const error of errors) {
+    const action = ACTION_PATH.exec(error.path);
+    if (action) actions.set(Number(action[1]), actions.get(Number(action[1])) ?? error.code);
+    else if (ACTIONS_LIST_PATH.test(error.path)) list ??= error.code;
+    else if (SAY_PATH.test(error.path)) say ??= error.code;
+    else if (INTENT_PATH.test(error.path)) intent ??= error.code;
+    else whole ??= error.code;
+  }
+  const batchFailed = actions.size > 0 || list !== undefined;
+  return slots.map((slot) => {
+    if (whole !== undefined) return whole;
+    if (slot.kind === 'say') return say;
+    if (slot.kind === 'intent') return intent;
+    if (!batchFailed) return undefined;
+    return actions.get(slot.at) ?? list ?? 'batch_rejected';
+  });
+}
+
+/** Per-player locks: the snapshot, the plan and its submission run one at a time for a life. */
+const locks = new Map<string, Promise<void>>();
+
+/** Runs `fn` after every earlier call for the same life has finished. */
+export async function withPlayerLock<T>(lifeId: string, fn: () => Promise<T>): Promise<T> {
+  const previous = locks.get(lifeId) ?? Promise.resolve();
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => gate);
+  locks.set(lifeId, tail);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (locks.get(lifeId) === tail) locks.delete(lifeId);
+  }
+}
+
+/**
+ * Sends a thought as one plan: the snapshot, the plan built from it, and its submission, under the
+ * life's lock. A `stale_snapshot` refusal is retried once with a fresh snapshot. Throws
+ * `BodyUnavailable` when the Body does not answer.
+ */
+export async function submitThought(
+  deps: Pick<ActDeps, 'body' | 'clock' | 'expiresAfterTicks'>,
+  lifeId: string,
+  thought: Thought,
+): Promise<{ ack: PlanAck; thoughtId: string }> {
+  return withPlayerLock(lifeId, async () => {
+    let ack: PlanAck | undefined;
+    let thoughtId = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const snapshot = await deps.body.snapshot(lifeId);
+      thoughtId = newId('th');
+      const plan = buildPlan({
+        thought,
+        thoughtId,
+        snapshot,
+        expiresAfterTicks: deps.expiresAfterTicks,
+      });
+      ack = await deps.body.submitPlan(lifeId, plan);
+      if (ack.accepted || ack.rejection?.reason !== 'stale_snapshot') break;
+    }
+    if (ack === undefined) throw new BodyUnavailable('no plan was submitted');
+    return { ack, thoughtId };
+  });
+}
+
+/** Writes the `sovereign_call` event. A failed write is raised to the caller, not swallowed. */
+async function recordCall(deps: ActDeps, call: SovereignCallPayload): Promise<void> {
+  await deps.recorder.record(call);
+}
+
+/** `act`: validates the thought, reserves its credits, sends the plan, and settles the charge. */
+export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Promise<ActResult> {
+  const started = deps.clock.nowMs();
+  if (!deps.limiter.take(`act:${caller.lifeId}`, started).allowed) {
+    throw new ActToolError('rate_limited', 'Too many acts in a short time. Wait, then try again.');
+  }
+  const slots = slotsOf(input);
+  const judged = deps.validator.parseThought(JSON.stringify(input));
+  const refused: (string | undefined)[] = judged.ok
+    ? slots.map(() => undefined)
+    : refusalsOf(judged.errors, slots);
+  const survivors = slots.filter((_, i) => refused[i] === undefined);
+  const result = { accepted: [] as number[], rejected: [] as { index: number; reason: string }[] };
+  const reject = (index: number, reason: string): void => {
+    result.rejected.push({ index, reason });
+  };
+  let remaining = await deps.budget.balance(caller.lifeId, started);
+  let thoughtId: string | undefined;
+  let outcome: SovereignCallPayload['outcome'] = 'rejected';
+
+  try {
+    const survivorThought = judged.ok ? judged.value : reducedThought(input, slots, refused);
+    const kinds = survivors.map((slot) => slot.kind);
+    const reserve =
+      survivors.length === 0
+        ? undefined
+        : await deps.budget.reserve(caller.lifeId, batchCost(kinds), started);
+    if (reserve !== undefined) remaining = reserve.remaining;
+    const funded = reserve === undefined || reserve.ok;
+    slots.forEach((_, i) => {
+      if (refused[i] !== undefined) reject(i, refused[i] as string);
+    });
+    if (survivors.length > 0 && !funded) {
+      slots.forEach((_, i) => {
+        if (refused[i] === undefined) reject(i, 'budget_exhausted');
+      });
+    } else if (survivors.length > 0 && survivorThought !== undefined) {
+      const sent = await submitThought(deps, caller.lifeId, survivorThought);
+      thoughtId = sent.thoughtId;
+      if (sent.ack.accepted) {
+        slots.forEach((_, i) => {
+          if (refused[i] === undefined) result.accepted.push(i);
+        });
+      } else {
+        const reason = sent.ack.rejection?.reason ?? 'invalid_plan';
+        remaining = await deps.budget.refund(caller.lifeId, batchCost(kinds));
+        slots.forEach((_, i) => {
+          if (refused[i] === undefined) reject(i, reason);
+        });
+      }
+    }
+    outcome = result.accepted.length > 0 ? 'ok' : 'rejected';
+  } catch (err) {
+    if (!(err instanceof BodyUnavailable)) throw err;
+    remaining = await deps.budget.refund(caller.lifeId, batchCost(survivors.map((s) => s.kind)));
+    await deps.presence.wantBody(caller.lifeId, deps.clock.nowMs());
+    outcome = 'error';
+    await recordCall(deps, callPayload(caller, input, result, remaining, started, deps, outcome));
+    throw new ActToolError(
+      'body_unavailable',
+      'Your body is not reachable right now. Try again soon.',
+    );
+  }
+
+  result.rejected.sort((a, b) => a.index - b.index);
+  await recordCall(
+    deps,
+    callPayload(caller, input, result, remaining, started, deps, outcome, thoughtId),
+  );
+  return {
+    accepted: result.accepted,
+    rejected: result.rejected,
+    budget_remaining_thoughts: remaining,
+  };
+}
+
+/**
+ * The thought of the items that survive validation, for a partial batch: the valid say and intent
+ * only (the actions are all refused by the atomic rule). Undefined when nothing is left to send.
+ */
+function reducedThought(
+  input: ActArgs,
+  slots: Slot[],
+  refused: (string | undefined)[],
+): Thought | undefined {
+  const sayAt = slots.findIndex((slot) => slot.kind === 'say');
+  const intentAt = slots.findIndex((slot) => slot.kind === 'intent');
+  const sayKept = sayAt >= 0 && refused[sayAt] === undefined;
+  const intentKept = intentAt >= 0 && refused[intentAt] === undefined;
+  if (!sayKept && !intentKept) return undefined;
+  const reduced: Record<string, unknown> = {};
+  if (input.reasoning !== undefined) reduced.reasoning = input.reasoning;
+  if (sayKept) reduced.say = input.say;
+  if (intentKept) reduced.intent = input.intent;
+  return reduced as unknown as Thought;
+}
+
+/** The `sovereign_call` payload for one call. It carries only the player's own words. */
+function callPayload(
+  caller: Caller,
+  input: ActArgs,
+  result: { accepted: number[]; rejected: { index: number; reason: string }[] },
+  remaining: number,
+  started: number,
+  deps: ActDeps,
+  outcome: SovereignCallPayload['outcome'],
+  thoughtId?: string,
+): SovereignCallPayload {
+  return {
+    player_id: caller.playerId,
+    tool: 'act',
+    outcome,
+    accepted: result.accepted as SovereignCallPayload['accepted'],
+    rejected: result.rejected.slice(0, 8) as SovereignCallPayload['rejected'],
+    credits_charged: result.accepted.length,
+    budget_remaining: remaining,
+    latency_ms: Math.max(0, deps.clock.nowMs() - started),
+    ...(thoughtId === undefined ? {} : { thought_id: thoughtId }),
+    ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
+    ...(typeof input.say === 'string' ? { say: input.say } : {}),
+  } as SovereignCallPayload;
+}

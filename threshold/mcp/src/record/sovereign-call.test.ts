@@ -35,7 +35,7 @@ describe('sovereign_call record', () => {
   });
 
   it('gives a call with no plan a fresh id each time', () => {
-    const noPlan = { ...BASE, thought_id: undefined } as SovereignCallPayload;
+    const noPlan = { ...BASE, thought_id: undefined } as unknown as SovereignCallPayload;
     expect(sovereignCallMsgId(noPlan)).not.toBe(sovereignCallMsgId(noPlan));
   });
 
