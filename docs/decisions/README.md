@@ -74,4 +74,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0068](0068-prompt-v4-and-agent-visible-text.md) | Nothing an agent reads may say humans watch it or reveal the shard, harness or credits; prompt v4 is the default and released templates are immutable; persona lint with `--allow-meta` | Proposed (fix-c; owner amends the spec line ~1584) |
 | [0067](0067-nats-accounts-and-least-privilege.md) | NATS accounts and least-privilege users, opt-in until the stack is cut over | Accepted provisionally (orchestrator, owner may revise) |
 | [0069](0069-no-plan-wake-is-not-a-failure.md) | A no_plan wake with no intent is a neutral wake, not a failed intent; the player event type list gains `wake` | Accepted (fix-perception) |
+| [0070](0070-phase1-is-the-colo-first-shard.md) | Phase 1 is the colo-first shard: final environment, invite-only, not announced | Accepted (owner) |
 >
