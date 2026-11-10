@@ -298,3 +298,28 @@ describe('act: Body reasons as public codes', () => {
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
   });
 });
+
+describe('act: reasoning is optional in the input', () => {
+  it('sends a say given alone', async () => {
+    const h = harness();
+    const result = await actTool(h.deps, CALLER, { say: 'hi' });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+  });
+
+  it('sends a list of actions given alone', async () => {
+    const h = harness();
+    const result = await actTool(h.deps, CALLER, { actions: [GOTO] });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+  });
+
+  it('sends nothing for an empty input and charges nothing', async () => {
+    const h = harness();
+    const result = await actTool(h.deps, CALLER, {});
+    expect(result).toEqual({ accepted: [], rejected: [], budget_remaining_thoughts: 3 });
+    expect(h.body.plans).toHaveLength(0);
+  });
+});

@@ -182,14 +182,15 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     throw new ActToolError('rate_limited', 'Too many acts in a short time. Wait, then try again.');
   }
   const slots = slotsOf(input);
-  const judged = deps.validator.parseThought(JSON.stringify(input));
+  const thoughtInput = withReasoning(input);
+  const judged = deps.validator.parseThought(JSON.stringify(thoughtInput));
   let refused: (string | undefined)[] = judged.ok
     ? slots.map(() => undefined)
     : refusalsOf(judged.errors, slots);
   // A partial batch is sent as the thought of its survivors, which must pass the schema on its own.
   let thought: Thought | undefined = judged.ok
     ? judged.value
-    : reducedThought(input, slots, refused);
+    : reducedThought(thoughtInput, slots, refused);
   if (!judged.ok && thought !== undefined) {
     const checked = deps.validator.parseThought(JSON.stringify(thought));
     if (checked.ok) {
@@ -273,6 +274,14 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
 /** The charged kinds of a list of slots, in order. */
 function kindsOf(list: Slot[]): ChargedItem[] {
   return list.map((slot) => slot.kind);
+}
+
+/** The stand-in reasoning for a call that gave none: the thought requires it, the act input does not. */
+const ACT_REASONING = 'act';
+
+/** The input as the thought schema reads it. The recorded call keeps the player's own input. */
+function withReasoning(input: ActArgs): ActArgs {
+  return input.reasoning === undefined ? { ...input, reasoning: ACT_REASONING } : input;
 }
 
 /**
