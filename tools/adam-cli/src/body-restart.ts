@@ -95,7 +95,11 @@ async function waitGone(deps: RestartDeps, pid: number, ms: number): Promise<boo
   return true;
 }
 
-/** SIGTERM first (the Body keeps its checkpoint), SIGKILL only after the grace period. */
+/**
+ * SIGTERM first, then SIGKILL after the grace period. On POSIX a SIGTERM lets the Body write a final checkpoint.
+ * On Windows process.kill ends the process at once with no checkpoint, so the grace wait returns at once there and
+ * the Body resumes from its last checkpoint. SIGKILL is sent only when a POSIX Body ignores SIGTERM.
+ */
 async function terminate(deps: RestartDeps, pid: number, graceMs: number): Promise<void> {
   deps.signal(pid, 'SIGTERM');
   if (await waitGone(deps, pid, graceMs)) return;
