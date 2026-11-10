@@ -14,14 +14,14 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/mcp-db
-      GELDAR_MCP_PEPPER_FILE: /run/secrets/mcp-pepper
+      GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/postgres-mcp.txt
+      GELDAR_MCP_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
       # Only inside the container may the server bind 0.0.0.0; the port is still published on loopback alone.
       GELDAR_MCP_IN_CONTAINER: "1"
       GELDAR_MCP_BIND: 0.0.0.0
       # No public host yet (decision 0053 defers it). The dev hosts are the Host values local clients send.
       GELDAR_MCP_DEV_HOSTS: host.docker.internal,127.0.0.1,localhost
-    secrets: [mcp-db, mcp-pepper]
+    secrets: [postgres-mcp.txt, mcp-token-pepper.txt]
     ports:
       - "127.0.0.1:8788:8788"
     user: "1000:1000"
@@ -46,8 +46,11 @@ services:
     #   cap_drop: [ALL]
     #   security_opt: ["no-new-privileges:true"]
 
+# Each secret is named after its file, so Compose mounts it at /run/secrets/<file name>, the path the env above
+# reads. The names are the ones `mcp-tokens init` writes (tools/mcp-tokens/src/secret-files.ts); the test in
+# tools/repo-checks/src/mcp-overlay.test.ts fails when they drift apart.
 secrets:
-  mcp-db:
-    file: ./secrets/mcp-db.txt
-  mcp-pepper:
-    file: ./secrets/mcp-pepper.txt
+  postgres-mcp.txt:
+    file: ./secrets/postgres-mcp.txt
+  mcp-token-pepper.txt:
+    file: ./secrets/mcp-token-pepper.txt

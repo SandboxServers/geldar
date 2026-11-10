@@ -6,7 +6,7 @@ import { lifeIdFor, loadMcpConfig, parseMcpConfig, publicHostName, repoRoot } fr
 
 const ENV = {
   GELDAR_MCP_DB_PASSWORD_FILE: '/run/secrets/postgres-mcp.txt',
-  GELDAR_MCP_PEPPER_FILE: '/run/secrets/mcp-pepper.txt',
+  GELDAR_MCP_PEPPER_FILE: '/run/secrets/mcp-token-pepper.txt',
 };
 
 /** A fresh copy of the shipped shard file, so a test can break one key without touching the others. */

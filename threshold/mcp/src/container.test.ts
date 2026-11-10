@@ -48,7 +48,7 @@ function excluded(path: string): boolean {
 describe('threshold/mcp/Dockerfile.dockerignore', () => {
   it('keeps tokens, env files, secrets and tests out of the build context', () => {
     expect(excluded('threshold/mcp/mcp-tokens.json')).toBe(true);
-    expect(excluded('compose/secrets/mcp-db.txt')).toBe(true);
+    expect(excluded('compose/secrets/postgres-mcp.txt')).toBe(true);
     expect(excluded('threshold/mcp/.env.local')).toBe(true);
     expect(excluded('threshold/mcp/src/config.test.ts')).toBe(true);
     expect(excluded('threshold/mcp/src/store/node_modules/pg/index.js')).toBe(true);
@@ -141,6 +141,6 @@ describe('compose/mcp.yml', () => {
       expect(value, key).not.toMatch(/^(?:[a-z0-9]{32,}|gmcp-)/i);
     }
     expect(env.GELDAR_MCP_DB_PASSWORD_FILE).toMatch(/^\/run\/secrets\//);
-    expect(overlay.secrets['mcp-db']?.file).toMatch(/^\.\/secrets\//);
+    expect(overlay.secrets['postgres-mcp.txt']?.file).toMatch(/^\.\/secrets\//);
   });
 });
