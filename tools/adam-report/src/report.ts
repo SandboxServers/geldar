@@ -30,19 +30,32 @@ export interface Report {
   outcomes: Record<string, number>;
 }
 
-/** The model floor is the owner's recorded verdict; it is echoed, never computed here. */
+/** The tiers the owner may record as the floor (the Phase 0 tiers, by name or by model tag). */
+const FLOOR_TIERS = new Set(['8B', '32B', 'qwen3:8b', 'qwen3:32b']);
+
+/**
+ * The model floor is the owner's recorded verdict; it is echoed, never computed here. A value
+ * outside the allowed set is not a floor, so it is UNKNOWN. An allowed value is INFO, not a PASS.
+ */
 function modelFloor(criteria: Criteria): Measure {
   const base = {
     id: 'model_floor',
     title: 'Model floor (smallest model that passed)',
     window: 'criteria file',
   };
-  if (criteria.modelFloorVerdict === null)
-    return { ...base, verdict: 'UNKNOWN', values: {}, note: PENDING };
+  const recorded = criteria.modelFloorVerdict;
+  if (recorded === null) return { ...base, verdict: 'UNKNOWN', values: {}, note: PENDING };
+  if (!FLOOR_TIERS.has(recorded))
+    return {
+      ...base,
+      verdict: 'UNKNOWN',
+      values: { recorded },
+      note: `recorded value is not an allowed floor tier (${[...FLOOR_TIERS].join(', ')})`,
+    };
   return {
     ...base,
-    verdict: 'PASS',
-    values: { floor: criteria.modelFloorVerdict },
+    verdict: 'INFO',
+    values: { floor: recorded },
     note: 'recorded by the owner in the criteria file',
   };
 }
