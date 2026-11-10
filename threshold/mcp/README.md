@@ -125,6 +125,12 @@ be up first.
 ./geldar.ps1 mcp down                      # stops the container; volumes and the shard are kept
 ```
 
+A player's persona (`--identity-file`, `--goals-file`) is refused when it tells the character that
+humans or observers watch it, that it is an AI, a model or a simulation, or it names the harness,
+shard, colo or credits (decision 0068). Minecraft-the-game words are not refused: the Observer block,
+the Echo Shard, the end credits and spectator mode pass. Use `player add ... --allow-meta` only when
+the persona must keep such a line; the CLI prints a warning that it kept one.
+
 `mcp-tokens` and `db` are passthroughs to `tools/mcp-tokens` and `tools/migrate`; their usage lines
 print with no arguments. `mcp-tokens init` writes `compose/secrets/postgres-mcp.txt` (the MCP's Postgres
 password) and `compose/secrets/mcp-token-pepper.txt` (the token pepper); `compose/mcp.yml` mounts them under

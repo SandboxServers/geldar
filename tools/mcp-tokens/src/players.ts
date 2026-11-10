@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { checkOwnerId, type Sql } from './owners.ts';
+import { markText, personaMarks } from './persona-lint.ts';
 
 /** A player's identity, in bytes of UTF-8 (spec 5.15.5; multi-line markdown is allowed). */
 export const IDENTITY_MAX_BYTES = 8192;
@@ -34,6 +35,8 @@ export interface NewPlayer {
   name: string;
   harness: string;
   seed?: Seed;
+  /** Keeps a persona the lint refuses (`--allow-meta`). */
+  allowMeta?: boolean;
 }
 
 export type PlayerAction = 'pause' | 'resume' | 'retire';
@@ -73,12 +76,16 @@ export async function loadSovereignShard(path: string): Promise<SovereignShard> 
  * Reads the identity file (required) and the goals file (optional) as UTF-8 markdown, within the
  * byte limits. The size is checked before the file is read in full. Errors never echo contents.
  */
-export async function readSeedFiles(identityPath: string, goalsPath?: string): Promise<Seed> {
+export async function readSeedFiles(
+  identityPath: string,
+  goalsPath?: string,
+  allowMeta = false,
+): Promise<Seed> {
   const identity = await readLimited(identityPath, IDENTITY_MAX_BYTES, 'identity');
   const goals =
     goalsPath === undefined ? '' : await readLimited(goalsPath, GOALS_MAX_BYTES, 'goals');
   const seed = { identity, goals };
-  checkSeed(seed);
+  checkSeed(seed, allowMeta);
   return seed;
 }
 
@@ -88,13 +95,22 @@ async function readLimited(path: string, maxBytes: number, what: string): Promis
   return readFile(path, 'utf8');
 }
 
-export function checkSeed(seed: Seed): void {
+/**
+ * Refuses a persona that is empty or over its size, or that tells the character it is watched by
+ * humans, that it is software, or names the harness, shard, colo or credits. `allowMeta` (the
+ * `--allow-meta` flag) lets the persona through; the caller prints the warning.
+ */
+export function checkSeed(seed: Seed, allowMeta = false): void {
   if (seed.identity.trim() === '') throw new Error('the identity is empty');
   if (Buffer.byteLength(seed.identity, 'utf8') > IDENTITY_MAX_BYTES) {
     throw new Error(`the identity is over ${IDENTITY_MAX_BYTES} bytes`);
   }
   if (Buffer.byteLength(seed.goals, 'utf8') > GOALS_MAX_BYTES) {
     throw new Error(`the goals are over ${GOALS_MAX_BYTES} bytes`);
+  }
+  const marks = personaMarks(`${seed.identity}\n${seed.goals}`);
+  if (marks.length > 0 && !allowMeta) {
+    throw new Error(`the persona ${markText(marks)}; remove that, or pass --allow-meta to keep it`);
   }
 }
 
@@ -120,7 +136,7 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
   if (shard.harnesses[player.harness]?.enabled !== true) {
     throw new Error(`harness ${player.harness} is not enabled on shard ${shard.shard}`);
   }
-  if (player.seed !== undefined) checkSeed(player.seed);
+  if (player.seed !== undefined) checkSeed(player.seed, player.allowMeta === true);
   await transaction(sql, async () => {
     const owners = await sql.query(
       'SELECT player_cap FROM mcp_owners WHERE owner_id = $1 FOR UPDATE',

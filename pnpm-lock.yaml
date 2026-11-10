@@ -400,8 +400,13 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
 
+  tools/glass-ctl: {}
+
   tools/mcp-tokens:
     dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../../contract
       '@geldar/mcp':
         specifier: workspace:*
         version: link:../../threshold/mcp

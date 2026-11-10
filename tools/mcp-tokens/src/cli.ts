@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { markText, personaMarks } from './persona-lint.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
 import {
@@ -25,7 +26,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   owner add <id> [--cap N]              add an owner (default cap 3, at most 50)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
-                                        [--identity-file <f> [--goals-file <f>]]
+                                        [--identity-file <f> [--goals-file <f>]] [--allow-meta]
   player pause|resume|retire <id>
   token mint <player> --out <file>      write a new token to a file only you can read
   token list [--player <id>]            list tokens (never their hashes or values)
@@ -41,7 +42,7 @@ export interface Io {
 }
 
 /** Flags that take no value. Every other --flag takes the next argument. */
-const SWITCHES = new Set(['--force', '--i-understand', '--all']);
+const SWITCHES = new Set(['--force', '--i-understand', '--all', '--allow-meta']);
 
 export interface Parsed {
   positional: string[];
@@ -166,21 +167,29 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
     const goalsPath = optionalFlag(parsed, '--goals-file');
     if (goalsPath !== undefined && identityPath === undefined)
       throw new Error('--goals-file needs --identity-file');
+    const allowMeta = parsed.flags.has('--allow-meta');
     const player = {
       playerId: id,
       owner: requireFlag(parsed, '--owner'),
       life: requireFlag(parsed, '--life'),
       name: requireFlag(parsed, '--name'),
       harness: requireFlag(parsed, '--harness'),
+      allowMeta,
       ...(identityPath === undefined
         ? {}
         : {
             seed: await readSeedFiles(
               resolve(identityPath),
               goalsPath === undefined ? undefined : resolve(goalsPath),
+              allowMeta,
             ),
           }),
     };
+    const marks =
+      player.seed === undefined
+        ? []
+        : personaMarks(`${player.seed.identity}\n${player.seed.goals}`);
+    if (allowMeta && marks.length > 0) io.err(`warning: kept a persona that ${markText(marks)}`);
     await withSql(env, (sql) => addPlayer(sql, player, shard));
     io.out(`added player ${id} (life ${player.life}, owner ${player.owner})`);
     return;
