@@ -15,7 +15,7 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
    `geldar.ps1` test harness exists, so the subcommand was checked by running it and reading the file.
 3. Thinker socket shared secret (`animus/src/thinker/hub.ts`, `lantern-local/src/thinker.ts`): not started.
 4. Static no-credentials guard `tools/repo-checks/src/no-credentials.test.ts`: done (3 tests). It
-   fails when a tracked `probe-cred.txt` holds a `nats://user:pass@` URL (planted, confirmed, removed
+   fails when a tracked `probe-cred.txt` holds a NATS URL with an embedded user and password (planted, confirmed, removed
    from the index). Connect-path tests for the env reads: not started (no env reads exist yet).
 5. `docs/threat-model.md` and overlay docs: not started.
 

@@ -10,12 +10,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const FIXTURE_FILES = new Set(['golem/test/registry.test.ts']);
 
 /** Tracked paths that must never be committed, whatever their content. */
-const FORBIDDEN_PATHS = [
-  /^compose\/secrets\//,
-  /^compose\/nats-auth\.conf$/,
-  /\.creds$/,
-  /\.nk$/,
-];
+const FORBIDDEN_PATHS = [/^compose\/secrets\//, /^compose\/nats-auth\.conf$/, /\.creds$/, /\.nk$/];
 
 /** Content that is a credential: a private key, a NATS or URL password, or a NATS user with a password. */
 const FORBIDDEN_CONTENT = [
