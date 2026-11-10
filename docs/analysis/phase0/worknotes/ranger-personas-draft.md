@@ -1,4 +1,6 @@
-# The six rangers: draft persona seeds, in-universe characters (for the owner's approval)
+# The six rangers: persona seeds, in-universe characters (APPROVED by the owner, 2026-11-09)
+
+**Status: approved as written by the owner on 2026-11-09 ("Approve the drafts"). These are the seeds for `memory/identity.md` and `memory/goals.md` and for `agents.personality_seed`. A change needs the owner's say.**
 
 Revised 2026-11-09 after the owner's note: use the in-universe characters (the rule is against real people, not the characters they portray). Decision 0052: the first sovereign players are the original six Power Rangers, Claude Code sessions in containers under the owner's subscription, each with its own player repo. Each seed is the content for `memory/identity.md` (who they are; locked after birth) and `memory/goals.md` (starting goals; the player may change these). Player ids and Minecraft usernames are life ids (decision 0040): `ag_jason_01`, `ag_zack_01`, `ag_billy_01`, `ag_trini_01`, `ag_kimberly_01`, `ag_tommy_01`.
 
