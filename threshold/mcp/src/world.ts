@@ -139,6 +139,8 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       keepAlive: { start: () => () => undefined },
       log: deps.events,
       body: deps.body,
+      budget: deps.budget,
+      sleeps: deps.sleeps,
       runs: deps.runs,
       config: deps.wake,
       state: deps.waitState,

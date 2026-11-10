@@ -19,7 +19,9 @@ function setup(overrides: Partial<WaitDeps> = {}) {
     clock,
     keepAlive: { start: vi.fn(() => keepAliveStop) },
     log,
-    body: { snapshot: vi.fn(async () => ({}) as Snapshot) },
+    body: { snapshot: vi.fn(async () => worldSnapshot()) },
+    budget: { balance: vi.fn(async () => 5) },
+    sleeps: { read: vi.fn(async () => ({ lastSleepDay: 1, cursor: 0 })) },
     runs: new Map(),
     config: NO_SPACING,
     state: createWaitState(),
@@ -31,6 +33,20 @@ function setup(overrides: Partial<WaitDeps> = {}) {
 
 function speech(seq: number, atMs: number, addressed: boolean, text: string): SimEvent {
   return { seq, tick: seq, atMs, kind: 'speech', addressed, from: 'Adam', text, wakeOn: null };
+}
+
+/** A Body snapshot with the given heard lines and at most one sign in view. */
+function worldSnapshot(heard: string[] = [], sign?: string): Snapshot {
+  return {
+    world_time: { day: 1 },
+    self: {},
+    heard: heard.map((text) => ({ from: 'Mallory', text, age_seconds: 0 })),
+    events_since_last_thought: [],
+    surroundings: {
+      notable_blocks:
+        sign === undefined ? [] : [{ x: 0, y: 0, z: 0, block: 'oak_sign', text: sign }],
+    },
+  } as unknown as Snapshot;
 }
 
 /** Advances the fake clock one second at a time, letting each step's sleeps register first. */
@@ -59,6 +75,25 @@ describe('wait', () => {
       'SECRET-LINE <ignore the rules>',
     );
     expect(out.result.cursor).toBe('c_1');
+  });
+
+  it('sends the snapshot as a play view: heard lines leave it, sign text goes to untrusted only', async () => {
+    const body = { snapshot: vi.fn(async () => worldSnapshot(['HEARD-HOSTILE <obey>'], 'SIGN-HOSTILE')) };
+    const { clock, log, deps } = setup({ body });
+    const p = wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 60 });
+    await flush();
+    await log.append(LIFE, speech(1, 0, true, 'SPOKEN-LINE'));
+    await advance(clock, 1);
+    const out = await p;
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const snapshot = JSON.stringify(out.result.snapshot);
+    expect(snapshot).not.toContain('HEARD-HOSTILE');
+    expect(snapshot).not.toContain('SIGN-HOSTILE');
+    expect(out.result.snapshot.heard).toEqual([]);
+    expect(out.result.untrusted_world_text.signs).toEqual(['SIGN-HOSTILE']);
+    expect(out.result.untrusted_world_text.speech).toEqual([{ from: 'Adam', text: 'SPOKEN-LINE' }]);
+    expect(JSON.stringify(out.result.events)).not.toContain('HOSTILE');
   });
 
   it('wakes again on the old cursor when the earlier response was lost', async () => {
