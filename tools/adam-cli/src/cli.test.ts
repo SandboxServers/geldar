@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
-import { run, selectInFile } from './cli.ts';
+import { run, selectInFile, upLine } from './cli.ts';
 
 /**
  * The select keys of the committed strong life, written inline. The test never reads the live shard
@@ -26,6 +26,21 @@ function copyShard(): string {
   writeFileSync(file, SHARD_TEXT);
   return file;
 }
+
+describe('adam up prints the life the Mind selects', () => {
+  it('names the username the shard selects, not the fast entry of mind.lives', () => {
+    expect(upLine(SHARD_TEXT)).toBe('up: life ag_adam_03; see ./geldar.ps1 adam status');
+  });
+
+  it('names the fast life after adam select points the Mind at it', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const file = copyShard();
+    selectInFile(file, 'fast');
+    expect(upLine(readFileSync(file, 'utf8'))).toBe(
+      'up: life ag_adam_04; see ./geldar.ps1 adam status',
+    );
+  });
+});
 
 describe('adam select', () => {
   it('rewrites the life, the tier and the run tier to the fast life and back', () => {
