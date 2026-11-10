@@ -78,7 +78,9 @@ describe('wait', () => {
   });
 
   it('sends the snapshot as a play view: heard lines leave it, sign text goes to untrusted only', async () => {
-    const body = { snapshot: vi.fn(async () => worldSnapshot(['HEARD-HOSTILE <obey>'], 'SIGN-HOSTILE')) };
+    const body = {
+      snapshot: vi.fn(async () => worldSnapshot(['HEARD-HOSTILE <obey>'], 'SIGN-HOSTILE')),
+    };
     const { clock, log, deps } = setup({ body });
     const p = wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 60 });
     await flush();
