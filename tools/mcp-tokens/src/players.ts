@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { parse } from 'yaml';
-import { checkOwnerId, type Sql } from './owners.ts';
+import { checkCap, checkOwnerId, DEFAULT_OWNER_CAP, type Sql } from './owners.ts';
 
 /** A player's identity, in bytes of UTF-8 (spec 5.15.5; multi-line markdown is allowed). */
 export const IDENTITY_MAX_BYTES = 8192;
@@ -19,6 +19,8 @@ export interface SovereignShard {
   harnesses: Record<string, { enabled: boolean }>;
   /** The most credits a life can hold; a new life starts with a full balance. */
   capCredits: number;
+  /** The cap `owner add` gives an owner when no --cap is named (sovereign.owner_cap_default). */
+  ownerCapDefault: number;
 }
 
 /** A player's persona: the identity (required, markdown) and the goals (optional, markdown). */
@@ -62,7 +64,16 @@ export function parseSovereignShard(text: string): SovereignShard {
     allowed: sovereign.allowed === true,
     harnesses: (sovereign.harnesses ?? {}) as Record<string, { enabled: boolean }>,
     capCredits: budget.cap_credits,
+    ownerCapDefault: readOwnerCapDefault(sovereign.owner_cap_default),
   };
+}
+
+/** An absent owner_cap_default is the spec default; a present one must be a valid cap. */
+function readOwnerCapDefault(value: unknown): number {
+  if (value === undefined) return DEFAULT_OWNER_CAP;
+  if (typeof value !== 'number') throw new Error('sovereign.owner_cap_default must be a number');
+  checkCap(value);
+  return value;
 }
 
 export async function loadSovereignShard(path: string): Promise<SovereignShard> {
@@ -133,9 +144,7 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
       [player.owner],
     );
     if (Number(used.rows[0]?.n) >= Number(owner.player_cap)) {
-      throw new Error(
-        `owner ${player.owner} is at the cap of ${owner.player_cap} players on ${shard.shard}`,
-      );
+      throw new Error(`owner ${player.owner} is at the cap of ${owner.player_cap} players`);
     }
     await sql.query(
       `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,

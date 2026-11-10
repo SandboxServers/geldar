@@ -24,7 +24,10 @@ describe.skipIf(!integrationEnabled())('the owner cap in the database', () => {
   }
 
   /** An owner with the given cap, and a life and player for each status in `statuses`. */
-  async function owner(cap: number, statuses: string[]): Promise<{ ownerId: string; ids: string[] }> {
+  async function owner(
+    cap: number,
+    statuses: string[],
+  ): Promise<{ ownerId: string; ids: string[] }> {
     const suffix = freshSuffix();
     const ownerId = `it-cap-${suffix}`;
     await db().query('INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ($1, $1, $2)', [

@@ -2,7 +2,7 @@
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
-import { addOwner, DEFAULT_OWNER_CAP, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { addOwner, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
 import {
@@ -144,9 +144,9 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   const [verb, id, value] = args;
   if (verb === 'add' && id !== undefined && args.length === 2) {
     const cap = optionalFlag(parsed, '--cap');
-    await withSql(env, (sql) =>
-      addOwner(sql, id, cap === undefined ? DEFAULT_OWNER_CAP : parseCap(cap)),
-    );
+    const ownerCap =
+      cap === undefined ? (await loadSovereignShard(env.shardFile)).ownerCapDefault : parseCap(cap);
+    await withSql(env, (sql) => addOwner(sql, id, ownerCap));
     io.out(`added owner ${id}`);
     return;
   }
