@@ -186,4 +186,75 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 - **on-cap:** commit the passing tests; the rest goes to the worknote.
 - **index line to add:** `index: | [0107](0107-honest-sleep-mark.md) | Sleep mark is written on a completed Body result | Proposed |`
 
+### P1-C3-03: shelter intent and the `build` handler
+
+- **wave:** C3. **lane:** C. **size:** M (about 40k tokens). **status:** B.
+- **depends-on:** P1-C3-00 (the contract is unchanged, but the `source` column is used for sovereign shelter calls), P1-C3-02 (the sleep path it extends).
+- **may-edit:** `golem/src/actions/build.ts` and `golem/src/actions/build.test.ts` (new), `golem/src/actions/sleep.ts` and its test (enclosed rest), the action registry file that maps `do` names to handlers (find it by grep for `'sleep'` under `golem/src/body/`), the intent program registry (grep for an existing program name such as `hazard` or `burrow`), `golem/src/body/reflexes/panic-burrow.ts` only to export the existing burrow plan, `prompts/thought/v6.md` (new copy of v5 plus the `enclosed` line), `prompts/body-api/v2.json` only if its tool list needs the `build` entry, `tools/adam-report/src/survival.ts` and its test, `docs/analysis/phase1/worknotes/C3-03.md`, `docs/decisions/0107-*.md` (shared number, see C3-02).
+- **must-not-edit:** `docs/spec.md`, `contract/` (the `build` schema is already there), `sql/`, `shards/`, `compose/`, `geldar.ps1`, `package.json`, `golem/src/body/executor-action.ts` (C3-05 owns it), `prompts/thought/v5.md` (released, immutable, decision 0068).
+- **decisions:** 0107 (second use: section 3 of these notes and decision 0074 consequences).
+- **checks:** `./geldar.ps1 pnpm --filter @geldar/golem test` (confirm the package name in `golem/package.json`); the prompt golden tests; `tools/adam-report` test; typecheck and `pnpm format`; `./geldar.ps1 check`.
+- **steps:**
+  1. Write `build.ts` to the semantics of section 3: budget precheck, the 512 bound, the place order, the place preconditions, the partial-failure detail.
+  2. Register `build` in the action registry. Two-phase receipt: `prepared` before the first place, `committed` or `aborted` at the end (C3-05 writes the generic `prepared` path; this card calls the same helper).
+  3. Teach `sleep.ts` to accept an enclosed rest (`isEnclosed`, `golem/src/body/view.ts:112`) as well as a bed, keeping the result shape of C3-02.
+  4. Add the shelter intent: a program that runs the existing burrow plan on demand and then builds the blueprint if the cell is not enclosed. Its parameters: the blueprint name and the radius of the search.
+  5. Create `prompts/thought/v6.md`: a copy of v5 with one line that renders `enclosed` from the snapshot. Keep v5 unchanged; prompts load v6 only through the default in decision 0074 (owner confirms the default in the decision).
+  6. Update `tools/adam-report/src/survival.ts` so that "enclosed for a night" counts (decision 0074, point 2). Keep the bed rule as a second case.
+- **acceptance:**
+  - Build refuses 513 blocks (`invalid_args`, no placement). Revert-check: remove the bound; the test fails.
+  - Build refuses N blocks when the budget is N-1 (`limit_reached`, no placement; no partial build). Revert-check: remove the precheck and let blocks place; the test fails.
+  - Partial failure: the third of five blocks is occupied; the result is `failed` with `failed_index: 2`, and the first two stay placed. Revert-check: none needed beyond the test (a behaviour test).
+  - Enclosed rest: a sleep in an enclosed cell with no bed completes and the MCP mark is written (C3-02 path). Revert-check: restore the bed-only check; the test fails.
+  - Golden test: v6 renders `enclosed`; v5 output is byte-identical to before.
+  - Survival: an enclosed night passes the criterion; a night in the open fails it. Revert-check: restore the bed-only rule.
+- **commit:** `feat(golem): add the build handler with the 512-block bound and budget check` (build and tests); `feat(golem): accept an enclosed rest and add the shelter intent` (sleep, intent, reflex export); `feat(prompts): add thought template v6 that renders enclosed` (v6 and golden test); `fix(adam-report): count an enclosed night as rest` (survival, with decision 0107).
+- **on-cap:** commit the handler and its tests first; the shelter intent and the prompt may move to a follow-up card, recorded in the worknote.
+- **index line to add:** none, unless C3-00 has not yet merged 0107 (then the coder writes it: `index: | [0107](0107-honest-sleep-mark.md) | ...`, once, not twice).
+
+### P1-C3-04: roster and cap in the database, agents-per-player limit, measured thought deadline
+
+- **wave:** C3. **lane:** D. **size:** M (about 40k tokens). **status:** B.
+- **depends-on:** P1-C3-00 (the `mcp_roster` table), P1-C1-08 (the `owner add` default cap is read from the yaml, the fix that C1-08 makes).
+- **may-edit:** the `owner` and roster command code under `threshold/mcp/src/` (find it by grep for `owner add`), `threshold/mcp/test/` (new roster tests), `lantern-local/src/` only for the deadline measurement (find the module that enforces `deadline_s` by grep), `docs/analysis/phase1/worknotes/C3-04.md`, `docs/decisions/0108-*.md` (new).
+- **must-not-edit:** `docs/spec.md`, `contract/`, `sql/` (C3-00 owns it), `golem/` (C3-05 and C3-06 use it), `shards/phase0.yaml` (the deadline value does not change in this card), `compose/`, `geldar.ps1`, `package.json`.
+- **decisions:** 0108 only.
+- **checks:** `./geldar.ps1 pnpm --filter @geldar/mcp test`; the Lantern package test (name in its `package.json`); the integration test under `GELDAR_IT=1`; typecheck and `pnpm format`.
+- **steps:**
+  1. Move the roster and the cap into `mcp_roster` and `mcp_owners` (section 2). The owner cap default is read from the database; the yaml value is the initial seed only.
+  2. Enforce the agents-per-player limit (`max_agents`, default 1 **[J]**) when a sovereign player is started; refuse with a stable error code.
+  3. Keep trigger `0006` as it is; add a test that the trigger still refuses the 21st agent for the owner (decision 0052).
+  4. Measure the thought deadline: record the elapsed seconds of each thought job in the thought row (the column is added in C3-00 if the row has none; otherwise use the existing column). Do not change `deadline_s: 25`.
+  5. Write decision 0108 (Proposed): roster and cap source of truth, the agents-per-player default.
+- **acceptance:**
+  - A player with `max_agents = 1` cannot start a second agent (`roster_limit`). Revert-check: remove the check; the test fails.
+  - The owner cap comes from the database (`owner add` without `--cap` writes the database value). Revert-check: read the yaml value again; the test fails.
+  - The 21st agent for the owner is refused by the trigger (integration, `GELDAR_IT=1`).
+  - A thought that takes longer than `deadline_s` records a deadline elapsed value above 25 and an outcome of `deadline`. Revert-check: skip the measurement; the test fails.
+- **commit:** `feat(mcp): keep the roster and the owner cap in the database` (roster code and tests); `feat(lantern): record the elapsed time of each thought job` (measurement and test); decision 0108 in its own commit.
+- **on-cap:** commit the roster first; the measurement can move to a follow-up card.
+- **index line to add:** `index: | [0108](0108-roster-and-cap-source.md) | Roster and cap in the database | Proposed |`
+
+### P1-C3-05: `prepared` receipt, aborted receipts and the per-life wait cursor
+
+- **wave:** C3. **lane:** E. **size:** M (about 40k tokens). **status:** B.
+- **depends-on:** P1-C3-00 (the `wait_cursors` table). C3-06 may not start until this card is merged (the two share `golem/src/body`).
+- **may-edit:** `golem/src/body/executor-action.ts` (the receipt write, lines 60 to 93), `golem/src/body/executor-action*.test.ts` and `golem/src/body/executor-actions.test.ts`, the reflex abort path under `golem/src/body/reflexes/` (only to write the `aborted` receipt), the `wait` tool and its cursor code under `threshold/mcp/src/` (find the `c_N` sites by grep), `threshold/mcp/test/` (wait tests), `docs/analysis/phase1/worknotes/C3-05.md`, `docs/decisions/0109-*.md` (new).
+- **must-not-edit:** `docs/spec.md`, `contract/`, `sql/`, `golem/src/body/executor-intent.ts` (C3-06), `shards/`, `compose/`, `geldar.ps1`.
+- **decisions:** 0109 only.
+- **checks:** `./geldar.ps1 pnpm --filter @geldar/golem test`; `./geldar.ps1 pnpm --filter @geldar/mcp test`; the integration test under `GELDAR_IT=1` for the wait cursor; typecheck and `pnpm format`.
+- **steps:**
+  1. Before `runtime.runAction` (line 65), write the `prepared` receipt with `receiptIdFor(actionId, 'prepared')`. It is in the sink's queue before the run starts.
+  2. For an action that is abandoned before it runs (a reflex aborted by the plan change), write an `aborted` receipt with detail (at most 256 characters). Today such actions get none.
+  3. Replace the shard-wide wait sequence with the per-life cursor in `wait_cursors`. Each `c_N` site reads the life's cursor. The coder lists the sites in the worknote at the start.
+  4. Write decision 0109 (Proposed): the `prepared` write order, and the per-life cursor rule.
+- **acceptance:**
+  - A run writes `prepared` before the run and one final receipt after it. Revert-check: remove the `prepared` write; the test fails.
+  - An abandoned reflex action gets exactly one `aborted` receipt. Revert-check: remove the abort write; the test fails.
+  - A `wait` on life A is not woken by events for life B (per-life cursor). Revert-check: restore the shard-wide sequence; the test fails.
+  - `grep` for the literal `c_N` names in `threshold/mcp/src` shows none left (command output in the report).
+- **commit:** `feat(golem): write the prepared receipt before a run and an aborted receipt for an abandoned action`; `feat(mcp): give each life its own wait cursor`; decision 0109 in its own commit.
+- **on-cap:** commit the receipt change; the cursor moves to a follow-up card with the sites listed.
+- **index line to add:** `index: | [0109](0109-prepared-receipt-and-wait-cursor.md) | prepared receipt and per-life wait cursor | Proposed |`
+
 <!-- next: cards -->
