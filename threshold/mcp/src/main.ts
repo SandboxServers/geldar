@@ -171,6 +171,22 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
   };
 }
 
+/** The shortest HMAC pepper the server accepts; a shorter one is refused at startup. */
+export const PEPPER_MIN_BYTES = 32;
+
+/**
+ * The pepper bytes from its file's text, read as `tools/mcp-tokens` reads it: one trailing LF or
+ * CRLF is removed and nothing else, so a minted token verifies here. The message names the rule,
+ * never the pepper.
+ */
+export function pepperBytes(text: string): Buffer {
+  const bytes = Buffer.from(text.replace(/\r?\n$/, ''), 'utf8');
+  if (bytes.length < PEPPER_MIN_BYTES) {
+    throw new ConfigRejected(`pepper is shorter than ${PEPPER_MIN_BYTES} bytes`);
+  }
+  return bytes;
+}
+
 /** How long a read of the living lives or of one life's identity is reused. */
 export const LIFE_CACHE_MS = 5_000;
 
@@ -213,7 +229,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
   try {
     log({ event: 'mcp_start', shard: config.shard });
     const password = (await ports.readSecret(config.postgres.passwordFile)).trim();
-    const pepper = Buffer.from((await ports.readSecret(config.pepperFile)).trim(), 'utf8');
+    const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
     const { host, port, database, user } = config.postgres;
     const pgOptions: PgOptions = { host, port, database, user, password };
     const pool = ports.openPool(pgOptions);

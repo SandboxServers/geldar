@@ -13,6 +13,7 @@ import {
   lazyLifeRegistry,
   loadStartConfig,
   type McpPorts,
+  pepperBytes,
   type NatsLink,
   startMcp,
   tokenBucketLimiter,
@@ -21,7 +22,7 @@ import type { PgAgentStore } from './store/pg-agents.ts';
 
 /** A password and a pepper no log line may ever carry. */
 const CANARY_PASSWORD = 'canary-pg-password-7f3a';
-const CANARY_PEPPER = 'canary-pepper-9d1c';
+const CANARY_PEPPER = 'canary-pepper-9d1c-0123456789abcdef';
 const SHARD_FILE = join(repoRoot(), 'shards', 'phase0.yaml');
 /** The environment the shipped shard needs: the two secret file paths (the files are never read in these tests). */
 const ENV = {
@@ -190,6 +191,26 @@ describe('startMcp', () => {
     const all = logs.join('\n');
     expect(all).not.toContain(CANARY_PASSWORD);
     expect(all).not.toContain(CANARY_PEPPER);
+  });
+});
+
+describe('pepper', () => {
+  const key = 'k'.repeat(32);
+  it('reads the pepper as the CLI does: one trailing LF or CRLF goes, nothing else', () => {
+    expect(pepperBytes(`${key}\r\n`).toString()).toBe(key);
+    expect(pepperBytes(`${key}\n`).toString()).toBe(key);
+    expect(pepperBytes(`${key} `).toString()).toBe(`${key} `);
+  });
+
+  it('refuses a pepper under 32 bytes at startup, before the pool opens', async () => {
+    const order: string[] = [];
+    const config = await loadStartConfig(SHARD_FILE, ENV);
+    const ports = fakePorts(order, []);
+    const readSecret = ports.readSecret;
+    ports.readSecret = async (path) => (path.endsWith('pepper') ? 'short' : readSecret(path));
+    const failure = await startMcp(config, ports).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ConfigRejected);
+    expect(order).not.toContain('pool.open');
   });
 });
 
