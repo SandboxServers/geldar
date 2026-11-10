@@ -96,6 +96,8 @@ export function resumeMeasure(
   };
   if (resumed > 0)
     return { ...base, verdict: 'PASS', note: 'a completed intent ran in two Body generations' };
+  if (intents.length === 0 && actions.length === 0)
+    return { ...base, verdict: 'UNKNOWN', note: 'no intents or actions recorded' };
   if (bodyRestarts === null)
     return { ...base, verdict: 'UNKNOWN', note: 'no restart record in the manifest' };
   if (bodyRestarts === 0)
@@ -118,22 +120,31 @@ export function receiptMeasure(
     set.add(r.phase);
     phases.set(r.actionId, set);
   }
-  const badFinal = terminal.filter((a) => finals.get(a.actionId) !== 1).length;
+  const badFinalIds = terminal.filter((a) => finals.get(a.actionId) !== 1).map((a) => a.actionId);
   const economic = actions.filter((a) => phases.has(a.actionId));
-  const noPrepared = economic.filter((a) => !phases.get(a.actionId)?.has('prepared')).length;
+  const noPreparedIds = economic
+    .filter((a) => !phases.get(a.actionId)?.has('prepared'))
+    .map((a) => a.actionId);
   const values: Record<string, Value> = {
     actions_total: actions.length,
     terminal_actions: terminal.length,
-    terminal_without_one_final_receipt: badFinal,
+    terminal_without_one_final_receipt: badFinalIds.length,
     economic_actions: economic.length,
-    economic_without_prepared: noPrepared,
+    economic_without_prepared: noPreparedIds.length,
   };
   const base = { id: 'receipts', title: 'Every action has a receipt', window: windowText, values };
   if (terminal.length === 0) return { ...base, verdict: 'UNKNOWN', note: 'no terminal action' };
-  const ok = badFinal === 0 && noPrepared === 0;
-  return {
-    ...base,
-    verdict: ok ? 'PASS' : 'FAIL',
-    note: ok ? 'one final receipt per terminal action' : 'receipt rule broken',
-  };
+  if (badFinalIds.length > 0)
+    return {
+      ...base,
+      verdict: 'FAIL',
+      note: `action ${badFinalIds[0]} has no one final receipt`,
+    };
+  if (noPreparedIds.length > 0)
+    return {
+      ...base,
+      verdict: 'FAIL',
+      note: `economic action ${noPreparedIds[0]} has no prepared receipt`,
+    };
+  return { ...base, verdict: 'PASS', note: 'one final receipt per terminal action' };
 }

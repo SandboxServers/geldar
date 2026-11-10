@@ -4,7 +4,9 @@ import { snap } from './fixture.ts';
 
 describe('toLiteSnapshot reads the contract snapshot keys', () => {
   it('reads hunger, held_item and inventory from the self object', () => {
-    const lite = toLiteSnapshot(snap({ hunger: 7, held: 'stone_pickaxe', inventory: [['cobblestone', 3]] }));
+    const lite = toLiteSnapshot(
+      snap({ hunger: 7, held: 'stone_pickaxe', inventory: [['cobblestone', 3]] }),
+    );
     expect(lite).toEqual({
       hunger: 7,
       heldItem: 'stone_pickaxe',
@@ -18,7 +20,11 @@ describe('toLiteSnapshot reads the contract snapshot keys', () => {
 
   it('turns a non-numeric hunger, a non-string held item and a bad slot into null or dropped', () => {
     const raw = {
-      self: { hunger: '7', held_item: null, inventory: [{ item: 'stick' }, { item: 'dirt', count: 2 }] },
+      self: {
+        hunger: '7',
+        held_item: null,
+        inventory: [{ item: 'stick' }, { item: 'dirt', count: 2 }],
+      },
     };
     expect(toLiteSnapshot(raw)).toEqual({
       hunger: null,

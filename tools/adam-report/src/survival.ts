@@ -60,6 +60,15 @@ export function dayChecks(
   return checks;
 }
 
+/** The items a day boundary is missing: no bed slept in, no food eaten, or no stone pickaxe. */
+function missingItems(c: DayCheck): string[] {
+  const out: string[] = [];
+  if (!c.bed) out.push('bed');
+  if (c.food === false) out.push('food');
+  if (c.stonePickaxe === false) out.push('stone pickaxe');
+  return out;
+}
+
 function verdictOf(
   deaths: number,
   coveredDays: number,
@@ -71,9 +80,11 @@ function verdictOf(
     return { verdict: 'FAIL', note: 'a death fell inside the window' };
   if (coveredDays < days)
     return { verdict: 'UNKNOWN', note: `thoughts cover ${coveredDays} of ${days} days` };
-  const failed = checks.filter((c) => !c.bed || c.food === false || c.stonePickaxe === false);
-  if (failed.length > 0)
-    return { verdict: 'FAIL', note: `a day boundary failed: day ${failed[0]?.day}` };
+  const failed = checks.filter((c) => missingItems(c).length > 0);
+  if (failed.length > 0) {
+    const list = failed.map((c) => `day ${c.day} (${missingItems(c).join(', ')})`).join('; ');
+    return { verdict: 'FAIL', note: `missing at a day boundary: ${list}` };
+  }
   const unknown = checks.filter((c) => c.food === null || c.stonePickaxe === null);
   if (unknown.length > 0)
     return { verdict: 'UNKNOWN', note: `no snapshot for day ${unknown[0]?.day}` };

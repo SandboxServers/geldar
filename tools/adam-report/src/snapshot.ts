@@ -23,7 +23,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 export function toLiteSnapshot(raw: unknown): LiteSnapshot | null {
   if (!isRecord(raw) || !isRecord(raw.self)) return null;
   const self = raw.self;
-  const hunger = typeof self.hunger === 'number' && Number.isFinite(self.hunger) ? self.hunger : null;
+  const hunger =
+    typeof self.hunger === 'number' && Number.isFinite(self.hunger) ? self.hunger : null;
   const heldItem = typeof self.held_item === 'string' ? self.held_item : null;
   const inventory: { item: string; count: number }[] = [];
   if (Array.isArray(self.inventory)) {

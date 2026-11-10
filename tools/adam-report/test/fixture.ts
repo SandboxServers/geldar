@@ -87,7 +87,10 @@ export function manifest(o: Partial<Manifest> = {}): Manifest {
     lifeId: 'life-1',
     worldSeed: 'seed-1',
     gitSha: 'abc1234',
-    modelTags: [{ tag: 'model-b', digest: 'sha256:bb' }, { tag: 'model-a', digest: 'sha256:aa' }],
+    modelTags: [
+      { tag: 'model-b', digest: 'sha256:bb' },
+      { tag: 'model-a', digest: 'sha256:aa' },
+    ],
     shardConfigHash: 'cfg-1',
     startTimeMs: T0,
     restarts: [],
