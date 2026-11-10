@@ -12,28 +12,72 @@ import type {
 import { renderBodyApi } from './body-api.ts';
 import { reflectionDecodeSchema, thoughtDecodeSchema } from './decode-schema.ts';
 import {
+  beliefLines,
   DEFAULT_MAX_BELIEFS,
+  episodicLines,
+  fitMemory,
+  journalLines,
   relationshipLines,
-  renderBeliefs,
   renderCommitments,
-  renderEpisodic,
   renderGoals,
-  renderJournal,
+  renderLines,
 } from './render-memory.ts';
 import { renderSnapshot } from './render-snapshot.ts';
 import { fill, loadTemplate, type ParsedTemplate, refuseUnknownSlots } from './template.ts';
-import { renderWorldText, stableJson, type WorldTextLine } from './world-text.ts';
+import {
+  fitEscaped,
+  promptCost,
+  renderWorldText,
+  stableJson,
+  type WorldTextLine,
+} from './world-text.ts';
 
-/** The default budget of the thought's user message, in characters (`mind.prompt_budget_chars`). */
-export const DEFAULT_THOUGHT_BUDGET_CHARS = 12_000;
+/**
+ * The context window of the pinned models (`num_ctx` in `shards/phase0.yaml` `model_pins`, decision
+ * 0051): the Ollama prompt and the output share it.
+ */
+export const CONTEXT_TOKENS = 8192;
 
-/** The longest day digest a reflection shows, in characters: the whole digest, not one line of it. */
+/** The room kept for the output: above every `max_tokens` a job sends (600 and 1200 in `shards/phase0.yaml`). */
+export const OUTPUT_RESERVE_TOKENS = 2048;
+
+/**
+ * The system message of thought v2 costs 3354 estimated tokens and the reflection's 773 (measured
+ * with {@link promptCost} on the sample prompts). 2500 for the user message leaves
+ * 8192 - 2048 - 3354 = 2790 at the top, so the sum fits with a margin of 290; the estimate charges
+ * one token per three ASCII characters, which a BPE tokenizer beats on English, and the schema is a
+ * grammar Ollama does not send as prompt text. A larger budget needs a larger `num_ctx`.
+ */
+export const DEFAULT_THOUGHT_BUDGET_TOKENS = 2_500;
+
+/**
+ * The default budget of the reflection's user message, in the same estimated tokens. Its system
+ * message is 773 and its output cap 1200, so 4000 + 773 + 2048 = 6821 fits num_ctx 8192, with the
+ * same output reserve as the thought.
+ */
+export const DEFAULT_REFLECTION_BUDGET_TOKENS = 4_000;
+
+/** The share of a budget the memory blocks (beliefs, memories, recent thoughts) may use. */
+export const MEMORY_SHARE = 0.6;
+
+/**
+ * The share of the reflection budget the day digest may use, cut first; the memory blocks keep
+ * {@link MEMORY_SHARE} and the relationships get what the digest and the blocks leave.
+ */
+export const DIGEST_SHARE = 0.35;
+
+/** Estimated tokens kept back from the digest's cap for the section's heading, footer and line frame. */
+const DIGEST_RESERVE = 120;
+
+/** The longest day digest, in characters before escaping (the most a digest may be), cut to its cost. */
 const MAX_DIGEST_CHARS = 8192;
 
 /** The size limits of the prompts. */
 export interface PromptLimits {
-  /** Characters of the thought's user message; the quoted world text gets what is left. */
-  thoughtBudgetChars: number;
+  /** Estimated tokens of the thought's user message; the memory blocks and the quoted section share it. */
+  thoughtBudgetTokens: number;
+  /** Estimated tokens of the reflection's user message; the blocks and the quoted section share it. */
+  reflectionBudgetTokens: number;
   /** Beliefs shown in a prompt, newest first (`mind.max_beliefs`). */
   maxBeliefs: number;
 }
@@ -78,8 +122,10 @@ export interface PromptLibraryOptions {
   version?: number;
   /** The thought template version to load. Defaults to {@link DEFAULT_THOUGHT_VERSION}; 1 stays loadable. */
   thoughtVersion?: number;
-  /** See {@link PromptLimits.thoughtBudgetChars}. */
-  thoughtBudgetChars?: number;
+  /** See {@link PromptLimits.thoughtBudgetTokens}. */
+  thoughtBudgetTokens?: number;
+  /** See {@link PromptLimits.reflectionBudgetTokens}. */
+  reflectionBudgetTokens?: number;
   /** See {@link PromptLimits.maxBeliefs}. */
   maxBeliefs?: number;
 }
@@ -111,7 +157,8 @@ export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptL
   refuseUnknownSlots(degradedText, new Set(['memories_max']), 'reflection variant degraded');
 
   const limits: PromptLimits = {
-    thoughtBudgetChars: options.thoughtBudgetChars ?? DEFAULT_THOUGHT_BUDGET_CHARS,
+    thoughtBudgetTokens: options.thoughtBudgetTokens ?? DEFAULT_THOUGHT_BUDGET_TOKENS,
+    reflectionBudgetTokens: options.reflectionBudgetTokens ?? DEFAULT_REFLECTION_BUDGET_TOKENS,
     maxBeliefs: options.maxBeliefs ?? DEFAULT_MAX_BELIEFS,
   };
   return new TemplatePromptLibrary(
@@ -228,6 +275,14 @@ function renderThought(
       world.push({ kind: 'overheard', fields: { from: e.payload.from, text: e.payload.text } });
     }
   }
+  const memory = fitMemory(
+    {
+      beliefs: beliefLines(vars.beliefs, limits.maxBeliefs),
+      memories: episodicLines(vars.episodic),
+      journal: journalLines(vars.recentThoughts),
+    },
+    limits.thoughtBudgetTokens * MEMORY_SHARE,
+  );
   const schema = thoughtDecodeSchema();
   const self = vars.snapshot.self;
   const values: Record<string, string> = {
@@ -238,13 +293,13 @@ function renderThought(
     skill_index: 'none yet. You have not learned any skills.',
     goal_stack: renderGoals(vars.goals),
     commitments: renderCommitments(vars.dueCommitments),
-    beliefs: renderBeliefs(vars.beliefs, limits.maxBeliefs),
-    memories: renderEpisodic(vars.episodic),
+    beliefs: renderLines(memory.beliefs),
+    memories: renderLines(memory.memories),
     days: String(vars.snapshot.world_time.day),
     days_since_sleep: String(self.days_since_sleep),
     credits: String(self.budget_remaining_thoughts),
     wake_reason: vars.wake.reason,
-    recent_thoughts: renderJournal(vars.recentThoughts),
+    recent_thoughts: renderLines(memory.journal),
     intent_state:
       vars.snapshot.current_plan === null || vars.snapshot.current_plan === undefined
         ? 'none, you are not pursuing anything right now.'
@@ -256,7 +311,7 @@ function renderThought(
   const withoutWorld = [5, 6].map((n) => block(t, n, values, 'thought')).join('\n\n');
   values.quoted_world_text = renderWorldText(
     world,
-    limits.thoughtBudgetChars - withoutWorld.length,
+    limits.thoughtBudgetTokens - promptCost(withoutWorld),
   );
   const system = [1, 2, 3, 4].map((n) => block(t, n, values, 'thought')).join('\n\n');
   const user = [5, 6].map((n) => block(t, n, values, 'thought')).join('\n\n');
@@ -272,6 +327,15 @@ function renderReflection(
   checkIdentity(vars.agent.name, vars.agent.personalitySeed);
   const schema = reflectionDecodeSchema(vars.degraded);
   const max = vars.degraded ? 2 : 8;
+  const budget = limits.reflectionBudgetTokens;
+  const memory = fitMemory(
+    {
+      beliefs: beliefLines(vars.beliefs, limits.maxBeliefs),
+      memories: episodicLines(vars.episodic),
+      journal: journalLines(vars.journal),
+    },
+    budget * MEMORY_SHARE,
+  );
   const values: Record<string, string> = {
     reflection_schema: stableJson(schema, 200),
     memories_max: String(max),
@@ -281,23 +345,24 @@ function renderReflection(
     name: vars.agent.name,
     personality_seed: vars.agent.personalitySeed,
     day: String(vars.day),
-    journal_today: renderJournal(vars.journal),
+    journal_today: renderLines(memory.journal),
     goal_stack: renderGoals(vars.goals),
-    beliefs: renderBeliefs(vars.beliefs, limits.maxBeliefs),
-    memories: renderEpisodic(vars.episodic),
-    quoted_world_text: renderWorldText([
-      ...relationshipLines(vars.relationships, 'relationship', 20),
-      ...(vars.digest.trim() === ''
-        ? []
-        : [
-            {
-              kind: 'day_digest',
-              fields: { text: vars.digest },
-              maxChars: MAX_DIGEST_CHARS,
-            } satisfies WorldTextLine,
-          ]),
-    ]),
+    beliefs: renderLines(memory.beliefs),
+    memories: renderLines(memory.memories),
+    quoted_world_text: '',
   };
+  // The user message is block 3; the quoted section gets the room the blocks leave. The digest is
+  // cut after escaping to its share of the budget, and to the room, before the relationships.
+  const room = budget - promptCost(block(t, 3, values, 'reflection'));
+  const digestCap = Math.min(budget * DIGEST_SHARE, room - DIGEST_RESERVE);
+  const digest = vars.digest.trim() === '' ? '' : fitEscaped(vars.digest, Math.max(0, digestCap));
+  const world: WorldTextLine[] = [
+    ...(digest === ''
+      ? []
+      : [{ kind: 'day_digest' as const, fields: { text: digest }, maxChars: MAX_DIGEST_CHARS }]),
+    ...relationshipLines(vars.relationships, 'relationship', 20),
+  ];
+  values.quoted_world_text = renderWorldText(world, room);
   const system = [1, 2].map((n) => block(t, n, values, 'reflection')).join('\n\n');
   const user = block(t, 3, values, 'reflection');
   return finish(t, system, user, schema);

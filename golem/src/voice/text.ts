@@ -32,11 +32,15 @@ function isHidden(code: number): boolean {
     (code >= 0xfff0 && code <= 0xfffb) || // specials and interlinear annotation
     (code >= 0xfe00 && code <= 0xfe0f) || // variation selectors
     (code >= 0xe0000 && code <= 0xe007f) || // tag characters
-    (code >= 0xe0100 && code <= 0xe01ef) || // variation selectors supplement
+    (code >= 0xe0100 && code <= 0xe0fff) || // variation selectors supplement and the unassigned rest of plane 14
     (code >= 0x1bca0 && code <= 0x1bca3) || // shorthand format controls
-    (code >= 0x1d173 && code <= 0x1d17a) // musical symbol format controls
+    (code >= 0x1d173 && code <= 0x1d17a) || // musical symbol format controls
+    IGNORABLE.test(String.fromCodePoint(code)) // every default-ignorable and format code point, by property
   );
 }
+
+/** Default-ignorable and format (Cf) code points, whatever Unicode version the runtime has. */
+const IGNORABLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}]/u;
 
 /**
  * Makes untrusted chat text safe to store and to say: newlines and tabs become one space, hidden and

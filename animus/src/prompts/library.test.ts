@@ -5,10 +5,18 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.ts';
 import type { ReflectionPromptVars } from '../ports/index.ts';
-import { createPromptLibrary, DEFAULT_THOUGHT_VERSION } from './library.ts';
+import {
+  CONTEXT_TOKENS,
+  createPromptLibrary,
+  DEFAULT_REFLECTION_BUDGET_TOKENS,
+  DEFAULT_THOUGHT_BUDGET_TOKENS,
+  DEFAULT_THOUGHT_VERSION,
+  OUTPUT_RESERVE_TOKENS,
+} from './library.ts';
 import { pickRecipes, renderSnapshot } from './render-snapshot.ts';
 import { sampleSnapshot, sampleThoughtVars } from './snapshot.fixture.ts';
 import { fill } from './template.ts';
+import { promptCost } from './world-text.ts';
 
 const library = createPromptLibrary();
 
@@ -120,6 +128,19 @@ describe('prompt library', () => {
     expect(user?.content).toContain('Why you were woken: idle');
     expect(system?.content).not.toContain('Why you were woken');
     expect(user?.content).not.toContain('Your name is');
+  });
+
+  it('fits the default budgets, the system message and the output cap in num_ctx', () => {
+    const thought = library.render('thought', sampleThoughtVars()).messages[0];
+    const reflection = library.render('reflection', reflectionVars(false)).messages[0];
+    const thoughtSystem = promptCost(thought?.content ?? '');
+    const reflectionSystem = promptCost(reflection?.content ?? '');
+    expect(
+      DEFAULT_THOUGHT_BUDGET_TOKENS + thoughtSystem + OUTPUT_RESERVE_TOKENS,
+    ).toBeLessThanOrEqual(CONTEXT_TOKENS);
+    expect(
+      DEFAULT_REFLECTION_BUDGET_TOKENS + reflectionSystem + OUTPUT_RESERVE_TOKENS,
+    ).toBeLessThanOrEqual(CONTEXT_TOKENS);
   });
 
   it('tells the agent about thinking time and never names the model', () => {
@@ -298,9 +319,37 @@ describe('snapshot rendering', () => {
       (_, i) => `Section ${i}: ${'lorem ipsum '.repeat(4)}`,
     ).join('\n');
     expect(digest.length).toBeGreaterThan(6000);
-    const user = library.render('reflection', { ...reflectionVars(false), digest }).messages[1];
+    // The default budget gives the digest DIGEST_SHARE of its tokens, which cuts this 6 KB digest;
+    // with a budget of 8000 the whole digest fits.
+    const roomy = createPromptLibrary({ reflectionBudgetTokens: 8000 });
+    const user = roomy.render('reflection', { ...reflectionVars(false), digest }).messages[1];
     expect(user?.content).toContain('Section 0:');
     expect(user?.content).toContain('Section 99:');
+  });
+
+  it('keeps the reflection within its budget with a hostile digest and 500 beliefs', () => {
+    const beliefs = Array.from({ length: 500 }, (_, i) => ({
+      memoryId: i,
+      agentId: 'ag_adam_01',
+      kind: 'semantic' as const,
+      provenance: 'observation' as const,
+      subject: null,
+      text: `${i} ${'c'.repeat(510)}`,
+      createdDay: 1,
+      sourceThought: null,
+      sourceAgent: null,
+      dueTick: null,
+      resolved: false,
+      active: true,
+    }));
+    const vars = { ...reflectionVars(false), beliefs, digest: '<'.repeat(8000) };
+    const user = library.render('reflection', vars).messages[1];
+    expect(promptCost(user?.content ?? '')).toBeLessThanOrEqual(8000);
+    expect(user?.content).toContain('"0 ccc');
+    expect(user?.content).toContain(
+      '- relationship {"impression":"friendly","name":"Eve","trust":70}',
+    );
+    expect(user?.content).toContain('\\u003c');
   });
 
   it('shows at most mind.max_beliefs beliefs, the newest first, out of 500', () => {

@@ -1,5 +1,5 @@
 import type { GoalRow, JournalEntry, MemoryRow, RelationshipRow } from '../ports/index.ts';
-import { jsonString, type WorldTextLine } from './world-text.ts';
+import { jsonString, promptCost, type WorldTextLine } from './world-text.ts';
 
 /** How many people get their impression shown; the rest are named only. */
 export const PEOPLE_WITH_IMPRESSION = 6;
@@ -16,21 +16,21 @@ const NONE = '(none)';
  * Stored text came from the agent's own earlier thoughts and reflections, which may repeat what it
  * heard. Every item is a JSON string on its own line, so it cannot open a heading or a list entry.
  */
-function lines(items: string[]): string {
+export function renderLines(items: readonly string[]): string {
   return items.length === 0 ? NONE : items.join('\n');
 }
 
 /** The goal stack, rank order. */
 export function renderGoals(goals: readonly GoalRow[]): string {
   const sorted = [...goals].sort((a, b) => a.rank - b.rank);
-  return lines(
+  return renderLines(
     sorted.map((g, i) => `${i + 1}. ${jsonString(g.goal)} because ${jsonString(g.why)}`),
   );
 }
 
 /** Commitments due or open. */
 export function renderCommitments(rows: readonly MemoryRow[]): string {
-  return lines(
+  return renderLines(
     rows.map(
       (m) => `- ${m.dueTick === null ? 'open' : `due tick ${m.dueTick}`}: ${jsonString(m.text)}`,
     ),
@@ -41,16 +41,16 @@ export function renderCommitments(rows: readonly MemoryRow[]): string {
 export const DEFAULT_MAX_BELIEFS = 40;
 
 /** Beliefs with their kind: the first `max` of them, which are the newest (the load is newest first). */
-export function renderBeliefs(
+export function beliefLines(
   rows: readonly MemoryRow[],
   max: number = DEFAULT_MAX_BELIEFS,
-): string {
-  return lines(rows.slice(0, max).map((m) => `- (${m.provenance}) ${jsonString(m.text)}`));
+): string[] {
+  return rows.slice(0, max).map((m) => `- (${m.provenance}) ${jsonString(m.text)}`);
 }
 
 /** Episodic memories, in the order given (nearest first). */
-export function renderEpisodic(rows: readonly MemoryRow[]): string {
-  return lines(rows.map((m) => `- (day ${m.createdDay}) ${jsonString(m.text)}`));
+export function episodicLines(rows: readonly MemoryRow[]): string[] {
+  return rows.map((m) => `- (day ${m.createdDay}) ${jsonString(m.text)}`);
 }
 
 /** One journal entry as a short line: when, why woken, and what the thought said. */
@@ -71,8 +71,41 @@ function journalLine(entry: JournalEntry): string {
 }
 
 /** The latest thoughts (the last {@link MAX_RECENT_THOUGHTS}), oldest first. */
-export function renderJournal(entries: readonly JournalEntry[]): string {
-  return lines(entries.slice(-MAX_RECENT_THOUGHTS).map(journalLine));
+export function journalLines(entries: readonly JournalEntry[]): string[] {
+  return entries.slice(-MAX_RECENT_THOUGHTS).map(journalLine);
+}
+
+/** The memory blocks a thought may cut to fit its budget. */
+export interface MemoryItems {
+  /** Newest first. */
+  beliefs: string[];
+  /** Nearest first. */
+  memories: string[];
+  /** Oldest first. */
+  journal: string[];
+}
+
+/**
+ * Cuts the memory items until they fit `room` estimated tokens. The oldest journal entries go first,
+ * then the farthest episodic memories, then the oldest beliefs. Goals and commitments are not cut.
+ */
+export function fitMemory(items: MemoryItems, room: number): MemoryItems {
+  const out: MemoryItems = {
+    beliefs: [...items.beliefs],
+    memories: [...items.memories],
+    journal: [...items.journal],
+  };
+  const costOf = (line: string): number => promptCost(line) + 1;
+  let used = [...out.beliefs, ...out.memories, ...out.journal].reduce(
+    (sum, line) => sum + costOf(line),
+    0,
+  );
+  while (used > room) {
+    const dropped = out.journal.shift() ?? out.memories.pop() ?? out.beliefs.pop();
+    if (dropped === undefined) break;
+    used -= costOf(dropped);
+  }
+  return out;
 }
 
 /**
