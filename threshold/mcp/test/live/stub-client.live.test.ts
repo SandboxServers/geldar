@@ -4,14 +4,15 @@
  * player's token file (GELDAR_MCP_TEST_TOKEN_FILE, outside the repo). Run it with `./geldar.ps1 mcp smoke`.
  * Deterministic: the case names the intent itself and waits in bounded steps; no model chooses anything. It asserts
  * that each tool answers and that the wait returns within its bound. The token is read, never printed.
- * The act shape is contract/schemas/mcp-play.schema.json (ActInput) with thought.schema.json (Intent).
+ * The request bodies come from live-requests.ts, which a unit test checks against the contract (ActInput, WaitInput).
  */
 import { describe, expect, it } from 'vitest';
 import { connectAs, readTokenFile, TEST_PLAYER } from './client.ts';
 import { liveEnabled } from './gate.ts';
+import { actCall, lookCall, WAIT_SECONDS, waitCall } from './live-requests.ts';
 
-const WAIT_SECONDS = 25;
-const WAIT_STEPS = 4;
+/** Waits of WAIT_SECONDS each: 8 of 25 s is 200 s, past the intent's 2400-tick limit (about 120 s). */
+const WAIT_STEPS = 8;
 const ENDS = ['goal_completed', 'precondition_failed', 'intent_run_too_long'];
 
 describe.skipIf(!liveEnabled())('MCP stub client: look, act gather oak_log, wait', () => {
@@ -23,34 +24,17 @@ describe.skipIf(!liveEnabled())('MCP stub client: look, act gather oak_log, wait
         expect.arrayContaining(['look', 'act', 'wait']),
       );
 
-      const looked = await client.callTool({ name: 'look', arguments: {} });
+      const looked = await client.callTool(lookCall());
       expect(looked.isError, `look failed: ${JSON.stringify(looked).slice(0, 300)}`).not.toBe(true);
 
-      const acted = await client.callTool({
-        name: 'act',
-        arguments: {
-          reasoning: 'stub client case',
-          intent: {
-            goal: 'gather_oak_log',
-            program: 'gather',
-            arguments: { block: 'oak_log', count: 12 },
-            wake_on: ['goal_completed', 'precondition_failed'],
-          },
-        },
-      });
+      const acted = await client.callTool(actCall());
       expect(acted.isError, `act failed: ${JSON.stringify(acted).slice(0, 300)}`).not.toBe(true);
 
       let cursor: unknown;
       let ended = false;
       for (let step = 0; step < WAIT_STEPS && !ended; step += 1) {
         const started = Date.now();
-        const waited = await client.callTool({
-          name: 'wait',
-          arguments:
-            cursor === undefined
-              ? { max_seconds: WAIT_SECONDS }
-              : { max_seconds: WAIT_SECONDS, cursor },
-        });
+        const waited = await client.callTool(waitCall(cursor));
         const elapsed = Date.now() - started;
         expect(waited.isError, `wait failed: ${JSON.stringify(waited).slice(0, 300)}`).not.toBe(
           true,
