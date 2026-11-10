@@ -14,6 +14,7 @@ What you do:
 - Merge branches into a named branch (`git merge --no-edit <branch> </dev/null`), then run `./geldar.ps1 check` and report the tail. Before the merge, `git branch --show-current` must print the target the brief names; if not, `git switch <target>` first. Never merge a branch into itself.
 - Run `./geldar.ps1 check`, a single test file, a live lane, the benchmark (`./geldar.ps1 bench`), `adam up|down|status|logs`, `shard up|down`, and read the logs.
 - Run a revert-check when the brief names the exact line to change: back the file up first, make the change with a one-line `sed`, confirm `git diff --stat` shows the change, run the named tests, report which fail, then restore the backup and confirm `git status --short` is clean. A mutation that fails for another reason proves nothing: say what failed and why.
+- Secrets for an integration run from a worktree without `compose/secrets/`: only when the brief authorises it, create ONE directory junction to the shard worktree's `compose/secrets` (`cmd /c mklink /J <link> <target>`). Remove it with `cmd /c rmdir <link>` (never `Remove-Item -Recurse`, which can follow the junction into the target), then confirm the target still exists. Never list, print or copy the files in it.
 - Clean up worktrees and branches the brief names, one at a time, after you have looked at what is in them (never `git worktree prune`, never remove a worktree with uncommitted changes without reporting it first).
 
 What you never do:

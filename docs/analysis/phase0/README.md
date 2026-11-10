@@ -105,7 +105,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | WM-11 | M | Integration: the NATS gateway, presence, main, end to end | packet-coder | Shipped (merged to wave-m-main) | WM-02 to WM-10 | |
 | WM-12 | M | Run commands, docs and live cases (written, not run) | packet-coder | Shipped (merged to wave-m-main) | WM-11 | |
 | WM-13 | M | Player skins (MineSkin V2 upload, stored skin on login) | packet-coder | Shipped (merged to wave-m-main) | WM-01, velocity-identity plugin | |
-| WM-process | M | Apply the wave M retro actions | packet-coder | BlockedDependency | wave M test, review and retro | |
+| WM-process | M | Apply the wave M retro actions | packet-coder | Shipped | wave M test, review and retro | |
 | W6-01 | 6 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | packet-coder | Ready | — | |
 | W6-02 | 6 | Validator bounds read from shard config (BC-11); redact a private address from a worknote (E-16) | packet-coder | Ready | — | |
 | W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Ready | section 4 item 7 (provisional) | |
