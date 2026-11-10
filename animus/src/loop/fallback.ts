@@ -9,13 +9,6 @@ import { type Intent, type Thought, validateThought } from '@geldar/contract';
 import type { MindEvent } from '../ports/index.ts';
 import { PHASE0_PROGRAMS } from '../validate/index.ts';
 
-/** What a plan_result `intent` disposition says about an intent that never ran. */
-const FAILED_DISPOSITIONS: ReadonlySet<string> = new Set([
-  'precondition_failed',
-  'invalid_arguments',
-  'unsupported_program',
-]);
-
 const MAX_TRACKED_INTENTS = 32;
 const MAX_SEEN_EVENTS = 512;
 
@@ -57,10 +50,10 @@ export class IntentLedger {
       const oldest = this.seen.values().next().value;
       if (oldest !== undefined) this.seen.delete(oldest);
     }
+    // Only an intent's own `failed` event counts toward high effort. A refused plan is a
+    // plan_result, not a failed intent, so it must not count twice for one failure.
     if (event.type === 'plan_result') {
-      const disposition = event.payload.intent;
-      if (FAILED_DISPOSITIONS.has(disposition)) this.failures++;
-      else if (disposition === 'started') this.failures = 0;
+      if (event.payload.intent === 'started') this.failures = 0;
       return;
     }
     const p = event.payload;
@@ -90,14 +83,18 @@ export class IntentLedger {
     this.resubmitted.add(intentId);
   }
 
-  /** The most recently interrupted intent not yet resubmitted, or null. */
+  /**
+   * The most recently changed intent, when that change left it interrupted and not yet
+   * resubmitted; otherwise null. An older interrupted intent is stale and is never resurrected.
+   */
   lastInterrupted(): TrackedIntent | null {
-    let best: TrackedIntent | null = null;
+    let latest: TrackedIntent | null = null;
     for (const t of this.intents.values()) {
-      if (t.state !== 'interrupted' || this.resubmitted.has(t.intentId)) continue;
-      if (best === null || t.order > best.order) best = t;
+      if (latest === null || t.order > latest.order) latest = t;
     }
-    return best;
+    if (latest === null || latest.state !== 'interrupted') return null;
+    if (this.resubmitted.has(latest.intentId)) return null;
+    return latest;
   }
 
   private blank(intentId: string): TrackedIntent {
