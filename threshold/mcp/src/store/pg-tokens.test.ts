@@ -25,6 +25,8 @@ function row(over: Partial<TokenRow> = {}): TokenRow {
     display_name: 'Jason',
     harness: 'claude',
     status: 'active',
+    owner_players: 1,
+    player_cap: 3,
     expires_at: new Date(NOW + DAY),
     revoked_at: null,
     ...over,
@@ -111,6 +113,17 @@ describe('activeToken', () => {
   it('refuses a paused or retired player', () => {
     expect(activeToken(row({ status: 'paused' }), NOW, HARNESSES)).toBeNull();
     expect(activeToken(row({ status: 'retired' }), NOW, HARNESSES)).toBeNull();
+  });
+
+  it('refuses a player whose owner is over its cap, and names owner_over_cap', () => {
+    // A cap lowered from 3 to 1 leaves two counted players: both are refused.
+    const over = row({ owner_players: 2, player_cap: 1 });
+    expect(activeToken(over, NOW, HARNESSES)).toBeNull();
+    expect(missReason(over, NOW, HARNESSES)).toBe('owner_over_cap');
+  });
+
+  it('accepts a player whose owner is exactly at its cap', () => {
+    expect(activeToken(row({ owner_players: 3, player_cap: 3 }), NOW, HARNESSES)).not.toBeNull();
   });
 
   it('refuses a disabled harness, and a harness the config does not list', () => {

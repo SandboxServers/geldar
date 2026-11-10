@@ -28,18 +28,28 @@ export interface TokenRow {
   display_name: string;
   harness: string;
   status: string;
+  /** Players of the owner that are not retired, the player's own included. */
+  owner_players: number;
+  /** The owner's cap now; a lowered cap refuses at once, without a NOTIFY. */
+  player_cap: number;
   expires_at: Date;
   revoked_at: Date | null;
 }
 
 const RESOLVE_SQL = `SELECT t.token_id, t.token_hash, t.expires_at, t.revoked_at,
-  p.player_id, p.life_id, p.owner_id, p.display_name, p.harness, p.status
-FROM mcp_tokens t JOIN mcp_players p ON p.player_id = t.player_id
+  p.player_id, p.life_id, p.owner_id, p.display_name, p.harness, p.status,
+  o.player_cap,
+  (SELECT count(*)::int FROM mcp_players x WHERE x.owner_id = p.owner_id AND x.status <> 'retired')
+    AS owner_players
+FROM mcp_tokens t
+JOIN mcp_players p ON p.player_id = t.player_id
+JOIN mcp_owners o ON o.owner_id = p.owner_id
 WHERE t.token_hash = $1`;
 
 /**
- * The resolved token when the row is active: not revoked, not expired, the player active and
- * the harness enabled. Null for anything else, including a harness the config does not list.
+ * The resolved token when the row is active: not revoked, not expired, the player active, the
+ * owner within its cap and the harness enabled. Null for anything else, including a harness the
+ * config does not list.
  */
 export function activeToken(
   row: TokenRow,
@@ -49,6 +59,7 @@ export function activeToken(
   if (row.revoked_at !== null) return null;
   if (row.expires_at.getTime() <= nowMs) return null;
   if (row.status !== 'active') return null;
+  if (row.owner_players > row.player_cap) return null;
   if (harnesses[row.harness] !== true) return null;
   return {
     tokenId: row.token_id,
@@ -334,6 +345,7 @@ export function missReason(
   if (row.revoked_at !== null) return 'token_revoked';
   if (row.expires_at.getTime() <= nowMs) return 'token_expired';
   if (row.status !== 'active') return 'player_not_active';
+  if (row.owner_players > row.player_cap) return 'owner_over_cap';
   if (harnesses[row.harness] !== true) return 'harness_disabled';
   return 'unknown_token';
 }

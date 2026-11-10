@@ -5,10 +5,14 @@
  */
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { PgTokenStore } from '../../../threshold/mcp/src/store/pg-tokens.ts';
+import { hashToken } from '../../../threshold/mcp/src/store/token-hash.ts';
 import {
+  adminConfig,
   createScratchDatabase,
   dropScratchDatabase,
   freshSuffix,
+  insertToken,
   migrateScratch,
   scratchPool,
 } from '../../../threshold/mcp/test/it/scratch-db.ts';
@@ -107,6 +111,31 @@ describe.skipIf(!integrationEnabled())('the owner cap in the database', () => {
     await expect(
       db().query("UPDATE mcp_players SET status = 'active' WHERE player_id = $1", [retired]),
     ).rejects.toThrow(/is at the cap of 1/);
+  });
+
+  it('refuses a token of an owner over a lowered cap, and resolves again once it is raised', async () => {
+    const made = await owner(2, ['active', 'active']);
+    const [playerId] = made.ids as [string, string];
+    const value = `gmcp-${freshSuffix()}`;
+    await insertToken(db(), playerId, hashToken('it-pepper', value), '1 day');
+    const resolves = async (): Promise<boolean> => {
+      const mcp = scratchPool(database, 'geldar_mcp');
+      try {
+        const store = new PgTokenStore(
+          mcp,
+          { 'it-on': true },
+          { ...adminConfig(database), options: '-c role=geldar_mcp' },
+        );
+        return (await store.resolve(hashToken('it-pepper', value), Date.now())) !== null;
+      } finally {
+        await mcp.end();
+      }
+    };
+    expect(await resolves()).toBe(true);
+    await db().query('UPDATE mcp_owners SET player_cap = 1 WHERE owner_id = $1', [made.ownerId]);
+    expect(await resolves()).toBe(false);
+    await db().query('UPDATE mcp_owners SET player_cap = 2 WHERE owner_id = $1', [made.ownerId]);
+    expect(await resolves()).toBe(true);
   });
 
   it('lets a paused player resume and retire without a cap error', async () => {

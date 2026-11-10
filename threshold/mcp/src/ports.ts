@@ -43,6 +43,7 @@ export const REFUSAL_REASONS = [
   'player_not_active',
   'harness_disabled',
   'owner_retired',
+  'owner_over_cap',
   'wrong_player',
   'address_blocked',
   'internal',
