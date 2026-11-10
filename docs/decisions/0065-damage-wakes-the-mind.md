@@ -26,10 +26,13 @@ coalesced and rate-limited (5.3.2). Death is permanent for a life (spec 1579, 14
 3. Death keeps ending the life: the controller goes quiet (`ended`), so damage after a death and the
    idle watchdog stay off. A death is not a wake. A new life has its own Mind.
 4. Idle is unchanged: 60 s after a settled thought with nothing running.
+5. A damage burst that closes during an in-flight thought is dropped (recorded `coalesced_in_flight`),
+   not re-raised after the thought settles. The idle watchdog is the only follow-up.
 
 ## Consequences
 
 - A damage burst is one wake, not one model call per tick.
+- A hit taken during a long thought does not wake the Mind again once that thought settles.
 - Damage with no intent now wakes the Mind; before, it did not.
 - A run whose life dies still idles until the harness's no-thought rule ends it. That is the
   intended behaviour of a permadeath life, not a hang.
