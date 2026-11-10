@@ -383,6 +383,15 @@ importers:
 
   tools/players-cli:
     dependencies:
+      '@nats-io/jetstream':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@nats-io/kv':
+        specifier: 3.4.0
+        version: 3.4.0
+      '@nats-io/transport-node':
+        specifier: 3.4.0
+        version: 3.4.0
       yaml:
         specifier: 2.9.1
         version: 2.9.1
