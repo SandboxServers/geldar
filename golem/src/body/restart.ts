@@ -185,10 +185,12 @@ async function recover(body: Body, lifeId: string, tickWaitMs: number): Promise<
   const tick = await waitForTick(body, tickWaitMs);
   if (tick === null) return { kind: 'idle', reason: 'tick_unknown' };
   if (entry.expires_tick <= tick) {
+    closeLostIntent(body, entry, tick);
     await store.discard();
     return { kind: 'idle', reason: 'expired' };
   }
   if (!body.runtime.programs.names().includes(entry.program)) {
+    closeLostIntent(body, entry, tick);
     await store.discard();
     return { kind: 'idle', reason: 'unknown_program' };
   }
@@ -200,6 +202,23 @@ async function recover(body: Body, lifeId: string, tickWaitMs: number): Promise<
   return disposition === 'started'
     ? { kind: 'resumed', intentId: entry.intent_id }
     : { kind: 'idle', reason: 'resume_failed' };
+}
+
+/**
+ * The saved intent is not going to run again, so this generation ends it. The previous generation
+ * was killed (on Windows the stop path is a hard kill), so its own `interrupted` event may never
+ * have left the process; the tick makes the record id, so a repeated restart at the same tick
+ * dedupes.
+ */
+function closeLostIntent(body: Body, entry: CheckpointEntry, tick: number): void {
+  body.runtime.sink.intentChanged({
+    intentId: entry.intent_id,
+    lifeId: body.runtime.lifeId,
+    bodyGeneration: body.runtime.bodyGeneration,
+    state: 'interrupted',
+    tick,
+    detail: 'body_restarted',
+  });
 }
 
 /** The world tick once the view knows it, or null after `waitMs`. */

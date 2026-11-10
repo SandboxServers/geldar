@@ -187,6 +187,22 @@ describe('restartBody', () => {
     await b.stop();
   });
 
+  it('closes the intent of an expired or unknown-program checkpoint as interrupted', async () => {
+    const kv = buckets();
+    kv.checkpoints.seed(LIFE, entry({ expires_tick: 500, intent_id: 'in_lost' }));
+    const expired = await boot(kv, { tick: 500 });
+    expect(
+      expired.records.intents.map((c) => [c.intentId, c.bodyGeneration, c.state, c.detail]),
+    ).toEqual([['in_lost', expired.generation, 'interrupted', 'body_restarted']]);
+    await expired.stop();
+    kv.checkpoints.seed(LIFE, entry({ program: 'mystery', intent_id: 'in_other' }));
+    const unknown = await boot(kv);
+    expect(unknown.records.intents.map((c) => [c.intentId, c.state, c.detail])).toEqual([
+      ['in_other', 'interrupted', 'body_restarted'],
+    ]);
+    await unknown.stop();
+  });
+
   it('ignores a checkpoint whose program is not registered, and one that is not an entry', async () => {
     const kv = buckets();
     kv.checkpoints.seed(LIFE, entry({ program: 'mystery' }));
