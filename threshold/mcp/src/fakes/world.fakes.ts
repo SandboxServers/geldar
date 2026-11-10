@@ -1,6 +1,23 @@
+import { createOutputValidator } from '@geldar/animus/src/validate/index.ts';
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
-import { buildSnapshot, type SimEvent } from '@geldar/mcp-mock';
-import { type BodyGateway, BodyUnavailable, type PlayerEventLog } from '../ports.ts';
+import { buildSnapshot, FakeClock, type SimEvent, type WakeConfig } from '@geldar/mcp-mock';
+import type { RunState } from '../events/mapper.ts';
+import {
+  type BodyGateway,
+  BodyUnavailable,
+  type PlayerEventLog,
+  type PlayerRecord,
+} from '../ports.ts';
+import { KvPresenceStore, type PresenceBucket } from '../presence.ts';
+import type { WorldDeps } from '../world.ts';
+import {
+  FakeBudgetLedger,
+  FakeJournalStore,
+  FakePlayerDirectory,
+  FakePlayerEventLog,
+  RecordingCallRecorder,
+  ScriptedRateLimiter,
+} from './stores.fakes.ts';
 
 /** The rejection a scripted plan answer carries. */
 export interface ScriptedRejection {
@@ -98,4 +115,84 @@ export class FakeBody implements BodyGateway {
     if (this.offline.has(lifeId))
       throw new BodyUnavailable(`the Body of ${lifeId} does not answer`);
   }
+}
+
+/** An in-memory KV bucket for the presence store; `puts` keeps every write, in order. */
+export class MemoryPresenceBucket implements PresenceBucket {
+  readonly values = new Map<string, string>();
+  readonly puts: { key: string; value: string }[] = [];
+
+  async get(key: string): Promise<{ string(): string } | null> {
+    const value = this.values.get(key);
+    return value === undefined ? null : { string: () => value };
+  }
+
+  async put(key: string, value: string): Promise<number> {
+    this.values.set(key, value);
+    this.puts.push({ key, value });
+    return this.puts.length;
+  }
+}
+
+/** The fakes behind a `WorldDeps`, kept by name so a test can seed and inspect them. */
+export interface WorldFixture {
+  deps: WorldDeps;
+  clock: FakeClock;
+  bucket: MemoryPresenceBucket;
+  players: FakePlayerDirectory;
+  body: FakeBody;
+  budget: FakeBudgetLedger;
+  journal: FakeJournalStore;
+  recorder: RecordingCallRecorder;
+  events: FakePlayerEventLog;
+  limiter: ScriptedRateLimiter;
+}
+
+/**
+ * A world over fakes: a real `KvPresenceStore` on an in-memory bucket, all on one `FakeClock` that
+ * starts at 1,000,000 ms. The players given are the directory; budgets are seeded by the caller.
+ */
+export function worldFixture(players: PlayerRecord[]): WorldFixture {
+  const clock = new FakeClock(1_000_000);
+  const bucket = new MemoryPresenceBucket();
+  const presence = new KvPresenceStore(bucket, () => clock.nowMs());
+  const directory = new FakePlayerDirectory();
+  for (const player of players) directory.add(player);
+  const events = new FakePlayerEventLog();
+  const body = new FakeBody(events);
+  const budget = new FakeBudgetLedger(0, 100);
+  const journal = new FakeJournalStore();
+  const recorder = new RecordingCallRecorder();
+  const limiter = new ScriptedRateLimiter();
+  const wake: WakeConfig = { minSpacingMs: 5_000, intentRunTooLongMs: 600_000 };
+  const deps: WorldDeps = {
+    players: directory,
+    body,
+    budget,
+    sleeps: { read: async () => ({ lastSleepDay: 1, cursor: 0 }), write: async () => {} },
+    profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 0 }) },
+    journal,
+    recorder,
+    events,
+    presence,
+    limiter,
+    validator: createOutputValidator(),
+    clock,
+    runs: new Map<string, RunState>(),
+    wake,
+    expiresAfterTicks: 200,
+    laws: [],
+  };
+  return {
+    deps,
+    clock,
+    bucket,
+    players: directory,
+    body,
+    budget,
+    journal,
+    recorder,
+    events,
+    limiter,
+  };
 }

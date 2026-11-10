@@ -3,14 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { ServerNotification } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
-import {
-  FakeBudgetLedger,
-  FakeJournalStore,
-  FakePlayerDirectory,
-  FakePlayerEventLog,
-  RecordingCallRecorder,
-} from './fakes/stores.fakes.ts';
-import { FakeBody } from './fakes/world.fakes.ts';
+import { worldFixture } from './fakes/world.fakes.ts';
 import type { KeepAlive, PlayerRecord } from './ports.ts';
 import { createWorld } from './world.ts';
 import {
@@ -48,28 +41,14 @@ class RecordingKeepAlive implements KeepAlive {
 }
 
 function deps(keepAlive: KeepAlive): WorldSessionDeps {
-  const players = new FakePlayerDirectory();
-  players.add(PLAYER);
-  const budget = new FakeBudgetLedger(0, 100);
-  budget.seed(PLAYER.lifeId, 37, 0);
-  const journal = new FakeJournalStore();
-  const tools = createWorld({
-    players,
-    body: new FakeBody(new FakePlayerEventLog()),
-    budget,
-    sleeps: { read: async () => ({ lastSleepDay: 1, cursor: 0 }), write: async () => {} },
-    profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 3 }) },
-    journal,
-    recorder: new RecordingCallRecorder(),
-    laws: [],
-    now: () => 0,
-  });
+  const fx = worldFixture([PLAYER]);
+  fx.budget.seed(PLAYER.lifeId, 37, 0);
   return {
-    tools,
-    players,
+    tools: createWorld(fx.deps).tools,
+    players: fx.players,
     resources: {
       profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 3 }) },
-      journal,
+      journal: fx.journal,
       shard: { chatRadius: 16, waitCapSeconds: 240, tickRate: 20 },
     },
     keepAlive,

@@ -1,17 +1,11 @@
 import { callTool, type ToolContext, type ToolHandlers } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
-import {
-  FakeBudgetLedger,
-  FakeJournalStore,
-  FakePlayerDirectory,
-  FakePlayerEventLog,
-  RecordingCallRecorder,
-} from './fakes/stores.fakes.ts';
-import { FakeBody, NO_BOOK } from './fakes/world.fakes.ts';
+import type { FakeJournalStore, RecordingCallRecorder } from './fakes/stores.fakes.ts';
+import { type FakeBody, NO_BOOK, worldFixture } from './fakes/world.fakes.ts';
 import type { PlayerRecord } from './ports.ts';
 import { WORLD_TEXT_NOTE } from './tools/look.ts';
 import { NOT_AVAILABLE_MESSAGE } from './tools/unavailable.ts';
-import { createWorld, NOT_WIRED_MESSAGE, type WorldDeps } from './world.ts';
+import { createWorld } from './world.ts';
 
 const PLAYER: PlayerRecord = {
   playerId: 'ag-ranger-01',
@@ -51,26 +45,14 @@ interface Rig {
 }
 
 function rig(): Rig {
-  const players = new FakePlayerDirectory();
-  players.add(PLAYER);
-  players.add(OTHER);
-  const body = new FakeBody(new FakePlayerEventLog());
-  const budget = new FakeBudgetLedger(0, 100);
-  budget.seed(PLAYER.lifeId, 37, 0);
-  const journal = new FakeJournalStore();
-  const recorder = new RecordingCallRecorder();
-  const deps: WorldDeps = {
-    players,
-    body,
-    budget,
-    sleeps: { read: async () => ({ lastSleepDay: 1, cursor: 0 }), write: async () => {} },
-    profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 0 }) },
-    journal,
-    recorder,
-    laws: [],
-    now: () => 0,
+  const fx = worldFixture([PLAYER, OTHER]);
+  fx.budget.seed(PLAYER.lifeId, 37, 0);
+  return {
+    tools: createWorld(fx.deps).tools,
+    body: fx.body,
+    journal: fx.journal,
+    recorder: fx.recorder,
   };
-  return { tools: createWorld(deps), body, journal, recorder };
 }
 
 function ctx(playerId = PLAYER.playerId): ToolContext {
@@ -156,15 +138,6 @@ describe('the unavailable tools', () => {
       });
     },
   );
-});
-
-describe('the tools part 2 wires', () => {
-  it.each(['act', 'say', 'sleep', 'wait'])('answers %s with not_wired for now', async (name) => {
-    const { tools } = rig();
-    const reply = await run(tools, name, VALID_INPUT[name]);
-    expect(reply.isError).toBe(true);
-    expect(reply.text).toBe(`not_wired: ${NOT_WIRED_MESSAGE}`);
-  });
 });
 
 describe('the player comes from the bound session', () => {
