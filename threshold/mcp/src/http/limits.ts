@@ -1,4 +1,5 @@
 import type { RateLimiter } from '../ports.ts';
+import { clientKey } from './auth.ts';
 
 /** Most requests one player may have open at once (a `wait` holds one). */
 export const MAX_OPEN_PER_PLAYER = 4;
@@ -28,7 +29,7 @@ export class FrontLimits {
    * cache and was refused: each such request costs one token, so a flood empties the bucket.
    */
   failedAuth(address: string, nowMs: number): number | undefined {
-    const byAddress = this.limiter.take(`auth-failed:address:${address}`, nowMs);
+    const byAddress = this.limiter.take(`auth-failed:address:${clientKey(address)}`, nowMs);
     if (!byAddress.allowed) return retrySeconds(byAddress.retryAfterMs);
     const global = this.limiter.take('auth-failed:global', nowMs);
     if (!global.allowed) return retrySeconds(global.retryAfterMs);
@@ -41,7 +42,7 @@ export class FrontLimits {
    * this check for a cached hit, so authenticated traffic is never blocked by failed-auth state.
    */
   authBlocked(address: string, nowMs: number): number | undefined {
-    const decision = this.limiter.peek(`auth-failed:address:${address}`, nowMs);
+    const decision = this.limiter.peek(`auth-failed:address:${clientKey(address)}`, nowMs);
     if (decision === undefined || decision.allowed) return undefined;
     return retrySeconds(decision.retryAfterMs);
   }
@@ -86,12 +87,12 @@ export class FrontLimits {
    * The connection cap sees only the peer at connect time, so it cannot make this distinction.
    */
   acquireAddress(address: string, cap: number): boolean {
-    return takeSlot(this.openByAddress, address, cap);
+    return takeSlot(this.openByAddress, clientKey(address), cap);
   }
 
   /** Counts one open request for the effective client address as closed. */
   releaseAddress(address: string): void {
-    freeSlot(this.openByAddress, address);
+    freeSlot(this.openByAddress, clientKey(address));
   }
 }
 
