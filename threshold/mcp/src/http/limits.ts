@@ -37,14 +37,17 @@ export class FrontLimits {
   }
 
   /**
-   * Seconds to wait while the address has no failed-auth token left, else undefined. Reads the
-   * bucket without taking from it, so a refused address costs no token lookup. The caller skips
-   * this check for a cached hit, so authenticated traffic is never blocked by failed-auth state.
+   * Seconds to wait while the address or the global failed-auth bucket has no token left, else
+   * undefined. Reads both buckets without taking from them, so a refused request costs no token
+   * lookup. The caller skips this check for a cached hit, so authenticated traffic is never blocked
+   * by failed-auth state.
    */
   authBlocked(address: string, nowMs: number): number | undefined {
-    const decision = this.limiter.peek(`auth-failed:address:${clientKey(address)}`, nowMs);
-    if (decision === undefined || decision.allowed) return undefined;
-    return retrySeconds(decision.retryAfterMs);
+    const byAddress = this.limiter.peek(`auth-failed:address:${clientKey(address)}`, nowMs);
+    if (byAddress !== undefined && !byAddress.allowed) return retrySeconds(byAddress.retryAfterMs);
+    const global = this.limiter.peek('auth-failed:global', nowMs);
+    if (global !== undefined && !global.allowed) return retrySeconds(global.retryAfterMs);
+    return undefined;
   }
 
   /** Takes one call from the player's bucket and one from the owner's. Seconds to wait, or undefined. */

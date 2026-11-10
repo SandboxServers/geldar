@@ -123,10 +123,11 @@ describe('scoping and limits', () => {
     };
     const wrong = { body: INIT, headers: { Authorization: 'Bearer wrong-token-0123456789wrong' } };
     for (let i = 0; i < FAILED_AUTH_PER_MINUTE; i += 1) await rig.send('/p/aa', wrong);
-    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+    // The refused token is remembered after its first lookup, so the repeats cost no lookup at all.
+    expect(lookups).toBe(1);
     const reply = await rig.send('/p/aa', wrong);
     expect(reply.status).toBe(429);
-    expect(lookups).toBe(FAILED_AUTH_PER_MINUTE);
+    expect(lookups).toBe(1);
   });
 
   it('holds at most 4 open requests per player and refuses the 5th', async () => {

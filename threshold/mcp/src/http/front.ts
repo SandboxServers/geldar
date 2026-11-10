@@ -7,6 +7,7 @@ import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
 import {
   type BearerVerdict,
   clientAddress,
+  MissCache,
   parseBearer,
   tokenDigest,
   trustedProxies,
@@ -113,6 +114,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';
   const addressOf = (req: IncomingMessage): string =>
     clientAddress(req, trusted, clientIpHeader).address;
+  // Refused bearers, remembered for a few seconds so a repeat does not cost a store lookup.
+  const misses = new MissCache();
   const maxPerAddress =
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
@@ -148,7 +151,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       }
       const address = client.address;
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
-      // bearer is refused before the lookup while its address is out of failed-auth tokens.
+      // bearer is refused before the lookup while its address or the global bucket is out of tokens.
       const token = parseBearer(header);
       const cached =
         token !== null &&
@@ -157,7 +160,14 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
       let verdict: BearerVerdict;
       try {
-        verdict = await verifyBearer(options.store, options.pepper, playerId, header, now());
+        verdict = await verifyBearer(
+          options.store,
+          options.pepper,
+          playerId,
+          header,
+          now(),
+          misses,
+        );
       } catch (error) {
         // A failing store is a 503 with no detail; the log keeps only the error's class name.
         frontLog(options.log ?? stderrSink)({
