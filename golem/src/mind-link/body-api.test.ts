@@ -14,10 +14,10 @@ interface BodyApiFile {
 
 /** The Mind's prompt table is the Body's contract: every example in it must be something the Body accepts. */
 const table = JSON.parse(
-  readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v1.json'), 'utf8'),
+  readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v2.json'), 'utf8'),
 ) as BodyApiFile;
 
-describe('prompts/body-api/v1.json against the Body', () => {
+describe('prompts/body-api/v2.json against the Body', () => {
   it('names only programs the Body registers', () => {
     const programs = createProgramRegistry().names();
     for (const entry of table.programs) expect(programs, entry.program).toContain(entry.program);

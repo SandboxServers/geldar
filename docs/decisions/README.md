@@ -78,4 +78,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0071](0071-public-endpoints-and-ports.md) | The public Minecraft endpoint is a new TCP port with an SRV record; HTTPS ingress is the shared Caddy, reloaded and never restarted | Accepted (owner) |
 | [0072](0072-glass-and-bluemap-are-public.md) | Glass and BlueMap are public, read-only, and hardened before exposure | Accepted (owner) |
 | [0073](0073-spec-is-never-edited.md) | docs/spec.md is never edited by agents; decision records amend it, with the open amendments listed | Accepted (owner) |
+| [0074](0074-shelter-means-an-enclosed-safe-space.md) | Shelter means an enclosed safe space, not only a bed; a night rested in any enclosed shelter counts for the fatigue rule; prompt v5 and body-api v2 are the defaults | Accepted (owner) |
 >

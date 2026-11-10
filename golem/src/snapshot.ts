@@ -1,6 +1,7 @@
 import { type Snapshot, validateSnapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { isEnclosed } from './body/view.ts';
 import { ulid } from './ulid.ts';
 
 const DAY_TICKS = 24000;
@@ -91,11 +92,12 @@ function effectNames(bot: Bot): string[] {
 export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
   const age = bot.time.age;
   const feet = bot.entity.position;
-  const block = bot.blockAt(new Vec3(Math.floor(feet.x), Math.floor(feet.y), Math.floor(feet.z)));
+  const cell = new Vec3(Math.floor(feet.x), Math.floor(feet.y), Math.floor(feet.z));
+  const block = bot.blockAt(cell);
   const position: Snapshot['self']['position'] = {
-    x: Math.floor(feet.x),
-    y: Math.floor(feet.y),
-    z: Math.floor(feet.z),
+    x: cell.x,
+    y: cell.y,
+    z: cell.z,
   };
   const biome = biomeId(block?.biome?.name);
   if (biome !== undefined) position.biome = biome;
@@ -127,11 +129,15 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
       ...(opts.unlockedRecipes !== undefined ? { unlocked_recipes: opts.unlockedRecipes } : {}),
     },
     // Empty unless the caller passes the perception module's authorized surroundings (spec 5.2).
-    surroundings: opts.surroundings ?? {
-      blocks_summary: '',
-      notable_blocks: [],
-      entities: [],
-      agents: [],
+    // `enclosed` is the Body's own read of its cell (decision 0074), not perception.
+    surroundings: {
+      ...(opts.surroundings ?? {
+        blocks_summary: '',
+        notable_blocks: [],
+        entities: [],
+        agents: [],
+      }),
+      enclosed: isEnclosed((at) => bot.blockAt(at), cell),
     },
     ...(opts.bodyGeneration !== undefined ? { body_generation: opts.bodyGeneration } : {}),
     heard: opts.heard ?? [],

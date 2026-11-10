@@ -167,4 +167,34 @@ describe('buildSnapshot', () => {
       /snapshot rejected by the contract/,
     );
   });
+
+  it('reports enclosed from the solid cells around the feet cell (10, 64, -4)', () => {
+    // The feet cell's six neighbours and the cell above the head, as the Body's enclosure needs.
+    const pocket: [number, number, number][] = [
+      [1, 0, 0],
+      [-1, 0, 0],
+      [0, 0, 1],
+      [0, 0, -1],
+      [1, 1, 0],
+      [-1, 1, 0],
+      [0, 1, 1],
+      [0, 1, -1],
+      [0, 2, 0],
+      [0, -1, 0],
+    ];
+    const sealed = fakeBot({
+      blockAt: (at: { x: number; y: number; z: number }) => ({
+        boundingBox: pocket.some(
+          ([dx, dy, dz]) => at.x === 10 + dx && at.y === 64 + dy && at.z === -4 + dz,
+        )
+          ? 'block'
+          : 'empty',
+      }),
+    });
+    expect(buildSnapshot(sealed, opts).surroundings.enclosed).toBe(true);
+    expect(
+      buildSnapshot(fakeBot({ blockAt: () => ({ boundingBox: 'empty' }) }), opts).surroundings
+        .enclosed,
+    ).toBe(false);
+  });
 });
