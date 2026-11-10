@@ -33,7 +33,7 @@ models:
 mind:
   agent:
     name: Adam                   # display name in prompts and addressed-speech detection (decision 0051)
-    username: ag_adam_01         # the game account username, equal to the life id (decision 0040, 0051)
+    username: ag_adam_03         # the game account username, equal to the life id (decision 0040, 0051; decision 0064)
     tier: strong                 # which models.* tier the life runs on; fixed for the life (spec 5.3.3)
     # Approved by the owner on 2026-11-09 (decision 0051 item 2). The Mind refuses to start if this
     # is empty or the draft placeholder.
@@ -68,7 +68,9 @@ mind:
   run_tier: strong               # models.* tier for this run; the 8B run is a separate life (decision 0051)
   # The life id of each tier. `./geldar.ps1 adam up --model strong|fast` reads this table and sets
   # mind.agent.username, mind.agent.tier and mind.run_tier to match; the loaders ignore this key.
-  lives: { strong: ag_adam_01, fast: ag_adam_02 }
+  # The exit runs use fresh lives (decision 0064): 32B ag_adam_03, 8B ag_adam_04. `smoke` is the
+  # OPS-1 smoke life, always on the fast tier: `adam select --model smoke` writes it.
+  lives: { strong: ag_adam_03, fast: ag_adam_04, smoke: ag_smoke_01 }
 
 # Pinned models (decision 0051). A model whose digest differs from the Ollama one is not advertised.
 # The digests were recorded from Ollama by `./geldar.ps1 adam models --record` on 2026-11-09; the

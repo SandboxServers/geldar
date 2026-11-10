@@ -17,7 +17,7 @@ import type { ReflectDeps } from './reflect.ts';
 import { reflectOnce } from './reflect.ts';
 import { ReflectionTrigger } from './trigger.ts';
 
-export const LIFE = 'ag_adam_01';
+export const LIFE = 'ag_adam_03';
 
 /** Builds a `MindEvent`; the payload is whatever the type needs. */
 export function event(type: MindEvent['type'], tick: number, payload: unknown, day = 3): MindEvent {

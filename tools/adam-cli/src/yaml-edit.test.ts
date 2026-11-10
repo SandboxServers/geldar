@@ -99,7 +99,7 @@ describe('selectLife', () => {
     const doc = parse(fast) as {
       mind: { agent: { username: string; tier: string }; run_tier: string };
     };
-    expect(doc.mind.agent).toMatchObject({ username: 'ag_adam_02', tier: 'fast' });
+    expect(doc.mind.agent).toMatchObject({ username: 'ag_adam_04', tier: 'fast' });
     expect(doc.mind.run_tier).toBe('fast');
     const before = SHARD.split('\n');
     const after = fast.split('\n');
@@ -116,6 +116,6 @@ describe('selectLife', () => {
     const strong = parse(selectLife(there, 'strong', lives.strong)) as {
       mind: { agent: { username: string } };
     };
-    expect(strong.mind.agent.username).toBe('ag_adam_01');
+    expect(strong.mind.agent.username).toBe('ag_adam_03');
   });
 });

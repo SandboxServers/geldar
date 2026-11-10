@@ -64,11 +64,33 @@ export function classifyShardEdit(committedText: string, workingText: string): S
   }
   const mind = working?.mind;
   const tier = mind?.run_tier;
-  if (typeof tier !== 'string' || mind?.lives?.[tier] !== mind?.agent?.username) {
+  if (typeof tier !== 'string' || (tier !== 'strong' && tier !== 'fast')) {
     return refusedSelect(changes);
   }
   if (mind?.agent?.tier !== tier) return refusedSelect(changes);
+  // The tier's own life, or the smoke life: `select --model smoke` writes it on the fast tier, and nothing else.
+  const username = mind?.agent?.username;
+  const own = mind?.lives?.[tier] === username;
+  const smoke = tier === 'fast' && mind?.lives?.smoke === username;
+  if (!own && !smoke) return refusedSelect(changes);
   return { kind: 'select', changes };
+}
+
+/** The Mind's life as the text names it: the game username, the agent tier and the run tier (null when absent). */
+export interface MindLife {
+  username: string | null;
+  tier: string | null;
+  runTier: string | null;
+}
+
+export function mindLifeOf(text: string): MindLife {
+  const doc = parse(text) as { mind?: MindKeys } | null;
+  const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  return {
+    username: str(doc?.mind?.agent?.username),
+    tier: str(doc?.mind?.agent?.tier),
+    runTier: str(doc?.mind?.run_tier),
+  };
 }
 
 function refusedSelect(changes: KeyChange[]): ShardEdit {

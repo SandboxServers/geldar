@@ -35,7 +35,7 @@ import {
 } from './ports.ts';
 import { SERVICE_MARKERS } from './safe-stop.ts';
 import type { Preflight, PreflightFacts } from './sequence.ts';
-import { classifyShardEdit, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
+import { classifyShardEdit, mindLifeOf, SHARD_PATH, type ShardEdit } from './shard-edit.ts';
 import { parsePrepared, WORLD_VOLUME_ENV, type WorldVolumes } from './world-volume.ts';
 
 const COMPOSE_FILE = 'compose/phase0.yml';
@@ -431,6 +431,7 @@ export function createPreflight(opts: {
           volume,
           worldVolumeEnv: opts.env[WORLD_VOLUME_ENV],
           lifeId: LIFE_ID[opts.profile],
+          mind: mindLifeOf(shardYaml),
         },
         shardConfigSha256: sha256Hex(shardYaml),
         shardCommittedSha256,

@@ -53,7 +53,7 @@ function promptsWith(edit: (text: string) => string): string {
 
 function reflectionVars(degraded: boolean): ReflectionPromptVars {
   return {
-    agent: { name: 'Adam', lifeId: 'ag_adam_01', personalitySeed: 'curious, careful' },
+    agent: { name: 'Adam', lifeId: 'ag_adam_03', personalitySeed: 'curious, careful' },
     day: 3,
     journal: [
       {
@@ -64,9 +64,9 @@ function reflectionVars(degraded: boolean): ReflectionPromptVars {
         parsed: { reasoning: 'Gather wood.', say: 'Hello' },
       },
     ],
-    goals: [{ agentId: 'ag_adam_01', rank: 0, goal: 'build a shelter', why: 'night is coming' }],
+    goals: [{ agentId: 'ag_adam_03', rank: 0, goal: 'build a shelter', why: 'night is coming' }],
     relationships: [
-      { agentId: 'ag_adam_01', otherId: 'Eve', impression: 'friendly', trust: 70, lastSeenDay: 3 },
+      { agentId: 'ag_adam_03', otherId: 'Eve', impression: 'friendly', trust: 70, lastSeenDay: 3 },
     ],
     beliefs: [],
     commitments: [],
@@ -80,7 +80,7 @@ function reflectionVars(degraded: boolean): ReflectionPromptVars {
 function commitmentRow(text: string, dueTick: number | null): MemoryRow {
   return {
     memoryId: 1,
-    agentId: 'ag_adam_01',
+    agentId: 'ag_adam_03',
     kind: 'semantic',
     provenance: 'commitment',
     subject: null,
@@ -233,7 +233,7 @@ describe('prompt library', () => {
         heard: [],
       }),
     );
-    other.goals = [{ agentId: 'ag_adam_01', rank: 0, goal: 'x', why: 'y' }];
+    other.goals = [{ agentId: 'ag_adam_03', rank: 0, goal: 'x', why: 'y' }];
     const c = library.render('thought', other);
     expect(c.messages[0]?.content).toBe(a.messages[0]?.content);
     expect(c.messages[1]?.content).not.toBe(a.messages[1]?.content);
@@ -390,7 +390,7 @@ describe('snapshot rendering', () => {
   it('keeps the reflection within its budget with a hostile digest and 500 beliefs', () => {
     const beliefs = Array.from({ length: 500 }, (_, i) => ({
       memoryId: i,
-      agentId: 'ag_adam_01',
+      agentId: 'ag_adam_03',
       kind: 'semantic' as const,
       provenance: 'observation' as const,
       subject: null,
@@ -415,7 +415,7 @@ describe('snapshot rendering', () => {
   it('shows at most mind.max_beliefs beliefs, the newest first, out of 500', () => {
     const beliefs = Array.from({ length: 500 }, (_, i) => ({
       memoryId: 500 - i,
-      agentId: 'ag_adam_01',
+      agentId: 'ag_adam_03',
       kind: 'semantic' as const,
       provenance: 'observation' as const,
       subject: null,

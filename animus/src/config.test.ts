@@ -107,7 +107,7 @@ describe('animus config', () => {
   it('reads the Phase 0 shard file when placeholders are allowed', async () => {
     const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
     expect(config.shard).toBe('phase0');
-    expect(config.agent).toMatchObject({ name: 'Adam', username: 'ag_adam_01', tier: 'strong' });
+    expect(config.agent).toMatchObject({ name: 'Adam', username: 'ag_adam_03', tier: 'strong' });
     expect(config.thinker).toEqual({
       host: '127.0.0.1',
       port: 7410,

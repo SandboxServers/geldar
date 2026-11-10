@@ -20,7 +20,7 @@ import type {
 const DIMS = 768;
 
 /** The life the loop and reflection fixtures use; `addIntentRow` defaults to it. */
-const FIXTURE_LIFE = 'ag_adam_01';
+const FIXTURE_LIFE = 'ag_adam_03';
 
 /**
  * An `Embedder` that needs no model: the vector is a pure function of the text and the kind,

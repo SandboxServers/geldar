@@ -19,14 +19,24 @@ describe('adam select', () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const file = copyShard();
     const before = readFileSync(file, 'utf8');
-    expect(selectInFile(file, 'fast')).toBe('ag_adam_02');
+    expect(selectInFile(file, 'fast')).toBe('ag_adam_04');
     const fast = parse(readFileSync(file, 'utf8'));
-    expect(fast.mind.agent).toMatchObject({ username: 'ag_adam_02', tier: 'fast' });
+    expect(fast.mind.agent).toMatchObject({ username: 'ag_adam_04', tier: 'fast' });
     expect(fast.mind.run_tier).toBe('fast');
     expect(fast.mind.agent.personality_seed).toBe(parse(before).mind.agent.personality_seed);
-    expect(selectInFile(file, 'strong')).toBe('ag_adam_01');
+    expect(selectInFile(file, 'strong')).toBe('ag_adam_03');
     const strong = parse(readFileSync(file, 'utf8'));
     expect(strong.mind).toEqual(parse(before).mind);
+    vi.restoreAllMocks();
+  });
+
+  it('selects the smoke life on the fast tier, with run_tier fast and never run_tier smoke', () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const file = copyShard();
+    expect(selectInFile(file, 'smoke')).toBe('ag_smoke_01');
+    const smoke = parse(readFileSync(file, 'utf8'));
+    expect(smoke.mind.agent).toMatchObject({ username: 'ag_smoke_01', tier: 'fast' });
+    expect(smoke.mind.run_tier).toBe('fast');
     vi.restoreAllMocks();
   });
 

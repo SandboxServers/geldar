@@ -6,7 +6,7 @@ import { Attention } from './controller.ts';
 import { BODY_WAKE_REASONS } from './policy.ts';
 import { ManualTiming } from './timing.fakes.ts';
 
-const LIFE = 'ag_adam_01';
+const LIFE = 'ag_adam_03';
 const ME = { name: 'Adam', username: 'Adam_B0T' };
 
 let seq = 0;

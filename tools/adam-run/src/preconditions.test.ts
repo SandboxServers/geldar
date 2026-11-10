@@ -38,7 +38,8 @@ const good: PreconditionFacts = {
   prepared: prepared(),
   volume: FRESH,
   worldVolumeEnv: VOLUME,
-  lifeId: 'ag_adam_02',
+  lifeId: 'ag_adam_04',
+  mind: { username: 'ag_adam_04', tier: 'fast', runTier: 'fast' },
 };
 
 const withBench = (json: unknown): PreconditionFacts => ({
@@ -109,7 +110,22 @@ describe('checkPreconditions', () => {
       { ...good, observedDigests: { 'qwen3:8b': 'sha256:zzz' } },
       'Ollama reports sha256:zzz',
     ],
-    ['the wrong life id for 8B', { ...good, lifeId: 'ag_adam_01' }, 'profile 8b runs ag_adam_02'],
+    ['the wrong life id for 8B', { ...good, lifeId: 'ag_adam_03' }, 'profile 8b runs ag_adam_04'],
+    [
+      'a shard file that selects the 32B life for the 8B profile',
+      { ...good, mind: { username: 'ag_adam_03', tier: 'strong', runTier: 'strong' } },
+      'shard life: profile 8b runs ag_adam_04, but shards/phase0.yaml selects ag_adam_03; run adam select --model fast',
+    ],
+    [
+      'a shard file whose agent tier is not the profile tier',
+      { ...good, mind: { username: 'ag_adam_04', tier: 'strong', runTier: 'fast' } },
+      'shard tier: profile 8b runs the fast tier, but shards/phase0.yaml sets strong',
+    ],
+    [
+      'a shard file with no life selected',
+      { ...good, mind: { username: null, tier: null, runTier: null } },
+      'shards/phase0.yaml selects no life',
+    ],
     [
       'no prepared volume in the run folder',
       { ...good, prepared: null, volume: null },
@@ -194,11 +210,12 @@ describe('checkPreconditions', () => {
     expect(checkPreconditions(facts)).toEqual({ ok: true });
   });
 
-  it('the 32B profile checks its prepared volume too, and runs ag_adam_01', () => {
+  it('the 32B profile checks its prepared volume too, and runs ag_adam_03', () => {
     const facts: PreconditionFacts = {
       ...good,
       profile: '32b',
-      lifeId: 'ag_adam_01',
+      lifeId: 'ag_adam_03',
+      mind: { username: 'ag_adam_03', tier: 'strong', runTier: 'strong' },
       prepared: prepared('32b'),
       pins: [{ tag: 'qwen3:32b', digest: 'sha256:aaa' }],
       observedDigests: { 'qwen3:32b': 'sha256:aaa' },
@@ -214,10 +231,30 @@ describe('checkPreconditions', () => {
       ...good,
       profile: 'smoke',
       lifeId: 'ag_smoke_01',
+      mind: { username: 'ag_smoke_01', tier: 'fast', runTier: 'fast' },
       prepared: null,
       volume: null,
       worldVolumeEnv: undefined,
     };
     expect(checkPreconditions(facts)).toEqual({ ok: true });
+  });
+
+  it('a 32B run refuses a shard file that selects the 8B life on the fast tier', () => {
+    const facts: PreconditionFacts = {
+      ...good,
+      profile: '32b',
+      lifeId: 'ag_adam_03',
+      prepared: prepared('32b'),
+      pins: [{ tag: 'qwen3:32b', digest: 'sha256:aaa' }],
+      observedDigests: { 'qwen3:32b': 'sha256:aaa' },
+    };
+    const verdict = checkPreconditions(facts);
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.missing.join('\n')).toContain(
+        'shard life: profile 32b runs ag_adam_03, but shards/phase0.yaml selects ag_adam_04; run adam select --model strong',
+      );
+      expect(verdict.missing.join('\n')).toContain('shard tier: profile 32b runs the strong tier');
+    }
   });
 });

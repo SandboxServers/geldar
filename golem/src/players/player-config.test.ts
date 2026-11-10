@@ -65,9 +65,11 @@ describe('parsePlayerConfig', () => {
 
   it("refuses Adam's life ids from mind.lives", async () => {
     const doc = await shardDoc();
+    const adamLife = (doc.mind as { lives: { strong: string } }).lives.strong;
+    const adamPlayer = adamLife.replace(/_/g, '-');
     const players = sovereignOf(doc).players as Record<string, string>[];
-    players.push({ player_id: 'ag-adam-01', life_id: 'ag_adam_01', name: 'Adam' });
-    expect(() => parsePlayerConfig(doc, 'ag-adam-01')).toThrow(/Adam's life id/);
+    players.push({ player_id: adamPlayer, life_id: adamLife, name: 'Adam' });
+    expect(() => parsePlayerConfig(doc, adamPlayer)).toThrow(/Adam's life id/);
   });
 
   it('refuses an entry whose life_id is not the underscore form of its player id', async () => {

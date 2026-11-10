@@ -107,7 +107,7 @@ describe('shards/phase0.yaml Mind blocks', () => {
 
   it('has the blocks of decisions 0049 to 0051 with the pinned values', async () => {
     const doc = parse(await readFile(file, 'utf8')) as ShardDoc;
-    expect(doc.mind.agent.username).toBe('ag_adam_01');
+    expect(doc.mind.agent.username).toBe('ag_adam_03');
     expect(doc.mind.thinker).toMatchObject({ host: '127.0.0.1', port: 7410, heartbeat_s: 15 });
     expect(doc.mind.thought).toMatchObject({ max_tokens: 600, deadline_s: 25, reasoning: 'off' });
     expect(doc.mind.reflection).toMatchObject({ max_tokens: 1200, reasoning: 'on' });

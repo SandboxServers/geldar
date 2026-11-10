@@ -106,8 +106,9 @@ describe('loadMcpConfig', () => {
 
   it('refuses a ranger whose life id is Adam', () => {
     const doc = shardDoc();
-    doc.sovereign.players[0].player_id = 'ag-adam-01';
-    doc.sovereign.players[0].life_id = 'ag_adam_01';
+    const adamLife: string = doc.mind.agent.username;
+    doc.sovereign.players[0].player_id = adamLife.replace(/_/g, '-');
+    doc.sovereign.players[0].life_id = adamLife;
     expect(() => parseMcpConfig(doc, { env: ENV })).toThrow("is Adam's life");
   });
 

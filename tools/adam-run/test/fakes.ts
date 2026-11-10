@@ -3,7 +3,7 @@
  * `Scenario` is the fake stack's health: a test changes it from `onObserve` at the minute it wants.
  */
 import type { AbortCriteria } from '../src/abort.ts';
-import { LIFE_ID, type Profile } from '../src/manifest.ts';
+import { LIFE_ID, PROFILE_TIER, type Profile } from '../src/manifest.ts';
 import type {
   Clock,
   FileStore,
@@ -273,6 +273,11 @@ export function passingPreflight(
             profile === 'smoke' ? null : { exists: true, labelled: true, empty: true, usedBy: [] },
           worldVolumeEnv: FAKE_WORLD_VOLUME,
           lifeId: LIFE_ID[profile],
+          mind: {
+            username: LIFE_ID[profile],
+            tier: PROFILE_TIER[profile],
+            runTier: PROFILE_TIER[profile],
+          },
         },
         shardConfigSha256: 'a'.repeat(64),
         shardCommittedSha256: null,

@@ -202,7 +202,7 @@ describe('the preflight facts', () => {
     mkdirSync(join(repoRoot, 'shards'));
     writeFileSync(
       join(repoRoot, 'shards', 'phase0.yaml'),
-      'model_pins:\n  qwen3:8b:\n    digest: sha256:bbb\n',
+      'model_pins:\n  qwen3:8b:\n    digest: sha256:bbb\nmind:\n  run_tier: fast\n  agent:\n    username: ag_adam_04\n    tier: fast\n',
     );
     mkdirSync(join(repoRoot, 'bench-results'));
     const benchName = '20261110T024026Z-eba101b.json';
@@ -245,6 +245,7 @@ describe('the preflight facts', () => {
       expect(facts.prepared?.worldVolume).toBe('geldar-phase0-world-run-1');
       expect(facts.volume?.exists).toBe(true);
       expect(facts.worldVolumeEnv).toBe('geldar-phase0-world-run-1');
+      expect(facts.mind).toEqual({ username: 'ag_adam_04', tier: 'fast', runTier: 'fast' });
     } finally {
       vi.unstubAllGlobals();
     }
