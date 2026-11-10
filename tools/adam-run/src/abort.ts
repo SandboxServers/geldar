@@ -72,8 +72,8 @@ export function evaluateAbort(
   const last = history[history.length - 1];
   if (last === undefined) return null;
   if (!last.gpuPresent) return { rule: 'gpu', reason: 'the GPU is not visible to the host' };
-  // The life ended when a death was recorded since the first sample. A death ends the run only when the card says so.
-  const lifeEnded = last.deaths > (history[0]?.deaths ?? 0);
+  // The life ended when a death was recorded since the run start (ports.ts counts deaths from it). A death ends the run only when the card says so.
+  const lifeEnded = last.deaths > 0;
   if (c.deathFailsRun && lifeEnded) {
     return { rule: 'life_ended', reason: 'the life ended: a death happened in the run' };
   }
