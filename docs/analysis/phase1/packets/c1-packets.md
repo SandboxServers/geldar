@@ -485,3 +485,102 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **index line to add**: `index: | [0087](0087-nats-overlay-live-rules.md) | NATS overlay: live test rules and subject scoping | Proposed |`. If the generator is in `geldar.ps1`: an index line for C1-02 with the replacement subject table.
 
 **On cap**: commits 1 and 2 first. The revocation test (step 4) can move to the worknote for the next session.
+
+## Card C1-06b: component credential reads, with connect tests
+
+- **id**: C1-06b
+- **title**: Each component reads its own NATS user and password file, and a connect test proves it for golem, animus, eventsink, the MCP, the Java publisher and Velocity
+- **wave**: C1
+- **lane**: F
+- **status**: B
+- **depends-on**: C1-06a (the live server and the subject table)
+- **size**: M
+- **decisions**: 0087 (cited, not added; shared with C1-06a)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-06b.md`
+
+**may-edit**
+- The NATS connect path in `golem/src/` (new `golem/src/nats-credentials.ts` and its test; the existing connect call is found with `grep -rn "connect(" golem/src --include=*.ts`). `golem/src/view.ts` is integration-owned and is not touched.
+- `animus/src/nats-credentials.ts` and `eventsink/src/nats-credentials.ts`, each with its test, and the existing connect call in each.
+- `threshold/mcp/src/nats-credentials.ts` and the link at `threshold/mcp/src/cli.ts` (around line 158).
+- `plugin/` Java publisher: a new reader class in the existing Paper plugin package (locate with `grep -rln "nats\|NATS" plugin --include=*.java`), and the Velocity identity plugin under `plugin/velocity-identity/`.
+
+**must-not-edit**: `compose/*` (the environment wiring is C1-02's; `compose/velocity/velocity.toml` included); `geldar.ps1`; `contract/`; `shards/*`; root `package.json` and `pnpm-lock.yaml`; `golem/src/view.ts`; `docs/spec.md`; `docs/decisions/README.md`.
+
+**Steps**
+1. For each component (golem, animus, eventsink, MCP, Java publisher, Velocity), find the connect call and its environment reads. Write a table in the worknote: component, file, env names read today, auth today (none or other).
+2. TypeScript readers: read `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD_FILE` (the names the overlay uses). The file is read and trimmed; the value is never logged or put in an error message.
+3. Java reader: the same two names, the same rules.
+4. Fail closed when auth is on: a set user with a missing or unreadable password file stops the start. When neither variable is set, the component connects as it did before (the overlay is opt-in, 0067).
+5. Connect tests against the live server from C1-06a: each component connects with its role; a wrong password is refused; a missing file stops the start; the password string does not appear in any thrown message.
+6. Velocity: its plugin reads the same names. The compose wiring that sets them is an index line for C1-02.
+
+**Error behaviour**: an unreadable password file is a start failure with the file name, never the contents.
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run golem/src/nats-credentials.test.ts animus/src/nats-credentials.test.ts eventsink/src/nats-credentials.test.ts threshold/mcp/src/nats-credentials.test.ts`
+- Connect tests: `./geldar.ps1 pnpm vitest run nats-credentials.it` (desktop, Docker; the live server from C1-06a)
+- Java: `plugin/gradlew -p plugin test`
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit
+
+**Revert-check**
+- In `golem/src/nats-credentials.ts`, skip the password file read and pass an empty password. The test "golem connects with its role password" must fail. Restore.
+- In the Java reader, return the password as `null` on a missing file instead of failing. The test "missing file stops the start" must fail. Restore.
+
+**Commit plan**
+1. `C1-06b: credential table in the worknote, TypeScript readers for golem and animus`
+2. `C1-06b: eventsink and MCP readers, connect tests`
+3. `C1-06b: Java publisher reader and test`
+4. `C1-06b: Velocity identity reader and test`
+
+**index line to add**: for C1-02, the env names each component reads and the Velocity compose wiring. For 0087: a line noting that every component now reads its own role.
+
+**On cap**: the TypeScript components are the first state to land (commits 1 and 2). Velocity can move to the next session with its table row marked open.
+
+## Card C1-07: metrics exporters and the MCP replay bound
+
+- **id**: C1-07
+- **title**: Metrics exporters to the node's telemetry endpoint (off until one exists), and a bound on the MCP event replay
+- **wave**: C1
+- **lane**: C
+- **status**: B/O (the bound is B; the endpoint is O, owner question)
+- **depends-on**: P1-C1-00
+- **size**: M
+- **decisions**: 0088 (one record: exporter scope, endpoint config, replay window and its default)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-07.md`
+
+**may-edit**
+- `threshold/mcp/src/replay-source.ts`, `threshold/mcp/src/cli.ts` (the replay caller, around lines 176 to 230 and 363 to 420) and their tests.
+- New `metrics.ts` and `metrics.test.ts` in `golem/src/`, `eventsink/src/` and `threshold/mcp/src/`.
+- `package.json` and `pnpm-lock.yaml`: this card only (C1 has one owner for them). Add no dependency unless needed; the exporter writes the Prometheus text format by hand. A new dependency is pinned with `pnpm add -E`, at a release at least 14 days old.
+- `docs/decisions/0088-*.md` (new record).
+
+**must-not-edit**: `compose/*`; `geldar.ps1`; `shards/*` (the `replay_minutes` key is an index line for C1-02); `contract/`; `golem/src/view.ts`; `sql/*`; `docs/spec.md`; `docs/decisions/README.md`.
+
+**Steps**
+1. Find the replay window. Today `startReplay` receives a `fromIso` from its caller in `threshold/mcp/src/cli.ts`. Write in the worknote how `fromIso` is computed and whether it is bounded. The repo has no `replay_minutes` key; the 60-minute figure is the schedule's, not the code's.
+2. Bound the replay: `fromIso = now - replay_minutes`, where `replay_minutes` is read from the shard config when present and defaults to 60. Clamp to 1 to 1440; refuse 0, negatives and non-integers.
+3. Exporters: `metrics.ts` in each component, serving the text format on `/metrics` bound to loopback by default. Push to the telemetry endpoint only when `GELDAR_TELEMETRY_URL` is set. That endpoint does not exist yet (owner question 4), so until it does, the push stays off.
+4. Labels: no player names, life ids or token material as labels (a privacy rule). A test fails on any label named `player`, `life` or `token`.
+5. Metric names are listed in 0088 and the worknote.
+
+**Error behaviour**: an out-of-range `replay_minutes` stops the MCP start with the value named. A push that fails is logged with the status code, and the component keeps running.
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run threshold/mcp/src/replay-source.test.ts threshold/mcp/src/metrics.test.ts golem/src/metrics.test.ts eventsink/src/metrics.test.ts`
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit
+
+**Revert-check**
+- In `threshold/mcp/src/cli.ts`, pass the unbounded start for `fromIso`. The test "replay starts no earlier than the window" must fail. Restore.
+- Remove the `GELDAR_TELEMETRY_URL` guard in `metrics.ts`. The test "no endpoint, no outbound request" (a fake fetch that counts calls) must fail. Restore.
+
+**Commit plan**
+1. `C1-07: replay window bounded, default 60 minutes`
+2. `C1-07: MCP metrics exporter on loopback, label rule test`
+3. `C1-07: golem and eventsink exporters`
+4. `C1-07: record 0088 for exporters and the replay window`
+
+**index line to add**: for C1-02, the `replay_minutes` key in `shards/phase0.yaml` (optional; the code default is 60). For C1-10: the telemetry endpoint, once the owner names it.
+
+**On cap**: the replay bound (commit 1) is the first thing to land, since it is a behaviour fix. Exporters can move to the next session.
