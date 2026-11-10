@@ -164,7 +164,7 @@ Correction to the line above: the living lives are no longer a startup snapshot.
 WM-11b part 2 (partial, not complete):
 
 - Done: the golem book wiring (commit `53f8ff6`). `bookServe` in `golem/src/players/main.ts` serves the WM-07 book subject for the bound life through `startPlayerBody`'s `extraServe`; `runPlayer` uses it when no `extraServe` is passed. Tests in `golem/src/players/main.test.ts`: the bound life is answered, another life is not, and the subject is gone after stop. Revert check: the life check in `serveBooks` mutated to `if (request === null) return;` fails `ignores a request for another life` and `does not answer a book request that names another life`; restored from backup, `git diff --stat` empty.
-- Not done: the threshold/mcp e2e (scripted stub client through `startMcp`). It needs an SQL router for the token, agent, budget, journal and player stores, and schema-valid snapshot and plan replies on the NATS transport. The e2e revert checks (another player's token, revoked token) are owed with it. WM-11 is not complete (code).
+- Done: e2e at world+front-door level with fakes (`threshold/mcp/src/e2e.test.ts`, commit `cf9aa56`): 7 tests over loopback with the MCP SDK client and the in-memory fakes. startMcp is covered by main.test.ts; real-service e2e owed to ops (see the list above). Revert checks, each restored from a backup with a matching hash: the `auth.ts` forbidden line (`keeps player B on B` fails), the fake token store's revoked check (`refuses a revoked token` fails), and act's batch-cost reserve (`looks, acts` fails).
 - Check: `./geldar.ps1 check` exit 0 ("All checks passed") after `53f8ff6`. No rerun was needed.
 - Owed to ops, not run here:
   1. Image build: `docker build -f threshold/mcp/Dockerfile .`, then `compose/mcp.yml` up with the real config (WM-10 item 2).
@@ -172,4 +172,4 @@ WM-11b part 2 (partial, not complete):
   3. WM-09 CLI round trips on the dev Postgres: mint then resolve, revoke then 401, rotate and the grace window (WM-09 item d).
   4. A real NATS run of the gateway: snapshot, plan and book requests, the stream replay, and the presence bucket creation.
   5. A live case for the `extraServe` path against a running player Body (WM-08 item c).
-  6. The e2e still to write (above), then its revert checks.
+  6. An e2e against the real services (NATS, Postgres, a running Body). The world+front-door e2e with fakes is done (`cf9aa56`).
