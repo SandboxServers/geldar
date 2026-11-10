@@ -3,7 +3,7 @@
  * pool that records every statement, and a raw HTTP client that can send any method and Host.
  * Test-only; nothing in the Glass runtime imports this file.
  */
-import { type IncomingMessage, request as httpRequest, type Server, createServer } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createHandler } from '../src/http.ts';
 import { SseHub } from '../src/sse.ts';
@@ -36,15 +36,24 @@ export interface Running {
 }
 
 /** Starts Glass's handler on 127.0.0.1 with an ephemeral port and a recording pool. */
-export async function startGlass(rows: Record<string, unknown>[] = []): Promise<Running> {
+export async function startGlass(
+  rows: Record<string, unknown>[] = [],
+  stream: Record<string, unknown>[] = [],
+): Promise<Running> {
   const recorder = recordingPool(rows);
+  let pending = stream;
   const hub = new SseHub({
     maxClients: 8,
     bufferFrames: 100,
-    pollMs: 1000,
+    pollMs: 20,
     heartbeatMs: 15_000,
     start: async () => ({ cursor_at: '2026-11-10T00:00:00.000Z', thought_id: '' }),
-    fetch: async () => [],
+    // The stream's rows arrive once, on the first poll after a client attaches.
+    fetch: async () => {
+      const out = pending;
+      pending = [];
+      return out;
+    },
   });
   const server = createServer(createHandler({ db: recorder.pool as never, hub }));
   server.keepAliveTimeout = 100;
@@ -84,15 +93,21 @@ export function send(port: number, req: Send): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { ...req.headers };
     if (req.host !== undefined) headers.Host = req.host;
-    const out = httpRequest({ host: '127.0.0.1', port, method: req.method, path: req.path, headers }, (res) => {
-      const type = String(res.headers['content-type'] ?? '');
-      if (type.startsWith('text/event-stream')) {
-        resolve({ status: res.statusCode ?? 0, headers: res.headers, body: '' });
-        res.destroy();
-        return;
-      }
-      collect(res).then((body) => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }), reject);
-    });
+    const out = httpRequest(
+      { host: '127.0.0.1', port, method: req.method, path: req.path, headers },
+      (res) => {
+        const type = String(res.headers['content-type'] ?? '');
+        if (type.startsWith('text/event-stream')) {
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: '' });
+          res.destroy();
+          return;
+        }
+        collect(res).then(
+          (body) => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }),
+          reject,
+        );
+      },
+    );
     out.on('error', reject);
     out.end();
   });
