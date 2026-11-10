@@ -1,0 +1,9 @@
+{
+  "name": "@geldar/glass-ctl",
+  "private": true,
+  "description": "The logic behind ./geldar.ps1 glass: one detached Glass server on 127.0.0.1, with a format-2 PID file.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  }
+}

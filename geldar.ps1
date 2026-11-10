@@ -23,6 +23,8 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
   ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
   ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
+  ./geldar.ps1 glass up|down|status|logs  Glass (the Thought Stream) on 127.0.0.1:8787, detached; status probes the thoughts API
+  ./geldar.ps1 adam-run <32b|8b|smoke> start|status|stop|report [args]  The Adam run protocol (tools/adam-run)
   ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
   ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
 #>
@@ -272,10 +274,38 @@ Usage: ./geldar.ps1 <command> [args]
   ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
   ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
   ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
+  ./geldar.ps1 glass up|down|status|logs  Glass (the Thought Stream) on 127.0.0.1:8787, detached; status probes the thoughts API
+  ./geldar.ps1 adam-run <32b|8b|smoke> start|status|stop|report [args]  The Adam run protocol (tools/adam-run)
   ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
   ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
   ./geldar.ps1 help                  Print this usage
 '@
+}
+# glass and adam-run (W6-13). Both are thin: tools/glass-ctl holds the Glass logic, tools/adam-run/src/cli.ts the run protocol.
+function Invoke-GlassCtl([string[]] $GlassArgs) {
+  # Glass reads its password from the file this variable names; this script never opens it. Restored in finally.
+  $saved = @{ GELDAR_GLASS_PG_PASSWORD_FILE = $env:GELDAR_GLASS_PG_PASSWORD_FILE }
+  Push-Location $Root
+  try {
+    $env:GELDAR_GLASS_PG_PASSWORD_FILE = Join-Path $Root 'compose/secrets/postgres-glass.txt'
+    node (Join-Path $Root 'tools/glass-ctl/src/cli.ts') @GlassArgs
+    $code = $LASTEXITCODE
+  }
+  finally {
+    foreach ($name in $saved.Keys) { Set-Item -Path "Env:$name" -Value $saved[$name] }
+    Pop-Location
+  }
+  exit $code
+}
+
+function Invoke-AdamRun([string[]] $RunArgs) {
+  Push-Location $Root
+  try {
+    node (Join-Path $Root 'tools/adam-run/src/cli.ts') @RunArgs
+    $code = $LASTEXITCODE
+  }
+  finally { Pop-Location }
+  exit $code
 }
 
 switch ($Command) {
@@ -305,6 +335,8 @@ switch ($Command) {
   'shard' { Invoke-Shard $Rest }
   'bench' { Invoke-Bench $Rest }
   'adam' { Invoke-Adam $Rest }
+  'glass' { Invoke-GlassCtl $Rest }
+  'adam-run' { Invoke-AdamRun $Rest }
   default {
     [Console]::Error.WriteLine("Unknown command '$Command'.")
     Show-Usage
