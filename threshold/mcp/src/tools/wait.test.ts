@@ -228,7 +228,10 @@ describe('wait max_seconds cap', () => {
     const { clock, log, deps } = setup({ maxResultBytes: 2048 });
     const p = wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 60 });
     await flush();
-    await log.append(LIFE, speech(1, 0, true, 'y'.repeat(4000)));
+    // speech is cut to 512 characters per line, so four 500-character lines pass 2 KiB untrimmed
+    for (let seq = 1; seq <= 4; seq++) {
+      await log.append(LIFE, speech(seq, 0, true, 'y'.repeat(500)));
+    }
     await advance(clock, 1);
     const out = await p;
     expect(out.ok).toBe(true);
