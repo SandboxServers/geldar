@@ -76,3 +76,38 @@ Branch `fix/a1-admission-nats` from `wave6-main`. One commit per item, in priori
 - Replay: documented steps in `eventsink/README.md` (no command: a DLQ body with `data_truncated`
   true cannot be replayed).
 - Not done: step 2 (RCON hardening, original item 5); item 4 is another finisher's.
+
+## Step 1: RCON hardening (original item 5)
+
+- 1a, commit 69f76df (+ 0f37451 sharpened guard): `Initialize-ShardSecrets` in `geldar.ps1` applies
+  `Set-OwnerOnlyAcl` (the owner-only step of `restrictToOwner`: inheritance off, current account
+  full control) to `postgres.txt`, `rcon.txt` and `velocity-forwarding.txt`. A new file gets it
+  before its secret is written; an existing file gets it too. Best effort: a failure warns.
+- Guard: `threshold/mcp/src/geldar-script.test.ts` checks the call sits right before the secret
+  write, and in the existing-file branch.
+- 1b, commit ba01620: `compose/phase0.yml` no longer publishes 25575. `compose/rcon-host.yml`
+  publishes `127.0.0.1:25575` for `paper`. `./geldar.ps1 shard up phase0 --rcon-host` adds it.
+  `shard up` without the flag prints a one-line hint. `shard logs` and `shard status` accept the
+  flag without using it, so `--rcon-host` never reaches `docker logs`.
+- Host tools: `RconClient.connect` (golem/src/rcon.ts) is the one RCON connect. Its refused
+  error now names `compose/rcon-host.yml` and the flag. Callers: golem players main, golem
+  `life-removal.ts` (used by adam-cli, mcp-tokens and players-cli, which only reach RCON through it),
+  bench cli and bench tps. Test: `golem/src/rcon.test.ts`.
+- Docs: `docs/threat-model.md` RCON row and `.claude/skills/run-shard/SKILL.md`. Historical worknotes
+  and reports keep their old text.
+- Guards: `geldar-script.test.ts` checks phase0.yml has no 25575 line, the override publishes only
+  `127.0.0.1:25575` on paper, and the script adds the override and prints the hint.
+- Mutation checks: restoring the new-file ACL call's removal fails the guard (confirmed); putting
+  the 25575 port back into phase0.yml fails the guard (confirmed, restored from a scratchpad copy).
+  The RCON message change was not mutated: the old text lacks `compose/rcon-host.yml`, so the
+  updated `toThrow` fails on it by reading.
+- Deviation: the spec asks for the hint only when a host tool needs RCON. The script cannot tell
+  which host tools a run will use, so the hint prints on every `shard up` without `--rcon-host`.
+- Fix found by check (commit 61a03f2): the compose loop ran `docker compose config` on the override
+  alone, which has no image. It is skipped there and checked merged with phase0.yml.
+
+## Step 2: check
+
+- `./geldar.ps1 check`: exit 0 (349 test files passed, 15 skipped; 3828 tests passed, 59 skipped).
+  The first run failed only on the override's standalone compose config, fixed in 61a03f2. No
+  flaky test failed, so no re-run was needed beyond that one.
