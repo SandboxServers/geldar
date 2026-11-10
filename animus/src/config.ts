@@ -79,7 +79,12 @@ export interface AnimusConfig {
   modelPins: Record<string, ModelPin>;
   embedding: { model: string; digest: string; dims: number; onCpu: boolean };
   attention: { minWakeupSpacingS: number; fallbackWakeupTicks: number; overheardToDigest: boolean };
-  memory: { workingWindow: number; episodicTopK: number; fatigueDays: number };
+  memory: {
+    workingWindow: number;
+    episodicTopK: number;
+    fatigueDays: number;
+    fatigueRule: boolean;
+  };
 }
 
 /** Options of the loaders. */
@@ -236,6 +241,9 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
       workingWindow: int(memory, 'working_window', 'memory', 1),
       episodicTopK: int(memory, 'episodic_top_k', 'memory', 1),
       fatigueDays: int(memory, 'fatigue_days', 'memory', 1),
+      // The fatigue switch (spec 5.4): on unless the shard file turns it off.
+      fatigueRule:
+        memory.fatigue_rule === undefined ? true : bool(memory, 'fatigue_rule', 'memory'),
     },
   };
 }
