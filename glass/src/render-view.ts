@@ -1,7 +1,7 @@
 /**
  * The DOM part of the Thought Stream page. Every element is made here from a fixed tag and a fixed
  * class. Every value from the world goes in with textContent, after display(). Nothing from the
- * world becomes an attribute, a link, a style or markup. There is no innerHTML in this file.
+ * world becomes an attribute, a link, a style or markup. Nothing here sets markup from a string.
  *
  * glass/ has no DOM library, so the few DOM members used are declared below. The file is served to
  * the browser after type stripping, so it stays erasable TypeScript.
