@@ -127,8 +127,22 @@ async function guarded<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Every bound call keeps its life awake (spec 5.15.3: any call within 60 s), and a call that meets
+ * an unanswering Body asks for it up, so the next call finds the Body starting.
+ */
 function bound(deps: Wired, run: Run): ToolHandler {
-  return (input, ctx) => guarded(async () => run(await callerOf(deps, ctx), input, ctx));
+  return (input, ctx) =>
+    guarded(async () => {
+      const call = await callerOf(deps, ctx);
+      await deps.presence.touch(call.lifeId);
+      try {
+        return await run(call, input, ctx);
+      } catch (err) {
+        if (err instanceof BodyUnavailable) await deps.presence.wantBody(call.lifeId, deps.now());
+        throw err;
+      }
+    });
 }
 
 /** One `wait` for the bound life. The session's abort ends it; the keepalive is the session's own. */

@@ -274,3 +274,37 @@ describe('the settle timer', () => {
     expect(bucket.puts.length).toBe(before);
   });
 });
+
+describe('every bound call keeps the presence right', () => {
+  it('keeps an act-only player awake for 10 minutes, with no wait', async () => {
+    const { world, tools, bucket, clock } = wired();
+    for (let i = 0; i < 20; i++) {
+      await run(tools, 'act', { reasoning: 'ok', actions: [GOTO] });
+      await passSeconds(clock, 30);
+      expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({ state: 'awake', desired_body: 'up' });
+    }
+    world.close();
+  });
+
+  it('a look on a down Body leaves the life wanting its Body up', async () => {
+    const { world, tools, bucket, clock, deps, body } = wired();
+    await run(tools, 'look');
+    await passSeconds(clock, 700);
+    expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({ desired_body: 'down' });
+    body.setOffline(PLAYER.lifeId, true);
+    const reply = await run(tools, 'look');
+    expect(reply.text.startsWith('body_unavailable: ')).toBe(true);
+    expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({ state: 'awake', desired_body: 'up' });
+    world.close();
+  });
+
+  it('a call revives a hibernated life', async () => {
+    const { world, tools, bucket, clock, deps } = wired();
+    await run(tools, 'look');
+    await passSeconds(clock, 700);
+    expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({ state: 'hibernating' });
+    await run(tools, 'status');
+    expect(storedPresence(bucket, PLAYER.lifeId)).toMatchObject({ state: 'awake', desired_body: 'up' });
+    world.close();
+  });
+});
