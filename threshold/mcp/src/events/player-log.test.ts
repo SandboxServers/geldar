@@ -77,6 +77,15 @@ describe('RingEventLog', () => {
     expect((await log.since(LIFE, 1)).events.map((e) => e.kind)).toEqual(['plan_result', 'proposal']);
   });
 
+  it('puts an earlier sequence that arrives after a later one in order, and still ignores a repeat', async () => {
+    const log = new RingEventLog();
+    await log.append(LIFE, ev(4));
+    await log.append(LIFE, ev(7));
+    await log.append(LIFE, ev(5));
+    await log.append(LIFE, ev(5));
+    expect((await log.since(LIFE, 0)).events.map((e) => e.seq)).toEqual([4, 5, 7]);
+  });
+
   it('keeps each life in its own ring', async () => {
     const log = new RingEventLog();
     await log.append(LIFE, ev(1));

@@ -49,15 +49,12 @@ export class RingEventLog implements PlayerEventLog {
       if (ring.plans.size > PLAN_RESULT_LIMIT && oldest !== undefined) ring.plans.delete(oldest);
       return;
     }
-    const newest = ring.events[ring.events.length - 1];
-    // A sequence already held is ignored: the stream redelivers after a restart. One stream message
-    // may map to two entries of different kinds, so a kind not yet held at that seq is kept.
-    if (newest !== undefined && event.seq < newest.seq) return;
-    if (newest !== undefined && event.seq === newest.seq) {
-      const held = ring.events.some((e) => e.seq === event.seq && e.kind === event.kind);
-      if (held) return;
-    }
-    ring.events.push(event);
+    // A sequence and kind already held is ignored: the stream redelivers after a restart. One stream
+    // message may map to two kinds at one seq, and an earlier event that arrives late is put in order.
+    if (ring.events.some((e) => e.seq === event.seq && e.kind === event.kind)) return;
+    let at = ring.events.length;
+    while (at > 0 && (ring.events[at - 1]?.seq ?? 0) > event.seq) at--;
+    ring.events.splice(at, 0, event);
     if (ring.events.length > this.capacity) {
       const gone = ring.events.shift();
       if (gone !== undefined) ring.evicted.push(gone.seq);
