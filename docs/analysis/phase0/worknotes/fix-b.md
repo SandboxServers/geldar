@@ -10,9 +10,9 @@ Branch `fix/b-mcp-front-door` from `wave6-main`. Items follow the campaign revie
 | 2 | Unauthenticated path cost: global peek, negative cache, no second query | todo | - |
 | 3 | Caps derive from the owner cap; owner-first take; per-agent share | committed | 8d4574c |
 | 4 | Dead config keys wired to code; `shard/rules` reports effective values | partial | a6e76f7 (shard/rules) |
-| 5 | Owner cap: DB trigger, `owner add` reads yaml, auth refuses over cap | todo | - |
-| 6 | Journal spacing bucket, no journal text in events, stream `max_bytes` | todo | - |
-| 7 | NOTIFY payload is a hint; re-read token state before ending sessions | todo | - |
+| 5 | Owner cap: DB trigger, `owner add` reads yaml, auth refuses over cap | committed (integration cases unverified here) | cb8600a, f85d597, 1f9a1f2, 63da242 |
+| 6 | Journal spacing bucket, no journal text in events, stream `max_bytes` | NOT done | - |
+| 7 | NOTIFY payload is a hint; re-read token state before ending sessions | committed | c7a341d |
 
 ## Log
 
@@ -25,3 +25,6 @@ Branch `fix/b-mcp-front-door` from `wave6-main`. Items follow the campaign revie
 - Item 4 (later session): `shard/rules` now reports `max_body_bytes`, `max_result_bytes`, `presence.lease_seconds` and `presence.hibernate_after_seconds` from the loaded shard (`ShardRules` in `resources.ts`, filled by `shardRules` in `main.ts`). Commit a6e76f7. Test: `main.test.ts` "shard/rules reports the effective limits" loads a copy of the shard with non-default values for the five keys. Revert check: `maxResultBytes` hard-coded to 16384; the test failed (expected 16384 to be 8192), then restored. Fixture updates in `resources.test.ts`, `e2e.test.ts`, `world-session.test.ts` and `neutral-text.test.ts`.
 - Item 4 docs: `threshold/mcp/README.md` Configuration section lists the five keys, the owner-cap-derived caps (80 and 320 at 20), and the `GELDAR_MCP_TRUSTED_PROXIES` / `GELDAR_MCP_CLIENT_IP_HEADER` overrides (Caddy: `x-geldar-client-ip`). `shards/phase0.yaml` comments updated to match. No keys added or changed in the shard.
 - Item 4 still open: the other dead keys still need a wire-up check (not reviewed in this session).
+- Item 5 (cb8600a, f85d597, 1f9a1f2, 63da242): migration `sql/0006_owner_cap_trigger.sql` enforces the owner cap in the database; `owner add` takes its default cap from the shard file; the runbook documents it; auth refuses a token whose owner is over its cap with `owner_over_cap` (never cached). Caveat: `owner_cap_owner` (20) is not applied by `owner add`, because the yaml names no owner slug; the operator passes `owner add --cap 20`. The owner-cap integration cases in `tools/mcp-tokens/test/owner-cap.it.test.ts` were not run here (no Postgres in this worktree). CI's Postgres job must run them before the integration merge. The CI job file on `fix/f-supply-chain` is not present in this worktree, so the job list was not checked here.
+- Item 6: NOT done. Journal spacing bucket, the no-journal-text-in-events rule and the stream `max_bytes` were not started.
+- Item 7 (c7a341d): the `mcp_token_revoked` listener treats the NOTIFY payload as a hint and re-reads `revoked_at` and the player's `status` for that token and player before it ends sessions or drops the cache. Any DB role may NOTIFY (geldar_glass can). A forged NOTIFY for an active token ends nothing. A failed re-read ends nothing, and a revoked token is still refused by the next resolve (the hit cache lasts up to 5 s). Tests: `pg-tokens.test.ts` LISTEN cases (forged NOTIFY, real revoke, player left active). Revert check: the table check made to always fire; "a forged NOTIFY for an active token ends no session" failed (1 failed, 37 passed); restored from a scratchpad backup and `git diff --stat` was empty.
