@@ -24,16 +24,23 @@ export const MAX_GRACE_MINUTES = 1440;
 /** The name of the variable in the file that `token mint` and `token rotate` write. */
 export const TOKEN_VARIABLE = 'GELDAR_MCP_TOKEN';
 
+/** Resolves a path to its canonical spelling. The native form also expands Windows 8.3 short names. */
+export type Realpath = (path: string) => string;
+
 /**
  * The absolute path with symlinks resolved: realpath of the nearest existing ancestor (or of the
- * path itself), with the missing rest appended as written.
+ * path itself), with the missing rest appended as written. The native realpath is used because
+ * the JavaScript one leaves a Windows short name (`MCP-TO~1`) as written, so it would miss a repo.
  */
-export function resolveThroughSymlinks(path: string): string {
+export function resolveThroughSymlinks(
+  path: string,
+  realpath: Realpath = realpathSync.native,
+): string {
   let existing = resolve(path);
   const missing: string[] = [];
   for (;;) {
     try {
-      return join(realpathSync(existing), ...missing);
+      return join(realpath(existing), ...missing);
     } catch {
       const parent = dirname(existing);
       if (parent === existing) return join(existing, ...missing);
@@ -48,11 +55,18 @@ export function resolveThroughSymlinks(path: string): string {
  * on the path as given and on its symlink-resolved form, so a link outside the repo that points in
  * is refused too. The file is never overwritten: the write fails if it exists.
  */
-export function checkOutPath(out: string, repoRoot: string = REPO_ROOT): string {
+export function checkOutPath(
+  out: string,
+  repoRoot: string = REPO_ROOT,
+  realpath: Realpath = realpathSync.native,
+): string {
   const path = resolve(out);
   const inside =
     isInsideRepo(path, repoRoot) ||
-    isInsideRepo(resolveThroughSymlinks(path), resolveThroughSymlinks(repoRoot));
+    isInsideRepo(
+      resolveThroughSymlinks(path, realpath),
+      resolveThroughSymlinks(repoRoot, realpath),
+    );
   if (inside) {
     throw new Error('--out must be outside the repo; a token file must never be committed');
   }

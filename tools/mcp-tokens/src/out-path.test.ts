@@ -1,7 +1,8 @@
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkOutPath } from './tokens.ts';
 
 const dirs: string[] = [];
@@ -44,5 +45,31 @@ describe('checkOutPath through symlinks', () => {
     expect(() => checkOutPath(join(link, 'missing', 'token.env'), repo)).toThrow(
       'outside the repo',
     );
+  });
+});
+
+describe('checkOutPath with the native realpath', () => {
+  it('refuses a short-name path that the native realpath expands into the repo', () => {
+    const repo = join(tmpdir(), 'mcp-tokens-short', 'geldar');
+    const shortRepo = join(tmpdir(), 'mcp-tokens-short', 'GELDAR~1');
+    // Stands in for the native realpath, which expands the 8.3 short name to the long one.
+    const expanded = (path: string) =>
+      path.startsWith(shortRepo) ? join(repo, path.slice(shortRepo.length)) : path;
+    expect(() => checkOutPath(join(shortRepo, 'token.env'), repo, expanded)).toThrow(
+      'outside the repo',
+    );
+  });
+
+  it('resolves through realpathSync.native by default', () => {
+    const repo = join(tmpdir(), 'mcp-tokens-native', 'geldar');
+    const spy = vi.spyOn(realpathSync, 'native');
+    try {
+      expect(() =>
+        checkOutPath(join(tmpdir(), 'mcp-tokens-native', 'token.env'), repo),
+      ).not.toThrow();
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
