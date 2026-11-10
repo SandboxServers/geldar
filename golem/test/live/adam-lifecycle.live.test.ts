@@ -4,11 +4,17 @@
  * survives a Body crash with the next generation, and that one night's sleep gives exactly one
  * reflection row and its memories.
  */
+import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { withAdamCase } from './adam-case.ts';
+import { planEvidence, withAdamCase } from './adam-case.ts';
+import { currentGeneration, openSeedDeps, seedRunningIntent, travelIntent } from './adam-seed.ts';
 import { ADAM_LIFE_ID, memoriesFrom, mindLiveEnabled } from './adam-stack.ts';
 
 const SLOT = 10;
+/** The shard `adam-stack` starts (its default), where the seeded intent's rows are published. */
+const SHARD = 'phase0';
+/** A world tick far past any tick the shard reaches in a case, so the seeded intent never expires. */
+const FAR_TICK = 2_000_000_000;
 /** Polls faster than the default second, to catch an intent before it completes. */
 const FAST_POLL_MS = 500;
 const FIRST_INTENT_MS = 60_000;
@@ -17,40 +23,24 @@ const SLEEP_MS = 360_000;
 const SETTLE_MS = 20_000;
 
 describe.skipIf(!mindLiveEnabled)('Adam across a Body crash and a night', () => {
-  it('resumes the intent from the checkpoint after the Body is killed, and the next plan carries the new generation', async () => {
+  it('after the Body is killed, the next plan carries a generation above the one it was planned under', async () => {
     await withAdamCase({ slot: SLOT, kind: 'restart' }, async (ac) => {
       // The day and the empty inventory leave Adam nothing to do on his own, so the chatter gives him
       // a walk to make: the travel goal the first plan carries.
       ac.chatter.speak();
       await ac.chatter.say('Adam, walk over to the far wall of the arena and look around.');
-      // Adam's travel intents are short and finish between polls, so the state is not awaited: the
-      // newest intent of any state is the one the Body is killed under, the moment the plan lands.
-      const planned = await ac.waitFor(
-        'an intent accepted from a plan',
+      await ac.waitFor(
+        'an accepted plan (an intent made from a valid thought, or an action of it completed)',
         FIRST_INTENT_MS,
-        async () => (await ac.intents()).at(-1),
+        async () => planEvidence(await ac.thoughts(), await ac.intents(), await ac.actions()),
         FAST_POLL_MS,
       );
-      const generation = planned.body_generation;
+      // The generation the plan was made under: the highest one a thought of this case recorded.
+      const generation = Math.max(0, ...(await ac.thoughts()).map((t) => t.body_generation ?? 0));
+      expect(generation, await ac.state()).toBeGreaterThan(0);
       const killedAt = new Date().toISOString();
 
       await ac.stack.restartBody();
-
-      // The intent resumes under the new generation, or it had completed (before or after the kill).
-      const resumed = await ac.waitFor(
-        `intent ${planned.intent_id} resumed or completed under a generation above ${generation}`,
-        RESUME_MS,
-        async () =>
-          (await ac.intents()).find(
-            (i) =>
-              i.intent_id === planned.intent_id &&
-              (i.state === 'completed' || i.body_generation > generation),
-          ),
-      );
-      expect(
-        resumed.state === 'completed' || resumed.body_generation > generation,
-        await ac.state(),
-      ).toBe(true);
 
       // The Mind's next thought is made from a snapshot of the new Body.
       const next = await ac.waitFor(
@@ -66,6 +56,77 @@ describe.skipIf(!mindLiveEnabled)('Adam across a Body crash and a night', () => 
       const made = (await ac.intents()).filter((i) => i.thought_id === next.thought_id);
       for (const intent of made) {
         expect(intent.body_generation, await ac.state()).toBe(next.body_generation);
+      }
+    });
+  }, 900_000);
+
+  it('resumes the intent from the checkpoint after the Body is killed, and the next plan carries the new generation', async () => {
+    await withAdamCase({ slot: SLOT, kind: 'restart' }, async (ac) => {
+      // No intent of Adam's own may be running when the seed goes in, so the seeded one is the only one.
+      await ac.waitFor('no running intent before the seed', FIRST_INTENT_MS, async () =>
+        (await ac.intents()).every((i) => i.state !== 'running' && i.state !== 'accepted'),
+      );
+      const deps = await openSeedDeps();
+      try {
+        const generation = await currentGeneration(deps.generations, ADAM_LIFE_ID);
+        const { x, y, z } = ac.live.arena.center;
+        const target = { x: x + 4, y, z };
+        // A fresh id per run: an intent id must match `in_` and 26 Crockford base32 characters.
+        const intentId = `in_${randomUUID().replaceAll('-', '').slice(0, 26).toUpperCase()}`;
+        // The world tick is not read here: tick 0 labels the rows, and the far expiry keeps the intent live.
+        await seedRunningIntent(deps, {
+          lifeId: ADAM_LIFE_ID,
+          shard: SHARD,
+          bodyGeneration: generation,
+          intentId,
+          tick: 0,
+          expiresTick: FAR_TICK,
+          intent: travelIntent(target),
+          checkpoint: { target, legs: 0 },
+        });
+        const planned = await ac.waitFor(
+          `the seeded intent ${intentId} in the intents table`,
+          FIRST_INTENT_MS,
+          async () => (await ac.intents()).find((i) => i.intent_id === intentId),
+          FAST_POLL_MS,
+        );
+        const killedAt = new Date().toISOString();
+
+        await ac.stack.restartBody();
+
+        // The intent resumes under the new generation, or it had completed (before or after the kill).
+        const resumed = await ac.waitFor(
+          `intent ${planned.intent_id} resumed or completed under a generation above ${generation}`,
+          RESUME_MS,
+          async () =>
+            (await ac.intents()).find(
+              (i) =>
+                i.intent_id === planned.intent_id &&
+                (i.state === 'completed' || i.body_generation > generation),
+            ),
+        );
+        expect(
+          resumed.state === 'completed' || resumed.body_generation > generation,
+          await ac.state(),
+        ).toBe(true);
+
+        // The Mind's next thought is made from a snapshot of the new Body.
+        const next = await ac.waitFor(
+          'a thought made after the restart on the new generation',
+          RESUME_MS,
+          async () =>
+            (await ac.thoughts()).find(
+              (t) => t.valid && t.at >= killedAt && (t.body_generation ?? 0) > generation,
+            ),
+        );
+        expect(next.body_generation, await ac.state()).toBeGreaterThan(generation);
+        // If that thought became an intent, the Body recorded it under the same generation.
+        const made = (await ac.intents()).filter((i) => i.thought_id === next.thought_id);
+        for (const intent of made) {
+          expect(intent.body_generation, await ac.state()).toBe(next.body_generation);
+        }
+      } finally {
+        await deps.close();
       }
     });
   }, 900_000);
