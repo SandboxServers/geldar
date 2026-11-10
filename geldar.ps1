@@ -24,7 +24,7 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
   ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
   ./geldar.ps1 glass up|down|status|logs  Glass (the Thought Stream) on 127.0.0.1:8787, detached; status probes the thoughts API
-  ./geldar.ps1 adam-run <32b|8b|smoke> start|status|stop|report [args]  The Adam run protocol (tools/adam-run)
+  ./geldar.ps1 adam-run <32b|8b|smoke> start|status|stop|report|prepare-volume [args]  The Adam run protocol (tools/adam-run)
   ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
   ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
 #>
@@ -275,7 +275,7 @@ Usage: ./geldar.ps1 <command> [args]
   ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
   ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
   ./geldar.ps1 glass up|down|status|logs  Glass (the Thought Stream) on 127.0.0.1:8787, detached; status probes the thoughts API
-  ./geldar.ps1 adam-run <32b|8b|smoke> start|status|stop|report [args]  The Adam run protocol (tools/adam-run)
+  ./geldar.ps1 adam-run <32b|8b|smoke> start|status|stop|report|prepare-volume [args]  The Adam run protocol (tools/adam-run)
   ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
   ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
   ./geldar.ps1 help                  Print this usage
