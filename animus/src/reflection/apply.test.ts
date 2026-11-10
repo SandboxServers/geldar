@@ -12,6 +12,7 @@ function context(over: Partial<ApplyContext> = {}): ApplyContext {
     degraded: false,
     digest: { ownObservations: [], heard: [] },
     beliefs: [],
+    commitments: [],
     ...over,
   };
 }
@@ -199,7 +200,9 @@ describe('applyReflection', () => {
     await applyReflection(
       { store, embedder },
       reflection({ beliefs_remove: ['Meet Pike at the cave'] }),
-      context({ beliefs: before.beliefs }),
+      // Commitments are not beliefs (the store's beliefs exclude them), so only the commitments
+      // list can resolve it.
+      context({ beliefs: before.beliefs, commitments: before.dueCommitments }),
     );
     const after = await store.loadDeterministic(LIFE, 0);
     expect(after.dueCommitments.map((c) => c.text)).not.toContain('Meet Pike at the cave');

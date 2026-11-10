@@ -90,9 +90,15 @@ export class FakeMemoryStore implements MemoryStore, Journal {
   private nextMemoryId = 1;
   private readonly embedder: Embedder | undefined;
 
-  /** The embedder is needed only by `backfillEmbeddings`. */
-  constructor(embedder?: Embedder) {
+  private readonly limits: { maxBeliefs: number; maxCommitments: number };
+
+  /** The embedder is needed only by `backfillEmbeddings`. The limits match `PgMemoryStore`'s. */
+  constructor(embedder?: Embedder, limits: { maxBeliefs?: number; maxCommitments?: number } = {}) {
     this.embedder = embedder;
+    this.limits = {
+      maxBeliefs: limits.maxBeliefs ?? 40,
+      maxCommitments: limits.maxCommitments ?? 10,
+    };
   }
 
   async ensureAgent(agent: AgentRow): Promise<void> {
@@ -107,7 +113,10 @@ export class FakeMemoryStore implements MemoryStore, Journal {
       agent: { ...agent },
       goals: [...(this.goals.get(lifeId) ?? [])].sort((a, b) => a.rank - b.rank),
       relationships: [...this.relationships.values()].filter((r) => r.agentId === lifeId),
-      beliefs: active.filter((m) => m.kind === 'semantic').reverse(),
+      beliefs: active
+        .filter((m) => m.kind === 'semantic' && m.provenance !== 'commitment')
+        .reverse()
+        .slice(0, this.limits.maxBeliefs),
       dueCommitments: active
         .filter(
           (m) =>
@@ -115,7 +124,8 @@ export class FakeMemoryStore implements MemoryStore, Journal {
             !m.resolved &&
             (m.dueTick === null || m.dueTick <= nowTick),
         )
-        .sort((a, b) => (a.dueTick ?? -1) - (b.dueTick ?? -1)),
+        .sort((a, b) => (a.dueTick ?? -1) - (b.dueTick ?? -1))
+        .slice(0, this.limits.maxCommitments),
     };
   }
 
@@ -229,8 +239,8 @@ export class FakeMemoryStore implements MemoryStore, Journal {
         if (row.agentId === lifeId && row.active && row.subject === subject) row.active = false;
       }
       const text = `${update.name}: ${update.impression} (trust ${update.trust})`;
-      const vector =
-        this.embedder === undefined ? null : await this.embedder.embed([text], 'document');
+      // As the Pg store's tryEmbed: a failed embedder leaves the memory without a vector.
+      const vector = await this.embedder?.embed([text], 'document').catch(() => []);
       await this.writeMemoriesPartial(
         lifeId,
         [
@@ -261,6 +271,13 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     const agent = this.agents.get(lifeId);
     if (agent === undefined) throw new Error(`no agent ${lifeId}`);
     agent.lastSleepDay = day;
+  }
+
+  /** As the Postgres store: the first day kept, an unknown life throws. */
+  async setBornDay(lifeId: string, day: number): Promise<void> {
+    const agent = this.agents.get(lifeId);
+    if (agent === undefined) throw new Error(`no agent ${lifeId}`);
+    if (agent.bornDay === null) agent.bornDay = day;
   }
 
   /**
@@ -317,9 +334,18 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     return true;
   }
 
+  /** As the Postgres store: a parsed reflection whose day is no later than the last sleep day. */
   async lastReflectionTick(lifeId: string): Promise<number> {
+    const sleptDay = this.agents.get(lifeId)?.lastSleepDay ?? null;
+    if (sleptDay === null) return 0;
     const ticks = this.thoughts
-      .filter((t) => t.lifeId === lifeId && t.wakeReason === 'reflection')
+      .filter(
+        (t) =>
+          t.lifeId === lifeId &&
+          t.wakeReason === 'reflection' &&
+          t.parsed !== null &&
+          t.worldDay <= sleptDay,
+      )
       .map((t) => t.worldTick);
     return ticks.length === 0 ? 0 : Math.max(...ticks);
   }

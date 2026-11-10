@@ -15,6 +15,7 @@ import {
   beliefLines,
   DEFAULT_MAX_BELIEFS,
   episodicLines,
+  fitCommitments,
   fitMemory,
   journalLines,
   relationshipLines,
@@ -59,6 +60,9 @@ export const DEFAULT_REFLECTION_BUDGET_TOKENS = 4_000;
 
 /** The share of a budget the memory blocks (beliefs, memories, recent thoughts) may use. */
 export const MEMORY_SHARE = 0.6;
+
+/** The share of the reflection budget the open commitments may use, within {@link MEMORY_SHARE}. */
+export const COMMITMENT_SHARE = 0.25;
 
 /**
  * The share of the reflection budget the day digest may use, cut first; the memory blocks keep
@@ -105,11 +109,22 @@ const THOUGHT_SLOTS: Record<number, string[]> = {
 const REFLECTION_SLOTS: Record<number, string[]> = {
   1: ['reflection_schema', 'memories_max', 'degraded_note'],
   2: ['name', 'personality_seed'],
-  3: ['day', 'journal_today', 'goal_stack', 'beliefs', 'memories', 'quoted_world_text'],
+  3: [
+    'day',
+    'journal_today',
+    'goal_stack',
+    'commitments',
+    'beliefs',
+    'memories',
+    'quoted_world_text',
+  ],
 };
 
 /** The thought template a new Mind renders: `thought/v2.md`. `thought/v1.md` stays loadable. */
 export const DEFAULT_THOUGHT_VERSION = 2;
+
+/** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
+export const DEFAULT_REFLECTION_VERSION = 2;
 
 const THOUGHT_BLOCKS = [1, 2, 3, 4, 5, 6];
 const REFLECTION_BLOCKS = [1, 2, 3];
@@ -118,8 +133,10 @@ const REFLECTION_BLOCKS = [1, 2, 3];
 export interface PromptLibraryOptions {
   /** The `prompts/` directory. Defaults to the repository's. */
   promptsDir?: string;
-  /** The reflection and body-api template version to load. Only 1 exists. */
+  /** The body-api template version to load. Only 1 exists. */
   version?: number;
+  /** The reflection template version to load. Defaults to {@link DEFAULT_REFLECTION_VERSION}; 1 stays loadable. */
+  reflectionVersion?: number;
   /** The thought template version to load. Defaults to {@link DEFAULT_THOUGHT_VERSION}; 1 stays loadable. */
   thoughtVersion?: number;
   /** See {@link PromptLimits.thoughtBudgetTokens}. */
@@ -134,6 +151,7 @@ export interface PromptLibraryOptions {
 export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptLibrary {
   const dir = options.promptsDir ?? join(repoRoot(), 'prompts');
   const n = options.version ?? 1;
+  const r = options.reflectionVersion ?? DEFAULT_REFLECTION_VERSION;
   const t = options.thoughtVersion ?? DEFAULT_THOUGHT_VERSION;
   const thought = loadChecked(
     'thought',
@@ -144,8 +162,8 @@ export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptL
   );
   const reflection = loadChecked(
     'reflection',
-    n,
-    join(dir, 'reflection', `v${n}.md`),
+    r,
+    join(dir, 'reflection', `v${r}.md`),
     REFLECTION_BLOCKS,
     REFLECTION_SLOTS,
   );
@@ -275,13 +293,18 @@ function renderThought(
       world.push({ kind: 'overheard', fields: { from: e.payload.from, text: e.payload.text } });
     }
   }
+  // The due commitments get COMMITMENT_SHARE of the budget and come out of the memory share, as in
+  // the reflection, so the user message stays inside the budget however many are due.
+  const commitments = renderCommitments(
+    fitCommitments(vars.dueCommitments, limits.thoughtBudgetTokens * COMMITMENT_SHARE),
+  );
   const memory = fitMemory(
     {
       beliefs: beliefLines(vars.beliefs, limits.maxBeliefs),
       memories: episodicLines(vars.episodic),
       journal: journalLines(vars.recentThoughts),
     },
-    limits.thoughtBudgetTokens * MEMORY_SHARE,
+    limits.thoughtBudgetTokens * MEMORY_SHARE - promptCost(commitments),
   );
   const schema = thoughtDecodeSchema();
   const self = vars.snapshot.self;
@@ -292,7 +315,7 @@ function renderThought(
     personality_seed: vars.agent.personalitySeed,
     skill_index: 'none yet. You have not learned any skills.',
     goal_stack: renderGoals(vars.goals),
-    commitments: renderCommitments(vars.dueCommitments),
+    commitments,
     beliefs: renderLines(memory.beliefs),
     memories: renderLines(memory.memories),
     days: String(vars.snapshot.world_time.day),
@@ -328,13 +351,18 @@ function renderReflection(
   const schema = reflectionDecodeSchema(vars.degraded);
   const max = vars.degraded ? 2 : 8;
   const budget = limits.reflectionBudgetTokens;
+  // The commitments (at most mind.max_commitments, most overdue first) get COMMITMENT_SHARE of the
+  // budget and come out of the memory share, so the whole block stays inside the budget.
+  const commitments = renderCommitments(
+    fitCommitments(vars.commitments, budget * COMMITMENT_SHARE),
+  );
   const memory = fitMemory(
     {
       beliefs: beliefLines(vars.beliefs, limits.maxBeliefs),
       memories: episodicLines(vars.episodic),
       journal: journalLines(vars.journal),
     },
-    budget * MEMORY_SHARE,
+    budget * MEMORY_SHARE - promptCost(commitments),
   );
   const values: Record<string, string> = {
     reflection_schema: stableJson(schema, 200),
@@ -347,6 +375,7 @@ function renderReflection(
     day: String(vars.day),
     journal_today: renderLines(memory.journal),
     goal_stack: renderGoals(vars.goals),
+    commitments,
     beliefs: renderLines(memory.beliefs),
     memories: renderLines(memory.memories),
     quoted_world_text: '',

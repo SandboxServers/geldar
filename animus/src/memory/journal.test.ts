@@ -1,6 +1,7 @@
+import type { Thought } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { FakeMemoryStore } from '../fakes/memory.fakes.ts';
-import type { ThoughtRow } from '../ports/index.ts';
+import type { AgentRow, ThoughtRow } from '../ports/index.ts';
 import { PgJournal } from './journal.ts';
 import type { SqlClient } from './pg-store.ts';
 
@@ -17,8 +18,36 @@ function recordingClient(rowCount: number, rows: Record<string, unknown>[] = [])
 }
 
 /** The fields the fake's journal reads; the rest of a `ThoughtRow` does not matter here. */
-function thought(lifeId: string, thoughtId: string, wakeReason: string, worldTick: number) {
-  return { thoughtId, lifeId, wakeReason, worldTick, worldDay: 1, parsed: null } as ThoughtRow;
+function thought(
+  lifeId: string,
+  thoughtId: string,
+  wakeReason: string,
+  worldTick: number,
+  worldDay = 1,
+  parsed: ThoughtRow['parsed'] = null,
+): ThoughtRow {
+  return { thoughtId, lifeId, wakeReason, worldTick, worldDay, parsed } as ThoughtRow;
+}
+
+/** A life row that differs from the others only in its last sleep day. */
+function lifeAsleepOn(agentId: string, lastSleepDay: number | null): AgentRow {
+  return {
+    agentId,
+    name: agentId,
+    lifeSeq: 1,
+    gameAccount: agentId,
+    shard: 'shard',
+    mode: null,
+    declaredModel: null,
+    modelConfig: 'model',
+    tier: 'fast',
+    personalitySeed: null,
+    bornAt: null,
+    bornDay: 0,
+    budgetRemaining: null,
+    budgetDaily: null,
+    lastSleepDay,
+  };
 }
 
 describe('PgJournal.linkIntent', () => {
@@ -57,6 +86,9 @@ describe('PgJournal.lastReflectionTick', () => {
     const { client, calls } = recordingClient(0, [{ tick: '500' }]);
     await expect(new PgJournal(client).lastReflectionTick('l')).resolves.toBe(500);
     expect(calls[0]?.sql).toContain("wake_reason = 'reflection'");
+    expect(calls[0]?.sql).toContain('JOIN agents a ON a.agent_id = t.life_id');
+    expect(calls[0]?.sql).toContain('t.parsed IS NOT NULL');
+    expect(calls[0]?.sql).toContain('t.world_day <= a.last_sleep_day');
     expect(calls[0]?.params).toEqual(['l']);
 
     const none = recordingClient(0, [{ tick: '0' }]);
@@ -84,12 +116,24 @@ describe('the fake journal keeps the same life rules', () => {
     expect(store.intentThought('in_1')).toBe('th_1');
   });
 
-  it('answers the latest reflection tick of its own life', async () => {
+  it('answers the latest parsed reflection of its own life, no later than its last sleep day', async () => {
     const store = new FakeMemoryStore();
     await expect(store.lastReflectionTick('ag_adam_01')).resolves.toBe(0);
-    await store.recordThought(thought('ag_adam_01', 'th_a', 'reflection', 500));
-    await store.recordThought(thought('ag_adam_01', 'th_b', 'idle', 900));
-    await store.recordThought(thought('ag_other_01', 'th_c', 'reflection', 800));
+    await store.ensureAgent(lifeAsleepOn('ag_adam_01', 5));
+    await store.recordThought(thought('ag_adam_01', 'th_a', 'reflection', 500, 5, {} as Thought));
+    await store.recordThought(thought('ag_adam_01', 'th_failed', 'reflection', 700, 5, null));
+    await store.recordThought(
+      thought('ag_adam_01', 'th_late', 'reflection', 750, 6, {} as Thought),
+    );
+    await store.recordThought(thought('ag_adam_01', 'th_b', 'idle', 900, 5, {} as Thought));
+    await store.recordThought(thought('ag_other_01', 'th_c', 'reflection', 800, 5, {} as Thought));
     await expect(store.lastReflectionTick('ag_adam_01')).resolves.toBe(500);
+  });
+
+  it('answers zero for a life that never slept', async () => {
+    const store = new FakeMemoryStore();
+    await store.ensureAgent(lifeAsleepOn('ag_adam_01', null));
+    await store.recordThought(thought('ag_adam_01', 'th_a', 'reflection', 500, 1, {} as Thought));
+    await expect(store.lastReflectionTick('ag_adam_01')).resolves.toBe(0);
   });
 });

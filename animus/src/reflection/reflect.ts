@@ -119,6 +119,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
     goals: memory.goals,
     relationships: memory.relationships,
     beliefs: memory.beliefs,
+    commitments: memory.dueCommitments,
     episodic: [],
     degraded,
     digest: digest.text,
@@ -179,6 +180,7 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
           degraded,
           digest,
           beliefs: memory.beliefs,
+          commitments: memory.dueCommitments,
         });
         outcome = degraded ? 'degraded' : 'applied';
         errors = undefined;

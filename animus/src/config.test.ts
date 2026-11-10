@@ -33,6 +33,7 @@ describe('animus config: the start-up waits', () => {
       thinkerWaitS: 20,
       promptBudgetTokens: DEFAULT_THOUGHT_BUDGET_TOKENS,
       maxBeliefs: 40,
+      maxCommitments: 10,
       memoryTimeoutS: 10,
     });
   });
@@ -46,6 +47,7 @@ describe('animus config: the start-up waits', () => {
       thinkerWaitS: 20,
       promptBudgetTokens: DEFAULT_THOUGHT_BUDGET_TOKENS,
       maxBeliefs: 40,
+      maxCommitments: 10,
       memoryTimeoutS: 10,
     });
     doc.mind.thinker_wait_s = -1;
@@ -62,6 +64,15 @@ describe('animus config: the start-up waits', () => {
     doc.mind.prompt_budget_tokens = 4000;
     doc.mind.max_beliefs = 0;
     expect(() => parseAnimusConfig(doc)).toThrow('mind.max_beliefs');
+  });
+
+  it('reads mind.max_commitments (default 10) and rejects a value below 1', () => {
+    const doc = approvedDoc();
+    expect(parseAnimusConfig(doc).mind.maxCommitments).toBe(10);
+    doc.mind.max_commitments = 25;
+    expect(parseAnimusConfig(doc).mind.maxCommitments).toBe(25);
+    doc.mind.max_commitments = 0;
+    expect(() => parseAnimusConfig(doc)).toThrow('mind.max_commitments');
   });
 });
 

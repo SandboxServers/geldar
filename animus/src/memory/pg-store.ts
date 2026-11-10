@@ -125,6 +125,8 @@ export interface PgMemoryStoreOptions {
   embedder?: Embedder;
   /** The newest active beliefs `loadDeterministic` returns (`mind.max_beliefs`). */
   maxBeliefs?: number;
+  /** The open commitments `loadDeterministic` returns, earliest due first (`mind.max_commitments`). */
+  maxCommitments?: number;
 }
 
 /**
@@ -135,11 +137,13 @@ export class PgMemoryStore implements MemoryStore {
   private readonly pool: PgPool;
   private readonly embedder: Embedder | undefined;
   private readonly maxBeliefs: number;
+  private readonly maxCommitments: number;
 
   constructor(pool: PgPool, options: PgMemoryStoreOptions = {}) {
     this.pool = pool;
     this.embedder = options.embedder;
     this.maxBeliefs = options.maxBeliefs ?? 40;
+    this.maxCommitments = options.maxCommitments ?? 10;
   }
 
   async ensureAgent(agent: AgentRow): Promise<void> {
@@ -185,15 +189,18 @@ export class PgMemoryStore implements MemoryStore {
       this.pool.query(
         `SELECT ${MEMORY_COLUMNS} FROM memories
          WHERE agent_id = $1 AND kind = 'semantic' AND COALESCE(active, true)
+           AND provenance IS DISTINCT FROM 'commitment'
          ORDER BY memory_id DESC LIMIT $2`,
         [lifeId, this.maxBeliefs],
       ),
+      // Most overdue first, capped at mind.max_commitments. Overflow commitments are not lost: they
+      // wait for a later reflection, once the earlier ones are resolved and drop out of this query.
       this.pool.query(
         `SELECT ${MEMORY_COLUMNS} FROM memories
          WHERE agent_id = $1 AND provenance = 'commitment' AND COALESCE(active, true)
            AND NOT COALESCE(resolved, false) AND (due_tick IS NULL OR due_tick <= $2)
-         ORDER BY due_tick NULLS FIRST, memory_id`,
-        [lifeId, nowTick],
+         ORDER BY due_tick NULLS FIRST, memory_id LIMIT $3`,
+        [lifeId, nowTick, this.maxCommitments],
       ),
     ]);
     return {
@@ -278,13 +285,21 @@ export class PgMemoryStore implements MemoryStore {
     const literals = writes.embeddings.map((e) =>
       e === null ? null : toVectorLiteral(e, EMBEDDING_DIMS),
     );
+    // The embedder runs before the transaction opens, so a slow model holds no row locks.
+    const relationshipVectors = await this.embedRelationships(writes.relationships);
     return inTransaction(this.pool, async (client) => {
       for (const [i, memory] of writes.memories.entries()) {
         await this.insertMemory(client, lifeId, memory, literals[i] ?? null);
       }
       for (const memoryId of writes.resolve) await this.resolveIn(client, lifeId, memoryId);
       const retired = await this.retireBeliefs(client, lifeId, writes.deactivate);
-      await this.writeRelationships(client, lifeId, writes.relationships, writes.day);
+      await this.writeRelationships(
+        client,
+        lifeId,
+        writes.relationships,
+        writes.day,
+        relationshipVectors,
+      );
       if (writes.goals !== null) await this.writeGoals(client, lifeId, writes.goals);
       await this.setSleepDay(client, lifeId, writes.day);
       return retired;
@@ -301,8 +316,9 @@ export class PgMemoryStore implements MemoryStore {
     updates: { name: string; impression: string; trust: number }[],
     day: number,
   ): Promise<void> {
+    const vectors = await this.embedRelationships(updates);
     await inTransaction(this.pool, (client) =>
-      this.writeRelationships(client, lifeId, updates, day),
+      this.writeRelationships(client, lifeId, updates, day, vectors),
     );
   }
 
@@ -312,6 +328,15 @@ export class PgMemoryStore implements MemoryStore {
 
   async setLastSleepDay(lifeId: string, day: number): Promise<void> {
     await this.setSleepDay(this.pool, lifeId, day);
+  }
+
+  async setBornDay(lifeId: string, day: number): Promise<void> {
+    // Write-once: COALESCE keeps the birth day already set; zero rows means no such life.
+    const result = await this.pool.query(
+      'UPDATE agents SET born_day = COALESCE(born_day, $2) WHERE agent_id = $1',
+      [lifeId, day],
+    );
+    if ((result.rowCount ?? 0) === 0) throw new Error(`no agent ${lifeId}`);
   }
 
   /**
@@ -363,13 +388,28 @@ export class PgMemoryStore implements MemoryStore {
     return (result.rowCount ?? 0) > 0;
   }
 
+  /**
+   * One batched embedding of the relationship texts that may become semantic memories, made before
+   * the transaction. Entry i is the vector of update i, or undefined when the embedder failed.
+   */
+  private async embedRelationships(
+    updates: { name: string; impression: string; trust: number }[],
+  ): Promise<(number[] | undefined)[]> {
+    if (updates.length === 0) return [];
+    const vectors = await this.tryEmbed(
+      updates.map((u) => `${u.name}: ${u.impression} (trust ${u.trust})`),
+    );
+    return updates.map((_, i) => vectors[i]);
+  }
+
   private async writeRelationships(
     client: SqlClient,
     lifeId: string,
     updates: { name: string; impression: string; trust: number }[],
     day: number,
+    vectors: readonly (number[] | undefined)[],
   ): Promise<void> {
-    for (const update of updates) {
+    for (const [i, update] of updates.entries()) {
       const found = await client.query(
         `SELECT agent_id FROM agents WHERE (name = $1 OR game_account = $1) AND agent_id <> $2
          ORDER BY life_seq DESC LIMIT 1`,
@@ -395,7 +435,7 @@ export class PgMemoryStore implements MemoryStore {
         [lifeId, subject],
       );
       const text = `${update.name}: ${update.impression} (trust ${update.trust})`;
-      const [embedding] = await this.tryEmbed([text]);
+      const embedding = vectors[i];
       const memory: NewMemory = {
         kind: 'semantic',
         provenance: 'interpretation',

@@ -4,11 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.ts';
-import type { ReflectionPromptVars } from '../ports/index.ts';
+import type { MemoryRow, ReflectionPromptVars } from '../ports/index.ts';
 import {
   CONTEXT_TOKENS,
   createPromptLibrary,
   DEFAULT_REFLECTION_BUDGET_TOKENS,
+  DEFAULT_REFLECTION_VERSION,
   DEFAULT_THOUGHT_BUDGET_TOKENS,
   DEFAULT_THOUGHT_VERSION,
   OUTPUT_RESERVE_TOKENS,
@@ -27,7 +28,12 @@ function promptsWith(edit: (text: string) => string): string {
     mkdirSync(join(dir, sub));
   }
   const root = join(repoRoot(), 'prompts');
-  for (const file of ['thought/v1.md', 'reflection/v1.md', 'body-api/v1.json']) {
+  for (const file of [
+    'thought/v1.md',
+    'reflection/v1.md',
+    'reflection/v2.md',
+    'body-api/v1.json',
+  ]) {
     writeFileSync(join(dir, file), readFileSync(join(root, file)));
   }
   writeFileSync(
@@ -55,9 +61,28 @@ function reflectionVars(degraded: boolean): ReflectionPromptVars {
       { agentId: 'ag_adam_01', otherId: 'Eve', impression: 'friendly', trust: 70, lastSeenDay: 3 },
     ],
     beliefs: [],
+    commitments: [],
     episodic: [],
     digest: 'Eve said hello twice.',
     degraded,
+  };
+}
+
+/** An open commitment, due at `dueTick`, as the due query returns it. */
+function commitmentRow(text: string, dueTick: number | null): MemoryRow {
+  return {
+    memoryId: 1,
+    agentId: 'ag_adam_01',
+    kind: 'semantic',
+    provenance: 'commitment',
+    subject: null,
+    text,
+    createdDay: 1,
+    sourceThought: null,
+    sourceAgent: null,
+    dueTick,
+    resolved: false,
+    active: true,
   };
 }
 
@@ -66,7 +91,7 @@ describe('prompt library', () => {
     const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v2.md'));
     const hex = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
     expect(library.thoughtVersion).toBe(`thought@2+sha256:${hex}`);
-    expect(library.reflectionVersion).toMatch(/^reflection@1\+sha256:[0-9a-f]{12}$/);
+    expect(library.reflectionVersion).toMatch(/^reflection@2\+sha256:[0-9a-f]{12}$/);
     expect(library.bodyApiVersion).toMatch(/^body-api@1\+sha256:[0-9a-f]{12}$/);
     expect(library.render('thought', sampleThoughtVars()).templateVersion).toBe(
       library.thoughtVersion,
@@ -93,6 +118,7 @@ describe('prompt library', () => {
     const pinned: Record<string, string> = {
       'thought/v2.md': '12b59d391c2dab0578f77a4f3dc1997047c282bf4a2221fb4bebb273228629f5',
       'reflection/v1.md': 'bdbceaba069f87a944c1230ea314cc59cdeed4a132bc6a9c1283e483625cbcf8',
+      'reflection/v2.md': '18f3117ccf6bd8b0da693c65121d0622381e7e584d6dc898e58caa19ecdbc127',
       'body-api/v1.json': 'f943151a1af44dbd717239c088f56a157f5b3b1154aac7cb5f70bc19c8c89c2f',
     };
     for (const [file, hash] of Object.entries(pinned)) {
@@ -374,5 +400,45 @@ describe('snapshot rendering', () => {
     const five = createPromptLibrary({ maxBeliefs: 5 });
     const short = five.render('thought', { ...sampleThoughtVars(), beliefs }).messages[1];
     expect((short?.content ?? '').split('"zq-belief-').length - 1).toBe(5);
+  });
+
+  it('makes reflection v2 the default, shows the commitments, and keeps v1 loadable', () => {
+    expect(DEFAULT_REFLECTION_VERSION).toBe(2);
+    const vars = {
+      ...reflectionVars(false),
+      commitments: [commitmentRow('Meet Pike at the cave', 4)],
+    };
+    const v2 = library.render('reflection', vars);
+    expect(v2.templateVersion).toBe(library.reflectionVersion);
+    expect(v2.messages[1]?.content).toContain('- due tick 4: "Meet Pike at the cave"');
+    const v1 = createPromptLibrary({ reflectionVersion: 1 });
+    expect(v1.reflectionVersion).toMatch(/^reflection@1\+sha256:[0-9a-f]{12}$/);
+    // v1 has no commitments block, so the commitments are not in its message.
+    expect(v1.render('reflection', vars).messages[1]?.content).not.toContain('Meet Pike');
+  });
+
+  it('keeps a long set of due commitments inside the thought budget, the most overdue first', () => {
+    // A budget of 1000 gives the due commitments a quarter (250): the first fits, the second does not.
+    const small = createPromptLibrary({ thoughtBudgetTokens: 1000 });
+    const dueCommitments = Array.from({ length: 50 }, (_, i) =>
+      commitmentRow(`${i} ${'m'.repeat(5000)}`, i),
+    );
+    const user = small.render('thought', { ...sampleThoughtVars(), dueCommitments }).messages[1];
+    expect(promptCost(user?.content ?? '')).toBeLessThanOrEqual(1000);
+    expect(user?.content).toContain('- due tick 0: ');
+    expect(user?.content).not.toContain('- due tick 1:');
+  });
+
+  it('keeps a long set of commitments inside the reflection budget, the most overdue first', () => {
+    // A budget of 1000 gives the commitments a quarter (250): the first, most overdue, one fits
+    // (a 512-character text is about 170 tokens), the second does not.
+    const small = createPromptLibrary({ reflectionBudgetTokens: 1000 });
+    const commitments = Array.from({ length: 10 }, (_, i) =>
+      commitmentRow(`${i} ${'k'.repeat(5000)}`, i),
+    );
+    const user = small.render('reflection', { ...reflectionVars(false), commitments }).messages[1];
+    expect(promptCost(user?.content ?? '')).toBeLessThanOrEqual(1000);
+    expect(user?.content).toContain('- due tick 0: ');
+    expect(user?.content).not.toContain('- due tick 1:');
   });
 });

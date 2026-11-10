@@ -218,6 +218,49 @@ describe('FakeMemoryStore', () => {
     });
     expect(store.suppressed).toHaveLength(1);
   });
+
+  it('keeps a relationship memory when the embedder fails, as the Pg store does', async () => {
+    const down = {
+      dims: 768,
+      embed: async (): Promise<number[][]> => {
+        throw new Error('model down');
+      },
+    };
+    const store = new FakeMemoryStore(down);
+    await store.ensureAgent(AGENT);
+    await store.upsertRelationships(LIFE, [{ name: 'Steve', impression: 'curious', trust: 60 }], 2);
+    const loaded = await store.loadDeterministic(LIFE, 10);
+    expect(loaded.beliefs.map((m) => m.text)).toEqual(['Steve: curious (trust 60)']);
+  });
+
+  it('loads 40 beliefs without commitments, and the 10 most overdue commitments, then the next 10', async () => {
+    const store = new FakeMemoryStore(undefined, { maxBeliefs: 40, maxCommitments: 10 });
+    await store.ensureAgent(AGENT);
+    const beliefs = Array.from({ length: 500 }, (_, i) => memory(`belief ${i}`, 'semantic'));
+    const promises = Array.from({ length: 50 }, (_, i) => ({
+      ...memory(`promise ${i}`, 'semantic', i),
+      provenance: 'commitment' as const,
+    }));
+    const rows = [...beliefs, ...promises];
+    const vectors = await new FakeEmbedder().embed(
+      rows.map((r) => r.text),
+      'document',
+    );
+    await store.writeMemories(LIFE, rows, vectors);
+    const loaded = await store.loadDeterministic(LIFE, 100);
+    expect(loaded.beliefs).toHaveLength(40);
+    expect(loaded.beliefs.some((b) => b.provenance === 'commitment')).toBe(false);
+    expect(loaded.beliefs[0]?.text).toBe('belief 499');
+    expect(loaded.dueCommitments.map((c) => c.text)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `promise ${i}`),
+    );
+    // Once the first ten are resolved, the next ten are the ones reflection sees.
+    for (const c of loaded.dueCommitments) await store.resolveCommitment(LIFE, c.memoryId);
+    const next = await store.loadDeterministic(LIFE, 100);
+    expect(next.dueCommitments.map((c) => c.text)).toEqual(
+      Array.from({ length: 10 }, (_, i) => `promise ${i + 10}`),
+    );
+  });
 });
 
 describe('FakePromptLibrary and FakeOutputValidator', () => {

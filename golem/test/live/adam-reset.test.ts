@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { JOURNAL_RESET_TABLES, journalResetStatements, resetJournal } from './adam-reset.ts';
 import { ADAM_LIFE_ID } from './adam-stack.ts';
 
-/** A client that records every query and answers with no rows. */
-function recordingClient() {
+/**
+ * A client that records every query. Its `agents` tier read answers `tier` (no row when null); any
+ * other query answers with no rows.
+ */
+function recordingClient(tier: string | null = 'fast') {
   const calls: { sql: string; params: unknown[] }[] = [];
   return {
     calls,
     query: async (sql: string, params: unknown[] = []) => {
       calls.push({ sql, params });
+      if (sql.startsWith('SELECT tier')) return { rows: tier === null ? [] : [{ tier }] };
       return { rows: [] };
     },
   };
@@ -57,17 +61,34 @@ describe('journalResetStatements', () => {
 });
 
 describe('resetJournal', () => {
-  it('runs the statements in order with the life id as the only parameter', async () => {
+  it('reads the tier, then runs the journal deletes and clears the sleep and birth days', async () => {
     const db = recordingClient();
     await resetJournal(db, ADAM_LIFE_ID);
-    expect(db.calls).toEqual(
-      journalResetStatements(ADAM_LIFE_ID).map((s) => ({ sql: s.sql, params: s.params })),
-    );
+    expect(db.calls).toEqual([
+      { sql: 'SELECT tier FROM agents WHERE agent_id = $1', params: [ADAM_LIFE_ID] },
+      ...journalResetStatements(ADAM_LIFE_ID).map((s) => ({ sql: s.sql, params: s.params })),
+      {
+        sql: 'UPDATE agents SET last_sleep_day = NULL, born_day = NULL WHERE agent_id = $1',
+        params: [ADAM_LIFE_ID],
+      },
+    ]);
   });
 
   it('issues no query at all for another life id', async () => {
     const db = recordingClient();
     await expect(resetJournal(db, 'ag_kestrel_01')).rejects.toThrow(/refusing/);
     expect(db.calls).toEqual([]);
+  });
+
+  it('deletes nothing for the test life unless its row is tier fast', async () => {
+    const db = recordingClient('local');
+    await expect(resetJournal(db, ADAM_LIFE_ID)).rejects.toThrow(/not tier fast/);
+    expect(db.calls.map((c) => c.sql)).toEqual(['SELECT tier FROM agents WHERE agent_id = $1']);
+  });
+
+  it('refuses when the test life has no agents row', async () => {
+    const db = recordingClient(null);
+    await expect(resetJournal(db, ADAM_LIFE_ID)).rejects.toThrow(/not tier fast/);
+    expect(db.calls).toHaveLength(1);
   });
 });

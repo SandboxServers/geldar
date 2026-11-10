@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadAnimusConfig } from '../config.ts';
-import type { AgentRow, NewMemory, ThoughtRow } from '../ports/index.ts';
+import type { AgentRow, NewMemory, ReflectionWrites, ThoughtRow } from '../ports/index.ts';
 import { PgJournal } from './journal.ts';
 import { PgMemoryStore, type PgPool, poolConfig, type SqlResult } from './pg-store.ts';
 
@@ -57,6 +57,18 @@ describe('PgMemoryStore', () => {
     expect(calls[0]?.sql).toContain('ON CONFLICT DO NOTHING');
     expect(calls[0]?.params).toContain('headless');
     expect(calls[0]?.params).toContain('tag@sha256:x@t0.7@ollama');
+  });
+
+  it('setBornDay keeps a birth day already set and names a life that does not exist', async () => {
+    const { pool, calls } = fakePool(() => ({ rowCount: 1 }));
+    await new PgMemoryStore(pool).setBornDay('ag_kestrel_01', 4);
+    expect(calls[0]?.sql).toContain('COALESCE(born_day, $2)');
+    expect(calls[0]?.params).toEqual(['ag_kestrel_01', 4]);
+
+    const none = fakePool(() => ({ rowCount: 0 }));
+    await expect(new PgMemoryStore(none.pool).setBornDay('ag_x', 4)).rejects.toThrow(
+      'no agent ag_x',
+    );
   });
 
   it('writes the vector as a bound [..]::vector literal and never splices values', async () => {
@@ -137,6 +149,66 @@ describe('PgMemoryStore', () => {
     expect(insert?.params[5]).toBeNull();
   });
 
+  it('embeds the relationship texts in one call, before the transaction opens', async () => {
+    const { pool, calls } = fakePool();
+    const seen: { texts: string[]; begun: boolean }[] = [];
+    const embedder = {
+      dims: 768,
+      embed: async (texts: string[]) => {
+        seen.push({ texts, begun: calls.some((c) => c.sql === 'BEGIN') });
+        return texts.map(() => vec());
+      },
+    };
+    await new PgMemoryStore(pool, { embedder }).upsertRelationships(
+      'l',
+      [
+        { name: 'Steve', impression: 'curious', trust: 60 },
+        { name: 'Mara', impression: 'kind', trust: 70 },
+      ],
+      3,
+    );
+    expect(seen).toEqual([
+      { texts: ['Steve: curious (trust 60)', 'Mara: kind (trust 70)'], begun: false },
+    ]);
+  });
+
+  describe('commitReflection', () => {
+    const writes: ReflectionWrites = {
+      day: 3,
+      memories: [],
+      embeddings: [],
+      deactivate: [],
+      resolve: [],
+      relationships: [],
+      goals: [{ goal: 'a', why: 'x' }],
+    };
+
+    it('runs its writes in one transaction, goals before the sleep day', async () => {
+      const { pool, calls } = fakePool((sql) =>
+        sql.startsWith('UPDATE agents') ? { rowCount: 1 } : {},
+      );
+      await new PgMemoryStore(pool).commitReflection('l', writes);
+      const sqls = calls.map((c) => c.sql);
+      expect(sqls[0]).toBe('BEGIN');
+      expect(sqls.at(-1)).toBe('COMMIT');
+      expect(sqls.findIndex((s) => s.startsWith('DELETE FROM goals'))).toBeLessThan(
+        sqls.findIndex((s) => s.startsWith('UPDATE agents')),
+      );
+    });
+
+    it('rolls back and runs nothing after a failed write', async () => {
+      const { pool, calls } = fakePool((sql) => {
+        if (sql.startsWith('DELETE FROM goals')) throw new Error('boom');
+        return {};
+      });
+      await expect(new PgMemoryStore(pool).commitReflection('l', writes)).rejects.toThrow('boom');
+      const sqls = calls.map((c) => c.sql);
+      expect(sqls.at(-1)).toBe('ROLLBACK');
+      expect(sqls).not.toContain('COMMIT');
+      expect(sqls.some((s) => s.startsWith('UPDATE agents'))).toBe(false);
+    });
+  });
+
   it('replaces goals in one transaction, rank 0 first', async () => {
     const { pool, calls } = fakePool();
     await new PgMemoryStore(pool).replaceGoals('l', [
@@ -179,6 +251,21 @@ describe('PgMemoryStore', () => {
     const beliefs = calls.find((c) => c.sql.includes("kind = 'semantic'"));
     expect(beliefs?.sql).toContain('ORDER BY memory_id DESC LIMIT $2');
     expect(beliefs?.params).toEqual(['l', 12]);
+  });
+
+  it('keeps commitments out of the belief load, and bounds the due ones, earliest due first', async () => {
+    const { pool, calls } = fakePool((sql) =>
+      sql.startsWith('SELECT * FROM agents') ? { rows: [{ agent_id: 'l', born_at: null }] } : {},
+    );
+    await new PgMemoryStore(pool, { maxBeliefs: 40, maxCommitments: 10 }).loadDeterministic(
+      'l',
+      100,
+    );
+    const beliefs = calls.find((c) => c.sql.includes("kind = 'semantic'"));
+    expect(beliefs?.sql).toContain("provenance IS DISTINCT FROM 'commitment'");
+    const due = calls.find((c) => c.sql.includes("provenance = 'commitment'"));
+    expect(due?.sql).toContain('ORDER BY due_tick NULLS FIRST, memory_id LIMIT $3');
+    expect(due?.params).toEqual(['l', 100, 10]);
   });
 });
 
