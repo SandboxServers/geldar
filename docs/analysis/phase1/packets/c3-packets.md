@@ -189,7 +189,7 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 ### P1-C3-03: shelter intent and the `build` handler
 
 - **wave:** C3. **lane:** C. **size:** M (about 40k tokens). **status:** B.
-- **depends-on:** P1-C3-00 (the contract is unchanged, but the `source` column is used for sovereign shelter calls), P1-C3-02 (the sleep path it extends).
+- **depends-on:** P1-C3-00 (the contract is unchanged, but the `source` column is used for sovereign shelter calls), P1-C3-02 (the sleep path it extends), P1-C3-05 (the `prepared` receipt helper that the build uses; if C3-05 is not merged, C3-03 may not start).
 - **may-edit:** `golem/src/actions/build.ts` and `golem/src/actions/build.test.ts` (new), `golem/src/actions/sleep.ts` and its test (enclosed rest), the action registry file that maps `do` names to handlers (find it by grep for `'sleep'` under `golem/src/body/`), the intent program registry (grep for an existing program name such as `hazard` or `burrow`), `golem/src/body/reflexes/panic-burrow.ts` only to export the existing burrow plan, `prompts/thought/v6.md` (new copy of v5 plus the `enclosed` line), `prompts/body-api/v2.json` only if its tool list needs the `build` entry, `tools/adam-report/src/survival.ts` and its test, `docs/analysis/phase1/worknotes/C3-03.md`, `docs/decisions/0107-*.md` (shared number, see C3-02).
 - **must-not-edit:** `docs/spec.md`, `contract/` (the `build` schema is already there), `sql/`, `shards/`, `compose/`, `geldar.ps1`, `package.json`, `golem/src/body/executor-action.ts` (C3-05 owns it), `prompts/thought/v5.md` (released, immutable, decision 0068).
 - **decisions:** 0107 (second use: section 3 of these notes and decision 0074 consequences).
@@ -257,4 +257,181 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 - **on-cap:** commit the receipt change; the cursor moves to a follow-up card with the sites listed.
 - **index line to add:** `index: | [0109](0109-prepared-receipt-and-wait-cursor.md) | prepared receipt and per-life wait cursor | Proposed |`
 
-<!-- next: cards -->
+### P1-C3-06: Body crash reconciliation
+
+- **wave:** C3. **lane:** E. **size:** L (two sessions; about 30 files under `golem/src`). **status:** B.
+- **depends-on:** P1-C3-05 (shared `golem/src/body`; serialize). P1-C3-00.
+- **may-edit:** `golem/src/body/` (the boot reconciler, new `reconcile.ts` and its tests, `body_started` in the Body status), `golem/src/body/*.test.ts`, `golem/src/body/executor-intent.ts` (the resume path), `docs/analysis/phase1/worknotes/C3-06.md`, `docs/decisions/0110-*.md` (new). If a file passes 500 lines, split it first in its own commit.
+- **must-not-edit:** `docs/spec.md`, `contract/` (a new status field goes through C3-00 or an index line), `sql/`, `threshold/`, `shards/`, `compose/`, `geldar.ps1`, `package.json`.
+- **decisions:** 0110 only.
+- **checks:** `./geldar.ps1 pnpm --filter @geldar/golem test`; the reconciler integration test under `GELDAR_IT=1`; typecheck and `pnpm format`.
+- **steps:**
+  1. Session 1: write `body_started` and the boot reconciler with the eight-row matrix of section 5. Unit tests with the in-memory sink first.
+  2. Session 2: the Postgres integration tests for rows 2, 5 and 7; the torn-write rule (row 8); the revert-checks; decision 0110 (Proposed).
+  3. Split any file over 500 lines in its own commit before the reconciler lands.
+- **acceptance:** the eight rows of section 5 pass by name. Each row is revert-checked by removing its branch in the reconciler; the test for that row then fails. The known-gaps line (crash reconciliation partial) is closed only when rows 2, 3 and 5 pass.
+- **commit:** `refactor(golem): split files over 500 lines` (only if needed); `feat(golem): record body_started and reconcile a crashed Body on boot`; `test(golem): cover the crash reconciliation matrix`; decision 0110.
+- **on-cap:** commit the matrix rows that pass, in order 1, 2, 3, 5, 6, 7, 8, 4. Write the rest in the worknote.
+- **index line to add:** `index: | [0110](0110-body-crash-reconciliation.md) | Body crash reconciliation and body_started | Proposed |`
+
+### P1-C3-07: N-bot benchmark, harness live checks, DLQ replay, bench evidence (live part O)
+
+- **wave:** C3. **lane:** F. **size:** M for the desktop part; the live part is O. **status:** B/O.
+- **depends-on:** P1-C1-10 (the node is up and the load check of C1 is done), P1-C3-06 (the Body reconciles, so a bench crash is explainable).
+- **may-edit:** `tools/adam-run/src/` (the bot runner and the TPS and `bodyConnected` checks; `tick-rate.ts` is read-only), `tools/adam-run/test/`, `eventsink/src/` and its `README.md` (the DLQ replay command), `docs/analysis/phase0/bench-results.md` only for the new rows, `docs/analysis/phase1/bench/` (new, for the run's summary files without addresses), `docs/analysis/phase1/worknotes/C3-07.md`, `docs/decisions/0111-*.md` (new).
+- **must-not-edit:** `docs/spec.md`, `contract/`, `sql/`, `golem/`, `shards/` (the TPS value and `tick_rate` do not change), `compose/`, `geldar.ps1` (the new commands go in as an index line for the integration packet of the wave), `package.json`.
+- **decisions:** 0111 only.
+- **checks:** `./geldar.ps1 pnpm --filter @geldar/adam-run test`; DLQ replay test against a fake JetStream; the TPS-window unit tests; live runs only under section 6 of these notes, recorded by the owner's checklist (section 10 owner checklist B).
+- **steps:**
+  1. Desktop: write the DLQ replay command (the steps in `eventsink/README.md` lines 14 to 18 become a command) with a dry-run default and a test against a fake stream.
+  2. Desktop: add the `bodyConnected` five-minute silence abort test and the TPS reader test on recorded `server_tps` fixtures (no node).
+  3. Desktop: add the bot runner's N parameter (section 6 values) and its summary writer (no addresses in output).
+  4. Live (O): run the owner checklist B1 to B6. Record each run in `bench-results.md` with the commit.
+  5. Write decision 0111 (Proposed): the TPS rule and the bench pass rule.
+- **acceptance:** the DLQ replay dry run lists the dead letters and the non-dry run replays each once (test); the TPS reader gives 20 TPS on a 20 TPS fixture and flags a 17 TPS fixture (test); revert-check: skip the window check; the flag test fails. The live part passes only when the section 6 pass rule is met on the node, recorded in the worknote.
+- **commit:** `feat(eventsink): add the DLQ replay command`; `test(adam-run): cover the bodyConnected abort and the TPS window`; `feat(adam-run): add the N-bot runner and summary writer`; `docs: record bench results for N = 1, 5, 10, 15`; decision 0111.
+- **on-cap:** desktop items first; the live runs wait for the owner's checklist. Report the live part as not run, with the reason.
+- **index line to add:** `index: | [0111](0111-bench-and-harness-live-checks.md) | Bench pass rule and harness live checks | Proposed |` and the command line for `geldar.ps1` (`dlq replay`, help text from the card).
+
+### P1-C3-08: runbooks (docs only)
+
+- **wave:** C3. **lane:** F. **size:** M (docs). **status:** B.
+- **depends-on:** none for drafting; the owner review is O.
+- **may-edit:** `docs/runbooks/` (new: kill switch, privacy checklist, restore, rollback, chaos day), `docs/analysis/phase1/worknotes/C3-08.md`.
+- **must-not-edit:** `docs/spec.md`, any code, `shards/`, `compose/`, `geldar.ps1`, `package.json`, the decisions README. No IP addresses, account names or personal names in any runbook; use the placeholders `<node>` and `<owner-account>`.
+- **decisions:** none.
+- **checks:** `./geldar.ps1 check` (the docs-link and secret scans in the repo checks); a grep for IPv4 literals other than `127.0.0.1` in `docs/runbooks/` returns nothing.
+- **steps:**
+  1. Kill switch: the Glass and BlueMap switch and the MCP token revocation, with the exact commands that exist after C2 (a placeholder until then, marked as such).
+  2. Privacy checklist: what a sovereign player's data is, what the Glass shows, what the MCP stores.
+  3. Restore and rollback: the steps from C1-05b and the compose rollback.
+  4. Chaos day: the scenario table of section 7, with the owner's sign-off line.
+- **acceptance:** each runbook names its owner and its last check date; the link check passes; the IPv4 grep returns nothing.
+- **commit:** `docs: add C3 runbooks for the kill switch, privacy, restore, rollback and chaos day`.
+- **on-cap:** commit the runbooks that are complete; the rest in the worknote.
+- **index line to add:** none (docs under `docs/runbooks/`; the README link goes in the ops merge step).
+
+### P1-C3-09: chaos-day scripts (live part O)
+
+- **wave:** C3. **lane:** F. **size:** M for the scripts; the live day is O. **status:** B/O.
+- **depends-on:** P1-C3-06 (scenario 1 needs reconciliation), P1-C3-08 (the runbook is the reference for the day), P1-C1-05b (scenario 8, restore).
+- **may-edit:** `tools/chaos/` (new: one script per scenario of section 7, plus a runner that prints the expected and observed outcome), `tools/chaos/test/` (new), `docs/analysis/phase1/worknotes/C3-09.md`, `docs/decisions/0112-*.md` (new).
+- **must-not-edit:** `docs/spec.md`, `contract/`, `sql/`, `golem/`, `threshold/`, `compose/*` (the compose files stay as they are; scripts only call `docker`), `geldar.ps1` (an index line for the wave's integration packet), `package.json` (if a package is needed, use the lockfile rule of conventions section 3 and ask for an index line), `shards/`.
+- **decisions:** 0112 only.
+- **checks:** `./geldar.ps1 pnpm --filter chaos test` (confirm the package name); script help output; `./geldar.ps1 check` for the repo checks.
+- **steps:**
+  1. Desktop: write one script per scenario (1 to 8), each with `--dry-run` as the default and a `--confirm` flag to act. A script refuses to run against any shard other than the scratch shard.
+  2. Desktop: the runner prints the expected outcome (section 7) and records the observed outcome as JSON, without addresses.
+  3. Desktop: tests against a fake Docker (scripts build the `docker` argument lists; tests check the lists).
+  4. Live (O): owner checklist C (section 10), read-only steps first.
+- **acceptance:** each script refuses a non-scratch shard (test); the dry run prints the expected outcome for each scenario (test); revert-check: remove the scratch-shard guard; the refusal test fails.
+- **commit:** `feat(chaos): add the scenario scripts and the runner`; `test(chaos): cover the scratch-shard guard and the dry runs`; decision 0112.
+- **on-cap:** the scripts with the guard first. The live day is reported as not run.
+- **index line to add:** `index: | [0112](0112-chaos-day-scripts.md) | Chaos-day scripts and the scratch-shard guard | Proposed |`
+
+### P1-C3-10: integration and ops: roll C3 onto the node, the chaos day, the soak (O)
+
+- **wave:** C3. **lane:** A. **size:** L plus wall clock (72 hours for the gate). **status:** O.
+- **depends-on:** P1-C3-01 to C3-09 merged; P1-C1-10 (the node); the owner's confirmation of the soak gate (O-1) and the chaos-day sign-off (O-3).
+- **may-edit:** `shards/phase0.yaml` or a new `shards/phase1.yaml` (the integration packet owns it; index lines from the others are applied here), `geldar.ps1` (the new commands), `compose/` only the lines the integration needs, `docs/analysis/phase1/results/c3-*.md` (new, results only, no addresses), `docs/analysis/phase1/worknotes/C3-10.md`, `docs/decisions/0113-*.md` (new). Decision 0114 is held for the owner's soak-gate ruling; this packet writes it only if the owner answers O-1.
+- **must-not-edit:** `docs/spec.md`, `contract/` (fan-out index lines go through the ops merge step), `golem/` and `threshold/` source (fixes go back to the owning card), `docs/analysis/phase0/` ledger README.
+- **decisions:** 0113; 0114 only on the owner's ruling.
+- **checks:** `./geldar.ps1 check` with the integration case-count floor (conventions 4.2); the owner checklists D (roll-out), C (chaos day) and E (soak) in section 10.3; the wave gates of section 10.2.
+- **steps:** follow owner checklists D, C and E exactly, in order, with each stop condition. Record every step's result in the worknote with the time.
+- **acceptance:** the gate of section 8 (72 hours) is met and written in `results/`; the chaos day has a written outcome per scenario; no unexplained life end; the 7-day exit run is not started by this card.
+- **commit:** `feat(shards): add the Phase 1 C3 shard config`; `docs: record the C3 roll-out, chaos day and 72-hour gate results`; decision 0113.
+- **on-cap:** stop at the first failed stop condition in the checklist and report it; do not patch the node by hand.
+- **index line to add:** none (the packet is the integration owner).
+
+## 10. Wave section
+
+### 10.1 Lane diagram
+
+```
+Unblocker (A)   P1-C3-00 ─┬─> C3-01 (A, sovereign rows)
+                          ├─> C3-04 (D, roster and cap)  <── C1-08
+                          ├─> C3-05 (E, prepared receipt, wait cursor) ─> C3-06 (E, reconciliation) ─┐
+                          └─> C3-03 (C, build, shelter, prompt v6)  <── C3-02 (B, honest sleep)     │
+                                                                                                    │
+Fan-out lanes, desktop:  C3-02 (B)  C3-03 (C)  C3-04 (D)  C3-05 (E)  C3-06 (E)  C3-08 (F, docs)     │
+Live-gated (O):          C3-07 (F, after C1-10)  C3-09 (F, after C3-06, C3-08)  <──────────────────┘
+Integration + ops (A):   C3-10 (after C3-01 to C3-09 and C1-10; wall clock)
+```
+
+Serialization: `golem/src/body` runs C3-05, then C3-06 (one at a time). `golem/src/actions` is C3-03 only. `threshold/mcp/src` is C3-01, C3-02 and C3-04 in that order (C3-02 first, a small change). At most six agents at once (conventions 5).
+
+### 10.2 Wave-boundary gates (conventions 4.2)
+
+1. **Full check:** `./geldar.ps1 check` on the wave branch, with the integration case-count floor. The Postgres job runs the `GELDAR_IT=1` cases.
+2. **Reviews per surface, read-only, narrow brief, one fix round:** (a) the sovereign write path and the roster (C3-01, C3-04); (b) the Body's reconciler and receipts (C3-05, C3-06); (c) the build and sleep rules (C3-02, C3-03), reviewed against decision 0074; (d) the bench and chaos scripts (C3-07, C3-09), checked for the scratch-shard guard and for addresses in output.
+3. **One live run with a real client**, recorded in the worknote, step by step: a sovereign player connects, an agent takes a shelter intent, builds a shelter, sleeps in it, and the MCP reports the sleep result. Owner checklist A.
+4. **Retro** in `retro/` for C3.
+5. **Owner confirmation** of provisional decisions 0105 to 0113 (or a superseding record), and of O-1 to O-4 below.
+
+### 10.3 Owner checklists (O packets)
+
+Every checklist runs read-only steps first. A stop condition ends the step list; the operator writes the time, the step and the output in the worknote and does not patch the node by hand.
+
+**A. Live client run (wave gate 3).** Desktop only; no node.
+- A1. Confirm the branch and commit with `git log -1`. Stop if it is not the wave branch's head.
+- A2. Start the desktop shard (the existing desktop command). Read-only: check the Body and the MCP status.
+- A3. Connect one real Minecraft client as a sovereign player (not a bot). Stop if the client is not the owner's own account.
+- A4. Start a shelter intent. Watch the events. Stop if a death occurs in the first 10 minutes.
+- A5. Confirm rows in `intents`, `actions` and `receipts` (read-only queries).
+- A6. Stop the run. Record the result in the worknote.
+
+**B. N-bot benchmark (C3-07, live).** On the node, in the agreed off-peak window.
+- B1. Read-only: record the production shard's TPS and CPU for 30 minutes before the run. Stop if the production shard is already below 19 TPS.
+- B2. Run N = 1. Read the summary. Stop if the pass rule fails at N = 1.
+- B3. Run N = 5, then N = 10, then N = 15, one at a time, with a 15-minute cool-down. Stop at the first N that fails the pass rule.
+- B4. Run the 30-minute steady state at N = 15.
+- B5. Record the results (no addresses) in `bench-results.md` with the commit.
+- B6. Record the production shard's TPS and CPU for 30 minutes after the last run. Stop if it does not return to baseline; the owner decides.
+
+**C. Chaos day (C3-09, live; owner signs off).** On the scratch shard only.
+- C1. Confirm the shard name is the scratch shard (the guard refuses otherwise). Stop if it does not match.
+- C2. Run every script in dry-run mode. Read the output with the owner.
+- C3. Run scenarios 1 to 8 one at a time, in the order of section 7, each with `--confirm`. Record observed and expected outcomes.
+- C4. A scenario that does not match its expected outcome is a fail. The day stops after the fail; the owner decides on a re-run.
+- C5. The owner signs the written result in the worknote.
+
+**D. Roll-out to the node (C3-10).** Read-only first.
+- D1. Read-only: check disk, memory and the current containers on the node. Stop if free disk is under 20 percent.
+- D2. Take a backup with the C1-05b tool and confirm it restores to a scratch shard. Stop if the restore fails.
+- D3. Deploy the C3 images. Read-only health check of every container.
+- D4. Start the shard with the C3 config. Stop on the first unhealthy container.
+
+**E. Soak gate (C3-10): 72 hours.**
+- E1. Start 10 agents (15 at the end of the first 12 hours, if the TPS rule holds).
+- E2. Every 6 hours, read-only: wakeups per agent per real minute, TPS windows, unexplained life ends. Stop if the TPS rule fails for two consecutive windows.
+- E3. At 72 hours, write the gate result. Pass means: fewer than one wakeup per agent per real minute while intents run; no unexplained life end; no TPS window below 18.0.
+
+**F. Owner decisions before the soak.** The owner answers O-1 to O-4 in writing. No soak starts without O-1 and O-2.
+
+### 10.4 Ledger rows for later pasting
+
+Paste these rows into the Phase 1 ledger when it is written. This packet does not edit the ledger README.
+
+| Packet | Branch | Expected commit subject | Status | Evidence |
+|---|---|---|---|---|
+| P1-C3-00 | `phase1/c3-00-contract` | `feat(contract): add sovereign intent source, wait cursor and roster schema` | B | contract generator clean, migration test |
+| C3-01 | `phase1/c3-01-sovereign-rows` | `feat(mcp): write sovereign intent, action and receipt rows` | B | integration test under `GELDAR_IT=1` |
+| C3-02 | `phase1/c3-02-sleep-mark` | `fix(mcp): write the sleep mark only on a completed Body result` | B | refused-sleep test, revert-check |
+| C3-03 | `phase1/c3-03-build` | `feat(golem): add the build handler with the 512-block bound and budget check` | B | build tests, golden prompt test |
+| C3-04 | `phase1/c3-04-roster` | `feat(mcp): keep the roster and the owner cap in the database` | B | roster tests, trigger test |
+| C3-05 | `phase1/c3-05-receipts` | `feat(golem): write the prepared receipt before a run` | B | receipt and cursor tests |
+| C3-06 | `phase1/c3-06-reconcile` | `feat(golem): record body_started and reconcile a crashed Body on boot` | B | matrix rows 1 to 8 |
+| C3-07 | `phase1/c3-07-bench` | `docs: record bench results for N = 1, 5, 10, 15` | B/O | desktop tests; live rows in `bench-results.md` |
+| C3-08 | `phase1/c3-08-runbooks` | `docs: add C3 runbooks for the kill switch, privacy, restore, rollback and chaos day` | B | link check |
+| C3-09 | `phase1/c3-09-chaos` | `feat(chaos): add the scenario scripts and the runner` | B/O | guard tests; live day in `results/` |
+| C3-10 | `phase1/c3-10-rollout` | `docs: record the C3 roll-out, chaos day and 72-hour gate results` | O | `results/` |
+
+### 10.5 Open owner questions
+
+- **O-1.** Confirm the 72-hour soak as the C3 gate, and the 7-day run once at C4 exit (changes plan.md C3 exit). **Pending owner confirmation.**
+- **O-2.** Agents-per-player limit: default 1 and maximum 4 in `mcp_roster` (C3-04), or another value?
+- **O-3.** Chaos-day sign-off: who signs, and is scenario 4 (disk) allowed on the node or only on a test volume?
+- **O-4.** Benchmark numbers: N values (1, 5, 10, 15), the 19.0 mean and 18.0 floor, and the off-peak window on the shared node.
+- **O-5.** Prompt v6 (new copy, decision 0074 default) versus an edit to v5 (needs a superseding record under decision 0068).
+- **O-6.** Thought deadline: keep 25 seconds until the measurement from C3-04 is in, or change it earlier?
+- **O-7.** Shelter definition for the survival criteria (decision 0074 open item), confirmed by C3-03.
