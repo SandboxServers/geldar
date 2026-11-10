@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import { type AdamConfig, loadAdamConfig } from '../../src/adam/adam-config.ts';
 import { repoRoot } from '../../src/config.ts';
+import { resetJournal } from './adam-reset.ts';
 import {
   ADAM_LIFE_ID,
   AdamStack,
@@ -95,6 +96,8 @@ export async function withAdamCase(
     async (chatter, live) => {
       const restore = await resetBot(live.bot, live.ctl, { time: opts.time ?? 'noon' });
       const db = await openMindDb();
+      // Before the Mind starts: the 8B reads its own journal into every prompt (see adam-reset.ts).
+      await resetJournal(db, ADAM_LIFE_ID);
       const since = new Date().toISOString();
       // The life persists between runs: intents from earlier runs are not this case's.
       const older = new Set((await intentsOf(db, ADAM_LIFE_ID)).map((i) => i.intent_id));
