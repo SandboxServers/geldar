@@ -24,7 +24,7 @@ import {
   type ReflectionPromptVars,
   type ThoughtRow,
 } from '../ports/index.ts';
-import { type ApplyResult, applyReflection } from './apply.ts';
+import { type ApplyResult, applyReflection, type LogLine } from './apply.ts';
 import { buildDigest, type InventoryReading } from './digest.ts';
 
 /** The versions every thought records (wave 5 conventions). */
@@ -56,6 +56,8 @@ export interface ReflectDeps {
   validator: OutputValidator;
   publisher: EventPublisher;
   now: () => Date;
+  /** Where a failed apply or embedding is reported; `console.error` when not given. */
+  log?: LogLine;
 }
 
 /** What one reflection works from. */
@@ -180,7 +182,11 @@ export async function reflectOnce(deps: ReflectDeps, input: ReflectInput): Promi
         });
         outcome = degraded ? 'degraded' : 'applied';
         errors = undefined;
-      } catch {
+      } catch (error) {
+        // Nothing was written (the store commits all or nothing); the sleep day stays unset.
+        (deps.log ?? ((message: string) => console.error(message)))(
+          `reflection ${thoughtId}: apply failed, nothing stored: ${error}`,
+        );
         outcome = 'apply_failed';
       }
     } else {

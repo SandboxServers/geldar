@@ -168,9 +168,14 @@ describe('FakeMemoryStore', () => {
     const store = new FakeMemoryStore();
     const [v] = await new FakeEmbedder().embed(['x'], 'document');
     await store.ensureAgent(AGENT);
+    // Eve has an agents row, so her name resolves to a relationship row.
+    await store.ensureAgent({ ...AGENT, agentId: 'Eve', name: 'Eve', gameAccount: 'eve_01' });
     await store.writeMemories(
       LIFE,
-      [memory('wood is near', 'semantic'), memory('meet Eve at dusk', 'episodic', 500)],
+      [
+        memory('wood is near', 'semantic'),
+        { ...memory('meet Eve at dusk', 'episodic', 500), provenance: 'commitment' },
+      ],
       [v ?? [], v ?? []],
     );
     await store.replaceGoals(LIFE, [{ goal: 'build a house', why: 'shelter' }]);

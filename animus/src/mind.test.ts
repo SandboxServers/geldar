@@ -56,7 +56,7 @@ beforeEach(async () => {
 });
 
 async function rig(answers: string[], extra: Partial<MindDeps> = {}): Promise<Rig> {
-  const store = new FakeMemoryStore();
+  const store = new FakeMemoryStore(new FakeEmbedder());
   await store.ensureAgent(agent({ agentId: config.agent.username, lastSleepDay: 1 }));
   const source = new FakeEventSource();
   const body = new FakeBodyLink(makeSnapshot({ agent_id: config.agent.username }));
@@ -170,6 +170,46 @@ describe('the Mind of one life', () => {
     expect(reflections).toHaveLength(1);
     expect(r.store.thoughts.filter((t) => t.wakeReason === 'reflection')).toHaveLength(1);
     expect((await r.store.loadDeterministic(config.agent.username, 0)).agent.lastSleepDay).toBe(3);
+  });
+
+  it('fills in the missing vectors around a reflection', async () => {
+    const r = await rig([VALID_THOUGHT, JSON.stringify(reflection())]);
+    await r.store.writeMemoriesPartial(
+      config.agent.username,
+      [
+        {
+          kind: 'episodic',
+          provenance: 'observation',
+          subject: null,
+          text: 'a memory stored without a vector',
+          createdDay: 2,
+          sourceThought: null,
+          sourceAgent: null,
+          dueTick: null,
+        },
+      ],
+      [null],
+    );
+    r.mind.start();
+    await r.mind.settled();
+    r.source.emit(sleep(3, 500));
+    await r.mind.settled();
+    expect(await r.store.backfillEmbeddings(10)).toBe(0);
+  });
+
+  it('reports a failing backfill and still runs the reflection', async () => {
+    const onError = vi.fn();
+    const r = await rig([VALID_THOUGHT, JSON.stringify(reflection())], { onError });
+    r.store.backfillEmbeddings = async () => {
+      throw new Error('ollama down');
+    };
+    r.mind.start();
+    await r.mind.settled();
+    r.source.emit(sleep(3, 500));
+    await r.mind.settled();
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledWith(new Error('ollama down'));
+    expect(r.publisher.published.filter((e) => e.type === 'reflection')).toHaveLength(1);
   });
 
   it('keeps one thought in flight: a wake and a sleep arriving mid-thought wait their turn', async () => {

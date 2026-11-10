@@ -1,15 +1,34 @@
 /**
  * Applies a validated `Reflection` to memory (spec 5.4 steps 2 to 6). Everything goes through the
- * `MemoryStore` port, so the store decides what a relationship row may be keyed by (overnight
- * decision 40). Nothing is deleted: a belief is retired by `active = false`. Provenance is guarded:
- * a `report` is never promoted to an `observation` unless the digest holds a matching own one.
+ * `MemoryStore` port in one `commitReflection` call, so a failed apply writes nothing and the next
+ * sleep runs again. An embedder failure does not discard the reflection: the memories are stored
+ * with a NULL vector for `backfillEmbeddings`. Nothing is deleted: a belief is retired by
+ * `active = false`, and a commitment that is retired is also resolved. Provenance is guarded: a
+ * `report` is never promoted to an `observation` unless the digest holds a matching own one.
  */
 import type { Reflection } from '@geldar/contract';
-import type { Embedder, MemoryRow, MemoryStore, NewMemory, Provenance } from '../ports/index.ts';
+import type {
+  Embedder,
+  MemoryRow,
+  MemoryStore,
+  NewMemory,
+  Provenance,
+  ReflectionWrites,
+} from '../ports/index.ts';
 import { type Digest, sameStatement } from './digest.ts';
 
 /** The most memories a degraded (fatigued) reflection keeps. */
 export const DEGRADED_MAX_MEMORIES = 2;
+
+/** Where a reported failure goes; `console.error` when none is given. */
+export type LogLine = (message: string) => void;
+
+/** What `applyReflection` needs besides the reflection and its context. */
+export interface ApplyDeps {
+  store: MemoryStore;
+  embedder: Embedder;
+  log?: LogLine;
+}
 
 /** What `applyReflection` did. */
 export interface ApplyResult {
@@ -57,13 +76,28 @@ export function guardProvenance(
   return heard || reported ? 'report' : 'observation';
 }
 
-/** Applies `reflection`; throws if the embedder or the store does, before setting the sleep day. */
+/** Embeds `texts`; when the embedder fails, every text gets null and is stored for backfill. */
+async function embedOrNull(
+  embedder: Embedder,
+  texts: string[],
+  log: LogLine,
+): Promise<(number[] | null)[]> {
+  try {
+    return await embedder.embed(texts, 'document');
+  } catch (error) {
+    log(`reflection: embedding failed, ${texts.length} memories stored without vectors: ${error}`);
+    return texts.map(() => null);
+  }
+}
+
+/** Applies `reflection`; throws, having written nothing, when the store fails. */
 export async function applyReflection(
-  deps: { store: MemoryStore; embedder: Embedder },
+  deps: ApplyDeps,
   reflection: Reflection,
   context: ApplyContext,
 ): Promise<ApplyResult> {
   const { store, embedder } = deps;
+  const log: LogLine = deps.log ?? ((message) => console.error(message));
   const { lifeId, day, thoughtId } = context;
   const base = { createdDay: day, sourceThought: thoughtId, sourceAgent: null, dueTick: null };
   const keep = context.degraded
@@ -96,37 +130,41 @@ export async function applyReflection(
     });
   }
 
-  let memoriesWritten = 0;
-  if (memories.length > 0) {
-    const embeddings = await embedder.embed(
-      memories.map((m) => m.text),
-      'document',
-    );
-    memoriesWritten = (await store.writeMemories(lifeId, memories, embeddings)).length;
-  }
-  const result: ApplyResult = {
-    memoriesWritten,
+  // A belief added and removed in one reflection stays: the removal never reaches the new row.
+  const added = new Set(beliefs.map((b) => b.belief));
+  const removals = context.degraded
+    ? []
+    : reflection.beliefs_remove.filter((text) => !added.has(text));
+  const writes: ReflectionWrites = {
+    day,
+    memories,
+    embeddings:
+      memories.length === 0
+        ? []
+        : await embedOrNull(
+            embedder,
+            memories.map((m) => m.text),
+            log,
+          ),
+    deactivate: removals,
+    resolve: context.beliefs
+      .filter((b) => b.provenance === 'commitment' && removals.includes(b.text))
+      .map((b) => b.memoryId),
+    relationships: context.degraded
+      ? []
+      : (reflection.relationship_updates.map((u) => ({
+          ...u,
+          trust: clampTrust(u.trust),
+        })) as Reflection['relationship_updates']),
+    goals: context.degraded ? null : reflection.goals,
+  };
+  const beliefsRemoved = await store.commitReflection(lifeId, writes);
+  return {
+    memoriesWritten: memories.length,
     beliefsAdded: beliefs.length,
-    beliefsRemoved: 0,
-    relationshipsUpdated: 0,
-    goalsSet: 0,
+    beliefsRemoved,
+    relationshipsUpdated: writes.relationships.length,
+    goalsSet: writes.goals?.length ?? 0,
     degraded: context.degraded,
   };
-  if (!context.degraded) {
-    // A belief added and removed in one reflection stays: the removal never reaches the new row.
-    const added = new Set(beliefs.map((b) => b.belief));
-    const removals = reflection.beliefs_remove.filter((text) => !added.has(text));
-    if (removals.length > 0)
-      result.beliefsRemoved = await store.deactivateBeliefs(lifeId, removals);
-    const updates = reflection.relationship_updates.map((u) => ({
-      ...u,
-      trust: clampTrust(u.trust),
-    })) as Reflection['relationship_updates'];
-    if (updates.length > 0) await store.upsertRelationships(lifeId, updates, day);
-    result.relationshipsUpdated = updates.length;
-    await store.replaceGoals(lifeId, reflection.goals);
-    result.goalsSet = reflection.goals.length;
-  }
-  await store.setLastSleepDay(lifeId, day);
-  return result;
 }
