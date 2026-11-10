@@ -33,9 +33,23 @@ function row(over: Partial<TokenRow> = {}): TokenRow {
   };
 }
 
-/** A store over a pool that answers with `rows`, and a listener the test can drive. */
-function storeWith(rows: TokenRow[] | (() => TokenRow[])) {
-  const pool = new FakePool(() => ({ rows: typeof rows === 'function' ? rows() : rows }));
+/** The table state a revocation NOTIFY is checked against: a token and its player. */
+interface RevokeState {
+  revoked_at: Date | null;
+  status: string;
+}
+const ACTIVE: RevokeState = { revoked_at: null, status: 'active' };
+const REVOKED: RevokeState = { revoked_at: new Date(NOW), status: 'active' };
+
+/**
+ * A store over a pool that answers with `rows`, and a listener the test can drive. The revocation
+ * check (the table read a NOTIFY starts) answers `state`.
+ */
+function storeWith(rows: TokenRow[] | (() => TokenRow[]), state: RevokeState = ACTIVE) {
+  const pool = new FakePool((text) => {
+    if (text.includes('t.revoked_at, p.status')) return { rows: [state] };
+    return { rows: typeof rows === 'function' ? rows() : rows };
+  });
   const listeners: FakeListener[] = [];
   const store = new PgTokenStore(pool.asPool(), HARNESSES, {}, () => {
     const listener = new FakeListener();
@@ -47,6 +61,11 @@ function storeWith(rows: TokenRow[] | (() => TokenRow[])) {
 
 function revocation(payload: string): { channel: string; payload: string } {
   return { channel: REVOKE, payload };
+}
+
+/** Lets the table check a NOTIFY starts run to its end (it awaits one query). */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
 }
 
 afterEach(() => {
@@ -167,28 +186,32 @@ describe('PgTokenStore.resolve', () => {
   });
 
   it('drops a cached hit when its token is revoked on LISTEN', async () => {
-    const { pool, store, listeners } = storeWith([row()]);
+    const { pool, store, listeners } = storeWith([row()], REVOKED);
     await store.start();
     await store.resolve(HASH, NOW);
     listeners[0]?.emit(
       'notification',
       revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
     );
+    await settle();
     await store.resolve(HASH, NOW + 1);
-    expect(pool.sent).toHaveLength(2);
+    // resolve, the table check the NOTIFY started, then the resolve that queries again
+    expect(pool.sent).toHaveLength(3);
     await store.stop();
   });
 
   it('keeps the cache for other tokens when one is revoked', async () => {
-    const { pool, store, listeners } = storeWith([row()]);
+    const { pool, store, listeners } = storeWith([row()], REVOKED);
     await store.start();
     await store.resolve(HASH, NOW);
     listeners[0]?.emit(
       'notification',
       revocation(JSON.stringify({ token_id: 'tk_other', player_id: 'ag-jason-01' })),
     );
+    await settle();
     await store.resolve(HASH, NOW + 1);
-    expect(pool.sent).toHaveLength(1);
+    // resolve and the table check; the cached hit for tk_1 is not queried again
+    expect(pool.sent).toHaveLength(2);
     await store.stop();
   });
 });
@@ -206,7 +229,7 @@ describe('PgTokenStore.touch', () => {
 
 describe('PgTokenStore LISTEN connection', () => {
   it('LISTENs on the revoke channel and calls each listener with the revocation', async () => {
-    const { store, listeners } = storeWith([]);
+    const { store, listeners } = storeWith([], REVOKED);
     const seen: { tokenId: string; playerId: string }[] = [];
     store.onRevoke((revoked) => seen.push(revoked));
     await store.start();
@@ -215,6 +238,35 @@ describe('PgTokenStore LISTEN connection', () => {
       'notification',
       revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
     );
+    await settle();
+    expect(seen).toEqual([{ tokenId: 'tk_1', playerId: 'ag-jason-01' }]);
+    await store.stop();
+  });
+
+  it('a forged NOTIFY for an active token ends no session', async () => {
+    const { store, listeners } = storeWith([], ACTIVE);
+    const seen: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((revoked) => seen.push(revoked));
+    await store.start();
+    listeners[0]?.emit(
+      'notification',
+      revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
+    );
+    await settle();
+    expect(seen, 'the table says the token and its player are live').toEqual([]);
+    await store.stop();
+  });
+
+  it('a NOTIFY for a player that left active ends its sessions', async () => {
+    const { store, listeners } = storeWith([], { revoked_at: null, status: 'paused' });
+    const seen: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((revoked) => seen.push(revoked));
+    await store.start();
+    listeners[0]?.emit(
+      'notification',
+      revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
+    );
+    await settle();
     expect(seen).toEqual([{ tokenId: 'tk_1', playerId: 'ag-jason-01' }]);
     await store.stop();
   });
@@ -333,11 +385,16 @@ describe('PgTokenStore LISTEN connection', () => {
 
   it('does not cache a hit that a revocation overtook while its row was being read', async () => {
     const listeners: FakeListener[] = [];
-    const pool = new FakePool(() => {
-      listeners[0]?.emit(
-        'notification',
-        revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
-      );
+    let emitted = false;
+    const pool = new FakePool((text) => {
+      if (text.includes('t.revoked_at, p.status')) return { rows: [REVOKED] };
+      if (!emitted) {
+        emitted = true;
+        listeners[0]?.emit(
+          'notification',
+          revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
+        );
+      }
       return { rows: [row()] };
     });
     const store = new PgTokenStore(pool.asPool(), HARNESSES, {}, () => {
@@ -347,8 +404,10 @@ describe('PgTokenStore LISTEN connection', () => {
     });
     await store.start();
     expect(await store.resolve(HASH, NOW)).not.toBeNull();
+    await settle();
     await store.resolve(HASH, NOW);
-    expect(pool.sent, 'the second resolve queried: nothing was cached').toHaveLength(2);
+    // resolve, the table check, then the second resolve queried: nothing was cached
+    expect(pool.sent).toHaveLength(3);
     await store.stop();
   });
 

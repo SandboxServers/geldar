@@ -36,6 +36,11 @@ export interface TokenRow {
   revoked_at: Date | null;
 }
 
+/** The table state a revocation NOTIFY is checked against: the payload alone never ends a session. */
+const REVOKE_STATE_SQL = `SELECT t.revoked_at, p.status
+FROM mcp_tokens t JOIN mcp_players p ON p.player_id = t.player_id
+WHERE t.token_id = $1 AND t.player_id = $2`;
+
 const RESOLVE_SQL = `SELECT t.token_id, t.token_hash, t.expires_at, t.revoked_at,
   p.player_id, p.life_id, p.owner_id, p.display_name, p.harness, p.status,
   o.player_cap,
@@ -293,9 +298,23 @@ export class PgTokenStore implements TokenStore {
 
   private handleNotification(channel: string, payload: string | undefined): void {
     if (channel !== REVOKE_CHANNEL) return;
-    const revoked = parseRevocation(payload);
-    if (revoked === null) return;
-    this.fire(revoked);
+    const hint = parseRevocation(payload);
+    if (hint === null) return;
+    // Any database role may NOTIFY this channel (the read-only geldar_glass can), so the payload is
+    // only a hint. A failed read ends nothing here; the next resolve still refuses a revoked token.
+    this.confirm(hint).catch(() => undefined);
+  }
+
+  /** Fires the hint only when the table shows its token revoked or its player not active. */
+  private async confirm(hint: Revocation): Promise<void> {
+    const { rows } = await this.pool.query<{ revoked_at: Date | null; status: string }>(
+      REVOKE_STATE_SQL,
+      [hint.tokenId, hint.playerId],
+    );
+    const state = rows[0];
+    if (state === undefined) return;
+    if (state.revoked_at === null && state.status === 'active') return;
+    this.fire(hint);
   }
 
   /** Drops the cached hit for the token, then calls each listener (one failure does not stop the rest). */
