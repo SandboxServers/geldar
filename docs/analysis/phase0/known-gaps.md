@@ -43,7 +43,7 @@ Sources: the fix rounds A to F and the W6 packets (worknotes), decisions [0053](
 | Timing-sensitive tests are flaky under parallel load: `golem/src/test-control.test.ts`, `golem/test/live/adam-stack.test.ts`, `tools/repo-checks/src/cli.test.ts`, `threshold/mcp/src/imports.test.ts`, and the lantern-local thinker reconnect. | [fix-e](worknotes/fix-e.md) | M |
 | Harness checks that were never exercised live: the `bodyConnected` five-minute silence abort, the TPS reader, and the fresh-volume gate through `docker inspect`. The TPS rule is now real (`tick-rate.ts`) and `bodyConnected` reads the Body's own events, but neither has run in a live run. | [fix-e](worknotes/fix-e.md) sessions 3 and 6, [adam-run-owner-decisions.md](adam-run-owner-decisions.md) | M |
 | Exit runs are deferred by decision 0066. The phase is closed as proof of life. | [0066](../../decisions/0066-phase0-closed-as-proof-of-life.md), [0064](../../decisions/0064-exit-run-lives.md) | L (owner) |
-| A live smoke after the integration branch is merged has not been run. | [RESUME.md](RESUME.md) | S |
+| No clean 20-minute live smoke has passed. `smoke-w6-20-a` aborted on a process-probe bug; `smoke-w6-25-a` ended when the 8B Adam died to a zombie about 6 minutes in, and the harness treated the death as a stall (fixed as `life_ended`). Neither run is a pass. | [RESUME.md](RESUME.md), [README.md](README.md) (OPS-1) | S |
 | `tsc -p tools/mcp-tokens` reports 3 errors in `pepper-digest.test.ts` (`Uint8Array.equals`). That package's typecheck is not in `check`. | `tools/mcp-tokens` | S |
 | `tools/mcp-tokens` is not covered by `./geldar.ps1 check`. | `geldar.ps1`, `tools/mcp-tokens` | S |
 
