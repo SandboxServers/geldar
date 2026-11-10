@@ -173,6 +173,10 @@ describe('persona export', () => {
     await expect(exportPersona(options({ dryRun: true }), io)).rejects.toThrow(
       /goals.md has a control character \(line 1, U\+001B\)/,
     );
+    await writeFile(source, draftWith({ goals: 'Keep\u0085 going.' }));
+    await expect(exportPersona(options({ dryRun: true }), io)).rejects.toThrow(
+      /goals.md has a control character \(line 1, U\+0085\)/,
+    );
     await writeFile(source, draftWith({ identity: 'Brave\tand kind.' }));
     await expect(exportPersona(options({ dryRun: true }), io)).resolves.toBeUndefined();
   });
