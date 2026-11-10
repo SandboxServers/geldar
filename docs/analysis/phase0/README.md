@@ -108,18 +108,18 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | WM-process | M | Apply the wave M retro actions | packet-coder | BlockedDependency | wave M test, review and retro | |
 | W6-01 | 6 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | packet-coder | Ready | — | |
 | W6-02 | 6 | Validator bounds read from shard config (BC-11); redact a private address from a worknote (E-16) | packet-coder | Ready | — | |
-| W6-03 | 6 | Body `stuck` signal (AD-11): watchdog or a recorded decision | packet-coder | BlockedDecision | owner item 7 | |
+| W6-03 | 6 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | packet-coder | Ready | section 4 item 7 (provisional) | |
 | W6-04 | 6 | Velocity marker ordering (diagnose first) | packet-coder | Ready | — | |
-| W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | BlockedDecision | owner item 8 | |
+| W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | Ready | section 4 item 8 (provisional) | |
 | W6-06 | 6 | Warm every pinned model before advertising it (cold load) | packet-coder | Ready | — | |
 | W6-07 | 6 | Split three files over 500 lines (`pg-store.ts`, mock `server.ts`, `front.test.ts`) | packet-coder | Ready | — | |
 | W6-08 | 6 | Investigate `intent_link_gave_up` (read-only, needs the 32B logs from ops) | packet-coder | Ready | ops logs | |
-| W6-09 | 6 | `glass/` Thought Stream server: loopback, read-only API and SSE | packet-coder | Ready | — | |
+| W6-09 | 6 | `glass/` Thought Stream server: loopback, read-only API and SSE; owns migration `sql/0005_glass_reader.sql` (read-only role) | packet-coder | Ready | — | |
 | W6-10 | 6 | `glass/` page: escaped rendering, filters, per-agent view | packet-coder | BlockedDependency | W6-09 | |
 | W6-11 | 6 | Glass security: adversarial fixtures, read-only route test, XSS review | packet-coder | BlockedDependency | W6-10, W6-13 | |
 | W6-12 | 6 | Adam run report generator (JSON and Markdown, read-only DB) | packet-coder | Ready | — | |
 | W6-13 | 6 | Run protocol script `adam-run` and `glass up` | packet-coder | BlockedDependency | W6-09, W6-12 | |
-| W6-14 | 6 | Run protocol documents, 32B and 8B | packet-coder | BlockedDecision | owner items 1 to 6 | |
+| W6-14 | 6 | Run protocol documents, 32B and 8B | packet-coder | Ready | section 4 items 1 to 6 (provisional) | |
 | W6-20 | 6 | Campaign review: Body and Golem (read-only) | reviewer | BlockedDependency | all coder packets, OPS-2 | |
 | W6-21 | 6 | Campaign review: Mind, memory and prompts (read-only) | reviewer | BlockedDependency | all coder packets, OPS-2 | |
 | W6-22 | 6 | Campaign review: contract, sql, infra, Glass security, secrets (read-only) | reviewer | BlockedDependency | all coder packets | |

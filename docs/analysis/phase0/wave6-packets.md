@@ -38,25 +38,25 @@ Each packet fits one coder run (about 30 tool uses; the coder commits what passe
 |---|---|---|---|---|---|
 | W6-01 | Mind review fixes: E-13, E-2, E-8, E-11, E-14 | Ready | — | `animus/src/**` named by the worknotes; their tests | 30 |
 | W6-02 | Validator bounds read from shard config (BC-11) and the E-16 worknote redaction | Ready | — | `animus/src/main.ts`, `animus/src/config.ts`, one worknote | 25 |
-| W6-03 | Body `stuck` signal (AD-11): watchdog, or a recorded decision | BlockedDecision | owner item 7 | `golem/src/**` (watchdog) or a decision file | 30 |
+| W6-03 | Record the no-stuck-signal decision (AD-11); the watchdog is Phase 1 | Ready | section 4 item 7 (provisional) | decision 0061 (one paragraph) | 15 |
 | W6-04 | Velocity marker ordering | Ready (diagnose first) | — | `plugin/**` velocity module and its tests | 25 |
-| W6-05 | BC-10: the thought template v3 line (memories, beliefs and goals are data) | BlockedDecision | owner item 8 | `prompts/thought/v3.md`, prompt library, tests | 25 |
+| W6-05 | BC-10: the thought template v3 line (memories, beliefs and goals are data) | Ready | section 4 item 8 (provisional) | `prompts/thought/v3.md`, prompt library, tests | 25 |
 | W6-06 | Warm-up: every pinned model loaded and warmed before it is advertised | Ready (verify P0-22 first) | — | `lantern-local/src/**` and tests | 25 |
 | W6-07 | Split files over 500 lines: `pg-store.ts`, mock `server.ts`, `front.test.ts` | Ready | — | the three files and their new siblings | 30 |
 | W6-08 | Investigate `intent_link_gave_up` (read-only, worknote only) | Ready (needs ops logs) | ops: 32B logs | one worknote | 20 |
-| W6-09 | `glass/` server: loopback-only, read-only API and SSE | Ready | — | `glass/**` (new package) | 35 |
+| W6-09 | `glass/` server: loopback-only, read-only API and SSE, and the read-only role | Ready | — | `glass/**` (new package), `sql/0005_glass_reader.sql`, `sql/test/check-schema.sql` (role grants) | 35 |
 | W6-10 | `glass/` page: escaped rendering, filters, per-agent view | BlockedDependency | W6-09 | `glass/public/**`, `glass/src/render-*.ts` | 35 |
 | W6-11 | Glass security: adversarial fixtures, read-only route test, XSS review | BlockedDependency | W6-10, W6-13 | `glass/test/**`, `glass/README.md`, one review worknote | 30 |
 | W6-12 | Adam run report generator (JSON and Markdown, read-only DB) | Ready | — | `tools/adam-report/**` (new) | 35 |
 | W6-13 | Run protocol script `./geldar.ps1 adam-run`, and `./geldar.ps1 glass up` | BlockedDependency | W6-09, W6-12 | `tools/adam-run/**`, the `adam-run` and `glass` blocks in `geldar.ps1` | 35 |
-| W6-14 | Run protocol documents for the 32B and 8B runs | BlockedDecision | owner items 1 to 6 | `docs/analysis/phase0/adam-run-*.md` | 20 |
+| W6-14 | Run protocol documents for the 32B and 8B runs | Ready | section 4 items 1 to 6 (provisional) | `docs/analysis/phase0/adam-run-*.md` | 20 |
 | W6-20 | Campaign review: Body and Golem (read-only) | BlockedDependency | all coder packets merged, OPS-2 | a review worknote | 30 |
 | W6-21 | Campaign review: Mind, memory and prompts (read-only) | BlockedDependency | all coder packets merged, OPS-2 | a review worknote | 30 |
 | W6-22 | Campaign review: contract, sql, infra, Glass security, secrets (read-only) | BlockedDependency | all coder packets merged | a review worknote | 30 |
 | W6-23 | Campaign retro: learnings from every wave and both runs | BlockedDependency | W6-20 to W6-22, OPS-3 | `docs/analysis/phase0/retro/campaign.md` | 30 |
 | W6-24 | Apply the campaign retro actions (agents, skills, checks) | BlockedDependency | W6-23 | `.claude/agents/**`, `.claude/skills/**`, repo checks | 30 |
 
-**File ownership rules.** `geldar.ps1` is touched only by W6-13 (the `adam-run` and `glass` blocks). `animus/src/main.ts` is touched only by W6-02. `docs/spec.md` is never edited by any wave 6 packet. No packet adds a SQL migration (D-P0-11). No packet touches `contract/` unless its card says so.
+**File ownership rules.** `geldar.ps1` is touched only by W6-13 (the `adam-run` and `glass` blocks). `animus/src/main.ts` is touched only by W6-02. `docs/spec.md` is never edited by any wave 6 packet. No packet adds a SQL migration (D-P0-11), except W6-09, which adds `sql/0005_glass_reader.sql` (section 4 item 11, provisional). No packet touches `contract/` unless its card says so.
 
 ### Cards
 
@@ -70,14 +70,15 @@ Each packet fits one coder run (about 30 tool uses; the coder commits what passe
 - Tests: a wiring test (`animus/test/main.wiring.test.ts`) that starts the Mind's composition with a shard config whose bound differs from the default and asserts the validator sees the config value; revert-check.
 - Checks: `./geldar.ps1 check`; a grep for IPv4 literals in the worknote shows only `127.0.0.1`.
 
-**W6-03: Body `stuck` signal (AD-11).** BlockedDecision until owner item 7 is answered. Branch `phase0/w6-03-watchdog`. Commit: `feat(golem): set the stuck signal when a plan makes no progress` (or `docs: record that the stuck signal is not implemented in phase 0`, if the owner chooses).
-- Steps (if implemented): a watchdog in `golem/src/` that sets `stuck` after N ticks with no change in the intent's checkpoint; N is a shard config value, not a constant.
-- Tests: a fake clock test that `stuck` is set after N ticks and cleared on progress; an abort path test (the watchdog stops when the intent ends); revert-check.
+**W6-03: Record the no-stuck-signal decision (AD-11).** Ready. Owner item 7 is answered provisionally (section 4): Phase 0 has no `stuck` signal unless the runs show the need. The watchdog is a Phase 1 item. This is a docs packet; no code changes. Branch `phase0/w6-03-stuck-decision`. Commit: `docs: record that the stuck signal is not implemented in phase 0`.
+- Steps: add one paragraph to decision 0061 (`docs/decisions/0061-phase-0-exit-criteria-readings.md`) that records the decision, the reason (no exit criterion names `stuck`), and the trigger for revisiting it (the runs show a plan that stalls with no signal), and name the watchdog and the NATS read-only consumer as Phase 1 items.
+- Tests: none (docs only). Revert-check: not applicable.
+- Checks: `./geldar.ps1 check`.
 
 **W6-04: Velocity marker ordering.** Diagnose first: the retro names the item but not the defect. The coder reads `plugin/` velocity code and the wave 5 notes, writes the defect in the worknote, then fixes it if it is under one day of work. Branch `phase0/w6-04-velocity-marker`. Commit: `fix(velocity): order the bot-ingress marker before the forward`.
 - Tests: a JUnit test on the marker order, revert-checked. Checks: `cd plugin; ./gradlew build`, then `./geldar.ps1 check`.
 
-**W6-05: BC-10 v3 line.** BlockedDecision until owner item 8 is answered (the recommendation is one v3 line). Branch `phase0/w6-05-thought-v3`. Commit: `feat(prompts): thought template v3 marks memories, beliefs and goals as data`.
+**W6-05: BC-10 v3 line.** Ready. Owner item 8 is answered provisionally (section 4): one v3 line, with v2 still the default. Branch `phase0/w6-05-thought-v3`. Commit: `feat(prompts): thought template v3 marks memories, beliefs and goals as data`.
 - Steps: copy `prompts/thought/v2.md` to `v3.md` (templates are immutable once used, so v2 is not edited); add the one data line; the prompt library loads v3 only behind config. Decision 0058 default stays v2 until the owner says otherwise.
 - Tests: the rendered prompt for v3 places the three sections inside the quoted section; v2 output is byte-identical to before (golden test); revert-check.
 
@@ -98,6 +99,8 @@ Each packet fits one coder run (about 30 tool uses; the coder commits what passe
 - Headers on every response: `Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, no CORS.
 - No secret in any response or log: no connection strings, no password file paths, no tokens.
 - Tests: unit tests with fake DB and NATS; the route table test; the loopback refusal; the CSP header; an IT case (`GELDAR_IT=1`) against the dev Postgres. Revert-check the loopback refusal and the 405.
+- Migration (the one exception to D-P0-11; section 4 item 11, provisional): `sql/0005_glass_reader.sql` creates the role `geldar_glass` as NOLOGIN, with SELECT on exactly the tables Glass reads (`thoughts`, `actions`, `receipts`, `intents`, `agents`) and nothing else. No sequence grants, no write grants, no default privileges. The role gets a login only through `db migrate --set-role-password geldar_glass`. Follow the migration ledger rule and the migration runner (decision 0056).
+- Migration tests: `sql/test/check-schema.sql` asserts the role's grants (SELECT on each listed table; no INSERT, UPDATE, DELETE, or sequence USAGE; NOLOGIN after migrate). The IT case (`GELDAR_IT=1`) connects as `geldar_glass` and reads each table. The report generator (W6-12) reads the same role; if it needs a table outside this list, W6-12 files an interface request and the orchestrator adds it to a later migration. It does not edit this one.
 - Checks: `./geldar.ps1 check`.
 
 **W6-10: `glass/` page.** Depends on W6-09. Branch `phase0/w6-10-glass-page`. Commit: `feat(glass): add the Thought Stream page with escaped agent text and filters`.
@@ -121,10 +124,10 @@ Each packet fits one coder run (about 30 tool uses; the coder commits what passe
 - Tests: the manifest writer and the abort rules are pure and unit-tested (fake clock); revert-check the abort rules. No stack needed.
 - Checks: `./geldar.ps1 check`.
 
-**W6-14: Run protocol documents.** BlockedDecision until owner items 1 to 6. Branch `phase0/w6-14-run-docs`. Commit: `docs: add the 32B and 8B Adam run protocols`.
+**W6-14: Run protocol documents.** Ready. Owner items 1 to 6 are answered provisionally (section 4, recorded in decision 0061); the owner may revise them, and the protocols then change with them. Branch `phase0/w6-14-run-docs`. Commit: `docs: add the 32B and 8B Adam run protocols`.
 - Files: `docs/analysis/phase0/adam-run-32b.md`, `adam-run-8b.md`, and a shared preamble (which one is the owner's call; default: each file is self-contained).
 - Each protocol has: preconditions (benchmark gate PASS at 20 TPS, digests pinned, personality seed approved, fresh world volume, GPU free); steps for ops in order; duration (about 100 real minutes for the 5-day segment, at least 24 real hours in total, plus setup); the planned restart and the Body restart mid-intent, with the times set at dispatch; what to record (manifest, `status.log`, the two report files, a database export path, the commit); abort criteria, quoted from W6-13's criteria file; the verdict rule for the model floor.
-- Numbers come only from the criteria file, never typed here. Until the owner answers, the file says "owner: pending".
+- Numbers come only from the criteria file, never typed here. Each protocol cites the provisional answer it relies on (section 4 items 1 to 6) and says that the owner may revise it.
 - Checks: `./geldar.ps1 check`.
 
 **W6-20, W6-21, W6-22: campaign reviews (read-only).** Three independent reviewers, none of whom wrote the code they review. Each writes one worknote with findings by severity (blocker, major, minor), each with file and line and the spec section it checks. No fixes in these packets; every fix becomes a new packet, dispatched by the orchestrator.
@@ -187,19 +190,37 @@ W6-03 and W6-05 join Phase B when the owner answers items 7 and 8.
 
 Recommendation first. Items 1 to 6 are needed before W6-14 and the report can give a verdict. Items 7 and 8 gate W6-03 and W6-05.
 
+**Provisional (orchestrator, owner may revise).** The owner's standing instruction is to note decisions and keep working, so the orchestrator has answered every item below PROVISIONALLY, on 2026-11-10. Each answer is the `Answer (provisional)` line under its item. The owner may revise any of them; the reading of the exit criteria is recorded in [decision 0061](../../decisions/0061-phase-0-exit-criteria-readings.md), and the packet table reflects these answers.
+
 1. **"Survives 5 consecutive in-game days"**: does any death in the window fail the run? Recommendation: yes, and the `death` event is the measure.
+   Answer (provisional): yes. Any death in the 5-day window fails the run, and the `death` event is the measure.
 2. **"Useful autonomous minute"**: define it. Recommendation: a real minute in which an intent was running and the Body issued at least one action with a receipt, with no model call waited on that minute.
+   Answer (provisional): as recommended.
 3. **"Inference calls per useful autonomous minute"**: which calls count? Recommendation: thoughts and reflections, reported separately; the total is the headline.
+   Answer (provisional): as recommended: thoughts and reflections are reported separately, and the total is the headline.
 4. **"Thought latency under 15 s"**: p50, p95 or max? Recommendation: p95 under 15 s, with p50 and max reported. The 25 s deadline stays the hard limit.
+   Answer (provisional): p95 under 15 s, with p50 and max reported. The 25 s deadline stays the hard limit.
 5. **"A bed, food and stone tools"**: the measurable form. Recommendation: at each day boundary, a placed and slept-in bed owned by the agent, at least one food eaten in the day, a stone pickaxe in the inventory.
+   Answer (provisional): as recommended.
 6. **Five days and 24 hours**: one run or two? Recommendation: one continuous run of at least 24 real hours that contains the 5-day segment, with one planned restart and one Body restart mid-intent. Also: the model floor has no tier below 8B in Phase 0; confirm that nothing lower is run.
+   Answer (provisional): as recommended: one continuous run of at least 24 real hours containing the 5-day segment, with one planned restart and one Body restart mid-intent. Nothing below 8B is run; the model floor is 8B or 32B.
 7. **AD-11, the `stuck` signal**: implement a watchdog (W6-03), or record a decision that Phase 0 has no `stuck` signal? Recommendation: record the decision unless the runs need it, since no exit criterion names it.
+   Answer (provisional): record the decision that Phase 0 has no `stuck` signal unless the runs show the need. W6-03 becomes the docs packet "record the no-stuck-signal decision"; the watchdog is a Phase 1 item.
 8. **BC-10, the thought template v3 line** (carried from wave 5 and wave M). Recommendation: one v3 line (W6-05); decision 0058 stays v2 as the default until you say so.
+   Answer (provisional): yes. The BC-10 line is added as thought template v3 (W6-05); v2 stays the default. The owner may switch.
 9. **D-P0-18** (the benchmark `--runs` count of 10 for the recorded run) is still Proposed. Accept it for OPS-0 and OPS-4?
+   Answer (provisional): accept D-P0-18 (`--runs 10` for the recorded benchmark).
 10. **Glass access** in Phase 0: loopback only, no authentication, no tunnel. Recommendation: yes, as a v0. The Observatory edge is deferred to Phase 2 (D-P0-13), so the SSO rule in spec 5.13 and 8.4 does not apply yet. The tunnel design is a Phase 1 item.
+   Answer (provisional): yes. Glass is loopback only, with no authentication and no tunnel in Phase 0.
 11. **Least-privilege roles** (carried from wave 5): a read-only Postgres role for the Glass and the report, and a read-only NATS consumer. Recommendation: yes, before OPS-1.
+   Answer (provisional): yes, with a stated EXCEPTION to "no packet adds a SQL migration (D-P0-11)". One migration, `sql/0005_glass_reader.sql`, creates a read-only role `geldar_glass`: SELECT on exactly the tables Glass and the report generator read, no sequences, no writes, NOLOGIN until `db migrate --set-role-password geldar_glass`. W6-09 owns it and follows the migration ledger rule and the migration runner. The NATS read-only consumer is deferred and recorded as a Phase 1 item, because Glass reads Postgres only.
 12. **The spec edit** for the observer disclosure variable (decision 0059) and the `uuid` override (carried from wave 5 and wave M). Only the owner edits `docs/spec.md`; no wave 6 packet does.
-13. **Decision 0060** (persona size limits) has no file under `docs/decisions/`. Write it, or confirm it is not needed for Phase 0.
+   Answer (provisional): left to the owner. Nobody else edits `docs/spec.md`.
+13. **Decision 0060** (persona size limits): the file exists at `docs/decisions/0060-persona-size-limits.md` (merged with the wave 5 PR), so nothing needs writing. Recommendation: none needed; the item is settled.
+   Answer (provisional): settled. The file is on `origin/main`; no packet is needed for it.
 14. **Review independence**: the three campaign reviewers are fresh agents, not the coders. Recommendation: yes; the orchestrator aggregates and dispatches the fixes.
+   Answer (provisional): yes, fresh reviewers.
 15. **The campaign retro's scope**: the sources listed in W6-23. Is anything outside `docs/analysis/phase0/` to be read (for example the wave M ranger logs, which the retro may need)? Recommendation: no, unless the owner asks.
+   Answer (provisional): no. The retro reads only `docs/analysis/phase0/`, plus the decision records under `docs/decisions/`.
 16. **Coder agent**: the W6 coders run the `packet-coder` agent. Confirm that, and that the commit trailer is written once into `.claude/agents/packet-coder.md`, as the wave 5 retro asks.
+   Answer (provisional): yes, the W6 coders run `packet-coder`. Correction: the trailer is not yet in `.claude/agents/packet-coder.md` on `origin/main`; that file is unchanged by this plan, so the trailer write is an open action for the WM-process owner.
