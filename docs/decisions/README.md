@@ -70,3 +70,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0063](0063-phase-0-has-no-stuck-signal.md) | Phase 0 has no `stuck` signal (AD-11); the exit runs measure whether intents complete, and the watchdog is a Phase 1 item | Accepted provisionally (orchestrator, owner may revise) |
 | [0064](0064-exit-run-lives.md) | The exit runs use fresh lives (`ag_adam_03` 32B, `ag_adam_04` 8B) and fresh volumes; the smoke run has its own life (`ag_smoke_01`); journals are append-only | Accepted provisionally (orchestrator, owner may revise) |
 | [0065](0065-damage-wakes-the-mind.md) | Damage wakes the Mind when no intent is running; death still ends the life | Accepted provisionally (orchestrator, owner may revise) |
+| [0066](0066-phase0-closed-as-proof-of-life.md) | Phase 0 is closed as proof of life; the spec's section 10 exit criteria are waived by the owner and the exit runs are deferred | Accepted (owner) |
