@@ -116,4 +116,77 @@ Index line to add: `index: | [0092](0092-velocity-spectator-whitelist.md) | Velo
 
 ---
 
-<!-- next: C2-03 -->
+### C2-03: Glass hardening (0072)
+
+- `wave`: C2. `lane`: C. `depends-on`: C2-00. Schedule decision 0093. `status`: B. `size`: M.
+- `may-edit`: `glass/src/` (`http.ts`, `routes.ts`, `query.ts`, `config.ts`, `main.ts`, `sse.ts`, `render-*.ts` and their tests, new siblings such as `guard.ts` for the limiter), `glass/README.md`, `glass/test/` if it exists (locate with `ls glass`).
+- `must-not-edit`: `docs/spec.md`, `sql/` (no new migration; a grant change is an index line for the integration packet), `contract/`, `compose/*`, `geldar.ps1`, `deploy/` (C2-04), `eventsink/`.
+- `decisions`: 0093 only. The defaults the owner must confirm (the delay value, and whether a living sovereign's thoughts are shown on Glass) are listed in section 5 and gate this card's defaults: until confirmed, ship the delay option with the delay off, and the sovereign filter on.
+- `checks`: `./geldar.ps1 pnpm --filter @geldar/glass typecheck`; `./geldar.ps1 pnpm exec vitest run glass/src`; `./geldar.ps1 check`.
+- `worknote`: `docs/analysis/phase1/worknotes/C2-03.md`.
+- `commit`: one commit per item, e.g. `feat(glass): per-client rate limit and request size cap` (0072 item 1 and 2), `fix(glass): escape agent text under the strict CSP` (item 3, where a gap is found), `feat(glass): delay option and kill switch` (items 4 and 5).
+- `on-cap`: commit what passes, write the rest, stop.
+
+Steps:
+1. The strict CSP and `nosniff` already exist in `glass/src/http.ts` (lines 26 and 28). Confirm the policy is `default-src 'none'`, `script-src 'self'`, no `unsafe-inline`, and that it is on every response including errors (the "every response" rule).
+2. Escaped agent text: `render-view.ts` and `page-safety.test.ts` already exist. Add adversarial fixtures (script tags, attribute breakouts, `javascript:` links, a closing tag in a thought) and assert that the rendered output has no raw markup from agent text. Revert-check: the escape call in `render-view.ts`.
+3. Rate limit: a per-client-address token bucket with an injected clock, using the address rule from C2-00 (the trusted header from Caddy only). A refusal is 429 with `Retry-After`, a fixed body, and no state detail.
+4. Size cap: reject a request body or query above a fixed bound before parsing; the `limit` query stays 1 to 100 (`query.ts`).
+5. Delay option: `GELDAR_GLASS_DELAY_SECONDS` (default 0 until the owner confirms the value). Thoughts newer than the delay are not returned by the API or the SSE stream. Test with a fake clock.
+6. Kill switch: a config flag (`GELDAR_GLASS_ENABLED`, default on) that makes every route return a fixed 503 and closes SSE streams. Test that the stream closes within one heartbeat.
+7. No secret in any response or log: a test that greps the response bodies and logs for the connection string and the password path.
+8. Confirm the `geldar_glass` role is the one the Glass test connects as (the backlog item). If the test currently uses another role, change it and note it in the worknote; the grant file is not edited.
+
+Acceptance: each item has its test; the SSE kill-switch test and the delay test use fake clocks; the 0072 hardening list is fully covered (the list is the acceptance, and each item maps to a named test in the worknote).
+Revert-checks: (a) `glass/src/http.ts` line 26, remove `script-src 'self'` from the CSP string; the CSP test must fail. (b) the rate limiter's refusal branch; the 429 test must fail. Restore both.
+Index line to add: any grant change for `geldar_glass` (none expected).
+
+### C2-04: BlueMap public through Caddy (0072, 0071)
+
+- `wave`: C2. `lane`: D. `depends-on`: C1-09 (BlueMap installed), C2-00. Schedule decision 0094. `status`: B for the snippet and its checks; B/O for the live reload (owner or ops step). `size`: S.
+- `may-edit`: `deploy/caddy/` (new directory: a site or snippet file for the BlueMap host, a README, and a validation script under `tools/` only if one is needed; name it in the worknote), `docs/analysis/phase1/worknotes/C2-04.md`.
+- `must-not-edit`: `docs/spec.md`, `compose/*` (C2-07 wires the reload), `geldar.ps1`, `tools/repo-checks/src/cli.ts`, `shards/*`, `glass/`, `threshold/`.
+- `decisions`: 0094 only.
+- `checks`: `caddy validate --config <the snippet>` run in a pinned Caddy container (pin by digest; the coder records the digest and its release date, and the release must be at least two weeks old); `./geldar.ps1 check`.
+- `worknote`: `docs/analysis/phase1/worknotes/C2-04.md`.
+- `commit`: `feat(caddy): BlueMap read-only site snippet with a kill switch`.
+- `on-cap`: commit what passes, write the rest, stop.
+
+Steps:
+1. The snippet serves only `GET` and `HEAD`; every other method gets 405 at Caddy. Test with `caddy validate` plus a matcher assertion in the README's check list.
+2. Set the response headers that match Glass (the same CSP shape where BlueMap allows it; where BlueMap needs an inline style, record the exception in 0094 and do not widen it elsewhere).
+3. Rate limit: core Caddy has no built-in rate limiter. Either a pinned third-party module (a build step that must be owner-approved, since it adds a supply-chain dependency) or the limit moves to the BlueMap host. Default for this card: write the snippet without a rate limit, record the gap in 0094, and open the question in section 5. Do not add an unpinned plugin.
+4. Kill switch: a Caddy `respond 503` block, kept in a separate file so a single `caddy reload` turns BlueMap off without touching other sites.
+5. Document the reload procedure in `deploy/caddy/README.md`: `caddy reload` only, never `systemctl restart caddy` or a container restart, because the node's shared Caddy serves other sites (0071 item 6).
+6. The host name is `map.<project domain>`; the domain is a placeholder in the file, not a real value.
+
+Acceptance: `caddy validate` passes; a test or check asserts that the snippet has no `reverse_proxy` to an internal address other than the BlueMap service name, and no `127.0.0.1` other than the BlueMap listener.
+Revert-check: in the snippet, remove the method matcher; the method test must fail. Restore.
+Index line to add: `index: | [0094](0094-bluemap-public-read-only.md) | BlueMap public, Caddy snippet, kill switch | Proposed |`.
+
+### C2-05: look projection cleanup and MCP image slimming
+
+- `wave`: C2. `lane`: E. `depends-on`: C2-00. Schedule decision 0095. `status`: B. `size`: M.
+- `may-edit`: `threshold/mcp/src/tools/look.ts`, `threshold/mcp/src/play-view.ts`, `threshold/mcp/src/world.ts` (if the projection lives there), their tests, `threshold/mcp/Dockerfile`, `threshold/mcp/Dockerfile.dockerignore`, `threshold/mcp/README.md`.
+- `must-not-edit`: `docs/spec.md`, `contract/` (see the note below), `compose/*`, `geldar.ps1`, `threshold/mcp-mock/`, `animus/`, `tools/repo-checks/`, `golem/src/view.ts`.
+- `decisions`: 0095 only.
+- `checks`: `./geldar.ps1 pnpm --filter @geldar/mcp typecheck`; `./geldar.ps1 pnpm exec vitest run threshold/mcp/src/tools threshold/mcp/src/play-view.test.ts`; the image build `docker build -f threshold/mcp/Dockerfile .` (run once, record the size before and after); `./geldar.ps1 check`.
+- `worknote`: `docs/analysis/phase1/worknotes/C2-05.md`.
+- `commit`: `refactor(mcp): drop shard, snapshot_id and body_generation from look; add in-world time`, and `build(mcp): slim the image to the MCP package only`.
+- `on-cap`: commit what passes, write the rest, stop.
+
+Steps:
+1. Find every place `look` emits `shard`, `snapshot_id` or `body_generation` (`grep -rn "snapshot_id\|body_generation\|shard" threshold/mcp/src/tools/look.ts threshold/mcp/src/play-view.ts`). Remove them from the output. They are internal identifiers an agent does not need, and `snapshot_id` and `body_generation` leak Body bookkeeping.
+2. Add an in-world time field from the snapshot's `world_time` (day and tick), rendered the same way `status` renders it.
+3. Contract note: the look output shape lives in `contract/schemas/mcp-world.schema.json`. Fan-out packets do not edit `contract/`. If the field removal or the new field changes a required property, write an index line for the C2-07 integration packet to apply, and keep the schema's required list unchanged in this packet. Tests run against the handler output, so the handler change is independent of the schema change.
+4. Image: `threshold/mcp/Dockerfile` does `COPY . .` before `pnpm install --filter "@geldar/mcp..."`. Narrow it: copy only the workspace files the MCP package needs (its `package.json`, `contract/`, `threshold/mcp/`), so `animus/`, `threshold/mcp-mock/` and `tools/repo-checks/` are not in the image. Add the same exclusions to `Dockerfile.dockerignore`. Record the image size before and after in the worknote.
+5. The runtime stage stays uid 1000 on a read-only root (the existing comment in the Dockerfile); do not change the user.
+
+Acceptance: a test asserts that the `look` handler output has no key named `shard`, `snapshot_id` or `body_generation` (recursively), and has the in-world time; an image check asserts the built image has no `/opt/geldar/animus` or `/opt/geldar/threshold/mcp-mock` path.
+Revert-check: in `look.ts`, re-add the `body_generation` key to the output; the recursive key test must fail. Restore.
+Index line to add: the schema change for `contract/schemas/mcp-world.schema.json` (remove the three keys from any `properties` and add `in_world_time`), for the C2-07 integration packet.
+
+---
+
+<!-- next: C2-06 -->
+
