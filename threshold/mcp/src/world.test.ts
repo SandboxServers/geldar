@@ -264,6 +264,23 @@ describe('the settle timer', () => {
     world.close();
   });
 
+  it('settles an awake life that was left so by a restart, with no call since', async () => {
+    const fx = worldFixture([PLAYER]);
+    await fx.deps.presence.wantBody(PLAYER.lifeId, fx.clock.nowMs());
+    const world = createWorld(fx.deps);
+    await passSeconds(fx.clock, 60);
+    expect(storedPresence(fx.bucket, PLAYER.lifeId)).toMatchObject({
+      state: 'dim',
+      desired_body: 'up',
+    });
+    await passSeconds(fx.clock, 540);
+    expect(storedPresence(fx.bucket, PLAYER.lifeId)).toMatchObject({
+      state: 'hibernating',
+      desired_body: 'down',
+    });
+    world.close();
+  });
+
   it('stops settling once close runs', async () => {
     const { world, tools, bucket, clock, deps } = wired();
     await run(tools, 'look');

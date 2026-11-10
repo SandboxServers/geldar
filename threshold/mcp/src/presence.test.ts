@@ -11,20 +11,59 @@ import {
 const LIFE = 'ag_jason_01';
 const T0 = Date.parse('2026-11-09T12:00:00.000Z');
 
-/** An in-memory KV bucket that keeps the stored text, as NATS KV does. */
+/**
+ * An in-memory KV bucket that keeps the stored text and a revision per key, as NATS KV does.
+ * `afterGet` is a race hook: it runs once, after the next get has read its value, before the get
+ * returns. `conflicts` makes that many updates (or all, when infinite) lose their compare-and-set.
+ */
 class FakeBucket implements PresenceBucket {
   readonly values = new Map<string, string>();
+  readonly revisions = new Map<string, number>();
   puts = 0;
+  updates = 0;
+  gets = 0;
+  conflicts = 0;
+  afterGet: (() => Promise<void>) | null = null;
+  private lastRevision = 0;
 
-  async get(key: string): Promise<{ string(): string } | null> {
+  async get(key: string): Promise<{ string(): string; revision: number } | null> {
+    this.gets++;
     const value = this.values.get(key);
-    return value === undefined ? null : { string: () => value };
+    const revision = this.revisions.get(key) ?? 0;
+    const hook = this.afterGet;
+    this.afterGet = null;
+    if (hook !== null) await hook();
+    return value === undefined ? null : { string: () => value, revision };
   }
 
   async put(key: string, value: string): Promise<number> {
     this.puts++;
+    return this.store(key, value);
+  }
+
+  async keys(): Promise<AsyncIterable<string>> {
+    const snapshot = [...this.values.keys()];
+    return (async function* () {
+      yield* snapshot;
+    })();
+  }
+
+  async update(key: string, value: string, revision: number): Promise<number> {
+    this.updates++;
+    if (this.conflicts > 0) {
+      this.conflicts--;
+      throw new Error(`conflict on ${key}`);
+    }
+    if ((this.revisions.get(key) ?? 0) !== revision) throw new Error(`conflict on ${key}`);
+    this.puts++;
+    return this.store(key, value);
+  }
+
+  private store(key: string, value: string): number {
     this.values.set(key, value);
-    return this.puts;
+    this.lastRevision++;
+    this.revisions.set(key, this.lastRevision);
+    return this.lastRevision;
   }
 }
 
@@ -170,6 +209,47 @@ describe('KvPresenceStore', () => {
     now.ms = T0 + 800_000;
     await store.touch(LIFE);
     expect(stored(bucket)).toMatchObject({ state: 'awake', desired_body: 'up' });
+  });
+
+  it('a touch that lands between settle reading and writing is not overwritten with down', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 700_000;
+    bucket.afterGet = () => store.touch(LIFE);
+    await store.settle(LIFE);
+    expect(stored(bucket)).toMatchObject({ state: 'awake', desired_body: 'up' });
+  });
+
+  it('after a lost compare-and-set, settle reads and decides again', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 700_000;
+    bucket.conflicts = 2;
+    expect(await store.settle(LIFE)).toMatchObject({ state: 'hibernating', desired_body: 'down' });
+    expect(bucket.updates).toBe(3);
+    expect(bucket.gets).toBe(4);
+  });
+
+  it('gives up after three lost compare-and-set writes', async () => {
+    const bucket = new FakeBucket();
+    const now = { ms: T0 };
+    const store = storeAt(bucket, now);
+    await store.touch(LIFE);
+    now.ms = T0 + 700_000;
+    bucket.conflicts = Number.POSITIVE_INFINITY;
+    await expect(store.settle(LIFE)).rejects.toThrow('conflict');
+    expect(bucket.updates).toBe(3);
+  });
+
+  it('lists the lives the bucket holds, for a restarted world to seed from', async () => {
+    const bucket = new FakeBucket();
+    await storeAt(bucket, { ms: T0 }).touch(LIFE);
+    await storeAt(bucket, { ms: T0 }).touch('ag_other_01');
+    expect((await storeAt(bucket, { ms: T0 }).lifeIds()).sort()).toEqual([LIFE, 'ag_other_01']);
   });
 
   it('settle writes nothing and returns null for a life with no record', async () => {

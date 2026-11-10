@@ -73,8 +73,8 @@ export interface WorldDeps {
   journal: JournalStore;
   recorder: CallRecorder;
   events: PlayerEventLog;
-  /** Presence per life; `settle` is called by the world's timer. */
-  presence: PresenceStore & Pick<KvPresenceStore, 'settle'>;
+  /** Presence per life; `settle` is called by the world's timer, `lifeIds` seeds it at start. */
+  presence: PresenceStore & Pick<KvPresenceStore, 'settle' | 'lifeIds'>;
   limiter: RateLimiter;
   validator: OutputValidator;
   clock: Clock;
@@ -201,12 +201,23 @@ async function journalAndRecord(deps: Wired, call: ToolCall, text: string) {
 
 /**
  * Starts the settle timer: every `SETTLE_MS` on the injected clock, each life seen so far is settled,
- * so an awake life dims and then hibernates with no call. A failed write is retried on the next tick.
+ * so an awake life dims and then hibernates with no call. The lives already in the bucket count as
+ * seen, so a life awake before a restart settles too. A failed write is retried on the next tick.
  */
 function startSettle(deps: Wired): () => void {
   const stop = new AbortController();
+  const seedLives = async (): Promise<boolean> => {
+    try {
+      for (const lifeId of await deps.presence.lifeIds()) deps.lives.add(lifeId);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const tick = async (): Promise<void> => {
+    let seeded = false;
     for (;;) {
+      if (!seeded) seeded = await seedLives();
       try {
         await deps.clock.sleep(SETTLE_MS, stop.signal);
       } catch {
