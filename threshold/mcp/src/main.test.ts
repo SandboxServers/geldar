@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { repoRoot } from './config.ts';
 import { MemoryPresenceBucket } from './fakes/world.fakes.ts';
 import {
+  bucketRules,
   ConfigRejected,
   LIFE_CACHE_MS,
   lazyLifeRegistry,
@@ -234,7 +235,7 @@ describe('lazyLifeRegistry', () => {
 
 describe('tokenBucketLimiter', () => {
   it('allows the capacity, refuses the next call, and refills one token every 60/capacity seconds', () => {
-    const limiter = tokenBucketLimiter(2);
+    const limiter = tokenBucketLimiter(() => ({ capacity: 2, perMinute: 2 }));
     expect(limiter.take('ag-jason-01', 0).allowed).toBe(true);
     expect(limiter.take('ag-jason-01', 0).allowed).toBe(true);
     const refused = limiter.take('ag-jason-01', 0);
@@ -242,5 +243,53 @@ describe('tokenBucketLimiter', () => {
     expect(refused.retryAfterMs).toBe(30_000);
     expect(limiter.take('ag-jason-01', 30_000).allowed).toBe(true);
     expect(limiter.take('other', 0).allowed).toBe(true);
+  });
+
+  it('gives each bucket the capacity its name calls for, through the real config rules', () => {
+    const limits = {
+      callsPerMinute: 60,
+      ownerCallsPerMinute: 600,
+      failedAuthPerMinute: 30,
+      actMinSeconds: 2,
+      sayMinSeconds: 3,
+    };
+    const count = (bucket: string): number => {
+      const limiter = tokenBucketLimiter(bucketRules(limits));
+      let allowed = 0;
+      while (allowed < 1000 && limiter.take(bucket, 0).allowed) allowed += 1;
+      return allowed;
+    };
+    expect(count('player:ag-jason-01')).toBe(60);
+    expect(count('owner:steve')).toBe(600);
+    expect(count('auth-failed:address:203.0.113.9')).toBe(30);
+    expect(count('auth-failed:global')).toBe(300);
+    expect(count('act:ag_jason')).toBe(1);
+    expect(count('say:ag_jason')).toBe(1);
+  });
+
+  it('spaces act and say by their minimum seconds: one token each, refilled every N seconds', () => {
+    const limiter = tokenBucketLimiter(
+      bucketRules({
+        callsPerMinute: 60,
+        ownerCallsPerMinute: 600,
+        failedAuthPerMinute: 30,
+        actMinSeconds: 2,
+        sayMinSeconds: 3,
+      }),
+    );
+    expect(limiter.take('act:ag_jason', 0).allowed).toBe(true);
+    expect(limiter.take('act:ag_jason', 1_999).allowed).toBe(false);
+    expect(limiter.take('act:ag_jason', 2_000).allowed).toBe(true);
+    expect(limiter.take('say:ag_jason', 0).allowed).toBe(true);
+    expect(limiter.take('say:ag_jason', 2_999).allowed).toBe(false);
+    expect(limiter.take('say:ag_jason', 3_000).allowed).toBe(true);
+  });
+
+  it('keeps counting after the table is swept of full buckets', () => {
+    const limiter = tokenBucketLimiter(() => ({ capacity: 1, perMinute: 1 }));
+    for (let i = 0; i < 1500; i += 1) limiter.take(`auth-failed:address:${i}`, 0);
+    expect(limiter.take('auth-failed:address:0', 0).allowed).toBe(false);
+    expect(limiter.take('auth-failed:address:0', 60_000).allowed).toBe(true);
+    expect(limiter.take('auth-failed:address:fresh', 0).allowed).toBe(true);
   });
 });

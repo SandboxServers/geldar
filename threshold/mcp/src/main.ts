@@ -91,22 +91,78 @@ export async function loadStartConfig(file: string, env: Record<string, string |
   return parseMcpConfig(parse(text), { env });
 }
 
-/** A token bucket per key: `capacity` tokens, refilled evenly over a minute. */
-export function tokenBucketLimiter(perMinute: number): RateLimiter {
+/** A bucket's size: `capacity` tokens, and `perMinute` of them added back over each minute. */
+export interface BucketRule {
+  capacity: number;
+  perMinute: number;
+}
+
+/** The failed-auth budget for all addresses together (the approved 300 a minute; not configurable). */
+export const GLOBAL_FAILED_AUTH_PER_MINUTE = 300;
+
+/**
+ * The rule for each bucket, by name: the front door's `player:`, `owner:`, `auth-failed:` buckets
+ * and the tools' `act:` and `say:` buckets, whose minimum spacing is one token per N seconds.
+ */
+export function bucketRules(
+  limits: Pick<
+    McpConfig['sovereign']['rateLimits'],
+    | 'callsPerMinute'
+    | 'ownerCallsPerMinute'
+    | 'failedAuthPerMinute'
+    | 'actMinSeconds'
+    | 'sayMinSeconds'
+  >,
+): (bucket: string) => BucketRule {
+  const perMinute = (n: number): BucketRule => ({ capacity: n, perMinute: n });
+  const spaced = (seconds: number): BucketRule =>
+    seconds > 0 ? { capacity: 1, perMinute: 60 / seconds } : perMinute(limits.callsPerMinute);
+  return (bucket) => {
+    if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
+    if (bucket.startsWith('auth-failed:address:')) return perMinute(limits.failedAuthPerMinute);
+    if (bucket === 'auth-failed:global') return perMinute(GLOBAL_FAILED_AUTH_PER_MINUTE);
+    if (bucket.startsWith('act:')) return spaced(limits.actMinSeconds);
+    if (bucket.startsWith('say:')) return spaced(limits.sayMinSeconds);
+    return perMinute(limits.callsPerMinute);
+  };
+}
+
+/** Above this many buckets the limiter drops the full ones: a full bucket is the same as a new one. */
+const SWEEP_AT = 1_000;
+
+/**
+ * A token bucket per key, sized by `ruleOf`. A bucket that has refilled to full is dropped when the
+ * table grows, so an address that rotates through IPv6 cannot grow the table without bound.
+ */
+export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): RateLimiter {
   const buckets = new Map<string, { tokens: number; atMs: number }>();
+  let sweepAt = SWEEP_AT;
+  const refilled = (bucket: string, nowMs: number) => {
+    const rule = ruleOf(bucket);
+    const state = buckets.get(bucket) ?? { tokens: rule.capacity, atMs: nowMs };
+    const tokens = Math.min(
+      rule.capacity,
+      state.tokens + ((nowMs - state.atMs) * rule.perMinute) / 60_000,
+    );
+    return { rule, tokens };
+  };
+  const sweep = (nowMs: number) => {
+    for (const key of [...buckets.keys()]) {
+      const { rule, tokens } = refilled(key, nowMs);
+      if (tokens >= rule.capacity) buckets.delete(key);
+    }
+    sweepAt = Math.max(SWEEP_AT, buckets.size * 2);
+  };
   return {
     take(bucket: string, nowMs: number): RateDecision {
-      const state = buckets.get(bucket) ?? { tokens: perMinute, atMs: nowMs };
-      const refilled = Math.min(
-        perMinute,
-        state.tokens + ((nowMs - state.atMs) * perMinute) / 60_000,
-      );
-      if (refilled >= 1) {
-        buckets.set(bucket, { tokens: refilled - 1, atMs: nowMs });
+      if (buckets.size >= sweepAt) sweep(nowMs);
+      const { rule, tokens } = refilled(bucket, nowMs);
+      if (tokens >= 1) {
+        buckets.set(bucket, { tokens: tokens - 1, atMs: nowMs });
         return { allowed: true, retryAfterMs: 0 };
       }
-      buckets.set(bucket, { tokens: refilled, atMs: nowMs });
-      return { allowed: false, retryAfterMs: Math.ceil(((1 - refilled) * 60_000) / perMinute) };
+      buckets.set(bucket, { tokens, atMs: nowMs });
+      return { allowed: false, retryAfterMs: Math.ceil(((1 - tokens) * 60_000) / rule.perMinute) };
     },
   };
 }
@@ -184,6 +240,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       intentRunTooLongMs: config.sovereign.wake.intentRunTooLongSeconds * 1000,
     };
     const recorder = new SovereignCallRecorder({ publish: (id, p) => nats.publishCall(id, p) });
+    const limiter = tokenBucketLimiter(bucketRules(config.sovereign.rateLimits));
     const world = createWorld({
       players: new PgPlayerDirectory(pool),
       body,
@@ -194,7 +251,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       recorder,
       events,
       presence,
-      limiter: tokenBucketLimiter(config.sovereign.rateLimits.callsPerMinute),
+      limiter,
       validator: createOutputValidator(),
       clock: ports.clock,
       runs,
@@ -231,7 +288,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       http: config.http,
       pepper,
       store: tokens,
-      limiter: tokenBucketLimiter(config.sovereign.rateLimits.callsPerMinute),
+      limiter,
       createSession: (playerId, signal) => createWorldSession(sessionDeps, playerId, signal),
       log: (line) => ports.log(line),
       now,
