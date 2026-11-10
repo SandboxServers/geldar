@@ -50,6 +50,29 @@ describe('geldar.ps1 reads its arguments from $args', () => {
   });
 });
 
+describe('geldar.ps1 shard secret files', () => {
+  // The function body from its header up to the next top-level function, so the checks stay inside it.
+  const body =
+    /^function Initialize-ShardSecrets\(\[string\] \$Shard\) \{([\s\S]*?)^\}$/m.exec(script)?.[1] ?? '';
+  const acl = /^function Set-OwnerOnlyAcl\(\[string\] \$Path\) \{([\s\S]*?)^\}$/m.exec(script)?.[1] ?? '';
+
+  it('defines Set-OwnerOnlyAcl with inheritance off and the current account granted full control', () => {
+    expect(acl).toMatch(/icacls \$Path \/inheritance:r \/grant:r "\$\{user\}:F"/);
+    expect(acl).toMatch(/\$env:USERNAME/);
+  });
+
+  it('applies the owner-only ACL to each secret file, the new ones before the secret is written', () => {
+    const calls = [...body.matchAll(/Set-OwnerOnlyAcl \$path/g)];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    expect(body.indexOf('Set-OwnerOnlyAcl $path', body.indexOf('CreateNew'))).toBeGreaterThan(
+      body.indexOf('CreateNew'),
+    );
+    expect(body.indexOf('Set-OwnerOnlyAcl $path', body.indexOf('CreateNew'))).toBeLessThan(
+      body.indexOf('GetBytes($secret)'),
+    );
+  });
+});
+
 describe('geldar.ps1 mcp-tokens database environment', () => {
   // The case body from its label up to the next case, so the checks cannot match another command.
   const block = /^ {2}'mcp-tokens' \{([\s\S]*?)^ {2}'db' \{/m.exec(script)?.[1] ?? '';

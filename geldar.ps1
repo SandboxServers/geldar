@@ -115,8 +115,20 @@ function Assert-PluginsEnabled([string] $Shard, [string[]] $Compose) {
   }
 }
 
+# The owner-only step of tools/mcp-tokens/src/secret-files.ts (restrictToOwner): inheritance off, and the
+# current account gets full control. On Windows the file mode is not enforced, so this is the real guard.
+# Best effort: a failure is warned about, names the path and never fails the command.
+function Set-OwnerOnlyAcl([string] $Path) {
+  if (-not $IsWindows) { return }
+  $user = $env:USERNAME
+  if (-not $user) { Write-Warning "USERNAME is not set; $Path keeps its default permissions"; return }
+  & icacls $Path /inheritance:r /grant:r "${user}:F" *> $null
+  if ($LASTEXITCODE -ne 0) { Write-Warning "icacls could not restrict $Path; check its permissions by hand" }
+}
+
 # Writes the shard's Docker secret files (spec 6.7) when they are missing. Each holds
 # 32 random URL-safe characters with no newline. Existing files are never overwritten.
+# Each file gets the owner-only ACL (Set-OwnerOnlyAcl) before its secret is written.
 function Initialize-ShardSecrets([string] $Shard) {
   Get-ComposeFile $Shard | Out-Null
   $dir = Join-Path $Root 'compose/secrets'
@@ -127,6 +139,7 @@ function Initialize-ShardSecrets([string] $Shard) {
     if (Test-Path $path) {
       # An empty file is what a crash between create and write leaves behind; refuse to guess.
       if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
+      Set-OwnerOnlyAcl $path
       continue
     }
     # 64 symbols and 256 byte values: the modulo is unbiased.
@@ -142,8 +155,10 @@ function Initialize-ShardSecrets([string] $Shard) {
       # The winner may not have written its secret yet: give it one short retry before calling the file empty.
       if ((Get-Item $path).Length -eq 0) { Start-Sleep -Milliseconds 500 }
       if ((Get-Item $path).Length -eq 0) { throw "compose/secrets/$name.txt is empty; delete it and run again" }
+      Set-OwnerOnlyAcl $path
       continue
     }
+    Set-OwnerOnlyAcl $path
     try {
       $data = [Text.Encoding]::ASCII.GetBytes($secret)
       $stream.Write($data, 0, $data.Length)
