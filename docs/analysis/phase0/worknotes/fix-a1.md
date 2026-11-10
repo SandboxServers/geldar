@@ -45,3 +45,20 @@ Branch `fix/a1-admission-nats` from `wave6-main`. One commit per item, in priori
   `reconnect: false`, and exits non-zero on an unplanned `closed()`. Call sites to replace:
   golem registry (2), golem players main, golem adam main, golem body restart, animus main,
   eventsink main, threshold/mcp cli, tools/players-cli (skin-store, rangers-presence).
+
+## Step 2b: connectNats everywhere (commit b65f999)
+
+- Every NATS connection goes through `connectNats` from `@geldar/contract/nats`
+  (`contract/src/nats-connect.ts`): `maxReconnectAttempts: -1`, and a `closed()` watcher that exits
+  with code 1 on a close that carries an error. A clean `close()` does not exit.
+- Call sites switched: golem registry, golem players main, golem adam main, golem body restart,
+  animus main, eventsink main, threshold/mcp cli, tools/players-cli (skin-store, rangers-presence).
+  `tools/players-cli` now depends on `@geldar/contract`.
+- Test fixes: the golem registry mocks gained a never-resolving `closed()`; the MCP container test
+  resolves workspace subpath exports, so it sees `contract/src/nats-connect.ts` in the image.
+- Removal gap, narrowed: players and Adam already register the life id as their username, so
+  `removeRegistryKey` finds their key. The gap is bots whose username is not a life id (for example
+  GolemBench); their key stays after retire, and the manual command has the same gap.
+- Guard: `players/life-removal.ts` reaches RCON for the operator removal path, so it joins the
+  test-control guard's allow-list. This loosens the guard for that file; review it with rule 9.
+- Not done: original items 3 to 5 (eventsink DLQ, Body crash reconciliation, RCON hardening).
