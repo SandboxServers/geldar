@@ -88,7 +88,7 @@ function receiptRow(r: Record<string, unknown>): ReceiptRow {
 }
 
 function eventRow(r: Record<string, unknown>): EventRow {
-  return { type: String(r.type), day: toInt(r.world_day), atMs: toMs(r.at) };
+  return { type: String(r.type), day: nullableInt(r.world_day), atMs: toMs(r.at) };
 }
 
 async function readRows(

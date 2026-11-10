@@ -177,6 +177,16 @@ describe('runSequence', () => {
     expect(r.lines().at(-1)).toMatchObject({ event: 'abort', minute: 20 });
   });
 
+  it('a life that ends ends the run as ended (life_ended): the safe stop, the report, an ended line, no abort', async () => {
+    const r = rig('smoke', from(5, { deaths: 1 }), { durationMs: 60 * MIN });
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'ended', reason: 'life_ended', safeStopExit: 0 });
+    expect(r.sup.calls.slice(-3)).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
+    expect(r.reporter.runs).toEqual(['run-1']);
+    expect(r.lines().at(-1)).toMatchObject({ event: 'ended', minute: 5 });
+    expect(r.lines().some((l) => l.event === 'abort')).toBe(false);
+  });
+
   it('aborts with body_not_recovered when the Body does not reconnect after the kill', async () => {
     const r = rig(
       'smoke',
@@ -199,7 +209,6 @@ describe('runSequence', () => {
 
   const ABORTS: [string, number, Partial<Scenario>, string][] = [
     ['gpu', 3, { gpuPresent: false }, 'gpu'],
-    ['death', 5, { deaths: 1 }, 'death'],
     ['tps', 3, { tps: 10 }, 'tps'],
     ['latency', 3, { latencyP95Ms: 20_000 }, 'latency'],
     ['ollama', 3, { ollamaUp: false }, 'ollama'],

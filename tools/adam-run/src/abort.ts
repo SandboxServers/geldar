@@ -72,8 +72,10 @@ export function evaluateAbort(
   const last = history[history.length - 1];
   if (last === undefined) return null;
   if (!last.gpuPresent) return { rule: 'gpu', reason: 'the GPU is not visible to the host' };
-  if (c.deathFailsRun && last.deaths > (history[0]?.deaths ?? 0)) {
-    return { rule: 'death', reason: 'a death happened in the run, and deaths fail it' };
+  // The life ended when a death was recorded since the first sample. A death ends the run only when the card says so.
+  const lifeEnded = last.deaths > (history[0]?.deaths ?? 0);
+  if (c.deathFailsRun && lifeEnded) {
+    return { rule: 'life_ended', reason: 'the life ended: a death happened in the run' };
   }
   if (sustained(history, now, c.tpsWindowMs, (s) => s.tps !== null && s.tps < c.tpsMin)) {
     return { rule: 'tps', reason: `TPS under ${c.tpsMin} for ${c.tpsWindowMs / 60_000} minutes` };
@@ -106,11 +108,13 @@ export function evaluateAbort(
   if (last.diskFreeGb < c.diskMinGb) {
     return { rule: 'disk', reason: `free disk is ${last.diskFreeGb} GB, under ${c.diskMinGb} GB` };
   }
+  // An ended life has no thoughts to wait for, so the silence after its death is not a fault of the stack.
   const lastThought = last.lastThoughtAtMs;
   if (
-    lastThought === null
+    !lifeEnded &&
+    (lastThought === null
       ? now - (history[0]?.atMs ?? now) >= c.noThoughtMs
-      : now - lastThought >= c.noThoughtMs
+      : now - lastThought >= c.noThoughtMs)
   ) {
     return { rule: 'no-thought', reason: `no thought for ${c.noThoughtMs / 60_000} minutes` };
   }

@@ -141,8 +141,8 @@ describe('evaluateAbort', () => {
       last: 30,
     },
     {
-      name: 'a death fires (deaths fail the run)',
-      rule: 'death',
+      name: 'a death fires as life_ended (deaths fail the run)',
+      rule: 'life_ended',
       bad: { deaths: 1 },
       from: 30,
       last: 30,
@@ -187,6 +187,13 @@ describe('evaluateAbort', () => {
   it('a death does not fire when deaths do not fail the run', () => {
     const c = { ...criteria, deathFailsRun: false };
     expect(evaluateAbort(run(30, 30, { deaths: 1 }), now, c)).toBeNull();
+  });
+
+  it('no thought does not fire once the life has ended', () => {
+    const c = { ...criteria, deathFailsRun: false };
+    // The life ended at minute 5; its last thought was at 0, so only the ended life explains the silence.
+    const h = run(30, 5, { deaths: 1, lastThoughtAtMs: 0 });
+    expect(evaluateAbort(h, now, c)).toBeNull();
   });
 
   it('a death already counted at the start does not fire again', () => {

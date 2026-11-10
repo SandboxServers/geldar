@@ -102,7 +102,8 @@ export interface Observation {
 }
 
 export interface Sampler {
-  observe(): Promise<Observation>;
+  /** One sample. `runStartMs` is when the run began: deaths are counted from it, not from the life's birth. */
+  observe(runStartMs: number): Promise<Observation>;
 }
 
 /** The files a run writes, under its run folder (`.geldar/runs/<run-id>`). */
