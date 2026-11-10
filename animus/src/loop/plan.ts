@@ -16,15 +16,18 @@ export interface PlanInput {
   expiresAfterTicks: number;
 }
 
-/** The wall-clock length of one world tick (20 ticks a second). */
-export const TICK_MS = 50;
-
 /**
  * True when `plan` has expired by the time it would be submitted: the snapshot's tick plus the
- * whole ticks elapsed since the snapshot was taken must reach `expires_tick`.
+ * whole ticks elapsed since the snapshot was taken must reach `expires_tick`. `tickMs` is the
+ * wall-clock length of one world tick, `1000 / tick_rate`.
  */
-export function planExpiredBy(plan: PlanMessage, snapshotTick: number, elapsedMs: number): boolean {
-  return snapshotTick + Math.ceil(elapsedMs / TICK_MS) >= plan.expires_tick;
+export function planExpiredBy(
+  plan: PlanMessage,
+  snapshotTick: number,
+  elapsedMs: number,
+  tickMs: number,
+): boolean {
+  return snapshotTick + Math.ceil(elapsedMs / tickMs) >= plan.expires_tick;
 }
 
 /**
