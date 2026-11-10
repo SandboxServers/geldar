@@ -440,7 +440,9 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
         if (!res.headersSent) {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.write(frame);
-        } else if (String(res.getHeader('content-type') ?? '').startsWith('text/event-stream')) {
+        } else {
+          // An open response has sent its headers only as an event stream (the SDK opens SSE
+          // before it answers), so the frame goes out as one event.
           res.write(`event: message\ndata: ${frame}\n\n`);
         }
         res.end();
