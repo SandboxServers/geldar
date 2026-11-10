@@ -584,3 +584,98 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **index line to add**: for C1-02, the `replay_minutes` key in `shards/phase0.yaml` (optional; the code default is 60). For C1-10: the telemetry endpoint, once the owner names it.
 
 **On cap**: the replay bound (commit 1) is the first thing to land, since it is a behaviour fix. Exporters can move to the next session.
+
+## Card C1-08: crash hygiene
+
+- **id**: C1-08
+- **title**: `players down` clears the registry and whitelist (re-verified and tested); `owner add` default cap from the shard config; start-precondition refusal; plain-case lease check
+- **wave**: C1
+- **lane**: D
+- **status**: B
+- **depends-on**: P1-C1-00
+- **size**: S
+- **decisions**: 0089 (one record: the crash-window rules)
+- **worknote**: `docs/analysis/phase1/worknotes/C1-08.md`
+
+**Finding to check first**: `docs/analysis/phase1/plan.md` line 39 says `players down` does not clear the registry or whitelist. The code on `origin/main` says otherwise: `tools/players-cli/src` has a `down` branch (around line 261) that deletes the registry key and whitelist entry of a stopped life, and keeps them while the Body still runs (line 264). Re-verify with a test before any change. If the test passes, the plan's line is stale; say so in the worknote and in the report.
+
+**may-edit**
+- `tools/players-cli/src/` (the `down` verb and its test).
+- `tools/mcp-tokens/src/owners.ts` and `owner-add.test.ts` (the default cap). The cap trigger is `sql/0006_owner_cap_trigger.sql`, read only.
+- `tools/adam-run/src/preconditions.ts` and its test (the start-precondition refusal).
+- The plain-case lease check: locate with `grep -rn "lease" golem/src threshold/mcp/src --include=*.ts`, then edit only the file that holds the check.
+- `docs/decisions/0089-*.md` (new record).
+
+**must-not-edit**: `geldar.ps1` (any new verb is an index line for C1-02); `shards/*` (the `owner_cap` key is an index line for C1-02); `compose/*`; `sql/*`; `contract/`; `docs/spec.md`; `docs/decisions/README.md`.
+
+**Steps**
+1. Re-verify `players down` as above. Add a test: a stopped life loses its key and whitelist entry; a running Body keeps both.
+2. `owner add`: the default cap is read from the shard config key `owner_cap`. If the key is missing, refuse and say so; do not fall back to a constant. An explicit flag still overrides, and a flag above the config value is refused. Test with and without the flag.
+3. Start precondition: a Body start for a life name is refused while a crashed Body's lease for that name is still in force. The refusal names the seconds left. Use an injected clock; no sleeps.
+4. Plain-case lease check: the case where the name is not normalised (no prefix, no case change) must run the same lease check as the other cases. Find the branch that skips it, record its line in the worknote, and test it.
+
+**Error behaviour**: a missing `owner_cap` refuses `owner add` and names the key. A lease check that cannot read the registry refuses the start. Neither falls back to allowing.
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run tools/players-cli tools/mcp-tokens/src/owner-add.test.ts tools/adam-run/src/preconditions.test.ts`
+- `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
+- `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit
+
+**Revert-check**
+- In the `down` branch of `tools/players-cli/src`, skip the whitelist delete. The test "stopped life loses its whitelist entry" must fail. Restore.
+- In the plain-case branch, remove the lease check. The test "plain-case lease refuses a start" must fail. Restore.
+
+**Commit plan**
+1. `C1-08: players down test, re-verified against the code`
+2. `C1-08: owner add default cap from the shard config`
+3. `C1-08: start precondition and plain-case lease check`
+4. `C1-08: record 0089 for crash-window rules`
+
+**index line to add**: for C1-02, the `owner_cap` key with its range, and any new `players` help text.
+
+**On cap**: commit 1 (the re-verification) is the cheapest and most useful state. Items 3 and 4 can move to the next session with their worknote steps.
+
+## Card C1-09: BlueMap, pinned and internal only
+
+- **id**: C1-09
+- **title**: BlueMap pinned plugin and config, bound to loopback or the internal network; no web exposure; no secrets
+- **wave**: C1
+- **lane**: B
+- **status**: B
+- **depends-on**: P1-C1-00 (release-age check and its data file)
+- **size**: S
+- **decisions**: none reserved. The 0081 to 0089 block is used up. If a record is needed, the worknote asks the owner for a number.
+- **worknote**: `docs/analysis/phase1/worknotes/C1-09.md`
+
+**Note**: BlueMap is not in the repo. `plugin/` holds only `core` and `velocity-identity` (Geldar's own plugins). This card creates it.
+
+**may-edit**
+- `plugins/bluemap/` (new): `config/` with the BlueMap core config, a short `README.md`, and `test/config.test.ts`.
+- `tools/repo-checks/src/release-dates.json`: append one entry for the pinned BlueMap release. This is C1-00's data file, not the registry.
+
+**must-not-edit**: `compose/*` (the mount and the internal address are C1-02's); `geldar.ps1`; `shards/*`; `deploy/` (C1-04); `plugin/`; root `package.json` and `pnpm-lock.yaml`; `docs/spec.md`; `docs/decisions/README.md`. Any Caddy snippet is C2-04's, not this card's.
+
+**Steps**
+1. Pick the BlueMap release: the newest one published on or before 2026-10-27 (14 days before the packet date). Record its name, publish date, source URL and the sha256 of its jar in the worknote. Do not commit the jar.
+2. Config: the web server binds to `127.0.0.1` by default, or to an internal address that C1-02 supplies through compose. Anonymous access is off. The world is read from the Paper volume, read only.
+3. No token, password or key appears in the config. The config holds no secret; a secret would be a finding.
+4. `config.test.ts`: parses the config and asserts the bind is loopback or the internal address, no key matches `/token|secret|password/i`, the version pin is exact, and the release age is at least 14 days (reads `release-dates.json`).
+
+**Error behaviour**: a release with no publish date in `release-dates.json` fails the test (fail closed, as C1-00 defines).
+
+**Acceptance checks**
+- `./geldar.ps1 pnpm vitest run plugins/bluemap` (if the root vitest config does not include `plugins/`, the test moves into `tools/repo-checks` as an index line for C1-02, and the worknote says so)
+- `./geldar.ps1 pnpm check:repo`
+- `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit
+
+**Revert-check**
+- In `plugins/bluemap/config`, set the bind to `0.0.0.0`. The test "bind is loopback or internal" must fail. Restore.
+
+**Commit plan**
+1. `C1-09: BlueMap release pin and its release date`
+2. `C1-09: BlueMap config bound internal, anonymous access off`
+3. `C1-09: config test for bind, secrets and pin`
+
+**index line to add**: for C1-02, the internal bind address and the mount for the world directory, read only.
+
+**On cap**: commit 1 and 2 are the minimum. The test is the gate, so it cannot be skipped.
