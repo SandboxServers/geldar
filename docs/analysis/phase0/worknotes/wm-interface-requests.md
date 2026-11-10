@@ -1,6 +1,6 @@
-# Wave M interface requests
+# Wave M interface requests and open points
 
-Requests from the WM-03 front door to other packets, and questions for the owner. Each entry names the packet that owns the change.
+Requests from a Wave M packet to a packet that owns the shared interface. Each section names the packet that raised the request.
 
 ## WM-03 requests
 
@@ -46,3 +46,11 @@ The orchestrator decided these questions. They close Q1 to Q3 and confirm R1 and
 - Q2: A valid token sent to another player's path returns 403. An unknown player with an unknown token returns 401.
 - Q3: The trailing-space header gap is accepted. Node strips trailing whitespace from header values, so the gap cannot be reached through HTTP.
 - R1 and R2 (owner: WM-01 / WM-02): `TokenStore.resolve` must look up the row by the HMAC digest of the bearer, not by the raw token. `FakeTokenStore` must compare digests in constant time.
+
+## WM-04
+
+(a) `PresenceStore` needs `touch(playerId)`. The `wait` tool calls it when the wait opens, on each poll, and when it closes. Until the store has it, `wait` takes `touchPresence` as an optional dependency and leaves it out. WM-11 owns the WM-01 ports, so WM-11 adds the method.
+
+(b) `threshold/mcp-mock` should export `present.ts` from its index. WM-04 carries a copy at `threshold/mcp/src/events/present.ts` so the MCP package can build the presence view without the mock's index. Once the mock exports it, the copy can be removed.
+
+(c) The event texts `You slept.`, `You died and woke at spawn.` and `Your actions finished: N done, M failed` are not defined by the packet or the mock. None were added. Whoever owns the event wording should decide them.
