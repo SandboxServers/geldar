@@ -26,11 +26,11 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
   ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
 #>
-[CmdletBinding()]
-param(
-  [Parameter(Position = 0)] [string] $Command = 'help',
-  [Parameter(Position = 1, ValueFromRemainingArguments = $true)] [string[]] $Rest = @()
-)
+# No param block, on purpose. A named parameter here makes PowerShell's binder read `--out` as an ambiguous prefix
+# of the common parameters (-OutVariable, -OutBuffer), and `-v` as -Verbose. Every argument is read from $args:
+# the first is the command, the rest are its arguments, passed on verbatim.
+$Command = if ($args.Count -gt 0) { [string] $args[0] } else { 'help' }
+$Rest = [string[]] @($args | Select-Object -Skip 1)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -247,7 +247,41 @@ function Invoke-Mcp([string[]] $McpArgs) {
   } finally { Pop-Location }
 }
 
+# Get-Help reads the comment block only when the script has a param block, which this script does not, so the usage
+# is printed from here. The synopsis above lists the same commands; the static guard checks that this list covers
+# every case of the dispatch switch.
+function Show-Usage {
+  Write-Output @'
+Geldar task runner: local checks, shard lifecycle and the body benchmark.
+
+Usage: ./geldar.ps1 <command> [args]
+
+  ./geldar.ps1 setup                 Install workspace dependencies (frozen lockfile)
+  ./geldar.ps1 pnpm <args...>        Run pnpm with the pinned version on PATH, nested calls included
+  ./geldar.ps1 check                 Every check CI runs, in CI's order
+  ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy
+  ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
+  ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
+  ./geldar.ps1 shard status <name>   Show container health
+  ./geldar.ps1 shard logs <name> [service]
+  ./geldar.ps1 bench [args...]       Run the body benchmark (golem/), passing args through
+  ./geldar.ps1 adam up [--model strong|fast]   Check the shard and the pinned models, then start Adam's host processes
+  ./geldar.ps1 adam select --model strong|fast  Rewrite the life lines of the shard file (no checks, starts nothing)
+  ./geldar.ps1 adam down|status     Stop them (the Body last) or show their state and the last thought's latency
+  ./geldar.ps1 adam logs [service] [--follow]  Tail body, animus or lantern-local under .geldar/adam/
+  ./geldar.ps1 adam models [--record]  List the pinned models, their presence in Ollama and digests; --record writes the digests
+  ./geldar.ps1 players up|down|status|logs [--player <id>]  One Body process per sovereign ranger (status prints "down" when none runs)
+  ./geldar.ps1 mcp up|down|status|logs|smoke  The MCP container (compose/mcp.yml) on 127.0.0.1:8788; smoke runs the stub client case
+  ./geldar.ps1 mcp-tokens <command...>  Pass through to tools/mcp-tokens (init, owner, player, token)
+  ./geldar.ps1 db migrate [--dry-run]   Pass through to tools/migrate (applies sql/NNNN_*.sql)
+  ./geldar.ps1 help                  Print this usage
+'@
+}
+
 switch ($Command) {
+  'help' { Show-Usage }
+  '-h' { Show-Usage }
+  '--help' { Show-Usage }
   'players' {
     # Presence and the skin CLI read NATS through GELDAR_NATS_URL; unset, it defaults to the loopback NATS of the shard.
     # The variable is restored in finally, so the command leaves the shell's environment as it found it.
@@ -271,5 +305,9 @@ switch ($Command) {
   'shard' { Invoke-Shard $Rest }
   'bench' { Invoke-Bench $Rest }
   'adam' { Invoke-Adam $Rest }
-  default { Get-Help $PSCommandPath -Detailed | Out-Host }
+  default {
+    [Console]::Error.WriteLine("Unknown command '$Command'.")
+    Show-Usage
+    exit 2
+  }
 }
