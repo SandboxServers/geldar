@@ -1,4 +1,4 @@
-import type { IncomingMessage } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AuthDecision, MockHttp, Refusal } from '@geldar/mcp-mock';
 import { createMockHttp } from '@geldar/mcp-mock';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -78,6 +78,24 @@ function tooManyOpen(): Refusal {
   return { status: 429, message: 'too_many_open_requests', retryAfterSec: 1 };
 }
 
+/** A refusal for a client that left before its request was served; nothing is sent to it anyway. */
+function clientGone(): Refusal {
+  return { status: 499, message: 'client_gone' };
+}
+
+/**
+ * Runs `release` when the response closes. A response that has already closed will not fire
+ * 'close' again, so `release` runs at once then and the result is false.
+ */
+function releaseOnClose(res: ServerResponse, release: () => void): boolean {
+  if (res.closed || res.destroyed) {
+    release();
+    return false;
+  }
+  res.once('close', release);
+  return true;
+}
+
 function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefined {
   if (retryAfterSec === undefined) return undefined;
   return { status: 429, message: 'rate_limited', retryAfterSec };
@@ -113,6 +131,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       requestTimeoutMs: options.limits?.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
     },
     closeRefused: true,
+    // A trusted proxy carries every client, so its sockets skip the per-peer cap; each client's POSTs
+    // and GET streams are capped per effective address instead, and the total cap still applies.
+    exemptPeer: trusted,
     hostAllowed: (host) => hostAccepted(options.http.allowedHosts, port, host),
     async authenticate(playerId, header, req): Promise<AuthDecision> {
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
@@ -160,17 +181,18 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         gates.releaseAddress(address);
         return tooManyOpen();
       }
-      // A response already closed would never fire 'close' again, so its slots are released now.
-      if (res.closed || res.destroyed) {
-        gates.release(playerId);
-        gates.releaseAddress(address);
-        return { status: 499, message: 'client_gone' };
-      }
-      res.once('close', () => {
+      const held = releaseOnClose(res, () => {
         gates.release(playerId);
         gates.releaseAddress(address);
       });
-      return undefined;
+      return held ? undefined : clientGone();
+    },
+    // A GET stream takes the per-address slot only: a player's streams are not counted as its POSTs.
+    beforeStream(_playerId, req, res): Refusal | undefined {
+      const address = clientAddress(req, trusted);
+      if (!gates.acquireAddress(address, maxPerAddress)) return tooManyOpen();
+      const held = releaseOnClose(res, () => gates.releaseAddress(address));
+      return held ? undefined : clientGone();
     },
     onToolCall(playerId, body, res): Refusal | undefined {
       if (Array.isArray(body)) return { status: 400, message: 'batch_not_allowed' };
