@@ -32,6 +32,8 @@ import {
 export const RESTART_WAIT_MS = 10 * MINUTE_MS;
 /** How long the Body may take to reconnect after a harness kill. Shorter than the `body` abort window, so it is the one that fires. */
 export const BODY_WAIT_MS = 4 * MINUTE_MS;
+/** Consecutive sampler failures tolerated before the run aborts; each failure is a status.log line meanwhile. */
+export const MAX_SAMPLER_FAILURES = 5;
 
 export interface PreflightFacts {
   facts: PreconditionFacts;
@@ -167,6 +169,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
   );
 
   let last: Observation | null = null;
+  let samplerFailures = 0;
   let bodyKills = 0;
   let reportFailed = false;
 
@@ -244,8 +247,27 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
     try {
       obs = await sampler.observe(startMs);
     } catch (err) {
-      return abortWith('error', `the sampler failed: ${message(err)}`);
+      // One bad minute is a gap in status.log; only a run of failures in a row ends the run.
+      samplerFailures++;
+      if (samplerFailures >= MAX_SAMPLER_FAILURES)
+        return abortWith(
+          'error',
+          `the sampler failed ${samplerFailures} times in a row: ${message(err)}`,
+        );
+      appendStatus(
+        files,
+        paths.status,
+        harnessLine(
+          last,
+          now,
+          startMs,
+          'sampler_failed',
+          `${message(err)} (failure ${samplerFailures} of ${MAX_SAMPLER_FAILURES})`,
+        ),
+      );
+      continue;
     }
+    samplerFailures = 0;
     last = obs;
     appendStatus(files, paths.status, statusLine(obs, minuteOf(now, startMs)));
     if (restartDue) {

@@ -4,13 +4,16 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeClock, FakeProcesses } from '../test/fakes.ts';
 import {
+  ADAM_UP_TIMEOUT_MS,
   createClock,
   createFileStore,
   createGlassClient,
   createPreflight,
   createReporter,
+  createRunner,
   createSampler,
   createSupervisor,
+  EXEC_TIMEOUT_MS,
   readOnly,
   type SqlClient,
   startSecretPaths,
@@ -160,6 +163,34 @@ describe('the read-only SQL reads', () => {
     );
     expect(err).toBeInstanceOf(Error);
     expect(String((err as Error).message)).not.toContain('not-a-real-secret-xyz');
+  });
+});
+
+describe('timeouts on the child processes', () => {
+  it('a child past its timeout is killed and reads as a failed exec, not a hang', async () => {
+    const res = await createRunner(process.cwd()).exec(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 30000)'],
+      undefined,
+      300,
+    );
+    expect(res.code).toBe(124);
+    expect(res.stderr).toContain('timed out');
+  }, 15_000);
+
+  it('adam up waits up to 600 s; every other call gets the 60 s default', async () => {
+    const seen: Array<number | undefined> = [];
+    const runner: Runner = {
+      exec: async (_file, _args, _env, timeoutMs) => {
+        seen.push(timeoutMs);
+        return { code: 0, stdout: '', stderr: '' };
+      },
+    };
+    const sup = createSupervisor(runner, '/repo');
+    await sup.up();
+    await sup.restartStack();
+    expect(seen).toEqual([ADAM_UP_TIMEOUT_MS, undefined]);
+    expect(EXEC_TIMEOUT_MS).toBe(60_000);
   });
 });
 

@@ -207,6 +207,34 @@ describe('runSequence', () => {
     expect(r.lines().at(-1)).toMatchObject({ event: 'abort' });
   });
 
+  it('a failed sample is a status line and the run goes on', async () => {
+    const r = rig('smoke', {}, { durationMs: 60 * MIN });
+    const inner = r.deps.sampler;
+    let calls = 0;
+    r.deps.sampler = {
+      observe: async (startMs) => {
+        calls++;
+        if (calls === 3 || calls === 4) throw new Error('the query timed out');
+        return inner.observe(startMs);
+      },
+    };
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'completed' });
+    expect(r.lines().filter((l) => l.event === 'sampler_failed')).toHaveLength(2);
+  });
+
+  it('five sampler failures in a row abort the run, with the first four on status.log', async () => {
+    const r = rig('smoke', {}, { durationMs: 60 * MIN });
+    r.deps.sampler = {
+      observe: async () => {
+        throw new Error('the stack is gone');
+      },
+    };
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'aborted', rule: 'error' });
+    expect(r.lines().filter((l) => l.event === 'sampler_failed')).toHaveLength(4);
+  });
+
   const ABORTS: [string, number, Partial<Scenario>, string][] = [
     ['gpu', 3, { gpuPresent: false }, 'gpu'],
     ['tps', 3, { tps: 10 }, 'tps'],

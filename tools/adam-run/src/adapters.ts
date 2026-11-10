@@ -85,7 +85,7 @@ export function createClock(): Clock {
 /** Runs one program with an argument array. A missing program is a non-zero exit, not a throw. */
 export function createRunner(cwd: string): Runner {
   return {
-    exec: (file, args, env) =>
+    exec: (file, args, env, timeoutMs = EXEC_TIMEOUT_MS) =>
       new Promise<ExecResult>((done) => {
         execFile(
           file,
@@ -94,9 +94,18 @@ export function createRunner(cwd: string): Runner {
             cwd,
             windowsHide: true,
             maxBuffer: 64 * 1024 * 1024,
+            timeout: timeoutMs,
             env: env === undefined ? undefined : { ...process.env, ...env },
           },
           (err, stdout, stderr) => {
+            if (err?.killed) {
+              done({
+                code: TIMEOUT_CODE,
+                stdout: String(stdout),
+                stderr: `timed out after ${timeoutMs} ms`,
+              });
+              return;
+            }
             const code = err === null ? 0 : typeof err.code === 'number' ? err.code : 1;
             done({ code, stdout: String(stdout), stderr: String(stderr) });
           },
@@ -105,6 +114,12 @@ export function createRunner(cwd: string): Runner {
   };
 }
 
+/** A child that runs past its timeout is killed; 124 is the exit code of the `timeout` command for the same case. */
+const TIMEOUT_CODE = 124;
+/** Every program but `adam up` gets 60 s; `adam up` waits for Paper and gets 600 s. */
+export const EXEC_TIMEOUT_MS = 60_000;
+export const ADAM_UP_TIMEOUT_MS = 600_000;
+
 const PS_PROCESSES =
   "Get-CimInstance Win32_Process | Select-Object ProcessId,@{n='StartedAt';e={$_.CreationDate.ToUniversalTime().ToString('o')}},CommandLine | ConvertTo-Json -Compress";
 
@@ -112,10 +127,12 @@ const PS_PROCESSES =
 export function createProcesses(): Processes {
   return {
     list(): ProcessView[] {
+      // A timeout throws, and the sampler counts that as a failed sample.
       const out = execFileSync('powershell', ['-NoProfile', '-Command', PS_PROCESSES], {
         encoding: 'utf8',
         windowsHide: true,
         maxBuffer: 64 * 1024 * 1024,
+        timeout: EXEC_TIMEOUT_MS,
       });
       const parsed: unknown = out.trim() === '' ? [] : JSON.parse(out);
       const rows = (Array.isArray(parsed) ? parsed : [parsed]) as Record<string, unknown>[];
@@ -315,8 +332,13 @@ export function createSampler(deps: SamplerDeps): Sampler {
 
 /** The supervisor actions, through the repo's own adam CLI and a compose restart that never touches the data volumes. */
 export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
-  const adam = (args: string[]): Promise<ExecResult> =>
-    runner.exec('node', [join(repoRoot, 'tools', 'adam-cli', 'src', 'cli.ts'), ...args]);
+  const adam = (args: string[], timeoutMs?: number): Promise<ExecResult> =>
+    runner.exec(
+      'node',
+      [join(repoRoot, 'tools', 'adam-cli', 'src', 'cli.ts'), ...args],
+      undefined,
+      timeoutMs,
+    );
   const check = (res: ExecResult, what: string): void => {
     if (res.code === 0) return;
     const tail = stderrTail(res.stderr);
@@ -324,7 +346,7 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
   };
   return {
     async up() {
-      check(await adam(['up']), 'adam up');
+      check(await adam(['up'], ADAM_UP_TIMEOUT_MS), 'adam up');
     },
     async restartStack() {
       check(
