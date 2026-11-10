@@ -55,7 +55,7 @@ export class IntentLinker {
     for (;;) {
       attempts++;
       try {
-        if (await this.options.journal.linkIntent(intentId, thoughtId)) {
+        if (await this.options.journal.linkIntent(this.options.lifeId, intentId, thoughtId)) {
           this.log('intent_linked', intentId, thoughtId, attempts, errors);
           return;
         }

@@ -63,6 +63,11 @@ export class ReflectionTrigger {
     this.sinceTick = sinceTick;
   }
 
+  /** Starts the window at `tick`, the life's last reflection as the journal holds it, before any event. */
+  seed(sinceTick: number): void {
+    this.sinceTick = sinceTick;
+  }
+
   /** Keeps an event for the next digest. Never throws. */
   observe(event: MindEvent): void {
     if (event.lifeId !== this.deps.lifeId) return;

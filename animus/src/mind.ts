@@ -153,9 +153,16 @@ export class Mind {
     );
   }
 
-  /** Subscribes to the life's events, wires decisions and reflections, and wakes with `mind_start`. */
-  start(): void {
+  /**
+   * Seeds the reflection window from the journal, subscribes to the life's events, wires decisions
+   * and reflections, and wakes with `mind_start`.
+   */
+  async start(): Promise<void> {
     if (this.unsubscribe !== null) return;
+    const since = await this.deps.journal.lastReflectionTick(this.lifeId);
+    // A concurrent start may have subscribed while the journal was read.
+    if (this.unsubscribe !== null) return;
+    this.reflection.seed(since);
     this.detach = [
       this.attention.onDecision((decision) => this.track(this.think(decision))),
       this.attention.onReflectionDue((due) => this.track(this.reflect(due))),

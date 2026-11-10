@@ -239,16 +239,21 @@ export interface Journal {
   /** Stores one suppressed wake. */
   recordSuppressed(row: SuppressedWakeup): Promise<void>;
   /**
-   * Sets `thought_id` on the intent row `intentId` when that column is still null; returns whether
-   * a row changed. The event sink writes the intent row, so it may not exist yet: false then, and
-   * the caller tries again.
+   * Sets `thought_id` on the intent row `intentId` of `lifeId` when that column is still null;
+   * returns whether a row changed. Another life's row is never touched. The event sink writes the
+   * intent row, so it may not exist yet: false then, and the caller tries again.
    */
-  linkIntent(intentId: string, thoughtId: string): Promise<boolean>;
+  linkIntent(lifeId: string, intentId: string, thoughtId: string): Promise<boolean>;
   /**
    * The life's thoughts with `worldTick` at or after `tick`, oldest first. With `limit`, only
    * the newest `limit` of them (still oldest first).
    */
   journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]>;
+  /**
+   * The `worldTick` of the life's latest reflection (the thought row with `wakeReason`
+   * 'reflection'); 0 when the life has none. A restarted Mind starts its reflection window here.
+   */
+  lastReflectionTick(lifeId: string): Promise<number>;
 }
 
 /** Turns text into vectors (decision D-P0-12: `nomic-embed-text`, 768 dimensions). */

@@ -19,6 +19,9 @@ import type {
 /** The embedding size of `nomic-embed-text` (decision D-P0-12). */
 const DIMS = 768;
 
+/** The life the loop and reflection fixtures use; `addIntentRow` defaults to it. */
+const FIXTURE_LIFE = 'ag_adam_01';
+
 /**
  * An `Embedder` that needs no model: the vector is a pure function of the text and the kind,
  * made from a SHA-256 hash and scaled to unit length. Equal inputs give equal vectors; different
@@ -79,8 +82,8 @@ export class FakeMemoryStore implements MemoryStore, Journal {
   readonly agents = new Map<string, AgentRow>();
   readonly thoughts: ThoughtRow[] = [];
   readonly suppressed: SuppressedWakeup[] = [];
-  /** The `intents` rows by id, with their `thought_id` (undefined key: no row yet). */
-  private readonly intentRows = new Map<string, string | null>();
+  /** The `intents` rows by id: their life and `thought_id` (no key: no row yet). */
+  private readonly intentRows = new Map<string, { lifeId: string; thoughtId: string | null }>();
   private readonly memories: StoredMemory[] = [];
   private readonly relationships = new Map<string, RelationshipRow>();
   private readonly goals = new Map<string, GoalRow[]>();
@@ -280,32 +283,45 @@ export class FakeMemoryStore implements MemoryStore, Journal {
     }
   }
 
+  /** Stores a thought; a row of another life with the same id is left as it was (as the upsert does). */
   async recordThought(row: ThoughtRow): Promise<void> {
     const at = this.thoughts.findIndex((t) => t.thoughtId === row.thoughtId);
-    if (at >= 0) this.thoughts[at] = row;
-    else this.thoughts.push(row);
+    if (at < 0) this.thoughts.push(row);
+    else if (this.thoughts[at]?.lifeId === row.lifeId) this.thoughts[at] = row;
   }
 
   async recordSuppressed(row: SuppressedWakeup): Promise<void> {
     this.suppressed.push(row);
   }
 
-  /** Adds an `intents` row as the event sink would; `thoughtId` null means the column is empty. */
-  addIntentRow(intentId: string, thoughtId: string | null = null): void {
-    this.intentRows.set(intentId, thoughtId);
+  /**
+   * Adds an `intents` row as the event sink would; `thoughtId` null means the column is empty.
+   * The row belongs to `lifeId` (the fixtures' life when none is given).
+   */
+  addIntentRow(intentId: string, thoughtId: string | null = null, lifeId = FIXTURE_LIFE): void {
+    this.intentRows.set(intentId, { lifeId, thoughtId });
   }
 
   /** The `thought_id` of an `intents` row: undefined when there is no row. */
   intentThought(intentId: string): string | null | undefined {
-    return this.intentRows.get(intentId);
+    return this.intentRows.get(intentId)?.thoughtId;
   }
 
-  async linkIntent(intentId: string, thoughtId: string): Promise<boolean> {
-    const linked = this.intentRows.get(intentId);
-    if (linked === thoughtId) return true;
-    if (linked !== null) return false;
-    this.intentRows.set(intentId, thoughtId);
+  /** As the Postgres store: only a row of `lifeId` is linked, and only while its column is empty. */
+  async linkIntent(lifeId: string, intentId: string, thoughtId: string): Promise<boolean> {
+    const row = this.intentRows.get(intentId);
+    if (row === undefined || row.lifeId !== lifeId) return false;
+    if (row.thoughtId === thoughtId) return true;
+    if (row.thoughtId !== null) return false;
+    row.thoughtId = thoughtId;
     return true;
+  }
+
+  async lastReflectionTick(lifeId: string): Promise<number> {
+    const ticks = this.thoughts
+      .filter((t) => t.lifeId === lifeId && t.wakeReason === 'reflection')
+      .map((t) => t.worldTick);
+    return ticks.length === 0 ? 0 : Math.max(...ticks);
   }
 
   async journalSince(lifeId: string, tick: number, limit?: number): Promise<JournalEntry[]> {
