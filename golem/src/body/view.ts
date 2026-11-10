@@ -105,6 +105,17 @@ const ENCLOSURE: readonly Vec3[] = [
   new Vec3(0, -1, 0),
 ];
 
+/**
+ * True when every cell of ENCLOSURE around `feet` is a solid block: the Body's enclosure, the same
+ * test the view's `enclosed` reads and the snapshot's surroundings report (decision 0074).
+ */
+export function isEnclosed(
+  blockAt: (at: Vec3) => { boundingBox?: string } | null | undefined,
+  feet: Vec3,
+): boolean {
+  return ENCLOSURE.every((o) => blockAt(feet.plus(o))?.boundingBox === 'block');
+}
+
 /** One of the physics plugin's boolean flags on the bot's entity (the typings omit them). */
 function entityFlag(bot: Bot, flag: 'isInWater' | 'isInLava'): boolean {
   return (bot.entity as unknown as Record<string, unknown>)[flag] === true;
@@ -257,8 +268,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
       return near;
     },
     get enclosed() {
-      const feet = bot.entity.position.floored();
-      return ENCLOSURE.every((o) => bot.blockAt(feet.plus(o))?.boundingBox === 'block');
+      return isEnclosed((at) => bot.blockAt(at), bot.entity.position.floored());
     },
     dispose() {
       bot.off('physicsTick', sample);

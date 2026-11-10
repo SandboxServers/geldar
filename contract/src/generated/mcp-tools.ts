@@ -1005,6 +1005,10 @@ export const mcpToolSchemas: Record<
               "pattern": "^[a-z_]{1,64}$",
               "description": "The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded."
             },
+            "enclosed": {
+              "type": "boolean",
+              "description": "True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it."
+            },
             "notable_blocks": {
               "type": "array",
               "items": {
@@ -1650,11 +1654,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "sleep": {
-    "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
+    "description": "Rest for the night. Works best in a bed or sealed shelter. Returns the day's event digest and journal mirror so you can reflect.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
+      "description": "Rest for the night. Works best in a bed or sealed shelter. Returns the day's event digest and journal mirror so you can reflect.",
       "additionalProperties": false
     },
     "result": {
@@ -2267,6 +2271,10 @@ export const mcpToolSchemas: Record<
               "type": "string",
               "pattern": "^[a-z_]{1,64}$",
               "description": "The block name at the head (floor of y plus 1); air when there is none. Absent when the chunk is not loaded."
+            },
+            "enclosed": {
+              "type": "boolean",
+              "description": "True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it."
             },
             "notable_blocks": {
               "type": "array",

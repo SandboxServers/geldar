@@ -145,3 +145,29 @@ describe('view: pathfinding', () => {
     expect(view.pathfinding).toBe(true);
   });
 });
+
+/** The solid cells of a sealed one-block pocket around the Body's feet cell at (0, 64, 0). */
+const POCKET = [
+  '1,64,0',
+  '-1,64,0',
+  '0,64,1',
+  '0,64,-1',
+  '1,65,0',
+  '-1,65,0',
+  '0,65,1',
+  '0,65,-1',
+  '0,66,0',
+  '0,63,0',
+];
+
+describe('view: enclosed', () => {
+  it('is true only when solid blocks close the feet cell on every side, above and below', () => {
+    const { bot, state } = viewBot();
+    const view = createBodyView(bot);
+    expect(view.enclosed).toBe(false);
+    for (const key of POCKET) state.blocks[key] = 'stone';
+    expect(view.enclosed).toBe(true);
+    delete state.blocks['0,66,0'];
+    expect(view.enclosed).toBe(false);
+  });
+});

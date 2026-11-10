@@ -147,7 +147,7 @@
     "VoteResult": { "$ref": "#/$defs/ActionOutcome" },
     "SleepInput": {
       "type": "object",
-      "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
+      "description": "Rest for the night. Works best in a bed or sealed shelter. Returns the day's event digest and journal mirror so you can reflect.",
       "additionalProperties": false
     },
     "SleepResult": {

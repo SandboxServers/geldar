@@ -52,7 +52,7 @@ mind:
   prompt_budget_tokens: 2500
   max_beliefs: 40                # the newest active beliefs loaded and shown in a prompt
   max_commitments: 10            # the open commitments loaded and shown, earliest due first
-  thought_version: 4             # the thought template, prompts/thought/vN.md (v1 to v4 exist)
+  thought_version: 5             # the thought template, prompts/thought/vN.md (v1 to v5 exist)
   thought:
     max_tokens: 600             # output cap of a standard thought
     temperature: 0.7

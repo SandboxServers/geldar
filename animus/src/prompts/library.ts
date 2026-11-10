@@ -123,10 +123,13 @@ const REFLECTION_SLOTS: Record<number, string[]> = {
 };
 
 /**
- * The thought template a new Mind renders: `thought/v4.md`. `thought/v1.md` to `v3.md` stay loadable
+ * The thought template a new Mind renders: `thought/v5.md`. `thought/v1.md` to `v4.md` stay loadable
  * (v2 and v3 use the `credits` slot, which the renderer still fills).
  */
-export const DEFAULT_THOUGHT_VERSION = 4;
+export const DEFAULT_THOUGHT_VERSION = 5;
+
+/** The body-api template a new Mind renders: `body-api/v2.json`. `body-api/v1.json` stays loadable. */
+export const DEFAULT_BODY_API_VERSION = 2;
 
 /** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
 export const DEFAULT_REFLECTION_VERSION = 2;
@@ -138,7 +141,7 @@ const REFLECTION_BLOCKS = [1, 2, 3];
 export interface PromptLibraryOptions {
   /** The `prompts/` directory. Defaults to the repository's. */
   promptsDir?: string;
-  /** The body-api template version to load. Only 1 exists. */
+  /** The body-api template version to load. Defaults to {@link DEFAULT_BODY_API_VERSION}; 1 stays loadable. */
   version?: number;
   /** The reflection template version to load. Defaults to {@link DEFAULT_REFLECTION_VERSION}; 1 stays loadable. */
   reflectionVersion?: number;
@@ -155,7 +158,7 @@ export interface PromptLibraryOptions {
 /** Loads and hashes the templates now; throws on an unknown slot, a missing block or a bad file. */
 export function createPromptLibrary(options: PromptLibraryOptions = {}): PromptLibrary {
   const dir = options.promptsDir ?? join(repoRoot(), 'prompts');
-  const n = options.version ?? 1;
+  const n = options.version ?? DEFAULT_BODY_API_VERSION;
   const r = options.reflectionVersion ?? DEFAULT_REFLECTION_VERSION;
   const t = options.thoughtVersion ?? DEFAULT_THOUGHT_VERSION;
   const thought = loadChecked(
