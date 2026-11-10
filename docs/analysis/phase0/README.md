@@ -92,6 +92,20 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | P0-12 | 3 | `eventsink/`: NATS to Postgres, idempotent on `source_event_id` | packet-coder | Shipped (batch review 1, wave review 3 rounds, merged to wave3) | P0-03, P0-05 | |
 | P0-13a | 3 | Velocity bot-ingress identity plugin (KV registry, fail closed) | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-11 | |
 | P0-13b | 3 | Golem registers its bot username before connecting | packet-coder | Shipped (wave review 3 rounds, merged to wave3) | P0-13a | |
+| WM-01 | M | Contract, config and the `threshold/mcp` skeleton | packet-coder | Shipped (merged to wave-m-main) | wave 5 | |
+| WM-02 | M | Postgres: migration 0002, the first migration runner, the stores | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-03 | M | HTTP front door: auth, scoping, limits, revocation, logs | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-04 | M | Player event log, wake policy and `wait` | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-05 | M | `act`, `say` and the sovereign budget | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-06 | M | `look`, `status`, `sleep`, `journal`, `read_book`, resources | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-07 | M | Body: read a carried written book | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-08 | M | Player host: one Body process per ranger | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-09 | M | The `mcp-tokens` CLI | packet-coder | Shipped (merged to wave-m-main) | WM-02 | |
+| WM-10 | M | Container, compose overlay, threat model (tunnel config only) | packet-coder | Shipped (merged to wave-m-main) | WM-01 | |
+| WM-11 | M | Integration: the NATS gateway, presence, main, end to end | packet-coder | Shipped (merged to wave-m-main) | WM-02 to WM-10 | |
+| WM-12 | M | Run commands, docs and live cases (written, not run) | packet-coder | Shipped (merged to wave-m-main) | WM-11 | |
+| WM-13 | M | Player skins (MineSkin V2 upload, stored skin on login) | packet-coder | Shipped (merged to wave-m-main) | WM-01, velocity-identity plugin | |
+| WM-process | M | Apply the wave M retro actions | packet-coder | BlockedDependency | wave M test, review and retro | |
 
 Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md`, [retro/wave-3.md](retro/wave-3.md) and [retro/wave-4.md](retro/wave-4.md) are written.
 
