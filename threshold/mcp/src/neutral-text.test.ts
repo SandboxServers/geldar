@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
+import { safeLogLine } from './http/log.ts';
 import type { PlayerRecord } from './ports.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
@@ -121,5 +122,51 @@ describe('the player reads nothing about the world being a mock', () => {
     } finally {
       await client.close();
     }
+  });
+});
+
+/** A credential-looking canary that no log line may carry. */
+const CANARY = 'canary-7Qz9xLm2Vb4nKp8sWd1';
+
+describe('the operator sees the cause of a fault, never a secret', () => {
+  it('logs the cause of a tool fault with the token redacted', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const boom = (real: WorldSessionDeps['tools']): WorldSessionDeps['tools'] => ({
+      ...real,
+      look: () => {
+        throw new Error(`the store refused Bearer ${CANARY}`);
+      },
+    });
+    const deps = {
+      ...worldDeps(boom, false),
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await client.callTool({ name: 'look', arguments: {} });
+      expect(JSON.stringify(reply)).toContain(`internal_error: ${NEUTRAL_FAULT}`);
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'tool_log');
+    expect(fault?.player_id).toBe(PLAYER.playerId);
+    expect(String(fault?.cause)).toContain('the store refused');
+    expect(JSON.stringify(lines)).not.toContain(CANARY.slice(0, 12));
+  });
+
+  it('logs the cause of a resource fault', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const deps = {
+      ...worldDeps(undefined, true),
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      expect(await readOrError(client, 'geldar://shard/rules')).toContain(NEUTRAL_FAULT);
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain('the shard store is down');
   });
 });

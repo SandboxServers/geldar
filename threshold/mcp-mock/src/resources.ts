@@ -60,12 +60,11 @@ export function readResource(
     else if (uri === 'geldar://player/journal/recent') text = world.readJournalRecent(playerId);
     else text = JSON.stringify(world.readShardRules(playerId));
   } catch (error) {
-    // The real error stays in the log; the client only learns that the mock failed.
+    // The real error stays in the log; the client only learns the neutral fault text.
     log?.({
       event: 'resource_error',
       player_id: playerId,
-      uri,
-      message: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      cause: `${uri}: ${error instanceof Error ? error.message : String(error)}`,
     });
     throw new McpError(ErrorCode.InternalError, fault);
   }
