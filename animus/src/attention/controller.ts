@@ -176,6 +176,8 @@ export class Attention implements AttentionController {
   }
 
   private handle(event: MindEvent): void {
+    // After a death this life's controller is quiet: no thought, no idle, no reflection.
+    if (this.ended) return;
     switch (event.type) {
       case 'death':
         this.clearState();
@@ -315,7 +317,7 @@ export class Attention implements AttentionController {
   private settleIdle(intentId: string, event: MindEvent, endedInFlight: boolean): void {
     const cancel = this.scheduler.after(this.idleSettleMs, () => {
       this.cancelSettle.delete(cancel);
-      if (this.wokenIntents.has(intentId) || this.activeIntent !== null) return;
+      if (this.ended || this.wokenIntents.has(intentId) || this.activeIntent !== null) return;
       // The intent ended during a thought that is still running: that thought cannot have seen it,
       // so the idle wake is kept for the thought's settle instead of being dropped as stale.
       if (endedInFlight && this.inFlight) this.idleHeld = true;

@@ -406,6 +406,15 @@ describe('death and sleep', () => {
     expect(r.decisions).toHaveLength(1);
   });
 
+  it('after a death, an intent end and a Body wake give no thought', () => {
+    r.attention.onEvent(intent('in_1', 'running'));
+    r.attention.onEvent(plain('death'));
+    r.attention.onEvent(intent('in_1', 'interrupted'));
+    r.attention.onEvent(wake('goal_completed'));
+    r.time.advance(600_000);
+    expect(r.decisions).toHaveLength(0);
+  });
+
   it('a sleep event emits ReflectionDue and does not wake', () => {
     r.attention.onEvent(plain('sleep'));
     expect(r.decisions).toHaveLength(0);
