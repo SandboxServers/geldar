@@ -61,15 +61,14 @@ describe('geldar.ps1 shard secret files', () => {
     expect(acl).toMatch(/\$env:USERNAME/);
   });
 
-  it('applies the owner-only ACL to each secret file, the new ones before the secret is written', () => {
-    const calls = [...body.matchAll(/Set-OwnerOnlyAcl \$path/g)];
-    expect(calls.length).toBeGreaterThanOrEqual(2);
-    expect(body.indexOf('Set-OwnerOnlyAcl $path', body.indexOf('CreateNew'))).toBeGreaterThan(
-      body.indexOf('CreateNew'),
+  it('applies the owner-only ACL to a new secret file just before its secret is written', () => {
+    expect(body).toMatch(
+      /\n {4}Set-OwnerOnlyAcl \$path\r?\n {4}try \{\r?\n {6}\$data = \[Text\.Encoding\]::ASCII/,
     );
-    expect(body.indexOf('Set-OwnerOnlyAcl $path', body.indexOf('CreateNew'))).toBeLessThan(
-      body.indexOf('GetBytes($secret)'),
-    );
+  });
+
+  it('applies the owner-only ACL to an existing secret file before skipping it', () => {
+    expect(body).toMatch(/Set-OwnerOnlyAcl \$path\r?\n {6}continue\r?\n {4}\}/);
   });
 });
 
