@@ -161,6 +161,27 @@ describe('the supervisor and reporter argument arrays', () => {
     await expect(createSupervisor(runner, '/repo').up()).rejects.toThrow(/adam up exited 3/);
   });
 
+  it('a failing supervisor call carries the last lines of the child stderr, redacted', async () => {
+    const stderr = Array.from({ length: 25 }, (_, i) => `stderr line ${i + 1}`).join('\n');
+    const runner: Runner = {
+      exec: async (): Promise<ExecResult> => ({
+        code: 1,
+        stdout: '',
+        stderr: `${stderr}\nPOSTGRES_PASSWORD=do-not-print-me`,
+      }),
+    };
+    const err = await createSupervisor(runner, '/repo')
+      .up()
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    const message = (err as Error).message;
+    expect(message.startsWith('adam up exited 1: ')).toBe(true);
+    expect(message).toContain('stderr line 25');
+    expect(message).not.toContain('stderr line 5 ');
+    expect(message).toContain('POSTGRES_PASSWORD=<redacted>');
+    expect(message).not.toContain('do-not-print-me');
+  });
+
   it('the Body kill runs adam-cli restart-body through node, with an argument array', async () => {
     const { runner, calls } = recordingRunner();
     await createSupervisor(runner, '/repo').restartBody();

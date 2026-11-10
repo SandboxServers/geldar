@@ -17,6 +17,7 @@ import {
 import { dirname, join, resolve, sep } from 'node:path';
 import pg from 'pg';
 import { newestBenchFile } from './bench-gate.ts';
+import { stderrTail } from './child-error.ts';
 import { LIFE_ID, type PinnedModel, type Profile, readPins, sha256Hex } from './manifest.ts';
 import {
   type Clock,
@@ -285,7 +286,9 @@ export function createSupervisor(runner: Runner, repoRoot: string): Supervisor {
   const adam = (args: string[]): Promise<ExecResult> =>
     runner.exec('node', [join(repoRoot, 'tools', 'adam-cli', 'src', 'cli.ts'), ...args]);
   const check = (res: ExecResult, what: string): void => {
-    if (res.code !== 0) throw new Error(`${what} exited ${res.code}`);
+    if (res.code === 0) return;
+    const tail = stderrTail(res.stderr);
+    throw new Error(`${what} exited ${res.code}${tail === '' ? '' : `: ${tail}`}`);
   };
   return {
     async up() {
