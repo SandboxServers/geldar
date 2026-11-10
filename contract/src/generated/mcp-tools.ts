@@ -1650,11 +1650,11 @@ export const mcpToolSchemas: Record<
     }
   },
   "sleep": {
-    "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
+    "description": "Rest for the night. Works best in a bed or sealed shelter. Returns the day's event digest and journal mirror so you can reflect.",
     "input": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "Go to bed. Returns the day's event digest and journal mirror so you can reflect.",
+      "description": "Rest for the night. Works best in a bed or sealed shelter. Returns the day's event digest and journal mirror so you can reflect.",
       "additionalProperties": false
     },
     "result": {

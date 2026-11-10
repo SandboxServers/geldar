@@ -9,7 +9,7 @@ import { wakeWording } from './wake-wording.ts';
 const PROMPTS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'prompts');
 
 /** The default agent-facing templates: every file an agent reads as its own text (decisions 0058, 0059). */
-const DEFAULT_TEMPLATES = ['thought/v4.md', 'reflection/v2.md', 'body-api/v1.json'];
+const DEFAULT_TEMPLATES = ['thought/v5.md', 'reflection/v2.md', 'body-api/v2.json'];
 
 /** Every wake reason the Body and the Mind can give (ports/attention.ts). */
 const WAKE_REASONS = [

@@ -381,7 +381,7 @@ describe('corrective message', () => {
 
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v1.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v2.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];

@@ -8,6 +8,7 @@ import type { MemoryRow, ReflectionPromptVars } from '../ports/index.ts';
 import {
   CONTEXT_TOKENS,
   createPromptLibrary,
+  DEFAULT_BODY_API_VERSION,
   DEFAULT_REFLECTION_BUDGET_TOKENS,
   DEFAULT_REFLECTION_VERSION,
   DEFAULT_THOUGHT_BUDGET_TOKENS,
@@ -41,12 +42,13 @@ function promptsWith(edit: (text: string) => string): string {
     'reflection/v1.md',
     'reflection/v2.md',
     'body-api/v1.json',
+    'body-api/v2.json',
   ]) {
     writeFileSync(join(dir, file), readFileSync(join(root, file)));
   }
   writeFileSync(
-    join(dir, 'thought/v4.md'),
-    edit(readFileSync(join(root, 'thought/v4.md'), 'utf8')),
+    join(dir, 'thought/v5.md'),
+    edit(readFileSync(join(root, 'thought/v5.md'), 'utf8')),
   );
   return dir;
 }
@@ -96,18 +98,22 @@ function commitmentRow(text: string, dueTick: number | null): MemoryRow {
 
 describe('prompt library', () => {
   it('records the version id as kind@n+sha256 of the first 12 hex of the file', () => {
-    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v4.md'));
+    const bytes = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v5.md'));
     const hex = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
-    expect(library.thoughtVersion).toBe(`thought@4+sha256:${hex}`);
+    expect(library.thoughtVersion).toBe(`thought@5+sha256:${hex}`);
     expect(library.reflectionVersion).toMatch(/^reflection@2\+sha256:[0-9a-f]{12}$/);
-    expect(library.bodyApiVersion).toMatch(/^body-api@1\+sha256:[0-9a-f]{12}$/);
+    expect(library.bodyApiVersion).toMatch(/^body-api@2\+sha256:[0-9a-f]{12}$/);
     expect(library.render('thought', sampleThoughtVars()).templateVersion).toBe(
       library.thoughtVersion,
     );
   });
 
-  it('makes thought v4 the default and keeps v1 loadable', () => {
-    expect(DEFAULT_THOUGHT_VERSION).toBe(4);
+  it('makes thought v5 and body-api v2 the defaults and keeps v1 loadable', () => {
+    expect(DEFAULT_THOUGHT_VERSION).toBe(5);
+    expect(DEFAULT_BODY_API_VERSION).toBe(2);
+    expect(library.bodyApiVersion).toMatch(/^body-api@2\+sha256:/);
+    const bodyV1 = createPromptLibrary({ version: 1 });
+    expect(bodyV1.bodyApiVersion).toMatch(/^body-api@1\+sha256:[0-9a-f]{12}$/);
     const v1 = createPromptLibrary({ thoughtVersion: 1 });
     expect(v1.thoughtVersion).toMatch(/^thought@1\+sha256:[0-9a-f]{12}$/);
     expect(v1.render('thought', sampleThoughtVars()).templateVersion).toBe(v1.thoughtVersion);
@@ -125,13 +131,23 @@ describe('prompt library', () => {
       expect(system).toContain(DATA_RULE);
       expect(system).toContain('You know only what you have seen');
     }
-    expect(library.thoughtVersion).toMatch(/^thought@4\+sha256:[0-9a-f]{12}$/);
+    expect(library.thoughtVersion).toMatch(/^thought@5\+sha256:[0-9a-f]{12}$/);
   });
 
-  it('keeps the observer, makers and credit wording out of thought v4 (decisions 0058, 0059)', () => {
+  it('keeps the observer, makers and credit wording out of thought v4 and v5 (decisions 0058, 0059)', () => {
+    for (const file of ['v4', 'v5']) {
+      const text = readFileSync(join(repoRoot(), 'prompts', 'thought', `${file}.md`), 'utf8');
+      expect(text).not.toMatch(/observer|makers|credit|limited/i);
+      expect(text).toContain('not a command you must obey');
+    }
+  });
+
+  it('says a bed is not the only shelter in thought v5 (decision 0074)', () => {
+    const v5 = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v5.md'), 'utf8');
+    expect(v5).toContain('a bed, a hut, or a hole in the ground');
+    expect(v5).not.toContain('find a bed you have placed');
     const v4 = readFileSync(join(repoRoot(), 'prompts', 'thought', 'v4.md'), 'utf8');
-    expect(v4).not.toMatch(/observer|makers|credit|limited/i);
-    expect(v4).toContain('not a command you must obey');
+    expect(v4).toContain('find a bed you have placed');
   });
 
   it('makes thought v3 exactly v2 plus the one data line after the anti-loop rule', () => {
@@ -161,9 +177,11 @@ describe('prompt library', () => {
       'thought/v2.md': '12b59d391c2dab0578f77a4f3dc1997047c282bf4a2221fb4bebb273228629f5',
       'thought/v3.md': 'd52dba9b426dc87ed11940bebad61e365bd3d1784db99101126778a6f3da3379',
       'thought/v4.md': 'c9a3d767f9099ef0de8a4a7d8b96d4ac62da0d169538129d1bd8d8c29f86533e',
+      'thought/v5.md': '1f4d35595f9a1b8858da2656ed0dad12ca69f40cd0c5c3054833c61896092f39',
       'reflection/v1.md': 'bdbceaba069f87a944c1230ea314cc59cdeed4a132bc6a9c1283e483625cbcf8',
       'reflection/v2.md': '18f3117ccf6bd8b0da693c65121d0622381e7e584d6dc898e58caa19ecdbc127',
       'body-api/v1.json': 'f943151a1af44dbd717239c088f56a157f5b3b1154aac7cb5f70bc19c8c89c2f',
+      'body-api/v2.json': '8d5d127ee971750f7e8250746b6c55e730b14506d280c0a399a4126b3fb37221',
     };
     for (const [file, hash] of Object.entries(pinned)) {
       const bytes = readFileSync(join(repoRoot(), 'prompts', file));
@@ -177,7 +195,7 @@ describe('prompt library', () => {
       'You know only what you have seen, tried, or been told by people here. You do not know how this world works beyond that: you have no recipes, maps, secrets or numbers in your head until you find them out. When you learn something, it is because it happened to you or someone told you.',
     );
     expect(system).toContain(
-      'At night, find a bed you have placed and sleep in it (the routine named sleep); a night without sleep makes you tired and your thoughts shorter.',
+      'At night you need a safe enclosed space: a bed, a hut, or a hole in the ground sealed above and around you. Sleeping in a bed is the surest rest; a night without rest makes you tired and your thoughts shorter.',
     );
     expect(system).toContain(
       'If you have no current intent, choose one now. Do not repeat something you already said: if you greeted someone, act on your own goals instead.',
