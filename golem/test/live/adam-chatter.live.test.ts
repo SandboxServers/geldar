@@ -33,6 +33,7 @@ describe.skipIf(!mindLiveEnabled)('Adam and the chatter bot', () => {
       );
 
       const cueAt = Date.now();
+      ac.chatter.speak();
       const said = await ac.chatter.say(
         'Adam, are you there? Tell me what you are doing right now.',
       );
@@ -87,6 +88,7 @@ describe.skipIf(!mindLiveEnabled)('Adam and the chatter bot', () => {
       await ac.waitFor('a first valid thought', FIRST_THOUGHT_MS, async () =>
         (await ac.thoughts()).find((t) => t.valid),
       );
+      ac.chatter.speak();
       const outcomes = await ac.chatter.sayAll(lines);
       expect(
         outcomes.map((o) => o.status),

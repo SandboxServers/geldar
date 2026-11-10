@@ -75,7 +75,8 @@ export async function checkEightBillionLife(config: AdamConfig): Promise<void> {
 /**
  * Runs `fn` with Adam's stack up. The world is reset the standard way (`resetBot`, with the time
  * the case needs); the chatter and Adam are whitelisted, Adam is moved into the arena once his Body
- * is up, and everything is stopped and restored afterwards, even on failure.
+ * is up, and everything is stopped and restored afterwards, even on failure. The chatter starts
+ * silent: a case that needs it to speak calls `ac.chatter.speak()` once Adam has acted.
  */
 export async function withAdamCase(
   opts: { slot: number; time?: ResetTime },
@@ -84,7 +85,13 @@ export async function withAdamCase(
   const config = await loadAdamConfig();
   await checkEightBillionLife(config);
   await withChatterBot(
-    { slot: opts.slot, rateLimitSeconds: config.rateLimitSeconds, maxChars: config.maxChars },
+    {
+      slot: opts.slot,
+      rateLimitSeconds: config.rateLimitSeconds,
+      maxChars: config.maxChars,
+      // Silent until the case calls `chatter.speak()`, so the chatter never greets Adam before he acts.
+      silent: true,
+    },
     async (chatter, live) => {
       const restore = await resetBot(live.bot, live.ctl, { time: opts.time ?? 'noon' });
       const db = await openMindDb();
