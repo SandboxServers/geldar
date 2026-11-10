@@ -116,6 +116,7 @@ export async function applyReflection(
       provenance: guardProvenance(b.belief, b.kind, context),
       subject: null,
       text: b.belief,
+      dueTick: b.kind === 'commitment' ? (b.due_tick ?? null) : null,
     });
   }
   if (!context.degraded) {

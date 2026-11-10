@@ -48,6 +48,21 @@ describe('applyReflection', () => {
     expect(loaded.agent.lastSleepDay).toBe(3);
   });
 
+  it('stores a commitment with its due tick, and a belief without one has no due tick', async () => {
+    const { store } = await world([]);
+    const beliefs_add = [
+      { belief: 'two loaves to Pike', kind: 'commitment' as const, due_tick: 9000 },
+      { belief: 'the cave holds iron', kind: 'interpretation' as const },
+    ];
+    await applyReflection({ store, embedder }, reflection({ beliefs_add }), context());
+    const rows = allRows(store);
+    expect(rows.find((r) => r.text === 'two loaves to Pike')).toMatchObject({
+      provenance: 'commitment',
+      dueTick: 9000,
+    });
+    expect(rows.find((r) => r.text === 'the cave holds iron')?.dueTick).toBeNull();
+  });
+
   it('clamps trust to 0 to 100', async () => {
     const { store } = await world([]);
     const updates = [

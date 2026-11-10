@@ -5459,576 +5459,1120 @@ export interface Reflection {
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ]
     | [
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         },
         {
           belief: string;
           kind: "observation" | "report" | "interpretation" | "prediction" | "commitment" | "preference";
+          /**
+           * For a commitment: the world tick by which it is due. Optional; absent means open, with no due tick.
+           */
+          due_tick?: number;
         }
       ];
   /**
