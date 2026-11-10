@@ -20,6 +20,7 @@ gets `404`. All responses are `application/json` except the stream, and carry th
 | `GET /api/thoughts` | Thoughts, newest first, one page at a time. Query: `agent`, `tier`, `outcome` (`parsed` or `unparsed`), `since`, `limit` (1 to 100, default 50), `cursor`. The reply has `next`, the cursor for the next page, or `null`. |
 | `GET /api/thoughts/:id` | One thought with its `model_input`, capped at 64 KiB. |
 | `GET /api/receipts?action_id=` | The receipts of one action. |
+| `GET /api/stats` | The stream's poll counters: connected clients, frames delivered, dropped and rejected, polls, and poll errors. No text from the database. |
 | `GET /api/stream` | Server-sent events: each new thought as a `thought` event, with a heartbeat comment every 15 seconds. |
 
 Text fields hold agent-authored and world-authored text. The API returns it as JSON data, and

@@ -3,16 +3,15 @@ import { loadGlassConfig } from './config.ts';
 import { buildGlass } from './server.ts';
 
 const config = loadGlassConfig();
-const { server, hub, pool } = buildGlass(config);
+const { server, close } = buildGlass(config);
 
 server.listen(config.port, config.host, () => {
   console.log(`glass listening on ${config.host}:${config.port}`);
 });
 
+/** Idempotent: a second signal is a no-op, so the pool is ended once. */
 function stop(): void {
-  hub.close();
-  server.close();
-  void pool.end();
+  close();
 }
 
 process.on('SIGINT', stop);

@@ -45,6 +45,7 @@ const endingHub = {
     res.end('stream');
     return true;
   },
+  stats: () => ({ clients: 0, delivered: 0, dropped: 0, rejected: 0, polls: 0, pollErrors: 0 }),
 } as unknown as SseHub;
 
 const CONFIG: GlassConfig = {
@@ -130,6 +131,32 @@ describe('the Glass HTTP handler', () => {
         expect(reply.status, `${method} ${route.path}`).toBe(405);
         expect(reply.headers.allow, `${method} ${route.path}`).toBe('GET');
       }
+    }
+  });
+
+  it('returns the stream counters on GET /api/stats with no database call, and 405 to any other method', async () => {
+    const statsHub = {
+      attach: () => false,
+      stats: () => ({
+        clients: 1,
+        delivered: 4,
+        dropped: 0,
+        rejected: 2,
+        polls: 9,
+        pollErrors: 1,
+      }),
+    } as unknown as SseHub;
+    const port = await start({ db: noQueries, hub: statsHub });
+    const reply = await send(port, 'GET', '/api/stats');
+    expect(reply.status).toBe(200);
+    expect(reply.headers['content-type']).toBe('application/json; charset=utf-8');
+    expect(JSON.parse(reply.body)).toEqual({
+      stats: { clients: 1, delivered: 4, dropped: 0, rejected: 2, polls: 9, pollErrors: 1 },
+    });
+    for (const method of WRITE_METHODS) {
+      const refused = await send(port, method, '/api/stats');
+      expect(refused.status, method).toBe(405);
+      expect(refused.headers.allow, method).toBe('GET');
     }
   });
 
@@ -238,7 +265,7 @@ describe('the Glass HTTP handler', () => {
 
   it('lists the routes, all GET, and serves a GET to each one', async () => {
     const port = await start({ db: oneRow, hub: endingHub });
-    expect(ROUTES.map((route) => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET']);
+    expect(ROUTES.map((route) => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET', 'GET']);
     for (const route of ROUTES) {
       const reply = await send(port, 'GET', samplePath(route.path));
       expect(reply.status, route.path).toBe(200);
