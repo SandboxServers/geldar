@@ -27,6 +27,16 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
+describe('pepper byte-order mark', () => {
+  it('refuses a file that starts with a UTF-8 byte-order mark, in the CLI and the server', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mcp-tokens-pepper-'));
+    dirs.push(dir);
+    await writeFile(join(dir, PEPPER_FILE), `﻿${KEY}\n`);
+    await expect(readPepper(dir)).rejects.toThrow('byte-order mark');
+    expect(() => pepperBytes(`﻿${KEY}\n`)).toThrow('byte-order mark');
+  });
+});
+
 describe('pepper golden table', () => {
   it.each(GOLDEN)('reads %s the same way in the CLI and the server', async (_label, file, key) => {
     const dir = await mkdtemp(join(tmpdir(), 'mcp-tokens-pepper-'));
