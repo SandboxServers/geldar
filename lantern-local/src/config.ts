@@ -25,6 +25,8 @@ export interface LanternConfig {
   heartbeatMs: number;
   /** How long one pinned model may take to load in its warm-up before it is left unadvertised. */
   warmTimeoutMs: number;
+  /** The pinned names to warm, in order: the run tier's models, or else all with the strong tier last. */
+  warmNames: string[];
   pins: ModelPin[];
 }
 
@@ -114,22 +116,51 @@ function parsePins(block: unknown, allowPlaceholders: boolean): ModelPin[] {
   return out;
 }
 
+/** The tier's model names under `models`; empty if the tier is absent or not a list. */
+function tierNames(tiers: Record<string, unknown>, tier: string): string[] {
+  const list = tiers[tier];
+  return Array.isArray(list) ? list.filter((n): n is string => typeof n === 'string') : [];
+}
+
+/**
+ * The warm-up order (BC-1): only the run tier's models when `mind.run_tier` names a tier with
+ * models; otherwise every pin, with the strong tier's models last so the largest stays loaded.
+ */
+export function warmOrder(
+  mind: Record<string, unknown>,
+  tiers: Record<string, unknown>,
+  pins: ModelPin[],
+): string[] {
+  const run = typeof mind.run_tier === 'string' ? tierNames(tiers, mind.run_tier) : [];
+  if (run.length > 0) return run;
+  const strong = tierNames(tiers, 'strong');
+  const names = pins.map((p) => p.name);
+  return [...names.filter((n) => !strong.includes(n)), ...names.filter((n) => strong.includes(n))];
+}
+
 /** Reads `model_pins` and `mind.thinker` from the shard file; the environment overrides the URLs. */
 export function loadConfig(options: LoadOptions = {}): LanternConfig {
   const env = options.env ?? process.env;
   const doc = obj(parse(readFileSync(options.file ?? defaultShardFile(), 'utf8')), 'shard file');
-  const thinker = obj(obj(doc.mind, 'mind').thinker, 'mind.thinker');
+  const mind = obj(doc.mind, 'mind');
+  const thinker = obj(mind.thinker, 'mind.thinker');
+  const tiers =
+    doc.models !== null && typeof doc.models === 'object'
+      ? (doc.models as Record<string, unknown>)
+      : {};
   const host = str(thinker.host, 'mind.thinker.host');
   const port = int(thinker.port, 'mind.thinker.port', 1);
   const heartbeatS = int(thinker.heartbeat_s, 'mind.thinker.heartbeat_s', 1);
   const warmS = int(thinker.warm_timeout_s, 'mind.thinker.warm_timeout_s', 1);
   const wsUrl = env.GELDAR_MIND_WS_URL ?? `ws://${host}:${port}/v1/thinker/stream`;
   const ollamaUrl = env.OLLAMA_URL ?? 'http://127.0.0.1:11434';
+  const pins = parsePins(doc.model_pins, options.allowPlaceholders === true);
   return {
     wsUrl: requireLoopback(wsUrl, ['ws:'], 'GELDAR_MIND_WS_URL'),
     ollamaUrl: requireLoopback(ollamaUrl, ['http:'], 'OLLAMA_URL'),
     heartbeatMs: heartbeatS * 1000,
     warmTimeoutMs: warmS * 1000,
-    pins: parsePins(doc.model_pins, options.allowPlaceholders === true),
+    warmNames: warmOrder(mind, tiers, pins),
+    pins,
   };
 }

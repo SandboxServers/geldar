@@ -207,7 +207,7 @@ export class ThinkerSession {
     }
     const checked = validateThinkerFrame(json);
     if (!checked.ok) {
-      this.drop(`invalid frame: ${checked.errors[0] ?? 'unknown'}`);
+      this.drop(`invalid frame: ${JSON.stringify((checked.errors[0] ?? 'unknown').slice(0, 120))}`);
       return;
     }
     const frame = checked.value;

@@ -87,6 +87,20 @@ describe('the hub with the real lantern-local Thinker', () => {
     expect((failed as ModelError).code).toBe('internal');
   });
 
+  it('receives the Thinker timeout before the deadline, so the Mind does not refuse it as late', async () => {
+    const client = await connect(
+      (_request, signal) =>
+        new Promise<ChatResult>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        }),
+    );
+    const failed = await client
+      .complete(job({ deadline: new Date(Date.now() + 1500) }), NEVER)
+      .catch((err: unknown) => err);
+    expect((failed as ModelError).code).toBe('timeout');
+    expect(hub?.stats()[0]).toMatchObject({ anomalies: 0 });
+  });
+
   it('cancels a running job: the Thinker aborts its model call', async () => {
     let aborted = false;
     const client = await connect(

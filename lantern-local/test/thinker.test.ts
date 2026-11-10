@@ -80,7 +80,7 @@ describe('reconnect backoff', () => {
     expect(logs.some((l) => l.startsWith('connected; sending hello'))).toBe(true);
     expect(logs.some((l) => l.startsWith('welcomed; accepted 1'))).toBe(true);
     expect(logs.find((l) => l.startsWith('closed ('))).toMatch(
-      /code 1000, reason 'drain'\) \(was welcomed\)/,
+      /code 1000, reason "drain"\) \(was welcomed\)/,
     );
   });
 });
@@ -98,7 +98,7 @@ describe('connection', () => {
     expect(hello).toEqual({
       type: 'hello',
       thinker_version: '1.2.3',
-      models: [{ name: 'qwen3:8b', max_concurrent: 1, max_tokens: 1024 }],
+      models: [{ name: 'qwen3:8b', max_concurrent: 1, max_tokens: 2048 }],
     });
     const beat = await mind.next('heartbeat');
     expect(beat.load).toEqual({ 'qwen3:8b': 0 });
@@ -158,6 +158,19 @@ describe('connection', () => {
     mind.push(mind.job());
     expect((await mind.next('completion')).text).toBe('{"ok":true}');
   });
+
+  it('escapes and cuts a hostile property name in the log line of a dropped frame', async () => {
+    const hostile = `evil\n${'z'.repeat(2000)}`;
+    const t = launch();
+    await mind.next('hello');
+    await until(() => t.welcomes === 1, 'the welcome');
+    mind.push(mind.job({ [hostile]: 1 }));
+    await until(() => t.droppedFrames === 1, 'the dropped frame');
+    const line = logs.find((l) => l.startsWith('dropped an inbound frame'));
+    expect(line).toBeDefined();
+    expect(line?.includes('\n')).toBe(false);
+    expect(line?.length ?? Infinity).toBeLessThan(300);
+  });
 });
 
 describe('warm-up', () => {
@@ -216,7 +229,7 @@ describe('warm-up', () => {
     launchWarm();
     const hello = await mind.next('hello');
     expect(attempts).toBe(2);
-    expect(hello.models).toEqual([{ name: 'qwen3:8b', max_concurrent: 1, max_tokens: 1024 }]);
+    expect(hello.models).toEqual([{ name: 'qwen3:8b', max_concurrent: 1, max_tokens: 2048 }]);
     expect(logs).toContain('no pinned model warmed; advertising nothing and retrying');
     expect(logs.some((l) => l.startsWith('reconnecting in'))).toBe(true);
   });
@@ -229,6 +242,36 @@ describe('warm-up', () => {
       'the warm timeout',
     );
     expect(mind.frames).toHaveLength(0);
+  });
+
+  it('warms once per process: a dial that fails after the warm-up does not warm again', async () => {
+    mind.autoWelcome = false;
+    launchWarm({ helloTimeoutMs: 40 });
+    await until(() => mind.connections >= 3, 'three dial attempts');
+    expect(ollama.requests.filter((r) => r.body.model === 'qwen3:8b')).toHaveLength(1);
+  });
+
+  it('warms only the run tier model when it is named, and advertises only that one', async () => {
+    launchWarm({ models: [pin('qwen3:8b'), pin('qwen3:32b')], warmNames: ['qwen3:32b'] });
+    const hello = await mind.next('hello');
+    expect(ollama.requests.map((r) => r.body.model)).toEqual(['qwen3:32b']);
+    expect((hello.models as { name: string }[]).map((m) => m.name)).toEqual(['qwen3:32b']);
+  });
+
+  it('re-checks the digests before each dial and advertises only the models that still match', async () => {
+    mind.autoWelcome = false;
+    let matching = ['qwen3:8b', 'qwen3:32b'];
+    launchWarm({
+      models: [pin('qwen3:8b'), pin('qwen3:32b')],
+      helloTimeoutMs: 40,
+      recheck: async () => matching,
+    });
+    await until(() => mind.frames.filter((f) => f.type === 'hello').length === 1, 'first hello');
+    matching = ['qwen3:8b'];
+    await until(() => mind.frames.filter((f) => f.type === 'hello').length === 2, 'second hello');
+    const hellos = mind.frames.filter((f) => f.type === 'hello');
+    expect(hellos[1]?.models).toEqual([{ name: 'qwen3:8b', max_concurrent: 1, max_tokens: 2048 }]);
+    expect(ollama.requests.filter((r) => r.body.model === 'qwen3:32b')).toHaveLength(1);
   });
 });
 
@@ -287,10 +330,19 @@ describe('jobs', () => {
   it('answers timeout and aborts the HTTP call when the deadline passes mid-call', async () => {
     ollama.handler = () => {};
     await ready();
-    mind.push(mind.job({ deadline: new Date(Date.now() + 250).toISOString() }));
+    mind.push(mind.job({ deadline: new Date(Date.now() + 1000).toISOString() }));
     const err = await mind.next('error');
     expect(err.code).toBe('timeout');
     await until(() => ollama.requests[0]?.aborted === true, 'Ollama to see the abort');
+  });
+
+  it('sends the timeout before the deadline, so the Mind does not refuse it as late', async () => {
+    ollama.handler = () => {};
+    await ready();
+    const deadline = Date.now() + 1000;
+    mind.push(mind.job({ deadline: new Date(deadline).toISOString() }));
+    expect((await mind.next('error')).code).toBe('timeout');
+    expect(Date.now()).toBeLessThan(deadline);
   });
 
   it('answers timeout without calling Ollama when the deadline already passed', async () => {

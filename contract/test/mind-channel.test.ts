@@ -251,6 +251,13 @@ describe('job frame response_format and reasoning (decision 0049)', () => {
     deadline: '2026-11-08T21:14:05Z',
   };
 
+  it('counts response_format bytes, not UTF-16 units', () => {
+    // 3 bytes per character in UTF-8, so this is under the limit in units but over it in bytes.
+    const pad = '€'.repeat(Math.ceil(MAX_RESPONSE_FORMAT_BYTES / 2));
+    const format = { type: 'json_schema', schema: { pad } };
+    expect(validateThinkerFrame({ ...job, response_format: format }).ok).toBe(false);
+  });
+
   it('accepts the two optional fields and still accepts a frame without them', () => {
     expect(validateThinkerFrame(job).ok).toBe(true);
     const format = { type: 'json_schema', schema: { type: 'object' } };
