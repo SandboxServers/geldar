@@ -162,6 +162,30 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
     expect(final, 'the stored balance never below zero').toBeGreaterThanOrEqual(0);
   });
 
+  it('a balance racing a reserve never writes back a stale accrual', async () => {
+    // 60 credits an hour; the stored balance is 100 with an hour of accrual owed: 160 before the
+    // reserve. Whichever runs first, the end is 100 + 60 - 50 = 110. A stale write ends elsewhere.
+    const ledger = new PgBudgetLedger(mcp, { creditsPerRealHour: 60, capCredits: 240 });
+    for (let round = 0; round < 5; round += 1) {
+      const seeded = await seedPlayer(admin, freshSuffix());
+      const now = Date.now();
+      await admin.query(
+        'UPDATE mcp_budget SET credits = 100, accrued_at = $2 WHERE life_id = $1',
+        [seeded.lifeId, new Date(now - 3_600_000)],
+      );
+      const [reserved] = await Promise.all([
+        ledger.reserve(seeded.lifeId, 50, now),
+        ledger.balance(seeded.lifeId, now),
+      ]);
+      expect(reserved.ok, 'the reserve covered by 160').toBe(true);
+      const { rows } = await admin.query<{ credits: number }>(
+        'SELECT credits FROM mcp_budget WHERE life_id = $1',
+        [seeded.lifeId],
+      );
+      expect(rows[0]?.credits, 'the stored balance after both').toBe(110);
+    }
+  });
+
   describe('the geldar_mcp role', () => {
     it('reads the tables the server reads', async () => {
       await seedPlayer(admin, freshSuffix());

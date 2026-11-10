@@ -42,12 +42,14 @@ export function takeCredits(balance: number, cost: number): { ok: boolean; remai
  * Accrual in one statement. $1 life_id, $2 now (timestamptz), $3 credits per real hour, $4 cap.
  * Whole credits only, as accrue() does: seconds * rate / 3600, and the clock moves by the time
  * those credits took. A row at the cap takes the clock to now.
+ * `FOR UPDATE` locks the row and, under READ COMMITTED, re-reads it after a concurrent writer
+ * commits, so `acc` never works from a stale balance and the SET cannot overwrite a newer one.
  */
 const ACCRUE_CTE = `WITH cur AS (
   SELECT life_id, credits, accrued_at,
     FLOOR(GREATEST(EXTRACT(EPOCH FROM ($2::timestamptz - accrued_at)), 0)
       * $3::int / 3600)::int AS whole
-  FROM mcp_budget WHERE life_id = $1
+  FROM mcp_budget WHERE life_id = $1 FOR UPDATE
 ), acc AS (
   SELECT life_id, accrued_at, LEAST($4::int, credits + whole) AS capped,
     CASE WHEN credits + whole >= $4::int THEN $2::timestamptz
@@ -65,7 +67,12 @@ export class PgBudgetLedger implements BudgetLedger {
   private readonly rules: AccrualRules;
 
   constructor(pool: Pool, rules: AccrualRules) {
-    if (!(rules.creditsPerRealHour > 0)) throw new Error('credits_per_real_hour must be above 0');
+    if (!Number.isInteger(rules.creditsPerRealHour) || rules.creditsPerRealHour <= 0) {
+      throw new Error('credits_per_real_hour must be a whole number above 0');
+    }
+    if (!Number.isInteger(rules.capCredits) || rules.capCredits < 0) {
+      throw new Error('cap_credits must be a whole number of 0 or more');
+    }
     this.pool = pool;
     this.rules = rules;
   }
@@ -84,6 +91,9 @@ export class PgBudgetLedger implements BudgetLedger {
     credits: number,
     nowMs: number,
   ): Promise<{ ok: boolean; remaining: number }> {
+    if (!Number.isInteger(credits) || credits <= 0) {
+      throw new Error('reserve needs a whole number of credits above 0');
+    }
     const { rows } = await this.pool.query<{ remaining: number; ok: boolean }>(
       `${ACCRUE_CTE} UPDATE mcp_budget b
        SET credits = acc.capped - CASE WHEN acc.capped >= $5::int THEN $5::int ELSE 0 END,
@@ -97,6 +107,11 @@ export class PgBudgetLedger implements BudgetLedger {
     return { ok: row.ok, remaining: row.remaining };
   }
 
+  /*
+   * Refund has no reservation id, so it is not idempotent: a retried refund credits again, up to
+   * the cap. Callers must refund each reservation once. An idempotency key needs a reservation id
+   * in the BudgetLedger port first.
+   */
   async refund(lifeId: string, credits: number): Promise<number> {
     const { rows } = await this.pool.query<{ credits: number }>(
       `UPDATE mcp_budget SET credits = LEAST($3::int, credits + $2::int)

@@ -68,6 +68,32 @@ describe('PgBudgetLedger', () => {
     ).toThrow();
   });
 
+  it('refuses a rate that is not a whole number', () => {
+    expect(
+      () => new PgBudgetLedger(new FakePool().asPool(), { ...RULES, creditsPerRealHour: 1.5 }),
+    ).toThrow();
+  });
+
+  it('refuses a cost that is zero, negative or fractional, so reserve cannot mint', async () => {
+    const pool = new FakePool(() => ({ rows: [{ remaining: 9, ok: true }] }));
+    const ledger = new PgBudgetLedger(pool.asPool(), RULES);
+    await expect(ledger.reserve('ag_jason_01', -5, 0)).rejects.toThrow();
+    await expect(ledger.reserve('ag_jason_01', 0, 0)).rejects.toThrow();
+    await expect(ledger.reserve('ag_jason_01', 2.5, 0)).rejects.toThrow();
+    expect(pool.sent).toHaveLength(0);
+  });
+
+  it('locks the budget row in the accrual CTE for reserve and balance, so a race re-reads it', async () => {
+    // Without FOR UPDATE, two concurrent reserves both read 240 and both write 190 (see the IT).
+    const pool = new FakePool(() => ({ rows: [{ credits: 1, remaining: 1, ok: true }] }));
+    const ledger = new PgBudgetLedger(pool.asPool(), RULES);
+    await ledger.reserve('ag_jason_01', 1, 0);
+    await ledger.balance('ag_jason_01', 0);
+    for (const sent of pool.sent) {
+      expect(sent.text).toMatch(/FROM mcp_budget WHERE life_id = \$1 FOR UPDATE/);
+    }
+  });
+
   it('reserve sends the accrual inputs and the cost as bound values', async () => {
     const pool = new FakePool(() => ({ rows: [{ remaining: 5, ok: true }] }));
     const ledger = new PgBudgetLedger(pool.asPool(), RULES);
