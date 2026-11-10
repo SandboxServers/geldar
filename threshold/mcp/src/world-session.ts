@@ -35,6 +35,8 @@ export interface WorldSessionDeps {
   keepAlive: KeepAlive;
   /** Milliseconds between keepalives while a call is open (`keepalive_seconds` x 1000). */
   keepaliveMs: number;
+  /** `sovereign.mcp.max_result_bytes`: the largest tool result. Default 16384 (the mock's limit). */
+  maxResultBytes?: number | undefined;
   log?: (line: Record<string, unknown>) => void;
 }
 
@@ -97,6 +99,7 @@ export function createWorldSession(
         { playerId, signal },
         (m) => deps.log?.({ event: 'tool_log', player_id: playerId, cause: m }),
         PLAYER_FAULT,
+        deps.maxResultBytes,
       );
       return { ...response };
     } finally {

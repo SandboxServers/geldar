@@ -77,6 +77,12 @@ describe('callTool', () => {
     expect(body.untrusted_world_text.book.title).toBe('journal');
   });
 
+  it('refuses a result over the limit the caller passes, not only the 16 KiB default', async () => {
+    const res = await callTool(createFakeHandlers(), 'sleep', {}, ctx, undefined, undefined, 64);
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text).toBe('result_too_large: sleep');
+  });
+
   it('treats missing arguments as an empty object', async () => {
     for (const name of ['look', 'sleep', 'status', 'read_book'] as const) {
       const res = await callTool(createFakeHandlers(), name, undefined, ctx);

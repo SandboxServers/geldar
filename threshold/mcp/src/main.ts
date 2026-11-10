@@ -349,6 +349,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       resources: { profiles: agents, journal: new PgJournalStore(pool), shard: shardRules(config) },
       keepAlive: ports.keepAlive,
       keepaliveMs: config.sovereign.keepaliveSeconds * 1000,
+      maxResultBytes: config.sovereign.maxResultBytes,
       log,
     };
     const front = (ports.frontDoor ?? createFrontDoor)({
