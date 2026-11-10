@@ -140,6 +140,8 @@ The `day_night` publisher is not written yet; the consumer only reads it.
 
 Left for 11b: main.ts, cli.ts, golem extraServe wiring, image build test, e2e.
 
+world part 1 done: look, status, journal, read_book, unavailable, resources, keepalive, logging; part 2 left: act, say, sleep, wait wiring (touch-on-poll, timed settle) replacing the not_wired answers; the packet says not_available for pending tools, part 2 must check which is right.
+
 ## WM-11 finisher B status (stopped at the context limit)
 
 Done: the step 1 check passes on this branch (`./geldar.ps1 check`, exit 0, `b5d9bec`). The WM-11a worknote is committed on its own.
