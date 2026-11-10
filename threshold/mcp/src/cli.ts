@@ -275,10 +275,8 @@ export async function runStreamLoop(
   let current = messages;
   let openedAt = restart?.now() ?? 0;
   for (;;) {
-    let delivered = false;
     try {
       for await (const message of current) {
-        delivered = true;
         try {
           await settleOne(message, onMessage, counters, log, attempts);
         } catch (error) {
@@ -291,7 +289,7 @@ export async function runStreamLoop(
       log({ event: 'stream_loop_stopped', ...errorFields(error) });
     }
     if (restart === undefined || restart.stopping()) return;
-    if (delivered || restart.now() - openedAt >= HEALTHY_MS) failures.count = 0;
+    if (restart.now() - openedAt >= HEALTHY_MS) failures.count = 0;
     const next = await reopenOrExit(restart, failures, log);
     if (next === null) return;
     current = next;
@@ -312,6 +310,7 @@ async function reopenOrExit(
   log: (line: Record<string, string | number>) => void,
 ): Promise<AsyncIterable<StreamMessage> | null> {
   for (;;) {
+    if (restart.stopping()) return null;
     if (failures.count >= RESTART_ATTEMPTS) {
       log({ event: 'stream_loop_exhausted', attempts: RESTART_ATTEMPTS });
       restart.exit(1);
@@ -322,6 +321,7 @@ async function reopenOrExit(
     if (restart.stopping()) return null;
     try {
       const messages = await restart.reopen();
+      if (restart.stopping()) return null;
       log({ event: 'stream_loop_reopened', attempt: failures.count });
       return messages;
     } catch (error) {
@@ -417,6 +417,8 @@ export async function startReplay(
     reopen: async () => {
       const next = await source.open(subjects, fromIso);
       stopCurrent = next.stop;
+      // A stop that landed while the consumer was opening never saw this one, so it stops it here.
+      if (stopping) await next.stop();
       return next.messages;
     },
     stopping: () => stopping,

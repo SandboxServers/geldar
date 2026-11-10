@@ -345,6 +345,69 @@ describe('startReplay waits for the replay to catch up', () => {
     expect(exits).toEqual([1]);
   });
 
+  it('exits at the fifth failure when each reopened consumer delivers one message and ends', async () => {
+    const sleeps: number[] = [];
+    const exits: number[] = [];
+    const seen: number[] = [];
+    let opened = 0;
+    await runStreamLoop(
+      feed(),
+      async (seq) => {
+        seen.push(seq);
+      },
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          if (opened > 10) throw new Error('runaway reopen');
+          return feed(message(opened, '{"x":1}'));
+        },
+        stopping: () => false,
+        exit: (code) => exits.push(code),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+        now: () => 0,
+      },
+    );
+    expect(opened).toBe(5);
+    expect(seen).toEqual([1, 2, 3, 4, 5]);
+    expect(sleeps).toEqual([1000, 2000, 4000, 8000, 16000]);
+    expect(exits).toEqual([1]);
+  });
+
+  it('stops without reading or exiting when a stop lands during a reopen', async () => {
+    const seen: number[] = [];
+    const exits: number[] = [];
+    let opened = 0;
+    let stopped = false;
+    await runStreamLoop(
+      feed(),
+      async (seq) => {
+        seen.push(seq);
+      },
+      loopCounters(),
+      () => {},
+      undefined,
+      {
+        reopen: async () => {
+          opened++;
+          stopped = true;
+          return feed(message(10, '{"x":1}'));
+        },
+        stopping: () => stopped,
+        exit: (code) => exits.push(code),
+        sleep: async () => {},
+        now: () => 0,
+      },
+    );
+    expect(opened).toBe(1);
+    expect(seen).toEqual([]);
+    expect(exits).toEqual([]);
+  });
+
   it('resets the failures after a reopened consumer runs 60 s, so the next wait is 1 s again', async () => {
     const sleeps: number[] = [];
     const exits: number[] = [];
