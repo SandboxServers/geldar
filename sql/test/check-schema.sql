@@ -160,3 +160,68 @@ BEGIN
   RAISE NOTICE 'schema check passed: % tables, pgvector %', array_length(expected, 1), ext_version;
 END
 $$;
+
+-- Migrations 0002 and 0003 (not in spec Appendix D): the sovereign MCP tables, the revocation
+-- and player-ended triggers, the geldar_mcp role with its grants, and the migration ledger.
+DO $mcp$
+DECLARE
+  mcp_expected TEXT[] := ARRAY[
+    'schema_migrations', 'mcp_owners', 'mcp_players', 'mcp_tokens', 'mcp_budget', 'mcp_journal',
+    'mcp_sleep_marks'
+  ];
+  missing TEXT[];
+  ledger TEXT[];
+BEGIN
+  SELECT array_agg(t.name ORDER BY t.name) INTO missing
+  FROM unnest(mcp_expected) AS t(name)
+  WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = t.name
+  );
+  IF missing IS NOT NULL THEN
+    RAISE EXCEPTION 'schema check: missing mcp tables in public: %', missing;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_tokens_revoked') THEN
+    RAISE EXCEPTION 'schema check: the mcp_tokens_revoked trigger is missing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'mcp_players_ended') THEN
+    RAISE EXCEPTION 'schema check: the mcp_players_ended trigger is missing';
+  END IF;
+
+  -- A password may have been set (ALTER ROLE ... LOGIN PASSWORD), so this checks privileges only.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'geldar_mcp' AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+  ) THEN
+    RAISE EXCEPTION 'schema check: role geldar_mcp is missing or is superuser, createdb or createrole';
+  END IF;
+  IF has_table_privilege('geldar_mcp', 'thoughts', 'SELECT')
+     OR has_table_privilege('geldar_mcp', 'memories', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can read thoughts or memories';
+  END IF;
+  IF has_table_privilege('geldar_mcp', 'agents', 'UPDATE')
+     OR has_column_privilege('geldar_mcp', 'agents', 'last_sleep_day', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can write agents or read last_sleep_day';
+  END IF;
+  -- 0004: the sleep mark is written in three columns only, so its key cannot be rewritten.
+  IF has_table_privilege('geldar_mcp', 'mcp_sleep_marks', 'UPDATE')
+     OR has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'life_id', 'UPDATE') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can UPDATE the life_id of mcp_sleep_marks';
+  END IF;
+  IF NOT (has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'last_sleep_day', 'UPDATE')
+     AND has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'sleep_cursor', 'UPDATE')
+     AND has_column_privilege('geldar_mcp', 'mcp_sleep_marks', 'updated_at', 'UPDATE')) THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp cannot UPDATE the three sleep mark columns';
+  END IF;
+
+  -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
+  -- recorded by the runner and by 0002.
+  SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0004, found %', ledger;
+  END IF;
+
+  RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
+END
+$mcp$;

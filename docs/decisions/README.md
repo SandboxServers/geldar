@@ -57,6 +57,11 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0050](0050-phase0-mind-processes-run-on-the-host.md) | In Phase 0 the Mind, the local Thinker and Adam's Body run as host processes | Accepted (owner) |
 | [0051](0051-adam-identity-and-model-pins.md) | Adam's identity and the Phase 0 model pins | Accepted (owner; seed approved 2026-11-09) |
 | [0052](0052-per-owner-sovereign-player-cap-raised-to-20.md) | The per-owner cap on sovereign players is raised to 20 for the owner; the real Geldar MCP is built alongside wave 6 | Accepted (owner) |
+| [0053](0053-public-mcp-through-an-outbound-tunnel-deferred.md) | The sovereign MCP is loopback-only now; a public name through an outbound tunnel waits for the colo move | Accepted (owner ruling; Q1 and Q2 open) |
+| [0054](0054-static-hashed-per-player-bearer-tokens.md) | Sovereign MCP clients use static, hashed, per-player Bearer tokens, not OAuth 2.1 | Accepted |
+| [0055](0055-phase0-sovereign-tool-subset-and-mappings.md) | The Phase 0 sovereign MCP serves the frozen 14-tool vocabulary; six tools are not available and the action list is atomic | Accepted |
+| [0056](0056-first-migration-runner-and-least-privilege-grants.md) | The first migration runner, the migration ledger rule, and the least-privilege grants for the MCP role | Accepted |
+| [0057](0057-sovereign-budget-numbers-and-wake-spacing.md) | Sovereign budget numbers, rate limits, wake spacing and presence timings for Phase 0 | Accepted |
 | [0058](0058-the-character-knowledge-boundary-and-thought-v2.md) | Characters honour the in-world knowledge of the character, not the model's training data; thought prompt v2 carries the knowledge, sleep and anti-loop rules | Accepted (owner) |
 | [0059](0059-identity-mode-is-about-human-observation-not-agent-belief.md) | `identity_mode` governs whether humans may observe a shard; the agents are never told they are watched | Accepted (owner) |
 | [0060](0060-persona-size-limits.md) | Persona files are not artificially size-limited (identity 8192 bytes, goals 4096); the prompt fit is open for Wave M | Accepted (owner) |

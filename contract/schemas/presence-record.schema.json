@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/presence-record.schema.json",
+  "title": "PresenceRecord",
+  "description": "The MCP's record of one sovereign life's presence (spec 5.15.2, Wave M design). It is the value under the key life_id in the KV bucket geldar-presence (PRESENCE_BUCKET). awake while a wait is open or a call came within the lease; dim after that; hibernating after the hibernate window, with desired_body down. The player host starts the Body on up and stops it on down.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "state", "desired_body", "at"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "state": { "type": "string", "enum": ["awake", "dim", "hibernating"] },
+    "desired_body": { "type": "string", "enum": ["up", "down"] },
+    "at": {
+      "description": "When the MCP wrote this record.",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

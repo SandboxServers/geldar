@@ -5,8 +5,25 @@ import type { AddressInfo } from 'node:net';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import type { TokenTable } from './auth.ts';
+import { AddressConnections } from './address-count.ts';
+import type { AuthResult, TokenTable } from './auth.ts';
 import { checkBearer } from './auth.ts';
+
+/** Why a player's sessions ended while requests were open. Each value is a fixed template. */
+export type SessionEndReason = 'session_revoked';
+
+/** The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. */
+export type AuthDecision =
+  | { outcome: AuthResult }
+  | { outcome: 'limited'; retryAfterSec: number }
+  | { outcome: 'unavailable' };
+
+/** A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint. */
+export interface Refusal {
+  status: number;
+  message: string;
+  retryAfterSec?: number;
+}
 
 export interface MockHttpOptions {
   tokens: TokenTable;
@@ -14,6 +31,37 @@ export interface MockHttpOptions {
   createSession: (playerId: string, signal: AbortSignal) => McpServer;
   /** One call per request outcome. Default: a JSON line on stderr. */
   log?: (line: Record<string, unknown>) => void;
+  /** Replaces the bearer check of `tokens`. Runs after the Host and Origin checks, before the body is read. */
+  authenticate?: (
+    playerId: string,
+    header: string | undefined,
+    req: IncomingMessage,
+  ) => Promise<AuthDecision>;
+  /** Accepts or refuses a `Host` header (403 when refused). Default: every Host is accepted. */
+  hostAllowed?: (host: string | undefined) => boolean;
+  /** Largest POST body in bytes (413 above it). Default 1 MiB. */
+  maxBodyBytes?: number;
+  /** Sees every parsed POST body before it is dispatched; a refusal is sent instead. */
+  onToolCall?: (playerId: string, body: unknown, res: ServerResponse) => Refusal | undefined;
+  /** Runs after the auth check and before a POST body is read, so a refusal costs no body read. */
+  beforeBody?: (playerId: string, req: IncomingMessage, res: ServerResponse) => Refusal | undefined;
+  /** Runs before a GET stream is served, after the auth check; a refusal is sent instead. */
+  beforeStream?: (
+    playerId: string,
+    req: IncomingMessage,
+    res: ServerResponse,
+  ) => Refusal | undefined;
+  /** Says whether a TCP peer is exempt from the per-peer connection cap (a trusted proxy). Default: none. */
+  exemptPeer?: (peer: string) => boolean;
+  /** Adds `Connection: close` to a 401, 403 or 429 from the auth check, so the socket closes. Default false. */
+  closeRefused?: boolean;
+  /** Server limits. An unset one keeps Node's default. `maxConnectionsPerAddress` destroys a surplus socket of a peer. */
+  limits?: {
+    maxConnections?: number;
+    maxConnectionsPerAddress?: number;
+    headersTimeoutMs?: number;
+    requestTimeoutMs?: number;
+  };
 }
 
 export interface MockHttp {
@@ -23,6 +71,8 @@ export interface MockHttp {
   close(): Promise<void>;
   /** Live sessions for the player: 1 while it has one, else 0 (a player never has more than one). */
   sessionCount(playerId: string): number;
+  /** Ends the player's session and tells each open request of the player why, then closes them. */
+  endPlayerSessions(playerId: string, reason: SessionEndReason): Promise<void>;
 }
 
 const PATH = /^\/p\/([a-z][a-z0-9-]{1,38})$/;
@@ -50,14 +100,15 @@ interface LogContext {
 }
 
 class BodyTooLarge extends Error {}
+class BodyStalled extends Error {}
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, limit: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > limit) {
         req.removeAllListeners('data');
         req.resume(); // discard the rest so the client can read the 413
         reject(new BodyTooLarge());
@@ -67,7 +118,25 @@ function readBody(req: IncomingMessage): Promise<string> {
     });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
+    // A socket cut before the end settles the read (a no-op once it has ended).
+    req.on('close', () => reject(new BodyStalled()));
   });
+}
+
+/** Writes a refusal: its status, a JSON-RPC error with the fixed message, and any retry hint. */
+function sendRefusal(res: ServerResponse, refusal: Refusal): void {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (refusal.retryAfterSec !== undefined) {
+    headers['Retry-After'] = String(refusal.retryAfterSec);
+  }
+  res.writeHead(refusal.status, headers);
+  res.end(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      error: { code: -32003, message: refusal.message },
+      id: null,
+    }),
+  );
 }
 
 function rpcError(res: ServerResponse, status: number, code: number, message: string): void {
@@ -97,6 +166,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
   const starting = new Map<string, Promise<unknown>>();
   // Set once close() begins, so an initialize still in flight cannot start a session after it.
   let closing = false;
+  // Per player, the requests still open, so a revoke can end them.
+  const openResponses = new Map<string, Set<ServerResponse>>();
 
   function rememberSuperseded(id: string, playerId: string): void {
     superseded.set(id, playerId);
@@ -213,6 +284,19 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     await session.transport.handleRequest(req, res, body);
   }
 
+  /** Remembers the request until it closes, so `endPlayerSessions` can end it. */
+  function trackResponse(player: string, res: ServerResponse): void {
+    const open = openResponses.get(player) ?? new Set<ServerResponse>();
+    openResponses.set(player, open);
+    open.add(res);
+    // A write-after-end error has no other listener; without this it would crash the process.
+    res.on('error', () => undefined);
+    res.on('close', () => {
+      open.delete(res);
+      if (open.size === 0 && openResponses.get(player) === open) openResponses.delete(player);
+    });
+  }
+
   async function handle(req: IncomingMessage, res: ServerResponse, ctx: LogContext): Promise<void> {
     res.on('close', () => {
       log({
@@ -232,6 +316,13 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     }
     const player = match[1];
     ctx.playerId = player;
+    trackResponse(player, res);
+
+    if (options.hostAllowed !== undefined && !options.hostAllowed(req.headers.host)) {
+      ctx.event = 'host_rejected';
+      res.writeHead(403).end();
+      return;
+    }
 
     const origin = req.headers.origin;
     if (origin !== undefined && !hostAllowed(origin)) {
@@ -240,15 +331,35 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       return;
     }
 
-    const auth = checkBearer(options.tokens, player, req.headers.authorization);
-    if (auth === 'unauthorized') {
-      ctx.event = 'unauthorized';
-      res.writeHead(401, { 'WWW-Authenticate': 'Bearer' }).end();
+    const authHeader = req.headers.authorization;
+    const decision: AuthDecision =
+      options.authenticate !== undefined
+        ? await options.authenticate(player, authHeader, req)
+        : { outcome: checkBearer(options.tokens, player, authHeader) };
+    // A client that left during the lookup has already fired 'close', so nothing would release what
+    // the hooks take next. There is no one to answer, so the request ends here.
+    if (res.closed || res.destroyed) return;
+    // A refused client is not read further, so its socket closes when the option asks for it.
+    const close: Record<string, string> =
+      options.closeRefused === true ? { Connection: 'close' } : {};
+    if ('retryAfterSec' in decision) {
+      ctx.event = 'rate_limited';
+      res.writeHead(429, { 'Retry-After': String(decision.retryAfterSec), ...close }).end();
       return;
     }
-    if (auth === 'forbidden') {
+    if (decision.outcome === 'unauthorized') {
+      ctx.event = 'unauthorized';
+      res.writeHead(401, { 'WWW-Authenticate': 'Bearer', ...close }).end();
+      return;
+    }
+    if (decision.outcome === 'forbidden') {
       ctx.event = 'forbidden';
-      res.writeHead(403).end();
+      res.writeHead(403, close).end();
+      return;
+    }
+    if (decision.outcome === 'unavailable') {
+      ctx.event = 'unavailable';
+      res.writeHead(503, { 'Content-Type': 'text/plain', ...close }).end('service unavailable');
       return;
     }
 
@@ -259,15 +370,45 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       return;
     }
 
+    if (method === 'POST' && options.beforeBody !== undefined) {
+      const refusal = options.beforeBody(player, req, res);
+      if (refusal !== undefined) {
+        ctx.event = 'refused';
+        ctx.error = refusal.message;
+        sendRefusal(res, refusal);
+        return;
+      }
+    }
+    if (method === 'GET' && options.beforeStream !== undefined) {
+      const refusal = options.beforeStream(player, req, res);
+      if (refusal !== undefined) {
+        ctx.event = 'refused';
+        ctx.error = refusal.message;
+        sendRefusal(res, refusal);
+        return;
+      }
+    }
+
     let parsed: unknown;
     if (method === 'POST') {
+      const limit = options.maxBodyBytes ?? MAX_BODY_BYTES;
       const declared = Number(req.headers['content-length']);
       let raw: string | undefined;
-      if (!(declared > MAX_BODY_BYTES)) {
+      if (!(declared > limit)) {
+        // The whole body must arrive within the request timeout; the response is not timed.
+        const limitMs = options.limits?.requestTimeoutMs;
+        const stall = limitMs === undefined ? undefined : setTimeout(() => req.destroy(), limitMs);
         try {
-          raw = await readBody(req);
+          raw = await readBody(req, limit);
         } catch (error) {
+          if (error instanceof BodyStalled) {
+            ctx.event = 'body_timeout';
+            res.writeHead(408, { Connection: 'close' }).end();
+            return;
+          }
           if (!(error instanceof BodyTooLarge)) throw error;
+        } finally {
+          clearTimeout(stall);
         }
       }
       if (raw === undefined) {
@@ -283,6 +424,13 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       } catch {
         ctx.event = 'parse_error';
         rpcError(res, 400, -32700, 'Parse error');
+        return;
+      }
+      const refusal = options.onToolCall?.(player, parsed, res);
+      if (refusal !== undefined) {
+        ctx.event = 'refused';
+        ctx.error = refusal.message;
+        sendRefusal(res, refusal);
         return;
       }
       if (isInitializeRequest(parsed)) {
@@ -342,7 +490,53 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     });
   });
 
+  if (options.limits?.maxConnections !== undefined) {
+    server.maxConnections = options.limits.maxConnections;
+  }
+  if (options.limits?.headersTimeoutMs !== undefined) {
+    server.headersTimeout = options.limits.headersTimeoutMs;
+  }
+  if (options.limits?.requestTimeoutMs !== undefined) {
+    server.requestTimeout = options.limits.requestTimeoutMs;
+  }
+  const perAddress = options.limits?.maxConnectionsPerAddress;
+  if (perAddress !== undefined) {
+    const connections = new AddressConnections(perAddress);
+    server.on('connection', (socket) => {
+      const address = socket.remoteAddress ?? 'unknown';
+      // An exempt peer (a trusted proxy) carries many clients; only the total cap applies to it.
+      if (options.exemptPeer?.(address) === true) return;
+      if (!connections.take(address)) {
+        socket.destroy();
+        return;
+      }
+      socket.once('close', () => connections.release(address));
+    });
+  }
+
   return {
+    async endPlayerSessions(playerId, reason) {
+      const frame = JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32002, message: reason },
+        id: null,
+      });
+      for (const res of [...(openResponses.get(playerId) ?? [])]) {
+        // Ended but not yet closed: a write now would emit ERR_STREAM_WRITE_AFTER_END.
+        if (res.writableEnded || res.destroyed) continue;
+        if (!res.headersSent) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.write(frame);
+        } else {
+          // An open response has sent its headers only as an event stream (the SDK opens SSE
+          // before it answers), so the frame goes out as one event.
+          res.write(`event: message\ndata: ${frame}\n\n`);
+        }
+        res.end();
+      }
+      const session = byPlayer.get(playerId);
+      if (session !== undefined) await endSession(session);
+    },
     listen(port, host = '127.0.0.1') {
       return new Promise((resolve, reject) => {
         server.once('error', reject);

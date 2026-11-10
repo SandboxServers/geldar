@@ -1,0 +1,12 @@
+# Template for the public tunnel (decision 0053, deferred until the colo move). Nothing runs this file.
+# To use it: copy it to compose/cloudflared/config.yml (gitignored), replace every placeholder, and keep the
+# tunnel credentials file outside the repo. Ingress rules are matched in order; the 404 catch-all must stay last.
+tunnel: TUNNEL_ID_PLACEHOLDER
+credentials-file: /etc/cloudflared/credentials.json
+ingress:
+  # Only the sovereign MCP route: /p/<player-name>, the same shape the server accepts (threshold/mcp).
+  # The tunnel runs in its own container, so 127.0.0.1 would be that container's loopback: use the MCP service name.
+  - hostname: mcp.example.invalid
+    path: "^/p/[a-z][a-z0-9-]{1,38}$"
+    service: http://geldar-mcp:8788
+  - service: http_status:404

@@ -1,0 +1,15 @@
+{
+  "name": "@geldar/players-cli",
+  "private": true,
+  "description": "The logic behind ./geldar.ps1 players: one supervised Body process per sovereign ranger.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/kv": "3.4.0",
+    "@nats-io/transport-node": "3.4.0",
+    "yaml": "2.9.1"
+  }
+}

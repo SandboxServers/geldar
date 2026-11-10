@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/book-reply.schema.json",
+  "title": "BookReply",
+  "description": "Body to MCP, the reply to a BookRequest. On no_book or unreadable the three text fields are empty strings. The title, author and text are world text: they go only into the untrusted part of a tool result, never into the fixed templates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "title", "author", "text"],
+  "properties": {
+    "status": { "type": "string", "enum": ["ok", "no_book", "unreadable"] },
+    "title": { "type": "string", "maxLength": 64 },
+    "author": { "type": "string", "maxLength": 32 },
+    "text": { "type": "string", "maxLength": 8192 }
+  }
+}
