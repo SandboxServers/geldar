@@ -110,3 +110,21 @@ file. Follow-ups, each for the orchestrator to schedule:
    It is not a placeholder. Re-check it at the next base-image update.
 4. **Decision 0053 (owner).** The public-hostname decision is reserved, not written. `compose/mcp.yml`
    and the threat model refer to it. The tunnel stays unrun until the owner takes it.
+
+## WM-13
+
+Status: CLI part committed (980edfb, e63f13e). Velocity plugin part (plugin/velocity-identity) not started. Docs part is this section.
+
+- `shards/phase0.yaml` `skin:` key is not added: the packet lists only the CLI, plugin and docs files for WM-13. Decide with WM-12 whether the config key lands with the plugin or in WM-12.
+- Live steps owed, none run in this job:
+  - MineSkin upload of the six PNGs. Needs the owner's explicit yes at that time (third-party service receives the PNGs), and the key in `compose/secrets/mineskin.txt`.
+  - A `geldar-skins` write against a real NATS (`GELDAR_NATS_URL`).
+  - A Velocity login with a third client to see both rangers' textures (after the plugin part lands).
+- Endpoint assumptions to verify before the live upload (read from docs.mineskin.org on 2026-11-09, not from a live call):
+  - Endpoint is `POST https://api.mineskin.org/v2/generate` (V2 Changes and Migrating to V2 pages). The V2 OpenAPI viewer did not expose a fetchable spec, so the request body is unverified.
+  - Auth is `Authorization: Bearer <key>` (getting-started page and the V1 spec).
+  - `User-Agent` header is sent; the V1 spec marks it required. Unverified for V2.
+  - Request body is multipart with fields `file` (PNG) and `variant` (`classic` or `slim`). The V1 spec labels the body `application/x-www-form-urlencoded` with a binary file, which is inconsistent; multipart is assumed.
+  - Reply: `skin.texture.data.value` and `skin.texture.data.signature`. The V1 `data.texture` shape is refused.
+  - The docs describe a queue (`POST /v2/queue`, `GET /queue/:jobId`) for the new generation path. The basic migration keeps `POST /v2/generate` synchronous; if it returns a job id instead, `mineskin.ts` must change.
+  - Rate limit: 429 is treated as a refusal with the status only.
