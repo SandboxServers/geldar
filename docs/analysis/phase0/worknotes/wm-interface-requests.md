@@ -194,3 +194,19 @@ Status: CLI part committed (980edfb, e63f13e). Velocity plugin part committed (2
   - Reply: `skin.texture.data.value` and `skin.texture.data.signature`. The V1 `data.texture` shape is refused.
   - The docs describe a queue (`POST /v2/queue`, `GET /queue/:jobId`) for the new generation path. The basic migration keeps `POST /v2/generate` synchronous; if it returns a job id instead, `mineskin.ts` must change.
   - Rate limit: 429 is treated as a refusal with the status only.
+
+## WM-12
+
+Run commands, live cases and the guard. Written, not run; ops runs them later.
+
+- **Commands** (`geldar.ps1`): `players up|down|status|logs [--player]`, `mcp up|down|status|logs|smoke`, `mcp-tokens ...`, `db migrate [--dry-run]`.
+- **Live cases** (`threshold/mcp/test/live/`), gate `GELDAR_IT=1 GELDAR_MCP_LIVE=1` (`gate.ts`, pinned by `gate.test.ts`):
+  - (a) and (i) `rangers.live.test.ts`: rangers online with RSS; 30 minutes sampling TPS and RSS. Env `GELDAR_LIVE_TPS_CMD`, `GELDAR_LIVE_RANGER_COUNT`, `GELDAR_LIVE_RSS_CEILING_MB`.
+  - (b) `stub-client.live.test.ts` (`./geldar.ps1 mcp smoke`): look, act (gather oak_log in the schema's Intent shape), bounded waits to the end of the intent. Env `GELDAR_MCP_TEST_TOKEN_FILE`.
+  - (d) and (e) `wake-corpus.live.test.ts`: chatter wakes `wait` as `directly_addressed`; a corpus canary appears only under `untrusted_world_text`. Env `GELDAR_LIVE_CHATTER_SAY`, `GELDAR_LIVE_CORPUS_GIVE`, `GELDAR_LIVE_CORPUS_CLEAR` (optional), `GELDAR_LIVE_CANARY`.
+  - (f), (g), (h) `revoke-kill-hibernate.live.test.ts`: revoke during a wait then 401 (throwaway player); kill a ranger Body mid-intent; hibernation then look within 20 s. Env `GELDAR_LIVE_REVOKE_PLAYER`, `GELDAR_LIVE_REVOKE_TOKEN_FILE`, `GELDAR_LIVE_REVOKE_TOKEN_ID`, `GELDAR_LIVE_RANGER`, `GELDAR_LIVE_RANGER_TOKEN_FILE`.
+  - Token files live outside the repo; the operator steps are commands in env, so no host or secret is committed.
+- **How to run:** `$env:GELDAR_IT = '1'; $env:GELDAR_MCP_LIVE = '1'; ./geldar.ps1 pnpm --dir threshold/mcp exec vitest run test/live`. Unset, the cases skip and `./geldar.ps1 check` stays green.
+- **Needs:** the shard up, `mcp up` (loopback 8788), `players up`, the token files, the operator env above, and the override of 60 s for (h).
+- **Known gaps:** the `players status` line format, the `read_book` argument shape (`{}` assumed), and the `generation` snapshot field in (g) are unverified and checked on the first run. Case (c) is deferred (tunnel). Adam's online state is not asserted by (a).
+- **Left for WM-12:** the WM-02 IT cases against a real Postgres (migrate fresh, baseline, rerun, expired/revoked/retired/disabled tokens, NOTIFY within 1 s, 10 parallel reserves, `geldar_mcp` reading `thoughts`) and the WM-09 CLI round trips (mint then resolve, revoke then 401, rotate grace). Not written in this run.
