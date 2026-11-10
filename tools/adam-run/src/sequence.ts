@@ -320,7 +320,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
 
     // Checked before the kill below: the sample of the kill tick was taken before the kill, so it must not count.
     if (bodyDeadline !== null) {
-      if (obs.bodyConnected) bodyDeadline = null;
+      if (obs.alive.body) bodyDeadline = null;
       else if (now >= bodyDeadline)
         return abortWith('body_not_recovered', 'the Body did not reconnect after the kill');
     }

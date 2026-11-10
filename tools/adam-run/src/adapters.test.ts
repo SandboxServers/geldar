@@ -230,6 +230,61 @@ describe('the sampler tick rate', () => {
   });
 });
 
+describe('the sampler Body signal', () => {
+  const START = Date.UTC(2026, 10, 10, 9);
+  const NOW = START + 30 * 60_000;
+  /** Observes with the Body's process alive and the newest Body event of the life at `last` (or none). */
+  const observeBody = async (last: Date | null) => {
+    const texts: string[] = [];
+    const params: unknown[][] = [];
+    const sql: SqlClient = {
+      query: async (text, values) => {
+        texts.push(text);
+        params.push(values ?? []);
+        return { rows: text.includes('type IN') ? [{ last }] : [] };
+      },
+    };
+    const runner = {
+      exec: async (): Promise<ExecResult> => ({ code: 0, stdout: '', stderr: '' }),
+    } as unknown as Runner;
+    const processes = new FakeProcesses();
+    processes.table = [{ pid: 7, startedAt: 'x', commandLine: 'node golem/src/adam/main.ts' }];
+    const sampler = createSampler({
+      runner,
+      sql,
+      processes,
+      clock: { nowMs: () => NOW, sleep: async () => undefined },
+      lifeId: () => 'ag_adam_04',
+      repoRoot: tmpdir(),
+    });
+    const obs = await sampler.observe(START);
+    const i = texts.findIndex((t) => t.includes('type IN'));
+    return { obs, text: texts[i] ?? '', values: params[i] ?? [] };
+  };
+
+  it('a Body with recent events is connected; a Body that is alive but silent is not', async () => {
+    const live = await observeBody(new Date(NOW - 10_000));
+    expect(live.obs.alive.body).toBe(true);
+    expect(live.obs.bodyConnected).toBe(true);
+    const hung = await observeBody(new Date(NOW - 5 * 60_000));
+    expect(hung.obs.alive.body).toBe(true);
+    expect(hung.obs.bodyConnected).toBe(false);
+  });
+
+  it('no Body event of the life since the run start is not connected', async () => {
+    const { obs } = await observeBody(null);
+    expect(obs.alive.body).toBe(true);
+    expect(obs.bodyConnected).toBe(false);
+  });
+
+  it('reads the Body events of this life only, from the run start', async () => {
+    const { text, values } = await observeBody(null);
+    expect(text).toContain('agent_id = $1');
+    expect(text).toContain('FROM events');
+    expect(values).toEqual(['ag_adam_04', new Date(START)]);
+  });
+});
+
 describe('the forbidden-flags rule', () => {
   it('no adapter or CLI source contains a volume-removing or pruning command', () => {
     const forbidden = ['down -v', '--volumes', 'rm -f', 'volume rm', 'prune'];

@@ -235,6 +235,9 @@ export interface SamplerDeps {
   repoRoot: string;
 }
 
+/** A Body event within this long before a sample counts the Body as connected at that sample. */
+export const BODY_EVENT_GRACE_MS = 60_000;
+
 /** One status sample. TPS is null when the server_tps events of the last 5 minutes do not give a rate (see tick-rate.ts). */
 export function createSampler(deps: SamplerDeps): Sampler {
   const composePs = async (): Promise<Record<string, string>> => {
@@ -305,8 +308,21 @@ export function createSampler(deps: SamplerDeps): Sampler {
           "SELECT at, world_tick FROM events WHERE type = 'server_tps' AND at >= $1 ORDER BY at",
           [new Date(Math.max(runStartMs, atMs - TICK_WINDOW_MS))],
         );
-        return { t: t.rows[0], p95: p95.rows[0], d: d.rows[0], i: i.rows[0], tk: tk.rows };
+        // The Body's own events for the life. A Body that is alive but hung writes none; the process probe cannot tell.
+        const b = await q.query(
+          "SELECT max(at) AS last FROM events WHERE agent_id = $1 AND type IN ('intent', 'action', 'receipt', 'reflex_fired', 'wake', 'speech') AND at >= $2",
+          [lifeId, since],
+        );
+        return {
+          t: t.rows[0],
+          p95: p95.rows[0],
+          d: d.rows[0],
+          i: i.rows[0],
+          tk: tk.rows,
+          b: b.rows[0],
+        };
       });
+      const bodyLast = sql.b?.last;
       const tickPoints = (sql.tk ?? []).flatMap((r): TickPoint[] =>
         r.at instanceof Date ? [{ atMs: r.at.getTime(), tick: Number(r.world_tick) }] : [],
       );
@@ -333,7 +349,8 @@ export function createSampler(deps: SamplerDeps): Sampler {
         deaths: Number(sql.d?.n ?? 0),
         gpuPresent: gpu.code === 0 && gpu.stdout.trim() !== '',
         diskFreeGb: (Number(disk.bavail) * Number(disk.bsize)) / 1e9,
-        bodyConnected: alive.body,
+        // The Body's events, not its process: the process stays in alive.body. Connected means an event in the last grace.
+        bodyConnected: bodyLast instanceof Date && atMs - bodyLast.getTime() <= BODY_EVENT_GRACE_MS,
         errorsSinceLast: 0,
       };
     },

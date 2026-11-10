@@ -134,6 +134,20 @@ describe('evaluateAbort', () => {
       last: 30,
     },
     {
+      name: 'a hung Body (no events, process alive) for 5 minutes fires',
+      rule: 'body',
+      bad: { bodyConnected: false },
+      from: 25,
+      last: 30,
+    },
+    {
+      name: 'a hung Body (no events, process alive) for 4 minutes does not',
+      rule: '',
+      bad: { bodyConnected: false },
+      from: 26,
+      last: 30,
+    },
+    {
       name: 'GPU absent fires at once',
       rule: 'gpu',
       bad: { gpuPresent: false },
