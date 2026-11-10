@@ -27,20 +27,20 @@ Code facts for this wave (verified on the `run-main` checkout, `b474795`; re-che
 
 ## 1. Design invariants (cited by number from the cards)
 
-These come from 0075. A card that touches the feed, the renderer or the relay must keep all of them. A reviewer checks them at the wave gate (section 9).
+These come from 0075. A card that touches the feed, the renderer or the relay must keep all of them. A reviewer checks them at the wave gate (wave section, end of file).
 
 - **I1. Invisible by construction (0075 point 1).** A camera never joins Minecraft. The feed creates no entity, no tab-list or player-list entry, no join or leave message, no scoreboard, team, bossbar or particle, and no change to what agents perceive. It never forces a chunk load, ticket or generation: it reads only chunks that are already loaded (`World.isChunkLoaded` is checked before any chunk access; `getChunkAt` with generation is banned in the lakitu package). The spec's ghost path (Velocity, forced spectator, tab hiding, spec 8.4 and 1280) is not used.
 - **I2. Read-only, one way (0075 point 2; 0072).** The feed has no input path into the shard: no command, chat line, input packet or write. The Java lakitu package registers only `MONITOR`-priority listeners that never cancel or modify an event. The Glass reader stays SELECT-only. Audit records are not written by any Glass role (see 02, design decision D1).
 - **I3. Client-side collision against the same voxel data (0075 point 3).** The browser's camera collision reads the same voxel store that the mesher draws. Collision only limits the viewing camera. It never changes the world.
 - **I4. Targeting (0075 point 4).** An owner (login) targets agents of the players they own (cap 20, 0052). An admin (Watcher role, spec line 1275) targets any agent. The scope is checked on every pane request in the relay. A URL cannot widen the scope.
-- **I5. Pane cap 4 per session (0075 point 5).** Proposed value 4 (an owner decision, see section 10). The feed enforces it in the Java plugin, and the relay refuses earlier with the same rule. The page only mirrors the cap; it is never the enforcement.
+- **I5. Pane cap 4 per session (0075 point 5).** Proposed value 4 (an owner decision, see open questions, end of file). The feed enforces it in the Java plugin, and the relay refuses earlier with the same rule. The page only mirrors the cap; it is never the enforcement.
 - **I6. Audit (0075 point 6).** Each pane open, target change and close is recorded: login identity (a hash, not a name), agent identity, pane id, mode, start and stop times. No token, secret, address or account name is logged.
 - **I7. Agent-visible text (decision 0068; decision 0059).** No Lakitu term reaches a prompt, an observation or a chat line. Test 04 scans the agent-visible corpus for the banned terms (section 6, card 04, step 6).
 - **I8. Login gate (0077 option A; 0075 point 5).** Anonymous visitors get the thought stream and the map only. Cameras are off by default (feature flag `lakitu.enabled = false`) until the owner confirms 0075 point 5 and 0077. Tests run with the flag on.
 
 **Shared-file rule for this wave.** One packet at a time edits `package.json` and the lockfile: 03a. Everyone else requests through an "index line to add" (convention section 3). The integration packet 05 owns `geldar.ps1`, the compose files, the Caddy snippet handoff and the golem `view.ts`. Repo-checks registry changes are requested through an index line and applied by 05.
 
-**Pre-wave gate (owner, before any card below starts).** Confirm 0077 (gates 02 and every camera card). Decide 0075 point 5 (anonymous or login cameras) and the pane cap. Choose the interim auth. Choose the texture licence path (section 10). Until these are answered, cards 00, 01 and 03a may run (03a on recorded fixtures only, no login). Card 02 waits for 0077; card 03b and 03c wait for the owner's answer on anonymous versus login cameras; card 04 waits for 01 and 02 to merge; card 05 waits for 03c, 04 and the texture licence.
+**Pre-wave gate (owner, before any card below starts).** Confirm 0077 (gates 02 and every camera card). Decide 0075 point 5 (anonymous or login cameras) and the pane cap. Choose the interim auth. Choose the texture licence path (open questions, end of file). Until these are answered, cards 00, 01 and 03a may run (03a on recorded fixtures only, no login). Card 02 waits for 0077; card 03b and 03c wait for the owner's answer on anonymous versus login cameras; card 04 waits for 01 and 02 to merge; card 05 waits for 03c, 04 and the texture licence.
 
 ---
 
@@ -82,7 +82,7 @@ These come from 0075. A card that touches the feed, the renderer or the relay mu
    - `position`: `agent_id`, `x`, `y`, `z` (numbers), `yaw`, `pitch` (numbers), `on_ground` (boolean). Positions exist only in the login-scoped feed, never in the public thought stream.
    - a `frame` object that holds the parts above, with `sections` and `updates` as bounded arrays (`maxItems` constants written into the schema and mirrored in `CoreConfig` as the cap values, see step 4).
 3. Write `lakitu-audit.schema.json`: one event per pane action, with `event` (enum `pane_opened`, `pane_targeted`, `pane_mode_changed`, `pane_closed`), `login_hash` (64 hex characters, a SHA-256 of the login id; never the login name), `agent_id`, `pane_id`, `mode`, `at` (RFC 3339 timestamp, UTC), and optional `stopped_at` on `pane_closed` only. `additionalProperties: false`. The schema has no field for a token, secret, address or account name, and a test checks that.
-4. Write the error shapes as an enum in the feed schema: `pane_cap_reached` (the per-session cap, default 4), `target_not_permitted`, `feed_unavailable`, `feed_overloaded` (the Java load cap, card 01). Record the cap values (`max_panes_per_session` 4, `max_sections_per_frame` and `max_updates_per_frame`, both proposed values from the owner, see section 10) as `"default"` entries in the schema description and in the Java config key list the card 01 coder will read. Do not write Java here.
+4. Write the error shapes as an enum in the feed schema: `pane_cap_reached` (the per-session cap, default 4), `target_not_permitted`, `feed_unavailable`, `feed_overloaded` (the Java load cap, card 01). Record the cap values (`max_panes_per_session` 4, `max_sections_per_frame` and `max_updates_per_frame`, both proposed values from the owner, see open questions, end of file) as `"default"` entries in the schema description and in the Java config key list the card 01 coder will read. Do not write Java here.
 5. Write the schema tests in `contract/test/`: a valid frame with one section, one update and one position passes; a frame with an extra key (for example `token`, `player_name`, `ip`) fails; an audit event without `login_hash` fails; an audit event with `login_name` fails; a pane with `mode: "fly"` fails.
 6. Run the generator. Run it twice. The second run must produce no diff. Commit the generated output with the schema.
 7. Write decision 0100 as Proposed, with the design statement: one-way feed, no input path, no player names or tokens in the feed, positions only in the login-scoped feed. Write the index line into the worknote: `index: | [0100](0100-lakitu-feed-contract.md) | Lakitu feed contract | Proposed |`.
@@ -137,7 +137,7 @@ These come from 0075. A card that touches the feed, the renderer or the relay mu
    - `LakituLoadCapTest`: 10,000 block updates pushed in one tick leave the queue at its bound, with `dropped_updates` equal to the excess.
    - `LakituUnloadedChunkTest`: a fake world where `isChunkLoaded` is false returns zero sections and never calls the generating accessor (the fake throws if it is called).
    - `LakituConfigClampTest`: `radius_chunks = 9` is clamped to 4.
-8. Load test (second session if needed). Start a local Paper server on `127.0.0.1` from the pinned Paper version in `plugin/gradle/libs.versions.toml`, with Geldar-Core and `lakitu.enabled = true`. Connect no client. Use the agent registry with four test agent entries pointing at loaded chunks. Measure the server tick time with `/tps` (read-only) for 5 minutes with no panes, then with four panes open at `frame_hz` 5. The budget is proposed as: added tick time under 1 ms at the 95th percentile. Record the numbers in the worknote. The owner confirms the budget (section 10). The node measurement is card C1-10's business, not this packet's.
+8. Load test (second session if needed). Start a local Paper server on `127.0.0.1` from the pinned Paper version in `plugin/gradle/libs.versions.toml`, with Geldar-Core and `lakitu.enabled = true`. Connect no client. Use the agent registry with four test agent entries pointing at loaded chunks. Measure the server tick time with `/tps` (read-only) for 5 minutes with no panes, then with four panes open at `frame_hz` 5. The budget is proposed as: added tick time under 1 ms at the 95th percentile. Record the numbers in the worknote. The owner confirms the budget (open questions, end of file). The node measurement is card C1-10's business, not this packet's.
 9. Write decision 0101 with the numbers from the config and the load test.
 
 **Commit plan.** Commit 1: config keys and the clamp test, subject `feat: lakitu config keys and clamps (P1-C2b-01)`. Commit 2: the chunk reader and its tests, subject `feat: lakitu chunk reader, loaded chunks only (P1-C2b-01)`. Commit 3: the block-update queue and the position reader with the caps tests, subject `feat: lakitu update queue and position reader (P1-C2b-01)`. Commit 4: the static read-only test, subject `test: lakitu is read-only and invisible by static scan (P1-C2b-01)`. Commit 5: decision 0101, the worknote and the load test results, subject `docs: decision 0101 lakitu feed plugin and load test (P1-C2b-01)`.
@@ -244,7 +244,7 @@ These come from 0075. A card that touches the feed, the renderer or the relay mu
 2. Write `tools/lakitu-record/`: a Node script that connects to the feed endpoint on the desktop shard's loopback address, asks for one frame per target agent, and writes it as JSON under `glass/test/fixtures/lakitu/`. It is read-only: it issues GET requests only, and it refuses to run against any address that is not `127.0.0.1`. Record four fixtures: a flat area, a cave with an overhang, a wall of one block type with a door-sized gap, and an agent standing on the edge of a drop. Record them from the local shard only. The fixture contains block state names and coordinates. It contains no player names, no tokens and no asset.
 3. Write `glass/public/lakitu/voxels.js`: one voxel store. It holds sections by key (`world`, `section_x`, `section_y`, `section_z`), decodes the base64 `indices` into palette names, and answers `solidAt(x, y, z)` and `stateAt(x, y, z)`. The mesher and the camera (03b) both read this store and nothing else. There is no second copy of the block data.
 4. Write `glass/public/lakitu/mesher.js`: builds one mesh per non-empty section from the store, with hidden faces removed between solid neighbours in the same section and across section borders where the neighbour is loaded. An unloaded neighbour is drawn as a face (the safe reading).
-5. Write `glass/public/lakitu/palette.js`: placeholder colours, one flat colour per block state name, plus one neutral default colour for unknown names. The file says in its header that the colours are placeholders, that no texture is used, and that the texture licence decision (section 10) decides whether textures replace them.
+5. Write `glass/public/lakitu/palette.js`: placeholder colours, one flat colour per block state name, plus one neutral default colour for unknown names. The file says in its header that the colours are placeholders, that no texture is used, and that the texture licence decision (open questions, end of file) decides whether textures replace them.
 6. Write `glass/public/lakitu/scene.js`: builds the three.js scene from the meshes, with one camera object that 03b drives. Add three.js with `./geldar.ps1 pnpm add -E three@<version>`, choosing a release at least two weeks old at build time, and record the version and its date in the worknote. This is the only dependency change in the wave.
 7. Write the tests described in the checks, using the recorded fixtures. Compute the expected face counts by hand for the flat-area fixture (one top face per exposed block) and write the number next to the fixture.
 8. Run the licence check (in the checks list). Record the result.
@@ -361,6 +361,198 @@ These come from 0075. A card that touches the feed, the renderer or the relay mu
 
 ---
 
-## Cards 04, 05, the wave section and the ledger rows
+---
 
-Written in the next commit.
+## P1-C2b-04: invisibility leak test, cap test and feed-to-renderer parity test
+
+- **id:** P1-C2b-04
+- **title:** Automated, revert-checked leak test (tab list, entity list, agent snapshots with cameras up or down), the cap test, and the collision parity test
+- **wave:** C2b
+- **lane:** E
+- **depends-on:** P1-C2b-01 (merged), P1-C2b-02 (merged). Renderer code (03a, 03b) is used read-only through its test entry points.
+- **status:** B on the desktop when a local Paper server can run (the harness uses the pinned Paper image from the existing `compose/paper` definition, loopback only); the run against the node is not part of this card (card 05 and the wave gates).
+- **size:** M
+- **may-edit:**
+  - `tools/lakitu-leak/` (new: the harness, the snapshot code and the normalizer)
+  - `plugin/core/src/test/java/dev/geldar/core/lakitu/` (new integration-style tests; only added files there)
+  - `glass/test/lakitu-leak.test.ts`, `glass/test/lakitu-parity.test.ts` (new)
+  - `docs/analysis/phase1/worknotes/P1-C2b-04.md`
+- **must-not-edit:** `docs/spec.md`; `contract/`; `plugin/core/src/main/**` (01's code is tested, not changed here); `glass/src/` and `glass/public/` (02, 03); `geldar.ps1`; `compose/` (the harness reads the existing Paper definition; it does not change it); the repo-checks registry (index line request).
+- **decisions:** 0104 only. Write `docs/decisions/0104-lakitu-invisibility-test.md` as Proposed. It records the test as the exit check for I1 and I7.
+- **checks:**
+  - the leak test (`tools/lakitu-leak`), run on the desktop against a local loopback Paper server;
+  - the cap test (Java and relay, both);
+  - the parity test (feed frame and browser store agree on solid voxels);
+  - the agent-visible text scan (step 6);
+  - `./geldar.ps1 pnpm --filter glass` typecheck and Biome; Gradle tests for `plugin/core`;
+  - the file-size cap and the decision-index check.
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C2b-04.md`
+- **on-cap:** commit the tests that pass. A leak test that cannot run on the desktop is recorded as "not run, reason" and the card is not closed.
+
+**Steps for the leak test (the exit check for I1)**
+
+1. Start a throwaway Paper server on `127.0.0.1` from the pinned Paper definition, with the Geldar-Core build from card 01 and `lakitu.enabled = true`. The harness owns the server's lifecycle: it starts it, and it stops and removes it at the end, in a `finally`.
+2. Put one test agent on the server (a Body or a fixture bot, whichever the desktop harness already uses), and one test player who is not an agent, joined as a normal Minecraft client. The player is needed so that the tab list is not empty.
+3. Take snapshot **S0 (cameras down)**. The snapshot holds:
+   - the player list from RCON `list` (read-only);
+   - the entity count from RCON `execute if entity @e` for each type the harness knows about (read-only), and `execute if entity @e[type=player]`;
+   - the tab-list names from the harness (the Paper API call the harness runs, `Bukkit.getOnlinePlayers()`, read through the harness's plugin hook, which only reads);
+   - the bossbar list (`bossbar list`), the scoreboard objectives (`scoreboard objectives list`) and the team list (`team list`), all read-only;
+   - the server log from the start of the run to now, after the server's join and leave lines;
+   - the agent snapshot: the agent's observation JSON from the Body's observation path (the `look` view that the agent receives), read with the test agent's own read path.
+4. Log in a test login and open four panes: follow, orbit, free, follow, on the test agent (and, for the owner scope, on a second agent). Let the frames flow for 60 seconds.
+5. Take snapshot **S1 (cameras up)** with the same queries, then close the panes and take **S2 (cameras down again)**.
+6. The **agent-visible text scan**: scan the agent-visible corpus for the banned terms (case-insensitive): `lakitu`, `camera`, `pane`, `spectator`, `watch`, `glass`, `orbit`. The corpus is the prompt directory (`prompts/`), the observation schema, and every chat line the harness captured during the run. The baseline of the scan is run before the feature flag is switched on; if the baseline already contains a banned term, the card stops and writes the term into the worknote (it is not silently removed).
+7. Normalise each snapshot: remove tick numbers, timestamps, ULIDs and the run id. Then assert **S0 == S1 == S2** as sets and as the observation JSON, field by field. Assert the server log between S0 and S1 has no line containing `joined the game`, `left the game`, `logged in`, `UUID`, or a camera name. Assert the entity count and the player list are equal across all three snapshots.
+8. The leak test fails on any difference. It never retries until green (convention section 5). A difference is a finding and goes into the worknote.
+
+**Cap and parity steps**
+
+9. Cap (Java): the card 01 test `LakituCapTest` is extended to run through the real feed endpoint: a fifth pane is refused by the plugin (`pane_cap_reached`), and the relay refuses it first (card 02). Both refusals are asserted.
+10. Parity: for one recorded area and one live area on the harness server, the feed's solid voxels and the browser's voxel store (03a) agree on every block in the box around the agent. The test fails if one differs. This is the basis of I3 (the collision uses the same data the page draws).
+
+**Revert-checks (each one is a separate mutation; restore after each run)**
+
+- In the Java lakitu session-open code, add a call that sends a message to all players (for example `Bukkit.broadcastMessage` with a fixed text). Step 7's log assertion must fail. Restore.
+- In the Java lakitu session-open code, call `setPlayerListName` on the test player. Step 7's tab-list assertion must fail. Restore.
+- In the agent observation path (the test harness hook, not the golem code), add the pane count to the observation JSON. Step 7's agent-snapshot assertion must fail. Restore.
+- In `panes.ts` (card 02) or the Java cap line (card 01), raise the cap to 5. The cap test must fail. Restore.
+- In the parity test's input, flip one block in the browser store. The parity test must fail. Restore.
+
+**Commit plan.** Commit 1: the harness and snapshot code, subject `test: lakitu leak harness and snapshot normalizer (P1-C2b-04)`. Commit 2: the leak test, subject `test: lakitu invisibility leak test, cameras up and down (P1-C2b-04)`. Commit 3: the cap and parity tests, subject `test: lakitu cap and feed-to-renderer parity (P1-C2b-04)`. Commit 4: the text scan, subject `test: lakitu agent-visible text scan (P1-C2b-04)`. Commit 5: decision 0104 and the worknote with the revert-check results, subject `docs: decision 0104 invisibility test (P1-C2b-04)`.
+
+**Handoff.** Index line for the repo-checks registry: the leak test and the text scan, to be registered by card 05 (the integration packet). Index line for `docs/decisions/README.md` (0104).
+
+---
+
+## P1-C2b-05 INTEGRATION: Glass mount, compose, Caddy, texture pack, live run with a real browser
+
+- **id:** P1-C2b-05
+- **title:** Wire Lakitu into the Glass service, compose and Caddy; swap in the licensed texture pack; live run with a real browser
+- **wave:** C2b
+- **lane:** A (integration)
+- **depends-on:** P1-C2-03 (Glass hardening: rate limits, size cap, CSP, delay option, kill switch), P1-C2b-03c (merged), P1-C2b-04 (merged). Texture pack only after the licence decision (owner, open questions, end of file).
+- **status:** B/O (the wiring and the desktop run are B; the texture pack and the live browser run are O)
+- **size:** L (two sessions: wiring and desktop checks first; live run and texture swap second. Compose and Caddy make it L)
+- **may-edit:**
+  - `geldar.ps1` (only the `glass` block: a flag or subcommand for Lakitu on; the help text; this card is the integration owner for this wave)
+  - `compose/` (the Glass service entry and the feed port binding on loopback; a new file `compose/glass.yml` if the Glass service is not yet in compose, listed in the shared-file table in the wave's index line)
+  - `glass/src/main.ts`, `glass/src/config.ts` (the mount and the config keys only)
+  - `deploy/caddy/` (only the `/lakitu/` block, after C2-04 has merged; otherwise an index line to C2-04)
+  - `shards/phase0.yaml` (only the lakitu keys, if a shard config key is needed; otherwise none)
+  - `golem/src/body/view.ts` (no change expected; it is listed so that a reviewer knows the view stays untouched; any change requires an index line and a reviewer's sign-off)
+  - the repo-checks registry (the leak test and the text scan from card 04, registered as checks)
+  - `glass/public/lakitu/textures/` (only after the licence decision: the licensed pack's index file, not the textures themselves unless the licence allows them in the repo)
+  - `docs/analysis/phase1/worknotes/P1-C2b-05.md`
+- **must-not-edit:** `docs/spec.md`; `contract/`; `plugin/core/src/main/**` (01 is merged; no change); `golem/` (except the view noted above, which stays unchanged); `sql/` (no migration here).
+- **decisions:** none. A record the card needs is written by its owner; this card writes an index line request only.
+- **checks:**
+  - `./geldar.ps1 check` (the full check, convention 4.2 item 1, with the case-count floor);
+  - the Lakitu desktop run: the leak test, the cap test, the parity test (card 04) on the compose stack;
+  - `docker compose config` on each compose file, with no secrets in the output;
+  - the Caddy config validation for the snippet;
+  - the live run steps in the checklist in this card (O).
+- **worknote:** `docs/analysis/phase1/worknotes/P1-C2b-05.md`
+- **on-cap:** the desktop wiring is committed as one unit; the live steps are written as owner and ops checklists, not run by the coder.
+
+**Steps**
+
+1. Confirm the gates: 0075 point 5 answered by the owner (login cameras), 0077 Accepted, the interim tokens exist as hashes in the environment, and `lakitu.enabled` is still `false` in the shipped config. If any gate is open, stop after step 2 and write the reason into the worknote.
+2. Mount the Lakitu routes into `glass/src/main.ts` behind the flag. Add the feed endpoint to compose on loopback only (`127.0.0.1` binding). Check the compose file for any port other than the intended ones (card C2-06's expected-ports test covers the public ports).
+3. Register the card 04 tests as repo checks, by applying the index line from card 04's worknote.
+4. Add the `/lakitu/` block to the Caddy snippet only if C2-04 has merged; the block is GET and HEAD only, with the same rate limit as the Glass route, and the kill switch (0072, point 3) also stops `/lakitu/`.
+5. Run the desktop checks in the checks list. Record the output.
+6. Texture decision (O item, open questions, end of file). Until the owner records a licence decision, the placeholder palette stays. When the decision is recorded, the swap is one commit: the licensed files (or the index that points to them) go in, the palette file is replaced by the texture mapping, and the licence file is added next to the textures. The repo never contains a Mojang asset that is not licensed for it.
+7. Run `./geldar.ps1 check` and record the result.
+
+**Owner and ops checklist: live run with a real browser (O; not run by the coder)**
+
+Each step is a human action. Record the result and the time of each step in the worknote.
+
+1. Owner: deploy the Glass and feed to the shard with the flag still off. Confirm the thought stream and the map load for an anonymous browser.
+2. Owner: open the Glass in a browser with no login. Confirm no camera section is visible and that `/lakitu/` returns 404.
+3. Owner: set the interim owner token in the environment (not in a file). Restart Glass. Log in with the owner token in a fresh browser profile.
+4. Owner: confirm the picker lists only the owner's agents.
+5. Owner: open one pane (follow) on one agent. Confirm the camera moves with the agent.
+6. Owner: switch that pane to orbit, then to free. Walk the camera into a wall; confirm it stops at the wall.
+7. Owner: open a second pane on another owned agent. Open a third and a fourth. Try a fifth. Confirm it is refused, and that the refusal text is shown as text.
+8. Owner: with a real Minecraft client joined as a normal player on the same server, look at the tab list and the chat for 5 minutes while the panes are open. Confirm no camera name, no join or leave message, and no change to the scoreboard or bossbars.
+9. Owner: in the same session, note any change in the agent's chat or behaviour. Confirm none is caused by the camera.
+10. Admin: log in with the admin token. Confirm the picker lists all agents.
+11. Owner: check the audit table or the event sink: each pane open, target change and close is recorded, with a login hash and no name or token.
+12. Owner: close all panes. Confirm the audit shows the closes. Set the flag off. Confirm `/lakitu/` returns 404.
+13. Ops: run the kill switch as documented in the runbook and confirm the Glass and BlueMap routes go down with a Caddy reload. Restore.
+14. Owner: sign off the run in the worknote with the date. The run is one of the wave gates (wave section, end of file).
+
+**Commit plan.** Commit 1: the mount, the compose entry and the flag, subject `feat: lakitu mounted in glass behind a flag (P1-C2b-05)`. Commit 2: the repo-check registration, subject `ci: register lakitu leak and text checks (P1-C2b-05)`. Commit 3: the Caddy block (if C2-04 has merged), subject `deploy: lakitu caddy block, get and head only (P1-C2b-05)`. Commit 4 (O, after the licence): the texture pack, subject `feat: licensed lakitu textures (P1-C2b-05)`. Commit 5: the worknote with the checks and the checklist results, subject `docs: lakitu integration worknote (P1-C2b-05)`.
+
+**Revert-checks.** Mutate the flag check in `glass/src/main.ts` so that the routes mount with the flag off. The flag test (card 02, step 2) and step 2 of the checklist must fail. Restore.
+
+**Handoff.** Index lines: `docs/decisions/README.md` (none expected); the repo-checks registry (applied in this card); the shared-file table in the ledger (ops merge step, from the rows in wave section, end of file).
+
+---
+
+## Wave section: lanes, gates, ledger rows, owner questions
+
+### Lanes and order
+
+```
+Pre-wave (owner): 0077, 0075 point 5, pane cap, interim auth, texture licence path
+  |
+  +-- A  P1-C2b-00 (contract) ---> P1-C2b-01 (Java feed, L) ---+
+  |                                                             |
+  +-- B  P1-C2b-02 (relay; waits for 0077) -------------------+ |
+  |                                                           | |
+  +-- C  P1-C2b-03a (renderer, fixtures, package.json) -> 03b  | |
+  |                                                           | |
+  +-- D  P1-C2b-03c (page; needs 03a, 03b, 02) <--------------+ |
+  |                                                             |
+  +-- E  P1-C2b-04 (leak, cap, parity; needs 01, 02) <---------+
+  |
+  +-- A  P1-C2b-05 (integration: needs C2-03, 03c, 04; texture licence for the swap)
+```
+
+Six lanes at most, one of them the integration packet. 00 and 03a start first. 01 and 02 start after 00 merges. 03b starts after 03a. 03c and 04 start after their named dependencies merge. 05 is last.
+
+### Wave-boundary gates (convention section 4.2)
+
+1. **Full check.** `./geldar.ps1 check` on the wave branch, with the integration case-count floor. The leak test, the cap test and the parity test are counted in the floor.
+2. **Reviews, one per surface, read-only, narrow brief.** Each reviewer did not write the code they review.
+   - Java feed (01): the static read-only test and the load cap; I1 and I2 by reading the listeners.
+   - Relay and login (02): targeting (I4), the cap (I5), the audit contents (I6), and that no Glass role can write (D1).
+   - Renderer and page (03a to 03c): escaped text, the picker scope, the collision code path (I3).
+   - Leak test (04): the test itself, to see that it could fail (the revert-checks are the proof).
+   - Next round aims only at the fixes; no new scope.
+3. **Privacy review of what Lakitu exposes** (decision 0072, point 4; 0075's consequences). The reviewer answers, in writing, each of these:
+   - Positions of agents are shown only to a login that may target that agent. Anonymous visitors see no position, no block, and no pane.
+   - A camera shows block data of the agent's surroundings. The review decides whether builds of a player-owned agent are shown to an admin only.
+   - The audit output shows a login hash, an agent id and times. It shows no player name, no token and no address. The retention period is the owner's.
+   - Agent-authored text (thoughts, speech, books) is never shown on a camera pane.
+   - The feed never shows a player's name, which is a human identity.
+4. **One real-client live run, step by step.** The checklist in card 05 is the run script: a real browser on the owner login, and a real Minecraft client joined as a normal player. Recorded in the wave worknote with the date and the git commit.
+5. **Wave retro** in `retro/`. **Provisional decisions** (0100 to 0104) get the owner's confirmation or a superseding record. 0075 moves from Proposed to Accepted only after the owner's answer to point 5.
+
+### Ledger rows (for later pasting; ops merge step only)
+
+The Phase 1 ledger README is not edited by any card in this wave. The rows below are for ops to paste when the ledger is written.
+
+| Packet | Title | Status | Decision | Lane | Worknote |
+|---|---|---|---|---|---|
+| P1-C2b-00 | Lakitu feed contract | B | 0100 | A | `worknotes/P1-C2b-00.md` |
+| P1-C2b-01 | Geldar-Core lakitu feed plugin | B | 0101 | A | `worknotes/P1-C2b-01.md` |
+| P1-C2b-02 | Lakitu relay, login roles, cap, audit | B (login needs 0077) | 0102 | B | `worknotes/P1-C2b-02.md` |
+| P1-C2b-03a | Voxel mesher and scene, placeholder palette | B | 0103 | C | `worknotes/P1-C2b-03a.md` |
+| P1-C2b-03b | Follow, orbit, free, collision | B | 0103 | C | `worknotes/P1-C2b-03b.md` |
+| P1-C2b-03c | Multi-pane page, target picker | B (live login is O) | 0103 | D | `worknotes/P1-C2b-03c.md` |
+| P1-C2b-04 | Leak test, cap test, parity test | B | 0104 | E | `worknotes/P1-C2b-04.md` |
+| P1-C2b-05 | Integration, texture swap, live browser run | B/O | none | A | `worknotes/P1-C2b-05.md` |
+
+### Open owner questions (decide before the packets named)
+
+1. **Anonymous or login cameras (0075 point 5; 0077).** Recommended: anonymous gets the thought stream and the map; cameras need a login. Blocks 02, 03c and 05. Also decides whether 0072 needs an amendment (it does, if anonymous cameras are chosen).
+2. **Interim auth (0077).** Two static hashed token roles (`owner`, `admin`), recommended. Or a small login. Blocks 02 and the live steps of 05. Cameras stay off until this exists.
+3. **Pane cap (0075 point 5).** Proposed 4 per session. Blocks the cap values in 00 and 01 and the cap test in 04.
+4. **Texture licence path.** Choose: (a) only the placeholder palette in Phase 1; (b) a licensed free pack with its licence file recorded in the repo; (c) the owner's own licensed assets. No Mojang asset goes in the repo. Blocks the texture swap in 05 (step 6), not the rest of the wave.
+5. **Feed load budget.** Proposed: added tick time under 1 ms at the 95th percentile with four panes (card 01, step 8). Confirmed by the owner, and measured again in C1-10 on the node.
+6. **Audit retention.** How long audit rows are kept (0075 point 6 leaves this to the owner). Blocks the retention setting in 02.
+7. **Name.** "Lakitu" is the working name (0075, follow-ups). A public name is an owner decision.
