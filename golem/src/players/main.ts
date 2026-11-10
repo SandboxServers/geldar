@@ -18,9 +18,10 @@ import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from '../adam/a
 import { managerAcquire } from '../adam/main.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
 import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
+import { serveBooks } from '../books/book-server.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
-import { natsRequestServer } from '../mind-link/server.ts';
+import { natsRequestServer, type RequestServer } from '../mind-link/server.ts';
 import { RconClient } from '../rcon.ts';
 import { registryFromConfig } from '../registry.ts';
 import { parsePlayerConfig } from './player-config.ts';
@@ -32,6 +33,19 @@ import { admitLife } from './whitelist.ts';
 export type ExtraServe = (bot: Bot) => { stop(): Promise<void> | void };
 
 const NO_EXTRA: ExtraServe = () => ({ stop() {} });
+
+/** The book subject of one life, served beside its Body (WM-07, spec 5.15.2). */
+export function bookServe(options: {
+  shard: string;
+  lifeId: string;
+  server: RequestServer;
+  log: (line: string) => void;
+}): ExtraServe {
+  return (bot) => {
+    const stop = serveBooks({ ...options, bot });
+    return { stop: () => stop() };
+  };
+}
 
 /**
  * Starts the Body on `bot` with `extraServe` beside it. A failed start leaves nothing running (the
@@ -103,13 +117,22 @@ export async function runPlayer(
     port: stack.rconPort,
     password: await readRconPassword(stack),
   });
+  const server = natsRequestServer(nc);
   const bodyEnv: AdamBodyEnv = {
     config,
     kv: restartKv.kv,
     publisher: jetStreamPublisher(jetstream(nc)),
-    server: natsRequestServer(nc),
+    server,
     log: (line) => log({ event: 'body', line }),
   };
+  const serve =
+    extraServe ??
+    bookServe({
+      shard: config.shard,
+      lifeId,
+      server,
+      log: (line) => log({ event: 'book', line }),
+    });
   const session = new PlayerSession({
     lifeId,
     admit: (id) => admitLife(rcon, id),
@@ -122,7 +145,7 @@ export async function runPlayer(
       });
       return { acquire: managerAcquire(manager), close: () => manager.stop() };
     },
-    body: (bot) => startPlayerBody(bodyEnv, bot, extraServe),
+    body: (bot) => startPlayerBody(bodyEnv, bot, serve),
     log,
   });
 
