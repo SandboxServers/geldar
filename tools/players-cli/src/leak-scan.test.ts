@@ -17,6 +17,18 @@ describe('findLeaks', () => {
     expect(findLeaks(files).map((leak) => leak.rule)).toEqual(['skin-png', 'skin-png']);
   });
 
+  it('flags a PNG outside docs/ even when it is not under skins/', () => {
+    const files: TrackedFile[] = [
+      { path: 'tools/players-cli/assets/jason.png', content: null },
+      { path: 'threshold/mcp/face.PNG', content: null },
+      { path: 'docs/diagram.png', content: null },
+    ];
+    expect(findLeaks(files).map((leak) => leak.path)).toEqual([
+      'tools/players-cli/assets/jason.png',
+      'threshold/mcp/face.PNG',
+    ]);
+  });
+
   it('flags a tracked file whose content holds a MineSkin key', () => {
     const files: TrackedFile[] = [{ path: 'notes/setup.md', content: `key: ${FAKE_KEY}\n` }];
     expect(findLeaks(files)).toEqual([{ path: 'notes/setup.md', rule: 'mineskin-key' }]);
