@@ -14,8 +14,12 @@ describe('findMcpTokens', () => {
     expect(findMcpTokens('a.env.txt', text)).toEqual(['a.env.txt:1', 'a.env.txt:3']);
   });
 
-  it('passes the prefix alone, a short token and a token-shaped string in upper case', () => {
-    const text = ['gmcp-', `gmcp-${'ab'.repeat(31)}`, `gmcp-${'AB'.repeat(32)}`].join('\n');
+  it('passes the prefix alone, a 63-character hex run and a string in upper case', () => {
+    const text = [
+      'gmcp-',
+      `gmcp-${'ab'.repeat(31)}a`,
+      `gmcp-${'AB'.repeat(32)}`,
+    ].join('\n');
     expect(findMcpTokens('a.md', text)).toEqual([]);
   });
 
