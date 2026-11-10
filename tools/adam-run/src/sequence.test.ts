@@ -223,4 +223,15 @@ describe('runSequence', () => {
       expect(String(lines.at(-1)?.detail)).toContain(`${rule}:`);
     },
   );
+
+  it('ends the run as operator_stop when a stop is requested mid-run, with the report and one abort line', async () => {
+    const r = rig('smoke', {});
+    let checks = 0;
+    r.deps.stopRequested = () => ++checks >= 5;
+    const out = await runSequence(r.deps, r.run);
+    expect(out).toMatchObject({ status: 'aborted', rule: 'operator_stop', bodyKills: 0 });
+    const aborts = events(r.lines(), 'abort');
+    expect(aborts).toHaveLength(1);
+    expect(String(aborts[0]?.detail)).toContain('operator_stop:');
+  });
 });

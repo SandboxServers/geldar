@@ -52,6 +52,8 @@ export interface SequenceDeps {
   reporter: Reporter;
   preflight: Preflight;
   criteria: AbortCriteria;
+  /** True once `stop` has asked the running sequence to end; checked each minute. Absent in tests that never stop. */
+  stopRequested?: () => boolean;
 }
 
 export interface RunInput {
@@ -237,6 +239,8 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
 
     const fired = evaluateAbort(history, now, deps.criteria);
     if (fired !== null) return abortWith(fired.rule, fired.reason);
+    if (deps.stopRequested?.())
+      return abortWith('operator_stop', 'a stop was requested from another shell');
 
     if (restartDeadline !== null) {
       const recovered =
