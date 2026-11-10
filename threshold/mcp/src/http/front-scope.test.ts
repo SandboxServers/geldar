@@ -3,6 +3,7 @@ import {
   BODY_LIMIT,
   CALLS_PER_MINUTE,
   CapLimiter,
+  CONFIG,
   call,
   FAILED_AUTH_PER_MINUTE,
   type FrontRig,
@@ -30,6 +31,16 @@ describe('body and batch limits', () => {
     const pad = 'a'.repeat(BODY_LIMIT + 1 - head.length - tail.length);
     const reply = await rig.send('/p/aa', { body: `${head}${pad}${tail}` });
     expect(reply.status).toBe(413);
+  });
+
+  it('refuses a body one byte over the configured max_body_bytes, and accepts one of exactly that size', async () => {
+    await rig.restart({ http: { ...CONFIG, maxBodyBytes: 2048 } });
+    const head = '{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"';
+    const tail = '"}}';
+    const over = 'a'.repeat(2048 + 1 - head.length - tail.length);
+    const exact = 'a'.repeat(2048 - head.length - tail.length);
+    expect((await rig.send('/p/aa', { body: `${head}${over}${tail}` })).status).toBe(413);
+    expect((await rig.send('/p/aa', { body: `${head}${exact}${tail}` })).status).not.toBe(413);
   });
 
   it('accepts a body of exactly 64 KiB', async () => {

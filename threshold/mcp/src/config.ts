@@ -105,6 +105,8 @@ export interface McpConfig {
     maxConnections: number;
     /** The most open connections, and open POST requests, one client address holds at once. */
     maxConnectionsPerAddress: number;
+    /** The largest POST body the front door reads (413 above it). */
+    maxBodyBytes: number;
     /** The public DNS name, or null in local mode. */
     publicHost: string | null;
   };
@@ -369,6 +371,7 @@ function httpConfig(env: Env, sovereign: SovereignConfig): McpConfig['http'] {
         : headerName(env.GELDAR_MCP_CLIENT_IP_HEADER, 'GELDAR_MCP_CLIENT_IP_HEADER'),
     maxConnections: sovereign.maxConnections,
     maxConnectionsPerAddress: sovereign.maxConnectionsPerAddress,
+    maxBodyBytes: sovereign.maxBodyBytes,
   };
 }
 

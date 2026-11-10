@@ -56,6 +56,7 @@ async function startWithDownStore(logs: Record<string, string | number>[]): Prom
       clientIpHeader: 'cf-connecting-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 1,
+      maxBodyBytes: 65536,
     },
     pepper: PEPPER,
     store,

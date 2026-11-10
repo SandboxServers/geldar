@@ -112,6 +112,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       clientIpHeader: 'cf-connecting-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
+      maxBodyBytes: 65536,
       ...options.http,
     },
     pepper: PEPPER,

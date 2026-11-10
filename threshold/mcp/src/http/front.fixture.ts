@@ -23,7 +23,7 @@ export const TOKEN_B = 'token-for-player-bb-0123456789';
 // A canary the log scan must never find, in whole or in any prefix of 12 characters or more.
 export const CANARY = 'canary-7Qz9xLm2Vb4nKp8sWd1';
 
-const CONFIG = {
+export const CONFIG = {
   bind: '127.0.0.1',
   port: 0,
   allowedHosts: ['localhost', '127.0.0.1'],

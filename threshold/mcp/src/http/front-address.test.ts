@@ -113,6 +113,7 @@ async function start(
       clientIpHeader: 'cf-connecting-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
+      maxBodyBytes: 65536,
       ...http,
     },
     pepper: PEPPER,

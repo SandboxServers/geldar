@@ -35,6 +35,7 @@ describe('loadMcpConfig', () => {
       clientIpHeader: 'cf-connecting-ip',
       maxConnections: 320,
       maxConnectionsPerAddress: 80,
+      maxBodyBytes: 65536,
     });
     expect(config.nats.url).toBe('nats://127.0.0.1:4222');
     expect(config.postgres.user).toBe('geldar_mcp');

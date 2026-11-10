@@ -131,7 +131,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     tokens: new Map(),
     createSession: options.createSession,
     log: frontLog(options.log ?? stderrSink),
-    maxBodyBytes: BODY_LIMIT_BYTES,
+    maxBodyBytes: options.http.maxBodyBytes ?? BODY_LIMIT_BYTES,
     limits: {
       maxConnections: options.http.maxConnections ?? MAX_CONNECTIONS,
       maxConnectionsPerAddress: maxPerAddress,
