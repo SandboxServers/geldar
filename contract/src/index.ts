@@ -7,6 +7,7 @@ import type { Snapshot } from './generated/types.ts';
 import { validateSnapshot as validateSnapshotSchema } from './generated/validators.js';
 import { formatError, type ValidationResult } from './validation.ts';
 
+export { MARKER_WORD, markedWords } from './agent-text.ts';
 export type { Snapshot } from './generated/types.ts';
 export type { ValidationResult } from './validation.ts';
 

@@ -1,26 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { mcpToolSchemas } from '../src/index.ts';
+import { markedWords, mcpToolSchemas } from '../src/index.ts';
 
 /** The schema files whose text an agent reads through the MCP tool list and its results. */
 const AGENT_SCHEMAS = ['mcp-world', 'mcp-play', 'mcp-common', 'common'];
-
-/**
- * A word that tells an agent it is watched, that it is software, or that it is in a test. The same
- * list as animus/src/prompts/agent-text.test.ts, so both scans agree.
- */
-const MARKER = /observer|watch|human|maker|stream|credit|colo|shard|harness/i;
-
-/**
- * Words that contain a marker and are allowed in agent-visible text, each with the reason. Empty
- * today: add a word here only with a reason an in-world reader would accept.
- */
-const ALLOWED: Record<string, string> = {};
-
-function markedWords(text: string): string[] {
-  const words = text.match(/[A-Za-z][A-Za-z_-]*/g) ?? [];
-  return words.filter((word) => MARKER.test(word) && !(word.toLowerCase() in ALLOWED));
-}
 
 /** Every string under a `description` or `const` key, with the path to it, in a JSON value. */
 function agentTexts(
