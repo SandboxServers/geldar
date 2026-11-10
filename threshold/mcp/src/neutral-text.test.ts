@@ -170,3 +170,60 @@ describe('the operator sees the cause of a fault, never a secret', () => {
     expect(String(fault?.cause)).toContain('the shard store is down');
   });
 });
+
+describe('a database fault reaches the player as the neutral text, with its cause logged', () => {
+  const refusal = 'connect ECONNREFUSED 127.0.0.1:5432';
+  const denied = 'permission denied for table mcp_journal';
+
+  it('reads the neutral fault when the profile read throws', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const base = worldDeps(undefined, false);
+    const profiles = {
+      profile: async () => {
+        throw new Error(refusal);
+      },
+    };
+    const deps = {
+      ...base,
+      resources: { ...base.resources, profiles },
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await readOrError(client, 'geldar://player/self');
+      expect(reply).toContain(NEUTRAL_FAULT);
+      expect(reply).not.toContain('ECONNREFUSED');
+      expect(await readOrError(client, 'geldar://shard/rules')).not.toContain(NEUTRAL_FAULT);
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain(refusal);
+  });
+
+  it('reads the neutral fault when the journal read throws, and logs the cause', async () => {
+    const lines: Record<string, string | number>[] = [];
+    const base = worldDeps(undefined, false);
+    const journal = {
+      append: async () => {},
+      recent: async () => {
+        throw new Error(denied);
+      },
+    };
+    const deps = {
+      ...base,
+      resources: { ...base.resources, journal },
+      log: (line: Record<string, unknown>) => lines.push(safeLogLine(line)),
+    };
+    const client = await open(deps);
+    try {
+      const reply = await readOrError(client, 'geldar://player/journal/recent');
+      expect(reply).toContain(NEUTRAL_FAULT);
+      expect(reply).not.toContain('permission denied');
+    } finally {
+      await client.close();
+    }
+    const fault = lines.find((line) => line.event === 'resource_error');
+    expect(String(fault?.cause)).toContain(denied);
+  });
+});

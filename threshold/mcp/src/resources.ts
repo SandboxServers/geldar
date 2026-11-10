@@ -4,7 +4,14 @@ import {
   type ResourceWorld,
   readResource,
 } from '@geldar/mcp-mock';
-import type { AgentProfiles, JournalStore, PlayerRecord } from './ports.ts';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import type {
+  AgentProfile,
+  AgentProfiles,
+  JournalEntry,
+  JournalStore,
+  PlayerRecord,
+} from './ports.ts';
 
 export { listPrompts } from '@geldar/mcp-mock';
 export { listResources };
@@ -45,9 +52,16 @@ export function shardRulesOf(shard: ShardRules): Record<string, number> {
   };
 }
 
+/** The database facts one resource reads: only the URI's own, so a read costs at most one query. */
+interface ResourceFacts {
+  profile?: AgentProfile;
+  journal: JournalEntry[];
+}
+
 /**
- * Reads one resource for a player. The facts it needs are fetched first, then the mock's
- * `readResource` renders them, so the three URIs and the errors are the mock's own.
+ * Reads one resource for a player. The one database fact the URI needs is fetched first, inside
+ * a try: a failure is logged with its cause and the player reads the neutral fault. Then the
+ * mock's `readResource` renders the facts, so the three URIs and the errors are the mock's own.
  */
 export async function readPlayerResource(
   deps: ResourceDeps,
@@ -55,16 +69,30 @@ export async function readPlayerResource(
   uri: string,
   log?: (line: Record<string, unknown>) => void,
 ): Promise<{ contents: { uri: string; mimeType: string; text: string }[] }> {
-  const profile = await deps.profiles.profile(player.lifeId);
-  const journal = await deps.journal.recent(player.lifeId, RECENT_JOURNAL_LINES);
+  const facts: ResourceFacts = { journal: [] };
+  try {
+    if (uri === 'geldar://player/self') {
+      facts.profile = await deps.profiles.profile(player.lifeId);
+    } else if (uri === 'geldar://player/journal/recent') {
+      facts.journal = await deps.journal.recent(player.lifeId, RECENT_JOURNAL_LINES);
+    }
+  } catch (error) {
+    const cause = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    log?.({ event: 'resource_error', player_id: player.playerId, cause: `${uri}: ${cause}` });
+    throw new McpError(ErrorCode.InternalError, PLAYER_FAULT);
+  }
   const world: ResourceWorld = {
-    readSelf: () => ({
-      name: player.displayName,
-      seed: profile.personality_seed,
-      born_day: profile.born_day,
-    }),
+    readSelf: () => {
+      const profile = facts.profile;
+      if (profile === undefined) throw new Error('the profile was not loaded');
+      return {
+        name: player.displayName,
+        seed: profile.personality_seed,
+        born_day: profile.born_day,
+      };
+    },
     readJournalRecent: () =>
-      journal.map((entry) => entry.text).join('\n') || 'Nothing written yet.',
+      facts.journal.map((entry) => entry.text).join('\n') || 'Nothing written yet.',
     readShardRules: () => shardRulesOf(deps.shard),
   };
   return readResource(world, player.playerId, uri, log, PLAYER_FAULT);
