@@ -139,7 +139,8 @@ function tierNames(tiers: Record<string, unknown>, tier: string): string[] {
 
 /**
  * The warm-up order (BC-1): only the run tier's models when `mind.run_tier` names a tier with
- * models; otherwise every pin, with the strong tier's models last so the largest stays loaded.
+ * models; otherwise only the models `keepWarmSet` keeps. Never every pin: two chat models cannot
+ * both stay resident in the 24 GB card.
  */
 export function warmOrder(
   mind: Record<string, unknown>,
@@ -148,9 +149,8 @@ export function warmOrder(
 ): string[] {
   const run = typeof mind.run_tier === 'string' ? tierNames(tiers, mind.run_tier) : [];
   if (run.length > 0) return run;
-  const strong = tierNames(tiers, 'strong');
-  const names = pins.map((p) => p.name);
-  return [...names.filter((n) => !strong.includes(n)), ...names.filter((n) => strong.includes(n))];
+  const keep = keepWarmSet(mind, tiers).names;
+  return pins.map((p) => p.name).filter((n) => keep.includes(n));
 }
 
 /**

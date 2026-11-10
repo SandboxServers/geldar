@@ -43,7 +43,7 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     expect(rig.attention.settled).toEqual(['model_error', 'planned']);
   });
 
-  it('ends a cycle whose memory retrieval never returns', async () => {
+  it('degrades a memory retrieval that never returns to no memories, and the cycle still plans', async () => {
     const logs: Line[] = [];
     const rig = await makeRig([{ text: VALID_THOUGHT }], {
       loop: { stepTimeoutMs: STEP_MS },
@@ -56,11 +56,8 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     });
 
     const first = await rig.loop.handle(makeDecision('idle'));
-    expect(first.outcome).toBe('model_error');
-    expect(aborts(logs)).toEqual(['memory']);
-
-    const second = await rig.loop.handle(makeDecision('idle'));
-    expect(second.outcome).toBe('planned');
+    expect(first.outcome).toBe('planned');
+    expect(aborts(logs)).toEqual([]);
   });
 
   it('ends a cycle whose journal read never returns', async () => {
@@ -79,7 +76,18 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     expect(second.outcome).toBe('planned');
   });
 
-  it('ends a cycle whose thought row write never returns, before any plan is sent', async () => {
+  it('records a suppressed wakeup for a cycle that was aborted', async () => {
+    const rig = await makeRig([{ text: VALID_THOUGHT }], {
+      loop: { stepTimeoutMs: STEP_MS },
+    });
+    rig.store.journalSince = hangFirst(rig.store.journalSince.bind(rig.store));
+
+    const first = await rig.loop.handle(makeDecision('idle'));
+    expect(first.outcome).toBe('model_error');
+    expect(rig.store.suppressed.map((row) => row.eventTypes)).toEqual([['idle']]);
+  });
+
+  it('counts a thought row write that never returns as a journal error, and still sends the plan', async () => {
     const logs: Line[] = [];
     const rig = await makeRig([{ text: VALID_THOUGHT }, { text: VALID_THOUGHT }], {
       loop: { stepTimeoutMs: STEP_MS },
@@ -88,12 +96,46 @@ describe('ThinkingLoop: a hung step ends the cycle and the next wake thinks', ()
     rig.store.recordThought = hangFirst(rig.store.recordThought.bind(rig.store));
 
     const first = await rig.loop.handle(makeDecision('idle'));
-    expect(first.outcome).toBe('model_error');
-    expect(aborts(logs)).toEqual(['journal']);
-    expect(rig.body.plans).toHaveLength(0);
+    expect(first.outcome).toBe('planned');
+    expect(first.journalErrors).toBe(1);
+    expect(aborts(logs)).toEqual([]);
+    expect(rig.body.plans).toHaveLength(1);
 
     const second = await rig.loop.handle(makeDecision('idle'));
     expect(second.outcome).toBe('planned');
+  });
+
+  it('ends a cycle whose profile load never returns', async () => {
+    const logs: Line[] = [];
+    const rig = await makeRig([{ text: VALID_THOUGHT }], {
+      loop: { stepTimeoutMs: STEP_MS },
+      deps: { log: (line) => logs.push(line) },
+    });
+    rig.store.loadDeterministic = hangFirst(rig.store.loadDeterministic.bind(rig.store));
+
+    const first = await rig.loop.handle(makeDecision('idle'));
+    expect(first.outcome).toBe('model_error');
+    expect(aborts(logs)).toEqual(['memory']);
+
+    const second = await rig.loop.handle(makeDecision('idle'));
+    expect(second.outcome).toBe('planned');
+  });
+
+  it('ends a cycle whose plan send never returns as a fallback hold, and the next wake thinks', async () => {
+    const logs: Line[] = [];
+    const rig = await makeRig([{ text: VALID_THOUGHT }, { text: VALID_THOUGHT }], {
+      loop: { stepTimeoutMs: STEP_MS },
+      deps: { log: (line) => logs.push(line) },
+    });
+    rig.body.submitPlan = hangFirst(rig.body.submitPlan.bind(rig.body));
+
+    const first = await rig.loop.handle(makeDecision('idle'));
+    expect(first.outcome).toBe('fallback_hold');
+    expect(aborts(logs)).toEqual(['plan_submit']);
+
+    const second = await rig.loop.handle(makeDecision('idle'));
+    expect(second.outcome).toBe('planned');
+    expect(rig.attention.settled).toEqual(['fallback_hold', 'planned']);
   });
 
   it('ends a cycle whose Thinker never answers, at the job deadline plus the step limit', async () => {

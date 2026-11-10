@@ -19,6 +19,14 @@ const damage = (tick: number): MindEvent =>
   ({ ...at(tick), type: 'damage', payload: { health: 14, amount: 2 } }) as MindEvent;
 const death = (tick: number): MindEvent =>
   ({ ...at(tick), type: 'death', payload: {} }) as MindEvent;
+const bodyWake = (reason: string, intent: string): MindEvent =>
+  ({ ...at(0), type: 'wake', payload: { reason, tick: 0, intent_id: intent } }) as MindEvent;
+const intentState = (id: string, state: string): MindEvent =>
+  ({
+    ...at(0),
+    type: 'intent',
+    payload: { intent_id: id, life_id: LIFE, body_generation: 1, state, tick: 0 },
+  }) as MindEvent;
 
 function rig() {
   const time = new ManualTiming();
@@ -78,5 +86,32 @@ describe('damage with no intent running', () => {
     r.attention.onEvent(damage(2));
     r.time.advance(120_000);
     expect(r.decisions).toHaveLength(1);
+  });
+});
+
+describe('damage with an intent running', () => {
+  it('the Body wake for the same hit and the Mind damage candidate make one thought', () => {
+    const r = rig();
+    r.attention.onEvent(intentState('in_1', 'running'));
+    r.attention.onEvent(damage(0));
+    r.time.advance(50);
+    r.attention.onEvent(bodyWake('unexpected_damage', 'in_1'));
+    expect(r.decisions.map((d) => d.reason)).toEqual(['unexpected_damage']);
+    r.attention.thoughtSettled('planned');
+    r.time.advance(1_000);
+    // Past the 20 s spacing too: a damage candidate that was not folded would be emitted by then.
+    r.time.advance(30_000);
+    expect(r.decisions).toHaveLength(1);
+  });
+
+  it('a damage burst that closes during an in-flight thought opens no second thought', () => {
+    const r = rig();
+    r.attention.onEvent(intentState('in_1', 'running'));
+    r.attention.onEvent(damage(0));
+    r.attention.thoughtStarted();
+    r.time.advance(1_000);
+    r.attention.thoughtSettled('planned');
+    r.time.advance(120_000);
+    expect(r.decisions).toHaveLength(0);
   });
 });

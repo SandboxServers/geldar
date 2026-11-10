@@ -83,6 +83,7 @@ export class ThinkingLoop {
       body: deps.body,
       lifeId: options.lifeId,
       tickMs: 1000 / options.tickRate,
+      stepMs: this.stepMs,
       now: this.now,
       report: this.report,
       log: (line) => this.log(line),
@@ -115,13 +116,14 @@ export class ThinkingLoop {
   async handle(decision: WakeDecision): Promise<LoopResult> {
     this.startedAt = this.now();
     this.deps.attention.thoughtStarted();
-    this.log({
-      event: 'thought_started',
-      life_id: this.options.lifeId,
-      wake_reason: decision.reason,
-    });
     let result: LoopResult;
     try {
+      // Inside the try: a log sink that throws still settles the thought it started.
+      this.log({
+        event: 'thought_started',
+        life_id: this.options.lifeId,
+        wake_reason: decision.reason,
+      });
       result = await this.run(decision);
     } catch (error) {
       // A step that hung ends the cycle with its closed reason; any other throw is `error`.
@@ -134,8 +136,17 @@ export class ThinkingLoop {
         elapsed_ms: this.elapsed(),
       });
       reportFailure(this.report, error, 'cycle_failed');
+      // The wake is still on record, as a lost wake; a hung journal here must not reject the cycle.
+      if (error instanceof CycleAborted) {
+        await bounded(
+          recordLostWake(this.deps.journal, decision.reason, this.iso(), this.report),
+          this.stepMs,
+          'journal',
+        ).catch(() => undefined);
+      }
+      // A send that hung means the Body never got the plan: the thought settles as a fallback hold.
       result = {
-        outcome: 'model_error',
+        outcome: reason === 'plan_submit' ? 'fallback_hold' : 'model_error',
         thoughtId: null,
         plan: null,
         ack: null,
@@ -195,7 +206,7 @@ export class ThinkingLoop {
     const tick = raw.world_time.ticks;
 
     // 2. The profile and the memory.
-    const load = this.deps.memory.loadDeterministic(lifeId, tick);
+    const load = bounded(this.deps.memory.loadDeterministic(lifeId, tick), this.stepMs, 'memory');
     const memory = await withinLimit(load, this.options.memoryTimeoutMs, () =>
       this.log({
         event: 'memory_load_timeout',
@@ -216,7 +227,7 @@ export class ThinkingLoop {
         days_since_sleep: Math.max(0, raw.world_time.day - lastSleep),
       },
     };
-    const episodic = await bounded(this.retrieve(decision, snapshot), this.stepMs, 'memory');
+    const episodic = await this.retrieve(decision, snapshot);
     const since = Math.max(0, tick - 24_000);
     const recentRows = await bounded(
       this.deps.journal.journalSince(lifeId, since),
@@ -429,7 +440,10 @@ export class ThinkingLoop {
     return this.options.stepTimeoutMs ?? STEP_TIMEOUT_MS;
   }
 
-  /** Embeds the wake and searches the episodic memories; memory is best effort, so a failure gives none. */
+  /**
+   * Embeds the wake and searches the episodic memories. Memory is best effort: each await has its own
+   * bound, and a failure or a timeout gives none, so the cycle still thinks without them.
+   */
   private async retrieve(decision: WakeDecision, snapshot: Snapshot) {
     const query = [
       decision.reason,
@@ -439,12 +453,16 @@ export class ThinkingLoop {
       .join(' ')
       .slice(0, 512);
     try {
-      const [vector] = await this.deps.embedder.embed([query], 'query');
+      const [vector] = await bounded(
+        this.deps.embedder.embed([query], 'query'),
+        this.stepMs,
+        'memory',
+      );
       if (vector === undefined) return [];
-      return await this.deps.memory.searchEpisodic(
-        this.options.lifeId,
-        vector,
-        this.options.episodicTopK,
+      return await bounded(
+        this.deps.memory.searchEpisodic(this.options.lifeId, vector, this.options.episodicTopK),
+        this.stepMs,
+        'memory',
       );
     } catch {
       return [];
@@ -508,12 +526,18 @@ export class ThinkingLoop {
       creditsSettled: settled,
       at: this.iso(),
     });
-    const written = await bounded(
-      writeThoughtRow(this.deps.journal, row, thoughtId, this.report),
-      this.stepMs,
-      'journal',
-    );
-    if (!written) {
+    // The thought is valid and its credits are settled, so a write that fails or hangs is counted,
+    // not fatal: the plan is still sent.
+    try {
+      const written = await bounded(
+        writeThoughtRow(this.deps.journal, row, thoughtId, this.report),
+        this.stepMs,
+        'journal',
+      );
+      if (!written) cycle.journalErrors++;
+    } catch (error) {
+      if (!(error instanceof CycleAborted)) throw error;
+      reportFailure(this.report, error, 'journal_write_failed', { thought_id: thoughtId });
       cycle.journalErrors++;
     }
   }

@@ -14,9 +14,13 @@ describe('warmOrder', () => {
     expect(warmOrder({ run_tier: 'fast' }, tiers, pins)).toEqual(['qwen3:8b']);
   });
 
-  it('warms every pin with the strong tier last when no run tier is known', () => {
-    expect(warmOrder({}, tiers, pins)).toEqual(['qwen3:8b', 'qwen3:32b']);
-    expect(warmOrder({ run_tier: 'missing' }, tiers, pins)).toEqual(['qwen3:8b', 'qwen3:32b']);
+  it('warms nothing when no run tier is known and two chat tiers could both need VRAM', () => {
+    expect(warmOrder({}, tiers, pins)).toEqual([]);
+    expect(warmOrder({ run_tier: 'missing' }, tiers, pins)).toEqual([]);
+  });
+
+  it('warms the only configured chat tier when no run tier is known', () => {
+    expect(warmOrder({}, { fast: ['qwen3:8b'] }, pins)).toEqual(['qwen3:8b']);
   });
 });
 

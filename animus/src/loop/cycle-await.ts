@@ -6,7 +6,13 @@
  */
 
 /** The closed reasons a cycle can be aborted for, one per kind of awaited dependency. */
-export type CycleAbortReason = 'snapshot' | 'memory' | 'thinker' | 'journal' | 'publish';
+export type CycleAbortReason =
+  | 'snapshot'
+  | 'memory'
+  | 'thinker'
+  | 'journal'
+  | 'plan_submit'
+  | 'publish';
 
 /**
  * The default limit of one step, in milliseconds. Generous next to the p95 of 15 s for a thought

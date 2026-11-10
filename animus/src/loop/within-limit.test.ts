@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CycleAborted } from './cycle-await.ts';
 import { withinLimit } from './within-limit.ts';
 
 describe('withinLimit', () => {
@@ -15,11 +16,13 @@ describe('withinLimit', () => {
     expect(timedOut).toBe(false);
   });
 
-  it('fails after the limit with the budget in the message, and runs onTimeout first', async () => {
+  it('ends the wait after the limit as a memory abort, and runs onTimeout first', async () => {
     const order: string[] = [];
     const never = new Promise<string>(() => {});
     const result = withinLimit(never, 5, () => order.push('timeout'));
-    await expect(result).rejects.toThrow('timed out after 5 ms');
+    const error = await result.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(CycleAborted);
+    expect((error as CycleAborted).reason).toBe('memory');
     expect(order).toEqual(['timeout']);
   });
 
@@ -28,7 +31,7 @@ describe('withinLimit', () => {
     const late = new Promise<string>((_, reject) => {
       fail = reject;
     });
-    await expect(withinLimit(late, 5, () => {})).rejects.toThrow('timed out after 5 ms');
+    await expect(withinLimit(late, 5, () => {})).rejects.toBeInstanceOf(CycleAborted);
     fail(new Error('the query failed after the caller gave up'));
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
