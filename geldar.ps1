@@ -310,6 +310,27 @@ function Invoke-Node([string] $Script, [string[]] $ScriptArgs) {
   finally { Pop-Location }
 }
 
+# The database commands connect as the shard's geldar login (compose/phase0.yml) with the password from the secret file.
+# The password is never printed. The PG* variables are restored in finally, so the shell keeps its environment.
+function Invoke-PgNode([string] $Script, [string[]] $ScriptArgs) {
+  $pgNames = 'PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE', 'PGPASSWORD'
+  $saved = @{}
+  foreach ($name in $pgNames) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
+  try {
+    if (-not $env:PGHOST) { $env:PGHOST = '127.0.0.1' }
+    if (-not $env:PGPORT) { $env:PGPORT = '5432' }
+    if (-not $env:PGUSER) { $env:PGUSER = 'geldar' }
+    if (-not $env:PGDATABASE) { $env:PGDATABASE = 'geldar' }
+    # Without the file (init runs before any secret exists) the password stays unset.
+    $passwordFile = Join-Path $Root 'compose/secrets/postgres.txt'
+    if (Test-Path $passwordFile) { $env:PGPASSWORD = (Get-Content -Raw -Path $passwordFile).Trim() }
+    Invoke-Node $Script $ScriptArgs
+  }
+  finally {
+    foreach ($name in $pgNames) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+  }
+}
+
 function Invoke-Mcp([string[]] $McpArgs) {
   $action, $extra = $McpArgs
   Push-Location $Root
@@ -428,29 +449,12 @@ switch ($Command) {
     finally { $env:GELDAR_NATS_URL = $savedNats }
   }
   'mcp-tokens' {
-    # The database commands connect as the shard's geldar login (compose/phase0.yml) with the password from the secret file.
-    # The password is never printed. The PG* variables are restored in finally, so the shell keeps its environment.
-    $pgNames = 'PGHOST', 'PGPORT', 'PGUSER', 'PGDATABASE', 'PGPASSWORD'
-    $saved = @{}
-    foreach ($name in $pgNames) { $saved[$name] = [Environment]::GetEnvironmentVariable($name) }
-    try {
-      if (-not $env:PGHOST) { $env:PGHOST = '127.0.0.1' }
-      if (-not $env:PGPORT) { $env:PGPORT = '5432' }
-      if (-not $env:PGUSER) { $env:PGUSER = 'geldar' }
-      if (-not $env:PGDATABASE) { $env:PGDATABASE = 'geldar' }
-      # Without the file (init runs before any secret exists) the password stays unset.
-      $passwordFile = Join-Path $Root 'compose/secrets/postgres.txt'
-      if (Test-Path $passwordFile) { $env:PGPASSWORD = (Get-Content -Raw -Path $passwordFile).Trim() }
-      Invoke-Node 'tools/mcp-tokens/src/cli.ts' $Rest
-    }
-    finally {
-      foreach ($name in $pgNames) { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
-    }
+    Invoke-PgNode 'tools/mcp-tokens/src/cli.ts' $Rest
   }
   'db' {
     $action, $extra = $Rest
     if ($action -ne 'migrate') { throw "Unknown db action '$action'. Use: ./geldar.ps1 db migrate [args]" }
-    Invoke-Node 'tools/migrate/src/cli.ts' $extra
+    Invoke-PgNode 'tools/migrate/src/cli.ts' $extra
   }
   'mcp' { Invoke-Mcp $Rest }
   'setup' { Push-Location $Root; try { Invoke-Step 'pnpm install' { pnpm install --frozen-lockfile } } finally { Pop-Location } }
