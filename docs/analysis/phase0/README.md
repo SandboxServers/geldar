@@ -113,7 +113,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | W6-05 | 6 | Thought template v3 line (BC-10) | packet-coder | Done | section 4 item 8 (provisional) | |
 | W6-06 | 6 | Warm every pinned model before advertising it (cold load) | packet-coder | Done | — | |
 | W6-07 | 6 | Split three files over 500 lines (`pg-store.ts`, mock `server.ts`, `front.test.ts`) | packet-coder | Done | — | |
-| W6-08 | 6 | Investigate `intent_link_gave_up` (read-only, needs the 32B logs from ops) | packet-coder | Done | ops logs | |
+| W6-08 | 6 | Investigate `intent_link_gave_up` (read-only, needs the 32B logs from ops) | packet-coder | Not done (unverified) | none: no branch, merge or worknote in git | |
 | W6-09 | 6 | `glass/` Thought Stream server: loopback, read-only API and SSE; owns migration `sql/0005_glass_reader.sql` (read-only role) | packet-coder | Done | — | |
 | W6-10 | 6 | `glass/` page: escaped rendering, filters, per-agent view | packet-coder | Done | W6-09 | |
 | W6-11 | 6 | Glass security: adversarial fixtures, read-only route test, XSS review | packet-coder | Done | W6-10, W6-13 | |
@@ -128,7 +128,7 @@ Status: Ready / BlockedDependency / BlockedDecision / Writing / Review / Shipped
 | W6-25 | 6 | adam-run ops fixes (secrets, report, up line, stop) | packet-coder | Done | — | |
 | W6-26 | 6 | Why the Mind stopped waking after 16:25:16Z (smoke-w6-25-a) | packet-coder | Done | — | |
 
-**Campaign status (2026-11-10):** W6-01 to W6-26 done. OPS-0 (benchmark gate, 20 TPS at 100%) done; OPS-1 (smoke life g_smoke_01, run smoke-w6-25-a) done; OPS-2 (32B), OPS-3 (8B) and OPS-4 (final gate) deferred by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md). Fix rounds A to F done (see [known-gaps.md](known-gaps.md)). Campaign retro: pending. Decision numbers run through 0068; next free is 0069.
+**Campaign status (2026-11-10):** W6-01 to W6-26 done except W6-08 (not done, unverified; see its row). OPS-0 (benchmark gate, 20 TPS at 100%) done: GATE PASS at several commits, last full pass at 403a9cc and 98d5394; the final clean rebench at 57576f6 was stopped by the owner. OPS-1 (20-minute smoke) run, not a pass: ended by `life_ended` (smoke-w6-25-a, 8B Adam died to a zombie about 6 minutes in) and harness bugs fixed afterwards (smoke-w6-20-a aborted on a process-probe bug); no clean pass. OPS-2 (32B), OPS-3 (8B) and OPS-4 (final gate) deferred by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md), not run. Fix rounds A to F done (see [known-gaps.md](known-gaps.md)). Campaign retro: pending. Decision numbers run through 0068; next free is 0069.
 
 Wave PRs: wave 1 is #4; wave 2 is #16 (merged). Retros: [retro/wave-1.md](retro/wave-1.md); `retro/wave-2.md`, [retro/wave-3.md](retro/wave-3.md) and [retro/wave-4.md](retro/wave-4.md) are written.
 
