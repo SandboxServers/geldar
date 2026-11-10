@@ -1,0 +1,234 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FakeListener, FakePool } from './pg-fakes.ts';
+import { activeToken, PgTokenStore, parseRevocation, type TokenRow } from './pg-tokens.ts';
+
+const NOW = Date.UTC(2026, 10, 9, 12);
+const DAY = 86_400_000;
+const HARNESSES = { claude: true, retired_harness: false };
+const HASH = Buffer.alloc(32, 7);
+const REVOKE = 'mcp_token_revoked';
+
+function row(over: Partial<TokenRow> = {}): TokenRow {
+  return {
+    token_id: 'tk_1',
+    token_hash: HASH,
+    player_id: 'ag-jason-01',
+    life_id: 'ag_jason_01',
+    owner_id: 'owner-a',
+    display_name: 'Jason',
+    harness: 'claude',
+    status: 'active',
+    expires_at: new Date(NOW + DAY),
+    revoked_at: null,
+    ...over,
+  };
+}
+
+/** A store over a pool that answers with `rows`, and a listener the test can drive. */
+function storeWith(rows: TokenRow[] | (() => TokenRow[])) {
+  const pool = new FakePool(() => ({ rows: typeof rows === 'function' ? rows() : rows }));
+  const listeners: FakeListener[] = [];
+  const store = new PgTokenStore(pool.asPool(), HARNESSES, {}, () => {
+    const listener = new FakeListener();
+    listeners.push(listener);
+    return listener.asClient();
+  });
+  return { pool, store, listeners };
+}
+
+function revocation(payload: string): { channel: string; payload: string } {
+  return { channel: REVOKE, payload };
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('activeToken', () => {
+  it('accepts an active, unexpired, unrevoked token of an enabled harness', () => {
+    expect(activeToken(row(), NOW, HARNESSES)).toEqual({
+      tokenId: 'tk_1',
+      player: {
+        playerId: 'ag-jason-01',
+        lifeId: 'ag_jason_01',
+        ownerId: 'owner-a',
+        displayName: 'Jason',
+        harness: 'claude',
+        status: 'active',
+      },
+    });
+  });
+
+  it('refuses a revoked token', () => {
+    expect(activeToken(row({ revoked_at: new Date(NOW - 1) }), NOW, HARNESSES)).toBeNull();
+  });
+
+  it('refuses an expired token, and one expiring exactly now', () => {
+    expect(activeToken(row({ expires_at: new Date(NOW - 1) }), NOW, HARNESSES)).toBeNull();
+    expect(activeToken(row({ expires_at: new Date(NOW) }), NOW, HARNESSES)).toBeNull();
+  });
+
+  it('refuses a paused or retired player', () => {
+    expect(activeToken(row({ status: 'paused' }), NOW, HARNESSES)).toBeNull();
+    expect(activeToken(row({ status: 'retired' }), NOW, HARNESSES)).toBeNull();
+  });
+
+  it('refuses a disabled harness, and a harness the config does not list', () => {
+    expect(activeToken(row({ harness: 'retired_harness' }), NOW, HARNESSES)).toBeNull();
+    expect(activeToken(row({ harness: 'unlisted' }), NOW, HARNESSES)).toBeNull();
+  });
+});
+
+describe('PgTokenStore.resolve', () => {
+  it('returns the token, and asks Postgres by hash with the hash as a bound value', async () => {
+    const { pool, store } = storeWith([row()]);
+    const resolved = await store.resolve(HASH, NOW);
+    expect(resolved?.tokenId).toBe('tk_1');
+    expect(pool.sent[0]?.values).toEqual([HASH]);
+  });
+
+  it('returns null when the stored hash differs from the presented one', async () => {
+    const { store } = storeWith([row({ token_hash: Buffer.alloc(32, 8) })]);
+    expect(await store.resolve(HASH, NOW)).toBeNull();
+  });
+
+  it('returns null when no row matches', async () => {
+    const { store } = storeWith([]);
+    expect(await store.resolve(HASH, NOW)).toBeNull();
+  });
+
+  it('caches a hit for 5 s: the second call inside the window does not query', async () => {
+    const { pool, store } = storeWith([row()]);
+    await store.resolve(HASH, NOW);
+    await store.resolve(HASH, NOW + 4_999);
+    expect(pool.sent).toHaveLength(1);
+    await store.resolve(HASH, NOW + 5_000);
+    expect(pool.sent).toHaveLength(2);
+  });
+
+  it('never caches a miss', async () => {
+    const { pool, store } = storeWith([]);
+    await store.resolve(HASH, NOW);
+    await store.resolve(HASH, NOW);
+    expect(pool.sent).toHaveLength(2);
+  });
+
+  it('drops a cached hit when its token is revoked on LISTEN', async () => {
+    const { pool, store, listeners } = storeWith([row()]);
+    await store.start();
+    await store.resolve(HASH, NOW);
+    listeners[0]?.emit(
+      'notification',
+      revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
+    );
+    await store.resolve(HASH, NOW + 1);
+    expect(pool.sent).toHaveLength(2);
+    await store.stop();
+  });
+
+  it('keeps the cache for other tokens when one is revoked', async () => {
+    const { pool, store, listeners } = storeWith([row()]);
+    await store.start();
+    await store.resolve(HASH, NOW);
+    listeners[0]?.emit(
+      'notification',
+      revocation(JSON.stringify({ token_id: 'tk_other', player_id: 'ag-jason-01' })),
+    );
+    await store.resolve(HASH, NOW + 1);
+    expect(pool.sent).toHaveLength(1);
+    await store.stop();
+  });
+});
+
+describe('PgTokenStore.touch', () => {
+  it('writes last_used_at at most once a minute per token', async () => {
+    const { pool, store } = storeWith([]);
+    await store.touch('tk_1', NOW);
+    await store.touch('tk_1', NOW + 59_999);
+    await store.touch('tk_1', NOW + 60_000);
+    expect(pool.sent.map((sent) => sent.values[0])).toEqual(['tk_1', 'tk_1']);
+    expect(pool.sent[0]?.text).toContain('SET last_used_at = $2');
+  });
+});
+
+describe('PgTokenStore LISTEN connection', () => {
+  it('LISTENs on the revoke channel and calls each listener with the revocation', async () => {
+    const { store, listeners } = storeWith([]);
+    const seen: { tokenId: string; playerId: string }[] = [];
+    store.onRevoke((revoked) => seen.push(revoked));
+    await store.start();
+    expect(listeners[0]?.queries).toEqual([`LISTEN ${REVOKE}`]);
+    listeners[0]?.emit(
+      'notification',
+      revocation(JSON.stringify({ token_id: 'tk_1', player_id: 'ag-jason-01' })),
+    );
+    expect(seen).toEqual([{ tokenId: 'tk_1', playerId: 'ag-jason-01' }]);
+    await store.stop();
+  });
+
+  it('re-opens the connection one second after it drops', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = storeWith([]);
+    await store.start();
+    listeners[0]?.emit('end');
+    expect(listeners).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(listeners).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listeners).toHaveLength(2);
+    expect(listeners[1]?.queries).toEqual([`LISTEN ${REVOKE}`]);
+    await store.stop();
+  });
+
+  it('closes a connection that fails to connect, and rejects start', async () => {
+    const listeners: FakeListener[] = [];
+    const store = new PgTokenStore(new FakePool().asPool(), HARNESSES, {}, () => {
+      const listener = new FakeListener();
+      listener.connectError = new Error('connection refused');
+      listeners.push(listener);
+      return listener.asClient();
+    });
+    await expect(store.start()).rejects.toThrow('connection refused');
+    expect(listeners[0]?.ended).toBe(true);
+    await store.stop();
+  });
+
+  it('a late end from a replaced connection does not schedule a second reconnect', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = storeWith([]);
+    await store.start();
+    listeners[0]?.emit('error');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(listeners).toHaveLength(2);
+    listeners[0]?.emit('end');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(listeners).toHaveLength(2);
+    await store.stop();
+  });
+
+  it('stop ends the connection and does not reconnect', async () => {
+    vi.useFakeTimers();
+    const { store, listeners } = storeWith([]);
+    await store.start();
+    await store.stop();
+    expect(listeners[0]?.ended).toBe(true);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(listeners).toHaveLength(1);
+  });
+});
+
+describe('parseRevocation', () => {
+  it('reads token_id and player_id from the JSON payload', () => {
+    expect(parseRevocation('{"token_id":"tk_1","player_id":"ag-jason-01"}')).toEqual({
+      tokenId: 'tk_1',
+      playerId: 'ag-jason-01',
+    });
+  });
+
+  it('ignores a missing, malformed or incomplete payload', () => {
+    expect(parseRevocation(undefined)).toBeNull();
+    expect(parseRevocation('not json')).toBeNull();
+    expect(parseRevocation('{"token_id":"tk_1"}')).toBeNull();
+    expect(parseRevocation('{"token_id":1,"player_id":"x"}')).toBeNull();
+  });
+});
