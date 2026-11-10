@@ -16,7 +16,7 @@ import { Admission } from './admission.ts';
 import { IntentLedger } from './fallback.ts';
 import { type LoopDeps, type LoopOptions, ThinkingLoop } from './thinking-loop.ts';
 
-export const LIFE = 'ag_adam_01';
+export const LIFE = 'ag_adam_03';
 
 /** A valid thought: one intent and one action. */
 export const VALID_THOUGHT = JSON.stringify({

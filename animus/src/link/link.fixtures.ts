@@ -3,7 +3,7 @@ import type { PlanMessage, Snapshot, WorldEvent } from '@geldar/contract';
 import type { EventStream, StreamMessage } from './nats-event-source.ts';
 
 export const SHARD = 'phase0';
-export const LIFE = 'ag_adam_01';
+export const LIFE = 'ag_adam_03';
 
 /** An id: the prefix and 26 Crockford characters derived from `n`. */
 export function idOf(prefix: 'th' | 'sn' | 'in' | 'ac' | 'ev', n: number): string {

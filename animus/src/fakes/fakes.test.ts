@@ -22,7 +22,7 @@ const JOB: ModelJob = {
   deadline: new Date(Date.now() + 1000),
   stablePrefixChars: 0,
 };
-const LIFE = 'ag_adam_01';
+const LIFE = 'ag_adam_03';
 
 const AGENT: AgentRow = {
   agentId: LIFE,

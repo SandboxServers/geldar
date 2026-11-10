@@ -99,18 +99,18 @@ describe('PgJournal.lastReflectionTick', () => {
 describe('the fake journal keeps the same life rules', () => {
   it('keeps the first life when another life reuses a thought id', async () => {
     const store = new FakeMemoryStore();
-    await store.recordThought(thought('ag_adam_01', 'th_x', 'idle', 5));
+    await store.recordThought(thought('ag_adam_03', 'th_x', 'idle', 5));
     await store.recordThought(thought('ag_other_01', 'th_x', 'idle', 9));
 
     expect(store.thoughts).toHaveLength(1);
-    expect(store.thoughts[0]).toMatchObject({ lifeId: 'ag_adam_01', worldTick: 5 });
+    expect(store.thoughts[0]).toMatchObject({ lifeId: 'ag_adam_03', worldTick: 5 });
   });
 
   it("does not link another life's intent row", async () => {
     const store = new FakeMemoryStore();
     store.addIntentRow('in_1', null, 'ag_other_01');
 
-    await expect(store.linkIntent('ag_adam_01', 'in_1', 'th_1')).resolves.toBe(false);
+    await expect(store.linkIntent('ag_adam_03', 'in_1', 'th_1')).resolves.toBe(false);
     expect(store.intentThought('in_1')).toBeNull();
     await expect(store.linkIntent('ag_other_01', 'in_1', 'th_1')).resolves.toBe(true);
     expect(store.intentThought('in_1')).toBe('th_1');
@@ -118,22 +118,22 @@ describe('the fake journal keeps the same life rules', () => {
 
   it('answers the latest parsed reflection of its own life, no later than its last sleep day', async () => {
     const store = new FakeMemoryStore();
-    await expect(store.lastReflectionTick('ag_adam_01')).resolves.toBe(0);
-    await store.ensureAgent(lifeAsleepOn('ag_adam_01', 5));
-    await store.recordThought(thought('ag_adam_01', 'th_a', 'reflection', 500, 5, {} as Thought));
-    await store.recordThought(thought('ag_adam_01', 'th_failed', 'reflection', 700, 5, null));
+    await expect(store.lastReflectionTick('ag_adam_03')).resolves.toBe(0);
+    await store.ensureAgent(lifeAsleepOn('ag_adam_03', 5));
+    await store.recordThought(thought('ag_adam_03', 'th_a', 'reflection', 500, 5, {} as Thought));
+    await store.recordThought(thought('ag_adam_03', 'th_failed', 'reflection', 700, 5, null));
     await store.recordThought(
-      thought('ag_adam_01', 'th_late', 'reflection', 750, 6, {} as Thought),
+      thought('ag_adam_03', 'th_late', 'reflection', 750, 6, {} as Thought),
     );
-    await store.recordThought(thought('ag_adam_01', 'th_b', 'idle', 900, 5, {} as Thought));
+    await store.recordThought(thought('ag_adam_03', 'th_b', 'idle', 900, 5, {} as Thought));
     await store.recordThought(thought('ag_other_01', 'th_c', 'reflection', 800, 5, {} as Thought));
-    await expect(store.lastReflectionTick('ag_adam_01')).resolves.toBe(500);
+    await expect(store.lastReflectionTick('ag_adam_03')).resolves.toBe(500);
   });
 
   it('answers zero for a life that never slept', async () => {
     const store = new FakeMemoryStore();
-    await store.ensureAgent(lifeAsleepOn('ag_adam_01', null));
-    await store.recordThought(thought('ag_adam_01', 'th_a', 'reflection', 500, 1, {} as Thought));
-    await expect(store.lastReflectionTick('ag_adam_01')).resolves.toBe(0);
+    await store.ensureAgent(lifeAsleepOn('ag_adam_03', null));
+    await store.recordThought(thought('ag_adam_03', 'th_a', 'reflection', 500, 1, {} as Thought));
+    await expect(store.lastReflectionTick('ag_adam_03')).resolves.toBe(0);
   });
 });

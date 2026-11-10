@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FakeMemoryStore } from '../fakes/memory.fakes.ts';
 import { INTENT_LINK_BUDGET_MS, IntentLinker } from './intent-link.ts';
 
-const LIFE = 'ag_adam_01';
+const LIFE = 'ag_adam_03';
 const OTHER_LIFE = 'ag_kestrel_01';
 const INTENT = 'in_01HZX3V9Q4M2K8R7T6Y5W4E3D5';
 const THOUGHT = 'th_01HZX3V9Q4M2K8R7T6Y5W4E3D6';
