@@ -17,6 +17,7 @@ import {
   type WakeConfig,
 } from '@geldar/mcp-mock';
 import type { RunState } from './events/mapper.ts';
+import { TOOL_OUTCOMES } from './http/log.ts';
 import {
   type AgentProfiles,
   type BodyGateway,
@@ -289,5 +290,47 @@ export function createWorld(deps: WorldDeps): World {
     propose: unavailable('propose'),
     vote: unavailable('vote'),
   };
-  return { tools, close: stopSettle };
+  const logTools = Object.fromEntries(
+    Object.entries(tools).map(([name, run]) => [name, logged(wired, name, run)]),
+  ) as ToolHandlers;
+  return { tools: logTools, close: stopSettle };
+}
+
+/** The outcome code of a failed call: the tool's own code when it is a closed one, otherwise `internal`. */
+function outcomeOf(err: unknown): string {
+  if (err instanceof ToolError && (TOOL_OUTCOMES as readonly string[]).includes(err.code)) {
+    return err.code;
+  }
+  return 'internal';
+}
+
+/**
+ * Logs one `tool_call` line per call: the tool, the player, the outcome code and the duration. Never the
+ * arguments, the result or any text. A logger that throws does not fail the call.
+ */
+function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
+  const record = (playerId: string, outcome: string, started: number): void => {
+    try {
+      deps.log?.({
+        event: 'tool_call',
+        player_id: playerId,
+        tool,
+        outcome,
+        duration_ms: deps.now() - started,
+      });
+    } catch {
+      // The line is lost; the call's own result stands.
+    }
+  };
+  return async (input, ctx) => {
+    const started = deps.now();
+    try {
+      const result = await run(input, ctx);
+      record(ctx.playerId, 'ok', started);
+      return result;
+    } catch (err) {
+      record(ctx.playerId, outcomeOf(err), started);
+      throw err;
+    }
+  };
 }
