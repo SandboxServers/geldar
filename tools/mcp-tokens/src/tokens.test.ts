@@ -74,7 +74,9 @@ class TokenSql implements Sql {
       return { rows: [{ token_id: hit.token_id }] };
     }
     if (text.startsWith('UPDATE mcp_tokens SET revoked_at = now() WHERE player_id')) {
-      const hits = this.tokens.filter((t) => t.player_id === values[0] && !t.revoked);
+      const hits = this.tokens.filter(
+        (t) => t.player_id === values[0] && t.token_id !== values[1] && !t.revoked,
+      );
       for (const t of hits) t.revoked = true;
       return { rows: hits.map((t) => ({ token_id: t.token_id })) };
     }
@@ -229,12 +231,26 @@ describe('tokens', () => {
     expect((oldRow?.expires ?? 0) - Date.now()).toBeGreaterThan(9 * 60_000);
   });
 
-  it('rotates with no grace: the old token is expired at once', async () => {
+  it('rotates with no grace: the old token is revoked at once, so its revoke NOTIFY fires', async () => {
     const sql = await withPlayer();
     const old = await mintTokenFile(sql, secrets, 'ag-jo-01', join(outDir, 'old0.env'));
-    await rotateTokenFile(sql, secrets, 'ag-jo-01', join(outDir, 'new0.env'), 0);
-    expect((await listTokens(sql)).find((l) => l.startsWith(`${old} `))).toContain(' expired ');
+    const fresh = await rotateTokenFile(sql, secrets, 'ag-jo-01', join(outDir, 'new0.env'), 0);
+    const lines = await listTokens(sql);
+    expect(lines.find((l) => l.startsWith(`${old} `))).toContain(' revoked ');
+    expect(lines.find((l) => l.startsWith(`${fresh} `))).toContain(' active ');
+    expect(
+      sql.log.some((s) => s.startsWith('UPDATE mcp_tokens SET revoked_at = now() WHERE player_id')),
+    ).toBe(true);
     expect(DEFAULT_GRACE_MINUTES).toBe(10);
+  });
+
+  it('rotates with a grace: the old token is not revoked, only its expiry is moved', async () => {
+    const sql = await withPlayer();
+    await mintTokenFile(sql, secrets, 'ag-jo-01', join(outDir, 'old-g.env'));
+    await rotateTokenFile(sql, secrets, 'ag-jo-01', join(outDir, 'new-g.env'), 10);
+    expect(sql.log.some((s) => s.includes('SET revoked_at = now() WHERE player_id'))).toBe(false);
+    expect(sql.log.some((s) => s.startsWith('UPDATE mcp_tokens SET expires_at'))).toBe(true);
+    expect((await listTokens(sql)).some((line) => line.includes(' revoked '))).toBe(false);
   });
 
   it('parses --grace-minutes as a whole number from 0 to 1440', () => {

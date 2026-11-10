@@ -143,7 +143,9 @@ export async function mintTokenFile(
 
 /**
  * Mints a new token for a player and gives every older active token a grace period: each one
- * expires `graceMinutes` from now, or sooner if it already would. Returns the new token's id.
+ * expires `graceMinutes` from now, or sooner if it already would. A zero grace revokes them at once
+ * instead: the revoke sends the NOTIFY that makes the MCP server drop its cached hits, which an
+ * expiry does not. Returns the new token's id.
  */
 export async function rotateTokenFile(
   sql: Sql,
@@ -157,11 +159,18 @@ export async function rotateTokenFile(
   let tokenId = '';
   await transaction(sql, async () => {
     const issued = await issue(sql, pepper, playerId);
-    await sql.query(
-      `UPDATE mcp_tokens SET expires_at = LEAST(expires_at, now() + make_interval(mins => $2))
-       WHERE player_id = $1 AND token_id <> $3 AND revoked_at IS NULL`,
-      [playerId, graceMinutes, issued.tokenId],
-    );
+    if (graceMinutes === 0) {
+      await sql.query(
+        'UPDATE mcp_tokens SET revoked_at = now() WHERE player_id = $1 AND token_id <> $2 AND revoked_at IS NULL',
+        [playerId, issued.tokenId],
+      );
+    } else {
+      await sql.query(
+        `UPDATE mcp_tokens SET expires_at = LEAST(expires_at, now() + make_interval(mins => $2))
+         WHERE player_id = $1 AND token_id <> $3 AND revoked_at IS NULL`,
+        [playerId, graceMinutes, issued.tokenId],
+      );
+    }
     await writeTokenFile(path, issued.value);
     tokenId = issued.tokenId;
   });
