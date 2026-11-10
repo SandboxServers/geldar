@@ -204,7 +204,11 @@ export async function startMind(
         thoughtBudgetChars: config.mind.promptBudgetChars,
         maxBeliefs: config.mind.maxBeliefs,
       }),
-      validator: createOutputValidator(),
+      validator: createOutputValidator({
+        worldBorderRadius: config.bounds.worldBorderRadius,
+        maxWorldTicks: config.bounds.maxWorldTicks,
+        maxBlockOperations: config.bounds.maxBlockOperations,
+      }),
       onError: (error) => log({ event: 'handler_failed', life_id: lifeId, error: String(error) }),
     });
     await mind.start();

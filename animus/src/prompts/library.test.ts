@@ -81,6 +81,18 @@ describe('prompt library', () => {
     );
   });
 
+  it('keeps the bytes of the released templates unchanged (their SHA-256s are pinned)', () => {
+    const pinned: Record<string, string> = {
+      'thought/v2.md': '12b59d391c2dab0578f77a4f3dc1997047c282bf4a2221fb4bebb273228629f5',
+      'reflection/v1.md': 'bdbceaba069f87a944c1230ea314cc59cdeed4a132bc6a9c1283e483625cbcf8',
+      'body-api/v1.json': 'f943151a1af44dbd717239c088f56a157f5b3b1154aac7cb5f70bc19c8c89c2f',
+    };
+    for (const [file, hash] of Object.entries(pinned)) {
+      const bytes = readFileSync(join(repoRoot(), 'prompts', file));
+      expect(createHash('sha256').update(bytes).digest('hex'), file).toBe(hash);
+    }
+  });
+
   it('renders the knowledge, sleep and anti-loop rules in block 1 of thought v2', () => {
     const system = library.render('thought', sampleThoughtVars()).messages[0]?.content as string;
     expect(system).toContain(

@@ -39,6 +39,8 @@ export interface JobSettings {
 export interface AnimusConfig {
   shard: string;
   tickRate: number;
+  /** The output validator's bounds, from the shard file (`validate/bounds.ts` has the defaults). */
+  bounds: { worldBorderRadius: number; maxWorldTicks: number; maxBlockOperations: number };
   /** `nats://` URL on loopback. */
   natsUrl: string;
   /** `http://` URL of Ollama on loopback. */
@@ -165,6 +167,11 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
   return {
     shard,
     tickRate: int(root, 'tick_rate', 'shard file', 1),
+    bounds: {
+      worldBorderRadius: int(root, 'world_border_radius', 'shard file', 1),
+      maxWorldTicks: int(root, 'max_world_ticks', 'shard file', 1),
+      maxBlockOperations: int(root, 'max_block_operations', 'shard file', 1),
+    },
     natsUrl: loopbackUrl('GELDAR_NATS_URL', env.GELDAR_NATS_URL, 'nats:', 'nats://127.0.0.1:4222'),
     ollamaUrl: loopbackUrl('OLLAMA_URL', env.OLLAMA_URL, 'http:', 'http://127.0.0.1:11434'),
     postgres: {

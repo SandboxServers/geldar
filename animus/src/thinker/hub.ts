@@ -120,11 +120,14 @@ export class ThinkerHub {
     server.on('error', (err) => this.opts.log(`hub error: ${err.message}`));
     server.on('connection', (socket) => {
       const id = `local-${++this.counter}`;
-      // Only welcomed Thinkers count toward the cap; an unwelcomed socket ends at the hello timeout.
-      if (this.welcomed.size >= this.opts.maxConnections) {
+      // Welcomed Thinkers are capped at maxConnections; all sessions, welcomed or not, at twice that.
+      if (
+        this.welcomed.size >= this.opts.maxConnections ||
+        this.sessions.size >= 2 * this.opts.maxConnections
+      ) {
         // A refused socket can still raise `error` (a bad frame); with no listener that crashes the Mind.
         socket.on('error', () => {});
-        this.opts.log(`${id}: refused, too many welcomed Thinkers`);
+        this.opts.log(`${id}: refused, too many connections`);
         socket.close(1013, 'too many connections');
         return;
       }
@@ -142,6 +145,13 @@ export class ThinkerHub {
           this.onThinker({ kind: 'disconnected', id: closed.id, models });
         },
         onWelcomed: (ready) => {
+          // Many sockets can say hello at once; the cap is checked again here, when the count is known.
+          if (this.welcomed.size >= this.opts.maxConnections) {
+            this.sessions.delete(ready.id);
+            this.opts.log(`${ready.id}: refused on hello, too many welcomed Thinkers`);
+            void ready.close(1013, 'too many connections');
+            return;
+          }
           const models = [...ready.accepted.keys()];
           this.welcomed.set(ready.id, models);
           this.onThinker({ kind: 'connected', id: ready.id, models });

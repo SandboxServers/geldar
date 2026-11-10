@@ -65,6 +65,26 @@ describe('animus config: the start-up waits', () => {
 });
 
 describe('animus config', () => {
+  it('reads the output validator bounds from the shard file, so a shard value changes them', async () => {
+    const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
+    expect(config.bounds).toEqual({
+      worldBorderRadius: 1500,
+      maxWorldTicks: 240000,
+      maxBlockOperations: 10000,
+    });
+    const doc = approvedDoc();
+    doc.world_border_radius = 300;
+    doc.max_world_ticks = 1200;
+    doc.max_block_operations = 20;
+    expect(parseAnimusConfig(doc).bounds).toEqual({
+      worldBorderRadius: 300,
+      maxWorldTicks: 1200,
+      maxBlockOperations: 20,
+    });
+    delete doc.max_block_operations;
+    expect(() => parseAnimusConfig(doc)).toThrow('max_block_operations');
+  });
+
   it('reads the Phase 0 shard file when placeholders are allowed', async () => {
     const config = await loadAnimusConfig({ env: {}, allowPlaceholders: true });
     expect(config.shard).toBe('phase0');

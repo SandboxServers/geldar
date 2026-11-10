@@ -93,7 +93,7 @@ export class LocalThinker {
   private readonly inFlight = new Map<string, InFlight>();
   /** The models that answered their warm-up on the latest attempt: the ones `hello` advertises. */
   private advertised: AdvertisedModel[] = [];
-  /** The models that answered the warm-up, once it has succeeded: the process warms only once. */
+  /** The models that answered the warm-up, once every pinned name has answered: the process warms only once. */
   private warmed: AdvertisedModel[] | undefined;
   private socket: WebSocket | null = null;
   private serving = false;
@@ -144,23 +144,26 @@ export class LocalThinker {
   }
 
   /**
-   * One connection attempt: warms the pinned models once per process, re-checks their digests, then
-   * dials the Mind with the ones that still match. A failed dial does not warm again.
+   * One connection attempt: warms the pinned models until every name has answered, re-checks their
+   * digests, then dials the Mind with the ones that still match. A partial warm-up is advertised on
+   * this dial only, and the next dial warms the names again.
    */
   private async connect(): Promise<void> {
     if (this.stopped) return;
-    if (this.warmed === undefined) {
-      const warmed = await this.warmModels();
+    let warmed = this.warmed;
+    if (warmed === undefined) {
+      const attempt = await this.warmModels();
       if (this.stopped) return;
-      if (warmed.length === 0) {
+      if (attempt.warmed.length === 0) {
         this.opts.log('no pinned model warmed; advertising nothing and retrying');
         this.scheduleReconnect();
         return;
       }
-      this.warmed = warmed;
+      if (attempt.complete) this.warmed = attempt.warmed;
+      warmed = attempt.warmed;
     }
     if (this.opts.recheck === undefined) {
-      this.advertised = this.warmed;
+      this.advertised = warmed;
     } else {
       let current: string[];
       try {
@@ -171,7 +174,7 @@ export class LocalThinker {
         return;
       }
       if (this.stopped) return;
-      this.advertised = this.warmed.filter((m) => current.includes(m.name));
+      this.advertised = warmed.filter((m) => current.includes(m.name));
       if (this.advertised.length === 0) {
         this.opts.log('no warmed model still matches its pinned digest; retrying');
         this.scheduleReconnect();
@@ -182,11 +185,11 @@ export class LocalThinker {
   }
 
   /** Loads the pinned models in turn with a one-token call; returns the ones that answered in time. */
-  private async warmModels(): Promise<AdvertisedModel[]> {
+  private async warmModels(): Promise<{ warmed: AdvertisedModel[]; complete: boolean }> {
     const warm = this.opts.warm;
     const names = this.opts.warmNames ?? this.opts.models.map((m) => m.name);
     const order = names.flatMap((name) => this.opts.models.filter((m) => m.name === name));
-    if (warm === undefined) return order;
+    if (warm === undefined) return { warmed: order, complete: true };
     const warmed: AdvertisedModel[] = [];
     for (const pin of order) {
       if (this.stopped) break;
@@ -211,7 +214,7 @@ export class LocalThinker {
       }
     }
     this.warmAbort = undefined;
-    return warmed;
+    return { warmed, complete: warmed.length === order.length };
   }
 
   private dial(): void {
@@ -347,6 +350,15 @@ export class LocalThinker {
     const pin = this.byName.get(frame.model);
     if (pin === undefined || !this.accepted.has(frame.model)) {
       this.fail(id, 'model_unavailable', 'model not served here');
+      return;
+    }
+    // The Mind may ask only up to what the offer advertised; a larger ask is refused, not clamped.
+    if (frame.max_tokens > ADVERTISED_MAX_TOKENS) {
+      this.fail(
+        id,
+        'internal',
+        `bad_request: max_tokens ${frame.max_tokens} is above the advertised ${ADVERTISED_MAX_TOKENS}`,
+      );
       return;
     }
     if (this.inFlight.has(id)) {

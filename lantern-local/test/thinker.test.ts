@@ -251,6 +251,28 @@ describe('warm-up', () => {
     expect(ollama.requests.filter((r) => r.body.model === 'qwen3:8b')).toHaveLength(1);
   });
 
+  it('does not cache a partial warm-up: the next dial warms the missing model and advertises it', async () => {
+    let failing = true;
+    ollama.warmHandler = (req, res) => {
+      if (req.body.model === 'qwen3:32b' && failing) ollama.reply(res, { error: 'no memory' }, 500);
+      else ollama.reply(res, { message: { content: '' } });
+    };
+    launchWarm({ models: [pin('qwen3:8b'), pin('qwen3:32b')] });
+    await mind.next('hello');
+    failing = false;
+    mind.push({ type: 'drain', reconnect_after_seconds: 0 });
+    await until(
+      () => mind.frames.filter((f) => f.type === 'hello').length === 2,
+      'the second hello',
+    );
+    const second = mind.frames.filter((f) => f.type === 'hello')[1];
+    expect((second as { models: { name: string }[] }).models.map((m) => m.name)).toEqual([
+      'qwen3:8b',
+      'qwen3:32b',
+    ]);
+    expect(ollama.requests.filter((r) => r.body.model === 'qwen3:32b')).toHaveLength(2);
+  });
+
   it('warms only the run tier model when it is named, and advertises only that one', async () => {
     launchWarm({ models: [pin('qwen3:8b'), pin('qwen3:32b')], warmNames: ['qwen3:32b'] });
     const hello = await mind.next('hello');
@@ -379,6 +401,17 @@ describe('jobs', () => {
     await until(() => ollama.requests[0]?.aborted === true, 'Ollama to see the abort');
     await new Promise((r) => setTimeout(r, 100));
     expect(mind.frames.some((f) => f.type === 'error' || f.type === 'completion')).toBe(false);
+  });
+
+  it('refuses a job above the advertised max_tokens, without calling Ollama', async () => {
+    ollama.handler = () => {};
+    await ready();
+    mind.push(mind.job({ max_tokens: 2049 }));
+    expect(await mind.next('error')).toMatchObject({
+      code: 'internal',
+      message: expect.stringMatching(/^bad_request/),
+    });
+    expect(ollama.requests).toHaveLength(0);
   });
 
   it('answers busy for a second concurrent job on a one-slot model', async () => {
