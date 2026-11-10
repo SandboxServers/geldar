@@ -250,6 +250,195 @@ Revert-check: the NATS flip and the Velocity publish are each reverted in the co
 
 ---
 
-<!-- next: section 4 reviews -->
+## 4. Cards: wave-boundary reviews and the fix round
+
+Preamble for C2-R1 to C2-R4 (a reviewer gets its card and this preamble):
+
+- Read-only. No edits, no commits, no branches, no pushes, no worktree changes. The output is the final message, not a file.
+- Local only. Read the code and run the local tests the card names. Make no request to any live host (public or node), and run no scan. The external scan is C2-07 live step 7, not a reviewer's job.
+- Turn limit: 60 tool turns. If the limit comes first, return what is covered, list the paths not read, and mark the review partial.
+- Output: findings ranked high, medium, low. Each has an id (`R1-01` and so on), `file:line`, the failing scenario (the request or sequence, and what the attacker gets), and a verdict: CONFIRMED (reproduced by a local test you ran, or traced step by step through named lines) or PLAUSIBLE (not reproduced). A finding without a failing scenario is dropped. Then list the surfaces not covered and the local tests run, with results.
+- If a file shows a secret, give its path and line only. Never print the value.
+- Records: a review writes no record and reserves no number. Fix-round numbers are in the card of each surface (0097 for R1, 0098 for R2, 0099 for R3). R4 has none assigned; ask the orchestrator first.
+
+### C2-R1: MCP public endpoint
+
+- `wave`: C2. `lane`: R. `depends-on`: C2-00, C2-01, C2-05 merged. `status`: B. `size`: M. `turns`: 60 max.
+- `may-edit`: none (read-only). Scope to read: `threshold/mcp/src/http/` (`front.ts`, `auth.ts`, `limits.ts`, `log.ts` and tests), `threshold/mcp/src/config.ts`, `threshold/mcp/src/store/pg-tokens.ts`, `threshold/mcp/src/store/token-hash.ts`, `tools/mcp-tokens/src/`, the tool handlers reachable without a token, `compose/mcp.yml`, `threshold/mcp/Dockerfile` (listen address and `EXPOSE` only).
+- `must-not-edit`: everything.
+- `decisions`: read 0071, 0054, 0077 (issuing), 0090 (error shapes and header name), 0091. Fix-round record if needed: 0097.
+- `checks` (local only): `./geldar.ps1 pnpm exec vitest run threshold/mcp/src/http`; `./geldar.ps1 pnpm exec vitest run tools/mcp-tokens`.
+- `worknote`: none. `commit`: none. `on-cap`: the partial rule in the preamble.
+- Attacker's checklist:
+  - Every route and every tool reachable with no token. Each refusal must match an unknown token in status, body and headers.
+  - Client address: send `x-geldar-client-ip` and `CF-Connecting-IP` from an untrusted peer, with several values and with commas. The rate-limit key and the log line must not change. Repeat from the trusted peer.
+  - Tokens: prefix check, HMAC with the pepper, constant-time compare, a missing pepper fails closed. The token never appears in logs, error text, URLs, tool output or a stack trace.
+  - `/p/<player_id>`: a valid token for player A on player B's path gives 403. Does the 403 and 401 split let a holder list which player ids exist? What does the split cost?
+  - Negative cache and rate limit: table bound, eviction, memory growth under many spoofed addresses, fail-open when full, and whether a hit and a miss differ in timing class.
+  - Kill switch: `public.killSwitch` is read on every request, not only at start. Check in-flight requests too.
+  - Leakage: stack, path, host, NATS URL or database host in any error. A 404 that differs from a 401. Any look or status field that says the shard is watched, lists observers or viewers, or carries `shard`, `snapshot_id` or `body_generation`.
+  - Port scan expectation: the MCP listens on loopback, Caddy is the only peer, and `compose/mcp.yml` publishes nothing else.
+
+### C2-R2: Velocity and the public Minecraft port
+
+- `wave`: C2. `lane`: R. `depends-on`: C2-02 and C2-07 desktop wiring merged. `status`: B. `size`: M. `turns`: 60 max.
+- `may-edit`: none (read-only). Scope to read: `plugin/velocity-identity/src/main/java/dev/geldar/identity/` (`IdentityPlugin`, `LoginGate`, `DenialLimiter`, `RegistryClient`, `LifeRegistry`, `ReadinessFeed` and new siblings), `plugin/velocity-identity/src/test/`, `compose/velocity/velocity.toml`, the Velocity publish in `compose/phase0.yml`.
+- `must-not-edit`: everything.
+- `decisions`: read 0071 (port, SRV, whitelist), 0072, 0075 and 0077 (what a visitor may learn), 0092, 0067 and 0080 (the registry's NATS credential). Fix-round record if needed: 0098.
+- `checks` (local only): `cd plugin` then `./gradlew :velocity-identity:test --tests "dev.geldar.identity.*"`.
+- `worknote`: none. `commit`: none. `on-cap`: the partial rule in the preamble.
+- Attacker's checklist:
+  - Login order: the registry check is the first gate. An unregistered name is refused before any state change, and the refusal names neither the registry nor the life.
+  - Ghost rule: a registered ghost is forced to spectator. Compare the message, the timing and any difference a stranger can measure between live, ghost and unregistered. Any difference reveals the watched state.
+  - Server list ping: MOTD, player count, player sample names, version and protocol. Any field that shows humans are on, or which lives are sovereign.
+  - Online mode and forwarding: `online-mode` true, and the modern forwarding secret set to a non-default value. Can a client reach Paper's backend port directly, skipping Velocity and the name check? The Paper whitelist is a second check, not the first.
+  - Name spoofing: username case and Unicode folding, offline-mode UUIDs, a name that matches a registered life with a different account.
+  - `DenialLimiter`: keyed on the connection's real peer address (never a header), bounded memory, and rotating usernames does not reset the limit.
+  - Listeners: query protocol, metrics, console, or any extra listener in `velocity.toml`. The container binds `0.0.0.0:25565` only, and the host publish is one port on one interface.
+  - SRV: documented in the worknote only (0071). Nothing in the repo names the real port.
+  - Port scan expectation: from outside, the only open Minecraft port on this host is the chosen one.
+
+### C2-R3: Glass and BlueMap
+
+- `wave`: C2. `lane`: R. `depends-on`: C2-03 and C2-04 merged. `status`: B. `size`: M. `turns`: 60 max.
+- `may-edit`: none (read-only). Scope to read: `glass/src/` (`http.ts`, `routes.ts`, `query.ts`, `sse.ts`, `render-*.ts`, `guard.ts` if added, `config.ts`, `main.ts`) and their tests, and the BlueMap snippet and README in `deploy/caddy/`.
+- `must-not-edit`: everything.
+- `decisions`: read 0072 (the hardening list is the acceptance), 0075 and 0077 (anonymous visitors get no camera), 0093, 0094. Fix-round record if needed: 0099.
+- `checks` (local only): `./geldar.ps1 pnpm exec vitest run glass/src`.
+- `worknote`: none. `commit`: none. `on-cap`: the partial rule in the preamble.
+- Attacker's checklist:
+  - Anonymous reach: every route. Response bodies carry only the thought stream. No camera position, coordinates, inventory, human chat, or list of living sovereigns while the sovereign filter is on.
+  - Header: the rate-limit key uses the client header only when the peer is Caddy. An untrusted peer's header is ignored.
+  - Rate limit and size: token bucket bound, SSE connection count per client, slow headers and slow bodies (read timeouts), a body far above the cap, and a `limit` above 100 refused.
+  - Escaping and CSP: adversarial thoughts (script tags, `</script>`, attribute breakouts, `javascript:` and `data:` links, images that the CSP does not cover). `default-src 'none'`, `script-src 'self'`, no `unsafe-inline`, on error responses too.
+  - BlueMap: GET and HEAD only, the inline-style exception recorded in 0094 and nowhere else, and no host reached other than the BlueMap service.
+  - Delay and sovereign filter: the delay applies in the API and in SSE, not only in the page. The sovereign filter is on by default.
+  - Kill switch: `GELDAR_GLASS_ENABLED` off gives 503 on every route, assets included, and SSE closes within one heartbeat. The Caddy `respond 503` for BlueMap touches only the map host.
+  - Leakage: database errors passed through (host, role, password path); a `Server` header with a version; viewer counts or heartbeat payloads that show how many people are watching; response timing that reveals a live stream.
+  - Port scan expectation: Glass and BlueMap listen on loopback, and Caddy is their only public listener.
+
+### C2-R4: NATS, node and Caddy
+
+- `wave`: C2. `lane`: R. `depends-on`: C2-07 desktop wiring merged. `status`: B. `size`: M. `turns`: 60 max.
+- `may-edit`: none (read-only). Scope to read: `compose/phase0.yml`, `compose/nats-auth.yml`, `compose/mcp.yml`, `compose/velocity/velocity.toml` (publish and listener lines), `deploy/caddy/` (all files), the public block in `shards/phase0.yaml`, `sql/0005_glass_reader.sql` and `sql/test/check-schema.sql` (grants only), the `public-*` commands in `geldar.ps1`.
+- `must-not-edit`: everything.
+- `decisions`: read 0067, 0080 (NATS default-on), 0071 (port, shared Caddy, the 18443 forward unchanged), 0072, 0096. Fix-round record: none assigned.
+- `checks` (local only): `./geldar.ps1 pnpm --filter @geldar/repo-checks test` if it exists (locate with `grep -rn "repo-checks" package.json`); `docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml config` piped to a file outside the repo, read for secret values only by path and line.
+- `worknote`: none. `commit`: none. `on-cap`: the partial rule in the preamble.
+- Attacker's checklist:
+  - Every `ports:` entry in every compose file. A binding to `0.0.0.0` or with no host address is a finding, since Docker publishes past the host firewall. NATS (4222 and the monitoring port 8222), Postgres and the MCP port must be loopback or absent.
+  - NATS: the accounts overlay is on (0080), or opt-in with the reason recorded. Without accounts, NATS must not be reachable from outside loopback. Monitoring is off or loopback.
+  - Caddy header handling: the client's `X-Geldar-Client-Ip` is removed or overwritten before Caddy sets its own, on every site. The trusted peer is the MCP site only.
+  - SSRF: no upstream built from `{header.*}`, `{http.request.host}` or any query value. Each `reverse_proxy` targets a service name or loopback.
+  - Caddy surface: the `respond 503` kill switch for BlueMap; security headers on every site; the `Server` header and default error pages removed or generic.
+  - Logs: Caddy access logs do not record `Authorization` or the query string; the MCP and Glass logs carry no token.
+  - Secrets: the compose config output must not show a secret value. Env file location and mode. No secret in the repo.
+  - Reload: every script and README says `caddy reload` only, with no `systemctl restart caddy` and no shared-Caddy container restart (0071 item 6).
+  - Port scan expectation: predict the node's listening set from the compose and Caddy config, and name each extra listener. It must equal the C2-07 live step 7 list (the Minecraft TCP port, the 18443 placeholder and HTTPS).
+
+### C2-R5: fix round for the reviews
+
+- `wave`: C2. `lane`: R. `depends-on`: the review outputs C2-R1 to C2-R4 returned, and each owning card merged. `status`: B. `size`: S. One round only.
+- `may-edit`: only the files of the findings being fixed, within the owning card's `may-edit` list (sections 2 and 3). Each fix adds its test in the same file.
+- `must-not-edit`: `docs/spec.md`, `contract/` (a finding that needs a contract change is an index line for the integration packet, not a fix here), `geldar.ps1`, `package.json`, the lockfile, `docs/decisions/README.md`, and `compose/*` unless the owner has run the card's live steps.
+- `decisions`: the number its surface's review card names (0097 R1, 0098 R2, 0099 R3). R4 uses none unless the orchestrator assigns one.
+- `checks`: the owning card's checks, and `./geldar.ps1 check`.
+- `worknote`: `docs/analysis/phase1/worknotes/C2-R5.md`.
+- `commit`: one per finding; the subject names the finding id, for example `fix(mcp): ignore the client header from an untrusted peer (R1-02)`.
+- Scope: CONFIRMED high and medium findings only. PLAUSIBLE findings go to the owner with a request for a repro. Lows go to the worknote. No new features.
+- Each fix: first a test that reproduces the failing scenario and fails on the current code; then the fix; then the revert-check on the changed line.
+- `on-cap`: commit the fixes that pass, list the open findings in the worknote, stop. Any open high finding blocks the live steps.
+
+---
+
+## 5. Wave section
+
+Lane diagram (lanes are the cards' `lane` fields; R is the review lane):
+
+```
+C2-00 (lane A, unblocker, contract only)
+  |
+  +--> A: C2-01 MCP behind Caddy ----------------+
+  +--> B: C2-02 Velocity TCP port ---------------+
+  +--> C: C2-03 Glass hardening -----------------+--> C2-07 desktop wiring (A)
+  +--> D: C2-04 BlueMap snippet -----------------+        |
+  +--> E: C2-05 look and image slimming ---------+        v
+  +--> F: C2-06 port scan tool ------------------+   5.1 wave-boundary gates
+                                                    (C2-R1 to R4, fix round C2-R5)
+                                                           |
+                                                           v
+                                                    5.2 real-client live run
+                                                    and C2-07 live steps
+```
+
+### 5.1 Wave-boundary gates
+
+Conventions 4.2, with the C2 specifics. Nothing goes to an invitee (0070) until all of these hold.
+
+1. Full `./geldar.ps1 check` on the wave branch after the last desktop merge. The integration case-count floor is the count of integration tests run at the C1 merge (recorded in the C1 worknotes). The run must execute at least that many. A skipped integration test is a failure, not a warning (Phase 0 CI skipped 43).
+2. Reviews: C2-R1 to C2-R4 each returned. No CONFIRMED high finding is open. A PLAUSIBLE high finding needs an owner answer before the live steps. C2-R5 is merged or each open finding is recorded with an owner decision.
+3. Port-scan expectation: the C2-06 tool run from outside the node with the runbook list (C2-07 live step 7). The open set must equal the expected list exactly. An extra open port stops the run.
+4. The real-client live run in 5.2 is recorded in the C2-07 worknote.
+5. Provisional decisions: 0090 to 0096 get owner confirmation or a superseding record. Any of 0097 to 0099 that is written gets the same.
+6. The wave retro is `retro/phase1-wave-c2.md`, written by ops. Cards do not write it.
+7. Ops merge: index lines applied to `docs/decisions/README.md`, the ledger rows in 5.3 added to the Phase 1 ledger, and the `tools/portscan` workspace line added once to `package.json`.
+
+### 5.2 Real-client live run
+
+C2-07 live step 9 refers here. Preconditions: 5.1 items 1 to 3 pass, 0077 is Accepted, and invitations are still off (this run uses one owner token, not an invitation). Every step needs the owner's go.
+
+1. Token. The owner mints one invitee token with the C2-01 `mint` path and keeps it in the owner's password store. Put it in the environment variable `GELDAR_LIVE_TOKEN` in the owner's shell only. Never echo it, and never write it into a repo file, worknote, log or chat. Revoke it in step 13.
+2. Client. Install the Claude Code version the owner names and record it. Use a clean configuration directory so that no other MCP server loads.
+3. Register the public MCP as an HTTP server at `https://mcp.<project domain>/` with the header `Authorization: Bearer ${GELDAR_LIVE_TOKEN}`. The token must not be on a command line that lands in shell history.
+4. Tool list. Start a session and list the tools. Record the count and the names. Confirm each input schema is an object with `properties` and has no top-level `oneOf`, `anyOf` or `allOf`. The C2-00 guard test checks this in the repo; this step checks it on the wire. Any missing tool, or a combinator at the top, stops the run.
+5. Wake. Call the wake tool and record the status field of the reply.
+6. Look. One `look`. Confirm there is no `shard`, `snapshot_id` or `body_generation` key anywhere in the output, and that the in-world time is present.
+7. Act. One `act` with `gather` on a resource the look listed. Confirm the result shape matches the contract.
+8. Wait. One `wait` with the shortest duration the tool allows. Confirm it returns within its stated bound.
+9. Rate limit. From the same client, repeat `look` until the `public.rateLimit` refusal appears. Confirm the C2-00 shape: the status C2-00 fixes (429 unless C2-00 says otherwise), a `retryAfter` value, and a fixed body. Stop at the first refusal and do not try to get past it. Record the request count and the time.
+10. Auth. Repeat with a made-up `gmcp-` value, typed in the session and not saved. Confirm the status and body equal the missing-token case (C2-07 live step 8).
+11. Kill switch. The owner sets `public.killSwitch` to true in the shard config and applies it by the reload path C2-01 records in its worknote, touching the MCP service only and never Caddy. The next call gets the kill-switch shape from C2-00. The owner sets it back to false, and the next call succeeds. Record both times.
+12. Glass. In a browser with no login, as an anonymous visitor, open Glass. Confirm the thought stream shows this run's thoughts (wake, look, gather, wait), and that no camera view is on the page or in its network responses (0077, 0075). Record yes or no for each. Do not save screenshots in the repo.
+13. Stop. Remove the client's MCP entry, unset `GELDAR_LIVE_TOKEN`, and revoke the run token with the `tools/mcp-tokens` revoke command. Confirm the revoked token now gets 401.
+14. Record in `docs/analysis/phase1/worknotes/C2-07.md` (live section): client name and version, tool count and names, one line each for look, act and wait, the rate-limit count and retry hint, the kill-switch times, the Glass result, and the outcome. No token, no account name, no address.
+15. Stop conditions: a tool the mock passed fails with the real client; a 500 from any public route; a token in any log; a camera for an anonymous visitor on Glass.
+16. Retro: what the real client did that the mock did not goes into the wave retro (5.1 item 6).
+
+### 5.3 Ledger rows
+
+For pasting into the Phase 1 ledger at the ops merge. Do not edit the ledger README from a card.
+
+| id | title | lane | depends | status |
+|---|---|---|---|---|
+| C2-00 | contract unblocker for the public surfaces | A | C1-00 | planned |
+| C2-01 | public MCP behind Caddy | A | C2-00 | planned |
+| C2-02 | Velocity on the new TCP port | B | C2-00 | planned |
+| C2-03 | Glass hardening (0072) | C | C2-00 | planned |
+| C2-04 | BlueMap public through Caddy | D | C1-09, C2-00 | planned |
+| C2-05 | look projection cleanup and MCP image slimming | E | C2-00 | planned |
+| C2-06 | external port scan tool | F | C2-00 | planned |
+| C2-07 | integration, public deploy, scan, live run | A | C2-01 to C2-06, 0077, 0080 | planned (O) |
+| C2-R1 | review: MCP public endpoint | R | C2-00, C2-01, C2-05 | planned |
+| C2-R2 | review: Velocity and public Minecraft port | R | C2-02, C2-07 desktop | planned |
+| C2-R3 | review: Glass and BlueMap | R | C2-03, C2-04 | planned |
+| C2-R4 | review: NATS, node and Caddy | R | C2-07 desktop | planned |
+| C2-R5 | fix round for C2-R1 to R4 | R | C2-R1 to R4 | planned |
+
+### 5.4 Open owner questions
+
+Each gates the item named. None is answered by a card.
+
+1. UniFi forward: confirm the owner creates one TCP forward for the chosen Minecraft port to the node, and nothing else (0071 item 4). Gates C2-07 live step 4.
+2. DNS: confirm the owner authorises the `az` flow for `glass`, `map`, `mcp`, `play` and the `_minecraft._tcp` SRV record, with a read-only list first, and who runs it (the owner, or an ops agent for that step). Gates C2-07 live step 3.
+3. Tokens policy: who receives invitee tokens, how long they last, how they are revoked, and whether the 5.2 run token is revoked after the run. Gates C2-01 issuing (behind a flag until 0077) and 5.2.
+4. Invitations wait for the gates: confirm no invitation goes out until 5.1 passes and 0077 is Accepted (0070). Gates every invitation.
+5. 0077 confirmation: the camera rule (anonymous visitors see no camera; login is for cameras) and the interim auth. Gates C2-01 issuing, C2-03 camera removal and 5.2 step 12.
+6. Glass delay value: the number for `GELDAR_GLASS_DELAY_SECONDS`. The default stays 0 until confirmed. Gates the C2-07 live pre-gate.
+7. Living sovereign players on Glass: whether a living sovereign's thoughts may show on Glass. The sovereign filter stays on until confirmed. Gates C2-03 defaults.
+8. Agent board readability: whether a public visitor may read the agent-facing board text on Glass or BlueMap. This is my reading of "agent board"; the default is no until the owner rules. Gates the C2-03 render scope.
+9. BlueMap rate limit: accept the snippet without a rate limit, or approve a pinned Caddy module (a supply-chain change). Gates the C2-07 live pre-gate (C2-04 item 3).
+10. Caddy sites for `glass` and `mcp`: no card writes them, and C2-04 covers `map` only. The owner or orchestrator must assign them (a new card or an extension of C2-04). Gates C2-07 step 1 and live step 5.
+11. NATS default-on: confirm 0080. Gates C2-07 desktop step 5.
+12. UDP scan: an owner request, out of scope. C2-06 is TCP only.
 
 
