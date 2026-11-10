@@ -60,6 +60,9 @@ const ENDED = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 /** The real-time window in which the other copy of one addressed line (speech or wake) is folded. */
 const ADDRESSED_FOLD_MS = 3000;
 
+/** How long the first damage of a burst waits for the rest of it, so one burst is one wake. */
+const DAMAGE_BURST_MS = 1000;
+
 /** Which source an addressed candidate came from: a chat line, or the Body's wake for it. */
 type AddressedKind = 'speech' | 'wake';
 
@@ -93,6 +96,9 @@ export class Attention implements AttentionController {
   private cancelFallback: (() => void) | null = null;
   private cancelIdle: (() => void) | null = null;
   private readonly cancelSettle = new Set<() => void>();
+  /** The damage events of the burst being collected, and the window that closes it. */
+  private damageEvents: MindEvent[] = [];
+  private cancelDamage: (() => void) | null = null;
 
   private readonly options: AttentionOptions;
 
@@ -153,6 +159,9 @@ export class Attention implements AttentionController {
     this.disarmIdle();
     for (const cancel of this.cancelSettle) cancel();
     this.cancelSettle.clear();
+    this.cancelDamage?.();
+    this.cancelDamage = null;
+    this.damageEvents = [];
   }
 
   onEvent(event: MindEvent): void {
@@ -181,10 +190,30 @@ export class Attention implements AttentionController {
       case 'intent':
         this.handleIntent(event);
         return;
+      case 'damage':
+        this.handleDamage(event);
+        return;
       default:
-        // Actions, plan results, reflexes and damage reach the Mind through the Body's own wakes.
+        // Actions, plan results and reflexes reach the Mind through the Body's own wakes.
         return;
     }
+  }
+
+  /**
+   * Health fell. With no intent running the Body watches no `wake_on`, so nothing else wakes the
+   * Mind for it. The first damage opens a short window; the damage that arrives in it is one wake.
+   */
+  private handleDamage(event: MindEvent): void {
+    if (this.ended) return;
+    this.damageEvents.push(event);
+    if (this.cancelDamage !== null) return;
+    this.cancelDamage = this.scheduler.after(DAMAGE_BURST_MS, () => {
+      this.cancelDamage = null;
+      const events = this.damageEvents;
+      this.damageEvents = [];
+      this.addCandidate('unexpected_damage', this.activeIntent, events);
+      this.evaluate();
+    });
   }
 
   private handleSpeech(event: MindEvent & { type: 'speech' }): void {
