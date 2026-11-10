@@ -45,3 +45,15 @@ Branch fix/f-supply-chain, base wave6-main. Date of work: 2026-11-10.
 - `threshold/mcp/Dockerfile` and `threshold/mcp-mock/Dockerfile`: `npm install -g pnpm@12.15.0` replaced by `corepack enable`, which uses the verified packageManager.
 - `checkPackageManagerHash` in `pin-rules.ts` fails the check when the root packageManager has no sha512.
 - Not run: a local `docker build` (Docker 29.1.3 is present). CI builds the images in item 5.
+## Item 4: MCP image slimming (stopped; import edges documented, no refactor)
+
+The refactor was too large for this session's context. Production (non-test) import edges from `threshold/mcp/src`, found with a grep for `@geldar/(animus|mcp-mock|repo-checks)`:
+
+- `@geldar/mcp-mock` (values): `cli.ts` (RealClock), `world.ts` (several), `resources.ts` (buildSnapshot-style exports and a `listPrompts` re-export), `world-session.ts` (callTool, listTools), `http/front.ts` (createMockHttp), `tools/wait.ts`, `tools/sleep.ts`, `tools/read-book.ts`, `tools/unavailable.ts` (ToolError). Types only: `ports.ts` (Clock), `main.ts`, `events/mapper.ts`, `events/present.ts`, `events/player-log.ts`, `events/stream.ts`, `fakes/stores.fakes.ts`, `http/front.ts`.
+- `@geldar/animus` (values): `cli.ts` and `body-gateway.ts` (`nats-body-link.ts`), `events/stream.ts` (`link/mind-event.ts`), `events/speech.ts` (`attention/classify.ts`), `main.ts` (`validate/index.ts`), `world.ts` and `tools/act.ts` (`ids.ts`, `loop/plan.ts`), `record/sovereign-call.ts` (`ids.ts`), `fakes/world.fakes.ts` (`validate/index.ts`). Types only: `events/mapper.ts`, `store/pg-agents.ts`, `tools/say.ts`, `world.ts`, `main.ts`.
+- `@geldar/repo-checks`: `main.ts` imports `checkSovereignIdentity` from `repo-checks/src/identity-mode.ts` at runtime. That file is small and has no workspace imports.
+- Test-only edges (not a runtime concern): every `*.test.ts`, `test/fixtures/real-body-feed.ts`, `test/live/live-requests.test.ts`, `fakes/*.fakes.ts` if they are not imported by runtime code.
+
+Proposed fix for the next session: move the runtime-used pieces (the SimEvent and Clock types, ToolError, the output validator, `buildPlan`, `newId`, `classifySpeech` and the speech identity type, `normaliseEvent`/`mindEventSubjects`, the body link and its errors, and `checkSovereignIdentity`) into `contract/` or a small `shared` package that both `threshold/mcp` and `threshold/mcp-mock` depend on. Then make `threshold/mcp/Dockerfile` install `--filter "@geldar/mcp..."` against that package only, and tighten `Dockerfile.dockerignore` to match. `container.test.ts` must still pass.
+
+Current state: the Dockerfile still installs the `@geldar/mcp...` closure, which includes animus, mcp-mock and repo-checks. Nothing is changed for this item.
