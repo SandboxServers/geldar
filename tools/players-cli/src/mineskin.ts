@@ -1,5 +1,5 @@
 /** The signing service: it uploads a skin to Mojang's texture servers and returns a signed texture property. */
-export const MINESKIN_ENDPOINT = 'https://api.mineskin.org/v2/generate/upload';
+export const MINESKIN_ENDPOINT = 'https://api.mineskin.org/v2/generate';
 
 /** The only host a skin texture may point at (the Mojang texture domain). */
 export const TEXTURE_HOST = 'textures.minecraft.net';
@@ -73,7 +73,10 @@ async function readLimited(response: Response): Promise<string> {
   return text;
 }
 
-/** Takes `data.texture.value` and `data.texture.signature` out of the reply; any other shape is refused. */
+/**
+ * Takes `skin.texture.data.value` and `skin.texture.data.signature` out of a V2 reply (the V1 shape, with
+ * `data.texture`, is refused); any other shape is refused.
+ */
 function parseReply(text: string): { value: string; signature: string } {
   let parsed: unknown;
   try {
@@ -82,8 +85,8 @@ function parseReply(text: string): { value: string; signature: string } {
     throw new SigningError('the signing service reply is not JSON');
   }
   const texture = (
-    parsed as { data?: { texture?: { value?: unknown; signature?: unknown } } } | null
-  )?.data?.texture;
+    parsed as { skin?: { texture?: { data?: { value?: unknown; signature?: unknown } } } } | null
+  )?.skin?.texture?.data;
   if (typeof texture?.value !== 'string' || typeof texture.signature !== 'string') {
     throw new SigningError('the signing service reply has no signed texture');
   }

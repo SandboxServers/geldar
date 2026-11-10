@@ -22,8 +22,20 @@ function fakeFetch(status: number, body: string, headers: Record<string, string>
   return { fetchFn, calls };
 }
 
+/** A V2 reply, shaped as docs.mineskin.org's V2 Changes page shows it (fields the tool does not read are trimmed). */
 function reply(value: string, signature = SIGNATURE): string {
-  return JSON.stringify({ id: 'x', data: { texture: { value, signature } } });
+  return JSON.stringify({
+    success: true,
+    skin: {
+      uuid: '9c7b6f5f285c4c5b9b1ca4be73fa857b',
+      visibility: 'public',
+      variant: 'slim',
+      texture: { data: { value, signature }, url: { skin: GOOD_URL } },
+    },
+    rateLimit: { limit: { limit: 20, remaining: 19 } },
+    warnings: [],
+    messages: [],
+  });
 }
 
 describe('uploadSkin', () => {
@@ -33,7 +45,7 @@ describe('uploadSkin', () => {
     expect(texture).toEqual({ value: textureValue(GOOD_URL), signature: SIGNATURE, model: 'slim' });
     expect(calls).toHaveLength(1);
     expect(JSON.stringify(calls[0]?.init.headers)).toContain(KEY);
-    expect(calls[0]?.url).toBe('https://api.mineskin.org/v2/generate/upload');
+    expect(calls[0]?.url).toBe('https://api.mineskin.org/v2/generate');
   });
 
   it('refuses a texture hosted anywhere but the Mojang texture domain', async () => {
@@ -51,6 +63,10 @@ describe('uploadSkin', () => {
   it('refuses a reply without a signed texture, a non-JSON reply, and a malformed value', async () => {
     const cases = [
       '{"data":{}}',
+      JSON.stringify({
+        id: 'x',
+        data: { texture: { value: textureValue(GOOD_URL), signature: SIGNATURE } },
+      }),
       'not json',
       reply('not base64 !!'),
       reply(textureValue(GOOD_URL), 'x'.repeat(3000)),
