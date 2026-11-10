@@ -34,5 +34,5 @@ Three reviewers (A+D, B+C, E). Round 1 status: most fixed; not fixed or partly: 
 - E-N7: the live fixture reset leaves `agents.last_sleep_day`/`born_day`; the guard is id-only: reset them too and key the guard on tier fast.
 - E-N8: DECIDED (owner): identity_mode is declarative, decision 0059.
 - E-N9: the healthcheck passes on a marker file holding only a newline (`compose/phase0.yml:102,132`): add `[ -n "$start" ]`.
-- Still open from round 1: E-2 `dueTick` always null, E-8 trigger skip reasons silent and `creditsSettled` always 2, E-11 fatigue switch not configurable, E-13 provenance guard bypassed by rewording, E-14 COALESCE test is text-only, E-16 `p0-06-fix-2.md` holds `172.23.0.6`, E-17 pgvector filter after HNSW (Phase 1).
+- Still open from round 1: E-2 `dueTick` always null, E-8 trigger skip reasons silent and `creditsSettled` always 2, E-11 fatigue switch not configurable, E-13 provenance guard bypassed by rewording, E-14 COALESCE test is text-only, E-16 `p0-06-fix-2.md` holds `<container-ip>`, E-17 pgvector filter after HNSW (Phase 1).
 - Docs stale (docs sweep): `docs/decisions/README.md` 0051 line, RESUME.md at wave 4, ledger P0-19 to P0-33, `animus/README.md` skeleton text, `shards/phase0.yaml:5` dilation comment and the undocumented `mind.memory_timeout_s`.
