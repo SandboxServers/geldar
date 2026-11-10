@@ -144,6 +144,16 @@ shard, colo or credits (decision 0068). Minecraft-the-game words are not refused
 the Echo Shard, the end credits and spectator mode pass. Use `player add ... --allow-meta` only when
 the persona must keep such a line; the CLI prints a warning that it kept one.
 
+### Exporting a ranger's persona
+
+`mcp-tokens persona export <character> --out <dir>` reads the approved draft
+(`docs/analysis/phase0/worknotes/ranger-personas-draft.md`) and writes `<dir>/memory/identity.md` and
+`<dir>/memory/goals.md` for the owner's launcher. The directory must not exist yet, and it must lie
+outside this repo and every git work tree, so no persona text reaches git. The same lint as `player add`
+runs on both files: a hit refuses the export and prints only the offending lines (file, line, and the
+matched marker). `--dry-run` prints the byte sizes and the lint result and writes nothing;
+`--allow-meta` keeps a persona that has a hit, with a warning. Both files are owner-only and LF only.
+
 `mcp-tokens` and `db` are passthroughs to `tools/mcp-tokens` and `tools/migrate`; their usage lines
 print with no arguments. `mcp-tokens init` writes `compose/secrets/postgres-mcp.txt` (the MCP's Postgres
 password) and `compose/secrets/mcp-token-pepper.txt` (the token pepper); `compose/mcp.yml` mounts them under

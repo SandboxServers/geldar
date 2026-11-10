@@ -155,6 +155,11 @@ export async function exportPersona(options: ExportOptions, io: ExportIo): Promi
     return;
   }
 
+  if (existsSync(resolve(options.out))) {
+    throw new Error(
+      `--out ${options.out} already exists; choose a directory that does not exist yet`,
+    );
+  }
   const memory = join(resolve(options.out), 'memory');
   const paths = { identity: join(memory, IDENTITY_FILE), goals: join(memory, GOALS_FILE) };
   for (const path of [paths.identity, paths.goals]) {

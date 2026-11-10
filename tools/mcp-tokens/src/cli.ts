@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { addOwner, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
@@ -29,6 +30,8 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
   player pause|resume|retire <id>
+  persona export <character> --out <dir> [--dry-run] [--allow-meta]
+                                        write memory/identity.md and goals.md (--out must not exist)
   token mint <player> --out <file>      write a new token to a file only you can read
   token list [--player <id>]            list tokens (never their hashes or values)
   token revoke <tk_id> | --player <id> --all
@@ -43,7 +46,7 @@ export interface Io {
 }
 
 /** Flags that take no value. Every other --flag takes the next argument. */
-const SWITCHES = new Set(['--force', '--i-understand', '--all', '--allow-meta']);
+const SWITCHES = new Set(['--force', '--i-understand', '--all', '--allow-meta', '--dry-run']);
 
 export interface Parsed {
   positional: string[];
@@ -266,6 +269,21 @@ async function runToken(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   throw new Error(USAGE);
 }
 
+/** `persona export <character> --out <dir>`: the approved draft's persona, written outside every repo. */
+async function runPersona(parsed: Parsed, io: Io, args: string[]): Promise<void> {
+  const [action, character, ...extra] = args;
+  if (action !== 'export' || character === undefined || extra.length > 0) throw new Error(USAGE);
+  await exportPersona(
+    {
+      name: character,
+      out: requireFlag(parsed, '--out'),
+      dryRun: parsed.flags.has('--dry-run'),
+      allowMeta: parsed.flags.has('--allow-meta'),
+    },
+    io,
+  );
+}
+
 /** Runs one command; returns the process exit code. Errors become a line on stderr, never a stack. */
 export async function run(
   argv: readonly string[],
@@ -283,6 +301,8 @@ export async function run(
       await runPlayer(parsed, io, env, rest);
     } else if (command === 'token') {
       await runToken(parsed, io, env, rest);
+    } else if (command === 'persona') {
+      await runPersona(parsed, io, rest);
     } else {
       io.err(USAGE);
       return 2;

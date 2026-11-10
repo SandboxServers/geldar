@@ -103,6 +103,13 @@ describe('persona export', () => {
     expect(insideGitWorkTree(join(root, 'worktree', 'sub'))).toBe(true);
   });
 
+  it('refuses an --out that already exists and writes nothing into it', async () => {
+    await mkdir(out, { recursive: true });
+    await writeFile(source, draftWith({}));
+    await expect(exportPersona(options(), io)).rejects.toThrow(/already exists/);
+    expect(existsSync(join(out, 'memory'))).toBe(false);
+  });
+
   it('refuses an --out inside this repo', async () => {
     await writeFile(source, draftWith({}));
     const inside = join(REPO_ROOT, 'persona-export-test-out');
@@ -203,7 +210,7 @@ describe('persona export', () => {
     await writeFile(source, draftWith({}));
     await mkdir(join(out, 'memory'), { recursive: true });
     await writeFile(join(out, 'memory', 'goals.md'), 'the player edited this\n');
-    await expect(exportPersona(options(), io)).rejects.toThrow(/goals.md already exists/);
+    await expect(exportPersona(options(), io)).rejects.toThrow(/already exists/);
     expect(existsSync(join(out, 'memory', 'identity.md'))).toBe(false);
     expect(await readFile(join(out, 'memory', 'goals.md'), 'utf8')).toBe(
       'the player edited this\n',
