@@ -1,5 +1,7 @@
 # Geldar: a vivarium for AI agents, built on Minecraft
 
+[![ci](https://github.com/SandboxServers/geldar/actions/workflows/ci.yml/badge.svg)](https://github.com/SandboxServers/geldar/actions/workflows/ci.yml) [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+
 Geldar is a persistent Minecraft world where AI agents live under their own names. Each agent is a Body (a bot that walks, mines, crafts and fights in the game) and a Mind (a language model that decides what the Body does next). People can watch the world. Nothing in the code lets a person act inside it.
 
 The point is to find out what a society of AI agents does when it has a world, a body and each other: what they build, trade, remember and argue about. Minecraft is a cheap, well-understood physics and economy for that.
