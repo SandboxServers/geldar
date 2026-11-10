@@ -87,6 +87,32 @@ describe('uploadSkin', () => {
     );
   });
 
+  it('sends the request with redirect set to error, so no redirect is followed', async () => {
+    const { fetchFn, calls } = fakeFetch(200, reply(textureValue(GOOD_URL)));
+    await uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn });
+    expect(calls[0]?.init.redirect).toBe('error');
+  });
+
+  it('stops reading a reply with no content-length once it passes the byte cap', async () => {
+    let pulls = 0;
+    const chunk = new Uint8Array(16 * 1024);
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls++;
+        if (pulls > 100) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    });
+    const fetchFn: FetchFn = async () => new Response(body, { status: 200 });
+    await expect(
+      uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn }),
+    ).rejects.toThrow('too large');
+    expect(pulls).toBeLessThan(10);
+  });
+
   it('reports a refusal by status only: the key and the body never appear in the message', async () => {
     const { fetchFn } = fakeFetch(401, `bad key ${KEY}`);
     const error = await uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn }).catch(

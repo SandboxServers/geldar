@@ -53,7 +53,8 @@ export function checkSkinPath(file: string, repoRoot: string): string {
     throw new RosterError('the skin path must resolve to an absolute file');
   }
   const rel = relative(repoRoot, absolute);
-  const insideRepo = rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+  const outsideRepo = rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
+  const insideRepo = rel !== '' && !outsideRepo;
   if (insideRepo && rel.split(sep)[0] !== 'skins') {
     throw new RosterError('a skin inside the repo must be under skins/ (gitignored)');
   }

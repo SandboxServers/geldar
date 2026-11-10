@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { connectAs, operatorStep, readTokenFile, structuredOf, TEST_PLAYER } from './client.ts';
 import { liveEnabled } from './gate.ts';
+import { jsonHas } from './guards.ts';
 
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
@@ -47,12 +48,9 @@ describe.skipIf(!liveEnabled())('wake on direct address (d) and the corpus canar
         true,
       );
       const { untrusted_world_text: untrusted, ...rest } = structuredOf(read);
-      expect(JSON.stringify(untrusted), 'canary missing from untrusted_world_text').toContain(
-        canary,
-      );
-      expect(JSON.stringify(rest), 'canary leaked outside untrusted_world_text').not.toContain(
-        canary,
-      );
+      // jsonHas compares the JSON-escaped canary, so a canary with quotes or newlines is found and a leak is caught.
+      expect(jsonHas(untrusted, canary), 'canary missing from untrusted_world_text').toBe(true);
+      expect(jsonHas(rest, canary), 'canary leaked outside untrusted_world_text').toBe(false);
     } finally {
       await client.close();
       if (process.env.GELDAR_LIVE_CORPUS_CLEAR !== undefined)

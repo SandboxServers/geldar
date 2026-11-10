@@ -47,6 +47,7 @@ export async function uploadSkin(options: UploadOptions): Promise<SignedTexture>
     response = await fetchFn(options.endpoint ?? MINESKIN_ENDPOINT, {
       method: 'POST',
       headers: { Authorization: `Bearer ${options.apiKey}`, 'User-Agent': 'geldar-players-cli' },
+      redirect: 'error',
       body: form,
       signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     });
@@ -60,17 +61,34 @@ export async function uploadSkin(options: UploadOptions): Promise<SignedTexture>
   return validateTexture(reply.value, reply.signature, options.model);
 }
 
-/** Reads a body up to {@link MAX_RESPONSE_BYTES}; a longer reply is refused before it is parsed. */
+/**
+ * Reads a body up to {@link MAX_RESPONSE_BYTES}, chunk by chunk, so a reply with no content-length is cut off
+ * as soon as it passes the cap. A longer reply is refused before it is parsed.
+ */
 async function readLimited(response: Response): Promise<string> {
   const declared = Number(response.headers.get('content-length') ?? '0');
   if (declared > MAX_RESPONSE_BYTES) {
     throw new SigningError('the signing service reply is too large');
   }
-  const text = await response.text();
-  if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES) {
-    throw new SigningError('the signing service reply is too large');
+  if (response.body === null) {
+    return '';
   }
-  return text;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new SigningError('the signing service reply is too large');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /**

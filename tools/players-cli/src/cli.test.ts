@@ -131,6 +131,24 @@ describe('skin set', () => {
     expect(f.lines[0]).toContain('GELDAR_NATS_URL is not set');
   });
 
+  it('checks NATS before any MineSkin upload, so an unset URL spends no generation', async () => {
+    const f = fakes({ natsUrl: () => undefined });
+    const code = await runCli(['skin', 'set', 'ag-jason-01', join(REPO, 'skins', 'j.png')], f.deps);
+    expect(code).toBe(1);
+    expect(f.uploads).toHaveLength(0);
+  });
+
+  it('does not upload when the bucket cannot be opened', async () => {
+    const f = fakes({
+      openBucket: async () => {
+        throw new Error('no connection');
+      },
+    });
+    const code = await runCli(['skin', 'set', 'ag-jason-01', join(REPO, 'skins', 'j.png')], f.deps);
+    expect(code).toBe(1);
+    expect(f.uploads).toHaveLength(0);
+  });
+
   it('reports a missing key file with a fixed message', async () => {
     const f = fakes({
       readKey: async () => {
