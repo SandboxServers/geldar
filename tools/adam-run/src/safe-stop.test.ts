@@ -115,6 +115,18 @@ describe('safeStop', () => {
     expect(out).toMatchObject({ orphans: 'pass', exitCode: 0, alreadyStopped: false });
   });
 
+  it('writes abort.json and exits 1 when the orphan check throws, so the run still ends on record', async () => {
+    const r = rig();
+    r.deps.processes.list = () => {
+      throw new Error('ps failed');
+    };
+    const out = await safeStop(r.deps, r.input);
+    expect(out).toMatchObject({ orphans: 'unverifiable', exitCode: 1 });
+    const abort = JSON.parse(r.files.read(runPaths(RUN_DIR).abort) ?? 'null');
+    expect(abort).toMatchObject({ orphanCheck: { result: 'unverifiable' }, exitCode: 1 });
+    expect(abort.orphanCheck.detail[0]).toContain('ps failed');
+  });
+
   it('writes abort.json with the reason, the orphan result and the last sample, and a safe_stop line', async () => {
     const r = rig();
     const sample = {

@@ -134,7 +134,13 @@ export async function safeStop(deps: SafeStopDeps, input: SafeStopInput): Promis
       stopErrors.push(`${service}: ${message(err)}`);
     }
   }
-  const orphan = await orphanCheck(deps, input.runStartedAtMs);
+  let orphan: { result: OrphanResult; detail: string[] };
+  try {
+    orphan = await orphanCheck(deps, input.runStartedAtMs);
+  } catch (err) {
+    // A check that throws verifies nothing: the record says so, and the exit code is 1 below.
+    orphan = { result: 'unverifiable', detail: [`orphan check threw: ${message(err)}`] };
+  }
   const exitCode: 0 | 1 = orphan.result === 'pass' && stopErrors.length === 0 ? 0 : 1;
   const at = deps.clock.nowMs();
   const last = input.lastObservation;
