@@ -17,7 +17,8 @@ Every SQL in these protocols is a `SELECT`. Nothing else is run against the data
 
 1. **No code edits.** The only file that changes is `shards/phase0.yaml`, by `adam select`. Ops restores it after the run with `git checkout -- shards/phase0.yaml`. No other restore is allowed.
 2. **No `adam up` by hand for a run.** `adam-run <profile> start` starts the stack. No live test case runs during a run.
-3. **Clean journal per life.** The life's `thoughts` and `intents` rows must be zero before start (P12).
+3. **Clean journal per life.** The life's `thoughts`, `intents` and `agents` rows must be zero before start (P12). Each exit run has its own life, used once (decision 0064).
+11. **Lives.** The 32B run is `ag_adam_03`, the 8B run is `ag_adam_04`, and the smoke run is `ag_smoke_01`. The test life `ag_adam_02` of the golem live cases is not used by any run. Each run's life is whitelisted by hand (section 3).
 4. **No background monitors.** When the run ends, no watcher or loop that ops started is left running.
 5. **No secrets.** Do not open `compose/secrets/`, `skins/`, or any `.env` file. Do not print a secret. Logs stay out of the repo.
 6. **No IP addresses** except `127.0.0.1`.
@@ -40,12 +41,12 @@ Every SQL in these protocols is a `SELECT`. Nothing else is run against the data
 | P4 | Pinned models present | `ollama list` | The tags are listed. Never `ollama pull` during a run. |
 | P5 | Only allowed models loaded | `ollama ps` | Only the profile's chat model and the embedder are listed. Unload a stray with `ollama stop <tag>` (deletes nothing). |
 | P6 | World volume prepared | `./geldar.ps1 adam-run <32b\|8b> prepare-volume --run-id <run-id>` (section 3) | The command prints `prepared <profile> world volume <name>`. The name is written in `ops-log.md`. |
-| P7 | Life selected | `./geldar.ps1 adam select --model strong` (or `fast`) | Prints `selected: life ag_adam_01 (strong)` (or `ag_adam_02 (fast)`). `git status --short` shows only `shards/phase0.yaml` (see section 1). |
+| P7 | Life selected | `./geldar.ps1 adam select --model strong` (32B), `fast` (8B), or `smoke` (smoke run) | Prints `selected: life ag_adam_03 (strong)` (32B), `selected: life ag_adam_04 (fast)` (8B), or `selected: life ag_smoke_01 (smoke)` (smoke). `git status --short` shows only `shards/phase0.yaml` (see section 1). The adam-run gate refuses a Mind whose username or tier does not match the profile. |
 | P8 | Stack healthy | `./geldar.ps1 shard up phase0`, then `./geldar.ps1 shard status phase0` | `shard up` exits 0. Every service is running and healthy. |
 | P9 | Personality seed in place | `Select-String -Path shards\phase0.yaml -Pattern 'personality_seed'` | The line is present and not empty. Do not edit it. |
 | P10 | Disk room | `(Get-PSDrive -Name C).Free / 1GB` | At least 10 GB free (the harness's `diskMinGb`). |
 | P11 | No stale host processes | `./geldar.ps1 adam status` | `body`, `animus` and `lantern-local` each show `stopped`. If one is stale, `./geldar.ps1 adam down`, then check again. |
-| P12 | Clean journal for the life | The SQL in section 4 (C6 form) | `thoughts` and `intents` are both `0` for the run's life (`ag_adam_01` or `ag_adam_02`). |
+| P12 | Clean journal for the life, and the life is unused | Section 4, C9, with the run's life id (`ag_adam_03`, `ag_adam_04` or `ag_smoke_01`) | `thoughts`, `intents` and `agents` rows are all `0` for the run's life. The life has no rows in any table for an earlier run (decision 0064). A non-zero count stops the run. Nobody deletes rows. |
 | P13 | Harness present | `./geldar.ps1` (no arguments) | The usage lists `adam-run <32b\|8b\|smoke> start\|status\|stop\|report\|prepare-volume`. |
 
 The harness repeats P1 to P6 and the life check at `start`, and refuses on any failure. A refusal is a stop, not a retry.
@@ -56,7 +57,8 @@ The harness repeats P1 to P6 and the life check at `start`, and refuses on any f
 |---|---|
 | Prepare a fresh world volume (32B and 8B only) | `./geldar.ps1 adam-run <32b\|8b> prepare-volume --run-id <run-id>` |
 | Use the prepared volume | `$env:GELDAR_WORLD_VOLUME = '<name>'`, then `./geldar.ps1 adam down`, then `./geldar.ps1 adam up` (in the same shell) |
-| Select the tier | `./geldar.ps1 adam select --model strong\|fast` |
+| Select the tier (or the smoke life) | `./geldar.ps1 adam select --model strong\|fast\|smoke` |
+| Whitelist the run's life (by hand; nothing in the repo does it) | `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T paper rcon-cli whitelist add <life>`, then `... rcon-cli whitelist list` must show `<life>`. Run after `shard up phase0`. |
 | Start the run (foreground) | `./geldar.ps1 adam-run <32b\|8b> start --run-id <run-id> --hours 24 --restart-at-hours 12 --body-kill-after-minutes <n>` |
 | Run status | `./geldar.ps1 adam-run <32b\|8b> status --run-id <run-id>` |
 | Safe stop | `./geldar.ps1 adam-run <32b\|8b> stop --run-id <run-id>` |
@@ -92,6 +94,7 @@ T0 is the time `start` is entered (the manifest records the start time). Times a
 | C6 | `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T postgres psql -U geldar -d geldar -c "SELECT state, count(*) FROM intents WHERE life_id='<life>' GROUP BY state;"` | Counts per state. `running` is 1 while an intent is active. |
 | C7 | `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T postgres psql -U geldar -d geldar -c "SELECT count(*) FROM thoughts WHERE life_id='<life>' AND at > now() - interval '15 minutes';"` | Non-zero is normal. Zero once is recorded, not an abort. |
 | C8 | `./geldar.ps1 adam logs body` | No repeating error. A single error line goes into `ops-log.md` with its time. |
+| C9 | `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T postgres psql -U geldar -d geldar -c "SELECT (SELECT count(*) FROM thoughts WHERE life_id='<life>') AS thoughts, (SELECT count(*) FROM intents WHERE life_id='<life>') AS intents, (SELECT count(*) FROM agents WHERE agent_id='<life>') AS agents;"` | Run before start (P12) with the run's life. All three are `0`. Each is recorded in `ops-log.md`. |
 
 Anything that is not an abort rule is written to `ops-log.md` and reported at the next check. Ops does not stop a run on its own judgement.
 

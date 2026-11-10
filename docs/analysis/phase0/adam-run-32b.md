@@ -1,4 +1,4 @@
-# Adam run protocol: Qwen3 32B (strong), life `ag_adam_01`
+# Adam run protocol: Qwen3 32B (strong), exit run life `ag_adam_03`
 
 Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist.md](adam-run-ops-checklist.md) first: its preconditions P1 to P13, its commands (section 3), its checks (section 4), its abort rules (section 5) and its reading of the report (section 7) all apply. This file adds only what is specific to the 32B run. Readings are provisional (decision 0061; owner items in [adam-run-owner-decisions.md](adam-run-owner-decisions.md)).
 
@@ -13,15 +13,15 @@ Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist
 
 ## 1. Before start
 
-1. Work through the preconditions in the checklist, section 2 (P1 to P13), with life `ag_adam_01`. Section 1 of the checklist covers the tier select's edit of the shard file (owner item O-1, now implemented; see step 4).
+1. Work through the preconditions in the checklist, section 2 (P1 to P13), with life `ag_adam_03`. This life is new for the exit runs (decision 0064): it is used by this run only, and never by a rerun. P12 must show it unused in the dev database. Section 1 of the checklist covers the tier select's edit of the shard file (owner item O-1, now implemented; see step 4).
 2. **Fresh world volume.** Run `./geldar.ps1 adam-run 32b prepare-volume --run-id <run-id>`. Pick the run id now and write it in `ops-log.md`. The command creates a new, empty, labelled volume and records it in `.geldar/runs/<run-id>/manifest.json`. It deletes and reuses nothing. Note the printed volume name.
 3. Set the volume for this shell and restart the host side on it:
    `$env:GELDAR_WORLD_VOLUME = '<name from step 2>'`, then `./geldar.ps1 adam down`, then `./geldar.ps1 adam up`. The harness refuses to start if the volume is not the recorded, empty, unused one.
-4. **Select the tier.** `./geldar.ps1 adam select --model strong`. Expected output: `selected: life ag_adam_01 (strong)`. Then `git status --short` prints only `shards/phase0.yaml`. The select's edit is the only change start accepts: it may change only `mind.run_tier`, `mind.agent.username` and `mind.agent.tier`, with the values select writes. Any other change to that file, or any other dirty path, refuses the start. Do not edit the file by hand.
+4. **Select the tier.** `./geldar.ps1 adam select --model strong`. Expected output: `selected: life ag_adam_03 (strong)`. Then `git status --short` prints only `shards/phase0.yaml`. The select's edit is the only change start accepts: it may change only `mind.run_tier`, `mind.agent.username` and `mind.agent.tier`, with the values select writes. Any other change to that file, or any other dirty path, refuses the start. Do not edit the file by hand.
 5. **Benchmark gate.** The gate is the newest `bench-results/*.json`. Its `meta.commit` must equal `git rev-parse --short HEAD`, and it must show 100% at 20 TPS. Written by OPS-0 at this HEAD (`--runs 10`, D-P0-18). Otherwise the start is refused.
 6. **Seed.** `shards/phase0.yaml` holds the shard seed (8675309, equal to `SEED` in `compose/phase0.yml`). Record it in `ops-log.md`. The 8B run uses the same seed.
-7. **Whitelist the life.** After `shard up phase0`, run
-   `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T paper rcon-cli whitelist add ag_adam_01`, then `... rcon-cli whitelist list` must show `ag_adam_01`.
+7. **Whitelist the life (by hand).** Nothing in the repo whitelists `ag_adam_03`; ops does it. After `shard up phase0`, run
+   `docker compose -f compose/phase0.yml -p geldar-phase0 exec -T paper rcon-cli whitelist add ag_adam_03`, then `... rcon-cli whitelist list` must show `ag_adam_03`.
 
 ## 2. Steps, in order
 
@@ -36,7 +36,7 @@ Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist
 3. **Checks** at the intervals in section 3, using the checklist's C1 to C8.
 4. **Body kill and restart mid-intent** (planned by `--body-kill-after-minutes 120`). The harness does this itself: at the first minute at or after T0+2:00 with an intent active, it ends the Body process and starts a fresh one (`adam restart-body`), then waits up to 4 minutes for the Body to reconnect. Ops does not kill anything by hand.
    - **Check that it resumed.** Before the kill (or at the next check), run
-     `SELECT intent_id, body_generation, state FROM intents WHERE life_id='ag_adam_01' AND state IN ('accepted','running');`
+     `SELECT intent_id, body_generation, state FROM intents WHERE life_id='ag_adam_03' AND state IN ('accepted','running');`
      The intent that was `running` is still `running` after the restart, and its `body_generation` is one higher. It is not reset to `accepted`.
    - **Record** the times, the generation before and after, and the `status.log` line that shows the new generation, in `ops-log.md`.
    - **If it did not resume** (the intent is `failed`, or the generation did not change): that is a finding. Record it. Tell the orchestrator at once. Do not restart anything again.
@@ -44,7 +44,7 @@ Status: draft for owner review, 2026-11-10 (W6-14). Read [adam-run-ops-checklist
 5. **Planned whole-stack restart** (`--restart-at-hours 12`, T0+12:00). The harness restarts the stack (`docker compose restart` of the run's services; the volumes are kept) and waits up to 10 minutes. Ops checks:
    - `./geldar.ps1 adam status` shows the three host processes running.
    - A running intent is still `running`, or was `completed` during the restart. No intent is `accepted` again from scratch.
-   - `rcon-cli whitelist list` still lists `ag_adam_01` (the volume is kept, so it normally does). If it does not, whitelist it again, and record that.
+   - `rcon-cli whitelist list` still lists `ag_adam_03` (the volume is kept, so it normally does). If it does not, whitelist it again, and record that.
    - Record the restart time in `ops-log.md` and check that `manifest.json` records the restart.
 6. **End.** Not before T0+24:00. Then `./geldar.ps1 adam-run 32b stop --run-id <run-id>`, then `./geldar.ps1 adam status` (all `stopped`).
 7. **Restore the shard file.** After the stop, `git checkout -- shards/phase0.yaml` (this drops the select's edit; the manifest keeps the record in `shard_edit`), then `git status --short` prints nothing.
@@ -68,7 +68,7 @@ Section 5 of the checklist. The harness stops the stack and writes `abort.json`.
 
 ## 5. What this run gives the owner
 
-- A verdict per criterion for `ag_adam_01` in `run-report.md`: survival, continuity (24 h), intents (three completed with no model call during the intent), receipts, checkpoint resume, latency p50, p95 and max, calls per useful minute (thoughts and reflections reported separately), and the outcome histogram.
+- A verdict per criterion for `ag_adam_03` in `run-report.md`: survival, continuity (24 h), intents (three completed with no model call during the intent), receipts, checkpoint resume, latency p50, p95 and max, calls per useful minute (thoughts and reflections reported separately), and the outcome histogram.
 - A **candidate** for the model floor. A model passes when its verdict under the floor key in `criteria.yaml` is PASS. If `qwen3:32b` passes, it is a floor candidate. The 8B run decides whether a smaller floor exists; 8B is the only smaller tier in Phase 0 (decision 0061 item 6).
 
 ## 6. The rule for the 8B run
