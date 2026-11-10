@@ -22,15 +22,22 @@ const CRITERIA_YAML = [
 ].join('\n');
 
 const MANIFEST_JSON = JSON.stringify({
+  schema: 'adam-run-manifest/1',
   run_id: 'run-cli',
+  profile: 'smoke',
   life_id: 'life-1',
-  world_seed: 'seed-cli',
-  git_sha: 'abc1234',
-  model_tags: [{ tag: 'model-a', digest: 'sha256:aa' }],
-  shard_config_hash: 'cfg-cli',
-  start_time: new Date(T0).toISOString(),
-  restarts: [],
+  seed: 7,
+  git: { sha: 'abc1234', clean: true },
+  shard_config_sha256: 'cfg-cli',
+  shard_edit: null,
+  model_pins: [
+    { tag: 'model-a', pinned_digest: 'sha256:aa', observed_digest: 'sha256:aa', matches: true },
+  ],
+  bench: null,
+  criteria_sha256: 'crit-cli',
   tps_target: 20,
+  started_at: new Date(T0).toISOString(),
+  planned_restart_at: null,
 });
 
 describe('the adam-report command line', () => {

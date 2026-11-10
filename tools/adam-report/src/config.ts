@@ -66,29 +66,36 @@ function time(raw: Raw, key: string): number {
   return ms;
 }
 
-/** Parses manifest.json (W6-13's format, defined here). Throws on a missing or malformed field. */
+/** The schema adam-run's buildManifest writes (tools/adam-run/src/manifest.ts). */
+export const MANIFEST_SCHEMA = 'adam-run-manifest/1';
+
+/**
+ * Parses the manifest.json that `adam-run` writes. adam-run is the writer; this reader follows its field names.
+ * adam-run records no restart, so `restarts` is empty: `planned_restart_at` is a plan, not a restart record.
+ * Throws on a missing or malformed field, and on any other schema.
+ */
 export function parseManifest(text: string): Manifest {
   const raw = JSON.parse(text) as Raw;
-  const tags = raw.model_tags;
-  if (!Array.isArray(tags)) throw new Error('manifest: model_tags must be an array');
-  const restarts = raw.restarts ?? [];
-  if (!Array.isArray(restarts)) throw new Error('manifest: restarts must be an array');
+  if (raw.schema !== MANIFEST_SCHEMA)
+    throw new Error(`manifest: schema must be ${MANIFEST_SCHEMA}`);
+  const git = raw.git as Raw | null | undefined;
+  if (typeof git !== 'object' || git === null) throw new Error('manifest: git must be an object');
+  const pins = raw.model_pins;
+  if (!Array.isArray(pins)) throw new Error('manifest: model_pins must be an array');
+  const seed = raw.seed;
+  if (typeof seed !== 'number' || !Number.isInteger(seed))
+    throw new Error('manifest: seed must be an integer');
   const tps = raw.tps_target;
   if (typeof tps !== 'number') throw new Error('manifest: tps_target must be a number');
   return {
     runId: str(raw, 'run_id'),
     lifeId: str(raw, 'life_id'),
-    worldSeed: str(raw, 'world_seed'),
-    gitSha: str(raw, 'git_sha'),
-    modelTags: tags.map((t: Raw) => ({ tag: str(t, 'tag'), digest: str(t, 'digest') })),
-    shardConfigHash: str(raw, 'shard_config_hash'),
-    startTimeMs: time(raw, 'start_time'),
-    restarts: restarts.map((r: Raw) => {
-      const kind = str(r, 'kind');
-      if (kind !== 'planned' && kind !== 'body')
-        throw new Error('manifest: restart kind must be planned or body');
-      return { atMs: time(r, 'at'), kind };
-    }),
+    worldSeed: String(seed),
+    gitSha: str(git, 'sha'),
+    modelTags: pins.map((p: Raw) => ({ tag: str(p, 'tag'), digest: str(p, 'pinned_digest') })),
+    shardConfigHash: str(raw, 'shard_config_sha256'),
+    startTimeMs: time(raw, 'started_at'),
+    restarts: [],
     tpsTarget: tps,
   };
 }

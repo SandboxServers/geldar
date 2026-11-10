@@ -36,18 +36,23 @@ const CRITERIA_YAML = [
 ].join('\n');
 
 const MANIFEST_JSON = JSON.stringify({
+  schema: 'adam-run-manifest/1',
   run_id: 'run-det',
+  profile: 'smoke',
   life_id: 'life-1',
-  world_seed: 'seed-det',
-  git_sha: 'abc1234',
-  model_tags: [
-    { tag: 'model-b', digest: 'sha256:bb' },
-    { tag: 'model-a', digest: 'sha256:aa' },
+  seed: 3,
+  git: { sha: 'abc1234', clean: true },
+  shard_config_sha256: 'cfg-det',
+  shard_edit: null,
+  model_pins: [
+    { tag: 'model-b', pinned_digest: 'sha256:bb', observed_digest: null, matches: false },
+    { tag: 'model-a', pinned_digest: 'sha256:aa', observed_digest: 'sha256:aa', matches: true },
   ],
-  shard_config_hash: 'cfg-det',
-  start_time: new Date(T0).toISOString(),
-  restarts: [],
+  bench: null,
+  criteria_sha256: 'crit-det',
   tps_target: 20,
+  started_at: new Date(T0).toISOString(),
+  planned_restart_at: null,
 });
 
 /** Several rows of each kind, in one order. Order matters to the loader, not to the report. */
