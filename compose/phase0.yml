@@ -99,7 +99,7 @@ services:
       # /tmp/geldar-core.ready (its pid and start time) on enable and removes it on disable. The check compares the
       # start time with /proc/<pid>/stat, so a marker left by an earlier process never passes. The rolling
       # /data/logs/latest.log is not read: Paper rolls it at midnight UTC. ($$ is Compose's escape for $.)
-      test: ["CMD-SHELL", "mc-health && read -r pid start < /tmp/geldar-core.ready && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ]"]
+      test: ["CMD-SHELL", "mc-health && read -r pid start < /tmp/geldar-core.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ]"]
     restart: unless-stopped
 
   velocity:
@@ -129,7 +129,7 @@ services:
       # Port open AND the identity plugin enabled in this proxy process: without the plugin the proxy would admit
       # anyone. The plugin writes /tmp/geldar-identity.ready (its pid and start time) at init and removes it at
       # shutdown; the start time is compared with /proc, and the rolling proxy log is not read.
-      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
+      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
       interval: 10s
       timeout: 5s
       retries: 12
