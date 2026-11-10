@@ -36,6 +36,8 @@ export interface AttentionOptions {
   tickRate: number;
   /** Where suppressions are recorded. */
   journal: Journal;
+  /** Where a failed suppression record is reported (the suppression itself is lost). */
+  log?: (line: Record<string, unknown>) => void;
   /** Whether a speaker is a counterparty in an open commitment; false for everyone when absent. */
   isCounterparty?: CommitmentLookup;
   clock?: Clock;
@@ -55,6 +57,16 @@ export interface AttentionOptions {
 /** The terminal intent states. */
 const ENDED = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
+/** The real-time window in which the other copy of one addressed line (speech or wake) is folded. */
+const ADDRESSED_FOLD_MS = 3000;
+
+/** Which source an addressed candidate came from: a chat line, or the Body's wake for it. */
+type AddressedKind = 'speech' | 'wake';
+
+function addressedKind(events: MindEvent[]): AddressedKind {
+  return events.every((e) => e.type === 'speech') ? 'speech' : 'wake';
+}
+
 /** The attention controller (P0-27). */
 export class Attention implements AttentionController {
   private readonly decisions = new Set<(d: WakeDecision) => void>();
@@ -69,8 +81,11 @@ export class Attention implements AttentionController {
   private readonly wokenIntents = new Set<string>();
   private inFlight = false;
   private lastWakeMs: number | null = null;
-  /** The newest tick an addressed wake has been decided on; a later copy of it is a duplicate. */
-  private lastAddressedTick: number | null = null;
+  /** When the last addressed wake was emitted (the controller's clock), and from which source. */
+  private lastAddressedAtMs: number | null = null;
+  private lastAddressedKind: AddressedKind | null = null;
+  /** An idle wake whose intent ended during the thought in flight; it outlives that thought. */
+  private idleHeld = false;
   private activeIntent: string | null = null;
   /** The agent died: this life's controller stays quiet, so no idle watchdog is armed again. */
   private ended = false;
@@ -119,8 +134,11 @@ export class Attention implements AttentionController {
 
   thoughtSettled(_outcome: ThoughtOutcome): void {
     this.inFlight = false;
-    // Idle and fallback wakes were for a thought that has now happened; they are stale.
-    this.pending.retain((c) => !isFiller(c.reason));
+    // Idle and fallback wakes were for a thought that has now happened; they are stale, except an
+    // idle wake for an intent that ended while this thought was running (it was not yet thought of).
+    const keepIdle = this.idleHeld;
+    this.idleHeld = false;
+    this.pending.retain((c) => !isFiller(c.reason) || (keepIdle && c.reason === 'idle'));
     for (const c of this.pending.ranked()) c.recorded = false;
     if (this.activeIntent !== null) this.armFallback(this.activeIntent);
     this.evaluate();
@@ -211,7 +229,7 @@ export class Attention implements AttentionController {
         this.activeIntent = null;
         this.disarmFallback();
       }
-      this.settleIdle(id, event);
+      this.settleIdle(id, event, this.inFlight);
       return;
     }
     if (this.activeIntent !== id) {
@@ -239,10 +257,13 @@ export class Attention implements AttentionController {
   }
 
   /** After the settle window, an ended intent with no Body wake and no successor means `idle`. */
-  private settleIdle(intentId: string, event: MindEvent): void {
+  private settleIdle(intentId: string, event: MindEvent, endedInFlight: boolean): void {
     const cancel = this.scheduler.after(this.idleSettleMs, () => {
       this.cancelSettle.delete(cancel);
       if (this.wokenIntents.has(intentId) || this.activeIntent !== null) return;
+      // The intent ended during a thought that is still running: that thought cannot have seen it,
+      // so the idle wake is kept for the thought's settle instead of being dropped as stale.
+      if (endedInFlight && this.inFlight) this.idleHeld = true;
       this.addCandidate('idle', intentId, [event]);
       this.evaluate();
     });
@@ -270,9 +291,13 @@ export class Attention implements AttentionController {
     intentId: string | null,
     events: MindEvent[],
   ): void {
-    // The other copy of an addressed line that a thought has already been woken for: no second thought.
-    if (isAddressed(reason) && this.lastAddressedTick !== null) {
-      if (events.length > 0 && events.every((e) => e.tick <= (this.lastAddressedTick ?? -1))) {
+    // The other copy of an addressed line (the chat line or the Body's wake for it) that a thought has
+    // already been woken for: no second thought. Ticks are not compared: the two sources use different
+    // clocks. Two chat lines from different speakers are never folded.
+    if (isAddressed(reason) && this.lastAddressedAtMs !== null && this.lastAddressedKind !== null) {
+      const now = this.clock.nowMs();
+      const sameWindow = now - this.lastAddressedAtMs <= ADDRESSED_FOLD_MS;
+      if (events.length > 0 && sameWindow && addressedKind(events) !== this.lastAddressedKind) {
         this.record(
           [...new Set(events.map((e) => e.type))],
           'duplicate',
@@ -322,9 +347,11 @@ export class Attention implements AttentionController {
       digest: this.digest.take(),
       priority: priorityOf(best.rank),
     };
-    this.lastWakeMs = this.clock.nowMs();
+    const now = this.clock.nowMs();
+    this.lastWakeMs = now;
     if (isAddressed(best.reason)) {
-      this.lastAddressedTick = Math.max(...events.map((e) => e.tick));
+      this.lastAddressedAtMs = now;
+      this.lastAddressedKind = addressedKind(events);
     }
     this.inFlight = true;
     this.cancelSpacing?.();
@@ -356,7 +383,9 @@ export class Attention implements AttentionController {
     this.pending.take();
     this.digest.clear();
     this.activeIntent = null;
-    this.lastAddressedTick = null;
+    this.lastAddressedAtMs = null;
+    this.lastAddressedKind = null;
+    this.idleHeld = false;
     this.wokenIntents.clear();
     this.stop();
   }
@@ -369,10 +398,21 @@ export class Attention implements AttentionController {
 
   private record(eventTypes: string[], reason: SuppressionReason, intentId: string | null): void {
     const at = new Date(this.clock.nowMs()).toISOString();
+    const lifeId = this.options.lifeId;
     this.options.journal
-      .recordSuppressed({ lifeId: this.options.lifeId, at, eventTypes, reason, intentId })
-      .catch(() => {
+      .recordSuppressed({ lifeId, at, eventTypes, reason, intentId })
+      .catch((error: unknown) => {
         // A journal failure must not stop attention; the suppression is lost, the Mind carries on.
+        try {
+          this.options.log?.({
+            event: 'suppression_not_recorded',
+            life_id: lifeId,
+            code: 'suppression_record_failed',
+            error: String(error),
+          });
+        } catch {
+          // A failing log line must not stop attention either.
+        }
       });
   }
 }

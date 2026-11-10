@@ -95,6 +95,28 @@ describe('hostile text', () => {
     for (const ch of hidden) expect(cleanLine(`a${ch}b`)).toBe('ab');
   });
 
+  it.each([
+    ['U+180B', 0x180b],
+    ['U+180C', 0x180c],
+    ['U+180D', 0x180d],
+    ['U+180F', 0x180f],
+    ['U+206A', 0x206a],
+    ['U+206F', 0x206f],
+    ['U+FFA0', 0xffa0],
+    ['U+FFF0', 0xfff0],
+    ['U+FFFB', 0xfffb],
+    ['U+17B4', 0x17b4],
+    ['U+17B5', 0x17b5],
+    ['U+1BCA0', 0x1bca0],
+    ['U+1BCA3', 0x1bca3],
+    ['U+1D173', 0x1d173],
+    ['U+1D17A', 0x1d17a],
+    ['U+E0100', 0xe0100],
+    ['U+E01EF', 0xe01ef],
+  ])('cleanLine removes the invisible code point %s', (_name, code) => {
+    expect(cleanLine(`a${String.fromCodePoint(code)}b`)).toBe('ab');
+  });
+
   it('the voice neutralises hostile text before it is sent or published', async () => {
     const t = setup();
     for (const text of corpus) {
