@@ -21,6 +21,13 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
+# Labels on every service (FX-WATCHTOWER). The shared node runs a Watchtower container that auto-updates containers.
+# Its opt-out label keeps it off these services: they are pinned by digest and change only through deploy/colo-up.sh.
+# com.geldar.stack names the stack; deploy/colo-status.sh still scopes its docker calls by the compose project label.
+x-labels: &colo-labels
+  com.centurylinklabs.watchtower.enable: "false"
+  com.geldar.stack: colo
+
 services:
   postgres:
     # Budget: 1 CPU, 2048m (no swap, 256 pids). Measured in C1-10.
@@ -33,6 +40,7 @@ services:
     memswap_limit: "${GELDAR_COLO_POSTGRES_MEM:-2048m}"
     pids_limit: 256
     logging: *logging
+    labels: *colo-labels
     image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
     environment:
       POSTGRES_DB: geldar
@@ -65,6 +73,7 @@ services:
     memswap_limit: "${GELDAR_COLO_NATS_MEM:-512m}"
     pids_limit: 256
     logging: *logging
+    labels: *colo-labels
     image: nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
     # NATS accounts are the opt-in overlay (decision 0080); see the nats-auth slot at the end of this file.
     # The monitor port 8222 serves the healthcheck inside the container only: it is not published to the host.
@@ -92,6 +101,7 @@ services:
     memswap_limit: "${GELDAR_COLO_PAPER_MEM:-8192m}"
     pids_limit: 512
     logging: *logging
+    labels: *colo-labels
     image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
     # Writes the Velocity forwarding secret into paper-global.yml from its secret file, then starts the image.
     entrypoint: ["/bin/sh", "/geldar/paper-entrypoint.sh"]
@@ -143,6 +153,7 @@ services:
     memswap_limit: "${GELDAR_COLO_VELOCITY_MEM:-1024m}"
     pids_limit: 256
     logging: *logging
+    labels: *colo-labels
     image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
     environment:
       TYPE: VELOCITY
@@ -185,6 +196,7 @@ services:
     memswap_limit: "${GELDAR_COLO_EVENTSINK_MEM:-512m}"
     pids_limit: 256
     logging: *logging
+    labels: *colo-labels
     # NATS GELDAR_EVENTS to Postgres `events`, idempotently (spec 7). Context is the repo root.
     build:
       context: ..
@@ -217,6 +229,7 @@ services:
     memswap_limit: "${GELDAR_COLO_GOLEM_BODY_MEM:-2048m}"
     pids_limit: 256
     logging: *logging
+    labels: *colo-labels
     build:
       context: ..
       dockerfile: golem/Dockerfile
@@ -259,6 +272,7 @@ services:
     memswap_limit: "${GELDAR_COLO_ANIMUS_MEM:-2048m}"
     pids_limit: 256
     logging: *logging
+    labels: *colo-labels
     build:
       context: ..
       dockerfile: animus/Dockerfile.mind

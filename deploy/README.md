@@ -39,6 +39,11 @@ volumes and networks. No script runs `down`, and no script removes a volume.
 - The state directory `GELDAR_STATE_DIR` (default `/var/lib/geldar-colo`) must be writable by the deploying account.
   It holds the release records and the verified BlueMap jar.
 
+The node also runs a Watchtower container that auto-updates containers it finds. Every service in `compose/colo.yml`
+carries the label `com.centurylinklabs.watchtower.enable: "false"`, which keeps Watchtower away from them. The colo
+services are pinned by digest and change only through `colo-up.sh`, so an automatic pull would bypass the release
+record. The colo rule in `tools/repo-checks` fails a service that lacks the label or sets it to anything but `"false"`.
+
 ## First deploy: the order
 
 Run these in order. Stop at the first failure.
