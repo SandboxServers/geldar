@@ -9,6 +9,7 @@ import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.util.BoundingBox;
 
 /** {@link KinoWorld} over a Bukkit world. It calls getters only, on the server thread. */
 public final class BukkitKinoWorld implements KinoWorld {
@@ -59,18 +60,20 @@ public final class BukkitKinoWorld implements KinoWorld {
     }
 
     @Override
-    public List<EntityView> entitiesNear(double x, double z, int radiusChunks) {
-        int cx = Math.floorDiv((int) Math.floor(x), 16);
-        int cz = Math.floorDiv((int) Math.floor(z), 16);
-        List<EntityView> out = new ArrayList<>();
-        for (Entity e : world.getEntities()) {
-            Location at = e.getLocation();
-            if (Math.abs(Math.floorDiv(at.getBlockX(), 16) - cx) <= radiusChunks
-                    && Math.abs(Math.floorDiv(at.getBlockZ(), 16) - cz) <= radiusChunks) {
-                out.add(view(e));
-            }
+    public ChunkEntities entitiesInChunk(int chunkX, int chunkZ, int from, int max) {
+        if (max <= 0 || !world.isChunkLoaded(chunkX, chunkZ)) {
+            return new ChunkEntities(0, List.of());
         }
-        return out;
+        // The chunk is loaded (checked above); a box query reads only entities that exist, it loads nothing.
+        BoundingBox box = new BoundingBox(chunkX * 16.0, world.getMinHeight(), chunkZ * 16.0,
+                chunkX * 16.0 + 16.0, world.getMaxHeight(), chunkZ * 16.0 + 16.0);
+        Entity[] all = world.getNearbyEntities(box).toArray(new Entity[0]);
+        int end = Math.min(all.length, from + max);
+        List<EntityView> out = new ArrayList<>();
+        for (int i = Math.max(0, from); i < end; i++) {
+            out.add(view(all[i]));
+        }
+        return new ChunkEntities(all.length, out);
     }
 
     private EntityView view(Entity e) {

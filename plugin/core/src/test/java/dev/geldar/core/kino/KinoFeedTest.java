@@ -114,7 +114,7 @@ class KinoFeedTest {
 
     @Test
     void entityPositionsAndBlockUpdatesValidateAndPitchIsClamped() {
-        KinoFeed feed = new KinoFeed(new FakeWorld(Set.of()), sink, 2);
+        KinoFeed feed = new KinoFeed(new FakeWorld(Set.of(FakeWorld.key(0, 0))), sink, 2);
         feed.start("steve_bot");
         feed.tick();
         feed.blockChanged("world", 3, 70, -5, "minecraft:oak_log[axis=y]");
