@@ -19,7 +19,7 @@ Phase 1 puts the public Minecraft TCP port on Velocity (0071). Velocity must adm
 
 ## Paper enforcement
 
-Velocity sends one message on `geldar:ghost` to the backend each time a `SPECTATOR` connection's backend link comes up (`ServerPostConnectEvent`). Geldar-Core (`GhostListener`) receives it, remembers the player until quit, and holds them in spectator: forced on the signal, on join, on respawn and on a world change; a game-mode change to anything but spectator is cancelled. A ghost's chat is cancelled, so no agent hears a watcher. The Golem registry writer now writes `live: true` on every put; a dead life is unregistered, so `live: false` still comes only from a future ghost writer. The signal can only add a ghost, so a client that forges it restricts itself only.
+Velocity sends one message on `geldar:ghost` to the backend each time a `SPECTATOR` connection's backend link comes up (`ServerPostConnectEvent`). Geldar-Core (`GhostListener`) receives it, remembers the player until quit, and holds them in spectator: forced on the signal, on join, on respawn and on a world change; a game-mode change to anything but spectator is cancelled. A ghost's chat is cancelled, so no agent hears a watcher. The Golem registry writer now writes `live: true` on every put; a dead life is unregistered, so `live: false` still comes only from a future ghost writer. The signal can only add a ghost, so a client that forges it restricts itself only. Decision 0137 supersedes the signal as the primary path: Paper now fails closed on a signed `geldar_live` profile property, and the signal is the second path.
 
 ## Consequences
 
