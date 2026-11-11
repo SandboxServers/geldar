@@ -37,7 +37,7 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   - each such file exists, is not empty, is a regular file inside the secrets directory (a symlink out is refused),
     and has mode `0600` or `0400`.
   `gen-secrets.sh` creates `postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`,
-  `postgres-mcp.txt` and `mcp-token-pepper.txt` when they are missing. The NATS files (`nats-mind.txt`,
+  `postgres-mcp.txt`, `postgres-glass.txt` and `mcp-token-pepper.txt` when they are missing. The NATS files (`nats-mind.txt`,
   `nats-mcp.txt`, and `nats-auth.conf` when the auth overlay is merged) come from the trusted machine, never from the
   node.
   The scripts check the mode and the size. They never read the contents.
