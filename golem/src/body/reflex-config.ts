@@ -12,6 +12,7 @@ export const REFLEX_NAMES = [
   'fight_or_flee',
   'blocked_path',
   'panic_burrow',
+  'unstick',
 ] as const;
 
 /** One reflex's name, exactly as in the shard file and in `reflex_fired` records. */

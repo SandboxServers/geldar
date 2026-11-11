@@ -200,6 +200,12 @@
         },
         {
           "type": "object",
+          "properties": { "do": { "const": "unstick" } },
+          "required": ["do"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
           "properties": {
             "do": { "const": "give" },
             "to": { "type": "string", "pattern": "^[A-Za-z0-9_]{3,16}$" },
