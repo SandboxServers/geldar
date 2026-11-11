@@ -173,11 +173,7 @@
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 }
         },
-        "untrusted_world_text": {
-          "type": "object",
-          "allOf": [{ "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" }],
-          "required": ["book"]
-        },
+        "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
         "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
       }
     },

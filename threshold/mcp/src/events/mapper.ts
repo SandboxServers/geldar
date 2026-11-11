@@ -49,9 +49,16 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
     case 'damage':
     case 'death':
       return [{ ...base, kind: 'damage', amount: amountOf(event.payload) }];
+    case 'reflex_fired': {
+      // The only reflex entry the player hears is "Your body ate on its own", so only a reflex that
+      // really ate is one. Every other reflex firing, and any eat that failed or was abandoned,
+      // is the Body's own business and is not a news item (the first live run heard it falsely).
+      const p = event.payload as { name?: unknown; result?: unknown };
+      return p.name === 'eat' && p.result === 'handled' ? [{ ...base, kind: 'reflex' }] : [];
+    }
     case 'sleep':
-    case 'reflex_fired':
-      return [{ ...base, kind: 'reflex' }];
+      // A plugin sleep is no meal either: the wake and day entries already tell the player.
+      return [];
     case 'intent': {
       const p = event.payload;
       if (p.state === 'accepted') {
@@ -66,7 +73,9 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
       const repeat = run.lastEndedId !== undefined && run.lastEndedId === p.intent_id;
       ctx.runs.set(event.lifeId, { wakeOn: null, startedMs: null, lastEndedId: p.intent_id });
       if (repeat) return [];
-      return [{ ...base, kind: 'intent_finished', outcome: endOutcome(p.state, p.detail) }];
+      const outcome = endOutcome(p.state, p.detail);
+      const reason = outcome === 'failed' ? failureReason(p.detail) : undefined;
+      return [{ ...base, kind: 'intent_finished', outcome, ...(reason ? { reason } : {}) }];
     }
     case 'plan_result': {
       // The internal entry is what `say` reads for its confirmation. No player view shows it.
@@ -113,6 +122,28 @@ function endOutcome(
   if (state === 'completed') return 'completed';
   if (state === 'failed' && LIMIT_DETAIL.test(detail ?? '')) return 'limit_reached';
   return 'failed';
+}
+
+/** Item names the Body's detail lists: lowercase words only, so nothing else gets through. */
+const ITEM_LIST = /^[a-z_]+(?:, [a-z_]+){0,7}$/;
+
+/**
+ * A plain world fact for why an intent failed, rebuilt from the Body's detail with fixed templates
+ * (decision 0068: no system words, no free text). Only item names that pass `ITEM_LIST` are quoted.
+ * Undefined when the detail is not one of the known shapes: the player then hears the bare failure.
+ */
+export function failureReason(detail: string | undefined): string | undefined {
+  const text = detail ?? '';
+  const missing = /^missing_materials: missing (.+)$/.exec(text);
+  if (missing?.[1] && ITEM_LIST.test(missing[1])) {
+    return `you lack ${missing[1].replaceAll('_', ' ')}`;
+  }
+  if (text.startsWith('missing_station')) return 'no crafting table within reach';
+  if (text.startsWith('blocked')) return 'the way was blocked';
+  if (text.startsWith('out_of_reach') || text.startsWith('too_far')) {
+    return 'too far from the block';
+  }
+  return undefined;
 }
 
 function mapWake(

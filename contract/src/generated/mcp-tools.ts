@@ -1697,15 +1697,7 @@ export const mcpToolSchemas: Record<
           }
         },
         "untrusted_world_text": {
-          "type": "object",
-          "allOf": [
-            {
-              "$ref": "#/$defs/UntrustedWorldText"
-            }
-          ],
-          "required": [
-            "book"
-          ]
+          "$ref": "#/$defs/UntrustedWorldText"
         },
         "note": {
           "$ref": "#/$defs/UntrustedNote"
