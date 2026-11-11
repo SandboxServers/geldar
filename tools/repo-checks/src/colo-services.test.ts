@@ -233,6 +233,21 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
     expect(players.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
   });
 
+  it('keeps the Mind out of the default start: animus is under the mind profile, which colo-up.sh never names (C2-07j, decision 0134)', () => {
+    expect(mind.profiles).toEqual(['mind']);
+    const up = readFileSync(`${ROOT}deploy/colo-up.sh`, 'utf8');
+    expect(up).not.toMatch(/--profile mind|animus/);
+    const status = readFileSync(`${ROOT}deploy/colo-status.sh`, 'utf8');
+    expect(status).not.toMatch(/animus/);
+  });
+
+  it('gives the admin service the body NATS secret for ensure-skins-bucket (C2-07j)', () => {
+    const admin = colo.services.admin ?? {};
+    expect(admin.secrets).toContainEqual({ source: 'nats-body', target: 'nats-body.txt' });
+    expect(env(admin).GELDAR_NATS_USER).toBe('body');
+    expect(env(admin).GELDAR_NATS_PASSWORD_FILE).toBe('/run/secrets/nats-body.txt');
+  });
+
   it('is gated behind the sovereign profile, so a plain shard up does not start it', () => {
     expect(players.profiles).toEqual(['sovereign']);
   });

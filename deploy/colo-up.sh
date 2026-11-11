@@ -18,6 +18,7 @@ load_node_env
 [ -n "${GELDAR_ADMIN_IMAGE:-}" ] || die "release manifest has no GELDAR_ADMIN_IMAGE; refusing"
 check_merged_config
 check_secrets
+check_jar_sources
 fetch_bluemap
 record_release
 save_node_env
@@ -50,6 +51,9 @@ act dc up -d --wait $FORCE postgres nats
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_glass --password-file /run/secrets/postgres-glass.txt
+# The velocity plugin only reads geldar-skins (decision 0087 correction, C2-02e), so the bucket is made here, by the body
+# NATS user through the admin container, before velocity starts. Creating an existing bucket changes nothing.
+act sh "$DEPLOY_DIR/colo-admin.sh" ensure-skins-bucket
 FORCE=$(recreate_flag)
 # shellcheck disable=SC2086
 act dc up -d --wait $FORCE

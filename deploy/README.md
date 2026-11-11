@@ -205,6 +205,23 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 - `token-mint` needs `GELDAR_TOKENS_DIR` writable by uid 1000 (the admin container's user) and readable by the
   operator. The script requires mode `0700` on that directory, so the owner decides how to satisfy both.
 - `run --rm` starts the admin service's dependencies (Postgres) if they are not already running. It removes nothing.
+- `colo-up.sh` runs `colo-admin.sh ensure-skins-bucket` before the full `up`: the body NATS user creates the `geldar-skins`
+  bucket (a no-op when it exists), because Velocity is read-only on it (decision 0087 correction). The admin service
+  therefore also mounts `nats-body.txt`.
+- `bluemap-web` answers 404 at `/` until BlueMap has rendered; that is expected and not a fault.
+
+### Replacing `src` on a node
+
+A restarting container whose bind-mount source is missing makes Docker create that path as a root-owned directory (the two
+plugin jars did this). So, in this order:
+
+1. Stop the project's containers first: `docker compose -p geldar-colo -f compose/colo.yml stop`.
+2. Swap `src` (move the old tree away, put the new one in place, rebuild or copy the two plugin jars).
+3. Run `deploy/colo-up.sh`.
+
+`colo-up.sh` refuses when `plugin/core/build/libs/geldar-core.jar` or
+`plugin/velocity-identity/build/libs/geldar-velocity-identity.jar` is a directory. It names the path; stop the containers,
+`rmdir` it, restore the jar and run it again.
 
 ## What each script refuses
 

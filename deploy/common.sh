@@ -209,6 +209,19 @@ check_secrets() {
   say "secret files: each file the merged config declares is present, non-empty and owner-only"
 }
 
+# The two plugin jars are bind-mounted as files (compose/colo.yml). When a jar path is missing at container start, Docker
+# creates it as a root-owned DIRECTORY, and the container then fails. That happened after an operator moved `src` while
+# a container restarted (C2-07j). Refuse here when a needed jar path is a directory; a missing path is the build's concern.
+# GELDAR_PLUGIN_DIR overrides the plugin directory (the tests use it).
+check_jar_sources() {
+  pdir=${GELDAR_PLUGIN_DIR:-$(dirname "$COMPOSE_FILE")/../plugin}
+  for rel in core/build/libs/geldar-core.jar velocity-identity/build/libs/geldar-velocity-identity.jar; do
+    if [ -d "$pdir/$rel" ]; then
+      die "bind-mount source $pdir/$rel is a directory where a file is expected (Docker made it while the jar was missing); stop the project's containers, run: rmdir '$pdir/$rel', rebuild the plugins, then run colo-up again (deploy/README.md, replacing src)"
+    fi
+  done
+}
+
 # Reads the release manifest as KEY=VALUE data (it is never sourced) and exports each *_IMAGE variable.
 # Every image must be a digest reference; a tag, a bare name or latest is refused.
 load_release() {
