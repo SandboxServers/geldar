@@ -39,8 +39,24 @@ Branch `fix/c1-colo-compose-hardening`. A fix packet from the C1 boundary review
 - `colo-services.test.ts`: the Body and Mind caps now include `deploy.resources.limits.pids`. A new block checks all seven services for their budget, `memswap_limit`, `pids_limit`, deploy `pids` and `logging`, names exactly the seven services, and checks that Postgres and NATS publish no port and Velocity keeps `127.0.0.1:25567:25565`.
 - A test-file bug from the WIP commit was fixed: the ordering assertion searched for `'start shard`, but the script uses a double-quoted `"start shard $shard"`.
 
-## Remaining (not in this packet)
+## Results: B-rcon, C and D
 
-- **B, rcon-host refusal.** `shard up colo --rcon-host` should refuse, because the colo stack has no RCON on the host loopback. Not done here.
-- **C, NATS overlay for colo.** `shard up colo` does not merge the NATS overlay, so the colo NATS auth path is not covered by the overlay. Not done here.
-- **D, validator values.** The validator's limits and values are for finisher 2 to set. Not done here.
+- **B-rcon, `--rcon-host` refused for colo.** `shard up colo --rcon-host` refuses: the colo stack has no RCON on the host loopback. Revert-checked (commit 1586cb0).
+- **C, NATS auth on by default for `shard up colo`.** `Invoke-Shard` merges `compose/nats-auth.yml` for `up colo`. `Assert-ColoNatsSecrets` requires six files before `up` (nats-body.txt, nats-mind.txt, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt, nats-auth.conf). It names what is missing and never writes a partial set. animus takes the mind user: `GELDAR_NATS_USER: mind`, `GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mind.txt`, from the `nats-mind` secret (`./secrets/nats-mind.txt`). `Invoke-Check` validates colo.yml merged with nats-auth.yml.
+- **C tests.** `nats-auth.test.ts` has a static block (every password file in the merged colo config points at a secret the service mounts; animus wiring; the Invoke-Shard merge line). `colo-services.test.ts` expects the Mind's `nats-mind` secret.
+- **C revert evidence.** The Invoke-Shard merge line removed: the static merge test fails. The animus password path changed to `/run/secrets/nats-mind-revert.txt`: the password-wiring test fails. Both restored, checked by hash, `git diff --stat` empty.
+- **D, colo rules strengthened (`loopback-ports.ts`).** For `compose/colo*.yml`, every service needs `pids_limit`, `memswap_limit` and `logging`. `cpus` and `memory` must be positive, or `${VAR:-default}` with a positive default. Denied keys: `privileged`, `cap_add`, `pid`, `ipc`, `userns_mode`, `devices`, `sysctls`, and any `network_mode`. Volumes: named volumes, or relative sources from the allowlist (`../sql`, `../shards`, `../plugin`, `../plugins`, `../deploy`, `./paper`, `./velocity`, `./secrets`). Absolute host paths, Windows drive paths, `docker.sock`, and `..` after an allowed prefix are refused. `compose/nats-auth.yml` gets the value and security rules, not the presence rules, because it adds no service. `compose/colo.yml` passes unchanged.
+- **D revert evidence.** `privileged` removed from the denied keys: its test and the overlay test fail. The `docker.sock` check removed: both docker.sock tests fail. `cpus: "0"` accepted: its test fails. The `pids_limit` requirement removed: its test fails. Each restored, checked by hash.
+
+## Deviations
+
+- The static NATS test reads the two YAML files and merges them by hand, so it runs without docker. The docker-based merge test still runs where docker exists.
+- The `colo-services` expectation for the Mind's secret list changed on purpose: the Mind now takes `nats-mind`.
+- The "no deploy limits" test uses `arrayContaining`, because its services now also lack the new keys. Its limit messages are still exact.
+
+## Follow-ups
+
+- `geldar.ps1` is about 605 lines (soft cap 500, hard cap 700). Splitting it is a separate packet.
+- Non-superuser database roles (C2).
+- NATS auth config generation is PowerShell-only, so the node deploy depends on it.
+- The TypeScript colo rules read each file alone. The merged view is checked only by `docker compose config` in `Invoke-Check`.
