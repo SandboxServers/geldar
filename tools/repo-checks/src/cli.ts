@@ -4,8 +4,9 @@
  * working tree (an unstaged edit or an untracked file; CRLF pairs there are
  * left to git's conversion, a lone CR is not), on a
  * compose port that does not bind to loopback, on a workflow that is not valid
- * YAML or repeats a key, on a sovereign MCP bearer token in any text file, or on a decision record that
- * `docs/decisions/README.md` does not index. Line caps cover
+ * YAML or repeats a key, on a sovereign MCP bearer token in any text file, on an IPv4 literal the
+ * policy in decision 0132 does not allow, or on a decision record that `docs/decisions/README.md`
+ * does not index. Line caps cover
  * untracked, not-ignored files too, so a new file fails locally before it is
  * staged. Untracked CRLF needs no check: `.gitattributes`
  * (`text=auto eol=lf`) converts it to LF when the file is added.
@@ -23,6 +24,7 @@ import { checkDecisionIndex } from './decision-index.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
 import { checkIntegrationFloor, countIntegrationFiles } from './integration-floor.ts';
+import { findIpLiterals, parseIpAllowlist } from './ip-literals.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { findMcpTokens } from './mcp-token.ts';
@@ -38,6 +40,7 @@ import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
 const RELEASE_DATES = 'tools/repo-checks/src/release-dates.json';
 const FIRST_PARTY_IMAGES = 'tools/repo-checks/src/first-party-images.json';
 const INTEGRATION_FLOOR = 'tools/repo-checks/src/integration-floor.json';
+const IP_ALLOWLIST = 'tools/repo-checks/src/ip-literal-allowlist.json';
 
 /** The file's text, or undefined when it cannot be read (the caller fails closed on that). */
 function readOptional(path: string): string | undefined {
@@ -221,6 +224,22 @@ for (const file of [...tracked, ...untracked].filter((f) => isShardFile(f.path))
 for (const problem of checkDecisionIndex([...tracked, ...untracked])) {
   console.log(`error: ${problem}`);
   failed = true;
+}
+
+/** The IPv4 literal policy (decision 0132): a malformed allowlist fails closed. */
+const scanned = [...tracked, ...untracked];
+const ipAllowlist = parseIpAllowlist(readOptional(IP_ALLOWLIST), IP_ALLOWLIST);
+for (const problem of ipAllowlist.problems) {
+  console.log(`error: ${problem}`);
+  failed = true;
+}
+const ipAllowed = new Set(ipAllowlist.paths);
+for (const file of scanned) {
+  if (file.text.includes('\0')) continue; // a binary file has no IPv4 text to scan
+  for (const finding of findIpLiterals(file.path, file.text, ipAllowed)) {
+    console.log(`error: ${finding}`);
+    failed = true;
+  }
 }
 
 console.log(failed ? 'repo checks: failed' : 'repo checks: ok');

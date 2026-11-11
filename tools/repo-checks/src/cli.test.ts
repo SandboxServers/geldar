@@ -7,10 +7,14 @@ import { describe, expect, it } from 'vitest';
 
 const cliPath = fileURLToPath(new URL('./cli.ts', import.meta.url));
 
-/** The release-age data files the CLI fails closed without; each fixture repo gets the real copies. */
+/**
+ * The data files the CLI fails closed without (the release-age lists and the IPv4 allowlist);
+ * each fixture repo gets the real copies.
+ */
 const releaseDataFiles = [
   'tools/repo-checks/src/release-dates.json',
   'tools/repo-checks/src/first-party-images.json',
+  'tools/repo-checks/src/ip-literal-allowlist.json',
 ];
 
 function copyReleaseData(dir: string): void {
