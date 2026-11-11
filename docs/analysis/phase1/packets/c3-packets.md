@@ -112,8 +112,8 @@ The owner signs off the written result (plan.md C3, owner vs agents).
 
 ## 8. Soak definition
 
-- **C3 gate: 72 hours.** Continuous, 10 to 15 agents, intents running, on the node, after C3-10 is green. Exit check for the gate: fewer than one model wakeup per agent per real minute while intents run; no unexplained life end; no unexplained TPS window below 18.0.
-- **Exit run: 7 days.** The plan's exit check is 7 real days. The wave schedule proposes that the 7-day run happens once, after C4 feature freeze, as the Phase 1 exit run (changes plan.md C3 exit). **Pending owner confirmation** (owner question O-1). Until it is confirmed, the 7-day run is not scheduled and no packet depends on it.
+- **Soak gate (length open: owner question O-soak).** Continuous, 10 to 15 agents, intents running, on the node, after C3-10 is green. Exit check for the gate: fewer than one model wakeup per agent per real minute while intents run; no unexplained life end; no unexplained TPS window below 18.0.
+- **O-soak, both options (not decided in these cards).** (A) The wave schedule: a 72-hour soak gates C3, and a 7-day run happens once after C4 feature freeze as the Phase 1 exit run (changes plan.md C3 exit). (B) plan.md as written: a 7-day soak. Until the owner answers O-soak in writing, no packet states a duration as settled, and the 7-day run is not scheduled.
 - **Measurement:** the wakeup count comes from the event stream (`events` table, `world_day`, `world_tick`), not from logs.
 
 ## 9. Cards
@@ -170,7 +170,7 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 - **depends-on:** none (C1-00 merged). It does not touch the contract.
 - **may-edit:** `threshold/mcp/src/tools/sleep.ts`, `threshold/mcp/src/ports.ts` only if the `SleepMarks` port needs a method, `threshold/mcp/test/sleep*.test.ts` (new or existing), `docs/analysis/phase1/worknotes/C3-02.md`, `docs/decisions/0107-*.md` (new).
 - **must-not-edit:** `docs/spec.md`, `golem/`, `contract/`, `sql/`, `shards/`, `compose/`, `geldar.ps1`, `package.json`.
-- **decisions:** 0107 (shared with C3-03; only one of them writes it, and C3-02 writes it first).
+- **decisions:** 0107 only. C3-03 does not use 0107 (its record is 0114).
 - **checks:** `./geldar.ps1 pnpm --filter @geldar/mcp test`; typecheck and `pnpm format`; `./geldar.ps1 check` at the end.
 - **steps:**
   1. Read `threshold/mcp/src/tools/sleep.ts` around lines 90 to 110. The mark write sits before the Body answers.
@@ -192,7 +192,7 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 - **depends-on:** P1-C3-00 (the contract is unchanged, but the `source` column is used for sovereign shelter calls), P1-C3-02 (the sleep path it extends), P1-C3-05 (the `prepared` receipt helper that the build uses; if C3-05 is not merged, C3-03 may not start).
 - **may-edit:** `golem/src/actions/build.ts` and `golem/src/actions/build.test.ts` (new), `golem/src/actions/sleep.ts` and its test (enclosed rest), the action registry file that maps `do` names to handlers (find it by grep for `'sleep'` under `golem/src/body/`), the intent program registry (grep for an existing program name such as `hazard` or `burrow`), `golem/src/body/reflexes/panic-burrow.ts` only to export the existing burrow plan, `prompts/thought/v6.md` (new copy of v5 plus the `enclosed` line), `prompts/body-api/v2.json` only if its tool list needs the `build` entry, `tools/adam-report/src/survival.ts` and its test, `docs/analysis/phase1/worknotes/C3-03.md`, `docs/decisions/0107-*.md` (shared number, see C3-02).
 - **must-not-edit:** `docs/spec.md`, `contract/` (the `build` schema is already there), `sql/`, `shards/`, `compose/`, `geldar.ps1`, `package.json`, `golem/src/body/executor-action.ts` (C3-05 owns it), `prompts/thought/v5.md` (released, immutable, decision 0068).
-- **decisions:** 0107 (second use: section 3 of these notes and decision 0074 consequences).
+- **decisions:** 0114 only (the spare of the C3 block, reassigned here from the shared 0107). Section 3 of these notes and decision 0074 are read, not numbered.
 - **checks:** `./geldar.ps1 pnpm --filter @geldar/golem test` (confirm the package name in `golem/package.json`); the prompt golden tests; `tools/adam-report` test; typecheck and `pnpm format`; `./geldar.ps1 check`.
 - **steps:**
   1. Write `build.ts` to the semantics of section 3: budget precheck, the 512 bound, the place order, the place preconditions, the partial-failure detail.
@@ -201,6 +201,7 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
   4. Add the shelter intent: a program that runs the existing burrow plan on demand and then builds the blueprint if the cell is not enclosed. Its parameters: the blueprint name and the radius of the search.
   5. Create `prompts/thought/v6.md`: a copy of v5 with one line that renders `enclosed` from the snapshot. Keep v5 unchanged; prompts load v6 only through the default in decision 0074 (owner confirms the default in the decision).
   6. Update `tools/adam-report/src/survival.ts` so that "enclosed for a night" counts (decision 0074, point 2). Keep the bed rule as a second case.
+  7. Write decision 0114 (Proposed), as the record step: an enclosed shelter counts as rest (0074 point 2), the build bound and the shelter intent. Its index line goes in the worknote.
 - **acceptance:**
   - Build refuses 513 blocks (`invalid_args`, no placement). Revert-check: remove the bound; the test fails.
   - Build refuses N blocks when the budget is N-1 (`limit_reached`, no placement; no partial build). Revert-check: remove the precheck and let blocks place; the test fails.
@@ -208,9 +209,10 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
   - Enclosed rest: a sleep in an enclosed cell with no bed completes and the MCP mark is written (C3-02 path). Revert-check: restore the bed-only check; the test fails.
   - Golden test: v6 renders `enclosed`; v5 output is byte-identical to before.
   - Survival: an enclosed night passes the criterion; a night in the open fails it. Revert-check: restore the bed-only rule.
-- **commit:** `feat(golem): add the build handler with the 512-block bound and budget check` (build and tests); `feat(golem): accept an enclosed rest and add the shelter intent` (sleep, intent, reflex export); `feat(prompts): add thought template v6 that renders enclosed` (v6 and golden test); `fix(adam-report): count an enclosed night as rest` (survival, with decision 0107).
+- **commit:** `feat(golem): add the build handler with the 512-block bound and budget check` (build and tests); `feat(golem): accept an enclosed rest and add the shelter intent` (sleep, intent, reflex export); `feat(prompts): add thought template v6 that renders enclosed` (v6 and golden test); `fix(adam-report): count an enclosed night as rest` (survival, with decision 0114).
 - **on-cap:** commit the handler and its tests first; the shelter intent and the prompt may move to a follow-up card, recorded in the worknote.
-- **index line to add:** none, unless C3-00 has not yet merged 0107 (then the coder writes it: `index: | [0107](0107-honest-sleep-mark.md) | ...`, once, not twice).
+- **record:** step 7: write `docs/decisions/0114-enclosed-rest-and-shelter.md` (Proposed): an enclosed shelter counts as rest (0074 point 2), the build bound and the shelter intent. The file name is a suggestion; the number is reserved.
+- **index line to add:** `index: | [0114](0114-enclosed-rest-and-shelter.md) | Enclosed rest counts as sleep; shelter intent and build bound | Proposed |`.
 
 ### P1-C3-04: roster and cap in the database, agents-per-player limit, measured thought deadline
 
@@ -331,15 +333,15 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 
 ### P1-C3-10: integration and ops: roll C3 onto the node, the chaos day, the soak (O)
 
-- **wave:** C3. **lane:** A. **size:** L plus wall clock (72 hours for the gate). **status:** O.
-- **depends-on:** P1-C3-01 to C3-09 merged; P1-C1-10 (the node); the owner's confirmation of the soak gate (O-1) and the chaos-day sign-off (O-3).
-- **may-edit:** `shards/phase0.yaml` or a new `shards/phase1.yaml` (the integration packet owns it; index lines from the others are applied here), `geldar.ps1` (the new commands), `compose/` only the lines the integration needs, `docs/analysis/phase1/results/c3-*.md` (new, results only, no addresses), `docs/analysis/phase1/worknotes/C3-10.md`, `docs/decisions/0113-*.md` (new). Decision 0114 is held for the owner's soak-gate ruling; this packet writes it only if the owner answers O-1.
+- **wave:** C3. **lane:** A. **size:** L plus wall clock (soak length per O-soak). **status:** O.
+- **depends-on:** P1-C3-01 to C3-09 merged; P1-C1-10 (the node); the owner's answer to O-soak and the chaos-day sign-off (O-3).
+- **may-edit:** `shards/phase0.yaml` or a new `shards/phase1.yaml` (the integration packet owns it; index lines from the others are applied here), `geldar.ps1` (the new commands), `compose/` only the lines the integration needs, `docs/analysis/phase1/results/c3-*.md` (new, results only, no addresses), `docs/analysis/phase1/worknotes/C3-10.md`, `docs/decisions/0113-*.md` (new). This packet takes no number: 0114 is C3-03's (the C3 block is full).
 - **must-not-edit:** `docs/spec.md`, `contract/` (fan-out index lines go through the ops merge step), `golem/` and `threshold/` source (fixes go back to the owning card), `docs/analysis/phase0/` ledger README.
-- **decisions:** 0113; 0114 only on the owner's ruling.
+- **decisions:** 0113 only.
 - **checks:** `./geldar.ps1 check` with the integration case-count floor (conventions 4.2); the owner checklists D (roll-out), C (chaos day) and E (soak) in section 10.3; the wave gates of section 10.2.
 - **steps:** follow owner checklists D, C and E exactly, in order, with each stop condition. Record every step's result in the worknote with the time.
-- **acceptance:** the gate of section 8 (72 hours) is met and written in `results/`; the chaos day has a written outcome per scenario; no unexplained life end; the 7-day exit run is not started by this card.
-- **commit:** `feat(shards): add the Phase 1 C3 shard config`; `docs: record the C3 roll-out, chaos day and 72-hour gate results`; decision 0113.
+- **acceptance:** the soak gate of section 8 (length per O-soak) is met and written in `results/`; the chaos day has a written outcome per scenario; no unexplained life end; the 7-day exit run is not started by this card.
+- **commit:** `feat(shards): add the Phase 1 C3 shard config`; `docs: record the C3 roll-out, chaos day and soak gate results`; decision 0113.
 - **on-cap:** stop at the first failed stop condition in the checklist and report it; do not patch the node by hand.
 - **index line to add:** none (the packet is the integration owner).
 
@@ -428,7 +430,7 @@ Paste these rows into the Phase 1 ledger when it is written. This packet does no
 
 ### 10.5 Open owner questions
 
-- **O-1.** Confirm the 72-hour soak as the C3 gate, and the 7-day run once at C4 exit (changes plan.md C3 exit). **Pending owner confirmation.**
+- **O-soak.** Soak length, one open question (section 8 has both options): (A) 72-hour soak gates C3 and a 7-day run after C4 freeze; (B) the 7-day soak as plan.md states. **Pending owner answer.** Same question in C3-10 and C4 (section 10.5 there).
 - **O-2.** Agents-per-player limit: default 1 and maximum 4 in `mcp_roster` (C3-04), or another value?
 - **O-3.** Chaos-day sign-off: who signs, and is scenario 4 (disk) allowed on the node or only on a test volume?
 - **O-4.** Benchmark numbers: N values (1, 5, 10, 15), the 19.0 mean and 18.0 floor, and the off-peak window on the shared node.
