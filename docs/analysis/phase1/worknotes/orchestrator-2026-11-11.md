@@ -202,3 +202,8 @@ These go into decision 0075 as an amendment when C2b starts.
     - player creation and token minting are limited per owner, plus a short burst allowance.
   - **What stays.** The lifetime cap of 10 players per owner (R36) is separate from this and is unchanged.
   - **When.** This is done in C2c.
+- **Owner ruling R42 (2026-11-11).** Glass and registration share one site, glass.geldar.sandboxservers.games, with two services behind it.
+  - **Routing:** Caddy sends `/register` and `/roster` to the register service and everything else to Glass.
+  - **Sign-in:** the register service does the Microsoft sign-in and issues the session. Glass verifies that session read-only.
+  - **Isolation:** Glass's database role stays read-only. Only the register service holds write access and the pepper.
+  - **Packets:** K03 becomes "Glass trusts the shared session plus the Kino flags". There is no separate register subdomain.
