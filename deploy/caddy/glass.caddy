@@ -81,6 +81,18 @@ glass.{$GELDAR_DOMAIN} {
 	# GELDAR_KINO_ENABLED is 1 in Caddy's environment; otherwise these paths fall through to the 404 below. Caddy is the
 	# only TLS terminator (this host block is the HTTPS site), and the proxy passes the Upgrade handshake itself.
 	# The WebSocket is long-lived, so it is flushed at once. Glass checks the gk_session cookie and the scope itself.
+	# Kino textures (ruling R45): the page loads BlueMap's textures.json and resources from its own origin, so the CSP stays
+	# connect-src 'self'. /kino/tex/* is the map site's files with the prefix stripped, read-only (the 405 handle above
+	# already refuses every method but GET and HEAD). The live player JSON is not served here. The map upstream
+	# (bluemap-web) already answers the .gz files with Content-Encoding: gzip; the proxy passes that header through.
+	@kino_tex expression `{$GELDAR_KINO_ENABLED:0} == 1 && path('/kino/tex/*') && !path('*/live', '*/live/*', '*..*')`
+	handle @kino_tex {
+		uri strip_prefix /kino/tex
+		reverse_proxy {$GELDAR_MAP_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
+		}
+	}
+
 	@kino expression `{$GELDAR_KINO_ENABLED:0} == 1 && path('/kino', '/kino/*')`
 	handle @kino {
 		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {

@@ -324,6 +324,23 @@ describe('colo-public.sh refusals', () => {
     expect(readFileSync(join(on.geldar, 'glass.caddy'), 'utf8')).toContain('1 == 1');
   });
 
+  it('renders the Kino textures route with the map upstream into the glass file', () => {
+    const r = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=1\n`);
+    expect(r.run(['install']).status).toBe(0);
+    const file = readFileSync(join(r.geldar, 'glass.caddy'), 'utf8');
+    const tex = file.slice(file.indexOf('@kino_tex'), file.indexOf('@kino expression'));
+    expect(tex).toContain('reverse_proxy 127.0.0.1:8100');
+    expect(tex).toContain('1 == 1');
+    expect(file).not.toContain('{$GELDAR_MAP_UPSTREAM}');
+  });
+
+  it('refuses a glass install when the map upstream its textures route needs is missing', () => {
+    const r = rig(DEFAULT_ENV.replace('GELDAR_MAP_UPSTREAM=127.0.0.1:8100', ''));
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_MAP_UPSTREAM');
+  });
+
   it('refuses a Kino switch that is not 0 or 1', () => {
     const r = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=yes\n`);
     const res = r.run(['install']);

@@ -19,6 +19,9 @@ services:
     pids_limit: 128
     memswap_limit: "${GELDAR_COLO_GLASS_MEM:-256m}"
     environment:
+      # The browser Origin Glass accepts for the Kino WebSocket: full origins, comma-separated. Required: Glass refuses to
+      # start Kino with an empty list. Behind Caddy the Host is always localhost, so only this list can allow an Origin.
+      GELDAR_KINO_ALLOWED_ORIGINS: "${GELDAR_KINO_PUBLIC_ORIGIN:?set GELDAR_KINO_PUBLIC_ORIGIN to https://glass.<domain> when the Kino overlay is merged}"
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: "${GELDAR_KINO_NATS_USER:-kino}"
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-kino.txt

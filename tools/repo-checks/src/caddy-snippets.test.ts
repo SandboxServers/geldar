@@ -114,9 +114,12 @@ describe('deploy/caddy site files', () => {
 
   it('sets Host to localhost in every Glass proxy block, which Glass accepts and a public Host gets 421', () => {
     const blocks = proxyBlocks(read('glass.caddy'));
-    expect(blocks.length).toBe(5); // read API, page, stream, Kino (off by default), register
-    // One block is the register upstream, which keeps the public Host (it checks Origin, not Host).
+    expect(blocks.length).toBe(6); // read API, page, stream, Kino textures, Kino (off by default), register
+    // Two blocks keep the public Host: the register upstream (it checks Origin, not Host) and the
+    // Kino textures block, which proxies the map upstream exactly as map.caddy does (no Host override).
     const glass = blocks.filter((b) => /^\s*header_up Host localhost$/m.test(b));
+    const keepsHost = blocks.filter((b) => !/header_up Host /.test(b));
+    expect(keepsHost.length).toBe(2);
     expect(glass.length).toBe(4);
   });
 
