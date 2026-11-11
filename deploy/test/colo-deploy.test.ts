@@ -81,8 +81,8 @@ function findSh(): string {
 const SH = findSh();
 
 // Every test starts several `sh` processes; on a Windows desktop beside the full suite a test took 5-11 s, against
-// vitest's 5 s default. 30 s is a bound for real work, not a retry or a skip.
-const SPAWN_TEST_TIMEOUT_MS = 30_000;
+// vitest's 5 s default. 60 s is a bound for real work under full-suite load, not a retry or a skip.
+const SPAWN_TEST_TIMEOUT_MS = 60_000;
 vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
 
 // The fake docker: records its arguments and answers `config` with the fixture file. Every other call succeeds.

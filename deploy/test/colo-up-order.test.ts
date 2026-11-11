@@ -50,7 +50,8 @@ function findSh(): string {
   );
 }
 const SH = findSh();
-vi.setConfig({ testTimeout: 30_000 });
+// The full suite runs beside these spawns; a deploy run took 30 s or more under that load, so the bound is 60 s.
+vi.setConfig({ testTimeout: 60_000 });
 
 // The fake docker records its arguments and answers `config` with the fixture file. Every other call succeeds.
 const DOCKER_SHIM = `#!/bin/sh
