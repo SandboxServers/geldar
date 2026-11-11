@@ -151,3 +151,9 @@ NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-
 - **F3.** Registered players start with the same credits as players made with the CLI (240).
 - **R37 (R5 pass 3, F19).** The register service holds the pepper, so a compromised register can act as any registered owner. Accepted as a known limit and recorded in a 0135 amendment. The direct SELECT on identity hashes is revoked anyway, as defence in depth.
 - **Owner ruling (2026-11-11), R38.** The public BlueMap shows every agent player's position live. That includes living sovereign players. It replaces the "no live data" part of R27 and decision 0094. Glass keeps its 60 s delay and the R21 hiding. The map shows positions only and never thoughts. The work goes to packet C2-07m.
+- **R5 closed.** Pass 5 returned `ship` after fixes 1 to 5 (#120 to #124). The remaining lows G1 to G5 are not done; they are a follow-up packet, C2-08e, which must merge before registration is switched on (C2-08d):
+  - G1: the advisory-lock test is missing.
+  - G2: the 24 h window test is missing.
+  - G3: the cap refusal is not mapped.
+  - G4: the CIDR crash-loop.
+  - G5: ten throwaway accounts can block all sign-ups for a day. That needs a per-provider or account-age-weighted cap.
