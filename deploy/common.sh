@@ -15,6 +15,10 @@ STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 DRY_RUN=${DEPLOY_DRY_RUN:-0}
+# The uid the containers run as (compose/colo.yml user:, Paper UID). The secrets directory and every secret file must be
+# owned by it, so the deploy checks owners against it. Exported so compose sees the same value.
+GELDAR_SERVICE_UID=${GELDAR_SERVICE_UID:-1000}
+export GELDAR_SERVICE_UID
 
 WORK=$(mktemp -d) || exit 1
 trap 'rm -rf "$WORK"' EXIT
@@ -57,7 +61,17 @@ plan_header() {
   if [ "$DRY_RUN" = 1 ]; then say "DEPLOY_DRY_RUN=1: read-only steps only"; fi
 }
 
+check_service_uid() {
+  case $GELDAR_SERVICE_UID in
+    '' | *[!0-9]*) die "GELDAR_SERVICE_UID must be a number (the containers' uid, default 1000)" ;;
+  esac
+  [ "$GELDAR_SERVICE_UID" -ne 0 ] || die "GELDAR_SERVICE_UID is 0; the containers must not run as root"
+  runner=$(id -u) || die "cannot read the uid of this account"
+  [ "$runner" -ne 0 ] || die "refusing to run the deploy as root (uid 0); run it as the operator account, not root"
+}
+
 check_prereqs() {
+  check_service_uid
   need docker
   docker compose version >/dev/null 2>&1 || die "docker compose v2 is not available"
   docker info >/dev/null 2>&1 || die "cannot reach the docker daemon (is this account in the docker group?)"
@@ -104,7 +118,8 @@ inside_secrets_dir() {
 }
 
 # Checks one secret file, named by its compose NAME and PATH. It never reads the contents. The file must exist, resolve
-# (through any symlink) to a regular file inside an allowed directory, be non-empty, and be mode 0600 or 0400.
+# (through any symlink) to a regular file inside an allowed directory, be non-empty, be mode 0600 or 0400, and be owned
+# by GELDAR_SERVICE_UID (the uid the containers read it as).
 check_secret() {
   name=$1
   p=$2
@@ -126,6 +141,9 @@ check_secret() {
     600 | 400 | 0600 | 0400) ;;
     *) die "secret file $base has mode $m; it must be 0600 or 0400 (compose secret: $name)" ;;
   esac
+  o=$(stat -c %u "$real") || die "cannot stat the owner of secret file $base"
+  [ "$o" = "$GELDAR_SERVICE_UID" ] ||
+    die "secret file $base is owned by uid $o; expected uid $GELDAR_SERVICE_UID (GELDAR_SERVICE_UID, compose secret: $name)"
 }
 
 # Checks every secret file that the MERGED config declares, so a secret added to compose/colo.yml or an overlay is
@@ -136,6 +154,9 @@ check_secrets() {
   # Both sides of the containment test come from readlink -f, so they are spelled the same way (on Git for Windows
   # sh, pwd -P prints /tmp/... while readlink prints C:/... for the same directory).
   SECRETS_REAL=$(readlink -f "$GELDAR_SECRETS_DIR") || die "cannot open $GELDAR_SECRETS_DIR"
+  o=$(stat -c %u "$SECRETS_REAL") || die "cannot stat the owner of $GELDAR_SECRETS_DIR"
+  [ "$o" = "$GELDAR_SERVICE_UID" ] ||
+    die "secrets directory $GELDAR_SECRETS_DIR is owned by uid $o; expected uid $GELDAR_SERVICE_UID (GELDAR_SERVICE_UID)"
   COMPOSE_SECRETS_REAL=
   if [ -d "$(dirname "$COMPOSE_FILE")/secrets" ]; then
     COMPOSE_SECRETS_REAL=$(readlink -f "$(dirname "$COMPOSE_FILE")/secrets") || die "cannot resolve compose/secrets"

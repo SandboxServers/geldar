@@ -115,10 +115,17 @@ produce for the colo node to `<node>`'s secrets directory. Never send them throu
 directory is mode `0700` and each file is mode `0600`. Set `GELDAR_SECRETS_DIR` to that directory. Check the modes
 read-only with `stat -c '%a %n' <secrets-dir>/*`.
 
-Open question: the containers run as uid 1000. An owner-only file owned by `<operator>` may be unreadable inside a
-container. Check with `deploy/colo-status.sh` after the first `up`. The options are in
-`docs/analysis/phase1/worknotes/FX-SECRETS.md`. NATS auth generation is PowerShell-only, so its files are copied from
-the trusted machine.
+The service uid. The containers run as `GELDAR_SERVICE_UID` (default `1000`; compose sets `user:` on the Body, Mind,
+MCP, admin, player host and eventsink services, and `UID`/`GID` on Paper). The deploy scripts refuse to run as uid 0,
+and refuse unless the secrets directory and every secret file are owned by `GELDAR_SERVICE_UID`. So on the node,
+export the uid for the deploy and use the owner the files already have (for example `GELDAR_SERVICE_UID=1001`).
+`deploy/gen-secrets.sh` run as root chowns the directory and the generated files to `GELDAR_SERVICE_UID`; run as another
+user it refuses unless that user's uid equals `GELDAR_SERVICE_UID`. The pinned `itzg/mc-proxy` (Velocity) image has no UID/GID
+handling and runs as root, so it reads its 0600 secret owned by `GELDAR_SERVICE_UID` as root; that is expected and fine.
+Paper's data volume (`paper-data`) may keep the ownership it had before this change. So the first `up` must check that the
+volume is owned by `GELDAR_SERVICE_UID` or does not exist yet (a fresh volume): run `docker run --rm --entrypoint stat -v geldar-colo_paper-data:/data <paper image digest from compose/colo.yml> -c '%u %n' /data`
+before it, and fix a mismatch only inside the project's volume. NATS auth generation is PowerShell-only, so its files are copied
+from the trusted machine.
 
 ### (d) Release manifest
 

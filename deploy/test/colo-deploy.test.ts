@@ -1,7 +1,5 @@
-// Tests for the Colo deploy scripts (decision 0084). The scripts run under `sh` with a fake `docker` and a fake `stat`
-// on PATH. The fake docker records each call and answers only the read-only subcommands; the fake stat answers the
-// POSIX mode of each secret file from a fixture (NTFS has no POSIX modes). No real docker, node or network is used:
-// the BlueMap "download" is a local file:// fixture, allowed only by GELDAR_DEPLOY_ALLOW_FILE_URL=1 in these tests.
+// Tests for the Colo deploy scripts (decision 0084). The scripts run under `sh` with fake `docker`, `stat`, `id` and
+// `chown` on PATH; no real docker, node or network is used (the BlueMap download is a local file:// fixture).
 // `sh` is Git for Windows' sh on a Windows desktop and /bin/sh elsewhere; GELDAR_TEST_SH overrides both.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -45,6 +43,10 @@ const GENERATED = [
   'postgres-mcp.txt',
   'mcp-token-pepper.txt',
 ];
+// The fake chown: records each call ("UID PATH") in $FAKE_CHOWN_LOG and changes nothing.
+const CHOWN_SHIM = `#!/bin/sh
+echo "$*" >>"$FAKE_CHOWN_LOG"
+`;
 // Creating a symlink needs developer mode or elevation on Windows; the symlink test is skipped where it is refused.
 const canSymlink = (() => {
   const d = mkdtempSync(join(tmpdir(), 'geldar-colo-link-'));
@@ -78,10 +80,8 @@ function findSh(): string {
 }
 const SH = findSh();
 
-// Every test here starts several `sh` processes (the script, its shims, and the coreutils it calls). On a Windows
-// desktop each process start is slow, and it is slower while the full workspace suite runs beside this file: a
-// measured test took 5-11 s against vitest's 5 s default, with the same assertions passing. A test that stops
-// inside 30 s is still a failure, so this is a bound for real work, not a retry or a skip.
+// Every test starts several `sh` processes; on a Windows desktop beside the full suite a test took 5-11 s, against
+// vitest's 5 s default. 30 s is a bound for real work, not a retry or a skip.
 const SPAWN_TEST_TIMEOUT_MS = 30_000;
 vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
 
@@ -96,12 +96,22 @@ esac
 exit 0
 `;
 
-// The fake stat: only `stat -c %a PATH` is supported. The mode is read from $FAKE_MODE_DIR/<file name>, default 600.
-// It uses only shell builtins: each external command is a process start that is slow on Windows (see SPAWN_TEST_TIMEOUT_MS).
+// The fake stat: `stat -c %a PATH` (mode, from $FAKE_MODE_DIR/<file name>, default 600) and `stat -c %u PATH` (owner
+// uid, from $FAKE_OWNER_DIR/<file name>, default 1000). It uses only shell builtins: each external command is slow here.
 const STAT_SHIM = `#!/bin/sh
-[ "$1" = "-c" ] && [ "$2" = "%a" ] || exit 2
+[ "$1" = "-c" ] || exit 2
 name=\${3##*/}
-if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r mode <"$FAKE_MODE_DIR/$name"; echo "$mode"; else echo 600; fi
+case $2 in
+  %a) if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r v <"$FAKE_MODE_DIR/$name"; else v=600; fi ;;
+  %u) if [ -f "$FAKE_OWNER_DIR/$name" ]; then read -r v <"$FAKE_OWNER_DIR/$name"; else v=1000; fi ;;
+  *) exit 2 ;;
+esac
+echo "$v"
+`;
+// The fake id: only `id -u`, the uid of the account running the deploy (FAKE_RUNNER_UID, default 1000: not root).
+const ID_SHIM = `#!/bin/sh
+[ "$1" = "-u" ] || exit 2
+echo "\${FAKE_RUNNER_UID:-1000}"
 `;
 
 const CONFIG = (published: string) => `name: geldar-colo
@@ -158,6 +168,7 @@ interface Fixture {
   secrets: string;
   config: string;
   modes: string;
+  owners: string;
   release: string;
   state: string;
   lock: string;
@@ -178,6 +189,7 @@ function fixture(publishedPort = '25567'): Fixture {
   mkdirSync(bin);
   writeShim(bin, 'docker', DOCKER_SHIM);
   writeShim(bin, 'stat', STAT_SHIM);
+  writeShim(bin, 'id', ID_SHIM);
   const secrets = join(dir, 'secrets');
   mkdirSync(secrets);
   for (const f of SECRET_FILES) {
@@ -185,6 +197,8 @@ function fixture(publishedPort = '25567'): Fixture {
   }
   const modes = join(dir, 'modes');
   mkdirSync(modes);
+  const owners = join(dir, 'owners');
+  mkdirSync(owners);
   const releaseFile = join(dir, 'release.env');
   writeFileSync(releaseFile, release(BODY));
   const config = join(dir, 'config.yml');
@@ -213,6 +227,8 @@ function fixture(publishedPort = '25567'): Fixture {
     DOCKER_CALLS_LOG: posix(calls),
     DOCKER_CONFIG_FIXTURE: posix(config),
     FAKE_MODE_DIR: posix(modes),
+    FAKE_OWNER_DIR: posix(owners),
+    GELDAR_SERVICE_UID: '1000',
   });
   return {
     dir,
@@ -221,6 +237,7 @@ function fixture(publishedPort = '25567'): Fixture {
     secrets,
     config,
     modes,
+    owners,
     release: releaseFile,
     state: join(dir, 'state'),
     lock,
@@ -234,6 +251,11 @@ function lockText(url: string, sha: string): string {
 
 function setMode(fx: Fixture, file: string, mode: string) {
   writeFileSync(join(fx.modes, file), `${mode}\n`);
+}
+
+// Sets the owner uid the fake stat reports for a file or the secrets directory (by its base name).
+function setOwner(fx: Fixture, file: string, uid: string) {
+  writeFileSync(join(fx.owners, file), `${uid}\n`);
 }
 
 function run(script: string, fx: Fixture, extra: Record<string, string> = {}, args: string[] = []) {
@@ -464,8 +486,7 @@ describe('gen-secrets.sh (decision 0084)', () => {
       const value = readFileSync(join(target, f), 'utf8').trim();
       expect(value).toMatch(/^[0-9a-f]{64}$/);
       expect(first.out).not.toContain(value);
-      // NTFS reports 0666 whatever the script does, so the mode is checked on POSIX only. The script's guard is
-      // `umask 077` before any file is created, and that is checked everywhere.
+      // NTFS reports 0666 whatever the script does, so the mode is checked on POSIX only (`umask 077` everywhere).
       if (process.platform !== 'win32') expect(statSync(join(target, f)).mode & 0o077).toBe(0);
     }
     expect(readFileSync(join(DEPLOY, 'gen-secrets.sh'), 'utf8')).toContain('umask 077');
@@ -517,8 +538,7 @@ describe('secret files come from the merged config (decision 0084)', () => {
     },
   );
 
-  // The same containment check without a symlink, so it also runs where symlinks are refused (Windows without
-  // developer mode): the merged config names a file that lies outside the secrets directory.
+  // The same containment check without a symlink, so it also runs where symlinks are refused.
   it('refuses a merged-config path that lies outside the secrets directory, and runs no pull or up', () => {
     const fx = fixture();
     const elsewhere = join(fx.dir, 'elsewhere');
@@ -593,5 +613,87 @@ describe('secret files come from the merged config (decision 0084)', () => {
     expect(mutates(calls(fx))).toBe(false);
     writeFileSync(conf, 'nats-auth-test-value\n');
     expect(run('colo-up.sh', fx, REAL).code).toBe(0);
+  });
+});
+
+describe('service uid: root is refused and every secret is owned by GELDAR_SERVICE_UID', () => {
+  it('refuses to run the deploy as uid 0, and runs no pull or up', () => {
+    const fx = fixture();
+    const r = run('colo-up.sh', fx, { ...REAL, FAKE_RUNNER_UID: '0' });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('refusing to run the deploy as root');
+    expect(mutates(calls(fx))).toBe(false);
+  });
+
+  it.each([
+    ['0', 'must not run as root'],
+    ['abc', 'must be a number'],
+  ])('refuses GELDAR_SERVICE_UID=%s', (uid, msg) => {
+    const r = run('colo-up.sh', fixture(), { ...REAL, GELDAR_SERVICE_UID: uid });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain(msg);
+  });
+
+  it('refuses a secret file owned by another uid, names it and the expected uid, and runs no pull or up', () => {
+    const fx = fixture();
+    setOwner(fx, 'rcon.txt', '1001');
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('rcon.txt is owned by uid 1001; expected uid 1000');
+    expect(r.out).not.toContain(secretValue('rcon.txt'));
+    expect(mutates(calls(fx))).toBe(false);
+  });
+
+  it('refuses a secrets directory owned by another uid', () => {
+    const fx = fixture();
+    setOwner(fx, 'secrets', '1001');
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secrets directory');
+    expect(r.out).toContain('expected uid 1000');
+  });
+
+  it('passes when the directory and every secret file are owned by GELDAR_SERVICE_UID=1001', () => {
+    const fx = fixture();
+    setOwner(fx, 'secrets', '1001');
+    for (const f of SECRET_FILES) setOwner(fx, f, '1001');
+    expect(run('colo-up.sh', fx, { ...REAL, GELDAR_SERVICE_UID: '1001' }).code).toBe(0);
+  });
+
+  it('dry run ends with "dry-run complete", not "deployed"', () => {
+    const r = run('colo-up.sh', fixture());
+    expect(r.code).toBe(0);
+    expect(r.out.trimEnd().split('\n').at(-1)).toContain('dry-run complete');
+    expect(r.out).not.toContain('deployed:');
+  });
+
+  it('gen-secrets as root chowns the directory and each generated file to GELDAR_SERVICE_UID', () => {
+    const fx = fixture();
+    writeShim(join(fx.dir, 'bin'), 'chown', CHOWN_SHIM);
+    const gen = join(fx.dir, 'gen');
+    const log = join(fx.dir, 'chown.log');
+    const r = run('gen-secrets.sh', fx, {
+      FAKE_RUNNER_UID: '0',
+      GELDAR_SERVICE_UID: '1001',
+      GELDAR_SECRETS_DIR: posix(gen),
+      FAKE_CHOWN_LOG: posix(log),
+    });
+    expect(r.code).toBe(0);
+    const lines = readFileSync(log, 'utf8').trim().split('\n');
+    expect(lines).toContain(`1001 ${posix(gen)}`);
+    for (const f of GENERATED) expect(lines).toContain(`1001 ${posix(join(gen, f))}`);
+  });
+
+  it('gen-secrets as another user refuses unless that uid is GELDAR_SERVICE_UID, and creates nothing', () => {
+    const fx = fixture();
+    const gen = join(fx.dir, 'gen-user');
+    const r = run('gen-secrets.sh', fx, {
+      GELDAR_SERVICE_UID: '1001',
+      GELDAR_SECRETS_DIR: posix(gen),
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('uid 1000');
+    expect(r.out).toContain('GELDAR_SERVICE_UID');
+    expect(existsSync(gen)).toBe(false);
   });
 });
