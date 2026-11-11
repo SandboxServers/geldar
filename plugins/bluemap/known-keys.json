@@ -1,0 +1,66 @@
+{
+  "bluemap": "5.29",
+  "asset": "bluemap-5.29-paper.jar",
+  "jar_sha256": "7bf475936c26107d476c63151c76d5b49e865eebeada12c9e7d92155de877b9f",
+  "source": "de/bluecolored/bluemap/config/ defaults in the jar: core.conf, plugin.conf, webserver.conf, maps/map.conf",
+  "note": "Top-level setting keys of the 5.29 defaults. A key in the committed config that is not listed here is misspelled or unknown, and BlueMap ignores it.",
+  "files": {
+    "core.conf": [
+      "accept-download",
+      "data",
+      "full-update-interval",
+      "log",
+      "metrics",
+      "region-file-check-interval",
+      "render-thread-count",
+      "scan-for-mod-resources",
+      "update-cooldown"
+    ],
+    "plugin.conf": [
+      "hidden-game-modes",
+      "hide-below-block-light",
+      "hide-below-sky-light",
+      "hide-different-world",
+      "hide-invisible",
+      "hide-sneaking",
+      "hide-vanished",
+      "live-player-markers",
+      "player-render-limit",
+      "skin-download"
+    ],
+    "webserver.conf": [
+      "additional-headers",
+      "enabled",
+      "log",
+      "port",
+      "sse-enabled",
+      "webroot"
+    ],
+    "maps/overworld.conf": [
+      "ambient-light",
+      "cave-detection-ocean-floor",
+      "cave-detection-uses-block-light",
+      "dimension",
+      "dimension-type",
+      "edge-light-strength",
+      "enable-flat-view",
+      "enable-free-flight-view",
+      "enable-hires",
+      "enable-perspective-view",
+      "ignore-missing-light-data",
+      "marker-sets",
+      "min-inhabited-time",
+      "name",
+      "remove-caves-below-y",
+      "render-edges",
+      "render-mask",
+      "sky-color",
+      "sky-light",
+      "sorting",
+      "start-pos",
+      "storage",
+      "void-color",
+      "world"
+    ]
+  }
+}
