@@ -101,7 +101,17 @@ Not decided here. plan.md itself is not edited by this step (it is not in the pa
 
 ## Open items (not done in this step)
 
-- C4-06 card and the C4 wave section still say "v5" as the new version (title, may-edit, checks, commit list, 0122 slug). Must change to v7, with "v1 to v6 are not edited".
-- C4 sections 10.4 to 10.6 and the ledger text in c4-packets.md still state the soak as settled. Must change to O-soak.
-- Ledger file `docs/analysis/phase1/ledger.md`, the Phase 0 RESUME fix (next free number 0130), the ledger README "pending" retro line, and `docs/analysis/phase1/RESUME.md` are not written in this step.
-- `./geldar.ps1 check` not yet run.
+Done:
+
+- C4-06 card and the C4 wave section say v7 (was v5).
+- C4-05 names the receipt id it looks up.
+- C4 sections 10.4 to 10.6 and the ledger text state the soak as O-soak, not settled.
+- Ledger `docs/analysis/phase1/ledger.md` is created.
+- `docs/analysis/phase1/RESUME.md` is created.
+- Phase 0 RESUME and README point at the written retro and the next free number 0130.
+
+Still open:
+
+- The ledger README "pending" retro line.
+- O-soak itself: the owner must answer option (A) or (B) in writing (c3-packets.md section 8 and 10.5, c4-packets.md 10.5).
+- `./geldar.ps1 check` result: see the report.
