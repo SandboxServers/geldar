@@ -96,6 +96,36 @@ function Read-ColoConfig([string] $Path = (Join-Path $Root 'shards/colo.yaml')) 
   if ($memory -notmatch '^[1-9][0-9]{1,4}[mg]$') {
     throw "${Path}: memory_limit '$memory' must be a whole number of m or g, from 10m to 99999g"
   }
+  # The total is the least the shard may have. The per-service budgets are literal defaults in compose/colo.yml
+  # (${GELDAR_COLO_<SERVICE>_CPUS:-x} and _MEM:-y); their sums are the floor. Paper's heap (MEMORY: 6G in compose,
+  # a test keeps the two equal) plus 1 GiB is the floor for the memory total.
+  $paperHeapMiB = 6144
+  $toMiB = { param([string] $size) if ($size -match '^([0-9]+)g$') { [double] $Matches[1] * 1024 } else { [double] ($size -replace 'm$', '') } }
+  $budgetCpu = 0.0
+  $budgetMiB = 0.0
+  # Each budget variable appears more than once per service (memory and memswap_limit both read _MEM), so each
+  # service's CPUS and MEM is counted once, at its first reference.
+  $services = @{}
+  $cpuSeen = @{}
+  $memSeen = @{}
+  foreach ($match in [regex]::Matches((Get-Content -Raw (Join-Path $Root 'compose/colo.yml')), 'GELDAR_COLO_([A-Z_]+)_(CPUS|MEM):-([0-9.]+[mg]?)\}')) {
+    $service = $match.Groups[1].Value
+    $services[$service] = $true
+    if ($match.Groups[2].Value -eq 'CPUS') {
+      if (-not $cpuSeen.ContainsKey($service)) { $cpuSeen[$service] = $true; $budgetCpu += [double] $match.Groups[3].Value }
+    }
+    elseif (-not $memSeen.ContainsKey($service)) { $memSeen[$service] = $true; $budgetMiB += & $toMiB $match.Groups[3].Value }
+  }
+  if ($services.Count -eq 0) { throw "compose/colo.yml has no per-service GELDAR_COLO_<SERVICE>_CPUS/_MEM budgets to check the total against" }
+  if ([double] $cpu -lt $budgetCpu) {
+    throw "${Path}: cpu_limit $cpu is below the sum of the per-service CPU budgets in compose/colo.yml ($budgetCpu)"
+  }
+  if ((& $toMiB $memory) -lt ($paperHeapMiB + 1024)) {
+    throw "${Path}: memory_limit $memory is below Paper's heap (6G) plus 1 GiB (7168m)"
+  }
+  if ((& $toMiB $memory) -lt $budgetMiB) {
+    throw "${Path}: memory_limit $memory is below the sum of the per-service memory budgets in compose/colo.yml ($($budgetMiB)m)"
+  }
   $port = $values.minecraft_port
   if ($port -in '25565', '25566') {
     throw "${Path}: minecraft_port $port is refused (25565 is the game server, 25566 is reserved)"
@@ -124,7 +154,8 @@ function Invoke-Check {
     foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
-    Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)' { docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
+    Invoke-Step 'docker compose config (colo.yml with nats-auth.yml, the merge `shard up colo` starts)' { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
+    Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)'{ docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
     $natsMcp = Join-Path $Root 'compose/mcp.yml'
     Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml + nats-auth-mcp.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') -f (Join-Path $Root 'compose/nats-auth-mcp.yml') config --quiet }
@@ -244,17 +275,18 @@ function Initialize-ShardSecrets([string] $Shard) {
   }
 }
 
-# compose/colo.yml declares these NATS password files as secrets, and `up` fails in docker when one is missing.
-# Initialize-ShardSecrets does not write them (only `shard nats-auth` does), so `up colo` checks first and names
-# what is missing. It never generates a partial set here. A test keeps this list equal to colo.yml's nats-* files.
+# `up colo` merges compose/nats-auth.yml (NATS auth on by default), and compose/colo.yml declares nats-body and nats-mind.
+# Their password files and the server config nats-auth.conf are the secrets `up` fails in docker without. Initialize-ShardSecrets
+# does not write them (only `shard nats-auth` does), so `up colo` checks first and names what is missing. It never generates
+# a partial set here. A test keeps this list equal to what colo.yml and nats-auth.yml declare.
 function Assert-ColoNatsSecrets {
   $dir = Join-Path $Root 'compose/secrets'
-  $missing = foreach ($name in 'nats-body.txt') {
+  $missing = foreach ($name in 'nats-body.txt', 'nats-mind.txt', 'nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt', 'nats-auth.conf') {
     $path = Join-Path $dir $name
     if (-not (Test-Path -PathType Leaf $path) -or (Get-Item $path).Length -eq 0) { "compose/secrets/$name" }
   }
   if ($missing) {
-    throw "$($missing -join ', ') is missing or empty, and compose/colo.yml needs it. Create it with: ./geldar.ps1 shard nats-auth colo"
+    throw "$($missing -join ', ') is missing or empty, and compose/colo.yml with compose/nats-auth.yml needs them. Create them with: ./geldar.ps1 shard nats-auth colo"
   }
 }
 
@@ -341,8 +373,13 @@ function Invoke-Shard([string[]] $ShardArgs) {
   $file = Get-ComposeFile $shard
   # --rcon-host adds compose/rcon-host.yml, which publishes RCON to the host loopback for the host-run tools.
   $rconHost = @($extra) -contains '--rcon-host'
+  if ($rconHost -and $action -eq 'up' -and $shard -eq 'colo') {
+    throw "shard up colo: --rcon-host is refused. compose/rcon-host.yml publishes Paper's RCON to the host loopback and bypasses the colo rules (decision 0082). The colo stack keeps RCON on the colo network only."
+  }
   $files = @('-f', $file)
   if ($rconHost) { $files += @('-f', (Join-Path $Root 'compose/rcon-host.yml')) }
+  # Colo runs NATS with auth by default: `up` merges the overlay, and Assert-ColoNatsSecrets has checked its secret files.
+  if ($shard -eq 'colo' -and $action -eq 'up') { $files += @('-f', (Join-Path $Root 'compose/nats-auth.yml')) }
   $compose = @('compose') + $files + @('-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }
@@ -351,16 +388,14 @@ function Invoke-Shard([string[]] $ShardArgs) {
       if ($shard -eq 'colo') { Assert-ColoNatsSecrets }
       Assert-PluginJar $shard
       if ($shard -eq 'colo') {
-        # compose/colo.yml reads these two; the defaults in the file equal shards/colo.yaml's first guesses.
-        $colo = Read-ColoConfig
-        $env:GELDAR_COLO_CPU_LIMIT = $colo.cpu_limit
-        $env:GELDAR_COLO_MEMORY_LIMIT = $colo.memory_limit
+        # Refuses a bad shards/colo.yaml before anything starts. The per-service limits are literals in compose/colo.yml.
+        $null = Read-ColoConfig
       }
       Initialize-ShardSecrets $shard
       Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }
       Invoke-Step "start shard $shard" { docker @compose up -d --wait }
       Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose }
-      if (-not $rconHost) { Write-Host "hint: RCON 25575 is not published to the host. Host tools that use it (golem players and bench, the removal of adam-cli, mcp-tokens and players-cli) need: ./geldar.ps1 shard up $shard --rcon-host" }
+      if (-not $rconHost -and $shard -ne 'colo') { Write-Host "hint: RCON 25575 is not published to the host. Host tools that use it (golem players and bench, the removal of adam-cli, mcp-tokens and players-cli) need: ./geldar.ps1 shard up $shard --rcon-host" }
     }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }

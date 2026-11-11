@@ -76,7 +76,9 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
 
   it('gives the Mind its Postgres password from a file (the postgres secret)', () => {
     expect(env(mind).POSTGRES_PASSWORD_FILE).toBe('/run/secrets/postgres');
-    expect(mind.secrets).toEqual(['postgres']);
+    // The Mind also takes its NATS password as a file (decision 0080), declared like the Body's.
+    expect(mind.secrets).toEqual(['postgres', { source: 'nats-mind', target: 'nats-mind.txt' }]);
+    expect(colo.secrets['nats-mind']).toEqual({ file: './secrets/nats-mind.txt' });
   });
 
   it('bakes in no credential: every PASSWORD or TOKEN variable is a *_FILE path', () => {
@@ -93,14 +95,67 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(env(mind)).toHaveProperty('GELDAR_TELEMETRY_URL', null);
   });
 
-  it('caps both services with the shared limits anchor (decision 0082)', () => {
-    for (const service of [body, mind]) {
-      const limits = (service.deploy as { resources: { limits: Record<string, string> } }).resources
-        .limits;
-      expect(limits).toEqual({
-        cpus: composeDefault('GELDAR_COLO_CPU_LIMIT', '4'),
-        memory: composeDefault('GELDAR_COLO_MEMORY_LIMIT', '8192m'),
+  it('caps each service with its own budget, no swap, a pids limit and log rotation (decision 0082)', () => {
+    const budgets: [Service, string, string, string][] = [
+      [body, 'GOLEM_BODY', '1', '2048m'],
+      [mind, 'ANIMUS', '1', '2048m'],
+    ];
+    for (const [service, name, cpus, memory] of budgets) {
+      expect(service.deploy).toEqual({
+        resources: {
+          limits: {
+            cpus: composeDefault(`GELDAR_COLO_${name}_CPUS`, cpus),
+            memory: composeDefault(`GELDAR_COLO_${name}_MEM`, memory),
+            pids: 256,
+          },
+        },
+      });
+      expect(service.memswap_limit).toBe(composeDefault(`GELDAR_COLO_${name}_MEM`, memory));
+      expect(service.pids_limit).toBe(256);
+      expect(service.logging).toEqual({
+        driver: 'json-file',
+        options: { 'max-size': '10m', 'max-file': '3' },
       });
     }
+  });
+});
+
+// Every colo service, not only the Body and the Mind: the per-service budget (the default of each variable), no swap,
+// the pids limit in both forms (compose needs deploy.resources.limits.pids beside pids_limit), and log rotation.
+const SHARED_CAPS: Record<string, [string, string, string, number]> = {
+  paper: ['PAPER', '3', '8192m', 512],
+  velocity: ['VELOCITY', '0.5', '1024m', 256],
+  postgres: ['POSTGRES', '1', '2048m', 256],
+  nats: ['NATS', '0.5', '512m', 256],
+  eventsink: ['EVENTSINK', '0.5', '512m', 256],
+  'golem-body': ['GOLEM_BODY', '1', '2048m', 256],
+  animus: ['ANIMUS', '1', '2048m', 256],
+};
+
+describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
+  it('names exactly the seven services the budget totals cover', () => {
+    expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
+  });
+
+  for (const [name, [budget, cpus, memory, pids]] of Object.entries(SHARED_CAPS)) {
+    it(`${name}: its CPU, memory, pids and log limits`, () => {
+      const service = colo.services[name] ?? {};
+      const deployLimits = (service.deploy as { resources: { limits: Service } }).resources.limits;
+      expect(deployLimits.cpus).toBe(composeDefault(`GELDAR_COLO_${budget}_CPUS`, cpus));
+      expect(deployLimits.memory).toBe(composeDefault(`GELDAR_COLO_${budget}_MEM`, memory));
+      expect(deployLimits.pids).toBe(pids);
+      expect(service.memswap_limit).toBe(composeDefault(`GELDAR_COLO_${budget}_MEM`, memory));
+      expect(service.pids_limit).toBe(pids);
+      expect(service.logging).toEqual({
+        driver: 'json-file',
+        options: { 'max-size': '10m', 'max-file': '3' },
+      });
+    });
+  }
+
+  it('publishes no database or NATS port; Velocity is the only listener and keeps 127.0.0.1:25567', () => {
+    expect(colo.services.postgres).not.toHaveProperty('ports');
+    expect(colo.services.nats).not.toHaveProperty('ports');
+    expect(colo.services.velocity?.ports).toEqual(['127.0.0.1:25567:25565']);
   });
 });

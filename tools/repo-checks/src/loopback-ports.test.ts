@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { COLO_PATH, findPublicPorts, isComposeFile } from './loopback-ports.ts';
+import { COLO_PATH, coloRole, findPublicPorts, isComposeFile } from './loopback-ports.ts';
 
 /** The findings for one compose file, as `service: reason` strings. */
 function problems(text: string): string[] {
@@ -281,6 +281,9 @@ function coloService(ports: string[], deploy = LIMITS): string {
   return [
     'services:',
     '  paper:',
+    '    pids_limit: 256',
+    '    memswap_limit: 2048m',
+    '    logging: {}',
     ...ports,
     ...deploy.split('\n').map((line) => `    ${line}`),
   ].join('\n');
@@ -293,6 +296,157 @@ const LIMITS = [
   '      cpus: "4"',
   '      memory: 8192m',
 ].join('\n');
+
+/** A one-service colo file with every required key and a limit, plus `extra` lines; `drop` removes keys by name. */
+function hardened(extra: string[] = [], drop: string[] = []): string {
+  const base = [
+    '    image: x',
+    '    pids_limit: 256',
+    '    memswap_limit: 2048m',
+    '    logging: {}',
+    '    deploy:',
+    '      resources:',
+    '        limits:',
+    '          cpus: "1"',
+    '          memory: 512m',
+  ];
+  const kept = base.filter((line) => !drop.some((key) => line.startsWith(`    ${key}:`)));
+  return ['services:', '  paper:', ...kept, ...extra].join('\n');
+}
+
+describe('coloRole', () => {
+  it('applies the base rules to colo.yml and any colo*.yml, and the overlay rules to nats-auth.yml', () => {
+    expect(coloRole('compose/colo.yml')).toBe('base');
+    expect(coloRole('compose/colo-dev.yaml')).toBe('base');
+    expect(coloRole('compose/nats-auth.yml')).toBe('overlay');
+    expect(coloRole('compose/phase0.yml')).toBeNull();
+    expect(coloRole('compose/nats-auth-mcp.yml')).toBeNull();
+  });
+});
+
+describe('findPublicPorts: colo hardening rules', () => {
+  it('passes a service with every required key, a limit and no denied key', () => {
+    expect(coloProblems(hardened())).toEqual([]);
+  });
+
+  it('accepts a VAR-default limit when the default is positive', () => {
+    const text = hardened().replace('cpus: "1"', `cpus: "\${GELDAR_X_CPUS:-0.5}"`);
+    expect(coloProblems(text)).toEqual([]);
+  });
+
+  it('accepts named volumes and the allowlisted relative sources', () => {
+    const volumes = [
+      '    volumes:',
+      '      - data:/data',
+      '      - ../sql:/docker-entrypoint-initdb.d:ro',
+      '      - ../plugin/core/build/libs/x.jar:/plugins/x.jar:ro',
+      '      - ./paper/entry.sh:/entry.sh:ro',
+      '      - ./secrets/nats.conf:/etc/nats.conf:ro',
+    ];
+    expect(coloProblems(hardened(volumes))).toEqual([]);
+  });
+
+  it.each([
+    ['privileged: true', 'privileged'],
+    ['cap_add: [NET_ADMIN]', 'cap_add'],
+    ['pid: host', 'pid'],
+    ['ipc: host', 'ipc'],
+    ['userns_mode: host', 'userns_mode'],
+    ['devices: ["/dev/fuse:/dev/fuse"]', 'devices'],
+    ['sysctls: { net.core.somaxconn: 1024 }', 'sysctls'],
+  ])('denies %s on any colo service', (line, key) => {
+    expect(coloProblems(hardened([`    ${line}`]))).toEqual([
+      `paper: ${key} is not allowed in colo`,
+    ]);
+  });
+
+  it('denies network_mode on a colo service, even one that names a service', () => {
+    expect(coloProblems(hardened(['    network_mode: "service:nats"']))).toEqual([
+      'paper: network_mode is not allowed in colo; a service joins the colo network',
+    ]);
+  });
+
+  it('denies a docker.sock volume, naming the service and not the path', () => {
+    const found = coloProblems(
+      hardened(['    volumes:', '      - /var/run/docker.sock:/var/run/docker.sock']),
+    );
+    expect(found).toEqual([
+      'paper: volume "/var/run/docker.sock" mounts docker.sock, which is rejected',
+    ]);
+  });
+
+  it('denies a docker.sock long-form volume', () => {
+    const long = [
+      '    volumes:',
+      '      - type: bind',
+      '        source: /var/run/docker.sock',
+      '        target: /s',
+    ];
+    expect(coloProblems(hardened(long))).toEqual([
+      'paper: volume "/var/run/docker.sock" mounts docker.sock, which is rejected',
+    ]);
+  });
+
+  it('denies an absolute host path and a Windows drive path', () => {
+    const abs = coloProblems(hardened(['    volumes:', '      - /etc:/host-etc']));
+    const drive = coloProblems(hardened(['    volumes:', '      - C:\\data:/d']));
+    expect(abs).toEqual(['paper: volume "/etc" is an absolute host path, which is rejected']);
+    expect(drive).toEqual([
+      'paper: volume "C:\\\\data:/d" is an absolute host path, which is rejected',
+    ]);
+  });
+
+  it('denies a relative source outside the allowlist, including a prefix that only looks like one', () => {
+    const lines = ['    volumes:', '      - ../secrets-elsewhere:/x', '      - ../sqlx:/y'];
+    expect(coloProblems(hardened(lines))).toEqual([
+      'paper: volume "../secrets-elsewhere" is not in the colo allowlist',
+      'paper: volume "../sqlx" is not in the colo allowlist',
+    ]);
+  });
+
+  it('denies climbing out of an allowed directory with ..', () => {
+    const lines = ['    volumes:', '      - ../sql/../../etc:/x'];
+    expect(coloProblems(hardened(lines))).toEqual([
+      'paper: volume "../sql/../../etc" climbs out of its directory, which is rejected',
+    ]);
+  });
+
+  it('denies cpus of 0, which is not a positive limit', () => {
+    const text = hardened().replace('cpus: "1"', 'cpus: "0"');
+    expect(coloProblems(text)).toEqual(['paper: cpus "0" must be a positive number']);
+  });
+
+  it(`denies a \${VAR:-default} limit whose default is zero`, () => {
+    const text = hardened().replace('memory: 512m', `memory: "\${GELDAR_X_MEM:-0m}"`);
+    expect(coloProblems(text)).toEqual([
+      `paper: memory "\${GELDAR_X_MEM:-0m}" has a default that is not a positive size such as 512m`,
+    ]);
+  });
+
+  it('denies a service with no pids_limit', () => {
+    expect(coloProblems(hardened([], ['pids_limit']))).toEqual([
+      'paper: has no pids_limit; every colo service needs one',
+    ]);
+  });
+
+  it('denies a service with no memswap_limit or no logging', () => {
+    expect(coloProblems(hardened([], ['memswap_limit']))).toEqual([
+      'paper: has no memswap_limit; every colo service needs one',
+    ]);
+    expect(coloProblems(hardened([], ['logging']))).toEqual([
+      'paper: has no logging; every colo service needs one',
+    ]);
+  });
+
+  it('applies the presence rules to colo files only: the NATS overlay without limits passes', () => {
+    const overlay = 'services:\n  paper:\n    environment:\n      GELDAR_NATS_USER: paper';
+    expect(findPublicPorts('compose/nats-auth.yml', overlay)).toEqual([]);
+    const denied = 'services:\n  paper:\n    privileged: true';
+    expect(findPublicPorts('compose/nats-auth.yml', denied).map((f) => f.reason)).toEqual([
+      'privileged is not allowed in colo',
+    ]);
+  });
+});
 
 describe('findPublicPorts: compose/colo.yml', () => {
   it('passes the committed compose/colo.yml', () => {
@@ -340,10 +494,13 @@ describe('findPublicPorts: compose/colo.yml', () => {
   it('refuses a service with no deploy.resources.limits, naming the service', () => {
     const text =
       'services:\n  paper:\n    image: x\n  nats:\n    image: y\n    deploy:\n      resources:\n        limits:\n          cpus: "1"';
-    expect(coloProblems(text)).toEqual([
-      'paper: has no deploy.resources.limits with cpus and memory; every colo service needs one',
-      'nats: has no deploy.resources.limits with cpus and memory; every colo service needs one',
-    ]);
+    // The services also lack pids_limit, memswap_limit and logging, which the other rules name.
+    expect(coloProblems(text)).toEqual(
+      expect.arrayContaining([
+        'paper: has no deploy.resources.limits with cpus and memory; every colo service needs one',
+        'nats: has no deploy.resources.limits with cpus and memory; every colo service needs one',
+      ]),
+    );
   });
 
   it('refuses limits that name cpus but not memory', () => {
@@ -362,6 +519,9 @@ describe('findPublicPorts: compose/colo.yml', () => {
       'services:',
       '  paper:',
       '    <<: *limits',
+      '    pids_limit: 256',
+      '    memswap_limit: 2048m',
+      '    logging: {}',
       '    ports: ["127.0.0.1:25567:25565"]',
     ].join('\n');
     expect(coloProblems(text)).toEqual([]);

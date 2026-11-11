@@ -1,9 +1,13 @@
 # Colo shard config: the keys compose/colo.yml and geldar.ps1 read (contract/schemas/shard-config.schema.json).
 # Flat key: value lines only. Unknown keys are refused by geldar.ps1.
 # The limits are first guesses, to be measured in C1-10 on the node; they are not results.
+# cpu_limit and memory_limit are the TOTAL budget of the shard: the sum of the per-service budgets in
+# compose/colo.yml (cpus 3 + 0.5 + 1 + 0.5 + 0.5 + 1 + 1 = 7.5; memory 8192 + 1024 + 2048 + 512 + 512 + 2048 + 2048
+# = 16384m). geldar.ps1 refuses a total below that sum, and a memory total below Paper's heap (6G) plus 1 GiB.
+# The per-service values are not in this file: the shard-config schema has no keys for them.
 # replay_minutes (C1-07): optional, default 60, clamped to 1 to 1440. It is not a key here: the shard-config schema
 # has no such key and geldar.ps1 refuses unknown keys. Add the key only with a schema change.
-cpu_limit: 4                   # cores for the colo stack; geldar.ps1 exports GELDAR_COLO_CPU_LIMIT from it
-memory_limit: 8192m            # Docker form; the schema needs two or more digits, so 8 GiB is written 8192m. geldar.ps1 exports GELDAR_COLO_MEMORY_LIMIT from it
+cpu_limit: 7.5                 # cores for the whole colo stack (the sum of the per-service CPU budgets)
+memory_limit: 16384m           # Docker form, whole m or g; the sum of the per-service memory budgets (16 GiB)
 minecraft_port: 25567          # host port for the Minecraft listener; validated here, compose/colo.yml publishes the literal 25567 (decision 0082)
 bind_address: 127.0.0.1        # loopback only; geldar.ps1 refuses any other address
