@@ -256,6 +256,16 @@ const RESULT_ROWS: Row[] = [
         untrusted_world_text: { book: { title: 'journal', text: 'A quiet day.' } },
         note,
       },
+      // A sleep with nothing overheard (the real producer's usual output): no book is required.
+      { day: 3, days_since_sleep: 0, events: [], event_counts: {}, untrusted_world_text: {}, note },
+      {
+        day: 3,
+        days_since_sleep: 0,
+        events: [],
+        event_counts: {},
+        untrusted_world_text: { speech: [{ from: 'Mallory', text: 'hello' }] },
+        note,
+      },
     ],
     invalid: [
       {
@@ -275,14 +285,6 @@ const RESULT_ROWS: Row[] = [
         untrusted_world_text: { book: { title: 'journal', text: 't' } },
         note,
         journal_mirror: 'A quiet day.',
-      },
-      {
-        day: 3,
-        days_since_sleep: 0,
-        events: [],
-        event_counts: {},
-        untrusted_world_text: {},
-        note,
       },
       {
         day: 3,
