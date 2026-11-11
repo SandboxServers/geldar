@@ -27,7 +27,9 @@ const READ = functionBody('Read-ColoConfig');
 describe('geldar.ps1 colo config: static wiring', () => {
   it('defines Read-ColoConfig before Invoke-Check', () => {
     expect(READ).not.toBe('');
-    expect(SCRIPT.indexOf('function Read-ColoConfig')).toBeLessThan(SCRIPT.indexOf('function Invoke-Check'));
+    expect(SCRIPT.indexOf('function Read-ColoConfig')).toBeLessThan(
+      SCRIPT.indexOf('function Invoke-Check'),
+    );
   });
 
   it('is called from Invoke-Check, so check validates the colo config', () => {
@@ -47,7 +49,8 @@ describe('geldar.ps1 colo config: static wiring', () => {
   });
 });
 
-const hasPwsh = spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' }).status === 0;
+const hasPwsh =
+  spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' }).status === 0;
 
 /** The outcome of Read-ColoConfig on one file: the parsed hashtable, or the error message. */
 interface Outcome {
@@ -81,12 +84,15 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   function run(text: string | null, file = 'case.yaml'): Outcome {
     const path = text === null ? COLO_FILE : join(dir, file);
     if (text !== null) writeFileSync(path, text, 'utf8');
-    const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', harness, path], { encoding: 'utf8' });
+    const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', harness, path], {
+      encoding: 'utf8',
+    });
     expect(result.stderr).toBe('');
     return JSON.parse(result.stdout.trim()) as Outcome;
   }
 
-  const GOOD = 'cpu_limit: 4\nmemory_limit: 8192m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
+  const GOOD =
+    'cpu_limit: 4\nmemory_limit: 8192m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
 
   it('accepts the committed shards/colo.yaml and returns its values', () => {
     const outcome = run(null);
@@ -100,7 +106,9 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('accepts comments, blank lines and a missing bind_address (loopback by default)', () => {
-    const outcome = run('# note\n\ncpu_limit: 2.5   # cores\nmemory_limit: 512m\nminecraft_port: 25567\n');
+    const outcome = run(
+      '# note\n\ncpu_limit: 2.5   # cores\nmemory_limit: 512m\nminecraft_port: 25567\n',
+    );
     expect(outcome.ok).toBe(true);
     expect(outcome.value?.bind_address).toBe('127.0.0.1');
     expect(outcome.value?.cpu_limit).toBe('2.5');
@@ -132,7 +140,9 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a non-loopback bind_address', () => {
-    expect(run(GOOD.replace('127.0.0.1', '0.0.0.0')).error).toContain('bind_address 0.0.0.0 is refused');
+    expect(run(GOOD.replace('127.0.0.1', '0.0.0.0')).error).toContain(
+      'bind_address 0.0.0.0 is refused',
+    );
   });
 
   it('refuses a cpu_limit of 0 and a memory_limit without a unit', () => {
