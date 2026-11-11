@@ -146,11 +146,11 @@ function runUp(extra: Record<string, string>) {
 const ups = (log: string[]) => log.filter((c) => / up -d /.test(c));
 
 describe('colo-up.sh and containers left on a removed network', () => {
-  it('adds --force-recreate to both ups when a project container is on a network that is gone', () => {
+  it('adds --force-recreate to every up when a project container is on a network that is gone', () => {
     const r = runUp({ FAKE_CONTAINERS: 'c1 c2', FAKE_NET_OF: 'net-old', FAKE_GONE: 'net-old' });
     expect(r.code, r.out).toBe(0);
     const u = ups(r.log);
-    expect(u).toHaveLength(2);
+    expect(u).toHaveLength(3);
     for (const call of u) expect(call).toContain('--force-recreate');
     expect(r.log.some((c) => /(^| )down( |$)|volume|rm /.test(c) && !/--rm/.test(c))).toBe(false);
   });
@@ -158,7 +158,7 @@ describe('colo-up.sh and containers left on a removed network', () => {
   it('does not force a recreate when every network id still exists', () => {
     const r = runUp({ FAKE_CONTAINERS: 'c1 c2' });
     expect(r.code, r.out).toBe(0);
-    expect(ups(r.log)).toHaveLength(2);
+    expect(ups(r.log)).toHaveLength(3);
     for (const call of ups(r.log)) expect(call).not.toContain('--force-recreate');
   });
 
