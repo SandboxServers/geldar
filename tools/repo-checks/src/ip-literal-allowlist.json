@@ -1,0 +1,58 @@
+[
+  {
+    "path": "animus/src/config.test.ts",
+    "reason": "Animus host and URL validation tests use a private address as a non-loopback host"
+  },
+  {
+    "path": "glass/src/config.test.ts",
+    "reason": "Glass config tests use a private address for the trusted-proxy and host checks"
+  },
+  {
+    "path": "glass/src/http.test.ts",
+    "reason": "Glass HTTP tests use a private address as a client address"
+  },
+  {
+    "path": "glass/test/readonly-routes.test.ts",
+    "reason": "Glass read-only route tests use private addresses as client and proxy inputs"
+  },
+  {
+    "path": "golem/src/body/restart.fixes.test.ts",
+    "reason": "Golem NATS loopback guard test uses a private address as a non-loopback host"
+  },
+  {
+    "path": "golem/src/config.test.ts",
+    "reason": "Golem host validation tests use a private address as a non-loopback host"
+  },
+  {
+    "path": "golem/src/players/life-removal.test.ts",
+    "reason": "Golem life removal test passes a private address as a non-loopback host"
+  },
+  {
+    "path": "lantern-local/test/config-models.test.ts",
+    "reason": "Lantern config tests use a private address as a model host input"
+  },
+  {
+    "path": "threshold/mcp-mock/src/corpus/corpus.test.ts",
+    "reason": "Mock corpus tests use private addresses as client-address inputs"
+  },
+  {
+    "path": "threshold/mcp/src/config.ts",
+    "reason": "Product default trusted-proxy CIDRs in the private range (IP and CIDR handling)"
+  },
+  {
+    "path": "threshold/mcp/src/config.test.ts",
+    "reason": "Trusted-proxy CIDR config tests use private ranges"
+  },
+  {
+    "path": "threshold/mcp/src/config-proxy.test.ts",
+    "reason": "Trusted-proxy config tests use private ranges as CIDR inputs"
+  },
+  {
+    "path": "threshold/mcp/src/http/client-address.test.ts",
+    "reason": "Client-address tests use private ranges as trusted-proxy and forwarded-address inputs"
+  },
+  {
+    "path": "tools/glass-ctl/src/glass-ctl.test.ts",
+    "reason": "glass-ctl host check test uses a private address as a non-loopback host"
+  }
+]
