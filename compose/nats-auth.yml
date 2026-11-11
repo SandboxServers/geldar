@@ -22,14 +22,9 @@ services:
     # The store dir is set here only: the generated conf says `jetstream: enabled` and no store_dir, because nats-server
     # 2.15 refuses a store_dir in both places ("Duplicate 'store_dir' configuration").
     command: ["-js", "-sd", "/data", "-c", "/etc/nats/nats-auth.conf"]
-    # The monitor listens on 127.0.0.1:8222 inside the container only (`http:` in the generated conf), not on the colo
-    # network: its subsz detail names the subjects each client watches. The probe runs inside the container.
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
+    # The monitor listens on 127.0.0.1:8222 inside the container only (`http:` in a newly generated conf), not on the colo
+    # network: its subsz detail names the subjects each client watches. No healthcheck here: the base's TCP probe of the
+    # client port (4222) stays, so a conf generated before the monitor line existed still comes up healthy.
     secrets:
       - source: nats-auth.conf
         target: /etc/nats/nats-auth.conf

@@ -1,0 +1,31 @@
+# Optional overlay for signed-in Kino (decision 0075): gives Glass the gk_session signing key that the register service
+# signs with, so Glass verifies the cookie. Merge it after compose/colo-kino.yml ONLY when the key file exists on the node
+# (docs/runbooks/kino.md). Not merged: GELDAR_GLASS_SESSION_KEY_FILE is unset, Glass treats every viewer as anonymous and
+# /kino/targets lists public-camera agents only. Merged: the file is mounted, and a missing file fails the merge.
+# The file is the one the register deploy reads as REGISTER_SESSION_KEY_FILE (/run/secrets/register-session-key): one key,
+# at least 32 characters, shared by register and Glass. No value is in the repo.
+services:
+  glass:
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    # Logging and limits repeat compose/colo-kino.yml (identical values, so the merge is unchanged): the repo check wants
+    # them in every colo overlay file.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_GLASS_CPUS:-0.5}"
+          memory: "${GELDAR_COLO_GLASS_MEM:-256m}"
+          pids: 128
+    pids_limit: 128
+    memswap_limit: "${GELDAR_COLO_GLASS_MEM:-256m}"
+    environment:
+      GELDAR_GLASS_SESSION_KEY_FILE: /run/secrets/register-session-key
+    secrets: [register-session-key]
+secrets:
+  register-session-key:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/register-session-key.txt
