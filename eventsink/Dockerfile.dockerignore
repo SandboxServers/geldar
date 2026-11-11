@@ -8,3 +8,5 @@
 !eventsink
 **/node_modules
 eventsink/test
+**/*.env
+**/.env*
