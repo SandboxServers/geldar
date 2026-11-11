@@ -180,3 +180,39 @@ describe('Glass request size cap on the wire', () => {
     expect(over.headers['content-security-policy']).toContain("default-src 'none'");
   });
 });
+
+describe('Glass untrusted peer header log', () => {
+  async function startLogged(trusted: string[]) {
+    const lines: Array<{ event: string; peer: string }> = [];
+    const hub = {} as unknown as SseHub;
+    const server = createServer(
+      createHandler({
+        db,
+        hub,
+        policy: { trustedProxies: new Set(trusted) },
+        log: (entry) => lines.push(entry),
+      }),
+    );
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return { port: (server.address() as AddressInfo).port, lines };
+  }
+
+  it('logs the peer once when an untrusted peer sends the header', async () => {
+    const { port, lines } = await startLogged([]);
+    await get(port, { 'x-geldar-client-ip': '203.0.113.1' });
+    await get(port, { 'x-geldar-client-ip': '203.0.113.2' });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.event).toBe('glass_untrusted_peer_header');
+    expect(lines[0]?.peer).toMatch(/127\.0\.0\.1/);
+  });
+
+  it('logs nothing without the header, or from a trusted peer', async () => {
+    const none = await startLogged([]);
+    await get(none.port);
+    expect(none.lines).toHaveLength(0);
+    const trusted = await startLogged(['127.0.0.1', '::ffff:127.0.0.1']);
+    await get(trusted.port, { 'x-geldar-client-ip': '203.0.113.1' });
+    expect(trusted.lines).toHaveLength(0);
+  });
+});

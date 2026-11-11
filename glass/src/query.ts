@@ -133,9 +133,17 @@ export async function listReceipts(
   return result.rows;
 }
 
-/** The cursor a new stream starts from: the database's clock now, so only later thoughts arrive. */
-export async function streamStartCursor(db: SqlClient): Promise<ThoughtCursor> {
-  const result = await db.query(`SELECT now()::text AS at`, []);
+/**
+ * The cursor a new stream starts from: the database's clock now minus the public delay, so a thought
+ * still hidden by the delay arrives once it is old enough, and a thought already shown is not replayed.
+ */
+export async function streamStartCursor(
+  db: SqlClient,
+  delaySeconds: number,
+): Promise<ThoughtCursor> {
+  const result = await db.query(`SELECT (now() - make_interval(secs => $1::int))::text AS at`, [
+    Math.max(0, Math.floor(delaySeconds)),
+  ]);
   return { at: String(result.rows[0]?.at ?? ''), id: '' };
 }
 

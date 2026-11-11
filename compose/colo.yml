@@ -552,8 +552,8 @@ services:
       GELDAR_ADMIN_PG_PASSWORD_FILE: /run/secrets/postgres
       PGHOST: postgres
     # postgres: the superuser password (admin.sh). postgres-mcp.txt: the file `migrate --set-role-password geldar_mcp`
-    # reads. mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
-    secrets: [postgres, postgres-mcp.txt, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
+    # reads; postgres-glass.txt: the same for geldar_glass (C2-07d). mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
+    secrets: [postgres, postgres-mcp.txt, postgres-glass.txt, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
     volumes:
       # The colo shard file (the Mind's file, which carries sovereign), under the path GELDAR_SHARD_FILE names.
       - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro

@@ -14,6 +14,7 @@ import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 import com.velocitypowered.api.util.GameProfile;
@@ -44,6 +45,9 @@ public final class IdentityPlugin {
     /** Velocity to Paper only: marks the connection as a ghost. Must equal GhostListener.CHANNEL in Geldar-Core. */
     static final MinecraftChannelIdentifier GHOST_CHANNEL = MinecraftChannelIdentifier.create("geldar", "ghost");
     static final byte[] GHOST_SIGNAL = {1};
+    /** Profile property marking a live login; must equal GhostListener.LIVE_PROPERTY in Geldar-Core. */
+    static final String LIVE_PROPERTY = "geldar_live";
+    static final String LIVE_VALUE = "1";
     /** Written while the proxy runs; the Velocity healthcheck in compose/phase0.yml reads it. */
     static final Path READY_FILE = Path.of("/tmp/geldar-identity.ready");
 
@@ -127,6 +131,14 @@ public final class IdentityPlugin {
     @Subscribe(order = PostOrder.FIRST)
     public void onLogin(LoginEvent event) {
         Player player = event.getPlayer();
+        if (alreadyConnected(player)) {
+            // Velocity's own "already connected" reply would tell a stranger the name is online (decision 0137).
+            event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
+            if (denials.allow()) {
+                log.info("Denied {}", printable(player.getUsername()));
+            }
+            return;
+        }
         if (gate.admit(player.getUniqueId(), player.getUsername())) {
             String name = printable(player.getUsername());
             log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
@@ -148,7 +160,25 @@ public final class IdentityPlugin {
         if (!gate.isSpectator(player.getUniqueId())) {
             return;
         }
-        player.getCurrentServer().ifPresent(server -> server.sendPluginMessage(GHOST_CHANNEL, GHOST_SIGNAL));
+        // Fail closed: a signal that cannot be sent leaves a ghost without its marker, so the ghost goes.
+        Optional<ServerConnection> server = player.getCurrentServer();
+        if (server.isEmpty()) {
+            log.warn("No backend for {}; disconnecting", printable(player.getUsername()));
+            player.disconnect(Component.text(LoginGate.DENY_MESSAGE));
+            return;
+        }
+        if (!server.get().sendPluginMessage(GHOST_CHANNEL, GHOST_SIGNAL)) {
+            log.warn("Could not mark {} as a spectator; disconnecting", printable(player.getUsername()));
+            player.disconnect(Component.text(LoginGate.DENY_MESSAGE));
+        }
+    }
+
+    /** True when another connection already holds this name. */
+    private boolean alreadyConnected(Player player) {
+        if (proxy == null) {
+            return false; // handler tests build the plugin without a proxy
+        }
+        return proxy.getPlayer(player.getUsername()).filter(other -> other != player).isPresent();
     }
 
     @Subscribe
@@ -174,6 +204,7 @@ public final class IdentityPlugin {
      */
     @Subscribe
     public void onGameProfile(GameProfileRequestEvent event) {
+        markLive(event);
         try {
             Optional<LifeRegistry.Entry> life = registry.find(event.getGameProfile().getName());
             if (life.isEmpty()) {
@@ -186,6 +217,25 @@ public final class IdentityPlugin {
         } catch (RuntimeException e) {
             log.warn("Skin lookup failed ({}), the default profile is kept", e.getClass().getSimpleName());
         }
+    }
+
+    /**
+     * Sets {@link #LIVE_PROPERTY} on a login the gate classifies as live, and on no other (decision 0137).
+     * Modern forwarding signs profile properties, so Paper can trust it; Paper treats its absence as a ghost.
+     * Any such property already on the profile is dropped first.
+     */
+    private void markLive(GameProfileRequestEvent event) {
+        GameProfile profile = event.getGameProfile();
+        List<GameProfile.Property> properties = new ArrayList<>();
+        for (GameProfile.Property property : profile.getProperties()) {
+            if (!LIVE_PROPERTY.equals(property.getName())) {
+                properties.add(property);
+            }
+        }
+        if (gate.classify(profile.getName()) == LoginGate.Admission.LIVE) {
+            properties.add(new GameProfile.Property(LIVE_PROPERTY, LIVE_VALUE, ""));
+        }
+        event.setGameProfile(profile.withProperties(properties));
     }
 
     /** The profile with its textures property replaced by the stored one; the other properties are kept. */
