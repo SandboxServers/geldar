@@ -15,7 +15,10 @@ export interface PublicConfig {
   clientIpHeader: ClientIpHeader;
   /** The per-client token bucket on every public request; null (no `public:` block) means no per-client limit. */
   rateLimit: { perMinute: number; burst: number } | null;
-  /** True refuses every public request with the 503 kill-switch body. */
+  /**
+   * True refuses every public request with the 503 kill-switch body. Read from the shard file at start:
+   * it takes effect on restart. The immediate cut is `deploy/colo-public.sh off mcp` (Caddy swap + reload).
+   */
   killSwitch: boolean;
 }
 

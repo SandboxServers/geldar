@@ -184,7 +184,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     exemptPeer: trusted,
     hostAllowed: (host) => hostAccepted(options.http.allowedHosts, port, host),
     async authenticate(playerId, header, req): Promise<AuthDecision> {
-      // The kill switch answers every public request before anything else is read or counted.
+      // The kill switch answers every public request before anything else is read or counted. It is the
+      // startup config: it takes effect on restart, and the immediate cut is `deploy/colo-public.sh off mcp`.
       if (pub.killSwitch) return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
