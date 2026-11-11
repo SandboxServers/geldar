@@ -5,6 +5,7 @@
  *  - at most `perClient` open streams for one client key (the rate limiter's key);
  *  - a stream whose socket stays full for more than one heartbeat period is ended;
  *  - at most `bufferFrames` queued frames per client; a slow client loses its oldest frame;
+ *  - a stream older than `maxAgeMs` is ended at the next heartbeat, so a stuck socket cannot hold a slot;
  *  - one heartbeat comment per `heartbeatMs` per client, so proxies keep the stream open;
  *  - the timers run only while a client is attached, and the poll never overlaps itself.
  */
@@ -18,6 +19,8 @@ export interface SseOptions {
   bufferFrames: number;
   pollMs: number;
   heartbeatMs: number;
+  /** A stream older than this is ended at the next heartbeat. Left out: no age limit. */
+  maxAgeMs?: number;
   /** The cursor a new stream starts from: thoughts after this moment are new. */
   start: () => Promise<ThoughtCursor>;
   /** Thoughts after a cursor, oldest first. Each row carries `cursor_at` and `thought_id`. */
@@ -48,6 +51,8 @@ interface Client {
   waiting: boolean;
   /** When `waiting` last became true, in epoch milliseconds. */
   waitingSince: number;
+  /** When the stream opened, in epoch milliseconds. */
+  openedAt: number;
   closed: boolean;
 }
 
@@ -97,7 +102,15 @@ export class SseHub {
       this.counters.rejected += 1;
       return false;
     }
-    const client: Client = { res, key, queue: [], waiting: false, waitingSince: 0, closed: false };
+    const client: Client = {
+      res,
+      key,
+      queue: [],
+      waiting: false,
+      waitingSince: 0,
+      openedAt: Date.now(),
+      closed: false,
+    };
     this.clients.add(client);
     this.perKey.set(key, (this.perKey.get(key) ?? 0) + 1);
     res.writeHead(200, {
@@ -196,7 +209,9 @@ export class SseHub {
   private endStalled(): void {
     const now = Date.now();
     for (const client of [...this.clients]) {
-      if (client.waiting && now - client.waitingSince > this.options.heartbeatMs) {
+      const { maxAgeMs } = this.options;
+      const tooOld = maxAgeMs !== undefined && now - client.openedAt > maxAgeMs;
+      if (tooOld || (client.waiting && now - client.waitingSince > this.options.heartbeatMs)) {
         this.detach(client);
         client.res.destroy();
       }

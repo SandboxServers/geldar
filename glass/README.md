@@ -3,7 +3,7 @@
 Glass is the Thought Stream: a read-only web server that shows humans what the agents in the
 vivarium think, what they do, and what happens to them. It is a window for people. Glass is
 **read-only**, **for humans only**, and **public behind Caddy** (decision 0072). Glass itself binds
-loopback only and has no authentication; the shared Caddy (`deploy/caddy/glass.caddy`) is the only
+loopback only by default and has no authentication (the in-network opt-in below is the one exception); the shared Caddy (`deploy/caddy/glass.caddy`) is the only
 way in from outside. No agent reads from it, and nothing feeds Glass back into any agent's prompt or plan.
 
 The package is `@geldar/glass` (`glass/`). It is Node 22 and TypeScript, using `node:http` and
@@ -18,7 +18,7 @@ gets `404`. All responses are `application/json` except the stream, and carry th
 | --- | --- |
 | `GET /api/agents` | The agents: id, name, life number, shard, mode, tier, birth day, death time and cause. Owner, harness and model configuration are left out. |
 | `GET /api/thoughts` | Thoughts, newest first, one page at a time. Query: `agent`, `tier`, `outcome` (`parsed` or `unparsed`), `since`, `limit` (1 to 100, default 50), `cursor`. The reply has `next`, the cursor for the next page, or `null`. |
-| `GET /api/thoughts/:id` | One thought with its `model_input`, capped at 64 KiB. |
+| `GET /api/thoughts/:id` | One thought, without its prompt or raw reply. |
 | `GET /api/receipts?action_id=` | The receipts of one action. |
 | `GET /api/stream` | Server-sent events: each new thought as a `thought` event, with a heartbeat comment every 15 seconds. |
 
@@ -37,8 +37,8 @@ script and style, images, base-URI changes, form posts, and framing by any other
 
 There is no CORS header, so a page on another origin cannot read the API.
 
-**Host check.** Glass answers only to a `Host` header that names loopback: `127.0.0.1`, `localhost`
-or `[::1]`, with an optional port. Any other value, and a missing header, gets `421 Misdirected
+**Host check.** Glass answers only to a `Host` header that names loopback (`127.0.0.1`, `localhost`
+or `[::1]`, with an optional port) or a name listed in `GELDAR_GLASS_PUBLIC_HOSTS`. Any other value, and a missing header, gets `421 Misdirected
 Request` and a JSON error, on every route. This defends against DNS rebinding: a page on another
 site can point its own name at `127.0.0.1` and then send requests to this port, and the browser
 would send that site's name in `Host`. The check refuses those requests before any route runs.
@@ -49,9 +49,12 @@ Plain values come from the environment. The password comes from a file.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `GELDAR_GLASS_HOST` | `127.0.0.1` | Any other value is refused at start. The check runs before every listen. |
+| `GELDAR_GLASS_HOST` | `127.0.0.1` | `127.0.0.1`, `localhost` or `::1`; `0.0.0.0` is accepted only with `GELDAR_IN_NETWORK_HOSTS=1`. Anything else is refused at start. The check runs before every listen. |
 | `GELDAR_GLASS_PORT` | `8787` | The port Glass listens on. |
-| `GELDAR_GLASS_PG_HOST` | `127.0.0.1` | Postgres host. |
+| `GELDAR_GLASS_PG_HOST` | `127.0.0.1` | Postgres host; `postgres` is accepted only with `GELDAR_IN_NETWORK_HOSTS=1`. |
+| `GELDAR_IN_NETWORK_HOSTS` | unset | `1` lets Glass bind `0.0.0.0` and reach Postgres as `postgres`, for the compose network, where the port is published on host loopback only (decision 0131). |
+| `GELDAR_GLASS_PUBLIC_HOSTS` | empty | Comma-separated public host names Glass answers to besides loopback (exact match, any case, optional port). |
+| `GELDAR_GLASS_SSE_PER_CLIENT` | `2` | Open streams for one client key. The next gets `503`. If Caddy is not a trusted proxy, all visitors share one key, so the site is limited to this many viewers. |
 | `GELDAR_GLASS_PG_PORT` | `5432` | Postgres port. |
 | `GELDAR_GLASS_PG_DB` | `geldar` | Database. |
 | `GELDAR_GLASS_PG_USER` | `geldar_glass` | Any other value is refused. Glass never connects as a write role. |
@@ -120,20 +123,19 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
 - **Bounded work.** The SSE hub caps clients and drops the oldest frame for a slow client. The
   heartbeat is every 15 seconds. The pool holds at most four connections, and each statement stops
   after 10 seconds. Thought lists take at most 100 rows a page, the stream reads 100 rows a poll,
-  and `model_input` is capped at 64 KiB.
+  and a stream is ended after 10 minutes (the page reconnects).
 - **No secrets in output.** Responses and logs carry no connection string, no password file path
   and no token. Postgres errors are not sent to clients; they receive `internal error`.
 - **Public behind Caddy, loopback bind, no auth.** Glass is public through Caddy (decision 0072) and
-  binds loopback only; do not publish its port or bind it to another address. Anyone who can reach the
+  binds loopback only by default; do not publish its port on a public address. The in-network opt-in (`GELDAR_IN_NETWORK_HOSTS=1`) binds the compose network, and compose publishes the port on host loopback only. Anyone who can reach the
   port directly can read what Caddy would show. Other local users on the same machine can reach the
   port too. The `Host` check above stops DNS rebinding from a browser; it does not stop a local
   process that sends its own `Host`. Caddy sends `Host: localhost` to Glass for that reason.
 - **Framing and injection in the page.** The CSP above blocks inline script, so an injected
   attribute or tag cannot run. The page builds its rows with `textContent` only (`glass/src/render-view.ts`).
   The adversarial corpus (`glass/test/corpus.ts`) runs through the API, the stream and the page.
-- **Model input and raw replies.** The role grant lets Glass read `thoughts.model_input` and
-  `thoughts.raw_output`. Together these are the full prompt and the raw reply of each thought, and
-  they can contain world text. Glass shows them to humans only; no agent reads Glass.
+- **Model input and raw replies.** The database role may read the prompt and the raw reply of a
+  thought, but Glass does not select or send them. Changing that needs an owner-signed privacy review.
 
 ## Tests
 

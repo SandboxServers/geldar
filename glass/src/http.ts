@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
-import { clientAddress, clientKey } from './guard.ts';
+import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
 import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
@@ -76,7 +76,12 @@ export interface GlassHandlerDeps {
   hub: SseHub;
   /** The public guards. Left out, the handler admits every request (no rate limit). */
   policy?: Partial<PublicPolicy>;
+  /** Receives the `glass_untrusted_peer_header` line. Left out: one JSON line on stdout. */
+  log?: (entry: { event: string; peer: string }) => void;
 }
+
+/** Most distinct untrusted peers that are logged; each is logged once. */
+const MAX_UNTRUSTED_PEERS_LOGGED = 5;
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -204,6 +209,8 @@ function hostAnswered(host: string | undefined, publicHosts: ReadonlySet<string>
 /** The request listener. It never sends a database error or a stack trace to the client. */
 export function createHandler(deps: GlassHandlerDeps) {
   const policy: PublicPolicy = { ...OPEN_POLICY, ...deps.policy };
+  const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
+  const loggedPeers = new Set<string>();
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     // The kill switch answers before anything else is read: no route, page or stream is served.
@@ -224,6 +231,17 @@ export function createHandler(deps: GlassHandlerDeps) {
     if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
       sendJson(res, 413, { error: 'request body is too large' });
       return;
+    }
+    const peer = req.socket.remoteAddress ?? '';
+    if (
+      req.headers[CLIENT_IP_HEADER] !== undefined &&
+      !policy.trustedProxies.has(peer) &&
+      !loggedPeers.has(peer) &&
+      loggedPeers.size < MAX_UNTRUSTED_PEERS_LOGGED
+    ) {
+      // The peer is an internal bridge address; it is what GELDAR_GLASS_TRUSTED_PROXIES needs to hold.
+      loggedPeers.add(peer);
+      log({ event: 'glass_untrusted_peer_header', peer });
     }
     const client = clientKey(clientAddress(req, policy.trustedProxies));
     if (policy.limiter !== null) {
