@@ -36,6 +36,8 @@ const OUTSIDE_ALLOWED: Record<string, string[]> = {
   ],
   // Kino audit test: checks each audit row against the generated lakitu-audit validator (a test-only read).
   'test/kino/audit.test.ts': ['../../../contract/src/generated/validators.js'],
+  // Kino feed check: the contract-sync test compares the hand-written check with the generated validator.
+  'test/kino/feed-check.test.ts': ['../../../contract/src/generated/validators.js'],
 };
 
 /** Statements the shipped source may send. Anything else that starts a statement is a violation. */

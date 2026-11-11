@@ -79,8 +79,19 @@ describe('metrics', () => {
     const r = rig(true);
     const pane = r.relay.accept(conn(), 'anon:1', null);
     await pane?.message(sub);
-    r.pushes[0]?.('abcde');
-    expect(r.metrics.snapshot()).toEqual({ panes_open: 1, bytes_sent: 5, refusals: {} });
+    const feedMsg = JSON.stringify({
+      type: 'target_moved',
+      target_agent_id: 'shown',
+      x: 1,
+      y: 2,
+      z: 3,
+    });
+    r.pushes[0]?.(feedMsg);
+    expect(r.metrics.snapshot()).toEqual({
+      panes_open: 1,
+      bytes_sent: feedMsg.length,
+      refusals: {},
+    });
     r.sw.set(false);
     r.relay.accept(conn(), 'anon:2', null);
     const snap = r.metrics.snapshot();
