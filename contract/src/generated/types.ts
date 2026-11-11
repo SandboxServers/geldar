@@ -61,6 +61,62 @@ export interface BookRequest {
   life_id: string;
 }
 
+export interface CheckpointManifest {
+  /**
+   * A ULID (26 Crockford base32 characters) or a UUID v4.
+   */
+  checkpoint_id: string;
+  /**
+   * The digest of the image that wrote the checkpoint, sha256 plus 64 lowercase hex characters.
+   */
+  image_digest: string;
+  /**
+   * When the checkpoint was written, RFC 3339.
+   */
+  created_at: string;
+  /**
+   * @minItems 1
+   * @maxItems 3
+   */
+  parts:
+    | [
+        {
+          name: "postgres" | "nats" | "world";
+          sha256: string;
+          bytes: number;
+        }
+      ]
+    | [
+        {
+          name: "postgres" | "nats" | "world";
+          sha256: string;
+          bytes: number;
+        },
+        {
+          name: "postgres" | "nats" | "world";
+          sha256: string;
+          bytes: number;
+        }
+      ]
+    | [
+        {
+          name: "postgres" | "nats" | "world";
+          sha256: string;
+          bytes: number;
+        },
+        {
+          name: "postgres" | "nats" | "world";
+          sha256: string;
+          bytes: number;
+        },
+        {
+          name: "postgres" | "nats" | "world";
+          sha256: string;
+          bytes: number;
+        }
+      ];
+}
+
 export type SnapshotId = string;
 
 export type ThoughtId = string;
@@ -10492,6 +10548,29 @@ export interface ReflexFiredPayload {
     result: "handled" | "failed" | "abandoned";
     detail?: string;
   };
+}
+
+export interface ShardConfig {
+  /**
+   * CPU limit for the shard container, in cores. Greater than 0 and at most 64.
+   */
+  cpu_limit: number;
+  /**
+   * Memory limit for the shard container, Docker form: a whole number of m or g, from 10m to 99999g.
+   */
+  memory_limit: string;
+  /**
+   * Host port for the Minecraft listener. 25566 is reserved and rejected.
+   */
+  minecraft_port?: number;
+  /**
+   * Host address the listener binds to. Loopback by default.
+   */
+  bind_address?: string;
+  /**
+   * Optional telemetry endpoint. No default: unset means no telemetry.
+   */
+  telemetry_url?: string;
 }
 
 export interface SnapshotRequest {

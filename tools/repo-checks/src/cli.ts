@@ -22,11 +22,31 @@ import {
 import { checkDecisionIndex } from './decision-index.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
+import { checkIntegrationFloor, countIntegrationFiles } from './integration-floor.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { findMcpTokens } from './mcp-token.ts';
 import { checkPins } from './pin-rules.ts';
+import {
+  checkReleaseAge,
+  extractPins,
+  parseFirstPartyPrefixes,
+  parseReleaseDates,
+} from './release-age.ts';
 import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
+
+const RELEASE_DATES = 'tools/repo-checks/src/release-dates.json';
+const FIRST_PARTY_IMAGES = 'tools/repo-checks/src/first-party-images.json';
+const INTEGRATION_FLOOR = 'tools/repo-checks/src/integration-floor.json';
+
+/** The file's text, or undefined when it cannot be read (the caller fails closed on that). */
+function readOptional(path: string): string | undefined {
+  try {
+    return readFileSync(join(root, path), 'utf8');
+  } catch {
+    return undefined;
+  }
+}
 
 /** Every path below is relative to the repo root, wherever the CLI runs from. */
 const root = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
@@ -166,6 +186,29 @@ for (const file of [...tracked, ...untracked]) {
     console.log(`error: ${problem}`);
     failed = true;
   }
+}
+
+const releaseDates = parseReleaseDates(readOptional(RELEASE_DATES), RELEASE_DATES);
+const firstParty = parseFirstPartyPrefixes(readOptional(FIRST_PARTY_IMAGES), FIRST_PARTY_IMAGES);
+const pins = [...tracked, ...untracked].flatMap((file) => extractPins(file.path, file.text));
+const ageProblems = [
+  ...releaseDates.problems,
+  ...firstParty.problems,
+  ...checkReleaseAge(pins, releaseDates.dates, new Date(), firstParty.prefixes),
+];
+for (const problem of ageProblems) {
+  console.log(`error: ${problem} (docs/threat-model.md, decision 0005: 14-day release floor)`);
+  failed = true;
+}
+
+const integrationCount = countIntegrationFiles([...tracked, ...untracked]);
+for (const problem of checkIntegrationFloor(
+  integrationCount,
+  readOptional(INTEGRATION_FLOOR),
+  INTEGRATION_FLOOR,
+)) {
+  console.log(`error: ${problem}`);
+  failed = true;
 }
 
 for (const file of [...tracked, ...untracked].filter((f) => isShardFile(f.path))) {

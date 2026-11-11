@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/checkpoint-manifest.schema.json",
+  "title": "CheckpointManifest",
+  "description": "The manifest of one checkpoint of a shard: the parts written for it and the image that wrote them. Minimal on purpose. Unused until the backup packet runs (backups are deferred, decision 0130), so the shape may still change then. Unknown part names are rejected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkpoint_id", "image_digest", "created_at", "parts"],
+  "properties": {
+    "checkpoint_id": {
+      "description": "A ULID (26 Crockford base32 characters) or a UUID v4.",
+      "type": "string",
+      "pattern": "^([0-9A-HJKMNP-TV-Z]{26}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
+    },
+    "image_digest": {
+      "description": "The digest of the image that wrote the checkpoint, sha256 plus 64 lowercase hex characters.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "created_at": {
+      "description": "When the checkpoint was written, RFC 3339.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "parts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "sha256", "bytes"],
+        "properties": {
+          "name": { "type": "string", "enum": ["postgres", "nats", "world"] },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}
