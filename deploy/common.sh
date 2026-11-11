@@ -120,14 +120,18 @@ check_merged_config() {
   if grep -E '^ +image: ' "$WORK/config.yml" | grep -Evq '@sha256:[0-9a-f]{64}$'; then
     die "an image in the merged config is not digest-pinned; refusing"
   fi
+  # A service with a build: key and no image: would be built from source on the node by `up`. Refused.
+  unpinned=$(awk '/^  [A-Za-z0-9_-]+:$/ {svc = $1} /^    build:/ {b[svc] = 1} /^    image:/ {i[svc] = 1}
+    END {for (s in b) if (!(s in i)) print s}' "$WORK/config.yml")
+  [ -z "$unpinned" ] || die "service built on the node without a pinned image: $unpinned; refusing"
   say "compose config: valid; no public game port; every image digest-pinned"
 }
 
 # Fetches the BlueMap jar named by the lock file and checks its sha256 before anything uses it. A mismatch stops
-# the deploy. The lock file is written by C1-09 (plugins/bluemap/bluemap.lock.json) as JSON with "url" and "sha256".
+# the deploy. The lock file is plugins/bluemap/bluemap.lock.json (C1-09), JSON with "url" and "sha256".
 fetch_bluemap() {
   if [ ! -f "$BLUEMAP_LOCK" ]; then
-    say "bluemap: no lock file at $BLUEMAP_LOCK; skipped (C1-09 adds it)"
+    say "bluemap: no lock file at $BLUEMAP_LOCK; skipped"
     return 0
   fi
   need curl
@@ -137,8 +141,12 @@ fetch_bluemap() {
   [ -n "$url" ] || die "bluemap lock has no url"
   printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "bluemap lock: sha256 is not 64 lowercase hex characters"
   case $url in
-    https://* | file://*) ;;
-    *) die "bluemap lock: the url must be https (file:// is for tests only)" ;;
+    https://*) ;;
+    file://*)
+      # file:// exists only so the tests can use a local fixture jar; production never sets this variable.
+      [ "${GELDAR_DEPLOY_ALLOW_FILE_URL:-0}" = 1 ] || die "bluemap lock: the url must be https (file:// is test-only)"
+      ;;
+    *) die "bluemap lock: the url must be https" ;;
   esac
   curl -fsSL -o "$WORK/bluemap.jar" "$url" || die "bluemap: download failed"
   got=$(sha256sum "$WORK/bluemap.jar" | awk '{print $1}')

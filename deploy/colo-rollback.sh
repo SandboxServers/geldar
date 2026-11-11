@@ -1,7 +1,7 @@
 #!/bin/sh
 # Re-applies the previous release recorded by colo-up.sh (decision 0084). It pulls nothing: --pull never.
 # The release it leaves in place becomes the previous one, so a second rollback goes forward again.
-# Touches only the geldar-colo project. Never runs `down -v`.
+# Touches only the geldar-colo project. Removes no volume.
 set -eu
 . "$(dirname "$0")/common.sh"
 
