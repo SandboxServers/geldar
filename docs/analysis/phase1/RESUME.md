@@ -17,6 +17,10 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0131.
 
+## Stop: do not open the public Minecraft port yet
+
+Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges. On `main`, `compose/colo-public.yml` still publishes the offline-mode bot ingress, which has no authentication (C2-R2 finding R2-01; decision 0137). The UniFi forward exists, but nothing listens behind it until those variables are set.
+
 ## Where the campaign is (2026-11-11, morning)
 
 1. **C1 code is merged.** Still open in C1: **C1-10**, the owner's run on the node. The first ranger is Jason, the Red Ranger (`ag-jason-01`), a sovereign player agent. His Claude Code session runs under the owner's login. The Colo stack on the node has been stopped since its last failed start; PR #78 fixed those failures, and a redeploy is still to do. Also open: the C1-01 leftovers (FX-SPAWN, PR #100).
