@@ -1,10 +1,11 @@
-import type { Server } from 'node:http';
+import type { Server, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { loadConfig, type RegisterConfig } from '../src/config.ts';
 import type { Identity } from '../src/identity.ts';
 import { challengeOf } from '../src/pkce.ts';
 import { discordProvider, githubProvider, snowflakeTimeMs } from '../src/providers.ts';
 import { createRegisterServer } from '../src/server.ts';
+import type { Store } from '../src/store.ts';
 
 export const DAY = 86_400_000;
 export const NOW = Date.parse('2026-11-11T00:00:00Z');
@@ -24,6 +25,9 @@ export function config(over: Partial<RegisterConfig> = {}): RegisterConfig {
       REGISTER_DISCORD_CLIENT_ID: 'dc-id',
       REGISTER_DISCORD_SECRET_FILE: 'dc',
       REGISTER_PEPPER_FILE: 'pepper',
+      REGISTER_TOKEN_PEPPER_FILE: 'tokpepper',
+      REGISTER_SHARD: 'test',
+      REGISTER_START_CREDITS: '100',
     },
     (p) => (p === 'pepper' ? PEPPER : `secret-${p}`),
   );
@@ -37,6 +41,8 @@ export interface FakeIdp {
   tamperChallenge: boolean;
   challenge: string | null;
   tokenCalls: number;
+  /** The GitHub user id the fake returns. */
+  userId: string;
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
@@ -48,6 +54,7 @@ export function fakeIdp(): FakeIdp {
     tamperChallenge: false,
     challenge: null,
     tokenCalls: 0,
+    userId: RAW_ID,
     async fetch(url, init) {
       const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
       if (url.endsWith('/access_token') || url.endsWith('/oauth2/token')) {
@@ -62,7 +69,7 @@ export function fakeIdp(): FakeIdp {
       }
       if (url === 'https://api.github.com/user') {
         return ok({
-          id: Number(RAW_ID),
+          id: Number(idp.userId),
           login: HANDLE,
           created_at: new Date(idp.createdAtMs).toISOString(),
         });
@@ -93,7 +100,7 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function harness(over: Partial<RegisterConfig> = {}): Promise<Harness> {
+export async function harness(over: Partial<RegisterConfig> = {}, store?: Store): Promise<Harness> {
   const cfg = config(over);
   const idp = fakeIdp();
   const clock = { at: NOW };
@@ -105,11 +112,15 @@ export async function harness(over: Partial<RegisterConfig> = {}): Promise<Harne
     fetch: idp.fetch,
     now: () => clock.at,
     log: (l) => logs.push(l),
-    onSignedIn: (id, res) => {
-      signedIn.push(id);
-      res.writeHead(200, { 'content-type': 'text/plain' });
-      res.end('ok');
-    },
+    ...(store
+      ? { store }
+      : {
+          onSignedIn: (id: Identity, res: ServerResponse) => {
+            signedIn.push(id);
+            res.writeHead(200, { 'content-type': 'text/plain' });
+            res.end('ok');
+          },
+        }),
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

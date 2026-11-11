@@ -14,6 +14,12 @@ export interface RegisterConfig {
   readonly github: ProviderCredentials;
   readonly discord: ProviderCredentials;
   readonly pepper: string;
+  /** The MCP server's token pepper: a minted token's hash must match what the MCP checks (0054). */
+  readonly tokenPepper: string;
+  readonly shard: string;
+  readonly harnesses: readonly string[];
+  /** The credits a new life starts with (the shard's sovereign.budget.cap_credits). */
+  readonly startCredits: number;
   readonly minAccountAgeDays: number;
   readonly maxNewOwnersPerDay: number;
   readonly trustedPeers: readonly string[];
@@ -25,6 +31,11 @@ function intOf(raw: string | undefined, fallback: number, name: string): number 
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer`);
   return n;
+}
+
+function required(raw: string | undefined, name: string): string {
+  if (!raw) throw new Error(`${name} is not set`);
+  return raw;
 }
 
 /**
@@ -60,6 +71,13 @@ export function loadConfig(
       clientSecret: secret('REGISTER_DISCORD_SECRET'),
     },
     pepper,
+    tokenPepper: secret('REGISTER_TOKEN_PEPPER'),
+    shard: required(env.REGISTER_SHARD, 'REGISTER_SHARD'),
+    harnesses: (env.REGISTER_HARNESSES ?? 'claude-code')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => /^[a-z][a-z0-9-]{0,31}$/.test(s)),
+    startCredits: intOf(env.REGISTER_START_CREDITS, 0, 'REGISTER_START_CREDITS'),
     minAccountAgeDays: intOf(
       env.REGISTER_MIN_ACCOUNT_AGE_DAYS,
       30,

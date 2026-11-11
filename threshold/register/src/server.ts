@@ -1,9 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { Account } from './account.ts';
 import type { RegisterConfig } from './config.ts';
 import { type Identity, identityHash, type ProviderName } from './identity.ts';
 import { HOME_PAGE, REFUSED_PAGE, SECURITY_HEADERS, SIGNED_IN_PAGE } from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
 import { type FetchFn, meetsRules, type Provider } from './providers.ts';
+import type { Store } from './store.ts';
 
 /** The 0090 public refusal shapes (the same bodies the MCP front uses). */
 const KILL_BODY = { error: { code: 'unavailable', message: 'Service unavailable' } };
@@ -19,7 +21,9 @@ export interface RegisterDeps {
   readonly now: () => number;
   /** Log lines carry event names and the provider only: never an email, id, handle or token. */
   readonly log: (line: string) => void;
-  /** Session 2 plugs player creation here. The default shows a plain "signed in" page. */
+  /** Owner and player creation. Without a store the default shows a plain "signed in" page. */
+  readonly store?: Store;
+  /** Overrides the store-backed sign-in (tests of the sign-in alone). */
   readonly onSignedIn?: (identity: Identity, res: ServerResponse) => Promise<void> | void;
 }
 
@@ -92,6 +96,8 @@ export function createRegisterServer(deps: RegisterDeps): Server {
   const { config, now, log } = deps;
   const states = new StateStore(now);
   const limiter = new FixedWindow(config.perMinute, now);
+  const account = deps.store ? new Account({ config, store: deps.store, now, log }) : null;
+  const onSignedIn = deps.onSignedIn ?? account?.signedIn;
 
   async function callback(
     provider: Provider,
@@ -127,7 +133,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
         display: profile.handle,
       };
       log(`signed in provider=${provider.name}`);
-      if (deps.onSignedIn) await deps.onSignedIn(identity, res);
+      if (onSignedIn) await onSignedIn(identity, res);
       else send(res, 200, SIGNED_IN_PAGE, clear);
     } catch {
       log(`callback refused provider=${provider.name} reason=provider`);
@@ -141,6 +147,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
       if (config.killSwitch) return sendJson(res, 503, KILL_BODY);
       const wait = limiter.charge(clientAddress(req, config.trustedPeers));
       if (wait > 0) return sendJson(res, 429, rateBody(wait), { 'retry-after': String(wait) });
+      if (account && (await account.handle(req, res, url))) return;
       if (req.method !== 'GET')
         return sendJson(res, 405, {
           error: { code: 'method_not_allowed', message: 'Method not allowed' },

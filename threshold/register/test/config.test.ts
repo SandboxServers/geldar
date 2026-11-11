@@ -6,6 +6,8 @@ const env = {
   REGISTER_GITHUB_SECRET_FILE: 'g',
   REGISTER_DISCORD_SECRET_FILE: 'd',
   REGISTER_PEPPER_FILE: 'p',
+  REGISTER_TOKEN_PEPPER_FILE: 't',
+  REGISTER_SHARD: 'test',
 };
 const read = (p: string) => (p === 'p' ? 'x'.repeat(32) : `s-${p}\n`);
 
