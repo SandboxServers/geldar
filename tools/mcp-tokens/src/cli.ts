@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
-import { addOwner, parseCap, type Sql, setOwnerCap } from './owners.ts';
+import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
@@ -25,7 +25,7 @@ export const SHARD_FILE = join(REPO_ROOT, 'shards', 'phase0.yaml');
 export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
 
   init [--force --i-understand]         create the pepper and the Postgres password files
-  owner add <id> [--cap N]              add an owner (default cap 3, at most 50)
+  owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
@@ -151,8 +151,7 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   const [verb, id, value] = args;
   if (verb === 'add' && id !== undefined && args.length === 2) {
     const cap = optionalFlag(parsed, '--cap');
-    const ownerCap =
-      cap === undefined ? (await loadSovereignShard(env.shardFile)).ownerCapDefault : parseCap(cap);
+    const ownerCap = capForOwnerAdd(cap, await loadSovereignShard(env.shardFile));
     await withSql(env, (sql) => addOwner(sql, id, ownerCap));
     io.out(`added owner ${id}`);
     return;

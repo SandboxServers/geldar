@@ -90,5 +90,6 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0083](0083-c1-body-and-mind-image-contents.md) | Body and Mind image contents, base pins, and what is never baked in | Proposed |
 | [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
 | [0088](0088-metrics-exporters-and-replay-window.md) | Metrics exporters are push-only OTLP to a configured URL; the MCP replay window is bounded and optional | Proposed |
+| [0089](0089-crash-hygiene-defaults-and-refusals.md) | Crash hygiene: the owner cap default, the start refusal while a name lease is held, and `players down` | Accepted (orchestrator) |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
 >
