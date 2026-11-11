@@ -36,6 +36,11 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(mind.image).toBe(composeDefault('GELDAR_MIND_IMAGE', 'geldar-mind:c1'));
   });
 
+  it('builds each image locally from the repo root, so the digest rule treats it as a local build', () => {
+    expect(body.build).toEqual({ context: '..', dockerfile: 'golem/Dockerfile' });
+    expect(mind.build).toEqual({ context: '..', dockerfile: 'animus/Dockerfile.mind' });
+  });
+
   it('runs the entry points the images define (golem/Dockerfile and animus/Dockerfile.mind)', () => {
     expect(body.entrypoint).toEqual(['node', 'src/adam/main.ts']);
     expect(mind.entrypoint).toEqual(['node', 'src/main.ts']);

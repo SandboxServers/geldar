@@ -160,11 +160,14 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-03] The Body (Adam's Golem; image from golem/Dockerfile, decision 0083). GELDAR_BODY_IMAGE is set by the
-  # deploy tooling (C1-04) to the published reference, digest-pinned. The default is the local tag that
-  # `docker build -f golem/Dockerfile -t geldar-body:c1 .` makes, so this file validates offline. No published port.
+  # [C1-03] The Body (Adam's Golem; image from golem/Dockerfile, decision 0083). Built locally from the repo root (the
+  # `build:` key is how the digest rule treats a local build). GELDAR_BODY_IMAGE is the tag: the default is the local tag
+  # `geldar-body:c1`. The deploy tooling (C1-04) sets it to the published, digest-pinned reference. No published port.
   golem-body:
     <<: *limits
+    build:
+      context: ..
+      dockerfile: golem/Dockerfile
     image: ${GELDAR_BODY_IMAGE:-geldar-body:c1}
     entrypoint: ["node", "src/adam/main.ts"]
     environment:
@@ -183,11 +186,14 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-03] The Mind (Record/Mind host, decision 0078; image from animus/Dockerfile.mind). GELDAR_MIND_IMAGE follows the
-  # same rule as GELDAR_BODY_IMAGE: the deploy tooling sets it, and the default is `geldar-mind:c1` from
-  # `docker build -f animus/Dockerfile.mind -t geldar-mind:c1 .`. The model endpoint (the Thinker gateway) is configuration.
+  # [C1-03] The Mind (Record/Mind host, decision 0078; image from animus/Dockerfile.mind). Built locally from the repo
+  # root, as golem-body is. GELDAR_MIND_IMAGE follows the same rule: the default is `geldar-mind:c1`, and the deploy
+  # tooling (C1-04) sets the published reference. The model endpoint (the Thinker gateway) is configuration.
   animus:
     <<: *limits
+    build:
+      context: ..
+      dockerfile: animus/Dockerfile.mind
     image: ${GELDAR_MIND_IMAGE:-geldar-mind:c1}
     entrypoint: ["node", "src/main.ts"]
     environment:
