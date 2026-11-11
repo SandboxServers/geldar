@@ -4,8 +4,10 @@ import { Pool } from 'pg';
 import { assertLoopback, type GlassConfig, HEARTBEAT_MS } from './config.ts';
 import { RateLimiter } from './guard.ts';
 import { createHandler } from './http.ts';
+import { KinoAudit, sqlAuditStore } from './kino/audit.ts';
+import { startAuditPurge } from './kino/purge.ts';
 import type { FeedSource } from './kino/relay.ts';
-import { buildKino } from './kino/wiring.ts';
+import { buildKino, loadKinoEnv } from './kino/wiring.ts';
 import { type PublicPolicy, visibilityAt } from './policy.ts';
 import { type SqlClient, streamStartCursor, type ThoughtCursor, thoughtsAfter } from './query.ts';
 import { SseHub } from './sse.ts';
@@ -88,18 +90,6 @@ export function buildGlass(
     fetch: streamFeed(pool, policy),
     log: (entry) => console.log(JSON.stringify(entry)),
   });
-  const server = createServer(
-    createHandler({
-      db: pool,
-      hub,
-      policy,
-      ...(config.sessionKey === undefined ? {} : { sessionKey: config.sessionKey }),
-    }),
-  );
-  server.headersTimeout = HEADERS_TIMEOUT_MS;
-  server.requestTimeout = REQUEST_TIMEOUT_MS;
-  server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
-  server.maxConnections = MAX_CONNECTIONS;
   // Kino is mounted only when a feed is given (GELDAR_KINO_ENABLED, default off). Without one there
   // is no /kino page and no upgrade handler: a WebSocket upgrade is refused by closing the socket.
   const kino =
@@ -111,19 +101,25 @@ export function buildGlass(
           sessionKey: config.sessionKey,
           glassEnabled: policy.enabled,
           otlpEndpoint: kinoOtlpEndpoint,
+          trustedProxies: policy.trustedProxies,
+          allowedOrigins: loadKinoEnv().allowedOrigins,
         });
-  if (kino !== undefined) {
-    const glassHandler = createHandler({
+  // The retention purge belongs to Glass, not to Kino: it runs even when Kino is off.
+  const purge = startAuditPurge(new KinoAudit(sqlAuditStore(pool), () => {}));
+  // /kino/* goes through the same kill switch, Host check, size caps and rate limit as every route.
+  const server = createServer(
+    createHandler({
       db: pool,
       hub,
       policy,
       ...(config.sessionKey === undefined ? {} : { sessionKey: config.sessionKey }),
-    });
-    server.removeAllListeners('request');
-    server.on('request', (req, res) => {
-      if (!kino.http(req, res)) glassHandler(req, res);
-    });
-  }
+      ...(kino === undefined ? {} : { extra: (req, res) => kino.http(req, res) }),
+    }),
+  );
+  server.headersTimeout = HEADERS_TIMEOUT_MS;
+  server.requestTimeout = REQUEST_TIMEOUT_MS;
+  server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
+  server.maxConnections = MAX_CONNECTIONS;
   server.on('upgrade', (req, socket) => {
     if (kino === undefined) socket.destroy();
     else kino.upgrade(req, socket);
@@ -133,6 +129,7 @@ export function buildGlass(
     if (closed) return;
     closed = true;
     kino?.stop();
+    purge.stop();
     hub.close();
     server.close();
     void pool.end();

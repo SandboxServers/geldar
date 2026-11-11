@@ -10,6 +10,7 @@ final class FakeWorld implements KinoWorld {
     final Set<Long> loaded;
     Optional<Position> agent = Optional.of(new Position(8, 1, 8));
     final List<String> calls = new ArrayList<>();
+    int reads;
 
     FakeWorld(Set<Long> loaded) {
         this.loaded = loaded;
@@ -25,6 +26,7 @@ final class FakeWorld implements KinoWorld {
     public int maxSectionY() { return 19; }
 
     public String blockState(int x, int y, int z) {
+        reads++;
         if (!loaded.contains(key(Math.floorDiv(x, 16), Math.floorDiv(z, 16)))) {
             throw new AssertionError("block read in an unloaded chunk");
         }

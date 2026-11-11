@@ -3,6 +3,7 @@ package dev.geldar.core.kino;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
@@ -19,6 +20,9 @@ import java.util.regex.Pattern;
 public final class KinoControl {
     /** A target Glass has not mentioned for this long is stopped (a Glass that died or restarted). */
     public static final long TTL_MILLIS = 45_000;
+
+    /** Agents handled per drain; the rest of a flood is dropped (Glass resends on the next heartbeat). */
+    public static final int MAX_PER_DRAIN = 32;
 
     private static final Pattern AGENT = Pattern.compile("^[a-z][a-z0-9_]{0,63}$");
     private static final Set<String> TYPES = Set.of("start", "resync", "refresh", "stop");
@@ -64,13 +68,28 @@ public final class KinoControl {
             return;
         }
         long now = clock.getAsLong();
+        // One decision per agent per drain: any number of start/resync/refresh/stop for it collapse to one.
+        Map<String, String> last = new LinkedHashMap<>();
         for (Command c = queue.poll(); c != null; c = queue.poll()) {
-            switch (c.type()) {
-                case "start", "resync" -> started(c.agent(), feed.start(c.agent()), now);
-                case "refresh" -> started(c.agent(), feed.isTarget(c.agent()) || feed.start(c.agent()), now);
+            boolean window = c.type().equals("start") || c.type().equals("resync");
+            String kind = window ? "start" : c.type();
+            // A heartbeat never overrides a pending start or stop; otherwise the last command wins.
+            if (!kind.equals("refresh") || !last.containsKey(c.agent())) {
+                last.put(c.agent(), kind);
+            }
+        }
+        int applied = 0;
+        for (Map.Entry<String, String> c : last.entrySet()) {
+            if (applied++ >= MAX_PER_DRAIN) {
+                break;
+            }
+            String agent = c.getKey();
+            switch (c.getValue()) {
+                case "start" -> started(agent, feed.start(agent), now);
+                case "refresh" -> started(agent, feed.isTarget(agent) || feed.start(agent), now);
                 default -> {
-                    lastSeen.remove(c.agent());
-                    feed.stop(c.agent(), "unsubscribed");
+                    lastSeen.remove(agent);
+                    feed.stop(agent, "unsubscribed");
                 }
             }
         }

@@ -13,8 +13,9 @@ const inner: FeedSource = {
     };
   },
 };
-const make = () =>
+const make = (resyncMs = 0) =>
   controlledFeed(inner, {
+    resyncMs,
     sink: { publish: (j) => sent.push(JSON.parse(j)) },
     enabled: () => on,
     graceMs: 1000,
@@ -29,6 +30,53 @@ beforeEach(() => {
   innerSubs = 0;
 });
 afterEach(() => vi.useRealTimers());
+
+describe('Kino resync coalescing', () => {
+  it('sends at most one resync per 5 s per agent, and one trailing resync covers the burst', () => {
+    const f = make(5000);
+    f.subscribe('kestrel_01', () => {});
+    for (let i = 0; i < 50; i++) f.subscribe('kestrel_01', () => {});
+    const win = () => types().filter((t) => t !== 'refresh');
+    expect(win()).toEqual(['start']);
+    vi.advanceTimersByTime(4999);
+    expect(win()).toEqual(['start']);
+    vi.advanceTimersByTime(1);
+    expect(win()).toEqual(['start', 'resync']);
+    // The trailing resync counts as a window: another pane right after waits a full period again.
+    f.subscribe('kestrel_01', () => {});
+    vi.advanceTimersByTime(4999);
+    expect(types().filter((t) => t === 'resync')).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+    expect(types().filter((t) => t === 'resync')).toHaveLength(2);
+    f.dispose();
+  });
+
+  it('sends a resync at once when the last window is older than the period', () => {
+    const f = make(5000);
+    f.subscribe('kestrel_01', () => {});
+    vi.advanceTimersByTime(5000);
+    f.subscribe('kestrel_01', () => {});
+    expect(types().filter((t) => t === 'resync')).toHaveLength(1);
+    f.dispose();
+  });
+
+  it('drops the pending resync when the last pane leaves or Glass is disposed', () => {
+    const f = make(5000);
+    const a = f.subscribe('kestrel_01', () => {});
+    const b = f.subscribe('kestrel_01', () => {});
+    a();
+    b();
+    vi.advanceTimersByTime(20_000);
+    expect(types()).not.toContain('resync');
+    const g = make(5000);
+    g.subscribe('x_agent', () => {});
+    g.subscribe('x_agent', () => {});
+    g.dispose();
+    sent = [];
+    vi.advanceTimersByTime(20_000);
+    expect(sent).toEqual([]);
+  });
+});
 
 describe('Kino control publisher', () => {
   it('names the control subject and rejects a bad shard', () => {

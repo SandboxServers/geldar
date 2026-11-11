@@ -3,6 +3,7 @@
  * static web app. Nothing here exists unless the owner enabled Kino (default off): `buildKino` is
  * called with a feed only then, and without one Glass has no Kino route, upgrade handler or page.
  */
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
@@ -14,6 +15,7 @@ import { type ControlSink, controlledFeed } from './control.ts';
 import { KinoKillSwitch } from './killswitch.ts';
 import { KinoMetrics } from './metrics.ts';
 import { startOtlpExporter } from './otlp.ts';
+import { startAuditPurge } from './purge.ts';
 import { type FeedSource, KinoRelay } from './relay.ts';
 import { ANONYMOUS, listAgents, sqlScopeStore, watchableIds } from './scope.ts';
 import { handleKinoUpgrade } from './ws.ts';
@@ -21,14 +23,21 @@ import { handleKinoUpgrade } from './ws.ts';
 const WEB = new URL('../../web/kino/', import.meta.url);
 const THREE = new URL('../../node_modules/three/build/', import.meta.url);
 const JS = 'text/javascript; charset=utf-8';
-/** One day: the audit purge runs at start and then daily. */
-const PURGE_MS = 86_400_000;
+/** Open panes are re-checked against the store this often (ban, camera switched off, expired cookie). */
+export const REVALIDATE_MS = 60_000;
+/** Kino's page needs an inline import map and style, and loads images from itself: its own policy, same strictness otherwise. */
+export function kinoCsp(inlineScriptHashes: string[]): string {
+  const hashes = inlineScriptHashes.map((h) => ` 'sha256-${h}'`).join('');
+  return `default-src 'none'; script-src 'self'${hashes}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+}
 
 export interface KinoEnv {
   enabled: boolean;
   shard: string;
   natsUrl: string;
   otlpEndpoint: string | undefined;
+  /** Extra Origin hosts allowed on the WebSocket upgrade (GELDAR_KINO_ALLOWED_ORIGINS, comma separated). */
+  allowedOrigins: string[];
 }
 
 /** Kino settings from the environment. `enabled` is true only for GELDAR_KINO_ENABLED=1 or true. */
@@ -39,6 +48,10 @@ export function loadKinoEnv(env: NodeJS.ProcessEnv = process.env): KinoEnv {
     shard: env.GELDAR_SHARD || 'phase0',
     natsUrl: env.GELDAR_NATS_URL || 'nats://nats:4222',
     otlpEndpoint: env.GELDAR_KINO_OTLP_ENDPOINT || undefined,
+    allowedOrigins: (env.GELDAR_KINO_ALLOWED_ORIGINS ?? '')
+      .split(',')
+      .map((h) => h.trim().toLowerCase())
+      .filter((h) => h !== ''),
   };
 }
 
@@ -81,6 +94,10 @@ export interface KinoWiringOptions {
   otlpEndpoint?: string | undefined;
   /** Web files to serve; defaults to glass/web/kino. Tests pass none. */
   serveWeb?: boolean;
+  /** Peers whose x-geldar-client-ip is believed. */
+  trustedProxies?: ReadonlySet<string>;
+  allowedOrigins?: readonly string[];
+  revalidateMs?: number;
 }
 
 export function buildKino(o: KinoWiringOptions): KinoParts {
@@ -103,13 +120,24 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
   });
   killSwitch.attach(relay);
   const stopOtlp = startOtlpExporter(metrics, { endpoint: o.otlpEndpoint });
-  const purge = (): void => void audit.purge().catch(() => {});
-  purge();
-  const purgeTimer = setInterval(purge, PURGE_MS);
-  purgeTimer.unref();
+  const revalidateTimer = setInterval(
+    () => void relay.revalidateAll(),
+    o.revalidateMs ?? REVALIDATE_MS,
+  );
+  revalidateTimer.unref();
   const files = new Map<string, { body: string; type: string }>();
+  let csp = kinoCsp([]);
   if (o.serveWeb !== false) {
     loadWeb(WEB, '/kino/', files);
+    const hashes: string[] = [];
+    for (const f of files.values())
+      for (const m of f.body.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g))
+        hashes.push(
+          createHash('sha256')
+            .update(m[1] ?? '')
+            .digest('base64'),
+        );
+    csp = kinoCsp(hashes);
     for (const name of ['three.module.js', 'three.core.js'])
       files.set(`/kino/vendor/${name}`, {
         body: readFileSync(new URL(name, THREE), 'utf8'),
@@ -146,6 +174,7 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
     audit,
     http(req, res) {
       const path = (req.url ?? '').split('?')[0] ?? '';
+      if (path.startsWith('/kino/')) res.setHeader('Content-Security-Policy', csp);
       if (path === '/kino/targets') {
         void targets(req, res);
         return true;
@@ -161,11 +190,17 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
       return true;
     },
     upgrade(req, socket) {
-      const route = { relay, sessionKey: o.sessionKey, now: () => Date.now() };
+      const route = {
+        relay,
+        sessionKey: o.sessionKey,
+        now: () => Date.now(),
+        trustedProxies: o.trustedProxies ?? new Set<string>(),
+        allowedOrigins: o.allowedOrigins ?? [],
+      };
       if (!handleKinoUpgrade(route, req, socket)) socket.destroy();
     },
     stop() {
-      clearInterval(purgeTimer);
+      clearInterval(revalidateTimer);
       if (control) (feed as { dispose?: () => void }).dispose?.();
       stopOtlp?.();
       killSwitch.set(false);
