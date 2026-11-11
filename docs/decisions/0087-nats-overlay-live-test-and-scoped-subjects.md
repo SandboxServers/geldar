@@ -71,3 +71,14 @@ Until C1-06c merges, the live test proves the design, not the generated file. Th
 - C1-06b: component credentials, which cite this record.
 - C1-06c: the generator fix and its live test over the real output.
 - The default-on cutover of 0080, once the gate passes and C1-06c is merged.
+
+## C1-06c
+
+The generator fixes of the section above, on branch `phase1/c1-06c-nats-generator`:
+
+- The generator (`Initialize-NatsAuth` in `geldar.ps1`) emits the scoped table of this record. `tools/repo-checks/src/nats-auth.test.ts` runs the real generator and compares each role's subject lists with the table. The live server test (`threshold/mcp/test/nats-auth.it.test.ts`) still holds its own copy of the table; see the worknote for whether it reads the generated file.
+- `allow_responses` sits inside each user's `permissions` (defect 1).
+- The bare `*` per-life subjects are gone (defect 2), and the table is the one of this record (defect 3).
+- The `ops` user is removed from the generator. Decision 0067 lists `ops` as a hand-use operator role. 0080 does not require it. The gap: an operator who needs unrestricted access uses the NATS system account or credentials offline, not a generated user. Owner to reconcile 0067.
+- The overlay is split. `compose/nats-auth.yml` keeps the server command, the server config and the component users. The `geldar-mcp` entry moves to `compose/nats-auth-mcp.yml`, which only the Phase 0 MCP stack merges. The nats command keeps the base's `-js -sd /data` flags, since a command list replaces the base's.
+- `compose/colo.yml` (C1-02): the `golem-body` secret mounts at `nats-body.txt`, the path its `GELDAR_NATS_PASSWORD_FILE` names. The short form mounted it at `/run/secrets/nats-body`, so the Body could not read its password.
