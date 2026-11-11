@@ -37,6 +37,7 @@ describe('Kino origin allow-list', () => {
 
   it('refuses to start Kino with a host-only entry and normalises the rest', () => {
     vi.stubEnv('GELDAR_KINO_ENABLED', '1');
+    vi.stubEnv('GELDAR_SHARD', 'colo');
     vi.stubEnv('GELDAR_KINO_ALLOWED_ORIGINS', 'glass.example.test');
     expect(() => loadKinoEnv()).toThrow(/glass\.example\.test/);
     vi.stubEnv('GELDAR_KINO_ALLOWED_ORIGINS', 'https://Glass.example.test:443/, http://b.test');

@@ -3,7 +3,9 @@ import { connect } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GlassConfig } from '../config.ts';
 import { buildGlass, type GlassParts } from '../server.ts';
+import { controlSubject } from './control.ts';
 import { KinoMetrics } from './metrics.ts';
+import { feedSubject } from './nats-feed.ts';
 import { otlpBody, startOtlpExporter } from './otlp.ts';
 import type { FeedSource } from './relay.ts';
 import { loadKinoEnv } from './wiring.ts';
@@ -50,8 +52,26 @@ describe('Kino default off', () => {
     expect(loadKinoEnv({}).enabled).toBe(false);
     expect(loadKinoEnv({ GELDAR_KINO_ENABLED: '0' }).enabled).toBe(false);
     expect(loadKinoEnv({ GELDAR_KINO_ENABLED: 'yes' }).enabled).toBe(false);
-    expect(loadKinoEnv({ GELDAR_KINO_ENABLED: '1' }).enabled).toBe(true);
-    expect(loadKinoEnv({ GELDAR_KINO_ENABLED: 'true' }).enabled).toBe(true);
+    expect(loadKinoEnv({ GELDAR_KINO_ENABLED: '1', GELDAR_SHARD: 'colo' }).enabled).toBe(true);
+    expect(loadKinoEnv({ GELDAR_KINO_ENABLED: 'true', GELDAR_SHARD: 'colo' }).enabled).toBe(true);
+  });
+
+  it('refuses to start Kino without GELDAR_SHARD, naming the variable', () => {
+    expect(() => loadKinoEnv({ GELDAR_KINO_ENABLED: '1' })).toThrow(/GELDAR_SHARD/);
+    expect(() => loadKinoEnv({ GELDAR_KINO_ENABLED: 'true', GELDAR_SHARD: '' })).toThrow(
+      /GELDAR_SHARD/,
+    );
+  });
+
+  it('takes the shard from GELDAR_SHARD and builds the NATS subjects from it', () => {
+    const e = loadKinoEnv({
+      GELDAR_KINO_ENABLED: '1',
+      GELDAR_SHARD: 'colo',
+      GELDAR_KINO_ALLOWED_ORIGINS: 'https://g.test',
+    });
+    expect(e.shard).toBe('colo');
+    expect(feedSubject(e.shard, 'ag_jason_01')).toBe('geldar.colo.kino.ag_jason_01.feed');
+    expect(controlSubject(e.shard)).toBe('geldar.colo.kino.control');
   });
 
   it('has no /kino/ page when disabled, and serves it when enabled', async () => {
