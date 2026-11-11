@@ -20,9 +20,6 @@ import {
 import { resolveRoute } from './routes.ts';
 import type { SseHub } from './sse.ts';
 
-/** The largest model input a thought detail returns, in bytes (wave 6 item 10, Glass design). */
-export const MODEL_INPUT_CAP_BYTES = 64 * 1024;
-
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
 export const MAX_TARGET_CHARS = 2048;
 
@@ -79,23 +76,6 @@ export interface GlassHandlerDeps {
   hub: SseHub;
   /** The public guards. Left out, the handler admits every request (no rate limit). */
   policy?: Partial<PublicPolicy>;
-}
-
-export interface CappedText {
-  json: string;
-  bytes: number;
-  truncated: boolean;
-}
-
-/** Caps model input at 64 KiB. The byte count is the whole input's, so a reader can see the cut. */
-export function capModelInput(value: unknown): CappedText | null {
-  if (typeof value !== 'string') return null;
-  const whole = Buffer.from(value, 'utf8');
-  if (whole.length <= MODEL_INPUT_CAP_BYTES) {
-    return { json: value, bytes: whole.length, truncated: false };
-  }
-  const head = whole.subarray(0, MODEL_INPUT_CAP_BYTES).toString('utf8');
-  return { json: head, bytes: whole.length, truncated: true };
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -195,7 +175,9 @@ async function serveRoute(
       sendJson(res, 404, { error: 'not found' });
       return;
     }
-    sendJson(res, 200, { thought: { ...row, model_input: capModelInput(row.model_input) } });
+    // Never send the prompt or the raw reply, even if a query returned them (R21).
+    const { model_input: _prompt, raw_output: _raw, ...thought } = row;
+    sendJson(res, 200, { thought });
     return;
   }
   if (name === 'receipts') {

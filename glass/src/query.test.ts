@@ -83,6 +83,12 @@ describe('the Glass SQL allowlist', () => {
     }
   });
 
+  it('no statement selects the prompt or the raw reply (R21)', () => {
+    for (const { file, sql } of sqlStatements()) {
+      expect(sql, file).not.toMatch(/model_input|raw_output/);
+    }
+  });
+
   it('a hostile filter value travels as a parameter and never reaches the SQL text', async () => {
     const hostile = "x' OR 1=1; DROP TABLE thoughts; --";
     const clean = recordingDb();

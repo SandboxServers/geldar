@@ -92,20 +92,20 @@ describe('renderRow with hostile data', () => {
 });
 
 describe('renderDetail with hostile data', () => {
-  it('shows the raw output and receipts as text, with the same element set', () => {
+  it('shows the receipts as text, with the same element set', () => {
     for (const [index, value] of HOSTILE.entries()) {
       const doc = freshDoc();
       const receipts = [{ kind: value, phase: value, item: value, count: 1, credits: 2 }];
       const section = renderDetail(
         doc as unknown as Doc,
         toView(hostileRow(value, index)),
-        value,
         receipts,
       );
       (doc.body as unknown as El).append(section as unknown as El);
       auditTree(doc.body);
       expect(doc.body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
-      expect(doc.body.querySelector('pre')?.textContent).toContain(display(value).slice(0, 40));
+      expect(doc.body.querySelector('pre')).toBeNull();
+      expect(doc.body.textContent).toContain(display(value).slice(0, 40));
     }
   });
 });

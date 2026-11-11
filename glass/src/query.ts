@@ -95,7 +95,7 @@ export async function listThoughts(
   return result.rows;
 }
 
-/** One thought with the complete model input (the caller caps it). Null when there is none. */
+/** One thought. The prompt and the raw reply are not selected: they are not public (R21). */
 export async function getThought(
   db: SqlClient,
   thoughtId: string,
@@ -104,7 +104,7 @@ export async function getThought(
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.world_day, t.world_tick, t.wake_reason,
             t.prompt_template_version, t.schema_version, t.model_config, t.latency_ms,
-            t.parsed, t.raw_output, t.model_input::text AS model_input, a.tier, a.name
+            t.parsed, a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
       WHERE t.thought_id = $1
         AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
