@@ -13,6 +13,7 @@ import {
 } from '@nats-io/jetstream';
 import type { NatsConnection } from '@nats-io/transport-node';
 import { CONSUMER_NAME, STREAM_CONFIG } from './config.ts';
+import { type EventsinkMetrics, type FailReason, samplePending } from './metrics.ts';
 import { DLQ_TYPE, shardOfSubject, validateMessage } from './validate.ts';
 import { type EventWriter, isPermanentDbError } from './writer.ts';
 
@@ -33,6 +34,8 @@ export interface BatchDeps {
   publishDlq(subject: string, body: string): Promise<void>;
   /** Where errors and dead letters are reported; defaults to `console.error`. */
   log?(line: string): void;
+  /** Counts what the batch decides; absent when no telemetry URL is set. */
+  metrics?: EventsinkMetrics | undefined;
 }
 
 /** Original payload bytes kept in a dead letter body; the rest is cut so it fits max_payload. */
@@ -87,10 +90,14 @@ function isOwnDeadLetter(message: SinkMessage): boolean {
   }
 }
 
-/** Publishes one dead letter and acks the message; a DLQ failure naks it instead. */
+/**
+ * Publishes one dead letter and acks the message; a DLQ failure naks it instead. Only the acked
+ * (terminal) outcome is counted, so a retried DLQ publish is not counted twice.
+ */
 async function deadLetter(
   message: SinkMessage,
   reason: string,
+  kind: FailReason,
   deps: BatchDeps,
   log: (line: string) => void,
 ): Promise<void> {
@@ -100,6 +107,8 @@ async function deadLetter(
     log(
       `eventsink: ALERT dead letter published to ${dlq} for subject=${message.subject} reason=${reason.slice(0, 300)}`,
     );
+    deps.metrics?.failed(kind);
+    deps.metrics?.dlqWritten();
     message.ack();
   } catch (error) {
     log(`eventsink: DLQ publish failed subject=${message.subject}: ${String(error)}`);
@@ -124,12 +133,14 @@ async function insertRowByRow(
   for (const { message, event } of valid) {
     try {
       await deps.writer.insertBatch([event]);
+      deps.metrics?.written(1);
       message.ack();
     } catch (error) {
       if (isPermanentDbError(error)) {
         await deadLetter(
           message,
           `database rejected the event (${String((error as { code?: unknown }).code)}): ${(error as Error).message}`,
+          'db',
           deps,
           log,
         );
@@ -156,6 +167,7 @@ export async function handleBatch(
   const log = deps.log ?? ((line: string) => console.error(line));
   const valid: { message: SinkMessage; event: WorldEvent }[] = [];
   for (const message of messages) {
+    deps.metrics?.consumed(message.subject);
     if (isOwnDeadLetter(message)) {
       message.ack();
       continue;
@@ -165,11 +177,12 @@ export async function handleBatch(
       valid.push({ message, event: verdict.event });
       continue;
     }
-    await deadLetter(message, verdict.reason, deps, log);
+    await deadLetter(message, verdict.reason, 'validate', deps, log);
   }
   if (valid.length === 0) return;
   try {
     await deps.writer.insertBatch(valid.map((v) => v.event));
+    deps.metrics?.written(valid.length);
   } catch (error) {
     if (isPermanentDbError(error)) {
       log(`eventsink: batch rejected (${String(error)}), retrying row by row`);
@@ -270,7 +283,15 @@ async function bindConsumer(nc: NatsConnection, js: JetStreamClient): Promise<Co
 export async function startConsumer(
   nc: NatsConnection,
   writer: EventWriter,
-  options: { batchSize: number; fetchWaitMs: number; onFatal?: (error: unknown) => void },
+  options: {
+    batchSize: number;
+    fetchWaitMs: number;
+    onFatal?: (error: unknown) => void;
+    /** Counts the batch decisions and samples the pending count; absent when telemetry is off. */
+    metrics?: EventsinkMetrics | undefined;
+    /** How often the pending count is sampled; 15 s by default. */
+    lagIntervalMs?: number | undefined;
+  },
 ): Promise<RunningConsumer> {
   const js = jetstream(nc);
   let consumer = await bindConsumer(nc, js);
@@ -279,7 +300,13 @@ export async function startConsumer(
     publishDlq: async (subject, body) => {
       await js.publish(subject, body);
     },
+    metrics: options.metrics,
   };
+  const metrics = options.metrics;
+  const lagTimer = metrics
+    ? setInterval(() => void samplePending(metrics, consumer), options.lagIntervalMs ?? 15_000)
+    : undefined;
+  lagTimer?.unref();
 
   let stopping = false;
   const loop = (async () => {
@@ -311,6 +338,7 @@ export async function startConsumer(
   return {
     async stop() {
       stopping = true;
+      clearInterval(lagTimer);
       await loop;
     },
   };

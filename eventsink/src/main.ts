@@ -3,6 +3,7 @@ import { connectNats } from '@geldar/contract/nats';
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';
+import { eventsinkTelemetry } from './metrics.ts';
 import { pgEventWriter } from './writer.ts';
 
 const config = loadConfig();
@@ -17,8 +18,14 @@ const pool = new pg.Pool({
 // An idle client dropping must not crash the process; the next query reconnects.
 pool.on('error', (error) => console.error('eventsink: idle postgres client error', error));
 const nc = await connectNats({ servers: config.natsUrl, name: 'eventsink' });
+// Push-only metrics: no telemetry URL means no metrics object, no timer and no request.
+const telemetry = eventsinkTelemetry(process.env, {
+  service: 'eventsink',
+  log: (line) => console.error('eventsink: telemetry', JSON.stringify(line)),
+});
 const consumer = await startConsumer(nc, pgEventWriter(pool), {
   ...config,
+  metrics: telemetry?.metrics,
   onFatal: (error) => {
     console.error('eventsink: giving up after repeated failures, exiting for a restart', error);
     process.exit(1);
@@ -31,6 +38,7 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   await consumer.stop();
+  telemetry?.stop();
   await nc.drain();
   await pool.end();
   process.exit(0);
