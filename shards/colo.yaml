@@ -2,13 +2,14 @@
 # Flat key: value lines only. Unknown keys are refused by geldar.ps1.
 # The limits are first guesses, to be measured in C1-10 on the node; they are not results.
 # cpu_limit and memory_limit are the TOTAL budget of the shard: the sum of the per-service budgets in
-# compose/colo.yml (cpus 3 + 0.5 + 1 + 0.5 + 0.5 + 1 + 1 + 0.5 + 1 = 9; memory 8192 + 1024 + 2048 + 512 + 512 + 2048
-# + 2048 + 512 + 2048 = 18944m; geldar-mcp and players-host are the last two). geldar.ps1 refuses a total below that
+# compose/colo.yml (cpus 3 + 0.5 + 1 + 0.5 + 0.5 + 1 + 1 + 0.5 + 1 = 9, plus 0.5 for the admin one-shot (profile
+# admin) = 9.5; memory 8192 + 1024 + 2048 + 512 + 512 + 2048 + 2048 + 512 + 2048 = 18944m, plus 512m for admin =
+# 19456m; geldar-mcp, players-host and admin are the last three). geldar.ps1 refuses a total below that
 # sum, and a memory total below Paper's heap (6G) plus 1 GiB.
 # The per-service values are not in this file: the shard-config schema has no keys for them.
 # replay_minutes (C1-07): optional, default 60, clamped to 1 to 1440. It is not a key here: the shard-config schema
 # has no such key and geldar.ps1 refuses unknown keys. Add the key only with a schema change.
-cpu_limit: 9                   # cores for the whole colo stack (the sum of the per-service CPU budgets)
-memory_limit: 18944m           # Docker form, whole m or g; the sum of the per-service memory budgets (18.5 GiB)
+cpu_limit: 9.5                 # cores for the whole colo stack (the sum of the per-service CPU budgets)
+memory_limit: 19456m         # Docker form, whole m or g; the sum of the per-service memory budgets (19 GiB)
 minecraft_port: 25567          # host port for the Minecraft listener; validated here, compose/colo.yml publishes the literal 25567 (decision 0082)
 bind_address: 127.0.0.1        # loopback only; geldar.ps1 refuses any other address
