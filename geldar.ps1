@@ -151,7 +151,7 @@ function Invoke-Check {
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
     # Overlays (rcon-host.yml, nats-auth.yml, nats-auth-mcp.yml) only add to a base file, so each is checked merged with its base.
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml', 'colo-kino.yml') }) {
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml', 'colo-kino.yml', 'colo-kino-session.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
     Invoke-Step 'docker compose config (colo.yml with nats-auth.yml, the merge `shard up colo` starts)' { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
@@ -164,6 +164,10 @@ function Invoke-Check {
         $env:GELDAR_KINO_NATS_USER = 'kino'
         $env:GELDAR_KINO_PUBLIC_ORIGIN = 'https://glass.example.test'
         try { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/colo-kino.yml') config --quiet } finally { Remove-Item Env:GELDAR_KINO_NATS_USER, Env:GELDAR_KINO_PUBLIC_ORIGIN -ErrorAction SilentlyContinue }
+    }
+    Invoke-Step 'docker compose config (colo.yml with colo-kino.yml and colo-kino-session.yml, dummy origin)' {
+        $env:GELDAR_KINO_PUBLIC_ORIGIN = 'https://glass.example.test'
+        try { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/colo-kino.yml') -f (Join-Path $Root 'compose/colo-kino-session.yml') config --quiet } finally { Remove-Item Env:GELDAR_KINO_PUBLIC_ORIGIN -ErrorAction SilentlyContinue }
     }
     Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)'{ docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'

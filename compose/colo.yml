@@ -76,10 +76,9 @@ services:
     labels: *colo-labels
     image: nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
     # NATS accounts are the opt-in overlay (decision 0080); see the nats-auth slot at the end of this file.
-    # No monitor port in the base: the monitor lists subjects and subscriptions (who is watched) to anything on the colo
-    # network. The healthcheck is a TCP probe of the client port. The nats-auth overlay turns the monitor on, bound to
-    # 127.0.0.1 inside the container (http: in the generated conf), and probes it from there.
-    command: ["-js", "-sd", "/data"]
+    # No monitor port in the base: the monitor lists subjects and subscriptions (who is watched) to the colo network.
+    # The one healthcheck, for every merge, is a TCP probe of the client port (BusyBox "nc -z", in the pinned Alpine image),
+    # so a nats-auth.conf made before the `http:` monitor line stays healthy. Never probe the monitor.    command: ["-js", "-sd", "/data"]
     volumes:
       - nats-data:/data
     # No ports: NATS (4222) is reached on the colo network only.
