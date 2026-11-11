@@ -15,13 +15,13 @@ trap 'rm -f "$ADMIN_OVERLAY"; rm -rf "$WORK"' EXIT
 # Runs one compose call for the admin service. The token overlay is added only for token-mint.
 adm() {
   if [ -n "$ADMIN_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" -f "$ADMIN_OVERLAY" --profile admin "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$EXTRA_OVERLAY" -f "$ADMIN_OVERLAY" --profile admin "$@"
   elif [ -n "$ADMIN_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$ADMIN_OVERLAY" --profile admin "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$ADMIN_OVERLAY" --profile admin "$@"
   elif [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" --profile admin "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$EXTRA_OVERLAY" --profile admin "$@"
   else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" --profile admin "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" --profile admin "$@"
   fi
 }
 
