@@ -133,7 +133,11 @@ function errorText(error: unknown): string {
  * The only roles this tool sets a password for: the MCP's login (decision 0026) and the Glass's
  * read-only login (wave 6 item 10, migration 0005). Any other role is refused before connecting.
  */
-const PASSWORD_ROLES: ReadonlySet<string> = new Set(['geldar_mcp', 'geldar_glass']);
+const PASSWORD_ROLES: ReadonlySet<string> = new Set([
+  'geldar_mcp',
+  'geldar_glass',
+  'geldar_register',
+]);
 
 /**
  * Reads a password file as UTF-8, without a leading byte-order mark and one trailing newline.

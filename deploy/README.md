@@ -37,7 +37,7 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   - each such file exists, is not empty, is a regular file inside the secrets directory (a symlink out is refused),
     and has mode `0600` or `0400`.
   `gen-secrets.sh` creates `postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`,
-  `postgres-mcp.txt`, `postgres-glass.txt` and `mcp-token-pepper.txt` when they are missing. The NATS files (`nats-mind.txt`,
+  `postgres-mcp.txt`, `postgres-glass.txt`, `postgres-register.txt`, `register-pepper.txt` and `mcp-token-pepper.txt` when they are missing (an existing node re-runs `gen-secrets.sh` after this change; the admin service mounts `postgres-register.txt`). `register-github-secret.txt` and `register-discord-secret.txt` are the owner's OAuth client secrets: gen-secrets never creates them, and only the `register` profile reads them. The NATS files (`nats-mind.txt`,
   `nats-mcp.txt`, and `nats-auth.conf` when the auth overlay is merged) come from the trusted machine, never from the
   node.
   The scripts check the mode and the size. They never read the contents.
@@ -305,6 +305,7 @@ There is no `state/release.commit` record. The release record is `state/current.
 release manifest); the manifest carries no commit header, so nothing reads a commit from it.
 | `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container: the .1 gateway of GELDAR_COLO_SUBNET, the colo bridge /24 you pin (a private range inside 172.16/12 private that nothing else on the node uses). colo-up.sh saves the three values in state/node.env and reloads them; colo-public.sh install refuses without the two proxy lists; colo-status.sh prints them |
 | `GELDAR_MCP_TRUSTED_PROXIES` | the same for the MCP service |
+| `REGISTER_KILL_SWITCH`, `REGISTER_PUBLIC_URL`, `REGISTER_TRUSTED_PEERS`, `REGISTER_GITHUB_CLIENT_ID`, `REGISTER_DISCORD_CLIENT_ID` | the `register` service (C2-08c, profile `register`, decision 0135). OFF BY DEFAULT: the kill switch is true unless set to `false`, no default `up` starts the service, and `colo-public.sh` does not load `register.caddy`. Keep it off until C2-08d and the C2 gates. `colo-up.sh` sets the `geldar_register` login password after the glass one. |
 | `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` | the Caddy upstreams, in `GELDAR_PUBLIC_ENV` (each `127.0.0.1:<port>`) |
 
 Live check for the trusted proxies (do it once per node, after `install`): send one request through Caddy to the Glass

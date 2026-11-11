@@ -9,6 +9,7 @@ Decisions: [0071](../../docs/decisions/0071-public-endpoints-and-ports.md) (the 
 | BlueMap map | `map.caddy` | `map-off.caddy` | `{$GELDAR_MAP_UPSTREAM}` |
 | Glass | `glass.caddy` | `glass-off.caddy` | `{$GELDAR_GLASS_UPSTREAM}` |
 | MCP (`/p/<player_id>` only) | `mcp.caddy` | `mcp-off.caddy` | `{$GELDAR_MCP_UPSTREAM}` |
+| Register (GET and POST; off by default, not in `colo-public.sh`) | `register.caddy` | `register-off.caddy` | `{$GELDAR_REGISTER_UPSTREAM}` |
 
 The live and kill-switch files stay in this directory, `deploy/caddy/<site>.caddy`. That is where C2-04 and `deploy/colo-public.sh` look; the `deploy/caddy/sites/` path in the C2-07 card is superseded.
 

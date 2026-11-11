@@ -139,10 +139,11 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   admin: ['ADMIN', '0.5', '512m', 128],
   glass: ['GLASS', '0.5', '256m', 128],
   'bluemap-web': ['BLUEMAP_WEB', '0.25', '64m', 64],
+  register: ['REGISTER', '0.25', '128m', 64],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the twelve services the budget totals cover', () => {
+  it('names exactly the thirteen services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -426,5 +427,50 @@ describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0
       rate_limit: { per_minute: 600, burst: 120 },
       kill_switch: false,
     });
+  });
+});
+
+// C2-08c: the register service is wired but off by default (decision 0135).
+const register = colo.services.register ?? {};
+
+describe('compose/colo.yml: the register service (C2-08c)', () => {
+  it('is behind the register profile, so no default up starts it, and the kill switch defaults to on', () => {
+    expect(register.profiles).toEqual(['register']);
+    expect(env(register).REGISTER_KILL_SWITCH).toBe('${REGISTER_KILL_SWITCH:-true}');
+  });
+
+  it('publishes only the loopback register port, as a literal', () => {
+    expect(register.ports).toEqual(['127.0.0.1:8090:8090']);
+  });
+
+  it('builds threshold/register/Dockerfile and takes its image from a deploy variable', () => {
+    expect(register.image).toBe(composeDefault('GELDAR_REGISTER_IMAGE', 'geldar-register:c2'));
+    expect(register.build).toEqual({ context: '..', dockerfile: 'threshold/register/Dockerfile' });
+  });
+
+  it('runs read-only as the service uid with no capability and no new privileges', () => {
+    expect(register.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
+    expect(register.read_only).toBe(true);
+    expect(register.cap_drop).toEqual(['ALL']);
+    expect(register.security_opt).toEqual(['no-new-privileges:true']);
+  });
+
+  it('reads every secret from a file and declares each secret it names', () => {
+    const names = [
+      'postgres-register.txt',
+      'mcp-token-pepper.txt',
+      'register-pepper',
+      'register-github-secret',
+      'register-discord-secret',
+    ];
+    expect(register.secrets).toEqual(names);
+    for (const name of names) expect(colo.secrets).toHaveProperty([name]);
+    expect(env(register).REGISTER_DB_PASSWORD_FILE).toBe('/run/secrets/postgres-register.txt');
+    expect(env(register).REGISTER_TOKEN_PEPPER_FILE).toBe('/run/secrets/mcp-token-pepper.txt');
+    expect(JSON.stringify(env(register))).not.toMatch(/SECRET["']?:\s*"[^/]/);
+  });
+
+  it('the admin service mounts the geldar_register password file the deploy reads', () => {
+    expect(colo.services.admin?.secrets ?? []).toContain('postgres-register.txt');
   });
 });

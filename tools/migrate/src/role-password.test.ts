@@ -58,11 +58,21 @@ describe('setRolePassword', () => {
     expect(sent[0]).not.toContain('hunter2-secret');
   });
 
-  it('refuses any role but geldar_mcp and geldar_glass, before connecting', async () => {
+  it('sends a SCRAM-SHA-256 verifier for geldar_register, the register service (C2-08c)', async () => {
+    const { pool, sent } = fakePool();
+    await setRolePassword(pool, 'geldar_register', 'hunter2-secret', QUIET);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatch(
+      /^ALTER ROLE geldar_register WITH LOGIN PASSWORD 'SCRAM-SHA-256\$4096:/,
+    );
+    expect(sent[0]).not.toContain('hunter2-secret');
+  });
+
+  it('refuses any role but the three, before connecting', async () => {
     for (const role of ['postgres', 'geldar_historian', 'geldar_glass_admin']) {
       const { pool, sent, connects } = fakePool();
       await expect(setRolePassword(pool, role, 'hunter2-secret', QUIET)).rejects.toThrow(
-        'only geldar_mcp or geldar_glass',
+        'only geldar_mcp or geldar_glass or geldar_register',
       );
       expect(connects.count, role).toBe(0);
       expect(sent, role).toEqual([]);
