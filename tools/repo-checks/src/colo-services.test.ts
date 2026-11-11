@@ -491,7 +491,36 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
     expect(JSON.stringify(env(register))).not.toMatch(/SECRET["']?:\s*"[^/]/);
   });
 
+  it('trusts the MCP gateway by default, not loopback, for the client address (C2-R5 F5)', () => {
+    const peers = String(env(register).REGISTER_TRUSTED_PEERS);
+    expect(peers).toContain('GELDAR_MCP_TRUSTED_PROXIES');
+    expect(peers).toMatch(/^\$\{REGISTER_TRUSTED_PEERS:-\$\{GELDAR_MCP_TRUSTED_PROXIES:-/);
+    const common = readFileSync(new URL('../../../deploy/common.sh', import.meta.url), 'utf8');
+    expect(common).toMatch(/^NODE_ENV_VARS=.*\bREGISTER_TRUSTED_PEERS\b/m);
+  });
+
+  it('has a healthcheck that accepts 200 and 503 (C2-R5 F11)', () => {
+    const hc = register.healthcheck as { test: string[] } | undefined;
+    expect(hc?.test.join(' ')).toMatch(/8090.*200.*503/);
+  });
+
   it('the admin service mounts the geldar_register password file the deploy reads', () => {
     expect(colo.services.admin?.secrets ?? []).toContain('postgres-register.txt');
+  });
+});
+
+describe('sql: role creation is race-safe (FX-IT2)', () => {
+  it('every CREATE ROLE sits in a DO block that catches duplicate_object and unique_violation', () => {
+    const dir = new URL('../../../sql/', import.meta.url);
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.sql'))) {
+      const text = readFileSync(new URL(f, dir), 'utf8');
+      for (const m of text.matchAll(/CREATE ROLE\s+(\w+)/g)) {
+        const block = text.slice(
+          text.lastIndexOf('DO $', m.index),
+          text.indexOf('END', m.index) + 200,
+        );
+        expect(block, ` `).toMatch(/WHEN duplicate_object OR unique_violation THEN NULL/);
+      }
+    }
   });
 });

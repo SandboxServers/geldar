@@ -76,6 +76,11 @@ export class Account {
     this.deps = deps;
   }
 
+  /** Live session count, for the sweep test. */
+  get sessionCount(): number {
+    return this.sessions.size;
+  }
+
   /** One sign-up at a time, so the daily cap cannot be passed by two parallel callbacks. */
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const run = this.lock.then(work, work);
@@ -116,6 +121,7 @@ export class Account {
         }),
       );
     }
+    for (const [key, s] of this.sessions) if (now() >= s.expiresAt) this.sessions.delete(key);
     const id = randomBytes(32).toString('base64url');
     this.sessions.set(id, {
       ownerId: outcome,
@@ -144,7 +150,9 @@ export class Account {
 
   /** Handles an account route; false when the path is not one of them. */
   async handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
-    const m = /^\/(account|players)(?:\/(ag-[a-z0-9-]+)\/(token|retire))?$/.exec(url.pathname);
+    const m = /^\/(account|players|logout)(?:\/(ag-[a-z0-9-]+)\/(token|retire))?$/.exec(
+      url.pathname,
+    );
     if (!m) return false;
     const session = this.sessionOf(req);
     if (!session) {
@@ -166,6 +174,17 @@ export class Account {
     ) {
       this.deps.log('post refused reason=csrf');
       refuse(res);
+      return true;
+    }
+    if (m[1] === 'logout') {
+      const sid = cookieOf(req, SESSION_COOKIE);
+      if (sid) this.sessions.delete(sid);
+      res.writeHead(302, {
+        location: '/',
+        'set-cookie': sessionCookie('', 0),
+        ...SECURITY_HEADERS,
+      });
+      res.end();
       return true;
     }
     // A ban after sign-in ends the session at the next write.

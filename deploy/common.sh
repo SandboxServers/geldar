@@ -320,7 +320,7 @@ fetch_bluemap() {
 # Caddy shows. The two lists live in the node env file (STATE_DIR/node.env, mode 0600, KEY=VALUE as data, never sourced).
 # load_node_env fills an unset variable from the file and exports both; save_node_env writes the values in force.
 NODE_PROXY_VARS="GELDAR_GLASS_TRUSTED_PROXIES GELDAR_MCP_TRUSTED_PROXIES"
-NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET"
+NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET REGISTER_TRUSTED_PEERS"
 load_node_env() {
   for v in $NODE_ENV_VARS; do
     eval "cur=\${$v:-}"

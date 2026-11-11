@@ -79,6 +79,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar_mcp') THEN
     CREATE ROLE geldar_mcp NOLOGIN;
   END IF;
+EXCEPTION
+  -- Two runs in one cluster can both pass the check above; the loser sees one of these two errors. The role exists then.
+  WHEN duplicate_object OR unique_violation THEN NULL;
 END
 $role$;
 
