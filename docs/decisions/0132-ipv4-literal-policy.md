@@ -12,13 +12,13 @@ The repo rule was a sentence with no check, and it reads two ways. Its intent is
 
 1. **Four classes of IPv4 literal.**
    - **Allowed anywhere:** `127.0.0.0/8`, `0.0.0.0`, and the three RFC 5737 documentation ranges `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`. Documentation ranges are reserved for examples and route to no host.
-   - **Allowed only in an allowlisted file:** private and link-local ranges `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` and the carrier-grade NAT range `100.64.0.0/10`. A file is allowlisted only when it implements or tests IP, CIDR or host handling.
+   - **Allowed only in an allowlisted file:** the RFC 1918 private ranges (the 10, 172.16 and 192.168 blocks), the link-local block and the carrier-grade NAT block (100.64 to 100.127). A file is allowlisted only when it implements or tests IP, CIDR or host handling.
    - **Everything else fails:** any other IPv4 literal, which is a public routable address, fails in any file, allowlisted or not.
    - A private literal in a file that is not allowlisted fails.
 
 2. **The allowlist.** `tools/repo-checks/src/ip-literal-allowlist.json` is a JSON array of `{ "path", "reason" }` objects. Paths are repo-relative. An entry is added in the same change that needs it, with a short reason, and a reviewer checks that the private literals in it are synthetic. The check does not tell a real private address from a synthetic one; the allowlist and review do.
 
-3. **What is scanned.** Every git-tracked and untracked text file. Binary files (any NUL byte) are skipped, and so are `pnpm-lock.yaml`, `release-dates.json`, Gradle lockfiles, `verification-metadata.xml`, `CHANGELOG*` files, and `contract/src/generated`. A `version` field (JSON, YAML or Maven) is not scanned, so a package version such as a four-part `1.2.3.4` is not a finding.
+3. **What is scanned.** Every git-tracked and untracked text file. Binary files (any NUL byte) are skipped, and so are `pnpm-lock.yaml`, `release-dates.json`, Gradle lockfiles, `verification-metadata.xml`, `CHANGELOG*` files, and `contract/src/generated`. A `version` field (JSON, YAML or Maven) is not scanned, so a four-part package version is not a finding.
 
 4. **Matching.** A dotted quad whose four octets are each 0 to 255, not preceded by a digit or a dot and not followed by a digit or a dot-digit pair. An octet of 256 and a five-part dotted number are not addresses and are ignored.
 
