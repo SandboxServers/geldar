@@ -17,16 +17,16 @@ The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by th
 | C1-00 | Contract for the colo shard, repo gates | C1 | A | none | B | 0081 | N |
 | C1-01 | Split over-500 files, quarantine flaky tests | C1 | B | none | B | none | N |
 | C1-02 | Integration: colo compose, shard config, geldar.ps1 | C1 | A | C1-00 | B/O | 0082 | Y (owner items) |
-| C1-03 | Body-host and Mind-host images | C1 | C | C1-00 | B | 0083 | Y [0078] |
-| C1-04 | Non-PowerShell deploy by pull | C1 | D | C1-00 | B/O | 0084 | Y [deploy account] |
+| C1-03 | Body-host and Mind-host images | C1 | C | C1-00 | B | 0083 | N [0078 accepted, 0130] |
+| C1-04 | Non-PowerShell deploy by pull | C1 | D | C1-00 | B | 0084 | N [runner or owner SSH, 0130] |
 | C1-05a | Append-only journals, reset creates a new shard | C1 | E | C1-00 | B | 0085 | N |
-| C1-05b | Backup v1 per 0076 | C1 | E | C1-00, C1-05a | B/O | 0086 | Y [0076, destination] |
+| C1-05b | Backup v1 per 0076 | C1 | E | C1-00, C1-05a | deferred (0130) | 0086 | N [deferred by 0130] |
 | C1-06a | NATS overlay live test (owns `compose/nats-auth.yml`) | C1 | F | C1-00 | B | 0087 | Y [0080] |
 | C1-06b | Component credential reads | C1 | F | C1-06a | B | 0087 (cited, no new record) | N |
-| C1-07 | Metrics exporters, replay bound | C1 | C | C1-00 | B/O | 0088 | Y [telemetry endpoint] |
+| C1-07 | Metrics exporters, replay bound | C1 | C | C1-00 | B | 0088 | N [SigNoz, 0130] |
 | C1-08 | Crash hygiene | C1 | D | C1-00 | B | 0089 | N |
 | C1-09 | BlueMap pinned, internal | C1 | B | C1-00 | B | none (extends 0082) | N |
-| C1-10 | Node deploy, restore test, first ranger, smoke, load | C1 | ops | C1-02 to C1-09 | O | none | Y [0078, node] |
+| C1-10 | Node deploy, restore test, first ranger, smoke, load | C1 | ops | C1-02 to C1-09 | B (restore step and 20-min smoke deferred, 0130) | none | N [node via runner or SSH, 0130] |
 | C2-00 | Contract unblocker for the public surfaces | C2 | A | C1-00 | planned | 0090 | N |
 | C2-01 | Public MCP behind Caddy | C2 | A | C2-00 | planned | 0091 | Y [0077] |
 | C2-02 | Velocity on the new TCP port | C2 | B | C2-00 | planned | 0092 | N |
@@ -55,10 +55,10 @@ The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by th
 | C3-04 | Roster and owner cap in the database | C3 | D | C3-00, C1-08 | B | 0108 | N |
 | C3-05 | Prepared receipt and per-life wait cursor | C3 | E | C3-00 | B | 0109 | N |
 | C3-06 | Body crash reconciliation on boot | C3 | E | C3-05, C3-00 | B | 0110 | N |
-| C3-07 | Bench for N = 1, 5, 10, 15 | C3 | F | C1-10, C3-06 | B/O | 0111 | Y [O-4, live rows] |
+| C3-07 | Bench for N = 1, 5, 10, 15 | C3 | F | C1-10, C3-06 | build now, run at campaign end (0130) | 0111 | N [long run at campaign end, 0130] |
 | C3-08 | C3 runbooks | C3 | F | none | B | none | N |
-| C3-09 | Chaos scenario scripts and runner | C3 | F | C3-06, C3-08, C1-05b | B/O | 0112 | Y [O-3, live day] |
-| C3-10 | Roll-out, chaos day and soak gate | C3 | A | C3-01 to C3-09, C1-10 | O | 0113 | Y [O-soak, O-3] |
+| C3-09 | Chaos scenario scripts and runner | C3 | F | C3-06, C3-08, C1-05b | build now, run at campaign end (0130) | 0112 | N [chaos day at campaign end, 0130] |
+| C3-10 | Roll-out, chaos day and soak gate | C3 | A | C3-01 to C3-09, C1-10 | build now, run at campaign end (0130) | 0113 | Y [O-3, at campaign end; soak gate resolved by 0130] |
 | C4-00 | Contract unblocker: chat, books, credits, life, hibernation, Thinker enrolment | C4 | A | C3-00 | B | 0115 | N |
 | C4-01 | Proximity chat and the attention test | C4 | A | C4-00 | B | 0116 | N |
 | C4-02a | Books and skills: copy stamp and learned_from | C4 | B | C4-00 | B | 0117 | N |
@@ -68,4 +68,4 @@ The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by th
 | C4-05 | Shrine pool and birth: idempotent offers, server life IDs | C4 | E | C4-00, C3-05, 0079 | B (values O) | 0121 | Y [0079] |
 | C4-06 | Prompt v7 and wake wording | C4 | C | C4-01, C4-02b, C4-03 | B | 0122 | N |
 | C4-07 | Thinker gateway: per-Thinker NATS users, enrolment | C4 | F | C4-00, 0078, 0080 | B; enrolment O | 0123, 0124 | Y [0078, 0080, enrolment] |
-| C4-08 | Integration and ops: Phase 1 exit run on the node | C4 | G | C4-00 to C4-07 | O | 0125 (0126 owner ruling, not used by a packet) | Y [O-soak, 0126] |
+| C4-08 | Integration and ops: Phase 1 exit run on the node | C4 | G | C4-00 to C4-07 | O | 0125 (0126 owner ruling, not used by a packet) | Y [0126] |

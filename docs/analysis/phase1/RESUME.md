@@ -15,12 +15,12 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
 - **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
-- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0130.
+- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0131.
 
 ## Order to start
 
-1. **Owner confirmations before any wave packet that needs them.** Decisions 0076 (backup scope and destination), 0077 (invitee auth), 0078 (Mind placement), 0079 (credit numbers), and 0080 (NATS auth cutover) are Proposed. Also needed: a deploy account with Docker on the node; the backup destination and how the encryption key is held; a telemetry endpoint (none exists yet, so C1-07 stays off until one is named); and the soak ruling, O-soak (plan.md C3 says seven days; the C3 and C4 cards propose a 72-hour gate at C3 plus one 7-day exit run; the owner picks one in writing).
-2. **P1-C1-00 (ledger id C1-00)**, the contract unblocker. It merges first. Fan-out packets never edit `contract/`.
+1. **Owner confirmations are done for C1 and C3, and the start is clear.** Decisions 0076, 0078 and 0080 are accepted. The owner rulings of 2026-11-10 are in decision 0130: backups deferred (scope B accepted), deploy by the node's runner or the owner's SSH access (no new deploy account), telemetry in the node's SigNoz, and the long tests (7-day soak, chaos day, N-bot long benchmark, restore-time tests, 20-minute smoke) run once at the campaign end. Still Proposed: 0077 (invitee auth), which gates C2 and C2b, and 0079 (credit numbers), which gates C4-04. Do not start those packets until they are accepted.
+2. **P1-C1-00 (ledger id C1-00)**, the contract unblocker, is next. It merges first. Fan-out packets never edit `contract/`.
 3. **Lanes.** Fan out per the wave's lane table after the unblocker merges. Lanes share files only where a card says so; the shared-file owners are in packet-conventions section 3.
 
 Do not start a wave's live steps until its owner items are answered.
