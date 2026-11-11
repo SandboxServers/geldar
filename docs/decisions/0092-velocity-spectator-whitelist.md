@@ -17,6 +17,10 @@ Phase 1 puts the public Minecraft TCP port on Velocity (0071). Velocity must adm
 5. **Field absence means live.** Writers that predate the `live` field (the Golem registry writer) keep their meaning. Nothing in the repo writes `live: false` yet, so no name is a ghost in Phase 1 until a writer does.
 6. **No real port in the record.** The public port is set at deploy time (C2-07). This record names no port and no host.
 
+## Paper enforcement
+
+Velocity sends one message on `geldar:ghost` to the backend each time a `SPECTATOR` connection's backend link comes up (`ServerPostConnectEvent`). Geldar-Core (`GhostListener`) receives it, remembers the player until quit, and holds them in spectator: forced on the signal, on join, on respawn and on a world change; a game-mode change to anything but spectator is cancelled. A ghost's chat is cancelled, so no agent hears a watcher. The Golem registry writer now writes `live: true` on every put; a dead life is unregistered, so `live: false` still comes only from a future ghost writer. The signal can only add a ghost, so a client that forges it restricts itself only.
+
 ## Consequences
 
 - A ghost cannot send `geldar:cmd` messages, so it cannot offer, propose or vote (spec 8.4).

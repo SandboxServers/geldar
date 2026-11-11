@@ -16,7 +16,8 @@ class GeldarCoreTest {
         EventExporter exporter = exporter();
         List<Listener> listeners = GeldarCore.listeners(exporter, Logger.getLogger("test"), false);
 
-        assertEquals(2, listeners.size());
+        assertEquals(3, listeners.size());
+        assertTrue(listeners.stream().anyMatch(l -> l instanceof GhostListener));
         assertTrue(listeners.contains(exporter));
         assertTrue(listeners.stream().anyMatch(l -> l instanceof CommandBlockListener));
         assertTrue(listeners.stream().noneMatch(l -> l instanceof RecipeGrantListener));
@@ -26,7 +27,7 @@ class GeldarCoreTest {
     void theRecipeGrantIsRegisteredWhenTheFlagIsSet() {
         List<Listener> listeners = GeldarCore.listeners(exporter(), Logger.getLogger("test"), true);
 
-        assertEquals(3, listeners.size());
+        assertEquals(4, listeners.size());
         assertTrue(listeners.stream().anyMatch(l -> l instanceof RecipeGrantListener));
     }
 

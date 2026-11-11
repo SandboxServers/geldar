@@ -76,7 +76,7 @@ describe('lifeIdFor and registryKey', () => {
 });
 
 describe('LifeRegistration', () => {
-  it('puts {life_id, registered_at} under the lowercase username', async () => {
+  it('puts {life_id, registered_at, live: true} under the lowercase username', async () => {
     const log: string[] = [];
     const reg = new LifeRegistration(
       async () => fakeKv(log),
@@ -84,8 +84,26 @@ describe('LifeRegistration', () => {
     );
     await reg.register('GolemBench');
     expect(log).toEqual([
-      `put golembench ${JSON.stringify({ life_id: lifeIdFor('GolemBench'), registered_at: '2026-01-02T03:04:05.000Z' })}`,
+      `put golembench ${JSON.stringify({ life_id: lifeIdFor('GolemBench'), registered_at: '2026-01-02T03:04:05.000Z', live: true })}`,
     ]);
+  });
+
+  it('every heartbeat put carries live: true, and a dead life is unregistered, never written live: false', async () => {
+    vi.useFakeTimers();
+    try {
+      const log: string[] = [];
+      const reg = new LifeRegistration(async () => fakeKv(log));
+      await reg.register('Bot');
+      await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+      await reg.unregister('Bot');
+      const puts = log.filter((l) => l.startsWith('put bot '));
+      expect(puts).toHaveLength(2);
+      for (const p of puts) expect(JSON.parse(p.slice('put bot '.length)).live).toBe(true);
+      expect(log.at(-1)).toBe('delete bot');
+      expect(log.some((l) => l.includes('"live":false'))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('opens NATS once for many registrations and deletes the key on unregister', async () => {
