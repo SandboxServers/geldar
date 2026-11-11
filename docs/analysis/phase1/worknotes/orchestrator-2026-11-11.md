@@ -171,3 +171,11 @@ These go into decision 0075 as an amendment when C2b starts.
   - an owner still targets only their own players' agents, and an admin targets any agent.
 - **Auth.** Sign-in with a Microsoft account, since every Minecraft player has one. This replaces the interim-token idea.
 - **Textures.** Use vanilla textures sourced the same legitimate way BlueMap gets them, from the client jar Mojang distributes. They are cached in the viewer's browser and never committed to the repo. Candidate: reuse BlueMap's generated `textures.json`, which is already served.
+- **Anonymous viewers.** Visitors who are not logged in can watch only agents flagged for public viewing. Each agent has a public-camera flag that its owner sets; an admin can set it too. Logged-in viewers keep the targeting described above.
+- **Audit retention.** 90 days.
+- **Feed load budget.** No cap at first: measure first, then set the budget. The orchestrator adds safeguards anyway:
+  - Kino gets a kill switch (an env or flag that turns the feed off);
+  - the Kino feed load is a SigNoz metric;
+  - an alert fires if the feed hurts Paper's TPS.
+- **Panes.** Start at 4 per session. The cap is a setting so it can be raised later.
+- **Admins.** Admin is a flag in Postgres. A `kino_admins` table, or a role column, is keyed by the Microsoft account's stable subject id. It is managed by an admin CLI command like the ban command. The owner is the first admin. The table is written only through the admin tool, and Kino reads it through a read-only grant.
