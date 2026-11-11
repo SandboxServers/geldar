@@ -8,6 +8,8 @@ import {
   SRGBColorSpace,
   WebGLRenderer,
 } from 'three';
+import { bindControls } from './camera/controls.ts';
+import { CameraRig } from './camera/rig.ts';
 import { devFeed } from './dev-feed.ts';
 import { FeedState } from './feed.ts';
 import { KinoScene } from './scene.ts';
@@ -58,15 +60,27 @@ async function main(): Promise<void> {
 
   const el = document.getElementById('kino') as HTMLCanvasElement;
   const renderer = new WebGLRenderer({ canvas: el, antialias: false });
-  let drag = false;
-  el.addEventListener('pointerdown', () => (drag = true));
-  addEventListener('pointerup', () => (drag = false));
-  el.addEventListener(
-    'pointermove',
-    (e) => drag && view.orbit(-e.movementX * 0.01, e.movementY * 0.01),
-  );
-  el.addEventListener('wheel', (e) => view.orbit(0, 0, e.deltaY * 0.02));
+  const rig = new CameraRig();
+  bindControls(el, rig);
+  for (const [label, mode] of [
+    ['Follow', 'follow'],
+    ['Orbit', 'orbit'],
+    ['Free', 'free'],
+  ] as const) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.addEventListener('click', () => rig.setMode(mode));
+    document.body.appendChild(b);
+  }
+  let last = performance.now();
   const frame = (): void => {
+    const now = performance.now();
+    const target = state.focus;
+    const pos = rig.update(state.world, target, Math.min(0.1, (now - last) / 1000));
+    last = now;
+    view.camera.position.set(pos.x, pos.y, pos.z);
+    const look = rig.lookTarget(target);
+    view.camera.lookAt(look.x, look.y, look.z);
     renderer.setSize(el.clientWidth, el.clientHeight, false);
     view.camera.aspect = el.clientWidth / el.clientHeight;
     view.camera.updateProjectionMatrix();
