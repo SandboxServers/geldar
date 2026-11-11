@@ -49,6 +49,28 @@ describe('proxy and client address settings', () => {
     ).toThrow('GELDAR_MCP_TRUSTED_PROXIES[1] has prefix length 0');
   });
 
+  it('refuses an IPv4 prefix shorter than /8 and an IPv6 prefix shorter than /32, naming the key', () => {
+    for (const entry of ['0.0.0.0/1', '10.0.0.0/7', '::/1', '2001:db8::/31']) {
+      const doc = shardDoc();
+      doc.public = { trusted_proxies: [entry] };
+      expect(() => parseMcpConfig(doc, { env: ENV }), entry).toThrow(
+        /public\.trusted_proxies\[0\] has a prefix shorter than \/(8|32)/,
+      );
+    }
+    expect(() =>
+      parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_TRUSTED_PROXIES: '10.0.0.0/7' } }),
+    ).toThrow('GELDAR_MCP_TRUSTED_PROXIES[0] has a prefix shorter than /8');
+  });
+
+  it('accepts an IPv4 /8 and an IPv6 /32, the shortest prefixes allowed', () => {
+    const doc = shardDoc();
+    doc.public = { trusted_proxies: ['10.0.0.0/8', '2001:db8::/32'] };
+    expect(parseMcpConfig(doc, { env: ENV }).public.trustedProxies).toEqual([
+      '10.0.0.0/8',
+      '2001:db8::/32',
+    ]);
+  });
+
   it('reads client_ip_header from yaml, defaulting to x-geldar-client-ip', () => {
     const doc = shardDoc();
     doc.sovereign.mcp.client_ip_header = 'x-geldar-client-ip';
