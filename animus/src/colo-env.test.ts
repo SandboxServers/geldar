@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadAnimusConfig, repoRoot } from './config.ts';
 import { coloServiceEnv } from './colo-compose.fixture.ts';
+import { loadAnimusConfig, repoRoot } from './config.ts';
 
 const COLO_MIND_FILE = join(repoRoot(), 'shards', 'colo-mind.yaml');
 
@@ -29,8 +29,11 @@ describe('animus in compose/colo.yml', () => {
   });
 
   it('refuses the compose service names without the opt-in', async () => {
-    const { GELDAR_IN_NETWORK_HOSTS: _optIn, GELDAR_NATS_URL: _nats, ...env } =
-      coloServiceEnv('animus');
+    const {
+      GELDAR_IN_NETWORK_HOSTS: _optIn,
+      GELDAR_NATS_URL: _nats,
+      ...env
+    } = coloServiceEnv('animus');
     await expect(loadAnimusConfig({ env, file: COLO_MIND_FILE })).rejects.toThrow(
       /POSTGRES_HOST must be 127.0.0.1 or localhost, got 'postgres'/,
     );

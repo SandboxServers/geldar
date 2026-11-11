@@ -72,7 +72,10 @@ export interface RestartedBody {
  * Refuses a NATS URL that is not `nats://` on a loopback host (the Phase 0 rule, threat model). The
  * colo container also accepts its compose service names, with `GELDAR_IN_NETWORK_HOSTS=1` (decision 0131).
  */
-export function assertLoopbackNatsUrl(raw: string, env: Record<string, string | undefined> = process.env): void {
+export function assertLoopbackNatsUrl(
+  raw: string,
+  env: Record<string, string | undefined> = process.env,
+): void {
   let url: URL;
   try {
     url = new URL(raw);

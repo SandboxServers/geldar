@@ -368,14 +368,9 @@ function optionalInt(
  * A loopback host, or a colo service name when `GELDAR_IN_NETWORK_HOSTS=1` is set. Any other host is
  * refused (decisions 0050, 0131).
  */
-function loopbackHost(
-  name: string,
-  host: string,
-  env: Record<string, string | undefined>,
-): string {
+function loopbackHost(name: string, host: string, env: Record<string, string | undefined>): string {
   const allowed =
-    LOOPBACK_HOSTS.has(host) ||
-    (env.GELDAR_IN_NETWORK_HOSTS === '1' && IN_NETWORK_HOSTS.has(host));
+    LOOPBACK_HOSTS.has(host) || (env.GELDAR_IN_NETWORK_HOSTS === '1' && IN_NETWORK_HOSTS.has(host));
   if (!allowed) throw new Error(`${name} must be 127.0.0.1 or localhost, got '${host}'`);
   return host;
 }

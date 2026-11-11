@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { parseAdamConfig } from './adam/adam-config.ts';
 import { assertLoopbackNatsUrl } from './body/restart.ts';
-import { loadStackConfig, repoRoot } from './config.ts';
 import { coloServiceEnv } from './colo-compose.fixture.ts';
+import { loadStackConfig, repoRoot } from './config.ts';
 
 // The colo Body reads the env block of compose/colo.yml exactly as compose resolves it (decision 0131).
 describe('golem-body in compose/colo.yml', () => {
@@ -34,9 +34,9 @@ describe('golem-body in compose/colo.yml', () => {
     expect(() => loadStackConfig({ ...env, GELDAR_MC_HOST: 'evil.example' })).toThrow(
       /GELDAR_MC_HOST/,
     );
-    expect(() =>
-      loadStackConfig({ ...env, GELDAR_NATS_URL: 'nats://evil.example:4222' }),
-    ).toThrow(/GELDAR_NATS_URL/);
+    expect(() => loadStackConfig({ ...env, GELDAR_NATS_URL: 'nats://evil.example:4222' })).toThrow(
+      /GELDAR_NATS_URL/,
+    );
     expect(() =>
       assertLoopbackNatsUrl('nats://evil.example:4222', { GELDAR_IN_NETWORK_HOSTS: '1' }),
     ).toThrow(/NATS URL/);
