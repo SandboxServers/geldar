@@ -39,8 +39,8 @@ public:
   trusted_proxies: ["127.0.0.1"]
   client_ip_header: x-geldar-client-ip
   rate_limit:
-    per_minute: 120
-    burst: 40
+    per_minute: 600
+    burst: 120
   kill_switch: false
 # Sovereign players (spec 5.15; decisions 0040, 0041, 0052), the phase0 values. `players` is empty: no ranger is
 # served on the colo until the owner lists one (player_id, life_id, name) here. players-host refuses an unlisted id.

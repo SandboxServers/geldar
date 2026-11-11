@@ -82,7 +82,10 @@ describe('deploy/caddy site files', () => {
         expect(existsSync(resolve(dir, off))).toBe(true);
         const killed = read(off);
         expect(killed).toContain(`${site}.{$GELDAR_DOMAIN} {`);
-        expect(killed).toContain('respond 503');
+        expect(killed).toMatch(
+          /respond `\{"error":\{"code":"unavailable","message":"Service unavailable"\}\}` 503/,
+        );
+        expect(killed).toContain('header Content-Type application/json');
         expect(killed).not.toContain('reverse_proxy');
       });
 
@@ -102,6 +105,19 @@ describe('deploy/caddy site files', () => {
     for (const block of blocks) {
       expect(block).toMatch(/^\s*header_up Host localhost$/m);
     }
+  });
+
+  it('sets Host to localhost in the MCP proxy block, so the public Host does not get 403 host_rejected', () => {
+    const blocks = proxyBlocks(read('mcp.caddy'));
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toMatch(/^\s*header_up Host localhost$/m);
+  });
+
+  it('sets stream_close_delay 5s in every MCP proxy block and in the Glass stream route', () => {
+    for (const block of proxyBlocks(read('mcp.caddy'))) {
+      expect(block).toMatch(/^\s*stream_close_delay 5s$/m);
+    }
+    expect(read('glass.caddy')).toMatch(/^\s*stream_close_delay 5s$/m);
   });
 
   it('routes GET and HEAD for the page and its assets to Glass', () => {

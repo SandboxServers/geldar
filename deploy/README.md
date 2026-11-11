@@ -289,8 +289,9 @@ Node env values (names only; set them in the deploy env on the node, never in th
 
 Live check for the trusted proxies (do it once per node, after `install`): send one request through Caddy to the Glass
 site and one to the MCP site, then read each service log (`docker compose -p geldar-colo logs --tail 20 glass`, and
-`mcp`). The address the log shows for the caller is the address Caddy has inside the containers. It must equal the
-value you set in the matching `*_TRUSTED_PROXIES`. If it differs, set the variable to the logged address, run
+`mcp`). For Glass, read the log line `glass_untrusted_peer_header`: its `peer` value is the address to set in
+`GELDAR_GLASS_TRUSTED_PROXIES`. For the MCP service, the address the log shows for the caller must equal the
+value you set in `GELDAR_MCP_TRUSTED_PROXIES`. If it differs, set the variable to the logged address, run
 `colo-up.sh` again and repeat the request. Until it matches, the service treats Caddy as an ordinary client.
 
 ## Stop conditions

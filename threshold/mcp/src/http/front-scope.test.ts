@@ -74,15 +74,22 @@ describe('scoping and limits', () => {
   it('allows the 60th call a minute per player and refuses the 61st', async () => {
     const sid = await rig.openSession();
     const statuses: number[] = [];
+    let last: Awaited<ReturnType<typeof rig.send>> | undefined;
     for (let i = 0; i < CALLS_PER_MINUTE + 1; i += 1) {
-      const reply = await rig.send('/p/aa', {
+      last = await rig.send('/p/aa', {
         body: call('ping', i + 2),
         headers: { 'mcp-session-id': sid },
       });
-      statuses.push(reply.status);
+      statuses.push(last.status);
     }
     expect(statuses[CALLS_PER_MINUTE - 1]).toBe(200);
     expect(statuses[CALLS_PER_MINUTE]).toBe(429);
+    // The per-player call budget answers the 0090 rate_limited body with a matching Retry-After.
+    const seconds = Number(last?.headers['retry-after']);
+    expect(seconds).toBeGreaterThanOrEqual(1);
+    expect(last?.text).toBe(
+      `{"error":{"code":"rate_limited","message":"Too many requests"},"retryAfter":${seconds}}`,
+    );
   });
 
   it('shares the owner budget across players and refuses past it', async () => {

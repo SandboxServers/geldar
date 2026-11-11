@@ -93,8 +93,7 @@ bucket. The server logs that case at most once a minute.
 
 The MCP kill switch (`public.kill_switch: true`) takes effect on restart: it is read from the shard
 file at start, and nothing flips it in a running process. The immediate cut is
-`deploy/colo-public.sh off mcp` (swaps the Caddy site to the 503 snippet and reloads; open streams
-close within the proxy's `stream_close_delay`).
+`deploy/colo-public.sh off mcp` (swaps the Caddy site to the 503 snippet and reloads; `stream_close_delay` is meant to close open streams but is unverified for SSE until the C2-07 live check, so restart the MCP container after the swap).
 
 The shard's `sovereign.mcp` limits are: `wait_cap_seconds` (wait's clamp), `max_body_bytes`
 (request body), `max_result_bytes` (tool result after trimming), and `presence.lease_seconds` and

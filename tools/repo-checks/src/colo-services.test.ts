@@ -408,7 +408,7 @@ describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0
     expect(shard.public).toEqual({
       trusted_proxies: ['127.0.0.1'],
       client_ip_header: 'x-geldar-client-ip',
-      rate_limit: { per_minute: 120, burst: 40 },
+      rate_limit: { per_minute: 600, burst: 120 },
       kill_switch: false,
     });
   });
