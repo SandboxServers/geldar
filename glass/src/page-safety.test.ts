@@ -11,10 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
 import { createHandler } from './http.ts';
+import type { SqlClient } from './query.ts';
 import { hostileRow } from './render-fixtures.ts';
 import { display, toView } from './render-model.ts';
 import { type Doc, renderDetail, renderRow } from './render-view.ts';
-import type { SqlClient } from './query.ts';
 import type { SseHub } from './sse.ts';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
