@@ -4,13 +4,13 @@ import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
 import { accountPage, tokenPage } from './account-pages.ts';
 import type { RegisterConfig } from './config.ts';
 import type { Identity } from './identity.ts';
-import { REFUSED_PAGE, SECURITY_HEADERS } from './pages.ts';
+import { BASE, REFUSED_PAGE, SECURITY_HEADERS } from './pages.ts';
 import { STATE_COOKIE } from './pkce.ts';
+import { KINO_COOKIE_TTL_MS, kinoCookieHeader, signKinoSession } from './session-cookie.ts';
 import type { Store } from './store.ts';
 
 export const SESSION_COOKIE = 'gr_session';
 export const SESSION_TTL_MS = 30 * 60 * 1000;
-const DAY_MS = 86_400_000;
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/;
 const MAX_BODY = 4096;
@@ -27,6 +27,8 @@ export interface AccountDeps {
   readonly store: Store;
   readonly now: () => number;
   readonly log: (line: string) => void;
+  /** Per-owner limiter (R41): seconds to wait, or 0. */
+  readonly ownerCharge?: (ownerId: string) => number;
 }
 
 const cookieOf = (req: IncomingMessage, name: string): string | null => {
@@ -95,8 +97,6 @@ export class Account {
       const found = await store.findOwner(identity.identityHash);
       if (found?.banned) return 'banned' as const;
       if (found) return found.ownerId;
-      if ((await store.countNewOwnersSince(now() - DAY_MS)) >= config.maxNewOwnersPerDay)
-        return 'cap' as const;
       const ownerId = `reg-${identity.identityHash.slice(0, 24)}`;
       await store.createOwner(identity, ownerId);
       return ownerId;
@@ -105,21 +105,6 @@ export class Account {
     if (outcome === 'banned') {
       log(`sign-in refused provider=${identity.provider} reason=banned`);
       return html(res, 403, REFUSED_PAGE, { 'set-cookie': clearState });
-    }
-    if (outcome === 'cap') {
-      log(`sign-in refused provider=${identity.provider} reason=daily-cap`);
-      res.writeHead(429, {
-        'content-type': 'application/json',
-        'retry-after': '3600',
-        'set-cookie': clearState,
-        ...SECURITY_HEADERS,
-      });
-      return void res.end(
-        JSON.stringify({
-          error: { code: 'rate_limited', message: 'Too many requests' },
-          retryAfter: 3600,
-        }),
-      );
     }
     for (const [key, s] of this.sessions) if (now() >= s.expiresAt) this.sessions.delete(key);
     const id = randomBytes(32).toString('base64url');
@@ -130,8 +115,18 @@ export class Account {
       expiresAt: now() + SESSION_TTL_MS,
     });
     res.writeHead(302, {
-      location: '/account',
-      'set-cookie': [clearState, sessionCookie(id, SESSION_TTL_MS / 1000)],
+      location: `${BASE}/account`,
+      'set-cookie': [
+        clearState,
+        sessionCookie(id, SESSION_TTL_MS / 1000),
+        kinoCookieHeader(
+          signKinoSession(config.sessionKey, {
+            identityHash: identity.identityHash,
+            expiresAt: now() + KINO_COOKIE_TTL_MS,
+          }),
+          KINO_COOKIE_TTL_MS / 1000,
+        ),
+      ],
       ...SECURITY_HEADERS,
     });
     res.end();
@@ -150,13 +145,14 @@ export class Account {
 
   /** Handles an account route; false when the path is not one of them. */
   async handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
-    const m = /^\/(account|players|logout)(?:\/(ag-[a-z0-9-]+)\/(token|retire))?$/.exec(
-      url.pathname,
-    );
+    const m =
+      /^\/(account|players|logout)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera))?$/.exec(
+        url.pathname,
+      );
     if (!m) return false;
     const session = this.sessionOf(req);
     if (!session) {
-      res.writeHead(302, { location: '/', ...SECURITY_HEADERS });
+      res.writeHead(302, { location: BASE, ...SECURITY_HEADERS });
       res.end();
       return true;
     }
@@ -180,8 +176,8 @@ export class Account {
       const sid = cookieOf(req, SESSION_COOKIE);
       if (sid) this.sessions.delete(sid);
       res.writeHead(302, {
-        location: '/',
-        'set-cookie': sessionCookie('', 0),
+        location: BASE,
+        'set-cookie': [sessionCookie('', 0), kinoCookieHeader('', 0)],
         ...SECURITY_HEADERS,
       });
       res.end();
@@ -194,7 +190,24 @@ export class Account {
       refuse(res);
       return true;
     }
+    const wait = this.deps.ownerCharge?.(session.ownerId) ?? 0;
+    if (wait > 0 && m[3] !== 'retire') {
+      this.deps.log('post refused reason=rate');
+      res.writeHead(429, {
+        'content-type': 'application/json',
+        'retry-after': String(wait),
+        ...SECURITY_HEADERS,
+      });
+      res.end(
+        JSON.stringify({
+          error: { code: 'rate_limited', message: 'Too many requests' },
+          retryAfter: wait,
+        }),
+      );
+      return true;
+    }
     if (m[1] === 'players' && m[2] === undefined) return this.create(res, session, fields);
+    if (m[3] === 'public-camera') return this.camera(res, session, m[2] ?? '', fields);
     if (m[3] === 'token') return this.mint(res, session, m[2] ?? '');
     return this.retire(res, session, m[2] ?? '');
   }
@@ -259,6 +272,19 @@ export class Account {
     this.deps.log('token minted');
     html(res, 200, tokenPage(playerId, value));
     return true;
+  }
+
+  private async camera(
+    res: ServerResponse,
+    s: Session,
+    playerId: string,
+    f: URLSearchParams,
+  ): Promise<true> {
+    const value = f.get('value');
+    if (value !== 'on' && value !== 'off') return this.show(res, s, 'That setting is not valid.');
+    const ok = await this.deps.store.setPublicCamera(s.identityHash, playerId, value === 'on');
+    this.deps.log(ok ? 'public camera set' : 'public camera refused');
+    return this.show(res, s, ok ? 'Public camera updated.' : 'That player cannot be changed.');
   }
 
   private async retire(res: ServerResponse, s: Session, playerId: string): Promise<true> {

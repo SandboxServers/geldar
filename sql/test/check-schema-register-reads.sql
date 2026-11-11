@@ -31,8 +31,8 @@ BEGIN
   step := 'gates of 0012: read functions and input gates';
   BEGIN
     SET LOCAL ROLE geldar_register;
-    PERFORM register_create_owner(decode(repeat('d1', 32), 'hex'), 'github', 'reg-read-a', 'a');
-    PERFORM register_create_owner(decode(repeat('d2', 32), 'hex'), 'github', 'reg-read-b', 'b');
+    PERFORM register_create_owner(decode(repeat('d1', 32), 'hex'), 'microsoft', 'reg-read-a', 'a');
+    PERFORM register_create_owner(decode(repeat('d2', 32), 'hex'), 'microsoft', 'reg-read-b', 'b');
     PERFORM register_create_player(decode(repeat('d1', 32), 'hex'), 'ag-reg-read-01', 'ag_reg_read_01', 'reada',
                                    'claude-code', 'test', 'reg-tok-r1', decode(repeat('d3', 32), 'hex'));
     IF (SELECT owner_id FROM register_find_owner(decode(repeat('d1', 32), 'hex'))) IS DISTINCT FROM 'reg-read-a'
@@ -49,13 +49,13 @@ BEGIN
       RAISE EXCEPTION 'schema check: register_find_owner must answer banned for a banned identity only';
     END IF;
     -- F27: the bounds themselves are accepted (display 100, name 64)
-    PERFORM register_create_owner(decode(repeat('d8', 32), 'hex'), 'github', 'reg-bound-disp', repeat('x', 100));
+    PERFORM register_create_owner(decode(repeat('d8', 32), 'hex'), 'microsoft', 'reg-bound-disp', repeat('x', 100));
     PERFORM register_create_player(decode(repeat('d1', 32), 'hex'), 'ag-reg-read-05', 'ag_reg_read_05', repeat('n', 64),
                                    'claude-code', 'test', 'reg-tok-r5', decode(repeat('d9', 32), 'hex'));
     IF (SELECT count(*) FROM register_list_players(decode(repeat('d1', 32), 'hex'))) <> 2 THEN
       RAISE EXCEPTION 'schema check: a 64-character name must be accepted';
     END IF;
-    PERFORM register_create_owner(decode(repeat('da', 32), 'hex'), 'github', 'reg-' || repeat('a', 36), 'x');
+    PERFORM register_create_owner(decode(repeat('da', 32), 'hex'), 'microsoft', 'reg-' || repeat('a', 36), 'x');
     IF (SELECT count(*) FROM register_list_players(decode(repeat('d1', 32), 'hex'))) <> 2
        OR NOT EXISTS (SELECT 1 FROM register_list_players(decode(repeat('d1', 32), 'hex')) WHERE player_id = 'ag-reg-read-01')
        OR EXISTS (SELECT 1 FROM register_list_players(decode(repeat('d2', 32), 'hex'))) THEN
@@ -67,13 +67,13 @@ BEGIN
     -- owner id shape and length, display length, name length, shard shape: each is 22023
     FOR bad IN SELECT unnest(ARRAY['Bad Id', '-x', 'colo', 'reg-', 'reg-Upper', 'reg-' || repeat('a', 37)]) AS v LOOP
       BEGIN
-        PERFORM register_create_owner(decode(repeat('d4', 32), 'hex'), 'github', bad.v, 'x');
+        PERFORM register_create_owner(decode(repeat('d4', 32), 'hex'), 'microsoft', bad.v, 'x');
         RAISE EXCEPTION 'schema check: register_create_owner took the owner id %', bad.v USING ERRCODE = 'P0002';
       EXCEPTION WHEN invalid_parameter_value THEN NULL;
       END;
     END LOOP;
     BEGIN
-      PERFORM register_create_owner(decode(repeat('d4', 32), 'hex'), 'github', 'reg-long-display', repeat('x', 101));
+      PERFORM register_create_owner(decode(repeat('d4', 32), 'hex'), 'microsoft', 'reg-long-display', repeat('x', 101));
       RAISE EXCEPTION 'schema check: register_create_owner took a 101-character display' USING ERRCODE = 'P0002';
     EXCEPTION WHEN invalid_parameter_value THEN NULL;
     END;
@@ -95,23 +95,57 @@ BEGIN
       RAISE EXCEPTION 'schema check: register_create_player took a 65-character name' USING ERRCODE = 'P0002';
     EXCEPTION WHEN invalid_parameter_value THEN NULL;
     END;
-    -- F28: the database holds the daily new-owner cap: the 10th owner of the day is allowed, the 11th refused
-    step := 'gates of 0013: daily owner cap';
-    IF register_count_new_owners(now() - interval '24 hours') >= 10 THEN
-      RAISE EXCEPTION 'schema check: the cap probe needs fewer than 10 owners to start';
-    END IF;
-    WHILE register_count_new_owners(now() - interval '24 hours') < 10 LOOP
-      PERFORM register_create_owner(decode(lpad(to_hex(100 + register_count_new_owners(now() - interval '24 hours')), 2, '0') || repeat('ee', 31), 'hex'),
-                                    'github', 'reg-cap-' || register_count_new_owners(now() - interval '24 hours'), 'cap');
+    -- R41: the daily cap is gone (0014): twelve owners in a day are accepted
+    step := 'gates of 0014: no daily owner cap';
+    FOR i IN 1..12 LOOP
+      PERFORM register_create_owner(decode(lpad(to_hex(100 + i), 2, '0') || repeat('ee', 31), 'hex'),
+                                    'microsoft', 'reg-nocap-' || i, 'nocap');
     END LOOP;
+    -- R40: only Microsoft sign-ups are taken
+    step := 'gates of 0014: microsoft only';
     BEGIN
-      PERFORM register_create_owner(decode(repeat('ef', 32), 'hex'), 'github', 'reg-cap-over', 'cap');
-      RAISE EXCEPTION 'schema check: register_create_owner took an 11th owner in a day' USING ERRCODE = 'P0002';
-    EXCEPTION WHEN program_limit_exceeded THEN NULL;
+      PERFORM register_create_owner(decode(repeat('ef', 32), 'hex'), 'github', 'reg-gh-refused', 'gh');
+      RAISE EXCEPTION 'schema check: register_create_owner took a github identity' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
     END;
-    IF register_count_new_owners(now() - interval '24 hours') <> 10 THEN
-      RAISE EXCEPTION 'schema check: a refused owner must leave no row';
+    -- Kino: kino_admins is readable by glass and writable by no application role
+    step := 'gates of 0014: kino_admins grants';
+    IF NOT has_table_privilege('geldar_glass', 'kino_admins', 'SELECT')
+       OR has_table_privilege('geldar_glass', 'kino_admins', 'INSERT')
+       OR has_table_privilege('geldar_glass', 'kino_admins', 'UPDATE')
+       OR has_table_privilege('geldar_glass', 'kino_admins', 'DELETE')
+       OR has_any_column_privilege('geldar_register', 'kino_admins', 'SELECT')
+       OR has_table_privilege('geldar_register', 'kino_admins', 'INSERT')
+       OR has_table_privilege('geldar_mcp', 'kino_admins', 'INSERT') THEN
+      RAISE EXCEPTION 'schema check: kino_admins must be glass-read-only and have no application writer';
     END IF;
+    IF NOT has_column_privilege('geldar_glass', 'agents', 'public_camera', 'SELECT')
+       OR has_column_privilege('geldar_glass', 'agents', 'public_camera', 'UPDATE')
+       OR has_column_privilege('geldar_register', 'agents', 'public_camera', 'UPDATE') THEN
+      RAISE EXCEPTION 'schema check: public_camera must be glass-readable and written only through the definer function';
+    END IF;
+    -- Kino: the owner sets public_camera on their own agent; another identity cannot
+    step := 'gates of 0014: public_camera owner check';
+    PERFORM register_create_owner(decode(repeat('c1', 32), 'hex'), 'microsoft', 'reg-cam-a', 'a');
+    PERFORM register_create_owner(decode(repeat('c2', 32), 'hex'), 'microsoft', 'reg-cam-b', 'b');
+    PERFORM register_create_player(decode(repeat('c1', 32), 'hex'), 'ag-cam-01', 'ag_cam_01', 'cama',
+                                   'claude-code', 'test', 'reg-tok-c1', decode(repeat('c3', 32), 'hex'));
+    IF register_set_public_camera(decode(repeat('c2', 32), 'hex'), 'ag-cam-01', TRUE) THEN
+      RAISE EXCEPTION 'schema check: a non-owner switched public_camera';
+    END IF;
+    IF NOT register_set_public_camera(decode(repeat('c1', 32), 'hex'), 'ag-cam-01', TRUE) THEN
+      RAISE EXCEPTION 'schema check: the owner could not switch public_camera';
+    END IF;
+    RESET ROLE;
+    IF NOT (SELECT public_camera FROM agents WHERE agent_id = 'ag_cam_01') THEN
+      RAISE EXCEPTION 'schema check: the owner switch did not change public_camera';
+    END IF;
+    SET LOCAL ROLE geldar_register;
+    BEGIN
+      PERFORM register_set_public_camera(decode(repeat('c9', 32), 'hex'), 'ag-cam-01', FALSE);
+      RAISE EXCEPTION 'schema check: an unknown identity switched public_camera' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
     RESET ROLE;
     RAISE EXCEPTION 'probe rollback' USING ERRCODE = 'PR001';
   EXCEPTION WHEN SQLSTATE 'PR001' THEN NULL;

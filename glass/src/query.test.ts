@@ -12,8 +12,8 @@ import {
   thoughtsAfter,
 } from './query.ts';
 
-/** The five tables migration 0005 grants to geldar_glass, and nothing else. */
-const ALLOWED_TABLES = ['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+/** The five tables migration 0005 grants to geldar_glass, and kino_admins (migration 0014); nothing else. */
+const ALLOWED_TABLES = ['thoughts', 'actions', 'receipts', 'intents', 'agents', 'kino_admins'];
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const WRITE_WORDS = /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
 const SQL_WORD = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
