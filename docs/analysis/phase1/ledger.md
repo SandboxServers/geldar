@@ -1,0 +1,71 @@
+# Phase 1 ledger
+
+Status as of 2026-11-10, branch `docs/phase1-reconcile`. One row per wave packet, taken from the ledger-row tables of the five wave files: `packets/c1-packets.md` (Ledger rows), `packets/c2-packets.md` (5.3), `packets/c2b-packets.md` (Ledger rows), `packets/c3-packets.md` (10.4), and `packets/c4-packets.md` (10.7). Where a table has no `depends` or `lane` column (c2b, c3), those come from the card's `depends-on` and `lane` lines.
+
+Conventions:
+
+- **id** is the short form used in the wave tables (`C1-00`, `C2b-00`, `C3-00`). A card may write the same packet as `P1-C1-00` or `P1-C2b-00`; it is the same packet.
+- **status** is copied from the wave file. `B` means buildable now. `O` means it waits on an owner answer or on access. `planned` is the C2 wave's own word.
+- **decision numbers** come from `packets/decision-number-registry.md`. A row with no number writes no record.
+- **owner-blocked?** is `Y` when the status carries `O`, or when the registry says an owner confirmation (0076 to 0080) gates the packet. The reason is in brackets.
+- Campaign rows (10.8 of c4, CAMP-C4-A to E) are not wave packets and are not listed here. They are in `packets/c4-packets.md` section 10.8.
+
+The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by this file.
+
+| id | title | wave | lane | depends | status | decision numbers | owner-blocked? |
+|---|---|---|---|---|---|---|---|
+| C1-00 | Contract for the colo shard, repo gates | C1 | A | none | B | 0081 | N |
+| C1-01 | Split over-500 files, quarantine flaky tests | C1 | B | none | B | none | N |
+| C1-02 | Integration: colo compose, shard config, geldar.ps1 | C1 | A | C1-00 | B/O | 0082 | Y (owner items) |
+| C1-03 | Body-host and Mind-host images | C1 | C | C1-00 | B | 0083 | Y [0078] |
+| C1-04 | Non-PowerShell deploy by pull | C1 | D | C1-00 | B/O | 0084 | Y [deploy account] |
+| C1-05a | Append-only journals, reset creates a new shard | C1 | E | C1-00 | B | 0085 | N |
+| C1-05b | Backup v1 per 0076 | C1 | E | C1-00, C1-05a | B/O | 0086 | Y [0076, destination] |
+| C1-06a | NATS overlay live test (owns `compose/nats-auth.yml`) | C1 | F | C1-00 | B | 0087 | Y [0080] |
+| C1-06b | Component credential reads | C1 | F | C1-06a | B | 0087 (cited, no new record) | N |
+| C1-07 | Metrics exporters, replay bound | C1 | C | C1-00 | B/O | 0088 | Y [telemetry endpoint] |
+| C1-08 | Crash hygiene | C1 | D | C1-00 | B | 0089 | N |
+| C1-09 | BlueMap pinned, internal | C1 | B | C1-00 | B | none (extends 0082) | N |
+| C1-10 | Node deploy, restore test, first ranger, smoke, load | C1 | ops | C1-02 to C1-09 | O | none | Y [0078, node] |
+| C2-00 | Contract unblocker for the public surfaces | C2 | A | C1-00 | planned | 0090 | N |
+| C2-01 | Public MCP behind Caddy | C2 | A | C2-00 | planned | 0091 | Y [0077] |
+| C2-02 | Velocity on the new TCP port | C2 | B | C2-00 | planned | 0092 | N |
+| C2-03 | Glass hardening (0072) | C2 | C | C2-00 | planned | 0093 | N |
+| C2-04 | BlueMap public through Caddy | C2 | D | C1-09, C2-00 | planned | 0094 | N |
+| C2-05 | Look projection cleanup and MCP image slimming | C2 | E | C2-00 | planned | 0095 | N |
+| C2-06 | External port scan tool | C2 | F | C2-00 | planned | none | N |
+| C2-07 | Integration, public deploy, scan, live run | C2 | A | C2-01 to C2-06, 0077, 0080 | planned (O) | 0096 | Y [0077, 0080, node access] |
+| C2-R1 | Review: MCP public endpoint | C2 | R | C2-00, C2-01, C2-05 | planned | none (fix round 0097 only if needed) | N |
+| C2-R2 | Review: Velocity and public Minecraft port | C2 | R | C2-02, C2-07 desktop | planned | none (fix round 0098 only if needed) | N |
+| C2-R3 | Review: Glass and BlueMap | C2 | R | C2-03, C2-04 | planned | none (fix round 0099 only if needed) | N |
+| C2-R4 | Review: NATS, node and Caddy | C2 | R | C2-07 desktop | planned | none | N |
+| C2-R5 | Fix round for C2-R1 to R4 | C2 | R | C2-R1 to R4 | planned | 0097 to 0099 only if needed | N |
+| C2b-00 | Lakitu feed contract | C2b | A | C1-00 | B | 0100 | N |
+| C2b-01 | Geldar-Core Lakitu feed plugin | C2b | A | C2b-00 | B | 0101 | N |
+| C2b-02 | Lakitu relay, login roles, cap, audit | C2b | B | C2b-00, C2b-01 | B (login needs 0077) | 0102 | Y [0077] |
+| C2b-03a | Voxel mesher and scene, placeholder palette | C2b | C | C2b-00 | B | 0103 | N |
+| C2b-03b | Follow, orbit, free, collision | C2b | C | C2b-03a | B | 0103 | N |
+| C2b-03c | Multi-pane page, target picker | C2b | D | C2b-03a, C2b-03b, C2b-02 | B (live login is O) | 0103 | Y [0075 point 5, 0077] |
+| C2b-04 | Leak test, cap test, parity test | C2b | E | C2b-01, C2b-02 | B | 0104 | N |
+| C2b-05 | Integration, texture swap, live browser run | C2b | A | C2b-03c, C2b-04, C2-03 | B/O | none | Y [texture licence, login] |
+| C3-00 | Sovereign intent source, wait cursor, roster schema | C3 | A | C1-00 | B | 0105 | N |
+| C3-01 | Sovereign intent, action and receipt rows | C3 | A | C3-00 | B | 0106 | N |
+| C3-02 | Honest sleep mark | C3 | B | none | B | 0107 | N |
+| C3-03 | Build handler, shelter intent, prompt v6 | C3 | C | C3-00, C3-02, C3-05 | B | 0114 | N |
+| C3-04 | Roster and owner cap in the database | C3 | D | C3-00, C1-08 | B | 0108 | N |
+| C3-05 | Prepared receipt and per-life wait cursor | C3 | E | C3-00 | B | 0109 | N |
+| C3-06 | Body crash reconciliation on boot | C3 | E | C3-05, C3-00 | B | 0110 | N |
+| C3-07 | Bench for N = 1, 5, 10, 15 | C3 | F | C1-10, C3-06 | B/O | 0111 | Y [O-4, live rows] |
+| C3-08 | C3 runbooks | C3 | F | none | B | none | N |
+| C3-09 | Chaos scenario scripts and runner | C3 | F | C3-06, C3-08, C1-05b | B/O | 0112 | Y [O-3, live day] |
+| C3-10 | Roll-out, chaos day and soak gate | C3 | A | C3-01 to C3-09, C1-10 | O | 0113 | Y [O-soak, O-3] |
+| C4-00 | Contract unblocker: chat, books, credits, life, hibernation, Thinker enrolment | C4 | A | C3-00 | B | 0115 | N |
+| C4-01 | Proximity chat and the attention test | C4 | A | C4-00 | B | 0116 | N |
+| C4-02a | Books and skills: copy stamp and learned_from | C4 | B | C4-00 | B | 0117 | N |
+| C4-02b | Procedure library: the mechanism demo | C4 | B | C4-02a | B (numbers O) | 0118 | Y [demo pass bar] |
+| C4-03 | Sleep reflection and hibernation | C4 | C | C4-00, C3-02 | B (live hour O) | 0119 | Y [live hour, 0078] |
+| C4-04 | Credits allowance: reserve before dispatch, refund on failure | C4 | D | C4-00, 0079 | B (numbers O) | 0120 | Y [0079] |
+| C4-05 | Shrine pool and birth: idempotent offers, server life IDs | C4 | E | C4-00, C3-05, 0079 | B (values O) | 0121 | Y [0079] |
+| C4-06 | Prompt v7 and wake wording | C4 | C | C4-01, C4-02b, C4-03 | B | 0122 | N |
+| C4-07 | Thinker gateway: per-Thinker NATS users, enrolment | C4 | F | C4-00, 0078, 0080 | B; enrolment O | 0123, 0124 | Y [0078, 0080, enrolment] |
+| C4-08 | Integration and ops: Phase 1 exit run on the node | C4 | G | C4-00 to C4-07 | O | 0125 (0126 owner ruling, not used by a packet) | Y [O-soak, 0126] |
