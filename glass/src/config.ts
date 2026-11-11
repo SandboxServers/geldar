@@ -20,6 +20,8 @@ export interface GlassConfig {
   pg: { host: string; port: number; user: string; database: string; password: string };
   /** Most SSE clients at once; the next one gets 503. */
   sseMaxClients: number;
+  /** Most SSE streams for one client address (its rate-limit key); the next one gets 503. */
+  ssePerClient?: number;
   /** Frames held for one slow SSE client; the oldest is dropped when it is full. */
   sseBufferFrames: number;
   /** How often the stream looks for new thoughts. */
@@ -132,6 +134,7 @@ export function loadGlassConfig(
       password: readFile(passwordFile).trim(),
     },
     sseMaxClients: intSetting(env, 'GELDAR_GLASS_SSE_MAX_CLIENTS', 8),
+    ssePerClient: intSetting(env, 'GELDAR_GLASS_SSE_PER_CLIENT', 2),
     sseBufferFrames: intSetting(env, 'GELDAR_GLASS_SSE_BUFFER_FRAMES', 100),
     ssePollMs: intSetting(env, 'GELDAR_GLASS_SSE_POLL_MS', 1000),
     enabled: flagSetting(env, 'GELDAR_GLASS_ENABLED', true),

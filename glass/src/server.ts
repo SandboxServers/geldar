@@ -57,6 +57,7 @@ export function buildGlass(config: GlassConfig): GlassParts {
   };
   const hub = new SseHub({
     maxClients: config.sseMaxClients,
+    perClient: config.ssePerClient ?? 2,
     bufferFrames: config.sseBufferFrames,
     pollMs: config.ssePollMs,
     heartbeatMs: HEARTBEAT_MS,

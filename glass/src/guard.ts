@@ -41,7 +41,11 @@ function ipv6Groups(address: string): number[] | null {
   const tail = halves.length === 2 ? parse(halves[1] ?? '') : [];
   const missing = 8 - head.length - tail.length;
   if (halves.length === 2 ? missing < 1 : missing !== 0) return null;
-  const all = [...head, ...Array.from({ length: halves.length === 2 ? missing : 0 }, () => '0'), ...tail];
+  const all = [
+    ...head,
+    ...Array.from({ length: halves.length === 2 ? missing : 0 }, () => '0'),
+    ...tail,
+  ];
   if (!all.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
   return all.map((g) => Number.parseInt(g, 16));
 }

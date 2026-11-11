@@ -155,6 +155,7 @@ async function serveRoute(
   res: ServerResponse,
   deps: GlassHandlerDeps,
   policy: PublicPolicy,
+  client: string,
 ): Promise<void> {
   if (name === 'agents') {
     sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
@@ -186,7 +187,7 @@ async function serveRoute(
     sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
     return;
   }
-  if (!deps.hub.attach(res)) sendJson(res, 503, { error: 'too many streams' });
+  if (!deps.hub.attach(res, client)) sendJson(res, 503, { error: 'too many streams' });
 }
 
 /** The Host values Glass answers to. A name that another site controls is not one of them. */
@@ -258,7 +259,7 @@ export function createHandler(deps: GlassHandlerDeps) {
       return;
     }
     try {
-      await serveRoute(route.name, route.params, route.query, res, deps, policy);
+      await serveRoute(route.name, route.params, route.query, res, deps, policy, client);
     } catch (err) {
       if (err instanceof BadRequest) {
         sendJson(res, 400, { error: err.message });
