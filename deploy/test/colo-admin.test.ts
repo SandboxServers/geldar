@@ -335,6 +335,25 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(starts(calls(fx))).toEqual([]);
   });
 
+  it('runs player-add in the admin container, and does not exit on the host path first', () => {
+    const fx = fixture();
+    const r = run(fx, REAL, ['player-add', 'ag-clara-01']);
+    expect(r.code).toBe(0);
+    expect(
+      calls(fx).some((c) => c.endsWith('--profile admin run --rm admin player-add ag-clara-01')),
+    ).toBe(true);
+    expect(starts(calls(fx))).toHaveLength(1);
+  });
+
+  it('refuses player-add when the release manifest has no GELDAR_ADMIN_IMAGE', () => {
+    const fx = fixture();
+    writeFileSync(fx.releaseFile, release(false));
+    const r = run(fx, REAL, ['player-add', 'ag-clara-01']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('no GELDAR_ADMIN_IMAGE');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
   describe('per-player hosts (C1-10b)', () => {
     const SHARD_TEXT =
       'sovereign:\n  players:\n    - { player_id: ag-jason-01, life_id: ag_jason_01, name: Jason }\n    - { player_id: ag-clara-01, life_id: ag_clara_01, name: Clara }\n';
