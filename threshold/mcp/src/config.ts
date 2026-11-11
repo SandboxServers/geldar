@@ -17,8 +17,10 @@ import {
   replayWindow,
   text,
 } from './config-read.js';
+import { type PublicConfig, publicConfig } from './config-public.js';
 
 export type { ClientIpHeader } from './config-read.js';
+export type { PublicConfig } from './config-public.js';
 
 /** One sovereign ranger as the shard file lists it (`sovereign.players`). */
 export interface PlayerConfig {
@@ -88,6 +90,8 @@ export interface McpConfig {
   chat: { radius: number; maxChars: number };
   plan: { expiresAfterTicks: number };
   sovereign: SovereignConfig;
+  /** The `public` block: the public surfaces' proxy trust, header, rate limit and kill switch. */
+  public: PublicConfig;
   nats: { url: string };
   postgres: {
     host: string;
@@ -189,7 +193,8 @@ export function parseMcpConfig(doc: unknown, options: LoadOptions = {}): McpConf
   const plan = map(map(mind.plan, 'mind.plan'), 'mind.plan');
   const chat = map(root.chat, 'chat');
   const sovereign = sovereignConfig(map(root.sovereign, 'sovereign'), agentUsername);
-  const http = httpConfig(env, sovereign);
+  const publicSurface = publicConfig(root.public, sovereign);
+  const http = httpConfig(env, sovereign, publicSurface);
   return {
     shard,
     tickRate: int(root, 'tick_rate', 'shard file', 1, 200),
@@ -200,6 +205,7 @@ export function parseMcpConfig(doc: unknown, options: LoadOptions = {}): McpConf
     },
     plan: { expiresAfterTicks: int(plan, 'expires_after_ticks', 'mind.plan', 1, 1_000_000) },
     sovereign,
+    public: publicSurface,
     nats: { url: natsUrl(env.GELDAR_NATS_URL) },
     postgres: {
       host: envText(env, 'POSTGRES_HOST', '127.0.0.1'),
@@ -337,7 +343,11 @@ function players(entries: unknown[], agentUsername: string): PlayerConfig[] {
 }
 
 /** Builds the HTTP settings from the environment: bind address, public host and the Host allow-list. */
-function httpConfig(env: Env, sovereign: SovereignConfig): McpConfig['http'] {
+function httpConfig(
+  env: Env,
+  sovereign: SovereignConfig,
+  publicSurface: PublicConfig,
+): McpConfig['http'] {
   const inContainer = containerFlag(env.GELDAR_MCP_IN_CONTAINER);
   const bind = envText(env, 'GELDAR_MCP_BIND', '127.0.0.1');
   if (bind === '0.0.0.0') {
@@ -357,13 +367,13 @@ function httpConfig(env: Env, sovereign: SovereignConfig): McpConfig['http'] {
   }
   const trustedProxies =
     env.GELDAR_MCP_TRUSTED_PROXIES === undefined
-      ? sovereign.trustedProxies
+      ? publicSurface.trustedProxies
       : envProxyList(env.GELDAR_MCP_TRUSTED_PROXIES);
   // A public host means traffic arrives through a proxy; with no proxy named, every client would
   // share the proxy's address and its buckets.
   if (publicHost !== null && trustedProxies.length === 0) {
     throw new Error(
-      'GELDAR_MCP_PUBLIC_HOST is set and no trusted proxy is named (GELDAR_MCP_TRUSTED_PROXIES or sovereign.mcp.trusted_proxies): the public host needs its proxy trusted',
+      'GELDAR_MCP_PUBLIC_HOST is set and no trusted proxy is named (GELDAR_MCP_TRUSTED_PROXIES, public.trusted_proxies or sovereign.mcp.trusted_proxies): the public host needs its proxy trusted',
     );
   }
   return {
@@ -374,7 +384,7 @@ function httpConfig(env: Env, sovereign: SovereignConfig): McpConfig['http'] {
     trustedProxies,
     clientIpHeader:
       env.GELDAR_MCP_CLIENT_IP_HEADER === undefined
-        ? sovereign.clientIpHeader
+        ? publicSurface.clientIpHeader
         : headerName(env.GELDAR_MCP_CLIENT_IP_HEADER, 'GELDAR_MCP_CLIENT_IP_HEADER'),
     maxConnections: sovereign.maxConnections,
     maxConnectionsPerAddress: sovereign.maxConnectionsPerAddress,
