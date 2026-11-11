@@ -1,6 +1,7 @@
 #!/bin/bash
 # Installs, switches and removes the Geldar public sites in the shared Caddy (decisions 0071, 0094; card C2-07).
-# Usage: colo-public.sh install | off <site|all> | on <site|all> | remove | status      (sites: map glass mcp)
+# Usage: colo-public.sh install [site...] | off <site|all> | on <site|all> | remove | status      (sites: map glass mcp)
+# install with no site installs all of map glass mcp (all become live). install mcp names sites: only those get their live file and\n# rendered store files; the other sites keep their state (absent stays absent, off stays off, live stays live).
 # Caddy is a host-network container that serves other sites. It is only validated and reloaded here, never restarted,
 # recreated or started (no `docker restart`, `up` or `run`). Its Caddyfile gets one `import /config/geldar/*.caddy` line.
 # Caddy substitutes {$VAR} from its own process environment, which cannot change without a restart, so install renders
@@ -24,7 +25,7 @@ require_env() {
 }
 
 usage() {
-  die "usage: colo-public.sh install | off <map|glass|mcp|all> | on <map|glass|mcp|all> | remove | status"
+  die "usage: colo-public.sh install [map|glass|mcp ...] (no site = all three go live) | off <map|glass|mcp|all> | on <map|glass|mcp|all> | remove | status"
 }
 
 site_list() {
@@ -47,7 +48,7 @@ render_all() {
   [ -n "$domain" ] || die "GELDAR_DOMAIN is missing from the env file"
   printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$' || die "GELDAR_DOMAIN is not a plain host name"
   mkdir -p "$WORK/render"
-  for s in $SITES; do
+  for s in $INSTALL_SITES; do
     up_var=GELDAR_$(printf '%s' "$s" | tr 'a-z' 'A-Z')_UPSTREAM
     up=$(env_value "$up_var")
     [ -n "$up" ] || die "$up_var is missing from the env file"
@@ -96,7 +97,7 @@ drop_import() {
 install_rendered() {
   act mkdir -p "$GEL_DIR/store"
   act chmod 0755 "$GEL_DIR" "$GEL_DIR/store"
-  for s in $SITES; do
+  for s in $INSTALL_SITES; do
     for f in "$s.caddy" "$s-off.caddy"; do
       act install -m 0644 "$WORK/render/$f" "$GEL_DIR/store/$f"
     done
@@ -126,7 +127,21 @@ restore_geldar() {
   fi
 }
 
+# Validates the site names given to install (none = every site) into $INSTALL_SITES.
+install_site_list() {
+  INSTALL_SITES=""
+  if [ "$#" -eq 0 ]; then INSTALL_SITES=$SITES; return 0; fi
+  for s in "$@"; do
+    case $s in
+      map | glass | mcp) ;;
+      *) die "unknown site: $s (sites: map glass mcp)" ;;
+    esac
+    case " $INSTALL_SITES " in *" $s "*) ;; *) INSTALL_SITES="$INSTALL_SITES $s" ;; esac
+  done
+}
+
 cmd_install() {
+  install_site_list "$@"
   require_env GELDAR_CADDY_CONTAINER GELDAR_CADDY_CONFIG_DIR GELDAR_CADDY_FILE GELDAR_PUBLIC_ENV
   need docker
   load_node_env
@@ -149,7 +164,7 @@ cmd_install() {
     die "caddy validate failed; the Caddyfile is restored from $BACKUP and the previous site files are put back (none if this was the first install)"
   fi
   caddy_reload
-  say "installed: sites rendered, import present, caddy reloaded"
+  say "installed: ${INSTALL_SITES# } rendered, import present, caddy reloaded"
 }
 
 # Copies the stored live or off file of each site over its top-level file; on validate failure puts the old ones back.
@@ -225,7 +240,7 @@ require_env GELDAR_CADDY_CONFIG_DIR
 GEL_DIR=$GELDAR_CADDY_CONFIG_DIR/geldar
 if [ "$DRY_RUN" = 1 ]; then say "DEPLOY_DRY_RUN=1: nothing is changed"; fi
 case $cmd in
-  install) cmd_install ;;
+  install) shift; cmd_install "$@" ;;
   off | on) cmd_switch "$cmd" "${2:-}" ;;
   remove) cmd_remove ;;
   status) cmd_status ;;

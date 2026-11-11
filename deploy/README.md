@@ -275,6 +275,8 @@ under `$GELDAR_CADDY_CONFIG_DIR/geldar/` and leaves the repo files alone. It ref
 
 Order:
 
+Per-site install: `bash deploy/colo-public.sh install mcp` (or any of `map glass mcp`, several allowed) renders and publishes only the named sites. The others keep their state (absent stays absent, off stays off, live stays live); unknown names are refused. Bare `install` (no site) still makes all three live. `status` prints each site as not installed, off or on.
+
 1. `DEPLOY_DRY_RUN=1 bash deploy/colo-public.sh install` (prints every state change, changes nothing).
 2. `bash deploy/colo-public.sh install`: renders the sites, backs up the Caddyfile to `<file>.bak-geldar-<time>`, adds
    the single line `import /config/geldar/*.caddy` if absent, validates, then reloads. If validate fails, the
