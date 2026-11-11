@@ -108,3 +108,30 @@ C1-10 correction: the owner asked whether the first ranger is Jason. It is: Jaso
   - colo-status prints both.
 - **R33.** R4-09 (the register role can insert a token for any player): C2-08b must restrict inserts to the role's own players, through a SECURITY DEFINER function or a check against `owner_id`. Nothing changes before the service is deployed.
 - **Deploy.** Colo stack internal deploy dispatched at ee87caa, with images from colo-images run 43017919759 (baffba9).
+
+## Colo internal deploy (2026-11-11)
+
+**Result.** Deployed main 66f23c5 with images from colo-images run 43026058155 (ceefe49). Production unchanged; no public overlay; the MC port is unset.
+
+**Checks:**
+- MCP: 401 with the 0090 body.
+- Glass: 200.
+- bluemap-web: 404, expected because nothing is rendered yet.
+- Paper and Velocity: plugins loaded; the registry watch is running; no permission violations.
+
+**What it took.** Six attempts, fixed by PRs #110, #112, #113 and #114 (C2-07f to C2-07i):
+- secret path order;
+- the bind-mount parse;
+- a duplicate NATS store_dir;
+- containers left on a removed network;
+- velocity's uid;
+- caddy's NET_BIND_SERVICE capability.
+
+NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-nats-*`.
+
+**Settings on the node.** Subnet 172.23.0.0/16; gateway trusted per R32, persisted in `state/node.env`.
+
+**Open, now with C2-07j:**
+- the geldar-skins bucket is absent and velocity can no longer create it;
+- animus exits (no Ollama; the Mind is off per 0134);
+- the src-swap hazard.
