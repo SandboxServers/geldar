@@ -132,10 +132,11 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   animus: ['ANIMUS', '1', '2048m', 256],
   'geldar-mcp': ['GELDAR_MCP', '0.5', '512m', 128],
   'players-host': ['PLAYERS_HOST', '1', '2048m', 256],
+  admin: ['ADMIN', '0.5', '512m', 128],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the nine services the budget totals cover', () => {
+  it('names exactly the ten services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 

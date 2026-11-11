@@ -91,10 +91,11 @@ function budgets(): { cpus: number; memMiB: number; services: string[] } {
 }
 
 describe('shards/colo.yaml: the total covers the per-service budgets (always checked)', () => {
-  it('has a per-service CPU and memory budget for all nine colo services', () => {
+  it('has a per-service CPU and memory budget for all ten colo services', () => {
     const { services } = budgets();
     expect(services.sort()).toEqual(
       [
+        'ADMIN',
         'ANIMUS',
         'EVENTSINK',
         'GELDAR_MCP',
