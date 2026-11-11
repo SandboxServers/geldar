@@ -214,7 +214,14 @@ function fixture(publishedPort = '25567'): Fixture {
   delete env.Path;
   Object.assign(env, {
     // The shims come first. The directory of the chosen sh follows, so that Git for Windows' coreutils resolve.
-    PATH: [bin, SH === 'sh' ? '' : dirname(SH), process.env.PATH ?? process.env.Path ?? '']
+    // On Windows the spawn gets only Git for Windows' tools (usr/bin and mingw64/bin for curl), not the full Windows PATH: MSYS
+    // converts the whole PATH on every fork, so a long PATH made one deploy run cost over a minute (see the FX-DEPLOY-WIN note).
+    PATH: [
+      bin,
+      SH === 'sh' ? '' : dirname(SH),
+      process.platform === 'win32' ? join(dirname(SH), '..', '..', 'mingw64', 'bin') : '',
+      process.platform === 'win32' ? '' : (process.env.PATH ?? ''),
+    ]
       .filter(Boolean)
       .join(delimiter),
     GELDAR_COLO_COMPOSE: posix(COMPOSE),
