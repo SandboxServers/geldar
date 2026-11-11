@@ -267,22 +267,23 @@ function Initialize-NatsAuth([string] $Shard) {
   Write-Host 'created compose/secrets/nats-auth.conf'
 }
 
-# The per-user allow lists of decision 0067. Subjects are per shard; per-life subjects use `*`
-# because the lives are not known when the file is written (the gap the decision records).
+# The per-user allow lists of decision 0087, the table the live test proves (threshold/mcp/test/nats-auth.it.test.ts).
+# Every subject starts with the shard, or is a KV bucket, a JetStream API subject or an inbox. No role is scoped to one
+# life: a life is not known when the file is written, so the application checks its own life's subjects.
 function Get-NatsUsers([string] $Shard) {
   $s = $Shard
   $js = @('$JS.API.>', '$JS.ACK.>', '_INBOX.>')
   $kv = { param($b) "`$KV.$b.>" }
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
   return [ordered]@{
-    body = @{ Pub = @("geldar.$s.*") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'));
-      Sub = @("geldar.$s.body.*.snapshot", "geldar.$s.body.*.plan", "geldar.$s.body.*.book", '_INBOX.>') }
-    mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.*.snapshot", "geldar.$s.body.*.plan");
+    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'));
+      Sub = @("geldar.$s.body.>", '_INBOX.>') }
+    mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       Sub = @('_INBOX.>') }
     eventsink = @{ Pub = @("geldar.$s.dlq") + $js; Sub = @('_INBOX.>') }
-    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.*.book", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
+    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
     velocity = @{ Pub = @((& $kv 'geldar-life-registry'), (& $kv 'geldar-skins')) + $js; Sub = @('_INBOX.>') }
-    paper = @{ Pub = @("geldar.$s.*") + $js; Sub = @('_INBOX.>') }
+    paper = @{ Pub = @("geldar.$s.>") + $js; Sub = @('_INBOX.>') }
     ops = @{ Pub = @('>'); Sub = @('>') }
   }
 }

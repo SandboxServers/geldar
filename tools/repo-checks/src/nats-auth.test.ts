@@ -154,4 +154,25 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     );
     expect(inPermissions).toEqual(entries.map(() => true));
   });
+
+  it('emits the scoped subject table of decision 0087 for each role, with no bare * token', () => {
+    const entries = parseEntries(rendered?.conf ?? '');
+    const want = expectedTable(SHARD);
+    // Subject lists only: the entries carry passwords, and a failing expect prints its value.
+    const actual = entries
+      .filter((e) => ROLES.includes(e.user))
+      .map((e) => ({
+        user: e.user,
+        pub: [...e.pub].sort(),
+        sub: [...e.sub].sort(),
+      }));
+    const expected = ROLES.map((role) => ({
+      user: role,
+      pub: [...(want[role]?.pub ?? [])].sort(),
+      sub: [...(want[role]?.sub ?? [])].sort(),
+    }));
+    expect(actual).toEqual(expected);
+    const bare = entries.some((e) => [...e.pub, ...e.sub].some((s) => s.split('.').includes('*')));
+    expect(bare).toBe(false);
+  });
 });
