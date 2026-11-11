@@ -96,3 +96,15 @@ C1-10 correction: the owner asked whether the first ranger is Jason. It is: Jaso
 | R28 | `bluemap-web` mounts only BlueMap's webroot, as a read-only volume `subpath`, not the whole Paper volume with a narrowed served root. | The Paper volume holds `server.properties` (the RCON password), world data and plugin configs. With the whole volume mounted, one file-server path bug would expose them. | Not applicable. |
 - **Flake (C2-R1 fix slice M2's run):** `threshold/mcp/src/http/front-rate-limit.test.ts` ("does not limit a door whose public block has no rate limit") timed out once in a wide vitest run under load. It passed alone and in the full `check`. Add it to FX-SPAWN's follow-ups if it recurs.
 | R29 | C2-R2 (verdict: decision) is ruled by decision 0137. The public Minecraft port is a separate online-mode spectator proxy, as spec 8.4 already describes: a UUID whitelist (empty by default), at most 5 players, rate limited, no ping passthrough. The offline bot ingress is never published. Paper fails closed: a player is live only with a signed `geldar_live` profile property, and is a spectator from the first join. Both Velocity services are read-only on NATS. | The reviewer showed that publishing the offline bot ingress lets anyone claim a live agent's name. Spec 8.4 already settles the design, so this follows the spec and needs no amendment. | The owner amends 0137. |
+
+## Later rulings (C2 review round 2)
+
+- **R30.** The public MCP and Glass rate limits are separate settings. MCP: 600/min, burst 120. Glass: 60/min, burst 20. Applies to R1-2-01.
+- **R31.** Glass keeps grouping viewers by /64 when rate-limiting (R3-2-07 is accepted). Rotating through a wider block is a known limit and goes to the owner for review.
+- **R32.** Glass and the MCP trust the Docker bridge gateway as their proxy (R4-03), because Caddy runs on the host network and reaches them through it. Trusting the gateway also trusts every process on the node, so those processes could skip the rate limits; tokens are still required, and the node is the owner's own. Required with it:
+  - pin the colo bridge subnet in compose;
+  - persist both trusted-proxy variables in the node state env so colo-up keeps them;
+  - colo-public.sh install refuses unless both are set;
+  - colo-status prints both.
+- **R33.** R4-09 (the register role can insert a token for any player): C2-08b must restrict inserts to the role's own players, through a SECURITY DEFINER function or a check against `owner_id`. Nothing changes before the service is deployed.
+- **Deploy.** Colo stack internal deploy dispatched at ee87caa, with images from colo-images run 43017919759 (baffba9).
