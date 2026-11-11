@@ -17,6 +17,7 @@ import type {
   ResolvedToken,
   TokenStore,
 } from '../ports.ts';
+import { JOURNAL_KEEP } from '../ports.ts';
 
 /** A token the fake store knows: its hash, its player and when it stops working. */
 export interface FakeToken {
@@ -235,8 +236,13 @@ export class FakeJournalStore implements JournalStore {
     this.lines.set(lifeId, [...(this.lines.get(lifeId) ?? []), { at: atMs, text }]);
   }
 
+  /** The same contract as PgJournalStore.recent: a positive limit, capped at the JOURNAL_KEEP window. */
   async recent(lifeId: string, limit: number): Promise<JournalEntry[]> {
-    return (this.lines.get(lifeId) ?? []).slice(-limit);
+    if (!Number.isSafeInteger(limit) || limit < 1) {
+      throw new RangeError('limit must be a positive integer');
+    }
+    const window = Math.min(limit, JOURNAL_KEEP);
+    return (this.lines.get(lifeId) ?? []).slice(-window);
   }
 }
 

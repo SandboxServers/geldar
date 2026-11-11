@@ -89,9 +89,10 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0082](0082-colo-compose-network-and-limits.md) | Colo compose layout: own network, CPU and memory limits, loopback binds and ports (Velocity on 127.0.0.1:25567, never 25565 or 25566) | Proposed (the orchestrator may accept at the ops merge) |
 | [0083](0083-c1-body-and-mind-image-contents.md) | Body and Mind image contents, base pins, and what is never baked in | Proposed |
 | [0084](0084-colo-deploy-by-pull-with-a-project-scoped-script.md) | Colo deploy by pull, with a project-scoped script | Proposed |
-| [0085](0085-append-only-audit-tables.md) | Append-only audit tables: receipts, thoughts, suppressed wakeups and mcp_journal refuse UPDATE and DELETE; geldar_mcp loses UPDATE and DELETE on mcp_journal | Accepted (orchestrator, under 0064 and 0076) |
+| [0085](0085-append-only-audit-tables.md) | Append-only audit tables: receipts, thoughts, suppressed wakeups and mcp_journal refuse UPDATE and DELETE statements (0007; a superuser can still TRUNCATE or bypass the trigger; hardening in C2); geldar_mcp loses UPDATE and DELETE on mcp_journal | Accepted (orchestrator, under 0064 and 0076) |
 | [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
 | [0088](0088-metrics-exporters-and-replay-window.md) | Metrics exporters are push-only OTLP to a configured URL; the MCP replay window is bounded and optional | Proposed |
 | [0089](0089-crash-hygiene-defaults-and-refusals.md) | Crash hygiene: the owner cap default, the start refusal while a name lease is held, and `players down` | Accepted (orchestrator) |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
+| [0131](0131-colo-in-container-hosts-and-mind-shard-file.md) | Colo containers reach their compose peers by name through a closed, opt-in allowlist; the Mind's shard file is `shards/colo-mind.yaml`, separate from the budget file | Accepted (orchestrator, 2026-11-10) |
 >
