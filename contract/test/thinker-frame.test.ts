@@ -24,7 +24,7 @@ const examples: Record<string, unknown> = {
   goodbye: { type: 'goodbye', reason: 'schedule' },
   welcome: {
     type: 'welcome',
-    thinker: 'steven-home',
+    thinker: 'thinker-home',
     accepted_models: ['qwen3-32b', 'qwen3-8b'],
     server_time: '2026-11-08T21:00:00Z',
   },
@@ -104,7 +104,7 @@ describe('validateThinkerFrame', () => {
   });
 
   it('rejects a hello that carries a thinker field', () => {
-    const hello = { ...frame('hello'), thinker: 'steven-home' };
+    const hello = { ...frame('hello'), thinker: 'thinker-home' };
     const result = validateThinkerFrame(hello);
     expect(result.ok).toBe(false);
   });
