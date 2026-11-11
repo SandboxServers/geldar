@@ -37,7 +37,7 @@ const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
 const MIND = `registry.example.invalid/geldar/mind@sha256:${'2'.repeat(64)}`;
 const ADMIN = `registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}`;
 const GLASS = `registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}`;
-const RELEASE =`# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\nGELDAR_GLASS_IMAGE=${GLASS}\n`;
+const RELEASE = `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\nGELDAR_GLASS_IMAGE=${GLASS}\n`;
 const GLASS_LOGIN_STEP = / run --rm admin migrate --set-role-password geldar_glass /;
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');

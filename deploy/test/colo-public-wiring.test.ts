@@ -128,7 +128,7 @@ const composeCalls = (fx: Fx): string[] =>
         .filter((c) => c.startsWith('compose ') && c.includes(' -f '))
     : [];
 
-const OVERLAY = '-f ' + posix(resolve(ROOT, 'compose', 'colo-public.yml'));
+const OVERLAY = `-f ${posix(resolve(ROOT, 'compose', 'colo-public.yml'))}`;
 
 describe('public port overlay (GELDAR_MC_BIND, GELDAR_MC_PORT)', () => {
   it('is merged on every compose call when both are set, after the NATS overlay', () => {
