@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
+import { COLO_PATH, findPublicPorts, isComposeFile } from './loopback-ports.ts';
 
 /** The findings for one compose file, as `service: reason` strings. */
 function problems(text: string): string[] {
@@ -266,5 +268,107 @@ describe('findPublicPorts: bypass cases fail', () => {
   it('fails when the root or services is not a mapping', () => {
     expect(problems('- a\n- b')).toEqual(['(file): is not a YAML mapping']);
     expect(problems('services: ["a"]')).toEqual(['(file): services is not a mapping']);
+  });
+});
+
+/** The findings for compose/colo.yml, as `service: reason` strings. */
+function coloProblems(text: string): string[] {
+  return findPublicPorts(COLO_PATH, text).map((f) => `${f.service}: ${f.reason}`);
+}
+
+/** A one-service colo file: the `ports:` lines and an optional `deploy:` block, both given as YAML text. */
+function coloService(ports: string[], deploy = LIMITS): string {
+  return [
+    'services:',
+    '  paper:',
+    ...ports,
+    ...deploy.split('\n').map((line) => `    ${line}`),
+  ].join('\n');
+}
+
+const LIMITS = [
+  'deploy:',
+  '  resources:',
+  '    limits:',
+  '      cpus: "4"',
+  '      memory: 8192m',
+].join('\n');
+
+describe('findPublicPorts: compose/colo.yml', () => {
+  it('passes the committed compose/colo.yml', () => {
+    const text = readFileSync(
+      fileURLToPath(new URL('../../../compose/colo.yml', import.meta.url)),
+      'utf8',
+    );
+    expect(coloProblems(text)).toEqual([]);
+  });
+
+  it('passes a loopback Minecraft port 25567 and a limit on the service', () => {
+    expect(coloProblems(coloService(['    ports: ["127.0.0.1:25567:25565"]']))).toEqual([]);
+  });
+
+  it('refuses a published 25565 in the short form', () => {
+    const found = coloProblems(coloService(['    ports: ["127.0.0.1:25565:25565"]']));
+    expect(found).toEqual([
+      'paper: publishes host port 25565, which the colo stack never publishes',
+    ]);
+  });
+
+  it('refuses a published 25566 in the long form, whatever the host_ip', () => {
+    const ports = [
+      '    ports:',
+      '      - target: 25565',
+      '        published: "25566"',
+      '        host_ip: 127.0.0.1',
+    ];
+    expect(coloProblems(coloService(ports))).toEqual([
+      'paper: publishes host port 25566, which the colo stack never publishes',
+    ]);
+  });
+
+  it('refuses a range that covers a reserved port', () => {
+    expect(coloProblems(coloService(['    ports: ["127.0.0.1:25560-25570:25560-25570"]']))).toEqual(
+      ['paper: publishes host port 25565, which the colo stack never publishes'],
+    );
+  });
+
+  it('refuses a published port it cannot read as a number or a range', () => {
+    const found = coloProblems(coloService(['    ports: ["127.0.0.1:mc:25565"]']));
+    expect(found).toEqual(['paper: host port "mc" cannot be read as a number or a range']);
+  });
+
+  it('refuses a service with no deploy.resources.limits, naming the service', () => {
+    const text =
+      'services:\n  paper:\n    image: x\n  nats:\n    image: y\n    deploy:\n      resources:\n        limits:\n          cpus: "1"';
+    expect(coloProblems(text)).toEqual([
+      'paper: has no deploy.resources.limits with cpus and memory; every colo service needs one',
+      'nats: has no deploy.resources.limits with cpus and memory; every colo service needs one',
+    ]);
+  });
+
+  it('refuses limits that name cpus but not memory', () => {
+    const deploy = ['deploy:', '  resources:', '    limits:', '      cpus: "4"'].join('\n');
+    expect(coloProblems(coloService([], deploy))).toHaveLength(1);
+  });
+
+  it('accepts limits that come through a merge key from an anchor', () => {
+    const text = [
+      'x-limits: &limits',
+      '  deploy:',
+      '    resources:',
+      '      limits:',
+      '        cpus: "4"',
+      '        memory: 8192m',
+      'services:',
+      '  paper:',
+      '    <<: *limits',
+      '    ports: ["127.0.0.1:25567:25565"]',
+    ].join('\n');
+    expect(coloProblems(text)).toEqual([]);
+  });
+
+  it('applies the colo rules to colo only: phase0 keeps its published 25565 for velocity', () => {
+    const text = 'services:\n  velocity:\n    ports: ["127.0.0.1:25565:25565"]';
+    expect(findPublicPorts('compose/phase0.yml', text)).toEqual([]);
   });
 });
