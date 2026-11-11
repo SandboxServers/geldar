@@ -33,9 +33,11 @@ the date entry together, and rerun `test/lock.test.ts`.
 These files are copied into the Paper plugin directory, `plugins/BlueMap/`, at deploy time.
 
 - `core.conf`: `accept-download: false` (see below), `metrics: false` (no outbound bStats ping),
-  `data: "bluemap"`.
-- `webserver.conf`: `enabled: false`. BlueMap 5.29 has no bind-address option, so its integrated
-  server would listen on every interface. The server stays off. The rendered webroot is served by
+  `data: "bluemap"`, `render-thread-count: 1` (one render thread: 0 starts one per CPU core, which
+  competes with the game tick for the shared CPU cap).
+- `webserver.conf`: `enabled: false`. The 5.29 defaults have no bind-address key (no `ip`; checked
+  against the pinned jar, see `known-keys.json`), so an enabled server cannot be limited to loopback.
+  The server stays off. The rendered webroot is served by
   Caddy later (C2-04), not by BlueMap. The port (8100) is kept only as a value for C2-04 to read.
 - `plugin.conf`: `live-player-markers: false` and `skin-download: false`. No agent position is sent
   to the map, and no player skin is fetched from Mojang. This is the privacy rule: a public map must
