@@ -1,0 +1,14 @@
+# Allowlist: the build context is the repo root, so exclude everything (worktrees, secrets, .env)
+# and add back only what the Body image installs and runs.
+*
+!package.json
+!pnpm-workspace.yaml
+!pnpm-lock.yaml
+!contract
+!golem
+**/node_modules
+golem/test
+**/*.test.ts
+compose/secrets
+**/*.env
+.env*
