@@ -49,11 +49,11 @@ describe('proxy and client address settings', () => {
     ).toThrow('GELDAR_MCP_TRUSTED_PROXIES[1] has prefix length 0');
   });
 
-  it('reads client_ip_header from yaml, defaulting to cf-connecting-ip', () => {
+  it('reads client_ip_header from yaml, defaulting to x-geldar-client-ip', () => {
     const doc = shardDoc();
     doc.sovereign.mcp.client_ip_header = 'x-geldar-client-ip';
     expect(parseMcpConfig(doc, { env: ENV }).http.clientIpHeader).toBe('x-geldar-client-ip');
-    expect(parseMcpConfig(shardDoc(), { env: ENV }).http.clientIpHeader).toBe('cf-connecting-ip');
+    expect(parseMcpConfig(shardDoc(), { env: ENV }).http.clientIpHeader).toBe('x-geldar-client-ip');
   });
 
   it('lets GELDAR_MCP_CLIENT_IP_HEADER override the yaml header', () => {

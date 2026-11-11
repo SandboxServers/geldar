@@ -7,6 +7,7 @@ import type { Client, Pool } from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
 import { repoRoot } from './config.ts';
 import { MemoryPresenceBucket } from './fakes/world.fakes.ts';
+import type { FrontDoorOptions } from './http/front.ts';
 import {
   bucketRules,
   ConfigRejected,
@@ -261,6 +262,18 @@ describe('startMcp', () => {
     expect(order).toEqual(['front.close', 'replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
+  it('hands the front door the public block, so the per-client rate limit is on in production', async () => {
+    const order: string[] = [];
+    const ports = fakePorts(order, []);
+    let seen: FrontDoorOptions['public'];
+    ports.frontDoor = (options) => {
+      seen = options.public;
+      return { listen: async () => 0, close: async () => undefined };
+    };
+    const config = await loadStartConfig(SHARD_FILE, ENV);
+    await (await startMcp(config, ports)).stop();
+    expect(seen?.rateLimit).toEqual({ perMinute: 120, burst: 40 });
+  });
   it('closes what it opened when a later step fails, then rethrows', async () => {
     const order: string[] = [];
     const ports = fakePorts(order, []);

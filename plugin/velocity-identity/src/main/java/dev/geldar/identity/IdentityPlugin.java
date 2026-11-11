@@ -8,6 +8,7 @@ import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
+import com.velocitypowered.api.event.player.ServerPostConnectEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
@@ -40,6 +41,9 @@ import org.slf4j.Logger;
 public final class IdentityPlugin {
     /** The mechanic channel (spec Appendix F). Only admitted connections may send on it. */
     static final MinecraftChannelIdentifier COMMAND_CHANNEL = MinecraftChannelIdentifier.create("geldar", "cmd");
+    /** Velocity to Paper only: marks the connection as a ghost. Must equal GhostListener.CHANNEL in Geldar-Core. */
+    static final MinecraftChannelIdentifier GHOST_CHANNEL = MinecraftChannelIdentifier.create("geldar", "ghost");
+    static final byte[] GHOST_SIGNAL = {1};
     /** Written while the proxy runs; the Velocity healthcheck in compose/phase0.yml reads it. */
     static final Path READY_FILE = Path.of("/tmp/geldar-identity.ready");
 
@@ -90,7 +94,7 @@ public final class IdentityPlugin {
     @Subscribe
     public void onProxyInitialization(ProxyInitializeEvent event) {
         // Velocity only raises PluginMessageEvent for registered channels; others pass straight through.
-        proxy.getChannelRegistrar().register(COMMAND_CHANNEL);
+        proxy.getChannelRegistrar().register(COMMAND_CHANNEL, GHOST_CHANNEL);
         log.info("Geldar identity enabled");
         // Scheduled before the URL check: a missing URL denies every login, which is when the summary matters most.
         denialSummary = proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
@@ -132,6 +136,19 @@ public final class IdentityPlugin {
         if (denials.allow()) {
             log.info("Denied {}", printable(player.getUsername()));
         }
+    }
+
+    /**
+     * Tells Paper a ghost is a ghost (decision 0092): one message on {@code geldar:ghost} each time the
+     * backend connection comes up. Geldar-Core holds that player in spectator. Velocity has no game-mode API.
+     */
+    @Subscribe
+    public void onServerPostConnect(ServerPostConnectEvent event) {
+        Player player = event.getPlayer();
+        if (!gate.isSpectator(player.getUniqueId())) {
+            return;
+        }
+        player.getCurrentServer().ifPresent(server -> server.sendPluginMessage(GHOST_CHANNEL, GHOST_SIGNAL));
     }
 
     @Subscribe

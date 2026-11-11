@@ -54,6 +54,9 @@ public final class GeldarCore extends JavaPlugin {
 
         for (Listener listener : listeners(exporter, getLogger(), config.grantRecipesOnJoin())) {
             getServer().getPluginManager().registerEvents(listener, this);
+            if (listener instanceof GhostListener ghost) {
+                getServer().getMessenger().registerIncomingPluginChannel(this, GhostListener.CHANNEL, ghost);
+            }
         }
 
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.
@@ -87,6 +90,7 @@ public final class GeldarCore extends JavaPlugin {
             all.add(new RecipeGrantListener(log));
         }
         all.add(new CommandBlockListener(log));
+        all.add(new GhostListener(log));
         return List.copyOf(all);
     }
 
