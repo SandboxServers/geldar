@@ -35,9 +35,10 @@ describe.skipIf(!integrationEnabled())('append-only audit tables against a real 
     admin = scratchPool(database);
     await migrateScratch(admin);
     lifeId = (await seedPlayer(admin, freshSuffix())).lifeId;
-    await admin.query(`INSERT INTO thoughts (thought_id, life_id, at) VALUES ('th_ao', $1, now())`, [
-      lifeId,
-    ]);
+    await admin.query(
+      `INSERT INTO thoughts (thought_id, life_id, at) VALUES ('th_ao', $1, now())`,
+      [lifeId],
+    );
     await admin.query(
       `INSERT INTO receipts (receipt_id, action_id, life_id, kind, phase, detail)
        VALUES ('rc_ao', 'ac_ao', $1, 'k', 'prepared', 'first')`,
@@ -59,9 +60,9 @@ describe.skipIf(!integrationEnabled())('append-only audit tables against a real 
 
   for (const { table, column } of AUDIT_TABLES) {
     it(`refuses UPDATE and DELETE on ${table} as the superuser`, async () => {
-      await expect(
-        admin?.query(`UPDATE ${table} SET ${column} = 'changed'`),
-      ).rejects.toThrow(/append-only/);
+      await expect(admin?.query(`UPDATE ${table} SET ${column} = 'changed'`)).rejects.toThrow(
+        /append-only/,
+      );
       await expect(admin?.query(`DELETE FROM ${table}`)).rejects.toThrow(/append-only/);
     });
   }
