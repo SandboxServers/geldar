@@ -9,7 +9,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **Never-do list** (packet-conventions.md section 5, copied into every brief): no `adam up`, and no `adam up --help` on a live node; no state-changing probe against a live shard; never weaken a test, fixture or verdict to make it pass; never `git reset`, `git stash` or `git checkout` on tracked work; never edit `docs/spec.md`; never push, open a PR, or prune a worktree. Packets in this wave also never run `shard up` on the node.
 - **Worktree**: one per packet, under `.claude/worktrees/<id>`, branch `phase1/c1-<id>`. The brief gives the absolute worktree path.
 - **Must-not-edit, always**: `docs/spec.md`; `docs/decisions/README.md` (ops merge step writes the index); `docs/analysis/phase1/plan.md` and the conventions file; the ledger README. The shared files in packet-conventions.md section 3 are owned as stated in each card.
-- **Shared-file owners in this wave**: `contract/` and its generated output: P1-C1-00 only. `geldar.ps1`, `compose/*`, `shards/*`, the repo-checks registry, `golem/` view file: C1-02 only. `package.json` and `pnpm-lock.yaml`: C1-07 only (the one C1 packet that adds dependencies); everyone else writes an index line.
+- **Shared-file owners in this wave** (resolved 2026-11-10; the one-owner rule of conventions section 3 holds, with one named file exception): `contract/` and its generated output: P1-C1-00 only. `geldar.ps1`, `compose/*` except `compose/nats-auth.yml`, `shards/*`, the repo-checks registry, `golem/` view file: C1-02 only. `compose/nats-auth.yml`: C1-06a only (C1-02 writes an index line for any change to it). `package.json` and `pnpm-lock.yaml`: C1-07 only, for the whole wave (C1-05b hands its importer line to C1-07 in its worknote); everyone else writes an index line.
 - **Decision numbers**: a packet uses only its reserved numbers (packet-conventions.md section 6). It checks `docs/decisions/` before committing and never reuses a number.
 - **Gates per packet** (packet-conventions.md section 4.1): targeted test, `./geldar.ps1 pnpm typecheck` and `./geldar.ps1 pnpm format` for touched packages, revert-check named on the card, file caps (700 hard, 500 soft), decision-index check, `git merge-tree` dry run against the wave branch before the last commit. The worknote records each command and its final result. A gate that did not run is listed as not run, with the reason.
 - **Size**: S is one session of about 25k working tokens; M is one session of about 40k; L is two sessions (packet-conventions.md section 1). A packet that reaches its budget commits what passes, writes the rest into its worknote and report, and stops (`on-cap`).
@@ -165,7 +165,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **may-edit**
 - `compose/colo.yml` (new; the production Linux compose file).
 - `compose/phase0.yml`, `compose/mcp.yml`, `compose/rcon-host.yml`, `compose/velocity/velocity.toml`: comments and dead keys only, no behaviour change to the Phase 0 stack. Locate dead keys with `grep -n "" compose/*.yml` against the keys the services read, and with `grep -rn "<key>" --include=*.ts --include=*.ps1` before removing one.
-- `compose/nats-auth.yml`: comments only (C1-06a changes its content).
+- `compose/nats-auth.yml`: not touched by this card. C1-06a owns this one file in `compose/` (wave section, "Shared-file ownership in C1").
 - `shards/colo.yaml` (new; the shard config the colo compose reads, using the keys P1-C1-00 declared).
 - `shards/phase0.yaml`: comment and dead-key fixes only.
 - `geldar.ps1`: the `colo` shard path only (the `shard` verb takes a shard name; add the colo compose file to `Get-ComposeFile`, and add the checks). This card is the only owner of `geldar.ps1` in C1.
@@ -179,7 +179,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 2. Create `compose/colo.yml` as a standalone file (not an overlay). Give it its own network with an explicit name (`geldar-colo`). Every published port is written `127.0.0.1:<host>:<container>` (loopback). The Minecraft port comes from `shards/colo.yaml` and must not be 25566.
 3. Set `deploy.resources.limits` (`cpus`, `memory`) on every service from the keys in `shards/colo.yaml`. A service with no limit is an error in the loopback-ports test (step 7).
 4. Use `restart: unless-stopped` and the existing healthchecks from `compose/phase0.yml`.
-5. Fix the stale comments in `compose/mcp.yml` (the note about `mcp-tokens init` secret names points at a test path; confirm the path still exists) and `compose/nats-auth.yml` (comment only: it still says the overlay is untested, which stays true until C1-06a).
+5. Fix the stale comments in `compose/mcp.yml` (the note about `mcp-tokens init` secret names points at a test path; confirm the path still exists). The comment in `compose/nats-auth.yml` is C1-06a's, not this card's.
 6. Remove dead keys found in step 1 only when a grep shows no reader. Record each removal and its grep result in the worknote.
 
 **Steps (session 2)**
@@ -395,7 +395,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 
 **may-edit**
 - `tools/backup/` (new package: `package.json`, `tsconfig.json`, `src/`, `test/`). Use only dependencies already in `pnpm-lock.yaml`.
-- `pnpm-lock.yaml`: only the importer entry for `tools/backup`, added by `pnpm install` for the new package. This is a second lockfile edit in C1 and departs from the single-owner rule (section 3); the wave gate records it (see "Conflicts" in the wave section).
+- `pnpm-lock.yaml`: NOT edited by this card. C1-07 is the sole lockfile owner for C1 (wave section, "Shared-file ownership in C1"). Run `pnpm install` locally only to check the package; discard the lockfile change, and write the importer line to add (the `tools/backup` importer block that `pnpm install` produced) in the worknote for C1-07.
 - `docs/decisions/0086-*.md` (new record; the index line goes in the worknote).
 
 **must-not-edit**: `docs/spec.md`; `docs/decisions/README.md`; `geldar.ps1` and `compose/*` (C1-02; the `backup` verb is an index line); `shards/*`; `contract/` (C1-00's manifest schema is consumed, not changed); `sql/0001_*` to `sql/0007_*`; root `package.json`; `golem/` and `animus/` (read only).
@@ -430,7 +430,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 4. `C1-05b: restore to a scratch project with verification`
 5. `C1-05b: record 0086 for backup v1`
 
-**index line to add**: `index: | [0086](0086-backup-v1-checkpoint.md) | Backup v1: checkpoint scope, flush sequence, manifest, encryption | Proposed |`. For C1-02: the `backup` verb and its help text. For C1-07: the importer entry in `pnpm-lock.yaml`, if the merge order requires it.
+**index line to add**: `index: | [0086](0086-backup-v1-checkpoint.md) | Backup v1: checkpoint scope, flush sequence, manifest, encryption | Proposed |`. For C1-02: the `backup` verb and its help text. For C1-07: the importer line to add for `tools/backup` (the block from the local `pnpm install`), written in this worknote. C1-05b does not edit `pnpm-lock.yaml`.
 
 **On cap**: commits 1 and 2 are the first useful state. Restore (step 7) is the stop point: if the session ends there, the worknote lists the restore steps as not done and the report marks restore as not run.
 
@@ -447,7 +447,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **worknote**: `docs/analysis/phase1/worknotes/C1-06a.md`
 
 **may-edit**
-- `compose/nats-auth.yml`. Ownership conflict: C1-02 owns `compose/*`, but the schedule names this card as the owner of this one file. The wave gate decides (see "Conflicts"). Until it is decided, edits to this file are made here and nowhere else in `compose/`.
+- `compose/nats-auth.yml`: this card owns this one file (resolved; wave section, "Shared-file owners in this wave"). C1-02 does not edit it. Its stale comment is fixed here.
 - `threshold/mcp/test/nats-auth.it.test.ts` (new live test; the MCP package already holds the NATS test setup).
 - The subject generator, wherever it lives: `grep -rn "\*" geldar.ps1 tools/mcp-tokens/src threshold/mcp/src --include=*.ts --include=*.ps1 | grep -i "subject\|nats"`. If it lives in `geldar.ps1`, this card writes an index line for C1-02 instead of editing it.
 - `docs/decisions/0087-*.md` (new record).
@@ -644,7 +644,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **status**: B
 - **depends-on**: P1-C1-00 (release-age check and its data file)
 - **size**: S
-- **decisions**: none reserved. The 0081 to 0089 block is used up. If a record is needed, the worknote asks the owner for a number.
+- **decisions**: none. The 0081 to 0089 block is used up. If a record is needed, extend 0082 (the colo compose layout) with a section, or record the question in the worknote; do not take a number.
 - **worknote**: `docs/analysis/phase1/worknotes/C1-09.md`
 
 **Note**: BlueMap is not in the repo. `plugin/` holds only `core` and `velocity-identity` (Geldar's own plugins). This card creates it.
@@ -739,7 +739,7 @@ F  C1-06a (NATS overlay live test) -> C1-06b (component credentials)
 ops  C1-10 (node; after C1-02 to C1-09 merge and the owner's confirmations)
 ```
 
-Maximum six agents at once. Lanes C and D run alongside E and F. Only C1-00 and C1-02 touch shared files (section 0).
+Maximum six agents at once. Lanes C and D run alongside E and F. Shared files are touched only by their owners (section 0): C1-00 (`contract/`), C1-02 (`compose/*` except `nats-auth.yml`, `shards/*`, `geldar.ps1`), C1-06a (`compose/nats-auth.yml`), C1-07 (`package.json` and `pnpm-lock.yaml`).
 
 ### Wave-boundary gates
 
@@ -789,10 +789,10 @@ Output: findings as file:line, severity (block, fix, note), and one line of evid
 ### Conflicts found while writing these cards (resolve before dispatch)
 
 - Schedule ids: the schedule and the owner's brief write `P1-C1-xx` for the unblocker and `C1-xx` for the rest. The cards use `C1-xx` throughout, as C1-01 to C1-05a already do.
-- `compose/nats-auth.yml` (C1-06a): the schedule gives it to C1-06a, but conventions give `compose/*` to C1-02. The wave gate must name one owner.
-- `pnpm-lock.yaml` (C1-05b): the new `tools/backup` package needs an importer entry; conventions give the lockfile to C1-07 alone. Decide whether C1-05b adds its entry or C1-07 does.
-- `replay_minutes` (C1-07): the schedule places the key in `shards/phase0.yaml`, which C1-02 owns. The card defaults to 60 in code and asks C1-02 for the key.
-- Decision 0087 is shared by C1-06a and C1-06b (C1-06b cites it and adds no record). Decisions 0081 to 0089 are all allocated, so C1-09 has no reserved number; any record it needs gets a number from the owner.
+- `compose/nats-auth.yml` (C1-06a): RESOLVED. C1-06a owns only `compose/nats-auth.yml`; C1-02 owns the rest of `compose/*`. Recorded in the "Shared-file owners" line of this section and in the C1-02 and C1-06a cards.
+- `pnpm-lock.yaml` (C1-05b): RESOLVED. C1-07 is the sole lockfile owner for C1. C1-05b hands its `tools/backup` importer line to C1-07 in its worknote ("importer line to add").
+- `replay_minutes` (C1-07): RESOLVED as a handoff. The key goes in `shards/phase0.yaml` via an index line from C1-07's worknote to C1-02, which owns the file. The code defaults to 60 and clamps 1 to 1440.
+- Decision 0087 is shared by C1-06a and C1-06b: RESOLVED, one record (0087) covers both; C1-06b cites it and adds no record. C1-09 has no reserved number: RESOLVED, "none; extend 0082 or record in the worknote" (see C1-09 card).
 - Stale plan line: `plan.md` line 39 says `players down` does not clear the registry or whitelist. The code clears both for a stopped life. C1-08 re-verifies before any change.
 - The 60-minute replay window is not in the repo (C1-07 step 1 records how the window is computed today).
 - Node addresses, account names and telemetry targets stay out of the repo. The cards use placeholders.
