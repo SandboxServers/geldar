@@ -33,8 +33,13 @@ const STATS_BY_ID = /^stats --no-stream [0-9a-f]+$/;
 function findSh(): string {
   if (process.env.GELDAR_TEST_SH) return process.env.GELDAR_TEST_SH;
   if (process.platform !== 'win32') return 'sh';
-  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter((p): p is string => Boolean(p));
-  return roots.map((root) => join(root, 'Git', 'usr', 'bin', 'sh.exe')).find((p) => existsSync(p)) ?? 'sh';
+  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(
+    (p): p is string => Boolean(p),
+  );
+  return (
+    roots.map((root) => join(root, 'Git', 'usr', 'bin', 'sh.exe')).find((p) => existsSync(p)) ??
+    'sh'
+  );
 }
 const SH = findSh();
 
@@ -76,7 +81,8 @@ services:
     image: ${MIND}
 `;
 
-const release = (body: string, mind = MIND) => `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\n`;
+const release = (body: string, mind = MIND) =>
+  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\n`;
 // Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -129,7 +135,9 @@ function fixture(publishedPort = '25567'): Fixture {
   delete env.Path;
   Object.assign(env, {
     // The shims come first. The directory of the chosen sh follows, so that Git for Windows' coreutils resolve.
-    PATH: [bin, SH === 'sh' ? '' : dirname(SH), process.env.PATH ?? process.env.Path ?? ''].filter(Boolean).join(delimiter),
+    PATH: [bin, SH === 'sh' ? '' : dirname(SH), process.env.PATH ?? process.env.Path ?? '']
+      .filter(Boolean)
+      .join(delimiter),
     GELDAR_COLO_COMPOSE: posix(COMPOSE),
     GELDAR_SECRETS_DIR: posix(secrets),
     GELDAR_RELEASE_FILE: posix(releaseFile),
@@ -142,7 +150,17 @@ function fixture(publishedPort = '25567'): Fixture {
     DOCKER_CONFIG_FIXTURE: posix(config),
     FAKE_MODE_DIR: posix(modes),
   });
-  return { dir, env, calls, secrets, modes, release: releaseFile, state: join(dir, 'state'), lock, jarText };
+  return {
+    dir,
+    env,
+    calls,
+    secrets,
+    modes,
+    release: releaseFile,
+    state: join(dir, 'state'),
+    lock,
+    jarText,
+  };
 }
 
 function lockText(url: string, sha: string): string {
@@ -225,7 +243,10 @@ describe('colo-up.sh (decision 0084)', () => {
   });
 
   it.each([
-    ['a latest tag', release(`registry.example.invalid/geldar/body:latest@sha256:${'1'.repeat(64)}`)],
+    [
+      'a latest tag',
+      release(`registry.example.invalid/geldar/body:latest@sha256:${'1'.repeat(64)}`),
+    ],
     ['a bare tag with no digest', release('registry.example.invalid/geldar/body:0.1.0')],
   ])('refuses a release manifest that uses %s', (_name, text) => {
     const fx = fixture();
@@ -238,7 +259,10 @@ describe('colo-up.sh (decision 0084)', () => {
 
   it('refuses a BlueMap jar whose sha256 does not match the lock', () => {
     const fx = fixture();
-    writeFileSync(fx.lock, lockText(pathToFileURL(join(fx.dir, 'bluemap.jar')).href, '0'.repeat(64)));
+    writeFileSync(
+      fx.lock,
+      lockText(pathToFileURL(join(fx.dir, 'bluemap.jar')).href, '0'.repeat(64)),
+    );
     const r = run('colo-up.sh', fx, REAL);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('sha256 mismatch');
@@ -277,7 +301,10 @@ describe('colo-up.sh (decision 0084)', () => {
 
   it('refuses a service that would be built on the node with no pinned image', () => {
     const fx = fixture();
-    writeFileSync(join(fx.dir, 'config.yml'), `${CONFIG('25567')}  eventsink:\n    build:\n      context: ..\n`);
+    writeFileSync(
+      join(fx.dir, 'config.yml'),
+      `${CONFIG('25567')}  eventsink:\n    build:\n      context: ..\n`,
+    );
     const r = run('colo-up.sh', fx, REAL);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('built on the node without a pinned image: eventsink:');
@@ -343,11 +370,18 @@ describe('deploy scripts: docker scope and volumes (decision 0084)', () => {
     const log = calls(fx);
     expect(log.length).toBeGreaterThan(0);
     for (const c of log) {
-      const allowed = PROJECT_FILTER.test(c) || STATS_BY_ID.test(c) || /^(compose version|info)$/.test(c);
+      const allowed =
+        PROJECT_FILTER.test(c) || STATS_BY_ID.test(c) || /^(compose version|info)$/.test(c);
       expect(allowed, `unscoped docker call: ${c}`).toBe(true);
       expect(c).not.toMatch(/\bdown\b.*(-v\b|--volumes)|--volumes/);
     }
-    for (const script of ['common.sh', 'colo-up.sh', 'colo-rollback.sh', 'colo-down.sh', 'colo-status.sh']) {
+    for (const script of [
+      'common.sh',
+      'colo-up.sh',
+      'colo-rollback.sh',
+      'colo-down.sh',
+      'colo-status.sh',
+    ]) {
       const text = readFileSync(join(DEPLOY, script), 'utf8');
       expect(text, script).not.toMatch(/down -v|--volumes|volume rm|system prune/);
     }
