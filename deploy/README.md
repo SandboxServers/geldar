@@ -163,6 +163,10 @@ deploy/colo-admin.sh owner-add <owner> --cap 20
 deploy/colo-admin.sh player-add <player> --owner <owner> --life <life> --name <name> --harness <harness>
 ```
 
+`colo-up.sh` also runs `whitelist-house-body` after Paper is healthy and before any body starts. It whitelists the house
+Body (`mind.agent.username`) and every `sovereign.players[].life_id` from `shards/colo-mind.yaml` over RCON, and nothing
+else. It is idempotent, so a new ranger is whitelisted on the next `colo-up.sh` run (or run the step by hand).
+
 Before you start a ranger's host, add `<player>` under `sovereign.players` in `shards/colo-mind.yaml`. Then mint its
 token:
 
