@@ -340,6 +340,9 @@ services:
       GELDAR_MCP_BIND: 0.0.0.0
       # The Host values local clients send to the loopback port. No public host (decision 0053 defers it).
       GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
+      # Caddy (host network) may reach the publish as the docker bridge gateway: the node's deploy env sets the real peer
+      # address (comma-separated; replaces public.trusted_proxies in shards/colo-mind.yaml). Decision 0132: none in the repo.
+      GELDAR_MCP_TRUSTED_PROXIES: "${GELDAR_MCP_TRUSTED_PROXIES:-127.0.0.1}"
       # NATS as the mcp user (decision 0080): the overlay compose/nats-auth-mcp.yml is not merged on colo, so the wiring is here.
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: mcp
@@ -393,7 +396,10 @@ services:
       dockerfile: glass/Dockerfile
     image: ${GELDAR_GLASS_IMAGE:-geldar-glass:c2}
     environment:
-      GELDAR_GLASS_HOST: 127.0.0.1
+      # 0.0.0.0 inside the container is accepted only with the in-network opt-in (C2-07a3, decision 0131); the port is
+      # still published on loopback alone.
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_GLASS_HOST: 0.0.0.0
       GELDAR_GLASS_PORT: "8787"
       GELDAR_GLASS_PG_HOST: postgres
       GELDAR_GLASS_PG_PORT: "5432"
@@ -418,6 +424,43 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  # [C2-07c1] The BlueMap static file server (ruling R27, decisions 0072, 0094). BlueMap's own web server is off
+  # (plugins/bluemap/config/webserver.conf enabled: false), so Paper only writes the rendered files under bluemap/web in
+  # its data volume and no live data (players, markers) is written there. This caddy serves that directory read only,
+  # on the loopback publish; the host Caddy (map.caddy) proxies to it. The whole Paper volume is mounted read only but
+  # the server root is the web directory alone, so nothing else in the volume is served. No Caddyfile: file-server CLI.
+  bluemap-web:
+    # Budget: 0.25 CPU, 64m (no swap, 64 pids).
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_BLUEMAP_WEB_CPUS:-0.25}"
+          memory: "${GELDAR_COLO_BLUEMAP_WEB_MEM:-64m}"
+          pids: 64
+    memswap_limit: "${GELDAR_COLO_BLUEMAP_WEB_MEM:-64m}"
+    pids_limit: 64
+    logging: *logging
+    labels: *colo-labels
+    image: caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
+    command: ["caddy", "file-server", "--root", "/data/bluemap/web", "--listen", ":8100"]
+    environment:
+      # Caddy writes its autosave and state under these; the root filesystem is read only, /tmp is a tmpfs.
+      XDG_CONFIG_HOME: /tmp/config
+      XDG_DATA_HOME: /tmp/data
+    volumes:
+      - paper-data:/data:ro
+    ports:
+      # The loopback map port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8100:8100"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
     restart: unless-stopped
 
   # [C1-11a] The player host (golem/src/players/main.ts): one Body process per sovereign ranger, started and stopped by
