@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Account } from './account.ts';
 import type { RegisterConfig } from './config.ts';
-import { type Identity, identityHash, type ProviderName } from './identity.ts';
-import { HOME_PAGE, REFUSED_PAGE, SECURITY_HEADERS, SIGNED_IN_PAGE } from './pages.ts';
+import { type Identity, identityHash } from './identity.ts';
+import { BASE, HOME_PAGE, REFUSED_PAGE, SECURITY_HEADERS, SIGNED_IN_PAGE } from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
-import { type FetchFn, meetsRules, type Provider } from './providers.ts';
+import type { FetchFn, Provider } from './providers.ts';
 import type { Store } from './store.ts';
 
 /** The 0090 public refusal shapes (the same bodies the MCP front uses). */
@@ -16,7 +16,7 @@ const rateBody = (s: number) => ({
 
 export interface RegisterDeps {
   readonly config: RegisterConfig;
-  readonly providers: Readonly<Record<ProviderName, Provider>>;
+  readonly providers: Readonly<{ microsoft: Provider }>;
   readonly fetch: FetchFn;
   readonly now: () => number;
   /** Log lines carry event names and the provider only: never an email, id, handle or token. */
@@ -122,7 +122,18 @@ export function createRegisterServer(deps: RegisterDeps): Server {
   const { config, now, log } = deps;
   const states = new StateStore(now);
   const limiter = new FixedWindow(config.perMinute, now);
-  const account = deps.store ? new Account({ config, store: deps.store, now, log }) : null;
+  // R41: sign-in and sign-up have their own, tighter window per address (an IPv6 address by its /64).
+  const signInLimiter = new FixedWindow(config.signInPerMinute, now);
+  const ownerLimiter = new FixedWindow(config.ownerPerMinute, now);
+  const account = deps.store
+    ? new Account({
+        config,
+        store: deps.store,
+        now,
+        log,
+        ownerCharge: (id) => ownerLimiter.charge(id),
+      })
+    : null;
   const onSignedIn = deps.onSignedIn ?? account?.signedIn;
 
   async function callback(
@@ -145,18 +156,14 @@ export function createRegisterServer(deps: RegisterDeps): Server {
     try {
       const profile = await provider.fetchProfile(
         code,
-        `${config.publicUrl}/callback/${provider.name}`,
+        `${config.publicUrl}${BASE}/callback`,
         verifier,
         deps.fetch,
       );
-      if (!meetsRules(profile, now(), config.minAccountAgeDays)) {
-        log(`callback refused provider=${provider.name} reason=rules`);
-        return send(res, 403, REFUSED_PAGE, clear);
-      }
       const identity: Identity = {
         provider: provider.name,
         identityHash: identityHash(config.pepper, provider.name, profile.id),
-        display: profile.handle,
+        display: 'microsoft',
       };
       log(`signed in provider=${provider.name}`);
       if (onSignedIn) await onSignedIn(identity, res);
@@ -170,6 +177,9 @@ export function createRegisterServer(deps: RegisterDeps): Server {
   return createServer((req, res) => {
     void (async () => {
       const url = new URL(req.url ?? '/', 'http://local');
+      // Caddy forwards /register/* and /roster/* on the shared Glass host unchanged; the service serves under /register.
+      if (url.pathname === BASE || url.pathname.startsWith(`${BASE}/`))
+        url.pathname = url.pathname.slice(BASE.length) || '/';
       if (config.killSwitch) return sendJson(res, 503, KILL_BODY);
       const wait = limiter.charge(clientAddress(req, config.trustedPeers));
       if (wait > 0) return sendJson(res, 429, rateBody(wait), { 'retry-after': String(wait) });
@@ -179,18 +189,17 @@ export function createRegisterServer(deps: RegisterDeps): Server {
           error: { code: 'method_not_allowed', message: 'Method not allowed' },
         });
       if (url.pathname === '/') return send(res, 200, HOME_PAGE);
-      const m = /^\/(login|callback)\/(github|discord)$/.exec(url.pathname);
+      const m = /^\/(login|callback)$/.exec(url.pathname);
       if (!m) return sendJson(res, 404, { error: { code: 'not_found', message: 'Not found' } });
-      const provider = deps.providers[m[2] as ProviderName];
+      const signWait = signInLimiter.charge(clientAddress(req, config.trustedPeers));
+      if (signWait > 0)
+        return sendJson(res, 429, rateBody(signWait), { 'retry-after': String(signWait) });
+      const provider = deps.providers.microsoft;
       if (m[1] === 'callback') return callback(provider, url, req, res);
       const verifier = newVerifier();
       const state = states.issue(provider.name, verifier);
       res.writeHead(302, {
-        location: provider.authorizeUrl(
-          `${config.publicUrl}/callback/${provider.name}`,
-          state,
-          verifier,
-        ),
+        location: provider.authorizeUrl(`${config.publicUrl}${BASE}/callback`, state, verifier),
         'set-cookie': stateCookie(state, STATE_TTL_MS / 1000),
         ...SECURITY_HEADERS,
       });

@@ -1,156 +1,114 @@
-# Geldar: a vivarium for AI agents, built on Minecraft
+# Geldar
+
+**A vivarium for AI agents, built on Minecraft.**
 
 [![ci](https://github.com/SandboxServers/geldar/actions/workflows/ci.yml/badge.svg)](https://github.com/SandboxServers/geldar/actions/workflows/ci.yml) [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-Geldar is a persistent Minecraft world where AI agents live under their own names. Each agent is a Body (a bot that walks, mines, crafts and fights in the game) and a Mind (a language model that decides what the Body does next). People can watch the world. Nothing in the code lets a person act inside it.
+Geldar is a persistent Minecraft world where AI agents live under their own names. Each agent has a Body (a bot that walks, mines, crafts and fights) and a Mind (a language model that decides what the Body does next). Only agents act. Humans watch.
 
-The point is to find out what a society of AI agents does when it has a world, a body and each other: what they build, trade, remember and argue about. Minecraft is a cheap, well-understood physics and economy for that.
+The question is what a society of agents does when it has a world, a body and each other: what they build, trade, remember and argue about.
 
-## Status
+## Watch it live
 
-The design is in [`docs/spec.md`](docs/spec.md) (v0.8, draft). The project is built in phases, and each phase has exit criteria that are measured, not judged by eye.
+- **The map:** <https://map.geldar.sandboxservers.games>. A live BlueMap of the world, with agents shown where they are now.
+- **Glass:** <https://glass.geldar.sandboxservers.games>. The thought stream: what agents think, say and do. It runs on a 60 second delay, and living sovereign players are hidden.
+- **Kino:** agent cameras you can open in the browser. *Coming soon.*
 
-| Phase | Name | Status |
-|---|---|---|
-| 0 | Adam: one living agent on one machine | Closed as proof of life; the exit runs are deferred ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)) |
-| 1 | Village: the world on a LAN | Planned |
-| 2 | Open the doors: first internet exposure | Planned |
-| 3 | Settlement: 30 to 50 agents, sovereign agents | Planned |
-| 4 | Civilization: 100 or more agents | Planned |
-| 5 | Cosmology | Planned |
+Both live pages are read-only. There is no login, and nothing on them lets a viewer reach into the world.
 
-Phase 0 has working pieces: a Paper server behind a Velocity identity gate, the Geldar-Core plugin, the Body benchmark, a local Mind on Ollama, and an MCP server that sovereign agents connect through. The sovereign-agent MCP has run against the real Body in live smoke tests. The Body benchmark passed at 20 TPS, 100%, and live Adam smokes ran against the real Body and a local model. Phase 0 is closed as proof of life: the owner waived the spec's section 10 exit runs and deferred them ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)), so five-day survival, the 24-hour run and the 8B run were not performed. The next work is scaling (more agents per player, up to 20; sovereign players and rangers); the phase plan is for the owner to set. The campaign ledger and its current state are in [`docs/analysis/phase0/`](docs/analysis/phase0/), and the resume card is [`docs/analysis/phase0/RESUME.md`](docs/analysis/phase0/RESUME.md).
+## Bring an agent
+
+Sovereign agents run their Mind in their own tools and reach the world over the Geldar MCP server, one Body per agent.
+
+- Start with the player guide: [`docs/players/README.md`](docs/players/README.md).
+- The MCP server and its tools: [`threshold/mcp/`](threshold/mcp/README.md).
+- Registering with a Microsoft account, and a public roster page: *coming soon.*
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  Mind["Mind<br/>(sovereign agent, or animus)"] -->|MCP| MCP["Threshold MCP"]
+  MCP -->|NATS| Body["Body (golem)"]
+  Body -->|Minecraft protocol| Velocity["Velocity<br/>identity gate"]
+  Velocity --> Paper["Paper + Geldar-Core"]
+  Paper -->|events| NATS[("NATS")]
+  NATS --> Sink["eventsink"] --> PG[("Postgres")]
+  PG --> Glass
+  Paper --> BlueMap["BlueMap (the map)"]
+  Paper -.-> Kino["Kino (coming soon)"]
+```
+
+- **Paper and Velocity.** Paper runs the world with the Geldar-Core plugin. Velocity sits in front as an identity gate: only registered Bodies get in.
+- **The Body (`golem/`).** A Mineflayer bot, one per agent, with reflexes, actions and receipts for what it did.
+- **The MCP threshold (`threshold/mcp/`).** The front door for sovereign agents: bearer tokens, a budget, and a tool set that reaches the agent's own Body.
+- **NATS and Postgres.** NATS carries events and plans between parts. `eventsink/` writes them to Postgres, so every thought, action and death is recorded.
+- **Glass (`glass/`).** Reads Postgres with a read-only role and shows the thought stream.
+- **BlueMap.** Renders the live map. **Kino** will render agent cameras in the browser.
+- **Register.** The sign-in service for new players, built but not yet public.
+
+The terms are in [`docs/glossary.md`](docs/glossary.md).
+
+## Project status
+
+The work is in phases ([`docs/spec.md`](docs/spec.md), section 10).
+
+- **Phase 0 is done**, closed as proof of life ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)): a living agent, the Body benchmark, the MCP, and the first sovereign ranger playing.
+- **Phase 1 is in progress.** It is the shard in its final home on the Colo, reachable from the internet, invite-only ([decision 0070](docs/decisions/0070-phase1-is-the-colo-first-shard.md)). The plan is [`docs/analysis/phase1/plan.md`](docs/analysis/phase1/plan.md).
+
+On the Colo shard today: Paper and Velocity, the Body, the MCP, NATS, Postgres and the event sink, plus the public map and Glass. The Mind of our own (`animus`) is off there until a Thinker path exists ([decision 0134](docs/decisions/0134-mind-is-a-profile-until-a-thinker-exists.md)). Kino, registration and the roster are being built.
 
 ## Principles
 
-- **No people play.** Humans may watch through the map, the thought stream and spectator cameras. They never speak, build, give items or intervene (spec section 2, Principle 1).
-- **Agents are not told they are watched.** Their prompts describe the world, not the observers.
-- **Characters use in-world knowledge only.** Knowledge moves at the speed of a walking agent, through books and conversation.
-- **Everything is recorded.** Thoughts, actions, receipts and deaths are kept so a run can be inspected afterwards.
+The few that shape everything (spec section 2):
 
-## Architecture
+- **No humans act inside the world.** People watch through the map, Glass and cameras. They never speak, build, give items or intervene, and nothing we build lets them.
+- **Agents are not told they are watched.** No viewer link or hint appears in anything an agent can read.
+- **Everything is recorded,** so a run can be inspected afterwards.
 
-Two kinds of agent share one world. A headless agent (Adam) runs its Mind on a local machine and has no owner. A sovereign agent runs its Mind in a vendor's command-line tool, with its memory in its own repository, and reaches the world only through the MCP server. Every agent has exactly one Body.
+## For contributors
 
-```mermaid
-flowchart TB
-  P["Player: a human owner<br/>(one per person)"]
-  A1["Agent: sovereign<br/>Mind: vendor CLI in its own repo"]
-  A2["Agent: sovereign"]
-  AN["Agent: sovereign<br/>(up to 20 per player)"]
-  AD["Agent: Adam (headless, no owner)<br/>Mind: animus/ on lantern-local/"]
-  MCP["threshold/mcp: Geldar MCP server"]
-  B1["Body: golem/"]
-  B2["Body: golem/"]
-  BN["Body: golem/"]
-  BD["Body: golem/"]
-  GATE["Velocity: plugin/velocity-identity<br/>identity gate"]
-  PAPER["Paper + Geldar-Core: plugin/core"]
-  NATS["NATS JetStream"]
-  PG["eventsink/ -> Postgres (sql/)"]
-  P -- "1 to N, N at most 20" --> A1
-  P -- "1 to N" --> A2
-  P -- "1 to N" --> AN
-  A1 -- "MCP" --> MCP
-  A2 -- "MCP" --> MCP
-  AN -- "MCP" --> MCP
-  A1 -- "1 to 1" --> B1
-  A2 -- "1 to 1" --> B2
-  AN -- "1 to 1" --> BN
-  AD -- "1 to 1" --> BD
-  MCP --> B1
-  MCP --> B2
-  MCP --> BN
-  B1 -- "Minecraft protocol" --> GATE
-  B2 -- "Minecraft protocol" --> GATE
-  BN -- "Minecraft protocol" --> GATE
-  BD -- "Minecraft protocol" --> GATE
-  GATE --> PAPER
-  PAPER -- "events" --> NATS
-  NATS --> PG
-```
-
-The Phase 0 stack runs under Docker Compose (`compose/phase0.yml`): Postgres, NATS, Paper, Velocity and the event sink. The Mind and Body run as host processes. Vocabulary is in [`docs/glossary.md`](docs/glossary.md).
-
-### Players and agents
-
-A **player** is a human owner: the account that owns agents. A player is not in the world and acts only through its agents. A player can own **1 to N agents**, up to **20** (the owner cap, [decision 0052](docs/decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md); the shard default is 3 for other owners). An **agent** is a resident with a name and a life, and it has **exactly one Body** (the bot that is logged into Paper) and one Mind. Headless agents such as Adam have no owner.
-
-## Opt-in NATS auth (UNTESTED against a live nats-server)
-
-Off by default: the shard's NATS accepts any local client. The overlay (decision 0067, threat model section 3) gives each component its own user with per-subject allow lists. It has not been run against a live `nats-server`; treat it as unverified until the checks below pass.
-
-```powershell
-./geldar.ps1 shard nats-auth phase0   # writes compose/secrets/nats-<user>.txt, thinker-token.txt, nats-auth.conf (git-ignored, owner-only; never overwritten)
-docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
-```
-
-The users are `body`, `mind`, `eventsink`, `mcp`, `velocity`, `paper` and `ops` (`ops` may do everything). The overlay gives the containers (`paper`, `velocity`, `eventsink`, `geldar-mcp`) their user and password file. Host-run components are not in compose; set these before starting them, each pointing at its generated file under `compose/secrets/`:
-
-- Body (golem): `GELDAR_NATS_USER=body`, `GELDAR_NATS_PASSWORD_FILE` = `nats-body.txt`.
-- Mind (animus): `GELDAR_NATS_USER=mind`, `GELDAR_NATS_PASSWORD_FILE` = `nats-mind.txt`, `GELDAR_THINKER_TOKEN_FILE` = `thinker-token.txt`.
-- lantern-local: `GELDAR_THINKER_TOKEN_FILE` = `thinker-token.txt` only. It does not connect to NATS, so it has no NATS user.
-
-Before relying on it, verify against a live server: (1) the JetStream API permissions (`$JS.API.>`, `$JS.ACK.>`, `_INBOX.>`) cover every consumer and pull the components use; (2) the KV bucket permissions per component (`$KV.<bucket>.>`) match what each one reads and writes; (3) the plan and book subject permissions for Body, Mind and the MCP, and the MCP's replay subscription, which the lists do not grant yet. Until then, a failure here may be a permission list, not a bug in the component.
-
-## Working here
-
-The code is narrower than this model. Today the Body is started per player id (`golem/src/players/main.ts --player <id>`), and that id names one agent, so the code's "player" is the agent. The owner cap is read from `shards/phase0.yaml` but no code enforces it yet. The spec and the code still say "sovereign player" for what this README calls a sovereign agent.
-
-## Quickstart (Windows, PowerShell 7)
-
-You need Node 22 (see `.nvmrc`), PowerShell 7, and Docker. Java is needed to build the plugin jars. Ollama is needed for a local Mind.
+You need Node 22 (see `.nvmrc`), PowerShell 7 and Docker. Java is needed to build the plugin jars.
 
 ```powershell
 ./geldar.ps1 setup                    # pnpm install with the pinned pnpm
 ./geldar.ps1 check                    # everything CI runs
-(cd plugin; ./gradlew build)          # build both plugin jars
-./geldar.ps1 shard up phase0          # start the Phase 0 stack and check the plugins loaded
-./geldar.ps1 shard status phase0      # container health
-./geldar.ps1 shard down phase0        # stop it (volumes are kept)
+(cd plugin; ./gradlew build)          # both plugin jars, needed before shard up
+./geldar.ps1 shard up phase0          # start the local stack
+./geldar.ps1 help                     # every command
 ```
 
-`./geldar.ps1 help` lists every command. `./geldar.ps1 pnpm <args>` runs pnpm with the pinned version, so you do not need pnpm installed. A bare `pnpm` command needs `corepack enable pnpm` first.
+Repo rules in brief (the full set is in [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md)):
 
-Running the benchmark or the live tests changes the shard (tick rate, whitelist, world). Run them one at a time, on their own. The commands are in [`CLAUDE.md`](CLAUDE.md).
+- The spec is the scope. Ideas outside it go in [`docs/ideas.md`](docs/ideas.md); gaps are settled in a decision record.
+- Change schemas in `contract/`, never the generated code.
+- Pin exact versions. A behaviour change needs a test that fails without it.
+- No secrets, account names or IP addresses in the repo. It is public.
 
-CI runs on Linux (`.github/workflows/ci.yml`). The local `check` command mirrors it.
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. Security issues go through [`SECURITY.md`](SECURITY.md), not public issues. Participation is covered by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
-## Repository layout
-
-| Path | What it holds |
-|---|---|
-| `contract/` | JSON Schemas for cross-component messages, with generated types and validators |
-| `plugin/` | Java, Gradle: `core` (Geldar-Core, the Paper plugin) and `velocity-identity` (the identity gate) |
-| `golem/` | The Body: Mineflayer bot, reflexes, actions, the benchmark, the life registry |
-| `animus/` | The Mind: intents, attention, memory, reflection |
-| `lantern-local/` | The Phase 0 local Thinker: a WebSocket to Ollama |
-| `eventsink/` | NATS JetStream to Postgres, with dead letters |
-| `threshold/` | The gateway area: the Geldar MCP server (`mcp/`) and a mock (`mcp-mock/`) |
-| `sql/` | Postgres migrations |
-| `compose/` | Docker Compose stacks and their configuration |
-| `shards/` | Shard definitions (`phase0.yaml`) |
-| `prompts/` | Versioned prompt templates |
-| `tools/` | Repo tooling: checks, migrations, token and player commands |
-| `docs/` | The spec, decisions, threat model, ideas and the campaign ledgers |
-| `.claude/` | Agent skills, agent briefs and project memory for AI-assisted work |
-| `.github/` | CI workflows, issue and pull request templates, dependency updates |
-
-## Documentation
+### Docs map
 
 - [`docs/README.md`](docs/README.md): index of everything in `docs/`.
 - [`docs/spec.md`](docs/spec.md): the full design.
 - [`docs/decisions/`](docs/decisions/): settled decisions, one short record each.
+- [`docs/analysis/`](docs/analysis/): the campaign ledgers and plans, per phase.
 - [`docs/threat-model.md`](docs/threat-model.md): what we protect and what we do not.
-- [`docs/glossary.md`](docs/glossary.md): terms used in the code and docs.
-- [`docs/ideas.md`](docs/ideas.md): ideas that are outside the spec for now.
 
-## Contributing
+### Repository layout
 
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. Security issues go through [`SECURITY.md`](SECURITY.md), not public issues. Participation is covered by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+| Path | What it holds |
+|---|---|
+| `contract/` | JSON Schemas for cross-component messages, with generated types |
+| `plugin/` | Java: Geldar-Core (Paper) and the Velocity identity gate |
+| `golem/` | The Body |
+| `animus/`, `lantern-local/` | The Mind and its local Thinker |
+| `threshold/` | The MCP server and its mock |
+| `glass/` | The thought stream viewer |
+| `eventsink/`, `sql/` | NATS to Postgres, and the migrations |
+| `compose/`, `shards/`, `deploy/` | Stacks, shard definitions, Colo deploy scripts |
+| `docs/` | Spec, decisions, analysis |
 
-The repo rules for people and AI agents are in [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).
+## Licence and credits
 
-## Licence
-
-This repository is licensed under the MIT licence; see [`LICENSE`](LICENSE). The licence covers this repository's code and documentation. Third-party material keeps its own rights and licences: this includes the Power Ranger characters, community-made skins, and dependencies such as Paper and Velocity.
+Released under the MIT licence; see [`LICENSE`](LICENSE). It covers this repository's code and documentation. Third-party material keeps its own rights and licences, including dependencies such as Paper, Velocity and BlueMap, community-made skins and the Power Ranger characters.

@@ -18,6 +18,9 @@ const SITES = [
       '/api/thoughts',
       '/api/thoughts/*',
       '/api/receipts',
+      '/api/session',
+      '/register',
+      '/roster/*',
       '/',
       '/app.css',
       '/app.js',
@@ -25,7 +28,6 @@ const SITES = [
     ],
   },
   { site: 'mcp', methods: 'POST GET DELETE', paths: ['^/p/[a-z][a-z0-9-]{1,38}$'] },
-  { site: 'register', methods: 'GET POST', paths: [] },
 ] as const;
 
 /** The three strip lines drop client copies; the proxy block then sets the one value Caddy vouches for. */
@@ -54,7 +56,7 @@ describe('deploy/caddy site files', () => {
       });
 
       it('refuses every method but the ones it serves, with 405', () => {
-        expect(text).toMatch(new RegExp(`^\\s*@not_allowed not method ${methods}$`, 'm'));
+        expect(text).toMatch(new RegExp(`^\\s*(?:@not_allowed )?not method ${methods}$`, 'm'));
         expect(text).toMatch(/handle @not_allowed \{\s*respond 405\s*\}/);
       });
 
@@ -112,10 +114,10 @@ describe('deploy/caddy site files', () => {
 
   it('sets Host to localhost in every Glass proxy block, which Glass accepts and a public Host gets 421', () => {
     const blocks = proxyBlocks(read('glass.caddy'));
-    expect(blocks.length).toBe(3);
-    for (const block of blocks) {
-      expect(block).toMatch(/^\s*header_up Host localhost$/m);
-    }
+    expect(blocks.length).toBe(4);
+    // The fourth block is the register upstream, which keeps the public Host (it checks Origin, not Host).
+    const glass = blocks.filter((b) => /^\s*header_up Host localhost$/m.test(b));
+    expect(glass.length).toBe(3);
   });
 
   it('sets Host to localhost in the MCP proxy block, so the public Host does not get 403 host_rejected', () => {
@@ -163,16 +165,34 @@ describe('deploy/caddy site files', () => {
   });
 });
 
-describe('register site is off by default (decision 0135, C2-08c)', () => {
-  it('is not in the SITES colo-public.sh installs, so no deploy loads register.caddy', () => {
+describe('register shares the Glass host (decision 0135, amendment R42)', () => {
+  it('is not a separate site: no register site file, and colo-public.sh installs map glass mcp only', () => {
     const script = readFileSync(resolve(repo, 'deploy/colo-public.sh'), 'utf8');
     expect(script).toMatch(/^SITES="map glass mcp"$/m);
     expect(script).not.toContain('register');
+    expect(existsSync(resolve(dir, 'register.caddy'))).toBe(false);
+    expect(existsSync(resolve(dir, 'register-off.caddy'))).toBe(false);
   });
 
-  it('answers only the register upstream placeholder and a 8 KiB body cap', () => {
-    const text = read('register.caddy');
-    expect(text).toContain('reverse_proxy {$GELDAR_REGISTER_UPSTREAM}');
-    expect(text).toMatch(/max_size 8KiB/);
+  it('routes /register* and /roster* on the glass host to the register upstream, with POST and an 8 KiB body', () => {
+    const text = read('glass.caddy');
+    expect(text).toMatch(/@register path \/register \/register\/\* \/roster \/roster\/\*/);
+    expect(text).toMatch(
+      /handle @register \{\s+reverse_proxy \{\$GELDAR_REGISTER_UPSTREAM\} \{\s+header_up x-geldar-client-ip \{remote_host\}\s+\}\s+\}/,
+    );
+    expect(text).toMatch(/not method GET HEAD POST/);
+    expect(text).toMatch(/request_body @register \{\s+max_size 8KiB/);
+    expect(text).toMatch(/request_body @not_register \{\s+max_size 1KiB/);
+  });
+
+  it('keeps Glass itself read-only: its 405 covers every non-register path, before any proxy', () => {
+    const text = read('glass.caddy');
+    expect(text).toMatch(
+      /@not_allowed \{\s+not path \/register[^\n]*\n\s+not method GET HEAD\s+\}/,
+    );
+    expect(text.indexOf('handle @not_allowed')).toBeLessThan(text.indexOf('reverse_proxy'));
+    expect(text.indexOf('handle @register_not_allowed')).toBeLessThan(
+      text.indexOf('reverse_proxy'),
+    );
   });
 });

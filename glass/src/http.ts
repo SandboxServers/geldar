@@ -18,6 +18,7 @@ import {
   type ThoughtFilter,
 } from './query.ts';
 import { resolveRoute } from './routes.ts';
+import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
 
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
@@ -74,6 +75,10 @@ function pathOf(url: string | undefined): string {
 export interface GlassHandlerDeps {
   db: SqlClient;
   hub: SseHub;
+  /** The key shared with the register service that signs gk_session. Left out: every viewer is signed out. */
+  sessionKey?: string;
+  /** The clock for cookie expiry, in ms. */
+  now?: () => number;
   /** The public guards. Left out, the handler admits every request (no rate limit). */
   policy?: Partial<PublicPolicy>;
   /** Receives the `glass_untrusted_peer_header` line. Left out: one JSON line on stdout. */
@@ -161,7 +166,18 @@ async function serveRoute(
   deps: GlassHandlerDeps,
   policy: PublicPolicy,
   client: string,
+  req: IncomingMessage,
 ): Promise<void> {
+  if (name === 'session') {
+    const viewer = await resolveViewer(
+      deps.db,
+      deps.sessionKey,
+      req.headers.cookie,
+      (deps.now ?? Date.now)(),
+    );
+    sendJson(res, 200, viewer);
+    return;
+  }
   if (name === 'agents') {
     sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
     return;
@@ -288,7 +304,7 @@ export function createHandler(deps: GlassHandlerDeps) {
       return;
     }
     try {
-      await serveRoute(route.name, route.params, route.query, res, deps, policy, client);
+      await serveRoute(route.name, route.params, route.query, res, deps, policy, client, req);
     } catch (err) {
       if (err instanceof BadRequest) {
         sendJson(res, 400, { error: err.message });

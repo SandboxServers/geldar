@@ -175,10 +175,26 @@ deploy/colo-admin.sh token-mint <player>     # prints the file path and byte len
 ```
 
 The token file is `<tokens-dir>/<player>.token`, mode `0600`. Give it to the ranger's desktop by a channel outside
-chat. Then start the ranger's host with the secrets overlay:
+chat. Then start the ranger's host. There is one host per player: a container named `geldar-colo-players-host-<player>`.
+Do not start `players-host` with `up`: a second `up` replaces the first player's container.
 
 ```sh
-GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f deploy/compose.secrets.yml --profile sovereign up -d players-host
+deploy/colo-admin.sh player-start <player>   # idempotent: a running host is left alone
+deploy/colo-admin.sh player-stop <player>
+deploy/colo-admin.sh player-list             # each listed player, running or not
+```
+
+`player-start` and `player-stop` refuse an id that is not `^ag-[a-z0-9-]{1,40}$` or not listed under
+`sovereign.players` in `shards/colo-mind.yaml`. They touch only containers that carry the `geldar-colo` compose project
+label and that exact name. `player-start` runs
+`docker compose -p geldar-colo ... run -d --rm --no-deps --name geldar-colo-players-host-<player> -e GELDAR_PLAYER_ID=<player> players-host --player <player>`.
+
+Migrating Jason's old host (`geldar-colo-players-host-1`, from `up -d players-host`): stop and remove it, then start the
+new one.
+
+```sh
+docker stop geldar-colo-players-host-1 && docker rm geldar-colo-players-host-1
+deploy/colo-admin.sh player-start ag-jason-01
 ```
 
 ### (g) Verification

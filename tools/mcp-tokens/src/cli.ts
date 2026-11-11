@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { identityHash } from '../../../threshold/register/src/identity.ts';
-import { banIdentity, unbanIdentity } from './identities.ts';
+import { banIdentity, grantKinoAdmin, revokeKinoAdmin, unbanIdentity } from './identities.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
@@ -48,8 +48,11 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
   identity ban <id>                     ban a registered identity (64 hex digits) and revoke its owner's tokens
-  identity ban --provider github|discord --user-id <id> [--pepper-file <f>]
+  identity ban --provider microsoft|github|discord --user-id <id> [--pepper-file <f>]
                                         the same, the id derived from the provider account (decision 0136)
+  admin grant|revoke <id>               make a registered identity a Kino administrator, or remove it (64 hex digits)
+  admin grant|revoke --provider microsoft --user-id <id> [--pepper-file <f>]
+                                        the same, the id derived from the Microsoft subject
   identity unban <id>                   lift the ban (revoked tokens stay revoked)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
@@ -206,8 +209,8 @@ async function identityIdFrom(args: string[], parsed: Parsed, env: Env): Promise
   const provider = optionalFlag(parsed, '--provider');
   const userId = optionalFlag(parsed, '--user-id');
   if (args.length !== 1 || provider === undefined || userId === undefined) throw new Error(USAGE);
-  if (provider !== 'github' && provider !== 'discord')
-    throw new Error('--provider is github or discord');
+  if (provider !== 'microsoft' && provider !== 'github' && provider !== 'discord')
+    throw new Error('--provider is microsoft, github or discord');
   const file = optionalFlag(parsed, '--pepper-file') ?? env.registerPepperFile;
   if (file === undefined) throw new Error('--pepper-file (or REGISTER_PEPPER_FILE) is required');
   const pepper = (await readFile(file, 'utf8')).trim();
@@ -231,6 +234,24 @@ async function runIdentity(io: Io, env: Env, args: string[], parsed: Parsed): Pr
     return;
   }
   throw new Error(USAGE);
+}
+
+async function runAdmin(io: Io, env: Env, args: string[], parsed: Parsed): Promise<void> {
+  const verb = args[0];
+  if (verb !== 'grant' && verb !== 'revoke') throw new Error(USAGE);
+  const id = await identityIdFrom(args, parsed, env);
+  await withSql(env, async (sql) => {
+    if (verb === 'grant') {
+      await grantKinoAdmin(sql, id);
+      io.out(`granted Kino admin to identity ${id}`);
+    } else {
+      io.out(
+        (await revokeKinoAdmin(sql, id))
+          ? `revoked Kino admin from identity ${id}`
+          : `identity ${id} was not a Kino admin`,
+      );
+    }
+  });
 }
 
 async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
@@ -367,6 +388,8 @@ export async function run(
       await runOwner(parsed, io, env, rest);
     } else if (command === 'identity') {
       await runIdentity(io, env, rest, parsed);
+    } else if (command === 'admin') {
+      await runAdmin(io, env, rest, parsed);
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
     } else if (command === 'token') {

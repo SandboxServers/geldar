@@ -289,7 +289,7 @@ describe('the Glass HTTP handler', () => {
 
   it('lists the routes, all GET, and serves a GET to each one', async () => {
     const port = await start({ db: oneRow, hub: endingHub });
-    expect(ROUTES.map((route) => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET']);
+    expect(ROUTES.map((route) => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET', 'GET']);
     for (const route of ROUTES) {
       const reply = await send(port, 'GET', samplePath(route.path));
       expect(reply.status, route.path).toBe(200);
