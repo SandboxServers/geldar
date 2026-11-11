@@ -22,8 +22,15 @@ import java.util.regex.Pattern;
  * last received, and {@link #find} treats an entry older than the maximum age as absent.
  */
 public class LifeRegistry implements RegistryClient.Feed {
-    /** One registered life. */
-    public record Entry(String lifeId, String registeredAt) {}
+    /**
+     * One registered life. {@code live} is false for a ghost (a registered name whose life is not live); an entry
+     * without the {@code live} field is live, so the writers that predate the field keep their meaning.
+     */
+    public record Entry(String lifeId, String registeredAt, boolean live) {
+        public Entry(String lifeId, String registeredAt) {
+            this(lifeId, registeredAt, true);
+        }
+    }
 
     /**
      * The longest an entry stays admissible after it was last received. The bucket's TTL is 60 s and the
@@ -152,7 +159,16 @@ public class LifeRegistry implements RegistryClient.Feed {
             if (lifeId == null || registeredAt == null) {
                 return Optional.empty();
             }
-            return Optional.of(new Entry(lifeId, registeredAt));
+            boolean live = true;
+            JsonElement flag = object.get("live");
+            if (flag != null) {
+                // A present flag must be a JSON boolean; anything else fails closed (the name is denied).
+                if (!flag.isJsonPrimitive() || !flag.getAsJsonPrimitive().isBoolean()) {
+                    return Optional.empty();
+                }
+                live = flag.getAsBoolean();
+            }
+            return Optional.of(new Entry(lifeId, registeredAt, live));
         } catch (RuntimeException e) {
             return Optional.empty();
         }

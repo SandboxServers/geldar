@@ -201,6 +201,58 @@
         "time_of_day": { "type": "string", "enum": ["dawn", "day", "dusk", "night"] },
         "weather": { "type": "string", "enum": ["clear", "rain", "thunder"] }
       }
+    },
+    "PublicUnauthenticatedError": {
+      "description": "The public MCP refusal (HTTP 401) for a request with no token, a malformed token or an unknown token. The body is the same in all three cases, so it never says whether a token is valid (decision 0090).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "const": "unauthenticated" },
+            "message": { "const": "Unauthorized" }
+          }
+        }
+      }
+    },
+    "PublicRateLimitedError": {
+      "description": "The public MCP refusal (HTTP 429) for a client over its rate limit (decision 0090). retryAfter is the whole seconds the client should wait; the same value is sent as the Retry-After header.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "retryAfter"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "const": "rate_limited" },
+            "message": { "const": "Too many requests" }
+          }
+        },
+        "retryAfter": { "type": "integer", "minimum": 1, "maximum": 3600 }
+      }
+    },
+    "PublicKillSwitchError": {
+      "description": "The public MCP refusal (HTTP 503) while public.killSwitch is true (decision 0090). It names no switch and no config key.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "const": "unavailable" },
+            "message": { "const": "Service unavailable" }
+          }
+        }
+      }
     }
   }
 }
