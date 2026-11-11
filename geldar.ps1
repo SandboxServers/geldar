@@ -356,7 +356,8 @@ function Get-NatsUsers([string] $Shard) {
       Sub = @('_INBOX.>') }
     eventsink = @{ Pub = @("geldar.$s.dlq") + $js; Sub = @('_INBOX.>') }
     mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
-    velocity = @{ Pub = @((& $kv 'geldar-life-registry'), (& $kv 'geldar-skins')) + $js; Sub = @('_INBOX.>') }
+    # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
+    velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
     paper = @{ Pub = @("geldar.$s.>") + $js; Sub = @('_INBOX.>') }
   }
 }
