@@ -103,3 +103,63 @@ describe('Glass rate limit on the wire', () => {
     expect((await get(port, { 'x-geldar-client-ip': '203.0.113.2' })).status).toBe(429);
   });
 });
+
+interface Sent {
+  method: string;
+  path: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+function send(port: number, sent: Sent): Promise<Reply> {
+  return new Promise((resolve, reject) => {
+    const req = request(
+      { host: '127.0.0.1', port, method: sent.method, path: sent.path, headers: sent.headers },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          body += chunk;
+        });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+      },
+    );
+    req.on('error', reject);
+    req.end(sent.body);
+  });
+}
+
+describe('Glass request size cap on the wire', () => {
+  it('serves a target of exactly 2048 characters and refuses 2049 with 414 and the headers', async () => {
+    const { port } = await start({});
+    const atLimit = `/?pad=${'a'.repeat(2048 - '/?pad='.length)}`;
+    expect(atLimit.length).toBe(2048);
+    expect((await send(port, { method: 'GET', path: atLimit })).status).toBe(200);
+    const over = await send(port, { method: 'GET', path: `${atLimit}a` });
+    expect(over.status).toBe(414);
+    expect(JSON.parse(over.body)).toEqual({ error: 'request target is too long' });
+    expect(over.headers['content-security-policy']).toContain("default-src 'none'");
+    expect(over.headers['x-content-type-options']).toBe('nosniff');
+  });
+
+  it('admits a declared body of 1024 bytes and refuses 1025 with 413 before routing', async () => {
+    const { port } = await start({});
+    // The static page takes GET only, so an admitted body reaches the route and gets 405, not 413.
+    const atLimit = await send(port, {
+      method: 'POST',
+      path: '/',
+      headers: { 'content-length': '1024' },
+      body: 'x'.repeat(1024),
+    });
+    expect(atLimit.status).toBe(405);
+    const over = await send(port, {
+      method: 'POST',
+      path: '/',
+      headers: { 'content-length': '1025' },
+      body: 'x'.repeat(1025),
+    });
+    expect(over.status).toBe(413);
+    expect(JSON.parse(over.body)).toEqual({ error: 'request body is too large' });
+    expect(over.headers['content-security-policy']).toContain("default-src 'none'");
+  });
+});

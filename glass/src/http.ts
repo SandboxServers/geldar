@@ -23,6 +23,12 @@ import type { SseHub } from './sse.ts';
 /** The largest model input a thought detail returns, in bytes (wave 6 item 10, Glass design). */
 export const MODEL_INPUT_CAP_BYTES = 64 * 1024;
 
+/** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
+export const MAX_TARGET_CHARS = 2048;
+
+/** The largest declared request body Glass accepts, in bytes. Its routes take no body. */
+export const MAX_BODY_BYTES = 1024;
+
 /** Headers on every response, the API and the stream alike, including 404 and 405. */
 export const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
@@ -215,6 +221,15 @@ export function createHandler(deps: GlassHandlerDeps) {
     // DNS rebinding: a page on another site can name its own host, and then reach this port.
     if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
       sendJson(res, 421, { error: 'misdirected request' });
+      return;
+    }
+    // Size caps come before any parsing or routing: a long target or a declared body is refused at once.
+    if ((req.url ?? '').length > MAX_TARGET_CHARS) {
+      sendJson(res, 414, { error: 'request target is too long' });
+      return;
+    }
+    if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
+      sendJson(res, 413, { error: 'request body is too large' });
       return;
     }
     if (policy.limiter !== null) {
