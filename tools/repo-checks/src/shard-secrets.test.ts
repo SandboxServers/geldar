@@ -223,3 +223,28 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: the NATS secrets are checke
     }
   });
 });
+
+describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: --rcon-host is refused', () => {
+  it('refuses --rcon-host before anything starts, names the flag and the decision, and writes no secret', () => {
+    const dir = copyGenerator();
+    try {
+      const run = shard(dir, 'up', 'colo', '--rcon-host');
+      expect(run.status).not.toBe(0);
+      expect(squash(run.stderr)).toContain(squash('shard up colo: --rcon-host is refused'));
+      expect(squash(run.stderr)).toContain(squash('decision 0082'));
+      expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not refuse --rcon-host for phase0: the refusal is for the colo shard only', () => {
+    const dir = copyGenerator();
+    try {
+      const run = shard(dir, 'up', 'phase0', '--rcon-host');
+      expect(squash(run.stderr)).not.toContain(squash('--rcon-host is refused'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

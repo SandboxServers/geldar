@@ -371,6 +371,9 @@ function Invoke-Shard([string[]] $ShardArgs) {
   $file = Get-ComposeFile $shard
   # --rcon-host adds compose/rcon-host.yml, which publishes RCON to the host loopback for the host-run tools.
   $rconHost = @($extra) -contains '--rcon-host'
+  if ($rconHost -and $action -eq 'up' -and $shard -eq 'colo') {
+    throw "shard up colo: --rcon-host is refused. compose/rcon-host.yml publishes Paper's RCON to the host loopback and bypasses the colo rules (decision 0082). The colo stack keeps RCON on the colo network only."
+  }
   $files = @('-f', $file)
   if ($rconHost) { $files += @('-f', (Join-Path $Root 'compose/rcon-host.yml')) }
   $compose = @('compose') + $files + @('-p', "geldar-$shard")
@@ -388,7 +391,7 @@ function Invoke-Shard([string[]] $ShardArgs) {
       Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }
       Invoke-Step "start shard $shard" { docker @compose up -d --wait }
       Invoke-Step "check the plugins loaded on shard $shard" { Assert-PluginsEnabled $shard $compose }
-      if (-not $rconHost) { Write-Host "hint: RCON 25575 is not published to the host. Host tools that use it (golem players and bench, the removal of adam-cli, mcp-tokens and players-cli) need: ./geldar.ps1 shard up $shard --rcon-host" }
+      if (-not $rconHost -and $shard -ne 'colo') { Write-Host "hint: RCON 25575 is not published to the host. Host tools that use it (golem players and bench, the removal of adam-cli, mcp-tokens and players-cli) need: ./geldar.ps1 shard up $shard --rcon-host" }
     }
     'down' { Invoke-Step "stop shard $shard" { docker @compose down } }
     'status' { Invoke-Step "status of shard $shard" { docker @compose ps } }
