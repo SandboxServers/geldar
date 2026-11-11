@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
-import { clientAddress } from './guard.ts';
+import { clientAddress, clientKey } from './guard.ts';
 import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
@@ -224,8 +224,9 @@ export function createHandler(deps: GlassHandlerDeps) {
       sendJson(res, 413, { error: 'request body is too large' });
       return;
     }
+    const client = clientKey(clientAddress(req, policy.trustedProxies));
     if (policy.limiter !== null) {
-      const verdict = policy.limiter.take(clientAddress(req, policy.trustedProxies));
+      const verdict = policy.limiter.take(client);
       if (!verdict.allowed) {
         res.setHeader('Retry-After', String(verdict.retryAfter));
         sendJson(res, 429, {
