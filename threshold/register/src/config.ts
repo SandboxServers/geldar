@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { isIP } from 'node:net';
 
 export interface ProviderCredentials {
   readonly clientId: string;
@@ -56,6 +57,25 @@ function tokenPepper(
 }
 
 /**
+ * The trusted peers are matched as exact address strings, so each entry must be an IP literal. A CIDR
+ * range (valid in the MCP's list) is refused at startup rather than silently never matching (F26).
+ */
+function trustedPeerList(raw: string): string[] {
+  const entries = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const entry of entries) {
+    if (isIP(entry) === 0) {
+      throw new Error(
+        `REGISTER_TRUSTED_PEERS entry "${entry}" is not an IP literal (a CIDR range is not supported here; list the proxy address)`,
+      );
+    }
+  }
+  return entries;
+}
+
+/**
  * Reads the config from an environment map. A secret is read from the file named by
  * `<NAME>_FILE`. Only the exact string `false` turns the kill switch off.
  */
@@ -104,10 +124,7 @@ export function loadConfig(
       10,
       'REGISTER_MAX_NEW_OWNERS_PER_DAY',
     ),
-    trustedPeers: (env.REGISTER_TRUSTED_PEERS ?? '127.0.0.1')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
+    trustedPeers: trustedPeerList(env.REGISTER_TRUSTED_PEERS ?? '127.0.0.1'),
     perMinute: intOf(env.REGISTER_PER_MINUTE, 30, 'REGISTER_PER_MINUTE'),
   };
 }

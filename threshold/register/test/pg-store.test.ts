@@ -69,6 +69,23 @@ describe('PgStore error mapping', () => {
     ).rejects.toMatchObject({ code: '40001' });
   });
 
+  it('findOwner reads the banned flag from the definer function (F25)', async () => {
+    const storeAnswering = (rows: unknown[]): PgStore => {
+      const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1' });
+      (store as unknown as { pool: unknown }).pool = { query: async () => ({ rows }) };
+      return store;
+    };
+    expect(await storeAnswering([{ owner_id: 'o', banned: true }]).findOwner('ab')).toEqual({
+      ownerId: 'o',
+      banned: true,
+    });
+    expect(await storeAnswering([{ owner_id: 'o', banned: false }]).findOwner('ab')).toEqual({
+      ownerId: 'o',
+      banned: false,
+    });
+    expect(await storeAnswering([]).findOwner('ab')).toBeNull();
+  });
+
   it('createOwner goes through register_create_owner and maps nothing itself', async () => {
     const { store, sql } = storeFailingWith({ code: '23505' });
     await expect(
