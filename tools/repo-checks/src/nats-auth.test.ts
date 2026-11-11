@@ -17,8 +17,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');

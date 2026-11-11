@@ -329,8 +329,8 @@ describe('findPublicPorts: colo hardening rules', () => {
     expect(coloProblems(hardened())).toEqual([]);
   });
 
-  it('accepts a limit written as ${VAR:-default} when the default is positive', () => {
-    const text = hardened().replace('cpus: "1"', 'cpus: "${GELDAR_X_CPUS:-0.5}"');
+  it('accepts a VAR-default limit when the default is positive', () => {
+    const text = hardened().replace('cpus: "1"', `cpus: "\${GELDAR_X_CPUS:-0.5}"`);
     expect(coloProblems(text)).toEqual([]);
   });
 
@@ -416,10 +416,10 @@ describe('findPublicPorts: colo hardening rules', () => {
     expect(coloProblems(text)).toEqual(['paper: cpus "0" must be a positive number']);
   });
 
-  it('denies a ${VAR:-default} limit whose default is zero', () => {
-    const text = hardened().replace('memory: 512m', 'memory: "${GELDAR_X_MEM:-0m}"');
+  it(`denies a \${VAR:-default} limit whose default is zero`, () => {
+    const text = hardened().replace('memory: 512m', `memory: "\${GELDAR_X_MEM:-0m}"`);
     expect(coloProblems(text)).toEqual([
-      'paper: memory "${GELDAR_X_MEM:-0m}" has a default that is not a positive size such as 512m',
+      `paper: memory "\${GELDAR_X_MEM:-0m}" has a default that is not a positive size such as 512m`,
     ]);
   });
 

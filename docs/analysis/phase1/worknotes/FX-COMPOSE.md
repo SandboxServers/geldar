@@ -60,3 +60,4 @@ Branch `fix/c1-colo-compose-hardening`. A fix packet from the C1 boundary review
 - Non-superuser database roles (C2).
 - NATS auth config generation is PowerShell-only, so the node deploy depends on it.
 - The TypeScript colo rules read each file alone. The merged view is checked only by `docker compose config` in `Invoke-Check`.
+- Final gates (fix/c1-colo-compose-hardening): biome check tools/repo-checks/src exit 0; vitest run tools/repo-checks 265 passed, 3 skipped; check:repo ok; merge-tree with origin/main exit 0; docker compose config (colo.yml, and with nats-auth.yml) exit 0.
