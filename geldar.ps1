@@ -66,9 +66,55 @@ function Get-ComposeFile([string] $Shard) {
   return $file
 }
 
+# The colo shard's flat config (shards/colo.yaml), read by `check` and by `shard up colo`. The keys are the ones
+# contract/schemas/shard-config.schema.json declares. Unknown keys are refused by name. The host port must be the
+# literal 25567 that compose/colo.yml publishes (decision 0082): 25565 (the game server) and 25566 (reserved) are
+# refused, and so is any other value. A bind address other than loopback is refused.
+function Read-ColoConfig([string] $Path = (Join-Path $Root 'shards/colo.yaml')) {
+  if (-not (Test-Path -PathType Leaf $Path)) { throw "$Path does not exist" }
+  $known = 'cpu_limit', 'memory_limit', 'minecraft_port', 'bind_address'
+  $values = @{}
+  $lineNo = 0
+  foreach ($raw in Get-Content -Path $Path) {
+    $lineNo++
+    $line = ($raw -replace '\s+#.*$', '').Trim()
+    if ($line -eq '' -or $line.StartsWith('#')) { continue }
+    if ($line -notmatch '^([a-z_]+):\s*(\S+)$') { throw "${Path} line ${lineNo} is not a 'key: value' pair: $raw" }
+    $key = $Matches[1]
+    if ($key -notin $known) { throw "${Path} line ${lineNo}: unknown key '$key' (the colo shard reads: $($known -join ', '))" }
+    if ($values.ContainsKey($key)) { throw "${Path}: key '$key' is set twice" }
+    $values[$key] = $Matches[2]
+  }
+  foreach ($key in 'cpu_limit', 'memory_limit', 'minecraft_port') {
+    if (-not $values.ContainsKey($key)) { throw "${Path}: $key is missing; the colo shard needs it" }
+  }
+  $cpu = $values.cpu_limit
+  if ($cpu -notmatch '^[0-9]+(\.[0-9]+)?$' -or [double] $cpu -le 0 -or [double] $cpu -gt 64) {
+    throw "${Path}: cpu_limit '$cpu' must be a number above 0 and at most 64"
+  }
+  $memory = $values.memory_limit
+  if ($memory -notmatch '^[1-9][0-9]{1,4}[mg]$') {
+    throw "${Path}: memory_limit '$memory' must be a whole number of m or g, from 10m to 99999g"
+  }
+  $port = $values.minecraft_port
+  if ($port -in '25565', '25566') {
+    throw "${Path}: minecraft_port $port is refused (25565 is the game server, 25566 is reserved)"
+  }
+  if ($port -ne '25567') {
+    throw "${Path}: minecraft_port $port must be 25567, the host port compose/colo.yml publishes (decision 0082)"
+  }
+  $bind = if ($values.ContainsKey('bind_address')) { $values.bind_address } else { '127.0.0.1' }
+  if ($bind -ne '127.0.0.1') {
+    throw "${Path}: bind_address $bind is refused; the colo stack binds loopback only (127.0.0.1)"
+  }
+  return @{ cpu_limit = $cpu; memory_limit = $memory; minecraft_port = $port; bind_address = $bind }
+}
+
 function Invoke-Check {
   Push-Location $Root
   try {
+    Write-Host '==> colo shard config (shards/colo.yaml)' -ForegroundColor Cyan
+    $null = Read-ColoConfig
     Invoke-Step 'lint (biome)' { pnpm lint }
     Invoke-Step 'typecheck' { pnpm typecheck }
     Invoke-Step 'test (vitest)' { pnpm test }
@@ -259,6 +305,12 @@ function Invoke-Shard([string[]] $ShardArgs) {
     'nats-auth' { Initialize-NatsAuth $shard }
     'up' {
       Assert-PluginJar $shard
+      if ($shard -eq 'colo') {
+        # compose/colo.yml reads these two; the defaults in the file equal shards/colo.yaml's first guesses.
+        $colo = Read-ColoConfig
+        $env:GELDAR_COLO_CPU_LIMIT = $colo.cpu_limit
+        $env:GELDAR_COLO_MEMORY_LIMIT = $colo.memory_limit
+      }
       Initialize-ShardSecrets $shard
       Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }
       Invoke-Step "start shard $shard" { docker @compose up -d --wait }
