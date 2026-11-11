@@ -1,6 +1,6 @@
 # 0075. The Glass gets Lakitu cameras: free-fly, collision-bound, invisible in the world, targeted by login
 
-- Status: Proposed (pending owner confirmation of point 5, anonymous versus login cameras; the rest is for review)
+- Status: Accepted (owner, 2026-11-11; see the amendment at the end)
 - Date: 2026-11-10
 - Spec: section 2 (Principle 1: no humans inside, so viewers cannot act), section 7 (the Thought Stream, the Glass, and the spectator and ghost surfaces), 8.4 (Observatory edge, Entra ID SSO), 13 (open questions). Decisions 0052, 0059, 0068, 0070, 0072, 0073.
 
@@ -98,3 +98,19 @@ This is a **tension with decision 0072**, which says the Glass is public and nee
 - The leak test (no trace in the tab list, entity list, or agent snapshots while a camera is up) is automated and revert-checked. That is the exit check for the invisibility invariant.
 - The per-session cap and the collision test are part of the exit check.
 - The Glass privacy review (decision 0072, point 4) covers camera audit output and the feed as well as thought text.
+
+## Amendment, 2026-11-11: owner rulings (the name is Kino)
+
+The owner ruled on the open fork and the follow-ups. This amendment overrides the body above where they differ. The body is left as written.
+
+1. **Name.** The camera viewer is called **Kino**, after the Stargate Universe remotes. "Lakitu" in the body, in `contract/schemas/lakitu-*.schema.json` and in earlier packet cards is the old working name. New work uses Kino.
+2. **Who can open a camera.**
+   - Logged-in users (Microsoft personal accounts) can open cameras.
+   - Owners target their own players' agents.
+   - Admins target any agent. Admin status is a flag in Postgres, managed by an admin CLI, not a token.
+   - Anonymous visitors may watch only agents flagged for public viewing. The owner of the agent, or an admin, sets the flag. This replaces the "recommended" reading in the open fork: anonymous cameras exist, but only for flagged agents.
+   - Decision 0072 (the Glass is public and read-only) still holds. Kino keeps its read-only, one-way feed (point 2 of the decision).
+3. **Textures.** Vanilla textures, sourced as BlueMap sources them (from the Mojang client jar, already served as the map's `textures.json`), cached in the browser, and never in the repo. This closes the texture follow-up.
+4. **Limits.** 4 panes per session to start, as a setting. The audit log is retained 90 days. There is no load cap at first: measure first, then decide. There is a Kino kill switch and a SigNoz metric.
+5. **Data feed.** The Kino feed contract is `contract/schemas/kino-feed.schema.json` (server to browser) and `kino-client.schema.json` (browser to server: only `subscribe` and `unsubscribe`, no world input). Packet cards: `docs/analysis/phase1/packets/c2b-kino-packets.md`.
+6. **Still open.** The auth interim follow-up is answered by Microsoft sign-in (card K03). The public name beyond Kino is not an open item.
