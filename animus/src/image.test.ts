@@ -86,6 +86,8 @@ describe('animus/Dockerfile.mind.dockerignore', () => {
         '**/*.test.ts',
         'compose/secrets',
         '**/*.env',
+        '**/.env*',
+        '**/*.fakes.ts',
       ]),
     );
   });

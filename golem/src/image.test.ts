@@ -86,6 +86,8 @@ describe('golem/Dockerfile.dockerignore', () => {
         '**/*.test.ts',
         'compose/secrets',
         '**/*.env',
+        '**/.env*',
+        '**/*.fakes.ts',
       ]),
     );
   });
