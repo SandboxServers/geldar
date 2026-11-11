@@ -228,6 +228,123 @@ export interface Limits {
   max_block_operations: number;
 }
 
+export type KinoClient = SubscribeMessage | UnsubscribeMessage;
+
+export interface SubscribeMessage {
+  type: "subscribe";
+  target_agent_id: string;
+  mode: "follow" | "orbit" | "free";
+}
+
+export interface UnsubscribeMessage {
+  type: "unsubscribe";
+}
+
+export type KinoFeed =
+  HelloMessage | ChunkSectionMessage | BlockUpdateMessage | EntityPositionsMessage | TargetMovedMessage | ByeMessage;
+
+export type WorldName = string;
+
+export type AgentId = string;
+
+export type BlockState = string;
+
+export interface HelloMessage {
+  type: "hello";
+  /**
+   * Always 1 in this schema.
+   */
+  feed_version: 1;
+  world: WorldName;
+  target_agent_id: AgentId;
+  /**
+   * The view radius in chunks, 1 to 8.
+   */
+  view_radius: number;
+}
+
+export interface ChunkSectionMessage {
+  type: "chunk_section";
+  chunk_x: number;
+  chunk_z: number;
+  /**
+   * Section y (block y divided by 16, floored).
+   */
+  section_y: number;
+  /**
+   * The distinct block states of the section.
+   *
+   * @minItems 1
+   * @maxItems 4096
+   */
+  palette: [BlockState, ...BlockState[]];
+  /**
+   * Bits per palette index, 0 to 12.
+   */
+  bits: number;
+  /**
+   * Base64 of the bit-packed indices; empty when bits is 0.
+   */
+  data: string;
+}
+
+export interface BlockUpdateMessage {
+  type: "block_update";
+  pos: BlockPos;
+  state: BlockState;
+}
+
+export interface BlockPos {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface EntityPositionsMessage {
+  type: "entity_positions";
+  /**
+   * @maxItems 256
+   */
+  entities: EntityPosition[];
+}
+
+export interface EntityPosition {
+  /**
+   * An opaque feed-scoped entity id, not a UUID.
+   */
+  id: string;
+  /**
+   * The namespaced entity type, for example minecraft:zombie.
+   */
+  type: string;
+  agent_id?: AgentId;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+}
+
+export interface TargetMovedMessage {
+  type: "target_moved";
+  target_agent_id: AgentId;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ByeMessage {
+  type: "bye";
+  reason:
+    | "unsubscribed"
+    | "target_not_permitted"
+    | "pane_cap_reached"
+    | "feed_unavailable"
+    | "feed_overloaded"
+    | "kill_switch"
+    | "session_ended";
+}
+
 export type LakituAudit = {
   /**
    * The pane action.

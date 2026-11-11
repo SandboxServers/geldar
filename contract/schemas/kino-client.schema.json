@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/kino-client.schema.json",
+  "title": "KinoClient",
+  "description": "A browser-to-server message of the Kino feed, version 1 (decision 0075, amended 2026-11-11). Exactly two messages exist: subscribe and unsubscribe. PRINCIPLE 1: they carry no world input: no command, chat, coordinates, block, entity or input event. The server checks the target against the login scope on every subscribe (decision 0075 point 4). Identity comes from the connection, never from a message.",
+  "oneOf": [{ "$ref": "#/$defs/SubscribeMessage" }, { "$ref": "#/$defs/UnsubscribeMessage" }],
+  "$defs": {
+    "SubscribeMessage": {
+      "description": "Ask to watch one agent, in a camera mode.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target_agent_id", "mode"],
+      "properties": {
+        "type": { "const": "subscribe" },
+        "target_agent_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "mode": { "type": "string", "enum": ["follow", "orbit", "free"] }
+      }
+    },
+    "UnsubscribeMessage": {
+      "description": "Stop watching. No fields beyond type.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "unsubscribe" }
+      }
+    }
+  }
+}
