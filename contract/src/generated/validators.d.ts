@@ -18,6 +18,7 @@ export declare const validateChunkSectionMessage: ValidateFunction;
 export declare const validateBlockUpdateMessage: ValidateFunction;
 export declare const validateEntityPositionsMessage: ValidateFunction;
 export declare const validateTargetMovedMessage: ValidateFunction;
+export declare const validateRateLimitedMessage: ValidateFunction;
 export declare const validateByeMessage: ValidateFunction;
 export declare const validateLakituAudit: ValidateFunction;
 export declare const validateLakituFeed: ValidateFunction;

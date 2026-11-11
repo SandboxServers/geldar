@@ -8,9 +8,11 @@ const config = loadGlassConfig();
 // Kino is off unless GELDAR_KINO_ENABLED is 1 or true. Off: no NATS connection, no route, no page.
 const kinoEnv = loadKinoEnv();
 let feed: (FeedSource & { close(): Promise<void> }) | undefined;
+// natsFeed never rejects: if NATS is down or the kino user is missing, Kino stays disabled (logged) and
+// reconnects in the background; the Thought Stream and everything else start regardless.
 if (kinoEnv.enabled) {
   const { natsFeed } = await import('./kino/nats-feed.ts');
-  feed = await natsFeed({
+  feed = natsFeed({
     url: kinoEnv.natsUrl,
     shard: kinoEnv.shard,
     user: process.env.GELDAR_NATS_USER,

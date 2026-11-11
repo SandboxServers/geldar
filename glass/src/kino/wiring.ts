@@ -14,10 +14,11 @@ import { KinoAudit, sqlAuditStore } from './audit.ts';
 import { type ControlSink, controlledFeed } from './control.ts';
 import { KinoKillSwitch } from './killswitch.ts';
 import { KinoMetrics } from './metrics.ts';
+import { normalizeOrigin, parseAllowedOrigins } from './origins.ts';
 import { startOtlpExporter } from './otlp.ts';
 import { startAuditPurge } from './purge.ts';
 import { type FeedSource, KinoRelay } from './relay.ts';
-import { ANONYMOUS, listAgents, sqlScopeStore, watchableIds } from './scope.ts';
+import { ANONYMOUS, listAgents, ownedIds, sqlScopeStore, watchableIds } from './scope.ts';
 import { handleKinoUpgrade } from './ws.ts';
 
 const WEB = new URL('../../web/kino/', import.meta.url);
@@ -43,15 +44,19 @@ export interface KinoEnv {
 /** Kino settings from the environment. `enabled` is true only for GELDAR_KINO_ENABLED=1 or true. */
 export function loadKinoEnv(env: NodeJS.ProcessEnv = process.env): KinoEnv {
   const flag = (env.GELDAR_KINO_ENABLED ?? '').toLowerCase();
+  const rawOrigins = (env.GELDAR_KINO_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter((h) => h !== '');
   return {
     enabled: flag === '1' || flag === 'true',
     shard: env.GELDAR_SHARD || 'phase0',
     natsUrl: env.GELDAR_NATS_URL || 'nats://nats:4222',
     otlpEndpoint: env.GELDAR_KINO_OTLP_ENDPOINT || undefined,
-    allowedOrigins: (env.GELDAR_KINO_ALLOWED_ORIGINS ?? '')
-      .split(',')
-      .map((h) => h.trim().toLowerCase())
-      .filter((h) => h !== ''),
+    allowedOrigins:
+      flag === '1' || flag === 'true'
+        ? parseAllowedOrigins(rawOrigins)
+        : rawOrigins.map((e) => normalizeOrigin(e) ?? e.toLowerCase()),
   };
 }
 
@@ -87,7 +92,13 @@ export interface KinoParts {
 export interface KinoWiringOptions {
   db: SqlClient;
   /** The feed; with a control sink Glass also asks the plugin to start and stop targets. */
-  feed: FeedSource & { control?: ControlSink };
+  feed: FeedSource & {
+    control?: ControlSink;
+    /** False while the feed's connection is down: Kino is disabled until it is true again. */
+    available?(): boolean;
+    /** Called each time an established connection is lost. */
+    onLost?(listener: () => void): void;
+  };
   sessionKey: string | undefined;
   /** Glass's own enabled flag (the Glass kill switch also ends Kino). */
   glassEnabled: () => boolean;
@@ -115,7 +126,8 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
   const audit = new KinoAudit(sqlAuditStore(o.db), () =>
     console.log('{"kino":"audit write failed"}'),
   );
-  const enabled = (): boolean => o.glassEnabled() && killSwitch.enabled();
+  const enabled = (): boolean =>
+    o.glassEnabled() && killSwitch.enabled() && (o.feed.available?.() ?? true);
   const control = o.feed.control;
   const feed = control ? controlledFeed(o.feed, { sink: control, enabled }) : o.feed;
   const relay = new KinoRelay({
@@ -128,6 +140,8 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
     onBytes: metrics.onBytes,
   });
   killSwitch.attach(relay);
+  // A lost feed connection ends every open pane at once instead of leaving a frozen world on screen.
+  o.feed.onLost?.(() => relay.endAll('feed_unavailable'));
   const stopOtlp = startOtlpExporter(metrics, { endpoint: o.otlpEndpoint });
   const revalidateTimer = setInterval(
     () => void relay.revalidateAll(),
@@ -167,10 +181,14 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
           ? null
           : kinoSessionFromHeader(o.sessionKey, req.headers.cookie, Date.now());
       const access = session ? await sqlScopeStore(o.db).access(session.identityHash) : ANONYMOUS;
+      const owned =
+        session && access.signedIn && !access.banned
+          ? await ownedIds(o.db, session.identityHash)
+          : new Set<string>();
       json(200, {
         signed_in: access.signedIn,
         enabled: true,
-        agents: watchableIds(access, await listAgents(o.db)),
+        agents: watchableIds(access, await listAgents(o.db), owned),
       });
     } catch {
       json(503, { error: 'unavailable' });

@@ -56,7 +56,11 @@ export function controlledFeed(
   const watched = new Map<string, Watched>();
   const send = (type: 'start' | 'resync' | 'refresh' | 'stop', agent: string): void => {
     if (!o.enabled()) return;
-    o.sink.publish(JSON.stringify({ control_version: 1, type, target_agent_id: agent }));
+    try {
+      o.sink.publish(JSON.stringify({ control_version: 1, type, target_agent_id: agent }));
+    } catch {
+      // a closed connection throws; this runs in timers, so it must never escape (the pane ends through onLost)
+    }
   };
   const drop = (agent: string, w: Watched): void => {
     if (w.stopTimer) clearTimeout(w.stopTimer);

@@ -89,6 +89,12 @@ async function main(): Promise<void> {
       },
       onChange(change) {
         view?.update(change);
+        if (change.notice) {
+          msg.textContent = change.notice;
+          setTimeout(() => {
+            if (msg.textContent === change.notice) msg.textContent = '';
+          }, 4000);
+        }
       },
       onEnd(reason) {
         msg.textContent = byeText(reason);

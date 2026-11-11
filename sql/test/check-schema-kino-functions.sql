@@ -87,6 +87,10 @@ BEGIN
     IF (SELECT count(*) FROM kino_agent_list() WHERE agent_id IN ('ag_kf_a', 'ag_kf_c')) <> 2 THEN
       RAISE EXCEPTION 'schema check: kino_agent_list must list every agent';
     END IF;
+    step := '0019: kino_agent_list has no owner';
+    IF pg_get_function_result('kino_agent_list()'::regprocedure) LIKE '%owner%' THEN
+      RAISE EXCEPTION 'schema check: kino_agent_list must not return the owner';
+    END IF;
 
     step := '0016: glass_owner_agents';
     IF (SELECT array_agg(x) FROM glass_owner_agents(a_hash) x) IS DISTINCT FROM ARRAY['ag_kf_a'] THEN

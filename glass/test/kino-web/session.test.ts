@@ -124,19 +124,22 @@ describe('targets', () => {
 
   it('the server lists only what the viewer may watch', () => {
     const agents = [
-      { id: 'pub_bot', owner: 'o1', publicCamera: true },
-      { id: 'mine_bot', owner: 'o2', publicCamera: false },
-      { id: 'theirs_bot', owner: 'o1', publicCamera: false },
+      { id: 'pub_bot', publicCamera: true },
+      { id: 'mine_bot', publicCamera: false },
+      { id: 'theirs_bot', publicCamera: false },
     ];
+    const owned = new Set(['mine_bot']);
     const anon = { signedIn: false, admin: false, ownerId: null, banned: false };
     expect(watchableIds(anon, agents)).toEqual(['pub_bot']);
-    expect(watchableIds({ ...anon, signedIn: true, ownerId: 'o2' }, agents)).toEqual([
+    // an owned set without a sign-in grants nothing
+    expect(watchableIds(anon, agents, owned)).toEqual(['pub_bot']);
+    expect(watchableIds({ ...anon, signedIn: true, ownerId: 'o2' }, agents, owned)).toEqual([
       'pub_bot',
       'mine_bot',
     ]);
     expect(watchableIds({ ...anon, signedIn: true, admin: true }, agents)).toHaveLength(3);
-    expect(watchableIds({ ...anon, signedIn: true, ownerId: 'o2', banned: true }, agents)).toEqual(
-      [],
-    );
+    expect(
+      watchableIds({ ...anon, signedIn: true, ownerId: 'o2', banned: true }, agents, owned),
+    ).toEqual([]);
   });
 });

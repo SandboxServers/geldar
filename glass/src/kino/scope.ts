@@ -67,22 +67,35 @@ export function sqlScopeStore(db: SqlClient): ScopeStore {
 }
 
 /** Every agent with its scope, for the target picker. SELECT only, like the store above. */
-export async function listAgents(db: SqlClient): Promise<Array<AgentScope & { id: string }>> {
+export async function listAgents(
+  db: SqlClient,
+): Promise<Array<{ id: string; publicCamera: boolean }>> {
   const r = await db.query(
-    `SELECT s.agent_id, s.owner, s.public_camera FROM kino_agent_list() s ORDER BY s.agent_id`,
+    `SELECT s.agent_id, s.public_camera FROM kino_agent_list() s ORDER BY s.agent_id`,
     [],
   );
   return r.rows.map((row) => ({
     id: String(row.agent_id),
-    owner: row.owner === null || row.owner === undefined ? null : String(row.owner),
     publicCamera: row.public_camera === true,
   }));
+}
+
+/** The agent ids the identity owns (0016, a banned owner gets none). The owner id itself never leaves the database. */
+export async function ownedIds(db: SqlClient, identityHash: string): Promise<Set<string>> {
+  const r = await db.query(`SELECT x AS agent_id FROM glass_owner_agents(decode($1, 'hex')) x`, [
+    identityHash,
+  ]);
+  return new Set(r.rows.map((row) => String(row.agent_id)));
 }
 
 /** The agent ids this viewer may watch: the same rule as a subscribe, so the picker never offers a refusal. */
 export function watchableIds(
   access: Access,
-  agents: ReadonlyArray<AgentScope & { id: string }>,
+  agents: ReadonlyArray<{ id: string; publicCamera: boolean }>,
+  owned: ReadonlySet<string> = new Set(),
 ): string[] {
-  return agents.filter((a) => permitted(access, a)).map((a) => a.id);
+  if (access.banned) return [];
+  return agents
+    .filter((a) => access.admin || a.publicCamera || (access.signedIn && owned.has(a.id)))
+    .map((a) => a.id);
 }

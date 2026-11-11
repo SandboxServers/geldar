@@ -8,6 +8,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { clientAddress, clientKey } from '../guard.ts';
 import { kinoSessionFromHeader } from '../kino-cookie.ts';
+import { normalizeOrigin } from './origins.ts';
 import type { KinoRelay, Pane } from './relay.ts';
 
 export const KINO_WS_PATH = '/kino/ws';
@@ -91,13 +92,8 @@ export interface WsRoute {
  */
 export function originAllowed(origin: string | undefined, allowed: readonly string[]): boolean {
   if (origin === undefined) return true;
-  let o: string;
-  try {
-    o = new URL(origin).origin.toLowerCase();
-  } catch {
-    return false;
-  }
-  return o !== 'null' && allowed.includes(o);
+  const o = normalizeOrigin(origin);
+  return o !== null && allowed.some((a) => normalizeOrigin(a) === o);
 }
 /** Handles an `upgrade` event for KINO_WS_PATH. Returns false when the path is not ours. */
 export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: Duplex): boolean {

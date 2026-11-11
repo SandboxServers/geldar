@@ -9,6 +9,7 @@
     { "$ref": "#/$defs/BlockUpdateMessage" },
     { "$ref": "#/$defs/EntityPositionsMessage" },
     { "$ref": "#/$defs/TargetMovedMessage" },
+    { "$ref": "#/$defs/RateLimitedMessage" },
     { "$ref": "#/$defs/ByeMessage" }
   ],
   "$defs": {
@@ -154,6 +155,15 @@
         "x": { "type": "number" },
         "y": { "type": "number" },
         "z": { "type": "number" }
+      }
+    },
+    "RateLimitedMessage": {
+      "description": "The server refused the last subscribe because the client subscribed too often. Not an end of the feed: the page shows a short notice and the user may click again after a moment. Sent by Glass itself, never by the plugin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "rate_limited" }
       }
     },
     "ByeMessage": {
