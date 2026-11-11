@@ -120,8 +120,10 @@ describe('RCON is published to the host only through compose/rcon-host.yml', () 
     // The colo refusal is a throw on a line of its own, and it comes before the override is added.
     const refused = lines.filter((line) => line.includes('--rcon-host is refused'));
     expect(refused).toHaveLength(1);
-    expect(refused[0]).toMatch(/\bthrow\b/);
-    expect(lines.indexOf(refused[0])).toBeLessThan(lines.indexOf(adds[0]));
+    const [refusedLine = ''] = refused;
+    const [addLine = ''] = adds;
+    expect(refusedLine).toMatch(/\bthrow\b/);
+    expect(lines.indexOf(refusedLine)).toBeLessThan(lines.indexOf(addLine));
     // The hint names --rcon-host and prints only when the flag is missing, and not for colo.
     const hints = lines.filter((line) =>
       line.includes('hint: RCON 25575 is not published to the host'),
