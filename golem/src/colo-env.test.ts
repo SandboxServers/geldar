@@ -51,3 +51,28 @@ describe('golem-body in compose/colo.yml', () => {
     expect(() => assertLoopbackNatsUrl('nats://nats:4222', env)).toThrow(/NATS URL/);
   });
 });
+
+// The players host runs golem/src/players/main.ts, which loads the same stack config, with RCON to Paper.
+describe('players-host in compose/colo.yml', () => {
+  it('loads the stack config from the exact compose env, with RCON to Paper', () => {
+    const env = coloServiceEnv('players-host');
+    const cfg = loadStackConfig(env);
+    expect(cfg.mcHost).toBe('velocity');
+    expect(cfg.rconHost).toBe('paper');
+    expect(cfg.rconPort).toBe(25575);
+    expect(cfg.rconPasswordFile).toBe('/run/secrets/rcon');
+    expect(cfg.natsUrl).toBe('nats://nats:4222');
+    expect(() => assertLoopbackNatsUrl(env.GELDAR_NATS_URL ?? '', env)).not.toThrow();
+  });
+
+  it('refuses an arbitrary RCON host even with the in-network opt-in', () => {
+    const env = coloServiceEnv('players-host');
+    expect(() => loadStackConfig({ ...env, GELDAR_RCON_HOST: 'evil.example' })).toThrow(
+      /GELDAR_RCON_HOST/,
+    );
+  });
+
+  it('refuses the Paper service name for RCON without the opt-in', () => {
+    expect(() => loadStackConfig({ GELDAR_RCON_HOST: 'paper' })).toThrow(/GELDAR_RCON_HOST/);
+  });
+});
