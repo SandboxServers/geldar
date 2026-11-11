@@ -5,6 +5,8 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
+import { clientAddress } from './guard.ts';
+import { OPEN_POLICY, type PublicPolicy } from './policy.ts';
 import {
   getThought,
   listAgents,
@@ -69,6 +71,8 @@ function pathOf(url: string | undefined): string {
 export interface GlassHandlerDeps {
   db: SqlClient;
   hub: SseHub;
+  /** The public guards. Left out, the handler admits every request (no rate limit). */
+  policy?: Partial<PublicPolicy>;
 }
 
 export interface CappedText {
@@ -205,12 +209,24 @@ const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i;
 
 /** The request listener. It never sends a database error or a stack trace to the client. */
 export function createHandler(deps: GlassHandlerDeps) {
+  const policy: PublicPolicy = { ...OPEN_POLICY, ...deps.policy };
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     // DNS rebinding: a page on another site can name its own host, and then reach this port.
     if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
       sendJson(res, 421, { error: 'misdirected request' });
       return;
+    }
+    if (policy.limiter !== null) {
+      const verdict = policy.limiter.take(clientAddress(req, policy.trustedProxies));
+      if (!verdict.allowed) {
+        res.setHeader('Retry-After', String(verdict.retryAfter));
+        sendJson(res, 429, {
+          error: { code: 'rate_limited', message: 'Too many requests' },
+          retryAfter: verdict.retryAfter,
+        });
+        return;
+      }
     }
     const file = STATIC_FILES.get(pathOf(req.url));
     if (file !== undefined) {

@@ -2,6 +2,7 @@
 import { createServer, type Server } from 'node:http';
 import { Pool } from 'pg';
 import { assertLoopback, type GlassConfig, HEARTBEAT_MS } from './config.ts';
+import { RateLimiter } from './guard.ts';
 import { createHandler } from './http.ts';
 import { streamStartCursor, thoughtsAfter } from './query.ts';
 import { SseHub } from './sse.ts';
@@ -46,7 +47,9 @@ export function buildGlass(config: GlassConfig): GlassParts {
     fetch: (after) => thoughtsAfter(pool, after, STREAM_BATCH_ROWS),
     log: (entry) => console.log(JSON.stringify(entry)),
   });
-  const server = createServer(createHandler({ db: pool, hub }));
+  const limiter = new RateLimiter({ ...config.rateLimit, now: () => Date.now() });
+  const policy = { trustedProxies: new Set(config.trustedProxies), limiter };
+  const server = createServer(createHandler({ db: pool, hub, policy }));
   let closed = false;
   const close = (): void => {
     if (closed) return;

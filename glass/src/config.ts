@@ -24,6 +24,16 @@ export interface GlassConfig {
   sseBufferFrames: number;
   /** How often the stream looks for new thoughts. */
   ssePollMs: number;
+  /** False: every route answers 503 and open streams close (the kill switch, 0072 item 6). */
+  enabled: boolean;
+  /** Thoughts newer than this many seconds are not shown (0072 item 5). Zero shows them at once. */
+  delaySeconds: number;
+  /** True only when the owner rules that a living sovereign player's thoughts may show (0072 item 4). */
+  showLivingSovereign: boolean;
+  /** Peers whose `x-geldar-client-ip` header is believed (0090). Empty: the socket address is used. */
+  trustedProxies: string[];
+  /** The per-client token bucket (0072 item 3). The table holds at most `maxClients` clients. */
+  rateLimit: { perMinute: number; burst: number; maxClients: number };
 }
 
 /** Refuses any address but loopback. Called before every listen, so a setting cannot widen it. */
@@ -40,6 +50,32 @@ function intSetting(env: NodeJS.ProcessEnv, name: string, fallback: number): num
   const value = Number(raw);
   if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
   return value;
+}
+
+/** Reads a whole number that may be zero, or the default when unset. */
+function wholeSetting(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${name} must be a whole number`);
+  return value;
+}
+
+/** Reads a true or false setting, or the default when unset. Any other value is refused. */
+function flagSetting(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new Error(`${name} must be true or false`);
+}
+
+/** Splits a comma list of peer addresses, dropping blanks. */
+function listSetting(env: NodeJS.ProcessEnv, name: string): string[] {
+  return (env[name] ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
 }
 
 /**
@@ -71,5 +107,14 @@ export function loadGlassConfig(
     sseMaxClients: intSetting(env, 'GELDAR_GLASS_SSE_MAX_CLIENTS', 8),
     sseBufferFrames: intSetting(env, 'GELDAR_GLASS_SSE_BUFFER_FRAMES', 100),
     ssePollMs: intSetting(env, 'GELDAR_GLASS_SSE_POLL_MS', 1000),
+    enabled: flagSetting(env, 'GELDAR_GLASS_ENABLED', true),
+    delaySeconds: wholeSetting(env, 'GELDAR_GLASS_DELAY_SECONDS', 0),
+    showLivingSovereign: flagSetting(env, 'GELDAR_GLASS_SHOW_LIVING_SOVEREIGN', false),
+    trustedProxies: listSetting(env, 'GELDAR_GLASS_TRUSTED_PROXIES'),
+    rateLimit: {
+      perMinute: intSetting(env, 'GELDAR_GLASS_RATE_PER_MINUTE', 60),
+      burst: intSetting(env, 'GELDAR_GLASS_RATE_BURST', 20),
+      maxClients: intSetting(env, 'GELDAR_GLASS_RATE_MAX_CLIENTS', 1024),
+    },
   };
 }

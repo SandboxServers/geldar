@@ -142,6 +142,11 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
       sseMaxClients: 2,
       sseBufferFrames: 10,
       ssePollMs: POLL_MS,
+      enabled: true,
+      delaySeconds: 0,
+      showLivingSovereign: false,
+      trustedProxies: [],
+      rateLimit: { perMinute: 60, burst: 20, maxClients: 1024 },
     });
     glass = parts;
     await new Promise<void>((resolve) => parts.server.listen(0, '127.0.0.1', () => resolve()));
