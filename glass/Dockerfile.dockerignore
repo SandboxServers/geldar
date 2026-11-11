@@ -5,9 +5,11 @@
 !pnpm-workspace.yaml
 !.nvmrc
 !**/package.json
-# Glass imports no other workspace package, so only its own tree is needed: sources and the static page.
+# Glass imports no other workspace package (web/ imports from contract are type-only and stripped), so only its own tree is needed.
 !glass/src
 !glass/public
+# The Kino static app (wiring.ts reads glass/web/kino at start when GELDAR_KINO_ENABLED=1).
+!glass/web
 # The re-include above also matches every installed package.json; drop installed trees.
 **/node_modules/**
 **/node_modules
