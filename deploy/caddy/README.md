@@ -36,7 +36,7 @@ Core Caddy has no rate limiter, and this repo adds no third-party Caddy module (
 
 ## Kill procedure
 
-Swap to `<site>-off.caddy` (`deploy/colo-public.sh off <site>`) and reload. Open streams close within 5 s: `mcp.caddy` and the Glass `/api/stream` route set `stream_close_delay 5s`, so a reload does not leave them open. The in-process kill switches of the MCP and of Glass are read at start (ruling R26), so changing them needs a service restart; the Caddy swap is the live switch.
+Swap to `<site>-off.caddy` (`deploy/colo-public.sh off <site>`) and reload. `mcp.caddy` and the Glass `/api/stream` route set `stream_close_delay 5s`, which is intended to close open streams on a reload; that is not verified for SSE yet (C2-07 live check). Until it is, restart the MCP container and Glass after the swap. The in-process kill switches of the MCP and of Glass are read at start (ruling R26), so changing them needs a service restart; the Caddy swap is the live switch.
 
 The 405 for a refused method is `handle @not_allowed { respond 405 }`, the first handle in each site, because Caddy sorts a site-level `respond` after `handle` and it would never run. `tools/repo-checks/src/caddy-adapt.test.ts` adapts each file in the pinned image and checks the route order.
 

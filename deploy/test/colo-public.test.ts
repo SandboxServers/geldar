@@ -185,14 +185,16 @@ describe('colo-public.sh off, on and remove', () => {
     r.run(['install']);
     const live = readFileSync(join(r.geldar, 'map.caddy'), 'utf8');
     expect(r.run(['off', 'map']).status).toBe(0);
-    expect(readFileSync(join(r.geldar, 'map.caddy'), 'utf8')).toContain('respond 503');
-    expect(readFileSync(join(r.geldar, 'glass.caddy'), 'utf8')).not.toContain('respond 503');
+    expect(readFileSync(join(r.geldar, 'map.caddy'), 'utf8')).toContain('"code":"unavailable"');
+    expect(readFileSync(join(r.geldar, 'glass.caddy'), 'utf8')).not.toContain(
+      '"code":"unavailable"',
+    );
     expect(r.run(['status']).out).toMatch(/map: off[\s\S]*glass: on/);
     expect(r.run(['on', 'map']).status).toBe(0);
     expect(readFileSync(join(r.geldar, 'map.caddy'), 'utf8')).toBe(live);
     r.run(['off', 'all']);
     for (const s of ['map', 'glass', 'mcp']) {
-      expect(readFileSync(join(r.geldar, `${s}.caddy`), 'utf8')).toContain('respond 503');
+      expect(readFileSync(join(r.geldar, `${s}.caddy`), 'utf8')).toContain('"code":"unavailable"');
     }
   });
 
