@@ -22,6 +22,7 @@ describe('listMigrations', () => {
       '0004_mcp_sleep_marks_grants.sql',
       '0005_glass_reader.sql',
       '0006_owner_cap_trigger.sql',
+      '0007_journals_append_only.sql',
     ]);
   });
 

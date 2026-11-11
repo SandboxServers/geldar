@@ -286,7 +286,7 @@ describe('PgJournal', () => {
   it('writes the whole thought row as parameters, JSON for the jsonb columns', async () => {
     const { pool, calls } = fakePool();
     await new PgJournal(pool).recordThought(thought);
-    expect(calls[0]?.sql).toContain('ON CONFLICT (thought_id) DO UPDATE');
+    expect(calls[0]?.sql).toContain('ON CONFLICT (thought_id) DO NOTHING');
     expect(calls[0]?.params).toHaveLength(23);
     expect(calls[0]?.params[7]).toBe(JSON.stringify(thought.modelInput));
     expect(calls[0]?.params[6]).toBeNull();

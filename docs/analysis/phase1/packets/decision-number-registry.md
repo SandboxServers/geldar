@@ -23,7 +23,7 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0082 | C1 | C1-02 | Colo compose layout, ports and binds. C1-09 may extend it | Proposed |
 | 0083 | C1 | C1-03 | Image contents, base pins | Proposed |
 | 0084 | C1 | C1-04 | Deploy by pull | Proposed |
-| 0085 | C1 | C1-05a | Append-only journals, reset rule | Proposed |
+| 0085 | C1 | C1-05a | Append-only journals, reset rule | Accepted (orchestrator 2026-11-10) |
 | 0086 | C1 | C1-05b | Backup v1 | Proposed |
 | 0087 | C1 | C1-06a | NATS overlay live rules. Also covers C1-06b (cited, not added) | Proposed |
 | 0088 | C1 | C1-07 | Exporters and replay window | Proposed |
