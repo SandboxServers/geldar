@@ -36,7 +36,12 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       database: process.env.POSTGRES_DB ?? 'geldar',
       password,
     });
-    await assertConnectedToThrowaway(pool);
+    try {
+      await assertConnectedToThrowaway(pool);
+    } catch (err) {
+      await pool.end();
+      throw err;
+    }
     const nc = await connect({ servers: 'nats://127.0.0.1:4222' });
     const js = jetstream(nc);
     const jsm = await jetstreamManager(nc);

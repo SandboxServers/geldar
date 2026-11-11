@@ -175,6 +175,12 @@ export interface JournalEntry {
   text: string;
 }
 
+/**
+ * The newest lines of a life that a read returns. mcp_journal is append-only (sql/0007), so no
+ * line is deleted: the window bounds what a read shows. The fake store applies the same window.
+ */
+export const JOURNAL_KEEP = 1_000;
+
 /** The journal mirror in Postgres, capped per life at 4000 characters a line. */
 export interface JournalStore {
   /** Appends a line for a life. */

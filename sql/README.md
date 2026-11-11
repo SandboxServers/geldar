@@ -25,3 +25,11 @@ Appendix D needs this correction (spec.md is not edited here): `books` and `skil
 The `events` table is fed by `eventsink` (NATS stream `GELDAR_EVENTS` to Postgres, `INSERT ... ON CONFLICT (source_event_id) DO NOTHING`). Events it can never store are not rows: they go to the `geldar.<shard>.dlq` subject in the same stream, with the reason and a truncated body.
 
 Phase 0 runs one database per shard, so `WorldEvent.shard` has no column in `events` and the event sink drops it. Revisit this before Phase 1 multi-shard.
+
+## Integration test database guard
+
+The TRUNCATE cleanups in the integration tests run only against a scratch database (`geldar_it_<hex>`) or the shared CI database `geldar`.
+
+GELDAR_IT_ALLOW_SHARED_DB is CI-only: never set it locally.
+
+The guard allows the shared name only when the variable is `1` and `GITHUB_ACTIONS` is `true`, and CI sets the variable on the one integration step that needs it.

@@ -194,7 +194,6 @@ jobs:
           --health-timeout 5s --health-retries 30
     env:
       GELDAR_IT: '1'
-      GELDAR_IT_ALLOW_SHARED_DB: '1'
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: '5432'
     steps:
@@ -257,6 +256,9 @@ jobs:
           cat "$RUNNER_TEMP/eventsink.log"
           exit 1
       - name: integration tests that need Postgres or NATS
+        env:
+          # CI-only: the guard allows the shared geldar database only on GitHub Actions with this set.
+          GELDAR_IT_ALLOW_SHARED_DB: '1'
         run: >-
           pnpm vitest run
           threshold/mcp/test/it/pg-stores.it.test.ts
