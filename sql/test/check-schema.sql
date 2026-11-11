@@ -222,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0014, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0016, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
@@ -328,7 +328,7 @@ BEGIN
       IF NOT has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
         RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT agents.%', rel.attname;
       END IF;
-    ELSIF rel.attname <> 'public_camera' -- 0014: the one added Glass read (Kino)
+    ELSIF rel.attname NOT IN ('public_camera', 'thoughts_delayed_public') -- 0014 (Kino), 0016 (thought opt-in)
           AND has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass can read agents.% (not granted)', rel.attname;
     END IF;
@@ -603,7 +603,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
              WHERE p.proname LIKE 'register\_%' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
-     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 8
+     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 9
      OR NOT has_function_privilege('geldar_register', 'register_create_owner(bytea,text,text,text)', 'EXECUTE')
      OR has_function_privilege('geldar_mcp', 'register_create_owner(bytea,text,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'schema check: the register functions must be definer functions run by geldar_register only';

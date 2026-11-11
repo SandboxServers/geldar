@@ -47,6 +47,18 @@ export class PgStore implements Store {
     return r.rows[0]?.ok === true;
   }
 
+  async setThoughtsDelayedPublic(
+    identityHash: string,
+    playerId: string,
+    value: boolean,
+  ): Promise<boolean> {
+    const r = await this.pool.query(
+      'SELECT register_set_thoughts_delayed_public($1, $2, $3) AS ok',
+      [hex(identityHash), playerId, value],
+    );
+    return r.rows[0]?.ok === true;
+  }
+
   async listPlayers(identityHash: string): Promise<PlayerRow[]> {
     const r = await this.pool.query(
       'SELECT player_id, display_name, harness, status FROM register_list_players($1)',

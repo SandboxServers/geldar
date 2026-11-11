@@ -44,6 +44,12 @@ export interface Store {
   mintToken(request: MintRequest): Promise<boolean>;
   /** Sets public_camera on the owner's own agent through register_set_public_camera; false when it is not theirs. */
   setPublicCamera(identityHash: string, playerId: string, value: boolean): Promise<boolean>;
+  /** Sets agents.thoughts_delayed_public (decision 0138) through its definer function; false when the player is not theirs. Throws when rate limited. */
+  setThoughtsDelayedPublic(
+    identityHash: string,
+    playerId: string,
+    value: boolean,
+  ): Promise<boolean>;
   /** Retires the owner's own player and revokes its tokens; false when it is not theirs or not live. The database checks the owner by identity. */
   retirePlayer(identityHash: string, playerId: string): Promise<boolean>;
 }

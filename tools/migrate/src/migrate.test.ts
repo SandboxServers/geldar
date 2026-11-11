@@ -31,6 +31,7 @@ describe('listMigrations', () => {
       '0013_register_daily_owner_cap.sql',
       '0014_kino_access.sql',
       '0015_kino_audit.sql',
+      '0016_thought_visibility.sql',
     ]);
   });
 

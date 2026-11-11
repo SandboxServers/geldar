@@ -12,8 +12,17 @@ import {
   thoughtsAfter,
 } from './query.ts';
 
-/** The five tables migration 0005 grants to geldar_glass, and kino_admins (migration 0014); nothing else. */
-const ALLOWED_TABLES = ['thoughts', 'actions', 'receipts', 'intents', 'agents', 'kino_admins'];
+/** The five tables migration 0005 grants to geldar_glass, and kino_admins (migration 0014); nothing else.
+ * glass_owner_agents is the read-only definer function of migration 0016 (not a table; it is the only function Glass calls). */
+const ALLOWED_TABLES = [
+  'thoughts',
+  'actions',
+  'receipts',
+  'intents',
+  'agents',
+  'kino_admins',
+  'glass_owner_agents',
+];
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const WRITE_WORDS = /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
 const SQL_WORD = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
@@ -110,8 +119,8 @@ describe('the Glass SQL allowlist', () => {
     await streamStartCursor(db, 0);
     for (const call of calls) expect(call.text).not.toContain('DELETE');
     // The last value of a thought statement is its cut-off: null here, as no delay is set.
-    expect(calls[0]?.values).toEqual([hostile, false, null]);
-    expect(calls[1]?.values).toEqual([hostile, false, null]);
+    expect(calls[0]?.values).toEqual([hostile, false, null, []]);
+    expect(calls[1]?.values).toEqual([hostile, false, null, []]);
     expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10, false, null]);
   });
 });
