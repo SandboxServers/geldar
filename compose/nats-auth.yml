@@ -19,6 +19,8 @@
 services:
   nats:
     # The base's flags (-js -sd /data, as phase0.yml and colo.yml set them) stay: a command list replaces, not merges.
+    # The store dir is set here only: the generated conf says `jetstream: enabled` and no store_dir, because nats-server
+    # 2.15 refuses a store_dir in both places ("Duplicate 'store_dir' configuration").
     command: ["-js", "-sd", "/data", "-c", "/etc/nats/nats-auth.conf", "-m", "8222"]
     secrets:
       - source: nats-auth.conf

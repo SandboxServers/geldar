@@ -213,6 +213,16 @@ describe.skipIf(!hasDocker)('compose NATS auth overlays merge offline', () => {
     expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data']));
   });
 
+  it('sets the store dir once: -sd in the merged command of both stacks, no store_dir in the generator', () => {
+    for (const base of ['colo.yml', 'phase0.yml']) {
+      const merged = renderCompose(base, 'nats-auth.yml');
+      const command: string[] = JSON.parse(merged.stdout || '{}').services?.nats?.command ?? [];
+      expect(command.filter((a) => a === '-sd')).toHaveLength(1);
+      expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data', '-c']));
+    }
+    expect(functionBody('Initialize-NatsAuth')).not.toContain('store_dir');
+  });
+
   it('merges phase0.yml with mcp.yml, nats-auth.yml and nats-auth-mcp.yml', () => {
     const run = renderCompose('phase0.yml', 'mcp.yml', 'nats-auth.yml', 'nats-auth-mcp.yml');
     expect(run.status).toBe(0);

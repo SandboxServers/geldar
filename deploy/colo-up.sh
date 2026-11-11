@@ -30,11 +30,29 @@ act dc --profile admin pull admin
 # makes it and gives it to the service uid. mkdir -p and a chown of the two directories (not -R): a second run changes nothing.
 act dc run --rm --no-deps --user 0:0 --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER -v "${PROJECT}_paper-data:/data" \
   --entrypoint sh admin -c "mkdir -p /data/bluemap/web && chown $GELDAR_SERVICE_UID:$GELDAR_SERVICE_UID /data/bluemap /data/bluemap/web"
-act dc up -d --wait postgres nats
+# A changed network config makes compose recreate the project network; project containers that were stopped keep the old
+# network id and then fail to start ("network <id> not found"). When any container of this project (the label filter
+# keeps other projects out) points at a network that is gone, `up` recreates the containers. Volumes are never touched.
+recreate_flag() {
+  for cid in $(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"); do
+    for nid in $(docker inspect -f '{{range .NetworkSettings.Networks}}{{.NetworkID}} {{end}}' "$cid"); do
+      if ! docker network inspect "$nid" >/dev/null 2>&1; then
+        echo "--force-recreate"
+        return 0
+      fi
+    done
+  done
+}
+FORCE=$(recreate_flag)
+[ -z "$FORCE" ] || say "a project container is on a removed network; up will recreate containers (volumes are kept)"
+# shellcheck disable=SC2086
+act dc up -d --wait $FORCE postgres nats
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_glass --password-file /run/secrets/postgres-glass.txt
-act dc up -d --wait
+FORCE=$(recreate_flag)
+# shellcheck disable=SC2086
+act dc up -d --wait $FORCE
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run complete: no state was changed"
 else
