@@ -1,0 +1,91 @@
+# Colo Mind shard file: what the colo containers read (golem-body and animus), decisions 0078, 0131.
+# Mounted into both containers as /opt/geldar/shards/colo.yaml (compose/colo.yml). Derived from shards/phase0.yaml:
+# the same blocks, minus `sovereign` (no sovereign players on the colo yet). The flat budget file shards/colo.yaml
+# is NOT this file: geldar.ps1 refuses unknown keys in it, so the Mind's blocks cannot live there.
+# Every address is a colo compose service name or loopback. The Thinker is an explicit placeholder (see mind.thinker).
+shard: colo
+seed: 8675309                    # compose/colo.yml paper SEED must equal this; keep them equal
+tick_rate: 20                    # 20 TPS is the gate (decisions 0038 and 0047)
+world_border_radius: 1500        # spec 5.1: diameter 3000 in the world border command
+# The largest limits an intent may ask for: the output validator's bounds (animus validate/bounds.ts).
+max_world_ticks: 240000          # limits.max_world_ticks of an intent; the contract's own cap
+max_block_operations: 10000      # limits.max_block_operations of an intent; the contract's own cap
+population_target: 1
+identity_mode: watched           # unwatched | watched
+reflexes:                        # one flag per spec 5.2 reflex; enabled: false turns all off
+  enabled: true
+  eat: true
+  retreat: true
+  hazard_escape: true
+  fall_stop: true
+  fight_or_flee: true
+  blocked_path: true
+  panic_burrow: true
+chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
+memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
+attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }
+lifecycle: { permadeath: false }
+models:
+  strong: ["qwen3:32b"]          # served by the Thinker pool (decision 0078); the same tags as phase0
+  fast: ["qwen3:8b"]
+
+# The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
+# Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an
+# explicit placeholder: 127.0.0.1 inside the Mind's own container, where nothing connects, so no thought is
+# dispatched and no job runs. Replace `host`, `port` and `name` when the gateway is built (a later packet).
+mind:
+  agent:
+    name: Adam                   # display name in prompts and addressed-speech detection (decision 0051)
+    username: ag_colo_01         # the game account username, equal to the life id (decisions 0040, 0051, 0064)
+    tier: strong                 # which models.* tier the life runs on; fixed for the life (spec 5.3.3)
+    # The owner approved this seed on 2026-11-09 (decision 0051 item 2); the colo life reuses it unchanged.
+    personality_seed: "Curious and patient; careful after dark; likes making things last and counting what he has; generous with neighbours but remembers who helped him; dry, understated humour. Quirk: he names the places he finds (the Long Ford, the Bent Oak) and uses those names later."
+  thinker:
+    host: 127.0.0.1              # PLACEHOLDER: the Thinker socket of the Mind, loopback; no Thinker can reach it yet
+    port: 7410
+    name: unreachable-placeholder  # PLACEHOLDER: the Thinker name in the welcome frame; the gateway replaces it
+    heartbeat_s: 15              # seconds between heartbeat frames
+    warm_timeout_s: 180          # seconds one pinned model may take to load before its warm-up fails
+  snapshot_retry_s: 60           # the Mind retries a snapshot request for this long while the Body is not up
+  thinker_wait_s: 20             # a thought waits this long for a Thinker to connect, then retries once
+  # 2500 estimated tokens of a thought's user message; it must fit num_ctx 8192 with the system message and the
+  # 2048 output cap (library.ts, CONTEXT_TOKENS). The same budget as phase0.
+  prompt_budget_tokens: 2500
+  max_beliefs: 40                # the newest active beliefs loaded and shown in a prompt
+  max_commitments: 10            # the open commitments loaded and shown, earliest due first
+  thought_version: 5             # the thought template, prompts/thought/vN.md (v1 to v5 exist)
+  thought:
+    max_tokens: 600              # output cap of a standard thought
+    temperature: 0.7
+    deadline_s: 25               # job deadline, seconds after dispatch
+    reasoning: "off"             # the job's reasoning switch (decision 0049)
+  reflection:
+    max_tokens: 1200             # sleep reflection (spec 5.4)
+    deadline_s: 180
+    reasoning: "on"
+  admission:
+    max_thoughts_per_real_hour: 120   # local admission cap on thought jobs (wave 5 Q4)
+  plan:
+    expires_after_ticks: 1200    # a plan is refused by the Body this many world ticks after its snapshot
+  run_tier: strong               # models.* tier for this run
+  lives: { strong: ag_colo_01, fast: ag_adam_04, smoke: ag_smoke_01 }
+
+# Pinned models (decision 0051): the digests recorded from Ollama on 2026-11-09, as in phase0. A Thinker whose
+# model digest differs is not advertised. The loaders refuse the placeholder `sha256:RECORD_AT_DISPATCH`.
+model_pins:
+  "qwen3:32b":
+    digest: "sha256:030ee887880fc378860c2dd35101da424377520441ae4bfe7be6deff8ade7840"
+    num_ctx: 8192
+    keep_alive: 30m
+    max_concurrent: 1
+  "qwen3:8b":
+    digest: "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
+    num_ctx: 8192
+    keep_alive: 30m
+    max_concurrent: 1
+
+embedding:
+  model: nomic-embed-text        # decision D-P0-12
+  digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"
+  dims: 768
+  on_cpu: true                   # num_gpu 0, so it does not compete for the 24 GB card
