@@ -87,13 +87,13 @@ Acceptance for C3-06: every row passes; each test is revert-checked by removing 
 ## 6. N-bot benchmark design (C3-07, live part O)
 
 - **N values [J]:** 1, 5, 10 and 15 bots. Fifteen is the top of the C3 target (10 to 15 agents, plan.md C3).
-- **Scenario:** the existing scenario set in `docs/analysis/phase0/bench-results.md` (wood-to-stone-tools, food, shelter, bed, chest, blocked-path), each run 10 times per N, plus a 30-minute steady-state run at N = 15.
+- **Scenario:** the existing scenario set in `docs/analysis/phase0/bench-results.md` (wood-to-stone-tools, food, shelter, bed, chest, blocked-path), each run 10 times per N, plus a 30-minute steady-state run at N = 15 (a long run: campaign-end gate, 0130; not a wave gate).
 - **TPS threshold [J]:** pass needs (a) a mean of at least 19.0 TPS over every 5-minute window (`TICK_WINDOW_MS`, `tools/adam-run/src/tick-rate.ts:9`), and (b) no 5-minute window below 18.0. The gate value is 20 (`shards/phase0.yaml:5`); 19.0 allows for the bots' own load. Owner confirms the numbers (owner question O-4).
 - **Measurement on the shared node:** the run uses the off-peak window agreed with the owner. The node also runs the production game server and CI, so the run records load on those (CPU, memory, TPS of the production shard) before and after. A bench that drops the production shard below its own gate is a fail, whatever N.
 - **Pass means:** all four N values meet the TPS threshold; at least 90 percent of actions succeed per scenario at N = 1 and N = 10; p50 and p95 are recorded for each row in the table; no run ends in an unexplained `life_ended`. The result rows go to `bench-results.md` with the commit, N, TPS and the node's load note (no addresses).
 - **Not pass:** a TPS dip below 18.0, or a dip that the run cannot explain.
 
-## 7. Chaos-day scenarios (C3-09, live part O)
+## 7. Chaos-day scenarios (C3-09, live part O; the day runs at the end of the phase, 0130)
 
 Each scenario has a fixed expected outcome. A scenario passes when the observed outcome matches; any unexpected death, duplicate receipt, or lost event is a fail.
 
@@ -106,14 +106,14 @@ Each scenario has a fixed expected outcome. A scenario passes when the observed 
 | 5 | Thinker offline 15 minutes | Stop the Thinker process | Intents keep running; no wake storm; no death in the window |
 | 6 | MCP container recreated | Recreate the MCP container | Event replay is bounded (C1-07, 60 minutes); no action duplicated |
 | 7 | Velocity restarted | Restart the proxy | Players reconnect; whitelist from the registry |
-| 8 | Restore to scratch shard | Restore the latest backup (C1-05b) to a scratch shard | Checkpoint and journals match the manifest |
+| 8 | Restore to scratch shard | Restore the latest backup (C1-05b, deferred by 0130) to a scratch shard; runs only at the end-of-phase chaos day | Checkpoint and journals match the manifest |
 
 The owner signs off the written result (plan.md C3, owner vs agents).
 
 ## 8. Soak definition
 
-- **Soak gate (length open: owner question O-soak).** Continuous, 10 to 15 agents, intents running, on the node, after C3-10 is green. Exit check for the gate: fewer than one model wakeup per agent per real minute while intents run; no unexplained life end; no unexplained TPS window below 18.0.
-- **O-soak, both options (not decided in these cards).** (A) The wave schedule: a 72-hour soak gates C3, and a 7-day run happens once after C4 feature freeze as the Phase 1 exit run (changes plan.md C3 exit). (B) plan.md as written: a 7-day soak. Until the owner answers O-soak in writing, no packet states a duration as settled, and the 7-day run is not scheduled.
+- **Soak gate (campaign-end gate, resolved by decision 0130).** Continuous, 10 to 15 agents, intents running, on the node, 7 days, run once at the end of the phase after C4 freeze. It is not a C3 gate, and C3-10 does not start it. Exit check for the gate: fewer than one model wakeup per agent per real minute while intents run; no unexplained life end; no unexplained TPS window below 18.0.
+- **O-soak: resolved (0130).** One soak, at the end of the phase: the 7-day run in plan.md. The 72-hour soak gate proposed earlier is withdrawn. No soak runs in C3.
 - **Measurement:** the wakeup count comes from the event stream (`events` table, `world_day`, `world_tick`), not from logs.
 
 ## 9. Cards
@@ -278,7 +278,7 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 
 ### P1-C3-07: N-bot benchmark, harness live checks, DLQ replay, bench evidence (live part O)
 
-- **wave:** C3. **lane:** F. **size:** M for the desktop part; the live part is O. **status:** B/O.
+- **wave:** C3. **lane:** F. **size:** M for the desktop part; the live part is O, and it runs at the end of the phase (0130). **status:** B/O.
 - **depends-on:** P1-C1-10 (the node is up and the load check of C1 is done), P1-C3-06 (the Body reconciles, so a bench crash is explainable).
 - **may-edit:** `tools/adam-run/src/` (the bot runner and the TPS and `bodyConnected` checks; `tick-rate.ts` is read-only), `tools/adam-run/test/`, `eventsink/src/` and its `README.md` (the DLQ replay command), `docs/analysis/phase0/bench-results.md` only for the new rows, `docs/analysis/phase1/bench/` (new, for the run's summary files without addresses), `docs/analysis/phase1/worknotes/C3-07.md`, `docs/decisions/0111-*.md` (new).
 - **must-not-edit:** `docs/spec.md`, `contract/`, `sql/`, `golem/`, `shards/` (the TPS value and `tick_rate` do not change), `compose/`, `geldar.ps1` (the new commands go in as an index line for the integration packet of the wave), `package.json`.
@@ -315,8 +315,8 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 
 ### P1-C3-09: chaos-day scripts (live part O)
 
-- **wave:** C3. **lane:** F. **size:** M for the scripts; the live day is O. **status:** B/O.
-- **depends-on:** P1-C3-06 (scenario 1 needs reconciliation), P1-C3-08 (the runbook is the reference for the day), P1-C1-05b (scenario 8, restore).
+- **wave:** C3. **lane:** F. **size:** M for the scripts; the live day is O and runs at the end of the phase (0130). **status:** B/O.
+- **depends-on:** P1-C3-06 (scenario 1 needs reconciliation), P1-C3-08 (the runbook is the reference for the day), P1-C1-05b (scenario 8, restore; C1-05b is deferred by 0130, so scenario 8 runs at the end of the phase).
 - **may-edit:** `tools/chaos/` (new: one script per scenario of section 7, plus a runner that prints the expected and observed outcome), `tools/chaos/test/` (new), `docs/analysis/phase1/worknotes/C3-09.md`, `docs/decisions/0112-*.md` (new).
 - **must-not-edit:** `docs/spec.md`, `contract/`, `sql/`, `golem/`, `threshold/`, `compose/*` (the compose files stay as they are; scripts only call `docker`), `geldar.ps1` (an index line for the wave's integration packet), `package.json` (if a package is needed, use the lockfile rule of conventions section 3 and ask for an index line), `shards/`.
 - **decisions:** 0112 only.
@@ -333,15 +333,15 @@ Worknotes follow the convention (`docs/analysis/phase1/worknotes/C3-nn.md`). Unb
 
 ### P1-C3-10: integration and ops: roll C3 onto the node, the chaos day, the soak (O)
 
-- **wave:** C3. **lane:** A. **size:** L plus wall clock (soak length per O-soak). **status:** O.
-- **depends-on:** P1-C3-01 to C3-09 merged; P1-C1-10 (the node); the owner's answer to O-soak and the chaos-day sign-off (O-3).
+- **wave:** C3. **lane:** A. **size:** L, plus the end-of-phase soak wall clock (0130). **status:** O (the roll-out is this wave's; the soak and the chaos day are campaign-end gates).
+- **depends-on:** P1-C3-01 to C3-09 merged; P1-C1-10 (the node); the chaos-day sign-off (O-3). O-soak is resolved by 0130 (one soak, at the end of the phase).
 - **may-edit:** `shards/phase0.yaml` or a new `shards/phase1.yaml` (the integration packet owns it; index lines from the others are applied here), `geldar.ps1` (the new commands), `compose/` only the lines the integration needs, `docs/analysis/phase1/results/c3-*.md` (new, results only, no addresses), `docs/analysis/phase1/worknotes/C3-10.md`, `docs/decisions/0113-*.md` (new). This packet takes no number: 0114 is C3-03's (the C3 block is full).
 - **must-not-edit:** `docs/spec.md`, `contract/` (fan-out index lines go through the ops merge step), `golem/` and `threshold/` source (fixes go back to the owning card), `docs/analysis/phase0/` ledger README.
 - **decisions:** 0113 only.
 - **checks:** `./geldar.ps1 check` with the integration case-count floor (conventions 4.2); the owner checklists D (roll-out), C (chaos day) and E (soak) in section 10.3; the wave gates of section 10.2.
 - **steps:** follow owner checklists D, C and E exactly, in order, with each stop condition. Record every step's result in the worknote with the time.
-- **acceptance:** the soak gate of section 8 (length per O-soak) is met and written in `results/`; the chaos day has a written outcome per scenario; no unexplained life end; the 7-day exit run is not started by this card.
-- **commit:** `feat(shards): add the Phase 1 C3 shard config`; `docs: record the C3 roll-out, chaos day and soak gate results`; decision 0113.
+- **acceptance:** the roll-out and the short tests pass; the soak gate of section 8 and the chaos day run at the end of the phase (0130), not in this card; no unexplained life end; the 7-day exit run is not started by this card.
+- **commit:** `feat(shards): add the Phase 1 C3 shard config`; `docs: record the C3 roll-out results`; decision 0113.
 - **on-cap:** stop at the first failed stop condition in the checklist and report it; do not patch the node by hand.
 - **index line to add:** none (the packet is the integration owner).
 
@@ -366,7 +366,7 @@ Serialization: `golem/src/body` runs C3-05, then C3-06 (one at a time). `golem/s
 
 1. **Full check:** `./geldar.ps1 check` on the wave branch, with the integration case-count floor. The Postgres job runs the `GELDAR_IT=1` cases.
 2. **Reviews per surface, read-only, narrow brief, one fix round:** (a) the sovereign write path and the roster (C3-01, C3-04); (b) the Body's reconciler and receipts (C3-05, C3-06); (c) the build and sleep rules (C3-02, C3-03), reviewed against decision 0074; (d) the bench and chaos scripts (C3-07, C3-09), checked for the scratch-shard guard and for addresses in output.
-3. **One live run with a real client**, recorded in the worknote, step by step: a sovereign player connects, an agent takes a shelter intent, builds a shelter, sleeps in it, and the MCP reports the sleep result. Owner checklist A.
+3. **One live run with a real client** (the only live run per wave; the N-bot, chaos and soak runs are campaign-end gates, 0130), recorded in the worknote, step by step: a sovereign player connects, an agent takes a shelter intent, builds a shelter, sleeps in it, and the MCP reports the sleep result. Owner checklist A.
 4. **Retro** in `retro/` for C3.
 5. **Owner confirmation** of provisional decisions 0105 to 0113 (or a superseding record), and of O-1 to O-4 below.
 
@@ -382,7 +382,7 @@ Every checklist runs read-only steps first. A stop condition ends the step list;
 - A5. Confirm rows in `intents`, `actions` and `receipts` (read-only queries).
 - A6. Stop the run. Record the result in the worknote.
 
-**B. N-bot benchmark (C3-07, live).** On the node, in the agreed off-peak window.
+**B. N-bot benchmark (C3-07, live).** On the node, in the agreed off-peak window. Campaign-end gate (0130): not run at a wave boundary.
 - B1. Read-only: record the production shard's TPS and CPU for 30 minutes before the run. Stop if the production shard is already below 19 TPS.
 - B2. Run N = 1. Read the summary. Stop if the pass rule fails at N = 1.
 - B3. Run N = 5, then N = 10, then N = 15, one at a time, with a 15-minute cool-down. Stop at the first N that fails the pass rule.
@@ -390,7 +390,7 @@ Every checklist runs read-only steps first. A stop condition ends the step list;
 - B5. Record the results (no addresses) in `bench-results.md` with the commit.
 - B6. Record the production shard's TPS and CPU for 30 minutes after the last run. Stop if it does not return to baseline; the owner decides.
 
-**C. Chaos day (C3-09, live; owner signs off).** On the scratch shard only.
+**C. Chaos day (C3-09, live; owner signs off).** On the scratch shard only. Campaign-end gate (0130).
 - C1. Confirm the shard name is the scratch shard (the guard refuses otherwise). Stop if it does not match.
 - C2. Run every script in dry-run mode. Read the output with the owner.
 - C3. Run scenarios 1 to 8 one at a time, in the order of section 7, each with `--confirm`. Record observed and expected outcomes.
@@ -399,16 +399,16 @@ Every checklist runs read-only steps first. A stop condition ends the step list;
 
 **D. Roll-out to the node (C3-10).** Read-only first.
 - D1. Read-only: check disk, memory and the current containers on the node. Stop if free disk is under 20 percent.
-- D2. Take a backup with the C1-05b tool and confirm it restores to a scratch shard. Stop if the restore fails.
+- D2. Deferred (0130): no backup is taken for roll-out. The shard stays invite-only and unannounced (0070).
 - D3. Deploy the C3 images. Read-only health check of every container.
 - D4. Start the shard with the C3 config. Stop on the first unhealthy container.
 
-**E. Soak gate (C3-10): 72 hours.**
+**E. Soak (C3-10): 7 days, campaign-end gate (0130).** Not run at C3. The 72-hour gate is withdrawn.
 - E1. Start 10 agents (15 at the end of the first 12 hours, if the TPS rule holds).
 - E2. Every 6 hours, read-only: wakeups per agent per real minute, TPS windows, unexplained life ends. Stop if the TPS rule fails for two consecutive windows.
-- E3. At 72 hours, write the gate result. Pass means: fewer than one wakeup per agent per real minute while intents run; no unexplained life end; no TPS window below 18.0.
+- E3. At 7 days, write the soak result. Pass means: fewer than one wakeup per agent per real minute while intents run; no unexplained life end; no TPS window below 18.0.
 
-**F. Owner decisions before the soak.** The owner answers O-1 to O-4 in writing. No soak starts without O-1 and O-2.
+**F. Owner decisions before the soak.** The owner answers O-1 to O-4 in writing. No soak starts without O-1 and O-2; the soak runs at the end of the phase (0130).
 
 ### 10.4 Ledger rows for later pasting
 
@@ -426,11 +426,11 @@ Paste these rows into the Phase 1 ledger when it is written. This packet does no
 | C3-07 | `phase1/c3-07-bench` | `docs: record bench results for N = 1, 5, 10, 15` | B/O | desktop tests; live rows in `bench-results.md` |
 | C3-08 | `phase1/c3-08-runbooks` | `docs: add C3 runbooks for the kill switch, privacy, restore, rollback and chaos day` | B | link check |
 | C3-09 | `phase1/c3-09-chaos` | `feat(chaos): add the scenario scripts and the runner` | B/O | guard tests; live day in `results/` |
-| C3-10 | `phase1/c3-10-rollout` | `docs: record the C3 roll-out, chaos day and 72-hour gate results` | O | `results/` |
+| C3-10 | `phase1/c3-10-rollout` | `docs: record the C3 roll-out results` | O | `results/` |
 
 ### 10.5 Open owner questions
 
-- **O-soak.** Soak length, one open question (section 8 has both options): (A) 72-hour soak gates C3 and a 7-day run after C4 freeze; (B) the 7-day soak as plan.md states. **Pending owner answer.** Same question in C3-10 and C4 (section 10.5 there).
+- **O-soak.** Resolved 2026-11-10 (decision 0130): one 7-day soak at the end of the phase. The 72-hour gate is withdrawn. The chaos day and the N-bot long benchmark are campaign-end gates too.
 - **O-2.** Agents-per-player limit: default 1 and maximum 4 in `mcp_roster` (C3-04), or another value?
 - **O-3.** Chaos-day sign-off: who signs, and is scenario 4 (disk) allowed on the node or only on a test volume?
 - **O-4.** Benchmark numbers: N values (1, 5, 10, 15), the 19.0 mean and 18.0 floor, and the off-peak window on the shared node.
