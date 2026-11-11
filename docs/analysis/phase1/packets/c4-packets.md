@@ -261,7 +261,7 @@ Reading order for a coder: the card, the two pre-wave decisions it names ([0078]
 **Numbered steps**
 
 1. Pool (spec 5.7, the Shrine, around line 654): each shard has a fixed daily issuance pool. Offers during the day earn shares, weighted by the tariff table; the pool is paid out at the next in-game dawn. The pool size and the tariff table are shard config keys; the values are set only after 0079 is confirmed. Settlement writes `credit.settled` entries with integer amounts. The sum of shares paid never exceeds the pool (the bound).
-2. Offer and give: `offer(item, count)` at a Shrine is an economic action. The Body's `give` moves the items, and the server writes two receipts, one per side (0020). An `offer` repeated with the same action id is a no-op: it returns the first call's `prepared` receipt, moves no items and adds no shares. This needs the `prepared` receipt from C3-05.
+2. Offer and give: `offer(item, count)` at a Shrine is an economic action. The Body's `give` moves the items, and the server writes two receipts, one per side (0020). An `offer` repeated with the same action id is a no-op: it returns the first call's `prepared` receipt, moves no items and adds no shares. The lookup key is `receiptIdFor(actionId, 'prepared')`, the id C3-05 step 1 writes. This needs the `prepared` receipt from C3-05.
 3. Ledger text: `read_sign` at the Shrine returns the public ledger (totals and offers only). The ledger text is agent-visible, so it follows 0058 and 0068 and passes the scans in section 0. It never shows Glass, BlueMap or operator data.
 4. Life IDs: the server allocates an opaque `lf_` ID when an agent is born (birth source `spawn`, `cradle` or `replacement`). The Body and the Mind receive the ID in `life.started`. The Body's action set has no field for an ID.
 5. Death and birth: a death writes `life.ended` for life L1. The birth that follows writes `life.started` for a new life L2 with parent life L1 (or null for a first life). L1 and L2 are distinct; the exit (spec 1418) needs both.
@@ -284,7 +284,7 @@ Reading order for a coder: the card, the two pre-wave decisions it names ([0078]
 
 ---
 
-### P1-C4-06 prompt v5 and wake wording: due_tick, damage in flight, suppressed wakeups
+### P1-C4-06 prompt v7 and wake wording: due_tick, damage in flight, suppressed wakeups
 
 - **id:** P1-C4-06
 - **wave:** C4
@@ -294,29 +294,29 @@ Reading order for a coder: the card, the two pre-wave decisions it names ([0078]
 - **decisions:** 0122
 - **size:** M (about 40k)
 - **may-edit:** `animus/src/prompts/**` (a new version directory and the version bump; the template registry), `prompts/**` (the versioned template directory if it lives outside `animus/`; verify the path on the wave branch first and report it), `animus/src/attention/**` (the wake wording and the `suppressed_wakeups` reason), `animus/test/**` (prompt and wake tests), `docs/analysis/phase1/worknotes/P1-C4-06.md`.
-- **must-not-edit:** section 0 list; every released template version (v1 to v4): they are never edited, only superseded; `contract/src/agent-text.ts` (the marker list belongs to C4-00); `golem/**`; `plugin/**`; `threshold/**`.
+- **must-not-edit:** section 0 list; every released template version (v1 to v6): they are never edited, only superseded (v6 is reserved for C3-03, so this card creates v7); `contract/src/agent-text.ts` (the marker list belongs to C4-00); `golem/**`; `plugin/**`; `threshold/**`.
 - **worknote:** `docs/analysis/phase1/worknotes/P1-C4-06.md`
-- **commit:** per item (1 prompt v5 as a new version, 2 due_tick in the prompt, 3 damage re-raise and suppressed-wakeup reasons, 4 wake wording and the scans).
+- **commit:** per item (1 prompt v7 as a new version, 2 due_tick in the prompt, 3 damage re-raise and suppressed-wakeup reasons, 4 wake wording and the scans).
 
 **Numbered steps**
 
-1. Prompt v5 is a new template version with its own directory and a version bump in the registry (0068). Released versions v1 to v4 are not edited. A golden test records the content hash of each released template, so an edit to one fails the build.
+1. Prompt v7 is a new template version with its own directory and a version bump in the registry (0068). Released versions v1 to v6 are not edited. A golden test records the content hash of each released template, so an edit to one fails the build.
 2. `due_tick`: the prompt shows the tick at which the agent's current intent is next due (the next wake the Body expects). The value is read from the intent, not computed in the prompt.
 3. Damage in flight: when the agent takes damage while a thought is in flight, the wake is re-raised after that thought returns. It is not dropped and not merged silently.
 4. `suppressed_wakeups`: a wakeup that the attention rule (C4-01) suppresses records its reason (for example `absorbed-by-intent`, `budget`, `dim`) in the journal. The agent-visible text says only what happened in the world ("you were busy with the walk"), never the reason code.
 5. Wake wording: the "speech heard" wake uses in-world words only. It contains no word from the marker list and no server, budget or wakeup term.
-6. Run the prompt scan and the agent-visible text scan on v5 and on every new wake string.
+6. Run the prompt scan and the agent-visible text scan on v7 and on every new wake string.
 
 **Acceptance checks**
 
-- Test `prompt: v5 is a new version and released v1 to v4 are byte-identical`. Revert-check: edit a released template. The golden test must fail; restore.
+- Test `prompt: v7 is a new version and released v1 to v6 are byte-identical`. Revert-check: edit a released template. The golden test must fail; restore.
 - Test `wake: damage taken during a thought re-raises the wake`. Revert-check: drop the re-raise. The test must fail; restore.
 - Test `wake: a suppressed wakeup records its reason in the journal and the agent sees no reason code`.
 - Test `prompt: due_tick matches the intent's next due tick`.
-- Knowledge-boundary scans on v5 and the wake strings (section 0).
+- Knowledge-boundary scans on v7 and the wake strings (section 0).
 - `./geldar.ps1 check` exit 0.
 
-**Index line to add (handoff):** `index: | [0122](0122-prompt-v5-and-wake-wording.md) | Prompt v5, due_tick, damage re-raise, and suppressed-wakeup reasons | Proposed |`
+**Index line to add (handoff):** `index: | [0122](0122-prompt-v7-and-wake-wording.md) | Prompt v7, due_tick, damage re-raise, and suppressed-wakeup reasons | Proposed |`
 
 ---
 
@@ -417,7 +417,7 @@ Status as of 2026-11-10. This section is the wave plan for C4 under the same rul
           |             |               |
           +-------------+-------+-------+
                                 |
-                          C4-06 prompt v5 (lane C, after 01, 02b, 03)
+                          C4-06 prompt v7 (lane C, after 01, 02b, 03)
 
    lane F:  C4-07 Thinker gateway (after 00; security review before any bind;
             waits 0078 and 0080 confirmed)
@@ -439,7 +439,7 @@ Status as of 2026-11-10. This section is the wave plan for C4 under the same rul
 ### 10.3 Campaign-boundary gates (conventions 4.3)
 
 1. An adversarial campaign review in the Phase 0 style: nine reviewers, one per surface, none of whom wrote the code, aggressive and investigative. The surfaces: the MCP endpoint; Glass; the Lakitu feed; the Minecraft port; NATS; the Thinker gateway; the credit and shrine economy; books, skills and chat (the agent-visible text); and the hibernation, birth and data paths (life IDs and the migrations). Each reviewer reports findings with a severity; the next round fixes only the high findings.
-2. The full soak and the chaos run (below).
+2. The full soak and the chaos run (below; length per O-soak, 10.5).
 3. A security review of every public surface, as in conventions 4.3.3: the MCP endpoint, Glass, the Lakitu feed, the Minecraft port, NATS, and the Thinker gateway (which stays private until this review passes).
 4. Spec-amendment reconciliation against the table in [decision 0073](../../../decisions/0073-spec-is-never-edited.md). Every row gets a status (settled, open, or amended by the owner). A packet never edits the spec; the owner does, one line at a time. Rows to check: the observers sentence (0068), the owner cap (0052), the "player" and "agent" terms, the personal names, the sovereign OAuth line (0054), the Mind placement (0050 and 0078), the Observatory edge (0071), the port and SRV line (0071), the Phase 1 exit wording (0126), and the four-public-ports line (0071).
 5. The campaign retro in `docs/analysis/phase1/retro/campaign.md` (create).
@@ -448,15 +448,20 @@ Status as of 2026-11-10. This section is the wave plan for C4 under the same rul
 
 The soak is a test in `tools/soak/` (create). It runs the agents and reads only the journal, the receipt tables and the metric endpoint. The verdict is computed by the test; nobody writes a verdict by hand, and a threshold is never changed to pass (conventions section 5).
 
-- **Run:** 10 to 15 agents, one shard on the node, seven real days (the length is an owner question, see 10.6). The first hour is warm-up and is not counted.
+- **Run:** 10 to 15 agents, one shard on the node. The length is open (O-soak, 10.5 and 10.6). Under option (A) a 72-hour gate runs at C3 and one 7-day run runs at exit after the C4 freeze; under option (B) a 7-day run runs throughout. No packet schedules a duration until the owner answers. The first hour is warm-up and is not counted.
 - **Measured, sampled every real minute:** model wakeups per agent per real minute, and the intent steps completed; deaths and their causes; the receipt chain (every action has its prepared receipt and its final receipt, 0020, 0027); the credit ledger (reserved minus refunded minus settled, per life, at the end of each real day, must equal the open reservations); container memory (the slope per day of each container's resident set); NATS reconnects; MCP 5xx count; hibernation episodes and the time to `resumed`.
 - **Thresholds (pass):** wakeups below 1.0 per agent per real minute, averaged over the counted window, while intents run (the plan's C3 exit target); zero deaths caused by the Body while hibernating (C4-03); every receipt chain unbroken; the credit ledger reconciles every day; no container's resident set grows by more than a limit set in the test before the run starts; zero unexplained MCP 5xx.
-- **How counted:** a real minute is counted when at least one agent is awake. Wakeups are counted from the journal by reason, not from the logs. The window is the seven days minus the warm-up hour.
+- **How counted:** a real minute is counted when at least one agent is awake. Wakeups are counted from the journal by reason, not from the logs. The window is the run's duration minus the warm-up hour.
 - **Chaos (part of the same campaign gate):** restart each container in turn; take NATS down for five minutes; the desktop Thinker off for one hour (the C4-03 check); recreate the MCP container (the replay bound from the first ranger run, plan (g)). Each one has a written result in the campaign worknote.
 
-### 10.5 The soak length: flagged
+### 10.5 The soak length: open owner question O-soak
 
-The plan's C3 section says seven days (plan.md lines 156 and 161). An earlier planning note mentioned a 72-hour gate at C3, but plan.md has no such gate. This section uses seven real days and flags the length for owner confirmation (10.6, question 5). A 72-hour run may be used as an earlier gate only if the owner says so, and that choice is recorded in a decision.
+The plan's C3 section says seven days (plan.md lines 156 and 161). The wave schedule in the C3 cards (C3 section 8, C3-10) proposes a 72-hour soak gate at C3. The two do not agree, and no packet states a duration as settled. The options are the same as in C3:
+
+- (A) The wave schedule: a 72-hour soak gates C3, and one 7-day run happens once after the C4 feature freeze as the Phase 1 exit run (this changes plan.md C3 exit).
+- (B) plan.md as written: a 7-day soak throughout.
+
+Until the owner answers O-soak in writing, the 7-day run is not scheduled and CAMP-C4-B is not dated. The answer is recorded in a decision with a number from the registry.
 
 ### 10.6 Open owner questions that gate the wave
 
@@ -464,7 +469,7 @@ The plan's C3 section says seven days (plan.md lines 156 and 161). An earlier pl
 2. Decision 0079 (credit numbers and charge rules) confirmed: gates the values in C4-04 and C4-05. The mechanisms can be built before.
 3. Decision 0080 (NATS auth cutover, T-1 for Phase 1) confirmed: gates C4-07.
 4. The Shrine exit wording (spec line 1414 excludes the Shrine and permadeath; line 1418 requires them): the owner's ruling is decision 0126. Gates the exit record in C4-08.
-5. The soak length: seven real days (10.5), or another length.
+5. O-soak: the soak length and schedule, option (A) or option (B) in 10.5. Gates the soak rows in 10.8 and the exit run.
 6. Thinker identity: NATS credentials only in Phase 1, or mTLS from the step-ca path (C4-07, 0124).
 7. Which GPU hosts enrol as Thinkers, and whether the gateway is reachable over the LAN or a VPN in Phase 1 (plan (e), C4 owner items).
 8. The mechanism-demo pass bar (C4-02b, proposal [J]) and the useful-minute definition.
@@ -481,7 +486,7 @@ The plan's C3 section says seven days (plan.md lines 156 and 161). An earlier pl
 | P1-C4-03 | Sleep reflection and hibernation | C | P1-C4-00, C3-02 | B (live hour O) |
 | P1-C4-04 | Credits allowance: reserve before dispatch, refund on failure | D | P1-C4-00, 0079 | B (numbers O) |
 | P1-C4-05 | Shrine pool and birth: idempotent offers, server life IDs | E | P1-C4-00, C3-05, 0079 | B (values O) |
-| P1-C4-06 | Prompt v5 and wake wording | C | P1-C4-01, P1-C4-02b, P1-C4-03 | B |
+| P1-C4-06 | Prompt v7 and wake wording | C | P1-C4-01, P1-C4-02b, P1-C4-03 | B |
 | P1-C4-07 | Thinker gateway: per-Thinker NATS users, enrolment | F | P1-C4-00, 0078, 0080 | B; enrolment O |
 | P1-C4-08 | Integration and ops: Phase 1 exit run on the node | G | P1-C4-00 to P1-C4-07 | O |
 
@@ -490,7 +495,7 @@ The plan's C3 section says seven days (plan.md lines 156 and 161). An earlier pl
 | id | title | lane | depends | status |
 |---|---|---|---|---|
 | CAMP-C4-A | Adversarial campaign review (nine reviewers) | review | P1-C4-08 | O |
-| CAMP-C4-B | Full soak (seven real days) and chaos | ops | CAMP-C4-A | O (length pending) |
+| CAMP-C4-B | Full soak and chaos (length per O-soak) | ops | CAMP-C4-A | O (O-soak) |
 | CAMP-C4-C | Public-surface security review | review | CAMP-C4-A | O |
 | CAMP-C4-D | Spec-amendment reconciliation (0073 table) | owner | CAMP-C4-C | O |
 | CAMP-C4-E | Campaign retro | owner | CAMP-C4-D | O |
