@@ -147,6 +147,7 @@ services:
     build:
       context: ..
       dockerfile: eventsink/Dockerfile
+    image: ${GELDAR_EVENTSINK_IMAGE:-geldar-eventsink:c1}
     environment:
       GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
