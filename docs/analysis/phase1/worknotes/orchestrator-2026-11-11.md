@@ -158,3 +158,4 @@ NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-
   - G4: the CIDR crash-loop.
   - G5: ten throwaway accounts can block all sign-ups for a day. That needs a per-provider or account-age-weighted cap.
 - **R21 confirmed (owner, 2026-11-11).** Glass hides model_input and raw_output. Glass may be published.
+- **Owner ruling R39 (2026-11-11).** board-proxy runs with `admin off`, so it can't be reloaded. Each Geldar Caddy change takes effect only through a restart of board-proxy, and the owner approves each restart. Production drops for a few seconds each time. This replaces the 'reload, never restart' rule of 0071 for board-proxy; colo-public.sh must learn this mode (follow-up C2-07q).
