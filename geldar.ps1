@@ -281,7 +281,7 @@ function Initialize-ShardSecrets([string] $Shard) {
 # a partial set here. A test keeps this list equal to what colo.yml and nats-auth.yml declare.
 function Assert-ColoNatsSecrets {
   $dir = Join-Path $Root 'compose/secrets'
-  $missing = foreach ($name in 'nats-body.txt', 'nats-mind.txt', 'nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt', 'nats-auth.conf') {
+  $missing = foreach ($name in 'nats-body.txt', 'nats-mind.txt', 'nats-mcp.txt', 'nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt', 'nats-auth.conf') {
     $path = Join-Path $dir $name
     if (-not (Test-Path -PathType Leaf $path) -or (Get-Item $path).Length -eq 0) { "compose/secrets/$name" }
   }

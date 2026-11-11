@@ -1,7 +1,8 @@
 # Colo Mind shard file: what the colo containers read (golem-body and animus), decisions 0078, 0131.
-# Mounted into both containers as /opt/geldar/shards/colo.yaml (compose/colo.yml). Derived from shards/phase0.yaml:
-# the same blocks, minus `sovereign` (no sovereign players on the colo yet). The flat budget file shards/colo.yaml
-# is NOT this file: geldar.ps1 refuses unknown keys in it, so the Mind's blocks cannot live there.
+# Mounted into golem-body, animus, geldar-mcp and players-host as /opt/geldar/shards/colo.yaml (compose/colo.yml).
+# Derived from shards/phase0.yaml: the same blocks, with `sovereign` (C1-11a: the MCP and the player host read it).
+# The flat budget file shards/colo.yaml is NOT this file: geldar.ps1 refuses unknown keys in it, so the blocks
+# cannot live there.
 # Every address is a colo compose service name or loopback. The Thinker is an explicit placeholder (see mind.thinker).
 shard: colo
 seed: 8675309                    # compose/colo.yml paper SEED must equal this; keep them equal
@@ -28,6 +29,42 @@ lifecycle: { permadeath: false }
 models:
   strong: ["qwen3:32b"]          # served by the Thinker pool (decision 0078); the same tags as phase0
   fast: ["qwen3:8b"]
+
+# Sovereign players (spec 5.15; decisions 0040, 0041, 0052), the phase0 values. `players` is empty: no ranger is
+# served on the colo until the owner lists one (player_id, life_id, name) here. players-host refuses an unlisted id.
+sovereign:
+  allowed: true
+  harnesses:
+    claude: { enabled: true }
+  owner_cap_default: 3
+  owner_cap_owner: 20
+  mcp:
+    max_body_bytes: 65536
+    port: 8788
+    wait_cap_seconds: 240
+    keepalive_seconds: 25
+    max_result_bytes: 16384
+    trusted_proxies: []
+    replay_minutes: 60
+  wake:
+    min_spacing_seconds: 30
+    intent_run_too_long_seconds: 300
+  presence:
+    lease_seconds: 60
+    hibernate_after_seconds: 600
+    start: on_demand
+  budget:
+    credits_per_real_hour: 30
+    cap_credits: 240
+  rate_limits:
+    calls_per_minute: 60
+    act_min_seconds: 2
+    say_min_seconds: 3
+    journal_min_seconds: 5
+    handshake_per_minute: 300
+    owner_calls_per_minute: 600
+    failed_auth_per_minute: 30
+  players: []
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an
