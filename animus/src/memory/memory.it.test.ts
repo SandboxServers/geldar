@@ -63,8 +63,9 @@ describe.skipIf(!run)('memory over live Postgres', () => {
 
   afterAll(async () => {
     // Test rows are scoped to this run's ids; remove them so the volume stays clean.
-    await pool.query('DELETE FROM suppressed_wakeups WHERE life_id = $1', [LIFE]);
-    await pool.query('DELETE FROM thoughts WHERE life_id = $1', [LIFE]);
+    // suppressed_wakeups and thoughts are append-only (sql/0007): a row delete is refused, so they
+    // are truncated. Use a throwaway database only: TRUNCATE clears every life's rows.
+    await pool.query('TRUNCATE suppressed_wakeups, thoughts');
     await pool.query('DELETE FROM goals WHERE agent_id = $1', [LIFE]);
     await pool.query('DELETE FROM relationships WHERE agent_id = $1', [LIFE]);
     await pool.query('DELETE FROM memories WHERE agent_id = $1', [LIFE]);

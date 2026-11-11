@@ -188,7 +188,9 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       }
       expect(reason).toContain('one final receipt per action');
     } finally {
-      await pool.query('DELETE FROM receipts WHERE action_id = $1', [actionId]);
+      // receipts is append-only (sql/0007): a row delete is refused. Use a throwaway database only:
+      // TRUNCATE clears every action's receipts.
+      await pool.query('TRUNCATE receipts');
       await pool.query('DELETE FROM actions WHERE action_id = $1', [actionId]);
       await pool.query('DELETE FROM intents WHERE intent_id = ANY($1)', [
         [intentId, interruptedId, resumedId],
