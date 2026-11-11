@@ -3,10 +3,12 @@ import type { AuthDecision, MockHttp, Refusal } from '@geldar/mcp-mock';
 import { createMockHttp } from '@geldar/mcp-mock';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
+import { PUBLIC_DEFAULTS, type PublicConfig } from '../config-public.ts';
 import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
 import {
   type BearerVerdict,
   clientAddress,
+  clientKey,
   MissCache,
   parseBearer,
   tokenDigest,
@@ -15,9 +17,14 @@ import {
 } from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
+import { NegativeCache } from './negative-cache.ts';
+import { PublicRateLimit } from './public-limit.ts';
+import { KILL_SWITCH_BODY, rateLimitedBody } from './public-refusals.ts';
 
 export interface FrontDoorOptions {
   http: McpConfig['http'];
+  /** The `public` block: the kill switch and the per-client rate limit. Default: no kill switch, the default limit. */
+  public?: PublicConfig;
   /** The HMAC pepper, read from its file by the caller. Never logged. */
   pepper: Uint8Array;
   store: TokenStore;
@@ -110,14 +117,23 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
  */
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
+  const pub = options.public ?? PUBLIC_DEFAULTS;
+  // One bucket per client address for every public request, authenticated or not.
+  // Only when a public block is passed (the CLI always passes one), so a bare door in a test is not limited.
+  const publicLimit =
+    options.public === undefined
+      ? undefined
+      : new PublicRateLimit(options.public.rateLimit.perMinute, options.public.rateLimit.burst);
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
   // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
-  const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';
+  const clientIpHeader = options.http.clientIpHeader ?? 'x-geldar-client-ip';
   const addressOf = (req: IncomingMessage): string =>
     clientAddress(req, trusted, clientIpHeader).address;
   // Refused bearers, remembered for a few seconds so a repeat does not cost a store lookup.
   const misses = new MissCache();
+  // Addresses with a recent failed attempt; bounded, oldest evicted at the cap (see NegativeCache).
+  const failures = new NegativeCache();
   const maxPerAddress =
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
@@ -144,6 +160,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     exemptPeer: trusted,
     hostAllowed: (host) => hostAccepted(options.http.allowedHosts, port, host),
     async authenticate(playerId, header, req): Promise<AuthDecision> {
+      // The kill switch answers every public request before anything else is read or counted.
+      if (pub.killSwitch) return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
       const client = clientAddress(req, trusted, clientIpHeader);
@@ -152,6 +170,15 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         frontLog(options.log ?? stderrSink)({ event: `client_${client.warning}` });
       }
       const address = client.address;
+      const waitSec = publicLimit?.take(clientKey(address), now());
+      if (waitSec !== undefined) {
+        return {
+          outcome: 'answered',
+          status: 429,
+          headers: { 'Retry-After': String(waitSec) },
+          body: rateLimitedBody(waitSec),
+        };
+      }
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
       // bearer is refused before the lookup while its address or the global bucket is out of tokens.
       const token = parseBearer(header);
@@ -169,6 +196,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           header,
           now(),
           misses,
+          !failures.recent(clientKey(address), now()),
         );
       } catch (error) {
         // A failing store is a 503 with no detail; the log keeps only the error's class name.
@@ -187,6 +215,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         players.set(req, verdict.player);
         return { outcome: 'ok' };
       }
+      // A missing or refused token flags the address; a wrong-player 403 is a valid token, not a failure.
+      if (verdict.outcome === 'unauthorized') failures.record(clientKey(address), now());
       const retryAfterSec = gates.failedAuth(address, now());
       if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
       return { outcome: verdict.outcome, reason: verdict.reason };

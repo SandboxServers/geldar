@@ -94,6 +94,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0088](0088-metrics-exporters-and-replay-window.md) | Metrics exporters are push-only OTLP to a configured URL; the MCP replay window is bounded and optional | Proposed |
 | [0089](0089-crash-hygiene-defaults-and-refusals.md) | Crash hygiene: the owner cap default, the start refusal while a name lease is held, and `players down` | Accepted (orchestrator) |
 | [0090](0090-public-mcp-contract.md) | Public MCP contract: client-ip header, error shapes, kill-switch config | Proposed |
+| [0091](0091-public-mcp-behind-caddy.md) | Public MCP behind Caddy: trusted peer from config, the `public:` block, kill switch, rate limit defaults, negative cache, invitee issuing | Proposed |
 | [0092](0092-velocity-spectator-whitelist.md) | Velocity spectator whitelist and ghost rule | Proposed |
 | [0093](0093-glass-hardening.md) | Glass hardening: defaults (rate limit, size caps, delay 60 s, living sovereign hidden, no board) and the test for each 0072 item | Proposed (orchestrator; owner rulings recorded) |
 | [0094](0094-public-sites-read-only-through-caddy.md) | BlueMap, Glass and MCP read-only Caddy sites with kill switches; no Caddy rate limit | Proposed |

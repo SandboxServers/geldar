@@ -86,7 +86,7 @@ with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` 
 `sovereign.mcp.trusted_proxies`, and `GELDAR_MCP_CLIENT_IP_HEADER` replaces
 `sovereign.mcp.client_ip_header`. The Caddy deployment sets the header to `x-geldar-client-ip`
 and names Caddy's container address as the trusted proxy; without a trusted proxy the header is
-never read. The default header is `cf-connecting-ip`; `x-forwarded-for` is also accepted.
+never read. The default header is `x-geldar-client-ip` (decision 0090); `cf-connecting-ip` is not used.
 
 The shard's `sovereign.mcp` limits are: `wait_cap_seconds` (wait's clamp), `max_body_bytes`
 (request body), `max_result_bytes` (tool result after trimming), and `presence.lease_seconds` and

@@ -1,6 +1,7 @@
 import { request } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
+import { PUBLIC_DEFAULTS, type PublicConfig } from '../config-public.ts';
 import { tokenDigest } from '../http/auth.ts';
 import type { FrontDoor, FrontDoorOptions } from '../http/front.ts';
 import { createFrontDoor } from '../http/front.ts';
@@ -90,9 +91,12 @@ export function storeWithTokenA(store: FakeTokenStore = new FakeTokenStore()): F
 
 export interface StartOptions {
   http?: Partial<McpConfig['http']>;
+  public?: Partial<PublicConfig>;
   store?: FakeTokenStore;
   limiter?: RateLimiter;
   limits?: FrontDoorOptions['limits'];
+  /** Clock in milliseconds for the front door; default Date.now. */
+  now?: () => number;
 }
 
 export interface Started {
@@ -109,12 +113,14 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
-      clientIpHeader: 'cf-connecting-ip',
+      clientIpHeader: 'x-geldar-client-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
       maxBodyBytes: 65536,
       ...options.http,
     },
+    // Without a public block the door applies no per-client limit, as in a bare createFrontDoor.
+    ...(options.public === undefined ? {} : { public: { ...PUBLIC_DEFAULTS, ...options.public } }),
     pepper: PEPPER,
     store: options.store ?? storeWithTokenA(),
     limiter: options.limiter ?? new CappedLimiter(),
@@ -122,6 +128,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       new McpServer({ name: 'front-door-test', version: '0.0.0' }, { capabilities: { tools: {} } }),
     log: () => undefined,
     ...(options.limits === undefined ? {} : { limits: options.limits }),
+    ...(options.now === undefined ? {} : { now: options.now }),
   });
   const port = await door.listen(0);
   return { door, port };
@@ -146,7 +153,7 @@ export function postInit(port: number, token: string, options: PostOptions = {})
     'content-length': Buffer.byteLength(INIT),
     authorization: `Bearer ${token}`,
   };
-  if (options.cf !== undefined) headers['cf-connecting-ip'] = options.cf;
+  if (options.cf !== undefined) headers['x-geldar-client-ip'] = options.cf;
   return new Promise((resolve, reject) => {
     const req = request(
       { host: '127.0.0.1', port, path: '/p/aa', method: 'POST', headers },
@@ -185,7 +192,7 @@ export function openStream(
     authorization: `Bearer ${token}`,
     'mcp-session-id': sessionId,
   };
-  if (cf !== undefined) headers['cf-connecting-ip'] = cf;
+  if (cf !== undefined) headers['x-geldar-client-ip'] = cf;
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port, path: '/p/aa', method: 'GET', headers }, (res) =>
       resolve({ status: res.statusCode ?? 0, close: () => req.destroy() }),
