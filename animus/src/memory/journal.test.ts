@@ -68,16 +68,17 @@ describe('PgJournal.linkIntent', () => {
   });
 });
 
-describe('PgJournal.recordThought scoping', () => {
-  it('never overwrites life_id on a thought id collision, and writes only when the life matches', async () => {
+describe('PgJournal.recordThought replays', () => {
+  it('on a thought id collision does nothing, so the first row stays (thoughts is append-only)', async () => {
     const { client, calls } = recordingClient(0);
     await new PgJournal(client).recordThought(thought('l', 'th_1', 'idle', 5));
 
     const sql = calls[0]?.sql ?? '';
-    expect(sql).toContain('WHERE thoughts.life_id = EXCLUDED.life_id');
-    // The SET list no longer names life_id; the first assignment is `at`.
-    expect(sql).toContain('DO UPDATE SET\n         at = EXCLUDED.at');
-    expect(sql).not.toContain('life_id = EXCLUDED.life_id, at');
+    // A replay of the same thought id is a no-op: the conflict clause names no SET list, so no
+    // UPDATE runs (sql/0007 refuses one) and the first row keeps its values.
+    expect(sql).toMatch(/ON CONFLICT \(thought_id\) DO NOTHING\s*$/);
+    expect(sql).not.toContain('DO UPDATE');
+    expect(sql).not.toContain('EXCLUDED');
   });
 });
 

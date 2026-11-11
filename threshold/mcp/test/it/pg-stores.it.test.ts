@@ -330,20 +330,27 @@ describe.skipIf(!integrationEnabled())('Postgres stores against a real database'
       );
     });
 
-    it('keeps the newest 1000 journal lines of a life, oldest first to go', async () => {
+    it('reads the newest 1000 journal lines of a life, oldest first, and deletes none', async () => {
       const seeded = await seedPlayer(admin, freshSuffix());
       const journal = new PgJournalStore(mcp);
       for (let i = 0; i < 1001; i += 1) await journal.append(seeded.lifeId, `line ${i}`, i);
+      // Ask for more than the window: the store, not the caller, bounds what a read returns.
+      const texts = (await journal.recent(seeded.lifeId, 5_000)).map((entry) => entry.text);
+      expect(texts.length, 'lines read').toBe(1000);
+      expect(texts[0], 'the oldest line in the window').toBe('line 1');
+      expect(texts.at(-1), 'the newest line').toBe('line 1000');
+      expect(texts, 'the first line is outside the window').not.toContain('line 0');
+      // Append-only (sql/0007): the table still holds all 1001 rows and the first one.
       const count = await mcp.query<{ n: string }>(
         'SELECT count(*) AS n FROM mcp_journal WHERE life_id = $1',
         [seeded.lifeId],
       );
-      expect(count.rows[0]?.n, 'rows kept').toBe('1000');
+      expect(count.rows[0]?.n, 'rows kept: nothing deleted').toBe('1001');
       const oldest = await mcp.query<{ text: string }>(
         'SELECT text FROM mcp_journal WHERE life_id = $1 ORDER BY id ASC LIMIT 1',
         [seeded.lifeId],
       );
-      expect(oldest.rows[0]?.text, 'the first line was trimmed').toBe('line 1');
+      expect(oldest.rows[0]?.text, 'the first row is still stored').toBe('line 0');
     }, 30_000);
 
     it('refuses a read of thoughts', async () => {

@@ -19,20 +19,7 @@ export class PgJournal implements Journal {
          provider_usage, raw_output, parsed, latency_ms, credits_reserved, credits_settled)
        VALUES ($1, $2, $3::timestamptz, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13,
          $14, $15, $16, $17, $18::jsonb, $19, $20::jsonb, $21, $22, $23)
-       ON CONFLICT (thought_id) DO UPDATE SET
-         at = EXCLUDED.at, world_day = EXCLUDED.world_day,
-         world_tick = EXCLUDED.world_tick, wake_reason = EXCLUDED.wake_reason,
-         snapshot = EXCLUDED.snapshot, model_input = EXCLUDED.model_input,
-         prompt_template_version = EXCLUDED.prompt_template_version,
-         schema_version = EXCLUDED.schema_version, mind_version = EXCLUDED.mind_version,
-         body_version = EXCLUDED.body_version, model_config = EXCLUDED.model_config,
-         thinker_id = EXCLUDED.thinker_id, effort = EXCLUDED.effort,
-         tokens_in_estimated = EXCLUDED.tokens_in_estimated,
-         tokens_out_estimated = EXCLUDED.tokens_out_estimated,
-         provider_usage = EXCLUDED.provider_usage, raw_output = EXCLUDED.raw_output,
-         parsed = EXCLUDED.parsed, latency_ms = EXCLUDED.latency_ms,
-         credits_reserved = EXCLUDED.credits_reserved, credits_settled = EXCLUDED.credits_settled
-       WHERE thoughts.life_id = EXCLUDED.life_id`,
+       ON CONFLICT (thought_id) DO NOTHING`,
       [
         row.thoughtId,
         row.lifeId,

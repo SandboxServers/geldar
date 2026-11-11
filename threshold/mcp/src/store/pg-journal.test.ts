@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakePool } from './pg-fakes.ts';
-import { JOURNAL_LINE_MAX, PgJournalStore } from './pg-journal.ts';
+import { JOURNAL_KEEP, JOURNAL_LINE_MAX, PgJournalStore } from './pg-journal.ts';
 import { PgPlayerDirectory } from './pg-players.ts';
 
 describe('PgJournalStore', () => {
@@ -28,12 +28,25 @@ describe('PgJournalStore', () => {
     expect(pool.sent[0]?.values).toEqual(['ag_jason_01', new Date(0), 'ab']);
   });
 
-  it('keeps the newest 1000 lines of a life in the same statement as the insert', async () => {
+  it('only inserts: no statement deletes or updates a line (mcp_journal is append-only)', async () => {
     const pool = new FakePool();
     await new PgJournalStore(pool.asPool()).append('ag_jason_01', 'x', 0);
-    expect(pool.sent[0]?.text).toContain('DELETE FROM mcp_journal WHERE life_id = $1');
-    expect(pool.sent[0]?.text).toContain('OFFSET 999');
     expect(pool.sent).toHaveLength(1);
+    expect(pool.sent[0]?.text).toBe(
+      'INSERT INTO mcp_journal (life_id, at, text) VALUES ($1, $2, $3)',
+    );
+    expect(pool.sent[0]?.text).not.toMatch(/DELETE|UPDATE/);
+  });
+
+  it('a read returns the same newest N as before the trim: at most the 1000-line window', async () => {
+    const pool = new FakePool(() => ({ rows: [] }));
+    const store = new PgJournalStore(pool.asPool());
+    await store.recent('ag_jason_01', 5_000);
+    await store.recent('ag_jason_01', 3);
+    expect(pool.sent.map((s) => s.values)).toEqual([
+      ['ag_jason_01', JOURNAL_KEEP],
+      ['ag_jason_01', 3],
+    ]);
   });
 
   it('counts characters as Postgres does: 4000 emoji (8000 UTF-16 units) fit', async () => {
