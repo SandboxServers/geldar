@@ -16,7 +16,16 @@ const GLASS = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCANNED = ['src', 'test', 'public'];
 
 /** Bare packages a Glass file may import: pg for read-only queries and the test tooling. */
-const ALLOWED_PACKAGES = new Set(['pg', 'happy-dom', 'vitest']);
+const ALLOWED_PACKAGES = new Set([
+  'pg',
+  'happy-dom',
+  'vitest',
+  // Kino (decision 0075, owner-approved): Glass subscribes to the Kino feed and publishes the Kino
+  // control subject. Only src/kino/nats-feed.ts imports it (pinned below).
+  '@nats-io/transport-node',
+]);
+/** Where the NATS client may be imported: the Kino feed file, nowhere else in Glass. */
+const NATS_FILES = new Set(['src/kino/nats-feed.ts']);
 const BUILTINS = new Set(builtinModules.map((name) => name.replace(/^node:/, '')));
 
 /** Relative imports that leave glass, per file. Only the integration test sets up a database. */
@@ -25,6 +34,8 @@ const OUTSIDE_ALLOWED: Record<string, string[]> = {
     '../../tools/migrate/src/migrate.ts',
     '../../tools/migrate/src/scram.ts',
   ],
+  // Kino audit test: checks each audit row against the generated lakitu-audit validator (a test-only read).
+  'test/kino/audit.test.ts': ['../../../contract/src/generated/validators.js'],
 };
 
 /** Statements the shipped source may send. Anything else that starts a statement is a violation. */
@@ -58,6 +69,8 @@ export function importViolations(rel: string, text: string): string[] {
     const pkg = packageOf(spec);
     if (!ALLOWED_PACKAGES.has(pkg) && !BUILTINS.has(pkg))
       out.push(`${spec}: not an allowed package`);
+    else if (pkg === '@nats-io/transport-node' && !NATS_FILES.has(rel))
+      out.push(`${spec}: the NATS client is allowed only in the Kino feed file`);
   }
   return out;
 }
