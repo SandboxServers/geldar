@@ -105,11 +105,30 @@ describe('RCON is published to the host only through compose/rcon-host.yml', () 
   });
 
   it('shard up adds the override with --rcon-host and hints at it when the flag is missing', () => {
-    expect(script).toMatch(/\$rconHost = @\(\$extra\) -contains '--rcon-host'/);
-    expect(script).toMatch(/Join-Path \$Root 'compose\/rcon-host\.yml'/);
-    expect(script).toMatch(
-      /if \(-not \$rconHost\) \{ Write-Host "hint: RCON 25575 is not published to the host\. /,
+    // The checks are per line, so they hold whatever the layout of the up action, and fail if the override
+    // is added unconditionally, the colo refusal moves after it, or the hint goes.
+    const start = script.indexOf('function Invoke-Shard');
+    const end = script.indexOf('\nfunction ', start + 1);
+    const body = start < 0 ? '' : script.slice(start, end < 0 ? undefined : end);
+    const lines = body.split('\n');
+    expect(body, 'Invoke-Shard').not.toBe('');
+    expect(body).toMatch(/\$rconHost = @\(\$extra\) -contains '--rcon-host'/);
+    // The override is added by exactly one statement, and only behind the $rconHost switch.
+    const adds = lines.filter((line) => /\$files\b.*rcon-host\.yml/.test(line));
+    expect(adds).toHaveLength(1);
+    expect(adds[0]).toMatch(/if \(\$rconHost\)/);
+    // The colo refusal is a throw on a line of its own, and it comes before the override is added.
+    const refused = lines.filter((line) => line.includes('--rcon-host is refused'));
+    expect(refused).toHaveLength(1);
+    expect(refused[0]).toMatch(/\bthrow\b/);
+    expect(lines.indexOf(refused[0])).toBeLessThan(lines.indexOf(adds[0]));
+    // The hint names --rcon-host and prints only when the flag is missing, and not for colo.
+    const hints = lines.filter((line) =>
+      line.includes('hint: RCON 25575 is not published to the host'),
     );
+    expect(hints).toHaveLength(1);
+    expect(hints[0]).toMatch(/if \(-not \$rconHost\b/);
+    expect(hints[0]).toMatch(/--rcon-host/);
   });
 });
 
