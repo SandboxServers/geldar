@@ -85,8 +85,8 @@ verify_token() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke or players-status" ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status or ensure-skins-bucket" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"

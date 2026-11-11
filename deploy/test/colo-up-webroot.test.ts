@@ -208,3 +208,40 @@ describe('colo-up.sh: the BlueMap webroot (C2-07d, ruling R28)', () => {
     expect(calls(fx).some((c) => MKDIR.test(c))).toBe(false);
   });
 });
+
+describe('colo-up.sh: the skins bucket and the jar sources (C2-07j)', () => {
+  const SKINS = / run --rm .*admin ensure-skins-bucket/;
+
+  it('makes the skins bucket after nats is up and before the full up that starts velocity', () => {
+    const fx = fixture();
+    expect(run(fx).code).toBe(0);
+    const log = calls(fx);
+    const at = log.findIndex((c) => SKINS.test(c));
+    expect(at).toBeGreaterThan(-1);
+    const natsUp = log.findIndex((c) => / up -d --wait .*postgres nats/.test(c));
+    const fullUp = log.findIndex((c, i) => i > natsUp && / up -d --wait\s*$/.test(c));
+    expect(natsUp).toBeLessThan(at);
+    expect(fullUp).toBeGreaterThan(at);
+  });
+
+  it('refuses when a plugin jar path is a directory, names it, and starts nothing', () => {
+    const fx = fixture();
+    const plugins = join(dirname(fx.env.GELDAR_SECRETS_DIR), 'plugins');
+    const jarDir = join(plugins, 'core', 'build', 'libs', 'geldar-core.jar');
+    mkdirSync(jarDir, { recursive: true });
+    const r = run(fx, { GELDAR_PLUGIN_DIR: posix(plugins) });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('geldar-core.jar');
+    expect(r.out).toContain('rmdir');
+    expect(calls(fx).some((c) => / up -d /.test(c) || / pull/.test(c))).toBe(false);
+  });
+
+  it('accepts jar paths that are files or missing', () => {
+    const fx = fixture();
+    const plugins = join(dirname(fx.env.GELDAR_SECRETS_DIR), 'plugins');
+    const libs = join(plugins, 'velocity-identity', 'build', 'libs');
+    mkdirSync(libs, { recursive: true });
+    writeFileSync(join(libs, 'geldar-velocity-identity.jar'), 'x');
+    expect(run(fx, { GELDAR_PLUGIN_DIR: posix(plugins) }).code).toBe(0);
+  });
+});
