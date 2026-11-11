@@ -5,7 +5,7 @@
 -- calling kino_audit_purge, which deletes rows older than the retention and nothing else.
 
 CREATE TABLE kino_audit (
-  id BIGSERIAL PRIMARY KEY,
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, -- an identity column needs no sequence grant: Glass holds none
   event TEXT NOT NULL CHECK (event IN ('pane_opened', 'pane_targeted', 'pane_mode_changed', 'pane_closed')),
   login_hash TEXT NOT NULL CHECK (login_hash ~ '^[0-9a-f]{64}$'),
   agent_id TEXT NOT NULL CHECK (agent_id ~ '^[a-z][a-z0-9_]{0,63}$'),
@@ -18,7 +18,6 @@ CREATE TABLE kino_audit (
 CREATE INDEX kino_audit_at_idx ON kino_audit (at);
 REVOKE ALL ON kino_audit FROM PUBLIC;
 GRANT INSERT ON kino_audit TO geldar_glass;
-GRANT USAGE ON SEQUENCE kino_audit_id_seq TO geldar_glass;
 
 -- Rows with `at` before p_cutoff go; a row exactly at the cutoff stays. Glass computes the cutoff (now minus
 -- 90 days); the function refuses a cutoff newer than 30 days ago, so a bug cannot wipe the recent trail.
