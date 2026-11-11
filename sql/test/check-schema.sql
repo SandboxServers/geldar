@@ -222,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0008, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0009, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
@@ -417,6 +417,8 @@ BEGIN
      OR has_column_privilege('geldar_register', 'agents', 'personality_seed', 'SELECT')
      OR has_column_privilege('geldar_register', 'mcp_tokens', 'token_hash', 'SELECT')
      OR has_table_privilege('geldar_register', 'mcp_tokens', 'DELETE')
+     OR has_table_privilege('geldar_register', 'mcp_tokens', 'INSERT')
+     OR has_column_privilege('geldar_register', 'mcp_tokens', 'token_hash', 'INSERT')
      OR has_table_privilege('geldar_register', 'mcp_identities', 'DELETE') THEN
     RAISE EXCEPTION 'schema check: geldar_register has a grant it must not have';
   END IF;
@@ -435,8 +437,41 @@ BEGIN
     INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
       VALUES ('ag-reg-test-01', 'reg-test-owner', 'reg_test_01', 'regtest', 'claude-code', 'active');
     INSERT INTO mcp_budget (life_id, credits, accrued_at) VALUES ('reg_test_01', 10, now());
-    INSERT INTO mcp_tokens (token_id, player_id, token_hash, expires_at)
-      VALUES ('reg-tok-1', 'ag-reg-test-01', decode(repeat('cd', 32), 'hex'), now() + interval '1 day');
+    -- Migration 0009 (R33): no direct INSERT on mcp_tokens; the owner-checked function mints.
+    step := 'mint through the function only';
+    BEGIN
+      INSERT INTO mcp_tokens (token_id, player_id, token_hash, expires_at)
+        VALUES ('reg-tok-0', 'ag-reg-test-01', decode(repeat('cc', 32), 'hex'), now() + interval '1 day');
+      RAISE EXCEPTION 'schema check: geldar_register can INSERT into mcp_tokens directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM register_mint_token(hash, 'ag-reg-test-01', 'reg-tok-1', decode(repeat('cd', 32), 'hex'));
+    -- a second owner with a player of its own
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-other-owner', 'other', 1);
+    INSERT INTO mcp_identities (identity_hash, provider, owner_id)
+      VALUES (decode(repeat('ba', 32), 'hex'), 'discord', 'reg-other-owner');
+    INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+                        declared_model, model_config, tier, personality_seed)
+      VALUES ('reg_other_01', 'regother', 1, 'reg_other_01', 'test', 'sovereign', 'reg-other-owner',
+              'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed');
+    INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
+      VALUES ('ag-reg-other-01', 'reg-other-owner', 'reg_other_01', 'regother', 'claude-code', 'active');
+    -- the first owner's identity cannot mint for the other owner's player, nor an unknown identity for anyone's
+    BEGIN
+      PERFORM register_mint_token(hash, 'ag-reg-other-01', 'reg-tok-x', decode(repeat('d1', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: register_mint_token minted for another owner player' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      PERFORM register_mint_token(decode(repeat('00', 32), 'hex'), 'ag-reg-test-01', 'reg-tok-y', decode(repeat('d2', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: register_mint_token minted for an unknown identity' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    -- minting again revokes the earlier token: one active token per player
+    PERFORM register_mint_token(hash, 'ag-reg-test-01', 'reg-tok-2', decode(repeat('d3', 32), 'hex'));
+    IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 1 THEN
+      RAISE EXCEPTION 'schema check: a second mint must revoke the first token';
+    END IF;
     UPDATE mcp_tokens SET revoked_at = now() WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'schema check: geldar_register could not revoke a token';
