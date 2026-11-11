@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
@@ -19,8 +20,24 @@ import {
   rotateTokenFile,
 } from './tokens.ts';
 
-/** The shard config that says whether sovereign players are allowed, and with which harnesses. */
+/** The shard config that says whether sovereign players are allowed, and with which harnesses, by default. */
 export const SHARD_FILE = join(REPO_ROOT, 'shards', 'phase0.yaml');
+
+/** The variable that names another shard file (the admin image sets it to the colo shard). */
+export const SHARD_FILE_VARIABLE = 'GELDAR_SHARD_FILE';
+
+/**
+ * The shard file the tool reads: GELDAR_SHARD_FILE when it is set and not empty, else SHARD_FILE. A named path that
+ * does not exist is refused, naming the variable, so a typo never falls back to phase0.
+ */
+export function shardFileFrom(environ: NodeJS.ProcessEnv = process.env): string {
+  const named = environ[SHARD_FILE_VARIABLE];
+  if (named === undefined || named === '') return SHARD_FILE;
+  if (!existsSync(named)) {
+    throw new Error(`${SHARD_FILE_VARIABLE} names ${named}, which does not exist`);
+  }
+  return resolve(named);
+}
 
 export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
 
@@ -121,7 +138,10 @@ export async function connectPg(): Promise<SqlSession> {
 
 export const DEFAULT_ENV: Env = {
   secretDir: SECRET_DIR,
-  shardFile: SHARD_FILE,
+  // Read on each use, so GELDAR_SHARD_FILE is the one in force when the command runs.
+  get shardFile() {
+    return shardFileFrom();
+  },
   connect: connectPg,
 };
 
@@ -317,7 +337,14 @@ export async function run(
 // Only the command line runs the tool; tests import the functions above.
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const io: Io = { out: (line) => console.log(line), err: (line) => console.error(line) };
-  run(process.argv.slice(2), io).then((code) => {
-    process.exitCode = code;
-  });
+  try {
+    // A refused GELDAR_SHARD_FILE stops every command here, not only the ones that read the shard.
+    shardFileFrom();
+    run(process.argv.slice(2), io).then((code) => {
+      process.exitCode = code;
+    });
+  } catch (error) {
+    io.err(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
 }
