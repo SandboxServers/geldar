@@ -56,6 +56,8 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // Fallbacks for a caller that passes no cap: the config derives the real ones from owner_cap_owner (20):
 // 4 open requests per agent times the owner cap per address, and that times 4 owners for the listener.
 const MAX_CONNECTIONS = 320;
+/** A missing or malformed client-address header is logged once in this long (with a count held back). */
+const CLIENT_HEADER_LOG_MS = 60_000;
 const MAX_CONNECTIONS_PER_ADDRESS = 80;
 
 function stderrSink(line: Record<string, string | number>): void {
@@ -162,6 +164,20 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
     MAX_CONNECTIONS_PER_ADDRESS;
+  // The last client-header warning logged for each kind, and how many were held back since.
+  const headerWarned = new Map<string, { atMs: number; suppressed: number }>();
+  const warnClientHeader = (kind: string, nowMs: number): void => {
+    const last = headerWarned.get(kind);
+    if (last !== undefined && nowMs - last.atMs < CLIENT_HEADER_LOG_MS) {
+      last.suppressed += 1;
+      return;
+    }
+    headerWarned.set(kind, { atMs: nowMs, suppressed: 0 });
+    frontLog(options.log ?? stderrSink)({
+      event: `client_${kind}`,
+      ...(last !== undefined && last.suppressed > 0 ? { suppressed: last.suppressed } : {}),
+    });
+  };
   // Authenticated requests, so the call hook can read the owner of the player it serves.
   const players = new WeakMap<IncomingMessage, PlayerRecord>();
   let port = options.http.port;
@@ -191,9 +207,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
       const client = clientAddress(req, trusted, clientIpHeader);
       // A trusted proxy that sent no usable address is logged, not refused: the peer is used.
-      if (client.warning !== undefined) {
-        frontLog(options.log ?? stderrSink)({ event: `client_${client.warning}` });
-      }
+      // At most one line a minute for each kind: a proxy that lost the header would log on every request.
+      if (client.warning !== undefined) warnClientHeader(client.warning, now());
       const address = client.address;
       const waitSec = publicLimit?.take(clientKey(address), now());
       if (waitSec !== undefined) {
