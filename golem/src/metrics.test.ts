@@ -323,4 +323,57 @@ describe('startGolemTelemetry: push only', () => {
       await fake.close();
     }
   });
+
+  it('a receiver that never answers: the push aborts at the timeout, is logged, and stop resolves', async () => {
+    const fake = await receiver(200, new Promise<void>(() => {}));
+    const seen: Record<string, string | number>[] = [];
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    const handle = startGolemTelemetry(
+      { GELDAR_TELEMETRY_URL: fake.url },
+      {
+        service: 'geldar-golem',
+        log: (line) => seen.push(line),
+        intervalMs: 60_000,
+        timeoutMs: 50,
+      },
+    );
+    try {
+      await until(() => seen.length >= 1);
+      expect(seen).toEqual([{ event: 'telemetry_push_failed', status: 0 }]);
+      await handle.stop();
+      expect(fake.posts).toHaveLength(1);
+    } finally {
+      await handle.stop();
+      await fake.close();
+      process.off('unhandledRejection', onUnhandled);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(unhandled).toEqual([]);
+  }, 3000);
+
+  it('a tick while a push is still in flight starts no second push', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = await receiver(200, gate);
+    const handle = startGolemTelemetry(
+      { GELDAR_TELEMETRY_URL: fake.url },
+      { service: 'geldar-golem', log: quiet, intervalMs: 5 },
+    );
+    try {
+      await until(() => fake.posts.length >= 1);
+      // Many 5 ms ticks pass while the first push is held open: none of them sends a second push.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(fake.posts).toHaveLength(1);
+    } finally {
+      release();
+      await handle.stop();
+      await fake.close();
+    }
+  }, 3000);
 });
