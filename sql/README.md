@@ -5,7 +5,7 @@ The Postgres schema for a shard lives here as numbered migrations:
 - Files are named `NNNN_slug.sql` (for example `0001_init.sql`) and applied in name order.
 - On a fresh volume, Postgres init applies them (the official image runs every `*.sql` in `/docker-entrypoint-initdb.d` in name order).
 - Never edit a migration that has been merged. Add a new one with the next number instead.
-- `test/check-schema.sql` is not a migration. CI applies every `[0-9]*.sql` file with `psql -v ON_ERROR_STOP=1`, then runs it to check that every table of spec Appendix D exists and that pgvector is installed. It also checks the sovereign MCP tables, the revocation trigger and the `geldar_mcp` role (migration 0002).
+- `test/check-schema.sql` is not a migration. CI applies every `[0-9]*.sql` file with `psql -v ON_ERROR_STOP=1`, then runs it to check that every table of spec Appendix D exists and that pgvector is installed. It also checks the sovereign MCP tables, the revocation trigger and the `geldar_mcp` role (migration 0002). Migration 0008 adds `mcp_identities` and the NOLOGIN `geldar_register` role (decision 0135); the check runs as that role and asserts what it cannot read or write.
 
 ## Runner (`tools/migrate`)
 
