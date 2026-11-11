@@ -21,6 +21,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 const SHARD = 'phase0';
+/** The compose files that only add to a base: never validated alone (geldar.ps1 Invoke-Check and ci.yml). */
+const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml'];
 const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'];
 const MIND_TYPES = [
   'wake',
@@ -202,6 +204,25 @@ describe('geldar.ps1 NATS auth generator: static wiring', () => {
     expect(functionBody('Initialize-NatsAuth')).not.toBe('');
     expect(functionBody('Get-NatsUsers')).not.toBe('');
     expect(SCRIPT).toMatch(/'nats-auth' \{ Initialize-NatsAuth \$shard \}/);
+  });
+
+  it('skips every overlay when validating compose files alone, and merges nats-auth-mcp.yml into the Phase 0 chain', () => {
+    // An overlay has no image of its own, so validating it alone fails. Each skip list must name all of them.
+    const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
+    const psSkip = /-notin @\(([^)]*rcon-host[^)]*)\)/.exec(SCRIPT)?.[1] ?? '';
+    const ciSkip = /case "\$\(basename "\$f"\)" in ([\w.|-]+)\)/.exec(ci)?.[1]?.split('|') ?? [];
+    for (const overlay of OVERLAYS) {
+      expect(psSkip).toContain(`'${overlay}'`);
+      expect(ciSkip).toContain(overlay);
+    }
+    expect(SCRIPT).toMatch(/-f \(Join-Path \$Root 'compose\/nats-auth-mcp\.yml'\) config --quiet/);
+    expect(
+      ci
+        .split('\n')
+        .some((l) =>
+          l.includes('-f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml'),
+        ),
+    ).toBe(true);
   });
 });
 

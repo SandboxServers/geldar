@@ -120,14 +120,14 @@ function Invoke-Check {
     Invoke-Step 'test (vitest)' { pnpm test }
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
-    # Overlays (rcon-host.yml, nats-auth.yml) only add to a base file, so each is checked merged with its base.
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml') }) {
+    # Overlays (rcon-host.yml, nats-auth.yml, nats-auth-mcp.yml) only add to a base file, so each is checked merged with its base.
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
     Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)' { docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
     $natsMcp = Join-Path $Root 'compose/mcp.yml'
-    Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
+    Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml + nats-auth-mcp.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') -f (Join-Path $Root 'compose/nats-auth-mcp.yml') config --quiet }
     if (Test-Path plugin/build.gradle.kts) {
       $gradlew = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
       Push-Location plugin
