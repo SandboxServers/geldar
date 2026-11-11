@@ -4,6 +4,7 @@
  * captured console output and every response body must hold neither sentinel nor the connection
  * target. The database port is closed on purpose, so the query error path runs for real.
  */
+import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadGlassConfig } from '../src/config.ts';
@@ -74,7 +75,31 @@ describe('no secret in replies or logs', () => {
     expect(statuses).toContain(405);
     expect(statuses).toContain(421);
 
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    // Hold a stream open across several polls (20 ms each) so the poll error log line really runs.
+    await new Promise<void>((resolve, reject) => {
+      const out = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          method: 'GET',
+          path: '/api/stream',
+          headers: { Host: `127.0.0.1:${port}` },
+        },
+        (res) => {
+          res.resume();
+          setTimeout(() => {
+            out.destroy();
+            resolve();
+          }, 200);
+        },
+      );
+      out.on('error', (err) => {
+        if ((err as NodeJS.ErrnoException).code !== 'ECONNRESET') reject(err);
+      });
+      out.end();
+    });
+    const pollLines = logged.filter((line) => line.includes('glass_poll_error'));
+    expect(pollLines.length, 'the poll error log path ran').toBeGreaterThanOrEqual(1);
     const haystack = [...bodies, ...logged].join('\n');
     expect(haystack).not.toContain(PASSWORD);
     expect(haystack).not.toContain('GLASS-PATH-SENTINEL');
