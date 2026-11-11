@@ -139,6 +139,8 @@ services:
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
     # No ports: the game port and RCON are not published. Velocity is the only game listener.
+    # BlueMap (C1-09) needs no publish either: its integrated web server is off (webserver.conf enabled: false, and 5.29 has
+    # no bind-address key), so Caddy's map site serves the rendered webroot from the data volume, read only (C2-07a2 worknote).
     networks: [colo]
     healthcheck:
       <<: *mc-health
