@@ -62,6 +62,28 @@ describe('proxy and client address settings', () => {
     ).toThrow('GELDAR_MCP_TRUSTED_PROXIES[0] has a prefix shorter than /8');
   });
 
+  it('refuses an IPv6 prefix that covers IPv4-mapped space below /104', () => {
+    for (const entry of [
+      '::ffff:0.0.0.0/96',
+      '::ffff:0:0/96',
+      '0:0:0:0:0:ffff:0:0/96',
+      '::/32',
+      '::ffff:192.0.2.0/103',
+    ]) {
+      const doc = shardDoc();
+      doc.public = { trusted_proxies: [entry] };
+      expect(() => parseMcpConfig(doc, { env: ENV }), entry).toThrow(
+        /public\.trusted_proxies\[0\] has a prefix shorter than \/104/,
+      );
+    }
+  });
+
+  it('accepts a mapped /104 and ::/96, which do not reach below the IPv4 floor', () => {
+    const doc = shardDoc();
+    doc.public = { trusted_proxies: ['::ffff:10.0.0.0/104', '::/96', '::ffff:127.0.0.1'] };
+    expect(parseMcpConfig(doc, { env: ENV }).public.trustedProxies).toHaveLength(3);
+  });
+
   it('accepts an IPv4 /8 and an IPv6 /32, the shortest prefixes allowed', () => {
     const doc = shardDoc();
     doc.public = { trusted_proxies: ['10.0.0.0/8', '2001:db8::/32'] };

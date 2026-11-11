@@ -22,9 +22,12 @@ mcp.{$GELDAR_DOMAIN} {
 	@player path_regexp player ^/p/[a-z][a-z0-9-]{1,38}$
 	handle @player {
 		reverse_proxy {$GELDAR_MCP_UPSTREAM} {
+			# The MCP accepts its loopback dev hosts; a public Host would get 403, as for Glass.
+			header_up Host localhost
 			header_up x-geldar-client-ip {remote_host}
 			flush_interval -1
-			# A reload (the kill switch) closes open streams within 5 s.
+			# Intended to close open streams on a reload. Unproven for SSE until the C2-07 live check;
+			# restart the MCP container after the swap (deploy/caddy/README.md).
 			stream_close_delay 5s
 		}
 	}

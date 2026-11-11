@@ -111,14 +111,45 @@ export function proxyEntries(entries: readonly unknown[], label: string): string
   });
 }
 
-/** The shortest prefix the entry may have (/8 for IPv4, /32 for IPv6) when its prefix is shorter, else undefined. */
+/** The IPv4-mapped block ::ffff:0:0/96 as a 128-bit number. */
+const MAPPED_V4 = 0xffffn << 32n;
+/** A mapped-IPv4 prefix must be at least this long (the mapped form of IPv4 /8). */
+const MAPPED_FLOOR = 104;
+
+/** An IPv6 address as a 128-bit number; `::`, and a dotted IPv4 tail, are expanded. */
+function ipv6Bits(ip: string): bigint {
+  let text = ip.split('%')[0] ?? '';
+  const tail = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (tail !== null) {
+    const [a = 0, b = 0, c = 0, d = 0] = tail.slice(1).map(Number);
+    text = `${text.slice(0, tail.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = '', rest] = text.split('::');
+  const left = head === '' ? [] : head.split(':');
+  const right = rest === undefined || rest === '' ? [] : rest.split(':');
+  const fill = rest === undefined ? 0 : 8 - left.length - right.length;
+  const groups = [...left, ...Array<string>(fill).fill('0'), ...right];
+  return groups.reduce((acc, g) => (acc << 16n) | BigInt(`0x${g}`), 0n);
+}
+
+/**
+ * The shortest prefix the entry may have when its prefix is shorter, else undefined: /8 for IPv4, /32 for IPv6, and
+ * /104 for an IPv6 prefix that covers IPv4-mapped space (::ffff:0:0/96 and `::/N`), which would trust IPv4 ranges
+ * below the IPv4 floor.
+ */
 function prefixFloor(entry: string): number | undefined {
   const [ip = '', bits] = entry.split('/');
   if (bits === undefined) return undefined;
-  const floor = isIP(ip) === 6 ? 32 : 8;
-  return Number(bits) < floor ? floor : undefined;
+  const length = Number(bits);
+  if (isIP(ip) !== 6) return length < 8 ? 8 : undefined;
+  if (length < 32) return 32;
+  if (length < MAPPED_FLOOR) {
+    const shared = BigInt(Math.min(length, 96));
+    const drop = 128n - shared;
+    if (ipv6Bits(ip) >> drop === MAPPED_V4 >> drop) return MAPPED_FLOOR;
+  }
+  return undefined;
 }
-
 /** A header name for `client_ip_header`: lowercase letters, digits and hyphens. Absent is the default. */
 export function headerName(raw: unknown, label: string): ClientIpHeader {
   if (raw === undefined) return DEFAULT_CLIENT_IP_HEADER;
