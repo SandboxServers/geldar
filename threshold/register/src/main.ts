@@ -1,13 +1,11 @@
-import { readFileSync } from 'node:fs';
 import { loadConfig } from './config.ts';
+import { dbUrl } from './db-url.ts';
 import { PgStore } from './pg-store.ts';
 import { discordProvider, githubProvider } from './providers.ts';
 import { createRegisterServer } from './server.ts';
 
 const config = loadConfig(process.env);
-const dbUrlFile = process.env.REGISTER_DB_URL_FILE;
-if (!dbUrlFile) throw new Error('REGISTER_DB_URL_FILE is not set');
-const store = new PgStore(readFileSync(dbUrlFile, 'utf8').trim(), {
+const store = new PgStore(dbUrl(process.env), {
   shard: config.shard,
   startCredits: config.startCredits,
 });

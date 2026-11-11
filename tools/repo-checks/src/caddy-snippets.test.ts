@@ -25,6 +25,7 @@ const SITES = [
     ],
   },
   { site: 'mcp', methods: 'POST GET DELETE', paths: ['^/p/[a-z][a-z0-9-]{1,38}$'] },
+  { site: 'register', methods: 'GET POST', paths: [] },
 ] as const;
 
 /** The three strip lines drop client copies; the proxy block then sets the one value Caddy vouches for. */
@@ -159,5 +160,19 @@ describe('deploy/caddy site files', () => {
       expect(text).not.toContain('127.0.0.1');
       expect(IPV4.test(text)).toBe(false);
     }
+  });
+});
+
+describe('register site is off by default (decision 0135, C2-08c)', () => {
+  it('is not in the SITES colo-public.sh installs, so no deploy loads register.caddy', () => {
+    const script = readFileSync(resolve(repo, 'deploy/colo-public.sh'), 'utf8');
+    expect(script).toMatch(/^SITES="map glass mcp"$/m);
+    expect(script).not.toContain('register');
+  });
+
+  it('answers only the register upstream placeholder and a 8 KiB body cap', () => {
+    const text = read('register.caddy');
+    expect(text).toContain('reverse_proxy {$GELDAR_REGISTER_UPSTREAM}');
+    expect(text).toMatch(/max_size 8KiB/);
   });
 });

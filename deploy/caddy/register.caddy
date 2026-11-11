@@ -1,0 +1,35 @@
+# The public register front (decision 0135). Load this file, then `caddy reload`. It is NOT in deploy/colo-public.sh's SITES:
+# registration stays off until C2-08d and the C2 gates, so nothing loads this file by default (ops loads it by hand, after
+# the register DNS name exists). Placeholders: GELDAR_DOMAIN and GELDAR_REGISTER_UPSTREAM. Caddy is the only trusted proxy.
+register.{$GELDAR_DOMAIN} {
+	# Sign-in pages are GET; the account actions are POST.
+	@not_allowed not method GET POST
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
+
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+
+	# Response headers: no Server banner, no sniffing, no referrer (R4-05).
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	# Registration forms are small.
+	request_body {
+		max_size 8KiB
+	}
+
+	# The service answers its own 404 for any path it does not serve.
+	handle {
+		reverse_proxy {$GELDAR_REGISTER_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
+		}
+	}
+}

@@ -47,6 +47,8 @@ function adapt(site: string): Handler[] {
       'GELDAR_GLASS_UPSTREAM=glass.example.test:8080',
       '-e',
       'GELDAR_MCP_UPSTREAM=mcp.example.test:8788',
+      '-e',
+      'GELDAR_REGISTER_UPSTREAM=register.example.test:8090',
       '-v',
       `${dir}:/etc/caddy:ro`,
       IMAGE,
@@ -67,7 +69,7 @@ function adapt(site: string): Handler[] {
   return flatten(server.routes);
 }
 
-describe.each(['map', 'glass', 'mcp'])('caddy adapt: %s.caddy', (site) => {
+describe.each(['map', 'glass', 'mcp', 'register'])('caddy adapt: %s.caddy', (site) => {
   it.skipIf(skip)(
     'runs the 405 before any proxy or 404 route, and strips then sets the client address',
     { timeout: 120_000 },

@@ -5,12 +5,12 @@
 # compose/colo.yml (cpus 3 + 0.5 + 1 + 0.5 + 0.5 + 1 + 1 + 0.5 + 1 = 9, plus 0.5 for the admin one-shot (profile
 # admin) and 0.5 for glass = 10; memory 8192 + 1024 + 2048 + 512 + 512 + 2048 + 2048 + 512 + 2048 = 18944m, plus 512m
 # for admin and 256m for glass = 19712m; geldar-mcp, players-host, admin and glass are the last four). C2-07c1 adds
-# bluemap-web (0.25 CPU, 64m): 10.25 CPUs and 19776m. geldar.ps1 refuses a total below that
+# bluemap-web (0.25 CPU, 64m): 10.25 CPUs and 19776m. C2-08c adds register (0.25 CPU, 128m, profile register, off by default): 10.5 CPUs and 19904m. geldar.ps1 refuses a total below that
 # sum, and a memory total below Paper's heap (6G) plus 1 GiB.
 # The per-service values are not in this file: the shard-config schema has no keys for them.
 # replay_minutes (C1-07): optional, default 60, clamped to 1 to 1440. It is not a key here: the shard-config schema
 # has no such key and geldar.ps1 refuses unknown keys. Add the key only with a schema change.
-cpu_limit: 10.25               # cores for the whole colo stack (the sum of the per-service CPU budgets)
-memory_limit: 19776m         # Docker form, whole m or g; the sum of the per-service memory budgets (19.31 GiB)
+cpu_limit: 10.5                # cores for the whole colo stack (the sum of the per-service CPU budgets)
+memory_limit: 19904m         # Docker form, whole m or g; the sum of the per-service memory budgets (19.44 GiB)
 minecraft_port: 25567          # host port for the Minecraft listener; validated here, compose/colo.yml publishes the literal 25567 (decision 0082)
 bind_address: 127.0.0.1        # loopback only; geldar.ps1 refuses any other address

@@ -17,6 +17,7 @@ env_args=(
   -e GELDAR_MAP_UPSTREAM=map.example.test:8100
   -e GELDAR_GLASS_UPSTREAM=glass.example.test:8080
   -e GELDAR_MCP_UPSTREAM=mcp.example.test:8788
+  -e GELDAR_REGISTER_UPSTREAM=register.example.test:8090
 )
 
 check() {
@@ -33,5 +34,5 @@ check() {
     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 }
 
-check live map.caddy glass.caddy mcp.caddy
-check killed map-off.caddy glass-off.caddy mcp-off.caddy
+check live map.caddy glass.caddy mcp.caddy register.caddy
+check killed map-off.caddy glass-off.caddy mcp-off.caddy register-off.caddy

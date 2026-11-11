@@ -210,6 +210,11 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     expect(glassLogin).toBeGreaterThan(roleLogin);
     expect(fullUp).toBeGreaterThan(glassLogin);
     expect(log[glassLogin]).toContain('--password-file /run/secrets/postgres-glass.txt');
+    // The register login (C2-08c) runs after the glass one, before the full core.
+    const registerLogin = at(/ run --rm admin migrate --set-role-password geldar_register /);
+    expect(registerLogin).toBeGreaterThan(glassLogin);
+    expect(fullUp).toBeGreaterThan(registerLogin);
+    expect(log[registerLogin]).toContain('--password-file /run/secrets/postgres-register.txt');
     expect(log[log.length - 1]).toMatch(/ up -d --wait$/);
   });
 

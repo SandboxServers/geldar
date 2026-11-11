@@ -378,6 +378,63 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # [C2-08c] The register service (decision 0135, threshold/register): GitHub and Discord sign-in for sovereign-player
+  # owners. OFF BY DEFAULT: the profile `register` keeps it out of every default `up`, REGISTER_KILL_SWITCH is true, and
+  # no Caddy site loads it. It stays off on the Colo until C2-08d and the C2 gates. The only published port is the
+  # loopback 8090; the Postgres role is geldar_register (password file postgres-register.txt).
+  register:
+    profiles: [register]
+    # Budget: 0.25 CPU, 128m (no swap, 64 pids). Read-only root, as geldar-mcp runs.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_REGISTER_CPUS:-0.25}"
+          memory: "${GELDAR_COLO_REGISTER_MEM:-128m}"
+          pids: 64
+    memswap_limit: "${GELDAR_COLO_REGISTER_MEM:-128m}"
+    pids_limit: 64
+    logging: *logging
+    labels: *colo-labels
+    build:
+      context: ..
+      dockerfile: threshold/register/Dockerfile
+    image: ${GELDAR_REGISTER_IMAGE:-geldar-register:c2}
+    environment:
+      # The kill switch is on unless the deploy env says exactly "false" (config.ts). Read at start (ruling R26).
+      REGISTER_KILL_SWITCH: "${REGISTER_KILL_SWITCH:-true}"
+      # The public URL is a deploy value (the register host); the repo holds a placeholder only.
+      REGISTER_PUBLIC_URL: "${REGISTER_PUBLIC_URL:-https://register.example.invalid}"
+      # 0.0.0.0 inside the container; the port is published on loopback alone.
+      REGISTER_HOST: 0.0.0.0
+      REGISTER_PORT: "8090"
+      REGISTER_GITHUB_CLIENT_ID: "${REGISTER_GITHUB_CLIENT_ID:-}"
+      REGISTER_DISCORD_CLIENT_ID: "${REGISTER_DISCORD_CLIENT_ID:-}"
+      REGISTER_GITHUB_SECRET_FILE: /run/secrets/register-github-secret
+      REGISTER_DISCORD_SECRET_FILE: /run/secrets/register-discord-secret
+      REGISTER_PEPPER_FILE: /run/secrets/register-pepper
+      # The MCP's token pepper: the register service mints tokens the MCP verifies.
+      REGISTER_TOKEN_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
+      REGISTER_SHARD: colo
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REGISTER_DB_PASSWORD_FILE: /run/secrets/postgres-register.txt
+      # Caddy (host network) reaches the publish as the docker bridge gateway: the deploy env sets the real peer address.
+      REGISTER_TRUSTED_PEERS: "${REGISTER_TRUSTED_PEERS:-127.0.0.1}"
+    secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-github-secret, register-discord-secret]
+    ports:
+      # The loopback register port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8090:8090"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
   # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094). The image is a release-manifest value
   # (GELDAR_GLASS_IMAGE, C2-07a1); the local tag and the build are the offline path (glass/Dockerfile is C2-07a1's).
   # Postgres as geldar_glass (read-only role, sql/0005) with its password from a file secret. Caddy (host network)
@@ -568,7 +625,7 @@ services:
       GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
     # postgres: the superuser password (admin.sh). postgres-mcp.txt: the file `migrate --set-role-password geldar_mcp`
     # reads; postgres-glass.txt: the same for geldar_glass (C2-07d). mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
-    secrets: [postgres, rcon, postgres-mcp.txt, postgres-glass.txt, { source: nats-body, target: nats-body.txt }, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
+    secrets: [postgres, rcon, postgres-mcp.txt, postgres-glass.txt, postgres-register.txt, { source: nats-body, target: nats-body.txt }, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
     volumes:
       # The colo shard file (the Mind's file, which carries sovereign), under the path GELDAR_SHARD_FILE names.
       - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
@@ -617,6 +674,15 @@ secrets:
   # Glass's Postgres password for the geldar_glass role (C2-07a2).
   postgres-glass.txt:
     file: ./secrets/postgres-glass.txt
+  # The register service (C2-08c): its Postgres password (geldar_register), its pepper, and the OAuth client secrets (owner-provided).
+  postgres-register.txt:
+    file: ./secrets/postgres-register.txt
+  register-pepper:
+    file: ./secrets/register-pepper.txt
+  register-github-secret:
+    file: ./secrets/register-github-secret.txt
+  register-discord-secret:
+    file: ./secrets/register-discord-secret.txt
 
 volumes:
   postgres-data:
