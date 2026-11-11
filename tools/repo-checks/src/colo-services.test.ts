@@ -247,12 +247,15 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
 describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
   const uidServices = ['golem-body', 'players-host', 'animus', 'geldar-mcp', 'admin', 'eventsink'];
 
-  it.each(uidServices)('%s runs as the service uid, default 1000 (rendered as 1001 when set)', (name) => {
-    const user = colo.services[name]?.user;
-    expect(user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
-    expect(withUid(user)).toBe('1000:1000');
-    expect(withUid(user, '1001')).toBe('1001:1001');
-  });
+  it.each(uidServices)(
+    '%s runs as the service uid, default 1000 (rendered as 1001 when set)',
+    (name) => {
+      const user = colo.services[name]?.user;
+      expect(user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
+      expect(withUid(user)).toBe('1000:1000');
+      expect(withUid(user, '1001')).toBe('1001:1001');
+    },
+  );
 
   it('gives Paper UID and GID from the service uid, the itzg variables (default 1000)', () => {
     expect(env(colo.services.paper ?? {}).UID).toBe(UID_DEFAULT);

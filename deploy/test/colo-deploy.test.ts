@@ -694,7 +694,10 @@ describe('service uid: root is refused and every secret is owned by GELDAR_SERVI
   it('gen-secrets as another user refuses unless that uid is GELDAR_SERVICE_UID, and creates nothing', () => {
     const fx = fixture();
     const gen = join(fx.dir, 'gen-user');
-    const r = run('gen-secrets.sh', fx, { GELDAR_SERVICE_UID: '1001', GELDAR_SECRETS_DIR: posix(gen) });
+    const r = run('gen-secrets.sh', fx, {
+      GELDAR_SERVICE_UID: '1001',
+      GELDAR_SECRETS_DIR: posix(gen),
+    });
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('uid 1000');
     expect(r.out).toContain('GELDAR_SERVICE_UID');
