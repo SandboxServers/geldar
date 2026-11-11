@@ -201,8 +201,10 @@ check_secrets() {
     check_secret "$name" "$p"
   done <"$WORK/secrets.tsv"
   # A bind mount of an absolute host path is checked here too. A service secret prints its source as a bare name, which
-  # the loop above already checked through its top-level file, so only an absolute source is taken.
-  conf=$(awk '/^ +source: (\/|[A-Za-z]:\/)/ {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
+  # the loop above already checked through its top-level file, so only an absolute source is taken. The source is kept
+  # for one list item only (reset at each "- "), so an unrelated bind mount's source never carries over to a later
+  # item's target (C2-07g: the colo-mind.yaml bind mount was read as the nats-auth.conf secret).
+  conf=$(awk '/^ +- / {src = ""} /^ +(- )?source: (\/|[A-Za-z]:\/)/ {src = $NF} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
   if [ -n "$conf" ]; then check_secret "nats-auth.conf (bind mount)" "$conf"; fi
   say "secret files: each file the merged config declares is present, non-empty and owner-only"
 }
