@@ -31,3 +31,14 @@ Each ruling below is the orchestrator's, not the owner's. Each one says what to 
 ## Follow-ups queued
 
 - Dependabot alert 1 (medium): `uuid` below 11.1.1, a missing buffer bounds check in v3/v5/v6 when the caller passes a buffer. It comes in transitively through `@azure/msal-node` (uuid 8.3.2) and `yggdrasil` (uuid 10.0.0), the Minecraft auth libraries under mineflayer. Neither passes a buffer, so the risk is low. The fix is a `pnpm-workspace.yaml` override to 11.1.1, if that release is past the two-week floor, plus a full `check`. It is queued as a small packet once a slot is free.
+
+## Owner answers received during the night
+
+- **0077 Accepted (owner, 2026-11-11):** option A. Anonymous visitors get the thought stream and the map, and cameras need an owner or admin login. The interim login is two static hashed role tokens until Entra SSO in Phase 2. Invitee MCP tokens stay as in 0054. Effects: C2-01's invitee-issuing flag can default on once the C2-01 PR lands (a small follow-up, since C2-01 was briefed before the answer); C2-07 and the C2b login packets are no longer blocked by 0077. 0075 point 5 (anonymous or login cameras) is answered by this choice, but 0075's own status is left for the owner, because its other points were "for review".
+
+## More rulings
+
+| # | Ruling | Why | To reverse |
+|---|---|---|---|
+| R12 | C2-05 is accepted as tests and a record only. The image slimming in the card can't be done, because the MCP runtime imports `@geldar/animus/src/*`, `@geldar/mcp-mock` and `@geldar/repo-checks/src/identity-mode.ts`. Follow-up: move those shared modules into `contract` or a small shared package, then slim the image. | Removing them would break the runtime. The move is a refactor outside C2. | Not applicable. |
+| R13 | C2-02 ghost spectator: Velocity can only admit a ghost and block its commands; forcing spectator game mode needs Paper (`plugin/core`), and the Golem registry writer must write `live`. Queued as follow-up packet C2-02b. | Velocity has no game-mode API. | Not applicable. |
