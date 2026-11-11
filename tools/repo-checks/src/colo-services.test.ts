@@ -319,3 +319,18 @@ describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
     expect(colo.services[name]).not.toHaveProperty('user');
   });
 });
+
+describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0094)', () => {
+  const shard = parse(readFileSync(`${ROOT}shards/colo-mind.yaml`, 'utf8')) as {
+    public?: Record<string, unknown>;
+  };
+
+  it('names the proxy, the client header, the rate limit and the kill switch off', () => {
+    expect(shard.public).toEqual({
+      trusted_proxies: ['127.0.0.1'],
+      client_ip_header: 'x-geldar-client-ip',
+      rate_limit: { per_minute: 120, burst: 40 },
+      kill_switch: false,
+    });
+  });
+});
