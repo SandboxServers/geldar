@@ -300,7 +300,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 2. `deploy/colo-rollback.sh`: re-applies the recorded previous release with `up -d --wait --pull never`, and swaps the two records, so a second rollback goes forward again.
 3. `deploy/colo-down.sh` stops the project (`stop`; containers, networks and volumes are kept). `deploy/colo-status.sh` is read-only and finds containers by the compose project label.
 4. `deploy/gen-secrets.sh` creates the missing secret files (`postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`) from `/dev/urandom`, in a 0700 directory with `umask 077`. It never overwrites a file and never prints a value. The per-role NATS password files of the auth overlay are not generated here (see the worknote).
-5. The owner's steps (first deploy, rollback, what is copied to the node) are in the worknote, `docs/analysis/phase1/worknotes/P1-C1-04.md`, as the checklist for C1-10. There is no `deploy/README.md` in this packet.
+5. The owner's steps (first deploy, rollback, what is copied to the node) are in the worknote, `docs/analysis/phase1/worknotes/P1-C1-04.md`, as the checklist for C1-10. `deploy/README.md` is part of this packet (the runbook for the scripts); the worknote is the owner's checklist.
 6. No repository-wide secret scan was built. The test checks that no secret value appears in script output (a sentinel per file), and that the scripts never read a secret file's contents. A scan of `deploy/` and `compose/colo.yml` for high-entropy strings is a follow-up.
 
 **Error behaviour**: `colo-up.sh` exits 1 and names the failing check. `colo-rollback.sh` and `colo-up.sh` exit 1 if the release record cannot be written (nothing is applied without a record of what it replaced).
