@@ -240,6 +240,12 @@ export interface UnsubscribeMessage {
   type: "unsubscribe";
 }
 
+export interface KinoControl {
+  control_version: 1;
+  type: "start" | "resync" | "refresh" | "stop";
+  target_agent_id: string;
+}
+
 export type KinoFeed =
   HelloMessage | ChunkSectionMessage | BlockUpdateMessage | EntityPositionsMessage | TargetMovedMessage | ByeMessage;
 

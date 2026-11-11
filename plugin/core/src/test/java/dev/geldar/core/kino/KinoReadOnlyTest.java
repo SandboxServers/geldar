@@ -74,7 +74,8 @@ class KinoReadOnlyTest {
     @Test
     void theRegistrationIsBehindTheDefaultFalseKillSwitch() throws IOException {
         String core = Files.readString(Path.of("src/main/java/dev/geldar/core/GeldarCore.java"));
-        assertTrue(core.contains("if (dev.geldar.core.kino.KinoSetup.enabled(getConfig()))"));
+        // K08: Kino is always registered and applied from kino.enabled (reload starts it killed when false).
+        assertTrue(core.contains("dev.geldar.core.kino.KinoSetup.reload(kino, getConfig())"));
         assertTrue(Files.readString(Path.of("src/main/resources/config.yml")).matches("(?s).*kino:\\n(  #.*\\n)?  enabled: false\\n.*"));
         assertTrue(Files.readString(ROOT.resolve("KinoSetup.java")).contains("getBoolean(\"kino.enabled\", false)"));
     }

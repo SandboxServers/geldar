@@ -7,13 +7,15 @@ import { readdirSync, readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import type { Duplex } from 'node:stream';
+import { kinoSessionFromHeader } from '../kino-cookie.ts';
 import type { SqlClient } from '../query.ts';
 import { KinoAudit, sqlAuditStore } from './audit.ts';
+import { type ControlSink, controlledFeed } from './control.ts';
 import { KinoKillSwitch } from './killswitch.ts';
 import { KinoMetrics } from './metrics.ts';
 import { startOtlpExporter } from './otlp.ts';
 import { type FeedSource, KinoRelay } from './relay.ts';
-import { sqlScopeStore } from './scope.ts';
+import { ANONYMOUS, listAgents, sqlScopeStore, watchableIds } from './scope.ts';
 import { handleKinoUpgrade } from './ws.ts';
 
 const WEB = new URL('../../web/kino/', import.meta.url);
@@ -50,8 +52,11 @@ function loadWeb(dir: URL, prefix: string, out: Map<string, { body: string; type
         body: stripTypeScriptTypes(readFileSync(child, 'utf8')),
         type: JS,
       });
-    else if (e.name === 'dev.html')
-      out.set(prefix, { body: readFileSync(child, 'utf8'), type: 'text/html; charset=utf-8' });
+    else if (e.name.endsWith('.html'))
+      out.set(e.name === 'index.html' ? prefix : `${prefix}${e.name}`, {
+        body: readFileSync(child, 'utf8'),
+        type: 'text/html; charset=utf-8',
+      });
   }
 }
 
@@ -68,7 +73,8 @@ export interface KinoParts {
 
 export interface KinoWiringOptions {
   db: SqlClient;
-  feed: FeedSource;
+  /** The feed; with a control sink Glass also asks the plugin to start and stop targets. */
+  feed: FeedSource & { control?: ControlSink };
   sessionKey: string | undefined;
   /** Glass's own enabled flag (the Glass kill switch also ends Kino). */
   glassEnabled: () => boolean;
@@ -83,10 +89,13 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
   const audit = new KinoAudit(sqlAuditStore(o.db), () =>
     console.log('{"kino":"audit write failed"}'),
   );
+  const enabled = (): boolean => o.glassEnabled() && killSwitch.enabled();
+  const control = o.feed.control;
+  const feed = control ? controlledFeed(o.feed, { sink: control, enabled }) : o.feed;
   const relay = new KinoRelay({
     store: sqlScopeStore(o.db),
-    feed: o.feed,
-    enabled: () => o.glassEnabled() && killSwitch.enabled(),
+    feed,
+    enabled,
     audit,
     onPanes: metrics.onPanes,
     onRefusal: metrics.onRefusal,
@@ -107,6 +116,29 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
         type: JS,
       });
   }
+  /** The picker's list: who is signed in and which agents the server lets this viewer watch. */
+  const targets = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const json = (code: number, body: unknown): void => {
+      res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify(body));
+    };
+    if (req.method !== 'GET') return void res.writeHead(405, { Allow: 'GET' }).end();
+    if (!enabled()) return json(200, { signed_in: false, enabled: false, agents: [] });
+    try {
+      const session =
+        o.sessionKey === undefined
+          ? null
+          : kinoSessionFromHeader(o.sessionKey, req.headers.cookie, Date.now());
+      const access = session ? await sqlScopeStore(o.db).access(session.identityHash) : ANONYMOUS;
+      json(200, {
+        signed_in: access.signedIn,
+        enabled: true,
+        agents: watchableIds(access, await listAgents(o.db)),
+      });
+    } catch {
+      json(503, { error: 'unavailable' });
+    }
+  };
   return {
     relay,
     killSwitch,
@@ -114,6 +146,10 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
     audit,
     http(req, res) {
       const path = (req.url ?? '').split('?')[0] ?? '';
+      if (path === '/kino/targets') {
+        void targets(req, res);
+        return true;
+      }
       const file = files.get(path);
       if (file === undefined) return false;
       if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -130,6 +166,7 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
     },
     stop() {
       clearInterval(purgeTimer);
+      if (control) (feed as { dispose?: () => void }).dispose?.();
       stopOtlp?.();
       killSwitch.set(false);
     },

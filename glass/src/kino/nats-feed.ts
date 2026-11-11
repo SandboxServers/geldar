@@ -1,10 +1,11 @@
 /**
  * The relay's feed source on NATS: one subscription per watched agent on
- * `geldar.<shard>.kino.<agent_id>.feed` (kino-feed.schema.json). Subscribe only: Glass publishes
- * nothing (K02). Loaded only when Kino is enabled, so a default Glass opens no NATS connection.
+ * `geldar.<shard>.kino.<agent_id>.feed` (kino-feed.schema.json).  Subscribe on the feed: Glass publishes
+ * only the control subject (kino-control.schema.json, see control.ts). Loaded only when Kino is enabled, so a default Glass opens no NATS connection.
  */
 import { readFileSync } from 'node:fs';
 import { connect, type NatsConnection } from '@nats-io/transport-node';
+import { type ControlSink, controlSubject } from './control.ts';
 import type { FeedSource } from './relay.ts';
 
 const AGENT = /^[a-z][a-z0-9_]{0,63}$/;
@@ -26,7 +27,7 @@ export function feedSubject(shard: string, agent: string): string {
 
 export async function natsFeed(
   o: NatsFeedOptions,
-): Promise<FeedSource & { close(): Promise<void> }> {
+): Promise<FeedSource & { control: ControlSink; close(): Promise<void> }> {
   const auth =
     o.user && o.passwordFile
       ? { user: o.user, pass: readFileSync(o.passwordFile, 'utf8').trim() }
@@ -38,7 +39,10 @@ export async function natsFeed(
     ...auth,
   });
   const decoder = new TextDecoder();
+  const control = controlSubject(o.shard);
+  const encoder = new TextEncoder();
   return {
+    control: { publish: (json) => nc.publish(control, encoder.encode(json)) },
     subscribe(agentId, onMessage) {
       const sub = nc.subscribe(feedSubject(o.shard, agentId));
       void (async () => {

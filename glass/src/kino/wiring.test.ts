@@ -54,6 +54,25 @@ describe('Kino default off', () => {
     expect((await fetch(`http://127.0.0.1:${on.port}/kino/`, { method: 'POST' })).status).toBe(405);
   });
 
+  it('serves the production entry at /kino/ and keeps the mock feed on /kino/dev.html', async () => {
+    const { port } = await listen(FEED);
+    const index = await (await fetch(`http://127.0.0.1:${port}/kino/`)).text();
+    expect(index).toContain('src="./main.ts"');
+    expect(index).not.toContain('dev.ts');
+    expect((await fetch(`http://127.0.0.1:${port}/kino/main.ts`)).status).toBe(200);
+    expect((await fetch(`http://127.0.0.1:${port}/kino/session.ts`)).status).toBe(200);
+    const dev = await (await fetch(`http://127.0.0.1:${port}/kino/dev.html`)).text();
+    expect(dev).toContain('dev.ts');
+    expect((await fetch(`http://127.0.0.1:${port}/kino/targets`, { method: 'POST' })).status).toBe(
+      405,
+    );
+  });
+
+  it('has no /kino/targets when disabled', async () => {
+    const { port } = await listen();
+    expect((await fetch(`http://127.0.0.1:${port}/kino/targets`)).status).toBe(404);
+  });
+
   it('closes a WebSocket upgrade without a 101 when disabled', async () => {
     const { port } = await listen();
     const data = await new Promise<string>((resolve) => {

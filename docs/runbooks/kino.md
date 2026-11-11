@@ -32,3 +32,9 @@ To turn Kino back on, reverse the step you took. A pane that was closed does not
 ## Audit
 
 Pane opens, targets, mode changes and closes are recorded in `kino_audit` with a hashed login, kept 90 days (Glass purges older rows daily). If an audit write fails, the pane is closed (fail closed).
+
+## Entry page and control path (K09)
+
+`/kino/` is the production page (`glass/web/kino/index.html`, module `main.ts`); `/kino/dev.html` is the mock-feed dev page. The page reads `/kino/targets` (signed-in state and the agents the server lets this viewer watch; anonymous viewers get public-camera agents only), shows a sign-in link when not signed in, and ends a pane on `bye` (including `kill_switch`). Set the `kino-signin-url` and `kino-textures-url` meta tags in `index.html` per deploy (or open `/kino/?textures=<url>`).
+
+Glass asks the plugin to read an agent over NATS on `geldar.<shard>.kino.control` (`kino-control.schema.json`): `start` for the first pane, `resync` for later panes, `refresh` every 15 s while watched, `stop` 10 s after the last pane leaves. The plugin applies these on the server thread only when `kino.enabled` is true; a target not refreshed for 45 s is stopped, so a Glass restart leaves nothing running. NATS permissions: Glass may publish `geldar.<shard>.kino.control` and subscribe `geldar.<shard>.kino.*.feed`; the plugin the reverse.

@@ -35,6 +35,10 @@ public final class KinoSetup {
         holder[0] = feed;
         plugin.getServer().getPluginManager().registerEvents(new KinoBlockListener(feed), plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, feed::tick, 20L, 20L);
+        // Glass asks for targets over NATS; the commands are applied here on the server thread.
+        KinoControl control = new KinoControl(feed, System::currentTimeMillis);
+        new NatsKinoControl(natsUrl, shard, env, plugin.getLogger(), control);
+        plugin.getServer().getScheduler().runTaskTimer(plugin, control::drain, 10L, 10L);
         plugin.getLogger().info("Kino feed enabled: radius " + radius(file) + " chunks");
         return feed;
     }

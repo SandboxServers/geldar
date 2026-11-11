@@ -11,6 +11,7 @@ export declare const validateIntentEventPayload: ValidateFunction;
 export declare const validateKinoClient: ValidateFunction;
 export declare const validateSubscribeMessage: ValidateFunction;
 export declare const validateUnsubscribeMessage: ValidateFunction;
+export declare const validateKinoControl: ValidateFunction;
 export declare const validateKinoFeed: ValidateFunction;
 export declare const validateHelloMessage: ValidateFunction;
 export declare const validateChunkSectionMessage: ValidateFunction;
