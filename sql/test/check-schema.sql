@@ -328,7 +328,7 @@ BEGIN
       IF NOT has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
         RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT agents.%', rel.attname;
       END IF;
-    ELSIF rel.attname <> 'public_camera' -- 0014: the one added Glass read (Kino)
+    ELSIF rel.attname NOT IN ('public_camera', 'thoughts_delayed_public') -- 0014 (Kino), 0015 (thought opt-in)
           AND has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass can read agents.% (not granted)', rel.attname;
     END IF;

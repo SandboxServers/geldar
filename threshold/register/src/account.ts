@@ -146,7 +146,7 @@ export class Account {
   /** Handles an account route; false when the path is not one of them. */
   async handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const m =
-      /^\/(account|players|logout)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera))?$/.exec(
+      /^\/(account|players|logout)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
         url.pathname,
       );
     if (!m) return false;
@@ -208,6 +208,7 @@ export class Account {
     }
     if (m[1] === 'players' && m[2] === undefined) return this.create(res, session, fields);
     if (m[3] === 'public-camera') return this.camera(res, session, m[2] ?? '', fields);
+    if (m[3] === 'public-thoughts') return this.thoughts(res, session, m[2] ?? '', fields);
     if (m[3] === 'token') return this.mint(res, session, m[2] ?? '');
     return this.retire(res, session, m[2] ?? '');
   }
@@ -285,6 +286,33 @@ export class Account {
     const ok = await this.deps.store.setPublicCamera(s.identityHash, playerId, value === 'on');
     this.deps.log(ok ? 'public camera set' : 'public camera refused');
     return this.show(res, s, ok ? 'Public camera updated.' : 'That player cannot be changed.');
+  }
+
+  private async thoughts(
+    res: ServerResponse,
+    s: Session,
+    playerId: string,
+    f: URLSearchParams,
+  ): Promise<true> {
+    const value = f.get('value');
+    if (value !== 'on' && value !== 'off') return this.show(res, s, 'That setting is not valid.');
+    try {
+      const ok = await this.deps.store.setThoughtsDelayedPublic(
+        s.identityHash,
+        playerId,
+        value === 'on',
+      );
+      this.deps.log(ok ? 'delayed public thoughts set' : 'delayed public thoughts refused');
+      return this.show(
+        res,
+        s,
+        ok ? 'Delayed public thoughts updated.' : 'That player cannot be changed.',
+      );
+    } catch {
+      // A banned identity or the database rate limit: the same plain refusal, no database text.
+      this.deps.log('delayed public thoughts refused');
+      return this.show(res, s, 'That player cannot be changed right now.');
+    }
   }
 
   private async retire(res: ServerResponse, s: Session, playerId: string): Promise<true> {

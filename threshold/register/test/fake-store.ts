@@ -23,6 +23,23 @@ export class FakeStore implements Store {
     this.cameras.set(playerId, value);
     return true;
   }
+  thoughtFlags = new Map<string, boolean>();
+  lastThoughtFlagAt = new Map<string, number>();
+  async setThoughtsDelayedPublic(
+    identityHash: string,
+    playerId: string,
+    value: boolean,
+  ): Promise<boolean> {
+    const who = this.owners.get(identityHash);
+    const p = this.players.get(playerId);
+    if (!who || who.banned) throw new Error('unknown or banned identity');
+    if (!p || p.ownerId !== who.ownerId) return false;
+    const last = this.lastThoughtFlagAt.get(playerId);
+    if (last !== undefined && this.now() - last < 10_000) throw new Error('too many changes');
+    this.lastThoughtFlagAt.set(playerId, this.now());
+    this.thoughtFlags.set(playerId, value);
+    return true;
+  }
   async createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,

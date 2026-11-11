@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
+import { ownedAgentsOf } from './owner-view.ts';
 import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
@@ -16,6 +17,7 @@ import {
   type SqlClient,
   type ThoughtCursor,
   type ThoughtFilter,
+  type Visibility,
 } from './query.ts';
 import { resolveRoute } from './routes.ts';
 import { resolveViewer } from './session.ts';
@@ -178,13 +180,22 @@ async function serveRoute(
     sendJson(res, 200, viewer);
     return;
   }
+  const shown = async (): Promise<Visibility> => ({
+    ...visibilityAt(policy),
+    ownedAgents: await ownedAgentsOf(
+      deps.db,
+      deps.sessionKey,
+      req.headers.cookie,
+      (deps.now ?? Date.now)(),
+    ),
+  });
   if (name === 'agents') {
-    sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
+    sendJson(res, 200, { agents: await listAgents(deps.db, await shown()) });
     return;
   }
   if (name === 'thoughts') {
     const filter = thoughtFilter(query);
-    const thoughts = await listThoughts(deps.db, filter, visibilityAt(policy));
+    const thoughts = await listThoughts(deps.db, filter, await shown());
     sendJson(res, 200, {
       thoughts: publicRows(thoughts),
       next: nextCursor(thoughts, filter.limit),
@@ -192,7 +203,7 @@ async function serveRoute(
     return;
   }
   if (name === 'thought') {
-    const row = await getThought(deps.db, params.id ?? '', visibilityAt(policy));
+    const row = await getThought(deps.db, params.id ?? '', await shown());
     if (row === null) {
       sendJson(res, 404, { error: 'not found' });
       return;
@@ -205,7 +216,7 @@ async function serveRoute(
   if (name === 'receipts') {
     const actionId = textParam(query, 'action_id', 128);
     if (actionId === undefined) throw new BadRequest('action_id is required');
-    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
+    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, await shown()) });
     return;
   }
   if (!deps.hub.attach(res, client)) sendJson(res, 503, { error: 'too many streams' });

@@ -366,3 +366,33 @@ describe('public camera route', () => {
     expect(store.cameras.get('ag-cam-01')).toBe(false);
   });
 });
+
+describe('delayed public thoughts route (decision 0138)', () => {
+  const route = '/register/players/ag-th-01/public-thoughts';
+  it('sets the flag only for the owner own player, and is CSRF-checked', async () => {
+    await start();
+    const a = (await signIn('9101')).session as Session;
+    const b = (await signIn('9102')).session as Session;
+    await post('/register/players', a, newPlayer('ag-th-01'));
+    expect((await post(route, a, { value: 'on' }, 'x')).status).toBe(403);
+    expect(await (await post(route, a, { value: 'maybe' })).text()).toContain('not valid');
+    expect(await (await post(route, b, { value: 'on' })).text()).toContain('cannot be changed');
+    expect(store.thoughtFlags.size).toBe(0);
+    expect(await (await post(route, a, { value: 'on' })).text()).toContain(
+      'Delayed public thoughts updated',
+    );
+    expect(store.thoughtFlags.get('ag-th-01')).toBe(true);
+  });
+
+  it('refuses a second change inside the rate limit and allows it after, last allowed attempt included', async () => {
+    await start();
+    const a = (await signIn('9103')).session as Session;
+    await post('/register/players', a, newPlayer('ag-th-01'));
+    await post(route, a, { value: 'on' });
+    expect(await (await post(route, a, { value: 'off' })).text()).toContain('right now');
+    expect(store.thoughtFlags.get('ag-th-01')).toBe(true);
+    h.clock.at += 10_000;
+    await post(route, a, { value: 'off' });
+    expect(store.thoughtFlags.get('ag-th-01')).toBe(false);
+  });
+});
