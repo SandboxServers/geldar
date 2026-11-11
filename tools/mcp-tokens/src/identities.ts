@@ -45,3 +45,27 @@ export async function unbanIdentity(sql: Sql, hash: string): Promise<void> {
   );
   if (result.rows.length === 0) throw new Error('no identity with that id');
 }
+
+/** Makes a registered identity a Kino administrator (R42). The identity must exist; granting twice is a no-op. */
+export async function grantKinoAdmin(sql: Sql, hash: string): Promise<void> {
+  checkHash(hash);
+  const known = await sql.query(
+    "SELECT 1 FROM mcp_identities WHERE identity_hash = decode($1, 'hex')",
+    [hash],
+  );
+  if (known.rows.length === 0) throw new Error('no identity with that id');
+  await sql.query(
+    "INSERT INTO kino_admins (identity_hash) VALUES (decode($1, 'hex')) ON CONFLICT DO NOTHING",
+    [hash],
+  );
+}
+
+/** Removes a Kino administrator. Returns false when the identity was not one. */
+export async function revokeKinoAdmin(sql: Sql, hash: string): Promise<boolean> {
+  checkHash(hash);
+  const result = await sql.query(
+    "DELETE FROM kino_admins WHERE identity_hash = decode($1, 'hex') RETURNING 1 AS ok",
+    [hash],
+  );
+  return result.rows.length > 0;
+}

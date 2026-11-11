@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { banIdentity, unbanIdentity } from './identities.ts';
+import { banIdentity, grantKinoAdmin, revokeKinoAdmin, unbanIdentity } from './identities.ts';
 import type { Row, Sql } from './owners.ts';
 
 const HASH = 'ab'.repeat(32);
@@ -57,5 +57,40 @@ describe('identity ban and unban', () => {
     expect(log).toHaveLength(1);
     expect(log[0]?.text).toContain('banned_at = NULL');
     await expect(unbanIdentity(fake([]).sql, HASH)).rejects.toThrow('no identity');
+  });
+});
+
+describe('Kino admin grant and revoke (R42)', () => {
+  function admins(known: boolean, deleted: boolean) {
+    const log: { text: string; values: unknown[] | undefined }[] = [];
+    const sql: Sql = {
+      query: async (text, values) => {
+        log.push({ text, values });
+        if (text.startsWith('SELECT 1 FROM mcp_identities')) return { rows: known ? [{}] : [] };
+        if (text.startsWith('DELETE FROM kino_admins')) return { rows: deleted ? [{}] : [] };
+        return { rows: [] };
+      },
+    };
+    return { sql, log };
+  }
+
+  it('grants only to a registered identity, once', async () => {
+    const ok = admins(true, false);
+    await grantKinoAdmin(ok.sql, HASH);
+    expect(ok.log.at(-1)?.text).toContain('INSERT INTO kino_admins');
+    expect(ok.log.at(-1)?.text).toContain('ON CONFLICT DO NOTHING');
+    expect(ok.log.at(-1)?.values).toEqual([HASH]);
+    const unknown = admins(false, false);
+    await expect(grantKinoAdmin(unknown.sql, HASH)).rejects.toThrow('no identity');
+    expect(unknown.log.some((e) => e.text.startsWith('INSERT'))).toBe(false);
+  });
+
+  it('revokes and says whether it was an admin; a bad id never reaches the database', async () => {
+    expect(await revokeKinoAdmin(admins(true, true).sql, HASH)).toBe(true);
+    expect(await revokeKinoAdmin(admins(true, false).sql, HASH)).toBe(false);
+    const { sql, log } = admins(true, true);
+    await expect(grantKinoAdmin(sql, 'AB')).rejects.toThrow('64 lower-case hex');
+    await expect(revokeKinoAdmin(sql, 'AB')).rejects.toThrow('64 lower-case hex');
+    expect(log).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 
-export type ProviderName = 'github' | 'discord';
+/** Only 'microsoft' signs in (R40); the old names stay so the operator CLI can still name old identities. */
+export type ProviderName = 'microsoft' | 'github' | 'discord';
 
 /** What the service keeps of a signed-in account. No email, no raw id, no provider token. */
 export interface Identity {

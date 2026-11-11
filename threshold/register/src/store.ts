@@ -33,8 +33,6 @@ export interface MintRequest {
 export interface Store {
   /** The owner behind an identity hash, or null when the identity never registered. */
   findOwner(identityHash: string): Promise<OwnerRecord | null>;
-  /** How many identities were created at or after `sinceMs` (epoch ms). */
-  countNewOwnersSince(sinceMs: number): Promise<number>;
   createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
@@ -44,6 +42,8 @@ export interface Store {
   createPlayer(request: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'>;
   /** Mints a token through register_mint_token; false when the function refuses (not the owner's). */
   mintToken(request: MintRequest): Promise<boolean>;
+  /** Sets public_camera on the owner's own agent through register_set_public_camera; false when it is not theirs. */
+  setPublicCamera(identityHash: string, playerId: string, value: boolean): Promise<boolean>;
   /** Retires the owner's own player and revokes its tokens; false when it is not theirs or not live. The database checks the owner by identity. */
   retirePlayer(identityHash: string, playerId: string): Promise<boolean>;
 }
