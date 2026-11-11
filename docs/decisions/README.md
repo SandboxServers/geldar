@@ -57,7 +57,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0050](0050-phase0-mind-processes-run-on-the-host.md) | In Phase 0 the Mind, the local Thinker and Adam's Body run as host processes | Accepted (owner) |
 | [0051](0051-adam-identity-and-model-pins.md) | Adam's identity and the Phase 0 model pins | Accepted (owner; seed approved 2026-11-09) |
 | [0052](0052-per-owner-sovereign-player-cap-raised-to-20.md) | The per-owner cap on sovereign players is raised to 20 for the owner; the real Geldar MCP is built alongside wave 6 | Accepted (owner) |
-| [0053](0053-public-mcp-through-an-outbound-tunnel-deferred.md) | The sovereign MCP is loopback-only now; a public name through an outbound tunnel waits for the colo move | Accepted (owner ruling; Q1 and Q2 open) |
+| [0053](0053-public-mcp-through-an-outbound-tunnel-deferred.md) | The sovereign MCP is loopback-only now; a public name through an outbound tunnel waits for the colo move | Superseded by 0071 (2026-11-10) |
 | [0054](0054-static-hashed-per-player-bearer-tokens.md) | Sovereign MCP clients use static, hashed, per-player Bearer tokens, not OAuth 2.1 | Accepted |
 | [0055](0055-phase0-sovereign-tool-subset-and-mappings.md) | The Phase 0 sovereign MCP serves the frozen 14-tool vocabulary; six tools are not available and the action list is atomic | Accepted |
 | [0056](0056-first-migration-runner-and-least-privilege-grants.md) | The first migration runner, the migration ledger rule, and the least-privilege grants for the MCP role | Accepted |
@@ -93,6 +93,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
 | [0088](0088-metrics-exporters-and-replay-window.md) | Metrics exporters are push-only OTLP to a configured URL; the MCP replay window is bounded and optional | Proposed |
 | [0089](0089-crash-hygiene-defaults-and-refusals.md) | Crash hygiene: the owner cap default, the start refusal while a name lease is held, and `players down` | Accepted (orchestrator) |
+| [0090](0090-public-mcp-contract.md) | Public MCP contract: client-ip header, error shapes, kill-switch config | Proposed |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
 | [0131](0131-colo-in-container-hosts-and-mind-shard-file.md) | Colo containers reach their compose peers by name through a closed, opt-in allowlist; the Mind's shard file is `shards/colo-mind.yaml`, separate from the budget file | Accepted (orchestrator, 2026-11-10) |
 | [0132](0132-ipv4-literal-policy.md) | IPv4 literal policy: loopback and documentation addresses anywhere, private addresses only in an allowlisted file, public addresses never | Accepted (orchestrator, 2026-11-10) |
