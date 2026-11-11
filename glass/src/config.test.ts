@@ -57,6 +57,15 @@ describe('the Glass configuration', () => {
     }
   });
 
+  it('reads the public host list: empty by default, trimmed and lower-cased', () => {
+    expect(loadGlassConfig(env, readPassword).publicHosts).toEqual([]);
+    const listed = { ...env, GELDAR_GLASS_PUBLIC_HOSTS: ' Glass.Example.Invalid ,b.example.invalid' };
+    expect(loadGlassConfig(listed, readPassword).publicHosts).toEqual([
+      'glass.example.invalid',
+      'b.example.invalid',
+    ]);
+  });
+
   it('refuses any database role but geldar_glass', () => {
     const other = { ...env, GELDAR_GLASS_PG_USER: 'geldar' };
     expect(() => loadGlassConfig(other, readPassword)).toThrow(/only as geldar_glass/);

@@ -32,6 +32,8 @@ export interface GlassConfig {
   showLivingSovereign: boolean;
   /** Peers whose `x-geldar-client-ip` header is believed (0090). Empty: the socket address is used. */
   trustedProxies: string[];
+  /** Exact public host names answered behind Caddy (`GELDAR_GLASS_PUBLIC_HOSTS`). Default none. */
+  publicHosts?: string[];
   /** The per-client token bucket (0072 item 3). The table holds at most `maxClients` clients. */
   rateLimit: { perMinute: number; burst: number; maxClients: number };
 }
@@ -136,6 +138,7 @@ export function loadGlassConfig(
     delaySeconds: wholeSetting(env, 'GELDAR_GLASS_DELAY_SECONDS', 60),
     showLivingSovereign: flagSetting(env, 'GELDAR_GLASS_SHOW_LIVING_SOVEREIGN', false),
     trustedProxies: listSetting(env, 'GELDAR_GLASS_TRUSTED_PROXIES'),
+    publicHosts: listSetting(env, 'GELDAR_GLASS_PUBLIC_HOSTS').map((h) => h.toLowerCase()),
     rateLimit: {
       perMinute: intSetting(env, 'GELDAR_GLASS_RATE_PER_MINUTE', 60),
       burst: intSetting(env, 'GELDAR_GLASS_RATE_BURST', 20),
