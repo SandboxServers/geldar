@@ -54,7 +54,7 @@ describe('deploy/caddy site files', () => {
 
       it('refuses every method but the ones it serves, with 405', () => {
         expect(text).toMatch(new RegExp(`^\\s*@not_allowed not method ${methods}$`, 'm'));
-        expect(text).toContain('respond @not_allowed 405');
+        expect(text).toMatch(/handle @not_allowed \{\s*respond 405\s*\}/);
       });
 
       it('strips the incoming address headers and sets its own inside every reverse_proxy', () => {

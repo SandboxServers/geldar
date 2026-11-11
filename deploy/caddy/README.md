@@ -34,6 +34,12 @@ Core Caddy has no rate limiter, and this repo adds no third-party Caddy module (
 2. Validate: `bash deploy/caddy/validate.sh` (uses the pinned caddy image, `docker run --rm` only). CI runs it in the `compose` job.
 3. Reload: `caddy reload` on the node.
 
+## Kill procedure
+
+Swap to `<site>-off.caddy` (`deploy/colo-public.sh off <site>`) and reload. Open streams close within 5 s: `mcp.caddy` and the Glass `/api/stream` route set `stream_close_delay 5s`, so a reload does not leave them open. The in-process kill switches of the MCP and of Glass are read at start (ruling R26), so changing them needs a service restart; the Caddy swap is the live switch.
+
+The 405 for a refused method is `handle @not_allowed { respond 405 }`, the first handle in each site, because Caddy sorts a site-level `respond` after `handle` and it would never run. `tools/repo-checks/src/caddy-adapt.test.ts` adapts each file in the pinned image and checks the route order.
+
 Never run `systemctl restart caddy` or restart the container. Caddy serves other sites on the node, and a restart interrupts them all.
 
 ## Status
