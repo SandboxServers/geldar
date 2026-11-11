@@ -91,10 +91,11 @@ function budgets(): { cpus: number; memMiB: number; services: string[] } {
 }
 
 describe('shards/colo.yaml: the total covers the per-service budgets (always checked)', () => {
-  it('has a per-service CPU and memory budget for all nine colo services', () => {
+  it('has a per-service CPU and memory budget for all ten colo services', () => {
     const { services } = budgets();
     expect(services.sort()).toEqual(
       [
+        'ADMIN',
         'ANIMUS',
         'EVENTSINK',
         'GELDAR_MCP',
@@ -117,10 +118,10 @@ describe('shards/colo.yaml: the total covers the per-service budgets (always che
     expect(Number(memTotal)).toBeGreaterThanOrEqual(memMiB);
   });
 
-  it('sums to exactly 9 CPUs and 18944m, the orchestrator budget', () => {
+  it('sums to exactly 9.5 CPUs and 19456m, the orchestrator budget', () => {
     const { cpus, memMiB } = budgets();
-    expect(cpus).toBe(9);
-    expect(memMiB).toBe(18944);
+    expect(cpus).toBe(9.5);
+    expect(memMiB).toBe(19456);
   });
 });
 
@@ -167,14 +168,14 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   }
 
   const GOOD =
-    'cpu_limit: 9\nmemory_limit: 18944m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
+    'cpu_limit: 9.5\nmemory_limit: 19456m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
 
   it('accepts the committed shards/colo.yaml and returns its values', () => {
     const outcome = run(null);
     expect(outcome.ok).toBe(true);
     expect(outcome.value).toEqual({
-      cpu_limit: '9',
-      memory_limit: '18944m',
+      cpu_limit: '9.5',
+      memory_limit: '19456m',
       minecraft_port: '25567',
       bind_address: '127.0.0.1',
     });
@@ -182,7 +183,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
 
   it('accepts comments, blank lines and a missing bind_address (loopback by default)', () => {
     const outcome = run(
-      '# note\n\ncpu_limit: 9.5   # cores\nmemory_limit: 18944m\nminecraft_port: 25567\n',
+      '# note\n\ncpu_limit: 9.5   # cores\nmemory_limit: 19456m\nminecraft_port: 25567\n',
     );
     expect(outcome.ok).toBe(true);
     expect(outcome.value?.bind_address).toBe('127.0.0.1');
@@ -190,19 +191,19 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a memory total below Paper heap (6G) plus 1 GiB', () => {
-    const outcome = run(GOOD.replace('18944m', '7000m'));
+    const outcome = run(GOOD.replace('19456m', '7000m'));
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toContain("below Paper's heap (6G) plus 1 GiB");
   });
 
   it('refuses a memory total below the sum of the per-service memory budgets', () => {
-    const outcome = run(GOOD.replace('18944m', '8192m'));
+    const outcome = run(GOOD.replace('19456m', '8192m'));
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toContain('below the sum of the per-service memory budgets');
   });
 
   it('refuses a CPU total below the sum of the per-service CPU budgets', () => {
-    const outcome = run(GOOD.replace('cpu_limit: 9\n', 'cpu_limit: 8\n'));
+    const outcome = run(GOOD.replace('cpu_limit: 9.5\n', 'cpu_limit: 8\n'));
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toContain('below the sum of the per-service CPU budgets');
   });
@@ -214,12 +215,12 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a missing cpu_limit and names it', () => {
-    const outcome = run(GOOD.replace('cpu_limit: 9\n', ''));
+    const outcome = run(GOOD.replace('cpu_limit: 9.5\n', ''));
     expect(outcome.error).toContain('cpu_limit is missing');
   });
 
   it('refuses a missing memory_limit and names it', () => {
-    const outcome = run(GOOD.replace('memory_limit: 18944m\n', ''));
+    const outcome = run(GOOD.replace('memory_limit: 19456m\n', ''));
     expect(outcome.error).toContain('memory_limit is missing');
   });
 
@@ -239,8 +240,8 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a cpu_limit of 0 and a memory_limit without a unit', () => {
-    expect(run(GOOD.replace('cpu_limit: 9', 'cpu_limit: 0')).error).toContain('cpu_limit');
-    expect(run(GOOD.replace('18944m', '18944')).error).toContain('memory_limit');
-    expect(run(GOOD.replace('18944m', '8')).error).toContain('memory_limit');
+    expect(run(GOOD.replace('cpu_limit: 9.5', 'cpu_limit: 0')).error).toContain('cpu_limit');
+    expect(run(GOOD.replace('19456m', '19456')).error).toContain('memory_limit');
+    expect(run(GOOD.replace('19456m', '8')).error).toContain('memory_limit');
   });
 });

@@ -65,6 +65,123 @@ Run these in order. Stop at the first failure.
 
 Run the scripts from the repository root, or set `GELDAR_COLO_ROOT` to the checkout.
 
+## First-deploy runbook
+
+Work top to bottom. Steps (a) to (e) only read, or dry-run, until the real deploy in (e). Angle brackets are
+placeholders: `<node>` is the node's address or name, `<operator>` is the operator account, `<release-commit>` is the
+commit the images were built from, `<player>` and `<owner>` are ids you choose. Write your own values in your own
+notes, not in this file or the repository.
+
+### (a) Prerequisites
+
+- Docker Engine and Compose v2 on `<node>`. `docker compose version` and `docker info` must both work for
+  `<operator>` without sudo (the account is in the `docker` group).
+- A root-only state directory: `sudo install -d -m 0700 /etc/geldar-colo` for the release record and the secrets
+  directory, or set `GELDAR_STATE_DIR` and `GELDAR_SECRETS_DIR` to directories you create the same way.
+- The repository checkout at `<release-commit>`: `git clone --depth 1 <public repository URL> <checkout>`, then
+  `git -C <checkout> fetch --depth 1 origin <release-commit>` and `git -C <checkout> checkout <release-commit>`. Or
+  `git archive <release-commit> | tar -x -C <checkout>` on a machine with the repository, copied over. The commit is
+  named in the release summary of the `colo-images` workflow.
+- Free disk above `GELDAR_MIN_FREE_KB` (default 10 GiB). Check with `df -h /`.
+
+### (b) Plugin jars
+
+`compose/colo.yml` mounts `plugin/core/build/libs/geldar-core.jar` and
+`plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`. These are Gradle build products and are not
+published. For the first deploy, build them on a trusted machine and copy them to the same relative paths on the node:
+
+```sh
+# on the trusted machine, from the checkout at <release-commit>
+(cd plugin && ./gradlew build --no-daemon)
+sha256sum plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/geldar-velocity-identity.jar
+scp plugin/core/build/libs/geldar-core.jar <operator>@<node>:<checkout>/plugin/core/build/libs/
+scp plugin/velocity-identity/build/libs/geldar-velocity-identity.jar <operator>@<node>:<checkout>/plugin/velocity-identity/build/libs/
+# on <node>, from <checkout>: the same two sha256sum lines must print the same hashes
+```
+
+Record both hashes in the release record. Follow-up: publish the jars as a CI artifact so this copy step goes away.
+
+### (c) Secrets
+
+On the trusted machine, run `./geldar.ps1 shard secrets colo` and `./geldar.ps1 shard nats-auth colo`. Copy the files they
+produce for the colo node to `<node>`'s secrets directory. Never send them through a chat or commit them. The
+directory is mode `0700` and each file is mode `0600`. Set `GELDAR_SECRETS_DIR` to that directory. Check the modes
+read-only with `stat -c '%a %n' <secrets-dir>/*`.
+
+Open question: the containers run as uid 1000. An owner-only file owned by `<operator>` may be unreadable inside a
+container. Check with `deploy/colo-status.sh` after the first `up`. The options are in
+`docs/analysis/phase1/worknotes/FX-SECRETS.md`. NATS auth generation is PowerShell-only, so its files are copied from
+the trusted machine.
+
+### (d) Release manifest
+
+Copy `release.env` from the `colo-images` run summary or artifact for `<release-commit>` to
+`/etc/geldar-colo/release.env`, mode `0600`. Every `*_IMAGE` must be a digest reference (`name@sha256:<64 hex>`).
+`latest` and bare tags are refused by the script. The manifest must include `GELDAR_ADMIN_IMAGE`.
+
+### (e) Dry run, then deploy
+
+```sh
+cd <checkout>
+DEPLOY_DRY_RUN=1 deploy/colo-up.sh   # read the plan; stop if a value is unexpected
+deploy/colo-up.sh                    # the real deploy; prints "deployed: project geldar-colo"
+```
+
+### (f) Admin steps (one-shot container, decision 0133)
+
+Each step runs in a container started with `run --rm`. Nothing is kept running afterwards. Set the tokens directory
+first. It must be outside the checkout and mode `0700`:
+
+```sh
+export GELDAR_TOKENS_DIR=<tokens-dir>
+deploy/colo-admin.sh migrate                 # SQL migrations
+deploy/colo-admin.sh migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
+deploy/colo-admin.sh owner-add <owner> --cap 20
+deploy/colo-admin.sh player-add <player> --owner <owner> --life <life> --name <name> --harness <harness>
+```
+
+Before you start a ranger's host, add `<player>` under `sovereign.players` in `shards/colo-mind.yaml`. Then mint its
+token:
+
+```sh
+deploy/colo-admin.sh token-mint <player>     # prints the file path and byte length, never the value
+```
+
+The token file is `<tokens-dir>/<player>.token`, mode `0600`. Give it to the ranger's desktop by a channel outside
+chat. Then start the ranger's host with the secrets overlay:
+
+```sh
+GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f deploy/compose.secrets.yml --profile sovereign up -d players-host
+```
+
+### (g) Verification
+
+- `deploy/colo-status.sh` (read-only). Every service should be healthy, and no published port should be 25565 or 25566.
+  It also prints one resource sample. Compare it with the budgets in the capacity notes.
+- The MCP: its compose healthcheck is a TCP connect to `127.0.0.1:8788`. Its only HTTP route is `/p/<player>`; `/`
+  answers 404 without a check, and `/p/<player>` without a bearer token answers 401. On `<node>`,
+  `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8788/p/<player>` should print 401, not a connection error.
+- From the desktop, open an SSH tunnel: `ssh -L 8788:127.0.0.1:8788 <operator>@<node>`. Point the launcher at the local
+  end. Public DNS on ports 80 and 443 is a C2 matter. Then run the first look, one act and one wait for `<player>`.
+
+### (h) Rollback and stop conditions
+
+- Roll back with `deploy/colo-rollback.sh` (see "Rollback" below). It uses the release record in the state directory.
+- Stop and roll back if Cimmeria latency rises, if free disk drops below `GELDAR_MIN_FREE_KB`, if anything binds host
+  port 25565 or 25566, or if a container outside the `geldar-colo` project is touched.
+
+### (i) Known limits
+
+- The Adam Mind cannot think until the C4 gateway exists. It starts but does not act.
+- BlueMap is not mounted. Accepting its download is the owner's call (`plugins/bluemap/bluemap.lock.json`).
+- Postgres service roles are superuser for now (C2).
+- NATS auth generation is PowerShell-only; copy its files from the trusted machine.
+- The admin service mounts `postgres.txt` and `postgres-mcp.txt` (at `/run/secrets/postgres-mcp.txt`). The
+  `migrate --set-role-password` step reads the second one. Both files must exist before the first `up`.
+- `token-mint` needs `GELDAR_TOKENS_DIR` writable by uid 1000 (the admin container's user) and readable by the
+  operator. The script requires mode `0700` on that directory, so the owner decides how to satisfy both.
+- `run --rm` starts the admin service's dependencies (Postgres) if they are not already running. It removes nothing.
+
 ## What each script refuses
 
 `colo-up.sh` exits 1 and names the failing check. Its refusals, in order:
@@ -122,8 +239,9 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
 - **NATS auth config.** Generating the per-role NATS password files and the auth config is PowerShell-only:
   `./geldar.ps1 shard nats-auth` on the desktop. The secrets set is then copied to the node's secrets directory by
   hand. There is no shell equivalent yet.
-- **Image publish.** No workflow publishes `geldar-body`, `geldar-mind` or `geldar-eventsink` to a registry. Until one
-  exists, the release manifest cannot name a published digest for those images.
+- **Image publish.** `colo-images` publishes the five images (`geldar-body`, `geldar-mind`, `geldar-eventsink`,
+  `geldar-mcp`, `geldar-admin`) and writes `release.env` for its run. Take the manifest from the run for
+  `<release-commit>`; the publish itself is an ops step.
 - **Node wiring for NATS auth.** `compose/nats-auth.yml` is not wired into the node's deploy. The colo file runs
   without it.
 

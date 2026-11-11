@@ -1,0 +1,319 @@
+// Tests for deploy/colo-admin.sh (decision 0133). The script runs under `sh` with a fake `docker` and a fake `stat` on
+// PATH, as the colo deploy tests do (colo-deploy.test.ts). The fake docker records each call, copies any compose
+// overlay it is given to <log>.overlay, and answers only `config`. The fake stat answers the POSIX mode of a file
+// from a fixture. No real docker, container, node or network is used. The token file is a sentinel fixture: the
+// tests check that its value never reaches stdout or stderr.
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
+const COMPOSE = resolve(DEPLOY, '..', 'compose', 'colo.yml');
+const PROJECT_FILTER = /-p geldar-colo|label=com\.docker\.compose\.project=geldar-colo/;
+const SENTINEL = 'sentinel-token-value-that-must-never-print';
+const ADMIN = `registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}`;
+const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
+const SECRET_FILES = ['postgres.txt', 'rcon.txt', 'velocity-forwarding.txt', 'nats-body.txt'];
+
+function findSh(): string {
+  if (process.env.GELDAR_TEST_SH) return process.env.GELDAR_TEST_SH;
+  if (process.platform !== 'win32') return 'sh';
+  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(
+    (p): p is string => Boolean(p),
+  );
+  return (
+    roots.map((root) => join(root, 'Git', 'usr', 'bin', 'sh.exe')).find((p) => existsSync(p)) ??
+    'sh'
+  );
+}
+const SH = findSh();
+
+// Same bound as colo-deploy.test.ts: each test starts several sh processes on a Windows desktop. It is a limit for
+// real work, not a retry or a skip.
+const SPAWN_TEST_TIMEOUT_MS = 30_000;
+vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
+
+// The fake docker: records its arguments, copies each *.override.yml it is given, and answers `config`.
+const DOCKER_SHIM = `#!/bin/sh
+printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
+for a in "$@"; do case $a in *.override.yml) cp "$a" "$DOCKER_CALLS_LOG.overlay" ;; esac; done
+case "$*" in
+  *"config --quiet"*) exit 0 ;;
+  *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
+esac
+exit 0
+`;
+
+// The fake stat: only `stat -c %a PATH` is supported. The mode is read from $FAKE_MODE_DIR/<file name>, default 600.
+const STAT_SHIM = `#!/bin/sh
+[ "$1" = "-c" ] && [ "$2" = "%a" ] || exit 2
+name=\${3##*/}
+if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r mode <"$FAKE_MODE_DIR/$name"; echo "$mode"; else echo 600; fi
+`;
+
+const CONFIG = `name: geldar-colo
+services:
+  postgres:
+    image: pgvector/pgvector@sha256:${'5'.repeat(64)}
+  admin:
+    image: ${ADMIN}
+`;
+
+const release = (withAdmin = true) =>
+  `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\n${withAdmin ? `GELDAR_ADMIN_IMAGE=${ADMIN}\n` : ''}`;
+// Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
+const posix = (p: string) => p.replace(/\\/g, '/');
+
+interface Fixture {
+  dir: string;
+  env: Record<string, string>;
+  callsLog: string;
+  tokens: string;
+  state: string;
+  modes: string;
+  releaseFile: string;
+}
+
+const dirs: string[] = [];
+
+function writeShim(bin: string, name: string, text: string) {
+  writeFileSync(join(bin, name), text);
+  chmodSync(join(bin, name), 0o755);
+}
+
+function fixture(): Fixture {
+  const dir = mkdtempSync(join(tmpdir(), 'geldar-colo-admin-test-'));
+  dirs.push(dir);
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  writeShim(bin, 'docker', DOCKER_SHIM);
+  writeShim(bin, 'stat', STAT_SHIM);
+  const secrets = join(dir, 'secrets');
+  mkdirSync(secrets);
+  for (const f of SECRET_FILES) writeFileSync(join(secrets, f), `${f}-test-value\n`);
+  const modes = join(dir, 'modes');
+  mkdirSync(modes);
+  const repo = join(dir, 'repo');
+  mkdirSync(repo);
+  const tokens = join(dir, 'tokens');
+  mkdirSync(tokens);
+  const releaseFile = join(dir, 'release.env');
+  writeFileSync(releaseFile, release());
+  const config = join(dir, 'config.yml');
+  writeFileSync(config, CONFIG);
+  const callsLog = join(dir, 'calls.log');
+  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+  delete env.Path;
+  delete env.GELDAR_TOKENS_DIR;
+  Object.assign(env, {
+    PATH: [bin, SH === 'sh' ? '' : dirname(SH), process.env.PATH ?? process.env.Path ?? '']
+      .filter(Boolean)
+      .join(delimiter),
+    GELDAR_COLO_COMPOSE: posix(COMPOSE),
+    GELDAR_COLO_ROOT: posix(repo),
+    GELDAR_SECRETS_DIR: posix(secrets),
+    GELDAR_RELEASE_FILE: posix(releaseFile),
+    GELDAR_STATE_DIR: posix(join(dir, 'state')),
+    GELDAR_MIN_FREE_KB: '1',
+    DEPLOY_DRY_RUN: '1',
+    DOCKER_CALLS_LOG: posix(callsLog),
+    DOCKER_CONFIG_FIXTURE: posix(config),
+    FAKE_MODE_DIR: posix(modes),
+  });
+  return { dir, env, callsLog, tokens, state: join(dir, 'state'), modes, releaseFile };
+}
+
+function setMode(fx: Fixture, file: string, mode: string) {
+  writeFileSync(join(fx.modes, file), `${mode}\n`);
+}
+
+function run(fx: Fixture, extra: Record<string, string>, args: string[]) {
+  const r = spawnSync(SH, [posix(join(DEPLOY, 'colo-admin.sh')), ...args], {
+    env: { ...fx.env, ...extra },
+    encoding: 'utf8',
+  });
+  return { code: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
+}
+
+function calls(fx: Fixture): string[] {
+  return existsSync(fx.callsLog)
+    ? readFileSync(fx.callsLog, 'utf8').split('\n').filter(Boolean)
+    : [];
+}
+
+// A container start: `run` (or `up`) in a compose call. config calls are not starts.
+const starts = (log: string[]) => log.filter((c) => / run | up /.test(c));
+const REAL = { DEPLOY_DRY_RUN: '0' };
+
+// A token-mint run in the real mode, with a sentinel token file already in the tokens directory (the container
+// would have written it through the mount).
+function mintReal(fx: Fixture, mode = '600') {
+  setMode(fx, 'tokens', '700');
+  writeFileSync(join(fx.tokens, 'alice.token'), `${SENTINEL}\n`);
+  if (mode !== '600') setMode(fx, 'alice.token', mode);
+  return run(fx, { ...REAL, GELDAR_TOKENS_DIR: posix(fx.tokens) }, ['token-mint', 'alice']);
+}
+
+afterEach(() => {
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
+describe('colo-admin.sh (decision 0133)', () => {
+  it('refuses an unknown subcommand before any docker call', () => {
+    const fx = fixture();
+    const r = run(fx, REAL, ['drop-tables']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain("unknown subcommand 'drop-tables'");
+    expect(calls(fx)).toEqual([]);
+  });
+
+  it('refuses a missing subcommand', () => {
+    const fx = fixture();
+    const r = run(fx, REAL, []);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('unknown subcommand');
+    expect(calls(fx)).toEqual([]);
+  });
+
+  it('refuses token-mint when GELDAR_TOKENS_DIR is unset, and starts no container', () => {
+    const fx = fixture();
+    const r = run(fx, REAL, ['token-mint', 'alice']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('token-mint needs GELDAR_TOKENS_DIR');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
+  it('refuses a GELDAR_TOKENS_DIR that is not a directory', () => {
+    const fx = fixture();
+    const r = run(fx, { ...REAL, GELDAR_TOKENS_DIR: posix(join(fx.dir, 'missing')) }, [
+      'token-mint',
+      'alice',
+    ]);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('is not a directory');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
+  it('refuses a tokens directory with loose permissions (0755), and starts no container', () => {
+    const fx = fixture();
+    setMode(fx, 'tokens', '755');
+    const r = run(fx, { ...REAL, GELDAR_TOKENS_DIR: posix(fx.tokens) }, ['token-mint', 'alice']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('has mode 755; it must be 0700');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
+  it('refuses a tokens directory inside the repo checkout', () => {
+    const fx = fixture();
+    const inside = join(fx.dir, 'repo', 'tokens');
+    mkdirSync(inside);
+    setMode(fx, 'tokens', '700');
+    const r = run(fx, { ...REAL, GELDAR_TOKENS_DIR: posix(inside) }, ['token-mint', 'alice']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('inside the repo checkout');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
+  it.each([
+    ['/etc/alice.token', 'must be under /run/tokens'],
+    ['/run/tokens/../alice.token', "must not contain '..'"],
+    ['/run/tokens/sub/alice.token', 'name one file'],
+  ])('refuses --out %s', (out, message) => {
+    const fx = fixture();
+    setMode(fx, 'tokens', '700');
+    const r = run(fx, { ...REAL, GELDAR_TOKENS_DIR: posix(fx.tokens) }, [
+      'token-mint',
+      'alice',
+      '--out',
+      out,
+    ]);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain(message);
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
+  it('refuses a minted token file that is not mode 0600, and never shows its value', () => {
+    const fx = fixture();
+    const r = mintReal(fx, '644');
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('has mode 644; it must be 0600');
+    expect(r.out).not.toContain(SENTINEL);
+  });
+
+  it('mints into the mounted tokens directory and prints only the path and byte length', () => {
+    const fx = fixture();
+    const r = mintReal(fx);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('alice.token');
+    expect(r.out).toContain(`(${SENTINEL.length + 1} bytes)`);
+    expect(r.out).not.toContain(SENTINEL);
+    expect(
+      calls(fx).some((c) =>
+        c.endsWith('run --rm admin token-mint alice --out /run/tokens/alice.token'),
+      ),
+    ).toBe(true);
+    const overlay = readFileSync(`${fx.callsLog}.overlay`, 'utf8');
+    expect(overlay).toContain('target: /run/tokens');
+    expect(overlay).toMatch(/source: ".*tokens"/);
+    expect(existsSync(join(fx.state, 'admin-tokens.override.yml'))).toBe(false);
+  });
+
+  it('names the geldar-colo project in every docker call, and never runs down -v', () => {
+    const fx = fixture();
+    expect(mintReal(fx).code).toBe(0);
+    const log = calls(fx);
+    expect(log.length).toBeGreaterThan(0);
+    expect(log.every((c) => PROJECT_FILTER.test(c) || /^(compose version|info)$/.test(c))).toBe(
+      true,
+    );
+    expect(log.some((c) => /\bdown\b|--volumes/.test(c))).toBe(false);
+    const text = readFileSync(join(DEPLOY, 'colo-admin.sh'), 'utf8');
+    expect(text).not.toMatch(/down -v|--volumes|volume rm|system prune/);
+  });
+
+  it('dry run prints the plan and starts no container', () => {
+    const fx = fixture();
+    setMode(fx, 'tokens', '700');
+    const r = run(fx, { GELDAR_TOKENS_DIR: posix(fx.tokens) }, ['token-mint', 'alice']);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('dry-run, not run');
+    const log = calls(fx);
+    expect(log.some((c) => c.includes('config --quiet'))).toBe(true);
+    expect(starts(log)).toEqual([]);
+  });
+
+  it.each([
+    ['migrate', ['migrate', '--dry-run']],
+    ['owner-add', ['owner-add', 'ag-jo-01', '--cap', '20']],
+    ['token-revoke', ['token-revoke', 'tk_1']],
+    ['players-status', ['players-status']],
+  ])('runs %s in the admin container without mounting the tokens directory', (_name, args) => {
+    const fx = fixture();
+    const r = run(fx, REAL, args);
+    expect(r.code).toBe(0);
+    expect(
+      calls(fx).some((c) => c.endsWith(`--profile admin run --rm admin ${args.join(' ')}`)),
+    ).toBe(true);
+    expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
+  });
+
+  it('refuses when the release manifest has no GELDAR_ADMIN_IMAGE', () => {
+    const fx = fixture();
+    writeFileSync(fx.releaseFile, release(false));
+    const r = run(fx, REAL, ['players-status']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('no GELDAR_ADMIN_IMAGE');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+});

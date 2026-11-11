@@ -408,6 +408,53 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # [C1-11b] The admin one-shot (decision 0133): tools/migrate and tools/mcp-tokens, run on demand and never started by
+  # `shard up colo` (the profile). Run it from the repo root:
+  #   docker compose -p geldar-colo -f compose/colo.yml --profile admin run --rm admin <subcommand>
+  # It publishes nothing and reaches Postgres on the colo network. It writes token files only to an overlay mount that
+  # deploy/colo-admin.sh adds: an absolute host path is refused in this file (the loopback rule).
+  admin:
+    profiles: ["admin"]
+    # Budget: 0.5 CPU, 512m (no swap, 128 pids). A one-shot: it runs one CLI and exits.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_ADMIN_CPUS:-0.5}"
+          memory: "${GELDAR_COLO_ADMIN_MEM:-512m}"
+          pids: 128
+    memswap_limit: "${GELDAR_COLO_ADMIN_MEM:-512m}"
+    pids_limit: 128
+    logging: *logging
+    labels: *colo-labels
+    # Context is the repo root; the image is the one tools/admin/Dockerfile builds. GELDAR_ADMIN_IMAGE is the published tag.
+    build:
+      context: ..
+      dockerfile: tools/admin/Dockerfile
+    image: ${GELDAR_ADMIN_IMAGE:-geldar-admin:c1}
+    restart: "no"
+    environment:
+      # The colo shard the CLIs read for the owner caps, harness rules and persona limits (not shards/phase0.yaml).
+      GELDAR_SHARD_FILE: /opt/geldar/shards/colo.yaml
+      # admin.sh reads the superuser password from this file into PGPASSWORD for its own process only.
+      GELDAR_ADMIN_PG_PASSWORD_FILE: /run/secrets/postgres
+      PGHOST: postgres
+    # postgres: the superuser password (admin.sh). postgres-mcp.txt: the file `migrate --set-role-password geldar_mcp`
+    # reads. mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
+    secrets: [postgres, postgres-mcp.txt, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
+    volumes:
+      # The colo shard file (the Mind's file, which carries sovereign), under the path GELDAR_SHARD_FILE names.
+      - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 # The colo network. Its name is fixed so that it cannot collide with the Phase 0 stack's network.
 networks:
   colo:
