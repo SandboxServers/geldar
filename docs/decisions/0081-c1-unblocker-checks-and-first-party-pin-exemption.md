@@ -26,7 +26,7 @@ The exemption is narrow. It is an explicit allowlist (not a pattern the code gue
 
 `contract/schemas/checkpoint-manifest.schema.json` and `contract/schemas/shard-config.schema.json` are added to the contract and generated.
 
-- The checkpoint manifest has no producer or consumer yet. It is unused until the deferred backup packet is built. The registry reserves decision 0086 for backup v1 (C1-05b); this record does not claim the next free number 0130.
+- The checkpoint manifest has no producer or consumer yet. It is unused until the backup build (C1-05b) exists. The build and its destination are deferred by decision 0130 (on main; owner ruling 2026-11-10); the manifest waits for that build.
 - The shard config schema describes the colo shard configuration. It is validated by the contract tests.
 
 ## Consequences
