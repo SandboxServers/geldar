@@ -287,41 +287,45 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **decisions**: 0084 (one record: deploy by pull, env-file location and ownership, what the scripts never print)
 - **worknote**: `docs/analysis/phase1/worknotes/C1-04.md`
 
-**may-edit**
-- `deploy/` (new directory): `deploy/README.md`, `deploy/bin/` (shell scripts), `deploy/env/` (templates only, no values), `deploy/test/` (tests).
-- `deploy/test/` tests are TypeScript (Vitest), so they run on the desktop and in CI. The scripts themselves are POSIX `sh` and are run in CI on Linux.
-- `.gitignore`: add the env-file patterns only (for example `/etc/geldar` is never in the repo; add `deploy/env/*.env` so a generated file cannot be committed by accident).
-- `docs/decisions/0084-*.md` (new record).
+**may-edit** (as built; the card's first draft named `deploy/bin/` and `deploy/env/`, which were not used, see the worknote)
+- `deploy/` only: `deploy/common.sh` (shared checks, sourced), `deploy/colo-up.sh`, `deploy/colo-rollback.sh`, `deploy/colo-down.sh`, `deploy/colo-status.sh`, `deploy/gen-secrets.sh`, `deploy/compose.secrets.yml` (an overlay that points the secret names at the node's secrets directory), `deploy/release.env.example` (the release manifest template, no values), `deploy/test/colo-deploy.test.ts` (Vitest).
+- The tests are TypeScript (Vitest), so they run on the desktop and in CI. The scripts are POSIX `sh`; CI runs them on Linux (the Linux job is the integration owner's, see the card's index note).
+- `.gitignore`: not changed. The node's secret files and release manifest live outside the repo (`/etc/geldar-colo`), so no ignore pattern is needed for them.
+- `docs/decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md` (new record).
 
 **must-not-edit**: `geldar.ps1` (the Windows path stays as it is), `compose/*` and `shards/*` (C1-02), `.github/workflows/*` (an index line asks the integration owner to add a Linux job), `contract/`, `package.json`, `pnpm-lock.yaml`, `docs/spec.md`.
 
-**Steps**
-1. Write `deploy/bin/pull.sh`: records the current image digests from `compose/colo.yml` into `/var/lib/geldar/state/deployed.txt`, runs `docker compose -f compose/colo.yml pull`, then `docker compose ... up -d --wait`. It refuses to run as a user without the `docker` group, and it never runs `down -v`.
-2. Write `deploy/bin/env-init.sh`: creates `/etc/geldar/` (mode 0750, owner root, group docker) and one env file per service, mode 0600, owner root. It generates random values with `openssl rand` for internal tokens and writes them only to those files. It never echoes a value, and it refuses to overwrite an existing file (the same rule as `mcp-tokens init`).
-3. Write `deploy/bin/rollback.sh`: reads `deployed.txt`'s previous entry and redeploys those digests. It does not pull new images.
-4. Write `deploy/README.md` with the steps as commands, and the owner's part: deploy access (the self-hosted runner or the owner's SSH access, 0130) and the place the env files are copied to.
-5. Tests in `deploy/test/`: (a) run each script with `sh -n` (syntax); (b) run `env-init.sh` with `GELDAR_ROOT_DIR` pointing at a temp directory (the script takes its root from that variable so the test never writes under `/etc`); check modes and that no value appears in stdout; (c) run `pull.sh` with a fake `docker` on `PATH` that records its arguments; check the order (pull, then up with `--wait`) and that `down -v` never appears.
-6. `deploy/test/no-secrets.test.ts`: scan `deploy/` and `compose/colo.yml` for high-entropy strings and for `PASSWORD=`, `TOKEN=` with a value. Fail on any match.
+**Steps** (as built)
+1. `deploy/colo-up.sh`: checks docker, compose v2, the daemon, free disk, and the secret files (present, non-empty, mode 0600 or 0400; contents never read). It loads the release manifest (digest references only; `latest` and tags are refused), then validates the merged compose config: no published 25565 or 25566, every image digest-pinned, and no service built on the node without a pinned image. It fetches the BlueMap jar from the lock file, over https only, and stops on a sha256 mismatch. It records the previous and current release in the state directory, and only then runs `docker compose pull` and `up -d --wait`. It never removes a volume.
+2. `deploy/colo-rollback.sh`: re-applies the recorded previous release with `up -d --wait --pull never`, and swaps the two records, so a second rollback goes forward again.
+3. `deploy/colo-down.sh` stops the project (`stop`; containers, networks and volumes are kept). `deploy/colo-status.sh` is read-only and finds containers by the compose project label.
+4. `deploy/gen-secrets.sh` creates the missing secret files (`postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`) from `/dev/urandom`, in a 0700 directory with `umask 077`. It never overwrites a file and never prints a value. The per-role NATS password files of the auth overlay are not generated here (see the worknote).
+5. The owner's steps (first deploy, rollback, what is copied to the node) are in the worknote, `docs/analysis/phase1/worknotes/P1-C1-04.md`, as the checklist for C1-10. There is no `deploy/README.md` in this packet.
+6. No repository-wide secret scan was built. The test checks that no secret value appears in script output (a sentinel per file), and that the scripts never read a secret file's contents. A scan of `deploy/` and `compose/colo.yml` for high-entropy strings is a follow-up.
 
-**Error behaviour**: `env-init.sh` exits 1 and names the file when one exists; `pull.sh` exits 1 if `deployed.txt` cannot be written (it does not deploy without a record of what it replaced).
+**Error behaviour**: `colo-up.sh` exits 1 and names the failing check. `colo-rollback.sh` and `colo-up.sh` exit 1 if the release record cannot be written (nothing is applied without a record of what it replaced).
 
 **Acceptance checks**
 - `./geldar.ps1 pnpm vitest run deploy/test`
-- `sh -n deploy/bin/*.sh` (run in CI, and via `wsl` on the desktop if installed; if not, record "not run: no POSIX shell on the desktop" in the report)
+- `sh -n deploy/*.sh` (run in CI on Linux; on the desktop through Git for Windows' `sh`, since WSL is not used here)
 - `./geldar.ps1 pnpm typecheck`, `./geldar.ps1 pnpm format`, `./geldar.ps1 pnpm check:repo`
 - Full `pwsh -NoProfile -File ./geldar.ps1 check` before the last commit.
 
-**Revert-check (name the test and the line)**
-- In `deploy/bin/env-init.sh`, change the mode from `0600` to `0644`. The mode case in `deploy/test/env-init.test.ts` must fail. Restore.
-- In `deploy/bin/pull.sh`, replace `up -d --wait` with `up -d --force-recreate --volumes`. The order-and-flags case must fail (the `--volumes` flag is refused). Restore.
+**Revert-check (name the test and the line)**: each was run by changing one line, confirming a one-line diff, running `deploy/test`, and restoring from a backup. The worknote records the results.
+- The sha256 check in `deploy/common.sh` (`if [ "$got" != "$want" ]`): `refuses a BlueMap jar whose sha256 does not match the lock` fails.
+- The 25565/25566 pattern in `deploy/common.sh`: `refuses when the merged config publishes 25565 or 25566` fails.
+- The `latest` case in `deploy/common.sh`: `refuses a release manifest that uses a latest tag` fails.
+- `act dc stop` in `deploy/colo-down.sh` replaced by `act dc down --volumes`: `down stops the project ...` and the scope test both fail.
+- The mode case in `deploy/common.sh` (adding 644): `refuses a secret file that other accounts can read (mode 644) ...` fails.
+- The project flag in `dc()` in `deploy/common.sh`: the scope test (every docker call names the project or its label) fails.
 
-**Commit plan**
-1. `C1-04: deploy pull and rollback scripts with tests`
-2. `C1-04: env-init writes root-only env files, never echoes values`
-3. `C1-04: no-secrets scan over deploy/ and compose/colo.yml`
-4. `C1-04: record 0084 for deploy by pull`
+**Commit plan** (as made)
+1. `feat(deploy): project-scoped Colo deploy scripts and tests (draft)`
+2. `Merge origin/main into phase1/c1-04-deploy` (the merge brought in compose/colo.yml and the NATS overlays)
+3. `fix(deploy): Colo deploy tests run on Windows and Linux`
+4. the revert-check, card, decision and worknote commit
 
-**index line to add**: `index: | [0084](0084-<slug>.md) | <title> | Proposed |`. Also for the integration owner: "add a Linux CI job that runs `sh -n` and `deploy/test`" (the CI file is not in this card).
+**index line**: `index: | [0084](0084-colo-deploy-by-pull-with-a-project-scoped-script.md) | Colo deploy by pull, with a project-scoped script | Proposed |` (for the integration owner to add to `docs/decisions/README.md`; this packet does not edit that file).
 
 **Live step (O, owner)**: deploy access to the node (the self-hosted runner or the owner's SSH access; no new deploy account, 0130), and the env files written by `env-init.sh` with `sudo`. The owner runs them; the agent does not. Stop if `docker` on the node is not the expected version or the account can read `/etc/geldar` as a non-owner.
 
