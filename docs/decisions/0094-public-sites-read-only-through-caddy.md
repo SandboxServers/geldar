@@ -12,7 +12,7 @@
 4. **Kill switch.** Each site has a `*-off.caddy` file that answers 503 for the same host. Loading it in place of the live file and reloading turns that site off without touching other sites.
 5. **Upstreams and domain are placeholders** (`{$GELDAR_*_UPSTREAM}`, `{$GELDAR_DOMAIN}`). Real values are set by the integration packet C2-07 and never written into the repo.
 6. **Gap: no Caddy rate limit.** Core Caddy has no rate-limit directive. This record does not add a third-party or unpinned Caddy module, because that would be a supply-chain dependency that needs owner approval. Rate limits live in Glass (C2-03) and in the public MCP (C2-01). The owner may later approve a pinned module, which would need its own record.
-7. **Exception: the BlueMap inline style.** BlueMap's web UI may need an inline style under the strict CSP of 0072. If it does, the exception is recorded here and nowhere else. The snippet sets no CSP of its own in this version; the BlueMap host's CSP is checked in C2-07.
+7. **Exception: the BlueMap inline style.** No inline-style exception is recorded: BlueMap is not in the repo, so whether its web UI needs one is unknown until C2-07 loads it. map.caddy sets only X-Content-Type-Options: nosniff, Referrer-Policy: no-referrer and Content-Security-Policy: frame-ancestors 'none'. A full CSP, and any inline-style exception, is decided in C2-07 and recorded here and nowhere else.
 
 ## Why
 
