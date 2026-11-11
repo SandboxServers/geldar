@@ -73,6 +73,15 @@ function functionBody(name: string): string {
 
 const hasPwsh =
   spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' }).status === 0;
+const hasDocker = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' }).status === 0;
+
+/** `docker compose` over the named files in compose/, rendered as JSON. Offline: no image is pulled. */
+function renderCompose(...files: string[]) {
+  const args = files.flatMap((f) => ['-f', join(ROOT, 'compose', f)]);
+  return spawnSync('docker', ['compose', ...args, 'config', '--format', 'json'], {
+    encoding: 'utf8',
+  });
+}
 
 /** The quoted strings in one allow list, in order. */
 const quoted = (s: string) => [...s.matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? '');
@@ -131,6 +140,24 @@ afterAll(() => {
   if (rendered) rmSync(rendered.dir, { recursive: true, force: true });
 });
 
+describe.skipIf(!hasDocker)('compose NATS auth overlays merge offline', () => {
+  it('merges colo.yml with nats-auth.yml, which adds no service of its own', () => {
+    const run = renderCompose('colo.yml', 'nats-auth.yml');
+    expect(run.status).toBe(0);
+  });
+
+  it('keeps the -js -sd /data flags colo sets on nats when the overlay is merged', () => {
+    const run = renderCompose('colo.yml', 'nats-auth.yml');
+    const command = JSON.parse(run.stdout || '{}').services?.nats?.command ?? [];
+    expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data']));
+  });
+
+  it('merges phase0.yml with mcp.yml, nats-auth.yml and nats-auth-mcp.yml', () => {
+    const run = renderCompose('phase0.yml', 'mcp.yml', 'nats-auth.yml', 'nats-auth-mcp.yml');
+    expect(run.status).toBe(0);
+  });
+});
+
 describe('geldar.ps1 NATS auth generator: static wiring', () => {
   it('defines Initialize-NatsAuth and Get-NatsUsers, and dispatches nats-auth to it', () => {
     expect(functionBody('Initialize-NatsAuth')).not.toBe('');
@@ -153,6 +180,19 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       /permissions: \{.*allow_responses: true \} \},?$/.test(e.raw),
     );
     expect(inPermissions).toEqual(entries.map(() => true));
+  });
+
+  it('writes one password file per role, and the config carries the same password', () => {
+    const dir = join(rendered?.dir ?? '', 'compose', 'secrets');
+    const entries = parseEntries(rendered?.conf ?? '');
+    const files = ROLES.map((role) => ({
+      role,
+      // A value check, not a print: the test reports booleans only.
+      text: readFileSync(join(dir, `nats-${role}.txt`), 'utf8'),
+    }));
+    expect(files.map((f) => /^[A-Za-z0-9_-]{32}$/.test(f.text))).toEqual(ROLES.map(() => true));
+    const same = entries.map((e) => e.password === files.find((f) => f.role === e.user)?.text);
+    expect(same).toEqual(entries.map(() => true));
   });
 
   it('writes exactly the six role users, with no ops user the overlay does not mount', () => {
