@@ -194,6 +194,7 @@ jobs:
           --health-timeout 5s --health-retries 30
     env:
       GELDAR_IT: '1'
+      GELDAR_IT_ALLOW_SHARED_DB: '1'
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: '5432'
     steps:
@@ -263,6 +264,7 @@ jobs:
           threshold/mcp/test/it/pg-migrate.it.test.ts
           threshold/mcp/test/it/scram-login.it.test.ts
           threshold/mcp/test/it/schema-check.it.test.ts
+          threshold/mcp/test/it/append-only.it.test.ts
           tools/mcp-tokens/test/cli.it.test.ts
           tools/mcp-tokens/test/owner-cap.it.test.ts
           animus/src/memory/memory.it.test.ts
