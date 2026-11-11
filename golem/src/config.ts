@@ -38,7 +38,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   return {
     mcHost,
     mcPort: parsePort('GELDAR_MC_PORT', env.GELDAR_MC_PORT, 25565),
-    rconHost: '127.0.0.1',
+    rconHost: parseRconHost(env.GELDAR_RCON_HOST, env),
     rconPort: parsePort('GELDAR_RCON_PORT', env.GELDAR_RCON_PORT, 25575),
     rconPasswordFile:
       env.GELDAR_RCON_PASSWORD_FILE ?? join(repoRoot(), 'compose', 'secrets', 'rcon.txt'),
@@ -93,6 +93,17 @@ export function repoRoot(): string {
     dir = parent;
   }
   return dir;
+}
+
+/** Unset or empty means loopback. The players host sets a colo service name (Paper) with the opt-in. */
+function parseRconHost(raw: string | undefined, env: Record<string, string | undefined>): string {
+  if (raw === undefined || raw === '') return '127.0.0.1';
+  if (!hostAllowed(raw, env)) {
+    throw new Error(
+      `GELDAR_RCON_HOST must be 127.0.0.1 or localhost (or a colo service name with GELDAR_IN_NETWORK_HOSTS=1), got '${raw}'`,
+    );
+  }
+  return raw;
 }
 
 function parsePort(name: string, raw: string | undefined, fallback: number): number {

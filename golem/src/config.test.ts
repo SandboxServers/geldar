@@ -37,6 +37,24 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ GELDAR_MC_HOST: '0.0.0.0' })).toThrow(/GELDAR_MC_HOST/);
   });
 
+  it('keeps the RCON host on loopback unless GELDAR_RCON_HOST says otherwise', () => {
+    expect(loadConfig({}).rconHost).toBe('127.0.0.1');
+    expect(loadConfig({ GELDAR_RCON_HOST: '' }).rconHost).toBe('127.0.0.1');
+    expect(loadConfig({ GELDAR_RCON_HOST: 'localhost' }).rconHost).toBe('localhost');
+  });
+
+  it('accepts the Paper service name for RCON only with the in-network opt-in', () => {
+    const env = { GELDAR_IN_NETWORK_HOSTS: '1', GELDAR_RCON_HOST: 'paper' };
+    expect(loadConfig(env).rconHost).toBe('paper');
+    expect(() => loadConfig({ GELDAR_RCON_HOST: 'paper' })).toThrow(/GELDAR_RCON_HOST/);
+  });
+
+  it('refuses an arbitrary RCON host even with the in-network opt-in', () => {
+    const env = { GELDAR_IN_NETWORK_HOSTS: '1', GELDAR_RCON_HOST: 'evil.example' };
+    expect(() => loadConfig(env)).toThrow(/GELDAR_RCON_HOST/);
+    expect(() => loadConfig({ ...env, GELDAR_RCON_HOST: '10.0.0.5' })).toThrow(/GELDAR_RCON_HOST/);
+  });
+
   it('throws for ports outside 1 to 65535', () => {
     expect(() => loadConfig({ GELDAR_MC_PORT: '0' })).toThrow(/GELDAR_MC_PORT/);
     expect(() => loadConfig({ GELDAR_MC_PORT: '70000' })).toThrow(/GELDAR_MC_PORT/);
