@@ -3,6 +3,7 @@ import type { MintRequest, NewPlayerRequest, OwnerRecord, PlayerRow, Store } fro
 
 export interface PgStoreOptions {
   readonly shard: string;
+  /** Not sent to the database: the starting credits are a constant in register_create_player (0011). */
   readonly startCredits: number;
 }
 
@@ -38,24 +39,13 @@ export class PgStore implements Store {
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
   ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('INSERT INTO mcp_owners (owner_id, display) VALUES ($1, $2)', [
-        ownerId,
-        identity.display,
-      ]);
-      await client.query(
-        'INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES ($1, $2, $3)',
-        [hex(identity.identityHash), identity.provider, ownerId],
-      );
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+    // One definer function writes the owner and its identity (0011); the role has no direct insert.
+    await this.pool.query('SELECT register_create_owner($1, $2, $3, $4)', [
+      hex(identity.identityHash),
+      identity.provider,
+      ownerId,
+      identity.display,
+    ]);
   }
 
   async listPlayers(ownerId: string): Promise<PlayerRow[]> {
@@ -74,14 +64,13 @@ export class PgStore implements Store {
   async createPlayer(q: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'> {
     try {
       // One definer function writes the life, the player, the budget and the token (0010).
-      await this.pool.query('SELECT register_create_player($1, $2, $3, $4, $5, $6, $7, $8, $9)', [
+      await this.pool.query('SELECT register_create_player($1, $2, $3, $4, $5, $6, $7, $8)', [
         hex(q.identityHash),
         q.playerId,
         q.lifeId,
         q.name,
         q.harness,
         this.options.shard,
-        this.options.startCredits,
         q.tokenId,
         q.tokenHash,
       ]);
