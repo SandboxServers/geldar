@@ -101,8 +101,22 @@ export function proxyEntries(entries: readonly unknown[], label: string): string
         `${label}[${index}] must be an IP address or an IP range with a prefix length such as /8, not '${String(entry)}'`,
       );
     }
+    const floor = prefixFloor(entry);
+    if (floor !== undefined) {
+      throw new Error(
+        `${label}[${index}] has a prefix shorter than /${floor}, which would trust much of the internet; name a narrower range`,
+      );
+    }
     return entry;
   });
+}
+
+/** The shortest prefix the entry may have (/8 for IPv4, /32 for IPv6) when its prefix is shorter, else undefined. */
+function prefixFloor(entry: string): number | undefined {
+  const [ip = '', bits] = entry.split('/');
+  if (bits === undefined) return undefined;
+  const floor = isIP(ip) === 6 ? 32 : 8;
+  return Number(bits) < floor ? floor : undefined;
 }
 
 /** A header name for `client_ip_header`: lowercase letters, digits and hyphens. Absent is the default. */

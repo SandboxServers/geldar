@@ -30,6 +30,18 @@ models:
   strong: ["qwen3:32b"]          # served by the Thinker pool (decision 0078); the same tags as phase0
   fast: ["qwen3:8b"]
 
+# Public surfaces (decisions 0090, 0094; ruling R14, snake_case): the MCP and Glass sit behind the node's Caddy. Caddy
+# runs on the host network and reaches the loopback publishes; it sets x-geldar-client-ip. The client address is read
+# only from a peer in trusted_proxies. 127.0.0.1 is what Caddy looks like to a service that sees the real peer; if the
+# docker proxy shows the bridge gateway instead, the live step in docs/analysis/phase1/worknotes/C2-07a2.md sets
+# GELDAR_MCP_TRUSTED_PROXIES / GELDAR_GLASS_TRUSTED_PROXIES to that address. An unmatched peer is charged by its own address.
+public:
+  trusted_proxies: ["127.0.0.1"]
+  client_ip_header: x-geldar-client-ip
+  rate_limit:
+    per_minute: 120
+    burst: 40
+  kill_switch: false
 # Sovereign players (spec 5.15; decisions 0040, 0041, 0052), the phase0 values. `players` is empty: no ranger is
 # served on the colo until the owner lists one (player_id, life_id, name) here. players-host refuses an unlisted id.
 sovereign:

@@ -9,7 +9,7 @@ import type { PlayerRecord, RateDecision, RateLimiter, ResolvedToken } from '../
 import { FakeTokenStore } from './stores.fakes.ts';
 
 export const PEPPER = new TextEncoder().encode('front-door-test-pepper-0123456789');
-export const TOKEN_A = 'token-for-player-aa-0123456789';
+export const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
 export const INIT = JSON.stringify({
   jsonrpc: '2.0',
   id: 1,

@@ -43,3 +43,6 @@ The SQL predicates for the delay and the sovereign filter are checked in unit te
 ## Consequences
 
 Visitors see sovereign minds one minute late at best and never while the agent lives. The owner can change the delay or switch Glass off by config alone.
+## In-network bind (C2-07a3)
+
+Inside the Colo compose network Glass may bind `0.0.0.0` and read Postgres at the service name `postgres`, but only when `GELDAR_IN_NETWORK_HOSTS=1` is set (the pattern of decision 0131). Any other non-loopback bind and any other Postgres host except `localhost` is still refused. Without the opt-in nothing changes: loopback only. The Host check also answers the exact names listed in `GELDAR_GLASS_PUBLIC_HOSTS` (comma list, default empty, no wildcards), so Glass can be served behind Caddy; any other Host still gets 421. Status is unchanged.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RateDecision, RateLimiter } from '../ports.ts';
-import { FrontLimits } from './limits.ts';
+import { FrontLimits, MAX_LOOKUPS_IN_FLIGHT } from './limits.ts';
 
 const CAP = 2;
 
@@ -71,12 +71,33 @@ class GlobalCapLimiter implements RateLimiter {
   }
 }
 
-describe('global failed-auth bucket', () => {
-  it('refuses a fresh address once the global bucket is empty, before any token lookup', () => {
+describe('no global failed-auth gate (R24)', () => {
+  it('does not block a fresh address or fail a request when the global bucket is empty', () => {
     const limits = new FrontLimits(new GlobalCapLimiter());
-    expect(limits.failedAuth('198.51.100.1', 0)).toBeUndefined();
-    expect(limits.failedAuth('198.51.100.2', 0)).toBeUndefined();
-    expect(limits.authBlocked('198.51.100.3', 0)).toBeDefined();
+    for (let i = 1; i <= 5; i++) {
+      expect(limits.failedAuth(`198.51.100.${i}`, 0)).toBeUndefined();
+    }
+    expect(limits.authBlocked('198.51.100.9', 0)).toBeUndefined();
+  });
+});
+
+describe('in-flight lookup cap', () => {
+  it('allows 16 lookups and refuses the 17th', () => {
+    const limits = new FrontLimits(new AddressCapLimiter());
+    for (let i = 0; i < MAX_LOOKUPS_IN_FLIGHT; i++) expect(limits.acquireLookup()).toBe(true);
+    expect(limits.acquireLookup()).toBe(false);
+  });
+
+  it('gives a slot back on release, and never counts below zero', () => {
+    const limits = new FrontLimits(new AddressCapLimiter());
+    for (let i = 0; i < MAX_LOOKUPS_IN_FLIGHT; i++) limits.acquireLookup();
+    limits.releaseLookup();
+    expect(limits.acquireLookup()).toBe(true);
+    expect(limits.acquireLookup()).toBe(false);
+    const fresh = new FrontLimits(new AddressCapLimiter());
+    fresh.releaseLookup();
+    for (let i = 0; i < MAX_LOOKUPS_IN_FLIGHT; i++) expect(fresh.acquireLookup()).toBe(true);
+    expect(fresh.acquireLookup()).toBe(false);
   });
 });
 

@@ -91,7 +91,7 @@ function budgets(): { cpus: number; memMiB: number; services: string[] } {
 }
 
 describe('shards/colo.yaml: the total covers the per-service budgets (always checked)', () => {
-  it('has a per-service CPU and memory budget for all ten colo services', () => {
+  it('has a per-service CPU and memory budget for all eleven colo services', () => {
     const { services } = budgets();
     expect(services.sort()).toEqual(
       [
@@ -99,6 +99,7 @@ describe('shards/colo.yaml: the total covers the per-service budgets (always che
         'ANIMUS',
         'EVENTSINK',
         'GELDAR_MCP',
+        'GLASS',
         'GOLEM_BODY',
         'NATS',
         'PAPER',
@@ -118,10 +119,10 @@ describe('shards/colo.yaml: the total covers the per-service budgets (always che
     expect(Number(memTotal)).toBeGreaterThanOrEqual(memMiB);
   });
 
-  it('sums to exactly 9.5 CPUs and 19456m, the orchestrator budget', () => {
+  it('sums to exactly 10 CPUs and 19712m, the orchestrator budget', () => {
     const { cpus, memMiB } = budgets();
-    expect(cpus).toBe(9.5);
-    expect(memMiB).toBe(19456);
+    expect(cpus).toBe(10);
+    expect(memMiB).toBe(19712);
   });
 });
 
@@ -133,25 +134,25 @@ const hasPwsh =
  * harness takes a manifest of config files and prints one outcome per file. Each `it` below asserts on its own outcome.
  */
 const GOOD =
-  'cpu_limit: 9.5\nmemory_limit: 19456m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
+  'cpu_limit: 10\nmemory_limit: 19712m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
 
 /** Case id to config text; null means the committed shards/colo.yaml. */
 const CASES: Record<string, string | null> = {
   committed: null,
-  comments: '# note\n\ncpu_limit: 9.5   # cores\nmemory_limit: 19456m\nminecraft_port: 25567\n',
-  heap: GOOD.replace('19456m', '7000m'),
-  memSum: GOOD.replace('19456m', '8192m'),
-  cpuSum: GOOD.replace('cpu_limit: 9.5\n', 'cpu_limit: 8\n'),
+  comments: '# note\n\ncpu_limit: 10   # cores\nmemory_limit: 19712m\nminecraft_port: 25567\n',
+  heap: GOOD.replace('19712m', '7000m'),
+  memSum: GOOD.replace('19712m', '8192m'),
+  cpuSum: GOOD.replace('cpu_limit: 10\n', 'cpu_limit: 8\n'),
   unknownKey: `${GOOD}telemetry_urll: http://example.invalid\n`,
-  noCpu: GOOD.replace('cpu_limit: 9.5\n', ''),
-  noMem: GOOD.replace('memory_limit: 19456m\n', ''),
+  noCpu: GOOD.replace('cpu_limit: 10\n', ''),
+  noMem: GOOD.replace('memory_limit: 19712m\n', ''),
   port25565: GOOD.replace('25567', '25565'),
   port25566: GOOD.replace('25567', '25566'),
   port25570: GOOD.replace('25567', '25570'),
   bind: GOOD.replace('127.0.0.1', '0.0.0.0'),
-  cpuZero: GOOD.replace('cpu_limit: 9.5', 'cpu_limit: 0'),
-  memNoUnit: GOOD.replace('19456m', '19456'),
-  memTiny: GOOD.replace('19456m', '8'),
+  cpuZero: GOOD.replace('cpu_limit: 10', 'cpu_limit: 0'),
+  memNoUnit: GOOD.replace('19712m', '19712'),
+  memTiny: GOOD.replace('19712m', '8'),
 };
 
 /** The outcome of Read-ColoConfig on one file: the parsed hashtable, or the error message. */
@@ -214,8 +215,8 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
     const result = outcome('committed');
     expect(result.ok).toBe(true);
     expect(result.value).toEqual({
-      cpu_limit: '9.5',
-      memory_limit: '19456m',
+      cpu_limit: '10',
+      memory_limit: '19712m',
       minecraft_port: '25567',
       bind_address: '127.0.0.1',
     });
@@ -225,7 +226,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
     const result = outcome('comments');
     expect(result.ok).toBe(true);
     expect(result.value?.bind_address).toBe('127.0.0.1');
-    expect(result.value?.cpu_limit).toBe('9.5');
+    expect(result.value?.cpu_limit).toBe('10');
   });
 
   it('refuses a memory total below Paper heap (6G) plus 1 GiB', () => {

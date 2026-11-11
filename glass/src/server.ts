@@ -48,6 +48,7 @@ export function buildGlass(config: GlassConfig): GlassParts {
   const limiter = new RateLimiter({ ...config.rateLimit, now: () => Date.now() });
   const policy: PublicPolicy = {
     trustedProxies: new Set(config.trustedProxies),
+    publicHosts: new Set(config.publicHosts ?? []),
     limiter,
     delaySeconds: config.delaySeconds,
     showLivingSovereign: config.showLivingSovereign,
