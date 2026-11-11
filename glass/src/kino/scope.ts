@@ -68,3 +68,24 @@ export function sqlScopeStore(db: SqlClient): ScopeStore {
     },
   };
 }
+
+/** Every agent with its scope, for the target picker. SELECT only, like the store above. */
+export async function listAgents(db: SqlClient): Promise<Array<AgentScope & { id: string }>> {
+  const r = await db.query(
+    `SELECT a.agent_id, a.owner, a.public_camera FROM agents a ORDER BY a.agent_id`,
+    [],
+  );
+  return r.rows.map((row) => ({
+    id: String(row.agent_id),
+    owner: row.owner === null || row.owner === undefined ? null : String(row.owner),
+    publicCamera: row.public_camera === true,
+  }));
+}
+
+/** The agent ids this viewer may watch: the same rule as a subscribe, so the picker never offers a refusal. */
+export function watchableIds(
+  access: Access,
+  agents: ReadonlyArray<AgentScope & { id: string }>,
+): string[] {
+  return agents.filter((a) => permitted(access, a)).map((a) => a.id);
+}
