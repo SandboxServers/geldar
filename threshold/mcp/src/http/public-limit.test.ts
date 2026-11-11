@@ -52,13 +52,14 @@ describe('PublicRateLimit', () => {
     const limit = new PublicRateLimit(60, 1, 2);
     expect(limit.take('a', 0)).toBeUndefined();
     expect(limit.take('b', 0)).toBeUndefined();
-    // Touching b makes a the least recently seen.
-    expect(limit.take('b', 0)).toBe(1);
+    // a was inserted first, b second. Touching a makes b the least recently seen; under FIFO a would
+    // still be the oldest and go first.
+    expect(limit.take('a', 0)).toBe(1);
     expect(limit.take('c', 0)).toBeUndefined();
     expect(limit.size).toBe(2);
-    // b kept its empty bucket; a was dropped, so it starts full again.
-    expect(limit.take('b', 0)).toBe(1);
-    expect(limit.take('a', 0)).toBeUndefined();
+    // a kept its empty bucket; b was dropped, so it starts full again.
+    expect(limit.take('a', 0)).toBe(1);
+    expect(limit.take('b', 0)).toBeUndefined();
     expect(limit.size).toBe(2);
   });
 
