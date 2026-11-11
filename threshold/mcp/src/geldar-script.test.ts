@@ -63,10 +63,23 @@ describe('geldar.ps1 shard secret files', () => {
     expect(acl).toMatch(/\$env:USERNAME/);
   });
 
-  it('applies the owner-only ACL to a new secret file just before its secret is written', () => {
-    expect(body).toMatch(
-      /\n {4}Set-OwnerOnlyAcl \$path\r?\n {4}try \{\r?\n {6}\$data = \[Text\.Encoding\]::ASCII/,
-    );
+  it('creates a new secret file, restricts it, and only then writes the secret into it', () => {
+    // The creation block runs from the open to the 600 check. Its owner-only call must sit in the try that
+    // writes the secret and come before the write; the open must come before the call. The layout may change.
+    const start = body.indexOf('$stream = [IO.File]::Open(');
+    const end = body.indexOf("Assert-OwnerOnlyMode $path '600'");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const creation = body.slice(start, end);
+    const createAt = creation.indexOf('[IO.FileMode]::CreateNew');
+    const writeAt = creation.indexOf('$stream.Write(');
+    expect(writeAt).toBeGreaterThan(-1);
+    const writeTry = creation.lastIndexOf('try {', writeAt);
+    expect(writeTry).toBeGreaterThan(-1);
+    const aclAt = creation.indexOf('Set-OwnerOnlyAcl $path', writeTry);
+    expect(aclAt, 'Set-OwnerOnlyAcl $path in the write try').toBeGreaterThan(writeTry);
+    expect(createAt).toBeLessThan(aclAt);
+    expect(aclAt).toBeLessThan(writeAt);
   });
 
   it('applies the owner-only ACL to an existing secret file before skipping it', () => {

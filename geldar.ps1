@@ -167,11 +167,26 @@ function Assert-PluginsEnabled([string] $Shard, [string[]] $Compose) {
   }
 }
 
+# Off Windows, throws unless $Path has exactly the mode $Octal ('600' for a file, '700' for a directory).
+# chmod can report success on a filesystem that keeps no mode bits, so the mode is read back. Windows: no-op.
+function Assert-OwnerOnlyMode([string] $Path, [string] $Octal) {
+  if ($IsWindows) { return }
+  $got = [int][IO.File]::GetUnixFileMode($Path) -band 511
+  if ($got -ne [Convert]::ToInt32($Octal, 8)) {
+    throw "$Path has mode $([Convert]::ToString($got, 8)), not ${Octal}: set it by hand (chmod $Octal) and run again"
+  }
+}
+
 # The owner-only step of tools/mcp-tokens/src/secret-files.ts (restrictToOwner): inheritance off, and the
 # current account gets full control. On Windows the file mode is not enforced, so this is the real guard.
-# Best effort: a failure is warned about, names the path and never fails the command.
+# Windows: best effort, a failure is warned about, names the path and never fails the command.
+# Linux and macOS: mode 600 through Restrict-OwnerOnly, read back. A failure throws: a secret must never stay readable.
 function Set-OwnerOnlyAcl([string] $Path) {
-  if (-not $IsWindows) { return }
+  if (-not $IsWindows) {
+    Restrict-OwnerOnly $Path
+    Assert-OwnerOnlyMode $Path '600'
+    return
+  }
   $user = $env:USERNAME
   if (-not $user) { Write-Warning "USERNAME is not set; $Path keeps its default permissions"; return }
   & icacls $Path /inheritance:r /grant:r "${user}:F" *> $null
@@ -185,6 +200,12 @@ function Initialize-ShardSecrets([string] $Shard) {
   Get-ComposeFile $Shard | Out-Null
   $dir = Join-Path $Root 'compose/secrets'
   New-Item -ItemType Directory -Force $dir | Out-Null
+  if (-not $IsWindows) {
+    # The directory is owner-only too (700): its listing is no more public than the files it holds.
+    & chmod 700 $dir
+    if ($LASTEXITCODE -ne 0) { throw "chmod could not restrict $dir to its owner" }
+    Assert-OwnerOnlyMode $dir '700'
+  }
   $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
   foreach ($name in 'postgres', 'rcon', 'velocity-forwarding') {
     $path = Join-Path $dir "$name.txt"
@@ -210,14 +231,30 @@ function Initialize-ShardSecrets([string] $Shard) {
       Set-OwnerOnlyAcl $path
       continue
     }
-    Set-OwnerOnlyAcl $path
     try {
+      # The file is empty until the Write below, so its owner-only mode is set before the secret goes in.
+      Set-OwnerOnlyAcl $path
       $data = [Text.Encoding]::ASCII.GetBytes($secret)
       $stream.Write($data, 0, $data.Length)
     } finally {
       $stream.Dispose()
     }
+    Assert-OwnerOnlyMode $path '600'
     Write-Host "created compose/secrets/$name.txt"
+  }
+}
+
+# compose/colo.yml declares these NATS password files as secrets, and `up` fails in docker when one is missing.
+# Initialize-ShardSecrets does not write them (only `shard nats-auth` does), so `up colo` checks first and names
+# what is missing. It never generates a partial set here. A test keeps this list equal to colo.yml's nats-* files.
+function Assert-ColoNatsSecrets {
+  $dir = Join-Path $Root 'compose/secrets'
+  $missing = foreach ($name in 'nats-body.txt') {
+    $path = Join-Path $dir $name
+    if (-not (Test-Path -PathType Leaf $path) -or (Get-Item $path).Length -eq 0) { "compose/secrets/$name" }
+  }
+  if ($missing) {
+    throw "$($missing -join ', ') is missing or empty, and compose/colo.yml needs it. Create it with: ./geldar.ps1 shard nats-auth colo"
   }
 }
 
@@ -311,6 +348,7 @@ function Invoke-Shard([string[]] $ShardArgs) {
     'secrets' { Initialize-ShardSecrets $shard }
     'nats-auth' { Initialize-NatsAuth $shard }
     'up' {
+      if ($shard -eq 'colo') { Assert-ColoNatsSecrets }
       Assert-PluginJar $shard
       if ($shard -eq 'colo') {
         # compose/colo.yml reads these two; the defaults in the file equal shards/colo.yaml's first guesses.
