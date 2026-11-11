@@ -73,6 +73,7 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0134 | after block | FINISHER (orchestrator) | The Mind (`animus`) is a compose profile on the Colo until a Thinker path exists | Accepted (orchestrator, 2026-11-11) |
 | 0135 | after block | orchestrator (owner ruling 2026-11-11) | Self-registration with GitHub and Discord sign-in | Accepted in principle; design Proposed |
 | 0136 | after block | C2-08b | Register service details, if needed | reserved |
+| 0137 | after block | orchestrator (C2-R2 ruling R29) | Public spectator proxy is separate and online-mode; Paper fails closed | Accepted (orchestrator) |
 
 ## Clashes and how they were resolved
 

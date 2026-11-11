@@ -99,4 +99,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0133](0133-colo-admin-by-one-shot-container.md) | Colo administration runs in a one-shot `geldar-admin` container (migrate, owner, player, token) inside the compose network | Accepted (orchestrator, 2026-11-10) |
 | [0134](0134-mind-is-a-profile-until-a-thinker-exists.md) | The Mind (`animus`) is a compose profile on the Colo until a Thinker path exists | Accepted (orchestrator, 2026-11-11) |
 | [0135](0135-self-registration-with-github-and-discord.md) | Self-registration with GitHub and Discord sign-in: verified accounts at least 30 days old, no manual approval, off until the C2 gates pass | Accepted in principle (owner 2026-11-11); design Proposed |
+| [0137](0137-public-spectator-proxy-is-separate-and-online.md) | The public Minecraft port is a separate online-mode spectator proxy (spec 8.4); Paper holds every player without a signed live property in spectator | Accepted (orchestrator, 2026-11-11) |
 >

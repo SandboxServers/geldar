@@ -42,3 +42,20 @@ The slices touch separate files. B covers `deploy/caddy`, `glass/README.md` and 
 | R1-11 | low | 0077's status is stale; the `shards/phase0.yaml` comment still says `cf-connecting-ip` | docs branch (0077 done); fix slice M2 (comment) |
 
 M1 and M2 both edit `threshold/mcp/src/http/front.ts`, so they run one after the other. B2 runs after B, since both edit `deploy/caddy/*.caddy`.
+
+## C2-R2 Velocity and the public Minecraft port: verdict decision (1 high, 5 medium, 4 low)
+
+Ruled by R29 (decision 0137).
+
+| Finding | Severity | Summary | Owner |
+|---|---|---|---|
+| R2-01 | high | The public port was the offline-mode bot ingress, so any name could be claimed | C2-02c (a separate online-mode spectator proxy) |
+| R2-02 | medium | Ghost default-mode window; the ghost rule fails open | C2-02d (signed `geldar_live` property, kick on failure) |
+| R2-03 | medium | The Velocity-to-Paper ghost wiring has no test (three mutations pass) | C2-02d |
+| R2-04 | medium | Velocity's NATS credential can write the registry and skins, and has all of `$JS.API` | C2-02e |
+| R2-05 | medium | The public bind check is a four-string denylist; the port isn't range-checked | C2-07e |
+| R2-06 | medium | The public port stays served if the gate plugin is missing | C2-07e (publish only after the proxy is healthy) |
+| R2-07 | low | No connection limit on the public port | C2-02c |
+| R2-08 | low | The "already connected" reply may differ from the denial | C2-02d (a handler), plus a live check |
+| R2-09 | low | MOTD, max players and the BungeeCord channel are left at bot-ingress values | C2-02c |
+| R2-10 | low | Stale success message and 0092 item 4 | C2-07e and docs |
