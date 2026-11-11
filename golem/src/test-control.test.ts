@@ -24,6 +24,8 @@ const CONTROL_USERS = [
   // The operator removal path (`players down`, `adam stop`, `mcp-tokens retire`) removes the whitelist
   // entry over RCON with the same password file; see players/life-removal.ts.
   join(import.meta.dirname, 'players', 'life-removal.ts'),
+  // C2-07k: the admin one-shot whitelists the colo house Body over RCON before golem-body starts.
+  join(import.meta.dirname, 'whitelist-house-body.ts'),
 ];
 
 /** What actions must not reach: the RCON layer, the arena builder and the bench. */

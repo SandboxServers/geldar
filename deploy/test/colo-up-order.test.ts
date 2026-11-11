@@ -213,6 +213,34 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     expect(log[log.length - 1]).toMatch(/ up -d --wait$/);
   });
 
+  it('starts paper, whitelists the house body, and only then starts the full core (C2-07k)', () => {
+    const fx = fixture();
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).toBe(0);
+    const log = composeCalls(fx);
+    const at = (re: RegExp) => log.findIndex((c) => re.test(c));
+    const paperUp = at(/ up -d --wait paper$/);
+    const whitelist = at(/ run --rm admin whitelist-house-body$/);
+    const fullUp = at(/ up -d --wait$/);
+    const skins = at(/ run --rm admin ensure-skins-bucket$/);
+    expect(paperUp).toBeGreaterThan(skins);
+    expect(whitelist).toBeGreaterThan(paperUp);
+    expect(fullUp).toBeGreaterThan(whitelist);
+  });
+
+  it('a failed whitelist step stops the deploy before golem-body can start', () => {
+    const fx = fixture();
+    const shim = readFileSync(join(fx.env.PATH.split(delimiter)[0], 'docker'), 'utf8');
+    writeFileSync(
+      join(fx.env.PATH.split(delimiter)[0], 'docker'),
+      shim.replace('exit 0\n', '').replace(/\n$/, '\n') +
+        `case "$*" in *whitelist-house-body*) exit 1 ;; esac\nexit 0\n`,
+    );
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(composeCalls(fx).some((c) => / up -d --wait$/.test(c))).toBe(false);
+  });
+
   it('dry run prints each step in that order and runs no compose call that changes state', () => {
     const fx = fixture();
     const r = run('colo-up.sh', fx);

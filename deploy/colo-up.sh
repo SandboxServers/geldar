@@ -54,6 +54,12 @@ act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_glass --pa
 # The velocity plugin only reads geldar-skins (decision 0087 correction, C2-02e), so the bucket is made here, by the body
 # NATS user through the admin container, before velocity starts. Creating an existing bucket changes nothing.
 act sh "$DEPLOY_DIR/colo-admin.sh" ensure-skins-bucket
+# The house Body is whitelisted on Paper before golem-body starts (C2-07k): Paper (and the services it needs) come up and
+# healthy first, the admin one-shot adds the name over RCON (idempotent), and only then does the full core start.
+FORCE=$(recreate_flag)
+# shellcheck disable=SC2086
+act dc up -d --wait $FORCE paper
+act sh "$DEPLOY_DIR/colo-admin.sh" whitelist-house-body
 FORCE=$(recreate_flag)
 # shellcheck disable=SC2086
 act dc up -d --wait $FORCE
