@@ -1,10 +1,12 @@
 # Opt-in NATS auth overlay (decision 0067). It is opt-in now: the default stays open NATS until the
 # cutover gate of decision 0080 passes. The gate's live test is threshold/mcp/test/nats-auth.it.test.ts
-# (decision 0087, run with GELDAR_IT=1 against this overlay's nats-server digest). When that test
-# passes and the generator is fixed (C1-06c), the default changes to this overlay on (0080 option B).
-# Until then, the generated config from `shard nats-auth` is not yet what the test checks.
-# Use with the MCP file too (its geldar-mcp entry needs its base):
-#   docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
+# (decision 0087, run with GELDAR_IT=1 against this overlay's nats-server digest). The generator
+# (`shard nats-auth`) writes the table that test proves (C1-06c). The default changes to this overlay on (0080 option B).
+# This file merges on top of a base that runs nats (compose/phase0.yml or compose/colo.yml). It adds no service
+# of its own: the MCP entry is in nats-auth-mcp.yml, which only the Phase 0 MCP stack needs.
+# Phase 0, with the MCP file too:
+#   docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml -p geldar-phase0 up -d
+# Colo, offline check of the merge: docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
 # Before that, write the server config and the per-user password files (git-ignored, owner-only):
 #   ./geldar.ps1 shard nats-auth phase0
 # Each container reads its own password from a file mounted at /run/secrets/nats-<user>.txt and
@@ -13,7 +15,8 @@
 # them GELDAR_NATS_USER=body or mind and GELDAR_NATS_PASSWORD_FILE=compose/secrets/nats-<user>.txt.
 services:
   nats:
-    command: ["-c", "/etc/nats/nats-auth.conf", "-m", "8222"]
+    # The base's flags (-js -sd /data, as phase0.yml and colo.yml set them) stay: a command list replaces, not merges.
+    command: ["-js", "-sd", "/data", "-c", "/etc/nats/nats-auth.conf", "-m", "8222"]
     volumes:
       - ./secrets/nats-auth.conf:/etc/nats/nats-auth.conf:ro
   paper:
@@ -31,11 +34,6 @@ services:
       GELDAR_NATS_USER: eventsink
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-eventsink.txt
     secrets: [nats-eventsink.txt]
-  geldar-mcp:
-    environment:
-      GELDAR_NATS_USER: mcp
-      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mcp.txt
-    secrets: [nats-mcp.txt]
 secrets:
   nats-paper.txt:
     file: ./secrets/nats-paper.txt
@@ -43,5 +41,3 @@ secrets:
     file: ./secrets/nats-velocity.txt
   nats-eventsink.txt:
     file: ./secrets/nats-eventsink.txt
-  nats-mcp.txt:
-    file: ./secrets/nats-mcp.txt

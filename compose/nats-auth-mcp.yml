@@ -1,0 +1,13 @@
+# The MCP entry of the opt-in NATS auth overlay (decision 0067). It needs compose/mcp.yml for its service
+# (geldar-mcp) and compose/nats-auth.yml for the nats service and the server config, so it is merged last:
+#   docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml -p geldar-phase0 up -d
+# Colo does not include the MCP service, so this file is not merged there.
+services:
+  geldar-mcp:
+    environment:
+      GELDAR_NATS_USER: mcp
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mcp.txt
+    secrets: [nats-mcp.txt]
+secrets:
+  nats-mcp.txt:
+    file: ./secrets/nats-mcp.txt

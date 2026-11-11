@@ -120,14 +120,14 @@ function Invoke-Check {
     Invoke-Step 'test (vitest)' { pnpm test }
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
-    # Overlays (rcon-host.yml, nats-auth.yml) only add to a base file, so each is checked merged with its base.
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml') }) {
+    # Overlays (rcon-host.yml, nats-auth.yml, nats-auth-mcp.yml) only add to a base file, so each is checked merged with its base.
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
     Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)' { docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
     $natsMcp = Join-Path $Root 'compose/mcp.yml'
-    Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
+    Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml + nats-auth-mcp.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') -f (Join-Path $Root 'compose/nats-auth-mcp.yml') config --quiet }
     if (Test-Path plugin/build.gradle.kts) {
       $gradlew = if ($IsWindows) { './gradlew.bat' } else { './gradlew' }
       Push-Location plugin
@@ -257,7 +257,8 @@ function Initialize-NatsAuth([string] $Shard) {
     $pass = (Get-Content (Join-Path $dir "nats-$user.txt") -Raw).Trim()
     $pub = ($users[$user].Pub | ForEach-Object { "`"$_`"" }) -join ', '
     $sub = ($users[$user].Sub | ForEach-Object { "`"$_`"" }) -join ', '
-    "      { user: `"$user`", password: `"$pass`", allow_responses: true, permissions: { publish: { allow: [$pub] }, subscribe: { allow: [$sub] } } }"
+    # allow_responses belongs inside permissions: nats-server 2.15 rejects it on the user block.
+    "      { user: `"$user`", password: `"$pass`", permissions: { publish: { allow: [$pub] }, subscribe: { allow: [$sub] }, allow_responses: true } }"
   }
   $lines += ($entries -join ",`n")
   $lines += @('    ]', '  }', '}')
@@ -266,28 +267,34 @@ function Initialize-NatsAuth([string] $Shard) {
   Write-Host 'created compose/secrets/nats-auth.conf'
 }
 
-# The per-user allow lists of decision 0067. Subjects are per shard; per-life subjects use `*`
-# because the lives are not known when the file is written (the gap the decision records).
+# The per-user allow lists of decision 0087, the table the live test proves (threshold/mcp/test/nats-auth.it.test.ts).
+# Every subject starts with the shard, or is a KV bucket, a JetStream API subject or an inbox. No role is scoped to one
+# life: a life is not known when the file is written, so the application checks its own life's subjects.
 function Get-NatsUsers([string] $Shard) {
   $s = $Shard
   $js = @('$JS.API.>', '$JS.ACK.>', '_INBOX.>')
   $kv = { param($b) "`$KV.$b.>" }
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
   return [ordered]@{
-    body = @{ Pub = @("geldar.$s.*") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'));
-      Sub = @("geldar.$s.body.*.snapshot", "geldar.$s.body.*.plan", "geldar.$s.body.*.book", '_INBOX.>') }
-    mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.*.snapshot", "geldar.$s.body.*.plan");
+    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'));
+      Sub = @("geldar.$s.body.>", '_INBOX.>') }
+    mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       Sub = @('_INBOX.>') }
     eventsink = @{ Pub = @("geldar.$s.dlq") + $js; Sub = @('_INBOX.>') }
-    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.*.book", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
+    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
     velocity = @{ Pub = @((& $kv 'geldar-life-registry'), (& $kv 'geldar-skins')) + $js; Sub = @('_INBOX.>') }
-    paper = @{ Pub = @("geldar.$s.*") + $js; Sub = @('_INBOX.>') }
-    ops = @{ Pub = @('>'); Sub = @('>') }
+    paper = @{ Pub = @("geldar.$s.>") + $js; Sub = @('_INBOX.>') }
   }
 }
 
-# Owner-only ACL: drop inherited rules and grant the current user read and write alone.
+# Owner-only access, and a failure throws. On Windows: drop inherited ACL rules and grant the current user read and
+# write alone. Elsewhere (Linux, macOS): mode 0600. icacls exists only on Windows, so the POSIX branch must not call it.
 function Restrict-OwnerOnly([string] $Path) {
+  if (-not $IsWindows) {
+    & chmod 600 $Path
+    if ($LASTEXITCODE -ne 0) { throw "chmod could not restrict $Path to its owner" }
+    return
+  }
   & icacls $Path /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "icacls could not restrict $Path to its owner" }
 }
