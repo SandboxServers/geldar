@@ -269,6 +269,30 @@ Order:
 Rollback: `bash deploy/colo-public.sh remove` backs up the Caddyfile, removes the import line, validates, deletes the
 directory and reloads. If validate fails it restores the Caddyfile and removes nothing.
 
+### Public sites on a node: the order
+
+1. Deploy the stack first: `bash deploy/colo-up.sh`. It needs `GELDAR_GLASS_IMAGE` in the release manifest (a digest
+   reference; it refuses a missing one), `postgres-glass.txt` in the secrets directory (required like the other
+   secrets), and it sets the `geldar_glass` login password after the `geldar_mcp` one, before the full core starts.
+2. Then `bash deploy/colo-public.sh install` (steps above). Run it second: the sites proxy to services that must
+   already be up.
+
+Node env values (names only; set them in the deploy env on the node, never in the repo):
+
+| Variable | Meaning |
+|---|---|
+| `GELDAR_MC_BIND` | the node's own interface address for the public Minecraft port. Set together with `GELDAR_MC_PORT`; the scripts merge `compose/colo-public.yml` only when both are set, refuse exactly one, and refuse a wildcard (`0.0.0.0`, `::`) |
+| `GELDAR_MC_PORT` | the public Minecraft port (a number) |
+| `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container (the docker bridge gateway) |
+| `GELDAR_MCP_TRUSTED_PROXIES` | the same for the MCP service |
+| `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` | the Caddy upstreams, in `GELDAR_PUBLIC_ENV` (each `127.0.0.1:<port>`) |
+
+Live check for the trusted proxies (do it once per node, after `install`): send one request through Caddy to the Glass
+site and one to the MCP site, then read each service log (`docker compose -p geldar-colo logs --tail 20 glass`, and
+`mcp`). The address the log shows for the caller is the address Caddy has inside the containers. It must equal the
+value you set in the matching `*_TRUSTED_PROXIES`. If it differs, set the variable to the logged address, run
+`colo-up.sh` again and repeat the request. Until it matches, the service treats Caddy as an ordinary client.
+
 ## Stop conditions
 
 Stop and do not retry in a loop when:
