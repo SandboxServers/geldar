@@ -9,6 +9,11 @@ const CONFIG: GlassConfig = {
   sseMaxClients: 2,
   sseBufferFrames: 10,
   ssePollMs: 1000,
+  enabled: true,
+  delaySeconds: 0,
+  showLivingSovereign: false,
+  trustedProxies: [],
+  rateLimit: { perMinute: 60, burst: 20, maxClients: 1024 },
 };
 
 const built: GlassParts[] = [];

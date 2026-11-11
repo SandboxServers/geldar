@@ -12,6 +12,20 @@ describe('the Glass configuration', () => {
     expect(config.pg.user).toBe('geldar_glass');
   });
 
+  it('delays thoughts 60 seconds by default; 0 disables; a bad value is refused', () => {
+    expect(loadGlassConfig(env, readPassword).delaySeconds).toBe(60);
+    const off = { ...env, GELDAR_GLASS_DELAY_SECONDS: '0' };
+    expect(loadGlassConfig(off, readPassword).delaySeconds).toBe(0);
+    const bad = { ...env, GELDAR_GLASS_DELAY_SECONDS: '-1' };
+    expect(() => loadGlassConfig(bad, readPassword)).toThrow(/whole number/);
+  });
+
+  it('hides living sovereign agents and stays enabled by default', () => {
+    const config = loadGlassConfig(env, readPassword);
+    expect(config.showLivingSovereign).toBe(false);
+    expect(config.enabled).toBe(true);
+  });
+
   it.each(['0.0.0.0', '::', '::1', 'localhost', '192.168.1.5'])(
     'refuses to start when the host is %s',
     (host) => {
