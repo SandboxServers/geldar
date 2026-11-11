@@ -126,10 +126,18 @@ services:
 
 // The top-level secrets block as `docker compose config` prints it: each NAME with the file it reads from.
 function secretsBlock(dir: string, decls: [string, string][]): string {
-  const entries = decls.map(([n, f]) => `  ${n}:\n    file: ${dir}/${f}\n    name: geldar-colo_${n}\n`);
+  const entries = decls.map(
+    ([n, f]) => `  ${n}:\n    file: ${dir}/${f}\n    name: geldar-colo_${n}\n`,
+  );
   return `secrets:\n${entries.join('')}`;
 }
-function writeConfig(path: string, dir: string, decls: [string, string][], published = '25567', extra = '') {
+function writeConfig(
+  path: string,
+  dir: string,
+  decls: [string, string][],
+  published = '25567',
+  extra = '',
+) {
   writeFileSync(path, `${CONFIG(published)}${extra}${secretsBlock(posix(dir), decls)}`);
 }
 // A service that the nats-auth overlay gives the server config as a read-only bind file.
@@ -472,14 +480,17 @@ describe('gen-secrets.sh (decision 0084)', () => {
 });
 
 describe('secret files come from the merged config (decision 0084)', () => {
-  it.each(SECRETS)('refuses when the file of compose secret %s is missing, and names it', (name, file) => {
-    const fx = fixture();
-    rmSync(join(fx.secrets, file));
-    const r = run('colo-up.sh', fx, REAL);
-    expect(r.code).not.toBe(0);
-    expect(r.out).toContain(`secret file missing: ${file} (compose secret: ${name},`);
-    expect(mutates(calls(fx))).toBe(false);
-  });
+  it.each(SECRETS)(
+    'refuses when the file of compose secret %s is missing, and names it',
+    (name, file) => {
+      const fx = fixture();
+      rmSync(join(fx.secrets, file));
+      const r = run('colo-up.sh', fx, REAL);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain(`secret file missing: ${file} (compose secret: ${name},`);
+      expect(mutates(calls(fx))).toBe(false);
+    },
+  );
 
   it('refuses an empty secret file, and names it', () => {
     const fx = fixture();
@@ -490,18 +501,21 @@ describe('secret files come from the merged config (decision 0084)', () => {
     expect(mutates(calls(fx))).toBe(false);
   });
 
-  it.skipIf(!canSymlink)('refuses a symlink that resolves outside the secrets directories, and never reads its target', () => {
-    const fx = fixture();
-    const outside = join(fx.dir, 'outside.txt');
-    writeFileSync(outside, 'OUTSIDE-test-value\n');
-    rmSync(join(fx.secrets, 'rcon.txt'));
-    symlinkSync(outside, join(fx.secrets, 'rcon.txt'));
-    const r = run('colo-up.sh', fx, REAL);
-    expect(r.code).not.toBe(0);
-    expect(r.out).toContain('secret file rcon.txt (compose secret: rcon) resolves outside');
-    expect(r.out).not.toContain('OUTSIDE-test-value');
-    expect(mutates(calls(fx))).toBe(false);
-  });
+  it.skipIf(!canSymlink)(
+    'refuses a symlink that resolves outside the secrets directories, and never reads its target',
+    () => {
+      const fx = fixture();
+      const outside = join(fx.dir, 'outside.txt');
+      writeFileSync(outside, 'OUTSIDE-test-value\n');
+      rmSync(join(fx.secrets, 'rcon.txt'));
+      symlinkSync(outside, join(fx.secrets, 'rcon.txt'));
+      const r = run('colo-up.sh', fx, REAL);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('secret file rcon.txt (compose secret: rcon) resolves outside');
+      expect(r.out).not.toContain('OUTSIDE-test-value');
+      expect(mutates(calls(fx))).toBe(false);
+    },
+  );
 
   // The same containment check without a symlink, so it also runs where symlinks are refused (Windows without
   // developer mode): the merged config names a file that lies outside the secrets directory.
@@ -512,7 +526,10 @@ describe('secret files come from the merged config (decision 0084)', () => {
     const outsideFile = join(elsewhere, 'postgres.txt');
     writeFileSync(outsideFile, 'ELSEWHERE-test-value\n');
     const text = readFileSync(fx.config, 'utf8');
-    writeFileSync(fx.config, text.split(posix(join(fx.secrets, 'postgres.txt'))).join(posix(outsideFile)));
+    writeFileSync(
+      fx.config,
+      text.split(posix(join(fx.secrets, 'postgres.txt'))).join(posix(outsideFile)),
+    );
     const r = run('colo-up.sh', fx, REAL);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('secret file postgres.txt (compose secret: postgres) resolves outside');
