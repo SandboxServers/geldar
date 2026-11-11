@@ -1,7 +1,5 @@
-// Tests for the Colo deploy scripts (decision 0084). The scripts run under `sh` with a fake `docker` and a fake `stat`
-// on PATH. The fake docker records each call and answers only the read-only subcommands; the fake stat answers the
-// POSIX mode of each secret file from a fixture (NTFS has no POSIX modes). No real docker, node or network is used:
-// the BlueMap "download" is a local file:// fixture, allowed only by GELDAR_DEPLOY_ALLOW_FILE_URL=1 in these tests.
+// Tests for the Colo deploy scripts (decision 0084). The scripts run under `sh` with fake `docker`, `stat`, `id` and
+// `chown` on PATH; no real docker, node or network is used (the BlueMap download is a local file:// fixture).
 // `sh` is Git for Windows' sh on a Windows desktop and /bin/sh elsewhere; GELDAR_TEST_SH overrides both.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -82,10 +80,8 @@ function findSh(): string {
 }
 const SH = findSh();
 
-// Every test here starts several `sh` processes (the script, its shims, and the coreutils it calls). On a Windows
-// desktop each process start is slow, and it is slower while the full workspace suite runs beside this file: a
-// measured test took 5-11 s against vitest's 5 s default, with the same assertions passing. A test that stops
-// inside 30 s is still a failure, so this is a bound for real work, not a retry or a skip.
+// Every test starts several `sh` processes; on a Windows desktop beside the full suite a test took 5-11 s, against
+// vitest's 5 s default. 30 s is a bound for real work, not a retry or a skip.
 const SPAWN_TEST_TIMEOUT_MS = 30_000;
 vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
 
@@ -100,9 +96,8 @@ esac
 exit 0
 `;
 
-// The fake stat: `stat -c %a PATH` (the mode, from $FAKE_MODE_DIR/<file name>, default 600) and `stat -c %u PATH` (the
-// owner uid, from $FAKE_OWNER_DIR/<file name>, default 1000, the GELDAR_SERVICE_UID these tests set). It uses only shell
-// builtins: each external command is a process start that is slow on Windows (see SPAWN_TEST_TIMEOUT_MS).
+// The fake stat: `stat -c %a PATH` (mode, from $FAKE_MODE_DIR/<file name>, default 600) and `stat -c %u PATH` (owner
+// uid, from $FAKE_OWNER_DIR/<file name>, default 1000). It uses only shell builtins: each external command is slow here.
 const STAT_SHIM = `#!/bin/sh
 [ "$1" = "-c" ] || exit 2
 name=\${3##*/}
@@ -491,8 +486,7 @@ describe('gen-secrets.sh (decision 0084)', () => {
       const value = readFileSync(join(target, f), 'utf8').trim();
       expect(value).toMatch(/^[0-9a-f]{64}$/);
       expect(first.out).not.toContain(value);
-      // NTFS reports 0666 whatever the script does, so the mode is checked on POSIX only. The script's guard is
-      // `umask 077` before any file is created, and that is checked everywhere.
+      // NTFS reports 0666 whatever the script does, so the mode is checked on POSIX only (`umask 077` everywhere).
       if (process.platform !== 'win32') expect(statSync(join(target, f)).mode & 0o077).toBe(0);
     }
     expect(readFileSync(join(DEPLOY, 'gen-secrets.sh'), 'utf8')).toContain('umask 077');
@@ -544,8 +538,7 @@ describe('secret files come from the merged config (decision 0084)', () => {
     },
   );
 
-  // The same containment check without a symlink, so it also runs where symlinks are refused (Windows without
-  // developer mode): the merged config names a file that lies outside the secrets directory.
+  // The same containment check without a symlink, so it also runs where symlinks are refused.
   it('refuses a merged-config path that lies outside the secrets directory, and runs no pull or up', () => {
     const fx = fixture();
     const elsewhere = join(fx.dir, 'elsewhere');
