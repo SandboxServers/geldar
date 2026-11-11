@@ -1,0 +1,21 @@
+# BlueMap, public and read-only (decisions 0072 and 0071). Load this file, then `caddy reload`.
+# Placeholders, never real values: GELDAR_DOMAIN (the project domain) and GELDAR_MAP_UPSTREAM
+# (the BlueMap web address, set by the integration packet C2-07).
+map.{$GELDAR_DOMAIN} {
+	# GET and HEAD only; every other method is refused at Caddy.
+	@not_allowed not method GET HEAD
+	respond @not_allowed 405
+
+	# Drop any address header a client sent, then set the one Caddy vouches for.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+	request_header x-geldar-client-ip {remote_host}
+
+	# BlueMap serves static files; no request body is needed.
+	request_body {
+		max_size 1KiB
+	}
+
+	reverse_proxy {$GELDAR_MAP_UPSTREAM}
+}
