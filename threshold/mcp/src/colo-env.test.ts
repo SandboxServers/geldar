@@ -54,7 +54,7 @@ describe('geldar-mcp in compose/colo.yml', () => {
   });
 
   it('refuses a bind address that is neither loopback nor the container wildcard', async () => {
-    const env = { ...coloServiceEnv('geldar-mcp'), GELDAR_MCP_BIND: '10.0.0.5' };
+    const env = { ...coloServiceEnv('geldar-mcp'), GELDAR_MCP_BIND: 'not-allowed.example' };
     await expect(loadMcpConfig({ env, file: coloShardFile() })).rejects.toThrow(
       /GELDAR_MCP_BIND must be 127\.0\.0\.1/,
     );

@@ -57,7 +57,7 @@ describe('removeLifeFromShard', () => {
 
   it('names both manual commands and runs no step when the shard settings are unreadable', async () => {
     const { steps, calls } = fakeSteps();
-    const lines = await removeLifeFromShard(LIFE, { GELDAR_MC_HOST: '10.0.0.5' }, steps);
+    const lines = await removeLifeFromShard(LIFE, { GELDAR_MC_HOST: 'not-allowed.example' }, steps);
     expect(calls).toEqual([]);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('shard settings unreadable');

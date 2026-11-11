@@ -107,7 +107,7 @@ describe('assertLoopbackNatsUrl', () => {
   it('accepts loopback nats URLs and refuses the rest', () => {
     expect(() => assertLoopbackNatsUrl('nats://127.0.0.1:4222')).not.toThrow();
     expect(() => assertLoopbackNatsUrl('nats://localhost:4222')).not.toThrow();
-    expect(() => assertLoopbackNatsUrl('nats://10.0.0.5:4222')).toThrow(/127\.0\.0\.1/);
+    expect(() => assertLoopbackNatsUrl('nats://not-allowed.example:4222')).toThrow(/127\.0\.0\.1/);
     expect(() => assertLoopbackNatsUrl('http://127.0.0.1:4222')).toThrow(/nats/);
     expect(() => assertLoopbackNatsUrl('not a url')).toThrow(/nats/);
   });
