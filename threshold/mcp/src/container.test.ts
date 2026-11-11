@@ -71,6 +71,20 @@ describe('threshold/mcp/Dockerfile.dockerignore', () => {
       expect(excluded(kept), kept).toBe(false);
     }
   });
+
+  it('leaves the other workspaces, the plugin and the docs out of the build context', () => {
+    for (const left of [
+      'glass/src/http.ts',
+      'golem/src/view.ts',
+      'eventsink/src/index.ts',
+      'tools/portscan/src/index.ts',
+      'plugin/core/src/main/java/dev/geldar/Plugin.java',
+      'docs/spec.md',
+      'threshold/mcp-mock/test-support/fixtures.ts',
+    ]) {
+      expect(excluded(left), left).toBe(true);
+    }
+  });
 });
 
 describe('threshold/mcp/Dockerfile', () => {
