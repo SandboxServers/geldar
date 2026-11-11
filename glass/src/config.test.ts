@@ -45,6 +45,18 @@ describe('the Glass configuration', () => {
     expect(() => assertLoopback('0.0.0.0', { GELDAR_IN_NETWORK_HOSTS: '0' })).toThrow();
   });
 
+  it('reads Postgres at loopback, or at postgres only with the opt-in', () => {
+    expect(loadGlassConfig(env, readPassword).pg.host).toBe('127.0.0.1');
+    const named = { ...env, GELDAR_GLASS_PG_HOST: 'postgres' };
+    expect(() => loadGlassConfig(named, readPassword)).toThrow(/GELDAR_GLASS_PG_HOST/);
+    const optIn = { ...named, GELDAR_IN_NETWORK_HOSTS: '1' };
+    expect(loadGlassConfig(optIn, readPassword).pg.host).toBe('postgres');
+    for (const host of ['db.example.invalid', '192.0.2.7']) {
+      const other = { ...env, GELDAR_GLASS_PG_HOST: host, GELDAR_IN_NETWORK_HOSTS: '1' };
+      expect(() => loadGlassConfig(other, readPassword)).toThrow(/GELDAR_GLASS_PG_HOST/);
+    }
+  });
+
   it('refuses any database role but geldar_glass', () => {
     const other = { ...env, GELDAR_GLASS_PG_USER: 'geldar' };
     expect(() => loadGlassConfig(other, readPassword)).toThrow(/only as geldar_glass/);

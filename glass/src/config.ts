@@ -46,6 +46,12 @@ function inNetwork(env: NodeJS.ProcessEnv): boolean {
   return env.GELDAR_IN_NETWORK_HOSTS === '1';
 }
 
+/** Loopback always; the Colo service name `postgres` only with the opt-in. Nothing else. */
+function pgHostAllowed(host: string, env: NodeJS.ProcessEnv): boolean {
+  if (host === '127.0.0.1' || host === 'localhost') return true;
+  return host === IN_NETWORK_PG_HOST && inNetwork(env);
+}
+
 /**
  * Refuses any address but loopback. Called before every listen, so a setting cannot widen it.
  * `0.0.0.0` passes only with `GELDAR_IN_NETWORK_HOSTS=1` (decision 0131, 0093 in-network bind).
@@ -103,6 +109,12 @@ export function loadGlassConfig(
   assertLoopback(host, env);
   const user = env.GELDAR_GLASS_PG_USER ?? GLASS_PG_USER;
   if (user !== GLASS_PG_USER) throw new Error(`Glass connects only as ${GLASS_PG_USER}`);
+  const pgHost = env.GELDAR_GLASS_PG_HOST ?? '127.0.0.1';
+  if (!pgHostAllowed(pgHost, env)) {
+    throw new Error(
+      'GELDAR_GLASS_PG_HOST must be 127.0.0.1 or localhost (or postgres with GELDAR_IN_NETWORK_HOSTS=1)',
+    );
+  }
   const passwordFile = env.GELDAR_GLASS_PG_PASSWORD_FILE;
   if (passwordFile === undefined || passwordFile === '') {
     throw new Error('GELDAR_GLASS_PG_PASSWORD_FILE is not set');
@@ -111,7 +123,7 @@ export function loadGlassConfig(
     host,
     port: intSetting(env, 'GELDAR_GLASS_PORT', 8787),
     pg: {
-      host: env.GELDAR_GLASS_PG_HOST ?? '127.0.0.1',
+      host: pgHost,
       port: intSetting(env, 'GELDAR_GLASS_PG_PORT', 5432),
       user,
       database: env.GELDAR_GLASS_PG_DB ?? 'geldar',
