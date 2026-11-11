@@ -87,7 +87,7 @@ describe('loadMcpConfig', () => {
       parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_BIND: '0.0.0.0' } }),
     ).toThrow('needs GELDAR_MCP_IN_CONTAINER=1');
     expect(() =>
-      parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_BIND: '192.168.1.20' } }),
+      parseMcpConfig(shardDoc(), { env: { ...ENV, GELDAR_MCP_BIND: 'not-allowed.example' } }),
     ).toThrow('must be 127.0.0.1');
   });
 

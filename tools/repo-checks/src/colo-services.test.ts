@@ -130,10 +130,12 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   eventsink: ['EVENTSINK', '0.5', '512m', 256],
   'golem-body': ['GOLEM_BODY', '1', '2048m', 256],
   animus: ['ANIMUS', '1', '2048m', 256],
+  'geldar-mcp': ['GELDAR_MCP', '0.5', '512m', 128],
+  'players-host': ['PLAYERS_HOST', '1', '2048m', 256],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the seven services the budget totals cover', () => {
+  it('names exactly the nine services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -166,5 +168,71 @@ describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
     expect(colo.services.postgres).not.toHaveProperty('ports');
     expect(colo.services.nats).not.toHaveProperty('ports');
     expect(colo.services.velocity?.ports).toEqual(['127.0.0.1:25567:25565']);
+  });
+});
+
+// The C1-11a services: the MCP (the sovereign players' door) and the player host (one Body per ranger).
+const mcp = colo.services['geldar-mcp'] ?? {};
+const players = colo.services['players-host'] ?? {};
+
+describe('compose/colo.yml: the MCP service (C1-11a)', () => {
+  it('publishes only the loopback MCP port, as a literal (the loopback rule rejects interpolation)', () => {
+    expect(mcp.ports).toEqual(['127.0.0.1:8788:8788']);
+  });
+
+  it('takes its image from a deploy variable, built from threshold/mcp/Dockerfile offline', () => {
+    expect(mcp.image).toBe(composeDefault('GELDAR_MCP_IMAGE', 'geldar-mcp:c1'));
+    expect(mcp.build).toEqual({ context: '..', dockerfile: 'threshold/mcp/Dockerfile' });
+  });
+
+  it('reads Postgres as the geldar_mcp role from a file and never mounts a token file', () => {
+    expect(env(mcp).POSTGRES_HOST).toBe('postgres');
+    expect(env(mcp).GELDAR_MCP_DB_PASSWORD_FILE).toBe('/run/secrets/postgres-mcp.txt');
+    expect(mcp.secrets).toContainEqual({ source: 'nats-mcp', target: 'nats-mcp.txt' });
+    expect(JSON.stringify(mcp.volumes ?? [])).not.toMatch(/token/i);
+  });
+
+  it('connects to NATS as the mcp user with its password file, and declares the secrets it names', () => {
+    expect(env(mcp).GELDAR_NATS_USER).toBe('mcp');
+    expect(env(mcp).GELDAR_NATS_PASSWORD_FILE).toBe('/run/secrets/nats-mcp.txt');
+    for (const name of ['postgres-mcp.txt', 'mcp-token-pepper.txt', 'nats-mcp']) {
+      expect(colo.secrets).toHaveProperty([name]);
+    }
+  });
+
+  it('runs read-only as uid 1000 with no capability, the compose/mcp.yml hardening', () => {
+    expect(mcp.user).toBe('1000:1000');
+    expect(mcp.read_only).toBe(true);
+    expect(mcp.cap_drop).toEqual(['ALL']);
+    expect(mcp.security_opt).toEqual(['no-new-privileges:true']);
+  });
+
+  it('mounts the Mind shard file, which carries the sovereign block, as the shard file', () => {
+    expect(mcp.volumes).toEqual(['../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro']);
+  });
+});
+
+describe('compose/colo.yml: the player host (C1-11a)', () => {
+  it('runs the player entry point of the Body image, with the player id as a compose variable', () => {
+    expect(players.entrypoint).toEqual(['node', 'src/players/main.ts']);
+    expect(players.command).toEqual(['--player', '${GELDAR_PLAYER_ID:-}']);
+    expect(players.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
+  });
+
+  it('is gated behind the sovereign profile, so a plain shard up does not start it', () => {
+    expect(players.profiles).toEqual(['sovereign']);
+  });
+
+  it('reaches Velocity for the game and Paper for RCON, by service name, with the opt-in', () => {
+    expect(env(players).GELDAR_MC_HOST).toBe('velocity');
+    expect(env(players).GELDAR_RCON_HOST).toBe('paper');
+    expect(env(players).GELDAR_IN_NETWORK_HOSTS).toBe('1');
+    expect(players.secrets).toContainEqual({ source: 'nats-body', target: 'nats-body.txt' });
+    expect(players.secrets).toContain('rcon');
+  });
+
+  it('publishes no port and joins only the colo network', () => {
+    expect(players).not.toHaveProperty('ports');
+    expect(players.networks).toEqual(['colo']);
   });
 });
