@@ -9,6 +9,8 @@ COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}
 SECRETS_OVERLAY=$DEPLOY_DIR/compose.secrets.yml
 # NATS auth (decision 0080, default-on): the overlay beside the colo file. It gives nats the auth config and the
 # per-role password files, and it is merged on every compose call so the deploy never runs open NATS.
+# It is merged BEFORE the secrets overlay: it names its secrets as ./secrets/..., and the later file wins, so the
+# secrets overlay must come last to point every NATS secret at GELDAR_SECRETS_DIR.
 NATS_OVERLAY=$(dirname "$COMPOSE_FILE")/nats-auth.yml
 EXTRA_OVERLAY=${GELDAR_COLO_EXTRA_OVERLAY:-}
 GELDAR_SECRETS_DIR=${GELDAR_SECRETS_DIR:-/etc/geldar-colo/secrets}
@@ -52,13 +54,13 @@ act() {
 dc() {
   public_overlay
   if [ -n "$PUBLIC_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
   elif [ -n "$PUBLIC_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$PUBLIC_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" "$@"
   elif [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
   else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" "$@"
   fi
 }
 

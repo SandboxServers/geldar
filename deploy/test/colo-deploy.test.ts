@@ -41,6 +41,7 @@ const GENERATED = [
   'velocity-forwarding.txt',
   'nats-body.txt',
   'postgres-mcp.txt',
+  'postgres-glass.txt',
   'mcp-token-pepper.txt',
 ];
 // The fake chown: records each call ("UID PATH") in $FAKE_CHOWN_LOG and changes nothing.
