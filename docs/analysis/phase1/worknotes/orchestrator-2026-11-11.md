@@ -142,3 +142,10 @@ NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-
 - ag_colo_01 joined the world, and the Body went to idle.
 - Production is unchanged, and Animus stays off.
 - Nit for C2-07e: `state/release.commit` is stale.
+
+## Register review R5 (pass 1): decision rulings
+
+- **R34 (F2).** Register writes (create, retire, mint) go only through SECURITY DEFINER functions with an owner match. Direct DML is revoked, and every definer function pins search_path with pg_temp last (fixes F1, a temp-table shadow mint).
+- **R35 (F4).** A ban revokes all of the owner's live tokens at ban time. The MCP lookup also refuses tokens whose owner is banned. An admin ban/unban subcommand is added.
+- **R36.** Lifetime cap of 10 player creations per owner.
+- **F3.** Registered players start with the same credits as players made with the CLI (240).
