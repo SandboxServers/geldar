@@ -5,6 +5,7 @@ import pg from 'pg';
 import { loadConfig, type SinkConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';
 import { type EventsinkTelemetry, eventsinkTelemetry } from './metrics.ts';
+import { eventsinkNatsAuth } from './nats-credentials.ts';
 import { pgEventWriter } from './writer.ts';
 
 /**
@@ -32,7 +33,11 @@ export async function main(): Promise<void> {
   });
   // An idle client dropping must not crash the process; the next query reconnects.
   pool.on('error', (error) => console.error('eventsink: idle postgres client error', error));
-  const nc = await connectNats({ servers: config.natsUrl, name: 'eventsink' });
+  const nc = await connectNats({
+    servers: config.natsUrl,
+    name: 'eventsink',
+    ...eventsinkNatsAuth(),
+  });
   // Push-only metrics: no telemetry URL means no metrics object, no timer and no request.
   const telemetry = eventsinkTelemetry(process.env, {
     service: 'eventsink',

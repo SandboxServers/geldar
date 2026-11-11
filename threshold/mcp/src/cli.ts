@@ -17,6 +17,7 @@ import {
   type RunningMcp,
   startMcp,
 } from './main.ts';
+import { mcpNatsAuth } from './nats-credentials.ts';
 import { jetStreamReplay, StreamWaitTimeout } from './replay-source.ts';
 
 /** Exit codes: 0 stopped on a signal, 1 a runtime failure, 2 a usage error, 78 a configuration error. */
@@ -163,7 +164,7 @@ async function openNatsLink(
   shard: string,
   log: (line: Record<string, string | number>) => void,
 ): Promise<NatsLink> {
-  const nc = await connectNats({ servers: url, name: 'geldar-mcp' });
+  const nc = await connectNats({ servers: url, name: 'geldar-mcp', ...mcpNatsAuth() });
   const js = jetstream(nc);
   const jsm = await jetstreamManager(nc);
   const kvm = new Kvm(nc);

@@ -16,6 +16,7 @@ import { loadStackConfig } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { startGolemTelemetry } from '../metrics.ts';
 import { natsRequestServer } from '../mind-link/server.ts';
+import { golemNatsAuth } from '../nats-credentials.ts';
 import { registryFromConfig } from '../registry.ts';
 import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from './adam-body.ts';
 import { loadAdamConfig } from './adam-config.ts';
@@ -187,7 +188,12 @@ export async function main(): Promise<void> {
   const stack = loadStackConfig();
   const natsUrl = stack.natsUrl ?? '';
   assertLoopbackNatsUrl(natsUrl);
-  const nc = await connectNats({ servers: natsUrl, name: 'adam-body', timeout: 5_000 });
+  const nc = await connectNats({
+    servers: natsUrl,
+    name: 'adam-body',
+    timeout: 5_000,
+    ...golemNatsAuth(),
+  });
   const restartKv = await openRestartKv(natsUrl);
   // Pushes only when GELDAR_TELEMETRY_URL is set; otherwise no timer and no request (decision 0088).
   const telemetry = startGolemTelemetry(process.env, {
