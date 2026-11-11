@@ -1,0 +1,245 @@
+# The Colo shard stack: the production Linux compose file for the shared node (decision 0082; plan C1).
+# Standalone, not an overlay. Own network (geldar-colo), loopback binds only, CPU and memory limits on every service.
+# Start with: ./geldar.ps1 shard up colo. The values come from shards/colo.yaml; geldar.ps1 exports them as
+# GELDAR_COLO_CPU_LIMIT and GELDAR_COLO_MEMORY_LIMIT. The defaults below equal the first-guess values in that file,
+# so `docker compose -f compose/colo.yml config` works offline.
+# The node also runs a production game server and CI runners: this file never publishes 25565 or 25566.
+# Secrets are files in compose/secrets/ (run `./geldar.ps1 shard secrets colo`).
+name: geldar-colo
+
+x-minecraft-healthcheck: &mc-health
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 10m
+
+# Every service is capped (decision 0082). The contract (shard-config) declares one CPU and one memory budget
+# for the shard, so each service's ceiling is that budget; per-service splits are measured in C1-10.
+x-limits: &limits
+  deploy:
+    resources:
+      limits:
+        cpus: "${GELDAR_COLO_CPU_LIMIT:-4}"
+        memory: "${GELDAR_COLO_MEMORY_LIMIT:-8192m}"
+
+services:
+  postgres:
+    <<: *limits
+    image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    environment:
+      POSTGRES_DB: geldar
+      POSTGRES_USER: geldar
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+    secrets: [postgres]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Applied in name order on a fresh volume only (sql/README.md).
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [colo]
+    healthcheck:
+      # -h 127.0.0.1: during first-boot init Postgres listens only on its socket.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "geldar", "-d", "geldar"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  nats:
+    <<: *limits
+    image: nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
+    # NATS accounts are the opt-in overlay (decision 0080); see the nats-auth slot at the end of this file.
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    networks: [colo]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  paper:
+    <<: *limits
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    # Writes the Velocity forwarding secret into paper-global.yml from its secret file, then starts the image.
+    entrypoint: ["/bin/sh", "/geldar/paper-entrypoint.sh"]
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "26.1.2"
+      PAPER_BUILD: "74"
+      # Heap, a first guess below the memory limit (C1-10 measures it). The JVM needs headroom above the heap.
+      MEMORY: 6G
+      # The seed of the colo world. It is not in shards/colo.yaml (the shard-config schema has no seed key).
+      SEED: "8675309"
+      ONLINE_MODE: "FALSE"
+      ENABLE_WHITELIST: "TRUE"
+      ENFORCE_WHITELIST: "TRUE"
+      HARDCORE: "FALSE"
+      DIFFICULTY: normal
+      VIEW_DISTANCE: "6"
+      SIMULATION_DISTANCE: "5"
+      MAX_PLAYERS: "400"
+      SPAWN_PROTECTION: "0"
+      ALLOW_FLIGHT: "TRUE"
+      MOTD: "Geldar - no humans"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD_FILE: /run/secrets/rcon
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_SHARD: colo
+      RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
+    secrets: [rcon, velocity-forwarding]
+    volumes:
+      - paper-data:/data
+      - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
+      - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
+    # No ports: the game port and RCON are not published. Velocity is the only game listener.
+    networks: [colo]
+    healthcheck:
+      <<: *mc-health
+      test: ["CMD-SHELL", "mc-health && read -r pid start < /tmp/geldar-core.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ]"]
+    restart: unless-stopped
+
+  velocity:
+    <<: *limits
+    image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
+    environment:
+      TYPE: VELOCITY
+      VELOCITY_VERSION: "3.5.1"
+      VELOCITY_BUILD_ID: "615"
+      MEMORY: 512M
+      GELDAR_NATS_URL: nats://nats:4222
+    secrets: [velocity-forwarding]
+    volumes:
+      - ./velocity/velocity.toml:/config/velocity.toml:ro
+      - velocity-data:/server
+      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
+    ports:
+      # The colo bot ingress. Not 25565 (the production game server's port on this node) and never 25566.
+      # A compose value must be literal: the loopback rule rejects interpolation, so the host port is fixed here
+      # and shards/colo.yaml must say the same (geldar.ps1 checks it).
+      - "127.0.0.1:25567:25565"
+    networks: [colo]
+    depends_on:
+      paper:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  eventsink:
+    <<: *limits
+    # NATS GELDAR_EVENTS to Postgres `events`, idempotently (spec 7). Context is the repo root.
+    build:
+      context: ..
+      dockerfile: eventsink/Dockerfile
+    environment:
+      GELDAR_NATS_URL: nats://nats:4222
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+    secrets: [postgres]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # [C1-03] The Body (Adam's Golem; image from golem/Dockerfile, decision 0083). Built locally from the repo root (the
+  # `build:` key is how the digest rule treats a local build). GELDAR_BODY_IMAGE is the tag: the default is the local tag
+  # `geldar-body:c1`. The deploy tooling (C1-04) sets it to the published, digest-pinned reference. No published port.
+  golem-body:
+    <<: *limits
+    build:
+      context: ..
+      dockerfile: golem/Dockerfile
+    image: ${GELDAR_BODY_IMAGE:-geldar-body:c1}
+    entrypoint: ["node", "src/adam/main.ts"]
+    environment:
+      GELDAR_SHARD: colo
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: body
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
+      # Optional telemetry endpoint (C1-07). Unset in the host environment, it is unset in the container.
+      GELDAR_TELEMETRY_URL:
+    secrets: [nats-body]
+    volumes:
+      - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
+    networks: [colo]
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # [C1-03] The Mind (Record/Mind host, decision 0078; image from animus/Dockerfile.mind). Built locally from the repo
+  # root, as golem-body is. GELDAR_MIND_IMAGE follows the same rule: the default is `geldar-mind:c1`, and the deploy
+  # tooling (C1-04) sets the published reference. The model endpoint (the Thinker gateway) is configuration.
+  animus:
+    <<: *limits
+    build:
+      context: ..
+      dockerfile: animus/Dockerfile.mind
+    image: ${GELDAR_MIND_IMAGE:-geldar-mind:c1}
+    entrypoint: ["node", "src/main.ts"]
+    environment:
+      GELDAR_SHARD: colo
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+      # Optional telemetry endpoint (C1-07), passed through from the host environment as for golem-body.
+      GELDAR_TELEMETRY_URL:
+    secrets: [postgres]
+    volumes:
+      - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+# The colo network. Its name is fixed so that it cannot collide with the Phase 0 stack's network.
+networks:
+  colo:
+    name: geldar-colo
+
+secrets:
+  postgres:
+    file: ./secrets/postgres.txt
+  rcon:
+    file: ./secrets/rcon.txt
+  velocity-forwarding:
+    file: ./secrets/velocity-forwarding.txt
+  # The Body's NATS password (C1-03). Written by the NATS-auth tooling (C1-06a), never stored in this file.
+  nats-body:
+    file: ./secrets/nats-body.txt
+
+volumes:
+  postgres-data:
+  nats-data:
+  paper-data:
+  velocity-data:
+
+# SLOTS: the comments below are the remaining packets' hooks. C1-03 (golem-body and animus) is filled in above.
+#
+# [slot C1-06a] NATS auth: the overlay compose/nats-auth.yml (decision 0080) is merged on top of this file, not included
+# in it. The colo file gets no change for it. The merged file is checked offline by the colo config test:
+#   docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
+#
+# [slot C1-07] telemetry: GELDAR_TELEMETRY_URL is passed through to golem-body and animus (unset by default). The
+# SigNoz endpoint is set on the node by its owner (decision 0130); shards/colo.yaml holds the replay_minutes default.
+#
+# [slot C1-09] bluemap: the map renderer, served on loopback only. Its mount and internal bind come from C1-09.
