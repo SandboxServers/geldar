@@ -1,14 +1,8 @@
 import type { Pool } from 'pg';
-import type { JournalEntry, JournalStore } from '../ports.ts';
+import { JOURNAL_KEEP, type JournalEntry, type JournalStore } from '../ports.ts';
 
 /** The most characters one journal line holds (the migration's CHECK on `mcp_journal.text`). */
 export const JOURNAL_LINE_MAX = 4_000;
-
-/**
- * The newest lines of a life that a read returns. mcp_journal is append-only (sql/0007), so no
- * line is deleted: the window bounds what a read shows, as the old trim bounded what was kept.
- */
-export const JOURNAL_KEEP = 1_000;
 
 /** An append only inserts: mcp_journal refuses DELETE and UPDATE (sql/0007). */
 const APPEND_SQL = 'INSERT INTO mcp_journal (life_id, at, text) VALUES ($1, $2, $3)';

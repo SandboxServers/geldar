@@ -66,14 +66,18 @@ describe.skipIf(!run)('memory over live Postgres', () => {
   afterAll(async () => {
     // Test rows are scoped to this run's ids; remove them so the volume stays clean.
     // suppressed_wakeups and thoughts are append-only (sql/0007): a row delete is refused, so they
-    // are truncated. TRUNCATE clears every life's rows, so the guard refuses the dev database.
-    await assertConnectedToThrowaway(pool);
-    await pool.query('TRUNCATE suppressed_wakeups, thoughts');
-    await pool.query('DELETE FROM goals WHERE agent_id = $1', [LIFE]);
-    await pool.query('DELETE FROM relationships WHERE agent_id = $1', [LIFE]);
-    await pool.query('DELETE FROM memories WHERE agent_id = $1', [LIFE]);
-    await pool.query('DELETE FROM agents WHERE agent_id = ANY($1)', [[LIFE, OTHER]]);
-    await pool.end();
+    // are truncated. TRUNCATE clears every life's rows, so the guard refuses a real database.
+    // The pool closes in finally: a refused guard must not leave it open.
+    try {
+      await assertConnectedToThrowaway(pool);
+      await pool.query('TRUNCATE suppressed_wakeups, thoughts');
+      await pool.query('DELETE FROM goals WHERE agent_id = $1', [LIFE]);
+      await pool.query('DELETE FROM relationships WHERE agent_id = $1', [LIFE]);
+      await pool.query('DELETE FROM memories WHERE agent_id = $1', [LIFE]);
+      await pool.query('DELETE FROM agents WHERE agent_id = ANY($1)', [[LIFE, OTHER]]);
+    } finally {
+      await pool?.end();
+    }
   });
 
   it('round-trips memories, commitments, goals, relationships and the HNSW search', async () => {

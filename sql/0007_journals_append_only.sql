@@ -1,9 +1,13 @@
 -- Migration 0007: the audit tables are append-only (decision 0085). receipts, thoughts,
 -- suppressed_wakeups and mcp_journal record what happened, so a changed or deleted row is evidence
--- lost. A BEFORE UPDATE OR DELETE trigger on each table refuses the change for every role, the
--- superuser included. TRUNCATE is not blocked: a throwaway database may clear its tables, and the
--- integration tests do so behind a guard. 0002 to 0006 are applied and are not edited. Like every
--- migration, it inserts its own schema_migrations row. Every statement here may run again.
+-- lost. A BEFORE UPDATE OR DELETE trigger on each table refuses UPDATE and DELETE statements. The
+-- precise scope: the table owner or a superuser can still TRUNCATE, disable the trigger or change
+-- session_replication_role, and every service currently connects as the superuser. So the guarantee
+-- holds against accidental statements and against the geldar_mcp role. Hardening (non-superuser
+-- service roles, ENABLE ALWAYS TRIGGER, a TRUNCATE gate) is a C2 security-review item. TRUNCATE is
+-- not blocked: a throwaway database may clear its tables, and the integration tests do so behind a
+-- guard. 0002 to 0006 are applied and are not edited. Like every migration, it inserts its own
+-- schema_migrations row. Every statement here may run again.
 
 -- memories, goals and relationships change state (animus memory store), so they are not covered.
 -- intents and actions are written in place by the projection, so they are not covered either.

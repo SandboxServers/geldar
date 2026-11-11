@@ -340,9 +340,10 @@ BEGIN
 END
 $glass$;
 
--- 0007: the audit tables are append-only. Each has a BEFORE UPDATE OR DELETE row trigger on the
--- journal function (tgtype bits: row 1, before 2, delete 8, update 16), and geldar_mcp has no
--- UPDATE or DELETE on mcp_journal. TRUNCATE is not checked: it is allowed on a throwaway database.
+-- 0007: the audit tables are append-only. Each has an enabled BEFORE UPDATE OR DELETE row trigger on
+-- the journal function (tgtype bits: row 1, before 2, insert 4, delete 8, update 16), with no INSERT
+-- bit. geldar_mcp has no UPDATE, DELETE, TRUNCATE, TRIGGER or REFERENCES on mcp_journal. TRUNCATE is
+-- not checked on the audit tables: it is allowed on a throwaway database.
 DO $journal$
 DECLARE
   audit_table text;
@@ -354,14 +355,19 @@ BEGIN
         AND tgname = audit_table || '_append_only'
         AND tgfoid = 'journal_append_only'::regproc
         AND (tgtype & 27) = 27
+        AND (tgtype & 4) = 0
+        AND tgenabled IN ('O', 'A')
     ) THEN
       RAISE EXCEPTION 'schema check: the append-only trigger on % is missing or wrong', audit_table;
     END IF;
   END LOOP;
 
   IF has_table_privilege('geldar_mcp', 'mcp_journal', 'UPDATE')
-     OR has_table_privilege('geldar_mcp', 'mcp_journal', 'DELETE') THEN
-    RAISE EXCEPTION 'schema check: geldar_mcp can UPDATE or DELETE mcp_journal';
+     OR has_table_privilege('geldar_mcp', 'mcp_journal', 'DELETE')
+     OR has_table_privilege('geldar_mcp', 'mcp_journal', 'TRUNCATE')
+     OR has_table_privilege('geldar_mcp', 'mcp_journal', 'TRIGGER')
+     OR has_table_privilege('geldar_mcp', 'mcp_journal', 'REFERENCES') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can UPDATE, DELETE, TRUNCATE, TRIGGER or REFERENCES mcp_journal';
   END IF;
 
   RAISE NOTICE 'schema check passed: append-only triggers on 4 audit tables, geldar_mcp cannot change mcp_journal';
