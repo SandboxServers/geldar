@@ -6,6 +6,23 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const cliPath = fileURLToPath(new URL('./cli.ts', import.meta.url));
+
+/** The release-age data files the CLI fails closed without; each fixture repo gets the real copies. */
+const releaseDataFiles = [
+  'tools/repo-checks/src/release-dates.json',
+  'tools/repo-checks/src/first-party-images.json',
+];
+
+function copyReleaseData(dir: string): void {
+  for (const path of releaseDataFiles) {
+    const target = join(dir, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(
+      target,
+      readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url))),
+    );
+  }
+}
 const realCompose = fileURLToPath(new URL('../../../compose/phase0.yml', import.meta.url));
 
 /**
@@ -38,6 +55,7 @@ function runCli(
       mkdirSync(dirname(join(dir, path)), { recursive: true });
       writeFileSync(join(dir, path), text);
     }
+    copyReleaseData(dir);
     execFileSync('git', ['-c', 'core.autocrlf=false', 'add', '-A'], { cwd: dir });
     try {
       const output = execFileSync(process.execPath, [cliPath], {
@@ -186,6 +204,7 @@ describe('repo-checks CLI, control character wiring', () => {
       try {
         execFileSync('git', ['init', '-q'], { cwd: dir });
         writeFileSync(join(dir, 'note.md'), 'one\ntwo\n');
+        copyReleaseData(dir);
         execFileSync('git', ['add', '-A'], { cwd: dir });
         execFileSync(
           'git',
@@ -285,6 +304,7 @@ describe('repo-checks CLI, control character wiring', () => {
         execFileSync('git', ['init', '-q'], { cwd: dir });
         execFileSync('git', ['config', 'core.autocrlf', 'true'], { cwd: dir });
         writeFileSync(join(dir, 'note.md'), 'one\r\ntwo\r\n');
+        copyReleaseData(dir);
         execFileSync('git', ['add', '-A'], { cwd: dir });
         const output = execFileSync(process.execPath, [cliPath], { cwd: dir, encoding: 'utf8' });
         expect(output).toContain('repo checks: ok');
