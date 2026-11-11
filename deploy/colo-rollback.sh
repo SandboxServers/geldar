@@ -10,9 +10,9 @@ need docker
 PREVIOUS=$STATE_DIR/previous.env
 [ -f "$PREVIOUS" ] || die "no previous release recorded in $STATE_DIR; nothing to roll back to"
 check_prereqs
-check_secrets
 load_release "$PREVIOUS"
 check_merged_config
+check_secrets
 if [ "$DRY_RUN" != 1 ]; then
   (
     umask 077

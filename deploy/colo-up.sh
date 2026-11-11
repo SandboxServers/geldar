@@ -7,9 +7,9 @@ set -eu
 plan_header
 need docker
 check_prereqs
-check_secrets
 load_release "$RELEASE_FILE"
 check_merged_config
+check_secrets
 fetch_bluemap
 record_release
 act dc pull

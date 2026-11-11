@@ -15,7 +15,6 @@ STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 DRY_RUN=${DEPLOY_DRY_RUN:-0}
-SECRET_FILES="postgres.txt rcon.txt velocity-forwarding.txt nats-body.txt"
 
 WORK=$(mktemp -d) || exit 1
 trap 'rm -rf "$WORK"' EXIT
@@ -70,18 +69,87 @@ check_prereqs() {
   fi
 }
 
-# Checks that each secret file exists, is not empty, and is owner-only. It never reads the contents.
+# Writes the merged compose config (read-only) to $WORK/config.yml once. Every check below reads that file.
+merged_config() {
+  if [ -s "$WORK/config.yml" ]; then return 0; fi
+  dc config --quiet || die "compose config does not validate"
+  dc config >"$WORK/config.yml" || die "compose config failed"
+}
+
+# The secret files the merged config declares (decision 0084): one NAME<TAB>PATH line per top-level secrets: entry,
+# read from $WORK/config.yml. compose prints plain YAML, so awk is enough (no jq or python on the node).
+# An entry with no file: has an empty PATH and is refused by check_secret.
+secret_sources() {
+  awk '
+    function flush() {
+      if (cur != "") printf "%s\t%s\n", cur, path
+      cur = ""; path = ""
+    }
+    /^secrets:[[:space:]]*$/ { flush(); insec = 1; next }
+    /^[^ ]/ { if (insec) flush(); insec = 0; next }
+    insec && /^  [^ ]/ {
+      flush(); cur = $0; sub(/^  /, "", cur); sub(/:[[:space:]]*$/, "", cur); gsub(/"/, "", cur); next
+    }
+    insec && /^    file:/ { path = $0; sub(/^    file:[[:space:]]*/, "", path); gsub(/"/, "", path) }
+    END { flush() }
+  ' "$WORK/config.yml"
+}
+
+# True when a resolved path is inside the secrets directory or compose/secrets (the two places compose reads them from).
+inside_secrets_dir() {
+  case $1 in "$SECRETS_REAL"/*) return 0 ;; esac
+  [ -n "$COMPOSE_SECRETS_REAL" ] || return 1
+  case $1 in "$COMPOSE_SECRETS_REAL"/*) return 0 ;; esac
+  return 1
+}
+
+# Checks one secret file, named by its compose NAME and PATH. It never reads the contents. The file must exist, resolve
+# (through any symlink) to a regular file inside an allowed directory, be non-empty, and be mode 0600 or 0400.
+check_secret() {
+  name=$1
+  p=$2
+  base=${p##*/}
+  [ -n "$p" ] || die "secret $name has no file source in the merged config; refusing"
+  if [ ! -e "$p" ]; then
+    hint=
+    case $base in
+      nats-*) hint=" (NATS files are written on a trusted machine by ./geldar.ps1 shard nats-auth colo, not on the node)" ;;
+    esac
+    die "secret file missing: $base (compose secret: $name, path: $p)$hint"
+  fi
+  real=$(readlink -f "$p") || die "cannot resolve secret file $base (compose secret: $name)"
+  inside_secrets_dir "$real" || die "secret file $base (compose secret: $name) resolves outside the secrets directory; refusing"
+  [ -f "$real" ] || die "secret file $base (compose secret: $name) is not a regular file"
+  [ -s "$real" ] || die "secret file empty: $base (compose secret: $name)"
+  m=$(stat -c %a "$real") || die "cannot stat secret file $base"
+  case $m in
+    600 | 400 | 0600 | 0400) ;;
+    *) die "secret file $base has mode $m; it must be 0600 or 0400 (compose secret: $name)" ;;
+  esac
+}
+
+# Checks every secret file that the MERGED config declares, so a secret added to compose/colo.yml or an overlay is
+# checked with no change here. The nats-auth overlay mounts nats-auth.conf as a bind file, not a secret, so it is
+# read from the merged config too. Nothing is generated on the node for the NATS files (decision 0084).
 check_secrets() {
   [ -d "$GELDAR_SECRETS_DIR" ] || die "secrets directory missing: $GELDAR_SECRETS_DIR (deploy/README.md)"
-  for f in $SECRET_FILES; do
-    p=$GELDAR_SECRETS_DIR/$f
-    [ -f "$p" ] && [ -s "$p" ] || die "secret file missing or empty: $f"
-    m=$(stat -c %a "$p") || die "cannot stat secret file: $f"
-    case $m in
-      600 | 400 | 0600 | 0400) ;;
-      *) die "secret file $f has mode $m; it must be 0600 or 0400" ;;
-    esac
-  done
+  # Both sides of the containment test come from readlink -f, so they are spelled the same way (on Git for Windows
+  # sh, pwd -P prints /tmp/... while readlink prints C:/... for the same directory).
+  SECRETS_REAL=$(readlink -f "$GELDAR_SECRETS_DIR") || die "cannot open $GELDAR_SECRETS_DIR"
+  COMPOSE_SECRETS_REAL=
+  if [ -d "$(dirname "$COMPOSE_FILE")/secrets" ]; then
+    COMPOSE_SECRETS_REAL=$(readlink -f "$(dirname "$COMPOSE_FILE")/secrets") || die "cannot resolve compose/secrets"
+  fi
+  merged_config
+  secret_sources >"$WORK/secrets.tsv"
+  [ -s "$WORK/secrets.tsv" ] || die "the merged config declares no secret files; refusing (deploy/README.md)"
+  tab=$(printf '\t')
+  while IFS=$tab read -r name p; do
+    check_secret "$name" "$p"
+  done <"$WORK/secrets.tsv"
+  conf=$(awk '/^ +source: / {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
+  if [ -n "$conf" ]; then check_secret "nats-auth.conf (bind mount)" "$conf"; fi
+  say "secret files: each file the merged config declares is present, non-empty and owner-only"
 }
 
 # Reads the release manifest as KEY=VALUE data (it is never sourced) and exports each *_IMAGE variable.
@@ -112,8 +180,7 @@ load_release() {
 # Validates the merged compose config (read-only). It refuses a published 25565 or 25566 (decision 0082) and any
 # image that is not digest-pinned. It checks `published:` only, because 25565 is also the container target of Velocity.
 check_merged_config() {
-  dc config --quiet || die "compose config does not validate"
-  dc config >"$WORK/config.yml" || die "compose config failed"
+  merged_config
   if grep -Eq 'published: *"?(25565|25566)"?$' "$WORK/config.yml"; then
     die "the merged config publishes 25565 or 25566 (decision 0082); refusing"
   fi

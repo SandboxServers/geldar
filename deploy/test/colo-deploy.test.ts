@@ -13,6 +13,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,7 +23,41 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const COMPOSE = resolve(DEPLOY, '..', 'compose', 'colo.yml');
-const SECRET_FILES = ['postgres.txt', 'rcon.txt', 'velocity-forwarding.txt', 'nats-body.txt'];
+// The secrets the merged config declares: the compose NAME and the file each reads from (compose/colo.yml with
+// deploy/compose.secrets.yml). The fixture config lists these, so the script's check reads them from the config.
+const SECRETS: [string, string][] = [
+  ['postgres', 'postgres.txt'],
+  ['rcon', 'rcon.txt'],
+  ['velocity-forwarding', 'velocity-forwarding.txt'],
+  ['nats-body', 'nats-body.txt'],
+  ['nats-mind', 'nats-mind.txt'],
+  ['postgres-mcp.txt', 'postgres-mcp.txt'],
+  ['mcp-token-pepper.txt', 'mcp-token-pepper.txt'],
+  ['nats-mcp', 'nats-mcp.txt'],
+];
+const SECRET_FILES = SECRETS.map(([, file]) => file);
+// The files gen-secrets.sh creates; the NATS files are written on a trusted machine, never here.
+const GENERATED = [
+  'postgres.txt',
+  'rcon.txt',
+  'velocity-forwarding.txt',
+  'nats-body.txt',
+  'postgres-mcp.txt',
+  'mcp-token-pepper.txt',
+];
+// Creating a symlink needs developer mode or elevation on Windows; the symlink test is skipped where it is refused.
+const canSymlink = (() => {
+  const d = mkdtempSync(join(tmpdir(), 'geldar-colo-link-'));
+  try {
+    writeFileSync(join(d, 'a'), 'x');
+    symlinkSync(join(d, 'a'), join(d, 'b'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+})();
 const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
 const MIND = `registry.example.invalid/geldar/mind@sha256:${'2'.repeat(64)}`;
 const PREV_BODY = `registry.example.invalid/geldar/body@sha256:${'3'.repeat(64)}`;
@@ -89,6 +124,26 @@ services:
     image: ${MIND}
 `;
 
+// The top-level secrets block as `docker compose config` prints it: each NAME with the file it reads from.
+function secretsBlock(dir: string, decls: [string, string][]): string {
+  const entries = decls.map(
+    ([n, f]) => `  ${n}:\n    file: ${dir}/${f}\n    name: geldar-colo_${n}\n`,
+  );
+  return `secrets:\n${entries.join('')}`;
+}
+function writeConfig(
+  path: string,
+  dir: string,
+  decls: [string, string][],
+  published = '25567',
+  extra = '',
+) {
+  writeFileSync(path, `${CONFIG(published)}${extra}${secretsBlock(posix(dir), decls)}`);
+}
+// A service that the nats-auth overlay gives the server config as a read-only bind file.
+const NATS_BIND = (conf: string) =>
+  `  nats:\n    volumes:\n      - type: bind\n        source: ${conf}\n        target: /etc/nats/nats-auth.conf\n`;
+
 const release = (body: string, mind = MIND) =>
   `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\n`;
 // Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
@@ -101,6 +156,7 @@ interface Fixture {
   env: Record<string, string>;
   calls: string;
   secrets: string;
+  config: string;
   modes: string;
   release: string;
   state: string;
@@ -132,7 +188,7 @@ function fixture(publishedPort = '25567'): Fixture {
   const releaseFile = join(dir, 'release.env');
   writeFileSync(releaseFile, release(BODY));
   const config = join(dir, 'config.yml');
-  writeFileSync(config, CONFIG(publishedPort));
+  writeConfig(config, secrets, SECRETS, publishedPort);
   const jarText = 'bluemap-test-jar';
   const jar = join(dir, 'bluemap.jar');
   writeFileSync(jar, jarText);
@@ -163,6 +219,7 @@ function fixture(publishedPort = '25567'): Fixture {
     env,
     calls,
     secrets,
+    config,
     modes,
     release: releaseFile,
     state: join(dir, 'state'),
@@ -403,7 +460,7 @@ describe('gen-secrets.sh (decision 0084)', () => {
     const env = { ...fx.env, GELDAR_SECRETS_DIR: posix(target) };
     const first = run('gen-secrets.sh', { ...fx, env }, {});
     expect(first.code).toBe(0);
-    for (const f of SECRET_FILES) {
+    for (const f of GENERATED) {
       const value = readFileSync(join(target, f), 'utf8').trim();
       expect(value).toMatch(/^[0-9a-f]{64}$/);
       expect(first.out).not.toContain(value);
@@ -417,5 +474,124 @@ describe('gen-secrets.sh (decision 0084)', () => {
     expect(second.code).toBe(0);
     expect(second.out).toContain('kept (exists): rcon.txt');
     expect(readFileSync(join(target, 'rcon.txt'), 'utf8')).toBe(before);
+    // The NATS files are never generated on the node (decision 0084).
+    expect(existsSync(join(target, 'nats-mind.txt'))).toBe(false);
+  });
+});
+
+describe('secret files come from the merged config (decision 0084)', () => {
+  it.each(SECRETS)(
+    'refuses when the file of compose secret %s is missing, and names it',
+    (name, file) => {
+      const fx = fixture();
+      rmSync(join(fx.secrets, file));
+      const r = run('colo-up.sh', fx, REAL);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain(`secret file missing: ${file} (compose secret: ${name},`);
+      expect(mutates(calls(fx))).toBe(false);
+    },
+  );
+
+  it('refuses an empty secret file, and names it', () => {
+    const fx = fixture();
+    writeFileSync(join(fx.secrets, 'rcon.txt'), '');
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file empty: rcon.txt (compose secret: rcon)');
+    expect(mutates(calls(fx))).toBe(false);
+  });
+
+  it.skipIf(!canSymlink)(
+    'refuses a symlink that resolves outside the secrets directories, and never reads its target',
+    () => {
+      const fx = fixture();
+      const outside = join(fx.dir, 'outside.txt');
+      writeFileSync(outside, 'OUTSIDE-test-value\n');
+      rmSync(join(fx.secrets, 'rcon.txt'));
+      symlinkSync(outside, join(fx.secrets, 'rcon.txt'));
+      const r = run('colo-up.sh', fx, REAL);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('secret file rcon.txt (compose secret: rcon) resolves outside');
+      expect(r.out).not.toContain('OUTSIDE-test-value');
+      expect(mutates(calls(fx))).toBe(false);
+    },
+  );
+
+  // The same containment check without a symlink, so it also runs where symlinks are refused (Windows without
+  // developer mode): the merged config names a file that lies outside the secrets directory.
+  it('refuses a merged-config path that lies outside the secrets directory, and runs no pull or up', () => {
+    const fx = fixture();
+    const elsewhere = join(fx.dir, 'elsewhere');
+    mkdirSync(elsewhere);
+    const outsideFile = join(elsewhere, 'postgres.txt');
+    writeFileSync(outsideFile, 'ELSEWHERE-test-value\n');
+    const text = readFileSync(fx.config, 'utf8');
+    writeFileSync(
+      fx.config,
+      text.split(posix(join(fx.secrets, 'postgres.txt'))).join(posix(outsideFile)),
+    );
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file postgres.txt (compose secret: postgres) resolves outside');
+    expect(r.out).not.toContain('ELSEWHERE-test-value');
+    expect(mutates(calls(fx))).toBe(false);
+  });
+
+  it('never prints a secret file contents, even when the file is refused', () => {
+    const fx = fixture();
+    writeFileSync(join(fx.secrets, 'postgres.txt'), 'SENTINEL-7f3a9c\n');
+    setMode(fx, 'postgres.txt', '644');
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file postgres.txt has mode 644');
+    expect(r.out).not.toContain('SENTINEL-7f3a9c');
+  });
+
+  it('passes when every file the merged config declares is present and owner-only', () => {
+    const fx = fixture();
+    const r = run('colo-up.sh', fx);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('each file the merged config declares is present');
+  });
+
+  it('requires a secret added to the merged config, with no change to the script', () => {
+    const fx = fixture();
+    writeConfig(fx.config, fx.secrets, [...SECRETS, ['new-thing', 'new-thing.txt']]);
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file missing: new-thing.txt (compose secret: new-thing,');
+    expect(mutates(calls(fx))).toBe(false);
+    writeFileSync(join(fx.secrets, 'new-thing.txt'), 'new-thing-test-value\n');
+    expect(run('colo-up.sh', fx, REAL).code).toBe(0);
+  });
+
+  it('refuses a merged config that declares no secret files', () => {
+    const fx = fixture();
+    writeConfig(fx.config, fx.secrets, []);
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('declares no secret files');
+  });
+
+  it('names the trusted-machine step for a missing NATS file', () => {
+    const fx = fixture();
+    rmSync(join(fx.secrets, 'nats-mind.txt'));
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file missing: nats-mind.txt');
+    expect(r.out).toContain('./geldar.ps1 shard nats-auth colo');
+  });
+
+  it('refuses when the nats-auth overlay is merged and nats-auth.conf is missing, then passes once it exists', () => {
+    const fx = fixture();
+    const conf = join(fx.secrets, 'nats-auth.conf');
+    writeConfig(fx.config, fx.secrets, SECRETS, '25567', NATS_BIND(posix(conf)));
+    const missing = run('colo-up.sh', fx, REAL);
+    expect(missing.code).not.toBe(0);
+    expect(missing.out).toContain('secret file missing: nats-auth.conf');
+    expect(missing.out).toContain('./geldar.ps1 shard nats-auth colo');
+    expect(mutates(calls(fx))).toBe(false);
+    writeFileSync(conf, 'nats-auth-test-value\n');
+    expect(run('colo-up.sh', fx, REAL).code).toBe(0);
   });
 });

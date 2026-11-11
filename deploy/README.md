@@ -31,8 +31,15 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   which is 10 GiB). `colo-up.sh` refuses below it.
 - Secret files in the secrets directory (`GELDAR_SECRETS_DIR`, default `/etc/geldar-colo/secrets`):
   - the directory is root-only (`gen-secrets.sh` sets mode `0700`);
-  - `postgres.txt`, `rcon.txt`, `velocity-forwarding.txt` and `nats-body.txt` each exist, are not empty, and have
-    mode `0600` or `0400`.
+  - the required list is not kept by hand. The scripts read the secret names and their files from the merged compose
+    config (`docker compose config`, read-only), and check each file that config declares. A secret added to
+    `compose/colo.yml` or the overlay is checked with no change to the scripts;
+  - each such file exists, is not empty, is a regular file inside the secrets directory (a symlink out is refused),
+    and has mode `0600` or `0400`.
+  `gen-secrets.sh` creates `postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`,
+  `postgres-mcp.txt` and `mcp-token-pepper.txt` when they are missing. The NATS files (`nats-mind.txt`,
+  `nats-mcp.txt`, and `nats-auth.conf` when the auth overlay is merged) come from the trusted machine, never from the
+  node.
   The scripts check the mode and the size. They never read the contents.
 - The release manifest copied to `/etc/geldar-colo/release.env` (`GELDAR_RELEASE_FILE`), owned by root, mode `0600`.
   Every `*_IMAGE` line must be a digest reference (`name@sha256:` followed by 64 lowercase hex characters).
