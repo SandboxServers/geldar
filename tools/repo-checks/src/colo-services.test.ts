@@ -566,3 +566,17 @@ describe('sql: role creation is race-safe (FX-IT2)', () => {
     expect(unsafeRoleCreations('-- CREATE ROLE a;')).toEqual([]);
   });
 });
+
+describe('compose/colo.yml: BlueMap in Paper (C2-07o)', () => {
+  const volumes = (colo.services.paper?.volumes ?? []) as (string | Record<string, unknown>)[];
+
+  it('mounts the verified BlueMap jar and its config read-only', () => {
+    expect(volumes).toContainEqual({
+      type: 'bind',
+      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar',
+      target: '/plugins/bluemap.jar',
+      read_only: true,
+    });
+    expect(volumes).toContain('../plugins/bluemap/config:/plugins/BlueMap:ro');
+  });
+});
