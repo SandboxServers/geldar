@@ -30,7 +30,7 @@ export type IpClass = 'anywhere' | 'private' | 'public';
 
 /** The class of one dotted quad that DOTTED_QUAD matched. */
 export function classifyIpv4(literal: string): IpClass {
-  const [a, b, c] = literal.split('.').map(Number);
+  const [a = 0, b = 0, c = 0] = literal.split('.').map(Number);
   if (a === 127 || literal === '0.0.0.0') return 'anywhere';
   if (
     (a === 192 && b === 0 && c === 2) ||
