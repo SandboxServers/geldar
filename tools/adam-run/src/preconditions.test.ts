@@ -320,6 +320,20 @@ describe('checkPreconditions', () => {
     if (!verdict.ok) expect(verdict.missing.join('\n')).toContain('could not be read');
   });
 
+  it('plain-case lease refuses a start: a second start for a live life is refused', () => {
+    // The name is already a life id (no prefix, no case change), and a running Body keeps
+    // re-putting its key, so the lease is in force 20 s after the last heartbeat.
+    const put = '2026-11-10T00:00:00.000Z';
+    const lease = leaseFromEntry(put, Date.parse(put) + 20_000);
+    const verdict = checkPreconditions({ ...good, lifeId: 'ag_adam_04', lease });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.missing.join('\n')).toContain(
+        'life ag_adam_04: its registry lease is in force for 40 s',
+      );
+    }
+  });
+
   it('allows a start when the name lease is free', () => {
     expect(checkPreconditions({ ...good, lease: { kind: 'free' } })).toEqual({ ok: true });
   });
