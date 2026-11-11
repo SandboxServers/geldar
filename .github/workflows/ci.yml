@@ -104,6 +104,9 @@ jobs:
           echo "::group::phase0.yml with mcp.yml and nats-auth.yml"
           docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml config --quiet
           echo "::endgroup::"
+      - name: caddy validate (public site files)
+        shell: bash
+        run: bash deploy/caddy/validate.sh
 
   sql:
     name: sql
