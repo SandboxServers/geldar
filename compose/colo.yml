@@ -160,6 +160,51 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # [C1-03] The Body (Adam's Golem; image from golem/Dockerfile, decision 0083). GELDAR_BODY_IMAGE is set by the
+  # deploy tooling (C1-04) to the published reference, digest-pinned. The default is the local tag that
+  # `docker build -f golem/Dockerfile -t geldar-body:c1 .` makes, so this file validates offline. No published port.
+  golem-body:
+    <<: *limits
+    image: ${GELDAR_BODY_IMAGE:-geldar-body:c1}
+    entrypoint: ["node", "src/adam/main.ts"]
+    environment:
+      GELDAR_SHARD: colo
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: body
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
+      # Optional telemetry endpoint (C1-07). Unset in the host environment, it is unset in the container.
+      GELDAR_TELEMETRY_URL:
+    secrets: [nats-body]
+    volumes:
+      - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
+    networks: [colo]
+    depends_on:
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # [C1-03] The Mind (Record/Mind host, decision 0078; image from animus/Dockerfile.mind). GELDAR_MIND_IMAGE follows the
+  # same rule as GELDAR_BODY_IMAGE: the deploy tooling sets it, and the default is `geldar-mind:c1` from
+  # `docker build -f animus/Dockerfile.mind -t geldar-mind:c1 .`. The model endpoint (the Thinker gateway) is configuration.
+  animus:
+    <<: *limits
+    image: ${GELDAR_MIND_IMAGE:-geldar-mind:c1}
+    entrypoint: ["node", "src/main.ts"]
+    environment:
+      GELDAR_SHARD: colo
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+      # Optional telemetry endpoint (C1-07), passed through from the host environment as for golem-body.
+      GELDAR_TELEMETRY_URL:
+    secrets: [postgres]
+    volumes:
+      - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 # The colo network. Its name is fixed so that it cannot collide with the Phase 0 stack's network.
 networks:
   colo:
@@ -172,6 +217,9 @@ secrets:
     file: ./secrets/rcon.txt
   velocity-forwarding:
     file: ./secrets/velocity-forwarding.txt
+  # The Body's NATS password (C1-03). Written by the NATS-auth tooling (C1-06a), never stored in this file.
+  nats-body:
+    file: ./secrets/nats-body.txt
 
 volumes:
   postgres-data:
@@ -179,21 +227,13 @@ volumes:
   paper-data:
   velocity-data:
 
-# SLOTS: commented blocks for the packets that come later. Each is uncommented only by its packet's index line,
-# applied by the owner of this file (C1-02). Until then this file must pass `docker compose config --quiet`.
+# SLOTS: the comments below are the remaining packets' hooks. C1-03 (golem-body and animus) is filled in above.
 #
-# [slot C1-03] golem-body: the Body (Adam's Golem), image name geldar-body, digest-pinned (decision 0081 allowlist).
-# golem-body:
-#   <<: *limits
-#   image: ghcr.io/sandboxservers/geldar-body:<tag>@sha256:<digest>
-#   networks: [colo]
-#   depends_on:
-#     nats:
-#       condition: service_healthy
-#   restart: unless-stopped
+# [slot C1-06a] NATS auth: the overlay compose/nats-auth.yml (decision 0080) is merged on top of this file, not included
+# in it. The colo file gets no change for it. The merged file is checked offline by the colo config test:
+#   docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
 #
-# [slot C1-06a] nats-auth: compose/nats-auth.yml is an overlay; the colo file gets no change from it beyond the include.
+# [slot C1-07] telemetry: GELDAR_TELEMETRY_URL is passed through to golem-body and animus (unset by default). The
+# SigNoz endpoint is set on the node by its owner (decision 0130); shards/colo.yaml holds the replay_minutes default.
 #
-# [slot C1-07] metrics: the telemetry sidecar (SigNoz endpoint from shards/colo.yaml telemetry_url, decision 0130).
-#
-# [slot C1-09] bluemap: the map renderer, served on loopback only.
+# [slot C1-09] bluemap: the map renderer, served on loopback only. Its mount and internal bind come from C1-09.
