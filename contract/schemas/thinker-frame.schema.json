@@ -27,7 +27,7 @@
       "maxLength": 128
     },
     "ThinkerName": {
-      "description": "The Thinker's name as the colo records it, such as steven-home.",
+      "description": "The Thinker's name as the colo records it, such as thinker-home.",
       "type": "string",
       "minLength": 1,
       "maxLength": 64
