@@ -310,15 +310,33 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
       'caddy',
       'file-server',
       '--root',
-      '/data/bluemap/web',
+      '/srv',
       '--listen',
       ':8100',
     ]);
   });
 
-  it('publishes only the literal loopback port and mounts the Paper volume read only', () => {
+  it('publishes only the literal loopback port', () => {
     expect(bluemapWeb.ports).toEqual(['127.0.0.1:8100:8100']);
-    expect(bluemapWeb.volumes).toEqual(['paper-data:/data:ro']);
+  });
+
+  it('mounts only a read only subpath of the Paper volume under bluemap/, never the whole volume (R28)', () => {
+    const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<Record<string, unknown>>;
+    expect(volumes).toHaveLength(1);
+    const mount = volumes[0] ?? {};
+    expect(typeof mount).toBe('object');
+    expect(mount.source).toBe('paper-data');
+    expect(mount.target).toBe('/srv');
+    expect(mount.read_only).toBe(true);
+    const subpath = (mount.volume as { subpath?: string } | undefined)?.subpath;
+    expect(subpath).toMatch(/^bluemap\/[^.]/);
+    expect(subpath).not.toContain('..');
+  });
+
+  it('waits for a healthy Paper before it starts, and restarts until the webroot exists', () => {
+    expect(bluemapWeb.depends_on).toEqual({ paper: { condition: 'service_healthy' } });
+    expect(bluemapWeb.restart).toBe('unless-stopped');
+    expect(colo.services.paper).toHaveProperty('healthcheck');
   });
 
   it('is hardened like the other services', () => {
