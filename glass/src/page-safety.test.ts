@@ -4,9 +4,18 @@
  * render module, and when index.html carries an inline script, style or handler.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { createServer, get as httpGet } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
+import { createHandler } from './http.ts';
+import type { SqlClient } from './query.ts';
+import { hostileRow } from './render-fixtures.ts';
+import { display, toView } from './render-model.ts';
+import { type Doc, renderDetail, renderRow } from './render-view.ts';
+import type { SseHub } from './sse.ts';
 
 const PUBLIC = fileURLToPath(new URL('../public/', import.meta.url));
 const SRC = fileURLToPath(new URL('./', import.meta.url));
@@ -91,5 +100,85 @@ describe('index.html', () => {
   it('links one stylesheet from this origin', () => {
     const links = html.match(/<link\b[^>]*>/gi) ?? [];
     expect(links).toEqual(['<link rel="stylesheet" href="/app.css" />']);
+  });
+});
+
+/** Agent-authored text the page must show as plain text: markup, breakouts, a link, an entity. */
+const AGENT_TEXT = [
+  '<script>alert(1)</script>',
+  '" onmouseover="alert(1)',
+  'javascript:alert(1)',
+  'a thought with </script><script>alert(2)</script> inside',
+  'Tom &amp; Jerry &lt;b&gt;',
+  '<img src=x onerror="alert(1)">',
+];
+
+/** Elements that agent text must never create in the page. */
+const MARKUP_SINKS = ['script', 'img', 'a', 'iframe', 'svg', 'style'];
+
+function get(
+  port: number,
+  path: string,
+): Promise<{ status: number; headers: Record<string, unknown>; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpGet({ host: '127.0.0.1', port, path }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => {
+        body += chunk;
+      });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    });
+    req.on('error', reject);
+  });
+}
+
+describe('agent text in the rendered page', () => {
+  it.each(AGENT_TEXT)(
+    'shows %s as text in a row and in the detail, with no new element or handler',
+    (text) => {
+      const doc = new Window().document;
+      const view = toView(hostileRow(text, 0));
+      const row = renderRow(doc as unknown as Doc, view, () => {});
+      const detail = renderDetail(
+        doc as unknown as Doc,
+        view,
+        JSON.stringify(hostileRow(text, 0)),
+        [],
+      );
+      type DomNode = Parameters<typeof doc.body.append>[number];
+      doc.body.append(row as unknown as DomNode, detail as unknown as DomNode);
+      for (const tag of MARKUP_SINKS) expect(doc.body.querySelectorAll(tag).length, tag).toBe(0);
+      for (const node of Array.from(doc.body.querySelectorAll('*'))) {
+        for (const attr of Array.from(node.attributes)) {
+          expect(attr.name.startsWith('on'), `${attr.name} on ${node.tagName}`).toBe(false);
+        }
+      }
+      expect(doc.body.textContent).toContain(display(text).slice(0, 40));
+    },
+  );
+});
+
+describe('agent text in the API reply', () => {
+  it.each(AGENT_TEXT)('returns %s unchanged as JSON data, never as markup', async (text) => {
+    const row = { ...hostileRow(text, 0), model_input: text };
+    const db = { query: async () => ({ rows: [row] }) } as unknown as SqlClient;
+    const server = createServer(createHandler({ db, hub: {} as unknown as SseHub }));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const reply = await get(port, '/api/thoughts/t-0');
+      expect(reply.status).toBe(200);
+      expect(String(reply.headers['content-type'])).toBe('application/json; charset=utf-8');
+      expect(reply.headers['x-content-type-options']).toBe('nosniff');
+      const body = JSON.parse(reply.body) as {
+        thought: { name: string; model_input: { json: string } };
+      };
+      expect(body.thought.name).toBe(text);
+      expect(body.thought.model_input.json).toBe(text);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

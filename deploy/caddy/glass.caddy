@@ -1,0 +1,37 @@
+# Glass, the Thought Stream viewer, public and read-only (decisions 0072 and 0071). Load this file,
+# then `caddy reload`. Placeholders: GELDAR_DOMAIN and GELDAR_GLASS_UPSTREAM (set by C2-07).
+glass.{$GELDAR_DOMAIN} {
+	# GET and HEAD only, as glass/src/routes.ts requires; every other method is refused at Caddy.
+	@not_allowed not method GET HEAD
+	respond @not_allowed 405
+
+	# Drop any address header a client sent, then set the one Caddy vouches for.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+	request_header x-geldar-client-ip {remote_host}
+
+	# Glass reads no request body.
+	request_body {
+		max_size 1KiB
+	}
+
+	# The JSON routes of glass/src/routes.ts.
+	@glass_read path /api/agents /api/thoughts /api/thoughts/* /api/receipts /api/stats
+	handle @glass_read {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM}
+	}
+
+	# The Server-Sent Events stream: each event is flushed at once.
+	@glass_stream path /api/stream
+	handle @glass_stream {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			flush_interval -1
+		}
+	}
+
+	# Every other path, including the rate limits that Glass itself enforces (C2-03), is 404.
+	handle {
+		respond 404
+	}
+}

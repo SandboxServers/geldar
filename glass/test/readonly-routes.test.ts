@@ -172,6 +172,11 @@ describe('the Glass bind check', () => {
     sseMaxClients: 8,
     sseBufferFrames: 100,
     ssePollMs: 1000,
+    enabled: true,
+    delaySeconds: 0,
+    showLivingSovereign: false,
+    trustedProxies: [],
+    rateLimit: { perMinute: 60, burst: 20, maxClients: 1024 },
   });
 
   it('refuses every bind address but 127.0.0.1, IPv6 loopback and wildcards included', () => {
