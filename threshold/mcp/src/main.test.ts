@@ -208,6 +208,33 @@ describe('the replay window', () => {
   );
 });
 
+describe('the metrics push', () => {
+  /** Starts the MCP with the given telemetry URL and a fake fetch; returns the requests it sent. */
+  async function startWithTelemetry(url: string | undefined) {
+    const calls: Array<{ url: string; body: string }> = [];
+    const fetchFn = (async (target: string, init?: RequestInit) => {
+      calls.push({ url: String(target), body: String(init?.body ?? '') });
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+    const ports = fakePorts([], []);
+    ports.telemetry = { url, fetch: fetchFn, intervalMs: 3_600_000 };
+    const running = await startMcp(await loadStartConfig(SHARD_FILE, ENV), ports);
+    await running.stop();
+    return calls;
+  }
+
+  it('pushes the MCP metrics once to <url>/v1/metrics when the telemetry URL is set', async () => {
+    const calls = await startWithTelemetry('http://127.0.0.1:4318');
+    expect(calls.map((call) => call.url)).toEqual(['http://127.0.0.1:4318/v1/metrics']);
+    expect(calls[0]?.body).toContain('geldar_mcp_tool_calls_total');
+    expect(calls[0]?.body).toContain('geldar-mcp');
+  });
+
+  it('makes no outbound request when no telemetry URL is set', async () => {
+    expect(await startWithTelemetry(undefined)).toEqual([]);
+  });
+});
+
 describe('startMcp', () => {
   it('starts in the fixed order: secrets, pool, NATS, replay, then listen', async () => {
     const order: string[] = [];

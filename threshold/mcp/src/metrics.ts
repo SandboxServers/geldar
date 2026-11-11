@@ -1,10 +1,14 @@
 /**
  * Metrics for the MCP (decision 0088): counters, gauges and histograms with fixed label names. They are
- * rendered as Prometheus text (for /metrics on loopback) and pushed as OTLP/HTTP JSON to the telemetry
- * endpoint, which is set only when GELDAR_TELEMETRY_URL is set. A label named after a player, a life or a
- * token is refused when the metric is declared, so no series can carry one. Values are numbers only: no
- * thought text, persona text, prompts, tokens or player names are ever recorded here.
+ * pushed as OTLP/HTTP JSON to the telemetry endpoint, which is set only when GELDAR_TELEMETRY_URL is set.
+ * Nothing is served over HTTP: there is no /metrics route on any listener. `render` gives the Prometheus
+ * text for a local dump only. A label named after a player, a life or a token is refused when the metric
+ * is declared, so no series can carry one. Values are numbers only: no thought text, persona text,
+ * prompts, tokens or player names are ever recorded here.
  */
+
+import { MCP_TOOL_NAMES } from '@geldar/contract';
+import { TOOL_OUTCOMES } from './http/log.ts';
 
 export type MetricKind = 'counter' | 'gauge' | 'histogram';
 export type Labels = Record<string, string>;
@@ -177,8 +181,8 @@ export interface PushOptions {
   url: string;
   service: string;
   log: (line: Record<string, string | number>) => void;
-  fetch?: typeof fetch;
-  now?: () => number;
+  fetch?: typeof fetch | undefined;
+  now?: (() => number) | undefined;
 }
 
 /**
@@ -225,4 +229,42 @@ export function startTelemetry(
   timer.unref();
   void pushMetrics(registry, pushOptions);
   return { stop: () => clearInterval(timer) };
+}
+
+/** The MCP's metric names (decision 0088). Their labels take closed values only: a tool and an outcome. */
+export const MCP_TOOL_CALLS = 'geldar_mcp_tool_calls_total';
+export const MCP_TOOL_SECONDS = 'geldar_mcp_tool_call_seconds';
+const TOOL_SECONDS_BOUNDS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 240];
+
+/** Declares the MCP's metrics, once, before any call is recorded. */
+export function declareMcpMetrics(registry: MetricRegistry): void {
+  registry.declare('counter', MCP_TOOL_CALLS, 'MCP tool calls by tool and outcome code', [
+    'tool',
+    'outcome',
+  ]);
+  registry.declare(
+    'histogram',
+    MCP_TOOL_SECONDS,
+    'MCP tool call latency in seconds',
+    ['tool'],
+    TOOL_SECONDS_BOUNDS,
+  );
+}
+
+/**
+ * Counts one tool call and times it. A tool name outside the contract's list is recorded as `other`, and
+ * an outcome outside the closed `TOOL_OUTCOMES` as `internal`, so no label carries free text.
+ */
+export function recordToolCall(
+  registry: MetricRegistry,
+  tool: string,
+  outcome: string,
+  durationMs: number,
+): void {
+  const toolLabel = (MCP_TOOL_NAMES as readonly string[]).includes(tool) ? tool : 'other';
+  const outcomeLabel = (TOOL_OUTCOMES as readonly string[]).includes(outcome)
+    ? outcome
+    : 'internal';
+  registry.add(MCP_TOOL_CALLS, { tool: toolLabel, outcome: outcomeLabel });
+  registry.observe(MCP_TOOL_SECONDS, { tool: toolLabel }, durationMs / 1000);
 }

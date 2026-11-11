@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { MetricRegistry, pushMetrics, startTelemetry } from './metrics.ts';
+import {
+  declareMcpMetrics,
+  MetricRegistry,
+  pushMetrics,
+  recordToolCall,
+  startTelemetry,
+} from './metrics.ts';
 
 /** A fake fetch that answers with `status` and records each call. */
 function fakeFetch(status = 200) {
@@ -85,6 +91,35 @@ describe('MetricRegistry', () => {
     expect(counter.sum.dataPoints[0]?.asDouble).toBe(3);
     const keys = counter.sum.dataPoints[0]?.attributes.map((a) => a.key) ?? [];
     expect(keys).toEqual(['route', 'outcome']);
+  });
+});
+
+describe('the MCP tool-call metrics', () => {
+  it('counts a call by its tool and outcome code, and times it in seconds', () => {
+    const reg = new MetricRegistry();
+    declareMcpMetrics(reg);
+    recordToolCall(reg, 'look', 'ok', 250);
+    const text = reg.render();
+    expect(text).toContain('geldar_mcp_tool_calls_total{tool="look",outcome="ok"} 1');
+    expect(text).toContain('geldar_mcp_tool_call_seconds_count{tool="look"} 1');
+    expect(text).toContain('geldar_mcp_tool_call_seconds_bucket{tool="look",le="0.25"} 1');
+  });
+
+  it('keeps every label on a closed set: an unknown tool is other, an unknown outcome is internal', () => {
+    const reg = new MetricRegistry();
+    declareMcpMetrics(reg);
+    recordToolCall(reg, 'a player said hello', 'Canary-7 secret words', 5);
+    const text = reg.render();
+    expect(text).toContain('geldar_mcp_tool_calls_total{tool="other",outcome="internal"} 1');
+    expect(text).not.toContain('Canary');
+  });
+
+  it('uses only the label names tool, outcome and le, never one that names a person or a token', () => {
+    const reg = new MetricRegistry();
+    declareMcpMetrics(reg);
+    recordToolCall(reg, 'wait', 'rate_limited', 1);
+    const names = new Set(reg.render().match(/[a-zA-Z_]+(?=="|=")/g));
+    expect([...names].sort()).toEqual(['le', 'outcome', 'tool']);
   });
 });
 

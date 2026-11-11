@@ -147,6 +147,8 @@ export function containerPorts(shard: string): McpPorts {
     },
     clock: new RealClock(),
     log: stderrLog,
+    // Metrics are pushed only when GELDAR_TELEMETRY_URL is set (decision 0130: the node's SigNoz).
+    telemetry: { url: process.env.GELDAR_TELEMETRY_URL },
   };
 }
 
