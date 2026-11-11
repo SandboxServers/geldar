@@ -28,14 +28,7 @@
       "player-render-limit",
       "skin-download"
     ],
-    "webserver.conf": [
-      "additional-headers",
-      "enabled",
-      "log",
-      "port",
-      "sse-enabled",
-      "webroot"
-    ],
+    "webserver.conf": ["additional-headers", "enabled", "log", "port", "sse-enabled", "webroot"],
     "maps/overworld.conf": [
       "ambient-light",
       "cave-detection-ocean-floor",
