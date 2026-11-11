@@ -17,6 +17,7 @@ import {
 } from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
+import { NegativeCache } from './negative-cache.ts';
 import { PublicRateLimit } from './public-limit.ts';
 import { KILL_SWITCH_BODY, rateLimitedBody } from './public-refusals.ts';
 
@@ -131,6 +132,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     clientAddress(req, trusted, clientIpHeader).address;
   // Refused bearers, remembered for a few seconds so a repeat does not cost a store lookup.
   const misses = new MissCache();
+  // Addresses with a recent failed attempt; bounded, oldest evicted at the cap (see NegativeCache).
+  const failures = new NegativeCache();
   const maxPerAddress =
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
@@ -193,6 +196,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           header,
           now(),
           misses,
+          !failures.recent(clientKey(address), now()),
         );
       } catch (error) {
         // A failing store is a 503 with no detail; the log keeps only the error's class name.
@@ -211,6 +215,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         players.set(req, verdict.player);
         return { outcome: 'ok' };
       }
+      // A missing or refused token flags the address; a wrong-player 403 is a valid token, not a failure.
+      if (verdict.outcome === 'unauthorized') failures.record(clientKey(address), now());
       const retryAfterSec = gates.failedAuth(address, now());
       if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
       return { outcome: verdict.outcome, reason: verdict.reason };
