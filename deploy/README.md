@@ -118,8 +118,10 @@ read-only with `stat -c '%a %n' <secrets-dir>/*`.
 
 NATS auth is on by default (decision 0080): every compose call merges `compose/nats-auth.yml`. The overlay reads its
 files from `GELDAR_SECRETS_DIR`, the same directory as the other secrets, so nothing is copied into the checkout:
-`nats-auth.conf` (the server config, bind-mounted), `nats-paper.txt`, `nats-velocity.txt` and `nats-eventsink.txt`
-must sit there, owned by `GELDAR_SERVICE_UID` with mode `0600`. The deploy refuses until they exist.
+`nats-auth.conf` (the server config, a secret mounted at `/etc/nats/nats-auth.conf`), `nats-paper.txt`,
+`nats-velocity.txt` and `nats-eventsink.txt` must sit there, owned by `GELDAR_SERVICE_UID` with mode `0600`. The deploy
+refuses until they exist. `deploy/compose.secrets.yml` names all four under `GELDAR_SECRETS_DIR`, the way it names the
+other secrets, so `compose/nats-auth.yml` keeps no node path and has no interpolated volume (threat model section 1).
 
 The service uid. The containers run as `GELDAR_SERVICE_UID` (default `1000`; compose sets `user:` on the Body, Mind,
 MCP, admin, player host and eventsink services, and `UID`/`GID` on Paper). The deploy scripts refuse to run as uid 0,

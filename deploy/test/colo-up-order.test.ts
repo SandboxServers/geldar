@@ -20,6 +20,9 @@ const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const COMPOSE = resolve(ROOT, 'compose', 'colo.yml');
 const NATS_OVERLAY_TEXT = readFileSync(resolve(ROOT, 'compose', 'nats-auth.yml'), 'utf8');
+const DEPLOY_SECRETS_TEXT = readFileSync(resolve(DEPLOY, 'compose.secrets.yml'), 'utf8');
+// Built by concatenation: a literal dollar-brace in a plain string trips Biome.
+const INTERP = `$${'{'}`;
 const SECRETS: [string, string][] = [
   ['postgres', 'postgres.txt'],
   ['rcon', 'rcon.txt'],
@@ -94,12 +97,12 @@ services:
       context: ..
     image: ${BODY}
 `;
-// The nats-auth overlay gives the server config as a read-only bind file, so colo-up checks it as well.
-const NATS_BIND = (conf: string) =>
-  `  nats:\n    volumes:\n      - type: bind\n        source: ${conf}\n        target: /etc/nats/nats-auth.conf\n`;
+// The nats-auth overlay mounts the server config as a secret at the path nats reads (no bind volume), as the merged
+// config prints it: the service names the secret, and the top-level block gives its file under GELDAR_SECRETS_DIR.
+const NATS_MOUNT = `  nats:\n    secrets:\n      - source: nats-auth.conf\n        target: /etc/nats/nats-auth.conf\n`;
 // The top-level secrets block as `docker compose config` prints it: each NAME with the file it reads from.
 function secretsBlock(dir: string): string {
-  const entries = SECRETS.map(
+  const entries = [...SECRETS, ['nats-auth.conf', 'nats-auth.conf'] as [string, string]].map(
     ([n, f]) => `  ${n}:\n    file: ${dir}/${f}\n    name: geldar-colo_${n}\n`,
   );
   return `secrets:\n${entries.join('')}`;
@@ -133,8 +136,7 @@ function fixture(): Fixture {
   const releaseFile = join(dir, 'release.env');
   writeFileSync(releaseFile, RELEASE);
   const config = join(dir, 'config.yml');
-  const conf = posix(join(secrets, 'nats-auth.conf'));
-  writeFileSync(config, `${CONFIG}${NATS_BIND(conf)}${secretsBlock(posix(secrets))}`);
+  writeFileSync(config, `${CONFIG}${NATS_MOUNT}${secretsBlock(posix(secrets))}`);
   const jarText = 'bluemap-test-jar';
   const jar = join(dir, 'bluemap.jar');
   writeFileSync(jar, jarText);
@@ -232,14 +234,42 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
 });
 
 describe('compose/nats-auth.yml (decision 0080, the node secrets directory)', () => {
-  it('reads every NATS file from GELDAR_SECRETS_DIR, falling back to ./secrets for local use', () => {
-    // The compose variable, built by concatenation: a literal dollar-brace in a plain string trips Biome.
-    const dir = `$${'{'}GELDAR_SECRETS_DIR:-./secrets}`;
-    expect(NATS_OVERLAY_TEXT).toContain(`- ${dir}/nats-auth.conf:/etc/nats/nats-auth.conf:ro`);
-    for (const f of ['nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt']) {
-      expect(NATS_OVERLAY_TEXT).toContain(`file: ${dir}/${f}`);
+  it('names its files under ./secrets with no interpolation and no bind volume (threat model section 1)', () => {
+    expect(NATS_OVERLAY_TEXT).not.toContain(INTERP);
+    expect(NATS_OVERLAY_TEXT).not.toMatch(/^ +volumes:/m);
+    for (const f of [
+      'nats-auth.conf',
+      'nats-paper.txt',
+      'nats-velocity.txt',
+      'nats-eventsink.txt',
+    ]) {
+      expect(NATS_OVERLAY_TEXT).toContain(`file: ./secrets/${f}\n`);
     }
-    expect(NATS_OVERLAY_TEXT).not.toMatch(/\.\/secrets\//);
+  });
+
+  it('the deploy points each NATS file at GELDAR_SECRETS_DIR, and the up run mounts nats-auth.conf from it', () => {
+    const dir = `${INTERP}GELDAR_SECRETS_DIR}`;
+    for (const f of [
+      'nats-auth.conf',
+      'nats-paper.txt',
+      'nats-velocity.txt',
+      'nats-eventsink.txt',
+    ]) {
+      expect(DEPLOY_SECRETS_TEXT).toContain(`  ${f}:\n    file: ${dir}/${f}\n`);
+    }
+    const fx = fixture();
+    // The merged config the deploy reads: nats mounts the secret at the path its command names, from the overlay.
+    const rendered = readFileSync(fx.env.DOCKER_CONFIG_FIXTURE, 'utf8');
+    expect(rendered).toContain('target: /etc/nats/nats-auth.conf');
+    expect(NATS_OVERLAY_TEXT).toMatch(
+      / {6}- source: nats-auth\.conf\n {8}target: \/etc\/nats\/nats-auth\.conf\n/,
+    );
+    expect(NATS_OVERLAY_TEXT).toContain('"-c", "/etc/nats/nats-auth.conf"');
+    // A missing server config is refused by the deploy, which reads it from GELDAR_SECRETS_DIR.
+    rmSync(join(fx.env.GELDAR_SECRETS_DIR, 'nats-auth.conf'));
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file missing: nats-auth.conf');
   });
 
   it('starts nats with the auth config mounted at /etc/nats/nats-auth.conf', () => {

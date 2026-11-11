@@ -151,8 +151,8 @@ check_secret() {
 }
 
 # Checks every secret file that the MERGED config declares, so a secret added to compose/colo.yml or an overlay is
-# checked with no change here. The nats-auth overlay mounts nats-auth.conf as a bind file, not a secret, so it is
-# read from the merged config too. Nothing is generated on the node for the NATS files (decision 0084).
+# checked with no change here. nats-auth.conf is one of them: compose/nats-auth.yml mounts it as a secret, and
+# deploy/compose.secrets.yml names it under GELDAR_SECRETS_DIR. Nothing is generated on the node for the NATS files (decision 0084).
 check_secrets() {
   [ -d "$GELDAR_SECRETS_DIR" ] || die "secrets directory missing: $GELDAR_SECRETS_DIR (deploy/README.md)"
   # Both sides of the containment test come from readlink -f, so they are spelled the same way (on Git for Windows
@@ -172,7 +172,9 @@ check_secrets() {
   while IFS=$tab read -r name p; do
     check_secret "$name" "$p"
   done <"$WORK/secrets.tsv"
-  conf=$(awk '/^ +source: / {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
+  # A bind mount of an absolute host path is checked here too. A service secret prints its source as a bare name, which
+  # the loop above already checked through its top-level file, so only an absolute source is taken.
+  conf=$(awk '/^ +source: (\/|[A-Za-z]:\/)/ {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
   if [ -n "$conf" ]; then check_secret "nats-auth.conf (bind mount)" "$conf"; fi
   say "secret files: each file the merged config declares is present, non-empty and owner-only"
 }
