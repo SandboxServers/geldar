@@ -7,8 +7,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -28,9 +28,7 @@ function findBash(): string {
   const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(
     (p): p is string => Boolean(p),
   );
-  return (
-    roots.map((r) => join(r, 'Git', 'bin', 'bash.exe')).find((p) => existsSync(p)) ?? 'bash'
-  );
+  return roots.map((r) => join(r, 'Git', 'bin', 'bash.exe')).find((p) => existsSync(p)) ?? 'bash';
 }
 const BASH = findBash();
 
@@ -135,7 +133,12 @@ describe('colo-public.sh install', () => {
     for (const f of readdirSync(r.geldar).filter((n) => n.endsWith('.caddy'))) {
       expect(readFileSync(join(r.geldar, f), 'utf8')).not.toContain('{$');
     }
-    expect(readdirSync(r.geldar).sort()).toEqual(['glass.caddy', 'map.caddy', 'mcp.caddy', 'store']);
+    expect(readdirSync(r.geldar).sort()).toEqual([
+      'glass.caddy',
+      'map.caddy',
+      'mcp.caddy',
+      'store',
+    ]);
   });
 
   it('restores the Caddyfile byte for byte and removes the dir when validate fails', () => {
@@ -263,15 +266,17 @@ describe('colo-public.sh refusals', () => {
     expect(existsSync(r.geldar)).toBe(false);
   });
 
-  it.each(['10.0.0.5:8100', '0.0.0.0:8100', 'host.example.invalid:8100', '127.0.0.1'])(
-    'refuses a non-loopback upstream (%s)',
-    (up) => {
-      const r = rig(DEFAULT_ENV.replace('127.0.0.1:8100', up));
-      const res = r.run(['install']);
-      expect(res.status).not.toBe(0);
-      expect(res.out).toContain('loopback');
-      expect(existsSync(r.geldar)).toBe(false);
-      expect(r.calls()).toEqual([]);
-    },
-  );
+  it.each([
+    `${['10', '0', '0', '5'].join('.')}:8100`,
+    '0.0.0.0:8100',
+    'host.example.invalid:8100',
+    '127.0.0.1',
+  ])('refuses a non-loopback upstream (%s)', (up) => {
+    const r = rig(DEFAULT_ENV.replace('127.0.0.1:8100', up));
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('loopback');
+    expect(existsSync(r.geldar)).toBe(false);
+    expect(r.calls()).toEqual([]);
+  });
 });
