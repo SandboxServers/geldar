@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkPreconditions, type PreconditionFacts } from './preconditions.ts';
+import { checkPreconditions, leaseFromEntry, type PreconditionFacts } from './preconditions.ts';
 import { PREPARED_SCHEMA, type PreparedRecord, type VolumeState } from './world-volume.ts';
 
 const SHA = 'eba101b';
@@ -299,5 +299,53 @@ describe('checkPreconditions', () => {
       );
       expect(verdict.missing.join('\n')).toContain('shard tier: profile 32b runs the strong tier');
     }
+  });
+
+  it('refuses a start while the name lease is in force, and names the seconds left', () => {
+    const verdict = checkPreconditions({ ...good, lease: { kind: 'held', secondsLeft: 42 } });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.missing.join('\n')).toContain(
+        'life ag_adam_04: its registry lease is in force for 42 s',
+      );
+    }
+  });
+
+  it('refuses a start when the registry lease cannot be read, and never assumes it is free', () => {
+    const verdict = checkPreconditions({
+      ...good,
+      lease: { kind: 'unreadable', reason: 'NATS is unreachable' },
+    });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.missing.join('\n')).toContain('could not be read');
+  });
+
+  it('plain-case lease refuses a start: a second start for a live life is refused', () => {
+    // The name is already a life id (no prefix, no case change), and a running Body keeps
+    // re-putting its key, so the lease is in force 20 s after the last heartbeat.
+    const put = '2026-11-10T00:00:00.000Z';
+    const lease = leaseFromEntry(put, Date.parse(put) + 20_000);
+    const verdict = checkPreconditions({ ...good, lifeId: 'ag_adam_04', lease });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) {
+      expect(verdict.missing.join('\n')).toContain(
+        'life ag_adam_04: its registry lease is in force for 40 s',
+      );
+    }
+  });
+
+  it('allows a start when the name lease is free', () => {
+    expect(checkPreconditions({ ...good, lease: { kind: 'free' } })).toEqual({ ok: true });
+  });
+
+  it('reads the lease from the entry time and an injected clock, 60 s after the last put', () => {
+    const put = '2026-11-10T00:00:00.000Z';
+    const at = (ms: number) => Date.parse(put) + ms;
+    expect(leaseFromEntry(null, at(0))).toEqual({ kind: 'free' });
+    expect(leaseFromEntry(put, at(0))).toEqual({ kind: 'held', secondsLeft: 60 });
+    expect(leaseFromEntry(put, at(20_000))).toEqual({ kind: 'held', secondsLeft: 40 });
+    expect(leaseFromEntry(put, at(59_500))).toEqual({ kind: 'held', secondsLeft: 1 });
+    expect(leaseFromEntry(put, at(60_000))).toEqual({ kind: 'free' });
+    expect(leaseFromEntry('not a time', at(0)).kind).toBe('unreadable');
   });
 });

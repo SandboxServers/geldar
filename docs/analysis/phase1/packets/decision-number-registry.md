@@ -27,7 +27,7 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0086 | C1 | C1-05b | Backup v1 | Proposed |
 | 0087 | C1 | C1-06a | NATS overlay live rules. Also covers C1-06b (cited, not added) | Proposed |
 | 0088 | C1 | C1-07 | Exporters and replay window | Proposed |
-| 0089 | C1 | C1-08 | Crash-window rules | Proposed |
+| 0089 | C1 | C1-08 | Crash-window rules | Accepted (orchestrator) |
 | 0090 | C2 | C2-00 | Public MCP contract | Proposed |
 | 0091 | C2 | C2-01 | Invitee token issuing | Proposed |
 | 0092 | C2 | C2-02 | Velocity spectator whitelist and ghost rule | Proposed |

@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { parse } from 'yaml';
-import { checkCap, checkOwnerId, DEFAULT_OWNER_CAP, type Sql } from './owners.ts';
+import { checkCap, checkOwnerId, type Sql } from './owners.ts';
 import { markText, personaMarks } from './persona-lint.ts';
 
 /** A player's identity, in bytes of UTF-8 (spec 5.15.5; multi-line markdown is allowed). */
@@ -20,8 +20,10 @@ export interface SovereignShard {
   harnesses: Record<string, { enabled: boolean }>;
   /** The most credits a life can hold; a new life starts with a full balance. */
   capCredits: number;
-  /** The cap `owner add` gives an owner when no --cap is named (sovereign.owner_cap_default). */
-  ownerCapDefault: number;
+  /** The cap `owner add` gives an owner when no --cap is named (sovereign.owner_cap_default); absent when the key is. */
+  ownerCapDefault: number | undefined;
+  /** The most a `--cap` flag may grant (sovereign.owner_cap_owner, decision 0052); absent when the key is. */
+  ownerCapOwner: number | undefined;
 }
 
 /** A player's persona: the identity (required, markdown) and the goals (optional, markdown). */
@@ -67,14 +69,15 @@ export function parseSovereignShard(text: string): SovereignShard {
     allowed: sovereign.allowed === true,
     harnesses: (sovereign.harnesses ?? {}) as Record<string, { enabled: boolean }>,
     capCredits: budget.cap_credits,
-    ownerCapDefault: readOwnerCapDefault(sovereign.owner_cap_default),
+    ownerCapDefault: readOptionalCap(sovereign.owner_cap_default, 'sovereign.owner_cap_default'),
+    ownerCapOwner: readOptionalCap(sovereign.owner_cap_owner, 'sovereign.owner_cap_owner'),
   };
 }
 
-/** An absent owner_cap_default is the spec default; a present one must be a valid cap. */
-function readOwnerCapDefault(value: unknown): number {
-  if (value === undefined) return DEFAULT_OWNER_CAP;
-  if (typeof value !== 'number') throw new Error('sovereign.owner_cap_default must be a number');
+/** An absent cap key stays undefined (the caller refuses); a present one must be a valid cap. */
+function readOptionalCap(value: unknown, key: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number') throw new Error(`${key} must be a number`);
   checkCap(value);
   return value;
 }
