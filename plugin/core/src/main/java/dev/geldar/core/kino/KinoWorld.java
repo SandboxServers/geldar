@@ -31,6 +31,13 @@ public interface KinoWorld {
     /** Where an online agent is; empty when it is offline. */
     Optional<Position> agentPosition(String agentId);
 
-    /** Entities in the loaded chunks of the window, nearest first is not required. */
-    List<EntityView> entitiesNear(double x, double z, int radiusChunks);
+    /** The entities of one chunk: {@code total} in the chunk, and the views of at most {@code max} from index {@code from}. */
+    record ChunkEntities(int total, List<EntityView> views) {}
+
+    /**
+     * Entities of one loaded chunk, read from index {@code from}, at most {@code max} of them (an unloaded chunk
+     * has total 0). The feed bounds its per-tick work with {@code max}; an implementation must not look at more
+     * than that many entities, and must never load the chunk.
+     */
+    ChunkEntities entitiesInChunk(int chunkX, int chunkZ, int from, int max);
 }

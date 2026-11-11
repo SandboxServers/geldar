@@ -7,7 +7,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 /**
  * Wires the Kino feed. {@link #enabled} is the kill switch: with {@code kino.enabled} false (the default) the
- * plugin registers nothing. Targets are started and stopped through the returned feed (the relay of K02 does
+ * feed is registered but killed: it publishes nothing and starts no target, while the NATS connections, the
+ * listeners and the timers still exist (finding 12 of round 1: registering only on first enable is left open).
+ * Targets are started and stopped through the returned feed (the relay of K02 does
  * that); this class adds only MONITOR listeners and a read-only tick.
  */
 public final class KinoSetup {

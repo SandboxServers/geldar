@@ -25,9 +25,12 @@ const IMAGE =
 // The overlay's command (compose/nats-auth.yml) is these flags plus -c <conf> and -m 8222; the repo check pins the overlay.
 const OVERLAY_FLAGS = ['-js', '-sd', '/data'];
 const SHARDS = ['alpha', 'bravo'] as const;
-const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'] as const;
+const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper', 'kino'] as const;
 type Role = (typeof ROLES)[number];
-type Allow = { pub: string[]; sub: string[] };
+type Allow = { pub: string[]; sub: string[]; pubDeny?: string[] };
+
+/** The one subject with a single-token wildcard: Glass subscribes to every agent's Kino feed. */
+const kinoFeed = (shard: string) => `geldar.${shard}.kino.*.feed`;
 
 const JS = ['$JS.API.>', '$JS.ACK.>', '_INBOX.>'];
 const kv = (bucket: string) => `$KV.${bucket}.>`;
@@ -68,6 +71,8 @@ function roleAllows(shard: string): Record<Role, Allow> {
         kv('geldar-checkpoints'),
         kv('geldar-body-generation'),
       ],
+      // Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino subjects.
+      pubDeny: [`geldar.${s}.kino.>`],
       sub: [`geldar.${s}.body.>`, '_INBOX.>'],
     },
     mind: {
@@ -80,7 +85,14 @@ function roleAllows(shard: string): Record<Role, Allow> {
       sub: ['_INBOX.>'],
     },
     velocity: { pub: [...VELOCITY_PUB], sub: ['_INBOX.>'] },
-    paper: { pub: [`geldar.${s}.>`, ...JS], sub: ['_INBOX.>'] },
+    // Kino: the plugin publishes the feeds and reads the control subject, and cannot publish control.
+    paper: {
+      pub: [`geldar.${s}.>`, ...JS],
+      pubDeny: [`geldar.${s}.kino.control`],
+      sub: [`geldar.${s}.kino.control`, '_INBOX.>'],
+    },
+    // Kino: Glass reads every feed and publishes control, and nothing else.
+    kino: { pub: [`geldar.${s}.kino.control`], sub: [kinoFeed(s), '_INBOX.>'] },
   };
 }
 
@@ -96,7 +108,11 @@ function renderConfig(users: User[]): string {
     const pub = u.allow.pub.map((p) => `"${p}"`).join(', ');
     const sub = u.allow.sub.map((p) => `"${p}"`).join(', ');
     // allow_responses belongs inside permissions: nats-server 2.15 rejects it on the user block.
-    return `      { user: "${u.name}", password: "${u.password}", permissions: { publish: { allow: [${pub}] }, subscribe: { allow: [${sub}] }, allow_responses: true } }`;
+    // A deny list wins over the allow list in nats-server; geldar.ps1 renders it the same way.
+    const deny = u.allow.pubDeny
+      ? `, deny: [${u.allow.pubDeny.map((p) => `"${p}"`).join(', ')}]`
+      : '';
+    return `      { user: "${u.name}", password: "${u.password}", permissions: { publish: { allow: [${pub}]${deny} },subscribe: { allow: [${sub}] }, allow_responses: true } }`;
   });
   return [
     'port: 4222',
@@ -299,6 +315,33 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
     expect(replies.length).toBe(1 + watch.length + denied.length);
   }, 30_000);
 
+  it('kino: the control subject has one publisher (Glass) and one reader (the plugin); the body is denied the whole tree', async () => {
+    const feed = 'geldar.alpha.kino.steve_bot.feed';
+    const control = 'geldar.alpha.kino.control';
+    // kino: may subscribe a feed and publish control; may not publish a feed or subscribe control.
+    const k = await as('alpha-kino', [sub(feed), pub(control), pub(feed), sub(control)]);
+    expect(k.replies.slice(1, 3)).toEqual(['+OK', '+OK']);
+    expect(k.replies[3]).toContain('Permissions Violation for Publish');
+    expect(k.replies[4]).toContain('Permissions Violation for Subscription');
+    // paper: may subscribe control and publish a feed; may not publish control (a forged start).
+    const p = await as('alpha-paper', [sub(control), pub(feed), pub(control)]);
+    expect(p.replies.slice(1, 3)).toEqual(['+OK', '+OK']);
+    expect(p.replies[3]).toContain('Permissions Violation for Publish');
+    // body: the deny list beats geldar.<shard>.>, so neither a feed nor control, nor anything deeper, is publishable.
+    const b = await as('alpha-body', [
+      pub(feed),
+      pub(control),
+      pub('geldar.alpha.kino.x.y.z'),
+      pub('geldar.alpha.body.ag_test_01.snapshot'),
+    ]);
+    for (const r of b.replies.slice(1, 4)) expect(r).toContain('Permissions Violation for Publish');
+    expect(b.replies[4]).toBe('+OK');
+    // another shard's kino user cannot reach this shard's feed or control.
+    const x = await as('bravo-kino', [sub(feed), pub(control)]);
+    expect(x.replies[1]).toContain('Permissions Violation for Subscription');
+    expect(x.replies[2]).toContain('Permissions Violation for Publish');
+  }, 30_000);
+
   it('a store_dir in the conf next to -sd on the command line is refused at startup', async () => {
     const dupDir = await mkdtemp(join(tmpdir(), 'geldar-nats-dup-'));
     try {
@@ -345,8 +388,20 @@ describe('the generated subject table', () => {
   it('no bare wildcard subject: no token of any allow list is a single-token "*"', () => {
     const bare = SHARDS.flatMap((shard) =>
       Object.values(roleAllows(shard)).flatMap((a) => [...a.pub, ...a.sub]),
-    ).filter((s) => s.split('.').includes('*'));
+    ).filter((s) => s.split('.').includes('*') && s !== kinoFeed(s.split('.')[1] ?? ''));
     expect(bare).toEqual([]);
+  });
+
+  it('only the kino role holds the feed wildcard, and nobody but kino publishes the control subject', () => {
+    for (const shard of SHARDS) {
+      const allows = roleAllows(shard);
+      const holders = ROLES.filter((r) => allows[r].sub.includes(kinoFeed(shard)));
+      expect(holders).toEqual(['kino']);
+      expect(allows.kino.pub).toEqual([`geldar.${shard}.kino.control`]);
+      expect(allows.paper.sub).toContain(`geldar.${shard}.kino.control`);
+      expect(allows.paper.pubDeny).toContain(`geldar.${shard}.kino.control`);
+      expect(allows.body.pubDeny).toContain(`geldar.${shard}.kino.>`);
+    }
   });
 
   it('the rendered config sets no store_dir (the overlay command has -sd)', () => {
@@ -355,6 +410,8 @@ describe('the generated subject table', () => {
 
   it('the rendered config quotes no subject with a bare "*" token', () => {
     const text = renderConfig(makeUsers());
-    expect(text).not.toMatch(/"(?:[^"\s]*\.)?\*(?:\.[^"\s]*)?"/);
+    const withoutKinoFeeds = text.replace(/"geldar\.[a-z]+\.kino\.\*\.feed"/g, '');
+    expect(text).toContain('.kino.*.feed');
+    expect(withoutKinoFeeds).not.toMatch(/"(?:[^"\s]*\.)?\*(?:\.[^"\s]*)?"/);
   });
 });

@@ -1,8 +1,10 @@
 package dev.geldar.core.kino;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -23,6 +25,9 @@ public final class KinoFeed {
     /** Blocks one {@link #pump} may read on the server thread (one section is 4096). */
     public static final int BLOCK_BUDGET_PER_TICK = 16_384;
 
+    /** Entities one {@link #tick} may examine per target (the entity_positions message itself is capped at 256). */
+    public static final int ENTITY_EXAMINE_PER_TICK = 512;
+
     private static final int SECTION_BLOCKS = PaletteEncoder.CELLS;
 
     private final KinoWorld world;
@@ -42,6 +47,9 @@ public final class KinoFeed {
         boolean again;
         int lo;
         int hi;
+        /** Where the next entity scan resumes: a window cell index and an entity index inside that chunk. */
+        int scanChunk;
+        int scanEntity;
     }
 
     public KinoFeed(KinoWorld world, KinoSink sink, int radiusChunks) {
@@ -137,11 +145,47 @@ public final class KinoFeed {
             if (cx != t.chunkX || cz != t.chunkZ) {
                 t.chunkX = cx;
                 t.chunkZ = cz;
+                t.scanChunk = 0;
+                t.scanEntity = 0;
                 sink.publish(id, KinoMessages.targetMoved(id, at.get().x(), at.get().y(), at.get().z()));
                 queueWindow(t, at.get());
             }
-            sink.publish(id, KinoMessages.entityPositions(world.entitiesNear(at.get().x(), at.get().z(), radius)));
+            sink.publish(id, KinoMessages.entityPositions(scanEntities(id, t)));
         }
+    }
+
+    /**
+     * Looks at no more than {@link #ENTITY_EXAMINE_PER_TICK} entities per target per call, walking the window's
+     * chunks from where the last call stopped, so a crowded world is covered over several ticks. An entity that
+     * is an agent keeps its id only when it is this feed's own target (a viewer is not told who else is watched).
+     */
+    private List<KinoWorld.EntityView> scanEntities(String targetId, Target t) {
+        int side = 2 * radius + 1;
+        int cells = side * side;
+        int left = ENTITY_EXAMINE_PER_TICK;
+        int ci = t.scanChunk % cells;
+        int from = t.scanEntity;
+        List<KinoWorld.EntityView> out = new ArrayList<>();
+        for (int visited = 0; visited < cells && left > 0; visited++) {
+            int cx = t.chunkX - radius + ci / side;
+            int cz = t.chunkZ - radius + ci % side;
+            KinoWorld.ChunkEntities part = world.entitiesInChunk(cx, cz, from, left);
+            for (KinoWorld.EntityView v : part.views()) {
+                boolean hide = v.agentId() != null && !v.agentId().equals(targetId);
+                out.add(hide ? new KinoWorld.EntityView(v.type(), null, v.x(), v.y(), v.z(), v.yaw(), v.pitch()) : v);
+            }
+            left -= part.views().size();
+            if (from + part.views().size() < part.total()) {
+                t.scanChunk = ci;
+                t.scanEntity = from + part.views().size();
+                return out;
+            }
+            from = 0;
+            ci = (ci + 1) % cells;
+        }
+        t.scanChunk = ci;
+        t.scanEntity = 0;
+        return out;
     }
 
     /** A block change; sent to every target whose window holds the block. */
