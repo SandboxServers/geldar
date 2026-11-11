@@ -26,7 +26,7 @@ export interface GlassConfig {
   ssePollMs: number;
   /** False: every route answers 503 and open streams close (the kill switch, 0072 item 6). */
   enabled: boolean;
-  /** Thoughts newer than this many seconds are not shown (0072 item 5). Zero shows them at once. */
+  /** Thoughts newer than this many seconds are not shown (0072 item 5). Default 60; zero shows them at once. */
   delaySeconds: number;
   /** True only when the owner rules that a living sovereign player's thoughts may show (0072 item 4). */
   showLivingSovereign: boolean;
@@ -108,7 +108,7 @@ export function loadGlassConfig(
     sseBufferFrames: intSetting(env, 'GELDAR_GLASS_SSE_BUFFER_FRAMES', 100),
     ssePollMs: intSetting(env, 'GELDAR_GLASS_SSE_POLL_MS', 1000),
     enabled: flagSetting(env, 'GELDAR_GLASS_ENABLED', true),
-    delaySeconds: wholeSetting(env, 'GELDAR_GLASS_DELAY_SECONDS', 0),
+    delaySeconds: wholeSetting(env, 'GELDAR_GLASS_DELAY_SECONDS', 60),
     showLivingSovereign: flagSetting(env, 'GELDAR_GLASS_SHOW_LIVING_SOVEREIGN', false),
     trustedProxies: listSetting(env, 'GELDAR_GLASS_TRUSTED_PROXIES'),
     rateLimit: {

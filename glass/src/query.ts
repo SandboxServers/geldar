@@ -18,6 +18,17 @@ export interface ThoughtCursor {
   id: string;
 }
 
+/**
+ * What a reader may see. `shownUntil` is the newest thought time Glass shows (the delay, 0072 item 5);
+ * null shows every thought.
+ */
+export interface Visibility {
+  shownUntil: string | null;
+}
+
+/** No delay: every thought is shown. A caller with a policy passes `visibilityAt(policy)` instead. */
+export const SHOW_ALL: Visibility = { shownUntil: null };
+
 export interface ThoughtFilter {
   lifeId?: string | undefined;
   tier?: string | undefined;
@@ -38,7 +49,11 @@ export async function listAgents(db: SqlClient): Promise<Row[]> {
 }
 
 /** Lists thoughts, newest first, one page at a time. Each filter is optional. */
-export async function listThoughts(db: SqlClient, filter: ThoughtFilter): Promise<Row[]> {
+export async function listThoughts(
+  db: SqlClient,
+  filter: ThoughtFilter,
+  shown: Visibility = SHOW_ALL,
+): Promise<Row[]> {
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.at::text AS cursor_at, t.world_day, t.world_tick,
             t.wake_reason, t.prompt_template_version, t.latency_ms, t.parsed, a.tier, a.name
@@ -49,6 +64,7 @@ export async function listThoughts(db: SqlClient, filter: ThoughtFilter): Promis
                               OR ($3 = 'unparsed' AND t.parsed IS NULL))
         AND ($4::timestamptz IS NULL OR t.at >= $4)
         AND ($5::timestamptz IS NULL OR (t.at, t.thought_id) < ($5::timestamptz, $6::text))
+        AND ($8::timestamptz IS NULL OR t.at <= $8::timestamptz)
       ORDER BY t.at DESC, t.thought_id DESC
       LIMIT $7`,
     [
@@ -59,20 +75,25 @@ export async function listThoughts(db: SqlClient, filter: ThoughtFilter): Promis
       filter.before?.at ?? null,
       filter.before?.id ?? '',
       filter.limit,
+      shown.shownUntil,
     ],
   );
   return result.rows;
 }
 
 /** One thought with the complete model input (the caller caps it). Null when there is none. */
-export async function getThought(db: SqlClient, thoughtId: string): Promise<Row | null> {
+export async function getThought(
+  db: SqlClient,
+  thoughtId: string,
+  shown: Visibility = SHOW_ALL,
+): Promise<Row | null> {
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.world_day, t.world_tick, t.wake_reason,
             t.prompt_template_version, t.schema_version, t.model_config, t.latency_ms,
             t.parsed, t.raw_output, t.model_input::text AS model_input, a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
-      WHERE t.thought_id = $1`,
-    [thoughtId],
+      WHERE t.thought_id = $1 AND ($2::timestamptz IS NULL OR t.at <= $2::timestamptz)`,
+    [thoughtId, shown.shownUntil],
   );
   return result.rows[0] ?? null;
 }
@@ -98,15 +119,17 @@ export async function thoughtsAfter(
   db: SqlClient,
   after: ThoughtCursor,
   limit: number,
+  shown: Visibility = SHOW_ALL,
 ): Promise<Row[]> {
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.at::text AS cursor_at, t.wake_reason, t.parsed,
             a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
       WHERE t.at IS NOT NULL AND (t.at, t.thought_id) > ($1::timestamptz, $2::text)
+        AND ($4::timestamptz IS NULL OR t.at <= $4::timestamptz)
       ORDER BY t.at, t.thought_id
       LIMIT $3`,
-    [after.at, after.id, limit],
+    [after.at, after.id, limit, shown.shownUntil],
   );
   return result.rows;
 }

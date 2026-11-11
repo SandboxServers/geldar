@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import { clientAddress } from './guard.ts';
-import { OPEN_POLICY, type PublicPolicy } from './policy.ts';
+import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
   listAgents,
@@ -174,6 +174,7 @@ async function serveRoute(
   query: URLSearchParams,
   res: ServerResponse,
   deps: GlassHandlerDeps,
+  policy: PublicPolicy,
 ): Promise<void> {
   if (name === 'agents') {
     sendJson(res, 200, { agents: await listAgents(deps.db) });
@@ -181,7 +182,7 @@ async function serveRoute(
   }
   if (name === 'thoughts') {
     const filter = thoughtFilter(query);
-    const thoughts = await listThoughts(deps.db, filter);
+    const thoughts = await listThoughts(deps.db, filter, visibilityAt(policy));
     sendJson(res, 200, {
       thoughts: publicRows(thoughts),
       next: nextCursor(thoughts, filter.limit),
@@ -189,7 +190,7 @@ async function serveRoute(
     return;
   }
   if (name === 'thought') {
-    const row = await getThought(deps.db, params.id ?? '');
+    const row = await getThought(deps.db, params.id ?? '', visibilityAt(policy));
     if (row === null) {
       sendJson(res, 404, { error: 'not found' });
       return;
@@ -265,7 +266,7 @@ export function createHandler(deps: GlassHandlerDeps) {
       return;
     }
     try {
-      await serveRoute(route.name, route.params, route.query, res, deps);
+      await serveRoute(route.name, route.params, route.query, res, deps, policy);
     } catch (err) {
       if (err instanceof BadRequest) {
         sendJson(res, 400, { error: err.message });

@@ -4,7 +4,8 @@ import { Pool } from 'pg';
 import { assertLoopback, type GlassConfig, HEARTBEAT_MS } from './config.ts';
 import { RateLimiter } from './guard.ts';
 import { createHandler } from './http.ts';
-import { streamStartCursor, thoughtsAfter } from './query.ts';
+import { type PublicPolicy, visibilityAt } from './policy.ts';
+import { type SqlClient, streamStartCursor, type ThoughtCursor, thoughtsAfter } from './query.ts';
 import { SseHub } from './sse.ts';
 
 /** Rows the stream reads per poll: a burst is spread over ticks, not held in memory. */
@@ -19,6 +20,12 @@ export interface GlassParts {
   pool: Pool;
   /** Stops the hub, the server and the pool. Idempotent: a second call (a second SIGTERM) does nothing. */
   close: () => void;
+}
+
+/** The stream's feed: the thoughts after a cursor that the policy lets a reader see. */
+export function streamFeed(db: SqlClient, policy: PublicPolicy) {
+  return (after: ThoughtCursor) =>
+    thoughtsAfter(db, after, STREAM_BATCH_ROWS, visibilityAt(policy));
 }
 
 /** Builds Glass without listening. The loopback check runs here too, before any socket exists. */
@@ -38,17 +45,22 @@ export function buildGlass(config: GlassConfig): GlassParts {
   pool.on('error', () => {
     // An idle client failed. pg retires it; the error text can name the host, so it is not logged.
   });
+  const limiter = new RateLimiter({ ...config.rateLimit, now: () => Date.now() });
+  const policy: PublicPolicy = {
+    trustedProxies: new Set(config.trustedProxies),
+    limiter,
+    delaySeconds: config.delaySeconds,
+    now: () => Date.now(),
+  };
   const hub = new SseHub({
     maxClients: config.sseMaxClients,
     bufferFrames: config.sseBufferFrames,
     pollMs: config.ssePollMs,
     heartbeatMs: HEARTBEAT_MS,
     start: () => streamStartCursor(pool),
-    fetch: (after) => thoughtsAfter(pool, after, STREAM_BATCH_ROWS),
+    fetch: streamFeed(pool, policy),
     log: (entry) => console.log(JSON.stringify(entry)),
   });
-  const limiter = new RateLimiter({ ...config.rateLimit, now: () => Date.now() });
-  const policy = { trustedProxies: new Set(config.trustedProxies), limiter };
   const server = createServer(createHandler({ db: pool, hub, policy }));
   let closed = false;
   const close = (): void => {
