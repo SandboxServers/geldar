@@ -1,0 +1,200 @@
+# Publishes the Colo images (Body, Mind, Eventsink) to GHCR on a push to main that changes them, and on manual dispatch.
+# No pull_request trigger: pull requests and forks never publish. Each job also requires the upstream repository.
+# Each image is pushed, then its digest is read from the build-push output. The manifest job writes release.env
+# (the artifact `release.env`) with one digest reference per image: deploy/colo-up.sh reads it (decision 0084).
+# Tags :main and :<12-char commit> are for humans; the deploy pins digests. Unsigned, no SBOM, no provenance
+# attestation (same as mcp-mock-image.yml). Packages are created private: making them public and linking them
+# to the repository are owner actions.
+name: colo-images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - golem/**
+      - animus/**
+      - eventsink/**
+      - contract/**
+      - package.json
+      - pnpm-workspace.yaml
+      - pnpm-lock.yaml
+      - .github/workflows/colo-images.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: colo-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  body:
+    name: body image
+    if: github.repository == 'SandboxServers/geldar'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short commit
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - name: build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: golem/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ghcr.io/sandboxservers/geldar-body:main
+            ghcr.io/sandboxservers/geldar-body:${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  mind:
+    name: mind image
+    if: github.repository == 'SandboxServers/geldar'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short commit
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - name: build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: animus/Dockerfile.mind
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ghcr.io/sandboxservers/geldar-mind:main
+            ghcr.io/sandboxservers/geldar-mind:${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  eventsink:
+    name: eventsink image
+    if: github.repository == 'SandboxServers/geldar'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short commit
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - name: build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: eventsink/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ghcr.io/sandboxservers/geldar-eventsink:main
+            ghcr.io/sandboxservers/geldar-eventsink:${{ steps.sha.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  manifest:
+    name: release manifest
+    needs: [body, mind, eventsink]
+    if: github.repository == 'SandboxServers/geldar'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: write release.env and the job summary
+        env:
+          BODY_DIGEST: ${{ needs.body.outputs.digest }}
+          MIND_DIGEST: ${{ needs.mind.outputs.digest }}
+          EVENTSINK_DIGEST: ${{ needs.eventsink.outputs.digest }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for digest in "$BODY_DIGEST" "$MIND_DIGEST" "$EVENTSINK_DIGEST"; do
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "not a digest: $digest" >&2
+              exit 1
+            fi
+          done
+          # Only *_IMAGE lines are read by deploy/colo-up.sh; the commit is a comment line it skips.
+          {
+            echo "# Release manifest for the Colo node (decision 0084). Commit $SHA."
+            echo "GELDAR_BODY_IMAGE=ghcr.io/sandboxservers/geldar-body@$BODY_DIGEST"
+            echo "GELDAR_MIND_IMAGE=ghcr.io/sandboxservers/geldar-mind@$MIND_DIGEST"
+            echo "GELDAR_EVENTSINK_IMAGE=ghcr.io/sandboxservers/geldar-eventsink@$EVENTSINK_DIGEST"
+          } > release.env
+          {
+            echo "## Colo release"
+            echo ""
+            echo "Commit: \`$SHA\`"
+            echo ""
+            echo "| Variable | Digest reference |"
+            echo "| --- | --- |"
+            echo "| GELDAR_BODY_IMAGE | \`ghcr.io/sandboxservers/geldar-body@$BODY_DIGEST\` |"
+            echo "| GELDAR_MIND_IMAGE | \`ghcr.io/sandboxservers/geldar-mind@$MIND_DIGEST\` |"
+            echo "| GELDAR_EVENTSINK_IMAGE | \`ghcr.io/sandboxservers/geldar-eventsink@$EVENTSINK_DIGEST\` |"
+            echo ""
+            echo "The same values are in the \`release.env\` artifact of this run."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload release.env
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release.env
+          path: release.env
+          if-no-files-found: error
