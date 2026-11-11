@@ -1,0 +1,51 @@
+/**
+ * The relay's feed source on NATS: one subscription per watched agent on
+ * `geldar.<shard>.kino.<agent_id>.feed` (kino-feed.schema.json). Subscribe only: Glass publishes
+ * nothing (K02). Loaded only when Kino is enabled, so a default Glass opens no NATS connection.
+ */
+import { readFileSync } from 'node:fs';
+import { connect, type NatsConnection } from '@nats-io/transport-node';
+import type { FeedSource } from './relay.ts';
+
+const AGENT = /^[a-z][a-z0-9_]{0,63}$/;
+const SHARD = /^[a-z][a-z0-9-]*$/;
+
+export interface NatsFeedOptions {
+  url: string;
+  shard: string;
+  /** NATS credentials from GELDAR_NATS_USER and the password file; both unset: unauthenticated. */
+  user?: string | undefined;
+  passwordFile?: string | undefined;
+}
+
+/** The subject for one agent. Throws on a name that is not one subject token. */
+export function feedSubject(shard: string, agent: string): string {
+  if (!SHARD.test(shard) || !AGENT.test(agent)) throw new Error('invalid kino subject token');
+  return `geldar.${shard}.kino.${agent}.feed`;
+}
+
+export async function natsFeed(
+  o: NatsFeedOptions,
+): Promise<FeedSource & { close(): Promise<void> }> {
+  const auth =
+    o.user && o.passwordFile
+      ? { user: o.user, pass: readFileSync(o.passwordFile, 'utf8').trim() }
+      : {};
+  const nc: NatsConnection = await connect({
+    servers: o.url,
+    name: 'geldar-glass-kino',
+    maxReconnectAttempts: -1,
+    ...auth,
+  });
+  const decoder = new TextDecoder();
+  return {
+    subscribe(agentId, onMessage) {
+      const sub = nc.subscribe(feedSubject(o.shard, agentId));
+      void (async () => {
+        for await (const m of sub) onMessage(decoder.decode(m.data));
+      })().catch(() => {});
+      return () => sub.unsubscribe();
+    },
+    close: () => nc.drain(),
+  };
+}

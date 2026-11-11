@@ -9,6 +9,7 @@
     "start": "node src/main.ts"
   },
   "dependencies": {
+    "@nats-io/transport-node": "3.4.0",
     "pg": "8.23.1",
     "three": "0.186.1"
   },

@@ -77,6 +77,21 @@ glass.{$GELDAR_DOMAIN} {
 		}
 	}
 
+	# Kino (decision 0075): the page, its modules and the WebSocket at /kino/ws. OFF by default: the route exists only when
+	# GELDAR_KINO_ENABLED is 1 in Caddy's environment; otherwise these paths fall through to the 404 below. Caddy is the
+	# only TLS terminator (this host block is the HTTPS site), and the proxy passes the Upgrade handshake itself.
+	# The WebSocket is long-lived, so it is flushed at once. Glass checks the gk_session cookie and the scope itself.
+	@kino expression `{$GELDAR_KINO_ENABLED:0} == 1 && path('/kino', '/kino/*')`
+	handle @kino {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+			flush_interval -1
+			# A reload (the kill switch) closes open panes within 5 s.
+			stream_close_delay 5s
+		}
+	}
+
 	# The register service answers its own 404 for any path it does not serve. It is handed the client address only through
 	# the header set here, as Glass is; the Host header and the cookies pass through unchanged.
 	handle @register {

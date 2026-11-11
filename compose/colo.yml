@@ -442,12 +442,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094). The image is a release-manifest value
-  # (GELDAR_GLASS_IMAGE, C2-07a1); the local tag and the build are the offline path (glass/Dockerfile is C2-07a1's).
-  # Postgres as geldar_glass (read-only role, sql/0005) with its password from a file secret. Caddy (host network)
-  # reaches it on the loopback publish only. No NATS.
+  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094); image GELDAR_GLASS_IMAGE (C2-07a1).
+  # Postgres as geldar_glass (read-only role), file secret. Caddy (host network) reaches it on loopback. NATS only with Kino.
   glass:
-    # Budget: 0.5 CPU, 256m (no swap, 128 pids). Read-only root, as geldar-mcp runs.
     deploy:
       resources:
         limits:
@@ -463,8 +460,6 @@ services:
       dockerfile: glass/Dockerfile
     image: ${GELDAR_GLASS_IMAGE:-geldar-glass:c2}
     environment:
-      # 0.0.0.0 inside the container is accepted only with the in-network opt-in (C2-07a3, decision 0131); the port is
-      # still published on loopback alone.
       GELDAR_IN_NETWORK_HOSTS: "1"
       GELDAR_GLASS_HOST: 0.0.0.0
       GELDAR_GLASS_PORT: "8787"
@@ -472,11 +467,14 @@ services:
       GELDAR_GLASS_PG_PORT: "5432"
       GELDAR_GLASS_PG_USER: geldar_glass
       GELDAR_GLASS_PG_PASSWORD_FILE: /run/secrets/postgres-glass.txt
-      # Caddy runs on the host network; the peer Glass sees is the docker bridge gateway, not 127.0.0.1. Live check in
-      # the C2-07a2 worknote: set GELDAR_GLASS_TRUSTED_PROXIES in the deploy env to the address Glass logs for Caddy.
+      # Caddy is on the host network: set GELDAR_GLASS_TRUSTED_PROXIES in the deploy env to the peer address Glass logs.
       GELDAR_GLASS_TRUSTED_PROXIES: "${GELDAR_GLASS_TRUSTED_PROXIES:-127.0.0.1}"
       GELDAR_GLASS_DELAY_SECONDS: "${GELDAR_GLASS_DELAY_SECONDS:-60}"
       GELDAR_GLASS_ENABLED: "${GELDAR_GLASS_ENABLED:-true}"
+      # Kino (decision 0075): OFF unless GELDAR_KINO_ENABLED=1 (docs/runbooks/kino.md); its NATS user is subscribe-only.
+      GELDAR_KINO_ENABLED: "${GELDAR_KINO_ENABLED:-0}"
+      GELDAR_SHARD: "${GELDAR_SHARD:-phase0}"
+      GELDAR_KINO_OTLP_ENDPOINT: "${GELDAR_KINO_OTLP_ENDPOINT:-}"
     secrets: [postgres-glass.txt]
     ports:
       # The loopback Glass port. Literal: the loopback rule rejects interpolation.
