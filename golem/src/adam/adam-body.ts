@@ -14,6 +14,7 @@ import {
   type RestartOutcome,
   restartBody,
 } from '../body/restart.ts';
+import { countingSink, type GolemMetrics } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { SnapshotRevision } from '../mind-link/revision.ts';
@@ -40,6 +41,8 @@ export interface AdamBodyEnv {
   restart?: (options: RestartBodyOptions) => Promise<RestartedBody>;
   /** Passed on to `restartBody`: how long it waits before the `no_plan` wake. */
   noPlanWaitMs?: number;
+  /** Telemetry (push only with a URL, see `metrics.ts`); absent in tests that do not check it. */
+  metrics?: GolemMetrics;
 }
 
 /** A Body that is up. */
@@ -85,8 +88,15 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   const ended = new Promise<string>((resolve) => {
     end = resolve;
   });
+  // The server's world age comes with each time packet: the TPS and tick-lag metrics read it here.
+  const onTime = (): void => {
+    const age = worldAge(bot);
+    if (age !== null) env.metrics?.worldAge(age, Date.now());
+  };
+  bot.on('time', onTime);
   const onEnd = (reason?: string): void => {
     gone = true;
+    bot.off('time', onTime);
     end(`bot ended: ${reason ?? 'unknown'}`);
   };
   bot.once('end', onEnd);
@@ -101,7 +111,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     timeScale: config.timeScale,
     nats: { publisher: env.publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
-      const made = new RecentEvents(inner);
+      const made = new RecentEvents(env.metrics ? countingSink(inner, env.metrics) : inner);
       wrapped.recent = made;
       return made;
     },
@@ -131,6 +141,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     throw error;
   }
   const { executor, runtime } = restarted.body;
+  env.metrics?.bodyConnected(true);
+  void ended.then(() => env.metrics?.bodyConnected(false));
   // Wired after the restart: a throw here stops the restarted Body and quits the bot, as above.
   let detachEars: () => void = () => undefined;
   let onHealth: (() => void) | undefined;
