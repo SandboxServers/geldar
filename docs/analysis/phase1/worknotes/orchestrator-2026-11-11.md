@@ -135,3 +135,10 @@ NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-
 - the geldar-skins bucket is absent and velocity can no longer create it;
 - animus exits (no Ollama; the Mind is off per 0134);
 - the src-swap hazard.
+
+**Update 13:57.** Redeployed main 67ad3e7, with images from colo-images run 43033025219.
+- C2-07j (#115): the skins bucket is now created at deploy.
+- C2-07k (#116): the house Body is whitelisted over RCON by the admin one-shot.
+- ag_colo_01 joined the world, and the Body went to idle.
+- Production is unchanged, and Animus stays off.
+- Nit for C2-07e: `state/release.commit` is stale.
