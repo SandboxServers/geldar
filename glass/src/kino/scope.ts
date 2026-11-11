@@ -33,32 +33,27 @@ export interface ScopeStore {
   agent(agentId: string): Promise<AgentScope | null>;
 }
 
-/** The SELECT-only store behind `geldar_glass`. Needs read grants on mcp_identities and agents.owner. */
+/** The SELECT-only store behind `geldar_glass`. Reads through the definer functions kino_viewer and kino_agent_scope (0017): geldar_glass has no grant on mcp_identities or agents.owner. */
 export function sqlScopeStore(db: SqlClient): ScopeStore {
   return {
     async access(identityHash) {
       if (identityHash === null) return ANONYMOUS;
-      const admin = await db.query(
-        `SELECT 1 AS ok FROM kino_admins k WHERE k.identity_hash = decode($1, 'hex')`,
-        [identityHash],
-      );
       const who = await db.query(
-        `SELECT i.owner_id, (i.banned_at IS NOT NULL) AS banned FROM mcp_identities i WHERE i.identity_hash = decode($1, 'hex')`,
+        `SELECT v.owner_id, v.banned, v.admin FROM kino_viewer(decode($1, 'hex')) v`,
         [identityHash],
       );
       const row = who.rows[0];
       return {
         signedIn: true,
-        admin: admin.rows.length > 0,
-        ownerId: row === undefined ? null : String(row.owner_id),
+        admin: row !== undefined && row.admin === true,
+        ownerId: row === undefined || row.owner_id === null ? null : String(row.owner_id),
         banned: row !== undefined && row.banned === true,
       };
     },
     async agent(agentId) {
-      const r = await db.query(
-        `SELECT a.owner, a.public_camera FROM agents a WHERE a.agent_id = $1`,
-        [agentId],
-      );
+      const r = await db.query(`SELECT s.owner, s.public_camera FROM kino_agent_scope($1) s`, [
+        agentId,
+      ]);
       const row = r.rows[0];
       if (row === undefined) return null;
       return {
@@ -72,7 +67,7 @@ export function sqlScopeStore(db: SqlClient): ScopeStore {
 /** Every agent with its scope, for the target picker. SELECT only, like the store above. */
 export async function listAgents(db: SqlClient): Promise<Array<AgentScope & { id: string }>> {
   const r = await db.query(
-    `SELECT a.agent_id, a.owner, a.public_camera FROM agents a ORDER BY a.agent_id`,
+    `SELECT s.agent_id, s.owner, s.public_camera FROM kino_agent_scope(NULL) s ORDER BY s.agent_id`,
     [],
   );
   return r.rows.map((row) => ({

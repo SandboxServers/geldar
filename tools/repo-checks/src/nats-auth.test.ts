@@ -25,7 +25,7 @@ const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 const SHARD = 'phase0';
 /** The compose files that only add to a base: never validated alone (geldar.ps1 Invoke-Check and ci.yml). */
 const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml'];
-const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'];
+const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper', 'kino'];
 const MIND_TYPES = [
   'wake',
   'intent',
@@ -75,7 +75,9 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
       sub: ['_INBOX.>'],
     },
     velocity: { pub: [...VELOCITY_PUB], sub: ['_INBOX.>'] },
-    paper: { pub: [`geldar.${s}.>`, ...JS], sub: ['_INBOX.>'] },
+    // Kino: the plugin reads control and publishes the feed; Glass reads the feed and publishes control (and only that).
+    paper: { pub: [`geldar.${s}.>`, ...JS], sub: [`geldar.${s}.kino.control`, '_INBOX.>'] },
+    kino: { pub: [`geldar.${s}.kino.control`], sub: [`geldar.${s}.kino.*.feed`, '_INBOX.>'] },
   };
 }
 
@@ -107,6 +109,7 @@ interface Entry {
   password: string;
   pub: string[];
   sub: string[];
+  deny: string[];
   raw: string;
 }
 
@@ -120,6 +123,7 @@ function parseEntries(conf: string): Entry[] {
       password: /password: "([^"]*)"/.exec(raw)?.[1] ?? '',
       pub: quoted(/publish: \{ allow: \[([^\]]*)\]/.exec(raw)?.[1] ?? ''),
       sub: quoted(/subscribe: \{ allow: \[([^\]]*)\]/.exec(raw)?.[1] ?? ''),
+      deny: quoted(/publish: \{ allow: \[[^\]]*\], deny: \[([^\]]*)\]/.exec(raw)?.[1] ?? ''),
       raw,
     }));
 }
@@ -303,7 +307,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(same).toEqual(entries.map(() => true));
   });
 
-  it('writes exactly the six role users, with no ops user the overlay does not mount', () => {
+  it('writes exactly the seven role users, with no ops user the overlay does not mount', () => {
     const names = parseEntries(rendered?.conf ?? '').map((e) => e.user);
     expect(names).toEqual(ROLES);
   });
@@ -325,8 +329,40 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       sub: [...(want[role]?.sub ?? [])].sort(),
     }));
     expect(actual).toEqual(expected);
-    const bare = entries.some((e) => [...e.pub, ...e.sub].some((s) => s.split('.').includes('*')));
+    // The one wildcard token is the agent id in Glass's feed subscription: geldar.<shard>.kino.*.feed.
+    const bare = entries.some((e) =>
+      [...e.pub, ...e.sub].some(
+        (s) => s.split('.').includes('*') && s !== `geldar.${SHARD}.kino.*.feed`,
+      ),
+    );
     expect(bare).toBe(false);
+  });
+
+  it('keeps the Kino subjects to the plugin and to Glass: only paper publishes the feed, only kino publishes control', () => {
+    const entries = parseEntries(rendered?.conf ?? '');
+    const by = (u: string) => entries.find((e) => e.user === u);
+    const feed = `geldar.${SHARD}.kino.ag_x.feed`;
+    const control = `geldar.${SHARD}.kino.control`;
+    // body may publish geldar.<s>.> but its deny list takes the whole kino tree off it; paper is denied control only.
+    expect(by('body')?.deny).toEqual([`geldar.${SHARD}.kino.>`]);
+    expect(by('paper')?.deny).toEqual([control]);
+    expect(by('kino')?.deny).toEqual([]);
+    const reach = (subject: string, list: string[]) =>
+      list.some((p) => subject === p || (p.endsWith('.>') && subject.startsWith(p.slice(0, -1))));
+    const pubs = entries
+      .filter((e) => reach(control, e.pub) && !reach(control, e.deny))
+      .map((e) => e.user);
+    const feedPubs = entries
+      .filter((e) => reach(feed, e.pub) && !reach(feed, e.deny))
+      .map((e) => e.user);
+    const subsControl = entries.filter((e) => reach(control, e.sub)).map((e) => e.user);
+    expect(pubs).toEqual(['kino']);
+    expect(feedPubs).toEqual(['paper']);
+    expect(subsControl).toEqual(['paper']);
+    const subsFeed = entries
+      .filter((e) => e.sub.includes(`geldar.${SHARD}.kino.*.feed`))
+      .map((e) => e.user);
+    expect(subsFeed).toEqual(['kino']);
   });
 });
 
