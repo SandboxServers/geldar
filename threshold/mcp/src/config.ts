@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parse } from 'yaml';
-
+import { type PublicConfig, publicConfig } from './config-public.ts';
 import {
   bool,
   type ClientIpHeader,
@@ -16,11 +16,10 @@ import {
   proxyList,
   replayWindow,
   text,
-} from './config-read.js';
-import { type PublicConfig, publicConfig } from './config-public.js';
+} from './config-read.ts';
 
-export type { ClientIpHeader } from './config-read.js';
-export type { PublicConfig } from './config-public.js';
+export type { PublicConfig } from './config-public.ts';
+export type { ClientIpHeader } from './config-read.ts';
 
 /** One sovereign ranger as the shard file lists it (`sovereign.players`). */
 export interface PlayerConfig {

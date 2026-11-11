@@ -95,6 +95,8 @@ export interface StartOptions {
   store?: FakeTokenStore;
   limiter?: RateLimiter;
   limits?: FrontDoorOptions['limits'];
+  /** Clock in milliseconds for the front door; default Date.now. */
+  now?: () => number;
 }
 
 export interface Started {
@@ -117,7 +119,8 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       maxBodyBytes: 65536,
       ...options.http,
     },
-    public: { ...PUBLIC_DEFAULTS, ...options.public },
+    // Without a public block the door applies no per-client limit, as in a bare createFrontDoor.
+    ...(options.public === undefined ? {} : { public: { ...PUBLIC_DEFAULTS, ...options.public } }),
     pepper: PEPPER,
     store: options.store ?? storeWithTokenA(),
     limiter: options.limiter ?? new CappedLimiter(),
@@ -125,6 +128,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       new McpServer({ name: 'front-door-test', version: '0.0.0' }, { capabilities: { tools: {} } }),
     log: () => undefined,
     ...(options.limits === undefined ? {} : { limits: options.limits }),
+    ...(options.now === undefined ? {} : { now: options.now }),
   });
   const port = await door.listen(0);
   return { door, port };

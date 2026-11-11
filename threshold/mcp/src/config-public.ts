@@ -5,7 +5,7 @@ import {
   map,
   optionalInt,
   proxyList,
-} from './config-read.js';
+} from './config-read.ts';
 
 /** The `public` block of the shard file: the settings the public surfaces read (decision 0090). */
 export interface PublicConfig {
@@ -20,7 +20,7 @@ export interface PublicConfig {
 }
 
 /** Used when the shard file leaves `public.rate_limit` out: public surfaces are rate-limited by default. */
-export const PUBLIC_RATE_DEFAULTS = { perMinute: 60, burst: 20 } as const;
+export const PUBLIC_RATE_DEFAULTS = { perMinute: 120, burst: 40 } as const;
 
 /** The settings a front door uses when its caller passes none: no kill switch, default rate limit. */
 export const PUBLIC_DEFAULTS: PublicConfig = {

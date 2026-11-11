@@ -7,3 +7,11 @@
 export const KILL_SWITCH_BODY = {
   error: { code: 'unavailable', message: 'Service unavailable' },
 } as const;
+
+/** The per-client rate limit: HTTP 429 with this body and the same seconds in `Retry-After`. */
+export function rateLimitedBody(retryAfterSec: number): Record<string, unknown> {
+  return {
+    error: { code: 'rate_limited', message: 'Too many requests' },
+    retryAfter: retryAfterSec,
+  };
+}

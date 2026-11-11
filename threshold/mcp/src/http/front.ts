@@ -8,6 +8,7 @@ import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
 import {
   type BearerVerdict,
   clientAddress,
+  clientKey,
   MissCache,
   parseBearer,
   tokenDigest,
@@ -16,7 +17,8 @@ import {
 } from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
-import { KILL_SWITCH_BODY } from './public-refusals.ts';
+import { PublicRateLimit } from './public-limit.ts';
+import { KILL_SWITCH_BODY, rateLimitedBody } from './public-refusals.ts';
 
 export interface FrontDoorOptions {
   http: McpConfig['http'];
@@ -115,6 +117,12 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
   const pub = options.public ?? PUBLIC_DEFAULTS;
+  // One bucket per client address for every public request, authenticated or not.
+  // Only when a public block is passed (the CLI always passes one), so a bare door in a test is not limited.
+  const publicLimit =
+    options.public === undefined
+      ? undefined
+      : new PublicRateLimit(options.public.rateLimit.perMinute, options.public.rateLimit.burst);
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
   // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
@@ -159,6 +167,15 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         frontLog(options.log ?? stderrSink)({ event: `client_${client.warning}` });
       }
       const address = client.address;
+      const waitSec = publicLimit?.take(clientKey(address), now());
+      if (waitSec !== undefined) {
+        return {
+          outcome: 'answered',
+          status: 429,
+          headers: { 'Retry-After': String(waitSec) },
+          body: rateLimitedBody(waitSec),
+        };
+      }
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
       // bearer is refused before the lookup while its address or the global bucket is out of tokens.
       const token = parseBearer(header);
