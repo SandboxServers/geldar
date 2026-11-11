@@ -1,19 +1,13 @@
 #!/usr/bin/env node
-import { appendFileSync, closeSync, openSync, statSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { MCP_TOOL_NAMES } from '@geldar/contract';
 import { createApp, type McpWorld } from './app.ts';
 import { loadTokens } from './auth.ts';
 import { createFakeHandlers } from './fake-world.ts';
 import type { ToolHandlers } from './registry.ts';
+import { createScenarioWorld } from './scenario-world.ts';
 import { createShutdown } from './shutdown.ts';
-import {
-  applyOverrides,
-  parseScenario,
-  readScenarioFile,
-  type ScenarioOverrides,
-} from './sim/scenario.ts';
-import { createSimWorld } from './sim/sim-world.ts';
+import type { ScenarioOverrides } from './sim/scenario.ts';
 
 /** A fixed fake world; each player gets its own handler set, built on first use (the set holds a counter). */
 function createFixedWorld(): McpWorld {
@@ -121,31 +115,11 @@ async function main(): Promise<void> {
     world = createFixedWorld();
   } else {
     try {
-      const scenario = applyOverrides(parseScenario(readScenarioFile(values.scenario)), overrides);
-      const logFile = values['suppressed-log'];
-      if (logFile !== undefined) {
-        // Open for append: unlike appendFileSync with no data, this fails on a directory everywhere.
-        // Only a directory is refused: /dev/null and named pipes are fine log targets.
-        const fd = openSync(logFile, 'a');
-        try {
-          if (statSync(logFile).isDirectory()) throw new Error('suppressed log: is a directory');
-        } finally {
-          closeSync(fd);
-        }
-      }
-      world = createSimWorld({
-        scenario,
-        ...(logFile !== undefined
-          ? {
-              onSuppressed: (record) => {
-                try {
-                  appendFileSync(logFile, `${JSON.stringify(record)}\n`);
-                } catch {
-                  log({ event: 'suppressed_log_error' });
-                }
-              },
-            }
-          : {}),
+      world = createScenarioWorld({
+        scenarioPath: values.scenario,
+        overrides,
+        suppressedLog: values['suppressed-log'],
+        log,
       });
     } catch (error) {
       return fail(1, error instanceof Error ? error.message : 'cannot load the scenario');
