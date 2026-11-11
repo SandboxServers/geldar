@@ -267,12 +267,15 @@ services:
     environment:
       GELDAR_SHARD: colo
       GELDAR_IN_NETWORK_HOSTS: "1"
-      GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres
       # Optional telemetry endpoint (C1-07), passed through from the host environment as for golem-body.
       GELDAR_TELEMETRY_URL:
-    secrets: [postgres]
+      # NATS as the mind user (decision 0080): the password is a file, as golem-body's is. The URL is in-network.
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: mind
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mind.txt
+    secrets: [postgres, { source: nats-mind, target: nats-mind.txt }]
     volumes:
       # The Mind's shard file, under the name the Mind reads (decision 0131). Not the budget file.
       - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
@@ -297,6 +300,9 @@ secrets:
   # The Body's NATS password (C1-03). Written by the NATS-auth tooling (C1-06a), never stored in this file.
   nats-body:
     file: ./secrets/nats-body.txt
+  # The Mind's NATS password (animus, decision 0080). Written by `shard nats-auth colo` like nats-body.
+  nats-mind:
+    file: ./secrets/nats-mind.txt
 
 volumes:
   postgres-data:
@@ -307,7 +313,8 @@ volumes:
 # SLOTS: the comments below are the remaining packets' hooks. C1-03 (golem-body and animus) is filled in above.
 #
 # [slot C1-06a] NATS auth: the overlay compose/nats-auth.yml (decision 0080) is merged on top of this file, not included
-# in it. The colo file gets no change for it. The merged file is checked offline by the colo config test:
+# in it, by `shard up colo` (on by default; it needs the secret files, see Assert-ColoNatsSecrets). The merged file is
+# checked offline by `./geldar.ps1 check` (Invoke-Check) and by the NATS overlay test (docker config, skipped without docker):
 #   docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
 #
 # [slot C1-07] telemetry: GELDAR_TELEMETRY_URL is passed through to golem-body and animus (unset by default). The

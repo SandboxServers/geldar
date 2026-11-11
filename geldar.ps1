@@ -154,7 +154,8 @@ function Invoke-Check {
     foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
-    Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)' { docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
+    Invoke-Step 'docker compose config (colo.yml with nats-auth.yml, the merge `shard up colo` starts)' { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
+    Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)'{ docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
     $natsMcp = Join-Path $Root 'compose/mcp.yml'
     Invoke-Step 'docker compose config (phase0.yml + mcp.yml + nats-auth.yml + nats-auth-mcp.yml)' { docker compose -f $natsBase -f $natsMcp -f (Join-Path $Root 'compose/nats-auth.yml') -f (Join-Path $Root 'compose/nats-auth-mcp.yml') config --quiet }
@@ -274,17 +275,18 @@ function Initialize-ShardSecrets([string] $Shard) {
   }
 }
 
-# compose/colo.yml declares these NATS password files as secrets, and `up` fails in docker when one is missing.
-# Initialize-ShardSecrets does not write them (only `shard nats-auth` does), so `up colo` checks first and names
-# what is missing. It never generates a partial set here. A test keeps this list equal to colo.yml's nats-* files.
+# `up colo` merges compose/nats-auth.yml (NATS auth on by default), and compose/colo.yml declares nats-body and nats-mind.
+# Their password files and the server config nats-auth.conf are the secrets `up` fails in docker without. Initialize-ShardSecrets
+# does not write them (only `shard nats-auth` does), so `up colo` checks first and names what is missing. It never generates
+# a partial set here. A test keeps this list equal to what colo.yml and nats-auth.yml declare.
 function Assert-ColoNatsSecrets {
   $dir = Join-Path $Root 'compose/secrets'
-  $missing = foreach ($name in 'nats-body.txt') {
+  $missing = foreach ($name in 'nats-body.txt', 'nats-mind.txt', 'nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt', 'nats-auth.conf') {
     $path = Join-Path $dir $name
     if (-not (Test-Path -PathType Leaf $path) -or (Get-Item $path).Length -eq 0) { "compose/secrets/$name" }
   }
   if ($missing) {
-    throw "$($missing -join ', ') is missing or empty, and compose/colo.yml needs it. Create it with: ./geldar.ps1 shard nats-auth colo"
+    throw "$($missing -join ', ') is missing or empty, and compose/colo.yml with compose/nats-auth.yml needs them. Create them with: ./geldar.ps1 shard nats-auth colo"
   }
 }
 
@@ -376,6 +378,8 @@ function Invoke-Shard([string[]] $ShardArgs) {
   }
   $files = @('-f', $file)
   if ($rconHost) { $files += @('-f', (Join-Path $Root 'compose/rcon-host.yml')) }
+  # Colo runs NATS with auth by default: `up` merges the overlay, and Assert-ColoNatsSecrets has checked its secret files.
+  if ($shard -eq 'colo' -and $action -eq 'up') { $files += @('-f', (Join-Path $Root 'compose/nats-auth.yml')) }
   $compose = @('compose') + $files + @('-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }

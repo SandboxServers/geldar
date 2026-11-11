@@ -26,6 +26,15 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 /** The three secrets Initialize-ShardSecrets writes, in the order it writes them. */
 const SECRETS = ['postgres.txt', 'rcon.txt', 'velocity-forwarding.txt'];
+/** The files `shard nats-auth colo` writes that `shard up colo` needs (Assert-ColoNatsSecrets). */
+const NATS_SECRETS = [
+  'nats-body.txt',
+  'nats-mind.txt',
+  'nats-paper.txt',
+  'nats-velocity.txt',
+  'nats-eventsink.txt',
+  'nats-auth.conf',
+];
 
 const hasPwsh =
   spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' }).status === 0;
@@ -104,6 +113,25 @@ describe('geldar.ps1 shard secrets: static wiring', () => {
     expect(declared.length).toBeGreaterThan(0);
     const body = functionBody('Assert-ColoNatsSecrets');
     expect(declared.filter((name) => !body.includes(`'${name}'`))).toEqual([]);
+  });
+
+  it('checks every NATS file that colo.yml and nats-auth.yml declare, and the server config', () => {
+    // The overlay declares its own password files, so the check reads both files, not colo.yml alone.
+    const text = ['colo.yml', 'nats-auth.yml']
+      .map((f) => readFileSync(join(ROOT, 'compose', f), 'utf8'))
+      .join('\n');
+    const declared = [...text.matchAll(/file: \.\/secrets\/(nats-[\w.-]+)/g)].map((m) => m[1]);
+    expect(declared.length).toBeGreaterThan(0);
+    const body = functionBody('Assert-ColoNatsSecrets');
+    expect(declared.filter((name) => !body.includes(`'${name}'`))).toEqual([]);
+    expect(body).toContain("'nats-auth.conf'");
+    expect(NATS_SECRETS.filter((name) => !body.includes(`'${name}'`))).toEqual([]);
+  });
+
+  it('merges nats-auth.yml into shard up colo, and into no other shard or action', () => {
+    expect(functionBody('Invoke-Shard')).toMatch(
+      /if \(\$shard -eq 'colo' -and \$action -eq 'up'\) \{ \$files \+= @\('-f', \(Join-Path \$Root 'compose\/nats-auth\.yml'\)\) \}/,
+    );
   });
 });
 
@@ -201,19 +229,20 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: the NATS secrets are checke
       writeFileSync(join(dir, 'compose', 'secrets', 'nats-body.txt'), '');
       const run = shard(dir, 'up', 'colo');
       expect(run.status).not.toBe(0);
-      expect(squash(run.stderr)).toContain(
-        squash('compose/secrets/nats-body.txt is missing or empty'),
-      );
+      expect(squash(run.stderr)).toContain(squash('compose/secrets/nats-body.txt'));
+      expect(squash(run.stderr)).toContain(squash('is missing or empty'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('gets past the NATS check once nats-body.txt exists, so it fails later for another reason', () => {
+  it('gets past the NATS check once every NATS secret exists, so it fails later for another reason', () => {
     const dir = copyGenerator();
     try {
       mkdirSync(join(dir, 'compose', 'secrets'), { recursive: true });
-      writeFileSync(join(dir, 'compose', 'secrets', 'nats-body.txt'), 'x'.repeat(32));
+      for (const name of NATS_SECRETS) {
+        writeFileSync(join(dir, 'compose', 'secrets', name), 'x'.repeat(32));
+      }
       const run = shard(dir, 'up', 'colo');
       // The temp copy has no plugin jar, so the run stops at Assert-PluginJar, not at the NATS check.
       expect(run.status).not.toBe(0);
