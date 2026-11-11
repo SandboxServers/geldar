@@ -39,7 +39,7 @@ export interface Store {
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
   ): Promise<void>;
-  listPlayers(ownerId: string): Promise<PlayerRow[]>;
+  listPlayers(identityHash: string): Promise<PlayerRow[]>;
   /** Creates the life, player, budget and first token in register_create_player; limit is the lifetime cap of 10 (R36). */
   createPlayer(request: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'>;
   /** Mints a token through register_mint_token; false when the function refuses (not the owner's). */

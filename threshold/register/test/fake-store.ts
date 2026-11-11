@@ -25,7 +25,8 @@ export class FakeStore implements Store {
     this.writes.push(JSON.stringify({ identity, ownerId }));
     this.owners.set(identity.identityHash, { ownerId, banned: false, createdAt: this.now() });
   }
-  async listPlayers(ownerId: string): Promise<PlayerRow[]> {
+  async listPlayers(identityHash: string): Promise<PlayerRow[]> {
+    const ownerId = this.owners.get(identityHash)?.ownerId;
     return [...this.players.values()].filter((p) => p.ownerId === ownerId);
   }
   async createPlayer(q: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'> {

@@ -27,7 +27,6 @@ export function config(over: Partial<RegisterConfig> = {}): RegisterConfig {
       REGISTER_PEPPER_FILE: 'pepper',
       REGISTER_TOKEN_PEPPER_FILE: 'tokpepper',
       REGISTER_SHARD: 'test',
-      REGISTER_START_CREDITS: '100',
     },
     (p) => (p === 'pepper' ? PEPPER : `secret-${p}`),
   );

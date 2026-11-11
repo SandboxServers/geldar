@@ -189,7 +189,7 @@ export class Account {
   }
 
   private async show(res: ServerResponse, s: Session, notice = ''): Promise<true> {
-    const players = await this.deps.store.listPlayers(s.ownerId);
+    const players = await this.deps.store.listPlayers(s.identityHash);
     html(res, 200, accountPage(players, s.csrf, this.deps.config.harnesses, notice));
     return true;
   }

@@ -5,7 +5,7 @@ import { PgStore } from '../src/pg-store.ts';
 function storeFailingWith(error: unknown): { store: PgStore; sql: string[]; args: unknown[][] } {
   const sql: string[] = [];
   const args: unknown[][] = [];
-  const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1', startCredits: 240 });
+  const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1' });
   (store as unknown as { pool: unknown }).pool = {
     query: async (text: string, values: unknown[]) => {
       sql.push(text);

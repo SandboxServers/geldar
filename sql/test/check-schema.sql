@@ -222,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0011, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0012, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
@@ -472,10 +472,9 @@ BEGIN
     END;
     DROP TABLE pg_temp.mcp_identities;
     DROP TABLE pg_temp.mcp_players;
-    IF EXISTS (SELECT 1 FROM mcp_tokens WHERE token_id IN ('reg-tok-evil', 'reg-tok-evil2')) THEN
+    RESET ROLE; IF EXISTS (SELECT 1 FROM mcp_tokens WHERE token_id IN ('reg-tok-evil', 'reg-tok-evil2')) THEN
       RAISE EXCEPTION 'schema check: a shadow mint left a token';
-    END IF;
-
+    END IF; SET LOCAL ROLE geldar_register;
     step := 'sign-up only through the function';
     BEGIN
       INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('11', 32), 'hex'), 'github', 'reg-victim-owner');
@@ -488,10 +487,10 @@ BEGIN
     EXCEPTION WHEN insufficient_privilege THEN NULL;
     END;
     PERFORM register_create_owner(decode(repeat('12', 32), 'hex'), 'github', 'reg-fn-owner', 'fn');
-    IF (SELECT player_cap FROM mcp_owners WHERE owner_id = 'reg-fn-owner') <> 3
+    RESET ROLE; IF (SELECT player_cap FROM mcp_owners WHERE owner_id = 'reg-fn-owner') <> 3
        OR NOT EXISTS (SELECT 1 FROM mcp_identities WHERE owner_id = 'reg-fn-owner') THEN
       RAISE EXCEPTION 'schema check: register_create_owner must write a default-cap owner and its identity';
-    END IF;
+    END IF; SET LOCAL ROLE geldar_register;
     BEGIN
       PERFORM register_create_owner(decode(repeat('13', 32), 'hex'), 'github', 'reg-fn-owner', 'again');
       RAISE EXCEPTION 'schema check: register_create_owner reused an owner id' USING ERRCODE = 'P0002';
@@ -548,9 +547,9 @@ BEGIN
     END;
     -- minting again revokes the earlier token: one active token per player
     PERFORM register_mint_token(hash, 'ag-reg-test-01', 'reg-tok-2', decode(repeat('d3', 32), 'hex'));
-    IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 1 THEN
+    RESET ROLE; IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 1 THEN
       RAISE EXCEPTION 'schema check: a second mint must revoke the first token';
-    END IF;
+    END IF; SET LOCAL ROLE geldar_register;
 
     -- cannot rewrite the token hash, retire or un-revoke directly
     step := 'direct updates denied';
@@ -586,7 +585,7 @@ BEGIN
     IF register_retire_player(hash, 'ag-reg-test-01') THEN
       RAISE EXCEPTION 'schema check: register_retire_player retired a retired player again';
     END IF;
-    IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 0 THEN
+    RESET ROLE; IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 0 THEN
       RAISE EXCEPTION 'schema check: retire must revoke the tokens';
     END IF;
     IF (SELECT status FROM mcp_players WHERE player_id = 'ag-reg-other-01') <> 'active' THEN
@@ -602,7 +601,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
              WHERE p.proname LIKE 'register\_%' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
-     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 4
+     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 7
      OR NOT has_function_privilege('geldar_register', 'register_create_owner(bytea,text,text,text)', 'EXECUTE')
      OR has_function_privilege('geldar_mcp', 'register_create_owner(bytea,text,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'schema check: the register functions must be definer functions run by geldar_register only';
@@ -617,6 +616,9 @@ BEGIN
      OR has_column_privilege('geldar_mcp', 'mcp_identities', 'identity_hash', 'SELECT') THEN
     RAISE EXCEPTION 'schema check: geldar_mcp must read banned_at and owner_id of mcp_identities, not the hash';
   END IF;
+
+  RESET ROLE;
+
   BEGIN
     INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-gate-owner', 'gate', 5);
     INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('a1', 32), 'hex'), 'github', 'reg-gate-owner');
@@ -631,11 +633,9 @@ BEGIN
     END;
     PERFORM register_create_player(decode(repeat('a1', 32), 'hex'), 'ag-reg-gate-01', 'ag_reg_gate_01', 'g',
                                    'claude-code', 'test', 'reg-tok-g1', decode(repeat('a3', 32), 'hex'));
-    RESET ROLE;
-    IF (SELECT credits FROM mcp_budget WHERE life_id = 'ag_reg_gate_01') <> 240 THEN
+    RESET ROLE; IF (SELECT credits FROM mcp_budget WHERE life_id = 'ag_reg_gate_01') <> 240 THEN
       RAISE EXCEPTION 'schema check: the starting credits must be the constant of the function';
-    END IF;
-    SET LOCAL ROLE geldar_register;
+    END IF; SET LOCAL ROLE geldar_register;
     CREATE TEMP TABLE mcp_owners (owner_id TEXT, player_cap INT);
     INSERT INTO pg_temp.mcp_owners VALUES ('reg-shadow-owner', 100);
     PERFORM register_create_player(decode(repeat('a2', 32), 'hex'), 'ag-reg-shadow-01', 'ag_reg_shadow_01', 's',
