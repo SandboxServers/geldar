@@ -4,6 +4,16 @@ export const SHARED_DATABASE = 'geldar';
 /** The opt-in for the shared CI database. The CI integration job sets it; a developer machine never does. */
 export const SHARED_DB_OPT_IN = 'GELDAR_IT_ALLOW_SHARED_DB';
 
+/**
+ * Whether the shared CI database may be truncated: the opt-in is set AND the run is on GitHub
+ * Actions. The opt-in alone is not enough, so a developer who sets it locally is still refused.
+ */
+export function sharedDatabaseAllowed(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env[SHARED_DB_OPT_IN] === '1' && env.GITHUB_ACTIONS === 'true';
+}
+
 /** A scratch database made by a test helper (threshold/mcp/test/it/scratch-db.ts): geldar_it_ and lower-case hex. */
 const SCRATCH_DATABASE = /^geldar_it_[0-9a-f]+$/;
 
@@ -16,7 +26,7 @@ const SCRATCH_DATABASE = /^geldar_it_[0-9a-f]+$/;
  */
 export function assertThrowawayDatabase(
   database: string,
-  sharedAllowed = process.env[SHARED_DB_OPT_IN] === '1',
+  sharedAllowed = sharedDatabaseAllowed(),
 ): void {
   const allowed =
     SCRATCH_DATABASE.test(database) || (database === SHARED_DATABASE && sharedAllowed);
@@ -30,7 +40,7 @@ export function assertThrowawayDatabase(
 /** Asserts the database the pool is connected to, before the test writes anything. */
 export async function assertConnectedToThrowaway(
   pool: { query: (sql: string) => Promise<{ rows: { db: string }[] }> },
-  sharedAllowed = process.env[SHARED_DB_OPT_IN] === '1',
+  sharedAllowed = sharedDatabaseAllowed(),
 ): Promise<void> {
   const { rows } = await pool.query('SELECT current_database() AS db');
   assertThrowawayDatabase(rows[0]?.db ?? '', sharedAllowed);

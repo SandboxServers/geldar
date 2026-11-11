@@ -40,12 +40,34 @@ describe('assertThrowawayDatabase', () => {
     }
   });
 
-  it('reads the opt-in from GELDAR_IT_ALLOW_SHARED_DB when no flag is passed', () => {
+  it('refuses the shared name when the opt-in is set but the run is not on GitHub Actions', () => {
+    try {
+      vi.stubEnv('GELDAR_IT_ALLOW_SHARED_DB', '1');
+      vi.stubEnv('GITHUB_ACTIONS', '');
+      expect(() => assertThrowawayDatabase('geldar')).toThrow(REFUSED);
+      vi.stubEnv('GITHUB_ACTIONS', 'false');
+      expect(() => assertThrowawayDatabase('geldar')).toThrow(REFUSED);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('refuses the shared name when the run is on GitHub Actions but the opt-in is not set', () => {
     try {
       vi.stubEnv('GELDAR_IT_ALLOW_SHARED_DB', '');
+      vi.stubEnv('GITHUB_ACTIONS', 'true');
       expect(() => assertThrowawayDatabase('geldar')).toThrow(REFUSED);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('allows the shared name only with the opt-in and GITHUB_ACTIONS=true', () => {
+    try {
       vi.stubEnv('GELDAR_IT_ALLOW_SHARED_DB', '1');
+      vi.stubEnv('GITHUB_ACTIONS', 'true');
       expect(() => assertThrowawayDatabase('geldar')).not.toThrow();
+      expect(() => assertThrowawayDatabase('geldar_colo')).toThrow(REFUSED);
     } finally {
       vi.unstubAllEnvs();
     }
