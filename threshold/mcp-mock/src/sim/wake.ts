@@ -37,6 +37,8 @@ export interface WakeEvent {
   outcome?: 'completed' | 'failed' | 'limit_reached';
   /** For a failed intent. Not read: outcome: 'failed' alone gives precondition_failed. */
   failure?: 'precondition_failed';
+  /** For a failed intent: a short plain fact about why, already safe to show the agent. */
+  reason?: string;
   /** The running intent's `wake_on` when the event happened; null if no intent was running. */
   wakeOn: string[] | null;
 }

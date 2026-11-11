@@ -240,6 +240,42 @@ describe('craftAction', () => {
     expect(out).toMatchObject({ status: 'failed', reason: 'timeout', detail: { crafted: 4 } });
   });
 
+  it('fails timeout and closes the player grid when the library never gets the result slot', async () => {
+    const sticks = recipe(7, 4, { 5: 2 });
+    const fake = fakeBot({ recipes: [sticks], inventory: { 5: 6 } });
+    const write = vi.fn();
+    (fake.bot as unknown as { _client: unknown })._client = { write };
+    fake.craft.mockRejectedValueOnce(
+      new Error('Event updateSlot:0 did not fire within timeout of 20000ms'),
+    );
+    const out = await run(fake.bot, 'stick', 4);
+    expect(out).toMatchObject({ status: 'failed', reason: 'timeout' });
+    expect(JSON.stringify(out)).not.toContain('updateSlot');
+    expect(write).toHaveBeenCalledWith('close_window', { windowId: 0 });
+  });
+
+  it('fails internal, still closing the grid, on any other library error', async () => {
+    const sticks = recipe(7, 4, { 5: 2 });
+    const fake = fakeBot({ recipes: [sticks], inventory: { 5: 6 } });
+    const write = vi.fn();
+    (fake.bot as unknown as { _client: unknown })._client = { write };
+    fake.craft.mockRejectedValueOnce(new Error('boom'));
+    const out = await run(fake.bot, 'stick', 4);
+    expect(out).toMatchObject({ status: 'failed', reason: 'internal' });
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the missing-ingredient outcome and leaves the grid alone', async () => {
+    const sticks = recipe(7, 4, { 5: 2 });
+    const fake = fakeBot({ recipes: [sticks], inventory: { 5: 6 } });
+    const write = vi.fn();
+    (fake.bot as unknown as { _client: unknown })._client = { write };
+    fake.craft.mockRejectedValueOnce(new Error('missing ingredient'));
+    const out = await run(fake.bot, 'stick', 4);
+    expect(out).toMatchObject({ status: 'failed', reason: 'missing_materials' });
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('prefers the cobblestone variant when two variants tie, whatever their index', async () => {
     const blackstone = recipe(1, 1, { 12: 3, 7: 2 });
     const cobble = recipe(1, 1, { 10: 3, 7: 2 });
