@@ -95,6 +95,8 @@ export interface WorldDeps {
   laws: readonly string[];
   /** Receives the cause of a presence write that failed; the call goes on without it. */
   log?: (line: Record<string, unknown>) => void;
+  /** Counts each tool call with its closed outcome code and duration (metrics, decision 0088). */
+  onToolCall?: (tool: string, outcome: string, durationMs: number) => void;
 }
 
 /** The world as the server uses it: the tool handlers, and a `close` that stops the settle timer. */
@@ -326,16 +328,22 @@ function outcomeOf(err: unknown): string {
  */
 function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
   const record = (playerId: string, outcome: string, started: number): void => {
+    const durationMs = deps.now() - started;
     try {
       deps.log?.({
         event: 'tool_call',
         player_id: playerId,
         tool,
         outcome,
-        duration_ms: deps.now() - started,
+        duration_ms: durationMs,
       });
     } catch {
       // The line is lost; the call's own result stands.
+    }
+    try {
+      deps.onToolCall?.(tool, outcome, durationMs);
+    } catch {
+      // The count is lost; the call's own result stands.
     }
   };
   return async (input, ctx) => {

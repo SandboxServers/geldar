@@ -63,6 +63,35 @@ describe('the tool_call log', () => {
     expect(logged).not.toContain('secret');
   });
 
+  it('hands each call to onToolCall once, with its tool, its outcome code and its duration', async () => {
+    const counted: Array<[string, string, number]> = [];
+    const fx = worldFixture([PLAYER]);
+    fx.budget.seed(PLAYER.lifeId, 37, 0);
+    const tools = createWorld({
+      ...fx.deps,
+      onToolCall: (tool, outcome, durationMs) => counted.push([tool, outcome, durationMs]),
+    }).tools;
+    await callTool(tools, 'look', {}, ctx());
+    await callTool(tools, 'look', {}, ctx('ag-nobody-01'));
+    expect(counted).toEqual([
+      ['look', 'ok', expect.any(Number)],
+      ['look', 'unknown_player', expect.any(Number)],
+    ]);
+  });
+
+  it('a metrics hook that throws does not fail the call', async () => {
+    const fx = worldFixture([PLAYER]);
+    fx.budget.seed(PLAYER.lifeId, 37, 0);
+    const tools = createWorld({
+      ...fx.deps,
+      onToolCall: () => {
+        throw new Error('registry full');
+      },
+    }).tools;
+    const response = await callTool(tools, 'look', {}, ctx());
+    expect(response.isError).not.toBe(true);
+  });
+
   it('does not fail the call when the logger throws', async () => {
     const tools = rig(() => {
       throw new Error('log sink is down');

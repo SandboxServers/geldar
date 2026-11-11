@@ -257,7 +257,7 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
     keepaliveSeconds: int(mcp, 'keepalive_seconds', 'sovereign.mcp', 1, 240),
     maxBodyBytes: int(mcp, 'max_body_bytes', 'sovereign.mcp', 1024, 1_048_576),
     maxResultBytes: int(mcp, 'max_result_bytes', 'sovereign.mcp', 1024, 65536),
-    replayMinutes: int(mcp, 'replay_minutes', 'sovereign.mcp', 1, 1440),
+    replayMinutes: replayWindow(mcp.replay_minutes),
     wake: {
       minSpacingSeconds: int(wake, 'min_spacing_seconds', 'sovereign.wake', 0, 3600),
       intentRunTooLongSeconds: int(wake, 'intent_run_too_long_seconds', 'sovereign.wake', 1, 86400),
@@ -461,6 +461,17 @@ function text(block: Doc, key: string, where: string): string {
   const value = field(block, key, where);
   if (typeof value !== 'string' || value.trim() === '')
     throw new Error(`${where}.${key} must be a non-empty string`);
+  return value;
+}
+
+/** The replay window in minutes: 60 when the key is absent; 1 to 1440 otherwise, the value named when refused. */
+function replayWindow(value: unknown): number {
+  if (value === undefined) return 60;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 1440) {
+    throw new Error(
+      `sovereign.mcp.replay_minutes must be an integer from 1 to 1440, got ${String(value)}`,
+    );
+  }
   return value;
 }
 
