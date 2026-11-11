@@ -51,7 +51,7 @@ render_all() {
   for s in $INSTALL_SITES; do
     # Glass also serves the sign-in and roster paths, so its file carries the REGISTER upstream too (decision 0135, R42).
     ups=$(printf '%s' "$s" | tr 'a-z' 'A-Z')
-    [ "$s" = glass ] && ups="GLASS REGISTER"
+    [ "$s" = glass ] && ups="GLASS REGISTER MAP" # MAP: the Kino textures route /kino/tex/* proxies the map upstream
     sed_up=""
     for u in $ups; do
       up_var=GELDAR_${u}_UPSTREAM
