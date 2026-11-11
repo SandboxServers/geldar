@@ -50,6 +50,23 @@ function get(port: number, headers: Record<string, string> = {}): Promise<Reply>
   });
 }
 
+describe('Glass Host allowlist on the wire', () => {
+  it('answers a listed public host (with or without a port) and 421s any other', async () => {
+    const { port } = await start({ publicHosts: new Set(['glass.example.invalid']) });
+    expect((await get(port, { host: 'glass.example.invalid' })).status).not.toBe(421);
+    expect((await get(port, { host: 'Glass.Example.Invalid:443' })).status).not.toBe(421);
+    expect((await get(port, { host: 'other.example.invalid' })).status).toBe(421);
+    expect((await get(port, { host: 'x.glass.example.invalid' })).status).toBe(421);
+    expect((await get(port, { host: 'glass.example.invalid.evil.invalid' })).status).toBe(421);
+  });
+
+  it('421s a public name when none is listed', async () => {
+    const { port } = await start({});
+    expect((await get(port, { host: 'glass.example.invalid' })).status).toBe(421);
+    expect((await get(port, { host: '127.0.0.1' })).status).not.toBe(421);
+  });
+});
+
 describe('Glass rate limit on the wire', () => {
   it('serves the last request of the burst, then refuses with 429, Retry-After and the fixed body', async () => {
     const clock = { at: 1_000_000 };

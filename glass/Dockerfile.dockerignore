@@ -1,0 +1,19 @@
+# Allowlist: nothing enters the build context unless named here.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.nvmrc
+!**/package.json
+# Glass imports no other workspace package, so only its own tree is needed: sources and the static page.
+!glass/src
+!glass/public
+# The re-include above also matches every installed package.json; drop installed trees.
+**/node_modules/**
+**/node_modules
+**/*.test.ts
+glass/test
+glass/src/render-fixtures.ts
+**/.env*
+**/*tokens*.json
+**/secrets
