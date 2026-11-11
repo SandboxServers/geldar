@@ -312,6 +312,25 @@ describe('colo-public.sh refusals', () => {
     expect(existsSync(r.geldar)).toBe(false);
   });
 
+  it.each(['0', '65536', '99999'])('refuses an upstream port outside 1-65535 (%s)', (port) => {
+    const r = rig(
+      DEFAULT_ENV.replace(
+        'GELDAR_MCP_UPSTREAM=127.0.0.1:8102',
+        `GELDAR_MCP_UPSTREAM=127.0.0.1:${port}`,
+      ),
+    );
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_MCP_UPSTREAM port is outside 1-65535');
+    expect(existsSync(r.geldar)).toBe(false);
+  });
+
+  it('status says the output is what the files say, not the live Caddy state', () => {
+    const r = rig();
+    expect(r.run(['install']).status).toBe(0);
+    expect(r.run(['status']).out).toContain('files say');
+  });
+
   it('refuses a rendered file that still has a placeholder', () => {
     const r = rig();
     const src = join(r.root, 'src');

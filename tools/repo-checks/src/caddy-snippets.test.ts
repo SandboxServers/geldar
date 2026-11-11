@@ -89,6 +89,16 @@ describe('deploy/caddy site files', () => {
         expect(killed).not.toContain('reverse_proxy');
       });
 
+      it.each([`${site}.caddy`, `${site}-off.caddy`])(
+        '%s drops the Server header and sets nosniff and no-referrer (R4-05)',
+        (file) => {
+          const body = read(file);
+          expect(body).toMatch(/^\s*-Server$/m);
+          expect(body).toMatch(/^\s*X-Content-Type-Options nosniff$/m);
+          expect(body).toMatch(/^\s*Referrer-Policy no-referrer$/m);
+        },
+      );
+
       it('routes only its own paths and answers anything else with 404', () => {
         if (paths.length === 0) return; // BlueMap serves its whole static tree
         expect(text).toContain('respond 404');
