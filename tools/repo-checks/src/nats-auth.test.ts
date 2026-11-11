@@ -140,10 +140,49 @@ afterAll(() => {
   if (rendered) rmSync(rendered.dir, { recursive: true, force: true });
 });
 
+/**
+ * In one merged render, the services that set GELDAR_NATS_PASSWORD_FILE, and those whose file is not the target of one of
+ * their own secrets (so the container would start without its password). Service names only: no value is returned.
+ */
+function natsPasswordGaps(...files: string[]) {
+  const run = renderCompose(...files);
+  type Svc = { environment?: Record<string, string>; secrets?: { target?: string }[] };
+  const services: Record<string, Svc> = JSON.parse(run.stdout || '{}').services ?? {};
+  const named = Object.entries(services).filter(([, s]) => s.environment?.GELDAR_NATS_PASSWORD_FILE);
+  // A relative secret target mounts under /run/secrets/, as compose does for the long form.
+  const mountedAt = (target = '') => (target.startsWith('/') ? target : `/run/secrets/${target}`);
+  const gaps = named.filter(
+    ([, s]) =>
+      !(s.secrets ?? []).some(
+        (x) => mountedAt(x.target) === s.environment?.GELDAR_NATS_PASSWORD_FILE,
+      ),
+  );
+  return { status: run.status, checked: named.map(([name]) => name), gaps: gaps.map(([n]) => n) };
+}
+
 describe.skipIf(!hasDocker)('compose NATS auth overlays merge offline', () => {
   it('merges colo.yml with nats-auth.yml, which adds no service of its own', () => {
     const run = renderCompose('colo.yml', 'nats-auth.yml');
     expect(run.status).toBe(0);
+  });
+
+  it('points every NATS password file in the merged colo config at a secret its service mounts', () => {
+    const { status, checked, gaps } = natsPasswordGaps('colo.yml', 'nats-auth.yml');
+    expect(status).toBe(0);
+    expect(checked).toContain('golem-body');
+    expect(gaps).toEqual([]);
+  });
+
+  it('points every NATS password file in the merged phase0 config at a secret its service mounts', () => {
+    const { status, checked, gaps } = natsPasswordGaps(
+      'phase0.yml',
+      'mcp.yml',
+      'nats-auth.yml',
+      'nats-auth-mcp.yml',
+    );
+    expect(status).toBe(0);
+    expect(checked).toEqual(expect.arrayContaining(['paper', 'velocity', 'eventsink', 'geldar-mcp']));
+    expect(gaps).toEqual([]);
   });
 
   it('keeps the -js -sd /data flags colo sets on nats when the overlay is merged', () => {

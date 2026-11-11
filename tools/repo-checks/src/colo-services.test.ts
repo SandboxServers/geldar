@@ -59,7 +59,8 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
   it('gives the Body its NATS user and a password file, and declares that secret', () => {
     expect(env(body).GELDAR_NATS_USER).toBe('body');
     expect(env(body).GELDAR_NATS_PASSWORD_FILE).toBe('/run/secrets/nats-body.txt');
-    expect(body.secrets).toEqual(['nats-body']);
+    // The long form mounts the secret at the path the env names; the short form mounts it at /run/secrets/nats-body.
+    expect(body.secrets).toEqual([{ source: 'nats-body', target: 'nats-body.txt' }]);
     expect(colo.secrets['nats-body']).toEqual({ file: './secrets/nats-body.txt' });
   });
 
