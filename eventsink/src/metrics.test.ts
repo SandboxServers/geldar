@@ -196,7 +196,12 @@ describe('the push', () => {
   }
 
   afterEach(async () => {
-    await Promise.all(servers.splice(0).map((s) => new Promise((resolve) => s.close(resolve))));
+    await Promise.all(
+      servers.splice(0).map((s) => {
+        s.closeAllConnections();
+        return new Promise((resolve) => s.close(resolve));
+      }),
+    );
   });
 
   it('starts nothing without GELDAR_TELEMETRY_URL: no metrics, no timer, no request', async () => {
@@ -293,6 +298,52 @@ describe('the push', () => {
     await pushMetrics(new MetricRegistry(), { url: rx.url, service: 'eventsink', log });
     expect(log).toHaveBeenCalledWith({ event: 'telemetry_push_failed', status: 503 });
   });
+
+  it('a receiver that never answers: the push aborts at the timeout, is logged, and stop resolves', async () => {
+    const rx = await receiver(200, new Promise<void>(() => {}));
+    const log = vi.fn();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    const telemetry = eventsinkTelemetry(
+      { GELDAR_TELEMETRY_URL: rx.url },
+      { service: 'eventsink', log, intervalMs: 60_000, timeoutMs: 50 },
+    );
+    try {
+      // stop() waits for the one push in flight, so it resolves only once that push has timed out.
+      await telemetry?.stop();
+      expect(rx.requests).toHaveLength(1);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith({ event: 'telemetry_push_failed', status: 0 });
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(unhandled).toEqual([]);
+  }, 3000);
+
+  it('a tick while a push is still in flight starts no second push', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rx = await receiver(200, gate);
+    const telemetry = eventsinkTelemetry(
+      { GELDAR_TELEMETRY_URL: rx.url },
+      { service: 'eventsink', log: LOG, intervalMs: 5 },
+    );
+    try {
+      await vi.waitFor(() => expect(rx.requests.length).toBeGreaterThanOrEqual(1));
+      // Many 5 ms ticks pass while the first push is held open: none of them sends a second push.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(rx.requests).toHaveLength(1);
+    } finally {
+      release();
+      await telemetry?.stop();
+    }
+  }, 3000);
 });
 
 describe('the wiring', () => {
