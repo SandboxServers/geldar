@@ -85,6 +85,8 @@ export interface GlassHandlerDeps {
   policy?: Partial<PublicPolicy>;
   /** Receives the `glass_untrusted_peer_header` line. Left out: one JSON line on stdout. */
   log?: (entry: { event: string; peer: string }) => void;
+  /** Runs after the kill switch, Host check, size caps and rate limit; true means it answered the request. */
+  extra?: (req: IncomingMessage, res: ServerResponse) => boolean;
 }
 
 /** Most distinct untrusted peers that are logged; each is logged once. */
@@ -282,6 +284,7 @@ export function createHandler(deps: GlassHandlerDeps) {
         return;
       }
     }
+    if (deps.extra?.(req, res) === true) return;
     // HEAD is a GET without a body; Node drops the body bytes of a HEAD response.
     const readMethod = req.method === 'GET' || req.method === 'HEAD';
     const file = STATIC_FILES.get(pathOf(req.url));

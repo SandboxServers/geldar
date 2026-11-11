@@ -4,7 +4,7 @@
  * The relay awaits `record` before it opens or retargets a pane, so a failed write closes the pane
  * instead of leaving it open unaudited (fail closed).
  */
-import { createHash, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { SqlClient } from '../query.ts';
 
 export const AUDIT_RETENTION_DAYS = 90;
@@ -42,10 +42,14 @@ export function newPaneId(now: number = Date.now()): string {
   return `pn_${time}${rand.slice(0, 16)}`;
 }
 
+const ANON_KEY = randomBytes(32);
+
 /** The identity hash is already 64 hex characters; an anonymous viewer is hashed from the session key. */
 export function loginHash(identityHash: string | null, sessionKey: string): string {
   if (identityHash !== null && /^[0-9a-f]{64}$/.test(identityHash)) return identityHash;
-  return createHash('sha256')
+  // An anonymous key holds a client address: a bare SHA-256 of it is brute-forceable, so it is keyed
+  // with a secret that exists only in this process.
+  return createHmac('sha256', ANON_KEY)
     .update(identityHash ?? sessionKey)
     .digest('hex');
 }

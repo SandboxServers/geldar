@@ -6,13 +6,20 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
+import { clientAddress, clientKey } from '../guard.ts';
 import { kinoSessionFromHeader } from '../kino-cookie.ts';
-import type { KinoRelay } from './relay.ts';
+import type { KinoRelay, Pane } from './relay.ts';
 
 export const KINO_WS_PATH = '/kino/ws';
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 /** A client message is a few dozen bytes; this is generous and bounds memory. */
 const MAX_FRAME = 1024;
+/** A client that lets this much feed queue up unread is dropped (a slow reader must not grow Glass's heap). */
+export const MAX_BUFFERED_BYTES = 8 * 1024 * 1024;
+/** A client whose queue does not move for this long is dropped. */
+export const STALL_MS = 30_000;
+/** Pending commands per connection before it is dropped. */
+const MAX_QUEUED_MESSAGES = 16;
 
 export function encodeText(text: string): Buffer {
   const body = Buffer.from(text, 'utf8');
@@ -67,6 +74,28 @@ export interface WsRoute {
   relay: KinoRelay;
   sessionKey: string | undefined;
   now: () => number;
+  /** Peers whose x-geldar-client-ip is believed (GELDAR_GLASS_TRUSTED_PROXIES). */
+  trustedProxies?: ReadonlySet<string>;
+  /** Extra Origin hosts allowed besides the request's own Host (GELDAR_KINO_ALLOWED_ORIGINS). */
+  allowedOrigins?: readonly string[];
+  maxBuffered?: number;
+  stallMs?: number;
+}
+
+/** Same-site only: a browser's Origin must be this server's own host or one on the allow-list. */
+export function originAllowed(
+  origin: string | undefined,
+  host: string | undefined,
+  allowed: readonly string[],
+): boolean {
+  if (origin === undefined) return true; // not a browser: there is no ambient cookie to hijack
+  let h: string;
+  try {
+    h = new URL(origin).host.toLowerCase();
+  } catch {
+    return false;
+  }
+  return h === (host ?? '').toLowerCase() || allowed.includes(h);
 }
 
 /** Handles an `upgrade` event for KINO_WS_PATH. Returns false when the path is not ours. */
@@ -75,6 +104,10 @@ export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: 
   const key = req.headers['sec-websocket-key'];
   if (typeof key !== 'string' || req.headers.upgrade?.toLowerCase() !== 'websocket') {
     socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+    return true;
+  }
+  if (!originAllowed(req.headers.origin, req.headers.host, route.allowedOrigins ?? [])) {
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
     return true;
   }
   const accept = createHash('sha1')
@@ -87,11 +120,24 @@ export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: 
     route.sessionKey === undefined
       ? null
       : kinoSessionFromHeader(route.sessionKey, req.headers.cookie, route.now());
-  const remote = (req.socket as { remoteAddress?: string }).remoteAddress ?? 'unknown';
+  const client = clientKey(clientAddress(req, route.trustedProxies ?? new Set()));
+  const maxBuffered = route.maxBuffered ?? MAX_BUFFERED_BYTES;
   let ended = false;
+  let dropping = false;
+  let pane: Pane | null = null;
   const conn = {
     send: (t: string) => {
-      if (!ended && socket.writable) socket.write(encodeText(t));
+      if (ended || !socket.writable) return;
+      const frame = encodeText(t);
+      if (!dropping && socket.writableLength + frame.length > maxBuffered) {
+        // A slow reader: say bye, close, and destroy the socket if it still does not drain.
+        dropping = true;
+        if (pane !== null) pane.overloaded();
+        else conn.close();
+        setTimeout(() => socket.destroy(), 2000).unref();
+        return;
+      }
+      socket.write(frame);
     },
     close: () => {
       if (ended) return;
@@ -99,24 +145,51 @@ export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: 
       socket.end(Buffer.from([0x88, 0]));
     },
   };
-  const pane = route.relay.accept(
+  pane = route.relay.accept(
     conn,
-    session?.identityHash ?? `anon:${remote}`,
+    session?.identityHash ?? `anon:${client}`,
     session?.identityHash ?? null,
+    session === null ? {} : { expiresAt: session.expiresAt },
   );
   if (pane === null) return true;
+  const live: Pane = pane;
   let pending: Buffer = Buffer.alloc(0);
   let chain: Promise<void> = Promise.resolve();
+  let queued = 0;
   const fail = (): void => {
-    pane.closed();
+    live.closed();
     conn.close();
     socket.destroy();
   };
+  const sock = socket as Duplex & { bytesWritten?: number };
+  let lastWritten = sock.bytesWritten ?? 0;
+  let stalledSince = 0;
+  const stall = setInterval(() => {
+    const written = sock.bytesWritten ?? 0;
+    if (socket.writableLength === 0 || written !== lastWritten) stalledSince = 0;
+    else if (stalledSince === 0) stalledSince = route.now();
+    else if (route.now() - stalledSince >= (route.stallMs ?? STALL_MS)) {
+      stalledSince = 0;
+      dropping = true;
+      live.overloaded();
+      socket.destroy();
+    }
+    lastWritten = written;
+  }, 1000);
+  stall.unref();
+  socket.on('close', () => clearInterval(stall));
   socket.on('data', (chunk: Buffer) => {
     const rest = decodeFrames(
       Buffer.concat([pending, chunk]),
       (t) => {
-        chain = chain.then(() => pane.message(t)).catch(fail);
+        if (queued >= MAX_QUEUED_MESSAGES) return fail();
+        queued += 1;
+        chain = chain
+          .then(() => live.message(t))
+          .catch(fail)
+          .finally(() => {
+            queued -= 1;
+          });
       },
       (op) => {
         if (op === 8) fail();
@@ -126,7 +199,7 @@ export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: 
     if (rest === null) fail();
     else pending = rest;
   });
-  socket.on('close', () => pane.closed());
+  socket.on('close', () => live.closed());
   socket.on('error', fail);
   socket.on('end', fail);
   return true;

@@ -108,9 +108,47 @@ class KinoControlTest {
     @Test
     void aResyncSendsTheWindowAgain() {
         send("start", "kestrel_01");
+        for (int i = 0; i < 10; i++) {
+            feed.pump();
+        }
         out.clear();
         send("resync", "kestrel_01");
-        assertTrue(out.get(0).contains("\"hello\""));
+        for (int i = 0; i < 10; i++) {
+            feed.pump();
+        }
+        assertEquals(2, out.stream().filter(m -> m.contains("\"chunk_section\"")).count());
+        assertTrue(out.stream().noneMatch(m -> m.contains("\"hello\"")));
+    }
+
+    @Test
+    void aFloodOfCommandsForOneAgentIsOneDecisionAndReadsOnlyWithinTheBudget() {
+        for (int i = 0; i < 500; i++) {
+            control.receive(msg(i % 2 == 0 ? "resync" : "start", "kestrel_01"));
+        }
+        control.drain();
+        feed.pump();
+        assertTrue(feed.isTarget("kestrel_01"));
+        assertEquals(1, out.stream().filter(m -> m.contains("\"hello\"")).count());
+        assertTrue(world.reads <= KinoFeed.BLOCK_BUDGET_PER_TICK, "reads " + world.reads);
+    }
+
+    @Test
+    void aStopAfterAFloodWinsAndARefreshNeverOverridesIt() {
+        control.receive(msg("start", "kestrel_01"));
+        control.receive(msg("stop", "kestrel_01"));
+        control.receive(msg("refresh", "kestrel_01"));
+        control.drain();
+        assertFalse(feed.isTarget("kestrel_01"));
+    }
+
+    @Test
+    void atMostMaxPerDrainAgentsAreHandledInOneDrain() {
+        for (int i = 0; i < KinoControl.MAX_PER_DRAIN + 10; i++) {
+            control.receive(msg("start", "agent_" + i));
+        }
+        control.drain();
+        long started = out.stream().filter(m -> m.contains("\"hello\"")).count();
+        assertEquals(KinoControl.MAX_PER_DRAIN, started);
     }
 
     @Test

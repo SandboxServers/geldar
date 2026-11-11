@@ -27,15 +27,20 @@ export interface ControlOptions {
   graceMs?: number;
   /** Heartbeat while a target is watched. The plugin drops a target it has not heard of for longer. */
   refreshMs?: number;
+  /** A later pane's resync is sent at most this often per agent (default 5 s); extra ones are coalesced into one. */
+  resyncMs?: number;
 }
 
 export const DEFAULT_GRACE_MS = 10_000;
 export const DEFAULT_REFRESH_MS = 15_000;
+export const DEFAULT_RESYNC_MS = 5_000;
 
 interface Watched {
   count: number;
   stopTimer: ReturnType<typeof setTimeout> | null;
   refreshTimer: ReturnType<typeof setInterval> | null;
+  lastWindow: number;
+  resyncTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export function controlledFeed(
@@ -44,6 +49,7 @@ export function controlledFeed(
 ): FeedSource & { dispose(): void } {
   const grace = o.graceMs ?? DEFAULT_GRACE_MS;
   const refreshMs = o.refreshMs ?? DEFAULT_REFRESH_MS;
+  const resyncMs = o.resyncMs ?? DEFAULT_RESYNC_MS;
   const watched = new Map<string, Watched>();
   const send = (type: 'start' | 'resync' | 'refresh' | 'stop', agent: string): void => {
     if (!o.enabled()) return;
@@ -52,13 +58,36 @@ export function controlledFeed(
   const drop = (agent: string, w: Watched): void => {
     if (w.stopTimer) clearTimeout(w.stopTimer);
     if (w.refreshTimer) clearInterval(w.refreshTimer);
+    if (w.resyncTimer) clearTimeout(w.resyncTimer);
     watched.delete(agent);
+  };
+  /** One resync per resyncMs per agent: inside the window, a single trailing resync serves all panes. */
+  const resync = (agent: string, w: Watched): void => {
+    if (w.resyncTimer) return;
+    const wait = w.lastWindow + resyncMs - Date.now();
+    if (wait <= 0) {
+      w.lastWindow = Date.now();
+      send('resync', agent);
+      return;
+    }
+    w.resyncTimer = setTimeout(() => {
+      w.resyncTimer = null;
+      w.lastWindow = Date.now();
+      send('resync', agent);
+    }, wait);
+    w.resyncTimer.unref();
   };
   return {
     subscribe(agent, onMessage) {
       let w = watched.get(agent);
       if (w === undefined) {
-        w = { count: 0, stopTimer: null, refreshTimer: null };
+        w = {
+          count: 0,
+          stopTimer: null,
+          refreshTimer: null,
+          lastWindow: Date.now(),
+          resyncTimer: null,
+        };
         watched.set(agent, w);
         send('start', agent);
         const entry = w;
@@ -70,7 +99,7 @@ export function controlledFeed(
           clearTimeout(w.stopTimer);
           w.stopTimer = null;
         }
-        send('resync', agent);
+        resync(agent, w);
       }
       w.count++;
       const entry = w;
@@ -82,6 +111,10 @@ export function controlledFeed(
         unsubscribe();
         entry.count--;
         if (entry.count > 0) return;
+        if (entry.resyncTimer) {
+          clearTimeout(entry.resyncTimer);
+          entry.resyncTimer = null;
+        }
         entry.stopTimer = setTimeout(() => {
           if (entry.count > 0) return;
           send('stop', agent);

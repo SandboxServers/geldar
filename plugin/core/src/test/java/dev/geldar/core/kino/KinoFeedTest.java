@@ -32,10 +32,64 @@ class KinoFeedTest {
         assertAllValid();
     }
 
+    private void pumpAll(KinoFeed feed) {
+        for (int i = 0; i < 2000; i++) {
+            feed.pump();
+        }
+    }
+
+    @Test
+    void helloIsFollowedByTargetMovedSoFollowAndOrbitHaveAFocus() {
+        new KinoFeed(new FakeWorld(Set.of()), sink, 1).start("steve_bot");
+        assertTrue(out.get(0).contains("\"hello\""));
+        assertTrue(out.get(1).contains("\"target_moved\""));
+        assertAllValid();
+    }
+
+    @Test
+    void theWindowIsReadOnlyWithinThePerTickBlockBudgetAndIsCompleteInTheEnd() {
+        Set<Long> loaded = new java.util.HashSet<>();
+        for (int x = -4; x <= 4; x++) {
+            for (int z = -4; z <= 4; z++) {
+                loaded.add(FakeWorld.key(x, z));
+            }
+        }
+        FakeWorld w = new FakeWorld(loaded);
+        KinoFeed feed = new KinoFeed(w, sink, 4, 8192);
+        feed.start("steve_bot");
+        assertEquals(0, w.reads, "start itself reads no block");
+        int total = 0;
+        for (int i = 0; i < 1000; i++) {
+            int before = w.reads;
+            feed.pump();
+            assertTrue(w.reads - before <= 8192, "a pump read " + (w.reads - before));
+            total += w.reads - before;
+        }
+        assertEquals(81 * 5 * 4096, total);
+        assertEquals(81 * 2, count("chunk_section"));
+        assertAllValid();
+    }
+
+    @Test
+    void manyResyncsWhileAWindowIsQueuedCollapseToOneMorePass() {
+        FakeWorld w = new FakeWorld(Set.of(FakeWorld.key(0, 0)));
+        KinoFeed feed = new KinoFeed(w, sink, 1);
+        feed.start("steve_bot");
+        for (int i = 0; i < 100; i++) {
+            feed.start("steve_bot");
+        }
+        pumpAll(feed);
+        assertEquals(2 * 2, count("chunk_section"));
+        assertEquals(1, count("hello"));
+        pumpAll(feed);
+        assertEquals(2 * 2, count("chunk_section"));
+    }
+
     @Test
     void onlyLoadedChunksProduceSectionsAndAirSectionsAreSkipped() {
         KinoFeed feed = new KinoFeed(new FakeWorld(Set.of(FakeWorld.key(0, 0), FakeWorld.key(1, 0))), sink, 1);
         feed.start("steve_bot");
+        pumpAll(feed);
         // Target section 0; sections -2, -1 hold stone, 0, 1, 2 are air: two per loaded chunk.
         assertEquals(4, count("chunk_section"));
         assertAllValid();
