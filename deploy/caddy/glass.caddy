@@ -89,7 +89,7 @@ glass.{$GELDAR_DOMAIN} {
 	handle @kino_tex {
 		uri strip_prefix /kino/tex
 		reverse_proxy {$GELDAR_MAP_UPSTREAM} {
-			header_up -x-geldar-client-ip
+			header_up x-geldar-client-ip {remote_host}
 		}
 	}
 

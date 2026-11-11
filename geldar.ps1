@@ -162,7 +162,8 @@ function Invoke-Check {
     }
     Invoke-Step 'docker compose config (colo.yml with colo-kino.yml, dummy Kino NATS user)' {
         $env:GELDAR_KINO_NATS_USER = 'kino'
-        try { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/colo-kino.yml') config --quiet } finally { Remove-Item Env:GELDAR_KINO_NATS_USER -ErrorAction SilentlyContinue }
+        $env:GELDAR_KINO_PUBLIC_ORIGIN = 'https://glass.example.test'
+        try { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/colo-kino.yml') config --quiet } finally { Remove-Item Env:GELDAR_KINO_NATS_USER, Env:GELDAR_KINO_PUBLIC_ORIGIN -ErrorAction SilentlyContinue }
     }
     Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)'{ docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
