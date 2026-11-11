@@ -11,4 +11,5 @@ animus/test
 **/*.test.ts
 compose/secrets
 **/*.env
-.env*
+**/.env*
+**/*.fakes.ts

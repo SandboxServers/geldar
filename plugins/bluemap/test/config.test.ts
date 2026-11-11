@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest';
 // is not the exact value, fails the test.
 
 const CONFIG = join(import.meta.dirname, '..', 'config');
-const LOOPBACK = '127.0.0.1';
+
+// The setting keys of the BlueMap 5.29 defaults, generated from the pinned jar (known-keys.json).
+const KNOWN = JSON.parse(
+  readFileSync(join(import.meta.dirname, '..', 'known-keys.json'), 'utf8'),
+) as { bluemap: string; jar_sha256: string; files: Record<string, string[]> };
 
 /** The uncommented, unindented `key: value` lines of a file, as a map from key to raw value. */
 function settings(file: string): Map<string, string> {
@@ -37,18 +41,44 @@ function allConfigText(): string {
 
 describe('BlueMap config: internal only', () => {
   it('keeps the integrated webserver off, so nothing listens on any interface', () => {
-    // BlueMap 5.29 has no bind-address option. With the server on, its bind would be all
-    // interfaces. The only accepted state is off. If it is ever on, it must be loopback.
-    const enabled = value('webserver.conf', 'enabled');
-    if (enabled === 'true') {
-      expect(value('webserver.conf', 'ip')).toBe(LOOPBACK);
-    } else {
-      expect(enabled).toBe('false');
-    }
+    // The 5.29 webserver.conf has no bind-address key (no `ip`), so an enabled server cannot be
+    // limited to loopback. The only accepted state is off.
+    expect(value('webserver.conf', 'enabled')).toBe('false');
   });
 
   it('keeps the config free of IPv4 addresses (no node or network address)', () => {
     expect(allConfigText()).not.toMatch(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
+  });
+});
+
+describe('BlueMap config: every key is a 5.29 key', () => {
+  it('is pinned to BlueMap 5.29 with a sha256 of the jar', () => {
+    expect(KNOWN.bluemap).toBe('5.29');
+    expect(KNOWN.jar_sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('covers exactly the files the committed config uses', () => {
+    expect(Object.keys(KNOWN.files).sort()).toEqual([
+      'core.conf',
+      'maps/overworld.conf',
+      'plugin.conf',
+      'webserver.conf',
+    ]);
+  });
+
+  it('finds every committed key among the 5.29 defaults (BlueMap ignores an unknown key silently)', () => {
+    for (const [file, known] of Object.entries(KNOWN.files)) {
+      const names = new Set(known);
+      for (const key of settings(file).keys()) {
+        expect(names.has(key), `${file}: "${key}" is not a 5.29 key`).toBe(true);
+      }
+    }
+  });
+});
+
+describe('BlueMap config: bounded render CPU', () => {
+  it('sets one render thread, not 0 (0 starts one thread per core and competes with the game tick)', () => {
+    expect(value('core.conf', 'render-thread-count')).toBe('1');
   });
 });
 
