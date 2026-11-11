@@ -174,7 +174,7 @@ need docker
 check_prereqs
 load_release "$RELEASE_FILE"
 case $cmd in
-  player-*) ;;
+  player-start | player-stop | player-list) ;;
   *) [ -n "${GELDAR_ADMIN_IMAGE:-}" ] || die "the release manifest has no GELDAR_ADMIN_IMAGE; pin the admin image by digest" ;;
 esac
 if [ "$cmd" = token-mint ]; then
@@ -182,7 +182,7 @@ if [ "$cmd" = token-mint ]; then
 fi
 check_merged_config
 check_secrets
-case $cmd in player-*) run_hosts ;; esac
+case $cmd in player-start | player-stop | player-list) run_hosts ;; esac
 
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*"
