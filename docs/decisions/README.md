@@ -89,5 +89,6 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0082](0082-colo-compose-network-and-limits.md) | Colo compose layout: own network, CPU and memory limits, loopback binds and ports (Velocity on 127.0.0.1:25567, never 25565 or 25566) | Proposed (the orchestrator may accept at the ops merge) |
 | [0083](0083-c1-body-and-mind-image-contents.md) | Body and Mind image contents, base pins, and what is never baked in | Proposed |
 | [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
+| [0088](0088-metrics-exporters-and-replay-window.md) | Metrics exporters are push-only OTLP to a configured URL; the MCP replay window is bounded and optional | Proposed |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
 >
