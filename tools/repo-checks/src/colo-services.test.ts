@@ -76,7 +76,9 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
 
   it('gives the Mind its Postgres password from a file (the postgres secret)', () => {
     expect(env(mind).POSTGRES_PASSWORD_FILE).toBe('/run/secrets/postgres');
-    expect(mind.secrets).toEqual(['postgres']);
+    // The Mind also takes its NATS password as a file (decision 0080), declared like the Body's.
+    expect(mind.secrets).toEqual(['postgres', { source: 'nats-mind', target: 'nats-mind.txt' }]);
+    expect(colo.secrets['nats-mind']).toEqual({ file: './secrets/nats-mind.txt' });
   });
 
   it('bakes in no credential: every PASSWORD or TOKEN variable is a *_FILE path', () => {
