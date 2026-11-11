@@ -3,6 +3,7 @@ import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
 import type { GolemConfig } from './config.ts';
+import { golemNatsAuth } from './nats-credentials.ts';
 
 /** The JetStream KV bucket the Velocity identity plugin watches; Golem creates it. */
 export const REGISTRY_BUCKET = 'geldar-life-registry';
@@ -76,7 +77,12 @@ function hostAndPort(natsUrl: string): string {
 export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistry> {
   let nc: Awaited<ReturnType<typeof connectNats>>;
   try {
-    nc = await connectNats({ servers: natsUrl, name: 'golem', timeout: CONNECT_TIMEOUT_MS });
+    nc = await connectNats({
+      servers: natsUrl,
+      name: 'golem',
+      timeout: CONNECT_TIMEOUT_MS,
+      ...golemNatsAuth(),
+    });
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -262,6 +268,7 @@ export async function removeRegistryKey(natsUrl: string, lifeId: string): Promis
     servers: natsUrl,
     name: 'geldar-tools',
     timeout: CONNECT_TIMEOUT_MS,
+    ...golemNatsAuth(),
   });
   try {
     const kv = await new Kvm(jetstream(nc)).open(REGISTRY_BUCKET);

@@ -3,6 +3,7 @@ import { connectNats } from '@geldar/contract/nats';
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';
+import { eventsinkNatsAuth } from './nats-credentials.ts';
 import { pgEventWriter } from './writer.ts';
 
 const config = loadConfig();
@@ -16,7 +17,11 @@ const pool = new pg.Pool({
 });
 // An idle client dropping must not crash the process; the next query reconnects.
 pool.on('error', (error) => console.error('eventsink: idle postgres client error', error));
-const nc = await connectNats({ servers: config.natsUrl, name: 'eventsink' });
+const nc = await connectNats({
+  servers: config.natsUrl,
+  name: 'eventsink',
+  ...eventsinkNatsAuth(),
+});
 const consumer = await startConsumer(nc, pgEventWriter(pool), {
   ...config,
   onFatal: (error) => {
