@@ -17,13 +17,24 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0131.
 
-## Order to start
+## Stop: do not open the public Minecraft port yet
 
-1. **Owner confirmations are done for C1 and C3, and the start is clear.** Decisions 0076, 0078 and 0080 are accepted. The owner rulings of 2026-11-10 are in decision 0130: backups deferred (scope B accepted), deploy by the node's runner or the owner's SSH access (no new deploy account), telemetry in the node's SigNoz, and the long tests (7-day soak, chaos day, N-bot long benchmark, restore-time tests, 20-minute smoke) run once at the campaign end. Still Proposed: 0077 (invitee auth), which gates C2 and C2b, and 0079 (credit numbers), which gates C4-04. Do not start those packets until they are accepted.
-2. **P1-C1-00 (ledger id C1-00)**, the contract unblocker, is next. It merges first. Fan-out packets never edit `contract/`.
-3. **Lanes.** Fan out per the wave's lane table after the unblocker merges. Lanes share files only where a card says so; the shared-file owners are in packet-conventions section 3.
+Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges. On `main`, `compose/colo-public.yml` still publishes the offline-mode bot ingress, which has no authentication (C2-R2 finding R2-01; decision 0137). The UniFi forward exists, but nothing listens behind it until those variables are set.
 
-Do not start a wave's live steps until its owner items are answered.
+## Where the campaign is (2026-11-11, morning)
+
+1. **C1 code is merged.** Still open in C1: **C1-10**, the owner's run on the node. The first ranger is Jason, the Red Ranger (`ag-jason-01`), a sovereign player agent. His Claude Code session runs under the owner's login. The Colo stack on the node has been stopped since its last failed start; PR #78 fixed those failures, and a redeploy is still to do. Also open: the C1-01 leftovers (FX-SPAWN, PR #100).
+2. **C2 desktop work is merged:** C2-00 to C2-06, C2-02b, C2-07a1 to C2-07a3, C2-07b and C2-08a (PRs #79 to #99).
+   - In flight: C2-07c1 (#102), C2-07c2 (#101), and C2-07d (the admin Glass secret mount and pre-creating the BlueMap webroot).
+   - The edge is in place: the UniFi forward and the DNS names exist (owner-held values in `~/.config/geldar/colo-edge.md` on the owner's machine).
+3. **C2 wave review, round 1.** Findings and owners are in [worknotes/wave-c2-review-1.md](worknotes/wave-c2-review-1.md).
+   - R1 (MCP) fix slices: M1 merged, B2 merged, M2 running.
+   - R3 (Glass) fix slices: A1 merged, B merged, A2 running.
+   - Still to start: R2 (Velocity, including the ghost default-mode window) and R4 (node and Caddy, including the `colo-public.sh` re-install gap). Round 2 then targets the fix commits first.
+4. **Self-registration (0135)** is designed: GitHub and Discord sign-in, no manual approval. Its cards are in [packets/c2-register-packets.md](packets/c2-register-packets.md). C2-08a is merged; C2-08b and C2-08c come next. Turning registration on waits for the C2 gates and for C2-08d (the per-player Body lifecycle).
+5. **C2b:** C2b-00 and C2b-01 (session 1) are merged. Next: the C2b-01 load test (live lane), C2b-02 (the relay), and C2b-03a (the renderer).
+6. **Every ruling made tonight** is in [worknotes/orchestrator-2026-11-11.md](worknotes/orchestrator-2026-11-11.md) (R1 to R28, the owner answers, flakes).
+7. **Owner items still open:** the C1-10 run; creating the GitHub and Discord OAuth apps; the C2b questions (texture licence, audit retention, the feed load budget); 0079 (credits); and confirming R21 (Glass hides the prompt) or signing a privacy review.
 
 ## Who does what
 
