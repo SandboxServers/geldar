@@ -107,4 +107,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0132](0132-ipv4-literal-policy.md) | IPv4 literal policy: loopback and documentation addresses anywhere, private addresses only in an allowlisted file, public addresses never | Accepted (orchestrator, 2026-11-10) |
 | [0133](0133-colo-admin-by-one-shot-container.md) | Colo administration runs in a one-shot `geldar-admin` container (migrate, owner, player, token) inside the compose network | Accepted (orchestrator, 2026-11-10) |
 | [0134](0134-mind-is-a-profile-until-a-thinker-exists.md) | The Mind (`animus`) is a compose profile on the Colo until a Thinker path exists | Accepted (orchestrator, 2026-11-11) |
+| [0136](0136-register-ban-procedure.md) | Banning a registered identity: by provider account, tokens revoked, unban leaves them revoked | Accepted (orchestrator, 2026-11-11) |
 >

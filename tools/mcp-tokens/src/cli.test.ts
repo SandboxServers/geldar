@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { identityHash } from '../../../threshold/register/src/identity.ts';
 import { type Env, type Io, PASSWORD_REWRITE_WARNING, parseArgs, run } from './cli.ts';
 import { PEPPER_FILE, REPO_ROOT } from './secret-files.ts';
 
@@ -205,5 +206,72 @@ describe('player retire', () => {
       'player ag-jo-01: retire',
       'life ag_jo_01: removal failed (ECONNREFUSED)',
     ]);
+  });
+});
+
+describe('identity ban by provider account (F16)', () => {
+  const PEPPER = 'p'.repeat(40);
+
+  async function banCall(
+    extra: string[],
+  ): Promise<{ code: number; h: Awaited<ReturnType<typeof harness>>; values: unknown[][] }> {
+    const h = await harness();
+    const pepperFile = join(h.secretDir, '..', 'register-pepper');
+    await writeFile(pepperFile, `${PEPPER}\n`);
+    const values: unknown[][] = [];
+    const env = {
+      ...envOf(h),
+      connect: async () => ({
+        query: async (text: string, v?: unknown[]) => {
+          values.push(v ?? []);
+          return text.startsWith('UPDATE mcp_identities')
+            ? { rows: [{ owner_id: 'o' }] }
+            : { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    const code = await run(
+      ['identity', 'ban', ...extra.map((x) => (x === 'PEPPER' ? pepperFile : x))],
+      h.io,
+      env,
+    );
+    return { code, h, values };
+  }
+
+  it('derives the id with the register service HMAC and bans it', async () => {
+    const { code, values } = await banCall([
+      '--provider',
+      'github',
+      '--user-id',
+      '4242',
+      '--pepper-file',
+      'PEPPER',
+    ]);
+    expect(code).toBe(0);
+    expect(values.some((v) => v[0] === identityHash(PEPPER, 'github', '4242'))).toBe(true);
+  });
+
+  it('a different provider gives a different id, and an unknown provider is refused', async () => {
+    const discord = await banCall([
+      '--provider',
+      'discord',
+      '--user-id',
+      '4242',
+      '--pepper-file',
+      'PEPPER',
+    ]);
+    expect(discord.values.some((v) => v[0] === identityHash(PEPPER, 'discord', '4242'))).toBe(true);
+    expect(discord.values.some((v) => v[0] === identityHash(PEPPER, 'github', '4242'))).toBe(false);
+    const bad = await banCall([
+      '--provider',
+      'gitlab',
+      '--user-id',
+      '4242',
+      '--pepper-file',
+      'PEPPER',
+    ]);
+    expect(bad.code).toBe(1);
+    expect(bad.values).toEqual([]);
   });
 });

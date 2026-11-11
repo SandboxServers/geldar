@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
+import { identityHash } from '../../../threshold/register/src/identity.ts';
 import { banIdentity, unbanIdentity } from './identities.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
@@ -46,6 +48,8 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
   identity ban <id>                     ban a registered identity (64 hex digits) and revoke its owner's tokens
+  identity ban --provider github|discord --user-id <id> [--pepper-file <f>]
+                                        the same, the id derived from the provider account (decision 0136)
   identity unban <id>                   lift the ban (revoked tokens stay revoked)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
@@ -187,9 +191,29 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   throw new Error(USAGE);
 }
 
-async function runIdentity(io: Io, env: Env, args: string[]): Promise<void> {
-  const [verb, id] = args;
-  if ((verb === 'ban' || verb === 'unban') && id !== undefined && args.length === 2) {
+/**
+ * The identity id an operator names: the 64-hex id itself, or `--provider` and `--user-id`, from
+ * which it is derived with the register service's own HMAC (identityHash) and its pepper, read
+ * from `--pepper-file` or REGISTER_PEPPER_FILE the way the service reads REGISTER_PEPPER_FILE.
+ */
+async function identityIdFrom(args: string[], parsed: Parsed): Promise<string> {
+  if (args.length === 2) return args[1] as string;
+  const provider = optionalFlag(parsed, '--provider');
+  const userId = optionalFlag(parsed, '--user-id');
+  if (args.length !== 1 || provider === undefined || userId === undefined) throw new Error(USAGE);
+  if (provider !== 'github' && provider !== 'discord')
+    throw new Error('--provider is github or discord');
+  const file = optionalFlag(parsed, '--pepper-file') ?? process.env.REGISTER_PEPPER_FILE;
+  if (file === undefined) throw new Error('--pepper-file (or REGISTER_PEPPER_FILE) is required');
+  const pepper = (await readFile(file, 'utf8')).trim();
+  if (pepper.length < 32) throw new Error('the register pepper is missing or too short');
+  return identityHash(pepper, provider, userId);
+}
+
+async function runIdentity(io: Io, env: Env, args: string[], parsed: Parsed): Promise<void> {
+  const verb = args[0];
+  if (verb === 'ban' || verb === 'unban') {
+    const id = await identityIdFrom(args, parsed);
     await withSql(env, async (sql) => {
       if (verb === 'ban') {
         const revoked = await banIdentity(sql, id);
@@ -337,7 +361,7 @@ export async function run(
     } else if (command === 'owner') {
       await runOwner(parsed, io, env, rest);
     } else if (command === 'identity') {
-      await runIdentity(io, env, rest);
+      await runIdentity(io, env, rest, parsed);
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
     } else if (command === 'token') {

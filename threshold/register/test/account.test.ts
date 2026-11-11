@@ -224,6 +224,8 @@ describe('list, mint and retire', () => {
   });
 });
 
+// Covers the page text and the FakeStore's own line only. The database rule is asserted by
+// sql/test/check-schema.sql and threshold/mcp/test/it/register-gates.it.test.ts.
 describe('lifetime player limit (R36)', () => {
   it('allows the 10th creation, refuses the 11th, and still refuses after a retire', async () => {
     await start({ perMinute: 1000 });
