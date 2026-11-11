@@ -33,6 +33,7 @@ const NATS_SECRETS = [
   'nats-paper.txt',
   'nats-velocity.txt',
   'nats-eventsink.txt',
+  'nats-mcp.txt',
   'nats-auth.conf',
 ];
 

@@ -190,19 +190,19 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a memory total below Paper heap (6G) plus 1 GiB', () => {
-    const outcome = run(GOOD.replace('16384m', '7000m'));
+    const outcome = run(GOOD.replace('18944m', '7000m'));
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toContain("below Paper's heap (6G) plus 1 GiB");
   });
 
   it('refuses a memory total below the sum of the per-service memory budgets', () => {
-    const outcome = run(GOOD.replace('16384m', '8192m'));
+    const outcome = run(GOOD.replace('18944m', '8192m'));
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toContain('below the sum of the per-service memory budgets');
   });
 
   it('refuses a CPU total below the sum of the per-service CPU budgets', () => {
-    const outcome = run(GOOD.replace('cpu_limit: 7.5', 'cpu_limit: 7'));
+    const outcome = run(GOOD.replace('cpu_limit: 9\n', 'cpu_limit: 8\n'));
     expect(outcome.ok).toBe(false);
     expect(outcome.error).toContain('below the sum of the per-service CPU budgets');
   });
@@ -214,12 +214,12 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a missing cpu_limit and names it', () => {
-    const outcome = run(GOOD.replace('cpu_limit: 7.5\n', ''));
+    const outcome = run(GOOD.replace('cpu_limit: 9\n', ''));
     expect(outcome.error).toContain('cpu_limit is missing');
   });
 
   it('refuses a missing memory_limit and names it', () => {
-    const outcome = run(GOOD.replace('memory_limit: 16384m\n', ''));
+    const outcome = run(GOOD.replace('memory_limit: 18944m\n', ''));
     expect(outcome.error).toContain('memory_limit is missing');
   });
 
@@ -239,8 +239,8 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('refuses a cpu_limit of 0 and a memory_limit without a unit', () => {
-    expect(run(GOOD.replace('cpu_limit: 7.5', 'cpu_limit: 0')).error).toContain('cpu_limit');
-    expect(run(GOOD.replace('16384m', '16384')).error).toContain('memory_limit');
-    expect(run(GOOD.replace('16384m', '8')).error).toContain('memory_limit');
+    expect(run(GOOD.replace('cpu_limit: 9', 'cpu_limit: 0')).error).toContain('cpu_limit');
+    expect(run(GOOD.replace('18944m', '18944')).error).toContain('memory_limit');
+    expect(run(GOOD.replace('18944m', '8')).error).toContain('memory_limit');
   });
 });
