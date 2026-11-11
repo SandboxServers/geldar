@@ -197,7 +197,7 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 
 - The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
   think until the C4 gateway exists.
-- BlueMap is not mounted. Accepting its download is the owner's call (`plugins/bluemap/bluemap.lock.json`).
+- BlueMap is mounted read-only into Paper (C2-07o): the verified jar from `state/bluemap/bluemap.jar` and `plugins/bluemap/config`. The owner accepted BlueMap's download of the Minecraft client resources under Mojang's EULA (2026-11-11), so `core.conf` has `accept-download: true`.
 - Postgres service roles are superuser for now (C2).
 - NATS auth generation is PowerShell-only; copy its files from the trusted machine.
 - The admin service mounts `postgres.txt` and `postgres-mcp.txt` (at `/run/secrets/postgres-mcp.txt`). The
@@ -351,8 +351,7 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
 
 ## Owner actions
 
-- Accept BlueMap's Mojang asset download in the deployed `core.conf` only. The repository does not make that choice,
-  and the download is not approved by this runbook.
+- Done 2026-11-11: the owner accepted BlueMap's Mojang resource download (`accept-download: true` in the repo's `core.conf`).
 - Choose the deploy path (runner or SSH, decision 0130) and set up the secrets directory and the release manifest on
   the node.
 - Run the first deploy with the checklist in `docs/analysis/phase1/worknotes/P1-C1-04.md`.

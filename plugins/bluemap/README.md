@@ -32,7 +32,7 @@ the date entry together, and rerun `test/lock.test.ts`.
 
 These files are copied into the Paper plugin directory, `plugins/BlueMap/`, at deploy time.
 
-- `core.conf`: `accept-download: false` (see below), `metrics: false` (no outbound bStats ping),
+- `core.conf`: `accept-download: true` (owner ruling 2026-11-11, see below), `metrics: false` (no outbound bStats ping),
   `data: "bluemap"`, `render-thread-count: 1` (one render thread: 0 starts one per CPU core, which
   competes with the game tick for the shared CPU cap).
 - `webserver.conf`: `enabled: true`, `port: 8101` (ruling R38, 2026-11-11). The 5.29 defaults have no
@@ -45,7 +45,7 @@ These files are copied into the Paper plugin directory, `plugins/BlueMap/`, at d
   Exposed by the live JSON: player name, uuid, position, rotation, dimension. 5.29 has no plugin key for health or
   food and its players.json does not carry them as far as the pinned defaults show (not verified on a running server).
   No skin is fetched from Mojang.
-- `maps/overworld.conf`: the only map. `dimension: "minecraft:overworld"`, world `world`, read from
+- `maps/overworld.conf`, `maps/nether.conf`, `maps/end.conf`: the three dimensions of world `world` (C2-07o). Overworld: `dimension: "minecraft:overworld"`, world `world`, read from
   the Paper volume. The marker set is empty: no entity markers and no static markers.
 
 No token, password, key, address or account name appears in these files. `test/config.test.ts`
@@ -55,15 +55,13 @@ checks that.
 
 BlueMap needs the Minecraft client assets (textures and models) to render blocks. On first run it
 downloads them from Mojang's servers. That download is governed by Mojang's terms, so it is an
-owner decision, not a default. The repo ships with `accept-download: false`. BlueMap then does not
+owner decision, not a default. Since 2026-11-11 (owner ruling, C2-07o) the repo ships with `accept-download: true`. With `false`, BlueMap would not
 download anything and does not render textures.
 
 No Mojang asset is committed to this repo. The owner must:
 
 1. Read Mojang's terms for the client assets.
-2. Set `accept-download: true` in the copy of `core.conf` that is deployed to the node. Do not
-   commit that change. The repo keeps `false`, and `test/config.test.ts` fails if it is committed as
-   `true`.
+2. Done: `accept-download: true` is committed in `core.conf`, and `test/config.test.ts` fails if it is removed.
 3. Record the acceptance in the deploy notes (owner action, 0130).
 
 ## How the jar reaches Paper (for C1-02 and C1-04)

@@ -17,6 +17,7 @@ GELDAR_SECRETS_DIR=${GELDAR_SECRETS_DIR:-/etc/geldar-colo/secrets}
 export GELDAR_SECRETS_DIR
 RELEASE_FILE=${GELDAR_RELEASE_FILE:-/etc/geldar-colo/release.env}
 STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
+export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bluemap.jar into Paper (C2-07o)
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 DRY_RUN=${DEPLOY_DRY_RUN:-0}

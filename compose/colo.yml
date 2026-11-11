@@ -138,8 +138,9 @@ services:
       - paper-data:/data
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar', target: /plugins/bluemap.jar, read_only: true} # BlueMap (C2-07o, R38): verified jar, read-only; web server on 8101, colo network only
+      - ../plugins/bluemap/config:/plugins/BlueMap:ro
     # No ports: the game port and RCON are not published. Velocity is the only game listener.
-    # BlueMap (C2-07m, R38): its web server (port 8101) is on the colo network only; bluemap-web proxies /maps/*/live/* to it.
     networks: [colo]
     healthcheck:
       <<: *mc-health

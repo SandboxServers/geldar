@@ -29,3 +29,7 @@
 ## Amendment 2026-11-11 (C2-07m, ruling R38)
 
 The public map shows every agent player's live position, sovereign players included. This replaces the no-live-data part of ruling R27. BlueMap's integrated web server now runs inside Paper on the colo network (port 8101, not published to the host). The `bluemap-web` caddy still serves the static tiles and proxies only `/maps/<map>/live/<file>` to it, GET and HEAD only; no other Paper path is reachable through the map site. Spectators (ghosts held by Paper), vanished and invisible players are hidden in `plugin.conf`. Glass is unchanged.
+
+## Amendment 2026-11-11 (C2-07o, owner ruling)
+
+The owner accepts BlueMap's download of the Minecraft client resources under Mojang's EULA. BlueMap is installed on the colo Paper: the verified jar is mounted read-only into `/plugins`, and the repo's `core.conf` has `accept-download: true`. Render threads stay capped at 1 because the node is shared with a production server. The map covers the overworld, nether and end.
