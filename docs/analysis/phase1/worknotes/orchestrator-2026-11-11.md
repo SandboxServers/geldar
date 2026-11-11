@@ -180,3 +180,18 @@ These go into decision 0075 as an amendment when C2b starts.
 - **Panes.** Start at 4 per session. The cap is a setting so it can be raised later.
 - **Admins.** Admin is a flag in Postgres. A `kino_admins` table, or a role column, is keyed by the Microsoft account's stable subject id. It is managed by an admin CLI command like the ban command. The owner is the first admin. The table is written only through the admin tool, and Kino reads it through a read-only grant.
 - **Kino sign-in app (2026-11-11).** Created with az as the Entra app 'Geldar Kino'. Personal Microsoft accounts only, token v2, redirect URI /auth/callback on the glass host plus localhost:8787. The client secret is valid for 1 year and is stored only on the owner's desktop at ~/.config/geldar/; it is not in the repo or on the node yet.
+
+## Owner ruling R40 (2026-11-11): one Microsoft login, and a roster site
+
+- **One login.** Registration, the roster and Kino all use Microsoft accounts only, through the "Geldar Kino" Entra app (personal accounts). GitHub and Discord sign-in are removed. This amends 0135:
+  - The 30-day account-age floor cannot be checked with an MSA. Microsoft's own account controls replace it, and the daily owner cap stays.
+- **Roster site.** Owners manage their agents:
+  - create players;
+  - rename them;
+  - pause and resume them;
+  - retire them;
+  - mint and retire tokens;
+  - set the Kino anonymous-view flag.
+- **The database is the roster.** Postgres replaces `shards/colo-mind.yaml` `sovereign.players` as the source of truth for players-host and the whitelist step.
+- **A supervisor starts and stops player bodies** as the roster changes.
+- **When.** Planned as wave C2c, after Jason's first run, which is done by hand through C1-10a.
