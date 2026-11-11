@@ -4,6 +4,7 @@ import type { NatsConnection } from '@nats-io/transport-node';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONSUMER_NAME, STREAM_CONFIG } from './config.ts';
 import { ensureConsumer, ensureStream, MAX_DELIVER, startConsumer } from './consumer.ts';
+import { CONSUMED, EventsinkMetrics, WRITTEN } from './metrics.ts';
 import type { EventWriter } from './writer.ts';
 
 // The library entry points are replaced by fakes; the enums and types stay real.
@@ -209,6 +210,39 @@ describe('startConsumer', () => {
     expect(writer.insertBatch).toHaveBeenCalledTimes(1);
     expect(ack).toHaveBeenCalledTimes(1);
     expect(nak).not.toHaveBeenCalled();
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+  });
+
+  it('hands the metrics to the batch: one written damage counts as consumed and written', async () => {
+    const metrics = new EventsinkMetrics();
+    const message = {
+      subject: 'geldar.phase0.damage',
+      data: new TextEncoder().encode(JSON.stringify(EVENT)),
+      info: { deliveryCount: 1 },
+      ack: vi.fn(),
+      nak: vi.fn(),
+    };
+    fetch = async (n) => (n === 1 ? batchOf([message]) : idleBatch());
+    const running = await startConsumer({} as NatsConnection, writer, {
+      batchSize: 10,
+      fetchWaitMs: 1000,
+      metrics,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    // The summed value of each family, read from the OTLP form the push sends.
+    const sums = Object.fromEntries(
+      metrics.registry.otlp('0').map((family) => {
+        const { name, sum } = family as {
+          name: string;
+          sum?: { dataPoints: { asDouble: number }[] };
+        };
+        return [name, sum?.dataPoints.reduce((total, point) => total + point.asDouble, 0)];
+      }),
+    );
+    expect(sums[CONSUMED]).toBe(1);
+    expect(sums[WRITTEN]).toBe(1);
     const stopped = running.stop();
     await vi.advanceTimersByTimeAsync(2_000);
     await stopped;
