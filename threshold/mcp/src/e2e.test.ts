@@ -16,8 +16,8 @@ import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
 // every store, the Body, the presence bucket and the clock faked. Nothing sleeps for real.
 
 const PEPPER = new TextEncoder().encode('e2e-pepper-0123456789-stub-only');
-const TOKEN_A = 'e2e-token-for-player-aa-0123';
-const TOKEN_B = 'e2e-token-for-player-bb-0123';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
+const TOKEN_B = `gmcp-${'bb'.repeat(32)}`;
 const FAR_FUTURE_MS = 10 ** 13;
 const START_BUDGET = 37;
 
