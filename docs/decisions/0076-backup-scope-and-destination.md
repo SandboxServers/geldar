@@ -1,6 +1,6 @@
 # 0076. Backup scope and destination
 
-- Status: Proposed (owner confirms the scope and picks the destination)
+- Status: Accepted (owner confirmed 2026-11-10)
 - Date: 2026-11-10
 - Spec: section 6.8 (backups), which does not say what a checkpoint contains; section 10, the Phase 2 gate "a coordinated checkpoint is restored on a scratch shard"; the Phase 1 colo layout. Decisions 0043, 0064, 0070.
 
@@ -30,6 +30,10 @@ Destination (the owner's choice, not a design question here):
 - Encrypt every copy at rest. Key handling is the owner's.
 - Destination: **D3** is recommended. The owner decides.
 - Restore test: restore a checkpoint onto a scratch shard and run the Body benchmark there. This is the Phase 2 gate in spec section 10, moved earlier. Run it at every wave boundary in Phase 1.
+
+## Owner ruling (2026-11-10)
+
+Scope B is accepted. The destination (D1, D2 or D3) and the backup build are DEFERRED by the owner (decision 0130). Consequence: until backups exist, a running colo shard has no restore path. So the shard stays invite-only and unannounced, nothing irreplaceable lives on it, and the first restore test moves to the end-of-phase gates. The append-only journal change (C1-05a) is NOT deferred.
 
 ## Consequences
 
