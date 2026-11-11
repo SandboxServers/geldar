@@ -120,10 +120,11 @@ MCP, admin, player host and eventsink services, and `UID`/`GID` on Paper). The d
 and refuse unless the secrets directory and every secret file are owned by `GELDAR_SERVICE_UID`. So on the node,
 export the uid for the deploy and use the owner the files already have (for example `GELDAR_SERVICE_UID=1001`).
 `deploy/gen-secrets.sh` run as root chowns the directory and the generated files to `GELDAR_SERVICE_UID`; run as another
-user it refuses unless that user's uid equals `GELDAR_SERVICE_UID`. Velocity's image has no UID/GID support, so it runs as
-its image user (root); it reads its secret as root. Paper's data volume (`paper-data`) may keep the ownership it had
-before this change: check it with `docker run --rm --entrypoint stat -v geldar-colo_paper-data:/data <paper image digest from compose/colo.yml> -c '%u %n' /data`
-before the first `up`, and fix it only inside the project's volume. NATS auth generation is PowerShell-only, so its files are copied
+user it refuses unless that user's uid equals `GELDAR_SERVICE_UID`. The pinned `itzg/mc-proxy` (Velocity) image has no UID/GID
+handling and runs as root, so it reads its 0600 secret owned by `GELDAR_SERVICE_UID` as root; that is expected and fine.
+Paper's data volume (`paper-data`) may keep the ownership it had before this change. So the first `up` must check that the
+volume is owned by `GELDAR_SERVICE_UID` or does not exist yet (a fresh volume): run `docker run --rm --entrypoint stat -v geldar-colo_paper-data:/data <paper image digest from compose/colo.yml> -c '%u %n' /data`
+before it, and fix a mismatch only inside the project's volume. NATS auth generation is PowerShell-only, so its files are copied
 from the trusted machine.
 
 ### (d) Release manifest
