@@ -62,6 +62,13 @@ render_all() {
       { [ "$up_port" -ge 1 ] && [ "$up_port" -le 65535 ]; } || die "$up_var port is outside 1-65535"
       sed_up="$sed_up -e s|{[\$]$up_var}|$up|g"
     done
+    # Glass carries the Kino switch (decision 0075): rendered from the env file, 0 (off) when unset.
+    if [ "$s" = glass ]; then
+      kino=$(env_value GELDAR_KINO_ENABLED)
+      kino=${kino:-0}
+      case $kino in 0 | 1) ;; *) die "GELDAR_KINO_ENABLED must be 0 or 1" ;; esac
+      sed_up="$sed_up -e s|{[\$]GELDAR_KINO_ENABLED:0}|$kino|g"
+    fi
     for f in "$s.caddy" "$s-off.caddy"; do
       [ -f "$SRC/$f" ] || die "site file not found: $f"
       # shellcheck disable=SC2086

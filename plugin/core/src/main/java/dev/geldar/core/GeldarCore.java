@@ -72,9 +72,15 @@ public final class GeldarCore extends JavaPlugin {
         if (config.lakitu().enabled()) {
             dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
         }
-        if (dev.geldar.core.kino.KinoSetup.enabled(getConfig())) {
-            dev.geldar.core.kino.KinoSetup.register(this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
-        }
+        // Kino is registered always and applied from kino.enabled (default false: the feed starts killed, so it
+        // publishes nothing). The config file is re-read every 5 s, so flipping kino.enabled needs no restart.
+        dev.geldar.core.kino.KinoFeed kino = dev.geldar.core.kino.KinoSetup.register(
+                this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
+        dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
+        getServer().getScheduler().runTaskTimer(this, () -> {
+            reloadConfig();
+            dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
+        }, 100L, 100L);
 
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.
         // The Bukkit calls hop back onto the server thread; the timer thread touches no server state.

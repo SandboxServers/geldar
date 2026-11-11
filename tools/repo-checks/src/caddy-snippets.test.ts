@@ -114,10 +114,10 @@ describe('deploy/caddy site files', () => {
 
   it('sets Host to localhost in every Glass proxy block, which Glass accepts and a public Host gets 421', () => {
     const blocks = proxyBlocks(read('glass.caddy'));
-    expect(blocks.length).toBe(4);
-    // The fourth block is the register upstream, which keeps the public Host (it checks Origin, not Host).
+    expect(blocks.length).toBe(5); // read API, page, stream, Kino (off by default), register
+    // One block is the register upstream, which keeps the public Host (it checks Origin, not Host).
     const glass = blocks.filter((b) => /^\s*header_up Host localhost$/m.test(b));
-    expect(glass.length).toBe(3);
+    expect(glass.length).toBe(4);
   });
 
   it('sets Host to localhost in the MCP proxy block, so the public Host does not get 403 host_rejected', () => {

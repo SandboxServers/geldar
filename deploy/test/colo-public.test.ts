@@ -313,6 +313,25 @@ describe('colo-public.sh refusals', () => {
     expect(existsSync(r.geldar)).toBe(false);
   });
 
+  it('renders the Kino switch into the glass file: 0 when unset, the env value when set', () => {
+    const off = rig();
+    expect(off.run(['install']).status).toBe(0);
+    const offFile = readFileSync(join(off.geldar, 'glass.caddy'), 'utf8');
+    expect(offFile).toContain('0 == 1');
+    expect(offFile).not.toContain('{$GELDAR_KINO_ENABLED');
+    const on = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=1\n`);
+    expect(on.run(['install']).status).toBe(0);
+    expect(readFileSync(join(on.geldar, 'glass.caddy'), 'utf8')).toContain('1 == 1');
+  });
+
+  it('refuses a Kino switch that is not 0 or 1', () => {
+    const r = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=yes\n`);
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_KINO_ENABLED must be 0 or 1');
+    expect(existsSync(r.geldar)).toBe(false);
+  });
+
   it('refuses when an env-file key is missing', () => {
     const r = rig(DEFAULT_ENV.replace('GELDAR_MCP_UPSTREAM=127.0.0.1:8102', ''));
     const res = r.run(['install']);

@@ -21,6 +21,11 @@ public final class KinoSetup {
         return Math.max(1, Math.min(8, file.getInt("kino.radius_chunks", 4)));
     }
 
+    /** The config reload hook: applies {@code kino.enabled} to a running feed. */
+    public static void reload(KinoFeed feed, ConfigurationSection file) {
+        feed.setEnabled(enabled(file));
+    }
+
     public static KinoFeed register(
             JavaPlugin plugin, ConfigurationSection file, String natsUrl, String shard, Function<String, String> env) {
         NatsKinoSink sink = new NatsKinoSink(natsUrl, shard, env, plugin.getLogger());

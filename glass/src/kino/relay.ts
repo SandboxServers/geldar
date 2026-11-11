@@ -3,6 +3,7 @@
  * it sends nothing into the world and publishes nothing to NATS. Browser messages are subscribe and
  * unsubscribe only (kino-client.schema.json); anything else closes the socket.
  */
+import { type AuditEntry, loginHash, newPaneId, type PaneAudit } from './audit.ts';
 import { type Access, ANONYMOUS, permitted, type ScopeStore } from './scope.ts';
 
 export const DEFAULT_PANE_CAP = 4;
@@ -32,10 +33,15 @@ export interface KinoRelayOptions {
   feed: FeedSource;
   paneCap?: number;
   enabled?: () => boolean;
-  /** Narrow audit hook (K06 fills it): called once per allowed subscribe. */
-  audit?: (entry: { identityHash: string | null; agentId: string; mode: string }) => void;
+  /** The pane audit. A rejected `record` before a subscribe closes the pane (fail closed). */
+  audit?: PaneAudit;
+  /** Clock for audit times. */
+  now?: () => Date;
   /** Gauge hook for the open pane count. */
   onPanes?: (open: number) => void;
+  /** Metric hooks (K07): a refused or ended subscribe by reason, and feed bytes forwarded. */
+  onRefusal?: (reason: ByeReason) => void;
+  onBytes?: (bytes: number) => void;
 }
 
 export interface Pane {
@@ -77,6 +83,7 @@ export function parseClientMessage(text: string): Parsed {
 export class KinoRelay {
   private readonly panes = new Map<string, number>();
   private readonly cap: number;
+  private readonly live = new Set<(reason: ByeReason) => void>();
 
   private readonly o: KinoRelayOptions;
 
@@ -103,21 +110,50 @@ export class KinoRelay {
     this.o.onPanes?.(this.openPanes);
     let done = false;
     let stop: (() => void) | null = null;
+    const paneId = newPaneId();
+    const login = loginHash(identityHash, sessionKey);
+    let live: { agent: string; mode: AuditEntry['mode'] } | null = null;
+    const entry = (event: AuditEntry['event'], agent: string, mode: AuditEntry['mode']) => {
+      const at = (this.o.now?.() ?? new Date()).toISOString();
+      const e: AuditEntry = {
+        event,
+        login_hash: login,
+        agent_id: agent,
+        pane_id: paneId,
+        mode,
+        at,
+      };
+      if (event === 'pane_closed') e.stopped_at = at;
+      return e;
+    };
+    /** The pane stopped watching: write pane_closed. The write is reported by the audit; it cannot reopen. */
+    const auditClose = (): void => {
+      if (live === null || !this.o.audit) return;
+      const e = entry('pane_closed', live.agent, live.mode);
+      live = null;
+      this.o.audit.record(e).catch(() => {});
+    };
     const release = (): void => {
       if (done) return;
       done = true;
       stop?.();
       stop = null;
+      this.live.delete(end);
+      auditClose();
       const left = (this.panes.get(sessionKey) ?? 1) - 1;
       if (left <= 0) this.panes.delete(sessionKey);
       else this.panes.set(sessionKey, left);
       this.o.onPanes?.(this.openPanes);
     };
     const end = (reason: ByeReason): void => {
-      if (!done) conn.send(JSON.stringify({ type: 'bye', reason }));
+      if (!done) {
+        this.o.onRefusal?.(reason);
+        conn.send(JSON.stringify({ type: 'bye', reason }));
+      }
       release();
       conn.close();
     };
+    this.live.add(end);
     return {
       closed: release,
       message: async (text) => {
@@ -131,6 +167,7 @@ export class KinoRelay {
         if (msg.type === 'unsubscribe') {
           stop?.();
           stop = null;
+          auditClose();
           conn.send(JSON.stringify({ type: 'bye', reason: 'unsubscribed' }));
           return;
         }
@@ -146,16 +183,46 @@ export class KinoRelay {
         }
         if (done) return;
         if (!ok) return end('target_not_permitted');
+        const mode = msg.mode as AuditEntry['mode'];
+        const event =
+          live === null
+            ? 'pane_opened'
+            : live.agent !== msg.agent
+              ? 'pane_targeted'
+              : 'pane_mode_changed';
+        if (this.o.audit) {
+          try {
+            await this.o.audit.record(entry(event, msg.agent, mode));
+          } catch {
+            // Fail closed: the write failed, so the pane does not run unaudited.
+            if (!done) end('feed_unavailable');
+            return;
+          }
+          if (done) {
+            // The socket closed while the write was in flight: record the stop, open nothing.
+            live = { agent: msg.agent, mode };
+            auditClose();
+            return;
+          }
+        }
         stop?.();
-        this.o.audit?.({ identityHash, agentId: msg.agent, mode: msg.mode });
+        live = { agent: msg.agent, mode };
         stop = this.o.feed.subscribe(msg.agent, (json) => {
-          if (!done) conn.send(json);
+          if (done) return;
+          this.o.onBytes?.(Buffer.byteLength(json));
+          conn.send(json);
         });
       },
     };
   }
 
+  /** Sends `bye` with the reason to every live pane and closes it (the kill switch going off). */
+  endAll(reason: ByeReason): void {
+    for (const end of [...this.live]) end(reason);
+  }
+
   private refuse(conn: KinoConn, reason: ByeReason): null {
+    this.o.onRefusal?.(reason);
     conn.send(JSON.stringify({ type: 'bye', reason }));
     conn.close();
     return null;
