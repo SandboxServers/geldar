@@ -74,7 +74,7 @@ export function optionalInt(
   return block[key] === undefined ? fallback : int(block, key, where, min, max);
 }
 
-/** The `trusted_proxies` list: each entry an IP address or an IP range (`10.0.0.0/8`). Absent trusts none. */
+/** The `trusted_proxies` list: each entry an IP address or an IP range (a prefix such as /8). Absent trusts none. */
 export function proxyList(block: Doc, key: string, where: string): string[] {
   if (block[key] === undefined) return [];
   return proxyEntries(list(block, key, where), `${where}.${key}`);
@@ -98,7 +98,7 @@ export function proxyEntries(entries: readonly unknown[], label: string): string
     }
     if (typeof entry !== 'string' || !validProxyEntry(entry)) {
       throw new Error(
-        `${label}[${index}] must be an IP address or an IP range such as 10.0.0.0/8, not '${String(entry)}'`,
+        `${label}[${index}] must be an IP address or an IP range with a prefix length such as /8, not '${String(entry)}'`,
       );
     }
     return entry;
