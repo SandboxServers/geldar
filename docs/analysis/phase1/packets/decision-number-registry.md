@@ -14,11 +14,11 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0071 | existing | none | Public topology (Caddy, Cloudflare not wired) | Accepted |
 | 0072 | existing | none | Glass and BlueMap public, read-only | Accepted |
 | 0075 | existing | none | Glass is a Lakitu camera | Accepted |
-| 0076 | pre-packet | owner | Backup scope and destination | Proposed; owner confirms before C1-05b |
+| 0076 | pre-packet | owner | Backup scope and destination | Accepted (owner 2026-11-10); destination and build deferred (0130) |
 | 0077 | pre-packet | owner | Invitee auth and the login rule | Proposed; owner confirms before C2-01, C2-07 |
-| 0078 | pre-packet | owner | Mind placement for Phase 1 | Proposed; owner confirms before C1-03, C1-10 |
+| 0078 | pre-packet | owner | Mind placement for Phase 1 | Accepted (owner 2026-11-10) |
 | 0079 | pre-packet | owner | Credit numbers and charge rules | Proposed; owner confirms before C4-04, C4-05 |
-| 0080 | pre-packet | owner | NATS auth cutover | Proposed; owner confirms before C1-06a, C2-07 |
+| 0080 | pre-packet | owner | NATS auth cutover | Accepted (owner 2026-11-10) |
 | 0081 | C1 | C1-00 | Colo contract and gate definitions | Proposed |
 | 0082 | C1 | C1-02 | Colo compose layout, ports and binds. C1-09 may extend it | Proposed |
 | 0083 | C1 | C1-03 | Image contents, base pins | Proposed |
@@ -68,7 +68,8 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0125 | C4 | C4-08 | Phase 1 exit run | Proposed |
 | 0126 | C4 | owner | Shrine exit wording ruling. No packet writes it | reserved for owner |
 | 0127 to 0129 | C4 | none | Spare in the C4 block | free |
-| 0130 | after block | orchestrator | First free number after the Phase 1 blocks | free |
+| 0130 | after block | owner (ruling 2026-11-10) | Phase 1 owner rulings for C1 and the test schedule (deploy access, backups deferred, SigNoz, long tests at the end of the phase). Written by the owner-ruling docs packet | Accepted (owner ruling) |
+| 0131 | after block | orchestrator | First free number after 0130 | free |
 
 ## Clashes and how they were resolved
 
