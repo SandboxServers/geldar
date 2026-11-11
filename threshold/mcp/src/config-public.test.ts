@@ -18,45 +18,45 @@ function shardDoc(): Record<string, any> {
 describe('public block: proxy trust and client-address header', () => {
   it('reads public.trusted_proxies and public.client_ip_header', () => {
     const doc = shardDoc();
-    doc.public = { trusted_proxies: ['10.2.2.2'], client_ip_header: 'x-real-client' };
+    doc.public = { trusted_proxies: ['198.51.100.2'], client_ip_header: 'x-real-client' };
     const config = parseMcpConfig(doc, { env: ENV });
-    expect(config.public.trustedProxies).toEqual(['10.2.2.2']);
+    expect(config.public.trustedProxies).toEqual(['198.51.100.2']);
     expect(config.public.clientIpHeader).toBe('x-real-client');
-    expect(config.http.trustedProxies).toEqual(['10.2.2.2']);
+    expect(config.http.trustedProxies).toEqual(['198.51.100.2']);
     expect(config.http.clientIpHeader).toBe('x-real-client');
   });
 
   it('prefers public.trusted_proxies over sovereign.mcp.trusted_proxies', () => {
     const doc = shardDoc();
-    doc.sovereign.mcp.trusted_proxies = ['10.9.9.9'];
-    doc.public = { trusted_proxies: ['10.2.2.2'] };
+    doc.sovereign.mcp.trusted_proxies = ['203.0.113.9'];
+    doc.public = { trusted_proxies: ['198.51.100.2'] };
     const config = parseMcpConfig(doc, { env: ENV });
-    expect(config.http.trustedProxies).toEqual(['10.2.2.2']);
+    expect(config.http.trustedProxies).toEqual(['198.51.100.2']);
   });
 
   it('keeps sovereign.mcp.trusted_proxies as the fallback when the public block leaves it out', () => {
     const doc = shardDoc();
-    doc.sovereign.mcp.trusted_proxies = ['10.9.9.9'];
+    doc.sovereign.mcp.trusted_proxies = ['203.0.113.9'];
     doc.sovereign.mcp.client_ip_header = 'x-old-header';
     const config = parseMcpConfig(doc, { env: ENV });
-    expect(config.public.trustedProxies).toEqual(['10.9.9.9']);
+    expect(config.public.trustedProxies).toEqual(['203.0.113.9']);
     expect(config.public.clientIpHeader).toBe('x-old-header');
     expect(config.http.clientIpHeader).toBe('x-old-header');
   });
 
   it('lets the environment override public.trusted_proxies and public.client_ip_header', () => {
     const doc = shardDoc();
-    doc.public = { trusted_proxies: ['10.2.2.2'], client_ip_header: 'x-real-client' };
+    doc.public = { trusted_proxies: ['198.51.100.2'], client_ip_header: 'x-real-client' };
     const config = parseMcpConfig(doc, {
       env: {
         ...ENV,
-        GELDAR_MCP_TRUSTED_PROXIES: '10.1.1.1',
+        GELDAR_MCP_TRUSTED_PROXIES: '192.0.2.1',
         GELDAR_MCP_CLIENT_IP_HEADER: 'x-env-client',
       },
     });
-    expect(config.http.trustedProxies).toEqual(['10.1.1.1']);
+    expect(config.http.trustedProxies).toEqual(['192.0.2.1']);
     expect(config.http.clientIpHeader).toBe('x-env-client');
-    expect(config.public.trustedProxies).toEqual(['10.2.2.2']);
+    expect(config.public.trustedProxies).toEqual(['198.51.100.2']);
   });
 
   it('defaults to no trusted proxy and the x-geldar-client-ip header', () => {
