@@ -234,7 +234,8 @@ export async function samplePending(
 
 export interface EventsinkTelemetry {
   metrics: EventsinkMetrics;
-  stop(): void;
+  /** Starts no further push and resolves once every push already in flight has settled. */
+  stop(): Promise<void>;
 }
 
 /**
@@ -260,11 +261,24 @@ export function eventsinkTelemetry(
     log: options.log,
     fetch: options.fetch,
   };
-  const timer = setInterval(
-    () => void pushMetrics(metrics.registry, pushOptions),
-    options.intervalMs ?? 15_000,
-  );
+  const inFlight = new Set<Promise<void>>();
+  let stopped = false;
+  const push = (): void => {
+    if (stopped) return;
+    const request: Promise<void> = pushMetrics(metrics.registry, pushOptions).finally(() => {
+      inFlight.delete(request);
+    });
+    inFlight.add(request);
+  };
+  const timer = setInterval(push, options.intervalMs ?? 15_000);
   timer.unref();
-  void pushMetrics(metrics.registry, pushOptions);
-  return { metrics, stop: () => clearInterval(timer) };
+  push();
+  return {
+    metrics,
+    stop: async () => {
+      stopped = true;
+      clearInterval(timer);
+      await Promise.allSettled([...inFlight]);
+    },
+  };
 }

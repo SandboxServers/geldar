@@ -163,8 +163,11 @@ describe('the label sets are closed', () => {
 describe('the push', () => {
   const servers: Server[] = [];
 
-  /** A loopback receiver that records every request and answers with `status`. */
-  async function receiver(status = 200) {
+  /**
+   * A loopback receiver that records every request and answers with `status`. A `gate` holds every
+   * answer until it resolves; the request is recorded on arrival either way.
+   */
+  async function receiver(status = 200, gate: Promise<void> = Promise.resolve()) {
     const requests: {
       method?: string | undefined;
       path?: string | undefined;
@@ -183,7 +186,7 @@ describe('the push', () => {
           type: req.headers['content-type'],
           body,
         });
-        res.writeHead(status).end();
+        void gate.then(() => res.writeHead(status).end());
       });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
@@ -219,7 +222,7 @@ describe('the push', () => {
     await vi.waitFor(() =>
       expect(rx.requests.some((r) => r.body.includes('"asDouble":1'))).toBe(true),
     );
-    telemetry?.stop();
+    await telemetry?.stop();
     const sent = rx.requests.find((r) => r.body.includes('"asDouble":1'));
     expect(sent?.method).toBe('POST');
     expect(sent?.path).toBe('/v1/metrics');
@@ -240,12 +243,48 @@ describe('the push', () => {
       { service: 'eventsink', log: LOG, intervalMs: 10 },
     );
     await vi.waitFor(() => expect(rx.requests.length).toBeGreaterThanOrEqual(2));
-    telemetry?.stop();
-    // A push already in flight when stop() is called may still land; wait it out, then check.
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await telemetry?.stop();
     const after = rx.requests.length;
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(rx.requests.length).toBe(after);
+  });
+
+  it('stop waits for a push held open by the receiver, and no push starts or arrives after it', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const rx = await receiver(200, gate);
+    const starts: string[] = [];
+    const countingFetch = ((url: string, init?: RequestInit) => {
+      starts.push(url);
+      return fetch(url, init);
+    }) as unknown as typeof fetch;
+    const telemetry = eventsinkTelemetry(
+      { GELDAR_TELEMETRY_URL: rx.url },
+      { service: 'eventsink', log: LOG, intervalMs: 20, fetch: countingFetch },
+    );
+    expect(telemetry).toBeDefined();
+    try {
+      // The first push has reached the receiver and is held open: its answer has not come back.
+      await vi.waitFor(() => expect(rx.requests.length).toBeGreaterThanOrEqual(1));
+      let settled = false;
+      const stopping = telemetry?.stop().then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(settled).toBe(false);
+      release();
+      await stopping;
+      expect(settled).toBe(true);
+      const started = starts.length;
+      const arrived = rx.requests.length;
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(starts.length).toBe(started);
+      expect(rx.requests.length).toBe(arrived);
+    } finally {
+      release();
+    }
   });
 
   it('logs a refused push with its status and does not throw', async () => {
