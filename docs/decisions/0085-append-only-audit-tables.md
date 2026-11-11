@@ -26,4 +26,4 @@
 
 ## Index
 
-- Row for `docs/decisions/README.md`: `| [0085](0085-append-only-audit-tables.md) | Append-only audit tables: receipts, thoughts, suppressed_wakeups and mcp_journal refuse UPDATE and DELETE for every role (0007); the mcp role has no UPDATE or DELETE; thought replays do nothing; the reset logs its audit deletes and runs none | Accepted (orchestrator, under owner decisions 0064 and 0076) |`
+- Row for `docs/decisions/README.md`: `| [0085](0085-append-only-audit-tables.md) | Append-only audit tables: receipts, thoughts, suppressed_wakeups and mcp_journal refuse UPDATE and DELETE statements (0007; a superuser can still TRUNCATE or bypass the trigger; hardening in C2); the mcp role has no UPDATE or DELETE; thought replays do nothing; the reset logs its audit deletes and runs none | Accepted (orchestrator, under owner decisions 0064 and 0076) |`
