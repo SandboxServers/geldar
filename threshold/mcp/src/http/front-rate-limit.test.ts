@@ -44,6 +44,14 @@ describe('public rate limit (public.rate_limit)', () => {
     expect(await refused.text()).toBe(RATE_BODY_ONE_SECOND);
   });
 
+  it('does not limit a door whose public block has no rate limit (rateLimit null)', async () => {
+    const started = await startDoor({ public: { rateLimit: null }, now: () => 0 });
+    door = started.door;
+    for (let i = 0; i < 200; i++) {
+      expect((await post(started.port)).status).toBe(200);
+    }
+  });
+
   it('serves again once the clock has refilled one token', async () => {
     let clock = 0;
     const started = await startDoor({

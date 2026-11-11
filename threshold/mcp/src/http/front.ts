@@ -119,9 +119,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
   const pub = options.public ?? PUBLIC_DEFAULTS;
   // One bucket per client address for every public request, authenticated or not.
-  // Only when a public block is passed (the CLI always passes one), so a bare door in a test is not limited.
+  // Only when the shard has a `public:` block (its rateLimit is null otherwise), so a bare door is not limited.
   const publicLimit =
-    options.public === undefined
+    options.public?.rateLimit == null
       ? undefined
       : new PublicRateLimit(options.public.rateLimit.perMinute, options.public.rateLimit.burst);
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);

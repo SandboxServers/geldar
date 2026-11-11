@@ -13,14 +13,17 @@ export interface PublicConfig {
   trustedProxies: string[];
   /** The header a trusted proxy's client address is read from. */
   clientIpHeader: ClientIpHeader;
-  /** The per-client token bucket on every public request. */
-  rateLimit: { perMinute: number; burst: number };
+  /** The per-client token bucket on every public request; null (no `public:` block) means no per-client limit. */
+  rateLimit: { perMinute: number; burst: number } | null;
   /** True refuses every public request with the 503 kill-switch body. */
   killSwitch: boolean;
 }
 
-/** Used when the shard file leaves `public.rate_limit` out: public surfaces are rate-limited by default. */
-export const PUBLIC_RATE_DEFAULTS = { perMinute: 120, burst: 40 } as const;
+/**
+ * Used when a `public:` block leaves `rate_limit` out (ruling R23): one owner's pool is 600 a minute
+ * in the shard's sovereign rate limits, so the per-client default is not below it.
+ */
+export const PUBLIC_RATE_DEFAULTS = { perMinute: 600, burst: 120 } as const;
 
 /** The settings a front door uses when its caller passes none: no kill switch, default rate limit. */
 export const PUBLIC_DEFAULTS: PublicConfig = {
@@ -40,6 +43,8 @@ export function publicConfig(
 ): PublicConfig {
   const pub = block === undefined ? {} : map(block, 'public');
   return {
+    // No `public:` block means no per-client limit (decision 0091 point 5).
+    rateLimit: block === undefined ? null : rateLimitConfig(pub.rate_limit),
     trustedProxies:
       pub.trusted_proxies === undefined
         ? fallback.trustedProxies
@@ -48,13 +53,12 @@ export function publicConfig(
       pub.client_ip_header === undefined
         ? fallback.clientIpHeader
         : headerName(pub.client_ip_header, 'public.client_ip_header'),
-    rateLimit: rateLimitConfig(pub.rate_limit),
     killSwitch: pub.kill_switch === undefined ? false : bool(pub, 'kill_switch', 'public'),
   };
 }
 
 /** `public.rate_limit`: per_minute 1 to 10000 and burst 1 to 1000, each defaulted when absent. */
-function rateLimitConfig(value: unknown): PublicConfig['rateLimit'] {
+function rateLimitConfig(value: unknown): { perMinute: number; burst: number } {
   if (value === undefined) return { ...PUBLIC_RATE_DEFAULTS };
   const block = map(value, 'public.rate_limit');
   return {
