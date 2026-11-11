@@ -433,6 +433,18 @@ describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0
 // C2-08c: the register service is wired but off by default (decision 0135).
 const register = colo.services.register ?? {};
 
+describe('compose/colo.yml: the register start credits (C2-R5 F3)', () => {
+  it('defaults to the shard cap_credits, the number the CLI path grants', () => {
+    const shard = parse(readFileSync(`shards/colo-mind.yaml`, 'utf8')) as {
+      sovereign: { budget: { cap_credits: number } };
+    };
+    expect(shard.sovereign.budget.cap_credits).toBe(240);
+    expect(env(register).REGISTER_START_CREDITS).toBe(
+      composeDefault('REGISTER_START_CREDITS', String(shard.sovereign.budget.cap_credits)),
+    );
+  });
+});
+
 describe('compose/colo.yml: the register service (C2-08c)', () => {
   it('is behind the register profile, so no default up starts it, and the kill switch defaults to on', () => {
     expect(register.profiles).toEqual(['register']);

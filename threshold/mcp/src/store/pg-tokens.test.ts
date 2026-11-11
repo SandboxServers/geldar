@@ -26,6 +26,7 @@ function row(over: Partial<TokenRow> = {}): TokenRow {
     harness: 'claude',
     status: 'active',
     owner_players: 1,
+    owner_banned: false,
     player_cap: 3,
     expires_at: new Date(NOW + DAY),
     revoked_at: null,
@@ -139,6 +140,13 @@ describe('activeToken', () => {
     const over = row({ owner_players: 2, player_cap: 1 });
     expect(activeToken(over, NOW, HARNESSES)).toBeNull();
     expect(missReason(over, NOW, HARNESSES)).toBe('owner_over_cap');
+  });
+
+  it('refuses a token whose owner identity is banned, and reports it as revoked', () => {
+    const banned = row({ owner_banned: true });
+    expect(activeToken(banned, NOW, HARNESSES)).toBeNull();
+    expect(missReason(banned, NOW, HARNESSES)).toBe('token_revoked');
+    expect(activeToken(row({ owner_banned: false }), NOW, HARNESSES)).not.toBeNull();
   });
 
   it('accepts a player whose owner is exactly at its cap', () => {

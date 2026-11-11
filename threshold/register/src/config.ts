@@ -77,7 +77,12 @@ export function loadConfig(
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^[a-z][a-z0-9-]{0,31}$/.test(s)),
-    startCredits: intOf(env.REGISTER_START_CREDITS, 0, 'REGISTER_START_CREDITS'),
+    // No default: a life with 0 credits is dead on arrival. The deploy sets the shard's cap_credits.
+    startCredits: intOf(
+      required(env.REGISTER_START_CREDITS, 'REGISTER_START_CREDITS'),
+      0,
+      'REGISTER_START_CREDITS',
+    ),
     minAccountAgeDays: intOf(
       env.REGISTER_MIN_ACCOUNT_AGE_DAYS,
       30,

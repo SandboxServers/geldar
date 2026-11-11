@@ -32,4 +32,4 @@ The TRUNCATE cleanups in the integration tests run only against a scratch databa
 
 GELDAR_IT_ALLOW_SHARED_DB is CI-only: never set it locally.
 
-The guard allows the shared name only when the variable is `1` and `GITHUB_ACTIONS` is `true`, and CI sets the variable on the one integration step that needs it.
+The guard allows the shared name only when the variable is `1` and `GITHUB_ACTIONS` is `true`, and CI sets the variable on the one integration step that needs it. Migration 0010 (rulings R34 to R36) pins every definer function's search_path with pg_temp last and schema-qualifies its tables, adds egister_create_player (lifetime cap of 10 creations per owner) and egister_retire_player, revokes the register role's direct writes to players, tokens, budgets and agents, and lets geldar_mcp read mcp_identities.banned_at; the check asserts a temp-table shadow mint fails, the role cannot retire or un-revoke directly, and the 11th creation is refused.

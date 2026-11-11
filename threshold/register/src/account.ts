@@ -220,6 +220,8 @@ export class Account {
       }),
     );
     if (result === 'cap') return this.show(res, s, 'You have reached your player limit.');
+    if (result === 'limit')
+      return this.show(res, s, 'You have reached the lifetime limit for creating players.');
     if (result === 'taken') return this.show(res, s, 'That player id is taken.');
     this.deps.log('player created');
     html(res, 200, tokenPage(playerId, value));
@@ -241,7 +243,7 @@ export class Account {
   }
 
   private async retire(res: ServerResponse, s: Session, playerId: string): Promise<true> {
-    const ok = await this.deps.store.retirePlayer(s.ownerId, playerId);
+    const ok = await this.deps.store.retirePlayer(s.identityHash, playerId);
     this.deps.log(ok ? 'player retired' : 'retire refused');
     return this.show(res, s, ok ? 'Player retired.' : 'That player cannot be retired.');
   }

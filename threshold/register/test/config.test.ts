@@ -8,6 +8,7 @@ const env = {
   REGISTER_PEPPER_FILE: 'p',
   REGISTER_TOKEN_PEPPER_FILE: 't',
   REGISTER_SHARD: 'test',
+  REGISTER_START_CREDITS: '240',
 };
 const read = (p: string) => (p === 'p' ? 'x'.repeat(32) : `s-${p}\n`);
 
@@ -19,6 +20,13 @@ describe('loadConfig', () => {
     expect(c.maxNewOwnersPerDay).toBe(10);
     expect(c.publicUrl).toBe('https://register.example.invalid');
     expect(c.github.clientSecret).toBe('s-g');
+  });
+
+  it('requires the start credits and reads them as a whole number', () => {
+    const { REGISTER_START_CREDITS: _unset, ...without } = env;
+    expect(() => loadConfig(without, read)).toThrow('REGISTER_START_CREDITS is not set');
+    expect(() => loadConfig({ ...env, REGISTER_START_CREDITS: '-1' }, read)).toThrow();
+    expect(loadConfig(env, read).startCredits).toBe(240);
   });
 
   it('turns the switch off only for the exact string false', () => {

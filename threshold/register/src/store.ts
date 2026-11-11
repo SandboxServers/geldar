@@ -40,10 +40,10 @@ export interface Store {
     ownerId: string,
   ): Promise<void>;
   listPlayers(ownerId: string): Promise<PlayerRow[]>;
-  /** Creates the life, the player, its budget and its first token in one transaction. */
-  createPlayer(request: NewPlayerRequest): Promise<'ok' | 'cap' | 'taken'>;
+  /** Creates the life, player, budget and first token in register_create_player; limit is the lifetime cap of 10 (R36). */
+  createPlayer(request: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'>;
   /** Mints a token through register_mint_token; false when the function refuses (not the owner's). */
   mintToken(request: MintRequest): Promise<boolean>;
-  /** Retires the owner's own player and revokes its tokens; false when it is not theirs or not live. */
-  retirePlayer(ownerId: string, playerId: string): Promise<boolean>;
+  /** Retires the owner's own player and revokes its tokens; false when it is not theirs or not live. The database checks the owner by identity. */
+  retirePlayer(identityHash: string, playerId: string): Promise<boolean>;
 }

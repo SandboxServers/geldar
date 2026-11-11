@@ -25,6 +25,7 @@ describe('listMigrations', () => {
       '0007_journals_append_only.sql',
       '0008_register_identities.sql',
       '0009_register_mint_function.sql',
+      '0010_register_definer_functions.sql',
     ]);
   });
 
