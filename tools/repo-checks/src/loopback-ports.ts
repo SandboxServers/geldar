@@ -10,6 +10,11 @@ import { parseAllDocuments } from 'yaml';
 export const LOOPBACK_PREFIX = '127.0.0.1:';
 const LOOPBACK_HOST = '127.0.0.1';
 
+/** The colo compose file: no reserved host port, and a resource limit on every service (decision 0082). */
+export const COLO_PATH = 'compose/colo.yml';
+/** Host ports the colo stack never publishes: 25565 is the game server, 25566 is reserved. */
+const RESERVED_HOST_PORTS = [25565, 25566];
+
 /** True for the compose files the rule applies to, by repo-relative, forward-slash path. */
 export function isComposeFile(path: string): boolean {
   return /^compose\/[^/]+\.ya?ml$/.test(path);
@@ -60,8 +65,33 @@ function portProblem(entry: unknown): string | null {
   return `port ${shown} is not a string or a long-form mapping`;
 }
 
+/**
+ * Why a published host port is refused in the colo file, or null when it is not. A range is refused when it covers
+ * a reserved port. A value that is not a number or a range fails closed.
+ */
+function reservedHostPortProblem(published: unknown): string | null {
+  const text = String(published);
+  const match = /^(\d+)(?:-(\d+))?$/.exec(text);
+  if (match === null)
+    return `host port ${JSON.stringify(text)} cannot be read as a number or a range`;
+  const low = Number(match[1]);
+  const high = match[2] === undefined ? low : Number(match[2]);
+  const hit = RESERVED_HOST_PORTS.find((port) => port >= low && port <= high);
+  return hit === undefined
+    ? null
+    : `publishes host port ${hit}, which the colo stack never publishes`;
+}
+
+/** The `deploy.resources.limits` mapping of one service, or undefined when it has none. */
+function resourceLimits(definition: Record<string, unknown>): unknown {
+  const deploy = definition.deploy;
+  if (!isRecord(deploy) || !isRecord(deploy.resources)) return undefined;
+  return deploy.resources.limits;
+}
+
 /** The `ports:` entries and host networking of one compose file that break the loopback rule. */
 export function findPublicPorts(path: string, text: string): PortFinding[] {
+  const isColo = path === COLO_PATH;
   const finding = (service: string, reason: string): PortFinding => ({ path, service, reason });
 
   const documents = parseAllDocuments(text, { merge: true });
@@ -105,6 +135,17 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
       const mode = networkModeProblem(definition.network_mode);
       if (mode !== null) findings.push(finding(service, mode));
     }
+    if (isColo) {
+      const limits = resourceLimits(definition);
+      if (!isRecord(limits) || !('cpus' in limits) || !('memory' in limits)) {
+        findings.push(
+          finding(
+            service,
+            'has no deploy.resources.limits with cpus and memory; every colo service needs one',
+          ),
+        );
+      }
+    }
     if (!('ports' in definition)) continue;
     if (!Array.isArray(definition.ports)) {
       findings.push(finding(service, 'ports must be a list'));
@@ -113,6 +154,17 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
     for (const entry of definition.ports) {
       const problem = portProblem(entry);
       if (problem !== null) findings.push(finding(service, problem));
+      if (!isColo) continue;
+      // Short form is ip:published:target; long form has a published key. No published value means an ephemeral port.
+      const published =
+        typeof entry === 'string'
+          ? entry.split(':')[1]
+          : isRecord(entry)
+            ? entry.published
+            : undefined;
+      if (published === undefined || published === '') continue;
+      const reserved = reservedHostPortProblem(published);
+      if (reserved !== null) findings.push(finding(service, reserved));
     }
   }
   return findings;

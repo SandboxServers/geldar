@@ -86,6 +86,8 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0079](0079-credit-numbers-and-charge-rules.md) | Credit numbers and charge rules: spec tiers for Mind-driven agents, 0057 numbers for sovereign players, refund on failure before output, reserve before dispatch, per-address caps scaled to players | Proposed (owner confirms the numbers and charge rules) |
 | [0080](0080-nats-auth-cutover.md) | NATS auth cutover: default-on after a live nats-server test, credentials through compose/secrets, least-privilege users, per-Thinker users in Phase 1 and Gateway mTLS at Phase 2 | Accepted (owner confirmed 2026-11-10) |
 | [0081](0081-c1-unblocker-checks-and-first-party-pin-exemption.md) | C1 unblocker checks and the first-party pin exemption: release-age floor with a dated list, first-party image allowlist (digest pin still required), integration-test floor, decision-index drift check, checkpoint manifest and shard-config schemas | Accepted (owner ruled 2026-11-10) |
+| [0082](0082-colo-compose-network-and-limits.md) | Colo compose layout: own network, CPU and memory limits, loopback binds and ports (Velocity on 127.0.0.1:25567, never 25565 or 25566) | Proposed (the orchestrator may accept at the ops merge) |
 | [0083](0083-c1-body-and-mind-image-contents.md) | Body and Mind image contents, base pins, and what is never baked in | Proposed |
+| [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
 >

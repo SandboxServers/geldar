@@ -1,6 +1,8 @@
-# Opt-in NATS auth overlay (decision 0067). UNTESTED AGAINST A LIVE SERVER: no nats-server binary
-# was available when this was written, so the permission lists and the reads below are checked by
-# reading, not by a connection.
+# Opt-in NATS auth overlay (decision 0067). It is opt-in now: the default stays open NATS until the
+# cutover gate of decision 0080 passes. The gate's live test is threshold/mcp/test/nats-auth.it.test.ts
+# (decision 0087, run with GELDAR_IT=1 against this overlay's nats-server digest). When that test
+# passes and the generator is fixed (C1-06c), the default changes to this overlay on (0080 option B).
+# Until then, the generated config from `shard nats-auth` is not yet what the test checks.
 # Use with the MCP file too (its geldar-mcp entry needs its base):
 #   docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -p geldar-phase0 up -d
 # Before that, write the server config and the per-user password files (git-ignored, owner-only):
