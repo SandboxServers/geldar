@@ -503,6 +503,23 @@ describe('secret files come from the merged config (decision 0084)', () => {
     expect(mutates(calls(fx))).toBe(false);
   });
 
+  // The same containment check without a symlink, so it also runs where symlinks are refused (Windows without
+  // developer mode): the merged config names a file that lies outside the secrets directory.
+  it('refuses a merged-config path that lies outside the secrets directory, and runs no pull or up', () => {
+    const fx = fixture();
+    const elsewhere = join(fx.dir, 'elsewhere');
+    mkdirSync(elsewhere);
+    const outsideFile = join(elsewhere, 'postgres.txt');
+    writeFileSync(outsideFile, 'ELSEWHERE-test-value\n');
+    const text = readFileSync(fx.config, 'utf8');
+    writeFileSync(fx.config, text.split(posix(join(fx.secrets, 'postgres.txt'))).join(posix(outsideFile)));
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('secret file postgres.txt (compose secret: postgres) resolves outside');
+    expect(r.out).not.toContain('ELSEWHERE-test-value');
+    expect(mutates(calls(fx))).toBe(false);
+  });
+
   it('never prints a secret file contents, even when the file is refused', () => {
     const fx = fixture();
     writeFileSync(join(fx.secrets, 'postgres.txt'), 'SENTINEL-7f3a9c\n');
