@@ -380,6 +380,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     };
     const front = (ports.frontDoor ?? createFrontDoor)({
       http: config.http,
+      public: config.public,
       pepper,
       store: tokens,
       limiter,

@@ -103,8 +103,9 @@ describe('the Glass SQL allowlist', () => {
     await listAgents(db);
     await streamStartCursor(db);
     for (const call of calls) expect(call.text).not.toContain('DELETE');
-    expect(calls[0]?.values).toEqual([hostile]);
-    expect(calls[1]?.values).toEqual([hostile]);
-    expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10]);
+    // The last value of a thought statement is its cut-off: null here, as no delay is set.
+    expect(calls[0]?.values).toEqual([hostile, false, null]);
+    expect(calls[1]?.values).toEqual([hostile, false]);
+    expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10, false, null]);
   });
 });

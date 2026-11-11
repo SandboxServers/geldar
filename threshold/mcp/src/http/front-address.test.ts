@@ -112,7 +112,7 @@ async function start(
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
-      clientIpHeader: 'cf-connecting-ip',
+      clientIpHeader: 'x-geldar-client-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
       maxBodyBytes: 65536,
@@ -136,7 +136,7 @@ function post(token: string, cfConnectingIp?: string): Promise<number> {
     'content-length': Buffer.byteLength(INIT),
     authorization: `Bearer ${token}`,
   };
-  if (cfConnectingIp !== undefined) headers['cf-connecting-ip'] = cfConnectingIp;
+  if (cfConnectingIp !== undefined) headers['x-geldar-client-ip'] = cfConnectingIp;
   return new Promise((resolve, reject) => {
     const req = request(
       { host: '127.0.0.1', port, path: '/p/aa', method: 'POST', headers },
@@ -185,14 +185,14 @@ describe('failed-auth state and token cache', () => {
 });
 
 describe('client address behind a trusted proxy', () => {
-  it('ignores CF-Connecting-IP from a peer that is not trusted', async () => {
+  it('ignores x-geldar-client-ip from a peer that is not trusted', async () => {
     await start({ trustedProxies: [] });
     await exhaust('127.0.0.2');
     // The header names another client, but the peer 127.0.0.1 is what the bucket is keyed on.
     expect(await post(BAD, '127.0.0.3')).toBe(429);
   });
 
-  it('uses CF-Connecting-IP from a trusted peer, so each client has its own bucket', async () => {
+  it('uses x-geldar-client-ip from a trusted peer, so each client has its own bucket', async () => {
     await start({ trustedProxies: ['127.0.0.1'] });
     await exhaust('127.0.0.2');
     expect(await post(BAD, '127.0.0.2')).toBe(429);

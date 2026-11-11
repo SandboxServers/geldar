@@ -45,6 +45,8 @@ export async function verifyBearer(
   header: string | undefined,
   nowMs: number,
   misses: MissCache,
+  /** False for an address with a recent failure (NegativeCache): a miss is not explained by the store. */
+  explain = true,
 ): Promise<BearerVerdict> {
   const token = parseBearer(header);
   if (token === null) return { outcome: 'unauthorized', reason: shapeReason(header) };
@@ -54,9 +56,8 @@ export async function verifyBearer(
   const resolved = await store.resolve(digest, nowMs);
   if (resolved === null) {
     // The store is asked why only for some misses (see MissCache), and the answer is remembered.
-    const reason = misses.shouldExplain()
-      ? await explainMiss(store, digest, nowMs)
-      : 'unknown_token';
+    const reason =
+      explain && misses.shouldExplain() ? await explainMiss(store, digest, nowMs) : 'unknown_token';
     misses.remember(digest, reason, nowMs);
     return { outcome: 'unauthorized', reason };
   }

@@ -53,7 +53,7 @@ async function startWithDownStore(logs: Record<string, string | number>[]): Prom
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
-      clientIpHeader: 'cf-connecting-ip',
+      clientIpHeader: 'x-geldar-client-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 1,
       maxBodyBytes: 65536,
