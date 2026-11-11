@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/shard-config.schema.json",
+  "title": "ShardConfig",
+  "description": "The per-shard keys the colo compose reads from shards/<name>.yaml (Phase 1, wave C1). Declared here; no value is set by the contract. Unknown keys are an error. The Phase 0 shard file has none of these keys yet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cpu_limit", "memory_limit"],
+  "properties": {
+    "cpu_limit": {
+      "description": "CPU limit for the shard container, in cores. Greater than 0 and at most 64.",
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 64
+    },
+    "memory_limit": {
+      "description": "Memory limit for the shard container, Docker form: a whole number of m or g, from 10m to 99999g.",
+      "type": "string",
+      "pattern": "^[1-9][0-9]{1,4}[mg]$"
+    },
+    "minecraft_port": {
+      "description": "Host port for the Minecraft listener. 25566 is reserved and rejected.",
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535,
+      "not": { "const": 25566 },
+      "default": 25565
+    },
+    "bind_address": {
+      "description": "Host address the listener binds to. Loopback by default.",
+      "type": "string",
+      "format": "ipv4",
+      "default": "127.0.0.1"
+    },
+    "telemetry_url": {
+      "description": "Optional telemetry endpoint. No default: unset means no telemetry.",
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048
+    }
+  }
+}
