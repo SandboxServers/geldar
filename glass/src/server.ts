@@ -4,6 +4,9 @@ import { Pool } from 'pg';
 import { assertLoopback, type GlassConfig, HEARTBEAT_MS } from './config.ts';
 import { RateLimiter } from './guard.ts';
 import { createHandler } from './http.ts';
+import { type FeedSource, KinoRelay } from './kino/relay.ts';
+import { sqlScopeStore } from './kino/scope.ts';
+import { handleKinoUpgrade } from './kino/ws.ts';
 import { type PublicPolicy, visibilityAt } from './policy.ts';
 import { type SqlClient, streamStartCursor, type ThoughtCursor, thoughtsAfter } from './query.ts';
 import { SseHub } from './sse.ts';
@@ -44,7 +47,7 @@ export function streamFeed(db: SqlClient, policy: PublicPolicy) {
 }
 
 /** Builds Glass without listening. The loopback check runs here too, before any socket exists. */
-export function buildGlass(config: GlassConfig): GlassParts {
+export function buildGlass(config: GlassConfig, kinoFeed?: FeedSource): GlassParts {
   assertLoopback(config.host);
   const pool = new Pool({
     host: config.pg.host,
@@ -94,6 +97,17 @@ export function buildGlass(config: GlassConfig): GlassParts {
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
   server.maxConnections = MAX_CONNECTIONS;
+  if (kinoFeed !== undefined) {
+    const relay = new KinoRelay({
+      store: sqlScopeStore(pool),
+      feed: kinoFeed,
+      enabled: policy.enabled,
+    });
+    server.on('upgrade', (req, socket) => {
+      const route = { relay, sessionKey: config.sessionKey, now: () => Date.now() };
+      if (!handleKinoUpgrade(route, req, socket)) socket.destroy();
+    });
+  }
   let closed = false;
   const close = (): void => {
     if (closed) return;

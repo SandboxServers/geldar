@@ -1,4 +1,4 @@
-import type { PlanMessage } from '@geldar/contract';
+import { type PlanMessage, validateToolResult } from '@geldar/contract';
 import { buildSnapshot, type SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import {
@@ -138,6 +138,15 @@ describe('sleep', () => {
       'Day 1: asleep. 3 events since the last sleep, 0 lost before them.',
     );
     expect(await w.marks.read(LIFE)).toEqual({ lastSleepDay: 1, cursor: 4 });
+  });
+
+  it('returns a result that passes the SleepResult schema, with and without speech', async () => {
+    const quiet = await sleepTool(deps(world()), CALL);
+    expect(validateToolResult('sleep', quiet)).toMatchObject({ ok: true });
+    const w = world();
+    await w.body.emit(LIFE, simEvent(1, 'speech', { from: 'Mallory', text: 'Hello.' }));
+    const heard = await sleepTool(deps(w), CALL);
+    expect(validateToolResult('sleep', heard)).toMatchObject({ ok: true });
   });
 
   it('counts only the events after the last sleep on the next sleep', async () => {
