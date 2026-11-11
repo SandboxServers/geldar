@@ -22,6 +22,10 @@ function copyReleaseData(dir: string): void {
       readFileSync(fileURLToPath(new URL(`../../../${path}`, import.meta.url))),
     );
   }
+  // A fixture repo holds no integration tests, so its floor is zero.
+  const floor = join(dir, 'tools/repo-checks/src/integration-floor.json');
+  mkdirSync(dirname(floor), { recursive: true });
+  writeFileSync(floor, '{ "floor": 0 }\n');
 }
 const realCompose = fileURLToPath(new URL('../../../compose/phase0.yml', import.meta.url));
 

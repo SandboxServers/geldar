@@ -22,6 +22,7 @@ import {
 import { checkDecisionIndex } from './decision-index.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
+import { checkIntegrationFloor, countIntegrationFiles } from './integration-floor.ts';
 import { findCrlfInIndex } from './line-endings.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { findMcpTokens } from './mcp-token.ts';
@@ -36,6 +37,7 @@ import { checkWorkflowYaml, isWorkflowFile } from './workflow-yaml.ts';
 
 const RELEASE_DATES = 'tools/repo-checks/src/release-dates.json';
 const FIRST_PARTY_IMAGES = 'tools/repo-checks/src/first-party-images.json';
+const INTEGRATION_FLOOR = 'tools/repo-checks/src/integration-floor.json';
 
 /** The file's text, or undefined when it cannot be read (the caller fails closed on that). */
 function readOptional(path: string): string | undefined {
@@ -196,6 +198,16 @@ const ageProblems = [
 ];
 for (const problem of ageProblems) {
   console.log(`error: ${problem} (docs/threat-model.md, decision 0005: 14-day release floor)`);
+  failed = true;
+}
+
+const integrationCount = countIntegrationFiles([...tracked, ...untracked]);
+for (const problem of checkIntegrationFloor(
+  integrationCount,
+  readOptional(INTEGRATION_FLOOR),
+  INTEGRATION_FLOOR,
+)) {
+  console.log(`error: ${problem}`);
   failed = true;
 }
 
