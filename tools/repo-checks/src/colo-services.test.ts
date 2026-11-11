@@ -11,6 +11,10 @@ type Service = Record<string, unknown>;
 
 /** A compose interpolation with a default, as written in the file: ${NAME:-value}. */
 const composeDefault = (name: string, value: string) => `\${${name}:-${value}}`;
+// The service uid is one deploy variable (GELDAR_SERVICE_UID, default 1000); the deploy checks secret owners against it.
+const UID_DEFAULT = composeDefault('GELDAR_SERVICE_UID', '1000');
+/** The value compose shows once GELDAR_SERVICE_UID is set (or the default when it is not). */
+const withUid = (value: unknown, uid = '1000') => String(value).split(UID_DEFAULT).join(uid);
 
 const colo = parse(readFileSync(`${ROOT}compose/colo.yml`, 'utf8'), { merge: true }) as {
   services: Record<string, Service>;
@@ -202,7 +206,7 @@ describe('compose/colo.yml: the MCP service (C1-11a)', () => {
   });
 
   it('runs read-only as uid 1000 with no capability, the compose/mcp.yml hardening', () => {
-    expect(mcp.user).toBe('1000:1000');
+    expect(mcp.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
     expect(mcp.read_only).toBe(true);
     expect(mcp.cap_drop).toEqual(['ALL']);
     expect(mcp.security_opt).toEqual(['no-new-privileges:true']);
@@ -235,5 +239,29 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
   it('publishes no port and joins only the colo network', () => {
     expect(players).not.toHaveProperty('ports');
     expect(players.networks).toEqual(['colo']);
+  });
+});
+
+// The service uid (decision 0084 follow-up): the services run as GELDAR_SERVICE_UID, so the secret files the deploy
+// checks must be owned by the same uid. Paper's itzg image takes UID and GID; Velocity's image does not (no change there).
+describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
+  const uidServices = ['golem-body', 'players-host', 'animus', 'geldar-mcp', 'admin', 'eventsink'];
+
+  it.each(uidServices)('%s runs as the service uid, default 1000 (rendered as 1001 when set)', (name) => {
+    const user = colo.services[name]?.user;
+    expect(user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
+    expect(withUid(user)).toBe('1000:1000');
+    expect(withUid(user, '1001')).toBe('1001:1001');
+  });
+
+  it('gives Paper UID and GID from the service uid, the itzg variables (default 1000)', () => {
+    expect(env(colo.services.paper ?? {}).UID).toBe(UID_DEFAULT);
+    expect(env(colo.services.paper ?? {}).GID).toBe(UID_DEFAULT);
+    expect(withUid(env(colo.services.paper ?? {}).UID, '1001')).toBe('1001');
+    expect(withUid(env(colo.services.paper ?? {}).GID, '1001')).toBe('1001');
+  });
+
+  it.each(['postgres', 'nats'])('leaves %s on its own image user (no user: key)', (name) => {
+    expect(colo.services[name]).not.toHaveProperty('user');
   });
 });

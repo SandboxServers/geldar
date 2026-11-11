@@ -106,6 +106,9 @@ services:
     # Writes the Velocity forwarding secret into paper-global.yml from its secret file, then starts the image.
     entrypoint: ["/bin/sh", "/geldar/paper-entrypoint.sh"]
     environment:
+      # The itzg image starts as root and drops to this uid (default 1000); GELDAR_SERVICE_UID is the deploy's service uid.
+      UID: "${GELDAR_SERVICE_UID:-1000}"
+      GID: "${GELDAR_SERVICE_UID:-1000}"
       EULA: "TRUE"
       TYPE: PAPER
       VERSION: "26.1.2"
@@ -202,6 +205,7 @@ services:
       context: ..
       dockerfile: eventsink/Dockerfile
     image: ${GELDAR_EVENTSINK_IMAGE:-geldar-eventsink:c1}
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     environment:
       GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
@@ -235,6 +239,7 @@ services:
       dockerfile: golem/Dockerfile
     image: ${GELDAR_BODY_IMAGE:-geldar-body:c1}
     entrypoint: ["node", "src/adam/main.ts"]
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     environment:
       GELDAR_SHARD: colo
       # The colo service names are accepted only with this opt-in (decision 0131). The Body talks to Velocity, never Paper.
@@ -278,6 +283,7 @@ services:
       dockerfile: animus/Dockerfile.mind
     image: ${GELDAR_MIND_IMAGE:-geldar-mind:c1}
     entrypoint: ["node", "src/main.ts"]
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     environment:
       GELDAR_SHARD: colo
       GELDAR_IN_NETWORK_HOSTS: "1"
@@ -340,7 +346,7 @@ services:
     ports:
       # The loopback MCP port. Literal: the loopback rule rejects interpolation (the same port as compose/mcp.yml).
       - "127.0.0.1:8788:8788"
-    user: "1000:1000"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     read_only: true
     tmpfs:
       - /tmp
@@ -383,6 +389,7 @@ services:
       dockerfile: golem/Dockerfile
     image: ${GELDAR_BODY_IMAGE:-geldar-body:c1}
     entrypoint: ["node", "src/players/main.ts"]
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     command: ["--player", "${GELDAR_PLAYER_ID:-}"]
     environment:
       GELDAR_SHARD: colo
@@ -444,7 +451,7 @@ services:
     volumes:
       # The colo shard file (the Mind's file, which carries sovereign), under the path GELDAR_SHARD_FILE names.
       - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
-    user: "1000:1000"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     read_only: true
     tmpfs:
       - /tmp
