@@ -283,7 +283,7 @@ Node env values (names only; set them in the deploy env on the node, never in th
 |---|---|
 | `GELDAR_MC_BIND` | the node's own interface address for the public Minecraft port. Set together with `GELDAR_MC_PORT`; the scripts merge `compose/colo-public.yml` only when both are set, refuse exactly one, and refuse a wildcard (`0.0.0.0`, `::`) |
 | `GELDAR_MC_PORT` | the public Minecraft port (a number) |
-| `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container (the docker bridge gateway) |
+| `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container: the .1 gateway of GELDAR_COLO_SUBNET, the colo bridge /24 you pin (a private range inside 172.16/12 private that nothing else on the node uses). colo-up.sh saves the three values in state/node.env and reloads them; colo-public.sh install refuses without the two proxy lists; colo-status.sh prints them |
 | `GELDAR_MCP_TRUSTED_PROXIES` | the same for the MCP service |
 | `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` | the Caddy upstreams, in `GELDAR_PUBLIC_ENV` (each `127.0.0.1:<port>`) |
 

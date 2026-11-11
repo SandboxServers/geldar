@@ -285,3 +285,37 @@ describe('compose/nats-auth.yml (decision 0080, the node secrets directory)', ()
     );
   });
 });
+
+describe('colo-up.sh and colo-status.sh trusted proxies (R32)', () => {
+  const PROXIES = {
+    GELDAR_GLASS_TRUSTED_PROXIES: '192.0.2.1',
+    GELDAR_MCP_TRUSTED_PROXIES: '192.0.2.2',
+    GELDAR_COLO_SUBNET: '198.51.100.0/24',
+  };
+  const nodeEnv = (fx: Fixture) =>
+    join(fx.env.GELDAR_STATE_DIR.replace(/^\/([a-z])\//i, '$1:/'), 'node.env');
+
+  it('persists both lists in the node env file and reloads them on a later run', () => {
+    const fx = fixture();
+    const first = run('colo-up.sh', fx, { ...REAL, ...PROXIES });
+    expect(first.code).toBe(0);
+    expect(readFileSync(nodeEnv(fx), 'utf8')).toBe(
+      'GELDAR_GLASS_TRUSTED_PROXIES=192.0.2.1\nGELDAR_MCP_TRUSTED_PROXIES=192.0.2.2\nGELDAR_COLO_SUBNET=198.51.100.0/24\n',
+    );
+    const second = run('colo-up.sh', fx, REAL);
+    expect(second.code).toBe(0);
+    expect(second.out).toContain('trusted proxies: glass=192.0.2.1 mcp=192.0.2.2');
+    expect(second.out).toContain('colo subnet: 198.51.100.0/24');
+    expect(readFileSync(nodeEnv(fx), 'utf8')).toContain('GELDAR_MCP_TRUSTED_PROXIES=192.0.2.2');
+  });
+
+  it('colo-status.sh prints both lists, from the node env file when the shell has none', () => {
+    const fx = fixture();
+    expect(run('colo-up.sh', fx, { ...REAL, ...PROXIES }).code).toBe(0);
+    const st = run('colo-status.sh', fx);
+    expect(st.out).toContain('trusted proxies: glass=192.0.2.1 mcp=192.0.2.2');
+    expect(st.out).toContain('colo subnet: 198.51.100.0/24');
+    const bare = run('colo-status.sh', fixture());
+    expect(bare.out).toContain('trusted proxies: glass=unset mcp=unset');
+  });
+});

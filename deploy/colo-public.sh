@@ -98,15 +98,41 @@ install_rendered() {
     for f in "$s.caddy" "$s-off.caddy"; do
       act install -m 0644 "$WORK/render/$f" "$GEL_DIR/store/$f"
     done
-    act install -m 0644 "$WORK/render/$s.caddy" "$GEL_DIR/$s.caddy"
+    # A site that is off stays off: its top-level file is the refreshed off twin, not the live render.
+    top=$s.caddy
+    if [ -f "$WORK/prev/store/$s-off.caddy" ] && [ -f "$WORK/prev/$s.caddy" ] && cmp -s "$WORK/prev/$s.caddy" "$WORK/prev/store/$s-off.caddy"; then
+      top=$s-off.caddy
+    fi
+    act install -m 0644 "$WORK/render/$top" "$GEL_DIR/$s.caddy"
   done
+}
+
+# Keeps the installed files in $WORK/prev, so a failed install can put them back.
+snapshot_geldar() {
+  if [ -d "$GEL_DIR" ]; then
+    mkdir -p "$WORK/prev"
+    cp -pR "$GEL_DIR/." "$WORK/prev/"
+    HAD_PREV=1
+  fi
+}
+
+restore_geldar() {
+  rm -rf "$GEL_DIR"
+  if [ "$HAD_PREV" = 1 ]; then
+    mkdir -p "$GEL_DIR"
+    cp -pR "$WORK/prev/." "$GEL_DIR/"
+  fi
 }
 
 cmd_install() {
   require_env GELDAR_CADDY_CONTAINER GELDAR_CADDY_CONFIG_DIR GELDAR_CADDY_FILE GELDAR_PUBLIC_ENV
   need docker
+  load_node_env
+  proxies_set || die "GELDAR_GLASS_TRUSTED_PROXIES and GELDAR_MCP_TRUSTED_PROXIES must both be set (deploy env or node.env) to the colo bridge gateway, not 127.0.0.1; refusing"
   render_all
   backup_caddyfile
+  HAD_PREV=0
+  snapshot_geldar
   act install_rendered
   act add_import
   if [ "$DRY_RUN" = 1 ]; then
@@ -117,8 +143,8 @@ cmd_install() {
   fi
   if ! caddy_validate; then
     restore_caddyfile
-    rm -rf "$GEL_DIR"
-    die "caddy validate failed; the Caddyfile is restored from $BACKUP and the rendered files are removed"
+    restore_geldar
+    die "caddy validate failed; the Caddyfile is restored from $BACKUP and the previous site files are put back (none if this was the first install)"
   fi
   caddy_reload
   say "installed: sites rendered, import present, caddy reloaded"
