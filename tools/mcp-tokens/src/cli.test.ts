@@ -214,31 +214,45 @@ describe('identity ban by provider account (F16)', () => {
 
   async function banCall(
     extra: string[],
-    options: { verb?: string; pepper?: string; envPepperFile?: boolean } = {},
-  ): Promise<{ code: number; h: Awaited<ReturnType<typeof harness>>; values: unknown[][] }> {
+    options: { verb?: string; command?: string; pepper?: string; envPepperFile?: boolean } = {},
+  ): Promise<{
+    code: number;
+    h: Awaited<ReturnType<typeof harness>>;
+    values: unknown[][];
+    texts: string[];
+  }> {
     const h = await harness();
     const pepperFile = join(h.secretDir, '..', 'register-pepper');
     await writeFile(pepperFile, `${options.pepper ?? PEPPER}\n`);
     const values: unknown[][] = [];
+    const texts: string[] = [];
     const env = {
       ...envOf(h),
       ...(options.envPepperFile ? { registerPepperFile: pepperFile } : {}),
       connect: async () => ({
         query: async (text: string, v?: unknown[]) => {
           values.push(v ?? []);
+          texts.push(text);
           return text.startsWith('UPDATE mcp_identities')
             ? { rows: [{ owner_id: 'o' }] }
-            : { rows: [] };
+            : text.startsWith('SELECT 1 FROM mcp_identities') ||
+                text.startsWith('DELETE FROM kino_admins')
+              ? { rows: [{ ok: 1 }] }
+              : { rows: [] };
         },
         end: async () => {},
       }),
     };
     const code = await run(
-      ['identity', options.verb ?? 'ban', ...extra.map((x) => (x === 'PEPPER' ? pepperFile : x))],
+      [
+        options.command ?? 'identity',
+        options.verb ?? 'ban',
+        ...extra.map((x) => (x === 'PEPPER' ? pepperFile : x)),
+      ],
       h.io,
       env,
     );
-    return { code, h, values };
+    return { code, h, values, texts };
   }
 
   it('derives the id with the register service HMAC and bans it', async () => {
@@ -298,6 +312,24 @@ describe('identity ban by provider account (F16)', () => {
       },
     );
     expect(ok.code).toBe(0);
+  });
+
+  it('admin grant and revoke write kino_admins with the derived Microsoft id; other verbs and providers are refused', async () => {
+    const args = ['--provider', 'microsoft', '--user-id', 'sub-1', '--pepper-file', 'PEPPER'];
+    const want = identityHash(PEPPER, 'microsoft', 'sub-1');
+    const grant = await banCall(args, { command: 'admin', verb: 'grant' });
+    expect(grant.code).toBe(0);
+    expect(grant.texts.some((x) => x.startsWith('INSERT INTO kino_admins'))).toBe(true);
+    expect(grant.values.some((v) => v[0] === want)).toBe(true);
+    const revoke = await banCall(args, { command: 'admin', verb: 'revoke' });
+    expect(revoke.code).toBe(0);
+    expect(revoke.texts.some((x) => x.startsWith('DELETE FROM kino_admins'))).toBe(true);
+    expect(revoke.h.out.join('\n')).toContain('revoked Kino admin');
+    const byId = await banCall([want], { command: 'admin', verb: 'grant' });
+    expect(byId.code).toBe(0);
+    const bad = await banCall(args, { command: 'admin', verb: 'promote' });
+    expect(bad.code).toBe(1);
+    expect(bad.texts).toEqual([]);
   });
 
   it('unban derives the id the same way', async () => {

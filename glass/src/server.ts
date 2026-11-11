@@ -82,7 +82,14 @@ export function buildGlass(config: GlassConfig): GlassParts {
     fetch: streamFeed(pool, policy),
     log: (entry) => console.log(JSON.stringify(entry)),
   });
-  const server = createServer(createHandler({ db: pool, hub, policy }));
+  const server = createServer(
+    createHandler({
+      db: pool,
+      hub,
+      policy,
+      ...(config.sessionKey === undefined ? {} : { sessionKey: config.sessionKey }),
+    }),
+  );
   server.headersTimeout = HEADERS_TIMEOUT_MS;
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;

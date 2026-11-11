@@ -9,9 +9,10 @@ Decisions: [0071](../../docs/decisions/0071-public-endpoints-and-ports.md) (the 
 | BlueMap map | `map.caddy` | `map-off.caddy` | `{$GELDAR_MAP_UPSTREAM}` |
 | Glass | `glass.caddy` | `glass-off.caddy` | `{$GELDAR_GLASS_UPSTREAM}` |
 | MCP (`/p/<player_id>` only) | `mcp.caddy` | `mcp-off.caddy` | `{$GELDAR_MCP_UPSTREAM}` |
-| Register (GET and POST; off by default, not in `colo-public.sh`) | `register.caddy` | `register-off.caddy` | `{$GELDAR_REGISTER_UPSTREAM}` |
 
 The live and kill-switch files stay in this directory, `deploy/caddy/<site>.caddy`. That is where C2-04 and `deploy/colo-public.sh` look; the `deploy/caddy/sites/` path in the C2-07 card is superseded.
+
+The Glass host also carries the register service: `/register*` and `/roster*` (GET, HEAD and POST, 8 KiB body) go to `{$GELDAR_REGISTER_UPSTREAM}` before Glass handles the rest, so one host and one host-only `gk_session` cookie serve both (decision 0135, amendment R42). There is no separate register site; `glass-off.caddy` switches both off, and the service has its own kill switch. The Entra redirect URI is `https://glass.<domain>/register/callback`.
 
 Glass's proxy blocks set `header_up Host localhost`, because Glass answers 421 to any other Host. Glass serves the page (`/`, `/app.css`, `/app.js`, `/js/*`) and the API through Caddy; `/api/stats` is not routed.
 

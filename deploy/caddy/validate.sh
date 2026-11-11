@@ -34,5 +34,5 @@ check() {
     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 }
 
-check live map.caddy glass.caddy mcp.caddy register.caddy
-check killed map-off.caddy glass-off.caddy mcp-off.caddy register-off.caddy
+check live map.caddy glass.caddy mcp.caddy
+check killed map-off.caddy glass-off.caddy mcp-off.caddy

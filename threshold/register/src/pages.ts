@@ -1,3 +1,6 @@
+/** The register service lives under this path on the shared Glass host (R42). */
+export const BASE = '/register';
+
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'content-security-policy':
     "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
@@ -12,7 +15,7 @@ const page = (title: string, body: string): string =>
 
 export const HOME_PAGE = page(
   'Register',
-  '<h1>Register</h1><p><a href="/login/github">Sign in with GitHub</a></p><p><a href="/login/discord">Sign in with Discord</a></p>',
+  '<h1>Register</h1><p><a href="/register/login">Sign in with Microsoft</a></p>',
 );
 
 /** The one refusal page: it never says which check failed. */

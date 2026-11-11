@@ -4,18 +4,15 @@ import { challengeOf } from './pkce.ts';
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-/** What a provider says about an account, before the verification rules run. */
+/** What the provider says about an account. Only the stable subject: no email, no name. */
 export interface Profile {
   readonly id: string;
-  readonly handle: string;
-  readonly verified: boolean;
-  readonly createdAtMs: number;
 }
 
 export interface Provider {
   readonly name: ProviderName;
   authorizeUrl(redirectUri: string, state: string, verifier: string): string;
-  /** Exchanges the code, reads the profile, and drops the access token before returning. */
+  /** Exchanges the code and reads the subject from the id token. The access token is never kept. */
   fetchProfile(
     code: string,
     redirectUri: string,
@@ -24,139 +21,57 @@ export interface Provider {
   ): Promise<Profile>;
 }
 
-const DISCORD_EPOCH = 1420070400000n;
+export const MS_AUTHORITY = 'https://login.microsoftonline.com/consumers/v2.0';
+/** The fixed tenant id of Microsoft personal accounts; an id token of any other tenant is refused. */
+const CONSUMERS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 
-/** The creation time encoded in a Discord snowflake id. */
-export function snowflakeTimeMs(id: string): number {
-  return Number((BigInt(id) >> 22n) + DISCORD_EPOCH);
-}
-
-async function json(res: Response): Promise<unknown> {
-  if (!res.ok) throw new Error(`provider status ${res.status}`);
-  return res.json();
-}
-
-function obj(v: unknown): Record<string, unknown> {
-  if (typeof v !== 'object' || v === null || Array.isArray(v))
-    throw new Error('unexpected provider reply');
+/** The payload of an id token fetched straight from the token endpoint over TLS (the OpenID Connect Core token-endpoint rule: no signature check needed). */
+function claimsOf(idToken: unknown): Record<string, unknown> {
+  if (typeof idToken !== 'string') throw new Error('no id token');
+  const part = idToken.split('.')[1];
+  if (!part) throw new Error('bad id token');
+  const v: unknown = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error('bad id token');
   return v as Record<string, unknown>;
 }
 
-function tokenOf(v: unknown): string {
-  const t = obj(v).access_token;
-  if (typeof t !== 'string' || t === '') throw new Error('no access token');
-  return t;
-}
-
-export function githubProvider(creds: ProviderCredentials): Provider {
-  const auth = (t: string): RequestInit => ({
-    headers: {
-      authorization: `Bearer ${t}`,
-      accept: 'application/vnd.github+json',
-      'user-agent': 'geldar-register',
-    },
-  });
+export function microsoftProvider(creds: ProviderCredentials): Provider {
   return {
-    name: 'github',
-    authorizeUrl(redirectUri, state, verifier) {
-      const q = new URLSearchParams({
-        client_id: creds.clientId,
-        redirect_uri: redirectUri,
-        scope: 'user:email',
-        state,
-        code_challenge: challengeOf(verifier),
-        code_challenge_method: 'S256',
-      });
-      return `https://github.com/login/oauth/authorize?${q}`;
-    },
-    async fetchProfile(code, redirectUri, verifier, fetchFn) {
-      const token = tokenOf(
-        await json(
-          await fetchFn('https://github.com/login/oauth/access_token', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', accept: 'application/json' },
-            body: JSON.stringify({
-              client_id: creds.clientId,
-              client_secret: creds.clientSecret,
-              code,
-              redirect_uri: redirectUri,
-              code_verifier: verifier,
-            }),
-          }),
-        ),
-      );
-      const user = obj(await json(await fetchFn('https://api.github.com/user', auth(token))));
-      const emails = await json(await fetchFn('https://api.github.com/user/emails', auth(token)));
-      const verified = Array.isArray(emails) && emails.some((e) => obj(e).verified === true);
-      return {
-        id: idOf(user.id),
-        handle: String(user.login),
-        verified,
-        createdAtMs: Date.parse(String(user.created_at)),
-      };
-    },
-  };
-}
-
-/** A provider user id must be a number or a non-empty string; a reply without one must not become the id "undefined". */
-export function idOf(value: unknown): string {
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
-  if (typeof value === 'string' && value !== '') return value;
-  throw new Error('provider reply has no user id');
-}
-
-export function discordProvider(creds: ProviderCredentials): Provider {
-  return {
-    name: 'discord',
+    name: 'microsoft',
     authorizeUrl(redirectUri, state, verifier) {
       const q = new URLSearchParams({
         response_type: 'code',
         client_id: creds.clientId,
         redirect_uri: redirectUri,
-        scope: 'identify email',
+        scope: 'openid',
+        response_mode: 'query',
         state,
         code_challenge: challengeOf(verifier),
         code_challenge_method: 'S256',
       });
-      return `https://discord.com/oauth2/authorize?${q}`;
+      return `${MS_AUTHORITY}/authorize?${q}`;
     },
     async fetchProfile(code, redirectUri, verifier, fetchFn) {
-      const token = tokenOf(
-        await json(
-          await fetchFn('https://discord.com/api/oauth2/token', {
-            method: 'POST',
-            headers: { 'content-type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              grant_type: 'authorization_code',
-              client_id: creds.clientId,
-              client_secret: creds.clientSecret,
-              code,
-              redirect_uri: redirectUri,
-              code_verifier: verifier,
-            }).toString(),
-          }),
-        ),
-      );
-      const me = obj(
-        await json(
-          await fetchFn('https://discord.com/api/users/@me', {
-            headers: { authorization: `Bearer ${token}` },
-          }),
-        ),
-      );
-      const id = idOf(me.id);
-      return {
-        id,
-        handle: String(me.username),
-        verified: me.verified === true,
-        createdAtMs: snowflakeTimeMs(id),
-      };
+      const res = await fetchFn(`${MS_AUTHORITY}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: creds.clientId,
+          client_secret: creds.clientSecret,
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: verifier,
+        }).toString(),
+      });
+      if (!res.ok) throw new Error(`provider status ${res.status}`);
+      const claims = claimsOf(((await res.json()) as Record<string, unknown>).id_token);
+      if (claims.aud !== creds.clientId) throw new Error('id token audience');
+      if (claims.tid !== CONSUMERS_TENANT) throw new Error('id token tenant');
+      // The identity key is the subject, never the email.
+      const sub = claims.sub;
+      if (typeof sub !== 'string' || sub === '') throw new Error('id token has no subject');
+      return { id: sub };
     },
   };
-}
-
-/** The 0135 rules: a verified flag, and an account at least `minAgeDays` old. */
-export function meetsRules(p: Profile, nowMs: number, minAgeDays: number): boolean {
-  if (!p.verified || !Number.isFinite(p.createdAtMs)) return false;
-  return nowMs - p.createdAtMs >= minAgeDays * 86_400_000;
 }

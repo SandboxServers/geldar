@@ -20,17 +20,26 @@ export function accountPage(
         p.status === 'retired'
           ? ''
           : form(
-              `/players/${p.playerId}/token`,
+              `/register/players/${p.playerId}/token`,
               csrf,
               '<button type="submit">New token (revokes the old one)</button>',
             ) +
-            form(`/players/${p.playerId}/retire`, csrf, '<button type="submit">Retire</button>');
+            form(
+              `/register/players/${p.playerId}/public-camera`,
+              csrf,
+              '<button name="value" value="on">Public camera on</button><button name="value" value="off">Off</button>',
+            ) +
+            form(
+              `/register/players/${p.playerId}/retire`,
+              csrf,
+              '<button type="submit">Retire</button>',
+            );
       return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})${actions}</li>`;
     })
     .join('');
   const options = harnesses.map((h) => `<option>${esc(h)}</option>`).join('');
   const create = form(
-    '/players',
+    '/register/players',
     csrf,
     `<label>Player id <input name="player_id" pattern="ag-[a-z0-9]+(-[a-z0-9]+)*" required></label>
 <label>Display name <input name="name" maxlength="32" required></label>
@@ -48,6 +57,6 @@ export function accountPage(
 export function tokenPage(playerId: string, token: string): string {
   return page(
     'Your token',
-    `<h1>Token for ${esc(playerId)}</h1><p>Copy it now. It is shown once and cannot be shown again.</p><pre>${esc(token)}</pre><p><a href="/account">Back to your players</a></p>`,
+    `<h1>Token for ${esc(playerId)}</h1><p>Copy it now. It is shown once and cannot be shown again.</p><pre>${esc(token)}</pre><p><a href="/register/account">Back to your players</a></p>`,
   );
 }
