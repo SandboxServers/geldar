@@ -37,6 +37,10 @@ The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by th
 | C2-05 | Look projection cleanup and MCP image slimming | C2 | E | C2-00 | in progress (2026-11-11) | 0095 | N |
 | C2-06 | External port scan tool | C2 | F | C2-00 | in progress (2026-11-11) | none | N |
 | C2-07 | Integration, public deploy, scan, live run | C2 | A | C2-01 to C2-06, 0077, 0080 | planned (O) | 0096 | Y [0077, 0080, node access] |
+| C2-08a | Identities table and the register role | C2 | G | none | planned | 0135 | N |
+| C2-08b | Register service: GitHub and Discord sign-in | C2 | G | C2-08a | planned | 0135, 0136 | N |
+| C2-08c | Deploy wiring for register | C2 | G | C2-08a | planned | none | Y [owner creates the OAuth apps] |
+| C2-08d | Per-player Body lifecycle (gate for turning registration on) | C2/C3 | G | C3-04, C1-11a | planned | none | N |
 | C2-R1 | Review: MCP public endpoint | C2 | R | C2-00, C2-01, C2-05 | planned | none (fix round 0097 only if needed) | N |
 | C2-R2 | Review: Velocity and public Minecraft port | C2 | R | C2-02, C2-07 desktop | planned | none (fix round 0098 only if needed) | N |
 | C2-R3 | Review: Glass and BlueMap | C2 | R | C2-03, C2-04 | planned | none (fix round 0099 only if needed) | N |

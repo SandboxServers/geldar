@@ -45,3 +45,30 @@ Each ruling below is the orchestrator's, not the owner's. Each one says what to 
 | R14 | Shard YAML key names for 0090 are snake_case, in a top-level `public:` block (`trusted_proxies`, `client_ip_header`, `rate_limit.per_minute` and `rate_limit.burst`, `kill_switch`), mapped one to one to 0090's names. Precedence: env, then `public.*`, then the existing `sovereign.mcp` keys as a fallback. | The shard file is snake_case everywhere. Keeping the old keys as a fallback keeps current shard files working. | Rename in 0091. |
 | R15 | Public surfaces are rate-limited by default: 60 per minute, burst 20, with a bounded per-client table. This departs from 0090 ("no default"), and 0091 and 0093 record it. | A public endpoint left unlimited because a value was never set is the worse failure. | Owner sets values; owner can lift the defaults. |
 | R16 | C2-01 and C2-03 each ran out of context with half their items left. Following the campaign rule (re-slice, don't chain finishers), C2-01 is split into C2-01b (config, kill switch, rate limit) and then C2-01c (negative cache, invitee issuing, 0091). C2-03 is split into C2-03b (size cap, delay, sovereign filter, kill switch, 0093) and C2-03c, which adds test files only and runs in parallel. The Glass sovereign filter also hides receipts, not just thoughts. | Each split is under about 40k tokens. Receipts of a living sovereign agent show what it is doing, just as its thoughts do. | Not applicable. |
+
+## Owner answers to the C2 questions (c2-packets.md section 5.4), 2026-11-11
+
+| # | Question | Owner answer | What was done |
+|---|---|---|---|
+| 1 | UniFi forward | Orchestrator makes it, persisting in the UniFi app, without the UniFi API | Done. One TCP forward, `<shard TCP port>` to the Colo node. It was written into the Network app's own database, so it shows in the app and persists, and then provisioned. The steps, backup and undo are kept outside the repo (`~/.config/geldar/colo-edge.md` on the owner's machine). |
+| 2 | DNS | Orchestrator runs it with `az` | Done. `glass`, `map`, `mcp` and `play` under the project subdomain are CNAMEs to the project A record. `_minecraft._tcp.play` is an SRV record pointing at `<shard TCP port>`. Before creating them, the existing project A record was checked to equal the gateway's WAN address. Nothing listens on the names until C2-07. |
+| 3 | Tokens policy | People register themselves through a verification mechanism | GitHub and Discord sign-in; an IdP-verified account is admitted with no manual approval. Decision 0135 and the cards in `packets/c2-register-packets.md` (C2-08a to C2-08d). |
+| 4 | Invitations wait for the gates | Yes | Registration ships with its kill switch on, and stays off until the C2 gates pass. |
+| 5 | 0077 | Accepted | See above. |
+| 6 | Glass delay | 60 s | The C2-03 default is 60 (PR #86). |
+| 7 | Living sovereign agents on Glass | Recommendation accepted (hidden) | C2-03 hides their thoughts and receipts by default. |
+| 8 | Agent-board text | None, unless agents make it in-game | C2-03 pins "no board routes". If an in-game board ever appears, it needs a new decision. |
+| 9 | BlueMap rate limit | No Caddy module (recommendation) | As built in C2-04. |
+| 10 | Caddy sites for glass and mcp | Confirmed | C2-04 (PR #81). |
+| 11 | NATS default-on (0080) | Yes | Already accepted. C2-07 flips the default. |
+| 12 | UDP scan | Out of scope | C2-06 scans TCP only. |
+
+C1-10 correction: the owner asked whether the first ranger is Jason. It is: Jason is the Red Ranger (`ag-jason-01`), a sovereign player agent, not a person. The orchestrator first read "first ranger" as a human client. C1-10's exit is Jason finishing a session on the Colo stack, with no degradation of the node's other services.
+
+## More rulings
+
+| # | Ruling | Why | To reverse |
+|---|---|---|---|
+| R15b | MCP rate-limit defaults are 120 per minute with a burst of 40, applied when the `public:` block is present (the CLI path always passes it). Glass stays at 60 and 20. | A burst of 20 sat below the MCP's existing failed-auth budget (30 per minute) and could throttle a busy harness. | Change `PUBLIC_DEFAULTS`. |
+| R17 | Registration details (0135): a 30-day account-age floor, 10 new owners a day, 3 players per registered owner, the identity stored only as an HMAC, a separate `threshold/register` service, and the kill switch defaulting to on. Turning registration on waits for the per-player Body lifecycle (C2-08d). | Without the age floor, throwaway accounts pass "verified". Without the Body lifecycle, a registered player has a token and no Body. | Owner edits 0135. |
+| R18 | The shard's public Minecraft port was chosen to be free both among the gateway's existing forwards and among the Colo node's listening ports. The real number lives only in the local edge notes. | Decision 0071 requires a new TCP port. The repo carries no real ports or addresses. | Change the forward and the SRV record. |

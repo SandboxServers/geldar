@@ -71,6 +71,8 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0130 | after block | owner (ruling 2026-11-10) | Phase 1 owner rulings for C1 and the test schedule (deploy access, backups deferred, SigNoz, long tests at the end of the phase). Written by the owner-ruling docs packet | Accepted (owner ruling) |
 | 0131 | after block | FX-RUNTIME (orchestrator) | Colo in-container hosts and the Mind shard file | Accepted (orchestrator, 2026-11-10) |
 | 0134 | after block | FINISHER (orchestrator) | The Mind (`animus`) is a compose profile on the Colo until a Thinker path exists | Accepted (orchestrator, 2026-11-11) |
+| 0135 | after block | orchestrator (owner ruling 2026-11-11) | Self-registration with GitHub and Discord sign-in | Accepted in principle; design Proposed |
+| 0136 | after block | C2-08b | Register service details, if needed | reserved |
 
 ## Clashes and how they were resolved
 
