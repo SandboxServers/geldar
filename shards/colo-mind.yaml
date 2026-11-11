@@ -36,7 +36,7 @@ models:
 mind:
   agent:
     name: Adam                   # display name in prompts and addressed-speech detection (decision 0051)
-    username: ag_adam_03         # the game account username, equal to the life id (decisions 0040, 0051, 0064)
+    username: ag_colo_01         # the game account username, equal to the life id (decisions 0040, 0051, 0064)
     tier: strong                 # which models.* tier the life runs on; fixed for the life (spec 5.3.3)
     # The owner approved this seed on 2026-11-09 (decision 0051 item 2); the colo life reuses it unchanged.
     personality_seed: "Curious and patient; careful after dark; likes making things last and counting what he has; generous with neighbours but remembers who helped him; dry, understated humour. Quirk: he names the places he finds (the Long Ford, the Bent Oak) and uses those names later."
@@ -68,7 +68,7 @@ mind:
   plan:
     expires_after_ticks: 1200    # a plan is refused by the Body this many world ticks after its snapshot
   run_tier: strong               # models.* tier for this run
-  lives: { strong: ag_adam_03, fast: ag_adam_04, smoke: ag_smoke_01 }
+  lives: { strong: ag_colo_01, fast: ag_adam_04, smoke: ag_smoke_01 }
 
 # Pinned models (decision 0051): the digests recorded from Ollama on 2026-11-09, as in phase0. A Thinker whose
 # model digest differs is not advertised. The loaders refuse the placeholder `sha256:RECORD_AT_DISPATCH`.

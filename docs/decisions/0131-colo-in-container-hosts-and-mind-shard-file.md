@@ -21,7 +21,7 @@ The C1 boundary review found that the colo containers cannot start. The loaders 
 - The in-network allowlist is a closed list. Adding a name is a change to this decision, not a config value.
 - The colo Body talks to Velocity, never to Paper (decision 0082's ingress). `GELDAR_MC_HOST` is `velocity` and `GELDAR_MC_PORT` is `25565`, the in-network port. `GELDAR_RCON_PORT` is set only for completeness: the RCON host is loopback by design and the Body does not use RCON.
 - The Mind's Ollama address is still loopback. In the container nothing listens there, so the Mind cannot run a thought until the gateway packet. Loading the config does not need Ollama, so the loaders pass.
-- The colo life id is `ag_adam_03`, the phase0 id, reused unchanged. Whether the colo life gets a fresh id (decision 0064) is an open question for the owner. It is not decided here.
+- The colo life id is `ag_colo_01`, a fresh id, not the phase0 id `ag_adam_03`. A life id shared between the desktop Phase 0 stack and the colo shard would let both claim one name lease, so the colo Mind gets its own. Its `lives.strong` entry follows it. The `fast` and `smoke` entries stay as phase0 has them; no colo run uses them.
 - Whether the containers start is not verified by this decision. The first real start is packet C1-10.
 
 ## Unblocks

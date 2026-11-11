@@ -12,7 +12,7 @@ describe('animus in compose/colo.yml', () => {
     expect(config.shard).toBe('colo');
     expect(config.natsUrl).toBe('nats://nats:4222');
     expect(config.postgres.host).toBe('postgres');
-    expect(config.agent.username).toBe('ag_adam_03');
+    expect(config.agent.username).toBe('ag_colo_01');
   });
 
   it('refuses an arbitrary host even with the in-network opt-in', async () => {

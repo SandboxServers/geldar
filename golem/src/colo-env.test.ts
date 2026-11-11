@@ -21,7 +21,7 @@ describe('golem-body in compose/colo.yml', () => {
     const file = join(repoRoot(), 'shards', 'colo-mind.yaml');
     const cfg = parseAdamConfig(parse(readFileSync(file, 'utf8')));
     expect(cfg.shard).toBe(env.GELDAR_SHARD);
-    expect(cfg.lifeId).toBe('ag_adam_03');
+    expect(cfg.lifeId).toBe('ag_colo_01');
   });
 
   it('accepts the NATS URL of the body container', () => {
