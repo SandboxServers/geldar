@@ -8,38 +8,33 @@
  * `fallback_continue` when the model failed and the last interrupted intent was resubmitted and
  * accepted; `fallback_hold` when the Body refused or never got the plan; otherwise the cause when
  * nothing was submitted: `tired` (admission refused), `model_error` or `invalid_output` (twice).
+ *
+ * The model call and the memory search and thought-row write it uses live in `thought-attempt.ts`
+ * and `thought-store.ts`; they run on the `LoopEnv` this class builds.
  */
-import type { PlanAck, PlanMessage, Snapshot, Thought } from '@geldar/contract';
+import type { PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
 import { newId } from '../ids.ts';
-import {
-  type MindEvent,
-  type ModelCompletion,
-  ModelError,
-  type ModelMessage,
-  type ThoughtOutcome,
-  type WakeDecision,
-} from '../ports/index.ts';
-import { THOUGHT_COST } from './admission.ts';
+import type { MindEvent, ThoughtOutcome, WakeDecision } from '../ports/index.ts';
 import { bounded, CycleAborted, STEP_TIMEOUT_MS } from './cycle-await.ts';
-import type { Attempt, Cycle } from './cycle-state.ts';
-import { chooseEffort, isRepeatedFailureWake, jobShape } from './effort.ts';
+import type { Cycle } from './cycle-state.ts';
+import { chooseEffort, isRepeatedFailureWake } from './effort.ts';
 import { continueInterrupted, IntentLedger } from './fallback.ts';
 import { IntentLinker } from './intent-link.ts';
-import { buildThoughtRow } from './journal-row.ts';
+import type { LoopEnv } from './loop-env.ts';
 import { type LoopOptions, loopOptionsFromConfig } from './loop-options.ts';
 import type { LoopDeps, LoopResult } from './loop-types.ts';
 import { buildPlan } from './plan.ts';
 import { isStaleRefusal, noteRefusal, type SubmitContext, submitChecked } from './plan-submit.ts';
 import { requestSnapshotWithRetry, sleepFor } from './snapshot-retry.ts';
-import { callWaitingForThinker } from './thinker-wait.ts';
+import { attemptThought } from './thought-attempt.ts';
 import {
   buildThoughtEvent,
   type FailureReport,
   publishThoughtEvent,
   recordLostWake,
   reportFailure,
-  writeThoughtRow,
 } from './thought-journal.ts';
+import { recordThought, retrieveEpisodic } from './thought-store.ts';
 import { withinLimit } from './within-limit.ts';
 
 export type { LoopVersions } from './journal-row.ts';
@@ -62,6 +57,7 @@ export class ThinkingLoop {
   private startedAt = 0;
   private readonly links: IntentLinker;
   private readonly submitCtx: SubmitContext;
+  private readonly env: LoopEnv;
 
   constructor(deps: LoopDeps, options: LoopOptions) {
     this.deps = deps;
@@ -86,6 +82,17 @@ export class ThinkingLoop {
       stepMs: this.stepMs,
       now: this.now,
       report: this.report,
+      log: (line) => this.log(line),
+    };
+    this.env = {
+      deps,
+      options,
+      report: this.report,
+      stepMs: this.stepMs,
+      signal: this.abort.signal,
+      now: () => this.now(),
+      at: () => this.iso(),
+      elapsed: () => this.elapsed(),
       log: (line) => this.log(line),
     };
   }
@@ -227,7 +234,7 @@ export class ThinkingLoop {
         days_since_sleep: Math.max(0, raw.world_time.day - lastSleep),
       },
     };
-    const episodic = await this.retrieve(decision, snapshot);
+    const episodic = await retrieveEpisodic(this.env, decision, snapshot);
     const since = Math.max(0, tick - 24_000);
     const recentRows = await bounded(
       this.deps.journal.journalSince(lifeId, since),
@@ -272,7 +279,7 @@ export class ThinkingLoop {
 
     // 4 to 6. Admission, the model, validation, one corrective retry.
     const firstId = newId('th');
-    const first = await this.attempt(cycle, firstId, decision.reason, render.messages);
+    const first = await attemptThought(this.env, cycle, firstId, decision.reason, render.messages);
     let finalId = firstId;
     let last = first;
     if (first.kind === 'invalid') {
@@ -281,7 +288,7 @@ export class ThinkingLoop {
         ...render.messages,
         this.deps.validator.correctiveMessage(first.errors, first.completion.text),
       ];
-      last = await this.attempt(cycle, retryId, CORRECTIVE_RETRY, messages);
+      last = await attemptThought(this.env, cycle, retryId, CORRECTIVE_RETRY, messages);
       if (last.kind === 'ok') finalId = retryId;
     }
     if (first.kind === 'tired') await this.recordNoCall(cycle, firstId);
@@ -331,97 +338,6 @@ export class ThinkingLoop {
     return this.finish(cycle, cause, firstId, null, null);
   }
 
-  /** One model call with its admission, validation and journal row. */
-  private async attempt(
-    cycle: Cycle,
-    thoughtId: string,
-    wakeReason: string,
-    messages: ModelMessage[],
-  ): Promise<Attempt> {
-    const reservation = this.deps.admission.reserve(THOUGHT_COST);
-    if (reservation === null) return { kind: 'tired' };
-    const shape = jobShape(cycle.effort.level, this.options.thought);
-    cycle.calls++;
-    const call = (): Promise<ModelCompletion> =>
-      this.deps.model.complete(
-        {
-          model: this.options.model,
-          messages,
-          maxTokens: shape.maxTokens,
-          temperature: this.options.thought.temperature,
-          deadline: new Date(this.now() + shape.deadlineS * 1000),
-          responseSchema: cycle.render.responseSchema,
-          reasoning: shape.reasoning,
-          effort: cycle.effort.level,
-          stablePrefixChars: cycle.render.stablePrefixChars,
-        },
-        this.abort.signal,
-      );
-    // The Thinker's own deadline, the wait for a Thinker and one step of slack bound the call.
-    const thinkerBound = shape.deadlineS * 1000 + (this.options.thinkerWaitMs ?? 0) + this.stepMs;
-    let completion: ModelCompletion;
-    this.log({
-      event: 'thinker_request_sent',
-      life_id: this.options.lifeId,
-      thought_id: thoughtId,
-      model: this.options.model,
-      elapsed_ms: this.elapsed(),
-    });
-    try {
-      completion = await bounded(
-        callWaitingForThinker(call, {
-          model: this.options.model,
-          lifeId: this.options.lifeId,
-          waitMs: this.options.thinkerWaitMs ?? 0,
-          awaitThinker: this.deps.awaitThinker,
-          signal: this.abort.signal,
-          log: (line) => this.log(line),
-        }),
-        thinkerBound,
-        'thinker',
-      );
-    } catch (error) {
-      const code = error instanceof ModelError ? error.code : 'internal';
-      reservation.release();
-      this.log({
-        event: 'thinker_reply',
-        life_id: this.options.lifeId,
-        thought_id: thoughtId,
-        ok: false,
-        error_code: error instanceof CycleAborted ? error.reason : code,
-        elapsed_ms: this.elapsed(),
-      });
-      if (error instanceof CycleAborted) throw error;
-      cycle.errorCode = code;
-      await this.record(cycle, thoughtId, wakeReason, messages, null, null, THOUGHT_COST, 0, code);
-      return { kind: 'error', code };
-    }
-    reservation.settle();
-    this.log({
-      event: 'thinker_reply',
-      life_id: this.options.lifeId,
-      thought_id: thoughtId,
-      ok: true,
-      elapsed_ms: this.elapsed(),
-    });
-    cycle.latencyMs += completion.latencyMs;
-    cycle.thinkerId = completion.thinkerId;
-    const parsed = this.deps.validator.parseThought(completion.text);
-    const value = parsed.ok ? parsed.value : null;
-    await this.record(
-      cycle,
-      thoughtId,
-      wakeReason,
-      messages,
-      completion,
-      value,
-      THOUGHT_COST,
-      THOUGHT_COST,
-    );
-    if (parsed.ok) return { kind: 'ok', thought: parsed.value, completion };
-    return { kind: 'invalid', errors: parsed.errors, completion };
-  }
-
   private log(line: Record<string, unknown>): void {
     this.deps.log?.(line);
   }
@@ -438,35 +354,6 @@ export class ThinkingLoop {
   /** The limit of one step that waits on a dependency. */
   private get stepMs(): number {
     return this.options.stepTimeoutMs ?? STEP_TIMEOUT_MS;
-  }
-
-  /**
-   * Embeds the wake and searches the episodic memories. Memory is best effort: each await has its own
-   * bound, and a failure or a timeout gives none, so the cycle still thinks without them.
-   */
-  private async retrieve(decision: WakeDecision, snapshot: Snapshot) {
-    const query = [
-      decision.reason,
-      snapshot.current_plan?.goal ?? '',
-      ...snapshot.heard.map((h) => h.text),
-    ]
-      .join(' ')
-      .slice(0, 512);
-    try {
-      const [vector] = await bounded(
-        this.deps.embedder.embed([query], 'query'),
-        this.stepMs,
-        'memory',
-      );
-      if (vector === undefined) return [];
-      return await bounded(
-        this.deps.memory.searchEpisodic(this.options.lifeId, vector, this.options.episodicTopK),
-        this.stepMs,
-        'memory',
-      );
-    } catch {
-      return [];
-    }
   }
 
   /**
@@ -495,51 +382,7 @@ export class ThinkingLoop {
   }
 
   private async recordNoCall(cycle: Cycle, thoughtId: string): Promise<void> {
-    await this.record(cycle, thoughtId, cycle.decision.reason, null, null, null, 0, 0);
-  }
-
-  /** Writes one `thoughts` row; a failed write is counted and reported, never thrown. */
-  private async record(
-    cycle: Cycle,
-    thoughtId: string,
-    wakeReason: string,
-    messages: ModelMessage[] | null,
-    completion: ModelCompletion | null,
-    parsed: Thought | null,
-    reserved: number,
-    settled: number,
-    errorCode?: string,
-  ): Promise<void> {
-    const row = buildThoughtRow({
-      ...(errorCode === undefined ? {} : { errorCode }),
-      thoughtId,
-      snapshot: cycle.snapshot,
-      wakeReason,
-      messages,
-      templateVersion: cycle.render.templateVersion,
-      versions: this.options.versions,
-      modelConfig: this.options.modelConfig,
-      effort: cycle.effort.level,
-      completion,
-      parsed,
-      creditsReserved: reserved,
-      creditsSettled: settled,
-      at: this.iso(),
-    });
-    // The thought is valid and its credits are settled, so a write that fails or hangs is counted,
-    // not fatal: the plan is still sent.
-    try {
-      const written = await bounded(
-        writeThoughtRow(this.deps.journal, row, thoughtId, this.report),
-        this.stepMs,
-        'journal',
-      );
-      if (!written) cycle.journalErrors++;
-    } catch (error) {
-      if (!(error instanceof CycleAborted)) throw error;
-      reportFailure(this.report, error, 'journal_write_failed', { thought_id: thoughtId });
-      cycle.journalErrors++;
-    }
+    await recordThought(this.env, cycle, thoughtId, cycle.decision.reason, null, null, null, 0, 0);
   }
 
   /** The last step of a cycle: link the accepted intent, log, publish the `thought` event. */
