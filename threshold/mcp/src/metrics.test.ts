@@ -17,6 +17,20 @@ function fakeFetch(status = 200) {
   return { calls, fetchFn };
 }
 
+/**
+ * A fake receiver that never answers: each request stays open until the caller's signal aborts it,
+ * as a real fetch does, and then rejects with the abort reason.
+ */
+function silentFetch() {
+  const starts: string[] = [];
+  const fetchFn = ((url: string, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      starts.push(url);
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+    })) as unknown as typeof fetch;
+  return { starts, fetchFn };
+}
+
 function registry(): MetricRegistry {
   const reg = new MetricRegistry();
   reg.declare('counter', 'geldar_mcp_requests_total', 'MCP requests', ['route', 'outcome']);
@@ -208,4 +222,60 @@ describe('telemetry push', () => {
     });
     expect(logs).toEqual([{ event: 'telemetry_push_failed', status: 503 }]);
   });
+
+  it('a receiver that never answers: the push aborts at the timeout, is logged, and stop resolves', async () => {
+    const { starts, fetchFn } = silentFetch();
+    const logs: Record<string, string | number>[] = [];
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    const handle = startTelemetry(registry(), {
+      url: 'http://127.0.0.1:4318',
+      service: 'geldar-mcp',
+      log: (line) => logs.push(line),
+      fetch: fetchFn,
+      intervalMs: 60_000,
+      timeoutMs: 50,
+    });
+    try {
+      // stop() waits for the one push in flight, so it resolves only once that push has timed out.
+      await handle.stop();
+      expect(starts).toHaveLength(1);
+      expect(logs).toEqual([{ event: 'telemetry_push_failed', status: 0 }]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(unhandled).toEqual([]);
+  }, 3000);
+
+  it('a tick while a push is still in flight starts no second push', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const starts: string[] = [];
+    const heldFetch = (async (url: string) => {
+      starts.push(url);
+      await gate;
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+    const handle = startTelemetry(registry(), {
+      url: 'http://127.0.0.1:4318',
+      service: 'geldar-mcp',
+      log: () => {},
+      fetch: heldFetch,
+      intervalMs: 5,
+    });
+    try {
+      // Many 5 ms ticks pass while the first push is held open: none of them starts a second push.
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(starts).toHaveLength(1);
+    } finally {
+      release();
+      await handle.stop();
+    }
+  }, 3000);
 });

@@ -100,6 +100,9 @@ function toAttributes(labels: Labels): object[] {
   return Object.entries(labels).map(([key, value]) => ({ key, value: { stringValue: value } }));
 }
 
+/** A push with no answer after this long is abandoned, so a hung receiver cannot hold the sink's stop. */
+const PUSH_TIMEOUT_MS = 5000;
+
 export interface PushOptions {
   /** The telemetry endpoint's base URL (the OTLP/HTTP port). */
   url: string;
@@ -107,11 +110,13 @@ export interface PushOptions {
   log: (line: Record<string, string | number>) => void;
   fetch?: typeof fetch | undefined;
   now?: (() => number) | undefined;
+  /** How long one push may wait for its answer. Defaults to 5 seconds; tests shorten it. */
+  timeoutMs?: number | undefined;
 }
 
 /**
- * Sends the registry once as OTLP/HTTP JSON to `<url>/v1/metrics`. A failed push is logged with its
- * status code (0 for a network failure) and does not throw: the eventsink keeps running.
+ * Sends the registry once as OTLP/HTTP JSON to `<url>/v1/metrics`. A failed or timed-out push is logged
+ * with its status code (0 for a network failure or a timeout) and does not throw: the eventsink keeps running.
  */
 export async function pushMetrics(registry: MetricRegistry, options: PushOptions): Promise<void> {
   const fetchFn = options.fetch ?? fetch;
@@ -131,6 +136,7 @@ export async function pushMetrics(registry: MetricRegistry, options: PushOptions
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(options.timeoutMs ?? PUSH_TIMEOUT_MS),
     });
     if (!response.ok) options.log({ event: 'telemetry_push_failed', status: response.status });
   } catch {
@@ -240,8 +246,8 @@ export interface EventsinkTelemetry {
 
 /**
  * Starts the sink's push from the environment. With no `GELDAR_TELEMETRY_URL` it returns undefined:
- * no metrics object, no timer and no request. Otherwise it pushes at once, then every `intervalMs`,
- * with a timer that does not keep the process alive.
+ * no metrics object, no timer and no request. Otherwise it pushes at once, then every `intervalMs`: a
+ * tick while a push is still in flight starts none. The timer does not keep the process alive.
  */
 export function eventsinkTelemetry(
   env: Record<string, string | undefined>,
@@ -250,6 +256,7 @@ export function eventsinkTelemetry(
     log: (line: Record<string, string | number>) => void;
     intervalMs?: number;
     fetch?: typeof fetch;
+    timeoutMs?: number;
   },
 ): EventsinkTelemetry | undefined {
   const url = env.GELDAR_TELEMETRY_URL?.trim() || undefined;
@@ -260,6 +267,7 @@ export function eventsinkTelemetry(
     service: options.service,
     log: options.log,
     fetch: options.fetch,
+    timeoutMs: options.timeoutMs,
   };
   const inFlight = new Set<Promise<void>>();
   let stopped = false;
@@ -270,7 +278,10 @@ export function eventsinkTelemetry(
     });
     inFlight.add(request);
   };
-  const timer = setInterval(push, options.intervalMs ?? 15_000);
+  const tick = (): void => {
+    if (inFlight.size === 0) push();
+  };
+  const timer = setInterval(tick, options.intervalMs ?? 15_000);
   timer.unref();
   push();
   return {

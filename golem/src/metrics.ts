@@ -136,6 +136,9 @@ function toAttributes(labels: Labels): object[] {
   return Object.entries(labels).map(([key, value]) => ({ key, value: { stringValue: value } }));
 }
 
+/** A push with no answer after this long is abandoned, so a hung receiver cannot hold the Body's stop. */
+const PUSH_TIMEOUT_MS = 5000;
+
 export interface PushOptions {
   /** The telemetry endpoint's base URL (the OTLP/HTTP port). Only `startTelemetry` pushes, and only with one. */
   url: string;
@@ -143,11 +146,13 @@ export interface PushOptions {
   log: (line: Record<string, string | number>) => void;
   fetch?: typeof fetch | undefined;
   now?: (() => number) | undefined;
+  /** How long one push may wait for its answer. Defaults to 5 seconds; tests shorten it. */
+  timeoutMs?: number | undefined;
 }
 
 /**
- * Sends the registry once as OTLP/HTTP JSON to `<url>/v1/metrics`. A failed push is logged with its
- * status code (0 for a network failure) and does not throw: the Body keeps running.
+ * Sends the registry once as OTLP/HTTP JSON to `<url>/v1/metrics`. A failed or timed-out push is logged
+ * with its status code (0 for a network failure or a timeout) and does not throw: the Body keeps running.
  */
 export async function pushMetrics(registry: MetricRegistry, options: PushOptions): Promise<void> {
   const fetchFn = options.fetch ?? fetch;
@@ -167,6 +172,7 @@ export async function pushMetrics(registry: MetricRegistry, options: PushOptions
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(options.timeoutMs ?? PUSH_TIMEOUT_MS),
     });
     if (!response.ok) options.log({ event: 'telemetry_push_failed', status: response.status });
   } catch {
@@ -176,8 +182,9 @@ export async function pushMetrics(registry: MetricRegistry, options: PushOptions
 
 /**
  * Pushes on a timer. With no endpoint it does nothing at all: no timer, no request. The first push
- * happens at once, then every `intervalMs`; the timer does not keep the process alive. `stop` starts
- * no further push and resolves once every push already in flight has settled.
+ * happens at once, then every `intervalMs`; a tick while a push is still in flight starts none, so
+ * pushes never pile up. The timer does not keep the process alive. `stop` starts no further push and
+ * resolves once every push already in flight has settled.
  */
 export function startTelemetry(
   registry: MetricRegistry,
@@ -195,7 +202,10 @@ export function startTelemetry(
     });
     inFlight.add(request);
   };
-  const timer = setInterval(push, intervalMs);
+  const tick = (): void => {
+    if (inFlight.size === 0) push();
+  };
+  const timer = setInterval(tick, intervalMs);
   timer.unref();
   push();
   return {
@@ -358,6 +368,7 @@ export function startGolemTelemetry(
     log: (line: Record<string, string | number>) => void;
     intervalMs?: number;
     fetch?: typeof fetch;
+    timeoutMs?: number;
   },
 ): GolemTelemetry {
   const metrics = new GolemMetrics(new MetricRegistry());
@@ -368,6 +379,7 @@ export function startGolemTelemetry(
     log: options.log,
     intervalMs: options.intervalMs ?? 15_000,
     fetch: options.fetch,
+    timeoutMs: options.timeoutMs,
   });
   return { metrics, stop: handle.stop };
 }
