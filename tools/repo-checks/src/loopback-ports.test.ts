@@ -284,6 +284,7 @@ function coloService(ports: string[], deploy = LIMITS): string {
     '    pids_limit: 256',
     '    memswap_limit: 2048m',
     '    logging: {}',
+    WATCHTOWER_OFF,
     ...ports,
     ...deploy.split('\n').map((line) => `    ${line}`),
   ].join('\n');
@@ -297,6 +298,9 @@ const LIMITS = [
   '      memory: 8192m',
 ].join('\n');
 
+/** The Watchtower opt-out line that every colo service carries (FX-WATCHTOWER), in the map form. */
+const WATCHTOWER_OFF = '    labels: { com.centurylinklabs.watchtower.enable: "false" }';
+
 /** A one-service colo file with every required key and a limit, plus `extra` lines; `drop` removes keys by name. */
 function hardened(extra: string[] = [], drop: string[] = []): string {
   const base = [
@@ -304,6 +308,7 @@ function hardened(extra: string[] = [], drop: string[] = []): string {
     '    pids_limit: 256',
     '    memswap_limit: 2048m',
     '    logging: {}',
+    WATCHTOWER_OFF,
     '    deploy:',
     '      resources:',
     '        limits:',
@@ -448,6 +453,74 @@ describe('findPublicPorts: colo hardening rules', () => {
   });
 });
 
+describe('findPublicPorts: the Watchtower opt-out label (FX-WATCHTOWER)', () => {
+  it('passes a service whose label is the map form or the list form, set to false', () => {
+    expect(coloProblems(hardened())).toEqual([]);
+    const list = hardened().replace(
+      WATCHTOWER_OFF,
+      '    labels:\n      - com.centurylinklabs.watchtower.enable=false',
+    );
+    expect(coloProblems(list)).toEqual([]);
+  });
+
+  it('accepts a YAML false, which compose writes as "false"', () => {
+    expect(coloProblems(hardened().replace('"false"', 'false'))).toEqual([]);
+  });
+
+  it('reads the label through a shared anchor, as compose/colo.yml does', () => {
+    const text = [
+      'x-labels: &colo-labels',
+      '  com.centurylinklabs.watchtower.enable: "false"',
+      hardened(['    labels: *colo-labels'], ['labels']),
+    ].join('\n');
+    expect(coloProblems(text)).toEqual([]);
+  });
+
+  it('fails a service with no label, naming the service', () => {
+    expect(coloProblems(hardened([], ['labels']))).toEqual([
+      'paper: has no com.centurylinklabs.watchtower.enable label; every colo service needs it set to "false"',
+    ]);
+  });
+
+  it('fails a label set to true, in the map form and the list form', () => {
+    const map = hardened().replace('"false"', '"true"');
+    const list = hardened().replace(
+      WATCHTOWER_OFF,
+      '    labels:\n      - com.centurylinklabs.watchtower.enable=true',
+    );
+    const reason = 'paper: com.centurylinklabs.watchtower.enable must be "false", not "true"';
+    expect(coloProblems(map)).toEqual([reason]);
+    expect(coloProblems(list)).toEqual([reason]);
+  });
+
+  it('fails a misspelled key, which leaves the real label missing and names the misspelled one', () => {
+    const text = hardened().replace('watchtower.enable:', 'watchtower.enabled:');
+    expect(coloProblems(text)).toEqual([
+      'paper: has no com.centurylinklabs.watchtower.enable label; it has "com.centurylinklabs.watchtower.enabled", which is not that key',
+    ]);
+  });
+
+  it('fails a labels value that is neither a mapping nor a list of strings', () => {
+    expect(coloProblems(hardened().replace(WATCHTOWER_OFF, '    labels: [1]'))).toEqual([
+      'paper: labels must be a mapping or a list of KEY=VALUE strings',
+    ]);
+  });
+
+  it('applies the label rule to the NATS overlay only where it sets the label', () => {
+    const omitted = 'services:\n  paper:\n    environment:\n      GELDAR_NATS_USER: paper';
+    expect(findPublicPorts('compose/nats-auth.yml', omitted)).toEqual([]);
+    const on =
+      'services:\n  paper:\n    labels:\n      com.centurylinklabs.watchtower.enable: "true"';
+    expect(findPublicPorts('compose/nats-auth.yml', on).map((f) => f.reason)).toEqual([
+      'com.centurylinklabs.watchtower.enable must be "false", not "true"',
+    ]);
+  });
+
+  it('applies the label rule to colo only: phase0 has no label requirement', () => {
+    expect(findPublicPorts('compose/phase0.yml', 'services:\n  db:\n    image: x')).toEqual([]);
+  });
+});
+
 describe('findPublicPorts: compose/colo.yml', () => {
   it('passes the committed compose/colo.yml', () => {
     const text = readFileSync(
@@ -522,6 +595,7 @@ describe('findPublicPorts: compose/colo.yml', () => {
       '    pids_limit: 256',
       '    memswap_limit: 2048m',
       '    logging: {}',
+      WATCHTOWER_OFF,
       '    ports: ["127.0.0.1:25567:25565"]',
     ].join('\n');
     expect(coloProblems(text)).toEqual([]);

@@ -186,9 +186,49 @@ function volumeProblem(entry: unknown): string | null {
   return null;
 }
 
+/** The Watchtower opt-out label (FX-WATCHTOWER): the node's auto-updater must leave every colo service alone. */
+export const WATCHTOWER_LABEL = 'com.centurylinklabs.watchtower.enable';
+
+/** The `[key, value]` pairs of a `labels:` value in the map or the list (KEY=VALUE) form, or null for any other shape. */
+function labelPairs(labels: unknown): [string, unknown][] | null {
+  if (labels === undefined) return [];
+  if (isRecord(labels)) return Object.entries(labels);
+  if (!Array.isArray(labels) || !labels.every((item) => typeof item === 'string')) return null;
+  return labels.map((item): [string, string] => {
+    const cut = item.indexOf('=');
+    return cut < 0 ? [item, ''] : [item.slice(0, cut), item.slice(cut + 1)];
+  });
+}
+
+/**
+ * Why the Watchtower opt-out label is wrong on one service, or null. Every base service must set it to "false" (a
+ * YAML false is the same value to compose). The overlay may add services' labels, so it is checked only where it sets
+ * the label: an overlay that sets it to anything but "false" fails. A misspelled key fails as a missing label.
+ */
+function watchtowerProblem(
+  role: 'base' | 'overlay',
+  definition: Record<string, unknown>,
+): string | null {
+  const pairs = labelPairs(definition.labels);
+  if (pairs === null) return 'labels must be a mapping or a list of KEY=VALUE strings';
+  const own = pairs.filter(([key]) => key === WATCHTOWER_LABEL);
+  if (own.length === 0) {
+    if (role === 'overlay') return null;
+    const near = pairs.find(([key]) => /watchtower/i.test(key));
+    return near === undefined
+      ? `has no ${WATCHTOWER_LABEL} label; every colo service needs it set to "false"`
+      : `has no ${WATCHTOWER_LABEL} label; it has ${JSON.stringify(near[0])}, which is not that key`;
+  }
+  const bad = own.find(([, value]) => value !== 'false' && value !== false);
+  return bad === undefined
+    ? null
+    : `${WATCHTOWER_LABEL} must be "false", not ${JSON.stringify(bad[1])}`;
+}
+
 /**
  * The colo rules for one service: denied keys, the NATS network_mode, the cpus and memory values, the volume allowlist,
- * and (base files only) the required pids_limit, memswap_limit and logging. Each returns a reason, never a value.
+ * the Watchtower opt-out label, and (base files only) the required pids_limit, memswap_limit and logging. Each returns a
+ * reason, never a value.
  */
 function coloServiceProblems(
   role: 'base' | 'overlay',
@@ -198,6 +238,8 @@ function coloServiceProblems(
   for (const key of DENIED_COLO_KEYS) {
     if (key in definition) problems.push(`${key} is not allowed in colo`);
   }
+  const watchtower = watchtowerProblem(role, definition);
+  if (watchtower !== null) problems.push(watchtower);
   if ('network_mode' in definition && networkModeProblem(definition.network_mode) === null) {
     problems.push('network_mode is not allowed in colo; a service joins the colo network');
   }

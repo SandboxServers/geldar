@@ -137,6 +137,15 @@ describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
+  it('gives every service the Watchtower opt-out label and the stack label (FX-WATCHTOWER)', () => {
+    for (const [name, service] of Object.entries(colo.services)) {
+      expect(service.labels, name).toEqual({
+        'com.centurylinklabs.watchtower.enable': 'false',
+        'com.geldar.stack': 'colo',
+      });
+    }
+  });
+
   for (const [name, [budget, cpus, memory, pids]] of Object.entries(SHARED_CAPS)) {
     it(`${name}: its CPU, memory, pids and log limits`, () => {
       const service = colo.services[name] ?? {};
