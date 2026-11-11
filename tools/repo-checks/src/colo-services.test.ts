@@ -1,6 +1,6 @@
 // The C1-03 wiring in compose/colo.yml: the Body (golem-body) and the Mind (animus) services. Parsed, not grepped,
 // so a change to a key or a value fails here, not in a deploy. Decisions 0078 (Mind placement) and 0083 (images).
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -433,15 +433,24 @@ describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0
 // C2-08c: the register service is wired but off by default (decision 0135).
 const register = colo.services.register ?? {};
 
-describe('compose/colo.yml: the register start credits (C2-R5 F3)', () => {
-  it('defaults to the shard cap_credits, the number the CLI path grants', () => {
-    const shard = parse(readFileSync(`shards/colo-mind.yaml`, 'utf8')) as {
+describe('sql: the register start credits (C2-R5 F3, F20)', () => {
+  it('the newest start_credits constant in sql/ equals the shard cap_credits', () => {
+    const shard = parse(readFileSync(`${ROOT}shards/colo-mind.yaml`, 'utf8')) as {
       sovereign: { budget: { cap_credits: number } };
     };
-    expect(shard.sovereign.budget.cap_credits).toBe(240);
-    expect(env(register).REGISTER_START_CREDITS).toBe(
-      composeDefault('REGISTER_START_CREDITS', String(shard.sovereign.budget.cap_credits)),
-    );
+    // migrations apply in name order; the last one that sets the constant is the live one
+    const constants = readdirSync(`${ROOT}sql`)
+      .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+      .sort()
+      .flatMap((f) =>
+        [
+          ...readFileSync(`${ROOT}sql/${f}`, 'utf8').matchAll(
+            /start_credits\s+CONSTANT\s+INT\s*:=\s*(\d+)/g,
+          ),
+        ].map((m) => Number(m[1])),
+      );
+    expect(constants.length).toBeGreaterThan(0);
+    expect(constants.at(-1)).toBe(shard.sovereign.budget.cap_credits);
   });
 });
 

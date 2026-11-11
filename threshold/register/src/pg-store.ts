@@ -3,8 +3,6 @@ import type { MintRequest, NewPlayerRequest, OwnerRecord, PlayerRow, Store } fro
 
 export interface PgStoreOptions {
   readonly shard: string;
-  /** Not sent to the database: the starting credits are a constant in register_create_player (0011). */
-  readonly startCredits: number;
 }
 
 const hex = (h: string): Buffer => Buffer.from(h, 'hex');
@@ -19,19 +17,18 @@ export class PgStore implements Store {
   }
 
   async findOwner(identityHash: string): Promise<OwnerRecord | null> {
-    const r = await this.pool.query(
-      'SELECT owner_id, banned_at IS NOT NULL AS banned FROM mcp_identities WHERE identity_hash = $1',
-      [hex(identityHash)],
-    );
+    // The role reads no table (0012): the owner of the named identity comes from a definer function.
+    const r = await this.pool.query('SELECT owner_id, banned FROM register_find_owner($1)', [
+      hex(identityHash),
+    ]);
     const row = r.rows[0];
     return row ? { ownerId: String(row.owner_id), banned: row.banned === true } : null;
   }
 
   async countNewOwnersSince(sinceMs: number): Promise<number> {
-    const r = await this.pool.query(
-      'SELECT count(*)::int AS n FROM mcp_identities WHERE created_at >= $1',
-      [new Date(sinceMs)],
-    );
+    const r = await this.pool.query('SELECT register_count_new_owners($1) AS n', [
+      new Date(sinceMs),
+    ]);
     return Number(r.rows[0]?.n ?? 0);
   }
 
@@ -48,10 +45,10 @@ export class PgStore implements Store {
     ]);
   }
 
-  async listPlayers(ownerId: string): Promise<PlayerRow[]> {
+  async listPlayers(identityHash: string): Promise<PlayerRow[]> {
     const r = await this.pool.query(
-      'SELECT player_id, display_name, harness, status FROM mcp_players WHERE owner_id = $1 ORDER BY player_id',
-      [ownerId],
+      'SELECT player_id, display_name, harness, status FROM register_list_players($1)',
+      [hex(identityHash)],
     );
     return r.rows.map((row) => ({
       playerId: String(row.player_id),

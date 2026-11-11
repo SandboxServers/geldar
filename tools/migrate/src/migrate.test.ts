@@ -27,6 +27,7 @@ describe('listMigrations', () => {
       '0009_register_mint_function.sql',
       '0010_register_definer_functions.sql',
       '0011_register_signup_function.sql',
+      '0012_register_read_functions.sql',
     ]);
   });
 

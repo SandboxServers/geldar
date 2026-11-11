@@ -5,10 +5,7 @@ import { discordProvider, githubProvider } from './providers.ts';
 import { createRegisterServer } from './server.ts';
 
 const config = loadConfig(process.env);
-const store = new PgStore(dbUrl(process.env), {
-  shard: config.shard,
-  startCredits: config.startCredits,
-});
+const store = new PgStore(dbUrl(process.env), { shard: config.shard });
 const server = createRegisterServer({
   config,
   store,

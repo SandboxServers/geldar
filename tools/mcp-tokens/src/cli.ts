@@ -132,6 +132,8 @@ export interface Env {
   connect: () => Promise<SqlSession>;
   /** Deletes a retired life's registry key and whitelist entry; defaults to the golem removal. */
   removeLife?: (lifeId: string) => Promise<string[]>;
+  /** The register pepper file when `--pepper-file` is not given (REGISTER_PEPPER_FILE). */
+  registerPepperFile?: string | undefined;
 }
 
 export async function connectPg(): Promise<SqlSession> {
@@ -148,6 +150,9 @@ export const DEFAULT_ENV: Env = {
   // Read on each use, so GELDAR_SHARD_FILE is the one in force when the command runs.
   get shardFile() {
     return shardFileFrom();
+  },
+  get registerPepperFile() {
+    return process.env.REGISTER_PEPPER_FILE;
   },
   connect: connectPg,
 };
@@ -196,14 +201,14 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
  * which it is derived with the register service's own HMAC (identityHash) and its pepper, read
  * from `--pepper-file` or REGISTER_PEPPER_FILE the way the service reads REGISTER_PEPPER_FILE.
  */
-async function identityIdFrom(args: string[], parsed: Parsed): Promise<string> {
+async function identityIdFrom(args: string[], parsed: Parsed, env: Env): Promise<string> {
   if (args.length === 2) return args[1] as string;
   const provider = optionalFlag(parsed, '--provider');
   const userId = optionalFlag(parsed, '--user-id');
   if (args.length !== 1 || provider === undefined || userId === undefined) throw new Error(USAGE);
   if (provider !== 'github' && provider !== 'discord')
     throw new Error('--provider is github or discord');
-  const file = optionalFlag(parsed, '--pepper-file') ?? process.env.REGISTER_PEPPER_FILE;
+  const file = optionalFlag(parsed, '--pepper-file') ?? env.registerPepperFile;
   if (file === undefined) throw new Error('--pepper-file (or REGISTER_PEPPER_FILE) is required');
   const pepper = (await readFile(file, 'utf8')).trim();
   if (pepper.length < 32) throw new Error('the register pepper is missing or too short');
@@ -213,7 +218,7 @@ async function identityIdFrom(args: string[], parsed: Parsed): Promise<string> {
 async function runIdentity(io: Io, env: Env, args: string[], parsed: Parsed): Promise<void> {
   const verb = args[0];
   if (verb === 'ban' || verb === 'unban') {
-    const id = await identityIdFrom(args, parsed);
+    const id = await identityIdFrom(args, parsed, env);
     await withSql(env, async (sql) => {
       if (verb === 'ban') {
         const revoked = await banIdentity(sql, id);

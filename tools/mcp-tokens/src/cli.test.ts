@@ -214,13 +214,15 @@ describe('identity ban by provider account (F16)', () => {
 
   async function banCall(
     extra: string[],
+    options: { verb?: string; pepper?: string; envPepperFile?: boolean } = {},
   ): Promise<{ code: number; h: Awaited<ReturnType<typeof harness>>; values: unknown[][] }> {
     const h = await harness();
     const pepperFile = join(h.secretDir, '..', 'register-pepper');
-    await writeFile(pepperFile, `${PEPPER}\n`);
+    await writeFile(pepperFile, `${options.pepper ?? PEPPER}\n`);
     const values: unknown[][] = [];
     const env = {
       ...envOf(h),
+      ...(options.envPepperFile ? { registerPepperFile: pepperFile } : {}),
       connect: async () => ({
         query: async (text: string, v?: unknown[]) => {
           values.push(v ?? []);
@@ -232,7 +234,7 @@ describe('identity ban by provider account (F16)', () => {
       }),
     };
     const code = await run(
-      ['identity', 'ban', ...extra.map((x) => (x === 'PEPPER' ? pepperFile : x))],
+      ['identity', options.verb ?? 'ban', ...extra.map((x) => (x === 'PEPPER' ? pepperFile : x))],
       h.io,
       env,
     );
@@ -273,5 +275,57 @@ describe('identity ban by provider account (F16)', () => {
     ]);
     expect(bad.code).toBe(1);
     expect(bad.values).toEqual([]);
+  });
+
+  it('reads the pepper file from the injected env when --pepper-file is not given', async () => {
+    const r = await banCall(['--provider', 'github', '--user-id', '4242'], {
+      envPepperFile: true,
+    });
+    expect(r.code).toBe(0);
+    expect(r.values.some((v) => v[0] === identityHash(PEPPER, 'github', '4242'))).toBe(true);
+  });
+
+  it('refuses a 31-character pepper with no query', async () => {
+    const r = await banCall(['--provider', 'github', '--user-id', '1', '--pepper-file', 'PEPPER'], {
+      pepper: 'p'.repeat(31),
+    });
+    expect(r.code).toBe(1);
+    expect(r.values).toEqual([]);
+    const ok = await banCall(
+      ['--provider', 'github', '--user-id', '1', '--pepper-file', 'PEPPER'],
+      {
+        pepper: 'p'.repeat(32),
+      },
+    );
+    expect(ok.code).toBe(0);
+  });
+
+  it('unban derives the id the same way', async () => {
+    const r = await banCall(
+      ['--provider', 'discord', '--user-id', '1', '--pepper-file', 'PEPPER'],
+      { verb: 'unban' },
+    );
+    expect(r.code).toBe(0);
+    expect(r.values.some((v) => v[0] === identityHash(PEPPER, 'discord', '1'))).toBe(true);
+    expect(r.h.out.join('\n')).toContain('unbanned identity');
+  });
+
+  it('a missing pepper file, no pepper at all, or --user-id without --provider exit 1 with no query', async () => {
+    const missing = await banCall([
+      '--provider',
+      'github',
+      '--user-id',
+      '1',
+      '--pepper-file',
+      '/nonexistent/pepper-file',
+    ]);
+    expect(missing.code).toBe(1);
+    expect(missing.values).toEqual([]);
+    const none = await banCall(['--provider', 'github', '--user-id', '1']);
+    expect(none.code).toBe(1);
+    expect(none.values).toEqual([]);
+    const noProvider = await banCall(['--user-id', '1', '--pepper-file', 'PEPPER']);
+    expect(noProvider.code).toBe(1);
+    expect(noProvider.values).toEqual([]);
   });
 });

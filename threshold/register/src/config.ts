@@ -18,8 +18,6 @@ export interface RegisterConfig {
   readonly tokenPepper: string;
   readonly shard: string;
   readonly harnesses: readonly string[];
-  /** The credits a new life starts with (the shard's sovereign.budget.cap_credits). */
-  readonly startCredits: number;
   readonly minAccountAgeDays: number;
   readonly maxNewOwnersPerDay: number;
   readonly trustedPeers: readonly string[];
@@ -77,12 +75,6 @@ export function loadConfig(
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^[a-z][a-z0-9-]{0,31}$/.test(s)),
-    // No default: a life with 0 credits is dead on arrival. The deploy sets the shard's cap_credits.
-    startCredits: intOf(
-      required(env.REGISTER_START_CREDITS, 'REGISTER_START_CREDITS'),
-      0,
-      'REGISTER_START_CREDITS',
-    ),
     minAccountAgeDays: intOf(
       env.REGISTER_MIN_ACCOUNT_AGE_DAYS,
       30,
