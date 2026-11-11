@@ -19,7 +19,7 @@ import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
 import { NegativeCache } from './negative-cache.ts';
 import { PublicRateLimit } from './public-limit.ts';
-import { KILL_SWITCH_BODY, rateLimitedBody } from './public-refusals.ts';
+import { KILL_SWITCH_BODY, rateLimitedBody, UNAUTHENTICATED_BODY } from './public-refusals.ts';
 
 export interface FrontDoorOptions {
   http: McpConfig['http'];
@@ -84,8 +84,27 @@ function isToolCall(body: unknown): boolean {
     : false;
 }
 
+/**
+ * Every public 429 carries one body and the same seconds in `Retry-After` (decision 0090), so a
+ * probe cannot tell which gate refused it. The gate stays in the log (`event`, `error`).
+ */
 function tooManyOpen(): Refusal {
-  return { status: 429, message: 'too_many_open_requests', retryAfterSec: 1 };
+  return {
+    status: 429,
+    message: 'too_many_open_requests',
+    retryAfterSec: 1,
+    body: rateLimitedBody(1),
+  };
+}
+
+function limitedAnswer(retryAfterSec: number, event: string): AuthDecision {
+  return {
+    outcome: 'answered',
+    status: 429,
+    headers: { 'Retry-After': String(retryAfterSec) },
+    body: rateLimitedBody(retryAfterSec),
+    event,
+  };
 }
 
 /** A refusal for a client that left before its request was served; nothing is sent to it anyway. */
@@ -108,7 +127,12 @@ function releaseOnClose(res: ServerResponse, release: () => void): boolean {
 
 function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefined {
   if (retryAfterSec === undefined) return undefined;
-  return { status: 429, message: 'rate_limited', retryAfterSec };
+  return {
+    status: 429,
+    message: 'rate_limited',
+    retryAfterSec,
+    body: rateLimitedBody(retryAfterSec),
+  };
 }
 
 /**
@@ -186,7 +210,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         token !== null &&
         (options.store.isCachedHit?.(tokenDigest(options.pepper, token), now()) ?? false);
       const blockedSec = cached ? undefined : gates.authBlocked(address, now());
-      if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
+      if (blockedSec !== undefined) return limitedAnswer(blockedSec, 'rate_limited');
       // A bounded number of uncached lookups may be in flight at once: this protects Postgres, and
       // unlike a global failed-auth bucket an attacker cannot use it to lock out valid users for long.
       const lookup = token !== null && !cached;
@@ -210,7 +234,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           event: 'auth_unavailable',
           error: (error as Error).constructor.name,
         });
-        return { outcome: 'unavailable' };
+        return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY, event: 'unavailable' };
       } finally {
         if (lookup) gates.releaseLookup();
       }
@@ -218,7 +242,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         // GET and DELETE never reach the POST hook, so the handshake bucket meters them here.
         if (req.method === 'GET' || req.method === 'DELETE') {
           const waitSec = gates.handshake(verdict.player.playerId, now());
-          if (waitSec !== undefined) return { outcome: 'limited', retryAfterSec: waitSec };
+          if (waitSec !== undefined) return limitedAnswer(waitSec, 'rate_limited');
         }
         players.set(req, verdict.player);
         return { outcome: 'ok' };
@@ -226,7 +250,18 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       // A missing or refused token flags the address; a wrong-player 403 is a valid token, not a failure.
       if (verdict.outcome === 'unauthorized') failures.record(clientKey(address), now());
       const retryAfterSec = gates.failedAuth(address, now());
-      if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
+      if (retryAfterSec !== undefined) return limitedAnswer(retryAfterSec, 'rate_limited');
+      if (verdict.outcome === 'unauthorized') {
+        // One 401 for a missing, malformed or unknown token (0090); the reason is for the log only.
+        return {
+          outcome: 'answered',
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Bearer' },
+          body: UNAUTHENTICATED_BODY,
+          event: 'unauthorized',
+          reason: verdict.reason,
+        };
+      }
       return { outcome: verdict.outcome, reason: verdict.reason };
     },
     // Takes the open slots before the body is read, so a slow body holds one like any open request.

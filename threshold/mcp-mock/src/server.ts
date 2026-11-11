@@ -20,13 +20,25 @@ export type AuthDecision =
   | { outcome: AuthResult; reason?: string }
   | { outcome: 'limited'; retryAfterSec: number }
   | { outcome: 'unavailable' }
-  | { outcome: 'answered'; status: number; headers?: Record<string, string>; body: unknown };
+  | {
+      outcome: 'answered';
+      status: number;
+      headers?: Record<string, string>;
+      body: unknown;
+      /** The log line's event (default `answered`) and its log-only reason; neither is sent. */
+      event?: string;
+      reason?: string;
+    };
 
-/** A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint. */
+/**
+ * A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint.
+ * `body`, when set, is the JSON answered instead of the JSON-RPC error that carries the message.
+ */
 export interface Refusal {
   status: number;
   message: string;
   retryAfterSec?: number;
+  body?: unknown;
 }
 
 export interface MockHttpOptions {
@@ -137,11 +149,13 @@ function sendRefusal(res: ServerResponse, refusal: Refusal): void {
   }
   res.writeHead(refusal.status, headers);
   res.end(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      error: { code: -32003, message: refusal.message },
-      id: null,
-    }),
+    JSON.stringify(
+      refusal.body ?? {
+        jsonrpc: '2.0',
+        error: { code: -32003, message: refusal.message },
+        id: null,
+      },
+    ),
   );
 }
 
@@ -350,7 +364,8 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     const close: Record<string, string> =
       options.closeRefused === true ? { Connection: 'close' } : {};
     if (decision.outcome === 'answered') {
-      ctx.event = 'answered';
+      ctx.event = decision.event ?? 'answered';
+      if (decision.reason !== undefined) ctx.reason = decision.reason;
       res
         .writeHead(decision.status, {
           'Content-Type': 'application/json',
