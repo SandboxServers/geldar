@@ -509,18 +509,38 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
   });
 });
 
+/** The CREATE ROLE statements in `sql` (comments stripped) that no DO block with the race handler encloses. */
+export function unsafeRoleCreations(sql: string): string[] {
+  const text = sql.replace(/--[^\n]*/g, '');
+  const safe: Array<[number, number]> = [];
+  for (const b of text.matchAll(/\bDO\s+(\$\w*\$)([\s\S]*?)\1/g)) {
+    if (
+      /\bEXCEPTION\b[\s\S]*\bWHEN duplicate_object OR unique_violation THEN NULL/.test(b[2] ?? '')
+    ) {
+      safe.push([b.index, b.index + b[0].length]);
+    }
+  }
+  return [...text.matchAll(/CREATE ROLE\s+(\w+)/g)]
+    .filter((m) => !safe.some(([from, to]) => m.index > from && m.index < to))
+    .map((m) => m[1] ?? '');
+}
+
 describe('sql: role creation is race-safe (FX-IT2)', () => {
   it('every CREATE ROLE sits in a DO block that catches duplicate_object and unique_violation', () => {
     const dir = new URL('../../../sql/', import.meta.url);
     for (const f of readdirSync(dir).filter((n) => n.endsWith('.sql'))) {
-      const text = readFileSync(new URL(f, dir), 'utf8');
-      for (const m of text.matchAll(/CREATE ROLE\s+(\w+)/g)) {
-        const block = text.slice(
-          text.lastIndexOf('DO $', m.index),
-          text.indexOf('END', m.index) + 200,
-        );
-        expect(block, ` `).toMatch(/WHEN duplicate_object OR unique_violation THEN NULL/);
-      }
+      expect(unsafeRoleCreations(readFileSync(new URL(f, dir), 'utf8')), f).toEqual([]);
     }
+  });
+
+  it('F29: the check finds an unprotected role, a comment-only guard and a foreign block', () => {
+    const guard = 'EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;';
+    expect(unsafeRoleCreations('CREATE ROLE a;')).toEqual(['a']);
+    expect(unsafeRoleCreations(`DO $x$ BEGIN CREATE ROLE a; END $x$; -- ${guard}`)).toEqual(['a']);
+    expect(unsafeRoleCreations(`DO $x$ BEGIN PERFORM 1; ${guard} END $x$; CREATE ROLE a;`)).toEqual(
+      ['a'],
+    );
+    expect(unsafeRoleCreations(`DO $x$ BEGIN CREATE ROLE a; ${guard} END $x$;`)).toEqual([]);
+    expect(unsafeRoleCreations('-- CREATE ROLE a;')).toEqual([]);
   });
 });
