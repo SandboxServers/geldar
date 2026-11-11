@@ -107,11 +107,22 @@ describe('the Glass SQL allowlist', () => {
     await listReceipts(db, hostile);
     await thoughtsAfter(db, { at: '2026-11-10 00:00:00+00', id: hostile }, 10);
     await listAgents(db);
-    await streamStartCursor(db);
+    await streamStartCursor(db, 0);
     for (const call of calls) expect(call.text).not.toContain('DELETE');
     // The last value of a thought statement is its cut-off: null here, as no delay is set.
     expect(calls[0]?.values).toEqual([hostile, false, null]);
     expect(calls[1]?.values).toEqual([hostile, false, null]);
     expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10, false, null]);
+  });
+});
+
+describe('the stream start cursor', () => {
+  it('starts the delay behind now, as a bound parameter, and clamps a bad delay to zero', async () => {
+    const { db, calls } = recordingDb();
+    await streamStartCursor(db, 60);
+    await streamStartCursor(db, 0);
+    await streamStartCursor(db, -5);
+    expect(calls[0]?.text).toContain('make_interval');
+    expect(calls.map((c) => c.values)).toEqual([[60], [0], [0]]);
   });
 });

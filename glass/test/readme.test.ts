@@ -28,7 +28,7 @@ describe('the Glass README', () => {
 
   it('states the public-behind-Caddy position, the Host rule and the Caddy peer setting', () => {
     expect(README).toMatch(/\*\*public behind Caddy\*\*/);
-    expect(README).toMatch(/loopback only and has no authentication/);
+    expect(README).toMatch(/loopback only by default and has no authentication/);
     expect(README).toContain('421 Misdirected');
     expect(README).toContain('DNS rebinding');
     expect(README).toContain('Host: localhost');
@@ -43,6 +43,9 @@ describe('the Glass README', () => {
       'GELDAR_GLASS_SHOW_LIVING_SOVEREIGN',
       'GELDAR_GLASS_TRUSTED_PROXIES',
       'GELDAR_GLASS_ENABLED',
+      'GELDAR_GLASS_SSE_PER_CLIENT',
+      'GELDAR_GLASS_PUBLIC_HOSTS',
+      'GELDAR_IN_NETWORK_HOSTS',
     ]) {
       expect(README, name).toContain(`\`${name}\``);
     }
@@ -50,6 +53,10 @@ describe('the Glass README', () => {
     expect(README).toContain('read once at start');
     expect(README).toContain('glass-off.caddy');
     expect(README).toContain("Set it to Caddy's peer address");
+  });
+
+  it('does not mention the prompt column: Glass neither selects nor sends it', () => {
+    expect(README).not.toContain('model_input');
   });
 
   it('does not list /api/stats, allows HEAD, and says CI runs the IT cases', () => {

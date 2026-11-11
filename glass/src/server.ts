@@ -11,6 +11,9 @@ import { SseHub } from './sse.ts';
 /** Rows the stream reads per poll: a burst is spread over ticks, not held in memory. */
 const STREAM_BATCH_ROWS = 100;
 
+/** A stream is ended after this long; the page's EventSource reconnects with backoff. */
+export const MAX_STREAM_AGE_MS = 10 * 60_000;
+
 /** A connect that hangs longer than this fails, so a poll can never wait on it forever. */
 const CONNECT_TIMEOUT_MS = 5_000;
 
@@ -73,8 +76,9 @@ export function buildGlass(config: GlassConfig): GlassParts {
     bufferFrames: config.sseBufferFrames,
     pollMs: config.ssePollMs,
     heartbeatMs: HEARTBEAT_MS,
+    maxAgeMs: MAX_STREAM_AGE_MS,
     enabled: policy.enabled,
-    start: () => streamStartCursor(pool),
+    start: () => streamStartCursor(pool, config.delaySeconds),
     fetch: streamFeed(pool, policy),
     log: (entry) => console.log(JSON.stringify(entry)),
   });
