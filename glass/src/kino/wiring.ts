@@ -16,7 +16,6 @@ import { KinoKillSwitch } from './killswitch.ts';
 import { KinoMetrics } from './metrics.ts';
 import { normalizeOrigin, parseAllowedOrigins } from './origins.ts';
 import { startOtlpExporter } from './otlp.ts';
-import { startAuditPurge } from './purge.ts';
 import { type FeedSource, KinoRelay } from './relay.ts';
 import { ANONYMOUS, listAgents, ownedIds, sqlScopeStore, watchableIds } from './scope.ts';
 import { handleKinoUpgrade } from './ws.ts';

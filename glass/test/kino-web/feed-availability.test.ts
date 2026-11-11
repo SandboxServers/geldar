@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FeedState } from '../../web/kino/feed.ts';
 import { buildKino } from '../../src/kino/wiring.ts';
+import { FeedState } from '../../web/kino/feed.ts';
 
 describe('rate_limited', () => {
   it('shows a short notice and does not end the feed', () => {
@@ -17,7 +17,13 @@ describe('Kino with a feed that comes and goes', () => {
     let lost: (() => void) | undefined;
     const parts = buildKino({
       db,
-      feed: { subscribe: () => () => {}, available: () => up, onLost: (l) => void (lost = l) },
+      feed: {
+        subscribe: () => () => {},
+        available: () => up,
+        onLost: (l) => {
+          lost = l;
+        },
+      },
       sessionKey: undefined,
       glassEnabled: () => true,
       serveWeb: false,
