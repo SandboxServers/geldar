@@ -12,6 +12,7 @@ import { reflection } from '../reflection/reflection.fixtures.ts';
 import { OllamaEmbedder } from './embedder-ollama.ts';
 import { PgJournal } from './journal.ts';
 import { openPool, PgMemoryStore } from './pg-store.ts';
+import { assertConnectedToThrowaway } from './throwaway-db.ts';
 
 const run = process.env.GELDAR_IT === '1';
 const suffix = Date.now().toString(36).slice(-6);
@@ -56,6 +57,7 @@ describe.skipIf(!run)('memory over live Postgres', () => {
   beforeAll(async () => {
     const config = await loadAnimusConfig({ allowPlaceholders: true });
     pool = await openPool(config);
+    await assertConnectedToThrowaway(pool);
     store = new PgMemoryStore(pool, { embedder });
     await store.ensureAgent(agent(LIFE, `it${suffix}`));
     await store.ensureAgent(agent(OTHER, `ot${suffix}`));
@@ -64,7 +66,8 @@ describe.skipIf(!run)('memory over live Postgres', () => {
   afterAll(async () => {
     // Test rows are scoped to this run's ids; remove them so the volume stays clean.
     // suppressed_wakeups and thoughts are append-only (sql/0007): a row delete is refused, so they
-    // are truncated. Use a throwaway database only: TRUNCATE clears every life's rows.
+    // are truncated. TRUNCATE clears every life's rows, so the guard refuses the dev database.
+    await assertConnectedToThrowaway(pool);
     await pool.query('TRUNCATE suppressed_wakeups, thoughts');
     await pool.query('DELETE FROM goals WHERE agent_id = $1', [LIFE]);
     await pool.query('DELETE FROM relationships WHERE agent_id = $1', [LIFE]);

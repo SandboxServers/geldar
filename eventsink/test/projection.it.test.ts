@@ -10,6 +10,7 @@ import { jetstream, jetstreamManager } from '@nats-io/jetstream';
 import { connect } from '@nats-io/transport-node';
 import pg from 'pg';
 import { describe, expect, it } from 'vitest';
+import { assertConnectedToThrowaway } from './throwaway-db.ts';
 
 const enabled = process.env.GELDAR_IT === '1';
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -27,7 +28,15 @@ describe.skipIf(!enabled)('record projection against the live stack', () => {
       new URL('../../compose/secrets/postgres.txt', import.meta.url),
       'utf8',
     ).trim();
-    const pool = new pg.Pool({ host: '127.0.0.1', user: 'geldar', database: 'geldar', password });
+    // The database is POSTGRES_DB (default geldar, the dev database). The guard below refuses the dev
+    // database: the cleanup TRUNCATEs receipts, so run this test on a throwaway database only.
+    const pool = new pg.Pool({
+      host: '127.0.0.1',
+      user: 'geldar',
+      database: process.env.POSTGRES_DB ?? 'geldar',
+      password,
+    });
+    await assertConnectedToThrowaway(pool);
     const nc = await connect({ servers: 'nats://127.0.0.1:4222' });
     const js = jetstream(nc);
     const jsm = await jetstreamManager(nc);
