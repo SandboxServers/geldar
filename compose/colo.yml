@@ -20,7 +20,7 @@ x-limits: &limits
     resources:
       limits:
         cpus: "${GELDAR_COLO_CPU_LIMIT:-4}"
-        memory: "${GELDAR_COLO_MEMORY_LIMIT:-8g}"
+        memory: "${GELDAR_COLO_MEMORY_LIMIT:-8192m}"
 
 services:
   postgres:
