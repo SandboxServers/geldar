@@ -4,7 +4,7 @@ import { Account, SESSION_TTL_MS } from '../src/account.ts';
 import { loadConfig } from '../src/config.ts';
 import type { Identity } from '../src/identity.ts';
 import { idOf } from '../src/providers.ts';
-import { FixedWindow, LIMITER_MAX_KEYS, limiterKey } from '../src/server.ts';
+import { clientAddress, FixedWindow, LIMITER_MAX_KEYS, limiterKey } from '../src/server.ts';
 import { FakeStore } from './fake-store.ts';
 import { config, type Harness, harness, NOW } from './fixture.ts';
 
@@ -182,5 +182,39 @@ describe('the token pepper (F9)', () => {
   it('refuses a byte-order mark and a pepper under 32 bytes', () => {
     expect(() => loadConfig(base, read(`﻿${pepper}`))).toThrow(/byte-order mark/);
     expect(() => loadConfig(base, read('short\n'))).toThrow(/32 bytes/);
+  });
+
+  it('F27: 31 bytes is refused, 32 accepted (counted in bytes, not characters)', () => {
+    expect(() => loadConfig(base, read('q'.repeat(31)))).toThrow(/32 bytes/);
+    expect(loadConfig(base, read('q'.repeat(32))).tokenPepper).toHaveLength(32);
+    expect(() => loadConfig(base, read('é'.repeat(15)))).toThrow(/32 bytes/);
+    expect(loadConfig(base, read('é'.repeat(16))).tokenPepper).toHaveLength(16);
+  });
+
+  it('F26: trusted peers are IP literals; a CIDR range is refused at startup', () => {
+    expect(
+      loadConfig({ ...base, REGISTER_TRUSTED_PEERS: '192.0.2.1, ::1' }, read(pepper)).trustedPeers,
+    ).toEqual(['192.0.2.1', '::1']);
+    expect(() =>
+      loadConfig({ ...base, REGISTER_TRUSTED_PEERS: '192.0.2.0/24' }, read(pepper)),
+    ).toThrow(/not an IP literal/);
+    expect(() => loadConfig({ ...base, REGISTER_TRUSTED_PEERS: 'caddy' }, read(pepper))).toThrow(
+      /not an IP literal/,
+    );
+  });
+});
+
+describe('clientAddress and limiterKey forms (F26, F27)', () => {
+  const req = (peer: string, header?: string) =>
+    ({ socket: { remoteAddress: peer }, headers: { 'x-geldar-client-ip': header } }) as never;
+
+  it('reads the header from a trusted peer only', () => {
+    expect(clientAddress(req('192.0.2.1', '203.0.113.9'), ['192.0.2.1'])).toBe('203.0.113.9');
+    expect(clientAddress(req('192.0.2.2', '203.0.113.9'), ['192.0.2.1'])).toBe('192.0.2.2');
+  });
+
+  it('lower-cases and strips leading zeros in the canonical form', () => {
+    expect(limiterKey('2001:0DB8:0001:0002::1')).toBe(limiterKey('2001:db8:1:2::1'));
+    expect(limiterKey('2001:0DB8:0001:0002::1')).toBe('2001:db8:1:2::/64');
   });
 });

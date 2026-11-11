@@ -13,5 +13,7 @@ derive the identity hash of any provider id it knows and pass that to the define
 cannot tell that from a real sign-in. The role cannot list identity hashes (it has no SELECT on the identity
 table), so it cannot name an owner it has not seen. The definer functions limit what a compromise can do to
 register-owned tables (owners, identities, players, their agents rows, budgets and tokens) and to the caps
-(10 lifetime players per owner, the owner cap, the sign-up churn cap). Owners are free to create, so the
-lifetime cap is per owner, not per person.
+the database enforces: 10 lifetime players per owner, the owner cap, and the daily new-owner cap (10 per
+24 hours, counted under an advisory lock inside `register_create_owner`, migration 0013). The service checks
+the same daily cap before it calls the function. Owners are free to create within that cap, so the lifetime
+cap is per owner, not per person.
