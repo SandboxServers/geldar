@@ -22,6 +22,7 @@ import { serveBooks } from '../books/book-server.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { natsRequestServer, type RequestServer } from '../mind-link/server.ts';
+import { golemNatsAuth } from '../nats-credentials.ts';
 import { RconClient } from '../rcon.ts';
 import { registryFromConfig } from '../registry.ts';
 import { parsePlayerConfig } from './player-config.ts';
@@ -109,7 +110,12 @@ export async function runPlayer(
   const stack = loadStackConfig(env);
   const natsUrl = stack.natsUrl ?? '';
   assertLoopbackNatsUrl(natsUrl);
-  const nc = await connectNats({ servers: natsUrl, name: `player-${playerId}`, timeout: 5_000 });
+  const nc = await connectNats({
+    servers: natsUrl,
+    name: `player-${playerId}`,
+    timeout: 5_000,
+    ...golemNatsAuth(),
+  });
   const restartKv = await openRestartKv(natsUrl);
   const presence = await new Kvm(jetstream(nc)).open(PRESENCE_BUCKET);
   const server = natsRequestServer(nc);
