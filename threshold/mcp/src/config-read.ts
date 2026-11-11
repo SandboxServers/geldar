@@ -2,12 +2,12 @@ import { isIP } from 'node:net';
 
 /**
  * The request header a trusted proxy's client address is read from: a single-valued header name
- * (default `cf-connecting-ip`; the Caddy deployment sets `x-geldar-client-ip`), or the mode
+ * (default `x-geldar-client-ip`, which Caddy sets), or the mode
  * `x-forwarded-for`, read rightmost-untrusted-hop style.
  */
 export type ClientIpHeader = string;
 
-const DEFAULT_CLIENT_IP_HEADER: ClientIpHeader = 'cf-connecting-ip';
+const DEFAULT_CLIENT_IP_HEADER: ClientIpHeader = 'x-geldar-client-ip';
 const HEADER_NAME = /^[a-z0-9-]{1,64}$/;
 
 export type Doc = Record<string, unknown>;

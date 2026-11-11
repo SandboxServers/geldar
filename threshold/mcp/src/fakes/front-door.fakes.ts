@@ -109,7 +109,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
-      clientIpHeader: 'cf-connecting-ip',
+      clientIpHeader: 'x-geldar-client-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 32,
       maxBodyBytes: 65536,
@@ -146,7 +146,7 @@ export function postInit(port: number, token: string, options: PostOptions = {})
     'content-length': Buffer.byteLength(INIT),
     authorization: `Bearer ${token}`,
   };
-  if (options.cf !== undefined) headers['cf-connecting-ip'] = options.cf;
+  if (options.cf !== undefined) headers['x-geldar-client-ip'] = options.cf;
   return new Promise((resolve, reject) => {
     const req = request(
       { host: '127.0.0.1', port, path: '/p/aa', method: 'POST', headers },
@@ -185,7 +185,7 @@ export function openStream(
     authorization: `Bearer ${token}`,
     'mcp-session-id': sessionId,
   };
-  if (cf !== undefined) headers['cf-connecting-ip'] = cf;
+  if (cf !== undefined) headers['x-geldar-client-ip'] = cf;
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port, path: '/p/aa', method: 'GET', headers }, (res) =>
       resolve({ status: res.statusCode ?? 0, close: () => req.destroy() }),

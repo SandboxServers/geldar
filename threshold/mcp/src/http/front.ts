@@ -113,7 +113,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
   // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
-  const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';
+  const clientIpHeader = options.http.clientIpHeader ?? 'x-geldar-client-ip';
   const addressOf = (req: IncomingMessage): string =>
     clientAddress(req, trusted, clientIpHeader).address;
   // Refused bearers, remembered for a few seconds so a repeat does not cost a store lookup.
