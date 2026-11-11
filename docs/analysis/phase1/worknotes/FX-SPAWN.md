@@ -30,3 +30,8 @@ A refactor-only change has no behaviour to revert. The proof is "same assertions
 - colo-config.test.ts: 12 pwsh spawns before; after 0.94 to 1.03 s over five runs (one spawn).
 - mcp-mock: scenario-world + cli.test.ts about 12 to 14 s (the intent timing case still waits real seconds).
 - Concurrent with a full `./geldar.ps1 check`: the three files passed together in 5.9 s.
+
+## Fix pass 1
+
+- argv parsing moved out of cli.ts into threshold/mcp-mock/src/cli-args.ts (parseCliArgs, pure; cli.ts behaviour unchanged). cli-args.test.ts proves each of the four flags lands in its override field and bad values are refused. Revert-check: mapping min-wake-spacing to dayLengthSeconds failed 2 tests; restored.
+- scenario-world + cli.test.ts, five consecutive runs: 23.9, 13.5, 13.2, 19.6, 22.6 s (18 passed, 1 skipped each); the real-seconds intent case dominates and varies with load.
