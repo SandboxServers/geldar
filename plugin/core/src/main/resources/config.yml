@@ -18,3 +18,7 @@ lakitu:
   max_updates_per_frame: 512
   max_panes_per_session: 4
   frame_hz: 5
+kino:
+  # The Kino data feed (decision 0075). Off by default; false is the kill switch.
+  enabled: false
+  radius_chunks: 4
