@@ -100,6 +100,8 @@ export interface LoadOptions {
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
+/** The colo compose service names the Mind may reach. Accepted only with GELDAR_IN_NETWORK_HOSTS=1 (decision 0131). */
+const IN_NETWORK_HOSTS = new Set(['nats', 'postgres', 'paper', 'velocity']);
 const SHARD_NAME = /^[a-z][a-z0-9-]{1,31}$/;
 const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -181,10 +183,16 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
       maxWorldTicks: int(root, 'max_world_ticks', 'shard file', 1),
       maxBlockOperations: int(root, 'max_block_operations', 'shard file', 1),
     },
-    natsUrl: loopbackUrl('GELDAR_NATS_URL', env.GELDAR_NATS_URL, 'nats:', 'nats://127.0.0.1:4222'),
-    ollamaUrl: loopbackUrl('OLLAMA_URL', env.OLLAMA_URL, 'http:', 'http://127.0.0.1:11434'),
+    natsUrl: loopbackUrl(
+      'GELDAR_NATS_URL',
+      env.GELDAR_NATS_URL,
+      'nats:',
+      'nats://127.0.0.1:4222',
+      env,
+    ),
+    ollamaUrl: loopbackUrl('OLLAMA_URL', env.OLLAMA_URL, 'http:', 'http://127.0.0.1:11434', env),
     postgres: {
-      host: loopbackHost('POSTGRES_HOST', env.POSTGRES_HOST ?? '127.0.0.1'),
+      host: loopbackHost('POSTGRES_HOST', env.POSTGRES_HOST ?? '127.0.0.1', env),
       port: envPort('POSTGRES_PORT', env.POSTGRES_PORT, 5432),
       user: env.POSTGRES_USER ?? 'geldar',
       database: env.POSTGRES_DB ?? 'geldar',
@@ -198,7 +206,7 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
       personalitySeed: seed,
     },
     thinker: {
-      host: loopbackHost('mind.thinker.host', text(thinker, 'host', 'mind.thinker')),
+      host: loopbackHost('mind.thinker.host', text(thinker, 'host', 'mind.thinker'), env),
       port: int(thinker, 'port', 'mind.thinker', 1, 65535),
       name: text(thinker, 'name', 'mind.thinker'),
       heartbeatS: heartbeat,
@@ -356,9 +364,19 @@ function optionalInt(
   return block[key] === undefined ? fallback : int(block, key, where, min);
 }
 
-function loopbackHost(name: string, host: string): string {
-  if (!LOOPBACK_HOSTS.has(host))
-    throw new Error(`${name} must be 127.0.0.1 or localhost, got '${host}'`);
+/**
+ * A loopback host, or a colo service name when `GELDAR_IN_NETWORK_HOSTS=1` is set. Any other host is
+ * refused (decisions 0050, 0131).
+ */
+function loopbackHost(
+  name: string,
+  host: string,
+  env: Record<string, string | undefined>,
+): string {
+  const allowed =
+    LOOPBACK_HOSTS.has(host) ||
+    (env.GELDAR_IN_NETWORK_HOSTS === '1' && IN_NETWORK_HOSTS.has(host));
+  if (!allowed) throw new Error(`${name} must be 127.0.0.1 or localhost, got '${host}'`);
   return host;
 }
 
@@ -367,6 +385,7 @@ function loopbackUrl(
   raw: string | undefined,
   protocol: string,
   fallback: string,
+  env: Record<string, string | undefined>,
 ): string {
   const value = raw === undefined || raw.trim() === '' ? fallback : raw;
   let url: URL;
@@ -377,7 +396,7 @@ function loopbackUrl(
   }
   if (url.protocol !== protocol)
     throw new Error(`${name} must be a ${protocol}// URL, got '${value}'`);
-  loopbackHost(name, url.hostname);
+  loopbackHost(name, url.hostname, env);
   return value;
 }
 

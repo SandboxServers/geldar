@@ -51,9 +51,10 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(mind).not.toHaveProperty('ports');
   });
 
-  it('mounts the shard file read only at /opt/geldar/shards/colo.yaml', () => {
-    expect(body.volumes).toContain('../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro');
-    expect(mind.volumes).toContain('../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro');
+  it('mounts the Mind shard file read only at /opt/geldar/shards/colo.yaml (decision 0131)', () => {
+    // The budget file shards/colo.yaml is never mounted: the Body and the Mind read the Mind's blocks.
+    expect(body.volumes).toContain('../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro');
+    expect(mind.volumes).toContain('../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro');
   });
 
   it('gives the Body its NATS user and a password file, and declares that secret', () => {

@@ -172,6 +172,12 @@ services:
     entrypoint: ["node", "src/adam/main.ts"]
     environment:
       GELDAR_SHARD: colo
+      # The colo service names are accepted only with this opt-in (decision 0131). The Body talks to Velocity, never Paper.
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_MC_HOST: velocity
+      GELDAR_MC_PORT: "25565"
+      # The Body does not use RCON; the RCON host stays loopback by design, so only the port is set here.
+      GELDAR_RCON_PORT: "25575"
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: body
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
@@ -179,7 +185,8 @@ services:
       GELDAR_TELEMETRY_URL:
     secrets: [{ source: nats-body, target: nats-body.txt }]
     volumes:
-      - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
+      # The Mind's shard file, under the name the Body reads (repo root + shards/<GELDAR_SHARD>.yaml). Not the budget file.
+      - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
     networks: [colo]
     depends_on:
       nats:
@@ -198,13 +205,16 @@ services:
     entrypoint: ["node", "src/main.ts"]
     environment:
       GELDAR_SHARD: colo
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres
       # Optional telemetry endpoint (C1-07), passed through from the host environment as for golem-body.
       GELDAR_TELEMETRY_URL:
     secrets: [postgres]
     volumes:
-      - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
+      # The Mind's shard file, under the name the Mind reads (decision 0131). Not the budget file.
+      - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
     networks: [colo]
     depends_on:
       postgres:

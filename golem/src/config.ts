@@ -14,16 +14,27 @@ export interface GolemConfig {
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
+/** The colo compose service names a container may reach. Accepted only with GELDAR_IN_NETWORK_HOSTS=1 (decision 0131). */
+const IN_NETWORK_HOSTS = new Set(['nats', 'postgres', 'paper', 'velocity']);
 const SHARD_UP_HINT = 'run ./geldar.ps1 shard secrets phase0';
+
+/**
+ * True for a loopback host, and for a colo service name when `GELDAR_IN_NETWORK_HOSTS=1` is set.
+ * Any other host is refused in both cases (decision 0131).
+ */
+export function hostAllowed(host: string, env: Record<string, string | undefined>): boolean {
+  if (LOOPBACK_HOSTS.has(host)) return true;
+  return env.GELDAR_IN_NETWORK_HOSTS === '1' && IN_NETWORK_HOSTS.has(host);
+}
 
 /** Reads the settings from the environment, falling back to the Phase 0 loopback defaults. */
 export function loadConfig(env: Record<string, string | undefined> = process.env): GolemConfig {
   const mcHost = env.GELDAR_MC_HOST ?? '127.0.0.1';
   // Phase 0 binds nothing but loopback (threat model): any other host is refused.
-  if (!LOOPBACK_HOSTS.has(mcHost)) {
+  if (!hostAllowed(mcHost, env)) {
     throw new Error(`GELDAR_MC_HOST must be 127.0.0.1 or localhost, got '${mcHost}'`);
   }
-  const natsUrl = parseNatsUrl(env.GELDAR_NATS_URL);
+  const natsUrl = parseNatsUrl(env.GELDAR_NATS_URL, env);
   return {
     mcHost,
     mcPort: parsePort('GELDAR_MC_PORT', env.GELDAR_MC_PORT, 25565),
@@ -93,8 +104,11 @@ function parsePort(name: string, raw: string | undefined, fallback: number): num
   return port;
 }
 
-/** Unset or empty means the life registry is off; otherwise a `nats://` URL on a loopback host. */
-function parseNatsUrl(raw: string | undefined): string | undefined {
+/** Unset or empty means the life registry is off; otherwise a `nats://` URL on an allowed host. */
+function parseNatsUrl(
+  raw: string | undefined,
+  env: Record<string, string | undefined>,
+): string | undefined {
   if (raw === undefined || raw.trim() === '') return undefined;
   let url: URL;
   try {
@@ -105,7 +119,7 @@ function parseNatsUrl(raw: string | undefined): string | undefined {
   if (url.protocol !== 'nats:') {
     throw new Error(`GELDAR_NATS_URL must be a nats:// URL, got '${raw}'`);
   }
-  if (!LOOPBACK_HOSTS.has(url.hostname)) {
+  if (!hostAllowed(url.hostname, env)) {
     throw new Error(`GELDAR_NATS_URL must point at 127.0.0.1 or localhost, got '${raw}'`);
   }
   return raw;

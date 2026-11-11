@@ -1,6 +1,7 @@
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
+import { hostAllowed } from '../config.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
 import {
   type BodyKv,
@@ -20,7 +21,6 @@ const FLUSH_TIMEOUT_MS = 5_000;
 /** How long a restart waits for the world tick to become known before it leaves the checkpoint. */
 const TICK_WAIT_MS = 15_000;
 const TICK_POLL_MS = 100;
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost']);
 
 /** How a restart went. */
 export type RestartOutcome =
@@ -68,15 +68,18 @@ export interface RestartedBody {
   stop(): Promise<void>;
 }
 
-/** Refuses a NATS URL that is not `nats://` on a loopback host (the Phase 0 rule, threat model). */
-export function assertLoopbackNatsUrl(raw: string): void {
+/**
+ * Refuses a NATS URL that is not `nats://` on a loopback host (the Phase 0 rule, threat model). The
+ * colo container also accepts its compose service names, with `GELDAR_IN_NETWORK_HOSTS=1` (decision 0131).
+ */
+export function assertLoopbackNatsUrl(raw: string, env: Record<string, string | undefined> = process.env): void {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
     throw new Error(`NATS URL must be a nats:// URL, got '${raw}'`);
   }
-  if (url.protocol !== 'nats:' || !LOOPBACK_HOSTS.has(url.hostname)) {
+  if (url.protocol !== 'nats:' || !hostAllowed(url.hostname, env)) {
     throw new Error(`NATS URL must be nats:// on 127.0.0.1 or localhost, got '${raw}'`);
   }
 }
