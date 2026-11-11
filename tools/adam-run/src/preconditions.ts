@@ -45,11 +45,39 @@ export interface PreconditionFacts {
   mind: MindLife;
   /** The secret files a start needs that are missing or unreadable, as paths. Absent means none were checked. */
   secretsMissing?: string[];
+  /** The registry lease on the life's name (see leaseFromEntry). Absent means the gather did not read it. */
+  lease?: LeaseFact;
 }
 
 export interface LifeRows {
   thoughts: number;
   intents: number;
+}
+
+/** A key in the life registry lapses this long after its last put (golem/src/registry.ts REGISTRY_TTL_MS). */
+export const LEASE_MS = 60_000;
+
+/**
+ * The registry lease on a life's name. `held` means a Body (running, or crashed within the last
+ * minute) still owns the name, and `secondsLeft` is what remains of it. `unreadable` means the
+ * registry could not be read, so the start is refused rather than assumed free.
+ */
+export type LeaseFact =
+  | { kind: 'free' }
+  | { kind: 'held'; secondsLeft: number }
+  | { kind: 'unreadable'; reason: string };
+
+/**
+ * The lease a registry entry gives at `nowMs`. `registeredAt` is the entry's `registered_at`, or
+ * null when the key is absent. An entry whose time cannot be read is unreadable, never free.
+ */
+export function leaseFromEntry(registeredAt: string | null, nowMs: number): LeaseFact {
+  if (registeredAt === null) return { kind: 'free' };
+  const putMs = Date.parse(registeredAt);
+  if (Number.isNaN(putMs)) return { kind: 'unreadable', reason: 'registered_at is not a time' };
+  const ageMs = nowMs - putMs;
+  if (ageMs >= LEASE_MS) return { kind: 'free' };
+  return { kind: 'held', secondsLeft: Math.max(1, Math.ceil((LEASE_MS - ageMs) / 1000)) };
 }
 
 export type Verdict = { ok: true } | { ok: false; missing: string[] };
@@ -68,6 +96,23 @@ function freshLifeProblems(f: PreconditionFacts): string[] {
   if (thoughts === 0 && intents === 0) return [];
   return [
     `life ${f.lifeId} already has ${thoughts} thoughts and ${intents} intents; a fresh life id is needed (decision 0064; journals are never deleted)`,
+  ];
+}
+
+/**
+ * A start is refused while the life's name is leased: a second Body on the same name would write
+ * the same registry key and the same journal. An unreadable lease refuses too.
+ */
+function leaseProblems(f: PreconditionFacts): string[] {
+  const lease = f.lease;
+  if (lease === undefined || lease.kind === 'free') return [];
+  if (lease.kind === 'unreadable') {
+    return [
+      `life ${f.lifeId}: the registry lease could not be read (${lease.reason}); start the stack and retry`,
+    ];
+  }
+  return [
+    `life ${f.lifeId}: its registry lease is in force for ${lease.secondsLeft} s; wait for it to lapse, or stop the Body that holds it`,
   ];
 }
 
@@ -149,6 +194,7 @@ export function checkPreconditions(f: PreconditionFacts): Verdict {
     missing.push(`life id: profile ${f.profile} runs ${LIFE_ID[f.profile]}, not ${f.lifeId}`);
   }
   missing.push(...freshLifeProblems(f));
+  missing.push(...leaseProblems(f));
   // The Mind runs the shard file's life and tier: a run whose profile names another one would run the wrong model.
   const select = `adam select --model ${f.profile === 'smoke' ? 'smoke' : PROFILE_TIER[f.profile]}`;
   if (f.mind.username !== LIFE_ID[f.profile]) {

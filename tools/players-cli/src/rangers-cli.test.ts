@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { type RemovalSteps, removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { formatPidFile, type Presence, type Ranger } from './rangers.ts';
 import { eachRanger, parseOptions, probeStart, runRangersCli, USAGE } from './rangers-cli.ts';
 import type { LogFs } from './rangers-logs.ts';
@@ -114,7 +115,51 @@ function recordingRemoval(): {
   };
 }
 
+/** Fake removal steps that record the lives each side effect reached. */
+function recordingSteps(): RemovalSteps & { keys: string[]; whitelist: string[] } {
+  const keys: string[] = [];
+  const whitelist: string[] = [];
+  return {
+    keys,
+    whitelist,
+    async deleteKey(_natsUrl, lifeId) {
+      keys.push(lifeId);
+    },
+    async removeWhitelist(_cfg, lifeId) {
+      whitelist.push(lifeId);
+    },
+  };
+}
+
 describe('down', () => {
+  it('stopped life loses its whitelist entry and registry key through the real removal', async () => {
+    writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
+    const { ops } = fakeOps(BODY, 'graceful');
+    const steps = recordingSteps();
+    const result = await runRangersCli(['down'], SHARD, {
+      ops,
+      runDir,
+      removeLife: (lifeId) => removeLifeFromShard(lifeId, {}, steps),
+    });
+    expect(result.code).toBe(0);
+    expect(steps.keys).toEqual(['ag_jason_01']);
+    expect(steps.whitelist).toEqual(['ag_jason_01']);
+  });
+
+  it('running Body keeps its whitelist entry and registry key through the real removal', async () => {
+    writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
+    const { ops } = fakeOps(BODY, 'never');
+    const steps = recordingSteps();
+    const result = await runRangersCli(['down'], SHARD, {
+      ops,
+      runDir,
+      removeLife: (lifeId) => removeLifeFromShard(lifeId, {}, steps),
+    });
+    expect(result.code).toBe(1);
+    expect(steps.keys).toEqual([]);
+    expect(steps.whitelist).toEqual([]);
+  });
+
   it('removes the stopped life from the registry and whitelist after its Body exits', async () => {
     writeFileSync(pidPath(), formatPidFile({ pid: 4242, started: 'start-1', marker: MARKER }));
     const { ops } = fakeOps(BODY, 'graceful');
