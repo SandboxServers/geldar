@@ -35,6 +35,16 @@ describe('the Glass configuration', () => {
     },
   );
 
+  it('binds 0.0.0.0 only with the in-network opt-in, and never a LAN address', () => {
+    const wide = { ...env, GELDAR_GLASS_HOST: '0.0.0.0' };
+    expect(() => loadGlassConfig(wide, readPassword)).toThrow(/127\.0\.0\.1 only/);
+    const optIn = { ...wide, GELDAR_IN_NETWORK_HOSTS: '1' };
+    expect(loadGlassConfig(optIn, readPassword).host).toBe('0.0.0.0');
+    const lan = { ...env, GELDAR_GLASS_HOST: '192.0.2.5', GELDAR_IN_NETWORK_HOSTS: '1' };
+    expect(() => loadGlassConfig(lan, readPassword)).toThrow(/127\.0\.0\.1 only/);
+    expect(() => assertLoopback('0.0.0.0', { GELDAR_IN_NETWORK_HOSTS: '0' })).toThrow();
+  });
+
   it('refuses any database role but geldar_glass', () => {
     const other = { ...env, GELDAR_GLASS_PG_USER: 'geldar' };
     expect(() => loadGlassConfig(other, readPassword)).toThrow(/only as geldar_glass/);

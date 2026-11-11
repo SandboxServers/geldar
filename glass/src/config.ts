@@ -36,11 +36,24 @@ export interface GlassConfig {
   rateLimit: { perMinute: number; burst: number; maxClients: number };
 }
 
-/** Refuses any address but loopback. Called before every listen, so a setting cannot widen it. */
-export function assertLoopback(host: string): void {
-  if (host !== GLASS_HOST) {
-    throw new Error(`Glass binds to ${GLASS_HOST} only; refusing to start`);
-  }
+/** The all-interfaces address, accepted only inside the Colo compose network (decision 0131). */
+const IN_NETWORK_BIND = '0.0.0.0';
+
+/** The Colo compose service name of Postgres, accepted only with the same opt-in (decision 0131). */
+const IN_NETWORK_PG_HOST = 'postgres';
+
+function inNetwork(env: NodeJS.ProcessEnv): boolean {
+  return env.GELDAR_IN_NETWORK_HOSTS === '1';
+}
+
+/**
+ * Refuses any address but loopback. Called before every listen, so a setting cannot widen it.
+ * `0.0.0.0` passes only with `GELDAR_IN_NETWORK_HOSTS=1` (decision 0131, 0093 in-network bind).
+ */
+export function assertLoopback(host: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (host === GLASS_HOST) return;
+  if (host === IN_NETWORK_BIND && inNetwork(env)) return;
+  throw new Error(`Glass binds to ${GLASS_HOST} only; refusing to start`);
 }
 
 /** Reads a positive integer setting, or the default when unset. */
@@ -87,7 +100,7 @@ export function loadGlassConfig(
   readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
 ): GlassConfig {
   const host = env.GELDAR_GLASS_HOST ?? GLASS_HOST;
-  assertLoopback(host);
+  assertLoopback(host, env);
   const user = env.GELDAR_GLASS_PG_USER ?? GLASS_PG_USER;
   if (user !== GLASS_PG_USER) throw new Error(`Glass connects only as ${GLASS_PG_USER}`);
   const passwordFile = env.GELDAR_GLASS_PG_PASSWORD_FILE;
