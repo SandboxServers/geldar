@@ -139,8 +139,8 @@ describe('the 0090 refusal bodies', () => {
     expect(reply.status).toBe(503);
     const text = await reply.text();
     expect(text).toBe(UNAVAILABLE);
-    expect(conforms(JSON.parse(text) as PublicKillSwitchError, shape('PublicKillSwitchError'))).toEqual(
-      [],
-    );
+    expect(
+      conforms(JSON.parse(text) as PublicKillSwitchError, shape('PublicKillSwitchError')),
+    ).toEqual([]);
   });
 });

@@ -80,7 +80,7 @@ describe('the trusted-proxy header warning', () => {
     const lines: Record<string, string | number>[] = [];
     const port = await start(lines, { ms: 0 });
     await post(port);
-    for (let i = 0; i < 3; i++) await post(port, '1.2.3.4, 5.6.7.8');
+    for (let i = 0; i < 3; i++) await post(port, '203.0.113.1, 203.0.113.2');
     expect(warnings(lines, 'client_header_missing')).toHaveLength(1);
     expect(warnings(lines, 'client_header_malformed')).toHaveLength(1);
   });

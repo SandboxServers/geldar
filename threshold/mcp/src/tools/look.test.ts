@@ -37,7 +37,10 @@ function bodySnapshot(): Snapshot {
     daysSinceSleep: 0,
   });
   // The same keys, and one the contract does not know, planted inside self and surroundings too.
-  const planted = { ...Object.fromEntries(INTERNAL_KEYS.map((key) => [key, 'x'])), [UNKNOWN_KEY]: 1 };
+  const planted = {
+    ...Object.fromEntries(INTERNAL_KEYS.map((key) => [key, 'x'])),
+    [UNKNOWN_KEY]: 1,
+  };
   Object.assign(snapshot.self, planted);
   Object.assign(snapshot.surroundings, planted);
   return Object.assign(snapshot, {
