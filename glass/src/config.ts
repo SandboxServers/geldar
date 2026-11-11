@@ -3,6 +3,7 @@
  * binds to loopback only and reads Postgres as the read-only role `geldar_glass` (migration 0005).
  */
 import { readFileSync } from 'node:fs';
+import { MIN_SESSION_KEY_LENGTH } from './kino-cookie.ts';
 
 /** The only address Glass may bind to. There is no authentication in Phase 0 (wave 6 item 10). */
 export const GLASS_HOST = '127.0.0.1';
@@ -140,9 +141,7 @@ export function loadGlassConfig(
     sseBufferFrames: intSetting(env, 'GELDAR_GLASS_SSE_BUFFER_FRAMES', 100),
     ssePollMs: intSetting(env, 'GELDAR_GLASS_SSE_POLL_MS', 1000),
     enabled: flagSetting(env, 'GELDAR_GLASS_ENABLED', true),
-    ...(env.GELDAR_GLASS_SESSION_KEY_FILE
-      ? { sessionKey: readFile(env.GELDAR_GLASS_SESSION_KEY_FILE).trim() }
-      : {}),
+    ...sessionKeySetting(env.GELDAR_GLASS_SESSION_KEY_FILE, readFile),
     delaySeconds: wholeSetting(env, 'GELDAR_GLASS_DELAY_SECONDS', 60),
     showLivingSovereign: flagSetting(env, 'GELDAR_GLASS_SHOW_LIVING_SOVEREIGN', false),
     trustedProxies: listSetting(env, 'GELDAR_GLASS_TRUSTED_PROXIES'),
@@ -153,4 +152,32 @@ export function loadGlassConfig(
       maxClients: intSetting(env, 'GELDAR_GLASS_RATE_MAX_CLIENTS', 1024),
     },
   };
+}
+
+/**
+ * The cookie key, only when the file holds a usable one. A file that is unreadable, empty or shorter than
+ * MIN_SESSION_KEY_LENGTH disables the cookie path (every viewer is anonymous) and logs an error: Glass never
+ * verifies cookies against a key anyone could guess. An unset variable stays anonymous-only, silently.
+ */
+function sessionKeySetting(
+  file: string | undefined,
+  readFile: (path: string) => string,
+): { sessionKey?: string } {
+  if (file === undefined || file === '') return {};
+  let key: string;
+  try {
+    key = readFile(file).trim();
+  } catch {
+    console.error(
+      'glass: GELDAR_GLASS_SESSION_KEY_FILE is unreadable; sign-in cookies are disabled',
+    );
+    return {};
+  }
+  if (key.length < MIN_SESSION_KEY_LENGTH) {
+    console.error(
+      `glass: the session key is shorter than ${MIN_SESSION_KEY_LENGTH} characters; sign-in cookies are disabled`,
+    );
+    return {};
+  }
+  return { sessionKey: key };
 }

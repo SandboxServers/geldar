@@ -111,4 +111,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0136](0136-register-ban-procedure.md) | Banning a registered identity: by provider account, tokens revoked, unban leaves them revoked | Accepted (orchestrator, 2026-11-11) |
 | [0137](0137-public-spectator-proxy-is-separate-and-online.md) | The public Minecraft port is a separate online-mode spectator proxy (spec 8.4); Paper holds every player without a signed live property in spectator | Accepted (orchestrator, 2026-11-11) |
 | [0138](0138-thought-visibility.md) | Who reads a sovereign player's thoughts: the owner live, everyone once the life is over, the public delayed only on the owner's opt-in | Accepted (orchestrator, 2026-11-11) |
+| [0139](0139-kino-feed-agents-only.md) | The Kino entity feed lists agent bodies and mobs only; every other player is excluded | Accepted (orchestrator, 2026-11-11) |
 >

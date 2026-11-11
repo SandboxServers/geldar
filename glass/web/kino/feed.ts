@@ -8,6 +8,8 @@ export interface FeedChange {
   dirty: string[]; // section keys to (re)mesh
   entities?: EntityPosition[];
   bye?: string;
+  /** A short, non-blocking message for the user (the server refused a click: rate_limited). */
+  notice?: string;
 }
 
 export class FeedState {
@@ -47,6 +49,8 @@ export class FeedState {
       case 'target_moved':
         this.focus = { x: msg.x, y: msg.y, z: msg.z };
         return { dirty: [] };
+      case 'rate_limited':
+        return { dirty: [], notice: 'Too many clicks: wait a moment and try again.' };
       case 'bye':
         return { dirty: [], bye: msg.reason };
       default:

@@ -5,8 +5,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { connect, type NatsConnection } from '@nats-io/transport-node';
-import { type ControlSink, controlSubject } from './control.ts';
-import type { FeedSource } from './relay.ts';
+import { controlSubject } from './control.ts';
+import { type NatsLink, type SupervisedFeed, supervisedFeed } from './supervised-feed.ts';
 
 const AGENT = /^[a-z][a-z0-9_]{0,63}$/;
 const SHARD = /^[a-z][a-z0-9-]*$/;
@@ -25,9 +25,8 @@ export function feedSubject(shard: string, agent: string): string {
   return `geldar.${shard}.kino.${agent}.feed`;
 }
 
-export async function natsFeed(
-  o: NatsFeedOptions,
-): Promise<FeedSource & { control: ControlSink; close(): Promise<void> }> {
+/** Opens one NATS connection; rejects when the server is down or refuses the user. */
+async function connectNats(o: NatsFeedOptions): Promise<NatsLink> {
   const auth =
     o.user && o.passwordFile
       ? { user: o.user, pass: readFileSync(o.passwordFile, 'utf8').trim() }
@@ -38,18 +37,19 @@ export async function natsFeed(
     maxReconnectAttempts: -1,
     ...auth,
   });
-  const decoder = new TextDecoder();
-  const control = controlSubject(o.shard);
-  const encoder = new TextEncoder();
   return {
-    control: { publish: (json) => nc.publish(control, encoder.encode(json)) },
-    subscribe(agentId, onMessage) {
-      const sub = nc.subscribe(feedSubject(o.shard, agentId));
-      void (async () => {
-        for await (const m of sub) onMessage(decoder.decode(m.data));
-      })().catch(() => {});
-      return () => sub.unsubscribe();
-    },
-    close: () => nc.drain(),
+    publish: (subject, data) => nc.publish(subject, data),
+    subscribe: (subject) => nc.subscribe(subject),
+    closed: () => nc.closed(),
+    drain: () => nc.drain(),
   };
+}
+
+/** The Kino feed on NATS. Never rejects: a missing server or user leaves Kino disabled and retries in the background. */
+export function natsFeed(o: NatsFeedOptions): SupervisedFeed {
+  return supervisedFeed({
+    connect: () => connectNats(o),
+    feedSubject: (agent) => feedSubject(o.shard, agent),
+    controlSubject: controlSubject(o.shard),
+  });
 }

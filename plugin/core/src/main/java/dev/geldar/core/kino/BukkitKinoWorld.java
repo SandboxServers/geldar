@@ -64,18 +64,31 @@ public final class BukkitKinoWorld implements KinoWorld {
         if (max <= 0 || !world.isChunkLoaded(chunkX, chunkZ)) {
             return new ChunkEntities(0, List.of());
         }
-        // The chunk is loaded (checked above); a box query reads only entities that exist, it loads nothing.
+        // The chunk is loaded (checked above); a box query reads only entities that exist, it loads nothing. The
+        // box also returns entities that straddle the border, so keep only those whose position is in this chunk.
         BoundingBox box = new BoundingBox(chunkX * 16.0, world.getMinHeight(), chunkZ * 16.0,
                 chunkX * 16.0 + 16.0, world.getMaxHeight(), chunkZ * 16.0 + 16.0);
-        Entity[] all = world.getNearbyEntities(box).toArray(new Entity[0]);
-        int end = Math.min(all.length, from + max);
-        List<EntityView> out = new ArrayList<>();
-        for (int i = Math.max(0, from); i < end; i++) {
-            out.add(view(all[i]));
+        List<Entity> eligible = new ArrayList<>();
+        for (Entity e : world.getNearbyEntities(box)) {
+            Location at = e.getLocation();
+            if (Math.floorDiv(at.getBlockX(), 16) != chunkX || Math.floorDiv(at.getBlockZ(), 16) != chunkZ) {
+                continue;
+            }
+            String name = e instanceof Player p ? p.getName() : null;
+            if (KinoEntityPolicy.include(e.getType().getKey().toString(), name, isAgent)) {
+                eligible.add(e);
+            }
         }
-        return new ChunkEntities(all.length, out);
+        // Sorted by entity id so a page offset means the same entities on the next call.
+        List<Entity> ordered = KinoEntityPolicy.orderedDistinct(eligible, Entity::getEntityId);
+        int end = Math.min(ordered.size(), Math.max(0, from) + max);
+        List<EntityView> out = new ArrayList<>();
+        // Locations are read only for the page (at most max), never for the whole chunk.
+        for (int i = Math.max(0, from); i < end; i++) {
+            out.add(view(ordered.get(i)));
+        }
+        return new ChunkEntities(ordered.size(), out);
     }
-
     private EntityView view(Entity e) {
         Location at = e.getLocation();
         String agent = e instanceof Player p && isAgent.test(p.getName()) ? p.getName() : null;

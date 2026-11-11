@@ -247,7 +247,13 @@ export interface KinoControl {
 }
 
 export type KinoFeed =
-  HelloMessage | ChunkSectionMessage | BlockUpdateMessage | EntityPositionsMessage | TargetMovedMessage | ByeMessage;
+  | HelloMessage
+  | ChunkSectionMessage
+  | BlockUpdateMessage
+  | EntityPositionsMessage
+  | TargetMovedMessage
+  | RateLimitedMessage
+  | ByeMessage;
 
 export type WorldName = string;
 
@@ -337,6 +343,10 @@ export interface TargetMovedMessage {
   x: number;
   y: number;
   z: number;
+}
+
+export interface RateLimitedMessage {
+  type: "rate_limited";
 }
 
 export interface ByeMessage {
