@@ -287,8 +287,14 @@ function Get-NatsUsers([string] $Shard) {
   }
 }
 
-# Owner-only ACL: drop inherited rules and grant the current user read and write alone.
+# Owner-only access, and a failure throws. On Windows: drop inherited ACL rules and grant the current user read and
+# write alone. Elsewhere (Linux, macOS): mode 0600. icacls exists only on Windows, so the POSIX branch must not call it.
 function Restrict-OwnerOnly([string] $Path) {
+  if (-not $IsWindows) {
+    & chmod 600 $Path
+    if ($LASTEXITCODE -ne 0) { throw "chmod could not restrict $Path to its owner" }
+    return
+  }
   & icacls $Path /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "icacls could not restrict $Path to its owner" }
 }

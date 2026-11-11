@@ -12,6 +12,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -114,6 +115,8 @@ interface Rendered {
   dir: string;
   conf: string;
   status: number | null;
+  /** The generator's stderr, trimmed. It names paths and PowerShell errors only: the generator never echoes a secret. */
+  stderr: string;
 }
 
 let rendered: Rendered | undefined;
@@ -135,7 +138,7 @@ beforeAll(() => {
   );
   const confPath = join(dir, 'compose', 'secrets', 'nats-auth.conf');
   const conf = run.status === 0 ? readFileSync(confPath, 'utf8') : '';
-  rendered = { dir, conf, status: run.status };
+  rendered = { dir, conf, status: run.status, stderr: (run.stderr ?? '').trim().slice(0, 1500) };
 });
 
 afterAll(() => {
@@ -234,8 +237,24 @@ describe('geldar.ps1 NATS auth generator: static wiring', () => {
 
 describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () => {
   it('runs the generator without error', () => {
-    expect(rendered?.status).toBe(0);
+    // The message carries the exit code and stderr, so a CI failure says why. No secret is printed: see Rendered.
+    expect(rendered?.status, `exit ${rendered?.status}: ${rendered?.stderr}`).toBe(0);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'makes each NATS secret file and the server config owner-only (mode 0600)',
+    () => {
+      // Off Windows the owner-only step is chmod 600; on Windows the ACL is checked by the icacls step, not here.
+      const dir = join(rendered?.dir ?? '', 'compose', 'secrets');
+      const names = [
+        ...ROLES.map((role) => `nats-${role}.txt`),
+        'thinker-token.txt',
+        'nats-auth.conf',
+      ];
+      const modes = names.map((name) => statSync(join(dir, name)).mode & 0o777);
+      expect(modes).toEqual(names.map(() => 0o600));
+    },
+  );
 
   it('puts allow_responses inside each user permissions, never on the user block', () => {
     // Booleans, not toMatch: a failing matcher would print the config, and the config holds generated passwords.
