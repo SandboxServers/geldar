@@ -58,7 +58,7 @@ export async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     await consumer.stop();
-    telemetry?.stop();
+    await telemetry?.stop();
     await nc.drain();
     await pool.end();
     process.exit(0);

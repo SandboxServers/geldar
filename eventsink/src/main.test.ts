@@ -36,7 +36,7 @@ describe('consumerOptions', () => {
       },
     );
     const options = consumerOptions(CONFIG, telemetry, () => undefined);
-    telemetry?.stop();
+    await telemetry?.stop();
     expect(options.metrics).toBeInstanceOf(EventsinkMetrics);
     expect(options.metrics).toBe(telemetry?.metrics);
     expect(options.batchSize).toBe(CONFIG.batchSize);

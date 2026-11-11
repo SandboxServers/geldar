@@ -227,7 +227,7 @@ export async function main(): Promise<void> {
   process.once('SIGINT', () => onSignal('SIGINT'));
   process.once('SIGTERM', () => onSignal('SIGTERM'));
   await done;
-  telemetry.stop();
+  await telemetry.stop();
   if (supervisor.fatal) process.exitCode = 1;
   await manager.stop();
   await restartKv.close();

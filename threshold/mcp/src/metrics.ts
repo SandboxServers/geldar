@@ -216,19 +216,35 @@ export async function pushMetrics(registry: MetricRegistry, options: PushOptions
 
 /**
  * Pushes on a timer. With no endpoint it does nothing at all: no timer, no request. The first push
- * happens at once, then every `intervalMs`; the timer does not keep the process alive.
+ * happens at once, then every `intervalMs`; the timer does not keep the process alive. `stop` starts
+ * no further push and resolves once every push already in flight has settled.
  */
 export function startTelemetry(
   registry: MetricRegistry,
   options: Omit<PushOptions, 'url'> & { url: string | undefined; intervalMs: number },
-): { stop(): void } {
+): { stop(): Promise<void> } {
   const { url, intervalMs, ...rest } = options;
-  if (!url) return { stop: () => {} };
+  if (!url) return { stop: async () => {} };
   const pushOptions: PushOptions = { ...rest, url };
-  const timer = setInterval(() => void pushMetrics(registry, pushOptions), intervalMs);
+  const inFlight = new Set<Promise<void>>();
+  let stopped = false;
+  const push = (): void => {
+    if (stopped) return;
+    const request: Promise<void> = pushMetrics(registry, pushOptions).finally(() => {
+      inFlight.delete(request);
+    });
+    inFlight.add(request);
+  };
+  const timer = setInterval(push, intervalMs);
   timer.unref();
-  void pushMetrics(registry, pushOptions);
-  return { stop: () => clearInterval(timer) };
+  push();
+  return {
+    stop: async () => {
+      stopped = true;
+      clearInterval(timer);
+      await Promise.allSettled([...inFlight]);
+    },
+  };
 }
 
 /** The MCP's metric names (decision 0088). Their labels take closed values only: a tool and an outcome. */

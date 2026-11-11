@@ -14,8 +14,11 @@ import {
   wakeLabel,
 } from './metrics.ts';
 
-/** A loopback receiver that records each POST and answers with `status`. */
-async function receiver(status = 200) {
+/**
+ * A loopback receiver that records each POST and answers with `status`. A `gate` holds every answer
+ * until it resolves; the POST is recorded on arrival either way.
+ */
+async function receiver(status = 200, gate: Promise<void> = Promise.resolve()) {
   const posts: Array<{ path: string; type: string | undefined; body: string }> = [];
   const server = createServer((req, res) => {
     let raw = '';
@@ -28,8 +31,10 @@ async function receiver(status = 200) {
         type: req.headers['content-type'],
         body: raw,
       });
-      res.statusCode = status;
-      res.end();
+      void gate.then(() => {
+        res.statusCode = status;
+        res.end();
+      });
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
@@ -205,8 +210,8 @@ describe('startGolemTelemetry: push only', () => {
     );
     handle.metrics.wake('directly_addressed');
     await new Promise((resolve) => setTimeout(resolve, 40));
-    handle.stop();
-    blank.stop();
+    await handle.stop();
+    await blank.stop();
     expect(calls).toHaveLength(0);
     expect(handle.metrics.registry.render()).toContain(
       `${BODY_WAKEUPS}{reason="directly_addressed"} 1`,
@@ -246,7 +251,7 @@ describe('startGolemTelemetry: push only', () => {
         { key: 'reason', value: { stringValue: 'reflex_danger' } },
       ]);
     } finally {
-      handle.stop();
+      await handle.stop();
       await fake.close();
     }
   });
@@ -258,11 +263,49 @@ describe('startGolemTelemetry: push only', () => {
       { service: 'geldar-golem', log: quiet, intervalMs: 20 },
     );
     await until(() => fake.posts.length >= 1);
-    handle.stop();
+    await handle.stop();
     const after = fake.posts.length;
     await new Promise((resolve) => setTimeout(resolve, 80));
     await fake.close();
     expect(fake.posts.length).toBe(after);
+  });
+
+  it('stop waits for a push held open by the receiver, and no push starts or arrives after it', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fake = await receiver(200, gate);
+    const starts: string[] = [];
+    const countingFetch = ((url: string, init?: RequestInit) => {
+      starts.push(url);
+      return fetch(url, init);
+    }) as unknown as typeof fetch;
+    const handle = startGolemTelemetry(
+      { GELDAR_TELEMETRY_URL: fake.url },
+      { service: 'geldar-golem', log: quiet, intervalMs: 20, fetch: countingFetch },
+    );
+    try {
+      // The first push has reached the receiver and is held open: its answer has not come back.
+      await until(() => fake.posts.length >= 1);
+      let settled = false;
+      const stopping = handle.stop().then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(settled).toBe(false);
+      release();
+      await stopping;
+      expect(settled).toBe(true);
+      const started = starts.length;
+      const arrived = fake.posts.length;
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      expect(starts.length).toBe(started);
+      expect(fake.posts.length).toBe(arrived);
+    } finally {
+      release();
+      await fake.close();
+    }
   });
 
   it('logs a refused push with its status and does not throw', async () => {
@@ -276,7 +319,7 @@ describe('startGolemTelemetry: push only', () => {
       await until(() => seen.length >= 1);
       expect(seen).toEqual([{ event: 'telemetry_push_failed', status: 503 }]);
     } finally {
-      handle.stop();
+      await handle.stop();
       await fake.close();
     }
   });
