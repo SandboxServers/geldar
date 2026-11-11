@@ -150,7 +150,9 @@ function natsPasswordGaps(...files: string[]) {
   const run = renderCompose(...files);
   type Svc = { environment?: Record<string, string>; secrets?: { target?: string }[] };
   const services: Record<string, Svc> = JSON.parse(run.stdout || '{}').services ?? {};
-  const named = Object.entries(services).filter(([, s]) => s.environment?.GELDAR_NATS_PASSWORD_FILE);
+  const named = Object.entries(services).filter(
+    ([, s]) => s.environment?.GELDAR_NATS_PASSWORD_FILE,
+  );
   // A relative secret target mounts under /run/secrets/, as compose does for the long form.
   const mountedAt = (target = '') => (target.startsWith('/') ? target : `/run/secrets/${target}`);
   const gaps = named.filter(
@@ -183,7 +185,9 @@ describe.skipIf(!hasDocker)('compose NATS auth overlays merge offline', () => {
       'nats-auth-mcp.yml',
     );
     expect(status).toBe(0);
-    expect(checked).toEqual(expect.arrayContaining(['paper', 'velocity', 'eventsink', 'geldar-mcp']));
+    expect(checked).toEqual(
+      expect.arrayContaining(['paper', 'velocity', 'eventsink', 'geldar-mcp']),
+    );
     expect(gaps).toEqual([]);
   });
 
@@ -220,7 +224,9 @@ describe('geldar.ps1 NATS auth generator: static wiring', () => {
       ci
         .split('\n')
         .some((l) =>
-          l.includes('-f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml'),
+          l.includes(
+            '-f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml',
+          ),
         ),
     ).toBe(true);
   });
