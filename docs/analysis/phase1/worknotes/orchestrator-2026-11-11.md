@@ -159,3 +159,15 @@ NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-
   - G5: ten throwaway accounts can block all sign-ups for a day. That needs a per-provider or account-age-weighted cap.
 - **R21 confirmed (owner, 2026-11-11).** Glass hides model_input and raw_output. Glass may be published.
 - **Owner ruling R39 (2026-11-11).** board-proxy runs with `admin off`, so it can't be reloaded. Each Geldar Caddy change takes effect only through a restart of board-proxy, and the owner approves each restart. Production drops for a few seconds each time. This replaces the 'reload, never restart' rule of 0071 for board-proxy; colo-public.sh must learn this mode (follow-up C2-07q).
+
+## Owner rulings for C2b, the camera viewer (2026-11-11)
+
+These go into decision 0075 as an amendment when C2b starts.
+
+- **Name.** The camera viewer is called **Kino**, after the Kino remotes in Stargate Universe. This fits where the name Geldar comes from, and it replaces "Lakitu".
+- **Point 5, who gets cameras.** The owner said "All, sovereign players get cameras." We read it as follows; confirm when C2b starts:
+  - every logged-in user can open Kino cameras;
+  - sovereign players' agents are valid camera targets;
+  - an owner still targets only their own players' agents, and an admin targets any agent.
+- **Auth.** Sign-in with a Microsoft account, since every Minecraft player has one. This replaces the interim-token idea.
+- **Textures.** Use vanilla textures sourced the same legitimate way BlueMap gets them, from the client jar Mojang distributes. They are cached in the viewer's browser and never committed to the repo. Candidate: reuse BlueMap's generated `textures.json`, which is already served.
