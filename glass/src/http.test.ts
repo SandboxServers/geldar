@@ -139,30 +139,10 @@ describe('the Glass HTTP handler', () => {
     }
   });
 
-  it('returns the stream counters on GET /api/stats with no database call, and 405 to any other method', async () => {
-    const statsHub = {
-      attach: () => false,
-      stats: () => ({
-        clients: 1,
-        delivered: 4,
-        dropped: 0,
-        rejected: 2,
-        polls: 9,
-        pollErrors: 1,
-      }),
-    } as unknown as SseHub;
-    const port = await start({ db: noQueries, hub: statsHub });
-    const reply = await send(port, 'GET', '/api/stats');
-    expect(reply.status).toBe(200);
-    expect(reply.headers['content-type']).toBe('application/json; charset=utf-8');
-    expect(JSON.parse(reply.body)).toEqual({
-      stats: { clients: 1, delivered: 4, dropped: 0, rejected: 2, polls: 9, pollErrors: 1 },
-    });
-    for (const method of WRITE_METHODS) {
-      const refused = await send(port, method, '/api/stats');
-      expect(refused.status, method).toBe(405);
-      expect(refused.headers.allow, method).toBe('GET');
-    }
+  it('has no /api/stats route: the viewer count is not public', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    expect((await send(port, 'GET', '/api/stats')).status).toBe(404);
+    expect((await send(port, 'POST', '/api/stats')).status).toBe(404);
   });
 
   it('answers 404 for every unknown path, whatever the method', async () => {
@@ -270,7 +250,7 @@ describe('the Glass HTTP handler', () => {
 
   it('lists the routes, all GET, and serves a GET to each one', async () => {
     const port = await start({ db: oneRow, hub: endingHub });
-    expect(ROUTES.map((route) => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET', 'GET']);
+    expect(ROUTES.map((route) => route.method)).toEqual(['GET', 'GET', 'GET', 'GET', 'GET']);
     for (const route of ROUTES) {
       const reply = await send(port, 'GET', samplePath(route.path));
       expect(reply.status, route.path).toBe(200);

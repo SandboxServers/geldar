@@ -186,10 +186,6 @@ async function serveRoute(
     sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
     return;
   }
-  if (name === 'stats') {
-    sendJson(res, 200, { stats: deps.hub.stats() });
-    return;
-  }
   if (!deps.hub.attach(res)) sendJson(res, 503, { error: 'too many streams' });
 }
 
