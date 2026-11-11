@@ -55,11 +55,22 @@ esac
 exit 0
 `;
 
-// The fake stat: only `stat -c %a PATH` is supported. The mode is read from $FAKE_MODE_DIR/<file name>, default 600.
+// The fake stat: `stat -c %a PATH` (the mode, from $FAKE_MODE_DIR/<file name>, default 600) and `stat -c %u PATH` (the
+// owner, from $FAKE_OWNER_DIR/<file name>, default 1000, the GELDAR_SERVICE_UID these tests use).
 const STAT_SHIM = `#!/bin/sh
-[ "$1" = "-c" ] && [ "$2" = "%a" ] || exit 2
+[ "$1" = "-c" ] || exit 2
 name=\${3##*/}
-if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r mode <"$FAKE_MODE_DIR/$name"; echo "$mode"; else echo 600; fi
+case $2 in
+  %a) if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r v <"$FAKE_MODE_DIR/$name"; else v=600; fi ;;
+  %u) if [ -f "$FAKE_OWNER_DIR/$name" ]; then read -r v <"$FAKE_OWNER_DIR/$name"; else v=1000; fi ;;
+  *) exit 2 ;;
+esac
+echo "$v"
+`;
+// The fake id: only `id -u`, the uid of the account running the deploy (FAKE_RUNNER_UID, default 1000: not root).
+const ID_SHIM = `#!/bin/sh
+[ "$1" = "-u" ] || exit 2
+echo "\${FAKE_RUNNER_UID:-1000}"
 `;
 
 const CONFIG = `name: geldar-colo
@@ -99,6 +110,7 @@ function fixture(): Fixture {
   mkdirSync(bin);
   writeShim(bin, 'docker', DOCKER_SHIM);
   writeShim(bin, 'stat', STAT_SHIM);
+  writeShim(bin, 'id', ID_SHIM);
   const secrets = join(dir, 'secrets');
   mkdirSync(secrets);
   for (const f of SECRET_FILES) writeFileSync(join(secrets, f), `${f}-test-value\n`);
