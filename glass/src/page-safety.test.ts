@@ -140,12 +140,7 @@ describe('agent text in the rendered page', () => {
       const doc = new Window().document;
       const view = toView(hostileRow(text, 0));
       const row = renderRow(doc as unknown as Doc, view, () => {});
-      const detail = renderDetail(
-        doc as unknown as Doc,
-        view,
-        JSON.stringify(hostileRow(text, 0)),
-        [],
-      );
+      const detail = renderDetail(doc as unknown as Doc, view, []);
       type DomNode = Parameters<typeof doc.body.append>[number];
       doc.body.append(row as unknown as DomNode, detail as unknown as DomNode);
       for (const tag of MARKUP_SINKS) expect(doc.body.querySelectorAll(tag).length, tag).toBe(0);
@@ -161,7 +156,7 @@ describe('agent text in the rendered page', () => {
 
 describe('agent text in the API reply', () => {
   it.each(AGENT_TEXT)('returns %s unchanged as JSON data, never as markup', async (text) => {
-    const row = { ...hostileRow(text, 0), model_input: text };
+    const row = hostileRow(text, 0);
     const db = { query: async () => ({ rows: [row] }) } as unknown as SqlClient;
     const server = createServer(createHandler({ db, hub: {} as unknown as SseHub }));
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -172,10 +167,9 @@ describe('agent text in the API reply', () => {
       expect(String(reply.headers['content-type'])).toBe('application/json; charset=utf-8');
       expect(reply.headers['x-content-type-options']).toBe('nosniff');
       const body = JSON.parse(reply.body) as {
-        thought: { name: string; model_input: { json: string } };
+        thought: { name: string };
       };
       expect(body.thought.name).toBe(text);
-      expect(body.thought.model_input.json).toBe(text);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

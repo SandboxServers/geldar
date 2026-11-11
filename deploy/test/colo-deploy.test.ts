@@ -153,7 +153,7 @@ const NATS_BIND = (conf: string) =>
   `  nats:\n    volumes:\n      - type: bind\n        source: ${conf}\n        target: /etc/nats/nats-auth.conf\n`;
 
 const release = (body: string, mind = MIND) =>
-  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\nGELDAR_ADMIN_IMAGE=registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}\n`;
+  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\nGELDAR_ADMIN_IMAGE=registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}\nGELDAR_GLASS_IMAGE=registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}\n`;
 // Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');

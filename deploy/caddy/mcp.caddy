@@ -3,13 +3,15 @@
 mcp.{$GELDAR_DOMAIN} {
 	# The MCP HTTP transport uses POST (JSON-RPC), GET (the event stream) and DELETE (end a session).
 	@not_allowed not method POST GET DELETE
-	respond @not_allowed 405
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
 
-	# Drop any address header a client sent, then set the one Caddy vouches for.
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
 	request_header -x-geldar-client-ip
 	request_header -X-Forwarded-For
 	request_header -CF-Connecting-IP
-	request_header x-geldar-client-ip {remote_host}
 
 	# The same limit as BODY_LIMIT_BYTES in threshold/mcp/src/http/front.ts (64 KiB).
 	request_body {
@@ -20,7 +22,10 @@ mcp.{$GELDAR_DOMAIN} {
 	@player path_regexp player ^/p/[a-z][a-z0-9-]{1,38}$
 	handle @player {
 		reverse_proxy {$GELDAR_MCP_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
 			flush_interval -1
+			# A reload (the kill switch) closes open streams within 5 s.
+			stream_close_delay 5s
 		}
 	}
 

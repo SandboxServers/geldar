@@ -130,6 +130,32 @@ describe('shards/colo.yaml: the total covers the per-service budgets (always che
 const hasPwsh =
   spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' }).status === 0;
 
+/**
+ * Read-ColoConfig has no TypeScript equivalent, so it runs under pwsh. pwsh starts ONCE for the whole file: the
+ * harness takes a manifest of config files and prints one outcome per file. Each `it` below asserts on its own outcome.
+ */
+const GOOD =
+  'cpu_limit: 10.25\nmemory_limit: 19776m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
+
+/** Case id to config text; null means the committed shards/colo.yaml. */
+const CASES: Record<string, string | null> = {
+  committed: null,
+  comments: '# note\n\ncpu_limit: 10.25   # cores\nmemory_limit: 19776m\nminecraft_port: 25567\n',
+  heap: GOOD.replace('19776m', '7000m'),
+  memSum: GOOD.replace('19776m', '8192m'),
+  cpuSum: GOOD.replace('cpu_limit: 10.25\n', 'cpu_limit: 8\n'),
+  unknownKey: `${GOOD}telemetry_urll: http://example.invalid\n`,
+  noCpu: GOOD.replace('cpu_limit: 10.25\n', ''),
+  noMem: GOOD.replace('memory_limit: 19776m\n', ''),
+  port25565: GOOD.replace('25567', '25565'),
+  port25566: GOOD.replace('25567', '25566'),
+  port25570: GOOD.replace('25567', '25570'),
+  bind: GOOD.replace('127.0.0.1', '0.0.0.0'),
+  cpuZero: GOOD.replace('cpu_limit: 10.25', 'cpu_limit: 0'),
+  memNoUnit: GOOD.replace('19776m', '19776'),
+  memTiny: GOOD.replace('19776m', '8'),
+};
+
 /** The outcome of Read-ColoConfig on one file: the parsed hashtable, or the error message. */
 interface Outcome {
   ok: boolean;
@@ -139,43 +165,57 @@ interface Outcome {
 
 describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', () => {
   let dir = '';
-  const harness = join(tmpdir(), 'colo-config-harness.ps1');
+  const outcomes: Record<string, Outcome> = {};
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'colo-config-'));
+    const harness = join(dir, 'harness.ps1');
     const script = [
       '$ErrorActionPreference = "Stop"',
       'Set-StrictMode -Version Latest',
       `$Root = '${ROOT.replace(/\\$/, '').replaceAll("'", "''")}'`,
       READ,
-      'try { ConvertTo-Json -Compress -InputObject @{ ok = $true; value = (Read-ColoConfig -Path $args[0]) } }',
-      'catch { ConvertTo-Json -Compress -InputObject @{ ok = $false; error = $_.Exception.Message } }',
+      '$manifest = Get-Content -Raw -LiteralPath $args[0] | ConvertFrom-Json',
+      '$results = @()',
+      'foreach ($case in $manifest) {',
+      '  try { $results += @{ id = $case.id; ok = $true; value = (Read-ColoConfig -Path $case.path) } }',
+      '  catch { $results += @{ id = $case.id; ok = $false; error = $_.Exception.Message } }',
+      '}',
+      'ConvertTo-Json -Compress -InputObject @($results)',
     ].join('\n');
     writeFileSync(harness, script, 'utf8');
-  });
+    const manifest = Object.entries(CASES).map(([id, text]) => {
+      const path = join(dir, `${id}.yaml`);
+      if (text !== null) writeFileSync(path, text, 'utf8');
+      return { id, path: text === null ? COLO_FILE : path };
+    });
+    const manifestPath = join(dir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify(manifest), 'utf8');
+    const result = spawnSync(
+      'pwsh',
+      ['-NoProfile', '-NonInteractive', '-File', harness, manifestPath],
+      { encoding: 'utf8' },
+    );
+    expect(result.stderr).toBe('');
+    for (const entry of JSON.parse(result.stdout.trim()) as (Outcome & { id: string })[]) {
+      outcomes[entry.id] = entry;
+    }
+  }, 60_000);
 
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true });
-    rmSync(harness, { force: true });
   });
 
-  function run(text: string | null, file = 'case.yaml'): Outcome {
-    const path = text === null ? COLO_FILE : join(dir, file);
-    if (text !== null) writeFileSync(path, text, 'utf8');
-    const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', harness, path], {
-      encoding: 'utf8',
-    });
-    expect(result.stderr).toBe('');
-    return JSON.parse(result.stdout.trim()) as Outcome;
+  function outcome(id: string): Outcome {
+    const found = outcomes[id];
+    if (!found) throw new Error(`no outcome for case ${id}`);
+    return found;
   }
 
-  const GOOD =
-    'cpu_limit: 10.25\nmemory_limit: 19776m\nminecraft_port: 25567\nbind_address: 127.0.0.1\n';
-
   it('accepts the committed shards/colo.yaml and returns its values', () => {
-    const outcome = run(null);
-    expect(outcome.ok).toBe(true);
-    expect(outcome.value).toEqual({
+    const result = outcome('committed');
+    expect(result.ok).toBe(true);
+    expect(result.value).toEqual({
       cpu_limit: '10.25',
       memory_limit: '19776m',
       minecraft_port: '25567',
@@ -184,66 +224,60 @@ describe.skipIf(!hasPwsh)('geldar.ps1 colo config: Read-ColoConfig under pwsh', 
   });
 
   it('accepts comments, blank lines and a missing bind_address (loopback by default)', () => {
-    const outcome = run(
-      '# note\n\ncpu_limit: 10.25   # cores\nmemory_limit: 19776m\nminecraft_port: 25567\n',
-    );
-    expect(outcome.ok).toBe(true);
-    expect(outcome.value?.bind_address).toBe('127.0.0.1');
-    expect(outcome.value?.cpu_limit).toBe('10.25');
+    const result = outcome('comments');
+    expect(result.ok).toBe(true);
+    expect(result.value?.bind_address).toBe('127.0.0.1');
+    expect(result.value?.cpu_limit).toBe('10.25');
   });
 
   it('refuses a memory total below Paper heap (6G) plus 1 GiB', () => {
-    const outcome = run(GOOD.replace('19776m', '7000m'));
-    expect(outcome.ok).toBe(false);
-    expect(outcome.error).toContain("below Paper's heap (6G) plus 1 GiB");
+    const result = outcome('heap');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("below Paper's heap (6G) plus 1 GiB");
   });
 
   it('refuses a memory total below the sum of the per-service memory budgets', () => {
-    const outcome = run(GOOD.replace('19776m', '8192m'));
-    expect(outcome.ok).toBe(false);
-    expect(outcome.error).toContain('below the sum of the per-service memory budgets');
+    const result = outcome('memSum');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('below the sum of the per-service memory budgets');
   });
 
   it('refuses a CPU total below the sum of the per-service CPU budgets', () => {
-    const outcome = run(GOOD.replace('cpu_limit: 10.25\n', 'cpu_limit: 8\n'));
-    expect(outcome.ok).toBe(false);
-    expect(outcome.error).toContain('below the sum of the per-service CPU budgets');
+    const result = outcome('cpuSum');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('below the sum of the per-service CPU budgets');
   });
 
   it('names an unknown key', () => {
-    const outcome = run(`${GOOD}telemetry_urll: http://example.invalid\n`);
-    expect(outcome.ok).toBe(false);
-    expect(outcome.error).toContain("unknown key 'telemetry_urll'");
+    const result = outcome('unknownKey');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("unknown key 'telemetry_urll'");
   });
 
   it('refuses a missing cpu_limit and names it', () => {
-    const outcome = run(GOOD.replace('cpu_limit: 10.25\n', ''));
-    expect(outcome.error).toContain('cpu_limit is missing');
+    expect(outcome('noCpu').error).toContain('cpu_limit is missing');
   });
 
   it('refuses a missing memory_limit and names it', () => {
-    const outcome = run(GOOD.replace('memory_limit: 19776m\n', ''));
-    expect(outcome.error).toContain('memory_limit is missing');
+    expect(outcome('noMem').error).toContain('memory_limit is missing');
   });
 
   it('refuses 25565 and 25566 as the Minecraft port', () => {
-    expect(run(GOOD.replace('25567', '25565')).error).toContain('minecraft_port 25565 is refused');
-    expect(run(GOOD.replace('25567', '25566')).error).toContain('minecraft_port 25566 is refused');
+    expect(outcome('port25565').error).toContain('minecraft_port 25565 is refused');
+    expect(outcome('port25566').error).toContain('minecraft_port 25566 is refused');
   });
 
   it('refuses any other Minecraft port, because compose publishes the literal 25567', () => {
-    expect(run(GOOD.replace('25567', '25570')).error).toContain('must be 25567');
+    expect(outcome('port25570').error).toContain('must be 25567');
   });
 
   it('refuses a non-loopback bind_address', () => {
-    expect(run(GOOD.replace('127.0.0.1', '0.0.0.0')).error).toContain(
-      'bind_address 0.0.0.0 is refused',
-    );
+    expect(outcome('bind').error).toContain('bind_address 0.0.0.0 is refused');
   });
 
   it('refuses a cpu_limit of 0 and a memory_limit without a unit', () => {
-    expect(run(GOOD.replace('cpu_limit: 10.25', 'cpu_limit: 0')).error).toContain('cpu_limit');
-    expect(run(GOOD.replace('19776m', '19712')).error).toContain('memory_limit');
-    expect(run(GOOD.replace('19776m', '8')).error).toContain('memory_limit');
+    expect(outcome('cpuZero').error).toContain('cpu_limit');
+    expect(outcome('memNoUnit').error).toContain('memory_limit');
+    expect(outcome('memTiny').error).toContain('memory_limit');
   });
 });

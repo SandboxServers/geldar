@@ -58,8 +58,8 @@ export function renderRow(doc: Doc, view: ThoughtView, onOpen: (id: string) => v
   return item;
 }
 
-/** The detail of one thought: its facts, its plan, the receipts of its action, and the raw reply. */
-export function renderDetail(doc: Doc, view: ThoughtView, raw: string, receipts: Row[]): El {
+/** The detail of one thought: its facts, its plan and the receipts of its action. */
+export function renderDetail(doc: Doc, view: ThoughtView, receipts: Row[]): El {
   const section = doc.createElement('section');
   section.className = 'detail';
   const facts = doc.createElement('dl');
@@ -86,7 +86,7 @@ export function renderDetail(doc: Doc, view: ThoughtView, raw: string, receipts:
       .join(' ');
     list.append(make(doc, 'li', 'receipt', line));
   }
-  section.append(list, make(doc, 'h3', '', 'Raw reply'), make(doc, 'pre', 'raw', raw));
+  section.append(list);
   return section;
 }
 

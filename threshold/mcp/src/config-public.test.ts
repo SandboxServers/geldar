@@ -79,10 +79,17 @@ describe('public block: proxy trust and client-address header', () => {
 });
 
 describe('public block: rate limit and kill switch', () => {
-  it('defaults the rate limit to 60 a minute with a burst of 20, and the kill switch off', () => {
+  it('has no rate limit and the kill switch off when the file has no public block', () => {
     const config = parseMcpConfig(shardDoc(), { env: ENV });
-    expect(config.public.rateLimit).toEqual({ perMinute: 120, burst: 40 });
+    expect(config.public.rateLimit).toBeNull();
     expect(config.public.killSwitch).toBe(false);
+  });
+
+  it('defaults the rate limit to 600 a minute with a burst of 120 when the block has none', () => {
+    const doc = shardDoc();
+    doc.public = { kill_switch: false };
+    const config = parseMcpConfig(doc, { env: ENV });
+    expect(config.public.rateLimit).toEqual({ perMinute: 600, burst: 120 });
   });
 
   it('reads public.rate_limit and public.kill_switch', () => {
@@ -97,7 +104,7 @@ describe('public block: rate limit and kill switch', () => {
     const doc = shardDoc();
     doc.public = { rate_limit: { burst: 7 } };
     const config = parseMcpConfig(doc, { env: ENV });
-    expect(config.public.rateLimit).toEqual({ perMinute: 120, burst: 7 });
+    expect(config.public.rateLimit).toEqual({ perMinute: 600, burst: 7 });
   });
 
   it('refuses a per_minute of 0 and a burst above 1000, naming the key', () => {

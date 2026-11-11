@@ -262,18 +262,37 @@ describe('startMcp', () => {
     expect(order).toEqual(['front.close', 'replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
-  it('hands the front door the public block, so the per-client rate limit is on in production', async () => {
-    const order: string[] = [];
-    const ports = fakePorts(order, []);
+  /** Starts the MCP on a copy of the shard with `edit` applied; returns the public options the door got. */
+  async function publicSeen(edit: (text: string) => string): Promise<FrontDoorOptions['public']> {
+    const ports = fakePorts([], []);
     let seen: FrontDoorOptions['public'];
     ports.frontDoor = (options) => {
       seen = options.public;
       return { listen: async () => 0, close: async () => undefined };
     };
-    const config = await loadStartConfig(SHARD_FILE, ENV);
+    const config = await loadStartConfig(shardCopy(edit), ENV);
     await (await startMcp(config, ports)).stop();
-    expect(seen?.rateLimit).toEqual({ perMinute: 120, burst: 40 });
+    return seen;
+  }
+
+  it('starts a door with no per-client limit when the shard has no public block', async () => {
+    const seen = await publicSeen((text) => text);
+    expect(seen).toBeDefined();
+    expect(seen?.rateLimit).toBeNull();
   });
+
+  it('limits per client at 600 a minute with a burst of 120 when the block has no rate_limit', async () => {
+    const seen = await publicSeen((text) => `${text}\npublic:\n  kill_switch: false\n`);
+    expect(seen?.rateLimit).toEqual({ perMinute: 600, burst: 120 });
+  });
+
+  it('honours an explicit public.rate_limit', async () => {
+    const seen = await publicSeen(
+      (text) => `${text}\npublic:\n  rate_limit:\n    per_minute: 50\n    burst: 9\n`,
+    );
+    expect(seen?.rateLimit).toEqual({ perMinute: 50, burst: 9 });
+  });
+
   it('closes what it opened when a later step fails, then rethrows', async () => {
     const order: string[] = [];
     const ports = fakePorts(order, []);
