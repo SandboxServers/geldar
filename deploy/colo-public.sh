@@ -49,7 +49,7 @@ render_all() {
   printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$' || die "GELDAR_DOMAIN is not a plain host name"
   mkdir -p "$WORK/render"
   for s in $INSTALL_SITES; do
-    # Glass also serves /register* and /roster*, so its file carries the register upstream too (decision 0135, R42).
+    # Glass also serves the sign-in and roster paths, so its file carries the REGISTER upstream too (decision 0135, R42).
     ups=$(printf '%s' "$s" | tr 'a-z' 'A-Z')
     [ "$s" = glass ] && ups="GLASS REGISTER"
     sed_up=""
