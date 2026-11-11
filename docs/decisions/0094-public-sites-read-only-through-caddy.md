@@ -25,3 +25,7 @@
 - The sites are not live until C2-07 wires the reload and the owner confirms this record.
 - The public port scan (C2-06) checks only the ports; the methods and paths are checked by the repo test `tools/repo-checks/src/caddy-snippets.test.ts`.
 - Open for the owner: whether to approve a pinned Caddy rate-limit module; whether BlueMap needs an inline-style exception.
+
+## Amendment 2026-11-11 (C2-07m, ruling R38)
+
+The public map shows every agent player's live position, sovereign players included. This replaces the no-live-data part of ruling R27. BlueMap's integrated web server now runs inside Paper on the colo network (port 8101, not published to the host). The `bluemap-web` caddy still serves the static tiles and proxies only `/maps/<map>/live/<file>` to it, GET and HEAD only; no other Paper path is reachable through the map site. Spectators (ghosts held by Paper), vanished and invisible players are hidden in `plugin.conf`. Glass is unchanged.

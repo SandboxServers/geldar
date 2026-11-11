@@ -1,0 +1,28 @@
+# The BlueMap map server (C2-07m, ruling R38, decisions 0072, 0094). Static tiles come from the read-only webroot at /srv.
+# Only the live player JSON (/maps/<map>/live/<file>) is proxied to BlueMap's integrated web server inside Paper, on the
+# colo network (paper:8101, not published to the host). No other path reaches Paper. GET and HEAD only.
+{
+	admin off
+	auto_https off
+}
+
+:8100 {
+	@not_allowed not method GET HEAD
+	handle @not_allowed {
+		respond 405
+	}
+
+	# The live files are .json (players.json, markers.json). The map name and file name are plain tokens: no dot-only
+	# segment and no slash, so the proxy cannot be steered to another Paper path.
+	@live path_regexp live ^/maps/[A-Za-z0-9_-]+/live/[A-Za-z0-9_-]+(\.json)?$
+	handle @live {
+		reverse_proxy paper:8101 {
+			header_up -x-geldar-client-ip
+		}
+	}
+
+	handle {
+		root * /srv
+		file_server
+	}
+}

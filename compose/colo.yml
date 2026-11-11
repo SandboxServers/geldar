@@ -139,8 +139,7 @@ services:
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
     # No ports: the game port and RCON are not published. Velocity is the only game listener.
-    # BlueMap (C1-09) needs no publish either: its integrated web server is off (webserver.conf enabled: false, and 5.29 has
-    # no bind-address key), so Caddy's map site serves the rendered webroot from the data volume, read only (C2-07a2 worknote).
+    # BlueMap (C2-07m, R38): its web server (port 8101) is on the colo network only; bluemap-web proxies /maps/*/live/* to it.
     networks: [colo]
     healthcheck:
       <<: *mc-health
@@ -493,11 +492,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C2-07c1] The BlueMap static file server (ruling R27, decisions 0072, 0094). BlueMap's own web server is off
-  # (plugins/bluemap/config/webserver.conf enabled: false), so Paper only writes the rendered files under bluemap/web in
-  # its data volume and no live data (players, markers) is written there. This caddy serves that directory read only,
-  # on the loopback publish; the host Caddy (map.caddy) proxies to it. Only the bluemap/web subpath of the Paper volume
-  # is mounted (read only, at /srv), so nothing else in the volume is reachable even by a file-server path bug. No Caddyfile: file-server CLI.
+  # [C2-07c1, C2-07m] The BlueMap map server (R27, R38, decisions 0072, 0094). Paper writes the tiles under bluemap/web in its
+  # volume and runs BlueMap's web server (port 8101) on the colo network only, never published. This caddy serves the tiles
+  # read only from /srv and proxies only /maps/<map>/live/<file> to paper:8101 (live agent positions; spectators hidden in
+  # plugin.conf), GET and HEAD only. Config: compose/bluemap-web/Caddyfile. The host Caddy (map.caddy) proxies to its loopback port.
   bluemap-web:
     # Budget: 0.25 CPU, 64m (no swap, 64 pids).
     deploy:
@@ -511,7 +509,7 @@ services:
     logging: *logging
     labels: *colo-labels
     image: caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
-    command: ["caddy", "file-server", "--root", "/srv", "--listen", ":8100"]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     environment:
       # Caddy writes its autosave and state under these; the root filesystem is read only, /tmp is a tmpfs.
       XDG_CONFIG_HOME: /tmp/config
@@ -525,6 +523,7 @@ services:
         read_only: true
         volume:
           subpath: bluemap/web
+      - ./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
       # The loopback map port. Literal: the loopback rule rejects interpolation.
       - "127.0.0.1:8100:8100"
