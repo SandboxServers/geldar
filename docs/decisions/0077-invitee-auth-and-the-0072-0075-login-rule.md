@@ -1,6 +1,6 @@
 # 0077. Invitee auth, and the login rule for Lakitu cameras
 
-- Status: Proposed (owner confirms the rule and the interim auth)
+- Status: Accepted (owner, 2026-11-11): option A and the interim login as recommended
 - Date: 2026-11-10
 - Spec: section 8.4 (Observatory edge, Entra ID SSO, which is Phase 2); section 5.15.3 (OAuth 2.1 for MCP, replaced by 0054); section 2, Principle 1 (no humans inside, so viewers cannot act); section 13 (open questions). Decisions 0054, 0070, 0071, 0072, 0075.
 

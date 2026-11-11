@@ -106,7 +106,16 @@ async function runCraft(
     const message = errorText(error);
     // The library reports a short inventory as an error; that is a missing-materials outcome.
     if (/ingredient/i.test(message)) return failed('missing_materials', message.slice(0, 200));
-    throw error;
+    // The library puts the ingredients in the grid before it waits for the result slot. When the
+    // wait times out they stay there (the planks that vanished in the first live run): closing the
+    // player's grid makes the server hand them back to the inventory.
+    returnGrid(bot);
+    const timedOut = /did not fire within timeout/i.test(message);
+    return failed(
+      timedOut ? 'timeout' : 'internal',
+      `the crafting grid did not produce ${item.name}; the ingredients were returned`,
+      { item: item.name, crafted: heldCount(bot, item.id) - before },
+    );
   } finally {
     // A close error must not replace the outcome that the loop produced.
     if (bot.currentWindow) {
@@ -133,6 +142,21 @@ async function runCraft(
     });
   }
   return completed({ item: item.name, crafted, used_table: usedTable !== null });
+}
+
+/** The player's own window: its 2x2 grid is closed by this id, never opened. */
+const PLAYER_WINDOW_ID = 0;
+
+/** Closes the player's grid so the server returns what a stopped craft left in it. Never throws. */
+function returnGrid(bot: Bot): void {
+  try {
+    const client = bot._client as unknown as
+      | { write(name: string, params: Record<string, unknown>): void }
+      | undefined;
+    client?.write('close_window', { windowId: PLAYER_WINDOW_ID });
+  } catch (error) {
+    console.warn(`player grid did not close: ${errorText(error)}`);
+  }
 }
 
 /** Crafts `times` of a recipe with the library's craft, one batch at a time, checking the signal between them. */

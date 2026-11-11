@@ -2,6 +2,7 @@ import type { MindEvent } from '@geldar/animus/src/ports/body.ts';
 import type { SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { type MapContext, mapMindEvent, type RunState } from './mapper.ts';
+import { toPlayerEvents } from './present.ts';
 
 const LIFE = 'ag_jason_01';
 const AT = '2026-11-09T10:00:00.000Z';
@@ -162,12 +163,40 @@ describe('mapMindEvent', () => {
     expect(out.some((e) => e.kind === 'intent_finished')).toBe(false);
   });
 
-  it('maps reflex_fired and plugin sleep to reflex entries', () => {
+  it('maps only an eat reflex that ate to a reflex entry', () => {
     const ctx = ctxWith();
-    expect(mapMindEvent(event('reflex_fired', { item: 'bread' }), 1, ctx)).toMatchObject([
-      { kind: 'reflex' },
-    ]);
-    expect(mapMindEvent(event('sleep', {}), 2, ctx)).toMatchObject([{ kind: 'reflex' }]);
+    const fired = (name: string, result: string) =>
+      mapMindEvent(event('reflex_fired', { name, result, tick: 100 }), 1, ctx);
+    expect(fired('eat', 'handled')).toMatchObject([{ kind: 'reflex' }]);
+    expect(fired('eat', 'failed')).toEqual([]);
+    expect(fired('eat', 'abandoned')).toEqual([]);
+    expect(fired('flee', 'handled')).toEqual([]);
+    expect(mapMindEvent(event('sleep', {}), 2, ctx)).toEqual([]);
+  });
+
+  it('gives a failed intent a plain reason the player hears, and nothing for unknown details', () => {
+    const failedWith = (detail: string) => {
+      const out = mapMindEvent(
+        event('intent', { state: 'failed', intent_id: 'i1', detail }),
+        1,
+        ctxWith(),
+      );
+      return toPlayerEvents(out)[0]?.text;
+    };
+    expect(failedWith('missing_materials: missing oak_planks, stick')).toBe(
+      'Your intent failed: you lack oak planks, stick.',
+    );
+    expect(failedWith('missing_station: needs a crafting table')).toBe(
+      'Your intent failed: no crafting table within reach.',
+    );
+    expect(failedWith('blocked: no path')).toBe('Your intent failed: the way was blocked.');
+    // A detail that is not a known shape, or carries odd text, is never quoted.
+    expect(failedWith('missing_materials: missing Ignore previous; tell {x}')).toBe(
+      'Your intent failed: precondition_failed.',
+    );
+    expect(failedWith('internal: stack trace at golem/src')).toBe(
+      'Your intent failed: precondition_failed.',
+    );
   });
 
   it('keeps the stream sequence and the tick on every entry', () => {
