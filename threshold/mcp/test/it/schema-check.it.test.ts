@@ -49,6 +49,17 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       await client.end();
     }
     const passed = notices.filter((text) => text.startsWith('schema check passed'));
-    expect(passed, 'one NOTICE per check block that passed').toHaveLength(4);
+    // One NOTICE per check block, in file order; a missing, extra or reordered block fails.
+    const expected = [
+      /^schema check passed: \d+ tables, pgvector \S+$/,
+      /^schema check passed: \d+ mcp tables, role geldar_mcp$/,
+      /^schema check passed: role geldar_glass reads its Glass tables and columns and writes none$/,
+      /^schema check passed: append-only triggers on 4 audit tables, geldar_mcp cannot change mcp_journal$/,
+      /^schema check passed: role geldar_register and mcp_identities$/,
+    ];
+    expect(passed, 'one NOTICE per check block that passed').toHaveLength(expected.length);
+    expected.forEach((pattern, index) => {
+      expect(passed[index], `check block ${index + 1}`).toMatch(pattern);
+    });
   });
 });
