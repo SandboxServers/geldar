@@ -11,6 +11,7 @@ plan_header
 need docker
 check_prereqs
 load_release "$RELEASE_FILE"
+load_node_env
 # Glass is part of the stack: its image comes from the manifest like the others (load_release already refused a
 # value that is not a digest reference).
 [ -n "${GELDAR_GLASS_IMAGE:-}" ] || die "release manifest has no GELDAR_GLASS_IMAGE; refusing"
@@ -19,6 +20,8 @@ check_merged_config
 check_secrets
 fetch_bluemap
 record_release
+save_node_env
+say_node_env
 act dc pull
 act dc --profile admin pull admin
 # bluemap-web mounts the Paper volume's bluemap/web subpath (ruling R28), and a subpath mount fails when the directory is

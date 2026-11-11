@@ -286,6 +286,55 @@ fetch_bluemap() {
   fi
 }
 
+# Trusted proxies (ruling R32): Glass and the MCP trust the colo bridge gateway, which is the peer address a host-network
+# Caddy shows. The two lists live in the node env file (STATE_DIR/node.env, mode 0600, KEY=VALUE as data, never sourced).
+# load_node_env fills an unset variable from the file and exports both; save_node_env writes the values in force.
+NODE_PROXY_VARS="GELDAR_GLASS_TRUSTED_PROXIES GELDAR_MCP_TRUSTED_PROXIES"
+NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET"
+load_node_env() {
+  for v in $NODE_ENV_VARS; do
+    eval "cur=\${$v:-}"
+    if [ -z "$cur" ] && [ -f "$STATE_DIR/node.env" ]; then
+      cur=$(sed -n "s/^$v=//p" "$STATE_DIR/node.env" | tail -n 1)
+      [ -z "$cur" ] || printf '%s' "$cur" | grep -Eq '^[0-9A-Fa-f:.,/]*$' || die "$v in $STATE_DIR/node.env has characters that are not an address list"
+    fi
+    if [ -n "$cur" ]; then
+      eval "$v=\$cur"
+      export "${v?}"
+    fi
+  done
+}
+
+save_node_env() {
+  if [ "$DRY_RUN" = 1 ]; then
+    say "dry-run, not run: persist the trusted proxy lists in $STATE_DIR/node.env"
+    return 0
+  fi
+  (
+    umask 077
+    mkdir -p "$STATE_DIR" || exit 1
+    : >"$STATE_DIR/node.env.new"
+    for v in $NODE_ENV_VARS; do
+      eval "cur=\${$v:-}"
+      [ -z "$cur" ] || echo "$v=$cur" >>"$STATE_DIR/node.env.new"
+    done
+    mv "$STATE_DIR/node.env.new" "$STATE_DIR/node.env"
+  ) || die "cannot write the node env file in $STATE_DIR; nothing deployed"
+}
+
+# Prints the node env values in force (the bridge subnet is what keeps the gateway address stable).
+say_node_env() {
+  say "trusted proxies: glass=${GELDAR_GLASS_TRUSTED_PROXIES:-unset} mcp=${GELDAR_MCP_TRUSTED_PROXIES:-unset}"
+  say "colo subnet: ${GELDAR_COLO_SUBNET:-unset (compose default, the gateway trust will not match)}"
+}
+
+# True when every proxy list is set to something other than the loopback default.
+proxies_set() {
+  for v in $NODE_PROXY_VARS; do
+    eval "cur=\${$v:-}"
+    [ -n "$cur" ] && [ "$cur" != 127.0.0.1 ] || return 1
+  done
+}
 # Saves the release being replaced (previous.env) and the one being applied (current.env) before any pull.
 # If the record cannot be written, the deploy stops: nothing is applied without a record of what it replaced.
 record_release() {

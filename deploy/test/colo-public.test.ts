@@ -89,6 +89,9 @@ function rig(envFile = DEFAULT_ENV): Rig {
     GELDAR_PUBLIC_ENV: envPath,
     DOCKER_CALLS_LOG: callsLog,
     FAKE_VALIDATE_FAIL: flag,
+    GELDAR_STATE_DIR: join(root, 'state'),
+    GELDAR_GLASS_TRUSTED_PROXIES: '192.0.2.1',
+    GELDAR_MCP_TRUSTED_PROXIES: '192.0.2.1',
   };
   return {
     root,
@@ -179,6 +182,67 @@ describe('colo-public.sh install', () => {
   });
 });
 
+describe('colo-public.sh reinstall safety (R4-01)', () => {
+  const live = (r: Rig) =>
+    ['map', 'glass', 'mcp'].map((s) => readFileSync(join(r.geldar, `${s}.caddy`), 'utf8'));
+
+  it('install after off keeps the switched-off site off', () => {
+    const r = rig();
+    expect(r.run(['install']).status).toBe(0);
+    expect(r.run(['off', 'glass']).status).toBe(0);
+    expect(r.run(['install']).status).toBe(0);
+    const status = r.run(['status']).out;
+    expect(status).toContain('glass: off');
+    expect(status).toContain('map: on');
+    expect(status).toContain('mcp: on');
+  });
+
+  it('a failed reinstall leaves the live site files byte for byte as they were', () => {
+    const r = rig();
+    expect(r.run(['install']).status).toBe(0);
+    expect(r.run(['off', 'mcp']).status).toBe(0);
+    const before = live(r);
+    const store = readdirSync(join(r.geldar, 'store')).sort();
+    r.failValidate(true);
+    const res = r.run(['install'], { GELDAR_MAP_UPSTREAM_UNUSED: 'x' });
+    expect(res.status).not.toBe(0);
+    expect(live(r)).toEqual(before);
+    expect(readdirSync(join(r.geldar, 'store')).sort()).toEqual(store);
+    expect(readFileSync(r.caddyfile, 'utf8')).toContain(IMPORT);
+  });
+});
+
+describe('colo-public.sh trusted proxies (R32)', () => {
+  it('refuses install when either list is unset or still 127.0.0.1', () => {
+    for (const over of [
+      { GELDAR_GLASS_TRUSTED_PROXIES: '' },
+      { GELDAR_MCP_TRUSTED_PROXIES: '' },
+      { GELDAR_GLASS_TRUSTED_PROXIES: '127.0.0.1' },
+      { GELDAR_MCP_TRUSTED_PROXIES: '127.0.0.1' },
+    ]) {
+      const r = rig();
+      const res = r.run(['install'], over);
+      expect(res.status).not.toBe(0);
+      expect(res.out).toContain('TRUSTED_PROXIES');
+      expect(existsSync(r.geldar)).toBe(false);
+    }
+  });
+
+  it('accepts the values persisted in node.env when the shell has none', () => {
+    const r = rig();
+    const state = r.env.GELDAR_STATE_DIR;
+    mkdirSync(state);
+    writeFileSync(
+      join(state, 'node.env'),
+      'GELDAR_GLASS_TRUSTED_PROXIES=192.0.2.1\nGELDAR_MCP_TRUSTED_PROXIES=192.0.2.1\n',
+    );
+    const res = r.run(['install'], {
+      GELDAR_GLASS_TRUSTED_PROXIES: '',
+      GELDAR_MCP_TRUSTED_PROXIES: '',
+    });
+    expect(res.status).toBe(0);
+  });
+});
 describe('colo-public.sh off, on and remove', () => {
   it('swaps a site for its off twin and back, and off all covers every site', () => {
     const r = rig();
