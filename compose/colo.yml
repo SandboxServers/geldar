@@ -373,7 +373,7 @@ services:
     restart: unless-stopped
 
   # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094). The image is a release-manifest value
-  # (GELDAR_GLASS_IMAGE, C2-07a1); the tag is an offline default only, with no build here.
+  # (GELDAR_GLASS_IMAGE, C2-07a1); the local tag and the build are the offline path (glass/Dockerfile is C2-07a1's).
   # Postgres as geldar_glass (read-only role, sql/0005) with its password from a file secret. Caddy (host network)
   # reaches it on the loopback publish only. No NATS.
   glass:
@@ -388,6 +388,9 @@ services:
     pids_limit: 128
     logging: *logging
     labels: *colo-labels
+    build:
+      context: ..
+      dockerfile: glass/Dockerfile
     image: ${GELDAR_GLASS_IMAGE:-geldar-glass:c2}
     environment:
       GELDAR_GLASS_HOST: 127.0.0.1
