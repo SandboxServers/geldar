@@ -237,3 +237,11 @@ describe('Glass secret, login step and image', () => {
     expect(composeCalls(fx).some((c) => / (pull|up)\b/.test(c))).toBe(false);
   });
 });
+
+describe('colo network subnet (R32)', () => {
+  it('pins the colo bridge to a /24 taken from GELDAR_COLO_SUBNET, no private literal', () => {
+    const text = readFileSync(join(ROOT, 'compose', 'colo.yml'), 'utf8');
+    const net = text.slice(text.indexOf('\nnetworks:'), text.indexOf('\nsecrets:'));
+    expect(net).toContain('subnet: "${GELDAR_COLO_SUBNET:-');
+  });
+});

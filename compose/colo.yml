@@ -572,6 +572,12 @@ services:
 networks:
   colo:
     name: geldar-colo
+    # Pinned (ruling R32): a host-network Caddy reaches the loopback publishes as the bridge gateway (the .1 address of this
+    # subnet), and Glass and the MCP trust that address in GELDAR_*_TRUSTED_PROXIES. The node sets GELDAR_COLO_SUBNET to a
+    # private /24 inside the 172.16/12 private block (colo-up.sh saves it in node.env). The default is the documentation range.
+    ipam:
+      config:
+        - subnet: "${GELDAR_COLO_SUBNET:-192.0.2.0/24}"
 
 secrets:
   postgres:

@@ -5,6 +5,8 @@ set -eu
 . "$(dirname "$0")/common.sh"
 
 need docker
+load_node_env
+say_node_env
 filter="label=com.docker.compose.project=$PROJECT"
 say "containers of $PROJECT (state and health):"
 docker ps -a --filter "$filter" --format '{{.Names}}\t{{.State}}\t{{.Status}}'
