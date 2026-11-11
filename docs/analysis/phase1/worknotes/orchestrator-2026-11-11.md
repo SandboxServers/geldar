@@ -195,3 +195,10 @@ These go into decision 0075 as an amendment when C2b starts.
 - **The database is the roster.** Postgres replaces `shards/colo-mind.yaml` `sovereign.players` as the source of truth for players-host and the whitelist step.
 - **A supervisor starts and stops player bodies** as the roster changes.
 - **When.** Planned as wave C2c, after Jason's first run, which is done by hand through C1-10a.
+- **Owner ruling R41 (2026-11-11).** No limit on how many new owners can sign up in a day.
+  - **What goes.** The 10-per-day owner cap is removed, both from the database function (0013) and from the service. It also makes R5 finding G5 (throwaway accounts blocking sign-ups) moot.
+  - **What replaces it.** Proper rate limiting in the service:
+    - sign-up and sign-in attempts are limited per client IP and per IPv6 /64, using the same limiter as Glass and the MCP;
+    - player creation and token minting are limited per owner, plus a short burst allowance.
+  - **What stays.** The lifetime cap of 10 players per owner (R36) is separate from this and is unchanged.
+  - **When.** This is done in C2c.
