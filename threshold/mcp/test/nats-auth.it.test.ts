@@ -10,9 +10,9 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { connect } from 'node:net';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -20,7 +20,8 @@ const run = promisify(execFile);
 const enabled = process.env.GELDAR_IT === '1';
 
 // The digest the overlay's base file (compose/phase0.yml) uses for nats.
-const IMAGE = 'nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde';
+const IMAGE =
+  'nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde';
 const SHARDS = ['alpha', 'bravo'] as const;
 const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'] as const;
 type Role = (typeof ROLES)[number];
@@ -28,23 +29,51 @@ type Allow = { pub: string[]; sub: string[] };
 
 const JS = ['$JS.API.>', '$JS.ACK.>', '_INBOX.>'];
 const kv = (bucket: string) => `$KV.${bucket}.>`;
-const MIND_TYPES = ['wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep'];
+const MIND_TYPES = [
+  'wake',
+  'intent',
+  'action',
+  'plan_result',
+  'reflex_fired',
+  'speech',
+  'damage',
+  'death',
+  'sleep',
+];
 
 /** The per-role allow lists for one shard (decision 0087). Every subject starts with the shard, or is a KV bucket or inbox. */
 function roleAllows(shard: string): Record<Role, Allow> {
   const s = shard;
   return {
-    body: { pub: [`geldar.${s}.>`, ...JS, kv('geldar-life-registry'), kv('geldar-checkpoints'), kv('geldar-body-generation')],
-      sub: [`geldar.${s}.body.>`, '_INBOX.>'] },
-    mind: { pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`], sub: ['_INBOX.>'] },
+    body: {
+      pub: [
+        `geldar.${s}.>`,
+        ...JS,
+        kv('geldar-life-registry'),
+        kv('geldar-checkpoints'),
+        kv('geldar-body-generation'),
+      ],
+      sub: [`geldar.${s}.body.>`, '_INBOX.>'],
+    },
+    mind: {
+      pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
+      sub: ['_INBOX.>'],
+    },
     eventsink: { pub: [`geldar.${s}.dlq`, ...JS], sub: ['_INBOX.>'] },
-    mcp: { pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS], sub: ['_INBOX.>'] },
+    mcp: {
+      pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
+      sub: ['_INBOX.>'],
+    },
     velocity: { pub: [kv('geldar-life-registry'), kv('geldar-skins'), ...JS], sub: ['_INBOX.>'] },
     paper: { pub: [`geldar.${s}.>`, ...JS], sub: ['_INBOX.>'] },
   };
 }
 
-interface User { name: string; password: string; allow: Allow }
+interface User {
+  name: string;
+  password: string;
+  allow: Allow;
+}
 
 /** Renders the server config the overlay mounts at /etc/nats/nats-auth.conf (one account, JetStream on). */
 function renderConfig(users: User[]): string {
@@ -54,25 +83,48 @@ function renderConfig(users: User[]): string {
     // allow_responses belongs inside permissions: nats-server 2.15 rejects it on the user block.
     return `      { user: "${u.name}", password: "${u.password}", permissions: { publish: { allow: [${pub}] }, subscribe: { allow: [${sub}] }, allow_responses: true } }`;
   });
-  return ['port: 4222', 'jetstream { store_dir: "/data" }', 'accounts {', '  GELDAR {', '    jetstream: enabled', '    users = [',
-    entries.join(',\n'), '    ]', '  }', '}', ''].join('\n');
+  return [
+    'port: 4222',
+    'jetstream { store_dir: "/data" }',
+    'accounts {',
+    '  GELDAR {',
+    '    jetstream: enabled',
+    '    users = [',
+    entries.join(',\n'),
+    '    ]',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
 }
 
 /** Every user of both test shards, named `<shard>-<role>`, with a fresh random password. */
 function makeUsers(): User[] {
   return SHARDS.flatMap((shard) => {
     const allows = roleAllows(shard);
-    return ROLES.map((role) => ({ name: `${shard}-${role}`, password: randomBytes(24).toString('base64url'), allow: allows[role] }));
+    return ROLES.map((role) => ({
+      name: `${shard}-${role}`,
+      password: randomBytes(24).toString('base64url'),
+      allow: allows[role],
+    }));
   });
 }
 
 /** Replaces each wildcard token with a concrete sample token, so an allowed pattern can be tested. */
 function concrete(subject: string): string {
-  return subject.split('.').map((t) => (t === '>' ? 'x' : t)).join('.');
+  return subject
+    .split('.')
+    .map((t) => (t === '>' ? 'x' : t))
+    .join('.');
 }
 
 /** Opens a NATS connection as `user`, sends `ops`, then PING. Returns the reply to each line, in order. */
-function converse(port: number, user: string, pass: string, ops: string[]): Promise<{ connected: boolean; replies: string[] }> {
+function converse(
+  port: number,
+  user: string,
+  pass: string,
+  ops: string[],
+): Promise<{ connected: boolean; replies: string[] }> {
   return new Promise((resolve) => {
     const sock = connect(port, '127.0.0.1');
     const replies: string[] = [];
@@ -87,7 +139,13 @@ function converse(port: number, user: string, pass: string, ops: string[]): Prom
         buf = buf.slice(i + 2);
         if (line.startsWith('INFO') && !sentOps) {
           sentOps = true;
-          const connectLine = JSON.stringify({ verbose: true, pedantic: false, protocol: 1, user, pass });
+          const connectLine = JSON.stringify({
+            verbose: true,
+            pedantic: false,
+            protocol: 1,
+            user,
+            pass,
+          });
           sock.write(`CONNECT ${connectLine}\r\n${ops.join('')}PING\r\n`);
         } else if (line === 'PONG') {
           sock.destroy();
@@ -123,15 +181,29 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
   };
 
   async function writeConfig(list: User[]) {
-    await writeFile(join(dir, 'nats-auth.conf'), renderConfig(list), { encoding: 'utf8', mode: 0o600 });
+    await writeFile(join(dir, 'nats-auth.conf'), renderConfig(list), {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
   }
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'geldar-nats-auth-'));
     users = makeUsers();
     await writeConfig(users);
-    await run('docker', ['run', '-d', '--name', name, '-p', '127.0.0.1::4222', '-v', `${dir}:/etc/geldar-nats:ro`,
-      IMAGE, '-c', '/etc/geldar-nats/nats-auth.conf']);
+    await run('docker', [
+      'run',
+      '-d',
+      '--name',
+      name,
+      '-p',
+      '127.0.0.1::4222',
+      '-v',
+      `${dir}:/etc/geldar-nats:ro`,
+      IMAGE,
+      '-c',
+      '/etc/geldar-nats/nats-auth.conf',
+    ]);
     const { stdout } = await run('docker', ['port', name, '4222']);
     port = Number(/:(\d+)\s*$/m.exec(stdout)?.[1]);
     for (let attempt = 0; attempt < 100; attempt++) {
@@ -157,14 +229,25 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
     for (const role of ROLES) {
       const n = `alpha-${role}`;
       const allows = userOf(n).allow;
-      const ops = [...allows.pub.map((p) => pub(concrete(p))), ...allows.sub.map((p) => sub(concrete(p))),
-        pub('refused.alpha.not.allowed'), sub('refused.alpha.not.allowed')];
+      const ops = [
+        ...allows.pub.map((p) => pub(concrete(p))),
+        ...allows.sub.map((p) => sub(concrete(p))),
+        pub('refused.alpha.not.allowed'),
+        sub('refused.alpha.not.allowed'),
+      ];
       const { connected, replies } = await as(n, ops);
       expect(connected, n).toBe(true);
       const allowedReplies = replies.slice(1, 1 + allows.pub.length + allows.sub.length);
-      expect(allowedReplies.every((r) => r === '+OK'), `${n} allowed subjects`).toBe(true);
-      expect(replies[replies.length - 2], `${n} publish outside`).toContain('Permissions Violation for Publish');
-      expect(replies[replies.length - 1], `${n} subscribe outside`).toContain('Permissions Violation for Subscription');
+      expect(
+        allowedReplies.every((r) => r === '+OK'),
+        `${n} allowed subjects`,
+      ).toBe(true);
+      expect(replies[replies.length - 2], `${n} publish outside`).toContain(
+        'Permissions Violation for Publish',
+      );
+      expect(replies[replies.length - 1], `${n} subscribe outside`).toContain(
+        'Permissions Violation for Subscription',
+      );
     }
   }, 30_000);
 
@@ -194,8 +277,9 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
 
 describe('the generated subject table', () => {
   it('no bare wildcard subject: no token of any allow list is a single-token "*"', () => {
-    const bare = SHARDS.flatMap((shard) => Object.values(roleAllows(shard)).flatMap((a) => [...a.pub, ...a.sub]))
-      .filter((s) => s.split('.').includes('*'));
+    const bare = SHARDS.flatMap((shard) =>
+      Object.values(roleAllows(shard)).flatMap((a) => [...a.pub, ...a.sub]),
+    ).filter((s) => s.split('.').includes('*'));
     expect(bare).toEqual([]);
   });
 
