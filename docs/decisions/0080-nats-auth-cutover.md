@@ -1,6 +1,6 @@
 # 0080. NATS auth cutover
 
-- Status: Proposed (owner confirms the cutover gate and the credential distribution)
+- Status: Accepted (owner confirmed 2026-11-10)
 - Date: 2026-11-10
 - Spec: section 6.5 (Gateway with mTLS, step-ca); section 8.6 (host hardening); section 10 Phase 2 gates (a revoked Thinker is refused at Envoy). Decisions 0040, 0043, 0067, 0076.
 

@@ -2,6 +2,8 @@
 
 Status: draft, 2026-11-10. Written from `origin/main` at `e28dffc` (the Phase 1 analysis is merged). Source: [plan.md](../plan.md) (C1 section), [packet-conventions.md](../packet-conventions.md) (card format, shared files, gates, never-do list), the planner schedule for ids, scope, lanes, status and decision numbers, and decisions [0076](../../../decisions/0076-backup-scope-and-destination.md) to [0080](../../../decisions/0080-nats-auth-cutover.md) (proposed; owner confirms before the packets that depend on them).
 
+Owner rulings of 2026-11-10 are applied (decision 0130): deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, and long-running tests moved to the end-of-phase campaign gates. Decisions 0076, 0078 and 0080 are accepted.
+
 Nothing here is implemented. Each card is a brief the orchestrator dispatches. A card names only the files it may edit. Where a path in the schedule does not match the repo, the card uses the real path and says so in "Corrections to the schedule" below.
 
 ## 0. Conventions every card inherits
@@ -27,9 +29,9 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 | `adam-reset` in `tools/adam-run` (C1-05a) | No `adam-reset.ts` file. The reset lives in `golem/test/live/adam-reset.test.ts` and `golem/test/live/adam-case.ts` | Those two files, plus any `DELETE` path found by `grep -rn "DELETE" golem/test/live` |
 | "add tools/mcp-tokens to `check`, fix its 3 type errors" (C1-00) | `tools/mcp-tokens/package.json` already has `typecheck`; the 3 fixes are recorded in `docs/analysis/phase0/worknotes/fix-flake.md` (item 7). `check` runs `pnpm typecheck`, which covers every workspace package with the script | First confirm the workspace lists it (`pnpm-workspace.yaml`); run the typecheck; fix only what still fails |
 | CI Postgres job (C1-00) | `.github/workflows/ci.yml` already has a Postgres service in the `integration` job (around lines 179 to 188) and runs `sql/test/check-schema.sql` (line 147) | Extend the existing job; do not add a second one |
-| "the existing telemetry" (C1-07) | No telemetry endpoint or metrics code in the repo | Owner question 4 in section 4 |
+| "the existing telemetry" (C1-07) | No telemetry endpoint or metrics code in the repo | Answered 2026-11-10: the node's SigNoz (0130) |
 | Five flaky tests (C1-01) | `docs/analysis/phase0/known-gaps.md` line 43 names them: `golem/src/test-control.test.ts`, `golem/test/live/adam-stack.test.ts`, `tools/repo-checks/src/cli.test.ts`, `threshold/mcp/src/imports.test.ts`, and the lantern-local thinker reconnect test | Same list; the reconnect test is found with `grep -rln "reconnect" lantern-local/src` |
-| Decisions 0076 to 0080 (pre-packet) | Present on `origin/main` as Proposed | Owner confirmation gates are in section 4 |
+| Decisions 0076 to 0080 (pre-packet) | Accepted 2026-11-10 (0076: scope accepted, destination and build deferred, 0130) | Gates resolved; see the owner questions below |
 
 ---
 
@@ -279,7 +281,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **title**: Deploy tooling for Linux: shell scripts, root-only env files generated on the node, no secret in the repo
 - **wave**: C1
 - **lane**: D
-- **status**: B/O (the build and its tests are B; running on the node needs the deploy account, which is an owner item)
+- **status**: B/O (the build and its tests are B; running on the node needs deploy by runner or the owner's SSH access, an owner item, 0130)
 - **depends-on**: P1-C1-00 (for the shard-config keys and the release-age check on pins)
 - **size**: M
 - **decisions**: 0084 (one record: deploy by pull, env-file location and ownership, what the scripts never print)
@@ -297,7 +299,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 1. Write `deploy/bin/pull.sh`: records the current image digests from `compose/colo.yml` into `/var/lib/geldar/state/deployed.txt`, runs `docker compose -f compose/colo.yml pull`, then `docker compose ... up -d --wait`. It refuses to run as a user without the `docker` group, and it never runs `down -v`.
 2. Write `deploy/bin/env-init.sh`: creates `/etc/geldar/` (mode 0750, owner root, group docker) and one env file per service, mode 0600, owner root. It generates random values with `openssl rand` for internal tokens and writes them only to those files. It never echoes a value, and it refuses to overwrite an existing file (the same rule as `mcp-tokens init`).
 3. Write `deploy/bin/rollback.sh`: reads `deployed.txt`'s previous entry and redeploys those digests. It does not pull new images.
-4. Write `deploy/README.md` with the steps as commands, and the owner's part: the deploy account, its docker membership, and the place the env files are copied to.
+4. Write `deploy/README.md` with the steps as commands, and the owner's part: deploy access (the self-hosted runner or the owner's SSH access, 0130) and the place the env files are copied to.
 5. Tests in `deploy/test/`: (a) run each script with `sh -n` (syntax); (b) run `env-init.sh` with `GELDAR_ROOT_DIR` pointing at a temp directory (the script takes its root from that variable so the test never writes under `/etc`); check modes and that no value appears in stdout; (c) run `pull.sh` with a fake `docker` on `PATH` that records its arguments; check the order (pull, then up with `--wait`) and that `down -v` never appears.
 6. `deploy/test/no-secrets.test.ts`: scan `deploy/` and `compose/colo.yml` for high-entropy strings and for `PASSWORD=`, `TOKEN=` with a value. Fail on any match.
 
@@ -321,7 +323,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 
 **index line to add**: `index: | [0084](0084-<slug>.md) | <title> | Proposed |`. Also for the integration owner: "add a Linux CI job that runs `sh -n` and `deploy/test`" (the CI file is not in this card).
 
-**Live step (O, owner)**: a deploy account in the docker group on the node, and the env files written by `env-init.sh` with `sudo`. The owner runs them; the agent does not. Stop if `docker` on the node is not the expected version or the account can read `/etc/geldar` as a non-owner.
+**Live step (O, owner)**: deploy access to the node (the self-hosted runner or the owner's SSH access; no new deploy account, 0130), and the env files written by `env-init.sh` with `sudo`. The owner runs them; the agent does not. Stop if `docker` on the node is not the expected version or the account can read `/etc/geldar` as a non-owner.
 
 **On cap**: commit the scripts that pass; the rollback script can wait for C1-10.
 
@@ -387,7 +389,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **title**: Backup v1 per 0076: a coordinated checkpoint (Postgres, NATS KV and JetStream, world directory), manifest with checksums, encryption, restore to a scratch shard
 - **wave**: C1
 - **lane**: E
-- **status**: B/O (built and tested on the desktop; the real destination and key handling are owner steps, C1-10)
+- **status**: DEFERRED by owner 0130 (2026-11-10). The card is kept; the build is not scheduled in C1 and the destination is not chosen. The restore test that depends on it runs at the end-of-phase gates. C1-05a is NOT deferred.
 - **depends-on**: P1-C1-00 (manifest schema), C1-05a (append-only journals; a replayable backup needs it)
 - **size**: L (two sessions; the first ends after commit 2)
 - **decisions**: 0086 (one record: backup v1 scope, the flush sequence, manifest, encryption choice, destination config)
@@ -401,7 +403,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **must-not-edit**: `docs/spec.md`; `docs/decisions/README.md`; `geldar.ps1` and `compose/*` (C1-02; the `backup` verb is an index line); `shards/*`; `contract/` (C1-00's manifest schema is consumed, not changed); `sql/0001_*` to `sql/0007_*`; root `package.json`; `golem/` and `animus/` (read only).
 
 **Steps**
-1. Read decision 0076 and its owner status. If the owner has not confirmed 0076, build the code behind a destination of `none`, which refuses to run, and record the stop in the worknote.
+1. Read decision 0076 and its owner status. 0076 is accepted; its destination and this build are deferred (0130). Do not start this card until the owner schedules it.
 2. Locate the inputs: Postgres connection (`grep -rn "DATABASE_URL" compose shards tools --include=*.ts --include=*.yml`), the NATS KV and stream names (`grep -rln "KeyValue\|jetstream" threshold golem --include=*.ts`), the world volume (`tools/adam-run/src/world-volume.ts`), and the RCON client (`grep -rln "rcon" tools golem --include=*.ts`). Write the list in the worknote.
 3. `tools/backup/src/checkpoint.ts`, in this order: RCON `save-off`; RCON `save-all flush`, waiting for the server's "Saved the game" line with a timeout; `pg_dump --format=custom --serializable-deferrable` into a staging directory; export the NATS KV buckets and JetStream streams with the nats CLI from the digest already pinned in compose; copy the world directory; `save-on` in a `finally` block, so saving always comes back on.
 4. Manifest: the schema from C1-00 (`checkpoint_id`, `image_digest`, `created_at`, `parts` of `{name, sha256, bytes}` with names `postgres`, `nats`, `world`). No manifest is written when any part fails, so no partial checkpoint exists.
@@ -543,7 +545,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 - **title**: Metrics exporters to the node's telemetry endpoint (off until one exists), and a bound on the MCP event replay
 - **wave**: C1
 - **lane**: C
-- **status**: B/O (the bound is B; the endpoint is O, owner question)
+- **status**: B/O (the bound is B; the endpoint is the node's SigNoz, answered 2026-11-10 in 0130; the owner sets the URL)
 - **depends-on**: P1-C1-00
 - **size**: M
 - **decisions**: 0088 (one record: exporter scope, endpoint config, replay window and its default)
@@ -560,7 +562,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 **Steps**
 1. Find the replay window. Today `startReplay` receives a `fromIso` from its caller in `threshold/mcp/src/cli.ts`. Write in the worknote how `fromIso` is computed and whether it is bounded. The repo has no `replay_minutes` key; the 60-minute figure is the schedule's, not the code's.
 2. Bound the replay: `fromIso = now - replay_minutes`, where `replay_minutes` is read from the shard config when present and defaults to 60. Clamp to 1 to 1440; refuse 0, negatives and non-integers.
-3. Exporters: `metrics.ts` in each component, serving the text format on `/metrics` bound to loopback by default. Push to the telemetry endpoint only when `GELDAR_TELEMETRY_URL` is set. That endpoint does not exist yet (owner question 4), so until it does, the push stays off.
+3. Exporters: `metrics.ts` in each component, serving the text format on `/metrics` bound to loopback by default. Push to the telemetry endpoint only when `GELDAR_TELEMETRY_URL` is set. The endpoint is the node's SigNoz (0130); until the owner sets the URL, the push stays off.
 4. Labels: no player names, life ids or token material as labels (a privacy rule). A test fails on any label named `player`, `life` or `token`.
 5. Metric names are listed in 0088 and the worknote.
 
@@ -581,7 +583,7 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 3. `C1-07: golem and eventsink exporters`
 4. `C1-07: record 0088 for exporters and the replay window`
 
-**index line to add**: for C1-02, the `replay_minutes` key in `shards/phase0.yaml` (optional; the code default is 60). For C1-10: the telemetry endpoint, once the owner names it.
+**index line to add**: for C1-02, the `replay_minutes` key in `shards/phase0.yaml` (optional; the code default is 60). For C1-10: the SigNoz URL on the node, set by the owner (0130).
 
 **On cap**: the replay bound (commit 1) is the first thing to land, since it is a behaviour fix. Exporters can move to the next session.
 
@@ -683,26 +685,26 @@ Nothing here is implemented. Each card is a brief the orchestrator dispatches. A
 ## Card C1-10: deploy to the node, restore test, first ranger, smoke and load (ops)
 
 - **id**: C1-10
-- **title**: Owner and ops checklist: deploy the colo shard to the node, restore-test on a scratch shard, first ranger over loopback or a tunnel, a clean 20-minute smoke, a load check against the production game server and CI
+- **title**: Owner and ops checklist: deploy the colo shard to the node, first ranger over loopback or a tunnel, a short smoke, a load check against the production game server and CI. The restore test and the 20-minute smoke move to the end-of-phase gates (0130)
 - **wave**: C1
 - **lane**: ops (not a fan-out lane)
-- **status**: O (needs the node, the deploy account and the owner)
-- **depends-on**: C1-02 to C1-09 merged; owner confirms 0076, 0078, 0080
+- **status**: O (needs the node, deploy by runner or the owner's SSH access, and the owner; 0130)
+- **depends-on**: C1-02 to C1-09 merged; 0076, 0078 and 0080 accepted (2026-11-10)
 - **size**: L (two sessions, plus the wall-clock smoke)
 - **decisions**: none reserved
 - **worknote**: `docs/analysis/phase1/worknotes/C1-10.md`; checklist in `docs/analysis/phase1/runbooks/c1-bringup.md` (new)
 
 **Not a coding card.** It writes the checklist and records what ran. An agent does not run any step on the node. An operator runs each step, with the output pasted into the worknote.
 
-**Required access (owner supplies; none of it goes in the repo)**: a deploy account on the node that can run Docker; the backup destination and the root-only encryption key file (0076); the telemetry endpoint, or an explicit decision to run without one; read access to the production game server's own health numbers; the Caddy host, for reload only. The node address is kept in the owner's notes, never in a file in the repo.
+**Required access (owner supplies; none of it goes in the repo; 0130)**: deploy through a self-hosted runner on the node or the owner's existing SSH access (no new deploy account); no backup destination (deferred); the telemetry endpoint is the SigNoz on the node; read access to the production game server's own health numbers; the Caddy host, for reload only. The node address is kept in the owner's notes, never in a file in the repo.
 
 **Steps**
-0. Gate: all wave gates green (section "Wave C1 gates"). Owner has confirmed 0076, 0078 and 0080. The backup destination accepts a test write.
+0. Gate: all wave gates green (section "Wave C1 gates"). 0076, 0078 and 0080 accepted. No backup is required for this deploy (0130); the shard stays invite-only and unannounced (0070).
 1. Read-only first: `docker version`, `docker compose ls`, `docker stats --no-stream` (the baseline), `ss -ltn` (listening ports; every one must be loopback or the intended public port). Record the production game server's latency baseline with a read-only probe the owner names.
 2. Deploy by pull, with the C1-04 scripts. The env file is generated root-only. Nothing secret is printed.
-3. Restore test: a checkpoint from C1-05b is restored to a scratch project. The manifests and the row counts match. The scratch project is removed afterwards.
+3. Restore test: MOVED to the end-of-phase campaign gates (0130). Not run in this step.
 4. First ranger: a real MCP client over loopback or an SSH tunnel. `initialize`; `tools/list` returns 14 tools with no top-level `oneOf`, `anyOf` or `allOf`; wake Body; `look` shows the surroundings; `act` gather; `wait`. Paste the call names and result shapes (no tokens) into the worknote.
-5. Clean 20-minute smoke: no container restart, no error-level log line, memory under 90 percent of each limit in `docker stats`, free disk above 20 percent.
+5. Short smoke, at most 5 minutes (the 20-minute-plus smoke moves to the end-of-phase gates, 0130): no container restart, no error-level log line, memory under 90 percent of each limit in `docker stats`, free disk above 20 percent.
 6. Load check against the production game server and the CI runners, at a level the owner sets. Re-run the latency probe during the load.
 7. Caddy: `caddy reload` only. Never restart the shared Caddy.
 
@@ -744,7 +746,7 @@ Maximum six agents at once. Lanes C and D run alongside E and F. Shared files ar
 ### Wave-boundary gates
 
 1. Full `pwsh -NoProfile -File ./geldar.ps1 check`, with the integration case-count floor from `tools/repo-checks/src/integration-floor.json` (C1-00). The floor only ever rises. A count below it fails the gate.
-2. One read-only review per surface, each with the brief template below: deploy tooling (C1-04), backups (C1-05b), NATS auth (C1-06a and C1-06b), images and compose (C1-02, C1-03, C1-09). One fix round, aimed only at the review findings.
+2. One read-only review per surface, each with the brief template below: deploy tooling (C1-04), NATS auth (C1-06a and C1-06b), images and compose (C1-02, C1-03, C1-09). One fix round, aimed only at the review findings.
 3. One real-client live run, step by step, on the node (C1-10 step 4): a ranger over loopback or a tunnel. Pass: `initialize`; `tools/list` shows all 14 tools with no top-level combinator; wake Body; `look` shows the surroundings; `act` gather; `wait`. The transcript (no tokens) goes in the worknote.
 4. Retro in `retro/wave-c1.md`.
 5. Provisional decisions 0081 to 0089 each get an owner confirmation or a superseding record.
@@ -770,20 +772,20 @@ Output: findings as file:line, severity (block, fix, note), and one line of evid
 | C1-03 | Body-host and Mind-host images | C | C1-00 | B |
 | C1-04 | Non-PowerShell deploy by pull | D | C1-00 | B/O |
 | C1-05a | Append-only journals, reset creates a new shard | E | C1-00 | B |
-| C1-05b | Backup v1 per 0076 | E | C1-00, C1-05a | B/O |
+| C1-05b | Backup v1 per 0076 | E | C1-00, C1-05a | DEFERRED (0130) |
 | C1-06a | NATS overlay live test | F | C1-00 | B |
 | C1-06b | Component credential reads | F | C1-06a | B |
 | C1-07 | Metrics exporters, replay bound | C | C1-00 | B/O |
 | C1-08 | Crash hygiene | D | C1-00 | B |
 | C1-09 | BlueMap pinned, internal | B | C1-00 | B |
-| C1-10 | Node deploy, restore test, first ranger, smoke, load | ops | C1-02 to C1-09 | O |
+| C1-10 | Node deploy, first ranger, short smoke, load (restore test and 20-minute smoke at the end-of-phase gates, 0130) | ops | C1-02 to C1-09 | O |
 
 ### Owner questions gating the wave
 
-- Confirm 0076 (backup scope), 0078 (Mind placement) and 0080 (NATS cutover). C1-05b and C1-06a wait on the first two.
-- Deploy account on the node with Docker (C1-04, C1-10).
-- Backup destination, and how the encryption key is handled: `age` or `gpg`, and where the root-only key file lives (C1-05b).
-- Telemetry endpoint. None exists in the repo; C1-07 stays off until one is named.
+- Answered 2026-11-10: 0076 scope accepted (destination and build deferred), 0078 and 0080 accepted (0130).
+- Answered 2026-11-10: deploy by self-hosted runner or the owner's SSH access; no new deploy account (C1-04, C1-10; 0130).
+- Deferred 2026-11-10 (0130): the backup destination, the encryption key handling (`age` or `gpg`) and the key file location wait until the backup build is scheduled (C1-05b).
+- Answered 2026-11-10: the telemetry endpoint is the SigNoz on the node (0130). C1-07 pushes only when the owner sets the URL.
 - Where Adam-class agents think before the C4 gateway: a desktop Thinker over VPN, or `api-minds` (0078).
 
 ### Conflicts found while writing these cards (resolve before dispatch)

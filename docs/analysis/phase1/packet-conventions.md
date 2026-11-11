@@ -71,7 +71,7 @@ Each packet runs these before its last commit:
 ### 4.3 Per campaign boundary
 
 1. An adversarial campaign review, by reviewers who did not write the code.
-2. A full soak and chaos run.
+2. A full soak and chaos run. Per decision 0130, the soak, chaos day and restore-time tests are campaign-boundary gates, run once at the end of the phase and not per wave.
 3. A security review of every public surface (the MCP endpoint, Glass, the Lakitu feed, the Minecraft port, NATS).
 
 ## 5. Parallelism and rules for briefs

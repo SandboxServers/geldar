@@ -236,7 +236,7 @@ Steps (desktop, session 1):
 
 Steps (live, session 2; every step needs the owner's go):
 1. Pre-gates. Stop unless all hold: 0077 and 0080 are Accepted; C2-01..C2-06 are merged; the C2-R1..R4 reviews have no open high finding; the Glass delay value and the BlueMap rate-limit ruling are recorded.
-2. Read-only first, on the node, with the owner's deploy account: `docker compose ps` and `ss -ltn` (listening ports only). Confirm the chosen Minecraft TCP port is free and is not forwarded elsewhere at the edge. Stop if it is taken.
+2. Read-only first, on the node, with deploy access through the self-hosted runner or the owner's SSH access (0130; no new deploy account): `docker compose ps` and `ss -ltn` (listening ports only). Confirm the chosen Minecraft TCP port is free and is not forwarded elsewhere at the edge. Stop if it is taken.
 3. DNS (owner or an ops agent the owner has authorised for this step, with `az`): read the current records first with a read-only `az network dns record-set list` for the zone. Create `glass`, `map`, `mcp`, `play` and the `_minecraft._tcp` SRV record only if absent. Stop if a name already points somewhere unexpected. Subscription and account identifiers stay in the owner's terminal, not in the worknote.
 4. UniFi (owner): create the TCP forward for the chosen Minecraft port to the node, and nothing else. The existing 18443 forward is not changed (0071 item 4).
 5. Caddy, read-only then reload: `caddy validate` on the combined config; `caddy adapt` to see the result. Stop on any error. Then `caddy reload` only. Never `systemctl restart caddy`, never a container restart of the shared Caddy (0071 item 6).

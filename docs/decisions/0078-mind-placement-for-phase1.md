@@ -1,6 +1,6 @@
 # 0078. Mind placement for Phase 1
 
-- Status: Proposed (owner confirms; the colo layout and the Thinker pool depend on it)
+- Status: Accepted (owner confirmed 2026-11-10)
 - Date: 2026-11-10
 - Spec: section 6.1 (the Mind runs on the colo's Record/Mind host), section 6.3, section 10 Phase 1 (the Thinker pool is the owner's home GPUs and the `api-minds` Thinker, on the LAN or admin VPN), section 13. Decisions 0050, 0052 to 0055, 0070, 0071; the plan (plan.md, section (c), "Where the Mind runs").
 
