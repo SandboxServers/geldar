@@ -8,7 +8,7 @@
 # the placeholders into concrete files from a root-only env file (GELDAR_PUBLIC_ENV). The repo files are never edited.
 # Environment (names only, no value is printed): GELDAR_CADDY_CONTAINER, GELDAR_CADDY_CONFIG_DIR, GELDAR_CADDY_FILE,
 # GELDAR_PUBLIC_ENV (install only). The env file holds KEY=VALUE lines: GELDAR_DOMAIN, GELDAR_MAP_UPSTREAM,
-# GELDAR_GLASS_UPSTREAM, GELDAR_MCP_UPSTREAM (each 127.0.0.1:<port>). DEPLOY_DRY_RUN=1 prints every state change only.
+# GELDAR_GLASS_UPSTREAM, GELDAR_REGISTER_UPSTREAM, GELDAR_MCP_UPSTREAM (each 127.0.0.1:<port>). DEPLOY_DRY_RUN=1 prints every state change only.
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
 
@@ -49,15 +49,23 @@ render_all() {
   printf '%s' "$domain" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$' || die "GELDAR_DOMAIN is not a plain host name"
   mkdir -p "$WORK/render"
   for s in $INSTALL_SITES; do
-    up_var=GELDAR_$(printf '%s' "$s" | tr 'a-z' 'A-Z')_UPSTREAM
-    up=$(env_value "$up_var")
-    [ -n "$up" ] || die "$up_var is missing from the env file"
-    printf '%s' "$up" | grep -Eq '^127\.0\.0\.1:[0-9]{1,5}$' || die "$up_var is not a loopback address (127.0.0.1:<port>)"
-    up_port=${up#127.0.0.1:}
-    { [ "$up_port" -ge 1 ] && [ "$up_port" -le 65535 ]; } || die "$up_var port is outside 1-65535"
+    # Glass also serves /register* and /roster*, so its file carries the register upstream too (decision 0135, R42).
+    ups=$(printf '%s' "$s" | tr 'a-z' 'A-Z')
+    [ "$s" = glass ] && ups="GLASS REGISTER"
+    sed_up=""
+    for u in $ups; do
+      up_var=GELDAR_${u}_UPSTREAM
+      up=$(env_value "$up_var")
+      [ -n "$up" ] || die "$up_var is missing from the env file"
+      printf '%s' "$up" | grep -Eq '^127\.0\.0\.1:[0-9]{1,5}$' || die "$up_var is not a loopback address (127.0.0.1:<port>)"
+      up_port=${up#127.0.0.1:}
+      { [ "$up_port" -ge 1 ] && [ "$up_port" -le 65535 ]; } || die "$up_var port is outside 1-65535"
+      sed_up="$sed_up -e s|{[\$]$up_var}|$up|g"
+    done
     for f in "$s.caddy" "$s-off.caddy"; do
       [ -f "$SRC/$f" ] || die "site file not found: $f"
-      sed -e "s|{[\$]GELDAR_DOMAIN}|$domain|g" -e "s|{[\$]$up_var}|$up|g" "$SRC/$f" >"$WORK/render/$f"
+      # shellcheck disable=SC2086
+      sed -e "s|{[\$]GELDAR_DOMAIN}|$domain|g" $sed_up "$SRC/$f" >"$WORK/render/$f"
       if grep -Fq '{$' "$WORK/render/$f"; then die "an unrendered placeholder is left in $f; refusing"; fi
     done
   done

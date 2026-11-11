@@ -63,6 +63,7 @@ const DEFAULT_ENV = [
   'GELDAR_DOMAIN=geldar.example.invalid',
   'GELDAR_MAP_UPSTREAM=127.0.0.1:8100',
   'GELDAR_GLASS_UPSTREAM=127.0.0.1:8101',
+  'GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103',
   'GELDAR_MCP_UPSTREAM=127.0.0.1:8102',
 ].join('\n');
 
@@ -302,6 +303,14 @@ describe('colo-public.sh refusals', () => {
       expect(readFileSync(r.caddyfile, 'utf8')).toBe(CADDYFILE);
       expect(existsSync(r.geldar)).toBe(false);
     }
+  });
+
+  it('refuses when the register upstream glass routes to is missing', () => {
+    const r = rig(DEFAULT_ENV.replace('GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103', ''));
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_REGISTER_UPSTREAM');
+    expect(existsSync(r.geldar)).toBe(false);
   });
 
   it('refuses when an env-file key is missing', () => {
