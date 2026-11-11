@@ -228,6 +228,304 @@ export interface Limits {
   max_block_operations: number;
 }
 
+export type KinoClient = SubscribeMessage | UnsubscribeMessage;
+
+export interface SubscribeMessage {
+  type: "subscribe";
+  target_agent_id: string;
+  mode: "follow" | "orbit" | "free";
+}
+
+export interface UnsubscribeMessage {
+  type: "unsubscribe";
+}
+
+export type KinoFeed =
+  HelloMessage | ChunkSectionMessage | BlockUpdateMessage | EntityPositionsMessage | TargetMovedMessage | ByeMessage;
+
+export type WorldName = string;
+
+export type AgentId = string;
+
+export type BlockState = string;
+
+export interface HelloMessage {
+  type: "hello";
+  /**
+   * Always 1 in this schema.
+   */
+  feed_version: 1;
+  world: WorldName;
+  target_agent_id: AgentId;
+  /**
+   * The view radius in chunks, 1 to 8.
+   */
+  view_radius: number;
+}
+
+export interface ChunkSectionMessage {
+  type: "chunk_section";
+  chunk_x: number;
+  chunk_z: number;
+  /**
+   * Section y (block y divided by 16, floored).
+   */
+  section_y: number;
+  /**
+   * The distinct block states of the section.
+   *
+   * @minItems 1
+   * @maxItems 4096
+   */
+  palette: [BlockState, ...BlockState[]];
+  /**
+   * Bits per palette index, 0 to 12.
+   */
+  bits: number;
+  /**
+   * Base64 of the bit-packed indices; empty when bits is 0.
+   */
+  data: string;
+}
+
+export interface BlockUpdateMessage {
+  type: "block_update";
+  pos: BlockPos;
+  state: BlockState;
+}
+
+export interface BlockPos {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface EntityPositionsMessage {
+  type: "entity_positions";
+  /**
+   * @maxItems 256
+   */
+  entities: EntityPosition[];
+}
+
+export interface EntityPosition {
+  /**
+   * An opaque feed-scoped entity id, not a UUID.
+   */
+  id: string;
+  /**
+   * The namespaced entity type, for example minecraft:zombie.
+   */
+  type: string;
+  agent_id?: AgentId;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+}
+
+export interface TargetMovedMessage {
+  type: "target_moved";
+  target_agent_id: AgentId;
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ByeMessage {
+  type: "bye";
+  reason:
+    | "unsubscribed"
+    | "target_not_permitted"
+    | "pane_cap_reached"
+    | "feed_unavailable"
+    | "feed_overloaded"
+    | "kill_switch"
+    | "session_ended";
+}
+
+export type LakituAudit = {
+  /**
+   * The pane action.
+   */
+  event: "pane_opened" | "pane_targeted" | "pane_mode_changed" | "pane_closed";
+  /**
+   * SHA-256 of the login id, as 64 lowercase hex characters. Never the login name.
+   */
+  login_hash: string;
+  /**
+   * The agent the pane targets.
+   */
+  agent_id: string;
+  /**
+   * ULID of the pane, with the pn_ prefix.
+   */
+  pane_id: string;
+  /**
+   * The pane mode at the time of the event.
+   */
+  mode: "follow" | "orbit" | "free";
+  /**
+   * When the event happened, RFC 3339 in UTC.
+   */
+  at: string;
+  /**
+   * When the pane stopped. Present on pane_closed only.
+   */
+  stopped_at?: string;
+};
+
+export interface LakituFeed {
+  /**
+   * The version of this feed format. Always 1 in this schema.
+   */
+  feed_version: 1;
+  /**
+   * The server tick of this snapshot.
+   */
+  feed_tick: number;
+  pane: LakituPane;
+  /**
+   * Chunk sections of already-loaded chunks in the pane's radius. Capped at max_sections_per_frame (proposed 256).
+   *
+   * @maxItems 256
+   */
+  sections: LakituChunkSection[];
+  /**
+   * Block changes since the last frame. Capped at max_updates_per_frame (proposed 512).
+   *
+   * @maxItems 512
+   */
+  updates: LakituBlockUpdate[];
+  /**
+   * Agent positions in the login-scoped feed. At most one per pane, so at most max_panes_per_session (4).
+   *
+   * @maxItems 4
+   */
+  positions:
+    | []
+    | [LakituPosition]
+    | [LakituPosition, LakituPosition]
+    | [LakituPosition, LakituPosition, LakituPosition]
+    | [LakituPosition, LakituPosition, LakituPosition, LakituPosition];
+}
+
+export interface LakituPane {
+  /**
+   * ULID of the pane, with the pn_ prefix.
+   */
+  pane_id: string;
+  /**
+   * ULID of the login session, with the ls_ prefix. Never a token.
+   */
+  session_id: string;
+  /**
+   * The agent the pane follows. The relay checks the target scope on every request (0075 point 4).
+   */
+  target_agent_id: string;
+  /**
+   * follow keeps the camera behind the agent, orbit circles it, free moves the camera by hand. The camera is bound by collision to the same voxels as the mesher.
+   */
+  mode: "follow" | "orbit" | "free";
+  /**
+   * The chunk radius of the pane, from 1 to 4 (proposed max 4).
+   */
+  radius_chunks: number;
+}
+
+export interface LakituChunkSection {
+  /**
+   * The world name.
+   */
+  world: string;
+  /**
+   * Section x (block x divided by 16, floored).
+   */
+  section_x: number;
+  /**
+   * Section y (block y divided by 16, floored).
+   */
+  section_y: number;
+  /**
+   * Section z (block z divided by 16, floored).
+   */
+  section_z: number;
+  /**
+   * Block state names, for example minecraft:stone. Names only, no textures.
+   *
+   * @minItems 1
+   * @maxItems 4096
+   */
+  palette: [string, ...string[]];
+  /**
+   * Base64 of 4096 unsigned 16-bit little-endian palette indices, in x-z-y order (see the section description).
+   */
+  indices: string;
+  /**
+   * Always true: only already-loaded sections are sent (0075 point 1).
+   */
+  loaded: true;
+}
+
+export interface LakituBlockUpdate {
+  /**
+   * The server tick of the change.
+   */
+  tick: number;
+  /**
+   * The world name.
+   */
+  world: string;
+  /**
+   * Block x.
+   */
+  x: number;
+  /**
+   * Block y.
+   */
+  y: number;
+  /**
+   * Block z.
+   */
+  z: number;
+  /**
+   * The new block state name, for example minecraft:air.
+   */
+  state: string;
+}
+
+export interface LakituPosition {
+  /**
+   * The agent's id.
+   */
+  agent_id: string;
+  /**
+   * Block-space x.
+   */
+  x: number;
+  /**
+   * Block-space y.
+   */
+  y: number;
+  /**
+   * Block-space z.
+   */
+  z: number;
+  /**
+   * Yaw in degrees.
+   */
+  yaw: number;
+  /**
+   * Pitch in degrees, from -90 to 90.
+   */
+  pitch: number;
+  /**
+   * Whether the agent is on the ground.
+   */
+  on_ground: boolean;
+}
+
 export type McpCursor = string;
 
 export type McpInterest =
@@ -486,6 +784,28 @@ export interface PlayWorldTime {
   day: number;
   time_of_day: "dawn" | "day" | "dusk" | "night";
   weather: "clear" | "rain" | "thunder";
+}
+
+export interface PublicUnauthenticatedError {
+  error: {
+    code: "unauthenticated";
+    message: "Unauthorized";
+  };
+}
+
+export interface PublicRateLimitedError {
+  error: {
+    code: "rate_limited";
+    message: "Too many requests";
+  };
+  retryAfter: number;
+}
+
+export interface PublicKillSwitchError {
+  error: {
+    code: "unavailable";
+    message: "Service unavailable";
+  };
 }
 
 export interface LookInput {}

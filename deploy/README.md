@@ -37,7 +37,7 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   - each such file exists, is not empty, is a regular file inside the secrets directory (a symlink out is refused),
     and has mode `0600` or `0400`.
   `gen-secrets.sh` creates `postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`,
-  `postgres-mcp.txt` and `mcp-token-pepper.txt` when they are missing. The NATS files (`nats-mind.txt`,
+  `postgres-mcp.txt`, `postgres-glass.txt`, `postgres-register.txt`, `register-pepper.txt` and `mcp-token-pepper.txt` when they are missing (an existing node re-runs `gen-secrets.sh` after this change; the admin service mounts `postgres-register.txt`). `register-github-secret.txt` and `register-discord-secret.txt` are the owner's OAuth client secrets: gen-secrets never creates them, and only the `register` profile reads them. The NATS files (`nats-mind.txt`,
   `nats-mcp.txt`, and `nats-auth.conf` when the auth overlay is merged) come from the trusted machine, never from the
   node.
   The scripts check the mode and the size. They never read the contents.
@@ -163,6 +163,10 @@ deploy/colo-admin.sh owner-add <owner> --cap 20
 deploy/colo-admin.sh player-add <player> --owner <owner> --life <life> --name <name> --harness <harness>
 ```
 
+`colo-up.sh` also runs `whitelist-house-body` after Paper is healthy and before any body starts. It whitelists the house
+Body (`mind.agent.username`) and every `sovereign.players[].life_id` from `shards/colo-mind.yaml` over RCON, and nothing
+else. It is idempotent, so a new ranger is whitelisted on the next `colo-up.sh` run (or run the step by hand).
+
 Before you start a ranger's host, add `<player>` under `sovereign.players` in `shards/colo-mind.yaml`. Then mint its
 token:
 
@@ -171,10 +175,26 @@ deploy/colo-admin.sh token-mint <player>     # prints the file path and byte len
 ```
 
 The token file is `<tokens-dir>/<player>.token`, mode `0600`. Give it to the ranger's desktop by a channel outside
-chat. Then start the ranger's host with the secrets overlay:
+chat. Then start the ranger's host. There is one host per player: a container named `geldar-colo-players-host-<player>`.
+Do not start `players-host` with `up`: a second `up` replaces the first player's container.
 
 ```sh
-GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f deploy/compose.secrets.yml --profile sovereign up -d players-host
+deploy/colo-admin.sh player-start <player>   # idempotent: a running host is left alone
+deploy/colo-admin.sh player-stop <player>
+deploy/colo-admin.sh player-list             # each listed player, running or not
+```
+
+`player-start` and `player-stop` refuse an id that is not `^ag-[a-z0-9-]{1,40}$` or not listed under
+`sovereign.players` in `shards/colo-mind.yaml`. They touch only containers that carry the `geldar-colo` compose project
+label and that exact name. `player-start` runs
+`docker compose -p geldar-colo ... run -d --rm --no-deps --name geldar-colo-players-host-<player> -e GELDAR_PLAYER_ID=<player> players-host --player <player>`.
+
+Migrating Jason's old host (`geldar-colo-players-host-1`, from `up -d players-host`): stop and remove it, then start the
+new one.
+
+```sh
+docker stop geldar-colo-players-host-1 && docker rm geldar-colo-players-host-1
+deploy/colo-admin.sh player-start ag-jason-01
 ```
 
 ### (g) Verification
@@ -197,7 +217,7 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 
 - The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
   think until the C4 gateway exists.
-- BlueMap is not mounted. Accepting its download is the owner's call (`plugins/bluemap/bluemap.lock.json`).
+- BlueMap is mounted read-only into Paper (C2-07o): the verified jar from `state/bluemap/bluemap.jar` and `plugins/bluemap/config`. The owner accepted BlueMap's download of the Minecraft client resources under Mojang's EULA (2026-11-11), so `core.conf` has `accept-download: true`.
 - Postgres service roles are superuser for now (C2).
 - NATS auth generation is PowerShell-only; copy its files from the trusted machine.
 - The admin service mounts `postgres.txt` and `postgres-mcp.txt` (at `/run/secrets/postgres-mcp.txt`). The
@@ -205,6 +225,24 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 - `token-mint` needs `GELDAR_TOKENS_DIR` writable by uid 1000 (the admin container's user) and readable by the
   operator. The script requires mode `0700` on that directory, so the owner decides how to satisfy both.
 - `run --rm` starts the admin service's dependencies (Postgres) if they are not already running. It removes nothing.
+- `colo-up.sh` runs `colo-admin.sh ensure-skins-bucket` before the full `up`: the body NATS user creates the `geldar-skins`
+  bucket (a no-op when it exists), because Velocity is read-only on it (decision 0087 correction). The admin service
+  therefore also mounts `nats-body.txt`.
+- `bluemap-web` answers 404 at `/` until BlueMap has rendered; that is expected and not a fault.
+- The public map shows every agent player's live position (R38, C2-07m). BlueMap's web server runs in Paper on the colo network (port 8101, never published); `bluemap-web` proxies only `/maps/<map>/live/<file>` to it (GET and HEAD). Spectators and vanished players are hidden in `plugins/bluemap/config/plugin.conf`. Until BlueMap has started, the live path answers 502.
+
+### Replacing `src` on a node
+
+A restarting container whose bind-mount source is missing makes Docker create that path as a root-owned directory (the two
+plugin jars did this). So, in this order:
+
+1. Stop the project's containers first: `docker compose -p geldar-colo -f compose/colo.yml stop`.
+2. Swap `src` (move the old tree away, put the new one in place, rebuild or copy the two plugin jars).
+3. Run `deploy/colo-up.sh`.
+
+`colo-up.sh` refuses when `plugin/core/build/libs/geldar-core.jar` or
+`plugin/velocity-identity/build/libs/geldar-velocity-identity.jar` is a directory. It names the path; stop the containers,
+`rmdir` it, restore the jar and run it again.
 
 ## What each script refuses
 
@@ -235,6 +273,91 @@ repository or to a script.
 
 **Never restart the shared Caddy. Only reload it.** The Colo deploy does not touch Caddy. Site snippets are owned by
 C2. Caddy is shared on the node, so a restart is never a deploy step; a reload is the only action allowed there.
+
+## Public sites (C2)
+
+`deploy/colo-public.sh` puts the three public sites (`map`, `glass`, `mcp`; files in `deploy/caddy/`) into the shared
+Caddy. It only runs `caddy validate` and `caddy reload` through `docker exec`; it never restarts, recreates or starts
+the container. Run it on the node as the account that can write the Caddyfile and use docker.
+
+Environment (names only; values come from the operator):
+
+| Variable | Meaning |
+|---|---|
+| `GELDAR_CADDY_CONTAINER` | the Caddy container name |
+| `GELDAR_CADDY_CONFIG_DIR` | host directory bind-mounted at `/config` in the container |
+| `GELDAR_CADDY_FILE` | the Caddyfile on the host (mounted at `/etc/caddy/Caddyfile`) |
+| `GELDAR_PUBLIC_ENV` | a root-only `KEY=VALUE` file (install only): `GELDAR_DOMAIN`, `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` |
+
+Each upstream must be `127.0.0.1:<port>` (the Colo services publish on loopback). Caddy fills `{$VAR}` from its own
+process environment, which cannot change without a restart, so `install` renders the placeholders into concrete files
+under `$GELDAR_CADDY_CONFIG_DIR/geldar/` and leaves the repo files alone. It refuses a missing variable, a leftover
+`{$` and a non-loopback upstream.
+
+Order:
+
+Per-site install: `bash deploy/colo-public.sh install mcp` (or any of `map glass mcp`, several allowed) renders and publishes only the named sites. The others keep their state (absent stays absent, off stays off, live stays live); unknown names are refused. Bare `install` (no site) still makes all three live. `status` prints each site as not installed, off or on.
+
+1. `DEPLOY_DRY_RUN=1 bash deploy/colo-public.sh install` (prints every state change, changes nothing).
+2. `bash deploy/colo-public.sh install`: renders the sites, backs up the Caddyfile to `<file>.bak-geldar-<time>`, adds
+   the single line `import /config/geldar/*.caddy` if absent, validates, then reloads. If validate fails, the
+   Caddyfile is restored byte for byte, the rendered directory is removed, and the script exits non-zero.
+3. `bash deploy/colo-public.sh status` shows the import line and whether each site is on or off.
+4. Kill switch: `off <site|all>` swaps in the 503 twin, `on <site|all>` swaps the live file back; each validates and
+   reloads, and puts the old files back if validate fails.
+
+Rollback: `bash deploy/colo-public.sh remove` backs up the Caddyfile, removes the import line, validates, deletes the
+directory and reloads. If validate fails it restores the Caddyfile and removes nothing.
+
+### Public sites on a node: the order
+
+1. Deploy the stack first: `bash deploy/colo-up.sh`. It needs `GELDAR_GLASS_IMAGE` in the release manifest (a digest
+   reference; it refuses a missing one), `postgres-glass.txt` in the secrets directory (required like the other
+   secrets), and it sets the `geldar_glass` login password after the `geldar_mcp` one, before the full core starts.
+2. Then `bash deploy/colo-public.sh install` (steps above). Run it second: the sites proxy to services that must
+   already be up.
+
+Node env values (names only; set them in the deploy env on the node, never in the repo):
+
+| Variable | Meaning |
+|---|---|
+| `GELDAR_MC_BIND` | the node's own interface address for the public Minecraft port. Set together with `GELDAR_MC_PORT`; the scripts merge `compose/colo-public.yml` only when both are set, refuse exactly one, and refuse anything but one strict IPv4 literal (`a.b.c.d`; no `0.0.0.0`, hostname, IPv6 or list). `colo-up.sh` merges the overlay only in its last step, after the whole stack is healthy, and prints `public Minecraft port published on <bind>:<port>` |
+| `GELDAR_MC_PORT` | the public Minecraft port: 1-65535, never 25565 or 25566 (decision 0082) |
+
+There is no `state/release.commit` record. The release record is `state/current.env` and `state/previous.env` (copies of the
+release manifest); the manifest carries no commit header, so nothing reads a commit from it.
+| `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container: the .1 gateway of GELDAR_COLO_SUBNET, the colo bridge /24 you pin (a private range inside 172.16/12 private that nothing else on the node uses). colo-up.sh saves the three values in state/node.env and reloads them; colo-public.sh install refuses without the two proxy lists; colo-status.sh prints them |
+| `GELDAR_MCP_TRUSTED_PROXIES` | the same for the MCP service |
+| `REGISTER_KILL_SWITCH`, `REGISTER_PUBLIC_URL`, `REGISTER_TRUSTED_PEERS`, `REGISTER_GITHUB_CLIENT_ID`, `REGISTER_DISCORD_CLIENT_ID` | the `register` service (C2-08c, profile `register`, decision 0135). OFF BY DEFAULT: the kill switch is true unless set to `false`, no default `up` starts the service, and `colo-public.sh` does not load `register.caddy`. Keep it off until C2-08d and the C2 gates. `colo-up.sh` sets the `geldar_register` login password after the glass one. |
+| `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` | the Caddy upstreams, in `GELDAR_PUBLIC_ENV` (each `127.0.0.1:<port>`) |
+
+Live check for the trusted proxies (do it once per node, after `install`): send one request through Caddy to the Glass
+site and one to the MCP site, then read each service log (`docker compose -p geldar-colo logs --tail 20 glass`, and
+`mcp`). For Glass, read the log line `glass_untrusted_peer_header`: its `peer` value is the address to set in
+`GELDAR_GLASS_TRUSTED_PROXIES`. For the MCP service, the address the log shows for the caller must equal the
+value you set in `GELDAR_MCP_TRUSTED_PROXIES`. If it differs, set the variable to the logged address, run
+`colo-up.sh` again and repeat the request. Until it matches, the service treats Caddy as an ordinary client.
+
+## Performance diagnostics
+
+Paper 26.1.2 build 74 bundles the spark profiler (spark-paper 1.10.152), so no jar is fetched and there is no hash lock to
+check; the Paper build pin (`PAPER_BUILD` in `compose/colo.yml`) pins spark with it. Paper's
+entrypoint (compose/paper/paper-entrypoint.sh) writes its config, plugins/spark/config.json in the Paper volume, on every start: the always-on background profiler is off
+and results are not broadcast to online operators. Run spark from the console or RCON only:
+
+```sh
+docker exec geldar-colo-paper-1 rcon-cli spark tps
+docker exec geldar-colo-paper-1 rcon-cli spark health
+docker exec geldar-colo-paper-1 rcon-cli spark profiler start --timeout 60
+```
+
+Output goes to the RCON reply. A finished profile is uploaded to spark's bytebin (`spark-usercontent.lucko.me`) and the
+reply is a viewer link on `spark.lucko.me`. That is the only egress, and it happens only when an operator runs a profiler,
+heap or health command that uploads. To keep a profile local, add `--save-to-file` (`spark profiler stop --save-to-file`);
+it is written under `plugins/spark/` in the Paper volume. Nothing uploads in the background.
+
+Agents cannot run spark: they are offline players without op, and the `spark` permission is op-only. A repo check
+(`tools/repo-checks/src/colo-spark.test.ts`) fails if Paper is given ops or a plugin grants the permission.
 
 ## Stop conditions
 
@@ -269,8 +392,7 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
 
 ## Owner actions
 
-- Accept BlueMap's Mojang asset download in the deployed `core.conf` only. The repository does not make that choice,
-  and the download is not approved by this runbook.
+- Done 2026-11-11: the owner accepted BlueMap's Mojang resource download (`accept-download: true` in the repo's `core.conf`).
 - Choose the deploy path (runner or SSH, decision 0130) and set up the secrets directory and the release manifest on
   the node.
 - Run the first deploy with the checklist in `docs/analysis/phase1/worknotes/P1-C1-04.md`.

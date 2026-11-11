@@ -3,10 +3,12 @@ import type { AuthDecision, MockHttp, Refusal } from '@geldar/mcp-mock';
 import { createMockHttp } from '@geldar/mcp-mock';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
+import { PUBLIC_DEFAULTS, type PublicConfig } from '../config-public.ts';
 import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
 import {
   type BearerVerdict,
   clientAddress,
+  clientKey,
   MissCache,
   parseBearer,
   tokenDigest,
@@ -15,9 +17,14 @@ import {
 } from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
+import { NegativeCache } from './negative-cache.ts';
+import { PublicRateLimit } from './public-limit.ts';
+import { KILL_SWITCH_BODY, rateLimitedBody, UNAUTHENTICATED_BODY } from './public-refusals.ts';
 
 export interface FrontDoorOptions {
   http: McpConfig['http'];
+  /** The `public` block: the kill switch and the per-client rate limit. Default: no kill switch, the default limit. */
+  public?: PublicConfig;
   /** The HMAC pepper, read from its file by the caller. Never logged. */
   pepper: Uint8Array;
   store: TokenStore;
@@ -49,6 +56,8 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // Fallbacks for a caller that passes no cap: the config derives the real ones from owner_cap_owner (20):
 // 4 open requests per agent times the owner cap per address, and that times 4 owners for the listener.
 const MAX_CONNECTIONS = 320;
+/** A missing or malformed client-address header is logged once in this long (with a count held back). */
+const CLIENT_HEADER_LOG_MS = 60_000;
 const MAX_CONNECTIONS_PER_ADDRESS = 80;
 
 function stderrSink(line: Record<string, string | number>): void {
@@ -77,8 +86,27 @@ function isToolCall(body: unknown): boolean {
     : false;
 }
 
+/**
+ * Every public 429 carries one body and the same seconds in `Retry-After` (decision 0090), so a
+ * probe cannot tell which gate refused it. The gate stays in the log (`event`, `error`).
+ */
 function tooManyOpen(): Refusal {
-  return { status: 429, message: 'too_many_open_requests', retryAfterSec: 1 };
+  return {
+    status: 429,
+    message: 'too_many_open_requests',
+    retryAfterSec: 1,
+    body: rateLimitedBody(1),
+  };
+}
+
+function limitedAnswer(retryAfterSec: number, event: string): AuthDecision {
+  return {
+    outcome: 'answered',
+    status: 429,
+    headers: { 'Retry-After': String(retryAfterSec) },
+    body: rateLimitedBody(retryAfterSec),
+    event,
+  };
 }
 
 /** A refusal for a client that left before its request was served; nothing is sent to it anyway. */
@@ -101,7 +129,12 @@ function releaseOnClose(res: ServerResponse, release: () => void): boolean {
 
 function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefined {
   if (retryAfterSec === undefined) return undefined;
-  return { status: 429, message: 'rate_limited', retryAfterSec };
+  return {
+    status: 429,
+    message: 'rate_limited',
+    retryAfterSec,
+    body: rateLimitedBody(retryAfterSec),
+  };
 }
 
 /**
@@ -110,18 +143,41 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
  */
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
+  const pub = options.public ?? PUBLIC_DEFAULTS;
+  // One bucket per client address for every public request, authenticated or not.
+  // Only when the shard has a `public:` block (its rateLimit is null otherwise), so a bare door is not limited.
+  const publicLimit =
+    options.public?.rateLimit == null
+      ? undefined
+      : new PublicRateLimit(options.public.rateLimit.perMinute, options.public.rateLimit.burst);
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
   // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
-  const clientIpHeader = options.http.clientIpHeader ?? 'cf-connecting-ip';
+  const clientIpHeader = options.http.clientIpHeader ?? 'x-geldar-client-ip';
   const addressOf = (req: IncomingMessage): string =>
     clientAddress(req, trusted, clientIpHeader).address;
   // Refused bearers, remembered for a few seconds so a repeat does not cost a store lookup.
   const misses = new MissCache();
+  // Addresses with a recent failed attempt; bounded, oldest evicted at the cap (see NegativeCache).
+  const failures = new NegativeCache();
   const maxPerAddress =
     options.limits?.maxConnectionsPerAddress ??
     options.http.maxConnectionsPerAddress ??
     MAX_CONNECTIONS_PER_ADDRESS;
+  // The last client-header warning logged for each kind, and how many were held back since.
+  const headerWarned = new Map<string, { atMs: number; suppressed: number }>();
+  const warnClientHeader = (kind: string, nowMs: number): void => {
+    const last = headerWarned.get(kind);
+    if (last !== undefined && nowMs - last.atMs < CLIENT_HEADER_LOG_MS) {
+      last.suppressed += 1;
+      return;
+    }
+    headerWarned.set(kind, { atMs: nowMs, suppressed: 0 });
+    frontLog(options.log ?? stderrSink)({
+      event: `client_${kind}`,
+      ...(last !== undefined && last.suppressed > 0 ? { suppressed: last.suppressed } : {}),
+    });
+  };
   // Authenticated requests, so the call hook can read the owner of the player it serves.
   const players = new WeakMap<IncomingMessage, PlayerRecord>();
   let port = options.http.port;
@@ -144,22 +200,39 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     exemptPeer: trusted,
     hostAllowed: (host) => hostAccepted(options.http.allowedHosts, port, host),
     async authenticate(playerId, header, req): Promise<AuthDecision> {
+      // The kill switch answers every public request before anything else is read or counted. It is the
+      // startup config: it takes effect on restart, and the immediate cut is `deploy/colo-public.sh off mcp`.
+      if (pub.killSwitch) return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
       const client = clientAddress(req, trusted, clientIpHeader);
       // A trusted proxy that sent no usable address is logged, not refused: the peer is used.
-      if (client.warning !== undefined) {
-        frontLog(options.log ?? stderrSink)({ event: `client_${client.warning}` });
-      }
+      // At most one line a minute for each kind: a proxy that lost the header would log on every request.
+      if (client.warning !== undefined) warnClientHeader(client.warning, now());
       const address = client.address;
+      const waitSec = publicLimit?.take(clientKey(address), now());
+      if (waitSec !== undefined) {
+        return {
+          outcome: 'answered',
+          status: 429,
+          headers: { 'Retry-After': String(waitSec) },
+          body: rateLimitedBody(waitSec),
+        };
+      }
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
-      // bearer is refused before the lookup while its address or the global bucket is out of tokens.
+      // bearer is refused before the lookup while its own address is out of failed-auth tokens.
       const token = parseBearer(header);
       const cached =
         token !== null &&
         (options.store.isCachedHit?.(tokenDigest(options.pepper, token), now()) ?? false);
       const blockedSec = cached ? undefined : gates.authBlocked(address, now());
-      if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
+      if (blockedSec !== undefined) return limitedAnswer(blockedSec, 'rate_limited');
+      // A bounded number of uncached lookups may be in flight at once: this protects Postgres, and
+      // unlike a global failed-auth bucket an attacker cannot use it to lock out valid users for long.
+      const lookup = token !== null && !cached;
+      if (lookup && !gates.acquireLookup()) {
+        return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
+      }
       let verdict: BearerVerdict;
       try {
         verdict = await verifyBearer(
@@ -169,6 +242,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           header,
           now(),
           misses,
+          !failures.recent(clientKey(address), now()),
         );
       } catch (error) {
         // A failing store is a 503 with no detail; the log keeps only the error's class name.
@@ -176,19 +250,34 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           event: 'auth_unavailable',
           error: (error as Error).constructor.name,
         });
-        return { outcome: 'unavailable' };
+        return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY, event: 'unavailable' };
+      } finally {
+        if (lookup) gates.releaseLookup();
       }
       if (verdict.outcome === 'ok') {
         // GET and DELETE never reach the POST hook, so the handshake bucket meters them here.
         if (req.method === 'GET' || req.method === 'DELETE') {
           const waitSec = gates.handshake(verdict.player.playerId, now());
-          if (waitSec !== undefined) return { outcome: 'limited', retryAfterSec: waitSec };
+          if (waitSec !== undefined) return limitedAnswer(waitSec, 'rate_limited');
         }
         players.set(req, verdict.player);
         return { outcome: 'ok' };
       }
+      // A missing or refused token flags the address; a wrong-player 403 is a valid token, not a failure.
+      if (verdict.outcome === 'unauthorized') failures.record(clientKey(address), now());
       const retryAfterSec = gates.failedAuth(address, now());
-      if (retryAfterSec !== undefined) return { outcome: 'limited', retryAfterSec };
+      if (retryAfterSec !== undefined) return limitedAnswer(retryAfterSec, 'rate_limited');
+      if (verdict.outcome === 'unauthorized') {
+        // One 401 for a missing, malformed or unknown token (0090); the reason is for the log only.
+        return {
+          outcome: 'answered',
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Bearer' },
+          body: UNAUTHENTICATED_BODY,
+          event: 'unauthorized',
+          reason: verdict.reason,
+        };
+      }
       return { outcome: verdict.outcome, reason: verdict.reason };
     },
     // Takes the open slots before the body is read, so a slow body holds one like any open request.

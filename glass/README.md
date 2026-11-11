@@ -2,25 +2,24 @@
 
 Glass is the Thought Stream: a read-only web server that shows humans what the agents in the
 vivarium think, what they do, and what happens to them. It is a window for people. Glass is
-**read-only**, **for humans only**, and **loopback only**. No agent reads from it, and nothing
-feeds Glass back into any agent's prompt or plan. Glass has **no authentication in Phase 0**: the
-loopback bind is the only access control, so the port must not be published outside the host.
+**read-only**, **for humans only**, and **public behind Caddy** (decision 0072). Glass itself binds
+loopback only by default and has no authentication (the in-network opt-in below is the one exception); the shared Caddy (`deploy/caddy/glass.caddy`) is the only
+way in from outside. No agent reads from it, and nothing feeds Glass back into any agent's prompt or plan.
 
 The package is `@geldar/glass` (`glass/`). It is Node 22 and TypeScript, using `node:http` and
 `pg`. The page that people look at is in `glass/public`, and this package serves it with the data.
 
 ## Routes
 
-Every route is `GET`. Any other method gets `405` with an `Allow: GET` header. An unknown path
+Every route is `GET` or `HEAD`. Any other method gets `405` with an `Allow: GET, HEAD` header. An unknown path
 gets `404`. All responses are `application/json` except the stream, and carry the headers below.
 
 | Route | What it returns |
 | --- | --- |
 | `GET /api/agents` | The agents: id, name, life number, shard, mode, tier, birth day, death time and cause. Owner, harness and model configuration are left out. |
 | `GET /api/thoughts` | Thoughts, newest first, one page at a time. Query: `agent`, `tier`, `outcome` (`parsed` or `unparsed`), `since`, `limit` (1 to 100, default 50), `cursor`. The reply has `next`, the cursor for the next page, or `null`. |
-| `GET /api/thoughts/:id` | One thought with its `model_input`, capped at 64 KiB. |
+| `GET /api/thoughts/:id` | One thought, without its prompt or raw reply. |
 | `GET /api/receipts?action_id=` | The receipts of one action. |
-| `GET /api/stats` | The stream's poll counters: connected clients, frames delivered, dropped and rejected, polls, and poll errors. No text from the database. |
 | `GET /api/stream` | Server-sent events: each new thought as a `thought` event, with a heartbeat comment every 15 seconds. |
 
 Text fields hold agent-authored and world-authored text. The API returns it as JSON data, and
@@ -38,8 +37,8 @@ script and style, images, base-URI changes, form posts, and framing by any other
 
 There is no CORS header, so a page on another origin cannot read the API.
 
-**Host check.** Glass answers only to a `Host` header that names loopback: `127.0.0.1`, `localhost`
-or `[::1]`, with an optional port. Any other value, and a missing header, gets `421 Misdirected
+**Host check.** Glass answers only to a `Host` header that names loopback (`127.0.0.1`, `localhost`
+or `[::1]`, with an optional port) or a name listed in `GELDAR_GLASS_PUBLIC_HOSTS`. Any other value, and a missing header, gets `421 Misdirected
 Request` and a JSON error, on every route. This defends against DNS rebinding: a page on another
 site can point its own name at `127.0.0.1` and then send requests to this port, and the browser
 would send that site's name in `Host`. The check refuses those requests before any route runs.
@@ -50,9 +49,12 @@ Plain values come from the environment. The password comes from a file.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `GELDAR_GLASS_HOST` | `127.0.0.1` | Any other value is refused at start. The check runs before every listen. |
+| `GELDAR_GLASS_HOST` | `127.0.0.1` | `127.0.0.1`, `localhost` or `::1`; `0.0.0.0` is accepted only with `GELDAR_IN_NETWORK_HOSTS=1`. Anything else is refused at start. The check runs before every listen. |
 | `GELDAR_GLASS_PORT` | `8787` | The port Glass listens on. |
-| `GELDAR_GLASS_PG_HOST` | `127.0.0.1` | Postgres host. |
+| `GELDAR_GLASS_PG_HOST` | `127.0.0.1` | Postgres host; `postgres` is accepted only with `GELDAR_IN_NETWORK_HOSTS=1`. |
+| `GELDAR_IN_NETWORK_HOSTS` | unset | `1` lets Glass bind `0.0.0.0` and reach Postgres as `postgres`, for the compose network, where the port is published on host loopback only (decision 0131). |
+| `GELDAR_GLASS_PUBLIC_HOSTS` | empty | Comma-separated public host names Glass answers to besides loopback (exact match, any case, optional port). |
+| `GELDAR_GLASS_SSE_PER_CLIENT` | `2` | Open streams for one client key. The next gets `503`. If Caddy is not a trusted proxy, all visitors share one key, so the site is limited to this many viewers. |
 | `GELDAR_GLASS_PG_PORT` | `5432` | Postgres port. |
 | `GELDAR_GLASS_PG_DB` | `geldar` | Database. |
 | `GELDAR_GLASS_PG_USER` | `geldar_glass` | Any other value is refused. Glass never connects as a write role. |
@@ -60,6 +62,16 @@ Plain values come from the environment. The password comes from a file.
 | `GELDAR_GLASS_SSE_MAX_CLIENTS` | `8` | Stream clients at once. The next one gets `503`. |
 | `GELDAR_GLASS_SSE_BUFFER_FRAMES` | `100` | Frames held for one slow client. The oldest is dropped when it is full. |
 | `GELDAR_GLASS_SSE_POLL_MS` | `1000` | How often the stream looks for new thoughts. |
+| `GELDAR_GLASS_ENABLED` | `true` | The service kill switch. It is read once at start, so flipping it needs a restart, which drops every stream. The fast switch is Caddy: load `deploy/caddy/glass-off.caddy` in place of `glass.caddy` and reload. |
+| `GELDAR_GLASS_DELAY_SECONDS` | `60` | Thoughts are shown only after this many seconds. |
+| `GELDAR_GLASS_SHOW_LIVING_SOVEREIGN` | `false` | The sovereign filter: while `false`, the thoughts and receipts of living sovereign agents are hidden. |
+| `GELDAR_GLASS_TRUSTED_PROXIES` | empty | Comma-separated peer addresses whose `x-geldar-client-ip` header is believed. **Set it to Caddy's peer address.** While it is empty, every request is charged to Caddy's address and every visitor shares one rate-limit bucket. |
+| `GELDAR_GLASS_RATE_PER_MINUTE` | `60` | Refill rate of each client's bucket. The next request gets `429`. |
+| `GELDAR_GLASS_RATE_BURST` | `20` | Bucket size of each client. |
+| `GELDAR_GLASS_RATE_MAX_CLIENTS` | `1024` | Client buckets kept at once. The least recently used is dropped. |
+
+Size caps are fixed in the code, not configurable: a request body over 1 KiB gets `413` and a request
+line or query that is too long gets `414`.
 
 ## Running it
 
@@ -111,22 +123,23 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
 - **Bounded work.** The SSE hub caps clients and drops the oldest frame for a slow client. The
   heartbeat is every 15 seconds. The pool holds at most four connections, and each statement stops
   after 10 seconds. Thought lists take at most 100 rows a page, the stream reads 100 rows a poll,
-  and `model_input` is capped at 64 KiB.
+  and a stream is ended after 10 minutes (the page reconnects).
 - **No secrets in output.** Responses and logs carry no connection string, no password file path
   and no token. Postgres errors are not sent to clients; they receive `internal error`.
-- **Loopback only, no auth in Phase 0.** Anyone who can reach the port can read every thought.
-  Do not publish the port, and do not bind it to any other address. Other local users on the same
-  machine can reach the port too; Phase 0 has no per-user access control. The `Host` check above
-  stops DNS rebinding from a browser; it does not stop a local process that sends its own `Host`.
+- **Public behind Caddy, loopback bind, no auth.** Glass is public through Caddy (decision 0072) and
+  binds loopback only by default; do not publish its port on a public address. The in-network opt-in (`GELDAR_IN_NETWORK_HOSTS=1`) binds the compose network, and compose publishes the port on host loopback only. Anyone who can reach the
+  port directly can read what Caddy would show. Other local users on the same machine can reach the
+  port too. The `Host` check above stops DNS rebinding from a browser; it does not stop a local
+  process that sends its own `Host`. Caddy sends `Host: localhost` to Glass for that reason.
 - **Framing and injection in the page.** The CSP above blocks inline script, so an injected
   attribute or tag cannot run. The page builds its rows with `textContent` only (`glass/src/render-view.ts`).
   The adversarial corpus (`glass/test/corpus.ts`) runs through the API, the stream and the page.
-- **Model input and raw replies.** The role grant lets Glass read `thoughts.model_input` and
-  `thoughts.raw_output`. Together these are the full prompt and the raw reply of each thought, and
-  they can contain world text. Glass shows them to humans only; no agent reads Glass.
+- **Model input and raw replies.** The database role may read the prompt and the raw reply of a
+  thought, but Glass does not select or send them. Changing that needs an owner-signed privacy review.
 
 ## Tests
 
 - `./geldar.ps1 check` runs the unit tests, which use fake databases and fake stream sources.
-- `GELDAR_IT=1` runs `glass/test/glass.it.test.ts` against a scratch database on the dev Postgres.
-  It needs `compose/secrets/postgres.txt` and a running Postgres, so only the operator runs it.
+- `GELDAR_IT=1` runs `glass/test/glass.it.test.ts` against a scratch database on Postgres. CI runs
+  these cases in the `integration` job. Locally they need `compose/secrets/postgres.txt` and a
+  running Postgres.

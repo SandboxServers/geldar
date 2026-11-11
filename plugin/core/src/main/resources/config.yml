@@ -9,3 +9,16 @@ tps_interval_seconds: 20
 recipes:
   # Recipes unlock through play (decision 0048). true grants every recipe on join, for a test shard only.
   grant_on_join: false
+lakitu:
+  # The Lakitu camera feed (decision 0100). Off until the owner confirms decisions 0075 and 0077.
+  # Values above their maximum are clamped at enable and logged once.
+  enabled: false
+  radius_chunks: 4
+  max_sections_per_frame: 256
+  max_updates_per_frame: 512
+  max_panes_per_session: 4
+  frame_hz: 5
+kino:
+  # The Kino data feed (decision 0075). Off by default; false is the kill switch.
+  enabled: false
+  radius_chunks: 4

@@ -22,6 +22,8 @@ const enabled = process.env.GELDAR_IT === '1';
 // The digest the overlay's base file (compose/phase0.yml) uses for nats.
 const IMAGE =
   'nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde';
+// The overlay's command (compose/nats-auth.yml) is these flags plus -c <conf> and -m 8222; the repo check pins the overlay.
+const OVERLAY_FLAGS = ['-js', '-sd', '/data'];
 const SHARDS = ['alpha', 'bravo'] as const;
 const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'] as const;
 type Role = (typeof ROLES)[number];
@@ -39,6 +41,19 @@ const MIND_TYPES = [
   'damage',
   'death',
   'sleep',
+];
+
+/** Velocity is read-only on two buckets (0137 item 3): a KV watch (stream info, ordered consumer, flow control) and nothing else. */
+const VELOCITY_PUB = [
+  ...['geldar-life-registry', 'geldar-skins'].flatMap((b) => [
+    `$JS.API.STREAM.INFO.KV_${b}`,
+    `$JS.API.CONSUMER.CREATE.KV_${b}`,
+    `$JS.API.CONSUMER.CREATE.KV_${b}.>`,
+    `$JS.API.CONSUMER.INFO.KV_${b}.>`,
+    `$JS.API.CONSUMER.DELETE.KV_${b}.>`,
+  ]),
+  '$JS.FC.>',
+  '_INBOX.>',
 ];
 
 /** The per-role allow lists for one shard (decision 0087). Every subject starts with the shard, or is a KV bucket or inbox. */
@@ -64,7 +79,7 @@ function roleAllows(shard: string): Record<Role, Allow> {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
     },
-    velocity: { pub: [kv('geldar-life-registry'), kv('geldar-skins'), ...JS], sub: ['_INBOX.>'] },
+    velocity: { pub: [...VELOCITY_PUB], sub: ['_INBOX.>'] },
     paper: { pub: [`geldar.${s}.>`, ...JS], sub: ['_INBOX.>'] },
   };
 }
@@ -85,7 +100,8 @@ function renderConfig(users: User[]): string {
   });
   return [
     'port: 4222',
-    'jetstream { store_dir: "/data" }',
+    // No store_dir here: the overlay command sets `-sd /data`, and a second one is a startup error.
+    'jetstream: enabled',
     'accounts {',
     '  GELDAR {',
     '    jetstream: enabled',
@@ -201,6 +217,7 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
       '-v',
       `${dir}:/etc/geldar-nats:ro`,
       IMAGE,
+      ...OVERLAY_FLAGS,
       '-c',
       '/etc/geldar-nats/nats-auth.conf',
     ]);
@@ -261,6 +278,55 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
     expect(control.replies[1]).toBe('+OK');
   }, 30_000);
 
+  it('velocity is read-only: no KV publish, no other stream API, but the KV watch subjects work', async () => {
+    const watch = [
+      pub('$JS.API.STREAM.INFO.KV_geldar-life-registry'),
+      pub('$JS.API.CONSUMER.CREATE.KV_geldar-life-registry.w1'),
+      pub('$JS.API.CONSUMER.DELETE.KV_geldar-skins.w1'),
+      pub('$JS.FC.KV_geldar-skins.w1.1'),
+    ];
+    const denied = [
+      pub('$KV.geldar-life-registry.x'),
+      pub('$KV.geldar-skins.x'),
+      pub('$JS.API.STREAM.CREATE.KV_geldar-life-registry'),
+      pub('$JS.API.STREAM.INFO.KV_geldar-checkpoints'),
+    ];
+    const { replies } = await as('alpha-velocity', [...watch, ...denied]);
+    expect(replies.slice(1, 1 + watch.length)).toEqual(watch.map(() => '+OK'));
+    for (const r of replies.slice(1 + watch.length)) {
+      expect(r).toContain('Permissions Violation for Publish');
+    }
+    expect(replies.length).toBe(1 + watch.length + denied.length);
+  }, 30_000);
+
+  it('a store_dir in the conf next to -sd on the command line is refused at startup', async () => {
+    const dupDir = await mkdtemp(join(tmpdir(), 'geldar-nats-dup-'));
+    try {
+      const conf = renderConfig(users).replace(
+        'jetstream: enabled\naccounts',
+        'jetstream { store_dir: "/data" }\naccounts',
+      );
+      expect(conf).toContain('store_dir');
+      await writeFile(join(dupDir, 'nats-auth.conf'), conf, { encoding: 'utf8', mode: 0o600 });
+      const failure = await run('docker', [
+        'run',
+        '--rm',
+        '-v',
+        `${dupDir}:/etc/geldar-nats:ro`,
+        IMAGE,
+        ...OVERLAY_FLAGS,
+        '-c',
+        '/etc/geldar-nats/nats-auth.conf',
+      ]).then(
+        () => undefined,
+        (e: { stderr?: string }) => e,
+      );
+      expect(failure?.stderr).toContain("Duplicate 'store_dir'");
+    } finally {
+      await rm(dupDir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it('revoked user refused after reload; the other users still connect', async () => {
     const revoked = userOf('alpha-mind');
     await writeConfig(users.filter((u) => u.name !== revoked.name));
@@ -281,6 +347,10 @@ describe('the generated subject table', () => {
       Object.values(roleAllows(shard)).flatMap((a) => [...a.pub, ...a.sub]),
     ).filter((s) => s.split('.').includes('*'));
     expect(bare).toEqual([]);
+  });
+
+  it('the rendered config sets no store_dir (the overlay command has -sd)', () => {
+    expect(renderConfig(makeUsers())).not.toContain('store_dir');
   });
 
   it('the rendered config quotes no subject with a bare "*" token', () => {

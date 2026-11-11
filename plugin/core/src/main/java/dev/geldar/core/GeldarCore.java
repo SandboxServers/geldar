@@ -13,7 +13,9 @@ import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.event.Listener;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.messaging.Messenger;
 
 /** Geldar-Core plugin entry point: wires config, the NATS publisher, exporter and listeners. */
 public final class GeldarCore extends JavaPlugin {
@@ -44,16 +46,34 @@ public final class GeldarCore extends JavaPlugin {
         }
     }
 
+    /** Opens the incoming {@code geldar:ghost} channel for the ghost listener; without it no signal is read. */
+    static void registerChannels(Messenger messenger, Plugin plugin, List<Listener> listeners) {
+        for (Listener listener : listeners) {
+            if (listener instanceof GhostListener ghost) {
+                messenger.registerIncomingPluginChannel(plugin, GhostListener.CHANNEL, ghost);
+            }
+        }
+    }
+
     private void enable() {
         saveDefaultConfig();
-        CoreConfig config = CoreConfig.load(getConfig(), System::getenv);
+        CoreConfig config = CoreConfig.load(getConfig(), System::getenv, getLogger()::warning);
         publisher = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger());
         EventExporter exporter = new EventExporter(
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
         tpsExporter = exporter;
 
-        for (Listener listener : listeners(exporter, getLogger(), config.grantRecipesOnJoin())) {
+        List<Listener> registered = listeners(exporter, getLogger(), config.grantRecipesOnJoin());
+        for (Listener listener : registered) {
             getServer().getPluginManager().registerEvents(listener, this);
+        }
+        registerChannels(getServer().getMessenger(), this, registered);
+
+        if (config.lakitu().enabled()) {
+            dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
+        }
+        if (dev.geldar.core.kino.KinoSetup.enabled(getConfig())) {
+            dev.geldar.core.kino.KinoSetup.register(this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
         }
 
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.
@@ -87,6 +107,7 @@ public final class GeldarCore extends JavaPlugin {
             all.add(new RecipeGrantListener(log));
         }
         all.add(new CommandBlockListener(log));
+        all.add(new GhostListener(log));
         return List.copyOf(all);
     }
 

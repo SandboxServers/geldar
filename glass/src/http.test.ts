@@ -15,7 +15,7 @@ import { ROUTES } from './routes.ts';
 import { buildGlass } from './server.ts';
 import type { SseHub } from './sse.ts';
 
-const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'TRACE'];
+const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE'];
 
 /** Fails the test if a handler reaches the database: a refused method must never query. */
 const noQueries: SqlClient = {
@@ -55,6 +55,11 @@ const CONFIG: GlassConfig = {
   sseMaxClients: 2,
   sseBufferFrames: 10,
   ssePollMs: 1000,
+  enabled: true,
+  delaySeconds: 0,
+  showLivingSovereign: false,
+  trustedProxies: [],
+  rateLimit: { perMinute: 60, burst: 20, maxClients: 1024 },
 };
 
 const servers: Server[] = [];
@@ -123,41 +128,60 @@ describe('the Glass HTTP handler', () => {
     }
   });
 
-  it('answers every method except GET with 405, Allow: GET, and no database call, on every route', async () => {
+  it('answers every method except GET and HEAD with 405, Allow: GET, HEAD, and no database call, on every route', async () => {
     const port = await start({ db: noQueries, hub: endingHub });
     for (const route of ROUTES) {
       for (const method of WRITE_METHODS) {
         const reply = await send(port, method, samplePath(route.path));
         expect(reply.status, `${method} ${route.path}`).toBe(405);
-        expect(reply.headers.allow, `${method} ${route.path}`).toBe('GET');
+        expect(reply.headers.allow, `${method} ${route.path}`).toBe('GET, HEAD');
       }
     }
   });
 
-  it('returns the stream counters on GET /api/stats with no database call, and 405 to any other method', async () => {
-    const statsHub = {
-      attach: () => false,
-      stats: () => ({
-        clients: 1,
-        delivered: 4,
-        dropped: 0,
-        rejected: 2,
-        polls: 9,
-        pollErrors: 1,
-      }),
-    } as unknown as SseHub;
-    const port = await start({ db: noQueries, hub: statsHub });
-    const reply = await send(port, 'GET', '/api/stats');
-    expect(reply.status).toBe(200);
-    expect(reply.headers['content-type']).toBe('application/json; charset=utf-8');
-    expect(JSON.parse(reply.body)).toEqual({
-      stats: { clients: 1, delivered: 4, dropped: 0, rejected: 2, polls: 9, pollErrors: 1 },
-    });
-    for (const method of WRITE_METHODS) {
-      const refused = await send(port, method, '/api/stats');
-      expect(refused.status, method).toBe(405);
-      expect(refused.headers.allow, method).toBe('GET');
+  it('answers HEAD on every GET route and page file with the headers and no body', async () => {
+    const port = await start({ db: oneRow, hub: endingHub });
+    const paths = [
+      ...ROUTES.map((r) => samplePath(r.path)),
+      '/',
+      '/app.js',
+      '/app.css',
+      '/js/render-view.ts',
+    ];
+    for (const path of paths) {
+      const get = await send(port, 'GET', path);
+      const head = await send(port, 'HEAD', path);
+      expect(head.status, path).toBe(get.status);
+      expect(head.status, path).toBe(200);
+      expect(head.body, path).toBe('');
+      if (path !== '/api/stream') {
+        expect(head.headers['content-type'], path).toBe(get.headers['content-type']);
+      }
+      for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+        expect(head.headers[name.toLowerCase()], `${path} ${name}`).toBe(value);
+      }
     }
+  });
+
+  it('does not open a stream for a HEAD on the stream route', async () => {
+    let attached = 0;
+    const hub = {
+      attach: () => {
+        attached += 1;
+        return true;
+      },
+    } as unknown as SseHub;
+    const port = await start({ db: noQueries, hub });
+    const head = await send(port, 'HEAD', '/api/stream');
+    expect(head.status).toBe(200);
+    expect(head.headers['content-type']).toMatch(/^text\/event-stream/);
+    expect(attached).toBe(0);
+  });
+
+  it('has no /api/stats route: the viewer count is not public', async () => {
+    const port = await start({ db: noQueries, hub: endingHub });
+    expect((await send(port, 'GET', '/api/stats')).status).toBe(404);
+    expect((await send(port, 'POST', '/api/stats')).status).toBe(404);
   });
 
   it('answers 404 for every unknown path, whatever the method', async () => {
@@ -213,13 +237,13 @@ describe('the Glass HTTP handler', () => {
     expect(view.body).toContain("from './render-model.ts'");
   });
 
-  it('refuses every write to a page path with 405 and Allow: GET', async () => {
+  it('refuses every write to a page path with 405 and Allow: GET, HEAD', async () => {
     const port = await start({ db: noQueries, hub: endingHub });
     for (const path of ['/', '/app.js', '/app.css', '/js/render-view.ts']) {
       for (const method of WRITE_METHODS) {
         const reply = await send(port, method, path);
         expect(reply.status, `${method} ${path}`).toBe(405);
-        expect(reply.headers.allow, `${method} ${path}`).toBe('GET');
+        expect(reply.headers.allow, `${method} ${path}`).toBe('GET, HEAD');
       }
     }
   });

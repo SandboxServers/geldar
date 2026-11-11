@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { BlockList, isIP } from 'node:net';
 import type { MissReason, PlayerRecord, RefusalReason, TokenStore } from '../ports.ts';
+import { TOKEN_PATTERN } from '../store/token-hash.ts';
 
 /** `ok` with the token and player it resolved to, or the refusal with its log-only reason. */
 export type BearerVerdict =
@@ -14,10 +15,15 @@ export type BearerVerdict =
  */
 const BEARER = /^Bearer ([A-Za-z0-9._~+/=-]{16,200})$/;
 
-/** The token in an `Authorization` header, or null. The query string is never read. */
+/**
+ * The token in an `Authorization` header, or null. The query string is never read. Only a token of
+ * the minted shape (`gmcp-` and 64 hex) counts: any other string is refused before the HMAC and
+ * before any store lookup, with the same 401 as an unknown token.
+ */
 export function parseBearer(header: string | undefined): string | null {
   if (header === undefined) return null;
-  return BEARER.exec(header)?.[1] ?? null;
+  const token = BEARER.exec(header)?.[1];
+  return token !== undefined && TOKEN_PATTERN.test(token) ? token : null;
 }
 
 /** HMAC-SHA256 of a token under the pepper: the digest the token store holds (spec 5.15.3). */
@@ -45,6 +51,8 @@ export async function verifyBearer(
   header: string | undefined,
   nowMs: number,
   misses: MissCache,
+  /** False for an address with a recent failure (NegativeCache): a miss is not explained by the store. */
+  explain = true,
 ): Promise<BearerVerdict> {
   const token = parseBearer(header);
   if (token === null) return { outcome: 'unauthorized', reason: shapeReason(header) };
@@ -54,9 +62,8 @@ export async function verifyBearer(
   const resolved = await store.resolve(digest, nowMs);
   if (resolved === null) {
     // The store is asked why only for some misses (see MissCache), and the answer is remembered.
-    const reason = misses.shouldExplain()
-      ? await explainMiss(store, digest, nowMs)
-      : 'unknown_token';
+    const reason =
+      explain && misses.shouldExplain() ? await explainMiss(store, digest, nowMs) : 'unknown_token';
     misses.remember(digest, reason, nowMs);
     return { outcome: 'unauthorized', reason };
   }

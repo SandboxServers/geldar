@@ -129,7 +129,7 @@ C1-10 correction: the owner asked whether the first ranger is Jason. It is: Jaso
 
 NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-nats-*`.
 
-**Settings on the node.** Subnet 172.23.0.0/16; gateway trusted per R32, persisted in `state/node.env`.
+**Settings on the node.** Subnet: the colo network (value in `state/node.env`); gateway trusted per R32, persisted in `state/node.env`.
 
 **Open, now with C2-07j:**
 - the geldar-skins bucket is absent and velocity can no longer create it;

@@ -5,6 +5,8 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
+import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
+import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
   listAgents,
@@ -16,10 +18,14 @@ import {
   type ThoughtFilter,
 } from './query.ts';
 import { resolveRoute } from './routes.ts';
+import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
 
-/** The largest model input a thought detail returns, in bytes (wave 6 item 10, Glass design). */
-export const MODEL_INPUT_CAP_BYTES = 64 * 1024;
+/** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
+export const MAX_TARGET_CHARS = 2048;
+
+/** The largest declared request body Glass accepts, in bytes. Its routes take no body. */
+export const MAX_BODY_BYTES = 1024;
 
 /** Headers on every response, the API and the stream alike, including 404 and 405. */
 export const SECURITY_HEADERS: Record<string, string> = {
@@ -69,24 +75,18 @@ function pathOf(url: string | undefined): string {
 export interface GlassHandlerDeps {
   db: SqlClient;
   hub: SseHub;
+  /** The key shared with the register service that signs gk_session. Left out: every viewer is signed out. */
+  sessionKey?: string;
+  /** The clock for cookie expiry, in ms. */
+  now?: () => number;
+  /** The public guards. Left out, the handler admits every request (no rate limit). */
+  policy?: Partial<PublicPolicy>;
+  /** Receives the `glass_untrusted_peer_header` line. Left out: one JSON line on stdout. */
+  log?: (entry: { event: string; peer: string }) => void;
 }
 
-export interface CappedText {
-  json: string;
-  bytes: number;
-  truncated: boolean;
-}
-
-/** Caps model input at 64 KiB. The byte count is the whole input's, so a reader can see the cut. */
-export function capModelInput(value: unknown): CappedText | null {
-  if (typeof value !== 'string') return null;
-  const whole = Buffer.from(value, 'utf8');
-  if (whole.length <= MODEL_INPUT_CAP_BYTES) {
-    return { json: value, bytes: whole.length, truncated: false };
-  }
-  const head = whole.subarray(0, MODEL_INPUT_CAP_BYTES).toString('utf8');
-  return { json: head, bytes: whole.length, truncated: true };
-}
+/** Most distinct untrusted peers that are logged; each is logged once. */
+const MAX_UNTRUSTED_PEERS_LOGGED = 5;
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -164,14 +164,27 @@ async function serveRoute(
   query: URLSearchParams,
   res: ServerResponse,
   deps: GlassHandlerDeps,
+  policy: PublicPolicy,
+  client: string,
+  req: IncomingMessage,
 ): Promise<void> {
+  if (name === 'session') {
+    const viewer = await resolveViewer(
+      deps.db,
+      deps.sessionKey,
+      req.headers.cookie,
+      (deps.now ?? Date.now)(),
+    );
+    sendJson(res, 200, viewer);
+    return;
+  }
   if (name === 'agents') {
-    sendJson(res, 200, { agents: await listAgents(deps.db) });
+    sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
     return;
   }
   if (name === 'thoughts') {
     const filter = thoughtFilter(query);
-    const thoughts = await listThoughts(deps.db, filter);
+    const thoughts = await listThoughts(deps.db, filter, visibilityAt(policy));
     sendJson(res, 200, {
       thoughts: publicRows(thoughts),
       next: nextCursor(thoughts, filter.limit),
@@ -179,43 +192,91 @@ async function serveRoute(
     return;
   }
   if (name === 'thought') {
-    const row = await getThought(deps.db, params.id ?? '');
+    const row = await getThought(deps.db, params.id ?? '', visibilityAt(policy));
     if (row === null) {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
-    sendJson(res, 200, { thought: { ...row, model_input: capModelInput(row.model_input) } });
+    // Never send the prompt or the raw reply, even if a query returned them (R21).
+    const { model_input: _prompt, raw_output: _raw, ...thought } = row;
+    sendJson(res, 200, { thought });
     return;
   }
   if (name === 'receipts') {
     const actionId = textParam(query, 'action_id', 128);
     if (actionId === undefined) throw new BadRequest('action_id is required');
-    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId) });
+    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
     return;
   }
-  if (name === 'stats') {
-    sendJson(res, 200, { stats: deps.hub.stats() });
-    return;
-  }
-  if (!deps.hub.attach(res)) sendJson(res, 503, { error: 'too many streams' });
+  if (!deps.hub.attach(res, client)) sendJson(res, 503, { error: 'too many streams' });
 }
 
 /** The Host values Glass answers to. A name that another site controls is not one of them. */
 const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i;
 
+/** True for a local Host, or for a listed public name (exact match, optional port, any case). */
+function hostAnswered(host: string | undefined, publicHosts: ReadonlySet<string>): boolean {
+  if (host === undefined) return false;
+  if (LOOPBACK_HOST.test(host)) return true;
+  const match = /^([^:\s/]+)(:\d{1,5})?$/.exec(host);
+  return match !== null && publicHosts.has((match[1] as string).toLowerCase());
+}
+
 /** The request listener. It never sends a database error or a stack trace to the client. */
 export function createHandler(deps: GlassHandlerDeps) {
+  const policy: PublicPolicy = { ...OPEN_POLICY, ...deps.policy };
+  const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
+  const loggedPeers = new Set<string>();
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+    // The kill switch answers before anything else is read: no route, page or stream is served.
+    if (!policy.enabled()) {
+      sendJson(res, 503, { error: { code: 'unavailable', message: 'Service unavailable' } });
+      return;
+    }
     // DNS rebinding: a page on another site can name its own host, and then reach this port.
-    if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
+    if (!hostAnswered(req.headers.host, policy.publicHosts)) {
       sendJson(res, 421, { error: 'misdirected request' });
       return;
     }
+    // Size caps come before any parsing or routing: a long target or a declared body is refused at once.
+    if ((req.url ?? '').length > MAX_TARGET_CHARS) {
+      sendJson(res, 414, { error: 'request target is too long' });
+      return;
+    }
+    if (Number(req.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
+      sendJson(res, 413, { error: 'request body is too large' });
+      return;
+    }
+    const peer = req.socket.remoteAddress ?? '';
+    if (
+      req.headers[CLIENT_IP_HEADER] !== undefined &&
+      !policy.trustedProxies.has(peer) &&
+      !loggedPeers.has(peer) &&
+      loggedPeers.size < MAX_UNTRUSTED_PEERS_LOGGED
+    ) {
+      // The peer is an internal bridge address; it is what GELDAR_GLASS_TRUSTED_PROXIES needs to hold.
+      loggedPeers.add(peer);
+      log({ event: 'glass_untrusted_peer_header', peer });
+    }
+    const client = clientKey(clientAddress(req, policy.trustedProxies));
+    if (policy.limiter !== null) {
+      const verdict = policy.limiter.take(client);
+      if (!verdict.allowed) {
+        res.setHeader('Retry-After', String(verdict.retryAfter));
+        sendJson(res, 429, {
+          error: { code: 'rate_limited', message: 'Too many requests' },
+          retryAfter: verdict.retryAfter,
+        });
+        return;
+      }
+    }
+    // HEAD is a GET without a body; Node drops the body bytes of a HEAD response.
+    const readMethod = req.method === 'GET' || req.method === 'HEAD';
     const file = STATIC_FILES.get(pathOf(req.url));
     if (file !== undefined) {
-      if (req.method !== 'GET') {
-        res.setHeader('Allow', 'GET');
+      if (!readMethod) {
+        res.setHeader('Allow', 'GET, HEAD');
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
@@ -223,18 +284,27 @@ export function createHandler(deps: GlassHandlerDeps) {
       res.end(file.body);
       return;
     }
-    const route = resolveRoute(req.method, req.url);
+    const route = resolveRoute(req.method === 'HEAD' ? 'GET' : req.method, req.url);
     if (route.status === 'not-found') {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
     if (route.status === 'method-not-allowed') {
-      res.setHeader('Allow', route.allow.join(', '));
+      res.setHeader('Allow', [...route.allow, 'HEAD'].join(', '));
       sendJson(res, 405, { error: 'method not allowed' });
       return;
     }
+    if (req.method === 'HEAD' && route.name === 'stream') {
+      // A HEAD never opens a stream: it gets the stream's headers and no body.
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end();
+      return;
+    }
     try {
-      await serveRoute(route.name, route.params, route.query, res, deps);
+      await serveRoute(route.name, route.params, route.query, res, deps, policy, client, req);
     } catch (err) {
       if (err instanceof BadRequest) {
         sendJson(res, 400, { error: err.message });

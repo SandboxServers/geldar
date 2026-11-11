@@ -30,6 +30,8 @@ export interface TokenRow {
   status: string;
   /** Players of the owner that are not retired, the player's own included. */
   owner_players: number;
+  /** The owner's registration identity is banned (R35): its tokens stop resolving. */
+  owner_banned: boolean;
   /** The owner's cap now; a lowered cap refuses at once, without a NOTIFY. */
   player_cap: number;
   expires_at: Date;
@@ -45,7 +47,9 @@ const RESOLVE_SQL = `SELECT t.token_id, t.token_hash, t.expires_at, t.revoked_at
   p.player_id, p.life_id, p.owner_id, p.display_name, p.harness, p.status,
   o.player_cap,
   (SELECT count(*)::int FROM mcp_players x WHERE x.owner_id = p.owner_id AND x.status <> 'retired')
-    AS owner_players
+    AS owner_players,
+  EXISTS (SELECT 1 FROM mcp_identities i WHERE i.owner_id = p.owner_id AND i.banned_at IS NOT NULL)
+    AS owner_banned
 FROM mcp_tokens t
 JOIN mcp_players p ON p.player_id = t.player_id
 JOIN mcp_owners o ON o.owner_id = p.owner_id
@@ -62,6 +66,7 @@ export function activeToken(
   harnesses: Readonly<Record<string, boolean>>,
 ): ResolvedToken | null {
   if (row.revoked_at !== null) return null;
+  if (row.owner_banned) return null;
   if (row.expires_at.getTime() <= nowMs) return null;
   if (row.status !== 'active') return null;
   if (row.owner_players > row.player_cap) return null;
@@ -362,6 +367,7 @@ export function missReason(
   harnesses: Readonly<Record<string, boolean>>,
 ): MissReason {
   if (row.revoked_at !== null) return 'token_revoked';
+  if (row.owner_banned) return 'token_revoked';
   if (row.expires_at.getTime() <= nowMs) return 'token_expired';
   if (row.status !== 'active') return 'player_not_active';
   if (row.owner_players > row.player_cap) return 'owner_over_cap';

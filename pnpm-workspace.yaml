@@ -9,6 +9,7 @@ packages:
   - glass
   - threshold/mcp-mock
   - threshold/mcp
+  - threshold/register
   - tools/*
 
 # Exact versions only: `pnpm add foo` writes "1.2.3", never "^1.2.3".
@@ -34,3 +35,5 @@ overrides:
   "@types/estree": 1.0.9
   encodeurl: 2.0.0
   qs: 6.17.0
+  # uuid v3/v5/v6 buffer bounds check (Dependabot alert 1); transitive via @azure/msal-node and yggdrasil.
+  uuid: 11.1.1

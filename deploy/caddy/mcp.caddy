@@ -1,0 +1,46 @@
+# The public MCP HTTP front (decisions 0054 and 0071). Load this file, then `caddy reload`.
+# Placeholders: GELDAR_DOMAIN and GELDAR_MCP_UPSTREAM (set by C2-07). Caddy is the only trusted proxy.
+mcp.{$GELDAR_DOMAIN} {
+	# The MCP HTTP transport uses POST (JSON-RPC), GET (the event stream) and DELETE (end a session).
+	@not_allowed not method POST GET DELETE
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
+
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+
+	# Response headers: no Server banner, no sniffing, no referrer (R4-05).
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	# The same limit as BODY_LIMIT_BYTES in threshold/mcp/src/http/front.ts (64 KiB).
+	request_body {
+		max_size 64KiB
+	}
+
+	# Only /p/<player_id> is proxied. The pattern is the one in compose/cloudflared/config.example.yml.
+	@player path_regexp player ^/p/[a-z][a-z0-9-]{1,38}$
+	handle @player {
+		reverse_proxy {$GELDAR_MCP_UPSTREAM} {
+			# The MCP accepts its loopback dev hosts; a public Host would get 403, as for Glass.
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+			flush_interval -1
+			# Intended to close open streams on a reload. Unproven for SSE until the C2-07 live check;
+			# restart the MCP container after the swap (deploy/caddy/README.md).
+			stream_close_delay 5s
+		}
+	}
+
+	# Every other path is 404.
+	handle {
+		respond 404
+	}
+}

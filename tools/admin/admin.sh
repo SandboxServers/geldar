@@ -19,7 +19,7 @@ cmd=$1
 shift
 
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status) ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body) ;;
   *) usage ;;
 esac
 
@@ -39,5 +39,7 @@ case $cmd in
   player-add) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" player add "$@" ;;
   token-mint) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token mint "$@" ;;
   token-revoke) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token revoke "$@" ;;
+  ensure-skins-bucket) exec node "$ROOT/golem/src/ensure-skins-bucket.ts" "$@" ;;
+  whitelist-house-body) exec node "$ROOT/golem/src/whitelist-house-body.ts" "$@" ;;
   players-status) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token list "$@" ;;
 esac

@@ -110,9 +110,6 @@ export interface BucketRule {
   perMinute: number;
 }
 
-/** The failed-auth budget for all addresses together (the approved 300 a minute; not configurable). */
-export const GLOBAL_FAILED_AUTH_PER_MINUTE = 300;
-
 /**
  * The rule for each bucket, by name: the front door's `player:`, `owner:`, `owner-agent:`,
  * `auth-failed:` buckets and the tools' `act:`, `say:` and `journal:` buckets, whose minimum spacing is one
@@ -140,7 +137,6 @@ export function bucketRules(
     if (bucket.startsWith('owner-agent:')) return perMinute(share);
     if (bucket.startsWith('owner:')) return perMinute(limits.ownerCallsPerMinute);
     if (bucket.startsWith('auth-failed:address:')) return perMinute(limits.failedAuthPerMinute);
-    if (bucket === 'auth-failed:global') return perMinute(GLOBAL_FAILED_AUTH_PER_MINUTE);
     if (bucket.startsWith('handshake:')) return perMinute(limits.handshakePerMinute);
     if (bucket.startsWith('act:')) return spaced(limits.actMinSeconds);
     if (bucket.startsWith('say:')) return spaced(limits.sayMinSeconds);
@@ -380,6 +376,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     };
     const front = (ports.frontDoor ?? createFrontDoor)({
       http: config.http,
+      public: config.public,
       pepper,
       store: tokens,
       limiter,

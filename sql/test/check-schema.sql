@@ -222,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0007, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0014, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
@@ -269,7 +269,8 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
   LOOP
-    IF rel.relname <> ALL (glass_tables)
+    -- kino_admins (0014) is the one added read: the Kino sign-in check; it has no write grant (asserted in register-reads)
+    IF rel.relname <> ALL (glass_tables) AND rel.relname <> 'kino_admins'
        AND has_table_privilege('geldar_glass', rel.relname, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass can read % (not a Glass table)', rel.relname;
     END IF;
@@ -327,7 +328,8 @@ BEGIN
       IF NOT has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
         RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT agents.%', rel.attname;
       END IF;
-    ELSIF has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
+    ELSIF rel.attname <> 'public_camera' -- 0014: the one added Glass read (Kino)
+          AND has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass can read agents.% (not granted)', rel.attname;
     END IF;
   END LOOP;
@@ -373,3 +375,326 @@ BEGIN
   RAISE NOTICE 'schema check passed: append-only triggers on 4 audit tables, geldar_mcp cannot change mcp_journal';
 END
 $journal$;
+
+-- Migration 0008 (decision 0135): mcp_identities and the register role geldar_register. These run
+-- as the role (SET LOCAL ROLE), so a missing or extra grant fails here. Every probe is inside a
+-- sub-block that rolls back, so no row is left behind.
+DO $register$
+DECLARE
+  hash BYTEA := decode(repeat('ab', 32), 'hex');
+  step TEXT;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'geldar_register' AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole
+  ) THEN
+    RAISE EXCEPTION 'schema check: role geldar_register is missing or is superuser, createdb or createrole';
+  END IF;
+
+  -- mcp_identities has no column for an email, a raw provider id or a token.
+  IF (SELECT array_agg(column_name::text ORDER BY column_name) FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'mcp_identities')
+     IS DISTINCT FROM ARRAY['banned_at', 'created_at', 'identity_hash', 'owner_id', 'provider'] THEN
+    RAISE EXCEPTION 'schema check: mcp_identities must have exactly its five columns';
+  END IF;
+
+  -- the register role cannot read thoughts or events
+  step := 'cannot read thoughts';
+  BEGIN
+    SET LOCAL ROLE geldar_register;
+    PERFORM 1 FROM thoughts LIMIT 1;
+    RAISE EXCEPTION 'schema check: geldar_register can SELECT thoughts' USING ERRCODE = 'P0002';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  step := 'cannot read events';
+  BEGIN
+    SET LOCAL ROLE geldar_register;
+    PERFORM 1 FROM events LIMIT 1;
+    RAISE EXCEPTION 'schema check: geldar_register can SELECT events' USING ERRCODE = 'P0002';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  IF has_table_privilege('geldar_register', 'receipts', 'SELECT')
+     OR has_table_privilege('geldar_register', 'mcp_journal', 'SELECT')
+     OR has_table_privilege('geldar_register', 'mcp_journal', 'INSERT')
+     OR has_column_privilege('geldar_register', 'agents', 'personality_seed', 'SELECT')
+     OR has_column_privilege('geldar_register', 'mcp_tokens', 'token_hash', 'SELECT')
+     OR has_table_privilege('geldar_register', 'mcp_tokens', 'DELETE')
+     OR has_table_privilege('geldar_register', 'mcp_tokens', 'INSERT')
+     OR has_column_privilege('geldar_register', 'mcp_tokens', 'token_hash', 'INSERT')
+     OR has_table_privilege('geldar_register', 'mcp_identities', 'DELETE') THEN
+    RAISE EXCEPTION 'schema check: geldar_register has a grant it must not have';
+  END IF;
+
+  -- Player creation as the role: owners and identities by direct insert (sign-up), everything
+  -- else through the owner-checked functions (0009, 0010; rulings R33 and R34).
+  step := 'direct writes are denied';
+  IF has_table_privilege('geldar_register', 'mcp_players', 'INSERT')
+     OR has_table_privilege('geldar_register', 'mcp_budget', 'INSERT')
+     OR has_table_privilege('geldar_register', 'mcp_owners', 'INSERT')
+     OR has_table_privilege('geldar_register', 'mcp_identities', 'INSERT')
+     OR has_column_privilege('geldar_register', 'agents', 'agent_id', 'INSERT')
+     OR has_column_privilege('geldar_register', 'mcp_players', 'status', 'UPDATE')
+     OR has_column_privilege('geldar_register', 'mcp_tokens', 'revoked_at', 'UPDATE')
+     OR has_column_privilege('geldar_register', 'mcp_owners', 'player_cap', 'UPDATE') THEN
+    RAISE EXCEPTION 'schema check: geldar_register has a direct write it must not have';
+  END IF;
+
+  step := 'create and mint';
+  BEGIN
+    -- a real victim player of a third owner, written as the admin before the role is set
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-victim-owner', 'victim', 1);
+    INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+                        declared_model, model_config, tier, personality_seed)
+      VALUES ('ag_reg_victim_01', 'victim', 1, 'ag_reg_victim_01', 'test', 'sovereign', 'reg-victim-owner',
+              'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed');
+    INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
+      VALUES ('ag-reg-victim-01', 'reg-victim-owner', 'ag_reg_victim_01', 'victim', 'claude-code', 'active');
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-test-owner', 'handle', 1);
+    INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (hash, 'github', 'reg-test-owner');
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-other-owner', 'other', 1);
+    INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('ba', 32), 'hex'), 'discord', 'reg-other-owner');
+    SET LOCAL ROLE geldar_register;
+    -- F1: temp tables must not shadow the tables the functions read (search_path has pg_temp last). This runs
+    -- first in the session: a function plan cached by an earlier call would hide a shadow.
+    step := 'temp-table shadow';
+    CREATE TEMP TABLE mcp_identities (identity_hash BYTEA, owner_id TEXT, banned_at TIMESTAMPTZ);
+    CREATE TEMP TABLE mcp_players (player_id TEXT, owner_id TEXT, status TEXT);
+    INSERT INTO pg_temp.mcp_identities VALUES (decode(repeat('ee', 32), 'hex'), 'reg-victim-owner', NULL);
+    INSERT INTO pg_temp.mcp_players VALUES ('ag-reg-victim-01', 'reg-victim-owner', 'active');
+    BEGIN
+      PERFORM register_mint_token(decode(repeat('ee', 32), 'hex'), 'ag-reg-victim-01', 'reg-tok-evil', decode(repeat('ef', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: a temp-table shadow minted a token for another owner' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      PERFORM register_create_player(decode(repeat('ee', 32), 'hex'), 'ag-reg-evil-01', 'ag_reg_evil_01', 'e',
+                                     'claude-code', 'test', 'reg-tok-evil2', decode(repeat('f0', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: a temp-table shadow created a player' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    DROP TABLE pg_temp.mcp_identities;
+    DROP TABLE pg_temp.mcp_players;
+    RESET ROLE; IF EXISTS (SELECT 1 FROM mcp_tokens WHERE token_id IN ('reg-tok-evil', 'reg-tok-evil2')) THEN
+      RAISE EXCEPTION 'schema check: a shadow mint left a token';
+    END IF; SET LOCAL ROLE geldar_register;
+    step := 'sign-up only through the function';
+    BEGIN
+      INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('11', 32), 'hex'), 'github', 'reg-victim-owner');
+      RAISE EXCEPTION 'schema check: geldar_register can INSERT into mcp_identities directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-direct-owner', 'z', 50);
+      RAISE EXCEPTION 'schema check: geldar_register can INSERT into mcp_owners directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM register_create_owner(decode(repeat('12', 32), 'hex'), 'microsoft', 'reg-fn-owner', 'fn');
+    RESET ROLE; IF (SELECT player_cap FROM mcp_owners WHERE owner_id = 'reg-fn-owner') <> 3
+       OR NOT EXISTS (SELECT 1 FROM mcp_identities WHERE owner_id = 'reg-fn-owner') THEN
+      RAISE EXCEPTION 'schema check: register_create_owner must write a default-cap owner and its identity';
+    END IF; SET LOCAL ROLE geldar_register;
+    BEGIN
+      PERFORM register_create_owner(decode(repeat('13', 32), 'hex'), 'microsoft', 'reg-fn-owner', 'again');
+      RAISE EXCEPTION 'schema check: register_create_owner reused an owner id' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    BEGIN
+      PERFORM register_create_owner(decode(repeat('14', 32), 'hex'), 'nobody', 'reg-fn-owner2', 'x');
+      RAISE EXCEPTION 'schema check: register_create_owner took an unknown provider' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
+        VALUES ('ag-reg-direct-01', 'reg-test-owner', 'ag_reg_direct_01', 'x', 'claude-code', 'active');
+      RAISE EXCEPTION 'schema check: geldar_register can INSERT into mcp_players directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      INSERT INTO mcp_tokens (token_id, player_id, token_hash, expires_at)
+        VALUES ('reg-tok-0', 'ag-reg-test-01', decode(repeat('cc', 32), 'hex'), now() + interval '1 day');
+      RAISE EXCEPTION 'schema check: geldar_register can INSERT into mcp_tokens directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    PERFORM register_create_player(hash, 'ag-reg-test-01', 'ag_reg_test_01', 'regtest', 'claude-code', 'test',
+                                   'reg-tok-1', decode(repeat('cd', 32), 'hex'));
+    PERFORM register_create_player(decode(repeat('ba', 32), 'hex'), 'ag-reg-other-01', 'ag_reg_other_01', 'regother',
+                                   'claude-code', 'test', 'reg-tok-o', decode(repeat('d0', 32), 'hex'));
+    -- a second active player is refused by the owner cap trigger (cap 1), now running in the function
+    step := 'owner cap';
+    BEGIN
+      PERFORM register_create_player(hash, 'ag-reg-test-02', 'ag_reg_test_02', 'regtest2', 'claude-code', 'test',
+                                     'reg-tok-c', decode(repeat('d4', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: the owner cap did not fire for register_create_player' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    -- an unknown identity cannot create
+    BEGIN
+      PERFORM register_create_player(decode(repeat('00', 32), 'hex'), 'ag-reg-nobody-01', 'ag_reg_nobody_01', 'n',
+                                     'claude-code', 'test', 'reg-tok-n', decode(repeat('d5', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: register_create_player created for an unknown identity' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    step := 'mint through the function only';
+    -- the first owner's identity cannot mint for the other owner's player, nor an unknown identity for anyone's
+    BEGIN
+      PERFORM register_mint_token(hash, 'ag-reg-other-01', 'reg-tok-x', decode(repeat('d1', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: register_mint_token minted for another owner player' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      PERFORM register_mint_token(decode(repeat('00', 32), 'hex'), 'ag-reg-test-01', 'reg-tok-y', decode(repeat('d2', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: register_mint_token minted for an unknown identity' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    -- minting again revokes the earlier token: one active token per player
+    PERFORM register_mint_token(hash, 'ag-reg-test-01', 'reg-tok-2', decode(repeat('d3', 32), 'hex'));
+    RESET ROLE; IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 1 THEN
+      RAISE EXCEPTION 'schema check: a second mint must revoke the first token';
+    END IF; SET LOCAL ROLE geldar_register;
+
+    -- cannot rewrite the token hash, retire or un-revoke directly
+    step := 'direct updates denied';
+    BEGIN
+      UPDATE mcp_tokens SET token_hash = decode(repeat('ee', 32), 'hex') WHERE token_id = 'reg-tok-1';
+      RAISE EXCEPTION 'schema check: geldar_register can UPDATE mcp_tokens.token_hash' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE mcp_tokens SET revoked_at = NULL WHERE token_id = 'reg-tok-1';
+      RAISE EXCEPTION 'schema check: geldar_register can un-revoke a token directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE mcp_players SET status = 'retired' WHERE player_id = 'ag-reg-other-01';
+      RAISE EXCEPTION 'schema check: geldar_register can retire a player directly' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE mcp_players SET owner_id = 'reg-test-owner' WHERE player_id = 'ag-reg-other-01';
+      RAISE EXCEPTION 'schema check: geldar_register can UPDATE mcp_players.owner_id' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+
+    -- retire through the function: another owner's player is refused, the own player retires
+    step := 'retire';
+    IF register_retire_player(hash, 'ag-reg-other-01') THEN
+      RAISE EXCEPTION 'schema check: register_retire_player retired another owner player';
+    END IF;
+    IF NOT register_retire_player(hash, 'ag-reg-test-01') THEN
+      RAISE EXCEPTION 'schema check: register_retire_player could not retire an own player';
+    END IF;
+    IF register_retire_player(hash, 'ag-reg-test-01') THEN
+      RAISE EXCEPTION 'schema check: register_retire_player retired a retired player again';
+    END IF;
+    RESET ROLE; IF (SELECT count(*) FROM mcp_tokens WHERE player_id = 'ag-reg-test-01' AND revoked_at IS NULL) <> 0 THEN
+      RAISE EXCEPTION 'schema check: retire must revoke the tokens';
+    END IF;
+    IF (SELECT status FROM mcp_players WHERE player_id = 'ag-reg-other-01') <> 'active' THEN
+      RAISE EXCEPTION 'schema check: the other owner player changed';
+    END IF;
+    RAISE EXCEPTION 'probe rollback' USING ERRCODE = 'PR001';
+  EXCEPTION WHEN SQLSTATE 'PR001' THEN NULL;
+  END;
+
+  step := 'gates of 0011';
+  IF to_regprocedure('register_create_player(bytea,text,text,text,text,text,integer,text,bytea)') IS NOT NULL THEN
+    RAISE EXCEPTION 'schema check: register_create_player must not take the credits as an argument';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+             WHERE p.proname LIKE 'register\_%' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
+     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 8
+     OR NOT has_function_privilege('geldar_register', 'register_create_owner(bytea,text,text,text)', 'EXECUTE')
+     OR has_function_privilege('geldar_mcp', 'register_create_owner(bytea,text,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'schema check: the register functions must be definer functions run by geldar_register only';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_proc p
+             WHERE (p.proname LIKE 'register\_%' OR p.proname = 'mcp_enforce_owner_cap')
+               AND NOT (coalesce(p.proconfig, '{}') @> ARRAY['search_path=pg_catalog, public, pg_temp'])) THEN
+    RAISE EXCEPTION 'schema check: a register function or the cap trigger lacks the pinned search_path';
+  END IF;
+  IF NOT has_column_privilege('geldar_mcp', 'mcp_identities', 'banned_at', 'SELECT')
+     OR NOT has_column_privilege('geldar_mcp', 'mcp_identities', 'owner_id', 'SELECT')
+     OR has_column_privilege('geldar_mcp', 'mcp_identities', 'identity_hash', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp must read banned_at and owner_id of mcp_identities, not the hash';
+  END IF;
+  RESET ROLE;
+
+  BEGIN
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-gate-owner', 'gate', 5);
+    INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('a1', 32), 'hex'), 'github', 'reg-gate-owner');
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-shadow-owner', 'shadow', 1);
+    INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('a2', 32), 'hex'), 'github', 'reg-shadow-owner');
+    SET LOCAL ROLE geldar_register;
+    BEGIN
+      PERFORM register_create_player(decode(repeat('a1', 32), 'hex'), 'ag-reg-gate-01', 'ag_reg_gate_xx', 'g',
+                                     'claude-code', 'test', 'reg-tok-g0', decode(repeat('a3', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: a life id other than the player id with underscores was accepted' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN invalid_parameter_value THEN NULL;
+    END;
+    PERFORM register_create_player(decode(repeat('a1', 32), 'hex'), 'ag-reg-gate-01', 'ag_reg_gate_01', 'g',
+                                   'claude-code', 'test', 'reg-tok-g1', decode(repeat('a3', 32), 'hex'));
+    RESET ROLE; IF (SELECT credits FROM mcp_budget WHERE life_id = 'ag_reg_gate_01') <> 240 THEN
+      RAISE EXCEPTION 'schema check: the starting credits must be the constant of the function';
+    END IF; SET LOCAL ROLE geldar_register;
+    CREATE TEMP TABLE mcp_owners (owner_id TEXT, player_cap INT);
+    INSERT INTO pg_temp.mcp_owners VALUES ('reg-shadow-owner', 100);
+    PERFORM register_create_player(decode(repeat('a2', 32), 'hex'), 'ag-reg-shadow-01', 'ag_reg_shadow_01', 's',
+                                   'claude-code', 'test', 'reg-tok-s1', decode(repeat('a4', 32), 'hex'));
+    BEGIN
+      PERFORM register_create_player(decode(repeat('a2', 32), 'hex'), 'ag-reg-shadow-02', 'ag_reg_shadow_02', 's',
+                                     'claude-code', 'test', 'reg-tok-s2', decode(repeat('a5', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: a temp mcp_owners lifted the owner cap' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    DROP TABLE pg_temp.mcp_owners;
+    RESET ROLE;
+    UPDATE mcp_identities SET banned_at = now() WHERE identity_hash = decode(repeat('a1', 32), 'hex');
+    SET LOCAL ROLE geldar_register;
+    BEGIN
+      PERFORM register_mint_token(decode(repeat('a1', 32), 'hex'), 'ag-reg-gate-01', 'reg-tok-g2', decode(repeat('a6', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: a banned identity minted a token' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      PERFORM register_create_player(decode(repeat('a1', 32), 'hex'), 'ag-reg-gate-02', 'ag_reg_gate_02', 'g',
+                                     'claude-code', 'test', 'reg-tok-g3', decode(repeat('a7', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: a banned identity created a player' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      PERFORM register_retire_player(decode(repeat('a1', 32), 'hex'), 'ag-reg-gate-01');
+      RAISE EXCEPTION 'schema check: a banned identity retired a player' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    RAISE EXCEPTION 'probe rollback' USING ERRCODE = 'PR001';
+  EXCEPTION WHEN SQLSTATE 'PR001' THEN NULL;
+  END;
+  -- R36: the 11th creation by one owner is refused, the 10th is allowed (owner cap 1: retire between)
+  step := 'lifetime cap';
+  BEGIN
+    INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('reg-churn-owner', 'churn', 1);
+    INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES (decode(repeat('c1', 32), 'hex'), 'github', 'reg-churn-owner');
+    SET LOCAL ROLE geldar_register;
+    FOR i IN 1..10 LOOP
+      PERFORM register_create_player(decode(repeat('c1', 32), 'hex'), format('ag-reg-churn-%s', lpad(i::text, 2, '0')),
+                                     format('ag_reg_churn_%s', lpad(i::text, 2, '0')), 'churn', 'claude-code', 'test',
+                                     format('reg-tok-ch-%s', i), decode(repeat('c2', 31) || lpad(i::text, 2, '0'), 'hex'));
+      IF NOT register_retire_player(decode(repeat('c1', 32), 'hex'), format('ag-reg-churn-%s', lpad(i::text, 2, '0'))) THEN
+        RAISE EXCEPTION 'schema check: churn retire % failed', i;
+      END IF;
+    END LOOP;
+    BEGIN
+      PERFORM register_create_player(decode(repeat('c1', 32), 'hex'), 'ag-reg-churn-11', 'ag_reg_churn_11', 'churn',
+                                     'claude-code', 'test', 'reg-tok-ch-11', decode(repeat('c3', 32), 'hex'));
+      RAISE EXCEPTION 'schema check: the 11th player creation was allowed' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN program_limit_exceeded THEN NULL;
+    END;
+    RAISE EXCEPTION 'probe rollback' USING ERRCODE = 'PR001';
+  EXCEPTION WHEN SQLSTATE 'PR001' THEN NULL;
+  END;
+  RAISE NOTICE 'schema check passed: role geldar_register and mcp_identities';
+EXCEPTION WHEN OTHERS THEN
+  RAISE EXCEPTION 'schema check (register, %): %', step, SQLERRM;
+END
+$register$;

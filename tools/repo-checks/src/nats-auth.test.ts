@@ -24,7 +24,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 const SHARD = 'phase0';
 /** The compose files that only add to a base: never validated alone (geldar.ps1 Invoke-Check and ci.yml). */
-const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml'];
+const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml'];
 const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'];
 const MIND_TYPES = [
   'wake',
@@ -39,6 +39,18 @@ const MIND_TYPES = [
 ];
 const JS = ['$JS.API.>', '$JS.ACK.>', '_INBOX.>'];
 const kv = (bucket: string) => `$KV.${bucket}.>`;
+/** Velocity is read-only on two buckets (0137 item 3): a KV watch and nothing else. */
+const VELOCITY_PUB = [
+  ...['geldar-life-registry', 'geldar-skins'].flatMap((b) => [
+    `$JS.API.STREAM.INFO.KV_${b}`,
+    `$JS.API.CONSUMER.CREATE.KV_${b}`,
+    `$JS.API.CONSUMER.CREATE.KV_${b}.>`,
+    `$JS.API.CONSUMER.INFO.KV_${b}.>`,
+    `$JS.API.CONSUMER.DELETE.KV_${b}.>`,
+  ]),
+  '$JS.FC.>',
+  '_INBOX.>',
+];
 
 /** The scoped table of decision 0087 for one shard, the same as the live test's roleAllows. */
 function expectedTable(s: string): Record<string, { pub: string[]; sub: string[] }> {
@@ -62,7 +74,7 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
     },
-    velocity: { pub: [kv('geldar-life-registry'), kv('geldar-skins'), ...JS], sub: ['_INBOX.>'] },
+    velocity: { pub: [...VELOCITY_PUB], sub: ['_INBOX.>'] },
     paper: { pub: [`geldar.${s}.>`, ...JS], sub: ['_INBOX.>'] },
   };
 }
@@ -199,6 +211,16 @@ describe.skipIf(!hasDocker)('compose NATS auth overlays merge offline', () => {
     const run = renderCompose('colo.yml', 'nats-auth.yml');
     const command = JSON.parse(run.stdout || '{}').services?.nats?.command ?? [];
     expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data']));
+  });
+
+  it('sets the store dir once: -sd in the merged command of both stacks, no store_dir in the generator', () => {
+    for (const base of ['colo.yml', 'phase0.yml']) {
+      const merged = renderCompose(base, 'nats-auth.yml');
+      const command: string[] = JSON.parse(merged.stdout || '{}').services?.nats?.command ?? [];
+      expect(command.filter((a) => a === '-sd')).toHaveLength(1);
+      expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data', '-c']));
+    }
+    expect(functionBody('Initialize-NatsAuth')).not.toContain('store_dir');
   });
 
   it('merges phase0.yml with mcp.yml, nats-auth.yml and nats-auth-mcp.yml', () => {

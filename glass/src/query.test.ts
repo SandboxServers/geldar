@@ -12,8 +12,8 @@ import {
   thoughtsAfter,
 } from './query.ts';
 
-/** The five tables migration 0005 grants to geldar_glass, and nothing else. */
-const ALLOWED_TABLES = ['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+/** The five tables migration 0005 grants to geldar_glass, and kino_admins (migration 0014); nothing else. */
+const ALLOWED_TABLES = ['thoughts', 'actions', 'receipts', 'intents', 'agents', 'kino_admins'];
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const WRITE_WORDS = /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
 const SQL_WORD = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
@@ -83,6 +83,12 @@ describe('the Glass SQL allowlist', () => {
     }
   });
 
+  it('no statement selects the prompt or the raw reply (R21)', () => {
+    for (const { file, sql } of sqlStatements()) {
+      expect(sql, file).not.toMatch(/model_input|raw_output/);
+    }
+  });
+
   it('a hostile filter value travels as a parameter and never reaches the SQL text', async () => {
     const hostile = "x' OR 1=1; DROP TABLE thoughts; --";
     const clean = recordingDb();
@@ -101,10 +107,22 @@ describe('the Glass SQL allowlist', () => {
     await listReceipts(db, hostile);
     await thoughtsAfter(db, { at: '2026-11-10 00:00:00+00', id: hostile }, 10);
     await listAgents(db);
-    await streamStartCursor(db);
+    await streamStartCursor(db, 0);
     for (const call of calls) expect(call.text).not.toContain('DELETE');
-    expect(calls[0]?.values).toEqual([hostile]);
-    expect(calls[1]?.values).toEqual([hostile]);
-    expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10]);
+    // The last value of a thought statement is its cut-off: null here, as no delay is set.
+    expect(calls[0]?.values).toEqual([hostile, false, null]);
+    expect(calls[1]?.values).toEqual([hostile, false, null]);
+    expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10, false, null]);
+  });
+});
+
+describe('the stream start cursor', () => {
+  it('starts the delay behind now, as a bound parameter, and clamps a bad delay to zero', async () => {
+    const { db, calls } = recordingDb();
+    await streamStartCursor(db, 60);
+    await streamStartCursor(db, 0);
+    await streamStartCursor(db, -5);
+    expect(calls[0]?.text).toContain('make_interval');
+    expect(calls.map((c) => c.values)).toEqual([[60], [0], [0]]);
   });
 });

@@ -32,7 +32,7 @@ describe('loadMcpConfig', () => {
       allowedHosts: ['host.docker.internal', '127.0.0.1', 'localhost'],
       publicHost: null,
       trustedProxies: [],
-      clientIpHeader: 'cf-connecting-ip',
+      clientIpHeader: 'x-geldar-client-ip',
       maxConnections: 320,
       maxConnectionsPerAddress: 80,
       maxBodyBytes: 65536,

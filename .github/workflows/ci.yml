@@ -68,7 +68,7 @@ jobs:
   compose:
     name: compose
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: shard secrets (phase0)
@@ -90,17 +90,33 @@ jobs:
           # Overlays (rcon-host.yml, nats-auth.yml) only add to a base file, so each is checked merged
           # with its base, the same chains as ./geldar.ps1 check.
           for f in "${files[@]}"; do
-            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml|nats-auth-mcp.yml) continue ;; esac
+            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml|nats-auth-mcp.yml|colo-public.yml) continue ;; esac
             echo "::group::$f"
             docker compose -f "$f" config --quiet
             echo "::endgroup::"
           done
+          echo "::group::colo.yml with nats-auth.yml and colo-public.yml (dummy bind and port)"
+          GELDAR_MC_BIND=127.0.0.1 GELDAR_MC_PORT=2 docker compose -f compose/colo.yml -f compose/nats-auth.yml -f compose/colo-public.yml config --quiet
+          echo "::endgroup::"
           echo "::group::phase0.yml with rcon-host.yml"
           docker compose -f compose/phase0.yml -f compose/rcon-host.yml config --quiet
           echo "::endgroup::"
           echo "::group::phase0.yml with mcp.yml and nats-auth.yml"
           docker compose -f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml -f compose/nats-auth-mcp.yml config --quiet
           echo "::endgroup::"
+      - name: caddy validate (public site files)
+        shell: bash
+        run: bash deploy/caddy/validate.sh
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: caddy adapt test (route order, header strip; fails if Docker is missing)
+        env:
+          GELDAR_REQUIRE_DOCKER: '1'
+        run: pnpm --filter @geldar/repo-checks exec vitest run src/caddy-adapt.test.ts
 
   sql:
     name: sql
@@ -144,7 +160,7 @@ jobs:
       - name: check schema (Appendix D tables and pgvector)
         env:
           PGPASSWORD: ci
-        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql
 
   images:
     name: images

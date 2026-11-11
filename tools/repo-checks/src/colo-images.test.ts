@@ -4,12 +4,12 @@ import { parse } from 'yaml';
 import { checkActionPins } from './pin-rules.ts';
 import { parseFirstPartyPrefixes } from './release-age.ts';
 
-// The Colo image workflow (decision 0084): it publishes five first-party images and writes the release manifest.
+// The Colo image workflow (decision 0084): it publishes seven first-party images and writes the release manifest.
 const WORKFLOW = '.github/workflows/colo-images.yml';
 const RELEASE_EXAMPLE = 'deploy/release.env.example';
 const text = readFileSync(new URL(`../../../${WORKFLOW}`, import.meta.url), 'utf8');
 
-/** The five published images: the Dockerfile each is built from and the repository it is pushed to. */
+/** The seven published images: the Dockerfile each is built from and the repository it is pushed to. */
 const IMAGES = [
   { job: 'body', file: 'golem/Dockerfile', repository: 'geldar-body', key: 'GELDAR_BODY_IMAGE' },
   {
@@ -35,6 +35,13 @@ const IMAGES = [
     file: 'tools/admin/Dockerfile',
     repository: 'geldar-admin',
     key: 'GELDAR_ADMIN_IMAGE',
+  },
+  { job: 'glass', file: 'glass/Dockerfile', repository: 'geldar-glass', key: 'GELDAR_GLASS_IMAGE' },
+  {
+    job: 'register',
+    file: 'threshold/register/Dockerfile',
+    repository: 'geldar-register',
+    key: 'GELDAR_REGISTER_IMAGE',
   },
 ];
 
@@ -104,6 +111,8 @@ describe('colo-images.yml triggers', () => {
       'eventsink/**',
       'threshold/mcp/**',
       'tools/admin/**',
+      'glass/**',
+      'threshold/register/**',
       'shards/phase0.yaml',
       'tools/repo-checks/src/identity-mode.ts',
       'contract/**',
@@ -139,7 +148,7 @@ describe('colo-images.yml pins and permissions', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
   });
 
-  it('grants packages: write only to the five image jobs, and each of them only to the upstream repository', () => {
+  it('grants packages: write only to the seven image jobs, and each of them only to the upstream repository', () => {
     const imageJobs = IMAGES.map((image) => image.job).sort();
     const writers = Object.entries(jobs)
       .filter(([, job]) => job.permissions?.packages === 'write')
@@ -226,13 +235,13 @@ describe('colo-images.yml images', () => {
 describe('colo-images.yml release manifest', () => {
   const manifest = jobs.manifest;
 
-  it('runs after the five image jobs', () => {
+  it('runs after the seven image jobs', () => {
     expect(([] as string[]).concat(manifest?.needs ?? []).sort()).toEqual(
       IMAGES.map((image) => image.job).sort(),
     );
   });
 
-  it('validates all five digests before it writes the manifest', () => {
+  it('validates all seven digests before it writes the manifest', () => {
     const validator = manifest?.steps.find((step) => step.run?.includes('for digest in'));
     const loop = validator?.run?.match(/for digest in ([^;]+); do/)?.[1] ?? '';
     for (const image of IMAGES) {
@@ -240,7 +249,7 @@ describe('colo-images.yml release manifest', () => {
     }
   });
 
-  it('writes release.env with the five *_IMAGE digest references', () => {
+  it('writes release.env with the seven *_IMAGE digest references', () => {
     const writer = manifest?.steps.find((step) => step.run?.includes('> release.env'));
     expect(writer).toBeDefined();
     for (const image of IMAGES) {
@@ -250,7 +259,7 @@ describe('colo-images.yml release manifest', () => {
     }
   });
 
-  it('keeps the example manifest in step with the five keys, each a digest reference', () => {
+  it('keeps the example manifest in step with the seven keys, each a digest reference', () => {
     const example = readFileSync(new URL(`../../../${RELEASE_EXAMPLE}`, import.meta.url), 'utf8');
     const digestRef = /^[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}$/;
     const values = new Map(

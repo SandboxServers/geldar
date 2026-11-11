@@ -7,7 +7,7 @@ import type { FrontDoor } from './front.ts';
 import { createFrontDoor } from './front.ts';
 
 const PEPPER = new TextEncoder().encode('front-unavailable-pepper-0123456789ab');
-const TOKEN_A = 'token-for-player-aa-0123456789';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
 const DB_DETAIL = 'connect ECONNREFUSED db-internal.example:5432';
 
 const open: RateLimiter = {
@@ -53,7 +53,7 @@ async function startWithDownStore(logs: Record<string, string | number>[]): Prom
       allowedHosts: ['localhost', '127.0.0.1'],
       publicHost: null,
       trustedProxies: [],
-      clientIpHeader: 'cf-connecting-ip',
+      clientIpHeader: 'x-geldar-client-ip',
       maxConnections: 256,
       maxConnectionsPerAddress: 1,
       maxBodyBytes: 65536,

@@ -4,6 +4,9 @@ import { clientKey } from './auth.ts';
 /** Most requests one player may have open at once (a `wait` holds one). */
 export const MAX_OPEN_PER_PLAYER = 4;
 
+/** Most uncached `store.resolve` calls in flight at once: the bound that protects Postgres (ruling R24). */
+export const MAX_LOOKUPS_IN_FLIGHT = 16;
+
 /** A sibling agent that called this recently (ms) still holds its share of the owner's pool. */
 const ACTIVE_MS = 60_000;
 
@@ -33,6 +36,7 @@ export class FrontLimits {
   /** Per owner, each agent's last call time: the agents that count as active siblings. */
   private readonly lastCall = new Map<string, Map<string, number>>();
   private readonly share: number;
+  private lookups = 0;
 
   /** `share` is `ownerShare(...)`; 0 (the default) reserves nothing for siblings. */
   constructor(limiter: RateLimiter, share = 0) {
@@ -41,30 +45,39 @@ export class FrontLimits {
   }
 
   /**
-   * Takes one failed-auth token for the address and one global. Returns the seconds to wait
-   * when either bucket is empty, else undefined. Called only for a bearer that missed the token
-   * cache and was refused: each such request costs one token, so a flood empties the bucket.
+   * Takes one failed-auth token for the address. Returns the seconds to wait when the bucket is
+   * empty, else undefined. Called only for a bearer that missed the token cache and was refused.
+   * There is no global failed-auth bucket (ruling R24): a handful of addresses could drain it and
+   * lock out every valid user. Postgres is protected by the in-flight lookup cap instead.
    */
   failedAuth(address: string, nowMs: number): number | undefined {
     const byAddress = this.limiter.take(`auth-failed:address:${clientKey(address)}`, nowMs);
     if (!byAddress.allowed) return retrySeconds(byAddress.retryAfterMs);
-    const global = this.limiter.take('auth-failed:global', nowMs);
-    if (!global.allowed) return retrySeconds(global.retryAfterMs);
     return undefined;
   }
 
   /**
-   * Seconds to wait while the address or the global failed-auth bucket has no token left, else
-   * undefined. Reads both buckets without taking from them, so a refused request costs no token
-   * lookup. The caller skips this check for a cached hit, so authenticated traffic is never blocked
-   * by failed-auth state.
+   * Seconds to wait while the address's failed-auth bucket has no token left, else undefined.
+   * Reads the bucket without taking from it, so a refused request costs no token lookup. The
+   * caller skips this check for a cached hit, so authenticated traffic is never blocked by
+   * failed-auth state. Only the address's own bucket gates: another address's failures never do.
    */
   authBlocked(address: string, nowMs: number): number | undefined {
     const byAddress = this.limiter.peek(`auth-failed:address:${clientKey(address)}`, nowMs);
     if (byAddress !== undefined && !byAddress.allowed) return retrySeconds(byAddress.retryAfterMs);
-    const global = this.limiter.peek('auth-failed:global', nowMs);
-    if (global !== undefined && !global.allowed) return retrySeconds(global.retryAfterMs);
     return undefined;
+  }
+
+  /** Takes one slot of the global in-flight cap on uncached token lookups; false at the cap. */
+  acquireLookup(): boolean {
+    if (this.lookups >= MAX_LOOKUPS_IN_FLIGHT) return false;
+    this.lookups += 1;
+    return true;
+  }
+
+  /** Gives a lookup slot back. Never goes below zero. */
+  releaseLookup(): void {
+    if (this.lookups > 0) this.lookups -= 1;
   }
 
   /**

@@ -9,6 +9,11 @@ const CONFIG: GlassConfig = {
   sseMaxClients: 2,
   sseBufferFrames: 10,
   ssePollMs: 1000,
+  enabled: true,
+  delaySeconds: 0,
+  showLivingSovereign: false,
+  trustedProxies: [],
+  rateLimit: { perMinute: 60, burst: 20, maxClients: 1024 },
 };
 
 const built: GlassParts[] = [];
@@ -30,6 +35,15 @@ describe('the Glass server parts', () => {
   it('gives the pool a connect timeout of 5 seconds, so a hung connect cannot stall a poll', () => {
     const { pool } = build();
     expect(pool.options.connectionTimeoutMillis).toBe(5000);
+  });
+
+  it('sets the connection timeouts and the connection cap on the built server', () => {
+    const { server } = build();
+    expect(server.headersTimeout).toBe(10_000);
+    expect(server.requestTimeout).toBe(15_000);
+    expect(server.keepAliveTimeout).toBe(5_000);
+    expect(server.maxConnections).toBe(256);
+    expect(server.requestTimeout).toBeGreaterThanOrEqual(server.headersTimeout);
   });
 
   it('ends the pool once when close() runs twice, as a second SIGTERM does', () => {

@@ -7,6 +7,7 @@ import type { Client, Pool } from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
 import { repoRoot } from './config.ts';
 import { MemoryPresenceBucket } from './fakes/world.fakes.ts';
+import type { FrontDoorOptions } from './http/front.ts';
 import {
   bucketRules,
   ConfigRejected,
@@ -261,6 +262,37 @@ describe('startMcp', () => {
     expect(order).toEqual(['front.close', 'replay.stop', 'revoke.stop', 'nats.drain', 'pool.end']);
   });
 
+  /** Starts the MCP on a copy of the shard with `edit` applied; returns the public options the door got. */
+  async function publicSeen(edit: (text: string) => string): Promise<FrontDoorOptions['public']> {
+    const ports = fakePorts([], []);
+    let seen: FrontDoorOptions['public'];
+    ports.frontDoor = (options) => {
+      seen = options.public;
+      return { listen: async () => 0, close: async () => undefined };
+    };
+    const config = await loadStartConfig(shardCopy(edit), ENV);
+    await (await startMcp(config, ports)).stop();
+    return seen;
+  }
+
+  it('starts a door with no per-client limit when the shard has no public block', async () => {
+    const seen = await publicSeen((text) => text);
+    expect(seen).toBeDefined();
+    expect(seen?.rateLimit).toBeNull();
+  });
+
+  it('limits per client at 600 a minute with a burst of 120 when the block has no rate_limit', async () => {
+    const seen = await publicSeen((text) => `${text}\npublic:\n  kill_switch: false\n`);
+    expect(seen?.rateLimit).toEqual({ perMinute: 600, burst: 120 });
+  });
+
+  it('honours an explicit public.rate_limit', async () => {
+    const seen = await publicSeen(
+      (text) => `${text}\npublic:\n  rate_limit:\n    per_minute: 50\n    burst: 9\n`,
+    );
+    expect(seen?.rateLimit).toEqual({ perMinute: 50, burst: 9 });
+  });
+
   it('closes what it opened when a later step fails, then rethrows', async () => {
     const order: string[] = [];
     const ports = fakePorts(order, []);
@@ -452,7 +484,6 @@ describe('tokenBucketLimiter', () => {
     expect(count('player:ag-jason-01')).toBe(60);
     expect(count('owner:steve')).toBe(600);
     expect(count('auth-failed:address:203.0.113.9')).toBe(30);
-    expect(count('auth-failed:global')).toBe(300);
     expect(count('act:ag_jason')).toBe(1);
     expect(count('say:ag_jason')).toBe(1);
   });

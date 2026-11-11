@@ -57,7 +57,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0050](0050-phase0-mind-processes-run-on-the-host.md) | In Phase 0 the Mind, the local Thinker and Adam's Body run as host processes | Accepted (owner) |
 | [0051](0051-adam-identity-and-model-pins.md) | Adam's identity and the Phase 0 model pins | Accepted (owner; seed approved 2026-11-09) |
 | [0052](0052-per-owner-sovereign-player-cap-raised-to-20.md) | The per-owner cap on sovereign players is raised to 20 for the owner; the real Geldar MCP is built alongside wave 6 | Accepted (owner) |
-| [0053](0053-public-mcp-through-an-outbound-tunnel-deferred.md) | The sovereign MCP is loopback-only now; a public name through an outbound tunnel waits for the colo move | Accepted (owner ruling; Q1 and Q2 open) |
+| [0053](0053-public-mcp-through-an-outbound-tunnel-deferred.md) | The sovereign MCP is loopback-only now; a public name through an outbound tunnel waits for the colo move | Superseded by 0071 (2026-11-10) |
 | [0054](0054-static-hashed-per-player-bearer-tokens.md) | Sovereign MCP clients use static, hashed, per-player Bearer tokens, not OAuth 2.1 | Accepted |
 | [0055](0055-phase0-sovereign-tool-subset-and-mappings.md) | The Phase 0 sovereign MCP serves the frozen 14-tool vocabulary; six tools are not available and the action list is atomic | Accepted |
 | [0056](0056-first-migration-runner-and-least-privilege-grants.md) | The first migration runner, the migration ledger rule, and the least-privilege grants for the MCP role | Accepted |
@@ -79,7 +79,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0072](0072-glass-and-bluemap-are-public.md) | Glass and BlueMap are public, read-only, and hardened before exposure | Accepted (owner) |
 | [0073](0073-spec-is-never-edited.md) | docs/spec.md is never edited by agents; decision records amend it, with the open amendments listed | Accepted (owner) |
 | [0074](0074-shelter-means-an-enclosed-safe-space.md) | Shelter means an enclosed safe space, not only a bed; a night rested in any enclosed shelter counts for the fatigue rule; prompt v5 and body-api v2 are the defaults | Accepted (owner) |
-| [0075](0075-glass-is-a-lakitu-camera.md) | The Glass gets Lakitu cameras: free-fly, collision-bound, invisible in the world, targeted by login | Proposed (anonymous versus login cameras pending owner) |
+| [0075](0075-glass-is-a-lakitu-camera.md) | The Glass gets Lakitu cameras: free-fly, collision-bound, invisible in the world, targeted by login | Accepted (owner, 2026-11-11; the name is Kino) |
 | [0076](0076-backup-scope-and-destination.md) | Backup scope and destination: what a coordinated checkpoint contains, the destination, append-only journals, and a restore test | Accepted (owner confirmed 2026-11-10); destination and backup build deferred (0130) |
 | [0077](0077-invitee-auth-and-the-0072-0075-login-rule.md) | Invitee auth, and the login rule for Lakitu cameras: anonymous reads the thought stream and map; owner or admin login for cameras; interim auth before Entra SSO | Accepted (owner, 2026-11-11) |
 | [0078](0078-mind-placement-for-phase1.md) | Mind placement for Phase 1: the Mind on the colo Record/Mind host (spec 6.1), Thinkers on home GPUs through a gateway, sovereign players run no Mind | Accepted (owner confirmed 2026-11-10) |
@@ -93,11 +93,21 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
 | [0088](0088-metrics-exporters-and-replay-window.md) | Metrics exporters are push-only OTLP to a configured URL; the MCP replay window is bounded and optional | Proposed |
 | [0089](0089-crash-hygiene-defaults-and-refusals.md) | Crash hygiene: the owner cap default, the start refusal while a name lease is held, and `players down` | Accepted (orchestrator) |
+| [0090](0090-public-mcp-contract.md) | Public MCP contract: client-ip header, error shapes, kill-switch config | Proposed |
+| [0091](0091-public-mcp-behind-caddy.md) | Public MCP behind Caddy: trusted peer from config, the `public:` block, kill switch, rate limit defaults, negative cache, invitee issuing | Proposed |
+| [0092](0092-velocity-spectator-whitelist.md) | Velocity spectator whitelist and ghost rule | Proposed |
+| [0093](0093-glass-hardening.md) | Glass hardening: defaults (rate limit, size caps, delay 60 s, living sovereign hidden, no board) and the test for each 0072 item | Proposed (orchestrator; owner rulings recorded) |
+| [0094](0094-public-sites-read-only-through-caddy.md) | BlueMap, Glass and MCP read-only Caddy sites with kill switches; no Caddy rate limit | Proposed |
+| [0095](0095-look-projection-and-mcp-image.md) | Look carries no internal ids and has in-world time; the MCP image keeps the animus and mcp-mock modules its runtime imports | Proposed |
+| [0096](0096-public-topology-as-built.md) | Public topology as built on the Colo node: host-network Caddy, loopback publishes, the colo-public overlay for Minecraft | Proposed |
+| [0100](0100-lakitu-feed-contract.md) | Lakitu feed contract: one-way feed, no input path, no names or tokens in the feed, positions only in the login-scoped feed, pane cap 4 per session (proposed) | Proposed (orchestrator, 2026-11-11; owner to confirm) |
+| [0101](0101-lakitu-feed-plugin.md) | Lakitu feed plugin: invisible and read-only by static scan, config caps, load cap (tick budget to be measured) | Proposed (orchestrator, 2026-11-11; owner to confirm) |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
 | [0131](0131-colo-in-container-hosts-and-mind-shard-file.md) | Colo containers reach their compose peers by name through a closed, opt-in allowlist; the Mind's shard file is `shards/colo-mind.yaml`, separate from the budget file | Accepted (orchestrator, 2026-11-10) |
 | [0132](0132-ipv4-literal-policy.md) | IPv4 literal policy: loopback and documentation addresses anywhere, private addresses only in an allowlisted file, public addresses never | Accepted (orchestrator, 2026-11-10) |
 | [0133](0133-colo-admin-by-one-shot-container.md) | Colo administration runs in a one-shot `geldar-admin` container (migrate, owner, player, token) inside the compose network | Accepted (orchestrator, 2026-11-10) |
 | [0134](0134-mind-is-a-profile-until-a-thinker-exists.md) | The Mind (`animus`) is a compose profile on the Colo until a Thinker path exists | Accepted (orchestrator, 2026-11-11) |
-| [0135](0135-self-registration-with-github-and-discord.md) | Self-registration with GitHub and Discord sign-in: verified accounts at least 30 days old, no manual approval, off until the C2 gates pass | Accepted in principle (owner 2026-11-11); design Proposed |
+| [0135](0135-self-registration-with-github-and-discord.md) | Self-registration: Microsoft sign-in only (amended 2026-11-11, R40 to R42), rate limits instead of a daily cap, one host with Glass, no manual approval, off until the C2 gates pass | Accepted in principle (owner 2026-11-11); design Proposed |
+| [0136](0136-register-ban-procedure.md) | Banning a registered identity: by provider account, tokens revoked, unban leaves them revoked | Accepted (orchestrator, 2026-11-11) |
 | [0137](0137-public-spectator-proxy-is-separate-and-online.md) | The public Minecraft port is a separate online-mode spectator proxy (spec 8.4); Paper holds every player without a signed live property in spectator | Accepted (orchestrator, 2026-11-11) |
 >

@@ -40,10 +40,11 @@ function allConfigText(): string {
 }
 
 describe('BlueMap config: internal only', () => {
-  it('keeps the integrated webserver off, so nothing listens on any interface', () => {
-    // The 5.29 webserver.conf has no bind-address key (no `ip`), so an enabled server cannot be
-    // limited to loopback. The only accepted state is off.
-    expect(value('webserver.conf', 'enabled')).toBe('false');
+  it('runs the integrated webserver on 8101 for the colo network only (R38)', () => {
+    // The 5.29 webserver.conf has no bind-address key (no `ip`); it is kept off the host by Paper
+    // publishing no port (checked in tools/repo-checks colo-services.test.ts).
+    expect(value('webserver.conf', 'enabled')).toBe('true');
+    expect(value('webserver.conf', 'port')).toBe('8101');
   });
 
   it('keeps the config free of IPv4 addresses (no node or network address)', () => {
@@ -60,6 +61,8 @@ describe('BlueMap config: every key is a 5.29 key', () => {
   it('covers exactly the files the committed config uses', () => {
     expect(Object.keys(KNOWN.files).sort()).toEqual([
       'core.conf',
+      'maps/end.conf',
+      'maps/nether.conf',
       'maps/overworld.conf',
       'plugin.conf',
       'webserver.conf',
@@ -77,23 +80,52 @@ describe('BlueMap config: every key is a 5.29 key', () => {
 });
 
 describe('BlueMap config: bounded render CPU', () => {
-  it('sets one render thread, not 0 (0 starts one thread per core and competes with the game tick)', () => {
-    expect(value('core.conf', 'render-thread-count')).toBe('1');
+  it('caps render threads at 1 or 2, not 0 (0 starts one thread per core and competes with the game tick)', () => {
+    const n = Number(value('core.conf', 'render-thread-count'));
+    expect(n).toBeGreaterThanOrEqual(1);
+    expect(n).toBeLessThanOrEqual(2);
   });
 });
 
-describe('BlueMap config: terrain only, no agent markers', () => {
-  it('keeps live player markers off', () => {
-    expect(value('plugin.conf', 'live-player-markers')).toBe('false');
+describe('BlueMap config: web root and port (C2-07o)', () => {
+  it('writes the web root to bluemap/web, the subpath bluemap-web serves', () => {
+    expect(value('webserver.conf', 'webroot')).toBe('bluemap/web');
+    expect(value('core.conf', 'data')).toBe('bluemap');
+  });
+
+  it('enables the webserver on the port the bluemap-web live proxy targets', () => {
+    const caddy = readFileSync(
+      join(import.meta.dirname, '..', '..', '..', 'compose', 'bluemap-web', 'Caddyfile'),
+      'utf8',
+    );
+    const target = /reverse_proxy\s+paper:(\d+)/.exec(caddy);
+    expect(target).not.toBeNull();
+    expect(value('webserver.conf', 'enabled')).toBe('true');
+    expect(value('webserver.conf', 'port')).toBe(target?.[1]);
+  });
+});
+
+describe('BlueMap config: terrain and live agent positions (R38)', () => {
+  it('turns live player markers on and hides spectators and vanished players', () => {
+    expect(value('plugin.conf', 'live-player-markers')).toBe('true');
+    expect(value('plugin.conf', 'hide-vanished')).toBe('true');
+    expect(value('plugin.conf', 'hide-invisible')).toBe('true');
+    expect(settings('plugin.conf').get('hidden-game-modes')).toBe('[');
+    expect(readFileSync(join(CONFIG, 'plugin.conf'), 'utf8')).toMatch(
+      /hidden-game-modes:\s*\[\s*"spectator"\s*\]/,
+    );
   });
 
   it('keeps Mojang skin downloads off', () => {
     expect(value('plugin.conf', 'skin-download')).toBe('false');
   });
 
-  it('renders only the overworld, with no marker sets', () => {
-    const maps = readdirSync(join(CONFIG, 'maps'));
-    expect(maps).toEqual(['overworld.conf']);
+  it('renders the overworld, nether and end of the one Paper world, with no marker sets', () => {
+    const maps = readdirSync(join(CONFIG, 'maps')).sort();
+    expect(maps).toEqual(['end.conf', 'nether.conf', 'overworld.conf']);
+    expect(value('maps/nether.conf', 'dimension')).toBe('minecraft:the_nether');
+    expect(value('maps/end.conf', 'dimension')).toBe('minecraft:the_end');
+    for (const f of maps) expect(value('maps/' + f, 'world')).toBe('world');
     expect(value('maps/overworld.conf', 'dimension')).toBe('minecraft:overworld');
     const text = readFileSync(join(CONFIG, 'maps', 'overworld.conf'), 'utf8');
     const block = /marker-sets:\s*\{([\s\S]*?)\}/.exec(text);
@@ -105,9 +137,9 @@ describe('BlueMap config: terrain only, no agent markers', () => {
   });
 });
 
-describe('BlueMap config: no Mojang download and no secret', () => {
-  it('keeps accept-download false in the repo', () => {
-    expect(value('core.conf', 'accept-download')).toBe('false');
+describe('BlueMap config: no secret', () => {
+  it('has accept-download true by the owner ruling of 2026-11-11 (Mojang resource download, C2-07o)', () => {
+    expect(value('core.conf', 'accept-download')).toBe('true');
   });
 
   it('keeps bStats metrics off, so the map makes no outbound call', () => {

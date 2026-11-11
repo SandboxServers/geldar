@@ -1,6 +1,6 @@
 // The C1-03 wiring in compose/colo.yml: the Body (golem-body) and the Mind (animus) services. Parsed, not grepped,
 // so a change to a key or a value fails here, not in a deploy. Decisions 0078 (Mind placement) and 0083 (images).
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -137,10 +137,13 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   'geldar-mcp': ['GELDAR_MCP', '0.5', '512m', 128],
   'players-host': ['PLAYERS_HOST', '1', '2048m', 256],
   admin: ['ADMIN', '0.5', '512m', 128],
+  glass: ['GLASS', '0.5', '256m', 128],
+  'bluemap-web': ['BLUEMAP_WEB', '0.25', '64m', 64],
+  register: ['REGISTER', '0.25', '128m', 64],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the ten services the budget totals cover', () => {
+  it('names exactly the thirteen services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -205,6 +208,13 @@ describe('compose/colo.yml: the MCP service (C1-11a)', () => {
     }
   });
 
+  it('the admin service mounts every role password file the deploy reads (geldar_mcp, geldar_glass; C2-07d)', () => {
+    const admin = colo.services.admin?.secrets ?? [];
+    expect(admin).toContain('postgres-mcp.txt');
+    expect(admin).toContain('postgres-glass.txt');
+    expect(colo.secrets).toHaveProperty(['postgres-glass.txt']);
+  });
+
   it('runs read-only as uid 1000 with no capability, the compose/mcp.yml hardening', () => {
     expect(mcp.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
     expect(mcp.read_only).toBe(true);
@@ -222,6 +232,21 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
     expect(players.entrypoint).toEqual(['node', 'src/players/main.ts']);
     expect(players.command).toEqual(['--player', '${GELDAR_PLAYER_ID:-}']);
     expect(players.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
+  });
+
+  it('keeps the Mind out of the default start: animus is under the mind profile, which colo-up.sh never names (C2-07j, decision 0134)', () => {
+    expect(mind.profiles).toEqual(['mind']);
+    const up = readFileSync(`${ROOT}deploy/colo-up.sh`, 'utf8');
+    expect(up).not.toMatch(/--profile mind|animus/);
+    const status = readFileSync(`${ROOT}deploy/colo-status.sh`, 'utf8');
+    expect(status).not.toMatch(/animus/);
+  });
+
+  it('gives the admin service the body NATS secret for ensure-skins-bucket (C2-07j)', () => {
+    const admin = colo.services.admin ?? {};
+    expect(admin.secrets).toContainEqual({ source: 'nats-body', target: 'nats-body.txt' });
+    expect(env(admin).GELDAR_NATS_USER).toBe('body');
+    expect(env(admin).GELDAR_NATS_PASSWORD_FILE).toBe('/run/secrets/nats-body.txt');
   });
 
   it('is gated behind the sovereign profile, so a plain shard up does not start it', () => {
@@ -242,10 +267,153 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
   });
 });
 
+// The C2-07a2 service: Glass on a loopback publish, as the read-only geldar_glass role (decisions 0072, 0093, 0094).
+const glass = colo.services.glass ?? {};
+
+describe('compose/colo.yml: the Glass service (C2-07a2)', () => {
+  it('publishes only the loopback Glass port, as a literal', () => {
+    expect(glass.ports).toEqual(['127.0.0.1:8787:8787']);
+  });
+
+  it('takes its image from GELDAR_GLASS_IMAGE (the release manifest value)', () => {
+    expect(String(glass.image)).toMatch(/^\$\{GELDAR_GLASS_IMAGE:-[^}]+\}$/);
+  });
+
+  it('reads Postgres as geldar_glass with the password from a file secret, and has no NATS', () => {
+    expect(env(glass).GELDAR_GLASS_PG_USER).toBe('geldar_glass');
+    expect(env(glass).GELDAR_GLASS_PG_PASSWORD_FILE).toBe('/run/secrets/postgres-glass.txt');
+    expect(glass.secrets).toEqual(['postgres-glass.txt']);
+    expect(colo.secrets['postgres-glass.txt']).toEqual({ file: './secrets/postgres-glass.txt' });
+    expect(Object.keys(env(glass)).filter((key) => /NATS/.test(key))).toEqual([]);
+  });
+
+  it('sets the trusted proxy, the thought delay and the kill switch defaults (decision 0093)', () => {
+    expect(env(glass).GELDAR_GLASS_TRUSTED_PROXIES).toBe(
+      composeDefault('GELDAR_GLASS_TRUSTED_PROXIES', '127.0.0.1'),
+    );
+    expect(env(glass).GELDAR_GLASS_DELAY_SECONDS).toBe(
+      composeDefault('GELDAR_GLASS_DELAY_SECONDS', '60'),
+    );
+    expect(env(glass).GELDAR_GLASS_ENABLED).toBe(composeDefault('GELDAR_GLASS_ENABLED', 'true'));
+  });
+
+  it('runs read-only with no capability and no new privileges, on the colo network', () => {
+    expect(glass.read_only).toBe(true);
+    expect(glass.cap_drop).toEqual(['ALL']);
+    expect(glass.security_opt).toEqual(['no-new-privileges:true']);
+    expect(glass.networks).toEqual(['colo']);
+  });
+
+  it('binds 0.0.0.0 in the container only with the in-network opt-in, and reaches Postgres by name (C2-07a3)', () => {
+    expect(env(glass).GELDAR_IN_NETWORK_HOSTS).toBe('1');
+    expect(env(glass).GELDAR_GLASS_HOST).toBe('0.0.0.0');
+    expect(env(glass).GELDAR_GLASS_PG_HOST).toBe('postgres');
+  });
+
+  it('takes the MCP trusted proxies from the node env, default loopback (C2-07c1)', () => {
+    expect(env(mcp).GELDAR_MCP_TRUSTED_PROXIES).toBe(
+      composeDefault('GELDAR_MCP_TRUSTED_PROXIES', '127.0.0.1'),
+    );
+  });
+
+  it('publishes no BlueMap port from Paper: its web server is reachable on the colo network only (C2-07m, R38)', () => {
+    expect(colo.services.paper).not.toHaveProperty('ports');
+    expect(colo.services.paper?.networks).toEqual(['colo']);
+    const all = JSON.stringify(colo.services.paper);
+    expect(all).not.toContain('8101');
+  });
+});
+
+// R27, R38: the BlueMap map server: static tiles plus a restricted proxy of the live player JSON to Paper.
+const bluemapWeb = colo.services['bluemap-web'] ?? {};
+
+describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', () => {
+  it('uses the digest-pinned caddy image from C2-04 and the file-server CLI on the web directory', () => {
+    expect(bluemapWeb.image).toBe(
+      'caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb',
+    );
+    expect(bluemapWeb.command).toEqual([
+      'caddy',
+      'run',
+      '--config',
+      '/etc/caddy/Caddyfile',
+      '--adapter',
+      'caddyfile',
+    ]);
+  });
+
+  it('publishes only the literal loopback port', () => {
+    expect(bluemapWeb.ports).toEqual(['127.0.0.1:8100:8100']);
+  });
+
+  it('mounts only a read only subpath of the Paper volume under bluemap/, never the whole volume (R28)', () => {
+    const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<
+      Record<string, unknown> | string
+    >;
+    expect(volumes).toHaveLength(2);
+    expect(volumes[1]).toBe('./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro');
+    const mount = (volumes[0] ?? {}) as Record<string, unknown>;
+    expect(typeof mount).toBe('object');
+    expect(mount.source).toBe('paper-data');
+    expect(mount.target).toBe('/srv');
+    expect(mount.read_only).toBe(true);
+    const subpath = (mount.volume as { subpath?: string } | undefined)?.subpath;
+    expect(subpath).toMatch(/^bluemap\/[^.]/);
+    expect(subpath).not.toContain('..');
+  });
+
+  it('waits for a healthy Paper before it starts, and restarts until the webroot exists', () => {
+    expect(bluemapWeb.depends_on).toEqual({ paper: { condition: 'service_healthy' } });
+    expect(bluemapWeb.restart).toBe('unless-stopped');
+    expect(colo.services.paper).toHaveProperty('healthcheck');
+  });
+
+  it('is hardened like the other services', () => {
+    expect(bluemapWeb.read_only).toBe(true);
+    expect(bluemapWeb.cap_drop).toEqual(['ALL']);
+    expect(bluemapWeb.security_opt).toEqual(['no-new-privileges:true']);
+    expect(bluemapWeb.networks).toEqual(['colo']);
+    expect(bluemapWeb.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
+  });
+
+  it('runs BlueMap web server on port 8101, live markers on, spectators hidden (C2-07m, R38)', () => {
+    const conf = readFileSync(`plugins/bluemap/config/webserver.conf`, 'utf8');
+    expect(conf).toMatch(/^enabled:\s*true\s*$/m);
+    expect(conf).toMatch(/^webroot:\s*"bluemap\/web"\s*$/m);
+    expect(conf).toMatch(/^port:\s*8101\s*$/m);
+    const plugin = readFileSync(`plugins/bluemap/config/plugin.conf`, 'utf8');
+    expect(plugin).toMatch(/^live-player-markers:\s*true\s*$/m);
+    expect(plugin).toMatch(/^hidden-game-modes:\s*\[\s*"spectator"\s*\]/m);
+    expect(plugin).toMatch(/^hide-vanished:\s*true\s*$/m);
+    expect(plugin).toMatch(/^skin-download:\s*false\s*$/m);
+  });
+
+  it('proxies only /maps/<map>/live/<file> to paper:8101, GET and HEAD only (C2-07m)', () => {
+    const text = readFileSync(`compose/bluemap-web/Caddyfile`, 'utf8');
+    expect(text.match(/reverse_proxy/g)).toHaveLength(1);
+    expect(text).toContain('reverse_proxy paper:8101');
+    expect(text).toMatch(/^\s*@not_allowed not method GET HEAD$/m);
+    expect(text).toMatch(
+      /^\s*@live path_regexp live \^\/maps\/\[A-Za-z0-9_-\]\+\/live\/\[A-Za-z0-9_-\]\+\(\\\.json\)\?\$$/m,
+    );
+    expect(text).toMatch(/handle @live \{\s+reverse_proxy paper:8101/);
+    expect(text).toMatch(/handle \{\s+root \* \/srv\s+file_server/);
+  });
+});
+
 // The service uid (decision 0084 follow-up): the services run as GELDAR_SERVICE_UID, so the secret files the deploy
 // checks must be owned by the same uid. Paper's itzg image takes UID and GID; Velocity's image does not (no change there).
 describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
-  const uidServices = ['golem-body', 'players-host', 'animus', 'geldar-mcp', 'admin', 'eventsink'];
+  const uidServices = [
+    'golem-body',
+    'players-host',
+    'animus',
+    'geldar-mcp',
+    'admin',
+    'eventsink',
+    'glass',
+    'bluemap-web',
+  ];
 
   it.each(uidServices)(
     '%s runs as the service uid, default 1000 (rendered as 1001 when set)',
@@ -266,5 +434,149 @@ describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
 
   it.each(['postgres', 'nats'])('leaves %s on its own image user (no user: key)', (name) => {
     expect(colo.services[name]).not.toHaveProperty('user');
+  });
+});
+
+describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0094)', () => {
+  const shard = parse(readFileSync(`${ROOT}shards/colo-mind.yaml`, 'utf8')) as {
+    public?: Record<string, unknown>;
+  };
+
+  it('names the proxy, the client header, the rate limit and the kill switch off', () => {
+    expect(shard.public).toEqual({
+      trusted_proxies: ['127.0.0.1'],
+      client_ip_header: 'x-geldar-client-ip',
+      rate_limit: { per_minute: 600, burst: 120 },
+      kill_switch: false,
+    });
+  });
+});
+
+// C2-08c: the register service is wired but off by default (decision 0135).
+const register = colo.services.register ?? {};
+
+describe('sql: the register start credits (C2-R5 F3, F20)', () => {
+  it('the newest start_credits constant in sql/ equals the shard cap_credits', () => {
+    const shard = parse(readFileSync(`${ROOT}shards/colo-mind.yaml`, 'utf8')) as {
+      sovereign: { budget: { cap_credits: number } };
+    };
+    // migrations apply in name order; the last one that sets the constant is the live one
+    const constants = readdirSync(`${ROOT}sql`)
+      .filter((f) => /^\d{4}_.*\.sql$/.test(f))
+      .sort()
+      .flatMap((f) =>
+        [
+          ...readFileSync(`${ROOT}sql/${f}`, 'utf8').matchAll(
+            /start_credits\s+CONSTANT\s+INT\s*:=\s*(\d+)/g,
+          ),
+        ].map((m) => Number(m[1])),
+      );
+    expect(constants.length).toBeGreaterThan(0);
+    expect(constants.at(-1)).toBe(shard.sovereign.budget.cap_credits);
+  });
+});
+
+describe('compose/colo.yml: the register service (C2-08c)', () => {
+  it('is behind the register profile, so no default up starts it, and the kill switch defaults to on', () => {
+    expect(register.profiles).toEqual(['register']);
+    expect(env(register).REGISTER_KILL_SWITCH).toBe('${REGISTER_KILL_SWITCH:-true}');
+  });
+
+  it('publishes only the loopback register port, as a literal', () => {
+    expect(register.ports).toEqual(['127.0.0.1:8090:8090']);
+  });
+
+  it('builds threshold/register/Dockerfile and takes its image from a deploy variable', () => {
+    expect(register.image).toBe(composeDefault('GELDAR_REGISTER_IMAGE', 'geldar-register:c2'));
+    expect(register.build).toEqual({ context: '..', dockerfile: 'threshold/register/Dockerfile' });
+  });
+
+  it('runs read-only as the service uid with no capability and no new privileges', () => {
+    expect(register.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
+    expect(register.read_only).toBe(true);
+    expect(register.cap_drop).toEqual(['ALL']);
+    expect(register.security_opt).toEqual(['no-new-privileges:true']);
+  });
+
+  it('reads every secret from a file and declares each secret it names', () => {
+    const names = [
+      'postgres-register.txt',
+      'mcp-token-pepper.txt',
+      'register-pepper',
+      'register-github-secret',
+      'register-discord-secret',
+    ];
+    expect(register.secrets).toEqual(names);
+    for (const name of names) expect(colo.secrets).toHaveProperty([name]);
+    expect(env(register).REGISTER_DB_PASSWORD_FILE).toBe('/run/secrets/postgres-register.txt');
+    expect(env(register).REGISTER_TOKEN_PEPPER_FILE).toBe('/run/secrets/mcp-token-pepper.txt');
+    expect(JSON.stringify(env(register))).not.toMatch(/SECRET["']?:\s*"[^/]/);
+  });
+
+  it('trusts the MCP gateway by default, not loopback, for the client address (C2-R5 F5)', () => {
+    const peers = String(env(register).REGISTER_TRUSTED_PEERS);
+    expect(peers).toContain('GELDAR_MCP_TRUSTED_PROXIES');
+    expect(peers).toMatch(/^\$\{REGISTER_TRUSTED_PEERS:-\$\{GELDAR_MCP_TRUSTED_PROXIES:-/);
+    const common = readFileSync(new URL('../../../deploy/common.sh', import.meta.url), 'utf8');
+    expect(common).toMatch(/^NODE_ENV_VARS=.*\bREGISTER_TRUSTED_PEERS\b/m);
+  });
+
+  it('has a healthcheck that accepts 200 and 503 (C2-R5 F11)', () => {
+    const hc = register.healthcheck as { test: string[] } | undefined;
+    expect(hc?.test.join(' ')).toMatch(/8090.*200.*503/);
+  });
+
+  it('the admin service mounts the geldar_register password file the deploy reads', () => {
+    expect(colo.services.admin?.secrets ?? []).toContain('postgres-register.txt');
+  });
+});
+
+/** The CREATE ROLE statements in `sql` (comments stripped) that no DO block with the race handler encloses. */
+export function unsafeRoleCreations(sql: string): string[] {
+  const text = sql.replace(/--[^\n]*/g, '');
+  const safe: Array<[number, number]> = [];
+  for (const b of text.matchAll(/\bDO\s+(\$\w*\$)([\s\S]*?)\1/g)) {
+    if (
+      /\bEXCEPTION\b[\s\S]*\bWHEN duplicate_object OR unique_violation THEN NULL/.test(b[2] ?? '')
+    ) {
+      safe.push([b.index, b.index + b[0].length]);
+    }
+  }
+  return [...text.matchAll(/CREATE ROLE\s+(\w+)/g)]
+    .filter((m) => !safe.some(([from, to]) => m.index > from && m.index < to))
+    .map((m) => m[1] ?? '');
+}
+
+describe('sql: role creation is race-safe (FX-IT2)', () => {
+  it('every CREATE ROLE sits in a DO block that catches duplicate_object and unique_violation', () => {
+    const dir = new URL('../../../sql/', import.meta.url);
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.sql'))) {
+      expect(unsafeRoleCreations(readFileSync(new URL(f, dir), 'utf8')), f).toEqual([]);
+    }
+  });
+
+  it('F29: the check finds an unprotected role, a comment-only guard and a foreign block', () => {
+    const guard = 'EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;';
+    expect(unsafeRoleCreations('CREATE ROLE a;')).toEqual(['a']);
+    expect(unsafeRoleCreations(`DO $x$ BEGIN CREATE ROLE a; END $x$; -- ${guard}`)).toEqual(['a']);
+    expect(unsafeRoleCreations(`DO $x$ BEGIN PERFORM 1; ${guard} END $x$; CREATE ROLE a;`)).toEqual(
+      ['a'],
+    );
+    expect(unsafeRoleCreations(`DO $x$ BEGIN CREATE ROLE a; ${guard} END $x$;`)).toEqual([]);
+    expect(unsafeRoleCreations('-- CREATE ROLE a;')).toEqual([]);
+  });
+});
+
+describe('compose/colo.yml: BlueMap in Paper (C2-07o)', () => {
+  const volumes = (colo.services.paper?.volumes ?? []) as (string | Record<string, unknown>)[];
+
+  it('mounts the verified BlueMap jar and its config read-only', () => {
+    expect(volumes).toContainEqual({
+      type: 'bind',
+      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar',
+      target: '/plugins/bluemap.jar',
+      read_only: true,
+    });
+    expect(volumes).toContain('../plugins/bluemap/config:/plugins/BlueMap:ro');
   });
 });

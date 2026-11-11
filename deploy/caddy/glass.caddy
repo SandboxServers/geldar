@@ -1,0 +1,92 @@
+# Glass, the Thought Stream viewer, public and read-only (decisions 0072 and 0071), and on the same host the register
+# service under /register* and /roster* (decision 0135, amendment R42: one Microsoft sign-in, one host, so the gk_session
+# cookie is host-only). Load this file, then `caddy reload`. Placeholders: GELDAR_DOMAIN, GELDAR_GLASS_UPSTREAM and
+# GELDAR_REGISTER_UPSTREAM (set by C2-07).
+glass.{$GELDAR_DOMAIN} {
+	# The register service's paths. Everything else on this host is Glass.
+	@register path /register /register/* /roster /roster/*
+	@not_register not path /register /register/* /roster /roster/*
+
+	# Glass: GET and HEAD only, as glass/src/routes.ts requires; every other method is refused at Caddy.
+	@not_allowed {
+		not path /register /register/* /roster /roster/*
+		not method GET HEAD
+	}
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
+
+	# Register: sign-in pages are GET, the account actions are POST.
+	@register_not_allowed {
+		path /register /register/* /roster /roster/*
+		not method GET HEAD POST
+	}
+	handle @register_not_allowed {
+		respond 405
+	}
+
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+
+	# Response headers: no Server banner, no sniffing, no referrer (R4-05).
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
+	# Glass reads no request body; the register forms are small.
+	request_body @not_register {
+		max_size 1KiB
+	}
+	request_body @register {
+		max_size 8KiB
+	}
+
+	# The JSON routes of glass/src/routes.ts. Glass answers 421 to any Host that is not loopback, so
+	# every proxy block sets Host to localhost. The client address is set here, after the strips above.
+	@glass_read path /api/agents /api/thoughts /api/thoughts/* /api/receipts /api/session
+	handle @glass_read {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+		}
+	}
+
+	# The page and its assets (glass/src/http.ts serves exactly these files).
+	@glass_page path / /app.css /app.js /js/*
+	handle @glass_page {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+		}
+	}
+
+	# The Server-Sent Events stream: each event is flushed at once.
+	@glass_stream path /api/stream
+	handle @glass_stream {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+			flush_interval -1
+			# A reload (the kill switch) closes the open stream within 5 s.
+			stream_close_delay 5s
+		}
+	}
+
+	# The register service answers its own 404 for any path it does not serve. It is handed the client address only through
+	# the header set here, as Glass is; the Host header and the cookies pass through unchanged.
+	handle @register {
+		reverse_proxy {$GELDAR_REGISTER_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
+		}
+	}
+
+	# Every other path, including the rate limits that Glass itself enforces (C2-03), is 404.
+	handle {
+		respond 404
+	}
+}

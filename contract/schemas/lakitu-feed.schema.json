@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/lakitu-feed.schema.json",
+  "title": "LakituFeed",
+  "description": "One frame of the Lakitu feed, version 1 (decision 0100; 0075 points 1, 2, 3 and 5). The feed is one-way and read-only: it has no input path into the shard, and it carries only chunks that are already loaded. It carries block state names, never textures, player names, tokens or addresses. Positions appear only in the login-scoped feed, never in the public thought stream. Caps (proposed, owner to confirm): max_panes_per_session 4, max_sections_per_frame 256, max_updates_per_frame 512.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feed_version", "feed_tick", "pane", "sections", "updates", "positions"],
+  "properties": {
+    "feed_version": {
+      "description": "The version of this feed format. Always 1 in this schema.",
+      "const": 1
+    },
+    "feed_tick": {
+      "description": "The server tick of this snapshot.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "pane": { "$ref": "#/$defs/LakituPane" },
+    "sections": {
+      "description": "Chunk sections of already-loaded chunks in the pane's radius. Capped at max_sections_per_frame (proposed 256).",
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/LakituChunkSection" }
+    },
+    "updates": {
+      "description": "Block changes since the last frame. Capped at max_updates_per_frame (proposed 512).",
+      "type": "array",
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/LakituBlockUpdate" }
+    },
+    "positions": {
+      "description": "Agent positions in the login-scoped feed. At most one per pane, so at most max_panes_per_session (4).",
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "#/$defs/LakituPosition" }
+    }
+  },
+  "$defs": {
+    "LakituPane": {
+      "description": "One camera pane. session_id is an opaque ULID, never a token. radius_chunks is bounded to 4 (proposed).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pane_id", "session_id", "target_agent_id", "mode", "radius_chunks"],
+      "properties": {
+        "pane_id": {
+          "description": "ULID of the pane, with the pn_ prefix.",
+          "type": "string",
+          "pattern": "^pn_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "session_id": {
+          "description": "ULID of the login session, with the ls_ prefix. Never a token.",
+          "type": "string",
+          "pattern": "^ls_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "target_agent_id": {
+          "description": "The agent the pane follows. The relay checks the target scope on every request (0075 point 4).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "mode": {
+          "description": "follow keeps the camera behind the agent, orbit circles it, free moves the camera by hand. The camera is bound by collision to the same voxels as the mesher.",
+          "type": "string",
+          "enum": ["follow", "orbit", "free"]
+        },
+        "radius_chunks": {
+          "description": "The chunk radius of the pane, from 1 to 4 (proposed max 4).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        }
+      }
+    },
+    "LakituChunkSection": {
+      "description": "A 16 by 16 by 16 section of blocks, identified by section coordinates (not block coordinates). indices is base64 of 4096 unsigned 16-bit little-endian palette indices, in x-z-y order: index = (y * 16 + z) * 16 + x, where x, y and z run 0 to 15 inside the section. Each index points into palette. That is 8192 bytes, so 10924 base64 characters with one trailing '='.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["world", "section_x", "section_y", "section_z", "palette", "indices", "loaded"],
+      "properties": {
+        "world": {
+          "description": "The world name.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "section_x": {
+          "description": "Section x (block x divided by 16, floored).",
+          "type": "integer"
+        },
+        "section_y": {
+          "description": "Section y (block y divided by 16, floored).",
+          "type": "integer"
+        },
+        "section_z": {
+          "description": "Section z (block z divided by 16, floored).",
+          "type": "integer"
+        },
+        "palette": {
+          "description": "Block state names, for example minecraft:stone. Names only, no textures.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+:[a-z0-9_/.-]+$"
+          }
+        },
+        "indices": {
+          "description": "Base64 of 4096 unsigned 16-bit little-endian palette indices, in x-z-y order (see the section description).",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{10923}=$"
+        },
+        "loaded": {
+          "description": "Always true: only already-loaded sections are sent (0075 point 1).",
+          "const": true
+        }
+      }
+    },
+    "LakituBlockUpdate": {
+      "description": "One block change, in block coordinates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tick", "world", "x", "y", "z", "state"],
+      "properties": {
+        "tick": {
+          "description": "The server tick of the change.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "world": {
+          "description": "The world name.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "x": { "description": "Block x.", "type": "integer" },
+        "y": { "description": "Block y.", "type": "integer" },
+        "z": { "description": "Block z.", "type": "integer" },
+        "state": {
+          "description": "The new block state name, for example minecraft:air.",
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_/.-]+$"
+        }
+      }
+    },
+    "LakituPosition": {
+      "description": "An agent's position, in the login-scoped feed only. Angles are in degrees, pitch from -90 to 90.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_id", "x", "y", "z", "yaw", "pitch", "on_ground"],
+      "properties": {
+        "agent_id": {
+          "description": "The agent's id.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "x": { "description": "Block-space x.", "type": "number" },
+        "y": { "description": "Block-space y.", "type": "number" },
+        "z": { "description": "Block-space z.", "type": "number" },
+        "yaw": { "description": "Yaw in degrees.", "type": "number" },
+        "pitch": {
+          "description": "Pitch in degrees, from -90 to 90.",
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "on_ground": { "description": "Whether the agent is on the ground.", "type": "boolean" }
+      }
+    },
+    "LakituErrorCode": {
+      "description": "The error shapes of the feed and the relay. pane_cap_reached: the per-session cap (max_panes_per_session, default 4) is full. target_not_permitted: the login scope does not allow the target. feed_unavailable: the feed is not running or the lakitu flag is off. feed_overloaded: the Java load cap refused the frame (card P1-C2b-01).",
+      "type": "string",
+      "enum": ["pane_cap_reached", "target_not_permitted", "feed_unavailable", "feed_overloaded"]
+    }
+  }
+}

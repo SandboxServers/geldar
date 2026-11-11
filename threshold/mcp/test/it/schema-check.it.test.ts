@@ -20,6 +20,7 @@ import {
 } from './scratch-db.ts';
 
 const CHECK_FILE = join(SQL_DIR, 'test', 'check-schema.sql');
+const REGISTER_READS_FILE = join(SQL_DIR, 'test', 'check-schema-register-reads.sql');
 
 describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real Postgres', () => {
   let database = '';
@@ -45,10 +46,23 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
     try {
       // A failed check rejects here with its schema check message; a passing one returns.
       await client.query(check);
+      await client.query(readFileSync(REGISTER_READS_FILE, 'utf8'));
     } finally {
       await client.end();
     }
     const passed = notices.filter((text) => text.startsWith('schema check passed'));
-    expect(passed, 'one NOTICE per check block that passed').toHaveLength(4);
+    // One NOTICE per check block, in file order; a missing, extra or reordered block fails.
+    const expected = [
+      /^schema check passed: \d+ tables, pgvector \S+$/,
+      /^schema check passed: \d+ mcp tables, role geldar_mcp$/,
+      /^schema check passed: role geldar_glass reads its Glass tables and columns and writes none$/,
+      /^schema check passed: append-only triggers on 4 audit tables, geldar_mcp cannot change mcp_journal$/,
+      /^schema check passed: role geldar_register and mcp_identities$/,
+      /^schema check passed: register role reads through functions and the sign-up gates refuse$/,
+    ];
+    expect(passed, 'one NOTICE per check block that passed').toHaveLength(expected.length);
+    expected.forEach((pattern, index) => {
+      expect(passed[index], `check block ${index + 1}`).toMatch(pattern);
+    });
   });
 });

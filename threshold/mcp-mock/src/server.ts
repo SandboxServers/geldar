@@ -12,17 +12,33 @@ import { checkBearer } from './auth.ts';
 /** Why a player's sessions ended while requests were open. Each value is a fixed template. */
 export type SessionEndReason = 'session_revoked';
 
-/** The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. */
+/**
+ * The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. `answered`
+ * ends the request with the given status, headers and JSON body (a caller's fixed refusal shape).
+ */
 export type AuthDecision =
   | { outcome: AuthResult; reason?: string }
   | { outcome: 'limited'; retryAfterSec: number }
-  | { outcome: 'unavailable' };
+  | { outcome: 'unavailable' }
+  | {
+      outcome: 'answered';
+      status: number;
+      headers?: Record<string, string>;
+      body: unknown;
+      /** The log line's event (default `answered`) and its log-only reason; neither is sent. */
+      event?: string;
+      reason?: string;
+    };
 
-/** A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint. */
+/**
+ * A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint.
+ * `body`, when set, is the JSON answered instead of the JSON-RPC error that carries the message.
+ */
 export interface Refusal {
   status: number;
   message: string;
   retryAfterSec?: number;
+  body?: unknown;
 }
 
 export interface MockHttpOptions {
@@ -133,11 +149,13 @@ function sendRefusal(res: ServerResponse, refusal: Refusal): void {
   }
   res.writeHead(refusal.status, headers);
   res.end(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      error: { code: -32003, message: refusal.message },
-      id: null,
-    }),
+    JSON.stringify(
+      refusal.body ?? {
+        jsonrpc: '2.0',
+        error: { code: -32003, message: refusal.message },
+        id: null,
+      },
+    ),
   );
 }
 
@@ -345,6 +363,18 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     // A refused client is not read further, so its socket closes when the option asks for it.
     const close: Record<string, string> =
       options.closeRefused === true ? { Connection: 'close' } : {};
+    if (decision.outcome === 'answered') {
+      ctx.event = decision.event ?? 'answered';
+      if (decision.reason !== undefined) ctx.reason = decision.reason;
+      res
+        .writeHead(decision.status, {
+          'Content-Type': 'application/json',
+          ...decision.headers,
+          ...close,
+        })
+        .end(JSON.stringify(decision.body));
+      return;
+    }
     if ('retryAfterSec' in decision) {
       ctx.event = 'rate_limited';
       res.writeHead(429, { 'Retry-After': String(decision.retryAfterSec), ...close }).end();

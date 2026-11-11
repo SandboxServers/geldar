@@ -113,9 +113,11 @@ describe('adversarial fixtures through the API', () => {
     expect(Object.keys(parsed)).toEqual(['thoughts', 'next']);
   });
 
-  it('returns a deeply nested model_input as a capped JSON string, not as parsed structure', async () => {
+  it('returns a thought as JSON with no model_input and no raw_output, however nested', async () => {
     const deep = JSON.parse(`${'['.repeat(400)}1${']'.repeat(400)}`);
-    running = await startGlass([{ thought_id: 't1', model_input: deep, parsed: null }]);
+    running = await startGlass([
+      { thought_id: 't1', model_input: deep, raw_output: 'secret', parsed: null },
+    ]);
     const reply = await send(running.port, {
       method: 'GET',
       path: '/api/thoughts/t1',
@@ -124,7 +126,11 @@ describe('adversarial fixtures through the API', () => {
     expect(reply.status).toBe(200);
     expect(reply.headers['x-content-type-options']).toBe('nosniff');
     expect(String(reply.headers['content-type'])).toMatch(/^application\/json/);
-    expect(JSON.parse(reply.body)).toBeTypeOf('object');
+    const thought = (JSON.parse(reply.body) as { thought: Record<string, unknown> }).thought;
+    expect(thought.thought_id).toBe('t1');
+    expect(thought).not.toHaveProperty('model_input');
+    expect(thought).not.toHaveProperty('raw_output');
+    expect(reply.body).not.toContain('secret');
   });
 });
 

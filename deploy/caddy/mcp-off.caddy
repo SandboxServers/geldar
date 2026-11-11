@@ -1,0 +1,12 @@
+# Kill switch for the public MCP (decision 0054). To turn it off, load this file in place of mcp.caddy,
+# then `caddy reload`. Never restart Caddy: it serves other sites on the node.
+# The body is the 0090 kill-switch body, the one the MCP itself answers.
+mcp.{$GELDAR_DOMAIN} {
+	header Content-Type application/json
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+	respond `{"error":{"code":"unavailable","message":"Service unavailable"}}` 503
+}

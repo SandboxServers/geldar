@@ -9,10 +9,12 @@
     "start": "node src/main.ts"
   },
   "dependencies": {
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
+    "@types/three": "0.186.0",
     "happy-dom": "21.0.4"
   }
 }

@@ -1,0 +1,9 @@
+# The public Minecraft overlay (C2-07a2, decision 0096). Merged on top of colo.yml and nats-auth.yml by the deploy when
+# the owner opens the game port. It adds one publish and nothing else: the bind address and the port come from env
+# (GELDAR_MC_BIND, GELDAR_MC_PORT), and no value is kept in the repo. The loopback-ports check allows exactly this
+# entry on velocity in this file and rejects any other service, entry or file.
+#   docker compose -f compose/colo.yml -f compose/nats-auth.yml -f compose/colo-public.yml config --quiet
+services:
+  velocity:
+    ports:
+      - "${GELDAR_MC_BIND:?}:${GELDAR_MC_PORT:?}:25565"

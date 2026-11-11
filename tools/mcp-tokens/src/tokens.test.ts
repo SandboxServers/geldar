@@ -200,6 +200,32 @@ describe('tokens', () => {
     ).rejects.toThrow('no player');
   });
 
+  // Decision 0077 (option A): an invitee is a player the owner added, so it counts in the owner's
+  // cap at `player add` (players.test.ts, 'refuses the 21st'); its token comes from this same mint.
+  it("mints an invitee's token once: written to its file once, only the HMAC stored", async () => {
+    const sql = await withPlayer();
+    sql.players.set('ag-inv-01', 'active');
+    const out = join(outDir, 'inv.env');
+    const tokenId = await mintTokenFile(sql, secrets, 'ag-inv-01', out);
+    const token = await tokenIn(out);
+    const pepper = (await readFile(join(secrets, 'mcp-token-pepper.txt'), 'utf8')).trim();
+    expect(sql.tokens).toHaveLength(1);
+    expect(sql.tokens[0]?.player_id).toBe('ag-inv-01');
+    expect(sql.tokens[0]?.token_hash.equals(hashToken(pepper, token))).toBe(true);
+    expect([tokenId, ...(await listTokens(sql, 'ag-inv-01')), ...sql.log].join('\n')).not.toContain(
+      token,
+    );
+    // The file is written once: a second mint to the same path is refused and stores no row.
+    await expect(mintTokenFile(sql, secrets, 'ag-inv-01', out)).rejects.toThrow();
+    expect(sql.tokens).toHaveLength(1);
+    expect(await tokenIn(out)).toBe(token);
+    // The invitee's own limit is the same two active tokens as any player.
+    await mintTokenFile(sql, secrets, 'ag-inv-01', join(outDir, 'inv2.env'));
+    await expect(
+      mintTokenFile(sql, secrets, 'ag-inv-01', join(outDir, 'inv3.env')),
+    ).rejects.toThrow('revoke one first');
+  });
+
   it('lists tokens by id, player, status and expiry, never by hash', async () => {
     const sql = await withPlayer();
     const tokenId = await mintTokenFile(sql, secrets, 'ag-jo-01', join(outDir, 'l.env'));

@@ -1,0 +1,20 @@
+{
+  "name": "@geldar/register",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The self-registration service: GitHub and Discord sign-in for sovereign-player owners (decision 0135).",
+  "exports": {
+    ".": "./src/config.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/pg": "8.23.1"
+  },
+  "dependencies": {
+    "pg": "8.23.1"
+  }
+}

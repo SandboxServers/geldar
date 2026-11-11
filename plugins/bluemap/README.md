@@ -32,17 +32,20 @@ the date entry together, and rerun `test/lock.test.ts`.
 
 These files are copied into the Paper plugin directory, `plugins/BlueMap/`, at deploy time.
 
-- `core.conf`: `accept-download: false` (see below), `metrics: false` (no outbound bStats ping),
+- `core.conf`: `accept-download: true` (owner ruling 2026-11-11, see below), `metrics: false` (no outbound bStats ping),
   `data: "bluemap"`, `render-thread-count: 1` (one render thread: 0 starts one per CPU core, which
   competes with the game tick for the shared CPU cap).
-- `webserver.conf`: `enabled: false`. The 5.29 defaults have no bind-address key (no `ip`; checked
-  against the pinned jar, see `known-keys.json`), so an enabled server cannot be limited to loopback.
-  The server stays off. The rendered webroot is served by
-  Caddy later (C2-04), not by BlueMap. The port (8100) is kept only as a value for C2-04 to read.
-- `plugin.conf`: `live-player-markers: false` and `skin-download: false`. No agent position is sent
-  to the map, and no player skin is fetched from Mojang. This is the privacy rule: a public map must
-  not show where agents are, and agents must not be able to learn that they are watched from it.
-- `maps/overworld.conf`: the only map. `dimension: "minecraft:overworld"`, world `world`, read from
+- `webserver.conf`: `enabled: true`, `port: 8101` (ruling R38, 2026-11-11). The 5.29 defaults have no
+  bind-address key (no `ip`; see `known-keys.json`), so the server listens on the container interface; it is
+  reachable only on the colo network because Paper publishes no port. The `bluemap-web` caddy serves the tiles
+  and proxies only `/maps/<map>/live/<file>` (GET and HEAD) to `paper:8101`.
+- `plugin.conf`: `live-player-markers: true`, `hidden-game-modes: [spectator]`, `hide-vanished: true`,
+  `hide-invisible: true` and `skin-download: false`. The public map shows every agent player's live position
+  (sovereign players included). Spectators (ghosts held by Paper, C2-02d), vanished and invisible players do not show.
+  Exposed by the live JSON: player name, uuid, position, rotation, dimension. 5.29 has no plugin key for health or
+  food and its players.json does not carry them as far as the pinned defaults show (not verified on a running server).
+  No skin is fetched from Mojang.
+- `maps/overworld.conf`, `maps/nether.conf`, `maps/end.conf`: the three dimensions of world `world` (C2-07o). Overworld: `dimension: "minecraft:overworld"`, world `world`, read from
   the Paper volume. The marker set is empty: no entity markers and no static markers.
 
 No token, password, key, address or account name appears in these files. `test/config.test.ts`
@@ -52,15 +55,13 @@ checks that.
 
 BlueMap needs the Minecraft client assets (textures and models) to render blocks. On first run it
 downloads them from Mojang's servers. That download is governed by Mojang's terms, so it is an
-owner decision, not a default. The repo ships with `accept-download: false`. BlueMap then does not
+owner decision, not a default. Since 2026-11-11 (owner ruling, C2-07o) the repo ships with `accept-download: true`. With `false`, BlueMap would not
 download anything and does not render textures.
 
 No Mojang asset is committed to this repo. The owner must:
 
 1. Read Mojang's terms for the client assets.
-2. Set `accept-download: true` in the copy of `core.conf` that is deployed to the node. Do not
-   commit that change. The repo keeps `false`, and `test/config.test.ts` fails if it is committed as
-   `true`.
+2. Done: `accept-download: true` is committed in `core.conf`, and `test/config.test.ts` fails if it is removed.
 3. Record the acceptance in the deploy notes (owner action, 0130).
 
 ## How the jar reaches Paper (for C1-02 and C1-04)

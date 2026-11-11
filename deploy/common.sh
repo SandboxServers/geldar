@@ -9,12 +9,15 @@ COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}
 SECRETS_OVERLAY=$DEPLOY_DIR/compose.secrets.yml
 # NATS auth (decision 0080, default-on): the overlay beside the colo file. It gives nats the auth config and the
 # per-role password files, and it is merged on every compose call so the deploy never runs open NATS.
+# It is merged BEFORE the secrets overlay: it names its secrets as ./secrets/..., and the later file wins, so the
+# secrets overlay must come last to point every NATS secret at GELDAR_SECRETS_DIR.
 NATS_OVERLAY=$(dirname "$COMPOSE_FILE")/nats-auth.yml
 EXTRA_OVERLAY=${GELDAR_COLO_EXTRA_OVERLAY:-}
 GELDAR_SECRETS_DIR=${GELDAR_SECRETS_DIR:-/etc/geldar-colo/secrets}
 export GELDAR_SECRETS_DIR
 RELEASE_FILE=${GELDAR_RELEASE_FILE:-/etc/geldar-colo/release.env}
 STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
+export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bluemap.jar into Paper (C2-07o)
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 DRY_RUN=${DEPLOY_DRY_RUN:-0}
@@ -50,16 +53,59 @@ act() {
 
 # Every compose call names the project, so it can only reach geldar-colo containers, volumes and networks.
 dc() {
-  if [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
+  public_overlay
+  # colo-up.sh sets HOLD_PUBLIC=1 until the stack is healthy: the port is published by the last `up` only.
+  if [ "${HOLD_PUBLIC:-0}" = 1 ]; then PUBLIC_OVERLAY=; fi
+  if [ -n "$PUBLIC_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
+  elif [ -n "$PUBLIC_OVERLAY" ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" "$@"
+  elif [ -n "$EXTRA_OVERLAY" ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
   else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" "$@"
   fi
+}
+
+# The public Minecraft port overlay (compose/colo-public.yml) is merged only when the node env sets both
+# GELDAR_MC_BIND and GELDAR_MC_PORT. Exactly one set is refused, and so is a wildcard bind: the bind must be the node's
+# own interface address. Sets PUBLIC_OVERLAY (empty when the overlay is off). No address is kept in the repo.
+public_overlay() {
+  PUBLIC_OVERLAY=
+  bind=${GELDAR_MC_BIND:-}
+  port=${GELDAR_MC_PORT:-}
+  if [ -z "$bind" ] && [ -z "$port" ]; then return 0; fi
+  [ -n "$bind" ] || die "GELDAR_MC_PORT is set but GELDAR_MC_BIND is not; set both or neither (deploy/README.md)"
+  [ -n "$port" ] || die "GELDAR_MC_BIND is set but GELDAR_MC_PORT is not; set both or neither (deploy/README.md)"
+  case $bind in
+    0.0.0.0 | '::' | '[::]' | '0:0:0:0:0:0:0:0') die "GELDAR_MC_BIND is a wildcard address; it must be the node's own interface address" ;;
+  esac
+  # One IPv4 literal only: four decimal octets 0-255, no leading zeros, no hostname, no IPv6, no list.
+  printf '%s' "$bind" | grep -Eq '^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$' ||
+    die "GELDAR_MC_BIND must be one IPv4 literal (a.b.c.d); no hostname, IPv6 or list"
+  oldifs=$IFS
+  IFS=.
+  # shellcheck disable=SC2086
+  set -- $bind
+  IFS=$oldifs
+  for octet in "$@"; do
+    [ "$octet" -le 255 ] || die "GELDAR_MC_BIND must be one IPv4 literal (a.b.c.d): octet $octet is above 255"
+  done
+  case $port in
+    '' | *[!0-9]*) die "GELDAR_MC_PORT must be a number" ;;
+  esac
+  [ "${#port}" -le 5 ] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "GELDAR_MC_PORT must be between 1 and 65535"
+  case $port in
+    25565 | 25566) die "GELDAR_MC_PORT must not be 25565 or 25566 (decision 0082); pick another public port" ;;
+  esac
+  PUBLIC_OVERLAY=$(dirname "$COMPOSE_FILE")/colo-public.yml
+  [ -f "$PUBLIC_OVERLAY" ] || die "public overlay not found: $PUBLIC_OVERLAY"
 }
 
 plan_header() {
   say "project: $PROJECT"
-  say "compose: $COMPOSE_FILE (+ $SECRETS_OVERLAY + $NATS_OVERLAY${EXTRA_OVERLAY:+ + $EXTRA_OVERLAY})"
+  public_overlay
+  say "compose: $COMPOSE_FILE (+ $SECRETS_OVERLAY + $NATS_OVERLAY${PUBLIC_OVERLAY:+ + $PUBLIC_OVERLAY}${EXTRA_OVERLAY:+ + $EXTRA_OVERLAY})"
   say "secrets dir: $GELDAR_SECRETS_DIR; release manifest: $RELEASE_FILE; state: $STATE_DIR"
   if [ "$DRY_RUN" = 1 ]; then say "DEPLOY_DRY_RUN=1: read-only steps only"; fi
 }
@@ -173,10 +219,25 @@ check_secrets() {
     check_secret "$name" "$p"
   done <"$WORK/secrets.tsv"
   # A bind mount of an absolute host path is checked here too. A service secret prints its source as a bare name, which
-  # the loop above already checked through its top-level file, so only an absolute source is taken.
-  conf=$(awk '/^ +source: (\/|[A-Za-z]:\/)/ {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
+  # the loop above already checked through its top-level file, so only an absolute source is taken. The source is kept
+  # for one list item only (reset at each "- "), so an unrelated bind mount's source never carries over to a later
+  # item's target (C2-07g: the colo-mind.yaml bind mount was read as the nats-auth.conf secret).
+  conf=$(awk '/^ +- / {src = ""} /^ +(- )?source: (\/|[A-Za-z]:\/)/ {src = $NF} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
   if [ -n "$conf" ]; then check_secret "nats-auth.conf (bind mount)" "$conf"; fi
   say "secret files: each file the merged config declares is present, non-empty and owner-only"
+}
+
+# The two plugin jars are bind-mounted as files (compose/colo.yml). When a jar path is missing at container start, Docker
+# creates it as a root-owned DIRECTORY, and the container then fails. That happened after an operator moved `src` while
+# a container restarted (C2-07j). Refuse here when a needed jar path is a directory; a missing path is the build's concern.
+# GELDAR_PLUGIN_DIR overrides the plugin directory (the tests use it).
+check_jar_sources() {
+  pdir=${GELDAR_PLUGIN_DIR:-$(dirname "$COMPOSE_FILE")/../plugin}
+  for rel in core/build/libs/geldar-core.jar velocity-identity/build/libs/geldar-velocity-identity.jar; do
+    if [ -d "$pdir/$rel" ]; then
+      die "bind-mount source $pdir/$rel is a directory where a file is expected (Docker made it while the jar was missing); stop the project's containers, run: rmdir '$pdir/$rel', rebuild the plugins, then run colo-up again (deploy/README.md, replacing src)"
+    fi
+  done
 }
 
 # Reads the release manifest as KEY=VALUE data (it is never sourced) and exports each *_IMAGE variable.
@@ -256,6 +317,55 @@ fetch_bluemap() {
   fi
 }
 
+# Trusted proxies (ruling R32): Glass and the MCP trust the colo bridge gateway, which is the peer address a host-network
+# Caddy shows. The two lists live in the node env file (STATE_DIR/node.env, mode 0600, KEY=VALUE as data, never sourced).
+# load_node_env fills an unset variable from the file and exports both; save_node_env writes the values in force.
+NODE_PROXY_VARS="GELDAR_GLASS_TRUSTED_PROXIES GELDAR_MCP_TRUSTED_PROXIES"
+NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET REGISTER_TRUSTED_PEERS"
+load_node_env() {
+  for v in $NODE_ENV_VARS; do
+    eval "cur=\${$v:-}"
+    if [ -z "$cur" ] && [ -f "$STATE_DIR/node.env" ]; then
+      cur=$(sed -n "s/^$v=//p" "$STATE_DIR/node.env" | tail -n 1)
+      [ -z "$cur" ] || printf '%s' "$cur" | grep -Eq '^[0-9A-Fa-f:.,/]*$' || die "$v in $STATE_DIR/node.env has characters that are not an address list"
+    fi
+    if [ -n "$cur" ]; then
+      eval "$v=\$cur"
+      export "${v?}"
+    fi
+  done
+}
+
+save_node_env() {
+  if [ "$DRY_RUN" = 1 ]; then
+    say "dry-run, not run: persist the trusted proxy lists in $STATE_DIR/node.env"
+    return 0
+  fi
+  (
+    umask 077
+    mkdir -p "$STATE_DIR" || exit 1
+    : >"$STATE_DIR/node.env.new"
+    for v in $NODE_ENV_VARS; do
+      eval "cur=\${$v:-}"
+      [ -z "$cur" ] || echo "$v=$cur" >>"$STATE_DIR/node.env.new"
+    done
+    mv "$STATE_DIR/node.env.new" "$STATE_DIR/node.env"
+  ) || die "cannot write the node env file in $STATE_DIR; nothing deployed"
+}
+
+# Prints the node env values in force (the bridge subnet is what keeps the gateway address stable).
+say_node_env() {
+  say "trusted proxies: glass=${GELDAR_GLASS_TRUSTED_PROXIES:-unset} mcp=${GELDAR_MCP_TRUSTED_PROXIES:-unset}"
+  say "colo subnet: ${GELDAR_COLO_SUBNET:-unset (compose default, the gateway trust will not match)}"
+}
+
+# True when every proxy list is set to something other than the loopback default.
+proxies_set() {
+  for v in $NODE_PROXY_VARS; do
+    eval "cur=\${$v:-}"
+    [ -n "$cur" ] && [ "$cur" != 127.0.0.1 ] || return 1
+  done
+}
 # Saves the release being replaced (previous.env) and the one being applied (current.env) before any pull.
 # If the record cannot be written, the deploy stops: nothing is applied without a record of what it replaced.
 record_release() {

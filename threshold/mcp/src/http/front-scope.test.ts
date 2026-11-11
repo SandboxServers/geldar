@@ -74,15 +74,22 @@ describe('scoping and limits', () => {
   it('allows the 60th call a minute per player and refuses the 61st', async () => {
     const sid = await rig.openSession();
     const statuses: number[] = [];
+    let last: Awaited<ReturnType<typeof rig.send>> | undefined;
     for (let i = 0; i < CALLS_PER_MINUTE + 1; i += 1) {
-      const reply = await rig.send('/p/aa', {
+      last = await rig.send('/p/aa', {
         body: call('ping', i + 2),
         headers: { 'mcp-session-id': sid },
       });
-      statuses.push(reply.status);
+      statuses.push(last.status);
     }
     expect(statuses[CALLS_PER_MINUTE - 1]).toBe(200);
     expect(statuses[CALLS_PER_MINUTE]).toBe(429);
+    // The per-player call budget answers the 0090 rate_limited body with a matching Retry-After.
+    const seconds = Number(last?.headers['retry-after']);
+    expect(seconds).toBeGreaterThanOrEqual(1);
+    expect(last?.text).toBe(
+      `{"error":{"code":"rate_limited","message":"Too many requests"},"retryAfter":${seconds}}`,
+    );
   });
 
   it('shares the owner budget across players and refuses past it', async () => {
@@ -117,7 +124,9 @@ describe('scoping and limits', () => {
     for (let i = 0; i < FAILED_AUTH_PER_MINUTE + 1; i += 1) {
       const reply = await rig.send('/p/aa', {
         body: INIT,
-        headers: { Authorization: 'Bearer wrong-token-0123456789wrong' },
+        headers: {
+          Authorization: `Bearer gmcp-${'f0'.repeat(32)}`,
+        },
       });
       statuses.push(reply.status);
     }
@@ -132,7 +141,12 @@ describe('scoping and limits', () => {
       lookups += 1;
       return lookup(hash, nowMs);
     };
-    const wrong = { body: INIT, headers: { Authorization: 'Bearer wrong-token-0123456789wrong' } };
+    const wrong = {
+      body: INIT,
+      headers: {
+        Authorization: `Bearer gmcp-${'f0'.repeat(32)}`,
+      },
+    };
     for (let i = 0; i < FAILED_AUTH_PER_MINUTE; i += 1) await rig.send('/p/aa', wrong);
     // The refused token is remembered after its first lookup, so the repeats cost no lookup at all.
     expect(lookups).toBe(1);
@@ -152,7 +166,11 @@ describe('scoping and limits', () => {
       headers: { 'mcp-session-id': sid },
     });
     expect(fifth.status).toBe(429);
-    expect(fifth.text).toContain('too_many_open_requests');
+    // The open-request cap answers the one public 429 body, so it cannot be told from any other gate.
+    expect(fifth.text).toBe(
+      '{"error":{"code":"rate_limited","message":"Too many requests"},"retryAfter":1}',
+    );
+    expect(fifth.headers['retry-after']).toBe('1');
     rig.store.revoke('tok-a');
     await Promise.all(open);
   });

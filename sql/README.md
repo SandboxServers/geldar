@@ -5,7 +5,7 @@ The Postgres schema for a shard lives here as numbered migrations:
 - Files are named `NNNN_slug.sql` (for example `0001_init.sql`) and applied in name order.
 - On a fresh volume, Postgres init applies them (the official image runs every `*.sql` in `/docker-entrypoint-initdb.d` in name order).
 - Never edit a migration that has been merged. Add a new one with the next number instead.
-- `test/check-schema.sql` is not a migration. CI applies every `[0-9]*.sql` file with `psql -v ON_ERROR_STOP=1`, then runs it to check that every table of spec Appendix D exists and that pgvector is installed. It also checks the sovereign MCP tables, the revocation trigger and the `geldar_mcp` role (migration 0002).
+- `test/check-schema.sql` is not a migration. CI applies every `[0-9]*.sql` file with `psql -v ON_ERROR_STOP=1`, then runs it to check that every table of spec Appendix D exists and that pgvector is installed. It also checks the sovereign MCP tables, the revocation trigger and the `geldar_mcp` role (migration 0002). Migration 0008 adds `mcp_identities` and the NOLOGIN `geldar_register` role (decision 0135); the check runs as that role and asserts what it cannot read or write. Migration 0009 (ruling R33) revokes its direct INSERT on `mcp_tokens` and adds `register_mint_token` (SECURITY DEFINER), which inserts a token only for a player of the calling identity's owner; the check asserts the direct insert fails and a mint for another owner's player is refused.
 
 ## Runner (`tools/migrate`)
 
@@ -33,3 +33,7 @@ The TRUNCATE cleanups in the integration tests run only against a scratch databa
 GELDAR_IT_ALLOW_SHARED_DB is CI-only: never set it locally.
 
 The guard allows the shared name only when the variable is `1` and `GITHUB_ACTIONS` is `true`, and CI sets the variable on the one integration step that needs it.
+
+Migration 0010 (rulings R34 to R36) pins every definer function's search_path with pg_temp last and schema-qualifies its tables, adds `register_create_player` (lifetime cap of 10 creations per owner) and `register_retire_player`, revokes the register role's direct writes to players, tokens, budgets and agents, and lets geldar_mcp read mcp_identities.banned_at; the check asserts a temp-table shadow mint fails, the role cannot retire or un-revoke directly, and the 11th creation is refused.
+
+Migration 0011 adds `register_create_owner` (sign-up), so the register role has no INSERT on `mcp_owners` or `mcp_identities` and writes no table directly, drops the credits argument of `register_create_player` (the starting credits are a constant inside it, 240, the shard's `sovereign.budget.cap_credits`), pins the cap trigger's `search_path`, and locks the identity row in mint and create so a concurrent ban cannot be outrun. The register functions have no PUBLIC execute. `check-schema.sql` asserts each gate; the parallel-create, ban-race and MCP banned-owner cases are in `threshold/mcp/test/it/register-gates.it.test.ts`.

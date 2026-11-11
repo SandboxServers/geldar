@@ -15,6 +15,14 @@ export const COLO_PATH = 'compose/colo.yml';
 /** Host ports the colo stack never publishes: 25565 is the game server, 25566 is reserved. */
 const RESERVED_HOST_PORTS = [25565, 25566];
 
+/**
+ * The one public publish the repo allows (decision 0096, ruling R19): in the public overlay, the velocity service may
+ * publish the Minecraft port with the bind address and port taken from env. Nothing else is an exception.
+ */
+export const PUBLIC_OVERLAY_PATH = 'compose/colo-public.yml';
+export const PUBLIC_OVERLAY_SERVICE = 'velocity';
+export const PUBLIC_OVERLAY_PORT = '${GELDAR_MC_BIND:?}:${GELDAR_MC_PORT:?}:25565';
+
 /** True for the compose files the rule applies to, by repo-relative, forward-slash path. */
 export function isComposeFile(path: string): boolean {
   return /^compose\/[^/]+\.ya?ml$/.test(path);
@@ -90,25 +98,18 @@ function resourceLimits(definition: Record<string, unknown>): unknown {
 }
 
 /**
- * Which colo rules apply to a file: `base` for colo.yml and any colo*.yml (every service needs its limits and logging),
+ * Which colo rules apply to a file: `overlay` for the public Minecraft overlay (it adds one publish to velocity, so\n * the limits and logging live in colo.yml), `base` for colo.yml and any colo*.yml (every service needs its limits and logging),
  * `overlay` for the NATS auth overlay that is merged on colo (its services are the base's, so only the value and
  * security rules apply), or null for every other file.
  */
 export function coloRole(path: string): 'base' | 'overlay' | null {
+  if (path === PUBLIC_OVERLAY_PATH) return 'overlay';
   if (/^compose\/colo[^/]*\.ya?ml$/.test(path)) return 'base';
   return path === 'compose/nats-auth.yml' ? 'overlay' : null;
 }
 
 /** Keys no colo service may set: each one grants the container host-level power (privilege, capabilities, namespaces, devices, sysctls). */
-const DENIED_COLO_KEYS = [
-  'privileged',
-  'cap_add',
-  'pid',
-  'ipc',
-  'userns_mode',
-  'devices',
-  'sysctls',
-];
+const DENIED_COLO_KEYS = ['privileged', 'pid', 'ipc', 'userns_mode', 'devices', 'sysctls'];
 /** Relative bind sources a colo service may mount: the repo paths the stack needs. Named volumes are allowed too. */
 const COLO_SOURCE_ALLOWLIST = [
   '../sql',
@@ -118,8 +119,10 @@ const COLO_SOURCE_ALLOWLIST = [
   '../deploy',
   './paper',
   './velocity',
+  './bluemap-web',
   './secrets',
 ];
+const BLUEMAP_JAR_SOURCE = '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar';
 const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const DEFAULTED = /^\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}$/;
 
@@ -154,6 +157,8 @@ function limitProblem(name: 'cpus' | 'memory', value: unknown): string | null {
 function sourceProblem(source: string): string | null {
   const shown = JSON.stringify(source);
   if (/docker\.sock/i.test(source)) return `volume ${shown} mounts docker.sock, which is rejected`;
+  // The one interpolated host source: the deploy's verified BlueMap jar (C2-07o). Long form only; any other `$` is rejected.
+  if (source === BLUEMAP_JAR_SOURCE) return null;
   if (source.includes('$')) return `volume ${shown} uses interpolation, which is rejected`;
   if (/^(\/|~|[A-Za-z]:)/.test(source) || source.includes('\\')) {
     return `volume ${shown} is an absolute host path, which is rejected`;
@@ -237,6 +242,13 @@ function coloServiceProblems(
   const problems: string[] = [];
   for (const key of DENIED_COLO_KEYS) {
     if (key in definition) problems.push(`${key} is not allowed in colo`);
+  }
+  // The one capability a colo service may add back: Caddy's binary has the file capability cap_net_bind_service,
+  // and exec fails without it under cap_drop ALL + no-new-privileges (C2-07i). Anything else stays denied.
+  if ('cap_add' in definition) {
+    const caps = definition.cap_add;
+    const ok = Array.isArray(caps) && caps.length === 1 && caps[0] === 'NET_BIND_SERVICE';
+    if (!ok) problems.push('cap_add is not allowed in colo');
   }
   const watchtower = watchtowerProblem(role, definition);
   if (watchtower !== null) problems.push(watchtower);
@@ -333,6 +345,14 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
       continue;
     }
     for (const entry of definition.ports) {
+      // The single allowed exception: the exact env-interpolated Minecraft publish on velocity in the public overlay.
+      if (
+        path === PUBLIC_OVERLAY_PATH &&
+        service === PUBLIC_OVERLAY_SERVICE &&
+        entry === PUBLIC_OVERLAY_PORT
+      ) {
+        continue;
+      }
       const problem = portProblem(entry);
       if (problem !== null) findings.push(finding(service, problem));
       if (!isColo) continue;

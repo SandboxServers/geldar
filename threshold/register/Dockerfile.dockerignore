@@ -1,0 +1,19 @@
+# Allowlist: nothing enters the build context unless named here.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.nvmrc
+!**/package.json
+!contract
+!threshold/register
+# account.ts imports the token hash from the MCP package by relative path.
+!threshold/mcp/src/store/token-hash.ts
+# The re-include above also matches every installed package.json; drop installed trees.
+**/node_modules/**
+**/node_modules
+**/*.test.ts
+threshold/register/test
+**/.env*
+**/*tokens*.json
+**/secrets

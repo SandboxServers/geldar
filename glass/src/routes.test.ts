@@ -6,20 +6,20 @@ const PATHS = [
   '/api/thoughts',
   '/api/thoughts/abc',
   '/api/receipts',
-  '/api/stats',
   '/api/stream',
+  '/api/session',
 ];
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'TRACE'];
 
 describe('the route table', () => {
-  it('lists exactly the six routes, all GET', () => {
+  it('lists exactly the six routes, all GET, and no stats route', () => {
     expect(ROUTES.map((r) => `${r.method} ${r.path}`)).toEqual([
       'GET /api/agents',
       'GET /api/thoughts',
       'GET /api/thoughts/:id',
       'GET /api/receipts',
-      'GET /api/stats',
       'GET /api/stream',
+      'GET /api/session',
     ]);
   });
 
@@ -35,6 +35,7 @@ describe('the route table', () => {
 
   it('answers 404 for an unknown path, a trailing slash and an empty id', () => {
     expect(resolveRoute('GET', '/api/nope').status).toBe('not-found');
+    expect(resolveRoute('GET', '/api/stats').status).toBe('not-found');
     expect(resolveRoute('GET', '/api/agents/').status).toBe('not-found');
     expect(resolveRoute('GET', '/api/thoughts/').status).toBe('not-found');
     expect(resolveRoute('POST', '/').status).toBe('not-found');

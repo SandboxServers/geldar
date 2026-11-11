@@ -138,6 +138,8 @@ services:
       - paper-data:/data
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar', target: /plugins/bluemap.jar, read_only: true} # BlueMap (C2-07o, R38): verified jar, read-only; web server on 8101, colo network only
+      - ../plugins/bluemap/config:/plugins/BlueMap:ro
     # No ports: the game port and RCON are not published. Velocity is the only game listener.
     networks: [colo]
     healthcheck:
@@ -159,6 +161,9 @@ services:
     labels: *colo-labels
     image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
     environment:
+      # Like Paper: the itzg image starts as root and drops to this uid, so it reads the 0600 service-uid secret and owns /server.
+      UID: "${GELDAR_SERVICE_UID:-1000}"
+      GID: "${GELDAR_SERVICE_UID:-1000}"
       TYPE: VELOCITY
       VELOCITY_VERSION: "3.5.1"
       VELOCITY_BUILD_ID: "615"
@@ -338,6 +343,9 @@ services:
       GELDAR_MCP_BIND: 0.0.0.0
       # The Host values local clients send to the loopback port. No public host (decision 0053 defers it).
       GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
+      # Caddy (host network) may reach the publish as the docker bridge gateway: the node's deploy env sets the real peer
+      # address (comma-separated; replaces public.trusted_proxies in shards/colo-mind.yaml). Decision 0132: none in the repo.
+      GELDAR_MCP_TRUSTED_PROXIES: "${GELDAR_MCP_TRUSTED_PROXIES:-127.0.0.1}"
       # NATS as the mcp user (decision 0080): the overlay compose/nats-auth-mcp.yml is not merged on colo, so the wiring is here.
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: mcp
@@ -368,6 +376,171 @@ services:
       timeout: 3s
       retries: 3
       start_period: 60s
+    restart: unless-stopped
+
+  # [C2-08c] The register service (decision 0135, threshold/register): GitHub and Discord sign-in for sovereign-player
+  # owners. OFF BY DEFAULT: the profile `register` keeps it out of every default `up`, REGISTER_KILL_SWITCH is true, and
+  # no Caddy site loads it. It stays off on the Colo until C2-08d and the C2 gates. The only published port is the
+  # loopback 8090; the Postgres role is geldar_register (password file postgres-register.txt).
+  register:
+    profiles: [register]
+    # Budget: 0.25 CPU, 128m (no swap, 64 pids). Read-only root, as geldar-mcp runs.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_REGISTER_CPUS:-0.25}"
+          memory: "${GELDAR_COLO_REGISTER_MEM:-128m}"
+          pids: 64
+    memswap_limit: "${GELDAR_COLO_REGISTER_MEM:-128m}"
+    pids_limit: 64
+    logging: *logging
+    labels: *colo-labels
+    build:
+      context: ..
+      dockerfile: threshold/register/Dockerfile
+    image: ${GELDAR_REGISTER_IMAGE:-geldar-register:c2}
+    environment:
+      # The kill switch is on unless the deploy env says exactly "false" (config.ts). Read at start (ruling R26).
+      REGISTER_KILL_SWITCH: "${REGISTER_KILL_SWITCH:-true}"
+      # The public URL is a deploy value (the register host); the repo holds a placeholder only.
+      REGISTER_PUBLIC_URL: "${REGISTER_PUBLIC_URL:-https://register.example.invalid}"
+      # 0.0.0.0 inside the container; the port is published on loopback alone.
+      REGISTER_HOST: 0.0.0.0
+      REGISTER_PORT: "8090"
+      REGISTER_GITHUB_CLIENT_ID: "${REGISTER_GITHUB_CLIENT_ID:-}"
+      REGISTER_DISCORD_CLIENT_ID: "${REGISTER_DISCORD_CLIENT_ID:-}"
+      REGISTER_GITHUB_SECRET_FILE: /run/secrets/register-github-secret
+      REGISTER_DISCORD_SECRET_FILE: /run/secrets/register-discord-secret
+      REGISTER_PEPPER_FILE: /run/secrets/register-pepper
+      # The MCP's token pepper: the register service mints tokens the MCP verifies.
+      REGISTER_TOKEN_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
+      REGISTER_SHARD: colo
+      # The shard's sovereign.budget.cap_credits (shards/colo-mind.yaml), what the CLI path grants; a repo check pins them equal.
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      REGISTER_DB_PASSWORD_FILE: /run/secrets/postgres-register.txt
+      # Caddy (host network) reaches the publish as the docker bridge gateway: the deploy env sets it (default: the MCP's trusted proxy, the same gateway).
+      REGISTER_TRUSTED_PEERS: "${REGISTER_TRUSTED_PEERS:-${GELDAR_MCP_TRUSTED_PROXIES:-127.0.0.1}}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/').then((r)=>process.exit(r.status===200||r.status===503?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-github-secret, register-discord-secret]
+    ports:
+      # The loopback register port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8090:8090"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094). The image is a release-manifest value
+  # (GELDAR_GLASS_IMAGE, C2-07a1); the local tag and the build are the offline path (glass/Dockerfile is C2-07a1's).
+  # Postgres as geldar_glass (read-only role, sql/0005) with its password from a file secret. Caddy (host network)
+  # reaches it on the loopback publish only. No NATS.
+  glass:
+    # Budget: 0.5 CPU, 256m (no swap, 128 pids). Read-only root, as geldar-mcp runs.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_GLASS_CPUS:-0.5}"
+          memory: "${GELDAR_COLO_GLASS_MEM:-256m}"
+          pids: 128
+    memswap_limit: "${GELDAR_COLO_GLASS_MEM:-256m}"
+    pids_limit: 128
+    logging: *logging
+    labels: *colo-labels
+    build:
+      context: ..
+      dockerfile: glass/Dockerfile
+    image: ${GELDAR_GLASS_IMAGE:-geldar-glass:c2}
+    environment:
+      # 0.0.0.0 inside the container is accepted only with the in-network opt-in (C2-07a3, decision 0131); the port is
+      # still published on loopback alone.
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_GLASS_HOST: 0.0.0.0
+      GELDAR_GLASS_PORT: "8787"
+      GELDAR_GLASS_PG_HOST: postgres
+      GELDAR_GLASS_PG_PORT: "5432"
+      GELDAR_GLASS_PG_USER: geldar_glass
+      GELDAR_GLASS_PG_PASSWORD_FILE: /run/secrets/postgres-glass.txt
+      # Caddy runs on the host network; the peer Glass sees is the docker bridge gateway, not 127.0.0.1. Live check in
+      # the C2-07a2 worknote: set GELDAR_GLASS_TRUSTED_PROXIES in the deploy env to the address Glass logs for Caddy.
+      GELDAR_GLASS_TRUSTED_PROXIES: "${GELDAR_GLASS_TRUSTED_PROXIES:-127.0.0.1}"
+      GELDAR_GLASS_DELAY_SECONDS: "${GELDAR_GLASS_DELAY_SECONDS:-60}"
+      GELDAR_GLASS_ENABLED: "${GELDAR_GLASS_ENABLED:-true}"
+    secrets: [postgres-glass.txt]
+    ports:
+      # The loopback Glass port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8787:8787"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # [C2-07c1, C2-07m] The BlueMap map server (R27, R38, decisions 0072, 0094). Paper writes the tiles under bluemap/web in its
+  # volume and runs BlueMap's web server (port 8101) on the colo network only, never published. This caddy serves the tiles
+  # read only from /srv and proxies only /maps/<map>/live/<file> to paper:8101 (live agent positions; spectators hidden in
+  # plugin.conf), GET and HEAD only. Config: compose/bluemap-web/Caddyfile. The host Caddy (map.caddy) proxies to its loopback port.
+  bluemap-web:
+    # Budget: 0.25 CPU, 64m (no swap, 64 pids).
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_BLUEMAP_WEB_CPUS:-0.25}"
+          memory: "${GELDAR_COLO_BLUEMAP_WEB_MEM:-64m}"
+          pids: 64
+    memswap_limit: "${GELDAR_COLO_BLUEMAP_WEB_MEM:-64m}"
+    pids_limit: 64
+    logging: *logging
+    labels: *colo-labels
+    image: caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    environment:
+      # Caddy writes its autosave and state under these; the root filesystem is read only, /tmp is a tmpfs.
+      XDG_CONFIG_HOME: /tmp/config
+      XDG_DATA_HOME: /tmp/data
+    volumes:
+      # Only the BlueMap webroot of the Paper volume (R28): server.properties (RCON password), the world and the plugin
+      # configs are not mounted at all. A subpath needs Compose 2.30+ / Engine 26+ and the directory must exist at start.
+      - type: volume
+        source: paper-data
+        target: /srv
+        read_only: true
+        volume:
+          subpath: bluemap/web
+      - ./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      # The loopback map port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8100:8100"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    # The caddy binary carries the file capability cap_net_bind_service; with it dropped and no-new-privileges set,
+    # exec fails ("operation not permitted"). Adding it back lets exec work; the listener is :8100, so no low port is bound.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      paper:
+        condition: service_healthy
     restart: unless-stopped
 
   # [C1-11a] The player host (golem/src/players/main.ts): one Body process per sovereign ranger, started and stopped by
@@ -448,9 +621,18 @@ services:
       # admin.sh reads the superuser password from this file into PGPASSWORD for its own process only.
       GELDAR_ADMIN_PG_PASSWORD_FILE: /run/secrets/postgres
       PGHOST: postgres
+      # ensure-skins-bucket (C2-07j): the body NATS user makes the geldar-skins bucket, which velocity only reads.
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: body
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
+      # whitelist-house-body (C2-07k): the one-shot adds the house Body to Paper's whitelist over RCON before golem-body starts.
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_RCON_HOST: paper
+      GELDAR_RCON_PORT: "25575"
+      GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
     # postgres: the superuser password (admin.sh). postgres-mcp.txt: the file `migrate --set-role-password geldar_mcp`
-    # reads. mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
-    secrets: [postgres, postgres-mcp.txt, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
+    # reads; postgres-glass.txt: the same for geldar_glass (C2-07d). mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
+    secrets: [postgres, rcon, postgres-mcp.txt, postgres-glass.txt, postgres-register.txt, { source: nats-body, target: nats-body.txt }, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
     volumes:
       # The colo shard file (the Mind's file, which carries sovereign), under the path GELDAR_SHARD_FILE names.
       - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
@@ -469,6 +651,12 @@ services:
 networks:
   colo:
     name: geldar-colo
+    # Pinned (ruling R32): a host-network Caddy reaches the loopback publishes as the bridge gateway (the .1 address of this
+    # subnet), and Glass and the MCP trust that address in GELDAR_*_TRUSTED_PROXIES. The node sets GELDAR_COLO_SUBNET to a
+    # private /24 inside the 172.16/12 private block (colo-up.sh saves it in node.env). The default is the documentation range.
+    ipam:
+      config:
+        - subnet: "${GELDAR_COLO_SUBNET:-192.0.2.0/24}"
 
 secrets:
   postgres:
@@ -490,6 +678,18 @@ secrets:
     file: ./secrets/mcp-token-pepper.txt
   nats-mcp:
     file: ./secrets/nats-mcp.txt
+  # Glass's Postgres password for the geldar_glass role (C2-07a2).
+  postgres-glass.txt:
+    file: ./secrets/postgres-glass.txt
+  # The register service (C2-08c): its Postgres password (geldar_register), its pepper, and the OAuth client secrets (owner-provided).
+  postgres-register.txt:
+    file: ./secrets/postgres-register.txt
+  register-pepper:
+    file: ./secrets/register-pepper.txt
+  register-github-secret:
+    file: ./secrets/register-github-secret.txt
+  register-discord-secret:
+    file: ./secrets/register-discord-secret.txt
 
 volumes:
   postgres-data:
@@ -497,14 +697,4 @@ volumes:
   paper-data:
   velocity-data:
 
-# SLOTS: the comments below are the remaining packets' hooks. C1-03 (golem-body and animus) is filled in above.
-#
-# [slot C1-06a] NATS auth: the overlay compose/nats-auth.yml (decision 0080) is merged on top of this file, not included
-# in it, by `shard up colo` (on by default; it needs the secret files, see Assert-ColoNatsSecrets). The merged file is
-# checked offline by `./geldar.ps1 check` (Invoke-Check) and by the NATS overlay test (docker config, skipped without docker):
-#   docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
-#
-# [slot C1-07] telemetry: GELDAR_TELEMETRY_URL is passed through to golem-body and animus (unset by default). The
-# SigNoz endpoint is set on the node by its owner (decision 0130); shards/colo.yaml holds the replay_minutes default.
-#
-# [slot C1-09] bluemap: the map renderer, served on loopback only. Its mount and internal bind come from C1-09.
+# Slots filled by C1/C2 packets: NATS auth is the overlay compose/nats-auth.yml, merged by `shard up colo` (decision 0080); see decision 0082 for the budgets.

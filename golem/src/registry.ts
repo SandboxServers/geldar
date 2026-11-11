@@ -149,7 +149,12 @@ export class LifeRegistration implements BotRegistry {
 
   private async put(username: string): Promise<void> {
     const opened = await this.connection();
-    const value = { life_id: lifeIdFor(username), registered_at: this.now().toISOString() };
+    // `live: true` while the life is alive (decision 0092). A dead life is unregistered, not written live: false.
+    const value = {
+      life_id: lifeIdFor(username),
+      registered_at: this.now().toISOString(),
+      live: true,
+    };
     this.touched.add(username);
     try {
       await opened.kv.put(registryKey(username), JSON.stringify(value));

@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { identityHash } from '../../../threshold/register/src/identity.ts';
 import { type Env, type Io, PASSWORD_REWRITE_WARNING, parseArgs, run } from './cli.ts';
 import { PEPPER_FILE, REPO_ROOT } from './secret-files.ts';
 
@@ -205,5 +206,158 @@ describe('player retire', () => {
       'player ag-jo-01: retire',
       'life ag_jo_01: removal failed (ECONNREFUSED)',
     ]);
+  });
+});
+
+describe('identity ban by provider account (F16)', () => {
+  const PEPPER = 'p'.repeat(40);
+
+  async function banCall(
+    extra: string[],
+    options: { verb?: string; command?: string; pepper?: string; envPepperFile?: boolean } = {},
+  ): Promise<{
+    code: number;
+    h: Awaited<ReturnType<typeof harness>>;
+    values: unknown[][];
+    texts: string[];
+  }> {
+    const h = await harness();
+    const pepperFile = join(h.secretDir, '..', 'register-pepper');
+    await writeFile(pepperFile, `${options.pepper ?? PEPPER}\n`);
+    const values: unknown[][] = [];
+    const texts: string[] = [];
+    const env = {
+      ...envOf(h),
+      ...(options.envPepperFile ? { registerPepperFile: pepperFile } : {}),
+      connect: async () => ({
+        query: async (text: string, v?: unknown[]) => {
+          values.push(v ?? []);
+          texts.push(text);
+          return text.startsWith('UPDATE mcp_identities')
+            ? { rows: [{ owner_id: 'o' }] }
+            : text.startsWith('SELECT 1 FROM mcp_identities') ||
+                text.startsWith('DELETE FROM kino_admins')
+              ? { rows: [{ ok: 1 }] }
+              : { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    const code = await run(
+      [
+        options.command ?? 'identity',
+        options.verb ?? 'ban',
+        ...extra.map((x) => (x === 'PEPPER' ? pepperFile : x)),
+      ],
+      h.io,
+      env,
+    );
+    return { code, h, values, texts };
+  }
+
+  it('derives the id with the register service HMAC and bans it', async () => {
+    const { code, values } = await banCall([
+      '--provider',
+      'github',
+      '--user-id',
+      '4242',
+      '--pepper-file',
+      'PEPPER',
+    ]);
+    expect(code).toBe(0);
+    expect(values.some((v) => v[0] === identityHash(PEPPER, 'github', '4242'))).toBe(true);
+  });
+
+  it('a different provider gives a different id, and an unknown provider is refused', async () => {
+    const discord = await banCall([
+      '--provider',
+      'discord',
+      '--user-id',
+      '4242',
+      '--pepper-file',
+      'PEPPER',
+    ]);
+    expect(discord.values.some((v) => v[0] === identityHash(PEPPER, 'discord', '4242'))).toBe(true);
+    expect(discord.values.some((v) => v[0] === identityHash(PEPPER, 'github', '4242'))).toBe(false);
+    const bad = await banCall([
+      '--provider',
+      'gitlab',
+      '--user-id',
+      '4242',
+      '--pepper-file',
+      'PEPPER',
+    ]);
+    expect(bad.code).toBe(1);
+    expect(bad.values).toEqual([]);
+  });
+
+  it('reads the pepper file from the injected env when --pepper-file is not given', async () => {
+    const r = await banCall(['--provider', 'github', '--user-id', '4242'], {
+      envPepperFile: true,
+    });
+    expect(r.code).toBe(0);
+    expect(r.values.some((v) => v[0] === identityHash(PEPPER, 'github', '4242'))).toBe(true);
+  });
+
+  it('refuses a 31-character pepper with no query', async () => {
+    const r = await banCall(['--provider', 'github', '--user-id', '1', '--pepper-file', 'PEPPER'], {
+      pepper: 'p'.repeat(31),
+    });
+    expect(r.code).toBe(1);
+    expect(r.values).toEqual([]);
+    const ok = await banCall(
+      ['--provider', 'github', '--user-id', '1', '--pepper-file', 'PEPPER'],
+      {
+        pepper: 'p'.repeat(32),
+      },
+    );
+    expect(ok.code).toBe(0);
+  });
+
+  it('admin grant and revoke write kino_admins with the derived Microsoft id; other verbs and providers are refused', async () => {
+    const args = ['--provider', 'microsoft', '--user-id', 'sub-1', '--pepper-file', 'PEPPER'];
+    const want = identityHash(PEPPER, 'microsoft', 'sub-1');
+    const grant = await banCall(args, { command: 'admin', verb: 'grant' });
+    expect(grant.code).toBe(0);
+    expect(grant.texts.some((x) => x.startsWith('INSERT INTO kino_admins'))).toBe(true);
+    expect(grant.values.some((v) => v[0] === want)).toBe(true);
+    const revoke = await banCall(args, { command: 'admin', verb: 'revoke' });
+    expect(revoke.code).toBe(0);
+    expect(revoke.texts.some((x) => x.startsWith('DELETE FROM kino_admins'))).toBe(true);
+    expect(revoke.h.out.join('\n')).toContain('revoked Kino admin');
+    const byId = await banCall([want], { command: 'admin', verb: 'grant' });
+    expect(byId.code).toBe(0);
+    const bad = await banCall(args, { command: 'admin', verb: 'promote' });
+    expect(bad.code).toBe(1);
+    expect(bad.texts).toEqual([]);
+  });
+
+  it('unban derives the id the same way', async () => {
+    const r = await banCall(
+      ['--provider', 'discord', '--user-id', '1', '--pepper-file', 'PEPPER'],
+      { verb: 'unban' },
+    );
+    expect(r.code).toBe(0);
+    expect(r.values.some((v) => v[0] === identityHash(PEPPER, 'discord', '1'))).toBe(true);
+    expect(r.h.out.join('\n')).toContain('unbanned identity');
+  });
+
+  it('a missing pepper file, no pepper at all, or --user-id without --provider exit 1 with no query', async () => {
+    const missing = await banCall([
+      '--provider',
+      'github',
+      '--user-id',
+      '1',
+      '--pepper-file',
+      '/nonexistent/pepper-file',
+    ]);
+    expect(missing.code).toBe(1);
+    expect(missing.values).toEqual([]);
+    const none = await banCall(['--provider', 'github', '--user-id', '1']);
+    expect(none.code).toBe(1);
+    expect(none.values).toEqual([]);
+    const noProvider = await banCall(['--user-id', '1', '--pepper-file', 'PEPPER']);
+    expect(noProvider.code).toBe(1);
+    expect(noProvider.values).toEqual([]);
   });
 });

@@ -1,0 +1,12 @@
+# Kill switch for BlueMap (decision 0072). To turn BlueMap off, load this file in place of map.caddy,
+# then `caddy reload`. Never restart Caddy: it serves other sites on the node.
+# The body is the 0090 kill-switch body.
+map.{$GELDAR_DOMAIN} {
+	header Content-Type application/json
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+	respond `{"error":{"code":"unavailable","message":"Service unavailable"}}` 503
+}

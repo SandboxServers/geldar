@@ -1,0 +1,35 @@
+# 0094. BlueMap, Glass and the public MCP are read-only Caddy sites with kill switches, and core Caddy has no rate limit
+
+- Status: Proposed (orchestrator, 2026-11-11; owner to confirm)
+- Date: 2026-11-11
+- Spec: 6.2 and 6.4 (the public edge), 8.9 (the external port scan). Decisions 0054, 0071, 0072. This record is the Caddy-side detail of 0072 items 2, 3 and 6.
+
+## Decision
+
+1. **Three sites, each in its own file under `deploy/caddy/`:** `map` (BlueMap), `glass` (the Thought Stream viewer) and `mcp` (the public MCP, `/p/<player_id>` only). Each is loaded with `caddy validate` and then `caddy reload`, never restarted (0071 item 6).
+2. **Methods.** BlueMap and Glass accept GET and HEAD. The MCP accepts POST, GET and DELETE, which the MCP HTTP transport needs. Every other method gets 405 at Caddy.
+3. **Address headers.** Each site strips `x-geldar-client-ip`, `X-Forwarded-For` and `CF-Connecting-IP` from the request, then sets `x-geldar-client-ip` to `{remote_host}`. Caddy is the only trusted proxy.
+4. **Kill switch.** Each site has a `*-off.caddy` file that answers 503 for the same host. Loading it in place of the live file and reloading turns that site off without touching other sites.
+5. **Upstreams and domain are placeholders** (`{$GELDAR_*_UPSTREAM}`, `{$GELDAR_DOMAIN}`). Real values are set by the integration packet C2-07 and never written into the repo.
+6. **Gap: no Caddy rate limit.** Core Caddy has no rate-limit directive. This record does not add a third-party or unpinned Caddy module, because that would be a supply-chain dependency that needs owner approval. Rate limits live in Glass (C2-03) and in the public MCP (C2-01). The owner may later approve a pinned module, which would need its own record.
+7. **Exception: the BlueMap inline style.** No inline-style exception is recorded: BlueMap is not in the repo, so whether its web UI needs one is unknown until C2-07 loads it. map.caddy sets only X-Content-Type-Options: nosniff, Referrer-Policy: no-referrer and Content-Security-Policy: frame-ancestors 'none'. A full CSP, and any inline-style exception, is decided in C2-07 and recorded here and nowhere else.
+
+## Why
+
+- Caddy's job is method, header and path control and the kill switch. Rate limits and response hygiene sit in the services, which can count requests per player or per address with more context than a reverse proxy.
+- A file per site lets one reload turn off one site, which 0071 and 0072 require.
+- Pinning the Caddy image by digest keeps `caddy validate` reproducible.
+
+## Consequences
+
+- The sites are not live until C2-07 wires the reload and the owner confirms this record.
+- The public port scan (C2-06) checks only the ports; the methods and paths are checked by the repo test `tools/repo-checks/src/caddy-snippets.test.ts`.
+- Open for the owner: whether to approve a pinned Caddy rate-limit module; whether BlueMap needs an inline-style exception.
+
+## Amendment 2026-11-11 (C2-07m, ruling R38)
+
+The public map shows every agent player's live position, sovereign players included. This replaces the no-live-data part of ruling R27. BlueMap's integrated web server now runs inside Paper on the colo network (port 8101, not published to the host). The `bluemap-web` caddy still serves the static tiles and proxies only `/maps/<map>/live/<file>` to it, GET and HEAD only; no other Paper path is reachable through the map site. Spectators (ghosts held by Paper), vanished and invisible players are hidden in `plugin.conf`. Glass is unchanged.
+
+## Amendment 2026-11-11 (C2-07o, owner ruling)
+
+The owner accepts BlueMap's download of the Minecraft client resources under Mojang's EULA. BlueMap is installed on the colo Paper: the verified jar is mounted read-only into `/plugins`, and the repo's `core.conf` has `accept-download: true`. Render threads stay capped at 1 because the node is shared with a production server. The map covers the overworld, nether and end.

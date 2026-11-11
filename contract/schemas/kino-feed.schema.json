@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/kino-feed.schema.json",
+  "title": "KinoFeed",
+  "description": "One message of the Kino data feed, server to browser only, feed version 1 (decision 0075, amended 2026-11-11). PRINCIPLE 1: nothing in this contract can act on the world. Every message here is data flowing out of the shard to a viewer; the only browser-to-server messages are subscribe and unsubscribe (kino-client.schema.json), and they carry no world input. The feed reads chunks that are already loaded and never loads one. It carries block state names, never textures (textures are vanilla, fetched by the browser from the map's textures.json and cached there), and never player names, tokens, account names or addresses. CHUNK SECTION ENCODING (palette-v1): a section is 16x16x16 blocks, 4096 cells in order index = (y * 16 + z) * 16 + x with x, y, z from 0 to 15 inside the section. palette lists the distinct block states in the section, each as a namespaced id with optional states, for example minecraft:stone or minecraft:oak_log[axis=y]; state keys are sorted. bits is the width of one palette index: the smallest integer b with 2^b >= palette length, minimum 0, at most 12. data is base64 (standard alphabet, with padding) of the indices packed back to back, least significant bit first: cell i occupies bits i*bits to i*bits+bits-1 of the stream, and bit k of the stream is bit (k mod 8) of byte floor(k / 8). The stream is padded with zero bits to a whole byte, so data holds ceil(4096 * bits / 8) bytes. When bits is 0 the palette has exactly one entry, every cell is that entry, and data is the empty string. Caps: view radius at most 8 chunks; entity_positions at most 256 entries.",
+  "oneOf": [
+    { "$ref": "#/$defs/HelloMessage" },
+    { "$ref": "#/$defs/ChunkSectionMessage" },
+    { "$ref": "#/$defs/BlockUpdateMessage" },
+    { "$ref": "#/$defs/EntityPositionsMessage" },
+    { "$ref": "#/$defs/TargetMovedMessage" },
+    { "$ref": "#/$defs/ByeMessage" }
+  ],
+  "$defs": {
+    "AgentId": {
+      "description": "An agent id.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "WorldName": {
+      "description": "The world name.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "BlockState": {
+      "description": "A namespaced block id with optional states, for example minecraft:oak_log[axis=y]. Names only, no textures.",
+      "type": "string",
+      "maxLength": 256,
+      "pattern": "^[a-z0-9_.-]+:[a-z0-9_/.-]+(\\[[a-z0-9_]+=[a-z0-9_]+(,[a-z0-9_]+=[a-z0-9_]+)*\\])?$"
+    },
+    "BlockPos": {
+      "description": "A block position.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -2048, "maximum": 2048 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+      }
+    },
+    "EntityPosition": {
+      "description": "One entity's position. Angles are degrees, pitch from -90 to 90. agent_id is present only when the entity is an agent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "x", "y", "z", "yaw", "pitch"],
+      "properties": {
+        "id": {
+          "description": "An opaque feed-scoped entity id, not a UUID.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "type": {
+          "description": "The namespaced entity type, for example minecraft:zombie.",
+          "type": "string",
+          "pattern": "^[a-z0-9_.-]+:[a-z0-9_/.-]+$"
+        },
+        "agent_id": { "$ref": "#/$defs/AgentId" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" },
+        "yaw": { "type": "number" },
+        "pitch": { "type": "number", "minimum": -90, "maximum": 90 }
+      }
+    },
+    "HelloMessage": {
+      "description": "First message on a feed: the feed version, the world, the target agent and the view radius.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "feed_version", "world", "target_agent_id", "view_radius"],
+      "properties": {
+        "type": { "const": "hello" },
+        "feed_version": { "description": "Always 1 in this schema.", "const": 1 },
+        "world": { "$ref": "#/$defs/WorldName" },
+        "target_agent_id": { "$ref": "#/$defs/AgentId" },
+        "view_radius": {
+          "description": "The view radius in chunks, 1 to 8.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      }
+    },
+    "ChunkSectionMessage": {
+      "description": "One 16x16x16 section of an already-loaded chunk, in palette-v1 encoding (see the schema description).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "chunk_x", "chunk_z", "section_y", "palette", "bits", "data"],
+      "properties": {
+        "type": { "const": "chunk_section" },
+        "chunk_x": { "type": "integer", "minimum": -1875000, "maximum": 1875000 },
+        "chunk_z": { "type": "integer", "minimum": -1875000, "maximum": 1875000 },
+        "section_y": {
+          "description": "Section y (block y divided by 16, floored).",
+          "type": "integer",
+          "minimum": -128,
+          "maximum": 128
+        },
+        "palette": {
+          "description": "The distinct block states of the section.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/BlockState" }
+        },
+        "bits": {
+          "description": "Bits per palette index, 0 to 12.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12
+        },
+        "data": {
+          "description": "Base64 of the bit-packed indices; empty when bits is 0.",
+          "type": "string",
+          "maxLength": 24576,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      }
+    },
+    "BlockUpdateMessage": {
+      "description": "One block change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "pos", "state"],
+      "properties": {
+        "type": { "const": "block_update" },
+        "pos": { "$ref": "#/$defs/BlockPos" },
+        "state": { "$ref": "#/$defs/BlockState" }
+      }
+    },
+    "EntityPositionsMessage": {
+      "description": "Positions of the agents and entities in the view.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "entities"],
+      "properties": {
+        "type": { "const": "entity_positions" },
+        "entities": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/EntityPosition" }
+        }
+      }
+    },
+    "TargetMovedMessage": {
+      "description": "The target agent's focus point, sent when the target moves far enough that the section window shifts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target_agent_id", "x", "y", "z"],
+      "properties": {
+        "type": { "const": "target_moved" },
+        "target_agent_id": { "$ref": "#/$defs/AgentId" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "ByeMessage": {
+      "description": "The feed is closing. After bye the server sends nothing more.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "reason"],
+      "properties": {
+        "type": { "const": "bye" },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "unsubscribed",
+            "target_not_permitted",
+            "pane_cap_reached",
+            "feed_unavailable",
+            "feed_overloaded",
+            "kill_switch",
+            "session_ended"
+          ]
+        }
+      }
+    }
+  }
+}

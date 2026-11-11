@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/lakitu-audit.schema.json",
+  "title": "LakituAudit",
+  "description": "One pane action in the Lakitu audit log (decision 0100; 0075 point 6). Records a SHA-256 hash of the login id, never a login name, token, secret, address or account name. stopped_at is allowed on pane_closed only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event", "login_hash", "agent_id", "pane_id", "mode", "at"],
+  "properties": {
+    "event": {
+      "description": "The pane action.",
+      "type": "string",
+      "enum": ["pane_opened", "pane_targeted", "pane_mode_changed", "pane_closed"]
+    },
+    "login_hash": {
+      "description": "SHA-256 of the login id, as 64 lowercase hex characters. Never the login name.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "agent_id": {
+      "description": "The agent the pane targets.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "pane_id": {
+      "description": "ULID of the pane, with the pn_ prefix.",
+      "type": "string",
+      "pattern": "^pn_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "mode": {
+      "description": "The pane mode at the time of the event.",
+      "type": "string",
+      "enum": ["follow", "orbit", "free"]
+    },
+    "at": {
+      "description": "When the event happened, RFC 3339 in UTC.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "stopped_at": {
+      "description": "When the pane stopped. Present on pane_closed only.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "event": { "const": "pane_closed" } }, "required": ["event"] },
+      "then": {},
+      "else": { "properties": { "stopped_at": false } }
+    }
+  ]
+}

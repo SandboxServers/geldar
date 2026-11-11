@@ -23,6 +23,13 @@ describe('listMigrations', () => {
       '0005_glass_reader.sql',
       '0006_owner_cap_trigger.sql',
       '0007_journals_append_only.sql',
+      '0008_register_identities.sql',
+      '0009_register_mint_function.sql',
+      '0010_register_definer_functions.sql',
+      '0011_register_signup_function.sql',
+      '0012_register_read_functions.sql',
+      '0013_register_daily_owner_cap.sql',
+      '0014_kino_access.sql',
     ]);
   });
 

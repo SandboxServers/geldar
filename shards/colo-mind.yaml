@@ -30,8 +30,21 @@ models:
   strong: ["qwen3:32b"]          # served by the Thinker pool (decision 0078); the same tags as phase0
   fast: ["qwen3:8b"]
 
-# Sovereign players (spec 5.15; decisions 0040, 0041, 0052), the phase0 values. `players` is empty: no ranger is
-# served on the colo until the owner lists one (player_id, life_id, name) here. players-host refuses an unlisted id.
+# Public surfaces (decisions 0090, 0094; ruling R14, snake_case): the MCP and Glass sit behind the node's Caddy. Caddy
+# runs on the host network and reaches the loopback publishes; it sets x-geldar-client-ip. The client address is read
+# only from a peer in trusted_proxies. 127.0.0.1 is what Caddy looks like to a service that sees the real peer; if the
+# docker proxy shows the bridge gateway instead, the live step in docs/analysis/phase1/worknotes/C2-07a2.md sets
+# GELDAR_MCP_TRUSTED_PROXIES / GELDAR_GLASS_TRUSTED_PROXIES to that address. An unmatched peer is charged by its own address.
+public:
+  trusted_proxies: ["127.0.0.1"]
+  client_ip_header: x-geldar-client-ip
+  rate_limit:
+    per_minute: 600
+    burst: 120
+  kill_switch: false
+# Sovereign players (spec 5.15; decisions 0040, 0041, 0052), the phase0 values. `players` lists the rangers served on
+# the colo (player_id, life_id, name); the owner adds one here first (Jason, C1-10a). players-host refuses an unlisted id,
+# and colo-up whitelists every life_id on Paper (the in-game name) before any body starts.
 sovereign:
   allowed: true
   harnesses:
@@ -64,7 +77,9 @@ sovereign:
     handshake_per_minute: 300
     owner_calls_per_minute: 600
     failed_auth_per_minute: 30
-  players: []
+  players:
+    - { player_id: ag-jason-01, life_id: ag_jason_01, name: Jason }
+    - { player_id: ag-clara-01, life_id: ag_clara_01, name: Clara }
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an

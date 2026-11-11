@@ -36,7 +36,9 @@ const SECRET_FILES = [...SECRETS.map(([, f]) => f), 'nats-auth.conf'];
 const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
 const MIND = `registry.example.invalid/geldar/mind@sha256:${'2'.repeat(64)}`;
 const ADMIN = `registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}`;
-const RELEASE = `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\n`;
+const GLASS = `registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}`;
+const RELEASE = `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\nGELDAR_GLASS_IMAGE=${GLASS}\n`;
+const GLASS_LOGIN_STEP = / run --rm admin migrate --set-role-password geldar_glass /;
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -203,7 +205,45 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     expect(migrate).toBeGreaterThan(natsUp);
     expect(roleLogin).toBeGreaterThan(migrate);
     expect(fullUp).toBeGreaterThan(roleLogin);
+    // The glass login runs after the mcp one, before the full core.
+    const glassLogin = at(GLASS_LOGIN_STEP);
+    expect(glassLogin).toBeGreaterThan(roleLogin);
+    expect(fullUp).toBeGreaterThan(glassLogin);
+    expect(log[glassLogin]).toContain('--password-file /run/secrets/postgres-glass.txt');
+    // The register login (C2-08c) runs after the glass one, before the full core.
+    const registerLogin = at(/ run --rm admin migrate --set-role-password geldar_register /);
+    expect(registerLogin).toBeGreaterThan(glassLogin);
+    expect(fullUp).toBeGreaterThan(registerLogin);
+    expect(log[registerLogin]).toContain('--password-file /run/secrets/postgres-register.txt');
     expect(log[log.length - 1]).toMatch(/ up -d --wait$/);
+  });
+
+  it('starts paper, whitelists the house body, and only then starts the full core (C2-07k)', () => {
+    const fx = fixture();
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).toBe(0);
+    const log = composeCalls(fx);
+    const at = (re: RegExp) => log.findIndex((c) => re.test(c));
+    const paperUp = at(/ up -d --wait paper$/);
+    const whitelist = at(/ run --rm admin whitelist-house-body$/);
+    const fullUp = at(/ up -d --wait$/);
+    const skins = at(/ run --rm admin ensure-skins-bucket$/);
+    expect(paperUp).toBeGreaterThan(skins);
+    expect(whitelist).toBeGreaterThan(paperUp);
+    expect(fullUp).toBeGreaterThan(whitelist);
+  });
+
+  it('a failed whitelist step stops the deploy before golem-body can start', () => {
+    const fx = fixture();
+    const shim = readFileSync(join(fx.env.PATH.split(delimiter)[0], 'docker'), 'utf8');
+    writeFileSync(
+      join(fx.env.PATH.split(delimiter)[0], 'docker'),
+      shim.replace('exit 0\n', '').replace(/\n$/, '\n') +
+        `case "$*" in *whitelist-house-body*) exit 1 ;; esac\nexit 0\n`,
+    );
+    const r = run('colo-up.sh', fx, REAL);
+    expect(r.code).not.toBe(0);
+    expect(composeCalls(fx).some((c) => / up -d --wait$/.test(c))).toBe(false);
   });
 
   it('dry run prints each step in that order and runs no compose call that changes state', () => {
@@ -276,5 +316,39 @@ describe('compose/nats-auth.yml (decision 0080, the node secrets directory)', ()
     expect(NATS_OVERLAY_TEXT).toMatch(
       /command: \["-js", "-sd", "\/data", "-c", "\/etc\/nats\/nats-auth\.conf"/,
     );
+  });
+});
+
+describe('colo-up.sh and colo-status.sh trusted proxies (R32)', () => {
+  const PROXIES = {
+    GELDAR_GLASS_TRUSTED_PROXIES: '192.0.2.1',
+    GELDAR_MCP_TRUSTED_PROXIES: '192.0.2.2',
+    GELDAR_COLO_SUBNET: '198.51.100.0/24',
+  };
+  const nodeEnv = (fx: Fixture) =>
+    join(fx.env.GELDAR_STATE_DIR.replace(/^\/([a-z])\//i, '$1:/'), 'node.env');
+
+  it('persists both lists in the node env file and reloads them on a later run', () => {
+    const fx = fixture();
+    const first = run('colo-up.sh', fx, { ...REAL, ...PROXIES });
+    expect(first.code).toBe(0);
+    expect(readFileSync(nodeEnv(fx), 'utf8')).toBe(
+      'GELDAR_GLASS_TRUSTED_PROXIES=192.0.2.1\nGELDAR_MCP_TRUSTED_PROXIES=192.0.2.2\nGELDAR_COLO_SUBNET=198.51.100.0/24\n',
+    );
+    const second = run('colo-up.sh', fx, REAL);
+    expect(second.code).toBe(0);
+    expect(second.out).toContain('trusted proxies: glass=192.0.2.1 mcp=192.0.2.2');
+    expect(second.out).toContain('colo subnet: 198.51.100.0/24');
+    expect(readFileSync(nodeEnv(fx), 'utf8')).toContain('GELDAR_MCP_TRUSTED_PROXIES=192.0.2.2');
+  });
+
+  it('colo-status.sh prints both lists, from the node env file when the shell has none', () => {
+    const fx = fixture();
+    expect(run('colo-up.sh', fx, { ...REAL, ...PROXIES }).code).toBe(0);
+    const st = run('colo-status.sh', fx);
+    expect(st.out).toContain('trusted proxies: glass=192.0.2.1 mcp=192.0.2.2');
+    expect(st.out).toContain('colo subnet: 198.51.100.0/24');
+    const bare = run('colo-status.sh', fixture());
+    expect(bare.out).toContain('trusted proxies: glass=unset mcp=unset');
   });
 });
