@@ -135,7 +135,7 @@ first. It must be outside the checkout and mode `0700`:
 ```sh
 export GELDAR_TOKENS_DIR=<tokens-dir>
 deploy/colo-admin.sh migrate                 # SQL migrations
-deploy/colo-admin.sh migrate --set-role-password geldar_mcp --password-file <mounted-password-file>
+deploy/colo-admin.sh migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
 deploy/colo-admin.sh owner-add <owner> --cap 20
 deploy/colo-admin.sh player-add <player> --owner <owner> --life <life> --name <name> --harness <harness>
 ```
@@ -158,9 +158,9 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 
 - `deploy/colo-status.sh` (read-only). Every service should be healthy, and no published port should be 25565 or 25566.
   It also prints one resource sample. Compare it with the budgets in the capacity notes.
-- The MCP: its compose healthcheck is a TCP connect to `127.0.0.1:8788`, and there is no unauthenticated HTTP route.
-  On `<node>`, `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8788/` should print an HTTP status (for
-  example 401), not a connection error.
+- The MCP: its compose healthcheck is a TCP connect to `127.0.0.1:8788`. Its only HTTP route is `/p/<player>`; `/`
+  answers 404 without a check, and `/p/<player>` without a bearer token answers 401. On `<node>`,
+  `curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8788/p/<player>` should print 401, not a connection error.
 - From the desktop, open an SSH tunnel: `ssh -L 8788:127.0.0.1:8788 <operator>@<node>`. Point the launcher at the local
   end. Public DNS on ports 80 and 443 is a C2 matter. Then run the first look, one act and one wait for `<player>`.
 
@@ -176,8 +176,8 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 - BlueMap is not mounted. Accepting its download is the owner's call (`plugins/bluemap/bluemap.lock.json`).
 - Postgres service roles are superuser for now (C2).
 - NATS auth generation is PowerShell-only; copy its files from the trusted machine.
-- The admin container needs the `postgres.txt` secret and the `geldar_mcp` password file mounted. Until the admin
-  service mounts that password file, `migrate --set-role-password` cannot run.
+- The admin service mounts `postgres.txt` and `postgres-mcp.txt` (at `/run/secrets/postgres-mcp.txt`). The
+  `migrate --set-role-password` step reads the second one. Both files must exist before the first `up`.
 - `token-mint` needs `GELDAR_TOKENS_DIR` writable by uid 1000 (the admin container's user) and readable by the
   operator. The script requires mode `0700` on that directory, so the owner decides how to satisfy both.
 - `run --rm` starts the admin service's dependencies (Postgres) if they are not already running. It removes nothing.
@@ -239,8 +239,9 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
 - **NATS auth config.** Generating the per-role NATS password files and the auth config is PowerShell-only:
   `./geldar.ps1 shard nats-auth` on the desktop. The secrets set is then copied to the node's secrets directory by
   hand. There is no shell equivalent yet.
-- **Image publish.** No workflow publishes `geldar-body`, `geldar-mind` or `geldar-eventsink` to a registry. Until one
-  exists, the release manifest cannot name a published digest for those images.
+- **Image publish.** `colo-images` publishes the five images (`geldar-body`, `geldar-mind`, `geldar-eventsink`,
+  `geldar-mcp`, `geldar-admin`) and writes `release.env` for its run. Take the manifest from the run for
+  `<release-commit>`; the publish itself is an ops step.
 - **Node wiring for NATS auth.** `compose/nats-auth.yml` is not wired into the node's deploy. The colo file runs
   without it.
 
