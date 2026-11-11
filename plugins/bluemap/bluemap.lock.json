@@ -1,0 +1,12 @@
+{
+  "name": "BlueMap (Paper)",
+  "version": "5.29",
+  "released_at": "2026-10-10T17:31:34Z",
+  "asset": "bluemap-5.29-paper.jar",
+  "url": "https://github.com/BlueMap-Minecraft/BlueMap/releases/download/v5.29/bluemap-5.29-paper.jar",
+  "sha256": "7bf475936c26107d476c63151c76d5b49e865eebeada12c9e7d92155de877b9f",
+  "size_bytes": 6336407,
+  "release_page": "https://github.com/BlueMap-Minecraft/BlueMap/releases/tag/v5.29",
+  "license": "MIT",
+  "minimum_paper_build": "26.1.1"
+}

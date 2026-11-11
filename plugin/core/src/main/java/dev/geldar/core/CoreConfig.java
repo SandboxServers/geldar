@@ -6,7 +6,8 @@ import org.bukkit.configuration.ConfigurationSection;
 
 /**
  * Settings from {@code plugins/GeldarCore/config.yml}. The environment wins over the file:
- * {@code GELDAR_NATS_URL} and {@code GELDAR_SHARD}. Phase 0 has one open NATS, so there is no credential.
+ * {@code GELDAR_NATS_URL} and {@code GELDAR_SHARD}. NATS credentials are optional and are not read here:
+ * the publisher reads {@code GELDAR_NATS_USER} and {@code GELDAR_NATS_PASSWORD_FILE} (see {@code NatsEventPublisher}).
  * {@code recipes.grant_on_join} (default false) turns the join-time recipe grant back on.
  */
 public record CoreConfig(String natsUrl, String shard, int queueCapacity, int tpsIntervalSeconds, boolean grantRecipesOnJoin) {
