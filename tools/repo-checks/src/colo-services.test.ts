@@ -138,10 +138,11 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   'players-host': ['PLAYERS_HOST', '1', '2048m', 256],
   admin: ['ADMIN', '0.5', '512m', 128],
   glass: ['GLASS', '0.5', '256m', 128],
+  'bluemap-web': ['BLUEMAP_WEB', '0.25', '64m', 64],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the eleven services the budget totals cover', () => {
+  it('names exactly the twelve services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -280,8 +281,78 @@ describe('compose/colo.yml: the Glass service (C2-07a2)', () => {
     expect(glass.networks).toEqual(['colo']);
   });
 
-  it('publishes no BlueMap port: Paper has no ports and Caddy serves the webroot (C1-09)', () => {
+  it('binds 0.0.0.0 in the container only with the in-network opt-in, and reaches Postgres by name (C2-07a3)', () => {
+    expect(env(glass).GELDAR_IN_NETWORK_HOSTS).toBe('1');
+    expect(env(glass).GELDAR_GLASS_HOST).toBe('0.0.0.0');
+    expect(env(glass).GELDAR_GLASS_PG_HOST).toBe('postgres');
+  });
+
+  it('takes the MCP trusted proxies from the node env, default loopback (C2-07c1)', () => {
+    expect(env(mcp).GELDAR_MCP_TRUSTED_PROXIES).toBe(
+      composeDefault('GELDAR_MCP_TRUSTED_PROXIES', '127.0.0.1'),
+    );
+  });
+
+  it('publishes no BlueMap port from Paper: bluemap-web serves the webroot (C1-09, R27)', () => {
     expect(colo.services.paper).not.toHaveProperty('ports');
+  });
+});
+
+// R27: the BlueMap static file server. BlueMap's own web server stays off, so Paper writes no live data to the webroot.
+const bluemapWeb = colo.services['bluemap-web'] ?? {};
+
+describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', () => {
+  it('uses the digest-pinned caddy image from C2-04 and the file-server CLI on the web directory', () => {
+    expect(bluemapWeb.image).toBe(
+      'caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb',
+    );
+    expect(bluemapWeb.command).toEqual([
+      'caddy',
+      'file-server',
+      '--root',
+      '/srv',
+      '--listen',
+      ':8100',
+    ]);
+  });
+
+  it('publishes only the literal loopback port', () => {
+    expect(bluemapWeb.ports).toEqual(['127.0.0.1:8100:8100']);
+  });
+
+  it('mounts only a read only subpath of the Paper volume under bluemap/, never the whole volume (R28)', () => {
+    const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<Record<string, unknown>>;
+    expect(volumes).toHaveLength(1);
+    const mount = volumes[0] ?? {};
+    expect(typeof mount).toBe('object');
+    expect(mount.source).toBe('paper-data');
+    expect(mount.target).toBe('/srv');
+    expect(mount.read_only).toBe(true);
+    const subpath = (mount.volume as { subpath?: string } | undefined)?.subpath;
+    expect(subpath).toMatch(/^bluemap\/[^.]/);
+    expect(subpath).not.toContain('..');
+  });
+
+  it('waits for a healthy Paper before it starts, and restarts until the webroot exists', () => {
+    expect(bluemapWeb.depends_on).toEqual({ paper: { condition: 'service_healthy' } });
+    expect(bluemapWeb.restart).toBe('unless-stopped');
+    expect(colo.services.paper).toHaveProperty('healthcheck');
+  });
+
+  it('is hardened like the other services', () => {
+    expect(bluemapWeb.read_only).toBe(true);
+    expect(bluemapWeb.cap_drop).toEqual(['ALL']);
+    expect(bluemapWeb.security_opt).toEqual(['no-new-privileges:true']);
+    expect(bluemapWeb.networks).toEqual(['colo']);
+    expect(bluemapWeb.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
+  });
+
+  it('keeps BlueMap own web server off, so no live data reaches the webroot', () => {
+    const conf = readFileSync(`${ROOT}plugins/bluemap/config/webserver.conf`, 'utf8');
+    expect(conf).toMatch(/^enabled:\s*false\s*$/m);
+    expect(conf).toMatch(/^webroot:\s*"bluemap\/web"\s*$/m);
+    const plugin = readFileSync(`${ROOT}plugins/bluemap/config/plugin.conf`, 'utf8');
+    expect(plugin).toMatch(/^live-player-markers:\s*false\s*$/m);
   });
 });
 
@@ -296,6 +367,7 @@ describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
     'admin',
     'eventsink',
     'glass',
+    'bluemap-web',
   ];
 
   it.each(uidServices)(

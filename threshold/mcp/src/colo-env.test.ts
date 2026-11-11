@@ -18,7 +18,8 @@ function coloServiceEnv(service: string): Record<string, string> {
   if (block === undefined) throw new Error(`${file} has no service '${service}'`);
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(block.environment ?? {})) {
-    if (value !== null) env[name] = String(value);
+    // Compose resolves `${NAME:-default}` against the host env; with nothing set it is the default (C2-07c1).
+    if (value !== null) env[name] = String(value).replace(/^\$\{[A-Z0-9_]+:-([^}]*)\}$/, '$1');
   }
   return env;
 }
