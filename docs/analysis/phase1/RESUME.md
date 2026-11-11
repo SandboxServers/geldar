@@ -17,13 +17,13 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0131.
 
-## Order to start
+## Where the campaign is (2026-11-11)
 
-1. **Owner confirmations are done for C1 and C3, and the start is clear.** Decisions 0076, 0078 and 0080 are accepted. The owner rulings of 2026-11-10 are in decision 0130: backups deferred (scope B accepted), deploy by the node's runner or the owner's SSH access (no new deploy account), telemetry in the node's SigNoz, and the long tests (7-day soak, chaos day, N-bot long benchmark, restore-time tests, 20-minute smoke) run once at the campaign end. Still Proposed: 0077 (invitee auth), which gates C2 and C2b, and 0079 (credit numbers), which gates C4-04. Do not start those packets until they are accepted.
-2. **P1-C1-00 (ledger id C1-00)**, the contract unblocker, is next. It merges first. Fan-out packets never edit `contract/`.
-3. **Lanes.** Fan out per the wave's lane table after the unblocker merges. Lanes share files only where a card says so; the shared-file owners are in packet-conventions section 3.
-
-Do not start a wave's live steps until its owner items are answered.
+1. **C1 code is merged**: C1-00 to C1-09 (PRs #49 to #62) and the Colo fix PRs #63 to #78 (decisions 0131 to 0134). Still open in C1: **C1-10**, the owner's run on the node (first ranger, no degradation of the node's other services); the C1-01 leftovers (clock seams for three flaky tests, and two files over the soft cap; see worknotes P1-C1-01 and P1-C1-01b); and the C1 wave review, which runs together with C2's.
+2. **C2 (Doors) has started.** C2-00 (contract) and C2-02, C2-04, C2-05 and C2-06 are in progress. C2-01 and C2-03 start once C2-00 merges. C2-07 (integration, public deploy, live run) needs the owner: 0077, DNS, the UniFi forward and the c2-packets section 5.4 questions.
+3. **Owner-gated work ships with safe defaults**, as the cards say: invitee issuing behind a flag that defaults off, the Glass delay at 0, the sovereign filter on, and no Caddy rate-limit module. Each ruling is in [worknotes/orchestrator-2026-11-11.md](worknotes/orchestrator-2026-11-11.md).
+4. **Still Proposed:** 0077 (invitee auth), which gates C2-01 issuing, C2-07 and C2b login; and 0079 (credit numbers), which gates C4-04 and C4-05.
+5. **Next after C2's desktop packets:** the C2 wave review (C2-R1 to C2-R3 from the desktop; C2-R4 after C2-07's desktop step), then C2b-00 and the parts of C2b with no owner block (C2b-01, 03a, 03b, 04).
 
 ## Who does what
 

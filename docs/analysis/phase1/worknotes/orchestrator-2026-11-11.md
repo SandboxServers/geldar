@@ -1,0 +1,27 @@
+# Orchestrator log, night of 2026-11-11
+
+The owner asked for autonomous overnight work toward the Phase 1 goal, with decisions logged for later review and no spec edits (deviations go through decision 0073 amendments). The machine restarted for updates during the night, which stopped the previous session after PR #78 was opened. This log starts from there.
+
+Each ruling below is the orchestrator's, not the owner's. Each one says what to check and how to reverse it.
+
+## State at the start
+
+- `origin/main` at `5c129ed` (PR #77). PR #78 (`fix/colo-core-start`, decision 0134) open, CI green, from the stopped session.
+- C1 code: C1-00 to C1-09 merged (PRs #49 to #62), followed by the Colo fix PRs #63 to #78 (FX-* worknotes, C1-11a and C1-11b, decisions 0131 to 0134). C1-05b is deferred (0130). C1-10 (node deploy, first ranger, no degradation) is the owner's step on the node.
+- C1-01 is partial: three flaky tests still need clock seams (`golem/src/test-control.test.ts`, `golem/test/live/adam-stack.test.ts`, `tools/repo-checks/src/cli.test.ts`), and `lantern-local/src/thinker.ts` (592) and `threshold/mcp-mock/src/server.ts` (565) are over the soft cap.
+- `RESUME.md` and `ledger.md` were stale (they still said C1-00 was next). This branch updates them.
+- Two empty untracked files, `present.ts` and `wait.ts`, sit in the main checkout's root (dated 2026-11-09). They are not touched; the owner can delete them.
+
+## Rulings
+
+| # | Ruling | Why | To reverse |
+|---|---|---|---|
+| R1 | Merged PR #78 with no separate review. | CI was green and mergeable. The owner's rule is one review per wave, at the wave end, not per PR. It joins the C1 wave review. | Revert merge `51dc45a`. |
+| R2 | Start wave C2 (Doors) now. C1's exit check (first ranger on the node) is the owner's step and does not block desktop work. | plan.md orders C2 after C1. Only the C1 node step is outstanding, and C2's desktop packets don't depend on it. | Stop C2 PRs from merging. |
+| R3 | C2 packets merge to `main` one PR per packet, as C1 did (PRs #49 to #62), not through a wave integration branch. | This matches the C1 practice, and the C2 packets touch separate files once C2-00 has merged. | Not applicable. |
+| R4 | C2-00 error shapes: 401 for every unauthenticated case with one body; 429 with integer `retryAfter` seconds; 503 for the kill switch. Record 0090 is "Proposed (orchestrator)". | These are the card's own defaults, made concrete so the fan-out packets agree. | Owner edits 0090. |
+| R5 | The owner-gated defaults stay as the cards set them. C2-01 invitee issuing ships behind a flag that defaults off, since 0077 is still Proposed. C2-03 ships with the Glass delay at 0, the sovereign filter on, and no agent-board text. C2-04 ships with no Caddy rate-limit module (no new supply-chain dependency), and the gap is recorded in 0094. | These are the safest defaults. Each one waits for an owner question in c2-packets.md section 5.4. | Owner answers 5.4 items 3, 5, 6, 7, 8 and 9. |
+| R6 | Owner question 5.4 item 10 (Caddy sites for `glass` and `mcp`) goes to C2-04, which grows from S to M. It writes the `map`, `glass` and `mcp` snippets under `deploy/caddy/`, each with its own kill-switch file. | C2-04 already owns `deploy/caddy/`. Without the two extra sites the public MCP and Glass have no way in. These are template snippets only, with the domain as a placeholder; nothing is reloaded. | Drop the two snippets. |
+| R7 | C2-01 splits `threshold/mcp/src/config.ts` (558 lines) in its own first commit before it adds the `public` block. | packet-conventions section 1: a packet that needs a file over 500 lines splits it first. | Not applicable. |
+| R8 | C2-02, C2-04, C2-05 and C2-06 start before C2-00 merges. C2-01 and C2-03 wait for it. | The first four read nothing from `contract/`. The header name they share (`x-geldar-client-ip`) is fixed in R4. C2-01 and C2-03 read the C2-00 config keys and error shapes. This keeps at most six agents running at once. | Not applicable. |
+| R9 | C2-06 may update `pnpm-lock.yaml` for its new `tools/portscan` importer only, with no new external dependency. | `pnpm-workspace.yaml` already globs `tools/*`, and CI installs with a frozen lockfile, so the importer has to be in the lockfile. The card's "C2-07 adds it" would leave C2-06's PR red. | Not applicable. |

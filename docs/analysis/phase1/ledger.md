@@ -1,6 +1,6 @@
 # Phase 1 ledger
 
-Status as of 2026-11-10, branch `docs/phase1-reconcile`. One row per wave packet, taken from the ledger-row tables of the five wave files: `packets/c1-packets.md` (Ledger rows), `packets/c2-packets.md` (5.3), `packets/c2b-packets.md` (Ledger rows), `packets/c3-packets.md` (10.4), and `packets/c4-packets.md` (10.7). Where a table has no `depends` or `lane` column (c2b, c3), those come from the card's `depends-on` and `lane` lines.
+Status as of 2026-11-11 (orchestrator night log: `worknotes/orchestrator-2026-11-11.md`); first written 2026-11-10 on branch `docs/phase1-reconcile`. One row per wave packet, taken from the ledger-row tables of the five wave files: `packets/c1-packets.md` (Ledger rows), `packets/c2-packets.md` (5.3), `packets/c2b-packets.md` (Ledger rows), `packets/c3-packets.md` (10.4), and `packets/c4-packets.md` (10.7). Where a table has no `depends` or `lane` column (c2b, c3), those come from the card's `depends-on` and `lane` lines.
 
 Conventions:
 
@@ -14,26 +14,28 @@ The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by th
 
 | id | title | wave | lane | depends | status | decision numbers | owner-blocked? |
 |---|---|---|---|---|---|---|---|
-| C1-00 | Contract for the colo shard, repo gates | C1 | A | none | B | 0081 | N |
-| C1-01 | Split over-500 files, quarantine flaky tests | C1 | B | none | B | none | N |
-| C1-02 | Integration: colo compose, shard config, geldar.ps1 | C1 | A | C1-00 | B/O | 0082 | Y (owner items) |
-| C1-03 | Body-host and Mind-host images | C1 | C | C1-00 | B | 0083 | N [0078 accepted, 0130] |
-| C1-04 | Non-PowerShell deploy by pull | C1 | D | C1-00 | B | 0084 | N [runner or owner SSH, 0130] |
-| C1-05a | Append-only journals, reset creates a new shard | C1 | E | C1-00 | B | 0085 | N |
+| C1-00 | Contract for the colo shard, repo gates | C1 | A | none | merged (#49) | 0081 | N |
+| C1-01 | Split over-500 files, quarantine flaky tests | C1 | B | none | partial (#52, #54): flaky-test clock seams and two soft-cap files open (worknotes P1-C1-01, P1-C1-01b) | none | N |
+| C1-02 | Integration: colo compose, shard config, geldar.ps1 | C1 | A | C1-00 | merged (#55); owner live step in C1-10 | 0082 | Y (owner items) |
+| C1-03 | Body-host and Mind-host images | C1 | C | C1-00 | merged (#51) | 0083 | N [0078 accepted, 0130] |
+| C1-04 | Non-PowerShell deploy by pull | C1 | D | C1-00 | merged (#62) | 0084 | N [runner or owner SSH, 0130] |
+| C1-05a | Append-only journals, reset creates a new shard | C1 | E | C1-00 | merged (#60) | 0085 | N |
 | C1-05b | Backup v1 per 0076 | C1 | E | C1-00, C1-05a | deferred (0130) | 0086 | N [deferred by 0130] |
-| C1-06a | NATS overlay live test (owns `compose/nats-auth.yml`) | C1 | F | C1-00 | B | 0087 | Y [0080] |
-| C1-06b | Component credential reads | C1 | F | C1-06a | B | 0087 (cited, no new record) | N |
-| C1-07 | Metrics exporters, replay bound | C1 | C | C1-00 | B | 0088 | N [SigNoz, 0130] |
-| C1-08 | Crash hygiene | C1 | D | C1-00 | B | 0089 | N |
-| C1-09 | BlueMap pinned, internal | C1 | B | C1-00 | B | none (extends 0082) | N |
-| C1-10 | Node deploy, restore test, first ranger, smoke, load | C1 | ops | C1-02 to C1-09 | B (restore step and 20-min smoke deferred, 0130) | none | N [node via runner or SSH, 0130] |
-| C2-00 | Contract unblocker for the public surfaces | C2 | A | C1-00 | planned | 0090 | N |
+| C1-06a | NATS overlay live test (owns `compose/nats-auth.yml`) | C1 | F | C1-00 | merged (#53) | 0087 | Y [0080] |
+| C1-06b | Component credential reads | C1 | F | C1-06a | merged (#57) | 0087 (cited, no new record) | N |
+| C1-07 | Metrics exporters, replay bound | C1 | C | C1-00 | merged (#58) | 0088 | N [SigNoz, 0130] |
+| C1-08 | Crash hygiene | C1 | D | C1-00 | merged (#59) | 0089 | N |
+| C1-09 | BlueMap pinned, internal | C1 | B | C1-00 | merged (#56) | none (extends 0082) | N |
+| C1-10 | Node deploy, restore test, first ranger, smoke, load | C1 | ops | C1-02 to C1-09 | O: owner on the node (first ranger, no degradation) | none | N [node via runner or SSH, 0130] |
+| C1-11a | Sovereign services on the colo stack (MCP, players host) | C1 | ops fix | C1-02 | merged (#73) | none | N |
+| C1-11b | Colo admin tooling (one-shot admin container) | C1 | ops fix | C1-02 | merged (#75) | 0133 | N |
+| C2-00 | Contract unblocker for the public surfaces | C2 | A | C1-00 | in progress (2026-11-11) | 0090 | N |
 | C2-01 | Public MCP behind Caddy | C2 | A | C2-00 | planned | 0091 | Y [0077] |
-| C2-02 | Velocity on the new TCP port | C2 | B | C2-00 | planned | 0092 | N |
+| C2-02 | Velocity on the new TCP port | C2 | B | C2-00 | in progress (2026-11-11) | 0092 | N |
 | C2-03 | Glass hardening (0072) | C2 | C | C2-00 | planned | 0093 | N |
-| C2-04 | BlueMap public through Caddy | C2 | D | C1-09, C2-00 | planned | 0094 | N |
-| C2-05 | Look projection cleanup and MCP image slimming | C2 | E | C2-00 | planned | 0095 | N |
-| C2-06 | External port scan tool | C2 | F | C2-00 | planned | none | N |
+| C2-04 | BlueMap public through Caddy | C2 | D | C1-09, C2-00 | in progress (2026-11-11) | 0094 | N |
+| C2-05 | Look projection cleanup and MCP image slimming | C2 | E | C2-00 | in progress (2026-11-11) | 0095 | N |
+| C2-06 | External port scan tool | C2 | F | C2-00 | in progress (2026-11-11) | none | N |
 | C2-07 | Integration, public deploy, scan, live run | C2 | A | C2-01 to C2-06, 0077, 0080 | planned (O) | 0096 | Y [0077, 0080, node access] |
 | C2-R1 | Review: MCP public endpoint | C2 | R | C2-00, C2-01, C2-05 | planned | none (fix round 0097 only if needed) | N |
 | C2-R2 | Review: Velocity and public Minecraft port | C2 | R | C2-02, C2-07 desktop | planned | none (fix round 0098 only if needed) | N |
