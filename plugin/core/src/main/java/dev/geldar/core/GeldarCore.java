@@ -46,7 +46,7 @@ public final class GeldarCore extends JavaPlugin {
 
     private void enable() {
         saveDefaultConfig();
-        CoreConfig config = CoreConfig.load(getConfig(), System::getenv);
+        CoreConfig config = CoreConfig.load(getConfig(), System::getenv, getLogger()::warning);
         publisher = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger());
         EventExporter exporter = new EventExporter(
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
@@ -57,6 +57,10 @@ public final class GeldarCore extends JavaPlugin {
             if (listener instanceof GhostListener ghost) {
                 getServer().getMessenger().registerIncomingPluginChannel(this, GhostListener.CHANNEL, ghost);
             }
+        }
+
+        if (config.lakitu().enabled()) {
+            dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
         }
 
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.

@@ -26,10 +26,35 @@ describe('the Glass README', () => {
     }
   });
 
-  it('states the loopback-only, no-auth Phase 0 position and the 421 Host rule', () => {
-    expect(README).toMatch(/\*\*loopback only\*\*/);
-    expect(README).toMatch(/no authentication in Phase 0/);
+  it('states the public-behind-Caddy position, the Host rule and the Caddy peer setting', () => {
+    expect(README).toMatch(/\*\*public behind Caddy\*\*/);
+    expect(README).toMatch(/loopback only and has no authentication/);
     expect(README).toContain('421 Misdirected');
     expect(README).toContain('DNS rebinding');
+    expect(README).toContain('Host: localhost');
+  });
+
+  it('lists every rate, delay, sovereign, proxy and kill-switch variable, and the fast switch', () => {
+    for (const name of [
+      'GELDAR_GLASS_RATE_PER_MINUTE',
+      'GELDAR_GLASS_RATE_BURST',
+      'GELDAR_GLASS_RATE_MAX_CLIENTS',
+      'GELDAR_GLASS_DELAY_SECONDS',
+      'GELDAR_GLASS_SHOW_LIVING_SOVEREIGN',
+      'GELDAR_GLASS_TRUSTED_PROXIES',
+      'GELDAR_GLASS_ENABLED',
+    ]) {
+      expect(README, name).toContain(`\`${name}\``);
+    }
+    expect(README).toMatch(/\| `GELDAR_GLASS_DELAY_SECONDS` \| `60` \|/);
+    expect(README).toContain('read once at start');
+    expect(README).toContain('glass-off.caddy');
+    expect(README).toContain("Set it to Caddy's peer address");
+  });
+
+  it('does not list /api/stats, allows HEAD, and says CI runs the IT cases', () => {
+    expect(README).not.toContain('/api/stats');
+    expect(README).toContain('Allow: GET, HEAD');
+    expect(README).toMatch(/CI runs\s+these cases in the `integration` job/);
   });
 });

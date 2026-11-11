@@ -17,11 +17,11 @@ import { createFrontDoor } from './front.ts';
 const PEPPER = new TextEncoder().encode('auth-reasons-test-pepper-0123456789');
 const NOW = 1_000_000;
 const FAR = NOW + 1_000_000_000;
-const TOKEN_A = 'token-for-player-aa-0123456789';
-const TOKEN_R = 'token-revoked-cc-0123456789';
-const TOKEN_X = 'token-expired-dd-0123456789';
-const TOKEN_P = 'token-paused-ee-0123456789';
-const UNKNOWN = 'unknown-token-0123456789xyz';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
+const TOKEN_R = `gmcp-${'cc'.repeat(32)}`;
+const TOKEN_X = `gmcp-${'dd'.repeat(32)}`;
+const TOKEN_P = `gmcp-${'ee'.repeat(32)}`;
+const UNKNOWN = `gmcp-${'ff'.repeat(32)}`;
 // A canary the log scan must never find, in whole or in any prefix of 12 characters or more.
 const CANARY = 'canary-7Qz9xLm2Vb4nKp8sWd1';
 const INIT = JSON.stringify({
@@ -274,10 +274,26 @@ describe('refusal reasons in the log', () => {
 
   it('asks the store why for one uncached miss in eight, not for each', async () => {
     for (let i = 0; i < 16; i++) {
-      await send('/p/aa', { Authorization: `Bearer ${UNKNOWN}-${i}-0123456789abcdef` });
+      await send('/p/aa', { Authorization: `Bearer gmcp-${String(i).padStart(64, '0')}` });
     }
     expect(store.lookups).toBe(16);
     expect(store.calls).toBe(2);
+  });
+
+  it('answers a wrong-shaped bearer with the same 401 and makes no store lookup', async () => {
+    const shapes = [
+      `${UNKNOWN}-0123456789abcdef`,
+      `gmcp-${'a'.repeat(63)}`,
+      `gmcp-${'a'.repeat(65)}`,
+      `gmcp-${'A'.repeat(64)}`,
+      `gmcp-${'g'.repeat(64)}`,
+      `xmcp-${'a'.repeat(64)}`,
+    ];
+    for (const shape of shapes) {
+      const reply = await send('/p/aa', { Authorization: `Bearer ${shape}` });
+      expect(reply.status).toBe(401);
+    }
+    expect(store.lookups).toBe(0);
   });
 });
 

@@ -119,9 +119,9 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
   const pub = options.public ?? PUBLIC_DEFAULTS;
   // One bucket per client address for every public request, authenticated or not.
-  // Only when a public block is passed (the CLI always passes one), so a bare door in a test is not limited.
+  // Only when the shard has a `public:` block (its rateLimit is null otherwise), so a bare door is not limited.
   const publicLimit =
-    options.public === undefined
+    options.public?.rateLimit == null
       ? undefined
       : new PublicRateLimit(options.public.rateLimit.perMinute, options.public.rateLimit.burst);
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
@@ -180,13 +180,19 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
         };
       }
       // A cached hit is authenticated traffic, so failed-auth state never blocks it. Any other
-      // bearer is refused before the lookup while its address or the global bucket is out of tokens.
+      // bearer is refused before the lookup while its own address is out of failed-auth tokens.
       const token = parseBearer(header);
       const cached =
         token !== null &&
         (options.store.isCachedHit?.(tokenDigest(options.pepper, token), now()) ?? false);
       const blockedSec = cached ? undefined : gates.authBlocked(address, now());
       if (blockedSec !== undefined) return { outcome: 'limited', retryAfterSec: blockedSec };
+      // A bounded number of uncached lookups may be in flight at once: this protects Postgres, and
+      // unlike a global failed-auth bucket an attacker cannot use it to lock out valid users for long.
+      const lookup = token !== null && !cached;
+      if (lookup && !gates.acquireLookup()) {
+        return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
+      }
       let verdict: BearerVerdict;
       try {
         verdict = await verifyBearer(
@@ -205,6 +211,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           error: (error as Error).constructor.name,
         });
         return { outcome: 'unavailable' };
+      } finally {
+        if (lookup) gates.releaseLookup();
       }
       if (verdict.outcome === 'ok') {
         // GET and DELETE never reach the POST hook, so the handshake bucket meters them here.

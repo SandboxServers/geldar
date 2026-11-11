@@ -5,27 +5,41 @@ glass.{$GELDAR_DOMAIN} {
 	@not_allowed not method GET HEAD
 	respond @not_allowed 405
 
-	# Drop any address header a client sent, then set the one Caddy vouches for.
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
 	request_header -x-geldar-client-ip
 	request_header -X-Forwarded-For
 	request_header -CF-Connecting-IP
-	request_header x-geldar-client-ip {remote_host}
 
 	# Glass reads no request body.
 	request_body {
 		max_size 1KiB
 	}
 
-	# The JSON routes of glass/src/routes.ts.
-	@glass_read path /api/agents /api/thoughts /api/thoughts/* /api/receipts /api/stats
+	# The JSON routes of glass/src/routes.ts. Glass answers 421 to any Host that is not loopback, so
+	# every proxy block sets Host to localhost. The client address is set here, after the strips above.
+	@glass_read path /api/agents /api/thoughts /api/thoughts/* /api/receipts
 	handle @glass_read {
-		reverse_proxy {$GELDAR_GLASS_UPSTREAM}
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+		}
+	}
+
+	# The page and its assets (glass/src/http.ts serves exactly these files).
+	@glass_page path / /app.css /app.js /js/*
+	handle @glass_page {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+		}
 	}
 
 	# The Server-Sent Events stream: each event is flushed at once.
 	@glass_stream path /api/stream
 	handle @glass_stream {
 		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
 			flush_interval -1
 		}
 	}

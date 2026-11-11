@@ -27,7 +27,14 @@ describe('bearer authentication', () => {
     ['another scheme', { Authorization: `Basic ${TOKEN_A}` }, '/p/aa', 401],
     ['lowercase scheme', { Authorization: `bearer ${TOKEN_A}` }, '/p/aa', 401],
     ['double space after the scheme', { Authorization: `Bearer  ${TOKEN_A}` }, '/p/aa', 401],
-    ['an unknown token', { Authorization: 'Bearer unknown-token-0123456789xyz' }, '/p/aa', 401],
+    [
+      'an unknown token',
+      {
+        Authorization: `Bearer gmcp-${'ff'.repeat(32)}`,
+      },
+      '/p/aa',
+      401,
+    ],
     [
       'a token only in the query string',
       { Authorization: undefined },

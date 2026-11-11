@@ -139,6 +139,8 @@ services:
       - ./paper/paper-entrypoint.sh:/geldar/paper-entrypoint.sh:ro
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
     # No ports: the game port and RCON are not published. Velocity is the only game listener.
+    # BlueMap (C1-09) needs no publish either: its integrated web server is off (webserver.conf enabled: false, and 5.29 has
+    # no bind-address key), so Caddy's map site serves the rendered webroot from the data volume, read only (C2-07a2 worknote).
     networks: [colo]
     healthcheck:
       <<: *mc-health
@@ -370,6 +372,54 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094). The image is a release-manifest value
+  # (GELDAR_GLASS_IMAGE, C2-07a1); the local tag and the build are the offline path (glass/Dockerfile is C2-07a1's).
+  # Postgres as geldar_glass (read-only role, sql/0005) with its password from a file secret. Caddy (host network)
+  # reaches it on the loopback publish only. No NATS.
+  glass:
+    # Budget: 0.5 CPU, 256m (no swap, 128 pids). Read-only root, as geldar-mcp runs.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_GLASS_CPUS:-0.5}"
+          memory: "${GELDAR_COLO_GLASS_MEM:-256m}"
+          pids: 128
+    memswap_limit: "${GELDAR_COLO_GLASS_MEM:-256m}"
+    pids_limit: 128
+    logging: *logging
+    labels: *colo-labels
+    build:
+      context: ..
+      dockerfile: glass/Dockerfile
+    image: ${GELDAR_GLASS_IMAGE:-geldar-glass:c2}
+    environment:
+      GELDAR_GLASS_HOST: 127.0.0.1
+      GELDAR_GLASS_PORT: "8787"
+      GELDAR_GLASS_PG_HOST: postgres
+      GELDAR_GLASS_PG_PORT: "5432"
+      GELDAR_GLASS_PG_USER: geldar_glass
+      GELDAR_GLASS_PG_PASSWORD_FILE: /run/secrets/postgres-glass.txt
+      # Caddy runs on the host network; the peer Glass sees is the docker bridge gateway, not 127.0.0.1. Live check in
+      # the C2-07a2 worknote: set GELDAR_GLASS_TRUSTED_PROXIES in the deploy env to the address Glass logs for Caddy.
+      GELDAR_GLASS_TRUSTED_PROXIES: "${GELDAR_GLASS_TRUSTED_PROXIES:-127.0.0.1}"
+      GELDAR_GLASS_DELAY_SECONDS: "${GELDAR_GLASS_DELAY_SECONDS:-60}"
+      GELDAR_GLASS_ENABLED: "${GELDAR_GLASS_ENABLED:-true}"
+    secrets: [postgres-glass.txt]
+    ports:
+      # The loopback Glass port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8787:8787"
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   # [C1-11a] The player host (golem/src/players/main.ts): one Body process per sovereign ranger, started and stopped by
   # the player's presence record. main.ts runs ONE player (`--player <id>`), so the id is a compose variable: set
   # GELDAR_PLAYER_ID to a sovereign.players id of shards/colo-mind.yaml, then `docker compose --profile sovereign up`.
@@ -490,6 +540,9 @@ secrets:
     file: ./secrets/mcp-token-pepper.txt
   nats-mcp:
     file: ./secrets/nats-mcp.txt
+  # Glass's Postgres password for the geldar_glass role (C2-07a2).
+  postgres-glass.txt:
+    file: ./secrets/postgres-glass.txt
 
 volumes:
   postgres-data:
@@ -497,14 +550,4 @@ volumes:
   paper-data:
   velocity-data:
 
-# SLOTS: the comments below are the remaining packets' hooks. C1-03 (golem-body and animus) is filled in above.
-#
-# [slot C1-06a] NATS auth: the overlay compose/nats-auth.yml (decision 0080) is merged on top of this file, not included
-# in it, by `shard up colo` (on by default; it needs the secret files, see Assert-ColoNatsSecrets). The merged file is
-# checked offline by `./geldar.ps1 check` (Invoke-Check) and by the NATS overlay test (docker config, skipped without docker):
-#   docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
-#
-# [slot C1-07] telemetry: GELDAR_TELEMETRY_URL is passed through to golem-body and animus (unset by default). The
-# SigNoz endpoint is set on the node by its owner (decision 0130); shards/colo.yaml holds the replay_minutes default.
-#
-# [slot C1-09] bluemap: the map renderer, served on loopback only. Its mount and internal bind come from C1-09.
+# Slots filled by C1/C2 packets: NATS auth is the overlay compose/nats-auth.yml, merged by `shard up colo` (decision 0080); see decision 0082 for the budgets.

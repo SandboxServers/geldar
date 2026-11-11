@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { COLO_PATH, coloRole, findPublicPorts, isComposeFile } from './loopback-ports.ts';
+import {
+  COLO_PATH,
+  coloRole,
+  findPublicPorts,
+  isComposeFile,
+  PUBLIC_OVERLAY_PATH,
+  PUBLIC_OVERLAY_PORT,
+} from './loopback-ports.ts';
 
 /** The findings for one compose file, as `service: reason` strings. */
 function problems(text: string): string[] {
@@ -604,5 +611,57 @@ describe('findPublicPorts: compose/colo.yml', () => {
   it('applies the colo rules to colo only: phase0 keeps its published 25565 for velocity', () => {
     const text = 'services:\n  velocity:\n    ports: ["127.0.0.1:25565:25565"]';
     expect(findPublicPorts('compose/phase0.yml', text)).toEqual([]);
+  });
+});
+
+// The one public publish (decision 0096): velocity in compose/colo-public.yml, with the bind address and port from env.
+describe('findPublicPorts: the public Minecraft overlay (C2-07a2)', () => {
+  const overlay = (service: string, port: string) =>
+    `services:\n  ${service}:\n    ports:\n      - "${port}"\n`;
+  const reasons = (path: string, text: string) =>
+    findPublicPorts(path, text).map((f) => `${f.service}: ${f.reason}`);
+
+  it('passes the committed compose/colo-public.yml', () => {
+    const text = readFileSync(
+      fileURLToPath(new URL('../../../compose/colo-public.yml', import.meta.url)),
+      'utf8',
+    );
+    expect(findPublicPorts(PUBLIC_OVERLAY_PATH, text)).toEqual([]);
+  });
+
+  it('is an overlay for the colo rules', () => {
+    expect(coloRole(PUBLIC_OVERLAY_PATH)).toBe('overlay');
+  });
+
+  it('allows the env-interpolated publish on velocity in that file', () => {
+    expect(reasons(PUBLIC_OVERLAY_PATH, overlay('velocity', PUBLIC_OVERLAY_PORT))).toEqual([]);
+  });
+
+  it('rejects the same entry on another service in that file', () => {
+    const found = reasons(PUBLIC_OVERLAY_PATH, overlay('paper', PUBLIC_OVERLAY_PORT));
+    expect(found.length).toBeGreaterThan(0);
+    expect(found.every((line) => line.startsWith('paper: '))).toBe(true);
+    expect(found.join('\n')).toContain('uses interpolation');
+  });
+
+  it('rejects the same entry on velocity in any other file', () => {
+    expect(reasons(COLO_PATH, overlay('velocity', PUBLIC_OVERLAY_PORT)).join('\n')).toContain(
+      'uses interpolation',
+    );
+    expect(
+      reasons('compose/nats-auth.yml', overlay('velocity', PUBLIC_OVERLAY_PORT)).join('\n'),
+    ).toContain('uses interpolation');
+  });
+
+  it('rejects a literal 0.0.0.0, a different interpolation and an extra entry on velocity', () => {
+    const literal = reasons(PUBLIC_OVERLAY_PATH, overlay('velocity', '0.0.0.0:8080:25565'));
+    expect(literal).toEqual([expect.stringContaining('must start with 127.0.0.1:')]);
+    const other = reasons(
+      PUBLIC_OVERLAY_PATH,
+      overlay('velocity', '${GELDAR_MC_BIND}:25565:25565'),
+    );
+    expect(other.join('\n')).toContain('uses interpolation');
+    const two = `${overlay('velocity', PUBLIC_OVERLAY_PORT)}      - "0.0.0.0:1:1"\n`;
+    expect(reasons(PUBLIC_OVERLAY_PATH, two)).toEqual([expect.stringContaining('must start with')]);
   });
 });
