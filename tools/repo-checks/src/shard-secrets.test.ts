@@ -73,8 +73,24 @@ function shard(dir: string, ...args: string[]) {
 }
 
 /**
- * A PowerShell error record wraps its message at the console width and adds a `|` gutter, so a message can split
- * across lines. Comparing with spaces and gutter bars removed keeps the test on the words, not the wrapping.
+ * `./geldar.ps1 shard <args>` from the temp copy, read through a try/catch that prints the exception's own message on
+ * stdout. The error record on stderr is formatted for the console: it wraps at the width, adds a `|` gutter and, on
+ * Linux, colour codes that split words (`decision` and `0082` end up apart). The message itself has none of that.
+ */
+function refusal(dir: string, ...args: string[]) {
+  const quoted = ['shard', ...args].map((arg) => `'${arg}'`).join(' ');
+  const script = join(dir, 'geldar.ps1');
+  const command = `try { & '${script}' ${quoted} } catch { Write-Output ('REFUSAL: ' + $_.Exception.Message); exit 1 }`;
+  const run = spawnSync('pwsh', ['-NoProfile', '-Command', command], {
+    encoding: 'utf8',
+    cwd: dir,
+  });
+  return { status: run.status, message: (run.stdout ?? '').trim().slice(0, 1500) };
+}
+
+/**
+ * Removes whitespace and the `|` gutter, so a comparison is on the words, not on how a message was wrapped.
+ * Used on the exception message, which the test reads without a console format.
  */
 const squash = (text: string) => text.replace(/[\s|]/g, '');
 
@@ -257,10 +273,10 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: --rcon-host is refused', ()
   it('refuses --rcon-host before anything starts, names the flag and the decision, and writes no secret', () => {
     const dir = copyGenerator();
     try {
-      const run = shard(dir, 'up', 'colo', '--rcon-host');
+      const run = refusal(dir, 'up', 'colo', '--rcon-host');
       expect(run.status).not.toBe(0);
-      expect(squash(run.stderr)).toContain(squash('shard up colo: --rcon-host is refused'));
-      expect(squash(run.stderr)).toContain(squash('decision 0082'));
+      expect(squash(run.message)).toContain(squash('shard up colo: --rcon-host is refused'));
+      expect(squash(run.message)).toContain(squash('decision 0082'));
       expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
