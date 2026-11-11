@@ -19,6 +19,7 @@ import { OllamaEmbedder } from './memory/embedder-ollama.ts';
 import { PgJournal } from './memory/journal.ts';
 import { openPool, PgMemoryStore } from './memory/pg-store.ts';
 import { Mind } from './mind.ts';
+import { animusNatsAuth } from './nats-credentials.ts';
 import type {
   AgentRow,
   BodyLink,
@@ -274,7 +275,12 @@ export const realStack: MindStack = {
     };
   },
   async openLink(config, log) {
-    const nc = await connectNats({ servers: config.natsUrl, name: 'animus', timeout: 5_000 });
+    const nc = await connectNats({
+      servers: config.natsUrl,
+      name: 'animus',
+      timeout: 5_000,
+      ...animusNatsAuth(),
+    });
     const js = jetstream(nc);
     const source = new NatsEventSource({
       stream: jetStreamEventStream(js),
