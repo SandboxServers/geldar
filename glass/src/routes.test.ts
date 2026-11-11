@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ROUTES, resolveRoute } from './routes.ts';
 
-const PATHS = [
-  '/api/agents',
-  '/api/thoughts',
-  '/api/thoughts/abc',
-  '/api/receipts',
-  '/api/stream',
-];
+const PATHS = ['/api/agents', '/api/thoughts', '/api/thoughts/abc', '/api/receipts', '/api/stream'];
 const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'TRACE'];
 
 describe('the route table', () => {
