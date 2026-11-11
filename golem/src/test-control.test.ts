@@ -1,6 +1,5 @@
 import type { Dirent } from 'node:fs';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseItems, TestControl } from './test-control.ts';
@@ -51,35 +50,66 @@ async function tsFilesUnder(dir: string): Promise<string[]> {
   return files;
 }
 
-/** Whether a path is an existing regular file. A directory or a missing path is not. */
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
+/** The file access the import scan uses. The real disk is the default; the in-process cases inject a map. */
+interface ImportFiles {
+  isFile(path: string): Promise<boolean>;
+  readText(path: string): Promise<string>;
+}
+
+/** The real disk. Whether a path is an existing regular file: a directory or a missing path is not. */
+const realFiles: ImportFiles = {
+  async isFile(path) {
+    try {
+      return (await stat(path)).isFile();
+    } catch {
+      return false;
+    }
+  },
+  readText: (path) => readFile(path, 'utf8'),
+};
+
+/** The RCON and arena sources. The scan stops at them before reading, so they need only exist. */
+const KNOWN_TARGETS = [...FORBIDDEN, join(import.meta.dirname, 'arena.ts')];
+
+/**
+ * An in-memory ImportFiles for the in-process cases. The paths in `texts` are files, and so are the
+ * RCON and arena sources. Any other path is missing or a directory.
+ */
+function memoryFiles(texts: Record<string, string>): ImportFiles {
+  const isKnown = (path: string) => Object.hasOwn(texts, path) || KNOWN_TARGETS.includes(path);
+  return {
+    isFile: async (path) => isKnown(path),
+    readText: async (path) => {
+      if (!Object.hasOwn(texts, path)) throw new Error(`ENOENT: ${path}`);
+      return texts[path] ?? '';
+    },
+  };
 }
 
 /**
  * The file a relative import names. Tries the specifier as written, then `.js` read as `.ts`, then
  * `.ts` added, then a directory's `index.ts`. Undefined when none of them is a file.
  */
-async function resolveImport(file: string, spec: string): Promise<string | undefined> {
+async function resolveImport(
+  file: string,
+  spec: string,
+  files: ImportFiles = realFiles,
+): Promise<string | undefined> {
   const base = resolve(dirname(file), spec);
   const candidates = [base, base.replace(/\.js$/, '.ts'), `${base}.ts`, join(base, 'index.ts')];
   for (const candidate of candidates) {
-    if (await isFile(candidate)) return candidate;
+    if (await files.isFile(candidate)) return candidate;
   }
   return undefined;
 }
 
 /** The files a source file imports by relative path (`from`, bare and dynamic) that resolve. */
-async function relativeImports(file: string): Promise<string[]> {
-  const text = await readFile(file, 'utf8');
+async function relativeImports(file: string, files: ImportFiles = realFiles): Promise<string[]> {
+  const text = await files.readText(file);
   const specs = text.matchAll(/\b(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g);
   const found: string[] = [];
   for (const match of specs) {
-    const target = await resolveImport(file, match[1] ?? '');
+    const target = await resolveImport(file, match[1] ?? '', files);
     if (target !== undefined) found.push(target);
   }
   return found;
@@ -89,11 +119,12 @@ async function relativeImports(file: string): Promise<string[]> {
 async function reachesForbidden(
   start: string,
   forbidden: string[] = FORBIDDEN,
+  files: ImportFiles = realFiles,
 ): Promise<string | undefined> {
   const seen = new Set<string>([start]);
   const queue = [start];
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
-    for (const next of await relativeImports(file)) {
+    for (const next of await relativeImports(file, files)) {
       if (forbidden.includes(next)) return next;
       if (!seen.has(next)) {
         seen.add(next);
@@ -347,54 +378,49 @@ describe('TestControl', () => {
   );
 
   it('catches a file that imports the RCON layer, directly, dynamically or transitively', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'guard-'));
-    try {
-      const control = relative(dir, join(import.meta.dirname, 'test-control'))
-        .split(sep)
-        .join('/');
-      const arena = relative(dir, join(import.meta.dirname, 'arena'))
-        .split(sep)
-        .join('/');
-      await writeFile(join(dir, 'direct.ts'), `import { TestControl } from '${control}';\n`);
-      await writeFile(join(dir, 'dynamic.ts'), `const m = await import('${control}');\n`);
-      await writeFile(join(dir, 'middle.ts'), "export * from './direct';\n");
-      await writeFile(join(dir, 'transitive.ts'), "import './middle';\n");
-      for (const name of ['direct', 'dynamic', 'transitive']) {
-        expect(await reachesForbidden(join(dir, `${name}.ts`)), name).toBe(
-          join(import.meta.dirname, 'test-control.ts'),
-        );
-      }
-      // Actions may not reach the arena either (it imports the control itself).
-      await writeFile(join(dir, 'arena-user.ts'), `import '${arena}';\n`);
-      expect(await reachesForbidden(join(dir, 'arena-user.ts'), await forbiddenForActions())).toBe(
-        join(import.meta.dirname, 'arena.ts'),
+    // A fixture root that is never created on disk: the cases read only the in-memory files below.
+    const dir = resolve('guard-fixture');
+    const control = relative(dir, join(import.meta.dirname, 'test-control'))
+      .split(sep)
+      .join('/');
+    const arena = relative(dir, join(import.meta.dirname, 'arena'))
+      .split(sep)
+      .join('/');
+    const files = memoryFiles({
+      [join(dir, 'direct.ts')]: `import { TestControl } from '${control}';\n`,
+      [join(dir, 'dynamic.ts')]: `const m = await import('${control}');\n`,
+      [join(dir, 'middle.ts')]: "export * from './direct';\n",
+      [join(dir, 'transitive.ts')]: "import './middle';\n",
+      [join(dir, 'arena-user.ts')]: `import '${arena}';\n`,
+    });
+    for (const name of ['direct', 'dynamic', 'transitive']) {
+      expect(await reachesForbidden(join(dir, `${name}.ts`), FORBIDDEN, files), name).toBe(
+        join(import.meta.dirname, 'test-control.ts'),
       );
-    } finally {
-      await rm(dir, { recursive: true, force: true });
     }
+    // Actions may not reach the arena either (it imports the control itself).
+    expect(
+      await reachesForbidden(join(dir, 'arena-user.ts'), await forbiddenForActions(), files),
+    ).toBe(join(import.meta.dirname, 'arena.ts'));
   });
+
   it('resolves directory, .js and extensionless import specifiers without a file-system error', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'guard-'));
-    try {
-      await mkdir(join(dir, 'sub'));
-      await writeFile(join(dir, 'plain.ts'), 'export const plain = 1;\n');
-      await writeFile(
-        join(dir, 'ok.ts'),
-        "import './sub';\nimport './plain.js';\nimport './plain';\n",
+    const dir = resolve('guard-fixture');
+    // `./sub` is named but is not a file (it is a directory in the old disk version); it resolves to nothing.
+    const files = memoryFiles({
+      [join(dir, 'plain.ts')]: 'export const plain = 1;\n',
+      [join(dir, 'ok.ts')]: "import './sub';\nimport './plain.js';\nimport './plain';\n",
+    });
+    expect(await reachesForbidden(join(dir, 'ok.ts'), FORBIDDEN, files)).toBeUndefined();
+    // The forbidden rcon.ts, named without its extension or with .js, is still found.
+    const rcon = relative(dir, join(import.meta.dirname, 'rcon'))
+      .split(sep)
+      .join('/');
+    for (const spec of [rcon, `${rcon}.js`]) {
+      const leak = memoryFiles({ [join(dir, 'leak.ts')]: `import '${spec}';\n` });
+      expect(await reachesForbidden(join(dir, 'leak.ts'), FORBIDDEN, leak)).toBe(
+        join(import.meta.dirname, 'rcon.ts'),
       );
-      expect(await reachesForbidden(join(dir, 'ok.ts'))).toBeUndefined();
-      // The forbidden rcon.ts, named without its extension or with .js, is still found.
-      const rcon = relative(dir, join(import.meta.dirname, 'rcon'))
-        .split(sep)
-        .join('/');
-      for (const spec of [rcon, `${rcon}.js`]) {
-        await writeFile(join(dir, 'leak.ts'), `import '${spec}';\n`);
-        expect(await reachesForbidden(join(dir, 'leak.ts'))).toBe(
-          join(import.meta.dirname, 'rcon.ts'),
-        );
-      }
-    } finally {
-      await rm(dir, { recursive: true, force: true });
     }
   });
 });
