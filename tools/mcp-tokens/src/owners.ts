@@ -36,6 +36,32 @@ export function parseCap(text: string): number {
   return cap;
 }
 
+/**
+ * The cap `owner add` grants. Without --cap it is sovereign.owner_cap_default; a missing key refuses,
+ * and no constant stands in for it. A --cap flag overrides the default but may not exceed
+ * sovereign.owner_cap_owner (decision 0052), which must also be present to check it.
+ */
+export function capForOwnerAdd(
+  flag: string | undefined,
+  shard: { ownerCapDefault: number | undefined; ownerCapOwner: number | undefined },
+): number {
+  if (flag === undefined) {
+    if (shard.ownerCapDefault === undefined)
+      throw new Error(
+        'sovereign.owner_cap_default is missing from the shard config; set it, or pass --cap',
+      );
+    return shard.ownerCapDefault;
+  }
+  const cap = parseCap(flag);
+  if (shard.ownerCapOwner === undefined)
+    throw new Error(
+      'sovereign.owner_cap_owner is missing from the shard config; --cap cannot be checked',
+    );
+  if (cap > shard.ownerCapOwner)
+    throw new Error(`--cap ${cap} is above sovereign.owner_cap_owner (${shard.ownerCapOwner})`);
+  return cap;
+}
+
 export async function addOwner(
   sql: Sql,
   id: string,
