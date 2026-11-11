@@ -4,14 +4,15 @@
  * unsubscribe only (kino-client.schema.json); anything else closes the socket.
  */
 import { type AuditEntry, loginHash, newPaneId, type PaneAudit } from './audit.ts';
+import { validFeedText } from './feed-check.ts';
 import { TokenBuckets } from './limits.ts';
 import { type Access, ANONYMOUS, permitted, type ScopeStore } from './scope.ts';
 
 export const DEFAULT_PANE_CAP = 4;
 /** Owner ruling: anonymous panes are bounded in total; signed-in viewers are not. */
 export const DEFAULT_ANON_CEILING = 40;
-/** Owner ruling: one subscribe per 2 s per client, burst 3. */
-export const SUBSCRIBE_BURST = 3;
+/** Owner ruling: one subscribe per 2 s per client; the burst of 8 lets a four-pane page open its panes at once. */
+export const SUBSCRIBE_BURST = 8;
 export const SUBSCRIBE_REFILL_MS = 2000;
 
 export type ByeReason =
@@ -22,6 +23,9 @@ export type ByeReason =
   | 'feed_overloaded'
   | 'kill_switch'
   | 'session_ended';
+
+/** What the metrics count: a bye reason, or a feed message Glass dropped as malformed, oversized or for another agent. */
+export type RefusalReason = ByeReason | 'bad_feed';
 
 /** Where feed messages come from (NATS in production). Returns the unsubscribe function. */
 export interface FeedSource {
@@ -46,11 +50,11 @@ export interface KinoRelayOptions {
   /** Gauge hook for the open pane count. */
   onPanes?: (open: number) => void;
   /** Metric hooks (K07): a refused or ended subscribe by reason, and feed bytes forwarded. */
-  onRefusal?: (reason: ByeReason) => void;
+  onRefusal?: (reason: RefusalReason) => void;
   onBytes?: (bytes: number) => void;
   /** Total anonymous panes allowed (default 40). */
   anonCeiling?: number;
-  /** Subscribe rate per client key (default burst 3, one per 2 s). */
+  /** Subscribe rate per client key (default burst 8, one per 2 s). */
   subscribeLimit?: { burst: number; refillMs: number };
 }
 
@@ -278,8 +282,13 @@ export class KinoRelay {
         }
         stop?.();
         live = { agent: msg.agent, mode };
-        stop = this.o.feed.subscribe(msg.agent, (json) => {
-          if (done) return;
+        const target = msg.agent;
+        stop = this.o.feed.subscribe(target, (json) => {
+          if (done || live?.agent !== target) return;
+          if (!validFeedText(json) || !this.forMe(json, target)) {
+            this.o.onRefusal?.('bad_feed'); // dropped and counted, never forwarded
+            return;
+          }
           this.o.onBytes?.(Buffer.byteLength(json));
           conn.send(json);
         });
@@ -295,6 +304,12 @@ export class KinoRelay {
   /** Re-asks the store for every live pane (ban, public_camera off, expiry). Run it on a timer. */
   async revalidateAll(): Promise<void> {
     for (const p of [...this.live]) await p.recheck();
+  }
+
+  /** A message that names its target (hello, target_moved) must name this pane's agent. */
+  private forMe(json: string, agent: string): boolean {
+    const m = JSON.parse(json) as { type: string; target_agent_id?: string };
+    return m.target_agent_id === undefined || m.target_agent_id === agent;
   }
 
   private nowMs(): number {

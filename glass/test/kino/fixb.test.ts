@@ -2,7 +2,7 @@ import { Duplex } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TokenBuckets } from '../../src/kino/limits.ts';
 import { startAuditPurge } from '../../src/kino/purge.ts';
-import { type ByeReason, type KinoConn, KinoRelay } from '../../src/kino/relay.ts';
+import { type KinoConn, KinoRelay, type RefusalReason } from '../../src/kino/relay.ts';
 import { type Access, type AgentScope, ANONYMOUS, type ScopeStore } from '../../src/kino/scope.ts';
 import { handleKinoUpgrade, originAllowed } from '../../src/kino/ws.ts';
 
@@ -16,7 +16,7 @@ let failStore: boolean;
 let clock: number;
 let subs: string[];
 let stopped: string[];
-let refusals: ByeReason[];
+let refusals: RefusalReason[];
 
 function relay(extra: Partial<ConstructorParameters<typeof KinoRelay>[0]> = {}): KinoRelay {
   const store: ScopeStore = {
@@ -60,12 +60,12 @@ beforeEach(() => {
   refusals = [];
 });
 
-describe('subscribe rate limit (1 per 2 s, burst 3)', () => {
+describe('subscribe rate limit (1 per 2 s, burst 8)', () => {
   it('allows the burst, refuses the next, and refills one token per 2 s', async () => {
     const r = relay();
     const c = conn();
     const p = r.accept(c, 'h', 'h');
-    for (let i = 0; i < 3; i++) await p?.message(sub('mine', i % 2 ? 'orbit' : 'follow'));
+    for (let i = 0; i < 8; i++) await p?.message(sub('mine', i % 2 ? 'orbit' : 'follow'));
     expect(c.closed).toBe(0);
     await p?.message(sub('mine'));
     expect(c.sent.at(-1)).toBe(JSON.stringify({ type: 'bye', reason: 'feed_overloaded' }));
@@ -80,6 +80,16 @@ describe('subscribe rate limit (1 per 2 s, burst 3)', () => {
     const c3 = conn();
     await r.accept(c3, 'h', 'h')?.message(sub('mine'));
     expect(c3.closed).toBe(0);
+  });
+
+  it('a four-pane page opening 4 panes at once is allowed', async () => {
+    const r = relay();
+    const conns = [0, 1, 2, 3].map(() => conn());
+    const panes = conns.map((c) => r.accept(c, 'h', 'h'));
+    await Promise.all(panes.map((p, i) => p?.message(sub(['mine', 'a', 'b', 'c'][i] ?? 'mine'))));
+    expect(conns.map((c) => c.closed)).toEqual([0, 0, 0, 0]);
+    expect(subs).toHaveLength(4);
+    expect(refusals).toEqual([]);
   });
 
   it('a mode change on the same agent audits only and leaves the feed alone', async () => {
@@ -283,7 +293,15 @@ describe('WebSocket upgrade', () => {
 
   it('drops a client whose unread queue passes the byte cap, with a bye and a refusal', async () => {
     const { r, sock, push } = await slowReader({ maxBuffered: 4096 });
-    const msg = JSON.stringify({ type: 'chunk_section', pad: 'x'.repeat(1000) });
+    const msg = JSON.stringify({
+      type: 'chunk_section',
+      chunk_x: 0,
+      chunk_z: 0,
+      section_y: 0,
+      palette: ['minecraft:stone'],
+      bits: 0,
+      data: 'A'.repeat(1000),
+    });
     for (let i = 0; i < 3; i++) push(msg);
     expect(r.openPanes).toBe(1);
     for (let i = 0; i < 10; i++) push(msg);
