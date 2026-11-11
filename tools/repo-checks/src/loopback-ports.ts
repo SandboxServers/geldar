@@ -109,15 +109,7 @@ export function coloRole(path: string): 'base' | 'overlay' | null {
 }
 
 /** Keys no colo service may set: each one grants the container host-level power (privilege, capabilities, namespaces, devices, sysctls). */
-const DENIED_COLO_KEYS = [
-  'privileged',
-  'cap_add',
-  'pid',
-  'ipc',
-  'userns_mode',
-  'devices',
-  'sysctls',
-];
+const DENIED_COLO_KEYS = ['privileged', 'pid', 'ipc', 'userns_mode', 'devices', 'sysctls'];
 /** Relative bind sources a colo service may mount: the repo paths the stack needs. Named volumes are allowed too. */
 const COLO_SOURCE_ALLOWLIST = [
   '../sql',
@@ -246,6 +238,13 @@ function coloServiceProblems(
   const problems: string[] = [];
   for (const key of DENIED_COLO_KEYS) {
     if (key in definition) problems.push(`${key} is not allowed in colo`);
+  }
+  // The one capability a colo service may add back: Caddy's binary has the file capability cap_net_bind_service,
+  // and exec fails without it under cap_drop ALL + no-new-privileges (C2-07i). Anything else stays denied.
+  if ('cap_add' in definition) {
+    const caps = definition.cap_add;
+    const ok = Array.isArray(caps) && caps.length === 1 && caps[0] === 'NET_BIND_SERVICE';
+    if (!ok) problems.push('cap_add is not allowed in colo');
   }
   const watchtower = watchtowerProblem(role, definition);
   if (watchtower !== null) problems.push(watchtower);

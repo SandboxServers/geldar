@@ -372,6 +372,19 @@ describe('findPublicPorts: colo hardening rules', () => {
     ]);
   });
 
+  it('allows exactly cap_add: [NET_BIND_SERVICE] (the Caddy file capability) and nothing wider', () => {
+    expect(coloProblems(hardened(['    cap_add: [NET_BIND_SERVICE]']))).toEqual([]);
+    for (const line of [
+      'cap_add: [NET_BIND_SERVICE, NET_ADMIN]',
+      'cap_add: [ALL]',
+      'cap_add: NET_BIND_SERVICE',
+    ]) {
+      expect(coloProblems(hardened([`    ${line}`]))).toEqual([
+        'paper: cap_add is not allowed in colo',
+      ]);
+    }
+  });
+
   it('denies network_mode on a colo service, even one that names a service', () => {
     expect(coloProblems(hardened(['    network_mode: "service:nats"']))).toEqual([
       'paper: network_mode is not allowed in colo; a service joins the colo network',
