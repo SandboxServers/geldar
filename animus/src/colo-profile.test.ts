@@ -3,8 +3,8 @@
 // the core start would pick up.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { repoRoot } from './config.ts';
 
 interface ComposeService {
