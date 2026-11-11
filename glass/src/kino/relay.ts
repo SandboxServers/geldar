@@ -14,6 +14,8 @@ export const DEFAULT_ANON_CEILING = 40;
 /** Owner ruling: one subscribe per 2 s per client; the burst of 8 lets a four-pane page open its panes at once. */
 export const SUBSCRIBE_BURST = 8;
 export const SUBSCRIBE_REFILL_MS = 2000;
+/** Consecutive failed revalidation reads that end a pane (fail closed). */
+export const RECHECK_ERROR_LIMIT = 2;
 
 export type ByeReason =
   | 'unsubscribed'
@@ -52,6 +54,8 @@ export interface KinoRelayOptions {
   /** Metric hooks (K07): a refused or ended subscribe by reason, and feed bytes forwarded. */
   onRefusal?: (reason: RefusalReason) => void;
   onBytes?: (bytes: number) => void;
+  /** Called for each failed revalidation read. */
+  onRecheckError?: () => void;
   /** Total anonymous panes allowed (default 40). */
   anonCeiling?: number;
   /** Subscribe rate per client key (default burst 8, one per 2 s). */
@@ -112,6 +116,7 @@ export class KinoRelay {
   private readonly cap: number;
   private readonly live = new Set<LivePane>();
   private readonly limiter: TokenBuckets;
+  private readonly modeLimiter: TokenBuckets;
   private anonOpen = 0;
 
   private readonly o: KinoRelayOptions;
@@ -121,6 +126,7 @@ export class KinoRelay {
     this.cap = o.paneCap ?? DEFAULT_PANE_CAP;
     const lim = o.subscribeLimit ?? { burst: SUBSCRIBE_BURST, refillMs: SUBSCRIBE_REFILL_MS };
     this.limiter = new TokenBuckets({ ...lim, now: () => this.nowMs() });
+    this.modeLimiter = new TokenBuckets({ ...lim, now: () => this.nowMs() });
   }
 
   /** Open panes across all sessions. */
@@ -153,6 +159,7 @@ export class KinoRelay {
     const paneId = newPaneId();
     const login = loginHash(identityHash, sessionKey);
     let live: { agent: string; mode: AuditEntry['mode'] } | null = null;
+    let errors = 0;
     const entry = (event: AuditEntry['event'], agent: string, mode: AuditEntry['mode']) => {
       const at = (this.o.now?.() ?? new Date()).toISOString();
       const e: AuditEntry = {
@@ -208,8 +215,13 @@ export class KinoRelay {
           identityHash === null ? ANONYMOUS : await this.o.store.access(identityHash);
         ok = permitted(access, await this.o.store.agent(agent));
       } catch {
-        return; // a database blip does not end a pane; the next round asks again
+        // Fail closed: one blip is forgiven, the second in a row ends the pane.
+        errors += 1;
+        this.o.onRecheckError?.();
+        if (errors >= RECHECK_ERROR_LIMIT && !done) end('feed_unavailable');
+        return;
       }
+      errors = 0;
       if (!done && !ok) end('target_not_permitted');
     };
     const handle: LivePane = { end, recheck };
@@ -233,7 +245,14 @@ export class KinoRelay {
           return;
         }
         if (this.o.enabled?.() === false) return end('kill_switch');
-        if (!this.limiter.take(sessionKey)) return end('feed_overloaded');
+        // A same-target click only changes the mode (an audit row); it has its own bucket. Either way a
+        // refused click is answered and dropped: the pane stays open.
+        const sameTarget = live !== null && live.agent === msg.agent && stop !== null;
+        const bucket = sameTarget ? this.modeLimiter : this.limiter;
+        if (!bucket.take(sessionKey)) {
+          conn.send(JSON.stringify({ type: 'rate_limited' }));
+          return;
+        }
         let ok = false;
         try {
           const access: Access =

@@ -11,6 +11,7 @@ DECLARE
   n BIGINT;
   cutoff TIMESTAMPTZ;
   r RECORD;
+  bad TEXT;
   a_hash CONSTANT BYTEA := decode(repeat('d1', 32), 'hex');
   b_hash CONSTANT BYTEA := decode(repeat('d2', 32), 'hex');
   c_hash CONSTANT BYTEA := decode(repeat('d3', 32), 'hex');
@@ -43,10 +44,10 @@ BEGIN
       RAISE EXCEPTION 'schema check: geldar_glass must hold no grant on mcp_identities, agents.owner or kino_audit';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
-                WHERE p.proname IN ('kino_viewer', 'kino_agent_scope', 'glass_owner_agents', 'kino_audit_record', 'kino_audit_purge')
+                WHERE p.proname IN ('kino_viewer', 'kino_agent_scope', 'kino_agent_list', 'glass_owner_agents', 'kino_audit_record', 'kino_audit_purge')
                   AND (a.grantee = 0 OR a.grantee <> p.proowner AND a.grantee <> 'geldar_glass'::regrole)
                   AND a.privilege_type = 'EXECUTE')
-       OR (SELECT count(*) FROM pg_proc p WHERE p.proname IN ('kino_viewer', 'kino_agent_scope', 'glass_owner_agents', 'kino_audit_record', 'kino_audit_purge') AND p.prosecdef) <> 5 THEN
+       OR (SELECT count(*) FROM pg_proc p WHERE p.proname IN ('kino_viewer', 'kino_agent_scope', 'kino_agent_list', 'glass_owner_agents', 'kino_audit_record', 'kino_audit_purge') AND p.prosecdef) <> 6 THEN
       RAISE EXCEPTION 'schema check: the Kino functions must be definer functions executable by geldar_glass only';
     END IF;
     SET LOCAL ROLE geldar_glass;
@@ -75,8 +76,16 @@ BEGIN
     SELECT * INTO r FROM kino_agent_scope('ag_kf_a');
     IF r.owner IS DISTINCT FROM 'reg-kf-a' OR r.public_camera IS NOT TRUE THEN RAISE EXCEPTION 'schema check: kino_agent_scope ag_kf_a: %', r; END IF;
     IF EXISTS (SELECT 1 FROM kino_agent_scope('ag_kf_missing')) THEN RAISE EXCEPTION 'schema check: kino_agent_scope answered for an unknown agent'; END IF;
-    IF (SELECT count(*) FROM kino_agent_scope(NULL) WHERE agent_id IN ('ag_kf_a', 'ag_kf_c')) <> 2 THEN
-      RAISE EXCEPTION 'schema check: kino_agent_scope(NULL) must list every agent';
+    FOREACH bad IN ARRAY ARRAY[NULL, '', '  ']::TEXT[] LOOP
+      BEGIN
+        PERFORM * FROM kino_agent_scope(bad);
+        RAISE EXCEPTION 'schema check: kino_agent_scope accepted %', coalesce(bad, 'NULL') USING ERRCODE = 'P0002';
+      EXCEPTION WHEN null_value_not_allowed THEN NULL;
+      END;
+    END LOOP;
+    step := '0018: kino_agent_list';
+    IF (SELECT count(*) FROM kino_agent_list() WHERE agent_id IN ('ag_kf_a', 'ag_kf_c')) <> 2 THEN
+      RAISE EXCEPTION 'schema check: kino_agent_list must list every agent';
     END IF;
 
     step := '0016: glass_owner_agents';
