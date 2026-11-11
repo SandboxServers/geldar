@@ -5,11 +5,10 @@ mcp.{$GELDAR_DOMAIN} {
 	@not_allowed not method POST GET DELETE
 	respond @not_allowed 405
 
-	# Drop any address header a client sent, then set the one Caddy vouches for.
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
 	request_header -x-geldar-client-ip
 	request_header -X-Forwarded-For
 	request_header -CF-Connecting-IP
-	request_header x-geldar-client-ip {remote_host}
 
 	# The same limit as BODY_LIMIT_BYTES in threshold/mcp/src/http/front.ts (64 KiB).
 	request_body {
@@ -20,6 +19,7 @@ mcp.{$GELDAR_DOMAIN} {
 	@player path_regexp player ^/p/[a-z][a-z0-9-]{1,38}$
 	handle @player {
 		reverse_proxy {$GELDAR_MCP_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
 			flush_interval -1
 		}
 	}

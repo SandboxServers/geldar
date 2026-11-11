@@ -13,18 +13,33 @@ const SITES = [
   {
     site: 'glass',
     methods: 'GET HEAD',
-    paths: ['/api/agents', '/api/thoughts', '/api/thoughts/*', '/api/receipts', '/api/stats'],
+    paths: [
+      '/api/agents',
+      '/api/thoughts',
+      '/api/thoughts/*',
+      '/api/receipts',
+      '/',
+      '/app.css',
+      '/app.js',
+      '/js/*',
+    ],
   },
   { site: 'mcp', methods: 'POST GET DELETE', paths: ['^/p/[a-z][a-z0-9-]{1,38}$'] },
 ] as const;
 
-/** The three strip lines must come before the set line, so the set value is the only one left. */
+/** The three strip lines drop client copies; the proxy block then sets the one value Caddy vouches for. */
 const STRIPS = [
   'request_header -x-geldar-client-ip',
   'request_header -X-Forwarded-For',
   'request_header -CF-Connecting-IP',
 ];
-const SET = 'request_header x-geldar-client-ip {remote_host}';
+const SET = 'header_up x-geldar-client-ip {remote_host}';
+
+/** The body of every reverse_proxy block that has one, in a file. */
+const proxyBlocks = (text: string): string[] =>
+  [...text.matchAll(/reverse_proxy \{\$[A-Z_]+\} \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(
+    (m) => m[1] ?? '',
+  );
 
 const IPV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/;
 
@@ -42,13 +57,15 @@ describe('deploy/caddy site files', () => {
         expect(text).toContain('respond @not_allowed 405');
       });
 
-      it('strips the incoming address headers before it sets its own', () => {
-        const setAt = text.indexOf(SET);
-        expect(setAt).toBeGreaterThan(-1);
+      it('strips the incoming address headers and sets its own inside every reverse_proxy', () => {
         for (const line of STRIPS) {
-          const at = text.indexOf(line);
-          expect(at).toBeGreaterThan(-1);
-          expect(at).toBeLessThan(setAt);
+          expect(text).toContain(line);
+        }
+        expect(text).not.toMatch(/^\s*request_header x-geldar-client-ip/m);
+        const blocks = proxyBlocks(text);
+        expect(blocks.length).toBe([...text.matchAll(/reverse_proxy /g)].length);
+        for (const block of blocks) {
+          expect(block).toContain(SET);
         }
       });
 
@@ -78,6 +95,31 @@ describe('deploy/caddy site files', () => {
       });
     });
   }
+
+  it('sets Host to localhost in every Glass proxy block, which Glass accepts and a public Host gets 421', () => {
+    const blocks = proxyBlocks(read('glass.caddy'));
+    expect(blocks.length).toBe(3);
+    for (const block of blocks) {
+      expect(block).toMatch(/^\s*header_up Host localhost$/m);
+    }
+  });
+
+  it('routes GET and HEAD for the page and its assets to Glass', () => {
+    expect(read('glass.caddy')).toMatch(
+      /@glass_page path \/ \/app\.css \/app\.js \/js\/\*\s+handle @glass_page \{\s+reverse_proxy/,
+    );
+  });
+
+  it('does not route /api/stats', () => {
+    expect(read('glass.caddy')).not.toContain('/api/stats');
+  });
+
+  it('sets nosniff, Referrer-Policy and frame-ancestors on BlueMap responses', () => {
+    const text = read('map.caddy');
+    expect(text).toMatch(/^\s*X-Content-Type-Options nosniff$/m);
+    expect(text).toMatch(/^\s*Referrer-Policy no-referrer$/m);
+    expect(text).toMatch(/^\s*Content-Security-Policy "frame-ancestors 'none'"$/m);
+  });
 
   it('sets the SSE stream route to flush at once', () => {
     expect(read('glass.caddy')).toMatch(/path \/api\/stream[\s\S]*flush_interval -1/);

@@ -6,16 +6,24 @@ map.{$GELDAR_DOMAIN} {
 	@not_allowed not method GET HEAD
 	respond @not_allowed 405
 
-	# Drop any address header a client sent, then set the one Caddy vouches for.
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
 	request_header -x-geldar-client-ip
 	request_header -X-Forwarded-For
 	request_header -CF-Connecting-IP
-	request_header x-geldar-client-ip {remote_host}
 
 	# BlueMap serves static files; no request body is needed.
 	request_body {
 		max_size 1KiB
 	}
 
-	reverse_proxy {$GELDAR_MAP_UPSTREAM}
+	# Response headers that BlueMap needs no exception for. The full CSP is checked in C2-07 (0094).
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
+
+	reverse_proxy {$GELDAR_MAP_UPSTREAM} {
+		header_up x-geldar-client-ip {remote_host}
+	}
 }
