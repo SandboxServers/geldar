@@ -135,9 +135,48 @@ describe('telemetry push', () => {
       intervalMs: 5,
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
-    handle.stop();
+    await handle.stop();
     expect(calls).toHaveLength(0);
     expect(logs).toHaveLength(0);
+  });
+
+  it('stop waits for a push still in flight, and no push starts after it', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const starts: string[] = [];
+    // Each push is held until the gate opens, so stop() is called while a request is in flight.
+    const heldFetch = (async (url: string) => {
+      starts.push(url);
+      await gate;
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+    const handle = startTelemetry(registry(), {
+      url: 'http://127.0.0.1:4318',
+      service: 'geldar-mcp',
+      log: () => {},
+      fetch: heldFetch,
+      intervalMs: 5,
+    });
+    try {
+      expect(starts).toHaveLength(1);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      let settled = false;
+      const stopping = handle.stop().then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(settled).toBe(false);
+      release();
+      await stopping;
+      expect(settled).toBe(true);
+      const started = starts.length;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(starts.length).toBe(started);
+    } finally {
+      release();
+    }
   });
 
   it('posts the OTLP JSON to <url>/v1/metrics once', async () => {
