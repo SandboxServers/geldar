@@ -449,6 +449,28 @@ BEGIN
     EXCEPTION WHEN insufficient_privilege THEN NULL;
     END;
 
+    -- retire: only the status column of mcp_players is writable
+    step := 'retire';
+    BEGIN
+      UPDATE mcp_players SET owner_id = 'reg-test-owner' WHERE player_id = 'ag-reg-test-01';
+      RAISE EXCEPTION 'schema check: geldar_register can UPDATE mcp_players.owner_id' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE mcp_players SET life_id = 'reg_test_01' WHERE player_id = 'ag-reg-test-01';
+      RAISE EXCEPTION 'schema check: geldar_register can UPDATE mcp_players.life_id' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    BEGIN
+      UPDATE mcp_players SET player_id = 'ag-reg-test-99' WHERE player_id = 'ag-reg-test-01';
+      RAISE EXCEPTION 'schema check: geldar_register can UPDATE mcp_players.player_id' USING ERRCODE = 'P0002';
+    EXCEPTION WHEN insufficient_privilege THEN NULL;
+    END;
+    UPDATE mcp_players SET status = 'retired' WHERE player_id = 'ag-reg-test-01';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'schema check: geldar_register could not retire a player';
+    END IF;
+
     -- the owner cap trigger (cap 1) refuses a second active player for this owner
     step := 'owner cap';
     INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,

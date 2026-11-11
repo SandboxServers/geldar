@@ -32,6 +32,9 @@ GRANT SELECT, INSERT ON mcp_identities, mcp_owners, mcp_players TO geldar_regist
 -- display, the harmless one: player_cap stays unwritable, so the role cannot raise its own cap.
 GRANT UPDATE (display) ON mcp_owners TO geldar_register;
 
+-- Retire a player (decision 0135 item 4): status only; owner_id, life_id and player_id stay fixed.
+GRANT UPDATE (status) ON mcp_players TO geldar_register;
+
 -- agents: the columns tools/mcp-tokens addPlayer inserts (never a grant on the other columns), and a
 -- read of the six identifying ones. personality_seed is not readable.
 GRANT INSERT (agent_id, name, life_seq, game_account, shard, mode, owner, harness, declared_model,
