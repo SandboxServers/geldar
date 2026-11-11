@@ -70,6 +70,7 @@ Only the numbers in a packet's own row may be used. A packet that needs a record
 | 0127 to 0129 | C4 | none | Spare in the C4 block | free |
 | 0130 | after block | owner (ruling 2026-11-10) | Phase 1 owner rulings for C1 and the test schedule (deploy access, backups deferred, SigNoz, long tests at the end of the phase). Written by the owner-ruling docs packet | Accepted (owner ruling) |
 | 0131 | after block | FX-RUNTIME (orchestrator) | Colo in-container hosts and the Mind shard file | Accepted (orchestrator, 2026-11-10) |
+| 0134 | after block | FINISHER (orchestrator) | The Mind (`animus`) is a compose profile on the Colo until a Thinker path exists | Accepted (orchestrator, 2026-11-11) |
 
 ## Clashes and how they were resolved
 
