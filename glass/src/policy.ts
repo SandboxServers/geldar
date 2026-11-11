@@ -9,6 +9,8 @@ import type { Visibility } from './query.ts';
 export interface PublicPolicy {
   /** Peers whose forwarded client address is believed. Empty: the socket address is used. */
   trustedProxies: ReadonlySet<string>;
+  /** Exact host names (lower case, no port) answered besides the local ones. No wildcards. */
+  publicHosts: ReadonlySet<string>;
   /** The per-client token bucket, or null when rate limiting is off (tests only). */
   limiter: RateLimiter | null;
   /** Seconds a thought waits before Glass shows it (0072 item 5). Zero shows it at once. */
@@ -24,6 +26,7 @@ export interface PublicPolicy {
 /** The policy a handler uses when the caller gives none. */
 export const OPEN_POLICY: PublicPolicy = {
   trustedProxies: new Set(),
+  publicHosts: new Set(),
   limiter: null,
   delaySeconds: 0,
   showLivingSovereign: false,

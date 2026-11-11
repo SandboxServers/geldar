@@ -214,6 +214,14 @@ async function serveRoute(
 /** The Host values Glass answers to. A name that another site controls is not one of them. */
 const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i;
 
+/** True for a local Host, or for a listed public name (exact match, optional port, any case). */
+function hostAnswered(host: string | undefined, publicHosts: ReadonlySet<string>): boolean {
+  if (host === undefined) return false;
+  if (LOOPBACK_HOST.test(host)) return true;
+  const match = /^([^:\s/]+)(:\d{1,5})?$/.exec(host);
+  return match !== null && publicHosts.has((match[1] as string).toLowerCase());
+}
+
 /** The request listener. It never sends a database error or a stack trace to the client. */
 export function createHandler(deps: GlassHandlerDeps) {
   const policy: PublicPolicy = { ...OPEN_POLICY, ...deps.policy };
@@ -225,7 +233,7 @@ export function createHandler(deps: GlassHandlerDeps) {
       return;
     }
     // DNS rebinding: a page on another site can name its own host, and then reach this port.
-    if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
+    if (!hostAnswered(req.headers.host, policy.publicHosts)) {
       sendJson(res, 421, { error: 'misdirected request' });
       return;
     }
