@@ -18,7 +18,7 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const COMPOSE = resolve(DEPLOY, '..', 'compose', 'colo.yml');
@@ -43,6 +43,13 @@ function findSh(): string {
 }
 const SH = findSh();
 
+// Every test here starts several `sh` processes (the script, its shims, and the coreutils it calls). On a Windows
+// desktop each process start is slow, and it is slower while the full workspace suite runs beside this file: a
+// measured test took 5-11 s against vitest's 5 s default, with the same assertions passing. A test that stops
+// inside 30 s is still a failure, so this is a bound for real work, not a retry or a skip.
+const SPAWN_TEST_TIMEOUT_MS = 30_000;
+vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
+
 // The fake docker: records its arguments and answers `config` with the fixture file. Every other call succeeds.
 const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
@@ -55,10 +62,11 @@ exit 0
 `;
 
 // The fake stat: only `stat -c %a PATH` is supported. The mode is read from $FAKE_MODE_DIR/<file name>, default 600.
+// It uses only shell builtins: each external command is a process start that is slow on Windows (see SPAWN_TEST_TIMEOUT_MS).
 const STAT_SHIM = `#!/bin/sh
 [ "$1" = "-c" ] && [ "$2" = "%a" ] || exit 2
-name=$(basename "$3")
-if [ -f "$FAKE_MODE_DIR/$name" ]; then cat "$FAKE_MODE_DIR/$name"; else echo 600; fi
+name=\${3##*/}
+if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r mode <"$FAKE_MODE_DIR/$name"; echo "$mode"; else echo 600; fi
 `;
 
 const CONFIG = (published: string) => `name: geldar-colo
