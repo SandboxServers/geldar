@@ -49,3 +49,5 @@ Not run: a mutation of the NATS name list (the static list test covers it, but i
 - The Linux mode assertions were checked here through a repro under WSL pwsh (7.6, ext filesystem in the home directory, uid 1000, umask 022), not through the vitest run, since WSL has no node or pnpm. The repro loaded the real function text from `geldar.ps1` by its AST.
 - Read access inside the container (item D) is not checked.
 - The chmod-failure throw is checked by reading the code (`Restrict-OwnerOnly` throws, `Set-OwnerOnlyAcl` returns only after it), not by a test; making chmod fail reliably on Linux needs a filesystem that refuses modes.
+- CI `typescript` failed on PR #63, also on Windows: the owner-only test in `geldar-script.test.ts` pinned `Set-OwnerOnlyAcl $path` directly before `try {`. The fix moved that call into the write's `try`, so the file was still restricted before the write, but the stale pattern failed.
+- Fix: the test now checks by index that the file is created, that the owner-only call sits in the write's `try` before `$stream.Write(`, and that moving or removing the call fails it. It no longer pins the line layout.
