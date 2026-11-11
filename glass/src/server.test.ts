@@ -37,6 +37,15 @@ describe('the Glass server parts', () => {
     expect(pool.options.connectionTimeoutMillis).toBe(5000);
   });
 
+  it('sets the connection timeouts and the connection cap on the built server', () => {
+    const { server } = build();
+    expect(server.headersTimeout).toBe(10_000);
+    expect(server.requestTimeout).toBe(15_000);
+    expect(server.keepAliveTimeout).toBe(5_000);
+    expect(server.maxConnections).toBe(256);
+    expect(server.requestTimeout).toBeGreaterThanOrEqual(server.headersTimeout);
+  });
+
   it('ends the pool once when close() runs twice, as a second SIGTERM does', () => {
     const parts = build();
     const end = vi.spyOn(parts.pool, 'end');
