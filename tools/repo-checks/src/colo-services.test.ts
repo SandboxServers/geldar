@@ -207,6 +207,13 @@ describe('compose/colo.yml: the MCP service (C1-11a)', () => {
     }
   });
 
+  it('the admin service mounts every role password file the deploy reads (geldar_mcp, geldar_glass; C2-07d)', () => {
+    const admin = colo.services.admin?.secrets ?? [];
+    expect(admin).toContain('postgres-mcp.txt');
+    expect(admin).toContain('postgres-glass.txt');
+    expect(colo.secrets).toHaveProperty(['postgres-glass.txt']);
+  });
+
   it('runs read-only as uid 1000 with no capability, the compose/mcp.yml hardening', () => {
     expect(mcp.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
     expect(mcp.read_only).toBe(true);
