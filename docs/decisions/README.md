@@ -87,5 +87,6 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0080](0080-nats-auth-cutover.md) | NATS auth cutover: default-on after a live nats-server test, credentials through compose/secrets, least-privilege users, per-Thinker users in Phase 1 and Gateway mTLS at Phase 2 | Accepted (owner confirmed 2026-11-10) |
 | [0081](0081-c1-unblocker-checks-and-first-party-pin-exemption.md) | C1 unblocker checks and the first-party pin exemption: release-age floor with a dated list, first-party image allowlist (digest pin still required), integration-test floor, decision-index drift check, checkpoint manifest and shard-config schemas | Accepted (owner ruled 2026-11-10) |
 | [0083](0083-c1-body-and-mind-image-contents.md) | Body and Mind image contents, base pins, and what is never baked in | Proposed |
+| [0087](0087-nats-overlay-live-test-and-scoped-subjects.md) | NATS overlay live test and scoped subjects | Proposed |
 | [0130](0130-phase1-owner-rulings-for-c1.md) | Phase 1 owner rulings: deploy by runner or SSH, backups deferred, telemetry to the node's SigNoz, long-running tests deferred to the end of the phase | Accepted (owner ruling 2026-11-10) |
 >
