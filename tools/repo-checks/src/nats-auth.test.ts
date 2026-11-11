@@ -155,6 +155,11 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(inPermissions).toEqual(entries.map(() => true));
   });
 
+  it('writes exactly the six role users, with no ops user the overlay does not mount', () => {
+    const names = parseEntries(rendered?.conf ?? '').map((e) => e.user);
+    expect(names).toEqual(ROLES);
+  });
+
   it('emits the scoped subject table of decision 0087 for each role, with no bare * token', () => {
     const entries = parseEntries(rendered?.conf ?? '');
     const want = expectedTable(SHARD);

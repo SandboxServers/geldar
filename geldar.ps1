@@ -284,7 +284,6 @@ function Get-NatsUsers([string] $Shard) {
     mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
     velocity = @{ Pub = @((& $kv 'geldar-life-registry'), (& $kv 'geldar-skins')) + $js; Sub = @('_INBOX.>') }
     paper = @{ Pub = @("geldar.$s.>") + $js; Sub = @('_INBOX.>') }
-    ops = @{ Pub = @('>'); Sub = @('>') }
   }
 }
 
