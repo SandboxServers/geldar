@@ -257,7 +257,8 @@ function Initialize-NatsAuth([string] $Shard) {
     $pass = (Get-Content (Join-Path $dir "nats-$user.txt") -Raw).Trim()
     $pub = ($users[$user].Pub | ForEach-Object { "`"$_`"" }) -join ', '
     $sub = ($users[$user].Sub | ForEach-Object { "`"$_`"" }) -join ', '
-    "      { user: `"$user`", password: `"$pass`", allow_responses: true, permissions: { publish: { allow: [$pub] }, subscribe: { allow: [$sub] } } }"
+    # allow_responses belongs inside permissions: nats-server 2.15 rejects it on the user block.
+    "      { user: `"$user`", password: `"$pass`", permissions: { publish: { allow: [$pub] }, subscribe: { allow: [$sub] }, allow_responses: true } }"
   }
   $lines += ($entries -join ",`n")
   $lines += @('    ]', '  }', '}')
