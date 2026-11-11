@@ -137,10 +137,11 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   'geldar-mcp': ['GELDAR_MCP', '0.5', '512m', 128],
   'players-host': ['PLAYERS_HOST', '1', '2048m', 256],
   admin: ['ADMIN', '0.5', '512m', 128],
+  glass: ['GLASS', '0.5', '256m', 128],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the ten services the budget totals cover', () => {
+  it('names exactly the eleven services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -242,10 +243,60 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
   });
 });
 
+// The C2-07a2 service: Glass on a loopback publish, as the read-only geldar_glass role (decisions 0072, 0093, 0094).
+const glass = colo.services.glass ?? {};
+
+describe('compose/colo.yml: the Glass service (C2-07a2)', () => {
+  it('publishes only the loopback Glass port, as a literal', () => {
+    expect(glass.ports).toEqual(['127.0.0.1:8787:8787']);
+  });
+
+  it('takes its image from GELDAR_GLASS_IMAGE (the release manifest value)', () => {
+    expect(String(glass.image)).toMatch(/^\$\{GELDAR_GLASS_IMAGE:-[^}]+\}$/);
+  });
+
+  it('reads Postgres as geldar_glass with the password from a file secret, and has no NATS', () => {
+    expect(env(glass).GELDAR_GLASS_PG_USER).toBe('geldar_glass');
+    expect(env(glass).GELDAR_GLASS_PG_PASSWORD_FILE).toBe('/run/secrets/postgres-glass.txt');
+    expect(glass.secrets).toEqual(['postgres-glass.txt']);
+    expect(colo.secrets['postgres-glass.txt']).toEqual({ file: './secrets/postgres-glass.txt' });
+    expect(Object.keys(env(glass)).filter((key) => /NATS/.test(key))).toEqual([]);
+  });
+
+  it('sets the trusted proxy, the thought delay and the kill switch defaults (decision 0093)', () => {
+    expect(env(glass).GELDAR_GLASS_TRUSTED_PROXIES).toBe(
+      composeDefault('GELDAR_GLASS_TRUSTED_PROXIES', '127.0.0.1'),
+    );
+    expect(env(glass).GELDAR_GLASS_DELAY_SECONDS).toBe(
+      composeDefault('GELDAR_GLASS_DELAY_SECONDS', '60'),
+    );
+    expect(env(glass).GELDAR_GLASS_ENABLED).toBe(composeDefault('GELDAR_GLASS_ENABLED', 'true'));
+  });
+
+  it('runs read-only with no capability and no new privileges, on the colo network', () => {
+    expect(glass.read_only).toBe(true);
+    expect(glass.cap_drop).toEqual(['ALL']);
+    expect(glass.security_opt).toEqual(['no-new-privileges:true']);
+    expect(glass.networks).toEqual(['colo']);
+  });
+
+  it('publishes no BlueMap port: Paper has no ports and Caddy serves the webroot (C1-09)', () => {
+    expect(colo.services.paper).not.toHaveProperty('ports');
+  });
+});
+
 // The service uid (decision 0084 follow-up): the services run as GELDAR_SERVICE_UID, so the secret files the deploy
 // checks must be owned by the same uid. Paper's itzg image takes UID and GID; Velocity's image does not (no change there).
 describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
-  const uidServices = ['golem-body', 'players-host', 'animus', 'geldar-mcp', 'admin', 'eventsink'];
+  const uidServices = [
+    'golem-body',
+    'players-host',
+    'animus',
+    'geldar-mcp',
+    'admin',
+    'eventsink',
+    'glass',
+  ];
 
   it.each(uidServices)(
     '%s runs as the service uid, default 1000 (rendered as 1001 when set)',
