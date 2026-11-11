@@ -21,6 +21,38 @@
 		}
 	}
 
+	# BlueMap's file storage writes only textures.json.gz and tiles as *.prbm.gz (low-res tiles may be plain .png).
+	# The browser asks for the plain name, so serve the .gz under it with Content-Encoding: gzip, unconditionally, as
+	# BlueMap's nginx and apache examples do. (Caddy's `precompressed` needs the plain file to exist, so it cannot do it.)
+	@gz path_regexp gz ^(/maps/[A-Za-z0-9_-]+/(textures\.json|tiles/.+\.prbm))$
+	handle @gz {
+		root * /srv
+		rewrite * {re.gz.1}.gz
+		header Content-Encoding gzip
+		@json path /maps/*/textures.json
+		header @json Content-Type application/json
+		@bin path_regexp \.prbm$
+		header @bin Content-Type application/octet-stream
+		route {
+			file_server {
+				pass_thru
+			}
+			# A tile BlueMap has not rendered is 204 (BlueMap's docs), not 404.
+			respond 204
+		}
+	}
+
+	@tiles path /maps/*/tiles/*
+	handle @tiles {
+		root * /srv
+		route {
+			file_server {
+				pass_thru
+			}
+			respond 204
+		}
+	}
+
 	handle {
 		root * /srv
 		file_server
