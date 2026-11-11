@@ -4,7 +4,10 @@
 map.{$GELDAR_DOMAIN} {
 	# GET and HEAD only; every other method is refused at Caddy.
 	@not_allowed not method GET HEAD
-	respond @not_allowed 405
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
 
 	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
 	request_header -x-geldar-client-ip
