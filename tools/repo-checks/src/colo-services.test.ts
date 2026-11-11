@@ -92,13 +92,25 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(env(mind)).toHaveProperty('GELDAR_TELEMETRY_URL', null);
   });
 
-  it('caps both services with the shared limits anchor (decision 0082)', () => {
-    for (const service of [body, mind]) {
-      const limits = (service.deploy as { resources: { limits: Record<string, string> } }).resources
-        .limits;
-      expect(limits).toEqual({
-        cpus: composeDefault('GELDAR_COLO_CPU_LIMIT', '4'),
-        memory: composeDefault('GELDAR_COLO_MEMORY_LIMIT', '8192m'),
+  it('caps each service with its own budget, no swap, a pids limit and log rotation (decision 0082)', () => {
+    const budgets: [Service, string, string, string][] = [
+      [body, 'GOLEM_BODY', '1', '2048m'],
+      [mind, 'ANIMUS', '1', '2048m'],
+    ];
+    for (const [service, name, cpus, memory] of budgets) {
+      expect(service.deploy).toEqual({
+        resources: {
+          limits: {
+            cpus: composeDefault(`GELDAR_COLO_${name}_CPUS`, cpus),
+            memory: composeDefault(`GELDAR_COLO_${name}_MEM`, memory),
+          },
+        },
+      });
+      expect(service.memswap_limit).toBe(composeDefault(`GELDAR_COLO_${name}_MEM`, memory));
+      expect(service.pids_limit).toBe(256);
+      expect(service.logging).toEqual({
+        driver: 'json-file',
+        options: { 'max-size': '10m', 'max-file': '3' },
       });
     }
   });

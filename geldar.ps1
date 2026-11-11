@@ -96,6 +96,29 @@ function Read-ColoConfig([string] $Path = (Join-Path $Root 'shards/colo.yaml')) 
   if ($memory -notmatch '^[1-9][0-9]{1,4}[mg]$') {
     throw "${Path}: memory_limit '$memory' must be a whole number of m or g, from 10m to 99999g"
   }
+  # The total is the least the shard may have. The per-service budgets are literal defaults in compose/colo.yml
+  # (${GELDAR_COLO_<SERVICE>_CPUS:-x} and _MEM:-y); their sums are the floor. Paper's heap (MEMORY: 6G in compose,
+  # a test keeps the two equal) plus 1 GiB is the floor for the memory total.
+  $paperHeapMiB = 6144
+  $toMiB = { param([string] $size) if ($size -match '^([0-9]+)g$') { [double] $Matches[1] * 1024 } else { [double] ($size -replace 'm$', '') } }
+  $budgetCpu = 0.0
+  $budgetMiB = 0.0
+  $services = @{}
+  foreach ($match in [regex]::Matches((Get-Content -Raw (Join-Path $Root 'compose/colo.yml')), 'GELDAR_COLO_([A-Z_]+)_(CPUS|MEM):-([0-9.]+[mg]?)\}')) {
+    $services[$match.Groups[1].Value] = $true
+    if ($match.Groups[2].Value -eq 'CPUS') { $budgetCpu += [double] $match.Groups[3].Value }
+    else { $budgetMiB += & $toMiB $match.Groups[3].Value }
+  }
+  if ($services.Count -eq 0) { throw "compose/colo.yml has no per-service GELDAR_COLO_<SERVICE>_CPUS/_MEM budgets to check the total against" }
+  if ([double] $cpu -lt $budgetCpu) {
+    throw "${Path}: cpu_limit $cpu is below the sum of the per-service CPU budgets in compose/colo.yml ($budgetCpu)"
+  }
+  if ((& $toMiB $memory) -lt ($paperHeapMiB + 1024)) {
+    throw "${Path}: memory_limit $memory is below Paper's heap (6G) plus 1 GiB (7168m)"
+  }
+  if ((& $toMiB $memory) -lt $budgetMiB) {
+    throw "${Path}: memory_limit $memory is below the sum of the per-service memory budgets in compose/colo.yml ($($budgetMiB)m)"
+  }
   $port = $values.minecraft_port
   if ($port -in '25565', '25566') {
     throw "${Path}: minecraft_port $port is refused (25565 is the game server, 25566 is reserved)"
@@ -313,10 +336,8 @@ function Invoke-Shard([string[]] $ShardArgs) {
     'up' {
       Assert-PluginJar $shard
       if ($shard -eq 'colo') {
-        # compose/colo.yml reads these two; the defaults in the file equal shards/colo.yaml's first guesses.
-        $colo = Read-ColoConfig
-        $env:GELDAR_COLO_CPU_LIMIT = $colo.cpu_limit
-        $env:GELDAR_COLO_MEMORY_LIMIT = $colo.memory_limit
+        # Refuses a bad shards/colo.yaml before anything starts. The per-service limits are literals in compose/colo.yml.
+        $null = Read-ColoConfig
       }
       Initialize-ShardSecrets $shard
       Invoke-Step "build the images of shard $shard (layer cache; a no-op when nothing changed)" { docker @compose build }
