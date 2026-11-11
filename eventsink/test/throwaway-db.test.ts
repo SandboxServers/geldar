@@ -5,6 +5,8 @@ describe('assertThrowawayDatabase', () => {
   it('refuses the dev database, the config default and an empty name', () => {
     expect(() => assertThrowawayDatabase('geldar')).toThrow(/throwaway database only/);
     expect(() => assertThrowawayDatabase('ops_dev', 'ops_dev')).toThrow(/throwaway database only/);
+    // With another config default, the dev database name is still refused on its own.
+    expect(() => assertThrowawayDatabase('geldar', 'ops_dev')).toThrow(/throwaway database only/);
     expect(() => assertThrowawayDatabase('')).toThrow(/throwaway database only/);
   });
 
