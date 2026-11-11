@@ -3,7 +3,14 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHandler } from './http.ts';
 import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
-import { getThought, listReceipts, listThoughts, type SqlClient, thoughtsAfter } from './query.ts';
+import {
+  getThought,
+  listAgents,
+  listReceipts,
+  listThoughts,
+  type SqlClient,
+  thoughtsAfter,
+} from './query.ts';
 import { ROUTES } from './routes.ts';
 import { streamFeed } from './server.ts';
 import type { SseHub } from './sse.ts';
@@ -70,7 +77,8 @@ describe('living sovereign agents (0072 item 4)', () => {
     await getThought(db, 'th-1', shown);
     await thoughtsAfter(db, { at: '2026-11-11 00:00:00+00', id: '' }, 5, shown);
     await listReceipts(db, 'ac-1', shown);
-    expect(calls).toHaveLength(4);
+    await listAgents(db, shown);
+    expect(calls).toHaveLength(5);
     for (const call of calls) {
       expect(call.text).toMatch(PREDICATE);
       expect(flagOf([call])).toBe(flag);
@@ -86,7 +94,7 @@ describe('living sovereign agents (0072 item 4)', () => {
   it.each([false, true])(
     'the thought, receipt and stream routes pass %s from the policy',
     async (flag) => {
-      for (const name of ['thoughts', 'thought', 'receipts']) {
+      for (const name of ['agents', 'thoughts', 'thought', 'receipts']) {
         const { db, calls } = recorder();
         await get({ showLivingSovereign: flag }, db, name);
         expect(flagOf(calls), name).toBe(flag);

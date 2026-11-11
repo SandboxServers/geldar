@@ -177,7 +177,7 @@ async function serveRoute(
   policy: PublicPolicy,
 ): Promise<void> {
   if (name === 'agents') {
-    sendJson(res, 200, { agents: await listAgents(deps.db) });
+    sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
     return;
   }
   if (name === 'thoughts') {
