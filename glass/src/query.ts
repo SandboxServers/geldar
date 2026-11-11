@@ -40,12 +40,22 @@ export interface ThoughtFilter {
   limit: number;
 }
 
-/** Lists the agents. Owner, harness and model config are left out: they are not what Glass shows. */
-export async function listAgents(db: SqlClient): Promise<Row[]> {
+/**
+ * Lists the agents. Owner, harness and model config are left out: they are not what Glass shows.
+ * A living sovereign agent is left out too unless the visibility shows it (0072 item 4): its name
+ * is as private as its thoughts.
+ */
+export async function listAgents(
+  db: SqlClient,
+  shown: Visibility = DEFAULT_VISIBILITY,
+): Promise<Row[]> {
   const result = await db.query(
-    `SELECT agent_id, name, life_seq, shard, mode, tier, born_day, died_at, death_cause
-       FROM agents ORDER BY agent_id LIMIT 500`,
-    [],
+    `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
+            a.death_cause
+       FROM agents a
+      WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+      ORDER BY a.agent_id LIMIT 500`,
+    [shown.showLivingSovereign],
   );
   return result.rows;
 }
@@ -85,7 +95,7 @@ export async function listThoughts(
   return result.rows;
 }
 
-/** One thought with the complete model input (the caller caps it). Null when there is none. */
+/** One thought. The prompt and the raw reply are not selected: they are not public (R21). */
 export async function getThought(
   db: SqlClient,
   thoughtId: string,
@@ -94,7 +104,7 @@ export async function getThought(
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.world_day, t.world_tick, t.wake_reason,
             t.prompt_template_version, t.schema_version, t.model_config, t.latency_ms,
-            t.parsed, t.raw_output, t.model_input::text AS model_input, a.tier, a.name
+            t.parsed, a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
       WHERE t.thought_id = $1
         AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
@@ -104,7 +114,7 @@ export async function getThought(
   return result.rows[0] ?? null;
 }
 
-/** The receipts of one action, oldest first (prepared before committed or aborted). */
+/** The receipts of one action, oldest first (prepared before committed or aborted), no newer than the cut-off. */
 export async function listReceipts(
   db: SqlClient,
   actionId: string,
@@ -116,8 +126,9 @@ export async function listReceipts(
        FROM receipts r LEFT JOIN agents a ON a.agent_id = r.life_id
       WHERE r.action_id = $1
         AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+        AND ($3::timestamptz IS NULL OR r.at <= $3::timestamptz)
       ORDER BY r.at, r.phase LIMIT 100`,
-    [actionId, shown.showLivingSovereign],
+    [actionId, shown.showLivingSovereign, shown.shownUntil],
   );
   return result.rows;
 }

@@ -38,7 +38,7 @@ Decision 0072 lists the hardening Glass needs before it is exposed. C2-03 implem
 
 ## Known gap
 
-The SQL predicates for the delay and the sovereign filter are checked in unit tests by statement text and bound parameters only. The IT cases in glass/test/glass.it.test.ts (`hides the living sovereign agent by default, and shows it when the flag is on`, `the delay cut-off hides a thought newer than the cut-off`) need Postgres (`GELDAR_IT=1`) and have not run yet. They do not cover a dead sovereign or a house agent row.
+The SQL predicates for the delay and the sovereign filter are checked in unit tests by statement text and bound parameters only. The IT cases in glass/test/glass.it.test.ts (`hides the living sovereign agent by default, and shows it when the flag is on`, `the delay cut-off hides a thought newer than the cut-off`) need Postgres (`GELDAR_IT=1`). CI runs them in the `integration` job. Review round 1 (C2-R3) ran the file against a throwaway pgvector container (15 cases passed) and added a second Glass built with the default policy (living sovereign hidden, 60 s delay): a dead sovereign and a house agent are shown, a living sovereign is hidden through `/api/agents`, the thought list and detail, `thoughtsAfter` and a seeded receipt, and `getThought`, `thoughtsAfter` and `listReceipts` are run with a cut-off before and after the row. `glass/src/delay.test.ts` checks the `<=` operator and the bound cut-off of each statement without Postgres.
 
 ## Consequences
 
@@ -46,3 +46,5 @@ Visitors see sovereign minds one minute late at best and never while the agent l
 ## In-network bind (C2-07a3)
 
 Inside the Colo compose network Glass may bind `0.0.0.0` and read Postgres at the service name `postgres`, but only when `GELDAR_IN_NETWORK_HOSTS=1` is set (the pattern of decision 0131). Any other non-loopback bind and any other Postgres host except `localhost` is still refused. Without the opt-in nothing changes: loopback only. The Host check also answers the exact names listed in `GELDAR_GLASS_PUBLIC_HOSTS` (comma list, default empty, no wildcards), so Glass can be served behind Caddy; any other Host still gets 421. Status is unchanged.
+
+Review round 1 (C2-R3). R21: the prompt is not public. Glass returns neither `model_input` nor `raw_output` (not selected, not sent, not rendered) until an owner-signed privacy review says otherwise. `/api/agents` hides a living sovereign agent under the default policy, as the thought routes do. `/api/stats` is removed: the viewer count is not public. Receipts get the same delay cut-off as thoughts. Status is unchanged.

@@ -83,6 +83,12 @@ describe('the Glass SQL allowlist', () => {
     }
   });
 
+  it('no statement selects the prompt or the raw reply (R21)', () => {
+    for (const { file, sql } of sqlStatements()) {
+      expect(sql, file).not.toMatch(/model_input|raw_output/);
+    }
+  });
+
   it('a hostile filter value travels as a parameter and never reaches the SQL text', async () => {
     const hostile = "x' OR 1=1; DROP TABLE thoughts; --";
     const clean = recordingDb();
@@ -105,7 +111,7 @@ describe('the Glass SQL allowlist', () => {
     for (const call of calls) expect(call.text).not.toContain('DELETE');
     // The last value of a thought statement is its cut-off: null here, as no delay is set.
     expect(calls[0]?.values).toEqual([hostile, false, null]);
-    expect(calls[1]?.values).toEqual([hostile, false]);
+    expect(calls[1]?.values).toEqual([hostile, false, null]);
     expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10, false, null]);
   });
 });

@@ -24,7 +24,6 @@ const REQUESTS = [
   { method: 'GET', path: '/api/thoughts' },
   { method: 'GET', path: '/api/thoughts/t1' },
   { method: 'GET', path: '/api/receipts?action_id=a1' },
-  { method: 'GET', path: '/api/stats' },
   { method: 'GET', path: '/api/stream' },
   { method: 'GET', path: '/api/thoughts?limit=0' },
   { method: 'GET', path: '/no-such-page' },

@@ -121,21 +121,12 @@ async function loadOlder() {
 async function openThought(id) {
   try {
     const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(id)}`);
-    const modelInput = thought.model_input ?? { json: '', bytes: 0, truncated: false };
     const receipts =
       typeof thought.action_id === 'string'
         ? (await getJson(`/api/receipts?action_id=${encodeURIComponent(thought.action_id)}`))
             .receipts
         : [];
-    const notes = [];
-    if (modelInput.truncated) {
-      const size = `${modelInput.bytes} bytes`;
-      notes.push(
-        renderNote(document, `The model input is ${size}; only the first 64 KiB is shown.`),
-      );
-    }
-    const detail = renderDetail(document, toView(thought), modelInput.json ?? '', receipts);
-    els.detail.replaceChildren(...notes, detail);
+    els.detail.replaceChildren(renderDetail(document, toView(thought), receipts));
   } catch {
     els.detail.replaceChildren(renderNote(document, 'Could not load this thought.'));
   }

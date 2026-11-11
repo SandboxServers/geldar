@@ -121,9 +121,9 @@ describe('the kill switch (0072 item 6)', () => {
   it('answers 503 even for a foreign Host, and 200 again when switched back on', async () => {
     let on = false;
     const { port } = await serve(() => on);
-    expect((await send(port, 'GET', '/api/stats', 'evil.example')).status).toBe(503);
+    expect((await send(port, 'GET', '/api/agents', 'evil.example')).status).toBe(503);
     on = true;
-    expect((await send(port, 'GET', '/api/stats')).status).toBe(200);
+    expect((await send(port, 'GET', '/')).status).toBe(200);
   });
 
   it('an open stream closes within one heartbeat of the switch going off', async () => {
