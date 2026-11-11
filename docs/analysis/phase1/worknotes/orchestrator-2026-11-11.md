@@ -179,3 +179,4 @@ These go into decision 0075 as an amendment when C2b starts.
   - an alert fires if the feed hurts Paper's TPS.
 - **Panes.** Start at 4 per session. The cap is a setting so it can be raised later.
 - **Admins.** Admin is a flag in Postgres. A `kino_admins` table, or a role column, is keyed by the Microsoft account's stable subject id. It is managed by an admin CLI command like the ban command. The owner is the first admin. The table is written only through the admin tool, and Kino reads it through a read-only grant.
+- **Kino sign-in app (2026-11-11).** Created with az as the Entra app 'Geldar Kino'. Personal Microsoft accounts only, token v2, redirect URI /auth/callback on the glass host plus localhost:8787. The client secret is valid for 1 year and is stored only on the owner's desktop at ~/.config/geldar/; it is not in the repo or on the node yet.
