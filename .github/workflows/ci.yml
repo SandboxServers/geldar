@@ -234,6 +234,27 @@ jobs:
           echo "::error::nats-server did not become ready"
           docker logs geldar-ci-nats
           exit 1
+      - name: start the eventsink (it creates GELDAR_EVENTS and its consumer, as in compose)
+        env:
+          GELDAR_NATS_URL: nats://127.0.0.1:4222
+          POSTGRES_PASSWORD_FILE: compose/secrets/postgres.txt
+        run: |
+          node eventsink/src/main.ts > "$RUNNER_TEMP/eventsink.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/eventsink.pid"
+      - name: wait for the eventsink to be consuming GELDAR_EVENTS
+        run: |
+          pid=$(cat "$RUNNER_TEMP/eventsink.pid")
+          for _ in $(seq 1 60); do
+            if grep -q 'consuming GELDAR_EVENTS' "$RUNNER_TEMP/eventsink.log"; then
+              echo "eventsink is consuming GELDAR_EVENTS"
+              exit 0
+            fi
+            if ! kill -0 "$pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          echo "::error::eventsink did not start"
+          cat "$RUNNER_TEMP/eventsink.log"
+          exit 1
       - name: integration tests that need Postgres or NATS
         run: >-
           pnpm vitest run
@@ -252,6 +273,13 @@ jobs:
           eventsink/test/projection.it.test.ts
           golem/src/mind-link/server.it.test.ts
           threshold/mcp/test/nats-auth.it.test.ts
+      - name: stop the eventsink and show its log
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/eventsink.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/eventsink.pid")" 2>/dev/null || true
+          fi
+          cat "$RUNNER_TEMP/eventsink.log" 2>/dev/null || true
 
   gate:
     name: ci gate
