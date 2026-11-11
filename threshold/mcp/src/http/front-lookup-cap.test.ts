@@ -92,7 +92,7 @@ function storeA(): GatedStore {
   return store;
 }
 
-const bad = (n: number): string => `bad-token-number-${String(n).padStart(8, '0')}`;
+const bad = (n: number): string => `gmcp-${String(n).padStart(64, '0')}`;
 const client = (n: number): string => `198.51.${Math.floor(n / 250)}.${(n % 250) + 1}`;
 
 function post(port: number, token: string, address: string): Promise<Response> {

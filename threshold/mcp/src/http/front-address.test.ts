@@ -11,7 +11,7 @@ import type { FrontDoor } from './front.ts';
 import { createFrontDoor } from './front.ts';
 
 const PEPPER = new TextEncoder().encode('front-address-test-pepper-0123456789');
-const TOKEN_A = 'token-for-player-aa-0123456789';
+const TOKEN_A = 'gmcp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const BAD = 'wrong-token-for-nobody-0123456789';
 const FAILED_AUTH_PER_ADDRESS = 30;
 const INIT = JSON.stringify({

@@ -40,7 +40,7 @@ function post(port: number, authorization: string | undefined, client = '198.51.
   });
 }
 
-const bad = (n: number): string => `Bearer bad-token-number-${String(n).padStart(8, '0')}`;
+const bad = (n: number): string => `Bearer gmcp-${String(n).padStart(64, '0')}`;
 
 async function start(clock: () => number) {
   const store = storeWithTokenA(new CountingStore()) as CountingStore;
