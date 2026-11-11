@@ -24,7 +24,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 const SHARD = 'phase0';
 /** The compose files that only add to a base: never validated alone (geldar.ps1 Invoke-Check and ci.yml). */
-const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml'];
+const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml'];
 const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper'];
 const MIND_TYPES = [
   'wake',
