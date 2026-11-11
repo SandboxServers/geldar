@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { createHandler } from './http.ts';
 import { hostileRow } from './render-fixtures.ts';
 import { display, toView } from './render-model.ts';
-import { type Doc, type El, renderDetail, renderRow } from './render-view.ts';
+import { type Doc, renderDetail, renderRow } from './render-view.ts';
 import type { SqlClient } from './query.ts';
 import type { SseHub } from './sse.ts';
 
@@ -146,7 +146,8 @@ describe('agent text in the rendered page', () => {
         JSON.stringify(hostileRow(text, 0)),
         [],
       );
-      doc.body.append(row as unknown as El, detail as unknown as El);
+      type DomNode = Parameters<typeof doc.body.append>[number];
+      doc.body.append(row as unknown as DomNode, detail as unknown as DomNode);
       for (const tag of MARKUP_SINKS) expect(doc.body.querySelectorAll(tag).length, tag).toBe(0);
       for (const node of Array.from(doc.body.querySelectorAll('*'))) {
         for (const attr of Array.from(node.attributes)) {
