@@ -237,10 +237,12 @@ export function createHandler(deps: GlassHandlerDeps) {
         return;
       }
     }
+    // HEAD is a GET without a body; Node drops the body bytes of a HEAD response.
+    const readMethod = req.method === 'GET' || req.method === 'HEAD';
     const file = STATIC_FILES.get(pathOf(req.url));
     if (file !== undefined) {
-      if (req.method !== 'GET') {
-        res.setHeader('Allow', 'GET');
+      if (!readMethod) {
+        res.setHeader('Allow', 'GET, HEAD');
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
@@ -248,14 +250,23 @@ export function createHandler(deps: GlassHandlerDeps) {
       res.end(file.body);
       return;
     }
-    const route = resolveRoute(req.method, req.url);
+    const route = resolveRoute(req.method === 'HEAD' ? 'GET' : req.method, req.url);
     if (route.status === 'not-found') {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
     if (route.status === 'method-not-allowed') {
-      res.setHeader('Allow', route.allow.join(', '));
+      res.setHeader('Allow', [...route.allow, 'HEAD'].join(', '));
       sendJson(res, 405, { error: 'method not allowed' });
+      return;
+    }
+    if (req.method === 'HEAD' && route.name === 'stream') {
+      // A HEAD never opens a stream: it gets the stream's headers and no body.
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end();
       return;
     }
     try {
