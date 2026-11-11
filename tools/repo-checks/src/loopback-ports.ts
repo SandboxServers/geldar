@@ -89,9 +89,154 @@ function resourceLimits(definition: Record<string, unknown>): unknown {
   return deploy.resources.limits;
 }
 
+/**
+ * Which colo rules apply to a file: `base` for colo.yml and any colo*.yml (every service needs its limits and logging),
+ * `overlay` for the NATS auth overlay that is merged on colo (its services are the base's, so only the value and
+ * security rules apply), or null for every other file.
+ */
+export function coloRole(path: string): 'base' | 'overlay' | null {
+  if (/^compose\/colo[^/]*\.ya?ml$/.test(path)) return 'base';
+  return path === 'compose/nats-auth.yml' ? 'overlay' : null;
+}
+
+/** Keys no colo service may set: each one grants the container host-level power (privilege, capabilities, namespaces, devices, sysctls). */
+const DENIED_COLO_KEYS = [
+  'privileged',
+  'cap_add',
+  'pid',
+  'ipc',
+  'userns_mode',
+  'devices',
+  'sysctls',
+];
+/** Relative bind sources a colo service may mount: the repo paths the stack needs. Named volumes are allowed too. */
+const COLO_SOURCE_ALLOWLIST = [
+  '../sql',
+  '../shards',
+  '../plugin',
+  '../plugins',
+  '../deploy',
+  './paper',
+  './velocity',
+  './secrets',
+];
+const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+const DEFAULTED = /^\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}$/;
+
+/** True when a cpus or memory value is a positive number, or a positive size such as 512m. */
+function isPositiveLimit(text: string, kind: 'cpus' | 'memory'): boolean {
+  if (kind === 'cpus') return /^\d+(\.\d+)?$/.test(text) && Number(text) > 0;
+  const size = /^(\d+(?:\.\d+)?)(b|k|kb|m|mb|g|gb)?$/i.exec(text.trim());
+  return size !== null && Number(size[1]) > 0;
+}
+
+/** Why one limit is rejected, or null. A literal must be positive; `${VAR:-default}` needs a positive default. */
+function limitProblem(name: 'cpus' | 'memory', value: unknown): string | null {
+  const shown = JSON.stringify(value);
+  const kind = name === 'cpus' ? 'a positive number' : 'a positive size such as 512m';
+  if (typeof value === 'number') {
+    return isPositiveLimit(String(value), name) ? null : `${name} ${shown} must be ${kind}`;
+  }
+  if (typeof value !== 'string') return `${name} ${shown} must be ${kind}`;
+  if (!value.includes('$')) {
+    return isPositiveLimit(value, name) ? null : `${name} ${shown} must be ${kind}`;
+  }
+  const defaulted = DEFAULTED.exec(value);
+  if (defaulted === null) {
+    return `${name} ${shown} must be ${kind}, or \${VAR:-default} with a positive default`;
+  }
+  return isPositiveLimit(defaulted[1] ?? '', name)
+    ? null
+    : `${name} ${shown} has a default that is not ${kind}`;
+}
+
+/** Why one volume source is rejected, or null. Named volumes and the allowlisted relative paths pass. */
+function sourceProblem(source: string): string | null {
+  const shown = JSON.stringify(source);
+  if (/docker\.sock/i.test(source)) return `volume ${shown} mounts docker.sock, which is rejected`;
+  if (source.includes('$')) return `volume ${shown} uses interpolation, which is rejected`;
+  if (/^(\/|~|[A-Za-z]:)/.test(source) || source.includes('\\')) {
+    return `volume ${shown} is an absolute host path, which is rejected`;
+  }
+  if (NAMED_VOLUME.test(source)) return null;
+  const prefix = COLO_SOURCE_ALLOWLIST.find((p) => source === p || source.startsWith(`${p}/`));
+  if (prefix === undefined) return `volume ${shown} is not in the colo allowlist`;
+  // An allowed prefix may start with `../`, so `..` is refused only in the part after it.
+  const rest = source.slice(prefix.length).split('/');
+  return rest.includes('..')
+    ? `volume ${shown} climbs out of its directory, which is rejected`
+    : null;
+}
+
+/** Why one `volumes:` entry is rejected, or null. Short form (src:dst[:mode]) and long form (source:) both pass through sourceProblem. */
+function volumeProblem(entry: unknown): string | null {
+  const shown = JSON.stringify(entry);
+  if (typeof entry === 'string') {
+    // A Windows drive path (C:\...) has a colon of its own, so it is refused before the split.
+    if (/^[A-Za-z]:[\\/]/.test(entry))
+      return `volume ${shown} is an absolute host path, which is rejected`;
+    // No colon: an anonymous volume at a container path, which mounts nothing from the host.
+    if (!entry.includes(':'))
+      return entry.includes('$') ? `volume ${shown} uses interpolation` : null;
+    return sourceProblem(entry.slice(0, entry.indexOf(':')));
+  }
+  if (isRecord(entry) && typeof entry.source === 'string') return sourceProblem(entry.source);
+  if (isRecord(entry) && entry.source !== undefined)
+    return `volume ${shown} has a source that is not a string`;
+  return null;
+}
+
+/**
+ * The colo rules for one service: denied keys, the NATS network_mode, the cpus and memory values, the volume allowlist,
+ * and (base files only) the required pids_limit, memswap_limit and logging. Each returns a reason, never a value.
+ */
+function coloServiceProblems(
+  role: 'base' | 'overlay',
+  definition: Record<string, unknown>,
+): string[] {
+  const problems: string[] = [];
+  for (const key of DENIED_COLO_KEYS) {
+    if (key in definition) problems.push(`${key} is not allowed in colo`);
+  }
+  if ('network_mode' in definition && networkModeProblem(definition.network_mode) === null) {
+    problems.push('network_mode is not allowed in colo; a service joins the colo network');
+  }
+  if (role === 'base') {
+    for (const key of ['pids_limit', 'memswap_limit', 'logging']) {
+      if (!(key in definition)) problems.push(`has no ${key}; every colo service needs one`);
+    }
+  }
+  const limits = resourceLimits(definition);
+  if (role === 'base' && (!isRecord(limits) || !('cpus' in limits) || !('memory' in limits))) {
+    problems.push(
+      'has no deploy.resources.limits with cpus and memory; every colo service needs one',
+    );
+  }
+  if (isRecord(limits)) {
+    for (const name of ['cpus', 'memory'] as const) {
+      if (name in limits) {
+        const problem = limitProblem(name, limits[name]);
+        if (problem !== null) problems.push(problem);
+      }
+    }
+  }
+  if ('volumes' in definition) {
+    if (!Array.isArray(definition.volumes)) {
+      problems.push('volumes must be a list');
+    } else {
+      for (const entry of definition.volumes) {
+        const problem = volumeProblem(entry);
+        if (problem !== null) problems.push(problem);
+      }
+    }
+  }
+  return problems;
+}
+
 /** The `ports:` entries and host networking of one compose file that break the loopback rule. */
 export function findPublicPorts(path: string, text: string): PortFinding[] {
-  const isColo = path === COLO_PATH;
+  const role = coloRole(path);
+  const isColo = role !== null;
   const finding = (service: string, reason: string): PortFinding => ({ path, service, reason });
 
   const documents = parseAllDocuments(text, { merge: true });
@@ -135,15 +280,9 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
       const mode = networkModeProblem(definition.network_mode);
       if (mode !== null) findings.push(finding(service, mode));
     }
-    if (isColo) {
-      const limits = resourceLimits(definition);
-      if (!isRecord(limits) || !('cpus' in limits) || !('memory' in limits)) {
-        findings.push(
-          finding(
-            service,
-            'has no deploy.resources.limits with cpus and memory; every colo service needs one',
-          ),
-        );
+    if (role !== null) {
+      for (const problem of coloServiceProblems(role, definition)) {
+        findings.push(finding(service, problem));
       }
     }
     if (!('ports' in definition)) continue;
