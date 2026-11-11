@@ -8,6 +8,8 @@ export declare const validateCheckpointManifest: ValidateFunction;
 export declare const validateDayNightPayload: ValidateFunction;
 export declare const validateWorldEvent: ValidateFunction;
 export declare const validateIntentEventPayload: ValidateFunction;
+export declare const validateLakituAudit: ValidateFunction;
+export declare const validateLakituFeed: ValidateFunction;
 export declare const validateLookInput: ValidateFunction;
 export declare const validateLookResult: ValidateFunction;
 export declare const validateWaitInput: ValidateFunction;
