@@ -221,7 +221,20 @@ jobs:
         run: |
           mkdir -p compose/secrets
           printf '%s' ci > compose/secrets/postgres.txt
-      - name: integration tests that need only Postgres
+      - name: NATS server with JetStream for the NATS integration tests (127.0.0.1:4222)
+        run: |
+          docker run -d --name geldar-ci-nats -p 127.0.0.1:4222:4222 -p 127.0.0.1:8222:8222 \
+            nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde -js -m 8222
+      - name: wait for NATS
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8222/healthz > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "::error::nats-server did not become ready"
+          docker logs geldar-ci-nats
+          exit 1
+      - name: integration tests that need Postgres or NATS
         run: >-
           pnpm vitest run
           threshold/mcp/test/it/pg-stores.it.test.ts
@@ -234,6 +247,11 @@ jobs:
           animus/src/memory/memory.it.test.ts
           glass/test/glass.it.test.ts
           tools/adam-report/test/report.it.test.ts
+          animus/src/link/link.it.test.ts
+          eventsink/test/eventsink.it.test.ts
+          eventsink/test/projection.it.test.ts
+          golem/src/mind-link/server.it.test.ts
+          threshold/mcp/test/nats-auth.it.test.ts
 
   gate:
     name: ci gate
