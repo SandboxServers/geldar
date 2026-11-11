@@ -298,8 +298,11 @@ Node env values (names only; set them in the deploy env on the node, never in th
 
 | Variable | Meaning |
 |---|---|
-| `GELDAR_MC_BIND` | the node's own interface address for the public Minecraft port. Set together with `GELDAR_MC_PORT`; the scripts merge `compose/colo-public.yml` only when both are set, refuse exactly one, and refuse a wildcard (`0.0.0.0`, `::`) |
-| `GELDAR_MC_PORT` | the public Minecraft port (a number) |
+| `GELDAR_MC_BIND` | the node's own interface address for the public Minecraft port. Set together with `GELDAR_MC_PORT`; the scripts merge `compose/colo-public.yml` only when both are set, refuse exactly one, and refuse anything but one strict IPv4 literal (`a.b.c.d`; no `0.0.0.0`, hostname, IPv6 or list). `colo-up.sh` merges the overlay only in its last step, after the whole stack is healthy, and prints `public Minecraft port published on <bind>:<port>` |
+| `GELDAR_MC_PORT` | the public Minecraft port: 1-65535, never 25565 or 25566 (decision 0082) |
+
+There is no `state/release.commit` record. The release record is `state/current.env` and `state/previous.env` (copies of the
+release manifest); the manifest carries no commit header, so nothing reads a commit from it.
 | `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container: the .1 gateway of GELDAR_COLO_SUBNET, the colo bridge /24 you pin (a private range inside 172.16/12 private that nothing else on the node uses). colo-up.sh saves the three values in state/node.env and reloads them; colo-public.sh install refuses without the two proxy lists; colo-status.sh prints them |
 | `GELDAR_MCP_TRUSTED_PROXIES` | the same for the MCP service |
 | `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` | the Caddy upstreams, in `GELDAR_PUBLIC_ENV` (each `127.0.0.1:<port>`) |

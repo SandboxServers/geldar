@@ -53,6 +53,8 @@ act() {
 # Every compose call names the project, so it can only reach geldar-colo containers, volumes and networks.
 dc() {
   public_overlay
+  # colo-up.sh sets HOLD_PUBLIC=1 until the stack is healthy: the port is published by the last `up` only.
+  if [ "${HOLD_PUBLIC:-0}" = 1 ]; then PUBLIC_OVERLAY=; fi
   if [ -n "$PUBLIC_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
   elif [ -n "$PUBLIC_OVERLAY" ]; then
@@ -77,8 +79,23 @@ public_overlay() {
   case $bind in
     0.0.0.0 | '::' | '[::]' | '0:0:0:0:0:0:0:0') die "GELDAR_MC_BIND is a wildcard address; it must be the node's own interface address" ;;
   esac
+  # One IPv4 literal only: four decimal octets 0-255, no leading zeros, no hostname, no IPv6, no list.
+  printf '%s' "$bind" | grep -Eq '^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$' ||
+    die "GELDAR_MC_BIND must be one IPv4 literal (a.b.c.d); no hostname, IPv6 or list"
+  oldifs=$IFS
+  IFS=.
+  # shellcheck disable=SC2086
+  set -- $bind
+  IFS=$oldifs
+  for octet in "$@"; do
+    [ "$octet" -le 255 ] || die "GELDAR_MC_BIND must be one IPv4 literal (a.b.c.d): octet $octet is above 255"
+  done
   case $port in
     '' | *[!0-9]*) die "GELDAR_MC_PORT must be a number" ;;
+  esac
+  [ "${#port}" -le 5 ] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || die "GELDAR_MC_PORT must be between 1 and 65535"
+  case $port in
+    25565 | 25566) die "GELDAR_MC_PORT must not be 25565 or 25566 (decision 0082); pick another public port" ;;
   esac
   PUBLIC_OVERLAY=$(dirname "$COMPOSE_FILE")/colo-public.yml
   [ -f "$PUBLIC_OVERLAY" ] || die "public overlay not found: $PUBLIC_OVERLAY"

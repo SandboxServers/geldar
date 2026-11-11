@@ -7,6 +7,8 @@
 set -eu
 . "$(dirname "$0")/common.sh"
 
+HOLD_PUBLIC=1
+export HOLD_PUBLIC
 plan_header
 need docker
 check_prereqs
@@ -63,6 +65,15 @@ act sh "$DEPLOY_DIR/colo-admin.sh" whitelist-house-body
 FORCE=$(recreate_flag)
 # shellcheck disable=SC2086
 act dc up -d --wait $FORCE
+# The public Minecraft port (decision 0096) is published only now, after the whole stack is healthy: a second `up` with
+# the overlay merged recreates velocity alone with the extra publish.
+HOLD_PUBLIC=0
+public_overlay
+if [ -n "$PUBLIC_OVERLAY" ]; then
+  act dc config --quiet
+  act dc up -d --wait velocity
+  say "public Minecraft port published on ${GELDAR_MC_BIND}:${GELDAR_MC_PORT}"
+fi
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run complete: no state was changed"
 else

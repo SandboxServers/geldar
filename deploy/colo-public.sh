@@ -52,6 +52,8 @@ render_all() {
     up=$(env_value "$up_var")
     [ -n "$up" ] || die "$up_var is missing from the env file"
     printf '%s' "$up" | grep -Eq '^127\.0\.0\.1:[0-9]{1,5}$' || die "$up_var is not a loopback address (127.0.0.1:<port>)"
+    up_port=${up#127.0.0.1:}
+    { [ "$up_port" -ge 1 ] && [ "$up_port" -le 65535 ]; } || die "$up_var port is outside 1-65535"
     for f in "$s.caddy" "$s-off.caddy"; do
       [ -f "$SRC/$f" ] || die "site file not found: $f"
       sed -e "s|{[\$]GELDAR_DOMAIN}|$domain|g" -e "s|{[\$]$up_var}|$up|g" "$SRC/$f" >"$WORK/render/$f"
@@ -200,6 +202,8 @@ cmd_remove() {
 
 cmd_status() {
   require_env GELDAR_CADDY_CONFIG_DIR GELDAR_CADDY_FILE
+  # The lines below describe the files on disk; they do not prove what Caddy has loaded (R4-07).
+  say "files say (the live state in Caddy is not checked here; run caddy validate and reload to be sure):"
   if [ -f "$GELDAR_CADDY_FILE" ] && grep -qxF "$IMPORT_LINE" "$GELDAR_CADDY_FILE"; then
     say "import line: present"
   else

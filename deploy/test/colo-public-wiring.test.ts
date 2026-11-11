@@ -131,19 +131,25 @@ const composeCalls = (fx: Fx): string[] =>
 const OVERLAY = `-f ${posix(resolve(ROOT, 'compose', 'colo-public.yml'))}`;
 
 describe('public port overlay (GELDAR_MC_BIND, GELDAR_MC_PORT)', () => {
-  it('is merged on every compose call when both are set, after the NATS overlay', () => {
+  it('is merged only in the last step, after the healthy full up, after the NATS overlay', () => {
     const fx = fixture();
-    const r = up(fx, { GELDAR_MC_BIND: '127.0.0.1', GELDAR_MC_PORT: '25999' });
+    const r = up(fx, { GELDAR_MC_BIND: '192.0.2.10', GELDAR_MC_PORT: '25999' });
     expect(r.code).toBe(0);
-    // colo-admin.sh builds its own file list (admin runs only; the public overlay does not touch what they start),
-    // so the calls through dc() are the ones asserted: config, pulls and ups.
+    expect(r.out).toContain('public Minecraft port published on 192.0.2.10:25999');
     const log = composeCalls(fx).filter((c) => !/ run --rm admin|--profile admin config/.test(c));
-    expect(log.length).toBeGreaterThan(3);
-    expect(log.some((c) => / up -d --wait$/.test(c))).toBe(true);
-    for (const c of log) {
-      expect(c).toContain(OVERLAY);
+    const withOverlay = log.filter((c) => c.includes(OVERLAY));
+    // Exactly the validation and the velocity up carry the overlay, and they are the last two compose calls.
+    expect(withOverlay).toHaveLength(2);
+    expect(log.slice(-2)).toEqual(withOverlay);
+    expect(withOverlay[0]).toMatch(/ config --quiet$/);
+    expect(withOverlay[1]).toMatch(/ up -d --wait velocity$/);
+    for (const c of withOverlay) {
       expect(c.indexOf('nats-auth.yml')).toBeLessThan(c.indexOf('colo-public.yml'));
     }
+    // The full healthy up comes before the publish.
+    const fullUp = log.findIndex((c) => / up -d --wait$/.test(c));
+    expect(fullUp).toBeGreaterThan(-1);
+    expect(fullUp).toBeLessThan(log.indexOf(withOverlay[1] as string));
   });
 
   it('is not merged when neither is set', () => {
@@ -190,6 +196,66 @@ describe('public port overlay (GELDAR_MC_BIND, GELDAR_MC_PORT)', () => {
     const r = up(fixture(), { GELDAR_MC_BIND: '127.0.0.1', GELDAR_MC_PORT: '25x' });
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('GELDAR_MC_PORT must be a number');
+  });
+
+  it.each([
+    'play.example.invalid',
+    '2001:db8::1',
+    '[2001:db8::1]',
+    '192.0.2.1,192.0.2.2',
+    '192.0.2',
+    '192.0.2.256',
+    '192.0.2.01',
+    '192.0.2.1 ',
+    '::ffff:192.0.2.1',
+  ])('refuses the bind %j (not one strict IPv4 literal)', (bind) => {
+    const fx = fixture();
+    const r = up(fx, { GELDAR_MC_BIND: bind, GELDAR_MC_PORT: '25999' });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('GELDAR_MC_BIND must be one IPv4 literal');
+    expect(composeCalls(fx).some((c) => / (pull|up)\b/.test(c))).toBe(false);
+  });
+
+  it.each([
+    ['0', 'between 1 and 65535'],
+    ['65536', 'between 1 and 65535'],
+    ['999999', 'between 1 and 65535'],
+    ['25565', '25565 or 25566'],
+    ['25566', '25565 or 25566'],
+  ])('refuses the port %s', (port, msg) => {
+    const fx = fixture();
+    const r = up(fx, { GELDAR_MC_BIND: '192.0.2.10', GELDAR_MC_PORT: port });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain(msg);
+    expect(composeCalls(fx).some((c) => / (pull|up)\b/.test(c))).toBe(false);
+  });
+
+  it.each(['1', '65535', '25999'])('accepts the port %s', (port) => {
+    const r = up(fixture(), { GELDAR_MC_BIND: '192.0.2.10', GELDAR_MC_PORT: port });
+    expect(r.code).toBe(0);
+    expect(r.out).toContain(`192.0.2.10:${port}`);
+  });
+
+  it('a failing healthy up publishes nothing: the overlay is never merged', () => {
+    const fx = fixture();
+    const shim = join(dirname(fx.env.DOCKER_CALLS_LOG as string), 'bin', 'docker');
+    writeFileSync(
+      shim,
+      `${DOCKER_SHIM.replace('exit 0\n', '')}case "$*" in *"up -d --wait"*) [ -f "$DOCKER_CALLS_LOG.x" ] && exit 1; : > "$DOCKER_CALLS_LOG.x" ;; esac\nexit 0\n`,
+    );
+    // The first up (postgres, nats) passes; every later up is refused, so the stack never turns healthy.
+    const r = up(fx, { GELDAR_MC_BIND: '192.0.2.10', GELDAR_MC_PORT: '25999' });
+    expect(r.code).not.toBe(0);
+    for (const c of composeCalls(fx)) expect(c).not.toContain('colo-public.yml');
+    expect(r.out).not.toContain('public Minecraft port published');
+  });
+
+  it('does not write state/release.commit (the record is current.env and previous.env)', () => {
+    const fx = fixture();
+    expect(up(fx).code).toBe(0);
+    const state = fx.env.GELDAR_STATE_DIR as string;
+    expect(existsSync(join(state, 'current.env'))).toBe(true);
+    expect(existsSync(join(state, 'release.commit'))).toBe(false);
   });
 });
 

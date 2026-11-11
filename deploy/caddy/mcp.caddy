@@ -13,6 +13,13 @@ mcp.{$GELDAR_DOMAIN} {
 	request_header -X-Forwarded-For
 	request_header -CF-Connecting-IP
 
+	# Response headers: no Server banner, no sniffing, no referrer (R4-05).
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+
 	# The same limit as BODY_LIMIT_BYTES in threshold/mcp/src/http/front.ts (64 KiB).
 	request_body {
 		max_size 64KiB
