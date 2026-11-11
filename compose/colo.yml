@@ -419,8 +419,14 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       REGISTER_DB_PASSWORD_FILE: /run/secrets/postgres-register.txt
-      # Caddy (host network) reaches the publish as the docker bridge gateway: the deploy env sets the real peer address.
-      REGISTER_TRUSTED_PEERS: "${REGISTER_TRUSTED_PEERS:-127.0.0.1}"
+      # Caddy (host network) reaches the publish as the docker bridge gateway: the deploy env sets it (default: the MCP's trusted proxy, the same gateway).
+      REGISTER_TRUSTED_PEERS: "${REGISTER_TRUSTED_PEERS:-${GELDAR_MCP_TRUSTED_PROXIES:-127.0.0.1}}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/').then((r)=>process.exit(r.status===200||r.status===503?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-github-secret, register-discord-secret]
     ports:
       # The loopback register port. Literal: the loopback rule rejects interpolation.

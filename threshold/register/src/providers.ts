@@ -89,13 +89,20 @@ export function githubProvider(creds: ProviderCredentials): Provider {
       const emails = await json(await fetchFn('https://api.github.com/user/emails', auth(token)));
       const verified = Array.isArray(emails) && emails.some((e) => obj(e).verified === true);
       return {
-        id: String(user.id),
+        id: idOf(user.id),
         handle: String(user.login),
         verified,
         createdAtMs: Date.parse(String(user.created_at)),
       };
     },
   };
+}
+
+/** A provider user id must be a number or a non-empty string; a reply without one must not become the id "undefined". */
+export function idOf(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'string' && value !== '') return value;
+  throw new Error('provider reply has no user id');
 }
 
 export function discordProvider(creds: ProviderCredentials): Provider {
@@ -137,7 +144,7 @@ export function discordProvider(creds: ProviderCredentials): Provider {
           }),
         ),
       );
-      const id = String(me.id);
+      const id = idOf(me.id);
       return {
         id,
         handle: String(me.username),

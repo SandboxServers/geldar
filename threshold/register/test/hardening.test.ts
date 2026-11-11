@@ -1,0 +1,186 @@
+import type { ServerResponse } from 'node:http';
+import { afterEach, describe, expect, it } from 'vitest';
+import { Account, SESSION_TTL_MS } from '../src/account.ts';
+import { loadConfig } from '../src/config.ts';
+import type { Identity } from '../src/identity.ts';
+import { idOf } from '../src/providers.ts';
+import { FixedWindow, LIMITER_MAX_KEYS, limiterKey } from '../src/server.ts';
+import { FakeStore } from './fake-store.ts';
+import { config, type Harness, harness, NOW } from './fixture.ts';
+
+let h: Harness | undefined;
+afterEach(async () => {
+  await h?.close();
+  h = undefined;
+});
+
+function stubRes(): { res: ServerResponse; status: () => number } {
+  let code = 0;
+  const res = {
+    writeHead: (c: number) => {
+      code = c;
+      return res;
+    },
+    end: () => res,
+  } as unknown as ServerResponse;
+  return { res, status: () => code };
+}
+
+const identity = (n: number): Identity => ({
+  provider: 'github',
+  identityHash: n.toString(16).padStart(64, '0'),
+  display: `u${n}`,
+});
+
+describe('sign-in is serial (F7a)', () => {
+  it('two parallel new sign-ins at a cap of 1 create one owner', async () => {
+    const clock = { at: NOW };
+    const store = new FakeStore(() => clock.at);
+    const account = new Account({
+      config: config({ maxNewOwnersPerDay: 1 }),
+      store,
+      now: () => clock.at,
+      log: () => {},
+    });
+    const a = stubRes();
+    const b = stubRes();
+    await Promise.all([account.signedIn(identity(1), a.res), account.signedIn(identity(2), b.res)]);
+    expect(store.owners.size).toBe(1);
+    expect([a.status(), b.status()].sort()).toEqual([302, 429]);
+  });
+});
+
+describe('the token page and the provider binding (F7b, F7c)', () => {
+  it('a state issued for GitHub is refused at /callback/discord', async () => {
+    h = await harness();
+    const { state, cookie } = await h.begin('github');
+    const res = await h.callback('discord', state, cookie);
+    expect(res.status).toBe(403);
+    expect(h.signedIn).toHaveLength(0);
+  });
+
+  it('the sign-in refusal page sends referrer-policy no-referrer', async () => {
+    h = await harness();
+    const res = await h.callback('github', 'nope', '');
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+  });
+});
+
+describe('the limiter (F8)', () => {
+  it('keys an IPv6 address by its /64', () => {
+    expect(limiterKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd')).toBe(limiterKey('2001:db8:1:2::1'));
+    expect(limiterKey('2001:db8:1:2::1')).not.toBe(limiterKey('2001:db8:1:3::1'));
+    expect(limiterKey('203.0.113.7')).toBe('203.0.113.7');
+  });
+
+  it('charges every address of a /64 to one bucket', () => {
+    const w = new FixedWindow(1, () => 0);
+    expect(w.charge('2001:db8:1:2::1')).toBe(0);
+    expect(w.charge('2001:db8:1:2:f::9')).toBeGreaterThan(0);
+  });
+
+  it('evicts the oldest key over the cap and does not reset a live counter', () => {
+    let t = 0;
+    const w = new FixedWindow(2, () => t);
+    expect(w.charge('victim')).toBe(0);
+    expect(w.charge('victim')).toBe(0);
+    for (let i = 0; i < LIMITER_MAX_KEYS - 1; i++) w.charge(`k${i}`);
+    // Within the cap nothing was flushed: the third hit is still refused.
+    expect(w.charge('victim')).toBeGreaterThan(0);
+    t = 1;
+    expect(w.charge('recent')).toBe(0);
+    expect(w.charge('recent')).toBe(0);
+    for (let i = 0; i < 50; i++) w.charge(`flood${i}`);
+    expect(w.charge('recent')).toBeGreaterThan(0);
+    // The oldest keys went, one by one; a recent key keeps its count.
+    expect(w.charge('flood49')).toBe(0);
+    expect(w.charge('flood49')).toBeGreaterThan(0);
+    // The oldest key (victim) was evicted individually, so it starts afresh.
+    expect(w.charge('victim')).toBe(0);
+  });
+});
+
+describe('sessions (F8)', () => {
+  it('sweeps expired sessions at sign-in and ends a session at POST /logout', async () => {
+    const clock = { at: NOW };
+    const store = new FakeStore(() => clock.at);
+    h = await harness({}, store);
+    (store as { now: () => number }).now = () => h?.clock.at ?? 0;
+    const login = async (id: string) => {
+      h!.idp.userId = id;
+      const b = await h!.begin('github');
+      const r = await fetch(`${h!.base}/callback/github?code=c&state=${b.state}`, {
+        headers: { cookie: b.cookie },
+        redirect: 'manual',
+      });
+      return (
+        (r.headers.getSetCookie().find((c) => c.startsWith('gr_session=')) ?? '').split(';')[0] ??
+        ''
+      );
+    };
+    const sc = await login('3001');
+    const page = await (await fetch(`${h.base}/account`, { headers: { cookie: sc } })).text();
+    const csrf = /name="csrf" value="([^"]+)"/.exec(page)?.[1] ?? '';
+    const out = await fetch(`${h.base}/logout`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { cookie: sc, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf }).toString(),
+    });
+    expect(out.status).toBe(302);
+    expect(out.headers.get('set-cookie')).toContain('Max-Age=0');
+    const again = await fetch(`${h.base}/account`, { headers: { cookie: sc }, redirect: 'manual' });
+    expect(again.status).toBe(302);
+    h.clock.at += SESSION_TTL_MS + 1;
+    expect(await login('3002')).toContain('gr_session=');
+  });
+});
+
+describe('session sweep (F8)', () => {
+  it('drops expired sessions when another user signs in', async () => {
+    const clock = { at: NOW };
+    const store = new FakeStore(() => clock.at);
+    const account = new Account({ config: config(), store, now: () => clock.at, log: () => {} });
+    await account.signedIn(identity(1), stubRes().res);
+    expect(account.sessionCount).toBe(1);
+    clock.at += SESSION_TTL_MS + 1;
+    await account.signedIn(identity(2), stubRes().res);
+    expect(account.sessionCount).toBe(1);
+  });
+});
+
+describe('the provider user id (F10)', () => {
+  it('accepts a number or a non-empty string and refuses anything else', () => {
+    expect(idOf(42)).toBe('42');
+    expect(idOf('abc')).toBe('abc');
+    for (const bad of [undefined, null, '', {}, Number.NaN, true]) {
+      expect(() => idOf(bad)).toThrow(/no user id/);
+    }
+  });
+});
+
+describe('the token pepper (F9)', () => {
+  const base = {
+    REGISTER_PEPPER_FILE: 'p',
+    REGISTER_TOKEN_PEPPER_FILE: 't',
+    REGISTER_GITHUB_SECRET_FILE: 'g',
+    REGISTER_DISCORD_SECRET_FILE: 'd',
+    REGISTER_PUBLIC_URL: 'https://register.example.invalid',
+    REGISTER_SHARD: 'colo',
+  };
+  const read = (token: string) => (p: string) =>
+    p === 't' ? token : p === 'p' ? 'p'.repeat(40) : 'x';
+  const pepper = 'q'.repeat(32);
+
+  it('strips one trailing newline only and keeps edge spaces', () => {
+    expect(loadConfig(base, read(`${pepper}\n`)).tokenPepper).toBe(pepper);
+    expect(loadConfig(base, read(`${pepper}\r\n`)).tokenPepper).toBe(pepper);
+    expect(loadConfig(base, read(` ${pepper} \n`)).tokenPepper).toBe(` ${pepper} `);
+    expect(loadConfig(base, read(`${pepper}\n\n`)).tokenPepper).toBe(`${pepper}\n`);
+  });
+
+  it('refuses a byte-order mark and a pepper under 32 bytes', () => {
+    expect(() => loadConfig(base, read(`﻿${pepper}`))).toThrow(/byte-order mark/);
+    expect(() => loadConfig(base, read('short\n'))).toThrow(/32 bytes/);
+  });
+});

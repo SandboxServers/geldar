@@ -37,6 +37,25 @@ function required(raw: string | undefined, name: string): string {
 }
 
 /**
+ * The token pepper, read as the MCP reads it (threshold/mcp/src/main.ts pepperBytes): no byte-order mark, one trailing
+ * LF or CRLF removed and nothing else, at least 32 bytes. A different read gives tokens the MCP can never match.
+ */
+function tokenPepper(
+  env: Readonly<Record<string, string | undefined>>,
+  readSecret: (path: string) => string,
+): string {
+  const path = env.REGISTER_TOKEN_PEPPER_FILE;
+  if (!path) throw new Error('REGISTER_TOKEN_PEPPER_FILE is not set');
+  const text = readSecret(path);
+  if (text.startsWith('﻿'))
+    throw new Error('REGISTER_TOKEN_PEPPER_FILE starts with a byte-order mark');
+  const value = text.replace(/\r?\n$/, '');
+  if (Buffer.byteLength(value, 'utf8') < 32)
+    throw new Error('REGISTER_TOKEN_PEPPER_FILE is shorter than 32 bytes');
+  return value;
+}
+
+/**
  * Reads the config from an environment map. A secret is read from the file named by
  * `<NAME>_FILE`. Only the exact string `false` turns the kill switch off.
  */
@@ -69,7 +88,7 @@ export function loadConfig(
       clientSecret: secret('REGISTER_DISCORD_SECRET'),
     },
     pepper,
-    tokenPepper: secret('REGISTER_TOKEN_PEPPER'),
+    tokenPepper: tokenPepper(env, readSecret),
     shard: required(env.REGISTER_SHARD, 'REGISTER_SHARD'),
     harnesses: (env.REGISTER_HARNESSES ?? 'claude-code')
       .split(',')

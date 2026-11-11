@@ -70,7 +70,26 @@ export function clientAddress(req: IncomingMessage, trusted: readonly string[]):
   return typeof raw === 'string' && /^[0-9a-fA-F:.]{2,45}$/.test(raw) ? raw : peer;
 }
 
-class FixedWindow {
+export const LIMITER_MAX_KEYS = 10_000;
+
+/** An IPv6 address is judged by its /64 (one subscriber holds the whole prefix); IPv4 and others are kept as they are. */
+export function limiterKey(address: string): string {
+  if (!address.includes(':') || address.includes('.')) return address;
+  const [head = '', tail] = address.toLowerCase().split('::');
+  const front = head === '' ? [] : head.split(':');
+  const back = tail === undefined || tail === '' ? [] : tail.split(':');
+  const groups =
+    tail === undefined
+      ? front
+      : [...front, ...Array(Math.max(0, 8 - front.length - back.length)).fill('0'), ...back];
+  if (groups.length !== 8) return address;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.replace(/^0+(?=.)/, ''))
+    .join(':')}::/64`;
+}
+
+export class FixedWindow {
   private readonly hits = new Map<string, { start: number; n: number }>();
   private readonly perMinute: number;
   private readonly now: () => number;
@@ -81,11 +100,18 @@ class FixedWindow {
   /** Seconds to wait, or 0 when the request may go on. */
   charge(key: string): number {
     const t = this.now();
-    if (this.hits.size > 10_000) this.hits.clear();
+    key = limiterKey(key);
     let h = this.hits.get(key);
     if (!h || t - h.start >= 60_000) {
       h = { start: t, n: 0 };
+      this.hits.delete(key);
       this.hits.set(key, h);
+      // Over the cap, drop the oldest keys one by one; a flush would reset every counter, an attacker's own included.
+      while (this.hits.size > LIMITER_MAX_KEYS) {
+        const oldest = this.hits.keys().next().value;
+        if (oldest === undefined) break;
+        this.hits.delete(oldest);
+      }
     }
     h.n += 1;
     return h.n > this.perMinute ? Math.max(1, Math.ceil((h.start + 60_000 - t) / 1000)) : 0;

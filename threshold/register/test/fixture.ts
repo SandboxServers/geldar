@@ -28,7 +28,7 @@ export function config(over: Partial<RegisterConfig> = {}): RegisterConfig {
       REGISTER_TOKEN_PEPPER_FILE: 'tokpepper',
       REGISTER_SHARD: 'test',
     },
-    (p) => (p === 'pepper' ? PEPPER : `secret-${p}`),
+    (p) => (p === 'pepper' ? PEPPER : p === 'tokpepper' ? 't'.repeat(40) : `secret-${p}`),
   );
   return { ...base, ...over };
 }

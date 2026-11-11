@@ -9,7 +9,7 @@ const env = {
   REGISTER_TOKEN_PEPPER_FILE: 't',
   REGISTER_SHARD: 'test',
 };
-const read = (p: string) => (p === 'p' ? 'x'.repeat(32) : `s-${p}\n`);
+const read = (p: string) => (p === 'p' || p === 't' ? 'x'.repeat(32) : `s-${p}\n`);
 
 describe('loadConfig', () => {
   it('defaults the kill switch on, the age floor to 30 and the daily cap to 10', () => {
