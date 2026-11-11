@@ -71,7 +71,9 @@ describe('rule 2: a non-owner sees only the public rules', () => {
     ['expired cookie', () => getThoughts(session(OWNER_HASH, 50))],
     ['wrong key', () => getThoughts(session(OWNER_HASH), 'z'.repeat(40))],
     ['no key configured', () => getThoughts(session(OWNER_HASH), '')],
-    ['banned identity', () => getThoughts(session(BANNED_HASH))],
+    // Fake database: it returns no agents for this hash, so this checks the caller passes an empty list on. The banned filter
+    // itself is SQL, covered in sql/test/check-schema-kino-functions.sql (glass_owner_agents for a banned owner).
+    ['identity the database lists no agents for', () => getThoughts(session(BANNED_HASH))],
   ];
   for (const [name, run] of cases) {
     it(`${name}: no owned agent reaches the query`, async () => {

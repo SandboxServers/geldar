@@ -335,8 +335,14 @@ function Initialize-NatsAuth([string] $Shard) {
     $pass = (Get-Content (Join-Path $dir "nats-$user.txt") -Raw).Trim()
     $pub = ($users[$user].Pub | ForEach-Object { "`"$_`"" }) -join ', '
     $sub = ($users[$user].Sub | ForEach-Object { "`"$_`"" }) -join ', '
+    # A deny list takes precedence over the allow list in nats-server, which is how a broad allow stays off the Kino subjects.
+    $deny = ''
+    if ($users[$user].ContainsKey('PubDeny')) {
+      $denyQuoted = ($users[$user].PubDeny | ForEach-Object { "`"$_`"" }) -join ', '
+      $deny = ", deny: [$denyQuoted]"
+    }
     # allow_responses belongs inside permissions: nats-server 2.15 rejects it on the user block.
-    "      { user: `"$user`", password: `"$pass`", permissions: { publish: { allow: [$pub] }, subscribe: { allow: [$sub] }, allow_responses: true } }"
+    "      { user: `"$user`", password: `"$pass`", permissions: { publish: { allow: [$pub]$deny }, subscribe: { allow: [$sub] }, allow_responses: true } }"
   }
   $lines += ($entries -join ",`n")
   $lines += @('    ]', '  }', '}')
@@ -355,6 +361,8 @@ function Get-NatsUsers([string] $Shard) {
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
   return [ordered]@{
     body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'));
+      # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
+      PubDeny = @("geldar.$s.kino.>");
       Sub = @("geldar.$s.body.>", '_INBOX.>') }
     mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       Sub = @('_INBOX.>') }
@@ -362,7 +370,10 @@ function Get-NatsUsers([string] $Shard) {
     mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
     # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
     velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
-    paper = @{ Pub = @("geldar.$s.>") + $js; Sub = @('_INBOX.>') }
+    # Kino: the plugin publishes the feed and reads the control subject, and cannot publish control (so it cannot forge a start).
+    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.control", '_INBOX.>') }
+    # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
+    kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
   }
 }
 

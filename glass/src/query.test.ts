@@ -22,6 +22,8 @@ const ALLOWED_TABLES = [
   'agents',
   'kino_admins',
   'glass_owner_agents',
+  'kino_viewer',
+  'kino_agent_scope',
 ];
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const WRITE_WORDS = /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
@@ -29,8 +31,13 @@ const SQL_WORD = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRAN
 
 /** Every source file in glass/src that is not a test. */
 function sourceFiles(): { name: string; text: string }[] {
-  return readdirSync(SRC_DIR)
-    .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+  // The top level and kino/, where the Kino scope store and the audit write their SQL.
+  return ['', 'kino']
+    .flatMap((sub) =>
+      readdirSync(join(SRC_DIR, sub))
+        .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+        .map((name) => join(sub, name)),
+    )
     .map((name) => ({ name, text: readFileSync(join(SRC_DIR, name), 'utf8') }));
 }
 

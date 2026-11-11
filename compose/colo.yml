@@ -471,7 +471,7 @@ services:
       GELDAR_GLASS_TRUSTED_PROXIES: "${GELDAR_GLASS_TRUSTED_PROXIES:-127.0.0.1}"
       GELDAR_GLASS_DELAY_SECONDS: "${GELDAR_GLASS_DELAY_SECONDS:-60}"
       GELDAR_GLASS_ENABLED: "${GELDAR_GLASS_ENABLED:-true}"
-      # Kino (decision 0075): OFF unless GELDAR_KINO_ENABLED=1 (docs/runbooks/kino.md); its NATS user is subscribe-only.
+      # Kino (decision 0075): OFF unless GELDAR_KINO_ENABLED=1 (docs/runbooks/kino.md); its NATS user (kino) may subscribe the feed and publish the control subject only.
       GELDAR_KINO_ENABLED: "${GELDAR_KINO_ENABLED:-0}"
       GELDAR_SHARD: "${GELDAR_SHARD:-phase0}"
       GELDAR_KINO_OTLP_ENDPOINT: "${GELDAR_KINO_OTLP_ENDPOINT:-}"

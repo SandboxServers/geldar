@@ -1,4 +1,4 @@
-# Overlay for Kino (decision 0075): gives Glass its subscribe-only NATS connection. Merge it over compose/colo.yml only
+# Overlay for Kino (decision 0075): gives Glass its NATS connection as the kino user (subscribe the feed, publish the control subject; see Get-NatsUsers in geldar.ps1). Merge it over compose/colo.yml only
 # when the owner enables Kino (docs/runbooks/kino.md); the base file keeps Glass free of NATS. The password file is a
 # file in the secrets directory, mounted at the path named by GELDAR_KINO_NATS_PASSWORD_FILE; no value is in the repo.
 services:
@@ -20,7 +20,7 @@ services:
     memswap_limit: "${GELDAR_COLO_GLASS_MEM:-256m}"
     environment:
       GELDAR_NATS_URL: nats://nats:4222
-      GELDAR_NATS_USER: "${GELDAR_KINO_NATS_USER:?set GELDAR_KINO_NATS_USER}"
+      GELDAR_NATS_USER: "${GELDAR_KINO_NATS_USER:-kino}"
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-kino.txt
     secrets: [nats-kino.txt]
 secrets:
