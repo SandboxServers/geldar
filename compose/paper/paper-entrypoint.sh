@@ -59,4 +59,15 @@ if ! awk -v secret="$secret" -v q="$quote" '
   exit 1
 fi
 
+# spark is bundled in Paper (C2-07n), so there is no jar; only its config is written, on every start: no background
+# profiler, and command results are not broadcast to online operators. Commands stay console and RCON only (no ops).
+mkdir -p /data/plugins/spark
+cat > /data/plugins/spark/config.json <<'SPARK_CONFIG'
+{
+  "backgroundProfiler": false,
+  "disableResponseBroadcast": true
+}
+SPARK_CONFIG
+chown --reference=/data /data/plugins /data/plugins/spark /data/plugins/spark/config.json
+
 exec /image/scripts/start "$@"

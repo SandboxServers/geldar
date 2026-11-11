@@ -318,6 +318,27 @@ site and one to the MCP site, then read each service log (`docker compose -p gel
 value you set in `GELDAR_MCP_TRUSTED_PROXIES`. If it differs, set the variable to the logged address, run
 `colo-up.sh` again and repeat the request. Until it matches, the service treats Caddy as an ordinary client.
 
+## Performance diagnostics
+
+Paper 26.1.2 build 74 bundles the spark profiler (spark-paper 1.10.152), so no jar is fetched and there is no hash lock to
+check; the Paper build pin (`PAPER_BUILD` in `compose/colo.yml`) pins spark with it. Paper's
+entrypoint (compose/paper/paper-entrypoint.sh) writes its config, plugins/spark/config.json in the Paper volume, on every start: the always-on background profiler is off
+and results are not broadcast to online operators. Run spark from the console or RCON only:
+
+```sh
+docker exec geldar-colo-paper-1 rcon-cli spark tps
+docker exec geldar-colo-paper-1 rcon-cli spark health
+docker exec geldar-colo-paper-1 rcon-cli spark profiler start --timeout 60
+```
+
+Output goes to the RCON reply. A finished profile is uploaded to spark's bytebin (`spark-usercontent.lucko.me`) and the
+reply is a viewer link on `spark.lucko.me`. That is the only egress, and it happens only when an operator runs a profiler,
+heap or health command that uploads. To keep a profile local, add `--save-to-file` (`spark profiler stop --save-to-file`);
+it is written under `plugins/spark/` in the Paper volume. Nothing uploads in the background.
+
+Agents cannot run spark: they are offline players without op, and the `spark` permission is op-only. A repo check
+(`tools/repo-checks/src/colo-spark.test.ts`) fails if Paper is given ops or a plugin grants the permission.
+
 ## Stop conditions
 
 Stop and do not retry in a loop when:
