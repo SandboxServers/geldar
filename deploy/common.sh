@@ -133,8 +133,13 @@ check_secret() {
 # read from the merged config too. Nothing is generated on the node for the NATS files (decision 0084).
 check_secrets() {
   [ -d "$GELDAR_SECRETS_DIR" ] || die "secrets directory missing: $GELDAR_SECRETS_DIR (deploy/README.md)"
-  SECRETS_REAL=$(cd "$GELDAR_SECRETS_DIR" && pwd -P) || die "cannot open $GELDAR_SECRETS_DIR"
-  COMPOSE_SECRETS_REAL=$(cd "$(dirname "$COMPOSE_FILE")/secrets" 2>/dev/null && pwd -P) || COMPOSE_SECRETS_REAL=
+  # Both sides of the containment test come from readlink -f, so they are spelled the same way (on Git for Windows
+  # sh, pwd -P prints /tmp/... while readlink prints C:/... for the same directory).
+  SECRETS_REAL=$(readlink -f "$GELDAR_SECRETS_DIR") || die "cannot open $GELDAR_SECRETS_DIR"
+  COMPOSE_SECRETS_REAL=
+  if [ -d "$(dirname "$COMPOSE_FILE")/secrets" ]; then
+    COMPOSE_SECRETS_REAL=$(readlink -f "$(dirname "$COMPOSE_FILE")/secrets") || die "cannot resolve compose/secrets"
+  fi
   merged_config
   secret_sources >"$WORK/secrets.tsv"
   [ -s "$WORK/secrets.tsv" ] || die "the merged config declares no secret files; refusing (deploy/README.md)"
