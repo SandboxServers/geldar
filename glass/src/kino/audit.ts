@@ -81,15 +81,19 @@ export class KinoAudit implements PaneAudit {
   }
 }
 
-/** The Postgres store behind `geldar_glass`: INSERT on kino_audit and EXECUTE on kino_audit_purge only. */
+/** The Postgres store behind `geldar_glass`: EXECUTE on kino_audit_record and kino_audit_purge only (SECURITY DEFINER, called with SELECT). */
 export function sqlAuditStore(db: SqlClient): AuditStore {
   return {
     async insert(e) {
-      await db.query(
-        `INSERT INTO kino_audit (event, login_hash, agent_id, pane_id, mode, at, stopped_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [e.event, e.login_hash, e.agent_id, e.pane_id, e.mode, e.at, e.stopped_at ?? null],
-      );
+      await db.query(`SELECT kino_audit_record($1, $2, $3, $4, $5, $6, $7)`, [
+        e.event,
+        e.login_hash,
+        e.agent_id,
+        e.pane_id,
+        e.mode,
+        e.at,
+        e.stopped_at ?? null,
+      ]);
     },
     async purgeBefore(cutoffIso) {
       const r = await db.query(`SELECT kino_audit_purge($1) AS n`, [cutoffIso]);
