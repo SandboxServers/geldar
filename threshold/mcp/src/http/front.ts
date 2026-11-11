@@ -3,6 +3,7 @@ import type { AuthDecision, MockHttp, Refusal } from '@geldar/mcp-mock';
 import { createMockHttp } from '@geldar/mcp-mock';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
+import { PUBLIC_DEFAULTS, type PublicConfig } from '../config-public.ts';
 import type { PlayerRecord, RateLimiter, TokenStore } from '../ports.ts';
 import {
   type BearerVerdict,
@@ -15,9 +16,12 @@ import {
 } from './auth.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
+import { KILL_SWITCH_BODY } from './public-refusals.ts';
 
 export interface FrontDoorOptions {
   http: McpConfig['http'];
+  /** The `public` block: the kill switch and the per-client rate limit. Default: no kill switch, the default limit. */
+  public?: PublicConfig;
   /** The HMAC pepper, read from its file by the caller. Never logged. */
   pepper: Uint8Array;
   store: TokenStore;
@@ -110,6 +114,7 @@ function refusedRateLimit(retryAfterSec: number | undefined): Refusal | undefine
  */
 export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
   const now = options.now ?? Date.now;
+  const pub = options.public ?? PUBLIC_DEFAULTS;
   const gates = new FrontLimits(options.limiter, options.agentShare ?? 0);
   // Only a peer on the trusted list may name the client, in the configured header. An empty list trusts none.
   const trusted = trustedProxies(options.http.trustedProxies ?? []);
@@ -144,6 +149,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     exemptPeer: trusted,
     hostAllowed: (host) => hostAccepted(options.http.allowedHosts, port, host),
     async authenticate(playerId, header, req): Promise<AuthDecision> {
+      // The kill switch answers every public request before anything else is read or counted.
+      if (pub.killSwitch) return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY };
       // No client of this server sends Origin, so any Origin is refused, valid token or not.
       if (req.headers.origin !== undefined) return { outcome: 'forbidden' };
       const client = clientAddress(req, trusted, clientIpHeader);

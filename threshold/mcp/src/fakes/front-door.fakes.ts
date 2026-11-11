@@ -1,6 +1,7 @@
 import { request } from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpConfig } from '../config.ts';
+import { PUBLIC_DEFAULTS, type PublicConfig } from '../config-public.ts';
 import { tokenDigest } from '../http/auth.ts';
 import type { FrontDoor, FrontDoorOptions } from '../http/front.ts';
 import { createFrontDoor } from '../http/front.ts';
@@ -90,6 +91,7 @@ export function storeWithTokenA(store: FakeTokenStore = new FakeTokenStore()): F
 
 export interface StartOptions {
   http?: Partial<McpConfig['http']>;
+  public?: Partial<PublicConfig>;
   store?: FakeTokenStore;
   limiter?: RateLimiter;
   limits?: FrontDoorOptions['limits'];
@@ -115,6 +117,7 @@ export async function startDoor(options: StartOptions = {}): Promise<Started> {
       maxBodyBytes: 65536,
       ...options.http,
     },
+    public: { ...PUBLIC_DEFAULTS, ...options.public },
     pepper: PEPPER,
     store: options.store ?? storeWithTokenA(),
     limiter: options.limiter ?? new CappedLimiter(),

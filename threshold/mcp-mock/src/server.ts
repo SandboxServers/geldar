@@ -12,11 +12,15 @@ import { checkBearer } from './auth.ts';
 /** Why a player's sessions ended while requests were open. Each value is a fixed template. */
 export type SessionEndReason = 'session_revoked';
 
-/** The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. */
+/**
+ * The answer of the `authenticate` hook: a bearer outcome, or a refusal with a retry hint. `answered`
+ * ends the request with the given status, headers and JSON body (a caller's fixed refusal shape).
+ */
 export type AuthDecision =
   | { outcome: AuthResult; reason?: string }
   | { outcome: 'limited'; retryAfterSec: number }
-  | { outcome: 'unavailable' };
+  | { outcome: 'unavailable' }
+  | { outcome: 'answered'; status: number; headers?: Record<string, string>; body: unknown };
 
 /** A POST the `onToolCall` hook refuses: its status, a fixed message and an optional retry hint. */
 export interface Refusal {
@@ -345,6 +349,17 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     // A refused client is not read further, so its socket closes when the option asks for it.
     const close: Record<string, string> =
       options.closeRefused === true ? { Connection: 'close' } : {};
+    if (decision.outcome === 'answered') {
+      ctx.event = 'answered';
+      res
+        .writeHead(decision.status, {
+          'Content-Type': 'application/json',
+          ...decision.headers,
+          ...close,
+        })
+        .end(JSON.stringify(decision.body));
+      return;
+    }
     if ('retryAfterSec' in decision) {
       ctx.event = 'rate_limited';
       res.writeHead(429, { 'Retry-After': String(decision.retryAfterSec), ...close }).end();
