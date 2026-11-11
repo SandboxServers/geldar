@@ -40,7 +40,7 @@ describe('golem/Dockerfile (the Body image)', () => {
 
   it('installs from the frozen lockfile', () => {
     expect(dockerfile).toMatch(
-      /RUN pnpm install --frozen-lockfile --prod --filter "@geldar\/golem\.\.\."/,
+      /RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@geldar\/golem\.\.\."/,
     );
   });
 

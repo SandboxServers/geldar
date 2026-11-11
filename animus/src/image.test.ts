@@ -40,7 +40,7 @@ describe('animus/Dockerfile.mind (the Mind image)', () => {
 
   it('installs from the frozen lockfile', () => {
     expect(dockerfile).toMatch(
-      /RUN pnpm install --frozen-lockfile --prod --filter "@geldar\/animus\.\.\."/,
+      /RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@geldar\/animus\.\.\."/,
     );
   });
 
