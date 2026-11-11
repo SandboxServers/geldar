@@ -14,4 +14,8 @@ fetch_bluemap
 record_release
 act dc pull
 act dc up -d --wait
-say "deployed: project $PROJECT (no volume was removed)"
+if [ "$DRY_RUN" = 1 ]; then
+  say "dry-run complete: no state was changed"
+else
+  say "deployed: project $PROJECT (no volume was removed)"
+fi
