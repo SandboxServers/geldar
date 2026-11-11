@@ -1,6 +1,6 @@
 #!/bin/sh
 # Deploys the Colo stack by pull (decision 0084). Idempotent: the same release twice changes nothing.
-# Order: Postgres and NATS first, then the SQL migrations and the geldar_mcp login step (both through the admin
+# Order: Postgres and NATS first, then the SQL migrations and the geldar_mcp and geldar_glass login steps (all through the admin
 # container, deploy/colo-admin.sh), and only then the full core. sql/0002 creates geldar_mcp NOLOGIN, so the MCP
 # cannot start before --set-role-password has run.
 # Touches only the geldar-colo project. Removes no volume. Set DEPLOY_DRY_RUN=1 to print the plan only.
@@ -11,6 +11,9 @@ plan_header
 need docker
 check_prereqs
 load_release "$RELEASE_FILE"
+# Glass is part of the stack: its image comes from the manifest like the others (load_release already refused a
+# value that is not a digest reference).
+[ -n "${GELDAR_GLASS_IMAGE:-}" ] || die "release manifest has no GELDAR_GLASS_IMAGE; refusing"
 check_merged_config
 check_secrets
 fetch_bluemap
@@ -20,6 +23,7 @@ act dc --profile admin pull admin
 act dc up -d --wait postgres nats
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
+act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_glass --password-file /run/secrets/postgres-glass.txt
 act dc up -d --wait
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run complete: no state was changed"
