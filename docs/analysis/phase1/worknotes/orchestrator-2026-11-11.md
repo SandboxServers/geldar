@@ -80,3 +80,10 @@ C1-10 correction: the owner asked whether the first ranger is Jason. It is: Jaso
 - **Flake (2026-11-11, C2-07b):** one full `./geldar.ps1 check` run on branch `phase1/c2-07b-public-deploy` failed in the vitest step, and the coder did not capture which test. The next two full runs passed. Action: the next coder to see a vitest failure in `check` records the test name. Until then the source is unknown (the known flakes are `golem/src/test-control.test.ts`, now fixed by C1-01c, and `lantern-local/test/thinker.test.ts`).
 - **For C2-R2 (Velocity):** the ghost default-mode window from C2-02b (#90). A ghost is in the backend's default game mode for a few ticks before `geldar:ghost` arrives. Required fix before any ghost account exists: join every player as spectator until Paper is told the player is live (fail closed).
 - **For C2-R4 (node and Caddy):** two gaps in `deploy/colo-public.sh` (#91). A failed re-install removes the previous site files instead of restoring them, so the next unrelated Caddy reload would silently drop the Geldar sites. And the env file named by `GELDAR_PUBLIC_ENV` is not checked to be root-only.
+
+## Rulings during the wave review
+
+| # | Ruling | Why | To reverse |
+|---|---|---|---|
+| R21 | Glass does not return `model_input` or `raw_output` to public visitors (C2-R3 finding R3-02). The thought detail keeps the thought text the agent wrote, and drops the full prompt. | The prompt carries exact coordinates, inventory and nearby people's speech. Decision 0072 item 4 requires an owner-signed privacy review before anything like that is exposed, and none exists. The review called it an owner choice; hiding is the safe side, and it can be undone. | The owner signs a privacy review, recorded in 0093, and a scrub for the position, inventory and notable-block lines is added. |
+| R22 | The Glass Caddy site rewrites `Host` to `localhost` for Glass (R3-03), and the site files stay at `deploy/caddy/<site>.caddy`. The card's `deploy/caddy/sites/` is superseded. | Glass accepts only loopback Host names, and `colo-public.sh` already uses the flat layout. | Not applicable. |
