@@ -41,6 +41,19 @@ const MIND_TYPES = [
   'sleep',
 ];
 
+/** Velocity is read-only on two buckets (0137 item 3): a KV watch (stream info, ordered consumer, flow control) and nothing else. */
+const VELOCITY_PUB = [
+  ...['geldar-life-registry', 'geldar-skins'].flatMap((b) => [
+    `$JS.API.STREAM.INFO.KV_${b}`,
+    `$JS.API.CONSUMER.CREATE.KV_${b}`,
+    `$JS.API.CONSUMER.CREATE.KV_${b}.>`,
+    `$JS.API.CONSUMER.INFO.KV_${b}.>`,
+    `$JS.API.CONSUMER.DELETE.KV_${b}.>`,
+  ]),
+  '$JS.FC.>',
+  '_INBOX.>',
+];
+
 /** The per-role allow lists for one shard (decision 0087). Every subject starts with the shard, or is a KV bucket or inbox. */
 function roleAllows(shard: string): Record<Role, Allow> {
   const s = shard;
@@ -64,7 +77,7 @@ function roleAllows(shard: string): Record<Role, Allow> {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
     },
-    velocity: { pub: [kv('geldar-life-registry'), kv('geldar-skins'), ...JS], sub: ['_INBOX.>'] },
+    velocity: { pub: [...VELOCITY_PUB], sub: ['_INBOX.>'] },
     paper: { pub: [`geldar.${s}.>`, ...JS], sub: ['_INBOX.>'] },
   };
 }
@@ -259,6 +272,27 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
     expect(replies[2]).toContain('Permissions Violation for Subscription');
     const control = await as('bravo-body', [pub(other)]);
     expect(control.replies[1]).toBe('+OK');
+  }, 30_000);
+
+  it('velocity is read-only: no KV publish, no other stream API, but the KV watch subjects work', async () => {
+    const watch = [
+      pub('$JS.API.STREAM.INFO.KV_geldar-life-registry'),
+      pub('$JS.API.CONSUMER.CREATE.KV_geldar-life-registry.w1'),
+      pub('$JS.API.CONSUMER.DELETE.KV_geldar-skins.w1'),
+      pub('$JS.FC.KV_geldar-skins.w1.1'),
+    ];
+    const denied = [
+      pub('$KV.geldar-life-registry.x'),
+      pub('$KV.geldar-skins.x'),
+      pub('$JS.API.STREAM.CREATE.KV_geldar-life-registry'),
+      pub('$JS.API.STREAM.INFO.KV_geldar-checkpoints'),
+    ];
+    const { replies } = await as('alpha-velocity', [...watch, ...denied]);
+    expect(replies.slice(1, 1 + watch.length)).toEqual(watch.map(() => '+OK'));
+    for (const r of replies.slice(1 + watch.length)) {
+      expect(r).toContain('Permissions Violation for Publish');
+    }
+    expect(replies.length).toBe(1 + watch.length + denied.length);
   }, 30_000);
 
   it('revoked user refused after reload; the other users still connect', async () => {
