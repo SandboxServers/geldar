@@ -381,8 +381,8 @@ Reading order for a coder: the card, the two pre-wave decisions it names ([0078]
 **Numbered steps (node, O; owner or ops runs each one; read-only first)**
 
 1. Preflight, read-only: confirm the commit hash on the node, `docker compose ps` and the logs with a tail limit, and an external port scan. Do not run `adam up` or `adam up --help` on a live node. Stop if a container is unhealthy or a port is open that 0071 does not list.
-2. Backup taken and its restore verified (0076), before any deploy. Stop if the restore test has not passed.
-3. Deploy with the deploy account the owner provides (plan (f), item 3). Read the compose config diff first; stop if it adds a public port.
+2. Backup: deferred by the owner (0130). No backup or restore is required before this deploy. The shard stays invite-only and unannounced (0070) until backups exist.
+3. Deploy by the self-hosted runner or the owner's existing SSH access (0130; no new deploy account). Read the compose config diff first; stop if it adds a public port.
 4. Thinker onboarding (owner): enrol the desktop Thinker with the enrolment CLI (C4-07). Check that the NATS user exists and that a single test thought round-trips for one test agent. Stop if a credential appears in any log or output.
 5. Hibernation hour (C4-03's live check): switch off the desktop Thinker for one hour on the test shard, watching read-only. Stop on any agent death, or any agent not `hibernating` before minute 10.
 6. Mechanism demo on the node (C4-02b), then the spec exit run with the test agents, following the exit record from step 2 of the desktop part. Read the plan for each item before the run starts.
@@ -439,7 +439,7 @@ Status as of 2026-11-10. This section is the wave plan for C4 under the same rul
 ### 10.3 Campaign-boundary gates (conventions 4.3)
 
 1. An adversarial campaign review in the Phase 0 style: nine reviewers, one per surface, none of whom wrote the code, aggressive and investigative. The surfaces: the MCP endpoint; Glass; the Lakitu feed; the Minecraft port; NATS; the Thinker gateway; the credit and shrine economy; books, skills and chat (the agent-visible text); and the hibernation, birth and data paths (life IDs and the migrations). Each reviewer reports findings with a severity; the next round fixes only the high findings.
-2. The full soak and the chaos run (below; length per O-soak, 10.5).
+2. The full soak and the chaos run (below; one 7-day soak at the end of the phase, 10.5 and 0130).
 3. A security review of every public surface, as in conventions 4.3.3: the MCP endpoint, Glass, the Lakitu feed, the Minecraft port, NATS, and the Thinker gateway (which stays private until this review passes).
 4. Spec-amendment reconciliation against the table in [decision 0073](../../../decisions/0073-spec-is-never-edited.md). Every row gets a status (settled, open, or amended by the owner). A packet never edits the spec; the owner does, one line at a time. Rows to check: the observers sentence (0068), the owner cap (0052), the "player" and "agent" terms, the personal names, the sovereign OAuth line (0054), the Mind placement (0050 and 0078), the Observatory edge (0071), the port and SRV line (0071), the Phase 1 exit wording (0126), and the four-public-ports line (0071).
 5. The campaign retro in `docs/analysis/phase1/retro/campaign.md` (create).
@@ -448,28 +448,28 @@ Status as of 2026-11-10. This section is the wave plan for C4 under the same rul
 
 The soak is a test in `tools/soak/` (create). It runs the agents and reads only the journal, the receipt tables and the metric endpoint. The verdict is computed by the test; nobody writes a verdict by hand, and a threshold is never changed to pass (conventions section 5).
 
-- **Run:** 10 to 15 agents, one shard on the node. The length is open (O-soak, 10.5 and 10.6). Under option (A) a 72-hour gate runs at C3 and one 7-day run runs at exit after the C4 freeze; under option (B) a 7-day run runs throughout. No packet schedules a duration until the owner answers. The first hour is warm-up and is not counted.
+- **Run:** 10 to 15 agents, one shard on the node, 7 days, once, after the C4 freeze (O-soak resolved by 0130). The first hour is warm-up and is not counted.
 - **Measured, sampled every real minute:** model wakeups per agent per real minute, and the intent steps completed; deaths and their causes; the receipt chain (every action has its prepared receipt and its final receipt, 0020, 0027); the credit ledger (reserved minus refunded minus settled, per life, at the end of each real day, must equal the open reservations); container memory (the slope per day of each container's resident set); NATS reconnects; MCP 5xx count; hibernation episodes and the time to `resumed`.
 - **Thresholds (pass):** wakeups below 1.0 per agent per real minute, averaged over the counted window, while intents run (the plan's C3 exit target); zero deaths caused by the Body while hibernating (C4-03); every receipt chain unbroken; the credit ledger reconciles every day; no container's resident set grows by more than a limit set in the test before the run starts; zero unexplained MCP 5xx.
 - **How counted:** a real minute is counted when at least one agent is awake. Wakeups are counted from the journal by reason, not from the logs. The window is the run's duration minus the warm-up hour.
 - **Chaos (part of the same campaign gate):** restart each container in turn; take NATS down for five minutes; the desktop Thinker off for one hour (the C4-03 check); recreate the MCP container (the replay bound from the first ranger run, plan (g)). Each one has a written result in the campaign worknote.
 
-### 10.5 The soak length: open owner question O-soak
+### 10.5 The soak length: resolved by decision 0130
 
-The plan's C3 section says seven days (plan.md lines 156 and 161). The wave schedule in the C3 cards (C3 section 8, C3-10) proposes a 72-hour soak gate at C3. The two do not agree, and no packet states a duration as settled. The options are the same as in C3:
+The plan's C3 section and this section now agree: one 7-day soak, at the end of the phase. The owner ruled on 2026-11-10 (decision 0130) that all long-running tests run at the end of the phase. The 72-hour soak gate proposed in the C3 cards is withdrawn.
 
-- (A) The wave schedule: a 72-hour soak gates C3, and one 7-day run happens once after the C4 feature freeze as the Phase 1 exit run (this changes plan.md C3 exit).
-- (B) plan.md as written: a 7-day soak throughout.
+- The single 7-day soak is the Phase 1 exit run, after the C4 feature freeze. No 72-hour gate runs at C3.
+- Options (A) and (B) of the earlier draft are closed; nothing here is open.
 
-Until the owner answers O-soak in writing, the 7-day run is not scheduled and CAMP-C4-B is not dated. The answer is recorded in a decision with a number from the registry.
+CAMP-C4-B is dated when the C4 freeze is dated. The soak is not started earlier.
 
 ### 10.6 Open owner questions that gate the wave
 
-1. Decision 0078 (Mind placement) confirmed: gates C4-03 and C4-07.
+1. Decision 0078 (Mind placement) accepted 2026-11-10: gates C4-03 and C4-07 (answered).
 2. Decision 0079 (credit numbers and charge rules) confirmed: gates the values in C4-04 and C4-05. The mechanisms can be built before.
-3. Decision 0080 (NATS auth cutover, T-1 for Phase 1) confirmed: gates C4-07.
+3. Decision 0080 (NATS auth cutover, T-1 for Phase 1) accepted 2026-11-10: gates C4-07 (answered).
 4. The Shrine exit wording (spec line 1414 excludes the Shrine and permadeath; line 1418 requires them): the owner's ruling is decision 0126. Gates the exit record in C4-08.
-5. O-soak: the soak length and schedule, option (A) or option (B) in 10.5. Gates the soak rows in 10.8 and the exit run.
+5. O-soak: resolved by 0130 (one 7-day soak at the end of the phase). Answered; no open item.
 6. Thinker identity: NATS credentials only in Phase 1, or mTLS from the step-ca path (C4-07, 0124).
 7. Which GPU hosts enrol as Thinkers, and whether the gateway is reachable over the LAN or a VPN in Phase 1 (plan (e), C4 owner items).
 8. The mechanism-demo pass bar (C4-02b, proposal [J]) and the useful-minute definition.
@@ -495,7 +495,7 @@ Until the owner answers O-soak in writing, the 7-day run is not scheduled and CA
 | id | title | lane | depends | status |
 |---|---|---|---|---|
 | CAMP-C4-A | Adversarial campaign review (nine reviewers) | review | P1-C4-08 | O |
-| CAMP-C4-B | Full soak and chaos (length per O-soak) | ops | CAMP-C4-A | O (O-soak) |
+| CAMP-C4-B | Full soak (7 days), chaos day and long benchmarks at the end of the phase (0130) | ops | CAMP-C4-A | O (end of phase) |
 | CAMP-C4-C | Public-surface security review | review | CAMP-C4-A | O |
 | CAMP-C4-D | Spec-amendment reconciliation (0073 table) | owner | CAMP-C4-C | O |
 | CAMP-C4-E | Campaign retro | owner | CAMP-C4-D | O |

@@ -88,10 +88,10 @@ Dependencies: C2b follows C2 (the Glass and BlueMap hardening and the gate check
 | Wave | Built | Demonstrable at end | Exit check | Owner | Agents | Risks |
 |---|---|---|---|---|---|---|
 | C0 Decisions | Decisions 0070 to 0073 and this plan | The plan and the decisions are in the index | The decisions are indexed and `check` passes | Owner | Writing | None open |
-| C1 Shard on the Colo, internal | The shard on the node, on its own compose network, with limits. Body-host image. Non-PowerShell deploy tooling. Secrets as root-only env files. Backups v1. Metrics into the existing telemetry. BlueMap installed. First ranger connects over loopback or a tunnel | A shard runs on the node, a ranger plays it, and a backup restores to a scratch shard | The restore test passes; the first ranger completes a session; no other node service degrades | Owner: node access, deploy account, backup destination | Build, test, deploy tooling | Resource contention with the production server; the Mind location decision |
+| C1 Shard on the Colo, internal | The shard on the node, on its own compose network, with limits. Body-host image. Non-PowerShell deploy tooling. Secrets as root-only env files. Backups deferred (0130). Metrics into the node's SigNoz (0130). BlueMap installed. First ranger connects over loopback or a tunnel | A shard runs on the node and a ranger plays it | The first ranger completes a session; no other node service degrades. The restore test and the 20-minute smoke move to campaign end (0130) | Owner: node access through a runner or SSH (no new deploy account, 0130). Backup destination deferred (0130) | Build, test, deploy tooling | Resource contention with the production server; the Mind location decision |
 | C2 Doors | Public MCP through Caddy with trusted proxies. NATS accounts overlay live-tested (0067). Velocity on the new TCP port, SRV record, whitelist. Glass and BlueMap public with the hardening of 0072. External port scan. Targeted security review of public surfaces | The four public surfaces answer, the scan shows only the intended ports, and the review has no open high findings | The gate check (below); invitations wait for these gates | Owner: UniFi forward, DNS records, tokens policy | Build and test | Public exposure bugs; tokens policy for outsiders |
 | C2b Lakitu | An invisible, read-only world data feed from the plugin; a web renderer with a collision-bound follow camera; owner and admin targeting; multi-pane views; an audit log (0075) | An owner opens the Glass, picks an agent of theirs, orbits the camera with collision, opens a second pane on another agent; an admin sees all; nothing is visible in game or in agent-visible text | The leak test (tab list, entity list, agent snapshots with a camera up) is automated and revert-checked; the collision test passes; the per-session cap holds | Owner: auth choice (interim tokens or a small login), texture licence, anonymous versus login cameras (0075) | Build and test | Renderer scope; data-feed load on a shared node; texture licensing; public versus login cameras (the 0072 tension) |
-| C3 Population and operability | Roster and cap in the database. N-bot Paper benchmark on the node. Runbooks. Chaos day. 7-day soak. Intent persistence for sovereign players. Honest sleep mark. Shelter intent and `build`, callable by agents | 10 to 15 agents run for 7 days; a chaos day passes | The soak meets the Phase 1 exit (7 real days, fewer than one wakeup per agent per real minute) | Owner: runbook review, chaos day sign-off | Build, soak, runbooks | Benchmark results on shared hardware; sovereign persistence gaps |
+| C3 Population and operability | Roster and cap in the database. N-bot Paper benchmark on the node. Runbooks. Chaos day and 7-day soak tooling (both run once at campaign end, 0130). Intent persistence for sovereign players. Honest sleep mark. Shelter intent and `build`, callable by agents | Tooling built and short tests pass; 10 to 15 agents soak for 7 days and a chaos day passes at campaign end (0130) | C3 exit: short tests pass. The soak meets the Phase 1 exit (7 real days, fewer than one wakeup per agent per real minute) at campaign end | Owner: runbook review; chaos day sign-off at campaign end | Build, soak tooling, runbooks | Benchmark results on shared hardware; sovereign persistence gaps |
 | C4 Village features on the Colo | The spec's Phase 1 content: proximity chat, books and skills, sleep reflection, hibernation, credits (allowance only), shrine and birth. Thinker gateway so desktop-GPU agents can join | The mechanism demo passes on the node; the Phase 1 exit items pass | The spec Phase 1 exit (line 1418), with test agents | Owner: Thinker enrollment, GPU hosts | Build and test | The exit wording conflict; the Thinker gateway's security |
 
 ### C0 Decisions (done)
@@ -109,14 +109,14 @@ Dependencies: C2b follows C2 (the Glass and BlueMap hardening and the gate check
   - a Body-host image that runs on the node;
   - deploy tooling written for Linux, not PowerShell;
   - secrets as root-only env files, with no secret in the repo;
-  - deployment by pull, or through the node's existing runners;
-  - backups v1 (spec 6.8), with a restore tested on a scratch shard;
-  - metrics into the node's existing telemetry;
+  - deployment through the node's existing runner or the owner's SSH access, with no new deploy account (decision 0130);
+  - backups deferred (decision 0130: scope B accepted; destination and build deferred); the append-only journals (C1-05a) stay in C1;
+  - metrics into the node's SigNoz (decision 0130);
   - the BlueMap plugin, pinned and installed;
   - the first ranger connects over loopback or a tunnel.
-- **Demonstrable at end:** a shard runs on the node, a ranger plays it, and a backup restores.
-- **Exit check:** the restore test passes on a scratch shard; the first ranger finishes a session; the production game server and CI runners show no degradation.
-- **Owner vs agents:** the owner grants node access and a deploy account with Docker access, and chooses the backup destination and the Mind location. Agents build and test.
+- **Demonstrable at end:** a shard runs on the node, and a ranger plays it.
+- **Exit check:** the first ranger finishes a session; the production game server and CI runners show no degradation. The backup restore test and the 20-minute Adam smoke move to the campaign end (decision 0130).
+- **Owner vs agents:** the owner grants node access through a runner or SSH, with no new deploy account (decision 0130). The backup destination is deferred. The owner chooses the Mind location. Agents build and test.
 - **Risks:** contention with the production server; the Mind location (spec 6.1 says the Colo, Phase 0 says the desktop).
 
 ### C2 Doors
@@ -150,16 +150,16 @@ Dependencies: C2b follows C2 (the Glass and BlueMap hardening and the gate check
 
 - **Built:**
   - the roster and the cap in the database;
-  - an N-bot Paper benchmark on the node;
+  - the N-bot Paper benchmark tooling (the long run is at campaign end);
   - runbooks, including the Glass and BlueMap kill switch and the privacy review checklist;
-  - a chaos day;
-  - a 7-day soak of 10 to 15 agents;
+  - the chaos day tooling (the chaos day runs at campaign end);
+  - the 7-day soak tooling for 10 to 15 agents (one soak, run at campaign end; the 72 h gate is withdrawn);
   - intent persistence for sovereign players (known-gaps: sovereign intents write no rows today);
   - an honest sleep mark;
   - the shelter intent and `build`, callable by agents (decision 0074).
-- **Demonstrable at end:** 10 to 15 agents run for 7 days, and a chaos day passes.
-- **Exit check:** the soak meets the Phase 1 exit targets (7 real days, fewer than one model wakeup per agent per real minute while intents run). The chaos day has a written result.
-- **Owner vs agents:** the owner signs off the runbooks and the chaos day. Agents build the benchmark and the soak.
+- **Demonstrable at end:** the tooling is built and the short tests pass. The 7-day soak, the chaos day and the N-bot long benchmark run once at the campaign end (decision 0130).
+- **Exit check (C3):** the short tests pass. The soak meets the Phase 1 exit targets (7 real days, fewer than one model wakeup per agent per real minute while intents run) when it runs at campaign end. The chaos day has a written result at campaign end.
+- **Owner vs agents:** the owner signs off the runbooks, and the chaos day at campaign end. Agents build the benchmark, the chaos tooling and the soak.
 - **Risks:** benchmark results on shared hardware; the missing intent rows for sovereign players, which make attempts hard to reconstruct.
 
 ### C4 Village features on the Colo
@@ -173,8 +173,8 @@ Dependencies: C2b follows C2 (the Glass and BlueMap hardening and the gate check
 ## (f) Open owner items
 
 1. A UniFi TCP forward for the new Minecraft port (0071).
-2. The backup destination (6.8).
-3. A deploy account with Docker access on the node.
+2. The backup destination (6.8). Deferred by decision 0130 (scope B accepted; destination and build deferred).
+3. A deploy account with Docker access on the node. Answered by decision 0130: deploy through the node's runner or the owner's SSH access, with no new deploy account.
 4. Go-ahead to create DNS records. Proposed names under the project subdomain: `glass`, `map`, `mcp`, and `play` with an SRV record for `_minecraft._tcp`. DNS lives in Azure DNS (0071).
 5. The tokens policy for outsiders (0054, 0070).
 6. The naming question for the rangers, which touches a third-party trademark. This is not settled in any decision.
