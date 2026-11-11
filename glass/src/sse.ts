@@ -18,6 +18,8 @@ export interface SseOptions {
   start: () => Promise<ThoughtCursor>;
   /** Thoughts after a cursor, oldest first. Each row carries `cursor_at` and `thought_id`. */
   fetch: (after: ThoughtCursor) => Promise<Row[]>;
+  /** False: the next heartbeat ends every stream (the kill switch, 0072 item 6). Left out: always on. */
+  enabled?: () => boolean;
   /** Receives one line per poll error at most once a minute: the event name and a sanitized error code. */
   log?: (entry: { event: 'glass_poll_error'; code: string }) => void;
 }
@@ -168,6 +170,10 @@ export class SseHub {
   }
 
   private heartbeat(): void {
+    if (this.options.enabled?.() === false) {
+      this.close();
+      return;
+    }
     this.broadcast(': heartbeat\n\n');
   }
 

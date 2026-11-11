@@ -219,6 +219,11 @@ export function createHandler(deps: GlassHandlerDeps) {
   const policy: PublicPolicy = { ...OPEN_POLICY, ...deps.policy };
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
+    // The kill switch answers before anything else is read: no route, page or stream is served.
+    if (!policy.enabled()) {
+      sendJson(res, 503, { error: { code: 'unavailable', message: 'Service unavailable' } });
+      return;
+    }
     // DNS rebinding: a page on another site can name its own host, and then reach this port.
     if (req.headers.host === undefined || !LOOPBACK_HOST.test(req.headers.host)) {
       sendJson(res, 421, { error: 'misdirected request' });

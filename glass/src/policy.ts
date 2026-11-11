@@ -15,6 +15,8 @@ export interface PublicPolicy {
   delaySeconds: number;
   /** True only when the owner rules that a living sovereign agent's thoughts and receipts may show. */
   showLivingSovereign: boolean;
+  /** False: every request gets 503 and open streams close at the next heartbeat (0072 item 6). */
+  enabled: () => boolean;
   /** The clock the delay reads, in epoch milliseconds. */
   now: () => number;
 }
@@ -25,6 +27,7 @@ export const OPEN_POLICY: PublicPolicy = {
   limiter: null,
   delaySeconds: 0,
   showLivingSovereign: false,
+  enabled: () => true,
   now: () => Date.now(),
 };
 

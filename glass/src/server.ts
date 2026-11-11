@@ -51,6 +51,7 @@ export function buildGlass(config: GlassConfig): GlassParts {
     limiter,
     delaySeconds: config.delaySeconds,
     showLivingSovereign: config.showLivingSovereign,
+    enabled: () => config.enabled,
     now: () => Date.now(),
   };
   const hub = new SseHub({
@@ -58,6 +59,7 @@ export function buildGlass(config: GlassConfig): GlassParts {
     bufferFrames: config.sseBufferFrames,
     pollMs: config.ssePollMs,
     heartbeatMs: HEARTBEAT_MS,
+    enabled: policy.enabled,
     start: () => streamStartCursor(pool),
     fetch: streamFeed(pool, policy),
     log: (entry) => console.log(JSON.stringify(entry)),
