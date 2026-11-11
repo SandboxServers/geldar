@@ -14,6 +14,7 @@ import { jetStreamPublisher } from '../body/records-nats.ts';
 import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
 import { loadStackConfig } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
+import { startGolemTelemetry } from '../metrics.ts';
 import { natsRequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
 import { registryFromConfig } from '../registry.ts';
@@ -194,12 +195,18 @@ export async function main(): Promise<void> {
     ...golemNatsAuth(),
   });
   const restartKv = await openRestartKv(natsUrl);
+  // Pushes only when GELDAR_TELEMETRY_URL is set; otherwise no timer and no request (decision 0088).
+  const telemetry = startGolemTelemetry(process.env, {
+    service: 'geldar-golem-adam',
+    log: jsonLog,
+  });
   const env: AdamBodyEnv = {
     config,
     kv: restartKv.kv,
     publisher: jetStreamPublisher(jetstream(nc)),
     server: natsRequestServer(nc),
     log: (line) => jsonLog({ event: 'body', life_id: config.lifeId, line }),
+    metrics: telemetry.metrics,
   };
   const manager = new ConnectionManager({
     host: stack.mcHost,
@@ -220,6 +227,7 @@ export async function main(): Promise<void> {
   process.once('SIGINT', () => onSignal('SIGINT'));
   process.once('SIGTERM', () => onSignal('SIGTERM'));
   await done;
+  telemetry.stop();
   if (supervisor.fatal) process.exitCode = 1;
   await manager.stop();
   await restartKv.close();

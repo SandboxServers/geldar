@@ -222,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0006, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0007, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
@@ -339,3 +339,31 @@ BEGIN
   RAISE NOTICE 'schema check passed: role geldar_glass reads its Glass tables and columns and writes none';
 END
 $glass$;
+
+-- 0007: the audit tables are append-only. Each has a BEFORE UPDATE OR DELETE row trigger on the
+-- journal function (tgtype bits: row 1, before 2, delete 8, update 16), and geldar_mcp has no
+-- UPDATE or DELETE on mcp_journal. TRUNCATE is not checked: it is allowed on a throwaway database.
+DO $journal$
+DECLARE
+  audit_table text;
+BEGIN
+  FOREACH audit_table IN ARRAY ARRAY['receipts', 'thoughts', 'suppressed_wakeups', 'mcp_journal'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_trigger
+      WHERE tgrelid = audit_table::regclass
+        AND tgname = audit_table || '_append_only'
+        AND tgfoid = 'journal_append_only'::regproc
+        AND (tgtype & 27) = 27
+    ) THEN
+      RAISE EXCEPTION 'schema check: the append-only trigger on % is missing or wrong', audit_table;
+    END IF;
+  END LOOP;
+
+  IF has_table_privilege('geldar_mcp', 'mcp_journal', 'UPDATE')
+     OR has_table_privilege('geldar_mcp', 'mcp_journal', 'DELETE') THEN
+    RAISE EXCEPTION 'schema check: geldar_mcp can UPDATE or DELETE mcp_journal';
+  END IF;
+
+  RAISE NOTICE 'schema check passed: append-only triggers on 4 audit tables, geldar_mcp cannot change mcp_journal';
+END
+$journal$;

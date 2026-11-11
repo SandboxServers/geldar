@@ -19,6 +19,7 @@ import {
 import { createFrontDoor, type FrontDoor, type FrontDoorOptions } from './http/front.ts';
 import { ownerShare } from './http/limits.ts';
 import { safeLogLine } from './http/log.ts';
+import { declareMcpMetrics, MetricRegistry, recordToolCall, startTelemetry } from './metrics.ts';
 import type { KeepAlive, RateDecision, RateLimiter } from './ports.ts';
 import { type BucketManager, KvPresenceStore, openPresenceBucket } from './presence.ts';
 import { SovereignCallRecorder } from './record/sovereign-call.ts';
@@ -73,7 +74,18 @@ export interface McpPorts {
   log(line: Record<string, string | number>): void;
   /** The front door; `createFrontDoor` in production. Tests return a fake that never listens. */
   frontDoor?: (options: FrontDoorOptions) => FrontDoor;
+  /** Metrics push (decision 0088). Off when `url` is unset (cli.ts reads GELDAR_TELEMETRY_URL). */
+  telemetry?: TelemetryPorts;
 }
+
+export interface TelemetryPorts {
+  url: string | undefined;
+  fetch?: typeof fetch | undefined;
+  intervalMs?: number | undefined;
+}
+
+/** How often the MCP pushes its metrics to the telemetry endpoint. */
+export const TELEMETRY_INTERVAL_MS = 60_000;
 
 /** A started server: its bound port, and a stop that follows the graceful order. */
 export interface RunningMcp {
@@ -256,8 +268,19 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
   const log = (line: Record<string, unknown>) => ports.log(safeLogLine(line));
   const now = () => ports.clock.nowMs();
   const closers: Array<() => Promise<void>> = [];
+  const metrics = new MetricRegistry();
+  declareMcpMetrics(metrics);
   try {
     log({ event: 'mcp_start', shard: config.shard });
+    // Pushes only when the telemetry URL is set; with no URL it starts no timer and sends nothing.
+    const telemetry = startTelemetry(metrics, {
+      url: ports.telemetry?.url,
+      service: 'geldar-mcp',
+      log,
+      fetch: ports.telemetry?.fetch,
+      intervalMs: ports.telemetry?.intervalMs ?? TELEMETRY_INTERVAL_MS,
+    });
+    closers.push(async () => telemetry.stop());
     const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
     const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
     const { host, port, database, user } = config.postgres;
@@ -327,6 +350,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       expiresAfterTicks: config.plan.expiresAfterTicks,
       laws: [],
       log,
+      onToolCall: (tool, outcome, durationMs) => recordToolCall(metrics, tool, outcome, durationMs),
     });
     closers.push(async () => world.close());
 

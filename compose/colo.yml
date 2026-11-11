@@ -178,7 +178,7 @@ services:
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
       # Optional telemetry endpoint (C1-07). Unset in the host environment, it is unset in the container.
       GELDAR_TELEMETRY_URL:
-    secrets: [nats-body]
+    secrets: [{ source: nats-body, target: nats-body.txt }]
     volumes:
       - ../shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro
     networks: [colo]

@@ -154,6 +154,87 @@ describe('loadStartConfig', () => {
   });
 });
 
+describe('the replay window', () => {
+  const NOW_MS = 10_000_000_000;
+  const MINUTE_MS = 60_000;
+
+  /** Starts the MCP on a copy of the shard with `edit` applied; returns the fromIso its replay was given. */
+  async function replayFrom(edit: (text: string) => string): Promise<string> {
+    const ports = fakePorts([], []);
+    ports.clock = new FakeClock(NOW_MS);
+    let fromIso = '';
+    const connect = ports.connectNats;
+    ports.connectNats = async (url) => {
+      const nats = await connect(url);
+      nats.replay = async (_subjects, start) => {
+        fromIso = start;
+        return { stop: async () => {} };
+      };
+      return nats;
+    };
+    const config = await loadStartConfig(shardCopy(edit), ENV);
+    const running = await startMcp(config, ports);
+    await running.stop();
+    return fromIso;
+  }
+
+  it('replay starts no earlier than the window: the shipped 60 minutes before now', async () => {
+    const fromIso = await replayFrom((text) => text);
+    expect(Date.parse(fromIso)).toBe(NOW_MS - 60 * MINUTE_MS);
+  });
+
+  it('defaults to 60 minutes when replay_minutes is absent', async () => {
+    const fromIso = await replayFrom((text) => text.replace(/^\s*replay_minutes: 60.*\n/m, ''));
+    expect(Date.parse(fromIso)).toBe(NOW_MS - 60 * MINUTE_MS);
+  });
+
+  it('uses the shard value when replay_minutes is set', async () => {
+    const fromIso = await replayFrom((text) =>
+      text.replace(/^(\s*)replay_minutes: 60/m, '$1replay_minutes: 5'),
+    );
+    expect(Date.parse(fromIso)).toBe(NOW_MS - 5 * MINUTE_MS);
+  });
+
+  it.each(['0', '-3', '2.5', '1441'])(
+    'refuses replay_minutes %s at start, naming the value',
+    async (value) => {
+      const file = shardCopy((text) =>
+        text.replace(/^(\s*)replay_minutes: 60/m, `$1replay_minutes: ${value}`),
+      );
+      const failure = await loadStartConfig(file, ENV).catch((error: unknown) => error);
+      expect((failure as Error).message).toContain('replay_minutes');
+      expect((failure as Error).message).toContain(`got ${value}`);
+    },
+  );
+});
+
+describe('the metrics push', () => {
+  /** Starts the MCP with the given telemetry URL and a fake fetch; returns the requests it sent. */
+  async function startWithTelemetry(url: string | undefined) {
+    const calls: Array<{ url: string; body: string }> = [];
+    const fetchFn = (async (target: string, init?: RequestInit) => {
+      calls.push({ url: String(target), body: String(init?.body ?? '') });
+      return new Response(null, { status: 204 });
+    }) as unknown as typeof fetch;
+    const ports = fakePorts([], []);
+    ports.telemetry = { url, fetch: fetchFn, intervalMs: 3_600_000 };
+    const running = await startMcp(await loadStartConfig(SHARD_FILE, ENV), ports);
+    await running.stop();
+    return calls;
+  }
+
+  it('pushes the MCP metrics once to <url>/v1/metrics when the telemetry URL is set', async () => {
+    const calls = await startWithTelemetry('http://127.0.0.1:4318');
+    expect(calls.map((call) => call.url)).toEqual(['http://127.0.0.1:4318/v1/metrics']);
+    expect(calls[0]?.body).toContain('geldar_mcp_tool_calls_total');
+    expect(calls[0]?.body).toContain('geldar-mcp');
+  });
+
+  it('makes no outbound request when no telemetry URL is set', async () => {
+    expect(await startWithTelemetry(undefined)).toEqual([]);
+  });
+});
+
 describe('startMcp', () => {
   it('starts in the fixed order: secrets, pool, NATS, replay, then listen', async () => {
     const order: string[] = [];
