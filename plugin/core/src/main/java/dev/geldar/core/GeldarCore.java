@@ -59,6 +59,10 @@ public final class GeldarCore extends JavaPlugin {
             }
         }
 
+        if (config.lakitu().enabled()) {
+            dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
+        }
+
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.
         // The Bukkit calls hop back onto the server thread; the timer thread touches no server state.
         tpsTimer = Executors.newSingleThreadScheduledExecutor(r -> {
