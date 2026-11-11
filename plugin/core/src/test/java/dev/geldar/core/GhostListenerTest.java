@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
+import com.destroystokyo.paper.profile.PlayerProfile;
+import com.destroystokyo.paper.profile.ProfileProperty;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
@@ -16,19 +20,43 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.junit.jupiter.api.Test;
 
 class GhostListenerTest {
-    /** A Player whose game mode is held in {@code mode[0]}; setGameMode writes it. */
+    /** A live-marked Player whose game mode is held in {@code mode[0]}; setGameMode writes it. */
     private static Player player(UUID id, GameMode[] mode) {
+        return player(id, mode, true, new ArrayList<>(), false);
+    }
+
+    /** A joiner without the live property: what a ghost looks like when it arrives. */
+    private static Player unmarked(UUID id, GameMode[] mode) {
+        return player(id, mode, false, new ArrayList<>(), false);
+    }
+
+    private static Player player(UUID id, GameMode[] mode, boolean live, List<String> events, boolean refuseMode) {
+        Set<ProfileProperty> properties = live ? Set.of(new ProfileProperty(GhostListener.LIVE_PROPERTY, "1")) : Set.of();
+        PlayerProfile profile = (PlayerProfile) Proxy.newProxyInstance(
+                GhostListenerTest.class.getClassLoader(),
+                new Class<?>[] {PlayerProfile.class},
+                (p, m, a) -> m.getName().equals("getProperties") ? properties : null);
         return (Player) Proxy.newProxyInstance(
                 GhostListenerTest.class.getClassLoader(),
                 new Class<?>[] {Player.class},
                 (p, m, a) -> switch (m.getName()) {
                     case "getUniqueId" -> id;
+                    case "getPlayerProfile" -> profile;
                     case "getGameMode" -> mode[0];
                     case "setGameMode" -> {
+                        if (refuseMode) {
+                            throw new IllegalStateException("refused");
+                        }
+                        events.add("mode");
                         mode[0] = (GameMode) a[0];
+                        yield null;
+                    }
+                    case "kick" -> {
+                        events.add("kick");
                         yield null;
                     }
                     case "hashCode" -> id.hashCode();
@@ -137,16 +165,104 @@ class GhostListenerTest {
         assertFalse(l.isGhost(p));
 
         UUID brokenId = UUID.randomUUID();
-        Player broken = (Player) Proxy.newProxyInstance(
-                GhostListenerTest.class.getClassLoader(),
-                new Class<?>[] {Player.class},
-                (pr, m, a) -> {
-                    if (m.getName().equals("setGameMode")) {
-                        throw new IllegalStateException("refused");
-                    }
-                    return m.getName().equals("getUniqueId") ? brokenId : null;
-                });
+        Player broken = player(brokenId, new GameMode[] {GameMode.SURVIVAL}, true, new ArrayList<>(), true);
         signal(l, broken);
         assertTrue(l.isGhost(broken));
+    }
+
+    @Test
+    void aRespawnReappliesSpectatorForAGhostOnly() {
+        GameMode[] mode = {GameMode.SURVIVAL};
+        Player ghost = player(UUID.randomUUID(), mode);
+        GhostListener l = listener();
+        signal(l, ghost);
+        mode[0] = GameMode.SURVIVAL;
+        l.onRespawn(new PlayerRespawnEvent(ghost, null, false));
+        assertEquals(GameMode.SPECTATOR, mode[0]);
+
+        GameMode[] liveMode = {GameMode.SURVIVAL};
+        Player live = player(UUID.randomUUID(), liveMode);
+        l.onRespawn(new PlayerRespawnEvent(live, null, false));
+        assertEquals(GameMode.SURVIVAL, liveMode[0]);
+    }
+
+    @Test
+    void aJoinerWithoutTheLivePropertyIsASpectatorAtTheFirstJoinEvent() {
+        GameMode[] mode = {GameMode.SURVIVAL};
+        Player p = unmarked(UUID.randomUUID(), mode);
+        GhostListener l = listener();
+        l.onJoin(new PlayerJoinEvent(p, Component.empty()));
+        assertEquals(GameMode.SPECTATOR, mode[0]);
+        assertTrue(l.isGhost(p));
+    }
+
+    @Test
+    void theJoinHandlerRunsFirstSoNoOtherHandlerSeesASurvivalGhost() throws Exception {
+        var handler = GhostListener.class.getMethod("onJoin", PlayerJoinEvent.class)
+                .getAnnotation(org.bukkit.event.EventHandler.class);
+        assertEquals(org.bukkit.event.EventPriority.LOWEST, handler.priority());
+    }
+
+    @Test
+    void aJoinerWithTheLivePropertyIsUntouched() {
+        GameMode[] mode = {GameMode.SURVIVAL};
+        Player p = player(UUID.randomUUID(), mode);
+        GhostListener l = listener();
+        l.onJoin(new PlayerJoinEvent(p, Component.empty()));
+        assertEquals(GameMode.SURVIVAL, mode[0]);
+        assertFalse(l.isGhost(p));
+    }
+
+    @Test
+    void theSignalStillWinsOverTheLiveProperty() {
+        GameMode[] mode = {GameMode.SURVIVAL};
+        Player p = player(UUID.randomUUID(), mode);
+        GhostListener l = listener();
+        l.onJoin(new PlayerJoinEvent(p, Component.empty()));
+        signal(l, p);
+        assertEquals(GameMode.SPECTATOR, mode[0]);
+        assertTrue(l.isGhost(p));
+    }
+
+    @Test
+    void aHoldFailureKicksTheGhostOnJoinAndOnTheSignal() {
+        List<String> events = new ArrayList<>();
+        Player joiner = player(UUID.randomUUID(), new GameMode[] {GameMode.SURVIVAL}, false, events, true);
+        GhostListener l = listener();
+        l.onJoin(new PlayerJoinEvent(joiner, Component.empty()));
+        assertEquals(List.of("kick"), events);
+
+        List<String> signalEvents = new ArrayList<>();
+        Player signalled = player(UUID.randomUUID(), new GameMode[] {GameMode.SURVIVAL}, true, signalEvents, true);
+        signal(l, signalled);
+        assertEquals(List.of("kick"), signalEvents);
+    }
+
+    @Test
+    void aSuccessfulHoldNeverKicks() {
+        List<String> events = new ArrayList<>();
+        Player p = player(UUID.randomUUID(), new GameMode[] {GameMode.SURVIVAL}, false, events, false);
+        listener().onJoin(new PlayerJoinEvent(p, Component.empty()));
+        assertEquals(List.of("mode"), events);
+    }
+
+    @Test
+    void anUnreadableProfileIsAGhost() {
+        GameMode[] mode = {GameMode.SURVIVAL};
+        Player p = (Player) Proxy.newProxyInstance(
+                GhostListenerTest.class.getClassLoader(), new Class<?>[] {Player.class},
+                (pr, m, a) -> switch (m.getName()) {
+                    case "getUniqueId" -> UUID.nameUUIDFromBytes(new byte[] {1});
+                    case "getPlayerProfile" -> throw new IllegalStateException("no profile");
+                    case "getGameMode" -> mode[0];
+                    case "setGameMode" -> {
+                        mode[0] = (GameMode) a[0];
+                        yield null;
+                    }
+                    default -> null;
+                });
+        GhostListener l = listener();
+        l.onJoin(new PlayerJoinEvent(p, Component.empty()));
+        assertEquals(GameMode.SPECTATOR, mode[0]);
     }
 }

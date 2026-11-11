@@ -13,7 +13,9 @@ import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.event.Listener;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.messaging.Messenger;
 
 /** Geldar-Core plugin entry point: wires config, the NATS publisher, exporter and listeners. */
 public final class GeldarCore extends JavaPlugin {
@@ -44,6 +46,15 @@ public final class GeldarCore extends JavaPlugin {
         }
     }
 
+    /** Opens the incoming {@code geldar:ghost} channel for the ghost listener; without it no signal is read. */
+    static void registerChannels(Messenger messenger, Plugin plugin, List<Listener> listeners) {
+        for (Listener listener : listeners) {
+            if (listener instanceof GhostListener ghost) {
+                messenger.registerIncomingPluginChannel(plugin, GhostListener.CHANNEL, ghost);
+            }
+        }
+    }
+
     private void enable() {
         saveDefaultConfig();
         CoreConfig config = CoreConfig.load(getConfig(), System::getenv, getLogger()::warning);
@@ -52,12 +63,11 @@ public final class GeldarCore extends JavaPlugin {
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
         tpsExporter = exporter;
 
-        for (Listener listener : listeners(exporter, getLogger(), config.grantRecipesOnJoin())) {
+        List<Listener> registered = listeners(exporter, getLogger(), config.grantRecipesOnJoin());
+        for (Listener listener : registered) {
             getServer().getPluginManager().registerEvents(listener, this);
-            if (listener instanceof GhostListener ghost) {
-                getServer().getMessenger().registerIncomingPluginChannel(this, GhostListener.CHANNEL, ghost);
-            }
         }
+        registerChannels(getServer().getMessenger(), this, registered);
 
         if (config.lakitu().enabled()) {
             dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
