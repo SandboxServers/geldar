@@ -224,6 +224,32 @@ describe('list, mint and retire', () => {
   });
 });
 
+describe('lifetime player limit (R36)', () => {
+  it('allows the 10th creation, refuses the 11th, and still refuses after a retire', async () => {
+    await start({ perMinute: 1000 });
+    const a = (await signIn('6001')).session as Session;
+    for (let i = 1; i <= 10; i++) {
+      const id = `ag-churn-${String(i).padStart(2, '0')}`;
+      expect(tokenIn(await (await post('/players', a, newPlayer(id))).text())).not.toBe('');
+      expect(await (await post(`/players/${id}/retire`, a, {})).text()).toContain('retired');
+    }
+    const eleventh = await (await post('/players', a, newPlayer('ag-churn-11'))).text();
+    expect(tokenIn(eleventh)).toBe('');
+    expect(eleventh).toContain('lifetime limit');
+    expect(store.players.has('ag-churn-11')).toBe(false);
+  });
+
+  it('refuses a retire for a banned identity', async () => {
+    await start();
+    const a = (await signIn('6101')).session as Session;
+    await post('/players', a, newPlayer('ag-ban-01'));
+    store.ban(identityHash(config().pepper, 'github', '6101'));
+    expect(await (await post('/players/ag-ban-01/retire', a, {})).text()).not.toContain(
+      'Player retired',
+    );
+    expect(store.players.get('ag-ban-01')?.status).toBe('active');
+  });
+});
 describe('controls on sign-in', () => {
   it('admits the 10th new owner of the day and refuses the 11th, but not a returning owner', async () => {
     await start({ perMinute: 1000 });

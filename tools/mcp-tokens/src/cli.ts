@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
+import { banIdentity, unbanIdentity } from './identities.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
@@ -44,6 +45,8 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   init [--force --i-understand]         create the pepper and the Postgres password files
   owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
+  identity ban <id>                     ban a registered identity (64 hex digits) and revoke its owner's tokens
+  identity unban <id>                   lift the ban (revoked tokens stay revoked)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
   player pause|resume|retire <id>
@@ -184,6 +187,23 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   throw new Error(USAGE);
 }
 
+async function runIdentity(io: Io, env: Env, args: string[]): Promise<void> {
+  const [verb, id] = args;
+  if ((verb === 'ban' || verb === 'unban') && id !== undefined && args.length === 2) {
+    await withSql(env, async (sql) => {
+      if (verb === 'ban') {
+        const revoked = await banIdentity(sql, id);
+        io.out(`banned identity ${id}; revoked ${revoked} live token(s)`);
+      } else {
+        await unbanIdentity(sql, id);
+        io.out(`unbanned identity ${id}`);
+      }
+    });
+    return;
+  }
+  throw new Error(USAGE);
+}
+
 async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
   const [verb, id] = args;
   if (verb === 'add' && id !== undefined && args.length === 2) {
@@ -316,6 +336,8 @@ export async function run(
       await runInit(parsed, io, env.secretDir);
     } else if (command === 'owner') {
       await runOwner(parsed, io, env, rest);
+    } else if (command === 'identity') {
+      await runIdentity(io, env, rest);
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
     } else if (command === 'token') {

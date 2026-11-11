@@ -415,6 +415,8 @@ services:
       # The MCP's token pepper: the register service mints tokens the MCP verifies.
       REGISTER_TOKEN_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
       REGISTER_SHARD: colo
+      # The shard's sovereign.budget.cap_credits (shards/colo-mind.yaml), what the CLI path grants; a repo check pins them equal.
+      REGISTER_START_CREDITS: "${REGISTER_START_CREDITS:-240}"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       REGISTER_DB_PASSWORD_FILE: /run/secrets/postgres-register.txt

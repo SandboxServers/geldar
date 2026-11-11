@@ -28,9 +28,12 @@ export class FakeStore implements Store {
   async listPlayers(ownerId: string): Promise<PlayerRow[]> {
     return [...this.players.values()].filter((p) => p.ownerId === ownerId);
   }
-  async createPlayer(q: NewPlayerRequest): Promise<'ok' | 'cap' | 'taken'> {
+  async createPlayer(q: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'> {
     this.writes.push(JSON.stringify({ ...q, tokenHash: q.tokenHash.toString('hex') }));
     if (this.players.has(q.playerId)) return 'taken';
+    // the lifetime cap counts retired players too (R36)
+    if ([...this.players.values()].filter((p) => p.ownerId === q.ownerId).length >= 10)
+      return 'limit';
     const live = [...this.players.values()].filter(
       (p) => p.ownerId === q.ownerId && p.status !== 'retired',
     );
@@ -54,9 +57,11 @@ export class FakeStore implements Store {
     this.mints.push(q);
     return true;
   }
-  async retirePlayer(ownerId: string, playerId: string): Promise<boolean> {
+  async retirePlayer(identityHash: string, playerId: string): Promise<boolean> {
+    const who = this.owners.get(identityHash);
     const p = this.players.get(playerId);
-    if (!p || p.ownerId !== ownerId || p.status === 'retired') return false;
+    if (!who || who.banned || !p || p.ownerId !== who.ownerId || p.status === 'retired')
+      return false;
     this.players.set(playerId, { ...p, status: 'retired' });
     return true;
   }
