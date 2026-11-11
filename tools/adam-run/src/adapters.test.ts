@@ -23,7 +23,13 @@ import {
 import type { ExecResult, Runner } from './ports.ts';
 import type { WorldVolumes } from './world-volume.ts';
 
-const SRC = [join(import.meta.dirname, 'adapters.ts'), join(import.meta.dirname, 'cli.ts')];
+const SRC = [
+  join(import.meta.dirname, 'adapters.ts'),
+  join(import.meta.dirname, 'glass-client.ts'),
+  join(import.meta.dirname, 'sampler.ts'),
+  join(import.meta.dirname, 'stack-endpoints.ts'),
+  join(import.meta.dirname, 'cli.ts'),
+];
 
 /** A runner that records every call and answers with a fixed exit code. */
 function recordingRunner(code = 0): {
