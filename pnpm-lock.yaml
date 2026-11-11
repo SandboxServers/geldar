@@ -380,6 +380,12 @@ importers:
         specifier: 2.9.1
         version: 2.9.1
 
+  threshold/register:
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+
   tools/adam-cli:
     dependencies:
       yaml:
@@ -463,6 +469,8 @@ importers:
       yaml:
         specifier: 2.9.1
         version: 2.9.1
+
+  tools/portscan: {}
 
   tools/repo-checks:
     dependencies:
