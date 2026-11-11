@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { JOURNAL_KEEP } from '../ports.ts';
 import { FakePool } from './pg-fakes.ts';
-import { JOURNAL_KEEP, JOURNAL_LINE_MAX, PgJournalStore } from './pg-journal.ts';
+import { JOURNAL_LINE_MAX, PgJournalStore } from './pg-journal.ts';
 import { PgPlayerDirectory } from './pg-players.ts';
 
 describe('PgJournalStore', () => {
