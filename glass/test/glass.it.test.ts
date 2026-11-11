@@ -15,7 +15,7 @@ import { Pool, type PoolConfig } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate, passwordStatement } from '../../tools/migrate/src/migrate.ts';
 import { scramVerifier } from '../../tools/migrate/src/scram.ts';
-import { listAgents, listThoughts } from '../src/query.ts';
+import { getThought, listAgents, listReceipts, listThoughts } from '../src/query.ts';
 import { buildGlass, type GlassParts } from '../src/server.ts';
 
 const ENABLED = process.env.GELDAR_IT === '1';
@@ -144,7 +144,7 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
       ssePollMs: POLL_MS,
       enabled: true,
       delaySeconds: 0,
-      showLivingSovereign: false,
+      showLivingSovereign: true,
       trustedProxies: [],
       rateLimit: { perMinute: 60, burst: 20, maxClients: 1024 },
     });
@@ -171,12 +171,43 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
     if (pool === undefined) throw new Error('glass not built');
     const agents = await listAgents(pool);
     expect(agents.map((row) => row.agent_id)).toContain(lifeId);
-    const thoughts = await listThoughts(pool, { limit: 10 });
+    const thoughts = await listThoughts(
+      pool,
+      { limit: 10 },
+      { shownUntil: null, showLivingSovereign: true },
+    );
     expect(thoughts.map((row) => row.thought_id)).toContain(thoughtId);
     const events = await pool.query(
       'SELECT type, agent_id, world_day, world_tick, at, source_event_id FROM events LIMIT 1',
     );
     expect(events.rows.length).toBeLessThanOrEqual(1);
+  });
+
+  it('hides the living sovereign agent by default, and shows it when the flag is on', async () => {
+    const pool = glass?.pool;
+    if (pool === undefined) throw new Error('glass not built');
+    const hidden = { shownUntil: null, showLivingSovereign: false };
+    const shown = { shownUntil: null, showLivingSovereign: true };
+    const ids = async (v: typeof shown) =>
+      (await listThoughts(pool, { limit: 100 }, v)).map((row) => row.thought_id);
+    expect(await ids(hidden)).not.toContain(thoughtId);
+    expect(await ids(shown)).toContain(thoughtId);
+    expect(await getThought(pool, thoughtId, hidden)).toBeNull();
+    expect(await getThought(pool, thoughtId, shown)).not.toBeNull();
+    expect(await listReceipts(pool, 'no-such-action', hidden)).toEqual([]);
+  });
+
+  it('the delay cut-off hides a thought newer than the cut-off', async () => {
+    const pool = glass?.pool;
+    if (pool === undefined) throw new Error('glass not built');
+    const old = new Date(Date.now() - 3_600_000).toISOString();
+    const late = new Date(Date.now() + 3_600_000).toISOString();
+    const ids = async (until: string) =>
+      (
+        await listThoughts(pool, { limit: 100 }, { shownUntil: until, showLivingSovereign: true })
+      ).map((row) => row.thought_id);
+    expect(await ids(old)).not.toContain(thoughtId);
+    expect(await ids(late)).toContain(thoughtId);
   });
 
   it('refuses events.payload, agents.personality_seed and every table Glass is not granted', async () => {

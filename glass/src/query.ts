@@ -20,14 +20,16 @@ export interface ThoughtCursor {
 
 /**
  * What a reader may see. `shownUntil` is the newest thought time Glass shows (the delay, 0072 item 5);
- * null shows every thought.
+ * null shows every thought. `showLivingSovereign` false hides the thoughts and receipts of a sovereign
+ * agent that is still alive (0072 item 4); a dead sovereign agent and a house agent always show.
  */
 export interface Visibility {
   shownUntil: string | null;
+  showLivingSovereign: boolean;
 }
 
-/** No delay: every thought is shown. A caller with a policy passes `visibilityAt(policy)` instead. */
-export const SHOW_ALL: Visibility = { shownUntil: null };
+/** No delay, living sovereign agents hidden. A caller with a policy passes `visibilityAt(policy)`. */
+export const DEFAULT_VISIBILITY: Visibility = { shownUntil: null, showLivingSovereign: false };
 
 export interface ThoughtFilter {
   lifeId?: string | undefined;
@@ -52,7 +54,7 @@ export async function listAgents(db: SqlClient): Promise<Row[]> {
 export async function listThoughts(
   db: SqlClient,
   filter: ThoughtFilter,
-  shown: Visibility = SHOW_ALL,
+  shown: Visibility = DEFAULT_VISIBILITY,
 ): Promise<Row[]> {
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.at::text AS cursor_at, t.world_day, t.world_tick,
@@ -64,7 +66,8 @@ export async function listThoughts(
                               OR ($3 = 'unparsed' AND t.parsed IS NULL))
         AND ($4::timestamptz IS NULL OR t.at >= $4)
         AND ($5::timestamptz IS NULL OR (t.at, t.thought_id) < ($5::timestamptz, $6::text))
-        AND ($8::timestamptz IS NULL OR t.at <= $8::timestamptz)
+        AND ($8::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+        AND ($9::timestamptz IS NULL OR t.at <= $9::timestamptz)
       ORDER BY t.at DESC, t.thought_id DESC
       LIMIT $7`,
     [
@@ -75,6 +78,7 @@ export async function listThoughts(
       filter.before?.at ?? null,
       filter.before?.id ?? '',
       filter.limit,
+      shown.showLivingSovereign,
       shown.shownUntil,
     ],
   );
@@ -85,25 +89,35 @@ export async function listThoughts(
 export async function getThought(
   db: SqlClient,
   thoughtId: string,
-  shown: Visibility = SHOW_ALL,
+  shown: Visibility = DEFAULT_VISIBILITY,
 ): Promise<Row | null> {
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.world_day, t.world_tick, t.wake_reason,
             t.prompt_template_version, t.schema_version, t.model_config, t.latency_ms,
             t.parsed, t.raw_output, t.model_input::text AS model_input, a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
-      WHERE t.thought_id = $1 AND ($2::timestamptz IS NULL OR t.at <= $2::timestamptz)`,
-    [thoughtId, shown.shownUntil],
+      WHERE t.thought_id = $1
+        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+        AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz)`,
+    [thoughtId, shown.showLivingSovereign, shown.shownUntil],
   );
   return result.rows[0] ?? null;
 }
 
 /** The receipts of one action, oldest first (prepared before committed or aborted). */
-export async function listReceipts(db: SqlClient, actionId: string): Promise<Row[]> {
+export async function listReceipts(
+  db: SqlClient,
+  actionId: string,
+  shown: Visibility = DEFAULT_VISIBILITY,
+): Promise<Row[]> {
   const result = await db.query(
-    `SELECT receipt_id, action_id, life_id, kind, phase, item, count, credits, at, detail
-       FROM receipts WHERE action_id = $1 ORDER BY at, phase LIMIT 100`,
-    [actionId],
+    `SELECT r.receipt_id, r.action_id, r.life_id, r.kind, r.phase, r.item, r.count, r.credits, r.at,
+            r.detail
+       FROM receipts r LEFT JOIN agents a ON a.agent_id = r.life_id
+      WHERE r.action_id = $1
+        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+      ORDER BY r.at, r.phase LIMIT 100`,
+    [actionId, shown.showLivingSovereign],
   );
   return result.rows;
 }
@@ -119,17 +133,18 @@ export async function thoughtsAfter(
   db: SqlClient,
   after: ThoughtCursor,
   limit: number,
-  shown: Visibility = SHOW_ALL,
+  shown: Visibility = DEFAULT_VISIBILITY,
 ): Promise<Row[]> {
   const result = await db.query(
     `SELECT t.thought_id, t.life_id, t.at, t.at::text AS cursor_at, t.wake_reason, t.parsed,
             a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
       WHERE t.at IS NOT NULL AND (t.at, t.thought_id) > ($1::timestamptz, $2::text)
-        AND ($4::timestamptz IS NULL OR t.at <= $4::timestamptz)
+        AND ($4::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+        AND ($5::timestamptz IS NULL OR t.at <= $5::timestamptz)
       ORDER BY t.at, t.thought_id
       LIMIT $3`,
-    [after.at, after.id, limit, shown.shownUntil],
+    [after.at, after.id, limit, shown.showLivingSovereign, shown.shownUntil],
   );
   return result.rows;
 }

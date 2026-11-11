@@ -201,7 +201,7 @@ async function serveRoute(
   if (name === 'receipts') {
     const actionId = textParam(query, 'action_id', 128);
     if (actionId === undefined) throw new BadRequest('action_id is required');
-    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId) });
+    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
     return;
   }
   if (name === 'stats') {

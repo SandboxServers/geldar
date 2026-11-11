@@ -50,6 +50,7 @@ export function buildGlass(config: GlassConfig): GlassParts {
     trustedProxies: new Set(config.trustedProxies),
     limiter,
     delaySeconds: config.delaySeconds,
+    showLivingSovereign: config.showLivingSovereign,
     now: () => Date.now(),
   };
   const hub = new SseHub({

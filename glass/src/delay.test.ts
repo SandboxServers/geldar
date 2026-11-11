@@ -58,7 +58,7 @@ function getRoute(port: number, name: string): Promise<number> {
 
 describe('thought delay (0072 item 5)', () => {
   it('is off by default: every thought is shown at once', () => {
-    expect(visibilityAt(OPEN_POLICY)).toEqual({ shownUntil: null });
+    expect(visibilityAt(OPEN_POLICY)).toEqual({ shownUntil: null, showLivingSovereign: false });
   });
 
   it('the list cut-off is the fake clock minus the delay, and moves as the clock moves', async () => {
