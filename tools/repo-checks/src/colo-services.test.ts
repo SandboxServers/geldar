@@ -34,6 +34,15 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
   it('takes each image from a deploy variable, with the local tag as the offline default', () => {
     expect(body.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
     expect(mind.image).toBe(composeDefault('GELDAR_MIND_IMAGE', 'geldar-mind:c1'));
+    expect(colo.services.eventsink?.image).toBe(
+      composeDefault('GELDAR_EVENTSINK_IMAGE', 'geldar-eventsink:c1'),
+    );
+  });
+
+  it('gives every service in the colo file an image key (C1-04: the node refuses a build-only service)', () => {
+    for (const [name, service] of Object.entries(colo.services)) {
+      expect(service, name).toHaveProperty('image');
+    }
   });
 
   it('builds each image locally from the repo root, so the digest rule treats it as a local build', () => {
