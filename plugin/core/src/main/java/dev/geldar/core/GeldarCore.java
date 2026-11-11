@@ -46,7 +46,7 @@ public final class GeldarCore extends JavaPlugin {
 
     private void enable() {
         saveDefaultConfig();
-        CoreConfig config = CoreConfig.load(getConfig(), System::getenv);
+        CoreConfig config = CoreConfig.load(getConfig(), System::getenv, getLogger()::warning);
         publisher = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger());
         EventExporter exporter = new EventExporter(
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
