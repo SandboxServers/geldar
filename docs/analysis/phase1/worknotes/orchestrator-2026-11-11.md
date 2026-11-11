@@ -149,3 +149,4 @@ NATS auth was regenerated on the desktop and the old files kept in `secrets.bak-
 - **R35 (F4).** A ban revokes all of the owner's live tokens at ban time. The MCP lookup also refuses tokens whose owner is banned. An admin ban/unban subcommand is added.
 - **R36.** Lifetime cap of 10 player creations per owner.
 - **F3.** Registered players start with the same credits as players made with the CLI (240).
+- **R37 (R5 pass 3, F19).** The register service holds the pepper, so a compromised register can act as any registered owner. Accepted as a known limit and recorded in a 0135 amendment. The direct SELECT on identity hashes is revoked anyway, as defence in depth.

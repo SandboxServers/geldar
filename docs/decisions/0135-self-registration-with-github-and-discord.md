@@ -50,3 +50,10 @@
 
 1. Create the GitHub OAuth app and the Discord application. Callback: `https://register.<project domain>/callback/github` and `/callback/discord`. Put the secrets in the node's secrets directory.
 2. Confirm or change: the 30-day age floor, 10 new owners a day, and 3 players per registered owner.
+
+## Amendment (orchestrator, 2026-11-11, review C2-R5)
+
+- **Writes go through owner-checked functions.** The register service writes only through owner-checked SECURITY DEFINER functions. Ban, unban, cap and credit rules are enforced in the database (rulings R34–R37).
+- **Bans.** A ban revokes every live token the owner holds, and the MCP refuses tokens whose owner is banned.
+- **Player cap.** An owner can create at most 10 players in total.
+- **Known limit.** The register service holds the identity pepper, so if the service is compromised, an attacker can act as any registered owner. The database limits the damage to the register-owned tables and the caps. Keep the service's secrets and image isolated, and treat a compromise as a reason to rotate the pepper.
