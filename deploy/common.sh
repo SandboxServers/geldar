@@ -7,6 +7,9 @@ PROJECT=geldar-colo
 ROOT=${GELDAR_COLO_ROOT:-$(cd "$DEPLOY_DIR/.." && pwd)}
 COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}
 SECRETS_OVERLAY=$DEPLOY_DIR/compose.secrets.yml
+# NATS auth (decision 0080, default-on): the overlay beside the colo file. It gives nats the auth config and the
+# per-role password files, and it is merged on every compose call so the deploy never runs open NATS.
+NATS_OVERLAY=$(dirname "$COMPOSE_FILE")/nats-auth.yml
 EXTRA_OVERLAY=${GELDAR_COLO_EXTRA_OVERLAY:-}
 GELDAR_SECRETS_DIR=${GELDAR_SECRETS_DIR:-/etc/geldar-colo/secrets}
 export GELDAR_SECRETS_DIR
@@ -48,15 +51,15 @@ act() {
 # Every compose call names the project, so it can only reach geldar-colo containers, volumes and networks.
 dc() {
   if [ -n "$EXTRA_OVERLAY" ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
   else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" "$@"
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" "$@"
   fi
 }
 
 plan_header() {
   say "project: $PROJECT"
-  say "compose: $COMPOSE_FILE (+ $SECRETS_OVERLAY${EXTRA_OVERLAY:+ + $EXTRA_OVERLAY})"
+  say "compose: $COMPOSE_FILE (+ $SECRETS_OVERLAY + $NATS_OVERLAY${EXTRA_OVERLAY:+ + $EXTRA_OVERLAY})"
   say "secrets dir: $GELDAR_SECRETS_DIR; release manifest: $RELEASE_FILE; state: $STATE_DIR"
   if [ "$DRY_RUN" = 1 ]; then say "DEPLOY_DRY_RUN=1: read-only steps only"; fi
 }
@@ -77,6 +80,7 @@ check_prereqs() {
   docker info >/dev/null 2>&1 || die "cannot reach the docker daemon (is this account in the docker group?)"
   [ -f "$COMPOSE_FILE" ] || die "compose file not found: $COMPOSE_FILE"
   [ -f "$SECRETS_OVERLAY" ] || die "secrets overlay not found: $SECRETS_OVERLAY"
+  [ -f "$NATS_OVERLAY" ] || die "NATS auth overlay not found: $NATS_OVERLAY"
   free=$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')
   if [ -z "$free" ] || [ "$free" -lt "$MIN_FREE_KB" ]; then
     die "free disk ${free:-unknown} KiB is below the threshold of $MIN_FREE_KB KiB"
@@ -147,8 +151,8 @@ check_secret() {
 }
 
 # Checks every secret file that the MERGED config declares, so a secret added to compose/colo.yml or an overlay is
-# checked with no change here. The nats-auth overlay mounts nats-auth.conf as a bind file, not a secret, so it is
-# read from the merged config too. Nothing is generated on the node for the NATS files (decision 0084).
+# checked with no change here. nats-auth.conf is one of them: compose/nats-auth.yml mounts it as a secret, and
+# deploy/compose.secrets.yml names it under GELDAR_SECRETS_DIR. Nothing is generated on the node for the NATS files (decision 0084).
 check_secrets() {
   [ -d "$GELDAR_SECRETS_DIR" ] || die "secrets directory missing: $GELDAR_SECRETS_DIR (deploy/README.md)"
   # Both sides of the containment test come from readlink -f, so they are spelled the same way (on Git for Windows
@@ -168,7 +172,9 @@ check_secrets() {
   while IFS=$tab read -r name p; do
     check_secret "$name" "$p"
   done <"$WORK/secrets.tsv"
-  conf=$(awk '/^ +source: / {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
+  # A bind mount of an absolute host path is checked here too. A service secret prints its source as a bare name, which
+  # the loop above already checked through its top-level file, so only an absolute source is taken.
+  conf=$(awk '/^ +source: (\/|[A-Za-z]:\/)/ {src = $2} /^ +target: \/etc\/nats\/nats-auth\.conf$/ {print src}' "$WORK/config.yml")
   if [ -n "$conf" ]; then check_secret "nats-auth.conf (bind mount)" "$conf"; fi
   say "secret files: each file the merged config declares is present, non-empty and owner-only"
 }

@@ -267,6 +267,9 @@ services:
   # root, as golem-body is. GELDAR_MIND_IMAGE follows the same rule: the default is `geldar-mind:c1`, and the deploy
   # tooling (C1-04) sets the published reference. The model endpoint (the Thinker gateway) is configuration.
   animus:
+    # Decision 0134: the Mind is a profile until a Thinker path exists (the C4 gateway, decision 0078). `shard up colo`
+    # and deploy/colo-up.sh start the core services only; `docker compose --profile mind up` starts this one.
+    profiles: ["mind"]
     # Budget: 1 CPU, 2048m (no swap, 256 pids). Measured in C1-10.
     deploy:
       resources:

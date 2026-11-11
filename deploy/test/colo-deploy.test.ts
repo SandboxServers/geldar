@@ -81,8 +81,8 @@ function findSh(): string {
 const SH = findSh();
 
 // Every test starts several `sh` processes; on a Windows desktop beside the full suite a test took 5-11 s, against
-// vitest's 5 s default. 30 s is a bound for real work, not a retry or a skip.
-const SPAWN_TEST_TIMEOUT_MS = 30_000;
+// vitest's 5 s default. 60 s is a bound for real work under full-suite load, not a retry or a skip.
+const SPAWN_TEST_TIMEOUT_MS = 60_000;
 vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
 
 // The fake docker: records its arguments and answers `config` with the fixture file. Every other call succeeds.
@@ -130,8 +130,6 @@ services:
     build:
       context: ..
     image: ${BODY}
-  animus:
-    image: ${MIND}
 `;
 
 // The top-level secrets block as `docker compose config` prints it: each NAME with the file it reads from.
@@ -155,7 +153,7 @@ const NATS_BIND = (conf: string) =>
   `  nats:\n    volumes:\n      - type: bind\n        source: ${conf}\n        target: /etc/nats/nats-auth.conf\n`;
 
 const release = (body: string, mind = MIND) =>
-  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\n`;
+  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\nGELDAR_ADMIN_IMAGE=registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}\n`;
 // Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');

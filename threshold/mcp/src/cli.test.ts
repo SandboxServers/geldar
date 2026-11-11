@@ -103,6 +103,63 @@ describe('runCli', () => {
     expect(logs.join('\n')).not.toContain('password');
   });
 
+  it('logs a Postgres login refusal as its SQLSTATE and the set-role-password hint, never the message', async () => {
+    const { deps, logs } = cliDeps({
+      start: async () => {
+        throw Object.assign(new Error('password authentication failed for user "geldar_mcp"'), {
+          name: 'error',
+          code: '28P01',
+        });
+      },
+    });
+    expect(await runCli(['node', 'cli.ts', 'start', SHARD_FILE], ENV, deps)).toBe(EXIT.failed);
+    const out = logs.join('\n');
+    expect(out).toContain('"code":"28P01"');
+    expect(out).toContain('set-role-password');
+    expect(out).not.toContain('authentication failed');
+    expect(out).not.toContain('"message"');
+  });
+
+  it('adds the hint for 28000 but not for other SQLSTATEs such as a missing database', async () => {
+    const dbError = (code: string) =>
+      Object.assign(new Error(`database "geldar" does not exist (${code})`), {
+        name: 'error',
+        code,
+      });
+    const role = cliDeps({
+      start: async () => {
+        throw dbError('28000');
+      },
+    });
+    await runCli(['node', 'cli.ts', 'start', SHARD_FILE], ENV, role.deps);
+    expect(role.logs.join('\n')).toContain('set-role-password');
+    const missing = cliDeps({
+      start: async () => {
+        throw dbError('3D000');
+      },
+    });
+    expect(await runCli(['node', 'cli.ts', 'start', SHARD_FILE], ENV, missing.deps)).toBe(
+      EXIT.failed,
+    );
+    expect(missing.logs.join('\n')).toContain('"code":"3D000"');
+    expect(missing.logs.join('\n')).not.toContain('set-role-password');
+    expect(missing.logs.join('\n')).not.toContain('does not exist');
+  });
+
+  it('logs a connection failure by its short code, not the host it failed to reach', async () => {
+    const { deps, logs } = cliDeps({
+      start: async () => {
+        throw Object.assign(new Error('connect ECONNREFUSED db.internal:5432'), {
+          name: 'Error',
+          code: 'ECONNREFUSED',
+        });
+      },
+    });
+    expect(await runCli(['node', 'cli.ts', 'start', SHARD_FILE], ENV, deps)).toBe(EXIT.failed);
+    expect(logs.join('\n')).toContain('"code":"ECONNREFUSED"');
+    expect(logs.join('\n')).not.toContain('db.internal');
+  });
+
   it('exits 2 for any command other than start', async () => {
     const { deps } = cliDeps();
     expect(await runCli(['node', 'cli.ts', 'stop'], {}, deps)).toBe(EXIT.usage);

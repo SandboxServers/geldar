@@ -66,8 +66,9 @@ Run these in order. Stop at the first failure.
 4. **Dry run.** `DEPLOY_DRY_RUN=1 deploy/colo-up.sh`. It runs every read-only check and prints the state-changing
    steps as `dry-run, not run`. Read the plan. Stop if a value is unexpected.
 5. **Real deploy.** `deploy/colo-up.sh`. It records the previous and current release in the state directory before it
-   pulls, and runs `docker compose pull` and `up -d --wait`. The script prints `deployed: project geldar-colo (no
-   volume was removed)` on success.
+   pulls. Then it runs in this order: `up -d --wait postgres nats`; `migrate` and `migrate --set-role-password
+   geldar_mcp` in the admin container (the MCP role cannot log in until the second one runs); and last the full core,
+   `up -d --wait`. The script prints `deployed: project geldar-colo (no volume was removed)` on success.
 6. **Check.** `deploy/colo-status.sh`. Every service should be healthy.
 
 Run the scripts from the repository root, or set `GELDAR_COLO_ROOT` to the checkout.
@@ -115,6 +116,13 @@ produce for the colo node to `<node>`'s secrets directory. Never send them throu
 directory is mode `0700` and each file is mode `0600`. Set `GELDAR_SECRETS_DIR` to that directory. Check the modes
 read-only with `stat -c '%a %n' <secrets-dir>/*`.
 
+NATS auth is on by default (decision 0080): every compose call merges `compose/nats-auth.yml`. The overlay reads its
+files from `GELDAR_SECRETS_DIR`, the same directory as the other secrets, so nothing is copied into the checkout:
+`nats-auth.conf` (the server config, a secret mounted at `/etc/nats/nats-auth.conf`), `nats-paper.txt`,
+`nats-velocity.txt` and `nats-eventsink.txt` must sit there, owned by `GELDAR_SERVICE_UID` with mode `0600`. The deploy
+refuses until they exist. `deploy/compose.secrets.yml` names all four under `GELDAR_SECRETS_DIR`, the way it names the
+other secrets, so `compose/nats-auth.yml` keeps no node path and has no interpolated volume (threat model section 1).
+
 The service uid. The containers run as `GELDAR_SERVICE_UID` (default `1000`; compose sets `user:` on the Body, Mind,
 MCP, admin, player host and eventsink services, and `UID`/`GID` on Paper). The deploy scripts refuse to run as uid 0,
 and refuse unless the secrets directory and every secret file are owned by `GELDAR_SERVICE_UID`. So on the node,
@@ -144,12 +152,13 @@ deploy/colo-up.sh                    # the real deploy; prints "deployed: projec
 ### (f) Admin steps (one-shot container, decision 0133)
 
 Each step runs in a container started with `run --rm`. Nothing is kept running afterwards. Set the tokens directory
-first. It must be outside the checkout and mode `0700`:
+first. It must be outside the checkout and mode `0700`. `colo-up.sh` already runs the first two lines; run them again
+only to repair:
 
 ```sh
 export GELDAR_TOKENS_DIR=<tokens-dir>
-deploy/colo-admin.sh migrate                 # SQL migrations
-deploy/colo-admin.sh migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
+deploy/colo-admin.sh migrate                 # SQL migrations (colo-up.sh runs this)
+deploy/colo-admin.sh migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt   # colo-up.sh runs this
 deploy/colo-admin.sh owner-add <owner> --cap 20
 deploy/colo-admin.sh player-add <player> --owner <owner> --life <life> --name <name> --harness <harness>
 ```
@@ -186,7 +195,8 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 
 ### (i) Known limits
 
-- The Adam Mind cannot think until the C4 gateway exists. It starts but does not act.
+- The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
+  think until the C4 gateway exists.
 - BlueMap is not mounted. Accepting its download is the owner's call (`plugins/bluemap/bluemap.lock.json`).
 - Postgres service roles are superuser for now (C2).
 - NATS auth generation is PowerShell-only; copy its files from the trusted machine.
@@ -256,8 +266,6 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
 - **Image publish.** `colo-images` publishes the five images (`geldar-body`, `geldar-mind`, `geldar-eventsink`,
   `geldar-mcp`, `geldar-admin`) and writes `release.env` for its run. Take the manifest from the run for
   `<release-commit>`; the publish itself is an ops step.
-- **Node wiring for NATS auth.** `compose/nats-auth.yml` is not wired into the node's deploy. The colo file runs
-  without it.
 
 ## Owner actions
 

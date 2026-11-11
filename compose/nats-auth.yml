@@ -9,6 +9,9 @@
 # Colo, offline check of the merge: docker compose -f compose/colo.yml -f compose/nats-auth.yml config --quiet
 # Before that, write the server config and the per-user password files (git-ignored, owner-only):
 #   ./geldar.ps1 shard nats-auth phase0
+# The files are named under ./secrets (compose/secrets/ locally). They are secrets, not bind mounts, and this file
+# names no node path: on the Colo node deploy/compose.secrets.yml points each name at GELDAR_SECRETS_DIR, the same way
+# it points the other secrets (threat model section 1 forbids interpolation in volume sources).
 # Each container reads its own password from a file mounted at /run/secrets/nats-<user>.txt and
 # names its user in GELDAR_NATS_USER (the TypeScript and Java connect paths read these; see
 # contract/src/nats-connect.ts). Host-run components (golem Body, animus) are not in compose: give
@@ -17,8 +20,9 @@ services:
   nats:
     # The base's flags (-js -sd /data, as phase0.yml and colo.yml set them) stay: a command list replaces, not merges.
     command: ["-js", "-sd", "/data", "-c", "/etc/nats/nats-auth.conf", "-m", "8222"]
-    volumes:
-      - ./secrets/nats-auth.conf:/etc/nats/nats-auth.conf:ro
+    secrets:
+      - source: nats-auth.conf
+        target: /etc/nats/nats-auth.conf
   paper:
     environment:
       GELDAR_NATS_USER: paper
@@ -35,6 +39,8 @@ services:
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-eventsink.txt
     secrets: [nats-eventsink.txt]
 secrets:
+  nats-auth.conf:
+    file: ./secrets/nats-auth.conf
   nats-paper.txt:
     file: ./secrets/nats-paper.txt
   nats-velocity.txt:
