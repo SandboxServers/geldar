@@ -124,7 +124,8 @@ public final class IdentityPlugin {
     public void onLogin(LoginEvent event) {
         Player player = event.getPlayer();
         if (gate.admit(player.getUniqueId(), player.getUsername())) {
-            log.info("Admitted {}", printable(player.getUsername()));
+            String name = printable(player.getUsername());
+            log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
             return;
         }
         event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));

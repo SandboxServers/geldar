@@ -1,0 +1,11 @@
+{
+  "name": "@geldar/portscan",
+  "private": true,
+  "description": "External TCP port scan: the open set must match the expected port list exactly (0071, 0072). Never run against a real host by the tests.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run",
+    "scan": "node src/cli.ts"
+  }
+}
