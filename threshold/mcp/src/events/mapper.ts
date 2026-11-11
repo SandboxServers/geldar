@@ -139,7 +139,15 @@ export function failureReason(detail: string | undefined): string | undefined {
     return `you lack ${missing[1].replaceAll('_', ' ')}`;
   }
   if (text.startsWith('missing_station')) return 'no crafting table within reach';
+  if (text.startsWith('blocked: no movement')) return 'you could not move and may be stuck';
+  if (text.startsWith('blocked: unstick')) return 'no way out was found without risking a fall';
   if (text.startsWith('blocked')) return 'the way was blocked';
+  if (text.startsWith('not_found: no bed')) return 'no bed within reach';
+  if (text.startsWith('not_possible: would drop the bot')) {
+    return 'that would drop you from where you stand';
+  }
+  if (text.startsWith('not_found')) return 'what you looked for was not found';
+  if (text.startsWith('not_possible')) return 'that was not possible right now';
   if (text.startsWith('out_of_reach') || text.startsWith('too_far')) {
     return 'too far from the block';
   }
