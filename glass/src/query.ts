@@ -114,7 +114,7 @@ export async function getThought(
   return result.rows[0] ?? null;
 }
 
-/** The receipts of one action, oldest first (prepared before committed or aborted). */
+/** The receipts of one action, oldest first (prepared before committed or aborted), no newer than the cut-off. */
 export async function listReceipts(
   db: SqlClient,
   actionId: string,
@@ -126,8 +126,9 @@ export async function listReceipts(
        FROM receipts r LEFT JOIN agents a ON a.agent_id = r.life_id
       WHERE r.action_id = $1
         AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+        AND ($3::timestamptz IS NULL OR r.at <= $3::timestamptz)
       ORDER BY r.at, r.phase LIMIT 100`,
-    [actionId, shown.showLivingSovereign],
+    [actionId, shown.showLivingSovereign, shown.shownUntil],
   );
   return result.rows;
 }
