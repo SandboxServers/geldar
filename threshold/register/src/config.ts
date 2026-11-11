@@ -12,15 +12,19 @@ export interface RegisterConfig {
   readonly publicUrl: string;
   readonly host: string;
   readonly port: number;
-  readonly github: ProviderCredentials;
-  readonly discord: ProviderCredentials;
+  /** The Microsoft (Entra) app: client id from the environment, client secret from a file. */
+  readonly microsoft: ProviderCredentials;
+  /** The key the shared Glass session cookie is signed with (R42); Glass reads the same file. */
+  readonly sessionKey: string;
   readonly pepper: string;
   /** The MCP server's token pepper: a minted token's hash must match what the MCP checks (0054). */
   readonly tokenPepper: string;
   readonly shard: string;
   readonly harnesses: readonly string[];
-  readonly minAccountAgeDays: number;
-  readonly maxNewOwnersPerDay: number;
+  /** Sign-in and sign-up per IP (IPv6: per /64) per minute: the burst allowed (R41). */
+  readonly signInPerMinute: number;
+  /** Player creation and token minting per owner per minute (R41). */
+  readonly ownerPerMinute: number;
   readonly trustedPeers: readonly string[];
   readonly perMinute: number;
 }
@@ -92,6 +96,9 @@ export function loadConfig(
   };
   const pepper = secret('REGISTER_PEPPER');
   if (pepper.length < 32) throw new Error('REGISTER_PEPPER must be at least 32 characters');
+  const sessionKey = secret('REGISTER_SESSION_KEY');
+  if (sessionKey.length < 32)
+    throw new Error('REGISTER_SESSION_KEY must be at least 32 characters');
   const publicUrl = (env.REGISTER_PUBLIC_URL ?? '').replace(/\/+$/, '');
   if (!publicUrl.startsWith('https://')) throw new Error('REGISTER_PUBLIC_URL must be https');
   return {
@@ -99,14 +106,11 @@ export function loadConfig(
     publicUrl,
     host: env.REGISTER_HOST ?? '127.0.0.1',
     port: intOf(env.REGISTER_PORT, 8090, 'REGISTER_PORT'),
-    github: {
-      clientId: env.REGISTER_GITHUB_CLIENT_ID ?? '',
-      clientSecret: secret('REGISTER_GITHUB_SECRET'),
+    microsoft: {
+      clientId: env.REGISTER_MS_CLIENT_ID ?? '',
+      clientSecret: secret('REGISTER_MS_CLIENT_SECRET'),
     },
-    discord: {
-      clientId: env.REGISTER_DISCORD_CLIENT_ID ?? '',
-      clientSecret: secret('REGISTER_DISCORD_SECRET'),
-    },
+    sessionKey: sessionKey,
     pepper,
     tokenPepper: tokenPepper(env, readSecret),
     shard: required(env.REGISTER_SHARD, 'REGISTER_SHARD'),
@@ -114,16 +118,8 @@ export function loadConfig(
       .split(',')
       .map((s) => s.trim())
       .filter((s) => /^[a-z][a-z0-9-]{0,31}$/.test(s)),
-    minAccountAgeDays: intOf(
-      env.REGISTER_MIN_ACCOUNT_AGE_DAYS,
-      30,
-      'REGISTER_MIN_ACCOUNT_AGE_DAYS',
-    ),
-    maxNewOwnersPerDay: intOf(
-      env.REGISTER_MAX_NEW_OWNERS_PER_DAY,
-      10,
-      'REGISTER_MAX_NEW_OWNERS_PER_DAY',
-    ),
+    signInPerMinute: intOf(env.REGISTER_SIGNIN_PER_MINUTE, 10, 'REGISTER_SIGNIN_PER_MINUTE'),
+    ownerPerMinute: intOf(env.REGISTER_OWNER_PER_MINUTE, 6, 'REGISTER_OWNER_PER_MINUTE'),
     trustedPeers: trustedPeerList(env.REGISTER_TRUSTED_PEERS ?? '127.0.0.1'),
     perMinute: intOf(env.REGISTER_PER_MINUTE, 30, 'REGISTER_PER_MINUTE'),
   };
