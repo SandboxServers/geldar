@@ -236,6 +236,39 @@ repository or to a script.
 **Never restart the shared Caddy. Only reload it.** The Colo deploy does not touch Caddy. Site snippets are owned by
 C2. Caddy is shared on the node, so a restart is never a deploy step; a reload is the only action allowed there.
 
+## Public sites (C2)
+
+`deploy/colo-public.sh` puts the three public sites (`map`, `glass`, `mcp`; files in `deploy/caddy/`) into the shared
+Caddy. It only runs `caddy validate` and `caddy reload` through `docker exec`; it never restarts, recreates or starts
+the container. Run it on the node as the account that can write the Caddyfile and use docker.
+
+Environment (names only; values come from the operator):
+
+| Variable | Meaning |
+|---|---|
+| `GELDAR_CADDY_CONTAINER` | the Caddy container name |
+| `GELDAR_CADDY_CONFIG_DIR` | host directory bind-mounted at `/config` in the container |
+| `GELDAR_CADDY_FILE` | the Caddyfile on the host (mounted at `/etc/caddy/Caddyfile`) |
+| `GELDAR_PUBLIC_ENV` | a root-only `KEY=VALUE` file (install only): `GELDAR_DOMAIN`, `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` |
+
+Each upstream must be `127.0.0.1:<port>` (the Colo services publish on loopback). Caddy fills `{$VAR}` from its own
+process environment, which cannot change without a restart, so `install` renders the placeholders into concrete files
+under `$GELDAR_CADDY_CONFIG_DIR/geldar/` and leaves the repo files alone. It refuses a missing variable, a leftover
+`{$` and a non-loopback upstream.
+
+Order:
+
+1. `DEPLOY_DRY_RUN=1 bash deploy/colo-public.sh install` (prints every state change, changes nothing).
+2. `bash deploy/colo-public.sh install`: renders the sites, backs up the Caddyfile to `<file>.bak-geldar-<time>`, adds
+   the single line `import /config/geldar/*.caddy` if absent, validates, then reloads. If validate fails, the
+   Caddyfile is restored byte for byte, the rendered directory is removed, and the script exits non-zero.
+3. `bash deploy/colo-public.sh status` shows the import line and whether each site is on or off.
+4. Kill switch: `off <site|all>` swaps in the 503 twin, `on <site|all>` swaps the live file back; each validates and
+   reloads, and puts the old files back if validate fails.
+
+Rollback: `bash deploy/colo-public.sh remove` backs up the Caddyfile, removes the import line, validates, deletes the
+directory and reloads. If validate fails it restores the Caddyfile and removes nothing.
+
 ## Stop conditions
 
 Stop and do not retry in a loop when:
