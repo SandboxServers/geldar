@@ -33,6 +33,7 @@ const NATS_SECRETS = [
   'nats-paper.txt',
   'nats-velocity.txt',
   'nats-eventsink.txt',
+  'nats-mcp.txt',
   'nats-auth.conf',
 ];
 
@@ -74,8 +75,9 @@ function shard(dir: string, ...args: string[]) {
 
 /**
  * `./geldar.ps1 shard <args>` from the temp copy, read through a try/catch that prints the exception's own message on
- * stdout. The error record on stderr is formatted for the console: it wraps at the width, adds a `|` gutter and, on
- * Linux, colour codes that split words (`decision` and `0082` end up apart). The message itself has none of that.
+ * stdout. Every assertion on a geldar.ps1 failure text uses this, never stderr: the error record on stderr is formatted
+ * for the console. It wraps at the width, adds a `|` gutter and, on Linux, cuts long text (CI truncated the missing-secret
+ * list before the command hint) and adds colour codes that split words. The exception message has none of that.
  */
 function refusal(dir: string, ...args: string[]) {
   const quoted = ['shard', ...args].map((arg) => `'${arg}'`).join(' ');
@@ -228,10 +230,10 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: the NATS secrets are checke
   it('fails before docker, names nats-body.txt and the command to run, and writes no secret', () => {
     const dir = copyGenerator();
     try {
-      const run = shard(dir, 'up', 'colo');
+      const run = refusal(dir, 'up', 'colo');
       expect(run.status).not.toBe(0);
-      expect(squash(run.stderr)).toContain(squash('compose/secrets/nats-body.txt'));
-      expect(squash(run.stderr)).toContain(squash('./geldar.ps1 shard nats-auth colo'));
+      expect(squash(run.message)).toContain(squash('compose/secrets/nats-body.txt'));
+      expect(squash(run.message)).toContain(squash('./geldar.ps1 shard nats-auth colo'));
       expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -243,10 +245,10 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: the NATS secrets are checke
     try {
       mkdirSync(join(dir, 'compose', 'secrets'), { recursive: true });
       writeFileSync(join(dir, 'compose', 'secrets', 'nats-body.txt'), '');
-      const run = shard(dir, 'up', 'colo');
+      const run = refusal(dir, 'up', 'colo');
       expect(run.status).not.toBe(0);
-      expect(squash(run.stderr)).toContain(squash('compose/secrets/nats-body.txt'));
-      expect(squash(run.stderr)).toContain(squash('is missing or empty'));
+      expect(squash(run.message)).toContain(squash('compose/secrets/nats-body.txt'));
+      expect(squash(run.message)).toContain(squash('is missing or empty'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -259,10 +261,10 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: the NATS secrets are checke
       for (const name of NATS_SECRETS) {
         writeFileSync(join(dir, 'compose', 'secrets', name), 'x'.repeat(32));
       }
-      const run = shard(dir, 'up', 'colo');
+      const run = refusal(dir, 'up', 'colo');
       // The temp copy has no plugin jar, so the run stops at Assert-PluginJar, not at the NATS check.
       expect(run.status).not.toBe(0);
-      expect(squash(run.stderr)).not.toContain(squash('shard nats-auth colo'));
+      expect(squash(run.message)).not.toContain(squash('shard nats-auth colo'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -286,8 +288,8 @@ describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: --rcon-host is refused', ()
   it('does not refuse --rcon-host for phase0: the refusal is for the colo shard only', () => {
     const dir = copyGenerator();
     try {
-      const run = shard(dir, 'up', 'phase0', '--rcon-host');
-      expect(squash(run.stderr)).not.toContain(squash('--rcon-host is refused'));
+      const run = refusal(dir, 'up', 'phase0', '--rcon-host');
+      expect(squash(run.message)).not.toContain(squash('--rcon-host is refused'));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

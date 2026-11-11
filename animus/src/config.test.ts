@@ -198,7 +198,7 @@ describe('animus config', () => {
     doc.mind.thinker.host = '0.0.0.0';
     expect(() => parseAnimusConfig(doc, { env: {} })).toThrow('127.0.0.1 or localhost');
     for (const env of [
-      { GELDAR_NATS_URL: 'nats://10.0.0.5:4222' },
+      { GELDAR_NATS_URL: 'nats://not-allowed.example:4222' },
       { OLLAMA_URL: 'http://ollama.example.com:11434' },
       { POSTGRES_HOST: 'db.example.com' },
     ]) {
