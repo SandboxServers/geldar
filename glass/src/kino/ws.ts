@@ -76,28 +76,29 @@ export interface WsRoute {
   now: () => number;
   /** Peers whose x-geldar-client-ip is believed (GELDAR_GLASS_TRUSTED_PROXIES). */
   trustedProxies?: ReadonlySet<string>;
-  /** Extra Origin hosts allowed besides the request's own Host (GELDAR_KINO_ALLOWED_ORIGINS). */
+  /** Full origins allowed on the upgrade (GELDAR_KINO_ALLOWED_ORIGINS). */
   allowedOrigins?: readonly string[];
   maxBuffered?: number;
   stallMs?: number;
 }
 
-/** Same-site only: a browser's Origin must be this server's own host or one on the allow-list. */
-export function originAllowed(
-  origin: string | undefined,
-  host: string | undefined,
-  allowed: readonly string[],
-): boolean {
-  if (origin === undefined) return true; // not a browser: there is no ambient cookie to hijack
-  let h: string;
+/**
+ * A browser's Origin must be on the explicit allow-list (GELDAR_KINO_ALLOWED_ORIGINS, full origins such as
+ * https://glass.example.test). There is no comparison with the Host header: Caddy rewrites Host to localhost
+ * for /kino, so Host says nothing about the page that opened the socket.
+ * A request with no Origin header is not a browser page (browsers always send one on a WebSocket upgrade),
+ * so no cross-site script can ride the cookie through it; it stays allowed.
+ */
+export function originAllowed(origin: string | undefined, allowed: readonly string[]): boolean {
+  if (origin === undefined) return true;
+  let o: string;
   try {
-    h = new URL(origin).host.toLowerCase();
+    o = new URL(origin).origin.toLowerCase();
   } catch {
     return false;
   }
-  return h === (host ?? '').toLowerCase() || allowed.includes(h);
+  return o !== 'null' && allowed.includes(o);
 }
-
 /** Handles an `upgrade` event for KINO_WS_PATH. Returns false when the path is not ours. */
 export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: Duplex): boolean {
   if (new URL(req.url ?? '/', 'http://x').pathname !== KINO_WS_PATH) return false;
@@ -106,7 +107,7 @@ export function handleKinoUpgrade(route: WsRoute, req: IncomingMessage, socket: 
     socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
     return true;
   }
-  if (!originAllowed(req.headers.origin, req.headers.host, route.allowedOrigins ?? [])) {
+  if (!originAllowed(req.headers.origin, route.allowedOrigins ?? [])) {
     socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
     return true;
   }

@@ -36,7 +36,7 @@ export interface KinoEnv {
   shard: string;
   natsUrl: string;
   otlpEndpoint: string | undefined;
-  /** Extra Origin hosts allowed on the WebSocket upgrade (GELDAR_KINO_ALLOWED_ORIGINS, comma separated). */
+  /** Full origins allowed on the WebSocket upgrade (GELDAR_KINO_ALLOWED_ORIGINS, comma separated, e.g. https://glass.example.test). */
   allowedOrigins: string[];
 }
 
@@ -100,7 +100,16 @@ export interface KinoWiringOptions {
   revalidateMs?: number;
 }
 
+/** Kino with no allowed origin would refuse every browser: fail at startup, naming the variable. */
+export function requireAllowedOrigins(origins: readonly string[] | undefined): void {
+  if (origins === undefined || origins.length === 0)
+    throw new Error(
+      'Kino is enabled but GELDAR_KINO_ALLOWED_ORIGINS is empty: set it to the page origin(s), e.g. https://glass.example.test',
+    );
+}
+
 export function buildKino(o: KinoWiringOptions): KinoParts {
+  requireAllowedOrigins(o.allowedOrigins);
   const killSwitch = new KinoKillSwitch(true);
   const metrics = new KinoMetrics();
   const audit = new KinoAudit(sqlAuditStore(o.db), () =>

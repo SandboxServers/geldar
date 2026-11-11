@@ -61,27 +61,52 @@ beforeEach(() => {
 });
 
 describe('subscribe rate limit (1 per 2 s, burst 8)', () => {
-  it('allows the burst, refuses the next, and refills one token per 2 s', async () => {
+  it('allows the burst, refuses the next with rate_limited (the pane stays open), and refills one token per 2 s', async () => {
     const r = relay();
     const c = conn();
     const p = r.accept(c, 'h', 'h');
-    for (let i = 0; i < 8; i++) await p?.message(sub('mine', i % 2 ? 'orbit' : 'follow'));
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'mine'];
+    for (const id of ids) await p?.message(sub(id));
     expect(c.closed).toBe(0);
-    await p?.message(sub('mine'));
-    expect(c.sent.at(-1)).toBe(JSON.stringify({ type: 'bye', reason: 'feed_overloaded' }));
-    expect(c.closed).toBe(1);
-    expect(refusals).toContain('feed_overloaded');
+    await p?.message(sub('zz'));
+    expect(c.sent.at(-1)).toBe(JSON.stringify({ type: 'rate_limited' }));
+    expect(c.closed).toBe(0);
+    expect(refusals).toEqual([]);
+    expect(subs).toHaveLength(8);
     // A fresh pane of the same client shares the bucket; 2 s later one subscribe passes.
     const c2 = conn();
     const p2 = r.accept(c2, 'h', 'h');
     await p2?.message(sub('mine'));
-    expect(c2.closed).toBe(1);
+    expect(c2.sent.at(-1)).toBe(JSON.stringify({ type: 'rate_limited' }));
     clock += 2000;
-    const c3 = conn();
-    await r.accept(c3, 'h', 'h')?.message(sub('mine'));
-    expect(c3.closed).toBe(0);
+    await p2?.message(sub('mine'));
+    expect(subs).toHaveLength(9);
+    expect(c2.closed).toBe(0);
   });
 
+  it('clicking through modes quickly never closes the pane and refuses the excess click', async () => {
+    const r = relay();
+    const c = conn();
+    const p = r.accept(c, 'h', 'h');
+    await p?.message(sub('mine'));
+    for (let i = 0; i < 30; i++) await p?.message(sub('mine', i % 2 ? 'orbit' : 'follow'));
+    expect(c.closed).toBe(0);
+    expect(c.sent.filter((s) => s.includes('rate_limited')).length).toBeGreaterThan(0);
+    expect(subs).toEqual(['mine']);
+    // The pane is still usable once the bucket refills.
+    clock += 2000;
+    await p?.message(sub('other'));
+    expect(subs).toEqual(['mine', 'other']);
+  });
+
+  it('a closed socket frees its slot at once, so a reload at the pane cap is accepted', async () => {
+    const r = relay({ paneCap: 2 });
+    const a = r.accept(conn(), 'h', 'h');
+    r.accept(conn(), 'h', 'h');
+    expect(r.accept(conn(), 'h', 'h')).toBeNull();
+    a?.closed();
+    expect(r.accept(conn(), 'h', 'h')).not.toBeNull();
+  });
   it('a four-pane page opening 4 panes at once is allowed', async () => {
     const r = relay();
     const conns = [0, 1, 2, 3].map(() => conn());
@@ -340,21 +365,49 @@ describe('WebSocket upgrade', () => {
   });
 });
 describe('Origin check', () => {
-  it('allows no Origin, the own host and listed hosts; refuses sibling subdomains', () => {
-    expect(originAllowed(undefined, 'glass.example.org', [])).toBe(true);
-    expect(originAllowed('https://glass.example.org', 'glass.example.org', [])).toBe(true);
-    expect(originAllowed('https://GLASS.example.org', 'glass.example.org', [])).toBe(true);
-    expect(originAllowed('https://map.example.org', 'glass.example.org', [])).toBe(false);
-    expect(originAllowed('https://map.example.org', 'glass.example.org', ['map.example.org'])).toBe(
-      true,
-    );
-    expect(originAllowed('null', 'glass.example.org', [])).toBe(false);
-    expect(originAllowed('https://glass.example.org.evil.test', 'glass.example.org', [])).toBe(
-      false,
-    );
+  const allow = ['https://glass.example.org'];
+  it('allows no Origin and listed origins only; there is no Host comparison', () => {
+    expect(originAllowed(undefined, [])).toBe(true);
+    expect(originAllowed('https://glass.example.org', allow)).toBe(true);
+    expect(originAllowed('https://GLASS.example.org', allow)).toBe(true);
+    expect(originAllowed('https://glass.example.org', [])).toBe(false);
+    expect(originAllowed('https://map.example.org', allow)).toBe(false);
+    expect(originAllowed('http://glass.example.org', allow)).toBe(false);
+    expect(originAllowed('null', allow)).toBe(false);
+    expect(originAllowed('https://glass.example.org.evil.test', allow)).toBe(false);
+    expect(originAllowed('https://evil.test', ['https://evil.test'])).toBe(true);
+  });
+
+  it('opens a pane for a listed Origin while Host is localhost (as behind Caddy), and 403s any other', () => {
+    for (const [origin, ok] of [
+      ['https://glass.example.org', true],
+      ['https://evil.test', false],
+    ] as const) {
+      const r = relay();
+      const out: Buffer[] = [];
+      const s = new Duplex({
+        read() {},
+        write(chunk: Buffer, _e, cb) {
+          out.push(chunk);
+          cb();
+        },
+      });
+      handleKinoUpgrade(
+        { relay: r, sessionKey: undefined, now: () => clock, allowedOrigins: allow },
+        {
+          url: '/kino/ws',
+          headers: { 'sec-websocket-key': 'k', upgrade: 'websocket', host: 'localhost', origin },
+          socket: { remoteAddress: '198.51.100.9' },
+        } as never,
+        s,
+      );
+      const text = Buffer.concat(out).toString('latin1');
+      expect(text.includes('101 Switching')).toBe(ok);
+      expect(text.includes('403 Forbidden')).toBe(!ok);
+      expect(r.openPanes).toBe(ok ? 1 : 0);
+    }
   });
 });
-
 describe('token buckets', () => {
   it('never holds more than maxKeys keys', () => {
     let t = 0;

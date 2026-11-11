@@ -41,6 +41,9 @@ interface Watched {
   refreshTimer: ReturnType<typeof setInterval> | null;
   lastWindow: number;
   resyncTimer: ReturnType<typeof setTimeout> | null;
+  /** The latest hello and target_moved seen for this agent, replayed to a pane that joins later. */
+  hello: string | null;
+  moved: string | null;
 }
 
 export function controlledFeed(
@@ -80,6 +83,8 @@ export function controlledFeed(
   return {
     subscribe(agent, onMessage) {
       let w = watched.get(agent);
+      const replayHello = w?.hello ?? null;
+      const replayMoved = w?.moved ?? null;
       if (w === undefined) {
         w = {
           count: 0,
@@ -87,6 +92,8 @@ export function controlledFeed(
           refreshTimer: null,
           lastWindow: Date.now(),
           resyncTimer: null,
+          hello: null,
+          moved: null,
         };
         watched.set(agent, w);
         send('start', agent);
@@ -103,7 +110,22 @@ export function controlledFeed(
       }
       w.count++;
       const entry = w;
-      const unsubscribe = inner.subscribe(agent, onMessage);
+      const unsubscribe = inner.subscribe(agent, (json) => {
+        // Cheap prefix test first: only hello and target_moved are remembered.
+        if (json.includes('"hello"') || json.includes('"target_moved"')) {
+          try {
+            const type = (JSON.parse(json) as { type?: unknown }).type;
+            if (type === 'hello') entry.hello = json;
+            else if (type === 'target_moved') entry.moved = json;
+          } catch {
+            // not ours to judge: the relay validates every message
+          }
+        }
+        onMessage(json);
+      });
+      // The plugin does not repeat hello / target_moved for a target it already reads, so a joining pane gets the cache.
+      if (replayHello !== null) onMessage(replayHello);
+      if (replayMoved !== null) onMessage(replayMoved);
       let left = false;
       return () => {
         if (left) return;

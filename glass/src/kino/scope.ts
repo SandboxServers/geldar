@@ -51,6 +51,8 @@ export function sqlScopeStore(db: SqlClient): ScopeStore {
       };
     },
     async agent(agentId) {
+      // kino_agent_scope(NULL) answers for every agent: never call it for a missing or empty id.
+      if (typeof agentId !== 'string' || agentId.trim() === '') return null;
       const r = await db.query(`SELECT s.owner, s.public_camera FROM kino_agent_scope($1) s`, [
         agentId,
       ]);
@@ -67,7 +69,7 @@ export function sqlScopeStore(db: SqlClient): ScopeStore {
 /** Every agent with its scope, for the target picker. SELECT only, like the store above. */
 export async function listAgents(db: SqlClient): Promise<Array<AgentScope & { id: string }>> {
   const r = await db.query(
-    `SELECT s.agent_id, s.owner, s.public_camera FROM kino_agent_scope(NULL) s ORDER BY s.agent_id`,
+    `SELECT s.agent_id, s.owner, s.public_camera FROM kino_agent_list() s ORDER BY s.agent_id`,
     [],
   );
   return r.rows.map((row) => ({

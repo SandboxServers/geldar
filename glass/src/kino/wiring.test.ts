@@ -1,6 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GlassConfig } from '../config.ts';
 import { buildGlass, type GlassParts } from '../server.ts';
 import { KinoMetrics } from './metrics.ts';
@@ -31,11 +31,21 @@ async function listen(feed?: FeedSource): Promise<{ port: number }> {
   return { port: (parts.server.address() as AddressInfo).port };
 }
 
+beforeEach(() => {
+  vi.stubEnv('GELDAR_KINO_ALLOWED_ORIGINS', 'https://glass.example.test');
+});
+
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const p of built.splice(0)) p.close();
 });
 
 describe('Kino default off', () => {
+  it('refuses to build Kino with no allowed origin, naming the variable', () => {
+    vi.stubEnv('GELDAR_KINO_ALLOWED_ORIGINS', '');
+    expect(() => buildGlass(CONFIG, FEED)).toThrow(/GELDAR_KINO_ALLOWED_ORIGINS/);
+  });
+
   it('is off unless GELDAR_KINO_ENABLED is 1 or true', () => {
     expect(loadKinoEnv({}).enabled).toBe(false);
     expect(loadKinoEnv({ GELDAR_KINO_ENABLED: '0' }).enabled).toBe(false);
