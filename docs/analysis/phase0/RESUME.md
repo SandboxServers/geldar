@@ -35,6 +35,6 @@ Read this, then [README.md](README.md) (the ledger), [known-gaps.md](known-gaps.
 
 **Worktrees:** packet worktrees remain under `.claude/worktrees/` (never `git worktree prune`; do not touch `scriptorium-decisions`). Leftover folders from Phase 0 are owner items to clean up. Create worktrees from the repo root, not a subdirectory.
 
-**Next free decision number:** 0069 (0068 is prompt v4 and agent-visible text).
+**Next free decision number:** 0130 (Phase 1 blocks reserve 0081 to 0129; 0068 is prompt v4). **Phase 1 entry point:** [phase1/ledger.md](../phase1/ledger.md) and [phase1/packets/](../phase1/packets/).
 
 **Machine:** about 20 GB free after closing Firefox and ChatGPT; at most about six agents at once.
