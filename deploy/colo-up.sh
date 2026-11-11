@@ -14,12 +14,19 @@ load_release "$RELEASE_FILE"
 # Glass is part of the stack: its image comes from the manifest like the others (load_release already refused a
 # value that is not a digest reference).
 [ -n "${GELDAR_GLASS_IMAGE:-}" ] || die "release manifest has no GELDAR_GLASS_IMAGE; refusing"
+[ -n "${GELDAR_ADMIN_IMAGE:-}" ] || die "release manifest has no GELDAR_ADMIN_IMAGE; refusing"
 check_merged_config
 check_secrets
 fetch_bluemap
 record_release
 act dc pull
 act dc --profile admin pull admin
+# bluemap-web mounts the Paper volume's bluemap/web subpath (ruling R28), and a subpath mount fails when the directory is
+# missing. A one-shot compose run of the pinned admin service (project-scoped; it keeps the service's read-only root and
+# cap_drop ALL, adding back only the capabilities mkdir and chown need; the one volume is the project's Paper volume)
+# makes it and gives it to the service uid. mkdir -p and a chown of the two directories (not -R): a second run changes nothing.
+act dc run --rm --no-deps --user 0:0 --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER -v "${PROJECT}_paper-data:/data" \
+  --entrypoint sh admin -c "mkdir -p /data/bluemap/web && chown $GELDAR_SERVICE_UID:$GELDAR_SERVICE_UID /data/bluemap /data/bluemap/web"
 act dc up -d --wait postgres nats
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate
 act sh "$DEPLOY_DIR/colo-admin.sh" migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt
