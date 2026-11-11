@@ -36,6 +36,9 @@ export interface KinoRelayOptions {
   audit?: (entry: { identityHash: string | null; agentId: string; mode: string }) => void;
   /** Gauge hook for the open pane count. */
   onPanes?: (open: number) => void;
+  /** Metric hooks (K07): a refused or ended subscribe by reason, and feed bytes forwarded. */
+  onRefusal?: (reason: ByeReason) => void;
+  onBytes?: (bytes: number) => void;
 }
 
 export interface Pane {
@@ -77,6 +80,7 @@ export function parseClientMessage(text: string): Parsed {
 export class KinoRelay {
   private readonly panes = new Map<string, number>();
   private readonly cap: number;
+  private readonly live = new Set<(reason: ByeReason) => void>();
 
   private readonly o: KinoRelayOptions;
 
@@ -108,16 +112,21 @@ export class KinoRelay {
       done = true;
       stop?.();
       stop = null;
+      this.live.delete(end);
       const left = (this.panes.get(sessionKey) ?? 1) - 1;
       if (left <= 0) this.panes.delete(sessionKey);
       else this.panes.set(sessionKey, left);
       this.o.onPanes?.(this.openPanes);
     };
     const end = (reason: ByeReason): void => {
-      if (!done) conn.send(JSON.stringify({ type: 'bye', reason }));
+      if (!done) {
+        this.o.onRefusal?.(reason);
+        conn.send(JSON.stringify({ type: 'bye', reason }));
+      }
       release();
       conn.close();
     };
+    this.live.add(end);
     return {
       closed: release,
       message: async (text) => {
@@ -149,13 +158,21 @@ export class KinoRelay {
         stop?.();
         this.o.audit?.({ identityHash, agentId: msg.agent, mode: msg.mode });
         stop = this.o.feed.subscribe(msg.agent, (json) => {
-          if (!done) conn.send(json);
+          if (done) return;
+          this.o.onBytes?.(Buffer.byteLength(json));
+          conn.send(json);
         });
       },
     };
   }
 
+  /** Sends `bye` with the reason to every live pane and closes it (the kill switch going off). */
+  endAll(reason: ByeReason): void {
+    for (const end of [...this.live]) end(reason);
+  }
+
   private refuse(conn: KinoConn, reason: ByeReason): null {
+    this.o.onRefusal?.(reason);
     conn.send(JSON.stringify({ type: 'bye', reason }));
     conn.close();
     return null;

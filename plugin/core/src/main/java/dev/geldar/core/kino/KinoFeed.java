@@ -67,6 +67,15 @@ public final class KinoFeed {
         targets.clear();
     }
 
+    /** Config reload: false is the kill switch (bye to every target, publishing stops); true allows starts again. */
+    public void setEnabled(boolean enabled) {
+        if (!enabled) {
+            kill();
+        } else {
+            killed = false;
+        }
+    }
+
     /** Whether the agent is a current target; only targets are named in entity positions. */
     public boolean isTarget(String agentId) {
         return targets.containsKey(agentId);
