@@ -15,7 +15,8 @@ import { Pool, type PoolConfig } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { migrate, passwordStatement } from '../../tools/migrate/src/migrate.ts';
 import { scramVerifier } from '../../tools/migrate/src/scram.ts';
-import { getThought, listAgents, listReceipts, listThoughts } from '../src/query.ts';
+import { OPEN_POLICY, visibilityAt } from '../src/policy.ts';
+import { getThought, listAgents, listReceipts, listThoughts, thoughtsAfter } from '../src/query.ts';
 import { buildGlass, type GlassParts } from '../src/server.ts';
 
 const ENABLED = process.env.GELDAR_IT === '1';
@@ -104,6 +105,18 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
   let dbName = '';
   let admin: Pool | undefined;
   let glass: GlassParts | undefined;
+  /** A second Glass with the default public policy: living sovereign hidden, 60 s delay. */
+  let strict: GlassParts | undefined;
+  let strictPort = 0;
+  const deadId = `ag_it_dead_${suffix}`;
+  const houseId = `ag_it_house_${suffix}`;
+  const deadThought = `th_it_dead_${suffix}`;
+  const houseOld = `th_it_house_old_${suffix}`;
+  const houseNew = `th_it_house_new_${suffix}`;
+  const livingNew = `th_it_living_new_${suffix}`;
+  const actionOld = `ac_it_old_${suffix}`;
+  const actionNew = `ac_it_new_${suffix}`;
+  const actionLiving = `ac_it_living_${suffix}`;
   let applied: string[] = [];
   let port = 0;
 
@@ -151,9 +164,77 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
     glass = parts;
     await new Promise<void>((resolve) => parts.server.listen(0, '127.0.0.1', () => resolve()));
     port = (parts.server.address() as AddressInfo).port;
+    await seedStrictCases(admin);
+    const second = buildGlass({
+      host: '127.0.0.1',
+      port: 0,
+      pg: {
+        host: conn.host ?? '127.0.0.1',
+        port: Number(conn.port ?? 5432),
+        user: ROLE,
+        database: dbName,
+        password,
+      },
+      sseMaxClients: 2,
+      sseBufferFrames: 10,
+      ssePollMs: POLL_MS,
+      enabled: true,
+      delaySeconds: 60,
+      showLivingSovereign: false,
+      trustedProxies: [],
+      rateLimit: { perMinute: 600, burst: 200, maxClients: 1024 },
+    });
+    strict = second;
+    await new Promise<void>((resolve) => second.server.listen(0, '127.0.0.1', () => resolve()));
+    strictPort = (second.server.address() as AddressInfo).port;
   });
 
+  /** A dead sovereign agent, a house agent, and rows older and newer than the 60 s delay. */
+  async function seedStrictCases(db: Pool): Promise<void> {
+    const insertAgent = (id: string, mode: string, died: boolean) =>
+      db.query(
+        `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+           declared_model, model_config, tier, personality_seed, died_at, death_cause)
+         VALUES ($1, $1, 1, $1, 'phaseit', $2, $3, 'it-on', 'self-reported',
+           'declared:unverified', $2, 'seed-it', $4::timestamptz, $5)`,
+        [
+          id,
+          mode,
+          `it-owner-${suffix}`,
+          died ? new Date(Date.now() - 3_600_000).toISOString() : null,
+          died ? 'it' : null,
+        ],
+      );
+    await insertAgent(deadId, 'sovereign', true);
+    await insertAgent(houseId, 'headless', false);
+    const insertThought = (id: string, life: string, age: string) =>
+      db.query(
+        `INSERT INTO thoughts (thought_id, life_id, at, world_day, world_tick, wake_reason, parsed,
+           model_input, raw_output)
+         VALUES ($1, $2, now() - $3::interval, 1, 3, 'it', '{}'::jsonb, '["secret prompt"]'::jsonb,
+           'secret reply')`,
+        [id, life, age],
+      );
+    await insertThought(deadThought, deadId, '2 hours');
+    await insertThought(houseOld, houseId, '10 minutes');
+    await insertThought(houseNew, houseId, '0 seconds');
+    await insertThought(livingNew, lifeId, '10 minutes');
+    const insertReceipt = (action: string, life: string, age: string) =>
+      db.query(
+        `INSERT INTO receipts (receipt_id, action_id, life_id, kind, phase, item, count, credits, at)
+         VALUES ($1, $1, $2, 'it', 'committed', 'stone', 1, 2, now() - $3::interval)`,
+        [action, life, age],
+      );
+    await insertReceipt(actionOld, houseId, '10 minutes');
+    await insertReceipt(actionNew, houseId, '0 seconds');
+    await insertReceipt(actionLiving, lifeId, '10 minutes');
+  }
+
   afterAll(async () => {
+    strict?.hub.close();
+    strict?.server.close();
+    strict?.server.closeAllConnections();
+    await strict?.pool.end().catch(() => undefined);
     glass?.hub.close();
     glass?.server.close();
     glass?.server.closeAllConnections();
@@ -169,7 +250,7 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
   it('reads the granted tables and columns as geldar_glass through the query layer', async () => {
     const pool = glass?.pool;
     if (pool === undefined) throw new Error('glass not built');
-    const agents = await listAgents(pool);
+    const agents = await listAgents(pool, { shownUntil: null, showLivingSovereign: true });
     expect(agents.map((row) => row.agent_id)).toContain(lifeId);
     const thoughts = await listThoughts(
       pool,
@@ -315,5 +396,109 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
 
     stream.destroy();
     expect(await eventually(() => hub.stats().clients === 0, 2000)).toBe(true);
+  });
+
+  describe('with the default public policy (living sovereign hidden, 60 s delay)', () => {
+    /** One GET to the strict Glass; returns the status and the parsed JSON body. */
+    function getStrict(path: string): Promise<{ status: number; json: Record<string, unknown> }> {
+      return new Promise((resolve, reject) => {
+        const req = request({ host: '127.0.0.1', port: strictPort, path, method: 'GET' }, (res) => {
+          let body = '';
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => {
+            body += chunk;
+          });
+          res.on('end', () =>
+            resolve({
+              status: res.statusCode ?? 0,
+              json: JSON.parse(body) as Record<string, unknown>,
+            }),
+          );
+        });
+        req.on('error', reject);
+        req.end();
+      });
+    }
+
+    const idsOf = (rows: unknown, key: string): string[] =>
+      (rows as Record<string, unknown>[]).map((row) => String(row[key]));
+
+    it('lists the dead sovereign and the house agent, and not the living sovereign', async () => {
+      const reply = await getStrict('/api/agents');
+      const ids = idsOf(reply.json.agents, 'agent_id');
+      expect(ids).toContain(deadId);
+      expect(ids).toContain(houseId);
+      expect(ids).not.toContain(lifeId);
+    });
+
+    it('lists thoughts of a dead sovereign and an old house thought, not newer or living ones', async () => {
+      const ids = idsOf((await getStrict('/api/thoughts?limit=100')).json.thoughts, 'thought_id');
+      expect(ids).toContain(deadThought);
+      expect(ids).toContain(houseOld);
+      expect(ids).not.toContain(houseNew);
+      expect(ids).not.toContain(livingNew);
+      expect(ids).not.toContain(thoughtId);
+    });
+
+    it('serves a thought detail only for a shown row, and never the prompt or the raw reply', async () => {
+      for (const id of [deadThought, houseOld]) {
+        const reply = await getStrict(`/api/thoughts/${id}`);
+        expect(reply.status, id).toBe(200);
+        const thought = reply.json.thought as Record<string, unknown>;
+        expect(thought).not.toHaveProperty('model_input');
+        expect(thought).not.toHaveProperty('raw_output');
+      }
+      for (const id of [houseNew, livingNew]) {
+        expect((await getStrict(`/api/thoughts/${id}`)).status, id).toBe(404);
+      }
+    });
+
+    it('shows the receipt of a house agent after the delay, and hides the newer and the living one', async () => {
+      const receipts = async (action: string) =>
+        (await getStrict(`/api/receipts?action_id=${action}`)).json.receipts as unknown[];
+      expect(await receipts(actionOld)).toHaveLength(1);
+      expect(await receipts(actionNew)).toHaveLength(0);
+      expect(await receipts(actionLiving)).toHaveLength(0);
+    });
+
+    it('thoughtsAfter (the stream query) applies the same sovereign and delay rules', async () => {
+      const pool = strict?.pool;
+      if (pool === undefined) throw new Error('glass not built');
+      const rows = await thoughtsAfter(
+        pool,
+        { at: '1970-01-01 00:00:00+00', id: '' },
+        100,
+        visibilityAt({ ...OPEN_POLICY, delaySeconds: 60, showLivingSovereign: false }),
+      );
+      const ids = idsOf(rows, 'thought_id');
+      expect(ids).toContain(deadThought);
+      expect(ids).toContain(houseOld);
+      expect(ids).not.toContain(houseNew);
+      expect(ids).not.toContain(livingNew);
+    });
+
+    it('getThought, thoughtsAfter and listReceipts respect a cut-off before and after the row', async () => {
+      const pool = strict?.pool;
+      if (pool === undefined) throw new Error('glass not built');
+      const at = (await admin?.query(`SELECT at FROM thoughts WHERE thought_id = $1`, [houseNew]))
+        ?.rows[0]?.at as Date;
+      const before = {
+        shownUntil: new Date(at.getTime() - 1000).toISOString(),
+        showLivingSovereign: false,
+      };
+      const after = {
+        shownUntil: new Date(at.getTime() + 1000).toISOString(),
+        showLivingSovereign: false,
+      };
+      const start = { at: '1970-01-01 00:00:00+00', id: '' };
+      expect(await getThought(pool, houseNew, before)).toBeNull();
+      expect(await getThought(pool, houseNew, after)).not.toBeNull();
+      expect(idsOf(await thoughtsAfter(pool, start, 100, before), 'thought_id')).not.toContain(
+        houseNew,
+      );
+      expect(idsOf(await thoughtsAfter(pool, start, 100, after), 'thought_id')).toContain(houseNew);
+      expect(await listReceipts(pool, actionNew, before)).toHaveLength(0);
+      expect(await listReceipts(pool, actionNew, after)).toHaveLength(1);
+    });
   });
 });
