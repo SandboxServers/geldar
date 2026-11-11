@@ -10,7 +10,7 @@ import type { FrontDoor } from './front.ts';
 import { createFrontDoor } from './front.ts';
 
 const PEPPER = new TextEncoder().encode('handshake-owner-pepper-0123456789abcd');
-const TOKEN_A = 'gmcp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
 
 const CONFIG = {
   bind: '127.0.0.1',

@@ -117,7 +117,9 @@ describe('scoping and limits', () => {
     for (let i = 0; i < FAILED_AUTH_PER_MINUTE + 1; i += 1) {
       const reply = await rig.send('/p/aa', {
         body: INIT,
-        headers: { Authorization: 'Bearer gmcp-f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0' },
+        headers: {
+          Authorization: `Bearer gmcp-${'f0'.repeat(32)}`,
+        },
       });
       statuses.push(reply.status);
     }
@@ -132,7 +134,12 @@ describe('scoping and limits', () => {
       lookups += 1;
       return lookup(hash, nowMs);
     };
-    const wrong = { body: INIT, headers: { Authorization: 'Bearer gmcp-f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0' } };
+    const wrong = {
+      body: INIT,
+      headers: {
+        Authorization: `Bearer gmcp-${'f0'.repeat(32)}`,
+      },
+    };
     for (let i = 0; i < FAILED_AUTH_PER_MINUTE; i += 1) await rig.send('/p/aa', wrong);
     // The refused token is remembered after its first lookup, so the repeats cost no lookup at all.
     expect(lookups).toBe(1);

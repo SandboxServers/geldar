@@ -14,8 +14,8 @@ import { createFrontDoor } from './front.ts';
 const HANDSHAKE_PER_MINUTE = 3;
 const CALLS_PER_MINUTE = 60;
 const PEPPER = new TextEncoder().encode('handshake-test-pepper-0123456789ab');
-const TOKEN_A = 'gmcp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const TOKEN_B = 'gmcp-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
+const TOKEN_B = `gmcp-${'bb'.repeat(32)}`;
 const NOW = 1_700_000_000_000;
 
 const CONFIG = {

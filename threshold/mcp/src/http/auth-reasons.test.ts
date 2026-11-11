@@ -17,11 +17,11 @@ import { createFrontDoor } from './front.ts';
 const PEPPER = new TextEncoder().encode('auth-reasons-test-pepper-0123456789');
 const NOW = 1_000_000;
 const FAR = NOW + 1_000_000_000;
-const TOKEN_A = 'gmcp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const TOKEN_R = 'gmcp-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc';
-const TOKEN_X = 'gmcp-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
-const TOKEN_P = 'gmcp-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-const UNKNOWN = 'gmcp-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
+const TOKEN_R = `gmcp-${'cc'.repeat(32)}`;
+const TOKEN_X = `gmcp-${'dd'.repeat(32)}`;
+const TOKEN_P = `gmcp-${'ee'.repeat(32)}`;
+const UNKNOWN = `gmcp-${'ff'.repeat(32)}`;
 // A canary the log scan must never find, in whole or in any prefix of 12 characters or more.
 const CANARY = 'canary-7Qz9xLm2Vb4nKp8sWd1';
 const INIT = JSON.stringify({

@@ -7,7 +7,7 @@ import type { FrontDoor } from './front.ts';
 import { createFrontDoor } from './front.ts';
 
 const PEPPER = new TextEncoder().encode('front-unavailable-pepper-0123456789ab');
-const TOKEN_A = 'gmcp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
 const DB_DETAIL = 'connect ECONNREFUSED db-internal.example:5432';
 
 const open: RateLimiter = {

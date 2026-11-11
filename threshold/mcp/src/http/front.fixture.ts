@@ -18,8 +18,8 @@ export const MAX_OPEN_PER_PLAYER = 4;
 export const BODY_LIMIT = 64 * 1024;
 
 export const PEPPER = new TextEncoder().encode('front-door-test-pepper-0123456789');
-export const TOKEN_A = 'gmcp-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-export const TOKEN_B = 'gmcp-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+export const TOKEN_A = `gmcp-${'aa'.repeat(32)}`;
+export const TOKEN_B = `gmcp-${'bb'.repeat(32)}`;
 // A canary the log scan must never find, in whole or in any prefix of 12 characters or more.
 export const CANARY = 'canary-7Qz9xLm2Vb4nKp8sWd1';
 
