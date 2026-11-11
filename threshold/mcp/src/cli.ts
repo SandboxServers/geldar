@@ -108,7 +108,7 @@ export function runCli(
       try {
         running = await (deps.start ?? startMcp)(config, deps.ports);
       } catch (error) {
-        log({ event: 'startup_failed', error: (error as Error).name });
+        log({ event: 'startup_failed', ...startupFailureFields(error) });
         return finish(EXIT.failed);
       }
       const shutdown = createShutdown({
@@ -453,6 +453,31 @@ function errorFields(error: unknown): Record<string, string | number> {
   if (!(error instanceof Error)) return { error: 'unknown' };
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' || typeof code === 'number'
+    ? { error: error.name, code }
+    : { error: error.name };
+}
+
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+const SHORT_CODE = /^[A-Z0-9_]{1,32}$/;
+/** 28000 and 28P01: the role cannot log in, because sql/0002 creates geldar_mcp NOLOGIN with no password. */
+const ROLE_PASSWORD_STATES = new Set(['28000', '28P01']);
+const ROLE_PASSWORD_HINT =
+  'the geldar_mcp role has no login password: run the set-role-password step (deploy/colo-admin.sh migrate)';
+
+/**
+ * The redacted reason a startup failure logs. A Postgres error (its `code` is a five-character SQLSTATE)
+ * logs that code and never its message; 28000 and 28P01 add the set-role-password hint. Any other error
+ * logs its name and, when it has one, a short upper-case code such as ECONNREFUSED. Messages are never logged.
+ */
+export function startupFailureFields(error: unknown): Record<string, string> {
+  if (!(error instanceof Error)) return { error: 'unknown' };
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'string' && SQLSTATE.test(code)) {
+    return ROLE_PASSWORD_STATES.has(code)
+      ? { error: error.name, code, hint: ROLE_PASSWORD_HINT }
+      : { error: error.name, code };
+  }
+  return typeof code === 'string' && SHORT_CODE.test(code)
     ? { error: error.name, code }
     : { error: error.name };
 }
