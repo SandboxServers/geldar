@@ -47,3 +47,14 @@ export function bookSubject(shard: string, lifeId: string): string {
 
 /** The KV bucket of presence records, one key per life id (`PresenceRecord`, WM-01 sovereign). */
 export const PRESENCE_BUCKET = 'geldar-presence';
+
+/**
+ * Where the Kino feed plugin publishes the feed messages of one agent (kino-feed.schema.json):
+ * `geldar.<shard>.kino.<agent_id>.feed`. Five tokens, so outside the sink's `geldar.*.*` filter.
+ */
+export function kinoFeedSubject(shard: string, agentId: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  if (!/^[a-z][a-z0-9_]{0,63}$/.test(agentId))
+    throw new Error(`invalid agent id for a subject: ${agentId}`);
+  return `geldar.${shard}.kino.${agentId}.feed`;
+}
