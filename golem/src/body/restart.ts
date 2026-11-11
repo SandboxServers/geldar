@@ -1,6 +1,7 @@
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
+import { golemNatsAuth } from '../nats-credentials.ts';
 import {
   type BodyKv,
   CHECKPOINT_BUCKET,
@@ -95,6 +96,7 @@ export async function openRestartKv(
     name: 'golem-restart',
     timeout: CONNECT_TIMEOUT_MS,
     reconnectDelayHandler: () => Math.min(1_000 * 2 ** tries++, 15_000),
+    ...golemNatsAuth(),
   });
   void (async () => {
     for await (const status of nc.status()) if (status.type === 'reconnect') tries = 0;
