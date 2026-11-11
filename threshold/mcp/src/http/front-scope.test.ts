@@ -159,7 +159,11 @@ describe('scoping and limits', () => {
       headers: { 'mcp-session-id': sid },
     });
     expect(fifth.status).toBe(429);
-    expect(fifth.text).toContain('too_many_open_requests');
+    // The open-request cap answers the one public 429 body, so it cannot be told from any other gate.
+    expect(fifth.text).toBe(
+      '{"error":{"code":"rate_limited","message":"Too many requests"},"retryAfter":1}',
+    );
+    expect(fifth.headers['retry-after']).toBe('1');
     rig.store.revoke('tok-a');
     await Promise.all(open);
   });

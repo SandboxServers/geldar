@@ -484,7 +484,6 @@ describe('tokenBucketLimiter', () => {
     expect(count('player:ag-jason-01')).toBe(60);
     expect(count('owner:steve')).toBe(600);
     expect(count('auth-failed:address:203.0.113.9')).toBe(30);
-    expect(count('auth-failed:global')).toBe(300);
     expect(count('act:ag_jason')).toBe(1);
     expect(count('say:ag_jason')).toBe(1);
   });

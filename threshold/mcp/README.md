@@ -87,6 +87,14 @@ with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` 
 `sovereign.mcp.client_ip_header`. The Caddy deployment sets the header to `x-geldar-client-ip`
 and names Caddy's container address as the trusted proxy; without a trusted proxy the header is
 never read. The default header is `x-geldar-client-ip` (decision 0090); `cf-connecting-ip` is not used.
+Caddy must set that header on every request: a trusted proxy that sends none (or a malformed one)
+puts every client on the proxy's own address, so they share one rate-limit bucket and one failed-auth
+bucket. The server logs that case at most once a minute.
+
+The MCP kill switch (`public.kill_switch: true`) takes effect on restart: it is read from the shard
+file at start, and nothing flips it in a running process. The immediate cut is
+`deploy/colo-public.sh off mcp` (swaps the Caddy site to the 503 snippet and reloads; open streams
+close within the proxy's `stream_close_delay`).
 
 The shard's `sovereign.mcp` limits are: `wait_cap_seconds` (wait's clamp), `max_body_bytes`
 (request body), `max_result_bytes` (tool result after trimming), and `presence.lease_seconds` and

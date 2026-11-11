@@ -6,6 +6,8 @@ import { type LookDeps, lookTool } from './look.ts';
 
 /** Internal identifiers the look output must never carry, at any depth (decision 0095). */
 const INTERNAL_KEYS = ['shard', 'snapshot_id', 'body_generation'];
+/** A key a later Body might add (an observer or watch flag): the contract does not know it. */
+const UNKNOWN_KEY = 'observer_flag';
 
 /** Every object key in a JSON-like value, depth first. */
 function keysDeep(value: unknown): string[] {
@@ -34,6 +36,13 @@ function bodySnapshot(): Snapshot {
     budget: 99,
     daysSinceSleep: 0,
   });
+  // The same keys, and one the contract does not know, planted inside self and surroundings too.
+  const planted = {
+    ...Object.fromEntries(INTERNAL_KEYS.map((key) => [key, 'x'])),
+    [UNKNOWN_KEY]: 1,
+  };
+  Object.assign(snapshot.self, planted);
+  Object.assign(snapshot.surroundings, planted);
   return Object.assign(snapshot, {
     shard: 'phase0',
     snapshot_id: 'sn_0000000000000001',
@@ -60,7 +69,7 @@ describe('lookTool', () => {
     const result = await lookTool(lookDeps(bodySnapshot()), CALL);
     const keys = keysDeep(result);
 
-    for (const key of INTERNAL_KEYS) {
+    for (const key of [...INTERNAL_KEYS, UNKNOWN_KEY]) {
       expect(keys, key).not.toContain(key);
     }
   });

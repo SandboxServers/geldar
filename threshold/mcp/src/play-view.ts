@@ -56,14 +56,35 @@ export function toPlayView(snapshot: Snapshot, options: PlayViewOptions): PlayVi
       time_of_day: snapshot.world_time.time_of_day,
       weather: snapshot.world_time.weather,
     },
+    // Both objects are built field by field: a key the Body adds later does not reach the agent.
     self: {
-      ...snapshot.self,
+      position: snapshot.self.position,
+      health: snapshot.self.health,
+      hunger: snapshot.self.hunger,
+      armor: snapshot.self.armor,
+      held_item: snapshot.self.held_item,
+      inventory: snapshot.self.inventory,
+      effects: snapshot.self.effects,
       budget_remaining_thoughts: options.budget,
       days_since_sleep: options.daysSinceSleep,
+      ...(snapshot.self.unlocked_recipes === undefined
+        ? {}
+        : { unlocked_recipes: snapshot.self.unlocked_recipes }),
     },
     surroundings: {
-      ...snapshot.surroundings,
+      blocks_summary: snapshot.surroundings.blocks_summary,
+      ...(snapshot.surroundings.standing_on === undefined
+        ? {}
+        : { standing_on: snapshot.surroundings.standing_on }),
+      ...(snapshot.surroundings.block_above_feet === undefined
+        ? {}
+        : { block_above_feet: snapshot.surroundings.block_above_feet }),
+      ...(snapshot.surroundings.enclosed === undefined
+        ? {}
+        : { enclosed: snapshot.surroundings.enclosed }),
       notable_blocks: notableBlocks,
+      entities: snapshot.surroundings.entities,
+      agents: snapshot.surroundings.agents,
     },
     heard: [],
     events_since_last_thought: [],
