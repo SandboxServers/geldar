@@ -103,11 +103,18 @@ function Read-ColoConfig([string] $Path = (Join-Path $Root 'shards/colo.yaml')) 
   $toMiB = { param([string] $size) if ($size -match '^([0-9]+)g$') { [double] $Matches[1] * 1024 } else { [double] ($size -replace 'm$', '') } }
   $budgetCpu = 0.0
   $budgetMiB = 0.0
+  # Each budget variable appears more than once per service (memory and memswap_limit both read _MEM), so each
+  # service's CPUS and MEM is counted once, at its first reference.
   $services = @{}
+  $cpuSeen = @{}
+  $memSeen = @{}
   foreach ($match in [regex]::Matches((Get-Content -Raw (Join-Path $Root 'compose/colo.yml')), 'GELDAR_COLO_([A-Z_]+)_(CPUS|MEM):-([0-9.]+[mg]?)\}')) {
-    $services[$match.Groups[1].Value] = $true
-    if ($match.Groups[2].Value -eq 'CPUS') { $budgetCpu += [double] $match.Groups[3].Value }
-    else { $budgetMiB += & $toMiB $match.Groups[3].Value }
+    $service = $match.Groups[1].Value
+    $services[$service] = $true
+    if ($match.Groups[2].Value -eq 'CPUS') {
+      if (-not $cpuSeen.ContainsKey($service)) { $cpuSeen[$service] = $true; $budgetCpu += [double] $match.Groups[3].Value }
+    }
+    elseif (-not $memSeen.ContainsKey($service)) { $memSeen[$service] = $true; $budgetMiB += & $toMiB $match.Groups[3].Value }
   }
   if ($services.Count -eq 0) { throw "compose/colo.yml has no per-service GELDAR_COLO_<SERVICE>_CPUS/_MEM budgets to check the total against" }
   if ([double] $cpu -lt $budgetCpu) {

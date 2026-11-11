@@ -39,7 +39,9 @@ describe('geldar.ps1 colo config: static wiring', () => {
   it('is called from Invoke-Shard up for colo, before anything starts', () => {
     const shard = functionBody('Invoke-Shard');
     expect(shard).toMatch(/if \(\$shard -eq 'colo'\) \{[\s\S]*\$null = Read-ColoConfig/);
-    expect(shard.indexOf('$null = Read-ColoConfig')).toBeLessThan(shard.indexOf("'start shard"));
+    expect(shard.indexOf('$null = Read-ColoConfig')).toBeLessThan(
+      shard.indexOf('start shard $shard'),
+    );
   });
 
   it('no longer exports the limits: compose/colo.yml holds the per-service budgets as literals', () => {
@@ -63,14 +65,27 @@ describe('geldar.ps1 colo config: static wiring', () => {
 /** The per-service budgets literal in compose/colo.yml, and the totals in shards/colo.yaml, read without pwsh. */
 function budgets(): { cpus: number; memMiB: number; services: string[] } {
   const compose = readFileSync(join(ROOT, 'compose', 'colo.yml'), 'utf8');
+  // memory and memswap_limit both read _MEM, so each service's CPUS and MEM is counted once, at its first reference.
   const services = new Set<string>();
+  const cpuSeen = new Set<string>();
+  const memSeen = new Set<string>();
   let cpus = 0;
   let memMiB = 0;
   for (const match of compose.matchAll(/GELDAR_COLO_([A-Z_]+)_(CPUS|MEM):-([0-9.]+[mg]?)\}/g)) {
-    services.add(match[1] ?? '');
+    const service = match[1] ?? '';
+    services.add(service);
     const value = match[3] ?? '';
-    if (match[2] === 'CPUS') cpus += Number(value);
-    else memMiB += value.endsWith('g') ? Number(value.slice(0, -1)) * 1024 : Number(value.slice(0, -1));
+    if (match[2] === 'CPUS') {
+      if (!cpuSeen.has(service)) {
+        cpuSeen.add(service);
+        cpus += Number(value);
+      }
+    } else if (!memSeen.has(service)) {
+      memSeen.add(service);
+      memMiB += value.endsWith('g')
+        ? Number(value.slice(0, -1)) * 1024
+        : Number(value.slice(0, -1));
+    }
   }
   return { cpus, memMiB, services: [...services] };
 }
