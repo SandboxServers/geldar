@@ -488,6 +488,28 @@ export interface PlayWorldTime {
   weather: "clear" | "rain" | "thunder";
 }
 
+export interface PublicUnauthenticatedError {
+  error: {
+    code: "unauthenticated";
+    message: "Unauthorized";
+  };
+}
+
+export interface PublicRateLimitedError {
+  error: {
+    code: "rate_limited";
+    message: "Too many requests";
+  };
+  retryAfter: number;
+}
+
+export interface PublicKillSwitchError {
+  error: {
+    code: "unavailable";
+    message: "Service unavailable";
+  };
+}
+
 export interface LookInput {}
 
 export interface LookResult {

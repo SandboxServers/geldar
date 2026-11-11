@@ -1,6 +1,6 @@
 # 0053. The sovereign MCP is loopback-only now; a public name through an outbound tunnel waits for the colo move
 
-- Status: Accepted (owner ruling, 2026-11-09: loopback first; owner may revise)
+- Status: Superseded by 0071 (2026-11-10)
 - Date: 2026-11-10
 - Spec: 5.15 (the sovereign MCP that the harnesses reach); decision 0052; Wave M packet WM-10 and its correction 1
 
