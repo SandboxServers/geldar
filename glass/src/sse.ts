@@ -2,6 +2,8 @@
  * The thought stream over Server-Sent Events. One shared poll reads new thoughts for every client,
  * so the database is queried once per tick however many humans are watching. Limits:
  *  - at most `maxClients` open streams; the next one is refused (the caller sends 503);
+ *  - at most `perClient` open streams for one client key (the rate limiter's key);
+ *  - a stream whose socket stays full for more than one heartbeat period is ended;
  *  - at most `bufferFrames` queued frames per client; a slow client loses its oldest frame;
  *  - one heartbeat comment per `heartbeatMs` per client, so proxies keep the stream open;
  *  - the timers run only while a client is attached, and the poll never overlaps itself.
@@ -11,6 +13,8 @@ import type { Row, ThoughtCursor } from './query.ts';
 
 export interface SseOptions {
   maxClients: number;
+  /** Most open streams for one client key; the next one is refused. Left out: no per-client cap. */
+  perClient?: number;
   bufferFrames: number;
   pollMs: number;
   heartbeatMs: number;
@@ -38,8 +42,12 @@ export interface SseStats {
 
 interface Client {
   res: ServerResponse;
+  /** The client key the per-client cap counts (the rate limiter's key). */
+  key: string;
   queue: string[];
   waiting: boolean;
+  /** When `waiting` last became true, in epoch milliseconds. */
+  waitingSince: number;
   closed: boolean;
 }
 
@@ -63,6 +71,7 @@ function thoughtFrame(row: Row): string {
 
 export class SseHub {
   private readonly clients = new Set<Client>();
+  private readonly perKey = new Map<string, number>();
   private readonly counters = { delivered: 0, dropped: 0, rejected: 0, polls: 0, pollErrors: 0 };
   private cursor: ThoughtCursor | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -82,13 +91,15 @@ export class SseHub {
    * Opens a stream on `res`. Returns false, and writes nothing, when the cap is reached. The
    * caller has set the response headers that apply to every response.
    */
-  attach(res: ServerResponse): boolean {
-    if (this.clients.size >= this.options.maxClients) {
+  attach(res: ServerResponse, key = ''): boolean {
+    const perClient = this.options.perClient ?? Number.POSITIVE_INFINITY;
+    if (this.clients.size >= this.options.maxClients || (this.perKey.get(key) ?? 0) >= perClient) {
       this.counters.rejected += 1;
       return false;
     }
-    const client: Client = { res, queue: [], waiting: false, closed: false };
+    const client: Client = { res, key, queue: [], waiting: false, waitingSince: 0, closed: false };
     this.clients.add(client);
+    this.perKey.set(key, (this.perKey.get(key) ?? 0) + 1);
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-store',
@@ -133,6 +144,9 @@ export class SseHub {
     if (!this.clients.delete(client)) return;
     client.closed = true;
     client.queue.length = 0;
+    const left = (this.perKey.get(client.key) ?? 1) - 1;
+    if (left > 0) this.perKey.set(client.key, left);
+    else this.perKey.delete(client.key);
     if (this.clients.size === 0) this.stop();
   }
 
@@ -174,7 +188,19 @@ export class SseHub {
       this.close();
       return;
     }
+    this.endStalled();
     this.broadcast(': heartbeat\n\n');
+  }
+
+  /** A client whose socket has been full for longer than one heartbeat period is cut off. */
+  private endStalled(): void {
+    const now = Date.now();
+    for (const client of [...this.clients]) {
+      if (client.waiting && now - client.waitingSince > this.options.heartbeatMs) {
+        this.detach(client);
+        client.res.destroy();
+      }
+    }
   }
 
   private broadcast(frame: string): void {
@@ -195,6 +221,7 @@ export class SseHub {
       this.counters.delivered += 1;
       if (!client.res.write(frame)) {
         client.waiting = true;
+        client.waitingSince = Date.now();
         client.res.once('drain', () => {
           client.waiting = false;
           this.flush(client);

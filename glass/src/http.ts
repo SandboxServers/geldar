@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
-import { clientAddress } from './guard.ts';
+import { clientAddress, clientKey } from './guard.ts';
 import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
@@ -155,6 +155,7 @@ async function serveRoute(
   res: ServerResponse,
   deps: GlassHandlerDeps,
   policy: PublicPolicy,
+  client: string,
 ): Promise<void> {
   if (name === 'agents') {
     sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
@@ -186,7 +187,7 @@ async function serveRoute(
     sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
     return;
   }
-  if (!deps.hub.attach(res)) sendJson(res, 503, { error: 'too many streams' });
+  if (!deps.hub.attach(res, client)) sendJson(res, 503, { error: 'too many streams' });
 }
 
 /** The Host values Glass answers to. A name that another site controls is not one of them. */
@@ -224,8 +225,9 @@ export function createHandler(deps: GlassHandlerDeps) {
       sendJson(res, 413, { error: 'request body is too large' });
       return;
     }
+    const client = clientKey(clientAddress(req, policy.trustedProxies));
     if (policy.limiter !== null) {
-      const verdict = policy.limiter.take(clientAddress(req, policy.trustedProxies));
+      const verdict = policy.limiter.take(client);
       if (!verdict.allowed) {
         res.setHeader('Retry-After', String(verdict.retryAfter));
         sendJson(res, 429, {
@@ -235,10 +237,12 @@ export function createHandler(deps: GlassHandlerDeps) {
         return;
       }
     }
+    // HEAD is a GET without a body; Node drops the body bytes of a HEAD response.
+    const readMethod = req.method === 'GET' || req.method === 'HEAD';
     const file = STATIC_FILES.get(pathOf(req.url));
     if (file !== undefined) {
-      if (req.method !== 'GET') {
-        res.setHeader('Allow', 'GET');
+      if (!readMethod) {
+        res.setHeader('Allow', 'GET, HEAD');
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
@@ -246,18 +250,27 @@ export function createHandler(deps: GlassHandlerDeps) {
       res.end(file.body);
       return;
     }
-    const route = resolveRoute(req.method, req.url);
+    const route = resolveRoute(req.method === 'HEAD' ? 'GET' : req.method, req.url);
     if (route.status === 'not-found') {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
     if (route.status === 'method-not-allowed') {
-      res.setHeader('Allow', route.allow.join(', '));
+      res.setHeader('Allow', [...route.allow, 'HEAD'].join(', '));
       sendJson(res, 405, { error: 'method not allowed' });
       return;
     }
+    if (req.method === 'HEAD' && route.name === 'stream') {
+      // A HEAD never opens a stream: it gets the stream's headers and no body.
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      res.end();
+      return;
+    }
     try {
-      await serveRoute(route.name, route.params, route.query, res, deps, policy);
+      await serveRoute(route.name, route.params, route.query, res, deps, policy, client);
     } catch (err) {
       if (err instanceof BadRequest) {
         sendJson(res, 400, { error: err.message });

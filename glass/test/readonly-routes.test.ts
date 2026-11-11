@@ -49,7 +49,7 @@ describe('the Glass read-only route contract', () => {
       for (const method of WRITE_METHODS) {
         const reply = await send(port, { method, path, host: `127.0.0.1:${port}` });
         expect(reply.status, `${method} ${path}`).toBe(405);
-        expect(reply.headers.allow, `${method} ${path}`).toBe('GET');
+        expect(reply.headers.allow, `${method} ${path}`).toBe('GET, HEAD');
       }
     }
     expect(running.recorder.statements).toEqual([]);

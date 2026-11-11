@@ -14,6 +14,18 @@ const STREAM_BATCH_ROWS = 100;
 /** A connect that hangs longer than this fails, so a poll can never wait on it forever. */
 const CONNECT_TIMEOUT_MS = 5_000;
 
+/** Time a client has to send its request headers; a slow-header (slowloris) connection is closed after it. */
+export const HEADERS_TIMEOUT_MS = 10_000;
+
+/** Time a client has to send the whole request. Glass routes take no body, so this is short. */
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+/** How long an idle keep-alive connection stays open (Caddy reuses its connection within this). */
+export const KEEP_ALIVE_TIMEOUT_MS = 5_000;
+
+/** Most open connections at once; SSE streams are capped lower, so this leaves room for the API. */
+export const MAX_CONNECTIONS = 256;
+
 export interface GlassParts {
   server: Server;
   hub: SseHub;
@@ -57,6 +69,7 @@ export function buildGlass(config: GlassConfig): GlassParts {
   };
   const hub = new SseHub({
     maxClients: config.sseMaxClients,
+    perClient: config.ssePerClient ?? 2,
     bufferFrames: config.sseBufferFrames,
     pollMs: config.ssePollMs,
     heartbeatMs: HEARTBEAT_MS,
@@ -66,6 +79,10 @@ export function buildGlass(config: GlassConfig): GlassParts {
     log: (entry) => console.log(JSON.stringify(entry)),
   });
   const server = createServer(createHandler({ db: pool, hub, policy }));
+  server.headersTimeout = HEADERS_TIMEOUT_MS;
+  server.requestTimeout = REQUEST_TIMEOUT_MS;
+  server.keepAliveTimeout = KEEP_ALIVE_TIMEOUT_MS;
+  server.maxConnections = MAX_CONNECTIONS;
   let closed = false;
   const close = (): void => {
     if (closed) return;
