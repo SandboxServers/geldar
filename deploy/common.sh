@@ -50,16 +50,42 @@ act() {
 
 # Every compose call names the project, so it can only reach geldar-colo containers, volumes and networks.
 dc() {
-  if [ -n "$EXTRA_OVERLAY" ]; then
+  public_overlay
+  if [ -n "$PUBLIC_OVERLAY" ] && [ -n "$EXTRA_OVERLAY" ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$PUBLIC_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
+  elif [ -n "$PUBLIC_OVERLAY" ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$PUBLIC_OVERLAY" "$@"
+  elif [ -n "$EXTRA_OVERLAY" ]; then
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" -f "$EXTRA_OVERLAY" "$@"
   else
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$SECRETS_OVERLAY" -f "$NATS_OVERLAY" "$@"
   fi
 }
 
+# The public Minecraft port overlay (compose/colo-public.yml) is merged only when the node env sets both
+# GELDAR_MC_BIND and GELDAR_MC_PORT. Exactly one set is refused, and so is a wildcard bind: the bind must be the node's
+# own interface address. Sets PUBLIC_OVERLAY (empty when the overlay is off). No address is kept in the repo.
+public_overlay() {
+  PUBLIC_OVERLAY=
+  bind=${GELDAR_MC_BIND:-}
+  port=${GELDAR_MC_PORT:-}
+  if [ -z "$bind" ] && [ -z "$port" ]; then return 0; fi
+  [ -n "$bind" ] || die "GELDAR_MC_PORT is set but GELDAR_MC_BIND is not; set both or neither (deploy/README.md)"
+  [ -n "$port" ] || die "GELDAR_MC_BIND is set but GELDAR_MC_PORT is not; set both or neither (deploy/README.md)"
+  case $bind in
+    0.0.0.0 | '::' | '[::]' | '0:0:0:0:0:0:0:0') die "GELDAR_MC_BIND is a wildcard address; it must be the node's own interface address" ;;
+  esac
+  case $port in
+    '' | *[!0-9]*) die "GELDAR_MC_PORT must be a number" ;;
+  esac
+  PUBLIC_OVERLAY=$(dirname "$COMPOSE_FILE")/colo-public.yml
+  [ -f "$PUBLIC_OVERLAY" ] || die "public overlay not found: $PUBLIC_OVERLAY"
+}
+
 plan_header() {
   say "project: $PROJECT"
-  say "compose: $COMPOSE_FILE (+ $SECRETS_OVERLAY + $NATS_OVERLAY${EXTRA_OVERLAY:+ + $EXTRA_OVERLAY})"
+  public_overlay
+  say "compose: $COMPOSE_FILE (+ $SECRETS_OVERLAY + $NATS_OVERLAY${PUBLIC_OVERLAY:+ + $PUBLIC_OVERLAY}${EXTRA_OVERLAY:+ + $EXTRA_OVERLAY})"
   say "secrets dir: $GELDAR_SECRETS_DIR; release manifest: $RELEASE_FILE; state: $STATE_DIR"
   if [ "$DRY_RUN" = 1 ]; then say "DEPLOY_DRY_RUN=1: read-only steps only"; fi
 }

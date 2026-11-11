@@ -36,7 +36,9 @@ const SECRET_FILES = [...SECRETS.map(([, f]) => f), 'nats-auth.conf'];
 const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
 const MIND = `registry.example.invalid/geldar/mind@sha256:${'2'.repeat(64)}`;
 const ADMIN = `registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}`;
-const RELEASE = `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\n`;
+const GLASS = `registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}`;
+const RELEASE = `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\nGELDAR_GLASS_IMAGE=${GLASS}\n`;
+const GLASS_LOGIN_STEP = / run --rm admin migrate --set-role-password geldar_glass /;
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -203,6 +205,11 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     expect(migrate).toBeGreaterThan(natsUp);
     expect(roleLogin).toBeGreaterThan(migrate);
     expect(fullUp).toBeGreaterThan(roleLogin);
+    // The glass login runs after the mcp one, before the full core.
+    const glassLogin = at(GLASS_LOGIN_STEP);
+    expect(glassLogin).toBeGreaterThan(roleLogin);
+    expect(fullUp).toBeGreaterThan(glassLogin);
+    expect(log[glassLogin]).toContain('--password-file /run/secrets/postgres-glass.txt');
     expect(log[log.length - 1]).toMatch(/ up -d --wait$/);
   });
 
