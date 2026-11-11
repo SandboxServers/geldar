@@ -97,13 +97,13 @@ plan_header
 say "admin subcommand: $cmd (one-shot container, profile admin, decision 0133)"
 need docker
 check_prereqs
-check_secrets
 load_release "$RELEASE_FILE"
 [ -n "${GELDAR_ADMIN_IMAGE:-}" ] || die "the release manifest has no GELDAR_ADMIN_IMAGE; pin the admin image by digest"
 if [ "$cmd" = token-mint ]; then
   tokens_checks
 fi
 check_merged_config
+check_secrets
 
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*"

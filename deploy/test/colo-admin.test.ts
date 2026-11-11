@@ -111,7 +111,11 @@ function fixture(): Fixture {
   const releaseFile = join(dir, 'release.env');
   writeFileSync(releaseFile, release());
   const config = join(dir, 'config.yml');
-  writeFileSync(config, CONFIG);
+  // The merged config declares the secrets the script checks (decision 0084): each NAME with its file.
+  const decls = ['postgres', 'rcon', 'velocity-forwarding', 'nats-body'];
+  const dirText = secrets.replace(/\\/g, '/');
+  const block = decls.map((n) => `  ${n}:\n    file: ${dirText}/${n}.txt\n`).join('');
+  writeFileSync(config, `${CONFIG}secrets:\n${block}`);
   const callsLog = join(dir, 'calls.log');
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   delete env.Path;
