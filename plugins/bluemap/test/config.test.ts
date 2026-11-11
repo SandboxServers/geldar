@@ -40,10 +40,11 @@ function allConfigText(): string {
 }
 
 describe('BlueMap config: internal only', () => {
-  it('keeps the integrated webserver off, so nothing listens on any interface', () => {
-    // The 5.29 webserver.conf has no bind-address key (no `ip`), so an enabled server cannot be
-    // limited to loopback. The only accepted state is off.
-    expect(value('webserver.conf', 'enabled')).toBe('false');
+  it('runs the integrated webserver on 8101 for the colo network only (R38)', () => {
+    // The 5.29 webserver.conf has no bind-address key (no `ip`); it is kept off the host by Paper
+    // publishing no port (checked in tools/repo-checks colo-services.test.ts).
+    expect(value('webserver.conf', 'enabled')).toBe('true');
+    expect(value('webserver.conf', 'port')).toBe('8101');
   });
 
   it('keeps the config free of IPv4 addresses (no node or network address)', () => {
@@ -82,9 +83,15 @@ describe('BlueMap config: bounded render CPU', () => {
   });
 });
 
-describe('BlueMap config: terrain only, no agent markers', () => {
-  it('keeps live player markers off', () => {
-    expect(value('plugin.conf', 'live-player-markers')).toBe('false');
+describe('BlueMap config: terrain and live agent positions (R38)', () => {
+  it('turns live player markers on and hides spectators and vanished players', () => {
+    expect(value('plugin.conf', 'live-player-markers')).toBe('true');
+    expect(value('plugin.conf', 'hide-vanished')).toBe('true');
+    expect(value('plugin.conf', 'hide-invisible')).toBe('true');
+    expect(settings('plugin.conf').get('hidden-game-modes')).toBe('[');
+    expect(readFileSync(join(CONFIG, 'plugin.conf'), 'utf8')).toMatch(
+      /hidden-game-modes:\s*\[\s*"spectator"\s*\]/,
+    );
   });
 
   it('keeps Mojang skin downloads off', () => {

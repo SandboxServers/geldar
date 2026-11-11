@@ -14,7 +14,8 @@ map.{$GELDAR_DOMAIN} {
 	request_header -X-Forwarded-For
 	request_header -CF-Connecting-IP
 
-	# BlueMap serves static files; no request body is needed.
+	# BlueMap serves static files and the live player JSON (R38, C2-07m: bluemap-web proxies only /maps/*/live/* to Paper);
+	# no request body is needed.
 	request_body {
 		max_size 1KiB
 	}

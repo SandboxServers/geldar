@@ -58,7 +58,12 @@ describe('colo.yml services on the Caddy image', () => {
 
   it('bluemap-web listens on the port it publishes', () => {
     const s = colo.services['bluemap-web'] ?? {};
-    expect(s.command).toContain(':8100');
+    expect(
+      readFileSync(
+        fileURLToPath(new URL('../../../compose/bluemap-web/Caddyfile', import.meta.url)),
+        'utf8',
+      ),
+    ).toMatch(/^:8100 \{/m);
     expect(s.ports).toEqual(['127.0.0.1:8100:8100']);
   });
 });

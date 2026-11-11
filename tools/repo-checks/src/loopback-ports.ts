@@ -119,6 +119,7 @@ const COLO_SOURCE_ALLOWLIST = [
   '../deploy',
   './paper',
   './velocity',
+  './bluemap-web',
   './secrets',
 ];
 const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;

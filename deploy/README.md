@@ -209,6 +209,7 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
   bucket (a no-op when it exists), because Velocity is read-only on it (decision 0087 correction). The admin service
   therefore also mounts `nats-body.txt`.
 - `bluemap-web` answers 404 at `/` until BlueMap has rendered; that is expected and not a fault.
+- The public map shows every agent player's live position (R38, C2-07m). BlueMap's web server runs in Paper on the colo network (port 8101, never published); `bluemap-web` proxies only `/maps/<map>/live/<file>` to it (GET and HEAD). Spectators and vanished players are hidden in `plugins/bluemap/config/plugin.conf`. Until BlueMap has started, the live path answers 502.
 
 ### Replacing `src` on a node
 

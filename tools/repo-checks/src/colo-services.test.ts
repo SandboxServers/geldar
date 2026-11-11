@@ -316,12 +316,15 @@ describe('compose/colo.yml: the Glass service (C2-07a2)', () => {
     );
   });
 
-  it('publishes no BlueMap port from Paper: bluemap-web serves the webroot (C1-09, R27)', () => {
+  it('publishes no BlueMap port from Paper: its web server is reachable on the colo network only (C2-07m, R38)', () => {
     expect(colo.services.paper).not.toHaveProperty('ports');
+    expect(colo.services.paper?.networks).toEqual(['colo']);
+    const all = JSON.stringify(colo.services.paper);
+    expect(all).not.toContain('8101');
   });
 });
 
-// R27: the BlueMap static file server. BlueMap's own web server stays off, so Paper writes no live data to the webroot.
+// R27, R38: the BlueMap map server: static tiles plus a restricted proxy of the live player JSON to Paper.
 const bluemapWeb = colo.services['bluemap-web'] ?? {};
 
 describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', () => {
@@ -331,11 +334,11 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
     );
     expect(bluemapWeb.command).toEqual([
       'caddy',
-      'file-server',
-      '--root',
-      '/srv',
-      '--listen',
-      ':8100',
+      'run',
+      '--config',
+      '/etc/caddy/Caddyfile',
+      '--adapter',
+      'caddyfile',
     ]);
   });
 
@@ -344,9 +347,12 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
   });
 
   it('mounts only a read only subpath of the Paper volume under bluemap/, never the whole volume (R28)', () => {
-    const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<Record<string, unknown>>;
-    expect(volumes).toHaveLength(1);
-    const mount = volumes[0] ?? {};
+    const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<
+      Record<string, unknown> | string
+    >;
+    expect(volumes).toHaveLength(2);
+    expect(volumes[1]).toBe('./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro');
+    const mount = (volumes[0] ?? {}) as Record<string, unknown>;
     expect(typeof mount).toBe('object');
     expect(mount.source).toBe('paper-data');
     expect(mount.target).toBe('/srv');
@@ -370,12 +376,28 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
     expect(bluemapWeb.user).toBe(`${UID_DEFAULT}:${UID_DEFAULT}`);
   });
 
-  it('keeps BlueMap own web server off, so no live data reaches the webroot', () => {
-    const conf = readFileSync(`${ROOT}plugins/bluemap/config/webserver.conf`, 'utf8');
-    expect(conf).toMatch(/^enabled:\s*false\s*$/m);
+  it('runs BlueMap web server on port 8101, live markers on, spectators hidden (C2-07m, R38)', () => {
+    const conf = readFileSync(`plugins/bluemap/config/webserver.conf`, 'utf8');
+    expect(conf).toMatch(/^enabled:\s*true\s*$/m);
     expect(conf).toMatch(/^webroot:\s*"bluemap\/web"\s*$/m);
-    const plugin = readFileSync(`${ROOT}plugins/bluemap/config/plugin.conf`, 'utf8');
-    expect(plugin).toMatch(/^live-player-markers:\s*false\s*$/m);
+    expect(conf).toMatch(/^port:\s*8101\s*$/m);
+    const plugin = readFileSync(`plugins/bluemap/config/plugin.conf`, 'utf8');
+    expect(plugin).toMatch(/^live-player-markers:\s*true\s*$/m);
+    expect(plugin).toMatch(/^hidden-game-modes:\s*\[\s*"spectator"\s*\]/m);
+    expect(plugin).toMatch(/^hide-vanished:\s*true\s*$/m);
+    expect(plugin).toMatch(/^skin-download:\s*false\s*$/m);
+  });
+
+  it('proxies only /maps/<map>/live/<file> to paper:8101, GET and HEAD only (C2-07m)', () => {
+    const text = readFileSync(`compose/bluemap-web/Caddyfile`, 'utf8');
+    expect(text.match(/reverse_proxy/g)).toHaveLength(1);
+    expect(text).toContain('reverse_proxy paper:8101');
+    expect(text).toMatch(/^\s*@not_allowed not method GET HEAD$/m);
+    expect(text).toMatch(
+      /^\s*@live path_regexp live \^\/maps\/\[A-Za-z0-9_-\]\+\/live\/\[A-Za-z0-9_-\]\+\(\\\.json\)\?\$$/m,
+    );
+    expect(text).toMatch(/handle @live \{\s+reverse_proxy paper:8101/);
+    expect(text).toMatch(/handle \{\s+root \* \/srv\s+file_server/);
   });
 });
 
