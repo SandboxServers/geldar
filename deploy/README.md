@@ -186,7 +186,8 @@ GELDAR_PLAYER_ID=<player> docker compose -p geldar-colo -f compose/colo.yml -f d
 
 ### (i) Known limits
 
-- The Adam Mind cannot think until the C4 gateway exists. It starts but does not act.
+- The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
+  think until the C4 gateway exists.
 - BlueMap is not mounted. Accepting its download is the owner's call (`plugins/bluemap/bluemap.lock.json`).
 - Postgres service roles are superuser for now (C2).
 - NATS auth generation is PowerShell-only; copy its files from the trusted machine.
