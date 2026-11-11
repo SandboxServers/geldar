@@ -1,4 +1,4 @@
--- Migration 0015 (decision 0138; packet C2c-thoughts): who may read a sovereign player's thoughts.
+-- Migration 0016 (decision 0138; packet C2c-thoughts): who may read a sovereign player's thoughts.
 -- agents.thoughts_delayed_public: the owner's opt-in to the delayed public thought stream. Written only by
 --   register_set_thoughts_delayed_public (SECURITY DEFINER, geldar_register), read by geldar_glass.
 -- glass_owner_agents: a read-only definer function so Glass can learn which agents a signed-in identity owns
@@ -68,4 +68,4 @@ $owned$;
 REVOKE ALL ON FUNCTION glass_owner_agents(BYTEA) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION glass_owner_agents(BYTEA) TO geldar_glass;
 
-INSERT INTO schema_migrations (version) VALUES ('0015') ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations (version) VALUES ('0016') ON CONFLICT DO NOTHING;

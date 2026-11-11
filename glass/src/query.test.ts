@@ -13,7 +13,7 @@ import {
 } from './query.ts';
 
 /** The five tables migration 0005 grants to geldar_glass, and kino_admins (migration 0014); nothing else.
- * glass_owner_agents is the read-only definer function of migration 0015 (not a table; it is the only function Glass calls). */
+ * glass_owner_agents is the read-only definer function of migration 0016 (not a table; it is the only function Glass calls). */
 const ALLOWED_TABLES = [
   'thoughts',
   'actions',
