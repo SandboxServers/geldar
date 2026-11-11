@@ -47,8 +47,14 @@ export function loadKinoEnv(env: NodeJS.ProcessEnv = process.env): KinoEnv {
     .split(',')
     .map((h) => h.trim())
     .filter((h) => h !== '');
+  const enabled = flag === '1' || flag === 'true';
+  if (enabled && !env.GELDAR_SHARD)
+    throw new Error(
+      'Kino is enabled but GELDAR_SHARD is unset: set it to the shard the plugin runs (e.g. colo); the NATS subjects and the kino user permissions are per shard',
+    );
   return {
-    enabled: flag === '1' || flag === 'true',
+    enabled,
+    // Unset is only reachable with Kino disabled, where the shard is not used.
     shard: env.GELDAR_SHARD || 'phase0',
     natsUrl: env.GELDAR_NATS_URL || 'nats://nats:4222',
     otlpEndpoint: env.GELDAR_KINO_OTLP_ENDPOINT || undefined,

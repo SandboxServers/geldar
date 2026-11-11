@@ -60,6 +60,19 @@ describe('Kino deploy wiring', () => {
     },
   );
 
+  it('sets the Glass shard to colo in the Kino overlay', () => {
+    expect(read('compose/colo-kino.yml')).toMatch(/^ {6}GELDAR_SHARD: colo$/m);
+  });
+
+  it.runIf(hasDocker)('gives Glass shard colo in the merged Colo config', () => {
+    const ok = render(['colo.yml', 'colo-kino.yml'], {
+      GELDAR_KINO_PUBLIC_ORIGIN: 'https://glass.example.test',
+      GELDAR_SHARD: '',
+    });
+    expect(ok.status).toBe(0);
+    expect(JSON.parse(ok.stdout).services.glass.environment.GELDAR_SHARD).toBe('colo');
+  });
+
   it('serves the textures read-only from the map upstream at /kino/tex/*, behind the Kino switch', () => {
     const start = caddy.indexOf('@kino_tex');
     const block = caddy.slice(start, caddy.indexOf('@kino_tex_other'));
