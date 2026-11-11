@@ -12,16 +12,33 @@ import {
   thoughtsAfter,
 } from './query.ts';
 
-/** The five tables migration 0005 grants to geldar_glass, and nothing else. */
-const ALLOWED_TABLES = ['thoughts', 'actions', 'receipts', 'intents', 'agents'];
+/** The five tables migration 0005 grants to geldar_glass, and kino_admins (migration 0014); nothing else.
+ * glass_owner_agents is the read-only definer function of migration 0016 (not a table; it is the only function Glass calls). */
+const ALLOWED_TABLES = [
+  'thoughts',
+  'actions',
+  'receipts',
+  'intents',
+  'agents',
+  'kino_admins',
+  'glass_owner_agents',
+  'kino_viewer',
+  'kino_agent_scope',
+  'kino_agent_list',
+];
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const WRITE_WORDS = /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
 const SQL_WORD = /\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;
 
 /** Every source file in glass/src that is not a test. */
 function sourceFiles(): { name: string; text: string }[] {
-  return readdirSync(SRC_DIR)
-    .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+  // The top level and kino/, where the Kino scope store and the audit write their SQL.
+  return ['', 'kino']
+    .flatMap((sub) =>
+      readdirSync(join(SRC_DIR, sub))
+        .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
+        .map((name) => join(sub, name)),
+    )
     .map((name) => ({ name, text: readFileSync(join(SRC_DIR, name), 'utf8') }));
 }
 
@@ -110,8 +127,8 @@ describe('the Glass SQL allowlist', () => {
     await streamStartCursor(db, 0);
     for (const call of calls) expect(call.text).not.toContain('DELETE');
     // The last value of a thought statement is its cut-off: null here, as no delay is set.
-    expect(calls[0]?.values).toEqual([hostile, false, null]);
-    expect(calls[1]?.values).toEqual([hostile, false, null]);
+    expect(calls[0]?.values).toEqual([hostile, false, null, []]);
+    expect(calls[1]?.values).toEqual([hostile, false, null, []]);
     expect(calls[2]?.values).toEqual(['2026-11-10 00:00:00+00', hostile, 10, false, null]);
   });
 });

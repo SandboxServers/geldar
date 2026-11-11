@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Account, SESSION_TTL_MS } from '../src/account.ts';
 import { loadConfig } from '../src/config.ts';
 import type { Identity } from '../src/identity.ts';
-import { idOf } from '../src/providers.ts';
 import { clientAddress, FixedWindow, LIMITER_MAX_KEYS, limiterKey } from '../src/server.ts';
 import { FakeStore } from './fake-store.ts';
 import { config, type Harness, harness, NOW } from './fixture.ts';
@@ -27,41 +26,15 @@ function stubRes(): { res: ServerResponse; status: () => number } {
 }
 
 const identity = (n: number): Identity => ({
-  provider: 'github',
+  provider: 'microsoft',
   identityHash: n.toString(16).padStart(64, '0'),
   display: `u${n}`,
 });
 
-describe('sign-in is serial (F7a)', () => {
-  it('two parallel new sign-ins at a cap of 1 create one owner', async () => {
-    const clock = { at: NOW };
-    const store = new FakeStore(() => clock.at);
-    const account = new Account({
-      config: config({ maxNewOwnersPerDay: 1 }),
-      store,
-      now: () => clock.at,
-      log: () => {},
-    });
-    const a = stubRes();
-    const b = stubRes();
-    await Promise.all([account.signedIn(identity(1), a.res), account.signedIn(identity(2), b.res)]);
-    expect(store.owners.size).toBe(1);
-    expect([a.status(), b.status()].sort()).toEqual([302, 429]);
-  });
-});
-
-describe('the token page and the provider binding (F7b, F7c)', () => {
-  it('a state issued for GitHub is refused at /callback/discord', async () => {
-    h = await harness();
-    const { state, cookie } = await h.begin('github');
-    const res = await h.callback('discord', state, cookie);
-    expect(res.status).toBe(403);
-    expect(h.signedIn).toHaveLength(0);
-  });
-
+describe('the refusal page (F7b)', () => {
   it('the sign-in refusal page sends referrer-policy no-referrer', async () => {
     h = await harness();
-    const res = await h.callback('github', 'nope', '');
+    const res = await h.callback(undefined, 'nope', '');
     expect(res.headers.get('referrer-policy')).toBe('no-referrer');
   });
 });
@@ -109,7 +82,7 @@ describe('sessions (F8)', () => {
     const login = async (id: string) => {
       h!.idp.userId = id;
       const b = await h!.begin('github');
-      const r = await fetch(`${h!.base}/callback/github?code=c&state=${b.state}`, {
+      const r = await fetch(`${h!.base}/register/callback?code=c&state=${b.state}`, {
         headers: { cookie: b.cookie },
         redirect: 'manual',
       });
@@ -119,9 +92,11 @@ describe('sessions (F8)', () => {
       );
     };
     const sc = await login('3001');
-    const page = await (await fetch(`${h.base}/account`, { headers: { cookie: sc } })).text();
+    const page = await (
+      await fetch(`${h.base}/register/account`, { headers: { cookie: sc } })
+    ).text();
     const csrf = /name="csrf" value="([^"]+)"/.exec(page)?.[1] ?? '';
-    const out = await fetch(`${h.base}/logout`, {
+    const out = await fetch(`${h.base}/register/logout`, {
       method: 'POST',
       redirect: 'manual',
       headers: { cookie: sc, 'content-type': 'application/x-www-form-urlencoded' },
@@ -129,7 +104,10 @@ describe('sessions (F8)', () => {
     });
     expect(out.status).toBe(302);
     expect(out.headers.get('set-cookie')).toContain('Max-Age=0');
-    const again = await fetch(`${h.base}/account`, { headers: { cookie: sc }, redirect: 'manual' });
+    const again = await fetch(`${h.base}/register/account`, {
+      headers: { cookie: sc },
+      redirect: 'manual',
+    });
     expect(again.status).toBe(302);
     h.clock.at += SESSION_TTL_MS + 1;
     expect(await login('3002')).toContain('gr_session=');
@@ -149,27 +127,18 @@ describe('session sweep (F8)', () => {
   });
 });
 
-describe('the provider user id (F10)', () => {
-  it('accepts a number or a non-empty string and refuses anything else', () => {
-    expect(idOf(42)).toBe('42');
-    expect(idOf('abc')).toBe('abc');
-    for (const bad of [undefined, null, '', {}, Number.NaN, true]) {
-      expect(() => idOf(bad)).toThrow(/no user id/);
-    }
-  });
-});
-
 describe('the token pepper (F9)', () => {
   const base = {
     REGISTER_PEPPER_FILE: 'p',
     REGISTER_TOKEN_PEPPER_FILE: 't',
-    REGISTER_GITHUB_SECRET_FILE: 'g',
-    REGISTER_DISCORD_SECRET_FILE: 'd',
-    REGISTER_PUBLIC_URL: 'https://register.example.invalid',
+    REGISTER_MS_CLIENT_ID: 'ms-id',
+    REGISTER_MS_CLIENT_SECRET_FILE: 'm',
+    REGISTER_SESSION_KEY_FILE: 's',
+    REGISTER_PUBLIC_URL: 'https://glass.example.invalid',
     REGISTER_SHARD: 'colo',
   };
   const read = (token: string) => (p: string) =>
-    p === 't' ? token : p === 'p' ? 'p'.repeat(40) : 'x';
+    p === 't' ? token : p === 'p' || p === 's' ? 'p'.repeat(40) : 'x';
   const pepper = 'q'.repeat(32);
 
   it('strips one trailing newline only and keeps edge spaces', () => {

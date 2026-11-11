@@ -1,6 +1,10 @@
 package dev.geldar.core.kino;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -18,7 +22,16 @@ public final class KinoFeed {
     public static final int SECTIONS_ABOVE = 2;
     private static final String AIR = "minecraft:air";
 
+    /** Blocks one {@link #pump} may read on the server thread (one section is 4096). */
+    public static final int BLOCK_BUDGET_PER_TICK = 16_384;
+
+    /** Entities one {@link #tick} may examine per target (the entity_positions message itself is capped at 256). */
+    public static final int ENTITY_EXAMINE_PER_TICK = 512;
+
+    private static final int SECTION_BLOCKS = PaletteEncoder.CELLS;
+
     private final KinoWorld world;
+    private final int budget;
     private final KinoSink sink;
     private final int radius;
     private final Map<String, Target> targets = new ConcurrentHashMap<>();
@@ -28,26 +41,55 @@ public final class KinoFeed {
         int chunkX;
         int chunkZ;
         final Set<Long> sent = new HashSet<>();
+        /** Sections still to read, as {x, y, z}; filled by a window request, drained by {@link #pump}. */
+        final Deque<int[]> pending = new ArrayDeque<>();
+        /** A resync arrived while a window was still queued: one more pass follows, not one per request. */
+        boolean again;
+        int lo;
+        int hi;
+        /** Where the next entity scan resumes: a window cell index and an entity index inside that chunk. */
+        int scanChunk;
+        int scanEntity;
     }
 
     public KinoFeed(KinoWorld world, KinoSink sink, int radiusChunks) {
+        this(world, sink, radiusChunks, BLOCK_BUDGET_PER_TICK);
+    }
+
+    public KinoFeed(KinoWorld world, KinoSink sink, int radiusChunks, int blockBudgetPerTick) {
+        this.budget = Math.max(SECTION_BLOCKS, blockBudgetPerTick);
         this.world = world;
         this.sink = sink;
         this.radius = Math.max(1, Math.min(8, radiusChunks));
     }
 
-    /** Starts a feed for an online agent; false when killed or the agent is offline. */
+    /**
+     * Starts a feed for an online agent; false when killed or the agent is offline. For a target that already runs
+     * this is a resync: it reads nothing here, it only asks for the window to be sent again (at most one pass is
+     * queued behind the one in progress). The block reads happen in {@link #pump}, within the per-tick budget.
+     */
     public boolean start(String agentId) {
         Optional<KinoWorld.Position> at = killed ? Optional.empty() : world.agentPosition(agentId);
         if (at.isEmpty()) {
             return false;
+        }
+        Target running = targets.get(agentId);
+        if (running != null) {
+            if (running.pending.isEmpty()) {
+                running.sent.clear();
+                queueWindow(running, at.get());
+            } else {
+                running.again = true;
+            }
+            return true;
         }
         Target t = new Target();
         targets.put(agentId, t);
         sink.publish(agentId, KinoMessages.hello(world.name(), agentId, radius));
         t.chunkX = chunk(at.get().x());
         t.chunkZ = chunk(at.get().z());
-        sendWindow(agentId, t, at.get());
+        sink.publish(agentId, KinoMessages.targetMoved(agentId, at.get().x(), at.get().y(), at.get().z()));
+        queueWindow(t, at.get());
         return true;
     }
 
@@ -65,6 +107,15 @@ public final class KinoFeed {
         killed = true;
         targets.keySet().forEach(id -> sink.publish(id, KinoMessages.bye("kill_switch")));
         targets.clear();
+    }
+
+    /** Config reload: false is the kill switch (bye to every target, publishing stops); true allows starts again. */
+    public void setEnabled(boolean enabled) {
+        if (!enabled) {
+            kill();
+        } else {
+            killed = false;
+        }
     }
 
     /** Whether the agent is a current target; only targets are named in entity positions. */
@@ -94,11 +145,47 @@ public final class KinoFeed {
             if (cx != t.chunkX || cz != t.chunkZ) {
                 t.chunkX = cx;
                 t.chunkZ = cz;
+                t.scanChunk = 0;
+                t.scanEntity = 0;
                 sink.publish(id, KinoMessages.targetMoved(id, at.get().x(), at.get().y(), at.get().z()));
-                sendWindow(id, t, at.get());
+                queueWindow(t, at.get());
             }
-            sink.publish(id, KinoMessages.entityPositions(world.entitiesNear(at.get().x(), at.get().z(), radius)));
+            sink.publish(id, KinoMessages.entityPositions(scanEntities(id, t)));
         }
+    }
+
+    /**
+     * Looks at no more than {@link #ENTITY_EXAMINE_PER_TICK} entities per target per call, walking the window's
+     * chunks from where the last call stopped, so a crowded world is covered over several ticks. An entity that
+     * is an agent keeps its id only when it is this feed's own target (a viewer is not told who else is watched).
+     */
+    private List<KinoWorld.EntityView> scanEntities(String targetId, Target t) {
+        int side = 2 * radius + 1;
+        int cells = side * side;
+        int left = ENTITY_EXAMINE_PER_TICK;
+        int ci = t.scanChunk % cells;
+        int from = t.scanEntity;
+        List<KinoWorld.EntityView> out = new ArrayList<>();
+        for (int visited = 0; visited < cells && left > 0; visited++) {
+            int cx = t.chunkX - radius + ci / side;
+            int cz = t.chunkZ - radius + ci % side;
+            KinoWorld.ChunkEntities part = world.entitiesInChunk(cx, cz, from, left);
+            for (KinoWorld.EntityView v : part.views()) {
+                boolean hide = v.agentId() != null && !v.agentId().equals(targetId);
+                out.add(hide ? new KinoWorld.EntityView(v.type(), null, v.x(), v.y(), v.z(), v.yaw(), v.pitch()) : v);
+            }
+            left -= part.views().size();
+            if (from + part.views().size() < part.total()) {
+                t.scanChunk = ci;
+                t.scanEntity = from + part.views().size();
+                return out;
+            }
+            from = 0;
+            ci = (ci + 1) % cells;
+        }
+        t.scanChunk = ci;
+        t.scanEntity = 0;
+        return out;
     }
 
     /** A block change; sent to every target whose window holds the block. */
@@ -119,11 +206,40 @@ public final class KinoFeed {
         return Math.floorDiv((int) Math.floor(blockCoord), 16);
     }
 
-    /** Sends each loaded, not yet sent chunk of the window; a section that is all air is not sent. */
-    private void sendWindow(String agentId, Target t, KinoWorld.Position at) {
+    /**
+     * Reads queued sections for all targets, at most the block budget per call (call it every game tick). It
+     * never reads more than the budget, whatever Glass asks for.
+     */
+    public void pump() {
+        if (killed) {
+            return;
+        }
+        int left = budget;
+        for (Map.Entry<String, Target> e : targets.entrySet()) {
+            Target t = e.getValue();
+            while (left >= SECTION_BLOCKS && !t.pending.isEmpty() && !killed) {
+                int[] s = t.pending.poll();
+                left -= SECTION_BLOCKS;
+                if (world.isChunkLoaded(s[0], s[2])) {
+                    sendSection(e.getKey(), s[0], s[1], s[2]);
+                }
+            }
+            if (t.pending.isEmpty() && t.again) {
+                t.again = false;
+                Optional<KinoWorld.Position> at = world.agentPosition(e.getKey());
+                if (at.isPresent()) {
+                    t.sent.clear();
+                    queueWindow(t, at.get());
+                }
+            }
+        }
+    }
+
+    /** Queues each loaded, not yet sent chunk of the window; no block is read here. */
+    private void queueWindow(Target t, KinoWorld.Position at) {
         int sy = Math.floorDiv((int) Math.floor(at.y()), 16);
-        int lo = Math.max(world.minSectionY(), sy - SECTIONS_BELOW);
-        int hi = Math.min(world.maxSectionY(), sy + SECTIONS_ABOVE);
+        t.lo = Math.max(world.minSectionY(), sy - SECTIONS_BELOW);
+        t.hi = Math.min(world.maxSectionY(), sy + SECTIONS_ABOVE);
         t.sent.removeIf(k -> Math.abs((int) (k >> 32) - t.chunkX) > radius
                 || Math.abs((int) (long) k - t.chunkZ) > radius);
         for (int x = t.chunkX - radius; x <= t.chunkX + radius; x++) {
@@ -133,8 +249,8 @@ public final class KinoFeed {
                     continue;
                 }
                 t.sent.add(key);
-                for (int y = lo; y <= hi; y++) {
-                    sendSection(agentId, x, y, z);
+                for (int y = t.lo; y <= t.hi; y++) {
+                    t.pending.add(new int[] {x, y, z});
                 }
             }
         }

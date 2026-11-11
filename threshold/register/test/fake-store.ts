@@ -15,8 +15,30 @@ export class FakeStore implements Store {
   async findOwner(hash: string): Promise<OwnerRecord | null> {
     return this.owners.get(hash) ?? null;
   }
-  async countNewOwnersSince(sinceMs: number): Promise<number> {
-    return [...this.owners.values()].filter((o) => o.createdAt >= sinceMs).length;
+  cameras = new Map<string, boolean>();
+  async setPublicCamera(identityHash: string, playerId: string, value: boolean): Promise<boolean> {
+    const who = this.owners.get(identityHash);
+    const p = this.players.get(playerId);
+    if (!who || who.banned || !p || p.ownerId !== who.ownerId) return false;
+    this.cameras.set(playerId, value);
+    return true;
+  }
+  thoughtFlags = new Map<string, boolean>();
+  lastThoughtFlagAt = new Map<string, number>();
+  async setThoughtsDelayedPublic(
+    identityHash: string,
+    playerId: string,
+    value: boolean,
+  ): Promise<boolean> {
+    const who = this.owners.get(identityHash);
+    const p = this.players.get(playerId);
+    if (!who || who.banned) throw new Error('unknown or banned identity');
+    if (!p || p.ownerId !== who.ownerId) return false;
+    const last = this.lastThoughtFlagAt.get(playerId);
+    if (last !== undefined && this.now() - last < 10_000) throw new Error('too many changes');
+    this.lastThoughtFlagAt.set(playerId, this.now());
+    this.thoughtFlags.set(playerId, value);
+    return true;
   }
   async createOwner(
     identity: { identityHash: string; provider: string; display: string },

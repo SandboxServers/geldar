@@ -49,6 +49,8 @@ const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 for a in "$@"; do case $a in *.override.yml) cp "$a" "$DOCKER_CALLS_LOG.overlay" ;; esac; done
 case "$*" in
+  "ps -a "*) [ -z "\${FAKE_PS_ALL:-}" ] || echo "$FAKE_PS_ALL"; exit 0 ;;
+  "ps "*) [ -z "\${FAKE_PS_RUN:-}" ] || echo "$FAKE_PS_RUN"; exit 0 ;;
   *"config --quiet"*) exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
 esac
@@ -338,5 +340,113 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('no GELDAR_ADMIN_IMAGE');
     expect(starts(calls(fx))).toEqual([]);
+  });
+
+  it('runs player-add in the admin container, and does not exit on the host path first', () => {
+    const fx = fixture();
+    const r = run(fx, REAL, ['player-add', 'ag-clara-01']);
+    expect(r.code).toBe(0);
+    expect(
+      calls(fx).some((c) => c.endsWith('--profile admin run --rm admin player-add ag-clara-01')),
+    ).toBe(true);
+    expect(starts(calls(fx))).toHaveLength(1);
+  });
+
+  it('refuses player-add when the release manifest has no GELDAR_ADMIN_IMAGE', () => {
+    const fx = fixture();
+    writeFileSync(fx.releaseFile, release(false));
+    const r = run(fx, REAL, ['player-add', 'ag-clara-01']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('no GELDAR_ADMIN_IMAGE');
+    expect(starts(calls(fx))).toEqual([]);
+  });
+
+  describe('per-player hosts (C1-10b)', () => {
+    const SHARD_TEXT =
+      'sovereign:\n  players:\n    - { player_id: ag-jason-01, life_id: ag_jason_01, name: Jason }\n    - { player_id: ag-clara-01, life_id: ag_clara_01, name: Clara }\n';
+    const shardEnv = (fx: Fixture) => {
+      const f = join(fx.dir, 'shard.yaml');
+      writeFileSync(f, SHARD_TEXT);
+      return { ...REAL, GELDAR_COLO_SHARD: posix(f) };
+    };
+    const HOST = 'geldar-colo-players-host-ag-clara-01';
+
+    it('starts one named host per player with run -d --no-deps, the id in env and in the command', () => {
+      const fx = fixture();
+      const r = run(fx, shardEnv(fx), ['player-start', 'ag-clara-01']);
+      expect(r.code).toBe(0);
+      const log = calls(fx);
+      const s = starts(log);
+      expect(s).toHaveLength(1);
+      expect(s[0]).toContain('-p geldar-colo');
+      expect(s[0]).toContain('--profile sovereign');
+      expect(s[0]).toContain(
+        `run -d --rm --no-deps --name ${HOST} -e GELDAR_PLAYER_ID=ag-clara-01 players-host --player ag-clara-01`,
+      );
+    });
+
+    it('leaves a host that is already running, and starts nothing', () => {
+      const fx = fixture();
+      const r = run(fx, { ...shardEnv(fx), FAKE_PS_RUN: HOST }, ['player-start', 'ag-clara-01']);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('already running');
+      expect(starts(calls(fx))).toEqual([]);
+    });
+
+    it('removes a stopped leftover of the same name before it starts', () => {
+      const fx = fixture();
+      const r = run(fx, { ...shardEnv(fx), FAKE_PS_ALL: HOST }, ['player-start', 'ag-clara-01']);
+      expect(r.code).toBe(0);
+      const log = calls(fx);
+      expect(log).toContain(`rm ${HOST}`);
+      expect(starts(log)).toHaveLength(1);
+    });
+
+    it.each([
+      ['an unlisted id', 'ag-nobody-01'],
+      ['a bad pattern', 'Ag_Clara'],
+      ['an id with an injected flag', 'ag-clara-01 --privileged'],
+      ['a too long id', `ag-${'a'.repeat(41)}`],
+    ])('refuses %s before any docker call', (_n, id) => {
+      const fx = fixture();
+      for (const verb of ['player-start', 'player-stop']) {
+        const r = run(fx, shardEnv(fx), [verb, id]);
+        expect(r.code).not.toBe(0);
+      }
+      expect(calls(fx)).toEqual([]);
+    });
+
+    it('stops only the named project container, and does nothing when it is absent', () => {
+      const fx = fixture();
+      const none = run(fx, shardEnv(fx), ['player-stop', 'ag-clara-01']);
+      expect(none.code).toBe(0);
+      expect(calls(fx).some((c) => c.startsWith('stop '))).toBe(false);
+      const r = run(fx, { ...shardEnv(fx), FAKE_PS_ALL: HOST }, ['player-stop', 'ag-clara-01']);
+      expect(r.code).toBe(0);
+      const log = calls(fx);
+      expect(log.filter((c) => c.startsWith('stop '))).toEqual([`stop ${HOST}`]);
+      expect(log.filter((c) => c.startsWith('ps ')).every((c) => PROJECT_FILTER.test(c))).toBe(
+        true,
+      );
+    });
+
+    it('lists every listed player with its state', () => {
+      const fx = fixture();
+      const r = run(fx, { ...shardEnv(fx), FAKE_PS_RUN: 'x' }, ['player-list']);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('ag-jason-01: running');
+      expect(r.out).toContain('ag-clara-01: running');
+      const none = run(fx, shardEnv(fx), ['player-list']);
+      expect(none.out).toContain('ag-clara-01: not running');
+    });
+
+    it('dry run starts and stops nothing, and needs no admin image', () => {
+      const fx = fixture();
+      writeFileSync(fx.releaseFile, release(false));
+      const r = run(fx, { ...shardEnv(fx), DEPLOY_DRY_RUN: '1' }, ['player-start', 'ag-clara-01']);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('dry-run, not run');
+      expect(starts(calls(fx))).toEqual([]);
+    });
   });
 });

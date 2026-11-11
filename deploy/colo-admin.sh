@@ -83,14 +83,89 @@ verify_token() {
   say "token file written: $f ($n bytes); the value is not printed"
 }
 
+# Per-player hosts (C1-10b). The compose service players-host is one service; one host per player is a one-off
+# container named geldar-colo-players-host-<player-id>, started with `run -d --rm --no-deps`. Only containers that carry
+# the geldar-colo compose project label and that exact name are ever listed, started or stopped.
+SHARD_FILE=${GELDAR_COLO_SHARD:-$ROOT/shards/colo-mind.yaml}
+
+# Checks <player-id> for player-start and player-stop: the id pattern, and that the shard file lists it.
+host_args() {
+  [ $# -eq 1 ] || die "$cmd takes one player id"
+  player=$1
+  printf '%s' "$player" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player id must match ^ag-[a-z0-9-]{1,40}\$: $player"
+  [ -f "$SHARD_FILE" ] || die "shard file not found: $SHARD_FILE"
+  grep -Eq "player_id:[[:space:]]*$player[[:space:]]*[,}]" "$SHARD_FILE" ||
+    die "player $player is not listed under sovereign.players in $SHARD_FILE; add it first"
+  hname=geldar-colo-players-host-$player
+}
+
+# Project-labelled containers with exactly the name $2; $1 is -a to include stopped ones, or empty.
+host_ps() {
+  docker ps $1 --filter "label=com.docker.compose.project=$PROJECT" --filter "name=^$2\$" --format '{{.Names}}'
+}
+
+sov() {
+  if [ -n "$EXTRA_OVERLAY" ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$EXTRA_OVERLAY" --profile sovereign "$@"
+  else
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" --profile sovereign "$@"
+  fi
+}
+
+run_hosts() {
+  case $cmd in
+    player-list)
+      for id in $(grep -Eo 'player_id:[[:space:]]*ag-[a-z0-9-]+' "$SHARD_FILE" | sed 's/.*:[[:space:]]*//'); do
+        if [ -n "$(host_ps '' "geldar-colo-players-host-$id")" ]; then
+          say "$id: running (geldar-colo-players-host-$id)"
+        else
+          say "$id: not running"
+        fi
+      done
+      ;;
+    player-start)
+      if [ "$DRY_RUN" = 1 ]; then
+        say "dry-run, not run: docker compose -p $PROJECT ... --profile sovereign run -d --rm --no-deps --name $hname -e GELDAR_PLAYER_ID=$player players-host --player $player"
+        exit 0
+      fi
+      if [ -n "$(host_ps '' "$hname")" ]; then
+        say "$hname is already running; left as it is"
+        exit 0
+      fi
+      if [ -n "$(host_ps -a "$hname")" ]; then docker rm "$hname" >/dev/null || die "cannot remove the stopped $hname"; fi
+      GELDAR_PLAYER_ID=$player sov run -d --rm --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" players-host --player "$player" ||
+        die "cannot start $hname"
+      say "started $hname"
+      ;;
+    player-stop)
+      if [ "$DRY_RUN" = 1 ]; then
+        say "dry-run, not run: docker stop $hname"
+        exit 0
+      fi
+      if [ -z "$(host_ps -a "$hname")" ]; then
+        say "$hname does not exist; nothing to stop"
+        exit 0
+      fi
+      docker stop "$hname" >/dev/null || die "cannot stop $hname"
+      if [ -n "$(host_ps -a "$hname")" ]; then docker rm "$hname" >/dev/null || die "cannot remove $hname"; fi
+      say "stopped $hname"
+      ;;
+  esac
+  exit 0
+}
+
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket or whitelist-house-body" ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | player-start | player-stop | player-list) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, player-start, player-stop or player-list" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
 fi
+case $cmd in
+  player-start | player-stop) host_args "$@" ;;
+  player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
+esac
 
 plan_header
 [ -n "$PROJECT" ] || die "no compose project name; refusing"
@@ -98,12 +173,16 @@ say "admin subcommand: $cmd (one-shot container, profile admin, decision 0133)"
 need docker
 check_prereqs
 load_release "$RELEASE_FILE"
-[ -n "${GELDAR_ADMIN_IMAGE:-}" ] || die "the release manifest has no GELDAR_ADMIN_IMAGE; pin the admin image by digest"
+case $cmd in
+  player-start | player-stop | player-list) ;;
+  *) [ -n "${GELDAR_ADMIN_IMAGE:-}" ] || die "the release manifest has no GELDAR_ADMIN_IMAGE; pin the admin image by digest" ;;
+esac
 if [ "$cmd" = token-mint ]; then
   tokens_checks
 fi
 check_merged_config
 check_secrets
+case $cmd in player-start | player-stop | player-list) run_hosts ;; esac
 
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*"

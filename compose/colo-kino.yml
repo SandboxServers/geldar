@@ -1,0 +1,31 @@
+# Overlay for Kino (decision 0075): gives Glass its NATS connection as the kino user (subscribe the feed, publish the control subject; see Get-NatsUsers in geldar.ps1). Merge it over compose/colo.yml only
+# when the owner enables Kino (docs/runbooks/kino.md); the base file keeps Glass free of NATS. The password file is a
+# file in the secrets directory, mounted at the path named by GELDAR_KINO_NATS_PASSWORD_FILE; no value is in the repo.
+services:
+  glass:
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_GLASS_CPUS:-0.5}"
+          memory: "${GELDAR_COLO_GLASS_MEM:-256m}"
+          pids: 128
+    pids_limit: 128
+    memswap_limit: "${GELDAR_COLO_GLASS_MEM:-256m}"
+    environment:
+      # The browser Origin Glass accepts for the Kino WebSocket: full origins, comma-separated. Required: Glass refuses to
+      # start Kino with an empty list. Behind Caddy the Host is always localhost, so only this list can allow an Origin.
+      GELDAR_KINO_ALLOWED_ORIGINS: "${GELDAR_KINO_PUBLIC_ORIGIN:?set GELDAR_KINO_PUBLIC_ORIGIN to https://glass.<domain> when the Kino overlay is merged}"
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: "${GELDAR_KINO_NATS_USER:-kino}"
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-kino.txt
+    secrets: [nats-kino.txt]
+secrets:
+  nats-kino.txt:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/nats-kino.txt

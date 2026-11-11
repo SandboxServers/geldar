@@ -76,14 +76,15 @@ services:
     labels: *colo-labels
     image: nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
     # NATS accounts are the opt-in overlay (decision 0080); see the nats-auth slot at the end of this file.
-    # The monitor port 8222 serves the healthcheck inside the container only: it is not published to the host.
-    command: ["-js", "-sd", "/data", "-m", "8222"]
+    # No monitor port in the base: the monitor lists subjects and subscriptions (who is watched) to the colo network.
+    # The one healthcheck, for every merge, is a TCP probe of the client port (BusyBox "nc -z", in the pinned Alpine image),
+    # so a nats-auth.conf made before the `http:` monitor line stays healthy. Never probe the monitor.    command: ["-js", "-sd", "/data"]
     volumes:
       - nats-data:/data
-    # No ports: NATS (4222) and its monitor (8222) are reached on the colo network only.
+    # No ports: NATS (4222) is reached on the colo network only.
     networks: [colo]
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz?js-enabled-only=true"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -442,12 +443,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094). The image is a release-manifest value
-  # (GELDAR_GLASS_IMAGE, C2-07a1); the local tag and the build are the offline path (glass/Dockerfile is C2-07a1's).
-  # Postgres as geldar_glass (read-only role, sql/0005) with its password from a file secret. Caddy (host network)
-  # reaches it on the loopback publish only. No NATS.
+  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094); image GELDAR_GLASS_IMAGE (C2-07a1).
+  # Postgres as geldar_glass (read-only role), file secret. Caddy (host network) reaches it on loopback. NATS only with Kino.
   glass:
-    # Budget: 0.5 CPU, 256m (no swap, 128 pids). Read-only root, as geldar-mcp runs.
     deploy:
       resources:
         limits:
@@ -463,8 +461,6 @@ services:
       dockerfile: glass/Dockerfile
     image: ${GELDAR_GLASS_IMAGE:-geldar-glass:c2}
     environment:
-      # 0.0.0.0 inside the container is accepted only with the in-network opt-in (C2-07a3, decision 0131); the port is
-      # still published on loopback alone.
       GELDAR_IN_NETWORK_HOSTS: "1"
       GELDAR_GLASS_HOST: 0.0.0.0
       GELDAR_GLASS_PORT: "8787"
@@ -472,11 +468,14 @@ services:
       GELDAR_GLASS_PG_PORT: "5432"
       GELDAR_GLASS_PG_USER: geldar_glass
       GELDAR_GLASS_PG_PASSWORD_FILE: /run/secrets/postgres-glass.txt
-      # Caddy runs on the host network; the peer Glass sees is the docker bridge gateway, not 127.0.0.1. Live check in
-      # the C2-07a2 worknote: set GELDAR_GLASS_TRUSTED_PROXIES in the deploy env to the address Glass logs for Caddy.
+      # Caddy is on the host network: set GELDAR_GLASS_TRUSTED_PROXIES in the deploy env to the peer address Glass logs.
       GELDAR_GLASS_TRUSTED_PROXIES: "${GELDAR_GLASS_TRUSTED_PROXIES:-127.0.0.1}"
       GELDAR_GLASS_DELAY_SECONDS: "${GELDAR_GLASS_DELAY_SECONDS:-60}"
       GELDAR_GLASS_ENABLED: "${GELDAR_GLASS_ENABLED:-true}"
+      # Kino (decision 0075): OFF unless GELDAR_KINO_ENABLED=1 (docs/runbooks/kino.md); its NATS user (kino) may subscribe the feed and publish the control subject only.
+      GELDAR_KINO_ENABLED: "${GELDAR_KINO_ENABLED:-0}"
+      GELDAR_SHARD: "${GELDAR_SHARD:-phase0}"
+      GELDAR_KINO_OTLP_ENDPOINT: "${GELDAR_KINO_OTLP_ENDPOINT:-}"
     secrets: [postgres-glass.txt]
     ports:
       # The loopback Glass port. Literal: the loopback rule rejects interpolation.

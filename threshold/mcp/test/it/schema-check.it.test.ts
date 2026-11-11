@@ -21,6 +21,7 @@ import {
 
 const CHECK_FILE = join(SQL_DIR, 'test', 'check-schema.sql');
 const REGISTER_READS_FILE = join(SQL_DIR, 'test', 'check-schema-register-reads.sql');
+const KINO_FUNCTIONS_FILE = join(SQL_DIR, 'test', 'check-schema-kino-functions.sql');
 
 describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real Postgres', () => {
   let database = '';
@@ -47,6 +48,7 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       // A failed check rejects here with its schema check message; a passing one returns.
       await client.query(check);
       await client.query(readFileSync(REGISTER_READS_FILE, 'utf8'));
+      await client.query(readFileSync(KINO_FUNCTIONS_FILE, 'utf8'));
     } finally {
       await client.end();
     }
@@ -59,6 +61,7 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       /^schema check passed: append-only triggers on 4 audit tables, geldar_mcp cannot change mcp_journal$/,
       /^schema check passed: role geldar_register and mcp_identities$/,
       /^schema check passed: register role reads through functions and the sign-up gates refuse$/,
+      /^schema check passed: Kino definer functions answer for the named identity and refuse the rest$/,
     ];
     expect(passed, 'one NOTICE per check block that passed').toHaveLength(expected.length);
     expected.forEach((pattern, index) => {

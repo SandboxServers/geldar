@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
+import { ownedAgentsOf } from './owner-view.ts';
 import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
@@ -16,8 +17,10 @@ import {
   type SqlClient,
   type ThoughtCursor,
   type ThoughtFilter,
+  type Visibility,
 } from './query.ts';
 import { resolveRoute } from './routes.ts';
+import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
 
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
@@ -74,10 +77,16 @@ function pathOf(url: string | undefined): string {
 export interface GlassHandlerDeps {
   db: SqlClient;
   hub: SseHub;
+  /** The key shared with the register service that signs gk_session. Left out: every viewer is signed out. */
+  sessionKey?: string;
+  /** The clock for cookie expiry, in ms. */
+  now?: () => number;
   /** The public guards. Left out, the handler admits every request (no rate limit). */
   policy?: Partial<PublicPolicy>;
   /** Receives the `glass_untrusted_peer_header` line. Left out: one JSON line on stdout. */
   log?: (entry: { event: string; peer: string }) => void;
+  /** Runs after the kill switch, Host check, size caps and rate limit; true means it answered the request. */
+  extra?: (req: IncomingMessage, res: ServerResponse) => boolean;
 }
 
 /** Most distinct untrusted peers that are logged; each is logged once. */
@@ -161,14 +170,34 @@ async function serveRoute(
   deps: GlassHandlerDeps,
   policy: PublicPolicy,
   client: string,
+  req: IncomingMessage,
 ): Promise<void> {
+  if (name === 'session') {
+    const viewer = await resolveViewer(
+      deps.db,
+      deps.sessionKey,
+      req.headers.cookie,
+      (deps.now ?? Date.now)(),
+    );
+    sendJson(res, 200, viewer);
+    return;
+  }
+  const shown = async (): Promise<Visibility> => ({
+    ...visibilityAt(policy),
+    ownedAgents: await ownedAgentsOf(
+      deps.db,
+      deps.sessionKey,
+      req.headers.cookie,
+      (deps.now ?? Date.now)(),
+    ),
+  });
   if (name === 'agents') {
-    sendJson(res, 200, { agents: await listAgents(deps.db, visibilityAt(policy)) });
+    sendJson(res, 200, { agents: await listAgents(deps.db, await shown()) });
     return;
   }
   if (name === 'thoughts') {
     const filter = thoughtFilter(query);
-    const thoughts = await listThoughts(deps.db, filter, visibilityAt(policy));
+    const thoughts = await listThoughts(deps.db, filter, await shown());
     sendJson(res, 200, {
       thoughts: publicRows(thoughts),
       next: nextCursor(thoughts, filter.limit),
@@ -176,7 +205,7 @@ async function serveRoute(
     return;
   }
   if (name === 'thought') {
-    const row = await getThought(deps.db, params.id ?? '', visibilityAt(policy));
+    const row = await getThought(deps.db, params.id ?? '', await shown());
     if (row === null) {
       sendJson(res, 404, { error: 'not found' });
       return;
@@ -189,7 +218,7 @@ async function serveRoute(
   if (name === 'receipts') {
     const actionId = textParam(query, 'action_id', 128);
     if (actionId === undefined) throw new BadRequest('action_id is required');
-    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, visibilityAt(policy)) });
+    sendJson(res, 200, { receipts: await listReceipts(deps.db, actionId, await shown()) });
     return;
   }
   if (!deps.hub.attach(res, client)) sendJson(res, 503, { error: 'too many streams' });
@@ -255,6 +284,7 @@ export function createHandler(deps: GlassHandlerDeps) {
         return;
       }
     }
+    if (deps.extra?.(req, res) === true) return;
     // HEAD is a GET without a body; Node drops the body bytes of a HEAD response.
     const readMethod = req.method === 'GET' || req.method === 'HEAD';
     const file = STATIC_FILES.get(pathOf(req.url));
@@ -288,7 +318,7 @@ export function createHandler(deps: GlassHandlerDeps) {
       return;
     }
     try {
-      await serveRoute(route.name, route.params, route.query, res, deps, policy, client);
+      await serveRoute(route.name, route.params, route.query, res, deps, policy, client, req);
     } catch (err) {
       if (err instanceof BadRequest) {
         sendJson(res, 400, { error: err.message });

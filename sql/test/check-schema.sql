@@ -222,8 +222,8 @@ BEGIN
   -- Every migration inserts its own row (sql/README.md). 0001 predates the ledger and is
   -- recorded by the runner and by 0002.
   SELECT array_agg(version ORDER BY version) INTO ledger FROM schema_migrations;
-  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013'] THEN
-    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0013, found %', ledger;
+  IF ledger IS NULL OR NOT ledger @> ARRAY['0001', '0002', '0003', '0004', '0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017', '0018', '0019'] THEN
+    RAISE EXCEPTION 'schema check: schema_migrations must hold 0001 to 0019, found %', ledger;
   END IF;
 
   RAISE NOTICE 'schema check passed: % mcp tables, role geldar_mcp', array_length(mcp_expected, 1);
@@ -269,7 +269,8 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
   LOOP
-    IF rel.relname <> ALL (glass_tables)
+    -- kino_admins (0014) is the one added read: the Kino sign-in check; it has no write grant (asserted in register-reads)
+    IF rel.relname <> ALL (glass_tables) AND rel.relname <> 'kino_admins'
        AND has_table_privilege('geldar_glass', rel.relname, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass can read % (not a Glass table)', rel.relname;
     END IF;
@@ -327,7 +328,8 @@ BEGIN
       IF NOT has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
         RAISE EXCEPTION 'schema check: geldar_glass cannot SELECT agents.%', rel.attname;
       END IF;
-    ELSIF has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
+    ELSIF rel.attname NOT IN ('public_camera', 'thoughts_delayed_public') -- 0014 (Kino), 0016 (thought opt-in)
+          AND has_column_privilege('geldar_glass', 'agents', rel.attname, 'SELECT') THEN
       RAISE EXCEPTION 'schema check: geldar_glass can read agents.% (not granted)', rel.attname;
     END IF;
   END LOOP;
@@ -486,13 +488,13 @@ BEGIN
       RAISE EXCEPTION 'schema check: geldar_register can INSERT into mcp_owners directly' USING ERRCODE = 'P0002';
     EXCEPTION WHEN insufficient_privilege THEN NULL;
     END;
-    PERFORM register_create_owner(decode(repeat('12', 32), 'hex'), 'github', 'reg-fn-owner', 'fn');
+    PERFORM register_create_owner(decode(repeat('12', 32), 'hex'), 'microsoft', 'reg-fn-owner', 'fn');
     RESET ROLE; IF (SELECT player_cap FROM mcp_owners WHERE owner_id = 'reg-fn-owner') <> 3
        OR NOT EXISTS (SELECT 1 FROM mcp_identities WHERE owner_id = 'reg-fn-owner') THEN
       RAISE EXCEPTION 'schema check: register_create_owner must write a default-cap owner and its identity';
     END IF; SET LOCAL ROLE geldar_register;
     BEGIN
-      PERFORM register_create_owner(decode(repeat('13', 32), 'hex'), 'github', 'reg-fn-owner', 'again');
+      PERFORM register_create_owner(decode(repeat('13', 32), 'hex'), 'microsoft', 'reg-fn-owner', 'again');
       RAISE EXCEPTION 'schema check: register_create_owner reused an owner id' USING ERRCODE = 'P0002';
     EXCEPTION WHEN unique_violation THEN NULL;
     END;
@@ -601,7 +603,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
              WHERE p.proname LIKE 'register\_%' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
-     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 7
+     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 9
      OR NOT has_function_privilege('geldar_register', 'register_create_owner(bytea,text,text,text)', 'EXECUTE')
      OR has_function_privilege('geldar_mcp', 'register_create_owner(bytea,text,text,text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'schema check: the register functions must be definer functions run by geldar_register only';
@@ -616,7 +618,6 @@ BEGIN
      OR has_column_privilege('geldar_mcp', 'mcp_identities', 'identity_hash', 'SELECT') THEN
     RAISE EXCEPTION 'schema check: geldar_mcp must read banned_at and owner_id of mcp_identities, not the hash';
   END IF;
-
   RESET ROLE;
 
   BEGIN
@@ -669,7 +670,6 @@ BEGIN
     RAISE EXCEPTION 'probe rollback' USING ERRCODE = 'PR001';
   EXCEPTION WHEN SQLSTATE 'PR001' THEN NULL;
   END;
-
   -- R36: the 11th creation by one owner is refused, the 10th is allowed (owner cap 1: retire between)
   step := 'lifetime cap';
   BEGIN

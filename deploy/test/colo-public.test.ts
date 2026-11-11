@@ -63,6 +63,7 @@ const DEFAULT_ENV = [
   'GELDAR_DOMAIN=geldar.example.invalid',
   'GELDAR_MAP_UPSTREAM=127.0.0.1:8100',
   'GELDAR_GLASS_UPSTREAM=127.0.0.1:8101',
+  'GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103',
   'GELDAR_MCP_UPSTREAM=127.0.0.1:8102',
 ].join('\n');
 
@@ -302,6 +303,50 @@ describe('colo-public.sh refusals', () => {
       expect(readFileSync(r.caddyfile, 'utf8')).toBe(CADDYFILE);
       expect(existsSync(r.geldar)).toBe(false);
     }
+  });
+
+  it('refuses when the register upstream glass routes to is missing', () => {
+    const r = rig(DEFAULT_ENV.replace('GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103', ''));
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_REGISTER_UPSTREAM');
+    expect(existsSync(r.geldar)).toBe(false);
+  });
+
+  it('renders the Kino switch into the glass file: 0 when unset, the env value when set', () => {
+    const off = rig();
+    expect(off.run(['install']).status).toBe(0);
+    const offFile = readFileSync(join(off.geldar, 'glass.caddy'), 'utf8');
+    expect(offFile).toContain('0 == 1');
+    expect(offFile).not.toContain('{$GELDAR_KINO_ENABLED');
+    const on = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=1\n`);
+    expect(on.run(['install']).status).toBe(0);
+    expect(readFileSync(join(on.geldar, 'glass.caddy'), 'utf8')).toContain('1 == 1');
+  });
+
+  it('renders the Kino textures route with the map upstream into the glass file', () => {
+    const r = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=1\n`);
+    expect(r.run(['install']).status).toBe(0);
+    const file = readFileSync(join(r.geldar, 'glass.caddy'), 'utf8');
+    const tex = file.slice(file.indexOf('@kino_tex'), file.indexOf('@kino expression'));
+    expect(tex).toContain('reverse_proxy 127.0.0.1:8100');
+    expect(tex).toContain('1 == 1');
+    expect(file).not.toContain('{$GELDAR_MAP_UPSTREAM}');
+  });
+
+  it('refuses a glass install when the map upstream its textures route needs is missing', () => {
+    const r = rig(DEFAULT_ENV.replace('GELDAR_MAP_UPSTREAM=127.0.0.1:8100', ''));
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_MAP_UPSTREAM');
+  });
+
+  it('refuses a Kino switch that is not 0 or 1', () => {
+    const r = rig(`${DEFAULT_ENV}\nGELDAR_KINO_ENABLED=yes\n`);
+    const res = r.run(['install']);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain('GELDAR_KINO_ENABLED must be 0 or 1');
+    expect(existsSync(r.geldar)).toBe(false);
   });
 
   it('refuses when an env-file key is missing', () => {

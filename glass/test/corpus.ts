@@ -63,5 +63,5 @@ export const CORPUS: { name: string; value: string }[] = [
   },
   { name: 'fake canary marker', value: '[CANARY:script] __glassCanary' },
   { name: 'extremely long string', value: 'z'.repeat(200_000) },
-  { name: 'deeply nested JSON text', value: '{"a":'.repeat(500) + '1' + '}'.repeat(500) },
+  { name: 'deeply nested JSON text', value: `${'{"a":'.repeat(500)}1${'}'.repeat(500)}` },
 ];

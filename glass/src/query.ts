@@ -26,6 +26,16 @@ export interface ThoughtCursor {
 export interface Visibility {
   shownUntil: string | null;
   showLivingSovereign: boolean;
+  /**
+   * Agent ids the signed-in viewer owns (decision 0138): their thoughts and receipts show live, with no delay and
+   * whatever the other rules say. Empty for an anonymous viewer, a banned identity, or any non-owner.
+   */
+  ownedAgents?: readonly string[] | undefined;
+}
+
+/** The owned agent ids as a query parameter. */
+function owned(shown: Visibility): string[] {
+  return [...(shown.ownedAgents ?? [])];
 }
 
 /** No delay, living sovereign agents hidden. A caller with a policy passes `visibilityAt(policy)`. */
@@ -53,9 +63,10 @@ export async function listAgents(
     `SELECT a.agent_id, a.name, a.life_seq, a.shard, a.mode, a.tier, a.born_day, a.died_at,
             a.death_cause
        FROM agents a
-      WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+      WHERE ($1::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+             OR a.thoughts_delayed_public OR a.agent_id = ANY($2::text[]))
       ORDER BY a.agent_id LIMIT 500`,
-    [shown.showLivingSovereign],
+    [shown.showLivingSovereign, owned(shown)],
   );
   return result.rows;
 }
@@ -76,8 +87,10 @@ export async function listThoughts(
                               OR ($3 = 'unparsed' AND t.parsed IS NULL))
         AND ($4::timestamptz IS NULL OR t.at >= $4)
         AND ($5::timestamptz IS NULL OR (t.at, t.thought_id) < ($5::timestamptz, $6::text))
-        AND ($8::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
-        AND ($9::timestamptz IS NULL OR t.at <= $9::timestamptz)
+        AND ($8::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+             OR a.thoughts_delayed_public OR a.agent_id = ANY($10::text[]))
+        AND ($9::timestamptz IS NULL OR t.at <= $9::timestamptz OR a.died_at IS NOT NULL
+             OR a.agent_id = ANY($10::text[]))
       ORDER BY t.at DESC, t.thought_id DESC
       LIMIT $7`,
     [
@@ -90,6 +103,7 @@ export async function listThoughts(
       filter.limit,
       shown.showLivingSovereign,
       shown.shownUntil,
+      owned(shown),
     ],
   );
   return result.rows;
@@ -107,9 +121,11 @@ export async function getThought(
             t.parsed, a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
       WHERE t.thought_id = $1
-        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
-        AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz)`,
-    [thoughtId, shown.showLivingSovereign, shown.shownUntil],
+        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+             OR a.thoughts_delayed_public OR a.agent_id = ANY($4::text[]))
+        AND ($3::timestamptz IS NULL OR t.at <= $3::timestamptz OR a.died_at IS NOT NULL
+             OR a.agent_id = ANY($4::text[]))`,
+    [thoughtId, shown.showLivingSovereign, shown.shownUntil, owned(shown)],
   );
   return result.rows[0] ?? null;
 }
@@ -125,10 +141,12 @@ export async function listReceipts(
             r.detail
        FROM receipts r LEFT JOIN agents a ON a.agent_id = r.life_id
       WHERE r.action_id = $1
-        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
-        AND ($3::timestamptz IS NULL OR r.at <= $3::timestamptz)
+        AND ($2::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+             OR a.thoughts_delayed_public OR a.agent_id = ANY($4::text[]))
+        AND ($3::timestamptz IS NULL OR r.at <= $3::timestamptz OR a.died_at IS NOT NULL
+             OR a.agent_id = ANY($4::text[]))
       ORDER BY r.at, r.phase LIMIT 100`,
-    [actionId, shown.showLivingSovereign, shown.shownUntil],
+    [actionId, shown.showLivingSovereign, shown.shownUntil, owned(shown)],
   );
   return result.rows;
 }
@@ -159,7 +177,8 @@ export async function thoughtsAfter(
             a.tier, a.name
        FROM thoughts t LEFT JOIN agents a ON a.agent_id = t.life_id
       WHERE t.at IS NOT NULL AND (t.at, t.thought_id) > ($1::timestamptz, $2::text)
-        AND ($4::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL)
+        AND ($4::boolean OR a.mode IS DISTINCT FROM 'sovereign' OR a.died_at IS NOT NULL
+             OR a.thoughts_delayed_public)
         AND ($5::timestamptz IS NULL OR t.at <= $5::timestamptz)
       ORDER BY t.at, t.thought_id
       LIMIT $3`,

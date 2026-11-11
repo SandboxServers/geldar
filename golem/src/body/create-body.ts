@@ -14,7 +14,9 @@ import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-conf
 import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
 import { combatReflexes } from './reflexes/combat.ts';
+import { forgetBurrow } from './reflexes/panic-burrow.ts';
 import { shelterReflexes } from './reflexes/shelter.ts';
+import { noteGoto, resetStuck } from './reflexes/unstick.ts';
 import { BodyRuntime, type TickSource } from './runtime.ts';
 import type { BodyView } from './view.ts';
 import { WakeTap } from './wake-conditions.ts';
@@ -129,8 +131,17 @@ export function createBody(options: CreateBodyOptions): Body {
     ...(options.nearbyAgents === undefined ? {} : { nearbyAgents: options.nearbyAgents }),
     ...(options.now === undefined ? {} : { now: options.now }),
   });
+  // The bot object lives through a death; what the reflexes remember about the old body does not.
+  const forgetOldBody = (): void => {
+    forgetBurrow(built.view);
+    resetStuck(built.view);
+  };
+  if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
+    if (action.do === 'goto') {
+      noteGoto(built.view, run.state, run.result.reason, run.result.message);
+    }
     // With the reflex off nothing would take the report, so a program must not wait for one.
     // Only a walk the intent's program ran: a plan's own goto is the Mind's to handle.
     if (isReflexEnabled(reflexConfig, 'blocked_path') && executor.ranByProgram(action))

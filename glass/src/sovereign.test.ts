@@ -17,7 +17,7 @@ import type { SseHub } from './sse.ts';
 
 /** The predicate every thought and receipt statement carries: a living sovereign agent is hidden. */
 const PREDICATE =
-  /\(\$\d+::boolean OR a\.mode IS DISTINCT FROM 'sovereign' OR a\.died_at IS NOT NULL\)/;
+  /\(\$\d+::boolean OR a\.mode IS DISTINCT FROM 'sovereign' OR a\.died_at IS NOT NULL/;
 
 type Call = { text: string; values: unknown[] };
 

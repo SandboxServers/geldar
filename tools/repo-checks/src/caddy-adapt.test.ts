@@ -69,7 +69,7 @@ function adapt(site: string): Handler[] {
   return flatten(server.routes);
 }
 
-describe.each(['map', 'glass', 'mcp', 'register'])('caddy adapt: %s.caddy', (site) => {
+describe.each(['map', 'glass', 'mcp'])('caddy adapt: %s.caddy', (site) => {
   it.skipIf(skip)(
     'runs the 405 before any proxy or 404 route, and strips then sets the client address',
     { timeout: 120_000 },

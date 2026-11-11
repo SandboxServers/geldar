@@ -25,13 +25,6 @@ export class PgStore implements Store {
     return row ? { ownerId: String(row.owner_id), banned: row.banned === true } : null;
   }
 
-  async countNewOwnersSince(sinceMs: number): Promise<number> {
-    const r = await this.pool.query('SELECT register_count_new_owners($1) AS n', [
-      new Date(sinceMs),
-    ]);
-    return Number(r.rows[0]?.n ?? 0);
-  }
-
   async createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
@@ -43,6 +36,27 @@ export class PgStore implements Store {
       ownerId,
       identity.display,
     ]);
+  }
+
+  async setPublicCamera(identityHash: string, playerId: string, value: boolean): Promise<boolean> {
+    const r = await this.pool.query('SELECT register_set_public_camera($1, $2, $3) AS ok', [
+      hex(identityHash),
+      playerId,
+      value,
+    ]);
+    return r.rows[0]?.ok === true;
+  }
+
+  async setThoughtsDelayedPublic(
+    identityHash: string,
+    playerId: string,
+    value: boolean,
+  ): Promise<boolean> {
+    const r = await this.pool.query(
+      'SELECT register_set_thoughts_delayed_public($1, $2, $3) AS ok',
+      [hex(identityHash), playerId, value],
+    );
+    return r.rows[0]?.ok === true;
   }
 
   async listPlayers(identityHash: string): Promise<PlayerRow[]> {

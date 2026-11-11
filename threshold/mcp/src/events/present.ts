@@ -67,7 +67,11 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
 }
 
 function intentText(e: SimEvent): string {
-  if (e.outcome === 'failed') return 'Your intent failed: precondition_failed.';
+  if (e.outcome === 'failed') {
+    return e.reason
+      ? `Your intent failed: ${e.reason}.`
+      : 'Your intent failed: precondition_failed.';
+  }
   if (e.outcome === 'limit_reached') return 'Your intent ran out of time.';
   return 'Your intent finished.';
 }

@@ -90,13 +90,19 @@ jobs:
           # Overlays (rcon-host.yml, nats-auth.yml) only add to a base file, so each is checked merged
           # with its base, the same chains as ./geldar.ps1 check.
           for f in "${files[@]}"; do
-            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml|nats-auth-mcp.yml|colo-public.yml) continue ;; esac
+            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml|nats-auth-mcp.yml|colo-public.yml|colo-kino.yml|colo-kino-session.yml) continue ;; esac
             echo "::group::$f"
             docker compose -f "$f" config --quiet
             echo "::endgroup::"
           done
           echo "::group::colo.yml with nats-auth.yml and colo-public.yml (dummy bind and port)"
           GELDAR_MC_BIND=127.0.0.1 GELDAR_MC_PORT=2 docker compose -f compose/colo.yml -f compose/nats-auth.yml -f compose/colo-public.yml config --quiet
+          echo "::endgroup::"
+          echo "::group::colo.yml with colo-kino.yml (dummy Kino NATS user)"
+          GELDAR_KINO_NATS_USER=kino GELDAR_KINO_PUBLIC_ORIGIN=https://glass.example.test docker compose -f compose/colo.yml -f compose/colo-kino.yml config --quiet
+          echo "::endgroup::"
+          echo "::group::colo.yml with colo-kino.yml and colo-kino-session.yml (dummy origin)"
+          GELDAR_KINO_NATS_USER=kino GELDAR_KINO_PUBLIC_ORIGIN=https://glass.example.test docker compose -f compose/colo.yml -f compose/colo-kino.yml -f compose/colo-kino-session.yml config --quiet
           echo "::endgroup::"
           echo "::group::phase0.yml with rcon-host.yml"
           docker compose -f compose/phase0.yml -f compose/rcon-host.yml config --quiet
@@ -160,7 +166,7 @@ jobs:
       - name: check schema (Appendix D tables and pgvector)
         env:
           PGPASSWORD: ci
-        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql -f sql/test/check-schema-kino-functions.sql
 
   images:
     name: images

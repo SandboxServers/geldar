@@ -291,6 +291,43 @@ describe.skipIf(!ENABLED)('Glass against a real Postgres', () => {
     expect(await ids(late)).toContain(thoughtId);
   });
 
+  it('decision 0138: owner live, dead lives public past the delay, opt-in shows a living agent', async () => {
+    const pool = glass?.pool;
+    if (pool === undefined || admin === undefined) throw new Error('glass not built');
+    const cut = new Date(Date.now() - 3 * 3_600_000).toISOString(); // older than every seeded thought
+    const ids = async (extra: { ownedAgents?: string[] }) =>
+      (
+        await listThoughts(
+          pool,
+          { limit: 100 },
+          { shownUntil: cut, showLivingSovereign: false, ...extra },
+        )
+      ).map((row) => row.thought_id);
+    // rule 3: the dead life shows although it is newer than the cut-off
+    expect(await ids({})).toContain(deadThought);
+    // rule 2: the living sovereign agent and a fresh house agent thought stay hidden from a non-owner
+    expect(await ids({})).not.toContain(livingNew);
+    expect(await ids({})).not.toContain(houseNew);
+    // rule 1: the owner sees the living agent at once; another agent id changes nothing
+    expect(await ids({ ownedAgents: [lifeId] })).toContain(livingNew);
+    expect(await ids({ ownedAgents: [houseId] })).not.toContain(livingNew);
+    // rule 4: the opt-in shows the living agent to everyone, still behind the delay
+    await admin.query('UPDATE agents SET thoughts_delayed_public = TRUE WHERE agent_id = $1', [
+      lifeId,
+    ]);
+    const late = new Date(Date.now() + 3_600_000).toISOString();
+    const optedIn = await listThoughts(
+      pool,
+      { limit: 100 },
+      { shownUntil: late, showLivingSovereign: false },
+    );
+    expect(optedIn.map((row) => row.thought_id)).toContain(livingNew);
+    expect(await ids({})).not.toContain(livingNew);
+    await admin.query('UPDATE agents SET thoughts_delayed_public = FALSE WHERE agent_id = $1', [
+      lifeId,
+    ]);
+  });
+
   it('refuses events.payload, agents.personality_seed and every table Glass is not granted', async () => {
     const pool = glass?.pool;
     if (pool === undefined) throw new Error('glass not built');

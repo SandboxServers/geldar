@@ -296,8 +296,6 @@ services:
       - /data
       - -c
       - /etc/nats/nats-auth.conf
-      - -m
-      - "8222"
     deploy:
       resources:
         limits:
@@ -307,9 +305,10 @@ services:
     healthcheck:
       test:
         - CMD
-        - wget
-        - -qO-
-        - http://localhost:8222/healthz?js-enabled-only=true
+        - nc
+        - -z
+        - 127.0.0.1
+        - "4222"
       timeout: 5s
       interval: 5s
       retries: 10

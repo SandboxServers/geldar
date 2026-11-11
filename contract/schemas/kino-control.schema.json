@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/kino-control.schema.json",
+  "title": "KinoControl",
+  "description": "A Glass-to-plugin control message of Kino, version 1, published on `geldar.<shard>.kino.control` (decision 0075). Glass asks the plugin to start or stop reading one agent for the feed. The plugin only reads: a start adds nothing the agent can see (no chat, entity or packet). `start` is sent when the first pane watches an agent, `resync` when a later pane joins (the plugin sends the window again), `refresh` as a heartbeat while any pane watches (a plugin that hears no refresh for a while stops the target, which covers a Glass restart), `stop` after the last pane leaves. While the plugin kill switch is off it ignores every message.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["control_version", "type", "target_agent_id"],
+  "properties": {
+    "control_version": { "const": 1 },
+    "type": { "type": "string", "enum": ["start", "resync", "refresh", "stop"] },
+    "target_agent_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }
+  }
+}

@@ -1,10 +1,28 @@
-# Glass, the Thought Stream viewer, public and read-only (decisions 0072 and 0071). Load this file,
-# then `caddy reload`. Placeholders: GELDAR_DOMAIN and GELDAR_GLASS_UPSTREAM (set by C2-07).
+# Glass, the Thought Stream viewer, public and read-only (decisions 0072 and 0071), and on the same host the register
+# service under /register* and /roster* (decision 0135, amendment R42: one Microsoft sign-in, one host, so the gk_session
+# cookie is host-only). Load this file, then `caddy reload`. Placeholders: GELDAR_DOMAIN, GELDAR_GLASS_UPSTREAM and
+# GELDAR_REGISTER_UPSTREAM (set by C2-07).
 glass.{$GELDAR_DOMAIN} {
-	# GET and HEAD only, as glass/src/routes.ts requires; every other method is refused at Caddy.
-	@not_allowed not method GET HEAD
+	# The register service's paths. Everything else on this host is Glass.
+	@register path /register /register/* /roster /roster/*
+	@not_register not path /register /register/* /roster /roster/*
+
+	# Glass: GET and HEAD only, as glass/src/routes.ts requires; every other method is refused at Caddy.
+	@not_allowed {
+		not path /register /register/* /roster /roster/*
+		not method GET HEAD
+	}
 	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
 	handle @not_allowed {
+		respond 405
+	}
+
+	# Register: sign-in pages are GET, the account actions are POST.
+	@register_not_allowed {
+		path /register /register/* /roster /roster/*
+		not method GET HEAD POST
+	}
+	handle @register_not_allowed {
 		respond 405
 	}
 
@@ -20,14 +38,17 @@ glass.{$GELDAR_DOMAIN} {
 		Referrer-Policy no-referrer
 	}
 
-	# Glass reads no request body.
-	request_body {
+	# Glass reads no request body; the register forms are small.
+	request_body @not_register {
 		max_size 1KiB
+	}
+	request_body @register {
+		max_size 8KiB
 	}
 
 	# The JSON routes of glass/src/routes.ts. Glass answers 421 to any Host that is not loopback, so
 	# every proxy block sets Host to localhost. The client address is set here, after the strips above.
-	@glass_read path /api/agents /api/thoughts /api/thoughts/* /api/receipts
+	@glass_read path /api/agents /api/thoughts /api/thoughts/* /api/receipts /api/session
 	handle @glass_read {
 		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
 			header_up Host localhost
@@ -53,6 +74,52 @@ glass.{$GELDAR_DOMAIN} {
 			flush_interval -1
 			# A reload (the kill switch) closes the open stream within 5 s.
 			stream_close_delay 5s
+		}
+	}
+
+	# Kino (decision 0075): the page, its modules and the WebSocket at /kino/ws. OFF by default: the route exists only when
+	# GELDAR_KINO_ENABLED is 1 in Caddy's environment; otherwise these paths fall through to the 404 below. Caddy is the
+	# only TLS terminator (this host block is the HTTPS site), and the proxy passes the Upgrade handshake itself.
+	# The WebSocket is long-lived, so it is flushed at once. Glass checks the gk_session cookie and the scope itself.
+	# Kino textures (ruling R45): the page loads BlueMap's textures.json from its own origin, so the CSP stays
+	# connect-src 'self'. ONLY /kino/tex/maps/<map>/textures.json is proxied (the prefix is stripped; one path segment for
+	# the map, as Caddy's path glob does not cross a slash). Every other path under /kino/tex/ is 404: the map site's pages
+	# and scripts must never run on the Glass origin, where the gk_session cookie and the register forms live. The request
+	# loses its Cookie and Authorization headers, the response loses Set-Cookie, and the response carries a locked-down CSP.
+	# GET and HEAD only (the 405 handle above). The live player JSON stays excluded. The map upstream (bluemap-web) answers
+	# textures.json from the .gz file with Content-Encoding: gzip; the proxy passes that header through.
+	@kino_tex expression `{$GELDAR_KINO_ENABLED:0} == 1 && path('/kino/tex/maps/*/textures.json') && !path('*/live', '*/live/*', '*..*')`
+	handle @kino_tex {
+		header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		uri strip_prefix /kino/tex
+		reverse_proxy {$GELDAR_MAP_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
+			header_up -Cookie
+			header_up -Authorization
+			header_down -Set-Cookie
+		}
+	}
+
+	@kino_tex_other expression `{$GELDAR_KINO_ENABLED:0} == 1 && path('/kino/tex', '/kino/tex/*')`
+	handle @kino_tex_other {
+		respond 404
+	}
+	@kino expression `{$GELDAR_KINO_ENABLED:0} == 1 && path('/kino', '/kino/*')`
+	handle @kino {
+		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+			flush_interval -1
+			# A reload (the kill switch) closes open panes within 5 s.
+			stream_close_delay 5s
+		}
+	}
+
+	# The register service answers its own 404 for any path it does not serve. It is handed the client address only through
+	# the header set here, as Glass is; the Host header and the cookies pass through unchanged.
+	handle @register {
+		reverse_proxy {$GELDAR_REGISTER_UPSTREAM} {
+			header_up x-geldar-client-ip {remote_host}
 		}
 	}
 

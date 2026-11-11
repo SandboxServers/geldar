@@ -18,6 +18,7 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
     private final String shard;
     private volatile Connection connection;
     private volatile boolean closed;
+    private final java.util.concurrent.atomic.AtomicLong dropped = new java.util.concurrent.atomic.AtomicLong();
 
     public NatsKinoSink(String url, String shard, Function<String, String> setting, Logger log) {
         this.shard = shard;
@@ -33,7 +34,7 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
     private void connect(String url, Function<String, String> setting, Logger log) {
         try {
             Options.Builder b = Options.builder().server(url).connectionTimeout(Duration.ofSeconds(5))
-                    .maxReconnects(-1);
+                    .maxReconnects(-1).discardMessagesWhenOutgoingQueueFull().reconnectBufferSize(256 * 1024);
             String user = setting.apply("GELDAR_NATS_USER");
             String file = setting.apply("GELDAR_NATS_PASSWORD_FILE");
             if (user != null && !user.isBlank() && file != null && !file.isBlank()) {
@@ -54,8 +55,18 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
     public void publish(String agentId, String json) {
         Connection nc = connection;
         if (nc != null) {
-            nc.publish(subject(shard, agentId), json.getBytes(StandardCharsets.UTF_8));
+            try {
+                nc.publish(subject(shard, agentId), json.getBytes(StandardCharsets.UTF_8));
+            } catch (IllegalStateException e) {
+                // Closed or reconnect buffer full: drop the message; the server thread never throws or waits.
+                dropped.incrementAndGet();
+            }
         }
+    }
+
+    /** Messages dropped because the connection refused them. */
+    public long dropped() {
+        return dropped.get();
     }
 
     @Override

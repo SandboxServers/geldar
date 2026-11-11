@@ -39,7 +39,7 @@ export const mcpToolSchemas: Record<
         "actions": {
           "type": "array",
           "maxItems": 6,
-          "description": "Immediate steps, at most 6, executed in order.",
+          "description": "Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, build, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw.",
           "items": {
             "$ref": "#/$defs/Action"
           }
@@ -242,6 +242,18 @@ export const mcpToolSchemas: Record<
               "properties": {
                 "do": {
                   "const": "sleep"
+                }
+              },
+              "required": [
+                "do"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "do": {
+                  "const": "unstick"
                 }
               },
               "required": [
@@ -1697,15 +1709,7 @@ export const mcpToolSchemas: Record<
           }
         },
         "untrusted_world_text": {
-          "type": "object",
-          "allOf": [
-            {
-              "$ref": "#/$defs/UntrustedWorldText"
-            }
-          ],
-          "required": [
-            "book"
-          ]
+          "$ref": "#/$defs/UntrustedWorldText"
         },
         "note": {
           "$ref": "#/$defs/UntrustedNote"
