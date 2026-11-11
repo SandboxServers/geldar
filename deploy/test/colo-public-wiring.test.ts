@@ -97,7 +97,14 @@ function fixture(opts: { manifest?: string[]; skipSecret?: string } = {}): Fx {
   delete env.Path;
   for (const k of ['GELDAR_MC_BIND', 'GELDAR_MC_PORT']) delete env[k];
   Object.assign(env, {
-    PATH: [bin, SH === 'sh' ? '' : dirname(SH), process.env.PATH ?? process.env.Path ?? '']
+    // On Windows the spawn gets only Git for Windows' tools (usr/bin and mingw64/bin for curl), not the full Windows PATH: MSYS
+    // converts the whole PATH on every fork, so a long PATH made one deploy run cost over a minute (see the FX-DEPLOY-WIN note).
+    PATH: [
+      bin,
+      SH === 'sh' ? '' : dirname(SH),
+      process.platform === 'win32' ? join(dirname(SH), '..', '..', 'mingw64', 'bin') : '',
+      process.platform === 'win32' ? '' : (process.env.PATH ?? ''),
+    ]
       .filter(Boolean)
       .join(delimiter),
     GELDAR_COLO_COMPOSE: posix(resolve(ROOT, 'compose', 'colo.yml')),
