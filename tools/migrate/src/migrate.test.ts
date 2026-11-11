@@ -33,6 +33,7 @@ describe('listMigrations', () => {
       '0015_kino_audit.sql',
       '0016_thought_visibility.sql',
       '0017_kino_scope_functions.sql',
+      '0018_kino_agent_list.sql',
     ]);
   });
 
