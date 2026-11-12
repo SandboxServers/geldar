@@ -87,7 +87,11 @@ describe('mineAction', () => {
     const bot = fakeBot(logs);
     expect(await mine(bot, 2)).toEqual({
       status: 'completed',
-      detail: { mined: 2, collected: { oak_log: 2 } },
+      detail: {
+        mined: 2,
+        collected: { oak_log: 2 },
+        hint: expect.stringContaining('the space is open'),
+      },
     });
   });
 
@@ -141,7 +145,11 @@ describe('mineAction', () => {
     bot.dig.mockRejectedValueOnce(new Error('Block is not in view'));
     expect(await mine(bot, 1)).toEqual({
       status: 'completed',
-      detail: { mined: 1, collected: { oak_log: 1 } },
+      detail: {
+        mined: 1,
+        collected: { oak_log: 1 },
+        hint: expect.stringContaining('the space is open'),
+      },
     });
     expect(bot.dig).toHaveBeenCalledTimes(2);
     // The retry walk (range 3) comes between the two digs; the pickup walk (range 0) is last.

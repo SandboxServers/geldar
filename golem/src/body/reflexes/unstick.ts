@@ -11,6 +11,8 @@ export const MAX_ATTEMPTS = 3;
 interface Streak {
   stalls: number;
   attempts: number;
+  /** Where the streak began. */
+  at?: { x: number; y: number; z: number } | undefined;
 }
 
 /** The stuck streaks by view (one view per Body). */
@@ -25,19 +27,46 @@ function streakOf(view: BodyView): Streak {
   return streak;
 }
 
-/** Tells the reflex how a `goto` ended: a stall adds to the streak, an arrival clears it. */
+/** Stalls count as one streak while the bot stays within this many blocks of where the streak began. */
+export const SAME_SPOT = 1;
+/** The bot moving further than this from where the streak began ends the streak (attempts too). */
+export const MOVED_AWAY = 3;
+
+/**
+ * Tells the reflex how a `goto` ended. The stall rule: a stall is a walk that went nowhere because
+ * of the bot's own cell, that is a failure with reason `blocked` (whatever its message: "no path",
+ * "way was blocked", "no movement for N world ticks") or a `goto` that finished without moving
+ * (`stalled`). Failures about the goal itself (`not_found`, `timeout`, `interrupted`) are not stalls.
+ * Stalls add up only while the bot stays within `SAME_SPOT` of where the streak began; a stall
+ * further away starts a new count, and one beyond `MOVED_AWAY` also clears the attempts. An arrival
+ * clears the streak. `at` is the bot's position when the walk ended; without it the spot is unchanged.
+ */
 export function noteGoto(
   view: BodyView,
   state: 'completed' | 'failed' | 'cancelled',
   reason: string | undefined,
-  message: string | undefined,
+  _message: string | undefined,
+  stalled = false,
+  at?: { x: number; y: number; z: number },
 ): void {
   const streak = streakOf(view);
-  if (state === 'completed') {
+  const stall = (state === 'completed' && stalled) || (state === 'failed' && reason === 'blocked');
+  if (stall) {
+    if (at && streak.at) {
+      const away = Math.hypot(at.x - streak.at.x, at.y - streak.at.y, at.z - streak.at.z);
+      if (away > MOVED_AWAY) streak.attempts = 0;
+      if (away > SAME_SPOT) {
+        streak.stalls = 0;
+        streak.at = at;
+      }
+    } else if (at) {
+      streak.at = at;
+    }
+    streak.stalls++;
+  } else if (state === 'completed') {
     streak.stalls = 0;
     streak.attempts = 0;
-  } else if (state === 'failed' && reason === 'blocked' && message?.startsWith('no movement')) {
-    streak.stalls++;
+    streak.at = undefined;
   }
 }
 

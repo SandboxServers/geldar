@@ -163,8 +163,9 @@ describe('unstick action', () => {
   it('does not dig down at low health, over lava, or through hard blocks', async () => {
     const soft = island();
     soft.set(key(0, 63, 0), 'oak_leaves');
-    soft.set(key(0, 61, 0), 'dirt');
-    const low = fakeBot(soft, 8);
+    soft.set(key(0, 59, 0), 'dirt');
+    // Health 2: a fall of 4 blocks is not survivable (the controlled dig-down rule, C1-13).
+    const low = fakeBot(soft, 2);
     expect(await unstick(ctxOf(low.bot))).toMatchObject({ status: 'failed', reason: 'blocked' });
     expect(low.dug).toEqual([]);
 

@@ -77,6 +77,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   const start = snapshot(bot);
   const tried = new Set<string>();
   let mined = 0;
+  let lastMined = '';
 
   while (mined < action.count) {
     if (signal.aborted) return abort(bot, mined);
@@ -133,6 +134,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     }
     // The block is broken even if the abort came during the dig, so it counts.
     mined += 1;
+    lastMined = block.name;
     if (signal.aborted) return abort(bot, mined);
 
     // The drop falls to the lowest air cell under the block. A walk there can fail (a high block
@@ -146,7 +148,12 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     await waitForDrop(ctx, bot, block, start, mined, baseline);
     if (signal.aborted) return abort(bot, mined);
   }
-  return completed({ mined, collected: inventoryDelta(start, snapshot(bot)) });
+  return completed({
+    mined,
+    collected: inventoryDelta(start, snapshot(bot)),
+    // Fixed text around the game's own block name: the gap can be walked into with goto.
+    hint: `you mined ${lastMined}; the space is open`,
+  });
 }
 
 /**

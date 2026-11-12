@@ -139,8 +139,12 @@ export function createBody(options: CreateBodyOptions): Body {
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
-    if (action.do === 'goto') {
-      noteGoto(built.view, run.state, run.result.reason, run.result.message);
+    // A `mine` counts only when its walk to the block was blocked (never as an arrival).
+    if (action.do === 'goto' || (action.do === 'mine' && run.state === 'failed')) {
+      const stalled = run.result.detail?.stalled === true;
+      const p = options.bot.entity?.position;
+      const at = p ? { x: p.x, y: p.y, z: p.z } : undefined;
+      noteGoto(built.view, run.state, run.result.reason, run.result.message, stalled, at);
     }
     // With the reflex off nothing would take the report, so a program must not wait for one.
     // Only a walk the intent's program ran: a plan's own goto is the Mind's to handle.
