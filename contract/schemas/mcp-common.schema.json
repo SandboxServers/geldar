@@ -77,10 +77,36 @@
             "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
           }
         },
+        "dimension": {
+          "description": "Death events: the dimension the player died in. Absent when the server could not read it.",
+          "enum": ["overworld", "nether", "end", "other"]
+        },
         "drops": {
           "description": "Death events: the number of items dropped; a line is emitted only when above 0.",
           "type": "integer",
           "minimum": 0
+        },
+        "drop_items": {
+          "description": "Death events: the dropped stacks, one record each, with the item name (no namespace), its count and where it lies. At most 41 records.",
+          "type": "array",
+          "maxItems": 41,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item", "count"],
+            "properties": {
+              "item": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[a-z0-9_./-]+$"
+              },
+              "count": { "type": "integer", "minimum": 1 },
+              "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "y": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+            }
+          }
         },
         "respawn_point": { "$ref": "common.schema.json#/$defs/Position" }
       }
