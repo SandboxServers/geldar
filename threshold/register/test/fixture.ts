@@ -6,6 +6,7 @@ import { challengeOf } from '../src/pkce.ts';
 import { microsoftProvider } from '../src/providers.ts';
 import { createRegisterServer } from '../src/server.ts';
 import type { Store } from '../src/store.ts';
+import { FakeSessionStore } from './fake-session-store.ts';
 
 export const DAY = 86_400_000;
 export const NOW = Date.parse('2026-11-11T00:00:00Z');
@@ -84,6 +85,8 @@ export function fakeIdp(): FakeIdp {
 }
 
 export interface Harness {
+  /** The session table the server uses; a test can count rows or inject an outage. */
+  readonly sessions: FakeSessionStore;
   base: string;
   idp: FakeIdp;
   clock: { at: number };
@@ -101,7 +104,11 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function harness(over: Partial<RegisterConfig> = {}, store?: Store): Promise<Harness> {
+export async function harness(
+  over: Partial<RegisterConfig> = {},
+  store?: Store,
+  sessions = new FakeSessionStore(),
+): Promise<Harness> {
   const cfg = config(over);
   const idp = fakeIdp();
   const clock = { at: NOW };
@@ -114,7 +121,7 @@ export async function harness(over: Partial<RegisterConfig> = {}, store?: Store)
     now: () => clock.at,
     log: (l) => logs.push(l),
     ...(store
-      ? { store }
+      ? { store, sessions }
       : {
           onSignedIn: (id: Identity, res: ServerResponse) => {
             signedIn.push(id);
@@ -127,6 +134,7 @@ export async function harness(over: Partial<RegisterConfig> = {}, store?: Store)
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     base,
+    sessions,
     idp,
     clock,
     logs,
