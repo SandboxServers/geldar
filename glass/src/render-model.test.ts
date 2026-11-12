@@ -6,6 +6,7 @@ import {
   clip,
   display,
   filterThoughts,
+  journalShown,
   LIST_CAP,
   pushThought,
   TEXT_CAP,
@@ -13,6 +14,7 @@ import {
   toView,
   visible,
 } from './render-model.ts';
+import { renderRow } from './render-view.ts';
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the same controls the page marks
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/u;
@@ -137,6 +139,81 @@ describe('the bounded list', () => {
     expect(appendOlder(full, [viewAt('n5')]).length).toBe(LIST_CAP);
   });
 });
+
+describe('journal rows', () => {
+  const long = `${'a'.repeat(150)}\n${'b'.repeat(150)}`;
+  it('previews 200 characters and expands to all of it', () => {
+    expect(journalShown('short', false)).toEqual({ shown: 'short', expandable: false });
+    const collapsed = journalShown(long, false);
+    expect(collapsed.expandable).toBe(true);
+    expect(collapsed.shown).toBe(`${long.slice(0, 200)}...`);
+    expect(journalShown(long, true).shown).toBe(long);
+  });
+  it('renders the text, a neutral label, and toggles on tap', () => {
+    const made: FakeEl[] = [];
+    const doc = {
+      createElement: (tag: string): FakeEl => {
+        const el = new FakeEl(tag);
+        made.push(el);
+        return el;
+      },
+    };
+    const view = toView({
+      thought_id: 'j1',
+      life_id: 'l1',
+      name: 'Jason',
+      tier: 'sovereign',
+      at: '2026-01-01T00:00:00Z',
+      kind: 'journal',
+      text: long,
+    });
+    let opened = 0;
+    const item = renderRow(doc, view, () => {
+      opened++;
+    }) as unknown as FakeEl;
+    const spans = made.filter((e) => e.tag === 'span');
+    const label = spans.find((s) => s.className.startsWith('outcome'));
+    expect(label?.textContent).toBe('journal');
+    expect(label?.className).not.toContain('unparsed');
+    const body = spans.find((s) => s.className.includes('journal-text'));
+    expect(body?.textContent).toBe(`${long.slice(0, 200)}...`);
+    const button = item.children[0] as FakeEl;
+    button.click();
+    expect(body?.textContent).toBe(long);
+    button.click();
+    expect(body?.textContent).toBe(`${long.slice(0, 200)}...`);
+    expect(opened).toBe(0);
+  });
+  it('searches the journal text by keyword', () => {
+    const view = toView({ thought_id: 'j', name: 'Jason', kind: 'journal', text: 'found a Cave' });
+    expect(filterThoughts([view], { keyword: 'cave' })).toHaveLength(1);
+  });
+});
+
+class FakeEl {
+  className = '';
+  textContent: string | null = '';
+  type = '';
+  value = '';
+  children: FakeEl[] = [];
+  private handler: (() => void) | undefined;
+  readonly tag: string;
+  constructor(tag: string) {
+    this.tag = tag;
+  }
+  append(...nodes: FakeEl[]): void {
+    this.children.push(...nodes);
+  }
+  replaceChildren(...nodes: FakeEl[]): void {
+    this.children = nodes;
+  }
+  addEventListener(_type: 'click', listener: () => void): void {
+    this.handler = listener;
+  }
+  click(): void {
+    this.handler?.();
+  }
+}
 
 describe('backoffMs', () => {
   it('doubles from 500 ms and stops at 30 s, for any attempt number', () => {

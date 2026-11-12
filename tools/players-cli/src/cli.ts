@@ -13,10 +13,16 @@ import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
 import { openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
 
+/** GELDAR_SHARD_FILE when set (the Colo admin image sets it to the Colo roster), else the phase0 shard config. */
+export function shardFilePath(env: NodeJS.ProcessEnv): string {
+  const set = env.GELDAR_SHARD_FILE?.trim();
+  return set ? set : join(REPO_ROOT, 'shards', 'phase0.yaml');
+}
+
 /** The repo root, three levels above this file (tools/players-cli/src). */
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 /** The shard config that names the sovereign players and their life ids. */
-export const SHARD_FILE = join(REPO_ROOT, 'shards', 'phase0.yaml');
+export const SHARD_FILE = shardFilePath(process.env);
 /** The MineSkin API key: a git-ignored secret file, read here and never printed. */
 export const KEY_FILE = join(REPO_ROOT, 'compose', 'secrets', 'mineskin.txt');
 

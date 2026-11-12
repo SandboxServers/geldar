@@ -1,11 +1,13 @@
-// The always-visible agent: a second, depth-test-off copy of the figure drawn translucent on top of
-// the scene, so a figure hidden behind blocks still shows as a silhouette. Where the figure is
-// visible the ghost lies over the same colour and changes nothing.
+// The always-visible agent: a second copy of the figure drawn translucent with depth test GREATER, so
+// it appears only where blocks hide the figure and shows as a faint silhouette. Where the figure is
+// visible the ghost fails the depth test and the true colours stay.
 
 import {
   BoxGeometry,
   Color,
   EdgesGeometry,
+  GreaterDepth,
+  type Group,
   LineBasicMaterial,
   LineSegments,
   Mesh,
@@ -14,16 +16,44 @@ import {
 
 export const GHOST_OPACITY = 0.4;
 export const GHOST_ORDER = 10;
+export const GHOST_TINT = 0x66e0ff;
 
-/** A depth-test-off translucent material in `colour`. */
+/**
+ * A translucent material in `colour` that draws only where something nearer already covers the pixel
+ * (depth test GREATER), so an unoccluded figure keeps its true colours and an occluded one shows a faint
+ * silhouette.
+ */
 export function ghostMaterial(colour: number): MeshBasicMaterial {
   return new MeshBasicMaterial({
     color: new Color(colour),
-    depthTest: false,
+    depthTest: true,
+    depthFunc: GreaterDepth,
     depthWrite: false,
     transparent: true,
     opacity: GHOST_OPACITY,
   });
+}
+
+/** The ghost of a skinned figure: the same parts, drawn with the skin tinted, only where occluded. */
+export function skinGhost(figure: Group): Group {
+  const ghost = figure.clone(true);
+  ghost.name = 'ghost';
+  ghost.traverse((o) => {
+    if (!(o instanceof Mesh)) return;
+    const src = (o.material as MeshBasicMaterial).map;
+    o.material = new MeshBasicMaterial({
+      map: src,
+      color: new Color(GHOST_TINT),
+      alphaTest: 0.5,
+      depthTest: true,
+      depthFunc: GreaterDepth,
+      depthWrite: false,
+      transparent: true,
+      opacity: GHOST_OPACITY,
+    });
+    o.renderOrder = GHOST_ORDER;
+  });
+  return ghost;
 }
 
 /** Adds the ghost silhouette (body, head and outline) as children of the agent body mesh. */
@@ -44,7 +74,8 @@ export function addGhost(
     new EdgesGeometry(bodyGeometry),
     new LineBasicMaterial({
       color: 0xffffff,
-      depthTest: false,
+      depthTest: true,
+      depthFunc: GreaterDepth,
       depthWrite: false,
       transparent: true,
       opacity: 0.7,

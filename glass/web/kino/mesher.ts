@@ -34,9 +34,21 @@ export interface MeshData {
   soft?: number[];
 }
 
+export const WATER_SOFT = 0.2;
+
+/** True for a water block state. */
+export function isWater(state: string | undefined): boolean {
+  return /^minecraft:water(?:\[|$)/.test(state ?? '');
+}
+
+/** Which faces a mesh holds: the opaque and cut-out ones, the water ones (blended later), or both. */
+export type MeshPass = 'all' | 'solid' | 'water';
+
 /** The `soft` attribute value of a block state. */
 export function softOf(state: string): number {
   if (!SEE_THROUGH.test(state)) return 0;
+  // Water is blended, never dithered: 0.2 is below the shader's fade threshold.
+  if (isWater(state)) return WATER_SOFT;
   return /leaves(?:\[|$)/.test(state) ? 1 : 0.5;
 }
 
@@ -56,6 +68,7 @@ export function meshSection(
   sy: number,
   cz: number,
   uvFor: UvLookup,
+  pass: MeshPass = 'all',
 ): MeshData {
   const soft: number[] = [];
   const mesh: MeshData = { positions: [], normals: [], uvs: [], indices: [], soft };
@@ -82,6 +95,7 @@ export function meshSection(
         const wz = oz + z;
         const state = world.stateAt(wx, wy, wz) as string;
         if (isAir(state)) continue;
+        if (pass !== 'all' && isWater(state) !== (pass === 'water')) continue;
         const shape = shapeFor(state);
         if (shape.kind === 'skip') continue;
         const s = shape.kind === 'cross' ? 0.5 : softOf(state);

@@ -4,11 +4,20 @@ Skins come from MineSkin signed textures stored in the `geldar-skins` NATS KV bu
 
 ## Put the skins on the node
 
-1. Keep `ranger-skins.json` (owner file, mode 0600) outside the repo. Format: `{"ag-jason-01": {"mineskin_uuid", "value", "signature", "model"}, ...}`.
-2. Copy it to the node, for example `/etc/geldar/ranger-skins.json` (owner root, mode 0600). Do not put it under `compose/` or the repo checkout.
-3. With `GELDAR_NATS_URL` set to the node NATS, import each ranger (no upload runs, no MineSkin key is needed):
-   `pnpm --filter ./tools/players-cli exec tsx src/cli.ts skin import ag-jason-01 /etc/geldar/ranger-skins.json` (repeat for ag-zack-01, ag-billy-01, ag-trini-01, ag-kimberly-01, ag-tommy-01).
-4. The plugin watches the bucket, so a new login gets the skin; an already connected agent shows it after it reconnects (restart that body: `colo-admin.sh player-stop` then `player-start`).
+The signed JSON (`ranger-skins.json`, format `{"ag-jason-01": {"mineskin_uuid", "value", "signature", "model"}, ...}`) is an owner secret. It never goes in the repo, in `compose/`, in a chat or in a command line.
+
+On the Colo node (no node or pnpm on the host; the admin image carries `players-cli`):
+
+1. Make a skins directory outside the checkout, mode 0700, owned by the service uid, for example `install -d -m 700 -o 1000 -g 1000 /etc/geldar/skins-in`. Copy the file in as `/etc/geldar/skins-in/ranger-skins.json`, mode 0600, owner the service uid (the container runs as that uid and reads it through a read-only mount).
+2. For each ranger (ag-jason-01, ag-zack-01, ag-billy-01, ag-trini-01, ag-kimberly-01, ag-tommy-01):
+   `GELDAR_SKINS_DIR=/etc/geldar/skins-in deploy/colo-admin.sh skin-import ag-jason-01 --file /run/skins/ranger-skins.json`
+   The script mounts the directory read-only at `/run/skins` in a one-shot admin container, which connects to NATS as the `body` user (password file `nats-body.txt`, already mounted in the admin service) and writes the bucket key (the life id from `shards/colo-mind.yaml`). It prints the player id and life id only, never the value, and exits non-zero with a message on failure. `DEPLOY_DRY_RUN=1` prints the plan.
+3. The plugin watches the bucket, so a new login gets the skin; an already connected agent shows it after it reconnects (restart that body: `colo-admin.sh player-stop` then `player-start`).
+4. Delete the file from the node when done, or keep it mode 0600 in that 0700 directory.
+
+Needs: an admin image built from this change (it adds `tools/players-cli`), and a NATS auth config whose `body` user may publish `$KV.geldar-skins.>` (regenerate `nats-auth.conf` with `./geldar.ps1 shard nats-auth colo` and recreate the NATS container; this is a separate owner approval step, and the passwords stay unchanged). `ensure-skins-bucket` must have run once (colo-up does it).
+
+On a dev machine with the Phase 0 shard, the original path still works: `pnpm --filter ./tools/players-cli exec tsx src/cli.ts skin import ag-jason-01 <json outside the repo>` with `GELDAR_NATS_URL` and the NATS user set.
 
 ## Check
 
@@ -19,6 +28,6 @@ Join as the agent (or look at the tab list); the skin shows for viewers. A textu
 `plugins/bluemap/config/plugin.conf` keeps `skin-download: false` (no fetch from Mojang for unknown UUIDs). Showing the skin on the live markers needs a live check on the node; see the SKINS report.
 ## Kino skins
 
-Copy the six PNGs from your private skin files to the node directory `/var/lib/geldar-colo/kino-skins` (or set `GELDAR_KINO_SKINS_DIR`), named by Kino agent id: `<agent_id>.png` (for example `ag_jason_01.png`: Kino agent ids are the underscore life ids shown in `/kino/targets`, not the hyphen player ids; lower case letters, digits, `_` and `-` are accepted, so the file name must match the id exactly). Mode 0644 files in a 0755 directory owned by root; Glass mounts it read-only. Create the directory before `up` (the overlay does not create it). Restart `glass` after adding files. Glass serves `/kino/skins/<agent_id>.png` only to a viewer who may watch that agent.
+Copy the six PNGs from your private skin files to `compose/secrets/kino-skins/` in the source tree on the node (the overlay `compose/colo-kino.yml` mounts `./secrets/kino-skins` relative to `compose/`; git-ignored), named by Kino agent id: `<agent_id>.png` (for example `ag_jason_01.png`: Kino agent ids are the underscore life ids shown in `/kino/targets`, not the hyphen player ids; lower case letters, digits, `_` and `-` are accepted, so the file name must match the id exactly). The files must be readable by the Glass uid (mode 0644 in a 0755 directory is enough); Glass mounts it read-only. Create the directory before `up` (the overlay does not create it). Restart `glass` after adding files. Glass serves `/kino/skins/<agent_id>.png` only to a viewer who may watch that agent.
 
 Kino fetches the skin lazily when an agent first appears and draws a Minecraft player model (head, body, arms, legs, and the overlay layer on 64x64 skins; 64x32 legacy skins mirror the left limbs). A 404, a bad image or a size other than 64x64 or 64x32 silently keeps the cyan box; the result is cached until the page reloads, so reload after adding a skin. Slim (3 px) arms are detected from the image: a 64x64 skin whose pixels x 54..55, y 20..31 are all fully transparent is slim, otherwise classic.

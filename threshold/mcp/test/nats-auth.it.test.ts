@@ -70,6 +70,7 @@ function roleAllows(shard: string): Record<Role, Allow> {
         kv('geldar-life-registry'),
         kv('geldar-checkpoints'),
         kv('geldar-body-generation'),
+        kv('geldar-skins'),
       ],
       // Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino subjects.
       pubDeny: [`geldar.${s}.kino.>`],
