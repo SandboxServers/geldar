@@ -137,6 +137,8 @@ export function executorHarness(
     sink: tap,
     view,
     reflexes: opts.reflexes ?? [],
+    // The fake handlers here complete without touching the fake bot, so no effect would be measured.
+    receipts: false,
     ...(opts.timeScale === undefined ? {} : { timeScale: opts.timeScale }),
   });
   const handlers = countingHandlers();

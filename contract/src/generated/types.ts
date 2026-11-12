@@ -25,6 +25,7 @@ export interface ActionOutcomePayload {
     | "interrupted"
     | "unsupported"
     | "busy"
+    | "no_effect"
     | "internal";
   /**
    * Short fixed text, for example 'Your mine failed: the way was blocked.'

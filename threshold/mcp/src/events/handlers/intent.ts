@@ -32,6 +32,7 @@ export function failureReason(detail: string | undefined): string | undefined {
   if (missing?.[1] && ITEM_LIST.test(missing[1])) {
     return `you lack ${missing[1].replaceAll('_', ' ')}`;
   }
+  if (text.startsWith('no_effect')) return 'it changed nothing';
   if (text.startsWith('missing_station')) return 'no crafting table within reach';
   if (text.startsWith('blocked: no movement')) return 'you could not move and may be stuck';
   if (text.startsWith('blocked: unstick')) return 'no way out was found without risking a fall';
