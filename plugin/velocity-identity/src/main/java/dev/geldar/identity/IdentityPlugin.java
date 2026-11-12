@@ -208,14 +208,23 @@ public final class IdentityPlugin {
         try {
             Optional<LifeRegistry.Entry> life = registry.find(event.getGameProfile().getName());
             if (life.isEmpty()) {
+                log.info("skin: lookup skipped (not a sovereign life)");
                 return;
             }
+            String lifeId = printable(life.get().lifeId());
             Optional<SkinRegistry.Texture> texture = skins.find(life.get().lifeId());
             if (texture.isPresent()) {
                 event.setGameProfile(withTexture(event.getGameProfile(), texture.get()));
+                log.info("skin: applied for {} (variant {})", lifeId, texture.get().variant());
+            } else if (!skins.isSynced()) {
+                log.warn("skin: KV unavailable: NotSynced");
+            } else if (skins.rejectionOf(life.get().lifeId()) != null) {
+                log.warn("skin: record for {} rejected: {}", lifeId, skins.rejectionOf(life.get().lifeId()));
+            } else {
+                log.info("skin: no record for {}", lifeId);
             }
         } catch (RuntimeException e) {
-            log.warn("Skin lookup failed ({}), the default profile is kept", e.getClass().getSimpleName());
+            log.warn("skin: KV unavailable: {}", e.getClass().getSimpleName());
         }
     }
 
