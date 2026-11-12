@@ -4,8 +4,7 @@
 # `${GELDAR_COLO_<SERVICE>_CPUS:-x}` and `${GELDAR_COLO_<SERVICE>_MEM:-y}`. shards/colo.yaml holds the TOTAL cap for the
 # shard; geldar.ps1 refuses a total below the sum of these defaults (Read-ColoConfig). `docker compose -f compose/colo.yml
 # config` works offline with the defaults.
-# The node also runs a production game server and CI runners: this file never publishes 25565 or 25566.
-# Secrets are files in compose/secrets/ (run `./geldar.ps1 shard secrets colo`).
+# The node also runs a production game server and CI runners: this file never publishes 25565 or 25566. Secrets: compose/secrets/ (`./geldar.ps1 shard secrets colo`).
 name: geldar-colo
 
 x-minecraft-healthcheck: &mc-health
@@ -21,8 +20,7 @@ x-logging: &logging
     max-size: "10m"
     max-file: "3"
 
-# Labels on every service (FX-WATCHTOWER). The shared node runs a Watchtower container that auto-updates containers.
-# Its opt-out label keeps it off these services: they are pinned by digest and change only through deploy/colo-up.sh.
+# Labels on every service (FX-WATCHTOWER): the opt-out keeps the node's Watchtower off these digest-pinned services (deploy/colo-up.sh updates them).
 # com.geldar.stack names the stack; deploy/colo-status.sh still scopes its docker calls by the compose project label.
 x-labels: &colo-labels
   com.centurylinklabs.watchtower.enable: "false"
@@ -78,7 +76,8 @@ services:
     # NATS accounts are the opt-in overlay (decision 0080); see the nats-auth slot at the end of this file.
     # No monitor port in the base: the monitor lists subjects and subscriptions (who is watched) to the colo network.
     # The one healthcheck, for every merge, is a TCP probe of the client port (BusyBox "nc -z", in the pinned Alpine image),
-    # so a nats-auth.conf made before the `http:` monitor line stays healthy. Never probe the monitor.    command: ["-js", "-sd", "/data"]
+    # so a nats-auth.conf made before the `http:` monitor line stays healthy. Never probe the monitor.
+    command: ["-js", "-sd", "/data"]
     volumes:
       - nats-data:/data
     # No ports: NATS (4222) is reached on the colo network only.
@@ -225,9 +224,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-03] The Body (Adam's Golem; image from golem/Dockerfile, decision 0083). Built locally from the repo root (the
-  # `build:` key is how the digest rule treats a local build). GELDAR_BODY_IMAGE is the tag: the default is the local tag
-  # `geldar-body:c1`. The deploy tooling (C1-04) sets it to the published, digest-pinned reference. No published port.
+  # [C1-03] The Body (Adam's Golem; golem/Dockerfile, decision 0083). Built locally (the `build:` key is how the digest rule treats it).
+  # GELDAR_BODY_IMAGE is the tag (default geldar-body:c1); the deploy tooling (C1-04) sets the published, digest-pinned reference. No published port.
   golem-body:
     # Budget: 1 CPU, 2048m (no swap, 256 pids). Measured in C1-10.
     deploy:
@@ -269,12 +267,10 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-03] The Mind (Record/Mind host, decision 0078; image from animus/Dockerfile.mind). Built locally from the repo
-  # root, as golem-body is. GELDAR_MIND_IMAGE follows the same rule: the default is `geldar-mind:c1`, and the deploy
-  # tooling (C1-04) sets the published reference. The model endpoint (the Thinker gateway) is configuration.
+  # [C1-03] The Mind (Record/Mind host, decision 0078; animus/Dockerfile.mind). Built locally, as golem-body is; GELDAR_MIND_IMAGE
+  # follows the same rule (default geldar-mind:c1). The model endpoint (the Thinker gateway) is configuration.
   animus:
-    # Decision 0134: the Mind is a profile until a Thinker path exists (the C4 gateway, decision 0078). `shard up colo`
-    # and deploy/colo-up.sh start the core services only; `docker compose --profile mind up` starts this one.
+    # Decision 0134: a profile until a Thinker path exists (decision 0078): `shard up colo` and deploy/colo-up.sh skip it.
     profiles: ["mind"]
     # Budget: 1 CPU, 2048m (no swap, 256 pids). Measured in C1-10.
     deploy:
@@ -314,9 +310,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-11a] The MCP server (threshold/mcp, spec 6.2; the same image as compose/mcp.yml, built from threshold/mcp/Dockerfile).
-  # The sovereign player's door: the only published port is the loopback 8788. The per-player token hashes live in
-  # Postgres (no token file is mounted). The Postgres role is geldar_mcp; the password file is postgres-mcp.txt.
+  # [C1-11a] The MCP server (threshold/mcp, spec 6.2; the image of compose/mcp.yml). The sovereign player's door: loopback 8788 only.
+  # Token hashes live in Postgres (no token file). Postgres role geldar_mcp; password file postgres-mcp.txt.
   geldar-mcp:
     # Budget: 0.5 CPU, 512m (no swap, 128 pids). Read-only root, as compose/mcp.yml runs it.
     deploy:
@@ -379,10 +374,8 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # [C2-08c] The register service (decision 0135, threshold/register): GitHub and Discord sign-in for sovereign-player
-  # owners. OFF BY DEFAULT: the profile `register` keeps it out of every default `up`, REGISTER_KILL_SWITCH is true, and
-  # no Caddy site loads it. It stays off on the Colo until C2-08d and the C2 gates. The only published port is the
-  # loopback 8090; the Postgres role is geldar_register (password file postgres-register.txt).
+  # [C2-08c] The register service (decision 0135, threshold/register): Microsoft (Entra) sign-in for sovereign-player owners.
+  # OFF BY DEFAULT: profile `register`, REGISTER_KILL_SWITCH true, no Caddy site. Loopback 8090 only; Postgres role geldar_register.
   register:
     profiles: [register]
     # Budget: 0.25 CPU, 128m (no swap, 64 pids). Read-only root, as geldar-mcp runs.
@@ -408,10 +401,11 @@ services:
       # 0.0.0.0 inside the container; the port is published on loopback alone.
       REGISTER_HOST: 0.0.0.0
       REGISTER_PORT: "8090"
-      REGISTER_GITHUB_CLIENT_ID: "${REGISTER_GITHUB_CLIENT_ID:-}"
-      REGISTER_DISCORD_CLIENT_ID: "${REGISTER_DISCORD_CLIENT_ID:-}"
-      REGISTER_GITHUB_SECRET_FILE: /run/secrets/register-github-secret
-      REGISTER_DISCORD_SECRET_FILE: /run/secrets/register-discord-secret
+      # Microsoft (Entra) sign-in only (config.ts). The client id is a deploy value; the client secret is an owner-provided file.
+      REGISTER_MS_CLIENT_ID: "${REGISTER_MS_CLIENT_ID:-}"
+      REGISTER_MS_CLIENT_SECRET_FILE: /run/secrets/register-ms-secret
+      # The key the gk_session cookie is signed with. Glass reads the same file (compose/colo-kino-session.yml).
+      REGISTER_SESSION_KEY_FILE: /run/secrets/register-session-key
       REGISTER_PEPPER_FILE: /run/secrets/register-pepper
       # The MCP's token pepper: the register service mints tokens the MCP verifies.
       REGISTER_TOKEN_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
@@ -428,7 +422,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-github-secret, register-discord-secret]
+    secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-ms-secret, register-session-key]
     ports:
       # The loopback register port. Literal: the loopback rule rejects interpolation.
       - "127.0.0.1:8090:8090"
@@ -443,8 +437,7 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094); image GELDAR_GLASS_IMAGE (C2-07a1).
-  # Postgres as geldar_glass (read-only role), file secret. Caddy (host network) reaches it on loopback. NATS only with Kino.
+  # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094); image GELDAR_GLASS_IMAGE (C2-07a1). Postgres as geldar_glass.
   glass:
     deploy:
       resources:
@@ -542,10 +535,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-11a] The player host (golem/src/players/main.ts): one Body process per sovereign ranger, started and stopped by
-  # the player's presence record. main.ts runs ONE player (`--player <id>`), so the id is a compose variable: set
-  # GELDAR_PLAYER_ID to a sovereign.players id of shards/colo-mind.yaml, then `docker compose --profile sovereign up`.
-  # The profile keeps it out of a plain `shard up colo` until an owner has listed a player. No published port.
+  # [C1-11a] The player host (golem/src/players/main.ts): one Body per sovereign ranger, started by the player's presence record.
+  # Set GELDAR_PLAYER_ID to a sovereign.players id of shards/colo-mind.yaml, then `docker compose --profile sovereign up`.
+  # The profile keeps it out of a plain `shard up colo`. No published port.
   players-host:
     profiles: ["sovereign"]
     # Budget: 1 CPU, 2048m (no swap, 256 pids). The same Body image and size as golem-body.
@@ -590,11 +582,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # [C1-11b] The admin one-shot (decision 0133): tools/migrate and tools/mcp-tokens, run on demand and never started by
-  # `shard up colo` (the profile). Run it from the repo root:
-  #   docker compose -p geldar-colo -f compose/colo.yml --profile admin run --rm admin <subcommand>
-  # It publishes nothing and reaches Postgres on the colo network. It writes token files only to an overlay mount that
-  # deploy/colo-admin.sh adds: an absolute host path is refused in this file (the loopback rule).
+  # [C1-11b] The admin one-shot (decision 0133): tools/migrate and tools/mcp-tokens, never started by `shard up colo` (the profile).
+  #   docker compose -p geldar-colo -f compose/colo.yml --profile admin run --rm admin <subcommand>   (from the repo root)
+  # Publishes nothing. Token files go only to the overlay mount deploy/colo-admin.sh adds (an absolute path is refused here).
   admin:
     profiles: ["admin"]
     # Budget: 0.5 CPU, 512m (no swap, 128 pids). A one-shot: it runs one CLI and exits.
@@ -646,13 +636,12 @@ services:
       postgres:
         condition: service_healthy
 
-# The colo network. Its name is fixed so that it cannot collide with the Phase 0 stack's network.
+# The colo network: fixed name, so it cannot collide with the Phase 0 network.
 networks:
   colo:
     name: geldar-colo
-    # Pinned (ruling R32): a host-network Caddy reaches the loopback publishes as the bridge gateway (the .1 address of this
-    # subnet), and Glass and the MCP trust that address in GELDAR_*_TRUSTED_PROXIES. The node sets GELDAR_COLO_SUBNET to a
-    # private /24 inside the 172.16/12 private block (colo-up.sh saves it in node.env). The default is the documentation range.
+    # Pinned (ruling R32): host-network Caddy reaches the loopback publishes as the bridge gateway (.1 of this subnet), which
+    # Glass and the MCP trust. The node sets GELDAR_COLO_SUBNET to a private /24 in 172.16/12 (colo-up.sh saves it in node.env).
     ipam:
       config:
         - subnet: "${GELDAR_COLO_SUBNET:-192.0.2.0/24}"
@@ -680,15 +669,16 @@ secrets:
   # Glass's Postgres password for the geldar_glass role (C2-07a2).
   postgres-glass.txt:
     file: ./secrets/postgres-glass.txt
-  # The register service (C2-08c): its Postgres password (geldar_register), its pepper, and the OAuth client secrets (owner-provided).
+  # The register service (C2-08c, Microsoft only): Postgres password, pepper, Entra client secret (owner-provided), session key
+  # (gen-secrets.sh). Declared once here; compose/colo-kino-session.yml mounts the session key into Glass. The two new files follow GELDAR_SECRETS_DIR.
   postgres-register.txt:
     file: ./secrets/postgres-register.txt
   register-pepper:
     file: ./secrets/register-pepper.txt
-  register-github-secret:
-    file: ./secrets/register-github-secret.txt
-  register-discord-secret:
-    file: ./secrets/register-discord-secret.txt
+  register-ms-secret:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/register-ms-secret.txt
+  register-session-key:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/register-session-key.txt
 
 volumes:
   postgres-data:
