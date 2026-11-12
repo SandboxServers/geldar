@@ -25,10 +25,13 @@ const MAX_INVALID_INPUT_CHARS = 600;
 /** A failure a handler wants the character to see as `<code>: <message>`. */
 export class ToolError extends Error {
   code: string;
+  /** For a transient failure: about how many seconds until a retry may work. The message says it in words. */
+  retryAfterS?: number;
 
-  constructor(code: string, message: string) {
+  constructor(code: string, message: string, retryAfterS?: number) {
     super(message);
     this.code = code;
+    if (retryAfterS !== undefined) this.retryAfterS = retryAfterS;
   }
 }
 

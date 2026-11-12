@@ -51,7 +51,9 @@ import { viewTool } from './tools/view.ts';
 import { createWaitState, type WaitError, type WaitState, wait } from './tools/wait.ts';
 
 /** The fixed messages the handlers add. None echoes world text or names an observer (decision 0059). */
-export const BODY_UNAVAILABLE_MESSAGE = 'Your body is waking. Try again in a few seconds.' as const;
+export const BODY_RETRY_AFTER_S = 5;
+export const BODY_UNAVAILABLE_MESSAGE =
+  `Your body is waking. Try again in about ${BODY_RETRY_AFTER_S} seconds.` as const;
 export const UNKNOWN_PLAYER_MESSAGE = 'No player is bound to this session.' as const;
 
 /** How often the world settles the presence of every life it has seen (dim, then hibernate). */
@@ -148,7 +150,11 @@ async function seeOf(deps: SeeDeps, call: ToolCall, input: unknown): Promise<Ima
   if (outcome.error === 'view_unavailable') {
     throw new ToolError('view_unavailable', SEE_REFUSALS[outcome.detail]);
   }
-  throw new ToolError(outcome.error, SEE_MESSAGES[outcome.error]);
+  throw new ToolError(
+    outcome.error,
+    SEE_MESSAGES[outcome.error],
+    outcome.error === 'body_unavailable' ? BODY_RETRY_AFTER_S : undefined,
+  );
 }
 
 /**
@@ -160,7 +166,7 @@ async function guarded<T>(run: () => Promise<T>): Promise<T> {
     return await run();
   } catch (err) {
     if (err instanceof BodyUnavailable) {
-      throw new ToolError('body_unavailable', BODY_UNAVAILABLE_MESSAGE);
+      throw new ToolError('body_unavailable', BODY_UNAVAILABLE_MESSAGE, BODY_RETRY_AFTER_S);
     }
     if (err instanceof ActToolError) throw new ToolError(err.code, err.message);
     throw err;
@@ -171,7 +177,7 @@ async function guarded<T>(run: () => Promise<T>): Promise<T> {
  * Every bound call keeps its life awake (spec 5.15.3: any call within 60 s), and a call that meets
  * an unanswering Body asks for it up, so the next call finds the Body starting.
  */
-function bound(deps: Wired, run: Run): ToolHandler {
+function bound(deps: Wired, run: Run, readOnly = false): ToolHandler {
   return (input, ctx) =>
     guarded(async () => {
       const call = await callerOf(deps, ctx);
@@ -183,10 +189,25 @@ function bound(deps: Wired, run: Run): ToolHandler {
           await bestEffortPresence(deps.presenceLog, () =>
             deps.presence.wantBody(call.lifeId, deps.now()),
           );
+          // The Body may have come up while the call waited: look again before saying it is waking.
+          // Only a read repeats; an act or say may already have reached the Body.
+          if (readOnly && (await bodyAnswers(deps.body, call.lifeId))) {
+            return await run(call, input, ctx);
+          }
         }
         throw err;
       }
     });
+}
+
+/** True when the Body answers a snapshot now. */
+async function bodyAnswers(body: BodyGateway, lifeId: string): Promise<boolean> {
+  try {
+    await body.snapshot(lifeId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** One `wait` for the bound life. The session's abort ends it; the keepalive is the session's own. */
@@ -206,6 +227,7 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       state: deps.waitState,
       failures: deps.failures,
       presenceLog: deps.presenceLog,
+      wantBody: (lifeId) => deps.presence.wantBody(lifeId, deps.now()),
       touchPresence: async (lifeId) => {
         deps.lives.add(lifeId);
         await deps.presence.touch(lifeId);
@@ -219,7 +241,13 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       ...(input.interests === undefined ? {} : { interests: input.interests }),
     },
   );
-  if (!outcome.ok) throw new ToolError(outcome.error, WAIT_MESSAGES[outcome.error]);
+  if (!outcome.ok) {
+    throw new ToolError(
+      outcome.error,
+      WAIT_MESSAGES[outcome.error],
+      outcome.error === 'body_unavailable' ? BODY_RETRY_AFTER_S : undefined,
+    );
+  }
   return outcome.result;
 }
 
@@ -325,8 +353,8 @@ export function createWorld(deps: WorldDeps): World {
     say: bound(wired, (call, input) => sayTool(wired, call, (input as SayInput).text)),
     sleep: bound(wired, (call) => sleepTool(sleepDeps, call)),
     wait: bound(wired, (call, input, ctx) => waitTool(wired, call, input as WaitInput, ctx)),
-    look: bound(wired, (call) => lookTool(wired, call)),
-    status: bound(wired, (call) => statusTool(wired, call)),
+    look: bound(wired, (call) => lookTool(wired, call), true),
+    status: bound(wired, (call) => statusTool(wired, call), true),
     journal: bound(wired, (call, input) =>
       journalAndRecord(wired, call, (input as { text: string }).text.slice(0, JOURNAL_LINE_LIMIT)),
     ),
@@ -374,6 +402,30 @@ function outcomeOf(err: unknown): string {
   return 'internal';
 }
 
+/** The last tool and outcome code per session (keyed by the session's abort signal). Operators only. */
+const lastCalls = new WeakMap<AbortSignal, { tool: string; outcome: string }>();
+const watched = new WeakSet<AbortSignal>();
+
+/**
+ * Logs one `session_end` line when a session's signal aborts: the last tool and its outcome code.
+ * It goes to the operator log only; no tool result carries it. A session with no finished call logs nothing.
+ */
+function watchSessionEnd(deps: Wired, ctx: ToolContext): void {
+  if (watched.has(ctx.signal)) return;
+  watched.add(ctx.signal);
+  const line = (): void => {
+    const last = lastCalls.get(ctx.signal);
+    if (last === undefined) return;
+    try {
+      deps.log?.({ event: 'session_end', player_id: ctx.playerId, ...last });
+    } catch {
+      // The line is lost; nothing else depends on it.
+    }
+  };
+  if (ctx.signal.aborted) line();
+  else ctx.signal.addEventListener('abort', line, { once: true });
+}
+
 /**
  * Logs one `tool_call` line per call: the tool, the player, the outcome code and the duration. Never the
  * arguments, the result or any text. A logger that throws does not fail the call.
@@ -399,13 +451,17 @@ function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
     }
   };
   return async (input, ctx) => {
+    watchSessionEnd(deps, ctx);
     const started = deps.now();
     try {
       const result = await run(input, ctx);
       record(ctx.playerId, 'ok', started);
+      lastCalls.set(ctx.signal, { tool, outcome: 'ok' });
       return result;
     } catch (err) {
-      record(ctx.playerId, outcomeOf(err), started);
+      const outcome = outcomeOf(err);
+      record(ctx.playerId, outcome, started);
+      lastCalls.set(ctx.signal, { tool, outcome });
       throw err;
     }
   };
