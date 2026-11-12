@@ -80,6 +80,7 @@ sovereign:
   players:
     - { player_id: ag-jason-01, life_id: ag_jason_01, name: Jason }
     - { player_id: ag-clara-01, life_id: ag_clara_01, name: Clara }
+    - { player_id: ag-kimberly-01, life_id: ag_kimberly_01, name: Kimberly }
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an
