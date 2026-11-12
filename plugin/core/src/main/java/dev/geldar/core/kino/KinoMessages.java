@@ -54,7 +54,7 @@ public final class KinoMessages {
         for (int i = 0; i < Math.min(MAX_ENTITIES, entities.size()); i++) {
             KinoWorld.EntityView v = entities.get(i);
             JsonObject e = new JsonObject();
-            e.addProperty("id", "e" + i);
+            e.addProperty("id", "e" + (v.uid() != 0 ? v.uid() : i));
             e.addProperty("type", v.type());
             if (v.agentId() != null) {
                 e.addProperty("agent_id", v.agentId());
