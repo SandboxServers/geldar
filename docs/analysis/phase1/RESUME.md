@@ -15,7 +15,7 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
 - **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
-- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0131.
+- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0147 (see item 8 for C5).
 
 ## Stop: do not open the public Minecraft port yet
 
@@ -35,6 +35,8 @@ Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges.
 5. **C2b:** C2b-00 and C2b-01 (session 1) are merged. Next: the C2b-01 load test (live lane), C2b-02 (the relay), and C2b-03a (the renderer).
 6. **Every ruling made tonight** is in [worknotes/orchestrator-2026-11-11.md](worknotes/orchestrator-2026-11-11.md) (R1 to R28, the owner answers, flakes).
 7. **Owner items still open:** the C1-10 run; creating the GitHub and Discord OAuth apps; the C2b questions (texture licence, audit retention, the feed load budget); 0079 (credits); and confirming R21 (Glass hides the prompt) or signing a privacy review.
+
+8. **Wave C5, Goldar learnings (drafted 2026-11-11, parallel to C1 to C4):** Body parity and the unavailable tools, from the review of the goldar repo. Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md); review: [worknotes/goldar-review.md](worknotes/goldar-review.md); ledger section "Wave C5"; decisions 0141 to 0146 are Proposed or Open (owner to confirm); rulings R47 to R54. C5a (C5-00 first, then 01 to 04 in parallel) and C5b (05 then 06; 07 parallel) are Ready except C5-01; C5c (08 to 10) waits on 0146. Next free decision number: 0147.
 
 ## Who does what
 

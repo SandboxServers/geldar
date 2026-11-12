@@ -207,3 +207,16 @@ These go into decision 0075 as an amendment when C2b starts.
   - **Sign-in:** the register service does the Microsoft sign-in and issues the session. Glass verifies that session read-only.
   - **Isolation:** Glass's database role stays read-only. Only the register service holds write access and the pepper.
   - **Packets:** K03 becomes "Glass trusts the shared session plus the Kino flags". There is no separate register subdomain.
+
+## Wave C5 rulings (goldar review, 2026-11-11)
+
+R43 to R46 are used on other branches; these start at R47. All are the orchestrator's, owner to confirm; each is reversible by editing the named card or draft.
+
+- **R47.** The work derived from the goldar repo review is its own wave, C5 (packets/c5-goldar-packets.md), run in parallel with C1 to C4. Ideas only, re-implemented; an MIT notice and credit if a PR transcribes anything closely. Reverse: delete the wave.
+- **R48.** C5-00 is added as the contract unblocker (events, death, new tools) so C5-02 to C5-07 do not edit `contract/` in parallel (packet-conventions 2). This moves the contract part of C5-02 into C5-00.
+- **R49.** C5-05 and C5-06 are sequential (both edit golem crafting and the click machinery); C5-07 runs in parallel to them.
+- **R50.** Drafts 0141 (soft-dig), 0142 (stall numbers), 0143 (outcome events), 0144 (death, no revive), 0145 (line of sight for names) are Proposed with the orchestrator's default stated. C5-01 is BlockedDecision until 0141 and 0142 are confirmed; C5-02 to C5-04 start on the defaults because their contract is provisional (0033).
+- **R51.** 0146 holds the three open owner questions (write_book stamping, Moot Stone governance, plugin item consumption). C5-08 to C5-10 are BlockedDecision. The plugin consuming items is never defaulted; only the owner approves it.
+- **R52.** Not ported on purpose: Glass live positions and living reasoning, revive, remote voting, mechanical laws (to `docs/ideas.md`), the plain-HTTP endpoint, an in-process body.
+- **R53.** The review is kept, sanitised, at worknotes/goldar-review.md (no personal names; "the goldar repo").
+- **R54.** C5-08 to C5-10 overlap C4 (books 0117, Shrine and offers 0121, credits 0120); they build on C4's cards and the overlap is checked before dispatch. The C4 cards were not re-read in this docs pass.
