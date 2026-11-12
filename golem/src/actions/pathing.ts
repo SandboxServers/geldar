@@ -49,6 +49,43 @@ export function ensurePathfinder(bot: Bot): void {
   bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
 }
 
+/** The distance (blocks) from a reach target at which a planned route counts as reaching it. */
+export const REACH_RANGE = 2;
+
+/**
+ * A read-only route plan for `reach` (PX-8a): searches from where the Body stands to within
+ * `REACH_RANGE` of `target` and reports the status and visited nodes. It never moves the bot.
+ * `canDig` plans with full digging, otherwise with the same movements `goto` uses.
+ */
+export function planReach(
+  bot: Bot,
+  target: { x: number; y: number; z: number },
+  canDig: boolean,
+): { status: string; visited: number } {
+  ensurePathfinder(bot);
+  const goal = new goals.GoalNear(target.x, target.y, target.z, REACH_RANGE);
+  const planner = bot.pathfinder as unknown as ReachPlanner;
+  let movements: unknown = planner.movements;
+  if (canDig) {
+    const digging = new Movements(bot);
+    digging.canDig = true;
+    digging.allow1by1towers = false;
+    digging.scafoldingBlocks = [];
+    movements = digging;
+  }
+  const found = planner.getPathTo(movements, goal);
+  return { status: found.status, visited: found.visitedNodes ?? 0 };
+}
+
+/** The parts of the pathfinder that a read-only plan uses. */
+interface ReachPlanner {
+  movements?: unknown;
+  getPathTo(
+    movements: unknown,
+    goal: unknown,
+  ): { status: string; path: PathNode[]; visitedNodes?: number };
+}
+
 /** A block as the pathfinder's `getBlock` returns it: prismarine fields plus its own flags. */
 interface PathBlock {
   physical?: boolean;
