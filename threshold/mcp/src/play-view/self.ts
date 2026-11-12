@@ -15,6 +15,10 @@ export const selfProjector: SnapshotProjector = (snapshot, options) => ({
     ...(snapshot.self.unlocked_recipes === undefined
       ? {}
       : { unlocked_recipes: snapshot.self.unlocked_recipes }),
+    ...(snapshot.self.status_flags === undefined
+      ? {}
+      : { status_flags: snapshot.self.status_flags }),
+    ...(snapshot.self.air === undefined ? {} : { air: snapshot.self.air }),
     ...(snapshot.self.ground_below === undefined
       ? {}
       : { ground_below: snapshot.self.ground_below }),

@@ -2,6 +2,7 @@ import { type Snapshot, validateSnapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { isEnclosed } from './body/view.ts';
+import { wearOf } from './perception/item-wear.ts';
 import { selfProbes } from './perception/self/index.ts';
 import { ulid } from './ulid.ts';
 
@@ -123,7 +124,9 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
       ...selfProbes(bot),
       held_item: bot.heldItem?.name ?? null,
       // Mineflayer's bare item names (`cobblestone`); the contract's item name is a free string.
-      inventory: bot.inventory.items().map((stack) => ({ item: stack.name, count: stack.count })),
+      inventory: bot.inventory
+        .items()
+        .map((stack) => ({ item: stack.name, count: stack.count, ...wearOf(stack) })),
       effects: effectNames(bot),
       budget_remaining_thoughts: opts.budgetRemainingThoughts ?? 0,
       days_since_sleep: opts.daysSinceSleep ?? 0,
