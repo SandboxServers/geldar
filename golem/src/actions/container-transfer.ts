@@ -355,7 +355,8 @@ async function moveStacks(
  * Moves `count` of an item between the open chest window and the player's inventory with predicted,
  * barrier-confirmed clicks. The cursor is empty when this returns: on an abort, a timeout or a
  * mismatch it is put back, and when that fails the result carries an error. The caller judges the
- * moved count from the window.
+ * moved count from the window. `region` limits the container side to a slot range (a furnace's
+ * input, fuel or output slot); by default it is every container slot.
  */
 export async function transferItems(
   ctx: ActionContext,
@@ -363,6 +364,7 @@ export async function transferItems(
   direction: TransferDirection,
   itemId: number,
   count: number,
+  region?: [number, number],
 ): Promise<TransferEnd> {
   const client = ctx.bot._client as unknown as TransferClient | undefined;
   if (!client) return { error: 'no protocol client', aborted: false };
@@ -396,7 +398,7 @@ export async function transferItems(
     // The window's stateId is only known from a packet: learn it before the first click.
     if (!(await barrier(s))) return { error: 'server did not confirm the window', aborted: false };
     s.model = readModel(container);
-    const chest: [number, number] = [0, container.inventoryStart];
+    const chest: [number, number] = region ?? [0, container.inventoryStart];
     const inventory: [number, number] = [container.inventoryStart, container.inventoryEnd];
     const [from, to] = direction === 'withdraw' ? [chest, inventory] : [inventory, chest];
     // A stack already on the cursor is not ours to place: closing the window returns it to the inventory.
