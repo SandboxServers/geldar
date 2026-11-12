@@ -493,6 +493,36 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # The alias proxy between bluemap-web and Paper: rewrites live/players.json names to private aliases (file in the node state dir) or to the neutral label "Ranger" when there is no file or no alias (fail closed).
+  # Colo network only, no published port. Plain Node (type stripping), the script is mounted read-only.
+  bluemap-alias:
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_BLUEMAP_ALIAS_CPUS:-0.1}"
+          memory: "${GELDAR_COLO_BLUEMAP_ALIAS_MEM:-64m}"
+          pids: 32
+    memswap_limit: "${GELDAR_COLO_BLUEMAP_ALIAS_MEM:-64m}"
+    pids_limit: 32
+    logging: *logging
+    labels: *colo-labels
+    image: node:22.23.2-trixie-slim@sha256:c5849ff9c9ebcd66615412f0b548ca5b8ecaef84003dc9ac2e077ebe46aaa3f6
+    command: ["node", "/app/alias-proxy.ts"]
+    environment:
+      GELDAR_ALIASES_FILE: /run/aliases/aliases.json
+    volumes:
+      - ../plugins/bluemap/alias-proxy/alias-proxy.ts:/app/alias-proxy.ts:ro
+      # The private alias file lives in this directory on the node (a directory, so a missing file is not turned into one).
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/aliases', target: /run/aliases, read_only: true}
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    restart: unless-stopped
+
   # [C2-07c1, C2-07m] The BlueMap map server (R27, R38, decisions 0072, 0094). Paper writes the tiles under bluemap/web in its
   # volume and runs BlueMap's web server (port 8101) on the colo network only, never published. This caddy serves the tiles
   # read only from /srv and proxies only /maps/<map>/live/<file> to paper:8101 (live agent positions; spectators hidden in
@@ -525,6 +555,7 @@ services:
         volume:
           subpath: bluemap/web
       - ./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../plugins/bluemap/web/geldar.css:/etc/caddy/geldar.css:ro
     ports:
       # The loopback map port. Literal: the loopback rule rejects interpolation.
       - "127.0.0.1:8100:8100"
@@ -541,6 +572,8 @@ services:
     depends_on:
       paper:
         condition: service_healthy
+      bluemap-alias:
+        condition: service_started
     restart: unless-stopped
 
   # [C1-11a] The player host (golem/src/players/main.ts): one Body per sovereign ranger, started by the player's presence record.

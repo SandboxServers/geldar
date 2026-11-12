@@ -81,3 +81,24 @@ compose.
 
 BlueMap is not public by itself. The public map is served by Caddy in C2-04 from the rendered
 webroot, read-only. Nothing in this directory opens a port.
+
+## Private aliases and the head size (manual deploy steps)
+
+Public map labels show a private alias, never the agent username. `bluemap-alias` (`alias-proxy/alias-proxy.ts`, a
+plain Node script in the pinned node image) sits between the `bluemap-web` Caddy `@live` handler and Paper
+(`paper:8101`). It rewrites each `name` in `live/players.json` from a private file and passes the other live files
+through. Fail closed: no file, an invalid file, or a player without an alias gives the neutral label `Ranger`, never the
+username; an unexpected upstream shape is a 502. UUIDs are unchanged (the offline UUID is still derivable from a name).
+The id (username) to alias mapping lives only on the node, never in the repo.
+
+These changes touch compose and the Caddyfile, so the deploy plan reports `needs-manual`. Owner steps, in order:
+
+1. Write `${GELDAR_STATE_DIR}/aliases/aliases.json` on the node, mode 0640: a flat JSON object mapping the underscore id to the alias, for example `{"ag_test_01": "TestRanger"}`. The id (`ag_<name>_01`) is the agent id, the Glass life id and the Minecraft username, so this is the same file Glass reads (`docs/runbooks/glass-aliases.md`). Never commit it.
+2. `compose/colo.yml` mounts the directory `${GELDAR_STATE_DIR}/aliases` read-only into `bluemap-alias`, so no overlay is
+   needed. Without the file every label is `Ranger`.
+3. Start `bluemap-alias`, then recreate `bluemap-web` (new Caddyfile). Restarting the shared production Caddy is not
+   needed for this; if it is, that needs owner approval first. Do not restart anything from a work packet.
+4. Head size: `web/geldar.css` is served by `bluemap-web` at `/assets/geldar.css`. Add `"styles": ["assets/geldar.css"]`
+   to `bluemap/web/settings.json` in the Paper volume. BlueMap regenerates that file on start; if the key is gone after
+   a restart (unverified on 5.29), add it again and reload the page.
+5. Check: `curl` the live `players.json` and confirm no `ag_` username appears.

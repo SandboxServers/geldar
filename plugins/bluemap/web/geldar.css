@@ -1,0 +1,7 @@
+/* Geldar BlueMap overrides. BlueMap sets only a width on player heads, so a head can render wider than tall. */
+#map-container .bm-marker-player img,
+.bm-marker-player img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}

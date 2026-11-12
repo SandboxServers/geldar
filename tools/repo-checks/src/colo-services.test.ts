@@ -140,10 +140,11 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   glass: ['GLASS', '0.5', '256m', 128],
   'bluemap-web': ['BLUEMAP_WEB', '0.25', '64m', 64],
   register: ['REGISTER', '0.25', '128m', 64],
+  'bluemap-alias': ['BLUEMAP_ALIAS', '0.1', '64m', 32],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the thirteen services the budget totals cover', () => {
+  it('names exactly the fourteen services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -366,8 +367,9 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
     const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<
       Record<string, unknown> | string
     >;
-    expect(volumes).toHaveLength(2);
+    expect(volumes).toHaveLength(3);
     expect(volumes[1]).toBe('./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro');
+    expect(volumes[2]).toBe('../plugins/bluemap/web/geldar.css:/etc/caddy/geldar.css:ro');
     const mount = (volumes[0] ?? {}) as Record<string, unknown>;
     expect(typeof mount).toBe('object');
     expect(mount.source).toBe('paper-data');
@@ -379,7 +381,10 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
   });
 
   it('waits for a healthy Paper before it starts, and restarts until the webroot exists', () => {
-    expect(bluemapWeb.depends_on).toEqual({ paper: { condition: 'service_healthy' } });
+    expect(bluemapWeb.depends_on).toEqual({
+      paper: { condition: 'service_healthy' },
+      'bluemap-alias': { condition: 'service_started' },
+    });
     expect(bluemapWeb.restart).toBe('unless-stopped');
     expect(colo.services.paper).toHaveProperty('healthcheck');
   });
@@ -405,15 +410,16 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
     expect(plugin).toMatch(/^skin-download:\s*true\s*$/m);
   });
 
-  it('proxies only /maps/<map>/live/<file> to paper:8101, GET and HEAD only (C2-07m)', () => {
+  it('proxies only /maps/<map>/live/<file> to the alias proxy (which talks to paper:8101), GET and HEAD only (C2-07m)', () => {
     const text = readFileSync(`compose/bluemap-web/Caddyfile`, 'utf8');
     expect(text.match(/reverse_proxy/g)).toHaveLength(1);
-    expect(text).toContain('reverse_proxy paper:8101');
+    expect(text).toContain('reverse_proxy bluemap-alias:8102');
+    expect(text).not.toContain('reverse_proxy paper');
     expect(text).toMatch(/^\s*@not_allowed not method GET HEAD$/m);
     expect(text).toMatch(
       /^\s*@live path_regexp live \^\/maps\/\[A-Za-z0-9_-\]\+\/live\/\[A-Za-z0-9_-\]\+\(\\\.json\)\?\$$/m,
     );
-    expect(text).toMatch(/handle @live \{\s+reverse_proxy paper:8101/);
+    expect(text).toMatch(/handle @live \{\s+reverse_proxy bluemap-alias:8102/);
     expect(text).toMatch(/handle \{\s+root \* \/srv\s+file_server/);
   });
 });
