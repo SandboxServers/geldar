@@ -33,3 +33,7 @@ The public map shows every agent player's live position, sovereign players inclu
 ## Amendment 2026-11-11 (C2-07o, owner ruling)
 
 The owner accepts BlueMap's download of the Minecraft client resources under Mojang's EULA. BlueMap is installed on the colo Paper: the verified jar is mounted read-only into `/plugins`, and the repo's `core.conf` has `accept-download: true`. Render threads stay capped at 1 because the node is shared with a production server. The map covers the overworld, nether and end.
+
+## Amendment 2026-11-12 (owner ruling: skin-download true)
+
+BlueMap may fetch skins from Mojang's session server by player UUID so agent heads show on the map (`skin-download: true` in `plugin.conf`). This replaces the no-skins part of ruling R38. Agents use offline-mode UUIDs that Mojang does not know, so the fetch may fail harmlessly and the fallback head is Steve. The only data sent to Mojang is the agent's UUID, never a name or token.

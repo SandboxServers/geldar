@@ -116,8 +116,8 @@ describe('BlueMap config: terrain and live agent positions (R38)', () => {
     );
   });
 
-  it('keeps Mojang skin downloads off', () => {
-    expect(value('plugin.conf', 'skin-download')).toBe('false');
+  it('has Mojang skin downloads on by owner ruling 2026-11-12 (UUID only, so agent heads show)', () => {
+    expect(value('plugin.conf', 'skin-download')).toBe('true');
   });
 
   it('renders the overworld, nether and end of the one Paper world, with no marker sets', () => {
