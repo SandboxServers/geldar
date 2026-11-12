@@ -41,10 +41,27 @@ function wallHeight(bot: Bot, cell: Vec3): number {
   return n;
 }
 
-/** True when a wall of at least `WALL_HEIGHT` stands on every side of the feet cell: a pit. */
+const open = (block: Block | null): boolean =>
+  block !== null && block.boundingBox === 'empty' && block.name !== 'lava';
+
+/** A neighbour cell the bot could stand in: open at feet and head, with solid ground under the feet. */
+function standable(bot: Bot, cell: Vec3): boolean {
+  return (
+    open(bot.blockAt(cell)) &&
+    open(bot.blockAt(cell.offset(0, 1, 0))) &&
+    solid(bot.blockAt(cell.offset(0, -1, 0)))
+  );
+}
+
+/**
+ * True when the bot stands on solid ground and no neighbour cell is standable: a pit. An open side
+ * that is only a hole (air over air) does not count as a way out, so a cavity with one such side is
+ * still a pit. Standing in air (no solid ground under the feet) is not a pit.
+ */
 export function inPit(bot: Bot): boolean {
   const feet = (bot as StairBot).entity.position.floored();
-  return DIRS.every((d) => wallHeight(bot, feet.plus(d)) >= WALL_HEIGHT);
+  if (!solid(bot.blockAt(feet.offset(0, -1, 0)))) return false;
+  return DIRS.every((d) => !standable(bot, feet.plus(d)));
 }
 
 /** The wall to dig into: the side facing the goal when it is a wall, else the first wall. */

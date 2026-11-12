@@ -3,7 +3,7 @@ import { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
-import { reportStall } from './stall-diag.ts';
+import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
 
 /** Health below this: the Body never drops on purpose (a fall could finish it). */
 export const MIN_HEALTH_TO_DROP = 12;
@@ -244,6 +244,21 @@ async function digSideways(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
 }
 
 /**
+ * The `no_way_out` diag line, with the steps this call tried. The shared diag line has no field for
+ * them, so the line is built by `emitStallDiag` (same snapshot, same rate limit) and gets `tried` added.
+ */
+function reportNoWayOut(bot: Bot, tried: readonly string[]): void {
+  emitStallDiag(
+    bot,
+    { reason: 'no_way_out' },
+    {
+      now: () => DEFAULT_DIAG_SINK.now(),
+      log: (line) => DEFAULT_DIAG_SINK.log(JSON.stringify({ ...JSON.parse(line), tried })),
+    },
+  );
+}
+
+/**
  * Gets a stuck bot free, with bare hands and no blocks placed: first walks or jumps in each of the
  * eight directions (including a deliberate drop off a ledge when `dropAllowed`), then digs sideways
  * (four directions) or down through soft blocks. At most `MAX_DIGS` digs and one try per direction.
@@ -302,7 +317,7 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
     return done('dig_down');
   }
   if (ctx.signal.aborted) return cancelled();
-  reportStall(bot, { reason: 'no_way_out' });
+  reportNoWayOut(bot, tried);
   return failed('blocked', `unstick: no way out found; tried ${tried.join(', ')}`, {
     tries,
     tried,
