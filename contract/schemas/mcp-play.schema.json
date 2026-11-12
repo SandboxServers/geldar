@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/mcp-play.schema.json",
   "$defs": {
+    "SituationLine": {
+      "type": "string",
+      "maxLength": 240,
+      "description": "One sentence of facts from your own senses: sun, light, shelter, creatures closing, health, hunger. Absent when nothing is known."
+    },
     "LookInput": {
       "type": "object",
       "description": "Look around: returns a snapshot of your surroundings and the text written nearby.",
@@ -12,6 +17,7 @@
       "additionalProperties": false,
       "required": ["snapshot", "untrusted_world_text", "note"],
       "properties": {
+        "situation": { "$ref": "#/$defs/SituationLine" },
         "snapshot": { "$ref": "mcp-common.schema.json#/$defs/PlaySnapshot" },
         "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
         "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
@@ -47,6 +53,7 @@
         "note"
       ],
       "properties": {
+        "situation": { "$ref": "#/$defs/SituationLine" },
         "snapshot": { "$ref": "mcp-common.schema.json#/$defs/PlaySnapshot" },
         "events": {
           "type": "array",
