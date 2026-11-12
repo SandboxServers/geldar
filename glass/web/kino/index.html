@@ -11,19 +11,26 @@
       { "imports": { "three": "/kino/vendor/three.module.js" } }
     </script>
     <style>
-      html, body { margin: 0; height: 100%; background: #101418; color: #dde; font: 14px system-ui, sans-serif; }
-      #bar { position: fixed; top: 0; left: 0; right: 0; display: flex; gap: 8px; padding: 6px; background: #000a; z-index: 1; }
+      html, body { margin: 0; height: 100%; background: #101418; color: #dde; font: 14px system-ui, sans-serif; overflow-x: hidden; }
+      body { display: flex; flex-direction: column; }
+      #bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px; background: #000a; box-sizing: border-box; max-width: 100%; }
       #bar a { color: #8cf; }
-      #panes { position: fixed; inset: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
-      .pane { position: relative; min-height: 200px; border: 1px solid #234; }
+      #bar select, #bar button, .pane .tools button { min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 16px; }
+      #bar select { flex: 1 1 140px; min-width: 0; }
+      #notice { flex: 1 1 100%; }
+      #status { flex: 1 1 100%; font: 12px ui-monospace, monospace; color: #9ab; }
+      #panes { flex: 1 1 0; min-height: 0; position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
+      .pane { position: relative; min-height: 200px; min-width: 0; border: 1px solid #234; }
       .pane canvas { width: 100%; height: 100%; display: block; }
-      .pane .tools { position: absolute; top: 40px; left: 6px; display: flex; gap: 4px; }
-      .pane .msg { position: absolute; bottom: 6px; left: 6px; }
+      .pane .tools { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+      .pane .msg { position: absolute; bottom: 28px; left: 6px; }
+      .pane .status { position: absolute; bottom: 6px; left: 6px; right: 6px; font: 12px ui-monospace, monospace; color: #cde; text-shadow: 0 0 3px #000; }
     </style>
   </head>
   <body>
     <div id="bar">
       <span id="notice"></span>
+      <span id="status"></span>
       <a id="signin" hidden>Sign in</a>
       <select id="picker" aria-label="Agent to watch"></select>
       <button id="open" type="button">Open pane</button>

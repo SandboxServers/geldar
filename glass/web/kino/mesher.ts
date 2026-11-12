@@ -2,7 +2,8 @@
 // hide it. The neighbour is read from the world, so faces on a section border are culled against
 // the next section; where no section is loaded, the neighbour counts as air and the face is drawn.
 
-import { isAir, type VoxelWorld } from './world.ts';
+import type { StateReader } from './cull.ts';
+import { isAir } from './world.ts';
 
 export type Face = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
 
@@ -102,7 +103,7 @@ const FACES: FaceDef[] = [
 ];
 
 export function meshSection(
-  world: VoxelWorld,
+  world: StateReader,
   cx: number,
   sy: number,
   cz: number,
