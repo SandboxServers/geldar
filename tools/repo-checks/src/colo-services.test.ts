@@ -385,7 +385,8 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
     expect(plugin).toMatch(/^live-player-markers:\s*true\s*$/m);
     expect(plugin).toMatch(/^hidden-game-modes:\s*\[\s*"spectator"\s*\]/m);
     expect(plugin).toMatch(/^hide-vanished:\s*true\s*$/m);
-    expect(plugin).toMatch(/^skin-download:\s*false\s*$/m);
+    // Owner ruling 2026-11-12: BlueMap may fetch skins from Mojang by UUID so agent heads show.
+    expect(plugin).toMatch(/^skin-download:\s*true\s*$/m);
   });
 
   it('proxies only /maps/<map>/live/<file> to paper:8101, GET and HEAD only (C2-07m)', () => {
