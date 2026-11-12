@@ -250,7 +250,7 @@ components:
 
 ## C7-08: terms, privacy notice and consent (drafts for owner review)
 
-- **id / wave.** C7-08, C7-C. **depends-on.** none (text). **Status.** BlockedDecision on owner approval of the text (Q4, Q5, Q8); the coder drafts and cannot approve.
+- **id / wave.** C7-08, C7-C. **depends-on.** none (text). **Status.** Done 2026-11-11: the owner approved the text as version 1 and published the contact address (Q8 answered; decision 0155). Q4 and Q5 are not answered by this; they still block C7-09.
 - **Goal.** (a) Draft Terms of Use, a Privacy Notice and an Acceptable Use policy, stored as markdown with a version string, each file headed `DRAFT: owner review required. Not approved.` The drafts say what is kept (an HMAC of the Microsoft subject, the display name, the agent's public behaviour, its thoughts after death under 0138, the death record, no email), what is public, how an agent never learns it is watched, the ban and abuse policy (0136), and how to delete and export (C7-09). (b) Sign-up gets a required consent checkbox linked to the terms version; a new `register_consents(identity_hash, terms_version, accepted_at)` row is written in the same transaction as owner creation. (c) A contact and abuse address appears on every page; until the owner supplies one, the page shows a placeholder and the sign-up gate (C7-11) stays closed.
 - **may-edit.** `docs/legal/terms-draft.md`, `docs/legal/privacy-draft.md`, `docs/legal/acceptable-use-draft.md` (new folder, drafts only), `register/src/pages/terms*.ts` and the consent checkbox in the sign-up path, `sql/` migration for `register_consents` (grants per 0056), tests, `docs/analysis/phase1/worknotes/C7-08.md`.
 - **Tests (each fails on revert).**
@@ -302,6 +302,7 @@ components:
 ## C7-11: sign-up gate (not a code packet)
 
 - **id / wave.** C7-11, C7-E. **depends-on.** C7-05, C7-06, C7-08, C7-09, and the owner's written approval of the terms version and the contact address.
+- **Status (2026-11-11).** Legal gate cleared: terms version 1 approved and contact address published (C7-08, decision 0155). Remaining gate items: C7-05, C7-06, C7-09 (C7-09 is blocked on Q4 and Q5).
 - **Goal.** The sign-up kill switch (`REGISTER_SIGNUP_ENABLED`, default off) turns on only when every item below is true and recorded in the ledger: the owner has approved the terms version (C7-08); the erasure rule is decided and the deletion path has passed its live check (C7-09, live lane); onboarding and account pages are merged (C7-05, C7-06); the supervisor's quotas are set and tested (C7-03); a contact address is published. Until then the switch stays off and the sign-up page answers with a closed-for-now page, not a JSON 503.
 - **may-edit.** `register/src/config*.ts` (the gate check: refuse to open if the terms version is not marked approved in a file the owner commits), `docs/analysis/phase1/RESUME.md` (the status line), `docs/analysis/phase1/ledger.md`.
 - **Tests.** The gate refuses to open with an unapproved terms version; opens with an approved one; the closed page is served in both states without a JSON body.
