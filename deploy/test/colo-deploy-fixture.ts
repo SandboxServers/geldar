@@ -173,6 +173,8 @@ export interface Fixture {
   state: string;
   lock: string;
   jarText: string;
+  chunkyLock: string;
+  chunkyText: string;
 }
 
 const dirs: string[] = [];
@@ -208,6 +210,12 @@ export function fixture(publishedPort = '25567'): Fixture {
   writeFileSync(jar, jarText);
   const lock = join(dir, 'bluemap.lock.json');
   writeFileSync(lock, lockText(pathToFileURL(jar).href, sha256(jarText)));
+  // Chunky (pregeneration) gets its own local fixture lock, so no test reaches the real Modrinth CDN.
+  const chunkyText = 'chunky-test-jar';
+  const chunkyJar = join(dir, 'chunky.jar');
+  writeFileSync(chunkyJar, chunkyText);
+  const chunkyLock = join(dir, 'chunky.lock.json');
+  writeFileSync(chunkyLock, lockText(pathToFileURL(chunkyJar).href, sha256(chunkyText)));
   const calls = join(dir, 'calls.log');
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   delete env.Path;
@@ -228,6 +236,7 @@ export function fixture(publishedPort = '25567'): Fixture {
     GELDAR_RELEASE_FILE: posix(releaseFile),
     GELDAR_STATE_DIR: posix(join(dir, 'state')),
     GELDAR_BLUEMAP_LOCK: posix(lock),
+    GELDAR_CHUNKY_LOCK: posix(chunkyLock),
     GELDAR_DEPLOY_ALLOW_FILE_URL: '1',
     GELDAR_MIN_FREE_KB: '1',
     DEPLOY_DRY_RUN: '1',
@@ -249,6 +258,8 @@ export function fixture(publishedPort = '25567'): Fixture {
     state: join(dir, 'state'),
     lock,
     jarText,
+    chunkyLock,
+    chunkyText,
   };
 }
 

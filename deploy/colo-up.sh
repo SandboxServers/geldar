@@ -22,6 +22,7 @@ check_merged_config
 check_secrets
 check_jar_sources
 fetch_bluemap
+fetch_chunky
 record_release
 save_node_env
 say_node_env

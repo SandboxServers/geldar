@@ -133,6 +133,7 @@ function fixture(release = RELEASE): Fixture {
     GELDAR_RELEASE_FILE: posix(releaseFile),
     GELDAR_STATE_DIR: posix(join(dir, 'state')),
     GELDAR_BLUEMAP_LOCK: posix(lock),
+    GELDAR_CHUNKY_LOCK: posix(join(dir, 'no-chunky-lock.json')),
     GELDAR_DEPLOY_ALLOW_FILE_URL: '1',
     GELDAR_MIN_FREE_KB: '1',
     GELDAR_SERVICE_UID: '1000',

@@ -1,0 +1,14 @@
+{
+  "name": "Chunky (Paper)",
+  "version": "1.5.3",
+  "released_at": "2026-05-04T05:46:08Z",
+  "asset": "Chunky-Bukkit-1.5.3.jar",
+  "url": "https://cdn.modrinth.com/data/fALzjamp/versions/MdY6JATr/Chunky-Bukkit-1.5.3.jar",
+  "sha256": "530d2c7430a96a39957391b7088be144daa3108f7665896d1c23aa8dd4af32f3",
+  "sha512": "43ffecc6e6a734b752da41575bbb316526c124c3f878942437d5133c377bfbd9b78bda975520dc074d7158c15dade58a444ccd0fd8d8a25d165b6fc450140422",
+  "size_bytes": 304616,
+  "release_page": "https://modrinth.com/plugin/chunky/version/1.5.3",
+  "license": "GPL-3.0-only",
+  "minecraft_versions": ["26.1", "26.1.1", "26.1.2", "26.2", "26.3"],
+  "loaders": ["bukkit", "folia", "paper", "spigot"]
+}

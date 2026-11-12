@@ -125,6 +125,7 @@ const COLO_SOURCE_ALLOWLIST = [
   './secrets',
 ];
 const BLUEMAP_JAR_SOURCE = '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar';
+const CHUNKY_JAR_SOURCE = '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar';
 const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const DEFAULTED = /^\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}$/;
 
@@ -160,7 +161,7 @@ function sourceProblem(source: string): string | null {
   const shown = JSON.stringify(source);
   if (/docker\.sock/i.test(source)) return `volume ${shown} mounts docker.sock, which is rejected`;
   // The one interpolated host source: the deploy's verified BlueMap jar (C2-07o). Long form only; any other `$` is rejected.
-  if (source === BLUEMAP_JAR_SOURCE) return null;
+  if (source === BLUEMAP_JAR_SOURCE || source === CHUNKY_JAR_SOURCE) return null;
   if (source.includes('$')) return `volume ${shown} uses interpolation, which is rejected`;
   if (/^(\/|~|[A-Za-z]:)/.test(source) || source.includes('\\')) {
     return `volume ${shown} is an absolute host path, which is rejected`;
