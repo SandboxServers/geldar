@@ -15,6 +15,10 @@ const RUNG_TICKS = 20;
 const FREE_DISTANCE = 1.2;
 /** Ticks the swim-up of the water exit may take. */
 const SWIM_TICKS = 40;
+/** The pillar places once the feet are this far above the start: the box has left the new block's cell. */
+const PILLAR_CLEAR = 1.0;
+/** A pillar worked when the bot ends this far above its start, on the placed block. */
+const RISE = 0.9;
 
 /** What a finished ladder reports. `refusal` names a block the dig rung would not take, and why. */
 export type LadderResult =
@@ -204,12 +208,52 @@ function heldBlock(bot: Bot): unknown {
   });
 }
 
-/** Jumps and places a held block under the feet; true when the bot ends higher than it began. */
-async function pillar(bot: Bot, o: LadderOptions): Promise<boolean> {
+/**
+ * Makes the two cells above the bot's head free for the pillar's jump: air passes, and a solid block
+ * the bare hand may dig is dug first. Anything else (unbreakable, hazardous, lava) is refused with a
+ * reason that names the headroom, and the jump is not tried.
+ */
+async function clearHeadroom(bot: Bot, o: LadderOptions, refusals: string[]): Promise<boolean> {
+  const b = bot as LooseBot;
+  const feet = b.entity.position.floored();
+  const own = [feet, feet.offset(0, 1, 0)];
+  for (const dy of [2, 3]) {
+    const at = feet.offset(0, dy, 0);
+    const block = bot.blockAt(at);
+    if (passable(block)) continue;
+    const refusal =
+      block === null || !solid(block)
+        ? `${block?.name ?? 'unloaded cell'} overhead`
+        : (unbreakableReason(block) ?? hazardReason(bot, block, at, own, true));
+    if (refusal) {
+      refusals.push(`no headroom for a pillar: ${refusal}`);
+      return false;
+    }
+    try {
+      const tool = b.pathfinder?.bestHarvestTool?.(block as Block);
+      if (tool) await bot.equip(tool as never, 'hand');
+      await bot.dig(block as Block, true);
+    } catch (error) {
+      refusals.push(`no headroom for a pillar: ${errorText(error)}`);
+      return false;
+    }
+  }
+  if (o.signal.aborted) return false;
+  return true;
+}
+
+/**
+ * Jumps and places a held block under the feet; true when the bot ends higher than it began and the
+ * block went down. The block is placed only once the feet are a full block up (`PILLAR_CLEAR`):
+ * earlier the bot's own box still fills the cell and the server refuses the placement.
+ */
+async function pillar(bot: Bot, o: LadderOptions, refusals: string[]): Promise<boolean> {
   const b = bot as LooseBot;
   const item = heldBlock(bot);
   if (!item) return false;
+  if (!(await clearHeadroom(bot, o, refusals))) return false;
   const startY = b.entity.position.y;
+  let placed = false;
   try {
     await bot.equip(item as never, 'hand');
     await bot.lookAt(b.entity.position.offset(0, -1, 0), true);
@@ -217,16 +261,15 @@ async function pillar(bot: Bot, o: LadderOptions): Promise<boolean> {
     // The cell the bot began in becomes the new floor: place on the block under it once the bot is up.
     const cell = b.entity.position.floored();
     const ground = bot.blockAt(cell.offset(0, -1, 0));
-    let placed = false;
     for (let i = 0; i < RUNG_TICKS && !o.signal.aborted; i++) {
       await bot.waitForTicks(1);
-      if (!placed && b.entity.position.y - startY > 0.6 && ground && solid(ground)) {
+      if (!placed && b.entity.position.y - startY >= PILLAR_CLEAR && ground && solid(ground)) {
         if (passable(bot.blockAt(cell))) {
           await bot.placeBlock(ground, new Vec3(0, 1, 0));
           placed = true;
         }
       }
-      if (placed && b.entity.position.y - startY >= 0.9) break;
+      if (placed && b.entity.position.y - startY >= RISE) break;
     }
   } catch (error) {
     o.sink.log(
@@ -239,7 +282,7 @@ async function pillar(bot: Bot, o: LadderOptions): Promise<boolean> {
   } finally {
     release(bot);
   }
-  return b.entity.position.y - startY >= 0.9;
+  return placed && b.entity.position.y - startY >= RISE;
 }
 
 /** Fixed text of the last-resort outcome: facts only. */
@@ -264,7 +307,7 @@ export async function escapeLadder(bot: Bot, o: LadderOptions): Promise<LadderRe
     ['sprint_jump', () => hop(bot, o, true)],
     ['dig', () => digAhead(bot, o, refusals)],
     ['stairs', () => stairs(bot, o, refusals)],
-    ['pillar', () => pillar(bot, o)],
+    ['pillar', () => pillar(bot, o, refusals)],
   ];
   if (inWater(bot)) rungs.unshift(['water_exit', () => waterExit(bot, o)]);
   for (const [rung, run] of rungs) {
@@ -278,8 +321,8 @@ export async function escapeLadder(bot: Bot, o: LadderOptions): Promise<LadderRe
         rung,
         worked,
         in_water: inWater(bot),
-        ...(refusals.length > 0 && (rung === 'dig' || rung === 'stairs')
-          ? { refusal: refusals[0] }
+        ...(refusals.length > 0 && (rung === 'dig' || rung === 'stairs' || rung === 'pillar')
+          ? { refusal: refusals[refusals.length - 1] }
           : {}),
       }),
     );

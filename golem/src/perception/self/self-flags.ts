@@ -1,6 +1,7 @@
 import type { Snapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { ownAir } from '../../body/air.ts';
 
 type StatusFlag = NonNullable<Snapshot['self']['status_flags']>[number];
 
@@ -75,9 +76,9 @@ function statusFlags(bot: Bot): StatusFlag[] {
 
 /** Breath bubbles, shown only below a full breath. */
 function air(bot: Bot): number | undefined {
-  const level = bot.oxygenLevel;
-  if (typeof level !== 'number' || level >= FULL_AIR) return undefined;
-  return Math.max(0, Math.floor(level));
+  const level = ownAir(bot);
+  if (level >= FULL_AIR) return undefined;
+  return level;
 }
 
 /** Armour, status flags and air. Each key is omitted when it has nothing to say. */

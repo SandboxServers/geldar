@@ -58,6 +58,60 @@ export type MoveResult =
 /** Escape ladders one goto may run before the plain `blocked` result stands. */
 export const MAX_LADDERS = 2;
 
+/** The parts of a pathfinder `Movements` that the door rule reads and wraps. */
+interface DoorMovements {
+  canOpenDoors: boolean;
+  openable: Set<number>;
+  getBlock(pos: { x: number; y: number; z: number }, dx: number, dy: number, dz: number): DoorCell;
+}
+
+/** A cell as `getBlock` returns it; the door rule rewrites these flags. */
+interface DoorCell {
+  type?: number;
+  openable?: boolean;
+  safe?: boolean;
+  physical?: boolean;
+}
+
+/** True for an open door's `open` property (a boolean, or its string form). */
+const isOpen = (value: unknown): boolean => value === true || value === 'true';
+
+/**
+ * Lets a route walk through wooden doors. The server is Paper, where a right-click opens a village
+ * door, so a closed door is a way through, not a wall. The library's openable set (2.4.5) holds
+ * gates only, so wooden doors join it here. A door is two cells: the planner clicks the lower
+ * half (`useOne`) and walks the upper half, which the library would otherwise refuse as unsafe.
+ * An open door is walked through, never clicked shut. Iron doors need redstone, so they stay walls.
+ * Only this instance's `getBlock` is wrapped; the library module is not touched.
+ */
+export function allowDoors(movements: unknown, bot: Bot): void {
+  const m = movements as DoorMovements;
+  const doorIds = new Set<number>();
+  for (const block of bot.registry.blocksArray) {
+    if (block.name.endsWith('_door') && !block.name.startsWith('iron_')) doorIds.add(block.id);
+  }
+  m.canOpenDoors = true;
+  for (const id of doorIds) m.openable.add(id);
+  const original = m.getBlock.bind(m);
+  m.getBlock = (pos, dx, dy, dz) => {
+    const cell = original(pos, dx, dy, dz);
+    if (cell.type === undefined || !doorIds.has(cell.type)) return cell;
+    const world = bot.blockAt(new Vec3(pos.x + dx, pos.y + dy, pos.z + dz), false) as {
+      getProperties?: () => Record<string, unknown>;
+    } | null;
+    const props = world?.getProperties?.() ?? {};
+    if (isOpen(props.open)) {
+      cell.safe = true;
+      cell.physical = false;
+      cell.openable = false;
+    } else if (props.half === 'upper') {
+      cell.safe = true;
+      cell.physical = false;
+    }
+    return cell;
+  };
+}
+
 /**
  * Loads the pathfinder once and sets the movement rules: no digging, no towers, no scaffolding.
  * Digging and placing belong to `mine` and `place`, so `goto` never tunnels or builds.
@@ -74,6 +128,7 @@ export function ensurePathfinder(bot: Bot): void {
   // The library spells this property `scafoldingBlocks` (2.4.5).
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
+  allowDoors(movements, bot);
   bot.pathfinder.setMovements(movements);
   bot.pathfinder.tickTimeout = TICK_SLICE_MS;
   bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
@@ -101,6 +156,7 @@ export function planReach(
     digging.canDig = true;
     digging.allow1by1towers = false;
     digging.scafoldingBlocks = [];
+    allowDoors(digging, bot);
     movements = digging;
   }
   const found = planner.getPathTo(movements, goal);

@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { isNightOrStorm } from '../actions/sleep.ts';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
+import { ownAir } from './air.ts';
 import { lightAtHead } from './light.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
@@ -283,7 +284,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
       return Math.max(0, peakY - bot.entity.position.y);
     },
     get air() {
-      return bot.oxygenLevel ?? 20;
+      return ownAir(bot);
     },
     edibleFoods() {
       const foods = bot.registry.foodsByName;

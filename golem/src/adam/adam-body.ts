@@ -229,6 +229,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       ears: composeEars(chatEars, digest),
       voice,
       buildSnapshot: (options) => buildSnapshot(bot, options),
+      view: async (size) => viewTextFromBot(bot, size),
       tick,
       publisher: env.publisher,
       log,
