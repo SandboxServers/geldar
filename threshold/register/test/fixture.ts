@@ -94,7 +94,7 @@ export interface Harness {
   signedIn: Identity[];
   server: Server;
   /** Runs /login/<p> and returns what the callback needs. */
-  begin(provider?: string): Promise<{ state: string; cookie: string }>;
+  begin(provider?: string, consent?: boolean): Promise<{ state: string; cookie: string }>;
   callback(
     provider: string | undefined,
     state: string,
@@ -140,8 +140,10 @@ export async function harness(
     logs,
     signedIn,
     server,
-    async begin(_provider) {
-      const res = await fetch(`${base}/register/login`, { redirect: 'manual' });
+    async begin(_provider, consent = true) {
+      // The sign-up consent box (C7-08): ticked by default, as a user who agrees would tick it.
+      const query = consent ? '?consent=yes' : '';
+      const res = await fetch(`${base}/register/login${query}`, { redirect: 'manual' });
       const loc = new URL(res.headers.get('location') ?? '');
       idp.challenge = loc.searchParams.get('code_challenge');
       const cookie = (res.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
