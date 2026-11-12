@@ -108,7 +108,7 @@ describe('IntentLedger and continueInterrupted', () => {
   });
 
   it('holds for a program outside the Phase 0 allow-list', () => {
-    for (const program of ['trade_wait', 'build', 'mySkill']) {
+    for (const program of ['trade_wait', 'mySkill']) {
       const ledger = new IntentLedger();
       const id = newId('in');
       ledger.observe(intentEvent(id, 'accepted', 100, program));

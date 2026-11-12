@@ -961,7 +961,7 @@ export interface ActInput {
   say?: string | null;
   intent?: Intent;
   /**
-   * Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, build, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw.
+   * Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw.
    *
    * @maxItems 6
    *

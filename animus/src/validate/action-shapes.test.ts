@@ -21,6 +21,7 @@ const EXAMPLES: Record<string, Record<string, unknown>> = {
   unstick: { do: 'unstick' },
   give: { do: 'give', to: 'Pike', item: 'bread', count: 2 },
   note: { do: 'note', text: 'iron is north' },
+  write_sign: { do: 'write_sign', text: 'Home' },
 };
 
 function accepts(action: Record<string, unknown>): boolean {

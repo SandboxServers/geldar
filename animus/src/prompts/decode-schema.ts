@@ -28,7 +28,7 @@ export function thoughtDecodeSchema(): Record<string, unknown> {
         type: 'object',
         properties: {
           goal: { type: 'string', maxLength: 64 },
-          program: { enum: ['travel', 'gather', 'craft', 'rest', 'flee', 'follow'] },
+          program: { enum: ['travel', 'gather', 'craft', 'rest', 'flee', 'follow', 'build'] },
           arguments: { type: 'object' },
           wake_on: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 32 } },
           limits: {
@@ -66,7 +66,7 @@ function actionField(verb: string, field: string): Record<string, unknown> {
     case 'to':
       return { type: 'string', maxLength: 16 };
     case 'text':
-      return { type: 'string', maxLength: 512 };
+      return { type: 'string', maxLength: verb === 'write_sign' ? 60 : 512 };
     case 'seconds':
       return { type: 'integer', minimum: 1, maximum: 600 };
     default:

@@ -16,6 +16,7 @@ export const PHASE0_VERBS: readonly string[] = [
   'unstick',
   'give',
   'note',
+  'write_sign',
 ];
 
 /** The programs an intent may name. Everything else (skills, `build`, `trade_wait`) is refused. */
@@ -26,6 +27,7 @@ export const PHASE0_PROGRAMS: readonly string[] = [
   'rest',
   'flee',
   'follow',
+  'build',
 ];
 
 /** The largest output the validators read: the Thinker's `text` cap (threat model section 4). */
@@ -126,6 +128,7 @@ type ArgSpec =
   | { kind: 'int'; min: number; max: number; required: boolean }
   | { kind: 'name'; required: boolean }
   | { kind: 'player'; required: boolean }
+  | { kind: 'blueprint'; required: boolean }
   | { kind: 'target'; required: boolean };
 
 /** Argument shapes of the Phase 0 programs, read from `golem/src/body/programs/*.ts`. */
@@ -154,7 +157,14 @@ const PROGRAM_ARGS: Record<string, Record<string, ArgSpec>> = {
     target: { kind: 'player', required: true },
     max_unseen_seconds: { kind: 'int', min: 1, max: 120, required: false },
   },
+  build: {
+    blueprint: { kind: 'blueprint', required: true },
+    block: { kind: 'name', required: true },
+  },
 };
+
+/** The blueprint ids the Body's build program knows (golem/src/actions/build/blueprints.ts). */
+const BLUEPRINTS: readonly string[] = ['shelter', 'wall', 'pillar'];
 
 /** Checks an intent's `arguments` against its program's shape and caps. */
 export function checkProgramArguments(
@@ -187,6 +197,10 @@ export function checkProgramArguments(
     } else if (rule.kind === 'name') {
       if (typeof v !== 'string' || !/^[a-z0-9_]{1,64}$/.test(v)) {
         errors.add('schema', at, 'must be a lower-case name');
+      }
+    } else if (rule.kind === 'blueprint') {
+      if (typeof v !== 'string' || !BLUEPRINTS.includes(v)) {
+        errors.add('schema', at, 'is not a known blueprint');
       }
     } else if (rule.kind === 'player') {
       if (typeof v !== 'string' || !/^[A-Za-z0-9_]{3,16}$/.test(v)) {
