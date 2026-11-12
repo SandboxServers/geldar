@@ -36,8 +36,45 @@ function viewBot() {
     state.findBlockCalls += 1;
     return state.bed ? { name: 'red_bed' } : null;
   };
+  // A ray hits the first cell of `state.blocks` it crosses; the sight test only asks hit or miss.
+  emitter.world = {
+    raycast: (from: Vec3, dir: Vec3, range: number) => {
+      for (let t = 0.25; t < range; t += 0.25) {
+        const p = from.plus(dir.scaled(t));
+        if (
+          state.blocks[`${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`] !== undefined
+        ) {
+          return { position: p };
+        }
+      }
+      return null;
+    },
+  };
   return { bot: emitter as unknown as Bot, raw: emitter, state };
 }
+
+describe('view: hostiles need line of sight', () => {
+  // Each sign: a zombie 3 blocks out on one axis, and the one cell the eye-to-body ray crosses.
+  it.each([
+    ['east', 3.5, 0.5, '2,65,0'],
+    ['west', -2.5, 0.5, '-1,65,0'],
+    ['south', 0.5, 3.5, '0,65,2'],
+    ['north', 0.5, -2.5, '0,65,-1'],
+  ])('a zombie to the %s behind a block is absent from nearbyHostiles', (_label, x, z, cell) => {
+    const { bot, raw, state } = viewBot();
+    (raw.entities as Record<string, unknown>).z = {
+      type: 'hostile',
+      name: 'zombie',
+      position: new Vec3(x, 64, z),
+      height: 1.95,
+      yaw: 0,
+    };
+    const view = createBodyView(bot);
+    expect(view.nearbyHostiles()).toHaveLength(1);
+    state.blocks[cell] = 'stone';
+    expect(view.nearbyHostiles()).toEqual([]);
+  });
+});
 
 describe('view: fluids', () => {
   it('reads water from the physics flag, and kelp or seagrass at the feet as water', () => {
