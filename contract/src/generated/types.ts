@@ -33,6 +33,10 @@ export interface ActionOutcomePayload {
    */
   message: string;
   /**
+   * Optional plain-words facts about a failure, for example 'need 2 more planks; no crafting table within 32 blocks'. The Body sets it only for a few reasons (missing materials or station, no effect, needs rescue, a craft timeout, a refused mine). The MCP server cleans it (length, control characters, a character whitelist, the agent-text scan) before a character reads it. Facts only, never advice.
+   */
+  detail_text?: string;
+  /**
    * True when the event is for an intent (a program), not an immediate action.
    */
   intent?: boolean;

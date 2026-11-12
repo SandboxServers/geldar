@@ -7,6 +7,7 @@
 import type { Bot } from 'mineflayer';
 import type { RunningAdamBody } from '../adam/adam-body.ts';
 import { BodySupervisor, type SupervisorOptions } from '../adam/main.ts';
+import { BodyWatchdog, type WatchdogOptions } from '../adam/watchdog.ts';
 
 /** One connection of the player: the bot source for the supervisor, and its close. */
 export interface PlayerConnection {
@@ -22,6 +23,8 @@ export interface PlayerSessionOptions {
   /** Starts one run of the player's Body on the bot. */
   body(bot: Bot): Promise<RunningAdamBody>;
   log: (line: Record<string, unknown>) => void;
+  /** Wedge watchdog settings (`log` is the session's); each `up` gets its own, so its history is that life's. */
+  watchdog?: Omit<WatchdogOptions, 'log'>;
 }
 
 interface ActiveSession {
@@ -69,6 +72,9 @@ export class PlayerSession {
         return { ...run, ended: Promise.race([run.ended, stopping]) };
       },
       log,
+      ...(this.opts.watchdog === undefined
+        ? {}
+        : { watchdog: new BodyWatchdog({ ...this.opts.watchdog, log }) }),
     });
     const active: ActiveSession = {
       supervisor,

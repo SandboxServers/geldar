@@ -280,7 +280,9 @@ export {
   intentWhy,
   isOutcomeReason,
   OUTCOME_REASONS,
+  outcomeDetailText,
   outcomeMessage,
+  playerDetailText,
   playerOutcomeText,
 } from './outcome-words.ts';
 export { planSubject, snapshotSubject, viewImageSubject } from './subjects.ts';

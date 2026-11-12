@@ -17,6 +17,7 @@ function actionLine(
         ok: e.kind === 'action',
         reason: e.reason,
         intent: e.intent,
+        detail: e.detail,
       }),
     },
   ];

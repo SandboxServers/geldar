@@ -2,6 +2,7 @@ import {
   type ActionOutcomePayload,
   intentWhy,
   isOutcomeReason,
+  outcomeDetailText,
   outcomeMessage,
 } from '@geldar/contract';
 import type { ActionReport } from './executor-types.ts';
@@ -16,12 +17,20 @@ export function actionOutcomeOf(
   const ok = report.record.state === 'completed';
   const raw = (report.record.result as { reason?: unknown } | null)?.reason;
   const reason = !ok && isOutcomeReason(raw) ? raw : !ok ? 'internal' : undefined;
+  const text = ok
+    ? undefined
+    : outcomeDetailText(
+        verb,
+        reason,
+        (report.record.result as { message?: unknown } | null)?.message,
+      );
   return {
     verb,
     index,
     ok,
     ...(reason === undefined ? {} : { reason }),
     message: outcomeMessage(verb, ok, reason),
+    ...(text === undefined ? {} : { detail_text: text }),
   } as ActionOutcomePayload;
 }
 
