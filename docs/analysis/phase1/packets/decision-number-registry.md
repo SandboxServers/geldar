@@ -134,10 +134,20 @@ Still open:
 
 The next free number is 0147 (checked against all remote branches on 2026-11-11).
 
+## Wave C7 numbers (added 2026-11-11)
+
+| Number | Packet(s) | Title | Status |
+|---|---|---|---|
+| 0151 | C7-03, C7-05 | Bodies run only in the Colo; no bring-your-own-body | Decided (owner ruling) |
+| 0152 | C7-02 to C7-04 | Owner management API, owner keys, Colo supervisor | Decided (owner ruling) |
+| 0153 | C7-08 to C7-11 | Terms, consent, deletion and export before sign-up | Decided (owner ruling); legal text Draft |
+
+C7 uses 0151 to 0153 only, as the owner ruled. 0147 to 0150 are not used by C7. The next free number stays 0147 for any other wave; after C7 the highest used number is 0153.
+
 ## Wave PX numbers (added 2026-11-11)
 
 | Number | Packet | Use | Status |
 |---|---|---|---|
 | 0154 | PX-0..PX-8b | Perception owner rulings | Decided |
 
-Numbers 0147 to 0153 are taken by other in-flight branches, so they are not free for wave PX: 0147 and 0148 (body events), 0149 (act budget metering), 0150 (register port), 0151 to 0153 (C7 user management). Wave PX uses only 0154.
+Numbers 0147 to 0153 are not free for wave PX. 0147 and 0148 (body events) and 0149 (act budget metering) are on in-flight branches; 0150 (register port) is on main; 0151 to 0153 are wave C7. Wave PX uses only 0154.
