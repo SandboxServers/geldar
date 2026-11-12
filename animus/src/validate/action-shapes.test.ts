@@ -18,6 +18,7 @@ const EXAMPLES: Record<string, Record<string, unknown>> = {
   withdraw: { do: 'withdraw', at: POS, item: 'stone', count: 1 },
   attack: { do: 'attack', target: 'Adam' },
   wait: { do: 'wait', seconds: 5 },
+  unstick: { do: 'unstick' },
 };
 
 function accepts(action: Record<string, unknown>): boolean {

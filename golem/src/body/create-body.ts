@@ -140,7 +140,8 @@ export function createBody(options: CreateBodyOptions): Body {
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
     if (action.do === 'goto') {
-      noteGoto(built.view, run.state, run.result.reason, run.result.message);
+      const stalled = run.result.detail?.stalled === true;
+      noteGoto(built.view, run.state, run.result.reason, run.result.message, stalled);
     }
     // With the reflex off nothing would take the report, so a program must not wait for one.
     // Only a walk the intent's program ran: a plan's own goto is the Mind's to handle.

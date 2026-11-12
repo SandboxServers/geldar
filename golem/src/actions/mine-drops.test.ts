@@ -190,7 +190,11 @@ describe('mineAction drops', () => {
     const outcome = await mine(bot, 1, 'stone');
     expect(outcome).toEqual({
       status: 'completed',
-      detail: { mined: 1, collected: { cobblestone: 1 } },
+      detail: {
+        mined: 1,
+        collected: { cobblestone: 1 },
+        hint: expect.stringContaining('the space is open'),
+      },
     });
     expect(bot.waitForTicks).toHaveBeenCalledTimes(3);
   });
@@ -214,7 +218,11 @@ describe('mineAction drops', () => {
     const outcome = await mine(bot, 3);
     expect(outcome).toEqual({
       status: 'completed',
-      detail: { mined: 3, collected: { oak_log: 1 } },
+      detail: {
+        mined: 3,
+        collected: { oak_log: 1 },
+        hint: expect.stringContaining('the space is open'),
+      },
     });
     // Each of the three waits runs its full 60 polls: one late drop is not three drops.
     expect(bot.waitForTicks).toHaveBeenCalledTimes(180);
@@ -239,7 +247,11 @@ describe('mineAction drops', () => {
     const outcome = await mine(bot, 2);
     expect(outcome).toEqual({
       status: 'completed',
-      detail: { mined: 2, collected: { oak_log: 8 } },
+      detail: {
+        mined: 2,
+        collected: { oak_log: 8 },
+        hint: expect.stringContaining('the space is open'),
+      },
     });
     expect(bot.waitForTicks).toHaveBeenCalledTimes(4);
   });

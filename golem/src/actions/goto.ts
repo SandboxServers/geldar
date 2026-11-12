@@ -5,6 +5,9 @@ import { type ActionOutcome, completed, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
+/** A `goto` that ends within this many blocks of where it began did not move the bot. */
+const FINISHED_STILL = 0.5;
+
 /** The `goto` action as the contract types it. */
 type GotoAction = Extract<Action, { do: 'goto' }>;
 
@@ -45,12 +48,19 @@ export const gotoAction: ActionHandler<'goto'> = {
       range = 1;
     }
 
+    const from = ctx.bot.entity.position.clone();
     const move = await moveNear(ctx.bot, aim, range, {
       signal: ctx.signal,
       timeScale: ctx.timeScale,
     });
     if (!move.ok) return outcomeOfMove(move);
     const at = ctx.bot.entity.position;
-    return completed({ position: { x: at.x, y: at.y, z: at.z }, distance: move.distance });
+    // "Finished" without moving while still far from the goal: the unstick reflex counts it as a stall.
+    const stalled = at.distanceTo(from) < FINISHED_STILL && move.distance > range + 1;
+    return completed({
+      position: { x: at.x, y: at.y, z: at.z },
+      distance: move.distance,
+      ...(stalled ? { stalled: true } : {}),
+    });
   },
 };

@@ -1,0 +1,179 @@
+{
+  "version": 3,
+  "description": "The Phase 0 allow-list of verbs and programs (wave 5 Q9), with one valid example each. v2 changes only the wording of sleep and rest: a shelter other than a bed counts for rest. The examples are checked against the output validator by a test. Immutable once used: a change is a new vN file.",
+  "say": {
+    "summary": "Speak aloud to anyone within earshot (at most 256 characters). A thought may carry say on its own or together with actions and an intent.",
+    "example": {
+      "reasoning": "Greet the person near me.",
+      "say": "Hello, I am heading to the hills."
+    }
+  },
+  "verbs": [
+    {
+      "do": "goto",
+      "summary": "Walk to a position or up to a person.",
+      "fields": { "target": "a position {x,y,z} or a person's name" },
+      "example": { "do": "goto", "target": { "x": 12, "y": 64, "z": -30 } }
+    },
+    {
+      "do": "mine",
+      "summary": "Dig the nearest blocks of one kind and pick up what they drop.",
+      "fields": { "block": "block name such as oak_log", "count": "1 to 256" },
+      "example": { "do": "mine", "block": "oak_log", "count": 4 }
+    },
+    {
+      "do": "craft",
+      "summary": "Make an item you have unlocked the recipe for, from what you carry.",
+      "fields": { "item": "item name such as oak_planks", "count": "1 to 64" },
+      "example": { "do": "craft", "item": "oak_planks", "count": 4 }
+    },
+    {
+      "do": "place",
+      "summary": "Place a block you carry.",
+      "fields": { "block": "block name", "at": "a position {x,y,z} or the word feet" },
+      "example": { "do": "place", "block": "crafting_table", "at": "feet" }
+    },
+    {
+      "do": "eat",
+      "summary": "Eat the best food you carry.",
+      "fields": {},
+      "example": { "do": "eat" }
+    },
+    {
+      "do": "sleep",
+      "summary": "Go to bed and sleep. Works at night near a bed you have placed. With no bed, rest by waiting in a sealed shelter (the rest routine).",
+      "fields": {},
+      "example": { "do": "sleep" }
+    },
+    {
+      "do": "open",
+      "summary": "Open the chest at a position.",
+      "fields": { "at": "a position {x,y,z}" },
+      "example": { "do": "open", "at": { "x": 3, "y": 64, "z": 8 } }
+    },
+    {
+      "do": "deposit",
+      "summary": "Put items from your inventory into the chest at a position.",
+      "fields": { "at": "a position {x,y,z}", "item": "item name", "count": "1 to 64" },
+      "example": {
+        "do": "deposit",
+        "at": { "x": 3, "y": 64, "z": 8 },
+        "item": "cobblestone",
+        "count": 16
+      }
+    },
+    {
+      "do": "withdraw",
+      "summary": "Take items out of the chest at a position.",
+      "fields": { "at": "a position {x,y,z}", "item": "item name", "count": "1 to 64" },
+      "example": {
+        "do": "withdraw",
+        "at": { "x": 3, "y": 64, "z": 8 },
+        "item": "bread",
+        "count": 2
+      }
+    },
+    {
+      "do": "attack",
+      "summary": "Fight a nearby creature or person.",
+      "fields": { "target": "a name or entity type such as zombie" },
+      "example": { "do": "attack", "target": "zombie" }
+    },
+    {
+      "do": "wait",
+      "summary": "Stand still and let time pass.",
+      "fields": { "seconds": "1 to 600" },
+      "example": { "do": "wait", "seconds": 10 }
+    },
+    {
+      "do": "unstick",
+      "summary": "Get free when you are stuck or cannot find a way down: the body digs down or steps down one block at a time. Needs no items.",
+      "fields": {},
+      "example": { "do": "unstick" }
+    }
+  ],
+  "programs": [
+    {
+      "program": "travel",
+      "summary": "Walk to a position or up to a person, as long as it takes (up to three tries).",
+      "arguments": { "target": "a position {x,y,z} or a person's name" },
+      "example": {
+        "goal": "reach_the_hills",
+        "program": "travel",
+        "arguments": { "target": { "x": 120, "y": 70, "z": -40 } },
+        "wake_on": ["goal_completed", "unexpected_damage"],
+        "limits": { "max_world_ticks": 6000, "max_block_operations": 100 }
+      }
+    },
+    {
+      "program": "gather",
+      "summary": "Collect a number of one item by mining blocks, until you hold that many.",
+      "arguments": {
+        "block": "block name to mine, such as stone",
+        "count": "how many you want to hold, 1 to 2304",
+        "item": "optional: the item that drops, when it differs from the block",
+        "radius": "optional: how far to look, 1 to 64"
+      },
+      "example": {
+        "goal": "collect_wood",
+        "program": "gather",
+        "arguments": { "block": "oak_log", "count": 12 },
+        "wake_on": ["goal_completed", "unexpected_damage", "directly_addressed"],
+        "limits": { "max_world_ticks": 12000, "max_block_operations": 200 }
+      }
+    },
+    {
+      "program": "craft",
+      "summary": "Craft an item until you hold that many.",
+      "arguments": { "item": "item name", "count": "how many you want to hold, 1 to 576" },
+      "example": {
+        "goal": "make_pickaxe",
+        "program": "craft",
+        "arguments": { "item": "wooden_pickaxe", "count": 1 },
+        "wake_on": ["goal_completed", "precondition_failed"],
+        "limits": { "max_world_ticks": 2400, "max_block_operations": 20 }
+      }
+    },
+    {
+      "program": "rest",
+      "summary": "Recover health by sleeping in a bed, or by waiting quietly in a sealed shelter: a hut, a house, or a hole in the ground sealed above and around you.",
+      "arguments": {
+        "until_health": "optional: stop at this health, 1 to 20 (default 20)",
+        "wait_seconds": "optional: seconds per wait, 1 to 60 (default 5)",
+        "max_waits": "optional: give up after this many waits, 1 to 120 (default 30)"
+      },
+      "example": {
+        "goal": "recover_health",
+        "program": "rest",
+        "arguments": { "until_health": 20 },
+        "wake_on": ["goal_completed", "unexpected_damage"],
+        "limits": { "max_world_ticks": 6000, "max_block_operations": 10 }
+      }
+    },
+    {
+      "program": "flee",
+      "summary": "Run away from nearby hostile creatures.",
+      "arguments": {
+        "distance": "optional: how far to run per leg, 8 to 64 (default 24)",
+        "max_legs": "optional: how many legs, 1 to 10 (default 4)"
+      },
+      "example": {
+        "goal": "get_away",
+        "program": "flee",
+        "arguments": { "distance": 24, "max_legs": 4 },
+        "wake_on": ["goal_completed", "unexpected_damage"],
+        "limits": { "max_world_ticks": 1200, "max_block_operations": 10 }
+      }
+    }
+  ],
+  "wake_on": {
+    "summary": "Conditions that interrupt an intent so you can think again. Keep the list short.",
+    "values": [
+      "directly_addressed",
+      "precondition_failed",
+      "unexpected_damage",
+      "goal_completed",
+      "new_agent_within_N (N is 1 to 99 blocks)"
+    ]
+  }
+}

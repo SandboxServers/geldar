@@ -31,9 +31,13 @@ export function noteGoto(
   state: 'completed' | 'failed' | 'cancelled',
   reason: string | undefined,
   message: string | undefined,
+  stalled = false,
 ): void {
   const streak = streakOf(view);
-  if (state === 'completed') {
+  if (state === 'completed' && stalled) {
+    // "Finished" without moving while far from the goal: the same as a no-movement failure.
+    streak.stalls++;
+  } else if (state === 'completed') {
     streak.stalls = 0;
     streak.attempts = 0;
   } else if (state === 'failed' && reason === 'blocked' && message?.startsWith('no movement')) {

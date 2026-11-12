@@ -379,9 +379,51 @@ describe('corrective message', () => {
   });
 });
 
+/** Verbs the MCP `act` description lists that the Phase 0 allow-list deliberately refuses, with why. */
+const EXCLUDED_FROM_PHASE0: Record<string, string> = {
+  build: 'needs the build planner; Phase 1',
+  give: 'item transfer between agents; Phase 1',
+  write_sign: 'text on signs; Phase 1',
+  write_book: 'books; Phase 1',
+  read_book: 'books; Phase 1',
+  use_skill: 'skills; Phase 1',
+  define_skill: 'skills; Phase 1',
+  offer: 'trade; Phase 1',
+  propose: 'governance; Phase 1',
+  vote: 'governance; Phase 1',
+  note: 'outside the Phase 0 allow-list; the Mind keeps notes through reflection',
+};
+
+describe('the allow-list and the MCP verb list', () => {
+  const schema = JSON.parse(
+    readFileSync(join(repoRoot(), 'contract', 'schemas', 'mcp-play.schema.json'), 'utf8'),
+  ) as unknown;
+  const text = JSON.stringify(schema);
+  const listed = (/Verbs \(do\): ([^.]*)\./.exec(text)?.[1] ?? '')
+    .split(',')
+    .map((v) => v.trim().split(' ')[0] ?? '')
+    .filter((v) => v !== '');
+
+  it('lists unstick and other verbs the Body can run', () => {
+    expect(listed).toContain('unstick');
+    expect(PHASE0_VERBS).toContain('unstick');
+    expect(validator.parseThought(thought({ actions: [{ do: 'unstick' }] })).ok).toBe(true);
+  });
+
+  it('has every listed verb either callable or excluded with a reason', () => {
+    expect(listed.length).toBeGreaterThan(10);
+    for (const verb of listed) {
+      const callable = PHASE0_VERBS.includes(verb);
+      const excluded = verb in EXCLUDED_FROM_PHASE0;
+      expect({ verb, ok: callable !== excluded }).toEqual({ verb, ok: true });
+    }
+    for (const verb of PHASE0_VERBS) expect(listed).toContain(verb);
+  });
+});
+
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v2.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v3.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];

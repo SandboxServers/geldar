@@ -13,6 +13,7 @@ export const PHASE0_VERBS: readonly string[] = [
   'withdraw',
   'attack',
   'wait',
+  'unstick',
 ];
 
 /** The programs a Phase 0 intent may name. Everything else (skills, `build`, `follow`) is refused. */

@@ -41,6 +41,16 @@ describe('unstick reflex trigger', () => {
     expect(unstickReflex.check(view)).toEqual({ stalls: 2, attempt: 1 });
   });
 
+  it('counts a goto that finished without moving (stalled) and clears on a real arrival', () => {
+    const view = settableView();
+    noteGoto(view, 'completed', undefined, undefined, true);
+    expect(stallCount(view)).toBe(1);
+    noteGoto(view, 'completed', undefined, undefined, true);
+    expect(unstickReflex.check(view)).toEqual({ stalls: 2, attempt: 1 });
+    noteGoto(view, 'completed', undefined, undefined, false);
+    expect(stallCount(view)).toBe(0);
+  });
+
   it('ignores other failures and clears on an arrival', () => {
     const view = settableView();
     noteGoto(view, 'failed', 'blocked', 'no path');
