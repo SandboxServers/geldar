@@ -9,6 +9,7 @@ const store = new PgStore(dbUrl(process.env), { shard: config.shard });
 const server = createRegisterServer({
   config,
   store,
+  sessions: store,
   providers: { microsoft: microsoftProvider(config.microsoft) },
   fetch: (url, init) => fetch(url, init),
   now: () => Date.now(),

@@ -5,6 +5,7 @@ import { type Identity, identityHash } from './identity.ts';
 import { BASE, HOME_PAGE, REFUSED_PAGE, SECURITY_HEADERS, SIGNED_IN_PAGE } from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
 import type { FetchFn, Provider } from './providers.ts';
+import type { SessionStore } from './session-store.ts';
 import type { Store } from './store.ts';
 
 /** The 0090 public refusal shapes (the same bodies the MCP front uses). */
@@ -23,6 +24,8 @@ export interface RegisterDeps {
   readonly log: (line: string) => void;
   /** Owner and player creation. Without a store the default shows a plain "signed in" page. */
   readonly store?: Store;
+  /** Sessions (C7-01). Sign-in and the account pages need both this and the store. */
+  readonly sessions?: SessionStore;
   /** Overrides the store-backed sign-in (tests of the sign-in alone). */
   readonly onSignedIn?: (identity: Identity, res: ServerResponse) => Promise<void> | void;
 }
@@ -125,15 +128,17 @@ export function createRegisterServer(deps: RegisterDeps): Server {
   // R41: sign-in and sign-up have their own, tighter window per address (an IPv6 address by its /64).
   const signInLimiter = new FixedWindow(config.signInPerMinute, now);
   const ownerLimiter = new FixedWindow(config.ownerPerMinute, now);
-  const account = deps.store
-    ? new Account({
-        config,
-        store: deps.store,
-        now,
-        log,
-        ownerCharge: (id) => ownerLimiter.charge(id),
-      })
-    : null;
+  const account =
+    deps.store && deps.sessions
+      ? new Account({
+          config,
+          store: deps.store,
+          sessions: deps.sessions,
+          now,
+          log,
+          ownerCharge: (id) => ownerLimiter.charge(id),
+        })
+      : null;
   const onSignedIn = deps.onSignedIn ?? account?.signedIn;
 
   async function callback(

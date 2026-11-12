@@ -4,6 +4,7 @@ import { Account, SESSION_TTL_MS } from '../src/account.ts';
 import { loadConfig } from '../src/config.ts';
 import type { Identity } from '../src/identity.ts';
 import { clientAddress, FixedWindow, LIMITER_MAX_KEYS, limiterKey } from '../src/server.ts';
+import { FakeSessionStore } from './fake-session-store.ts';
 import { FakeStore } from './fake-store.ts';
 import { config, type Harness, harness, NOW } from './fixture.ts';
 
@@ -108,7 +109,7 @@ describe('sessions (F8)', () => {
       headers: { cookie: sc },
       redirect: 'manual',
     });
-    expect(again.status).toBe(302);
+    expect(again.status).toBe(401);
     h.clock.at += SESSION_TTL_MS + 1;
     expect(await login('3002')).toContain('gr_session=');
   });
@@ -118,12 +119,19 @@ describe('session sweep (F8)', () => {
   it('drops expired sessions when another user signs in', async () => {
     const clock = { at: NOW };
     const store = new FakeStore(() => clock.at);
-    const account = new Account({ config: config(), store, now: () => clock.at, log: () => {} });
+    const sessions = new FakeSessionStore();
+    const account = new Account({
+      config: config(),
+      store,
+      sessions,
+      now: () => clock.at,
+      log: () => {},
+    });
     await account.signedIn(identity(1), stubRes().res);
-    expect(account.sessionCount).toBe(1);
+    expect(sessions.size()).toBe(1);
     clock.at += SESSION_TTL_MS + 1;
     await account.signedIn(identity(2), stubRes().res);
-    expect(account.sessionCount).toBe(1);
+    expect(sessions.size()).toBe(1);
   });
 });
 
