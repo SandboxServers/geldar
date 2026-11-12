@@ -16,7 +16,7 @@ async function rig() {
 }
 
 describe('NatsEventSource', () => {
-  it('opens a consumer on exactly the ten Mind subjects of the shard', async () => {
+  it('opens a consumer on exactly the eleven Mind subjects of the shard', async () => {
     const { stream } = await rig();
     expect(stream.openedWith).toEqual(mindEventSubjects(SHARD));
     expect(stream.openedWith).toEqual(
@@ -31,6 +31,7 @@ describe('NatsEventSource', () => {
         'damage',
         'death',
         'sleep',
+        'heard_sound',
       ].map((type) => `geldar.${SHARD}.${type}`),
     );
   });

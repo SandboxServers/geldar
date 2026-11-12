@@ -20,10 +20,29 @@ const FLIGHT_LIMIT_MS = 15_000;
 const FLEE_DISTANCE = 14;
 /** How close to the flight point counts as arrived. */
 const FLEE_RANGE = 3;
+/** A hissing creeper this close (blocks) and in sight makes the Body run (PX-7). */
+const HISS_RADIUS = 5;
+/** Ticks between two firings of this reflex: a flee within 2 s is suppressed (PX-7 cooldown). */
+const FLEE_COOLDOWN_TICKS = 40;
 /** How often (wall ms) a fight checks that the Body's health is still above the floor. */
 const HEALTH_WATCH_MS = 100;
 /** Flight directions tried in turn, in radians off the line straight away from the attacker. */
 const FLEE_TURNS = [0, Math.PI / 3, -Math.PI / 3];
+
+/** The trigger for a hissing creeper within HISS_RADIUS that the view lists (sight is applied by the view). */
+function hissTrigger(view: BodyView): Trigger | null {
+  const creeper = view
+    .nearbyHostiles(HISS_RADIUS)
+    .find((h) => h.name === 'creeper' && h.hissing === true);
+  if (!creeper) return null;
+  return {
+    health: view.health,
+    hostile: creeper.name,
+    distance: Math.round(creeper.distance * 10) / 10,
+    armed: false,
+    cause: 'hiss',
+  };
+}
 
 /** True when the Body carries a sword or an axe. */
 function isArmed(view: BodyView): boolean {
@@ -36,27 +55,32 @@ function isArmed(view: BodyView): boolean {
  * or axe carried) with health above 6, it cancels what it was doing and
  * fights that hostile with the `attack` action until it is gone or health falls to 6; otherwise it
  * runs from it. A flight, and a fight that ends on low health, raise a `reflex_danger` wake.
+ * Also: a creeper that hisses (fuse lit) within 5 blocks and in sight makes the Body run (cause `hiss`).
  */
 export const fightOrFleeReflex: Reflex = {
   name: 'fight_or_flee',
   priority: 60,
-  cooldownTicks: 60,
+  cooldownTicks: FLEE_COOLDOWN_TICKS,
   check(view: BodyView): Trigger | null {
     const hurt = view.ticksSinceHurt;
-    if (hurt === null || hurt === undefined || hurt > HURT_WINDOW_TICKS) return null;
-    const hostile = attackerOf(view, ATTACKER_RADIUS);
-    if (!hostile) return null;
-    return {
-      health: view.health,
-      hostile: hostile.name,
-      distance: Math.round(hostile.distance * 10) / 10,
-      // A creeper is never meleed: the Body runs from it.
-      armed: isArmed(view) && !isSuicideMob(hostile.name),
-    };
+    if (hurt !== null && hurt !== undefined && hurt <= HURT_WINDOW_TICKS) {
+      const hostile = attackerOf(view, ATTACKER_RADIUS);
+      if (hostile) {
+        return {
+          health: view.health,
+          hostile: hostile.name,
+          distance: Math.round(hostile.distance * 10) / 10,
+          // A creeper is never meleed: the Body runs from it.
+          armed: isArmed(view) && !isSuicideMob(hostile.name),
+        };
+      }
+    }
+    return hissTrigger(view);
   },
   async run(trigger: Trigger, ctx: ReflexContext): Promise<ReflexOutcome> {
     await ctx.cancelAction();
     const name = String(trigger.hostile);
+    if (trigger.cause === 'hiss') return flee(ctx, name, 'hiss');
     if (trigger.armed === true && ctx.view.health > LOW_HEALTH) {
       const fight = await fightHostile(ctx, name);
       if (fight.outcome.result === 'handled' || !fight.lowHealth) return fight.outcome;
