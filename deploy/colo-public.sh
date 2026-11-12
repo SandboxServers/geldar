@@ -1,13 +1,15 @@
 #!/bin/bash
 # Installs, switches and removes the Geldar public sites in the shared Caddy (decisions 0071, 0094; card C2-07).
 # Usage: colo-public.sh install [site...] | off <site|all> | on <site|all> | remove | status      (sites: map glass mcp)
-# install with no site installs all of map glass mcp (all become live). install mcp names sites: only those get their live file and\n# rendered store files; the other sites keep their state (absent stays absent, off stays off, live stays live).
-# Caddy is a host-network container that serves other sites. It is only validated and reloaded here, never restarted,
-# recreated or started (no `docker restart`, `up` or `run`). Its Caddyfile gets one `import /config/geldar/*.caddy` line.
+# install with no site installs all of map glass mcp (all become live). install mcp names sites: only those get their live file and
+# rendered store files; the other sites keep their state (absent stays absent, off stays off, live stays live).
+# Caddy is a host-network container that serves other sites. It is validated here and, per GELDAR_PUBLIC_APPLY=reload|restart|none,
+# reloaded (default) or, with its admin API off (R39), restarted ONCE and only when GELDAR_PUBLIC_RESTART_OK=1; never recreated or started. Its Caddyfile gets one `import /config/geldar/*.caddy` line.
 # Caddy substitutes {$VAR} from its own process environment, which cannot change without a restart, so install renders
 # the placeholders into concrete files from a root-only env file (GELDAR_PUBLIC_ENV). The repo files are never edited.
 # Environment (names only, no value is printed): GELDAR_CADDY_CONTAINER, GELDAR_CADDY_CONFIG_DIR, GELDAR_CADDY_FILE,
-# GELDAR_PUBLIC_ENV (install only). The env file holds KEY=VALUE lines: GELDAR_DOMAIN, GELDAR_MAP_UPSTREAM,
+# GELDAR_PUBLIC_ENV (install only), GELDAR_PUBLIC_APPLY (reload|restart|none), GELDAR_PUBLIC_RESTART_OK (1 = restart itself).
+# GELDAR_REGISTER_UPSTREAM may be unset: glass then answers 503 on /register* and /roster*. The env file holds KEY=VALUE lines: GELDAR_DOMAIN, GELDAR_MAP_UPSTREAM,
 # GELDAR_GLASS_UPSTREAM, GELDAR_REGISTER_UPSTREAM, GELDAR_MCP_UPSTREAM (each 127.0.0.1:<port>). DEPLOY_DRY_RUN=1 prints every state change only.
 set -euo pipefail
 . "$(dirname "$0")/common.sh"
@@ -53,9 +55,12 @@ render_all() {
     ups=$(printf '%s' "$s" | tr 'a-z' 'A-Z')
     [ "$s" = glass ] && ups="GLASS REGISTER MAP" # MAP: the Kino textures route /kino/tex/* proxies the map upstream
     sed_up=""
+    reg_off=0
     for u in $ups; do
       up_var=GELDAR_${u}_UPSTREAM
       up=$(env_value "$up_var")
+      # The register service may not be deployed: glass then answers 503 on its paths (see the marked block in glass.caddy).
+      if [ -z "$up" ] && [ "$u" = REGISTER ]; then reg_off=1; continue; fi
       [ -n "$up" ] || die "$up_var is missing from the env file"
       printf '%s' "$up" | grep -Eq '^127\.0\.0\.1:[0-9]{1,5}$' || die "$up_var is not a loopback address (127.0.0.1:<port>)"
       up_port=${up#127.0.0.1:}
@@ -71,8 +76,14 @@ render_all() {
     fi
     for f in "$s.caddy" "$s-off.caddy"; do
       [ -f "$SRC/$f" ] || die "site file not found: $f"
+      reg_sed=""
+      if [ "$reg_off" = 1 ] && [ "$f" = glass.caddy ]; then
+        printf '%s\n' '/# register-proxy-begin/,/# register-proxy-end/c\' \
+          '	handle @register {\' '		respond "the register service is not deployed" 503\' '	}' >"$WORK/reg503.sed"
+        reg_sed="-f $WORK/reg503.sed"
+      fi
       # shellcheck disable=SC2086
-      sed -e "s|{[\$]GELDAR_DOMAIN}|$domain|g" $sed_up "$SRC/$f" >"$WORK/render/$f"
+      sed $reg_sed -e "s|{[\$]GELDAR_DOMAIN}|$domain|g" $sed_up "$SRC/$f" >"$WORK/render/$f"
       if grep -Fq '{$' "$WORK/render/$f"; then die "an unrendered placeholder is left in $f; refusing"; fi
     done
   done
@@ -86,6 +97,34 @@ caddy_reload() {
   docker exec "$GELDAR_CADDY_CONTAINER" caddy reload --config "$CADDYFILE_IN_CONTAINER"
 }
 
+# GELDAR_PUBLIC_APPLY: reload (default), restart (admin API off, owner ruling R39) or none. Runs after validate passed.
+# restart never reloads, and restarts the container itself only when GELDAR_PUBLIC_RESTART_OK=1, and then exactly once.
+caddy_apply() {
+  case ${GELDAR_PUBLIC_APPLY:-reload} in
+    reload) caddy_reload; APPLIED="caddy reloaded" ;;
+    none) APPLIED="caddy not reloaded or restarted (GELDAR_PUBLIC_APPLY=none)" ;;
+    restart)
+      if [ "${GELDAR_PUBLIC_RESTART_OK:-}" = 1 ]; then
+        docker restart "$GELDAR_CADDY_CONTAINER" >/dev/null
+        caddy_wait_ready || die "$GELDAR_CADDY_CONTAINER did not come back running with a valid config after the restart"
+        APPLIED="board-proxy restarted once and validated"
+      else
+        APPLIED="caddy neither reloaded nor restarted"
+        PENDING_NOTE="colo-public: files installed and validated; RESTART board-proxy once to apply (docker restart $GELDAR_CADDY_CONTAINER)"
+      fi
+      ;;
+    *) die "GELDAR_PUBLIC_APPLY must be restart, reload or none" ;;
+  esac
+}
+
+# Waits (up to 30 s) until the container runs again and caddy validate passes.
+caddy_wait_ready() {
+  for _ in $(seq 1 30); do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$GELDAR_CADDY_CONTAINER" 2>/dev/null)" = true ] && caddy_validate >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
 # Backs up the Caddyfile and prints the backup path in $BACKUP. The Caddyfile is written in place (cat >, cp) and never
 # replaced by mv, so the single-file bind mount keeps its inode.
 backup_caddyfile() {
@@ -169,7 +208,7 @@ cmd_install() {
   act add_import
   if [ "$DRY_RUN" = 1 ]; then
     act caddy_validate
-    act caddy_reload
+    act caddy_apply
     say "dry-run complete: no state was changed"
     return 0
   fi
@@ -178,8 +217,9 @@ cmd_install() {
     restore_geldar
     die "caddy validate failed; the Caddyfile is restored from $BACKUP and the previous site files are put back (none if this was the first install)"
   fi
-  caddy_reload
-  say "installed: ${INSTALL_SITES# } rendered, import present, caddy reloaded"
+  caddy_apply
+  say "installed: ${INSTALL_SITES# } rendered, import present; $APPLIED"
+  [ -z "${PENDING_NOTE:-}" ] || say "$PENDING_NOTE"
 }
 
 # Copies the stored live or off file of each site over its top-level file; on validate failure puts the old ones back.
@@ -199,15 +239,16 @@ cmd_switch() {
   done
   if [ "$DRY_RUN" = 1 ]; then
     act caddy_validate
-    act caddy_reload
+    act caddy_apply
     return 0
   fi
   if ! caddy_validate; then
     for s in $list; do [ -f "$WORK/snap/$s.caddy" ] && cat "$WORK/snap/$s.caddy" >"$GEL_DIR/$s.caddy"; done
     die "caddy validate failed; the previous site files are put back"
   fi
-  caddy_reload
-  say "$mode: $list; caddy reloaded"
+  caddy_apply
+  say "$mode: $list; $APPLIED"
+  [ -z "${PENDING_NOTE:-}" ] || say "$PENDING_NOTE"
 }
 
 cmd_remove() {
@@ -218,7 +259,7 @@ cmd_remove() {
   if [ "$DRY_RUN" = 1 ]; then
     act caddy_validate
     act rm -rf "$GEL_DIR"
-    act caddy_reload
+    act caddy_apply
     return 0
   fi
   if ! caddy_validate; then
@@ -226,8 +267,9 @@ cmd_remove() {
     die "caddy validate failed; the Caddyfile is restored from $BACKUP and nothing is removed"
   fi
   rm -rf "$GEL_DIR"
-  caddy_reload
-  say "removed: import line and $GEL_DIR gone; caddy reloaded (backup: $BACKUP)"
+  caddy_apply
+  say "removed: import line and $GEL_DIR gone (backup: $BACKUP); $APPLIED"
+  [ -z "${PENDING_NOTE:-}" ] || say "$PENDING_NOTE"
 }
 
 cmd_status() {

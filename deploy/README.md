@@ -271,14 +271,15 @@ repository or to a script.
 
 ## Caddy
 
-**Never restart the shared Caddy. Only reload it.** The Colo deploy does not touch Caddy. Site snippets are owned by
-C2. Caddy is shared on the node, so a restart is never a deploy step; a reload is the only action allowed there.
+**The Colo deploy does not touch Caddy.** Site snippets are owned by C2. The shared production Caddy (`board-proxy`) has
+its admin API OFF, so it cannot be reloaded (owner ruling R39): a public-site change is applied by ONE operator restart of
+it, never by a deploy step. See GELDAR_PUBLIC_APPLY below.
 
 ## Public sites (C2)
 
 `deploy/colo-public.sh` puts the three public sites (`map`, `glass`, `mcp`; files in `deploy/caddy/`) into the shared
-Caddy. It only runs `caddy validate` and `caddy reload` through `docker exec`; it never restarts, recreates or starts
-the container. Run it on the node as the account that can write the Caddyfile and use docker.
+Caddy. It runs `caddy validate` (and, in the default `reload` mode, `caddy reload`) through `docker exec`; it never recreates or
+starts the container, and restarts it only in `restart` mode with `GELDAR_PUBLIC_RESTART_OK=1`. Run it on the node as the account that can write the Caddyfile and use docker.
 
 Environment (names only; values come from the operator):
 
@@ -287,7 +288,9 @@ Environment (names only; values come from the operator):
 | `GELDAR_CADDY_CONTAINER` | the Caddy container name |
 | `GELDAR_CADDY_CONFIG_DIR` | host directory bind-mounted at `/config` in the container |
 | `GELDAR_CADDY_FILE` | the Caddyfile on the host (mounted at `/etc/caddy/Caddyfile`) |
-| `GELDAR_PUBLIC_ENV` | a root-only `KEY=VALUE` file (install only): `GELDAR_DOMAIN`, `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` |
+| `GELDAR_PUBLIC_APPLY` | `reload` (default, needs the Caddy admin API), `restart` (the Colo setting: validate only, no reload, then print `colo-public: files installed and validated; RESTART board-proxy once to apply (docker restart board-proxy)`) or `none`. A failed validate restores the Caddyfile and the previous site files byte for byte in every mode |
+| `GELDAR_PUBLIC_RESTART_OK` | only with `1` (and `restart` mode) does the script run `docker restart <container>` itself, once, after validate, then waits up to 30 s for the container to run and `caddy validate` to pass. Never restarts otherwise |
+| `GELDAR_PUBLIC_ENV` | a root-only `KEY=VALUE` file (install only): `GELDAR_DOMAIN`, `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM`; `GELDAR_REGISTER_UPSTREAM` is optional: unset (register not deployed), glass answers 503 on `/register*` and `/roster*` |
 
 Each upstream must be `127.0.0.1:<port>` (the Colo services publish on loopback). Caddy fills `{$VAR}` from its own
 process environment, which cannot change without a restart, so `install` renders the placeholders into concrete files
@@ -300,7 +303,7 @@ Per-site install: `bash deploy/colo-public.sh install mcp` (or any of `map glass
 
 1. `DEPLOY_DRY_RUN=1 bash deploy/colo-public.sh install` (prints every state change, changes nothing).
 2. `bash deploy/colo-public.sh install`: renders the sites, backs up the Caddyfile to `<file>.bak-geldar-<time>`, adds
-   the single line `import /config/geldar/*.caddy` if absent, validates, then reloads. If validate fails, the
+   the single line `import /config/geldar/*.caddy` if absent, validates, then applies per `GELDAR_PUBLIC_APPLY` (reload, or in restart mode no reload and the restart note). If validate fails, the
    Caddyfile is restored byte for byte, the rendered directory is removed, and the script exits non-zero.
 3. `bash deploy/colo-public.sh status` shows the import line and whether each site is on or off.
 4. Kill switch: `off <site|all>` swaps in the 503 twin, `on <site|all>` swaps the live file back; each validates and
