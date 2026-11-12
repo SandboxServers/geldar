@@ -22,6 +22,14 @@ export interface MeshData {
   normals: number[];
   uvs: number[];
   indices: number[];
+  /** Per vertex: 1 leaves, 0.5 other see-through blocks, 0 opaque (drives the shader fade). */
+  soft?: number[];
+}
+
+/** The `soft` attribute value of a block state. */
+export function softOf(state: string): number {
+  if (occludes(state)) return 0;
+  return /leaves(?:\[|$)/.test(state) ? 1 : 0.5;
 }
 
 const SEE_THROUGH =
@@ -109,7 +117,8 @@ export function meshSection(
   cz: number,
   uvFor: UvLookup,
 ): MeshData {
-  const mesh: MeshData = { positions: [], normals: [], uvs: [], indices: [] };
+  const soft: number[] = [];
+  const mesh: MeshData = { positions: [], normals: [], uvs: [], indices: [], soft };
   const ox = cx * 16;
   const oy = sy * 16;
   const oz = cz * 16;
@@ -139,6 +148,7 @@ export function meshSection(
             mesh.normals.push(f.d[0], f.d[1], f.d[2]);
             const [u, v] = quadUv[i] ?? [0, 0];
             mesh.uvs.push(u, v);
+            soft.push(softOf(state));
           });
           mesh.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
         }

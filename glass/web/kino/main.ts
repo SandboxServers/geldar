@@ -225,6 +225,10 @@ async function main(): Promise<void> {
             : raw;
         view.camera.position.set(pos.x, pos.y, pos.z);
         view.cullAround(pos);
+        view.setFadeFocus(
+          pos,
+          focus && rig.mode !== 'free' ? { x: focus.x, y: focus.y + 1.2, z: focus.z } : null,
+        );
         const look = rig.lookTarget(focus);
         view.camera.lookAt(look.x, look.y, look.z);
         view.updateLabels(look);

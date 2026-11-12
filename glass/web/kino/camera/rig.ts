@@ -3,6 +3,7 @@
 
 import type { VoxelWorld } from '../world.ts';
 import { collides, type Vec3 } from './collision.ts';
+import { FOLLOW_REPICK_SECONDS, followCandidates, pickFollowIndex } from './follow-pick.ts';
 import {
   type CameraMode,
   clamp,
@@ -31,6 +32,10 @@ export class CameraRig {
   radius = 24;
   position: Vec3 = { x: 0, y: 0, z: 0 };
   followOffset: Vec3 = { ...FOLLOW_OFFSET };
+  /** Follow framing: the chosen candidate, when it was chosen, and the blended offset in use. */
+  pickIndex = 0;
+  pickTimer = 0;
+  shownOffset: Vec3 | null = null;
   move: MoveInput = { right: 0, up: 0, forward: 0 };
   /** One-shot forward distance in blocks (touch pinch in free-fly), consumed by update. */
   impulse = 0;
@@ -86,7 +91,22 @@ export class CameraRig {
     } else if (this.mode === 'orbit') {
       this.position = orbitPosition(world, target, this.yaw, this.pitch, this.radius);
     } else {
-      this.position = stepFollow(world, this.position, target, this.followOffset);
+      this.pickTimer -= dt;
+      const cands = followCandidates(this.followOffset);
+      if (this.pickTimer <= 0) {
+        this.pickTimer = FOLLOW_REPICK_SECONDS;
+        this.pickIndex = pickFollowIndex(world, lookPoint(target), cands, this.pickIndex);
+      }
+      const want = cands[this.pickIndex] ?? this.followOffset;
+      // Blend the shown offset towards the chosen one; the first frame (or a jump) snaps.
+      const k = this.shownOffset ? 1 - Math.exp(-dt * 3) : 1;
+      const s = this.shownOffset ?? want;
+      this.shownOffset = {
+        x: s.x + (want.x - s.x) * k,
+        y: s.y + (want.y - s.y) * k,
+        z: s.z + (want.z - s.z) * k,
+      };
+      this.position = stepFollow(world, this.position, target, this.shownOffset);
     }
     return this.position;
   }
