@@ -69,6 +69,9 @@ export function sceneBot(scene: CombatScene): Bot {
       items: () => Object.entries(scene.items).map(([name, count]) => ({ name, count })),
     },
     waitForTicks: async () => undefined,
+    // A flat stone floor at y 63 with air above: every spot is bare ground for the retreat stand.
+    blockAt: (p: Vec3) =>
+      p.y <= 63 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' },
   } as unknown as Bot;
 }
 

@@ -28,7 +28,7 @@ export interface SleepDeps {
 const EVENT_TEXT: Record<McpPlayerEvent['type'], string> = {
   speech_to_me: 'Someone spoke to you.',
   conversation_digest: 'Some talk went on nearby.',
-  damage: 'You took damage.',
+  damage: 'You were hurt.',
   death: 'You died, and woke at the spawn with nothing.',
   agent_approached: 'Someone came near you.',
   proposal: 'A proposal was put forward.',

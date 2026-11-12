@@ -47,7 +47,7 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
         }
         break;
       case 'damage':
-        out.push({ ...base, type: 'damage', text: `You took ${e.amount ?? 0} damage.` });
+        out.push({ ...base, type: 'damage', text: e.cause ?? 'You were hurt.' });
         break;
       case 'death':
         out.push({ ...base, type: 'death', text: deathText(e.cause) });

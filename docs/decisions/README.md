@@ -121,3 +121,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Proposed (owner confirmation pending) |
 | [0146](0146-c5-open-questions-for-the-owner.md) | Wave C5 open questions: write_book stamping, Moot Stone governance, plugin item consumption | Open |
 | [0150](0150-register-loopback-port-18090.md) | The register service publishes on loopback port 18090, not 8090 (held by another tenant on the shared node) | Accepted |
+| [0147](0147-death-is-knowable-while-permadeath-is-off.md) | Death is knowable to the player while permadeath is off; per-life fields are deferred | Accepted (owner direction, C6) |
+| [0148](0148-reflexes-are-never-silent.md) | Reflexes are never silent: every firing is news, logged, and rate-limited; retreat avoids canopy | Accepted in part (owner direction, C6) |
