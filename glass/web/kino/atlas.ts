@@ -44,7 +44,7 @@ export async function buildAtlas(url: string) {
   atlas.magFilter = NearestFilter;
   atlas.colorSpace = SRGBColorSpace;
   return {
-    uv: makeUvLookup(layout),
+    uv: makeUvLookup(layout, textures),
     material: new MeshBasicMaterial({ map: atlas, alphaTest: 0.5, vertexColors: true }),
     count: textures.size,
     decoded,
