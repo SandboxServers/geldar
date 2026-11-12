@@ -14,10 +14,19 @@ export const PHASE0_VERBS: readonly string[] = [
   'attack',
   'wait',
   'unstick',
+  'give',
+  'note',
 ];
 
-/** The programs a Phase 0 intent may name. Everything else (skills, `build`, `follow`) is refused. */
-export const PHASE0_PROGRAMS: readonly string[] = ['travel', 'gather', 'craft', 'rest', 'flee'];
+/** The programs an intent may name. Everything else (skills, `build`, `trade_wait`) is refused. */
+export const PHASE0_PROGRAMS: readonly string[] = [
+  'travel',
+  'gather',
+  'craft',
+  'rest',
+  'flee',
+  'follow',
+];
 
 /** The largest output the validators read: the Thinker's `text` cap (threat model section 4). */
 export const MAX_OUTPUT_BYTES = 32 * 1024;
@@ -116,6 +125,7 @@ export function checkPosition(
 type ArgSpec =
   | { kind: 'int'; min: number; max: number; required: boolean }
   | { kind: 'name'; required: boolean }
+  | { kind: 'player'; required: boolean }
   | { kind: 'target'; required: boolean };
 
 /** Argument shapes of the Phase 0 programs, read from `golem/src/body/programs/*.ts`. */
@@ -139,6 +149,10 @@ const PROGRAM_ARGS: Record<string, Record<string, ArgSpec>> = {
   flee: {
     distance: { kind: 'int', min: 8, max: 64, required: false },
     max_legs: { kind: 'int', min: 1, max: 10, required: false },
+  },
+  follow: {
+    target: { kind: 'player', required: true },
+    max_unseen_seconds: { kind: 'int', min: 1, max: 120, required: false },
   },
 };
 
@@ -173,6 +187,10 @@ export function checkProgramArguments(
     } else if (rule.kind === 'name') {
       if (typeof v !== 'string' || !/^[a-z0-9_]{1,64}$/.test(v)) {
         errors.add('schema', at, 'must be a lower-case name');
+      }
+    } else if (rule.kind === 'player') {
+      if (typeof v !== 'string' || !/^[A-Za-z0-9_]{3,16}$/.test(v)) {
+        errors.add('schema', at, 'is not a player name');
       }
     } else if (typeof v === 'string') {
       if (!/^[A-Za-z0-9_]{3,16}$/.test(v)) errors.add('schema', at, 'is not a player name');

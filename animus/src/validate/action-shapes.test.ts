@@ -19,6 +19,8 @@ const EXAMPLES: Record<string, Record<string, unknown>> = {
   attack: { do: 'attack', target: 'Adam' },
   wait: { do: 'wait', seconds: 5 },
   unstick: { do: 'unstick' },
+  give: { do: 'give', to: 'Pike', item: 'bread', count: 2 },
+  note: { do: 'note', text: 'iron is north' },
 };
 
 function accepts(action: Record<string, unknown>): boolean {

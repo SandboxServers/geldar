@@ -17,4 +17,6 @@ export const ACTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
   attack: ['do', 'target'],
   wait: ['do', 'seconds'],
   unstick: ['do'],
+  give: ['do', 'to', 'item', 'count'],
+  note: ['do', 'text'],
 };

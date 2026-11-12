@@ -60,6 +60,20 @@ export async function runPlanAction(
   sink.actionChanged(record);
   record.state = 'running';
   sink.actionChanged(record);
+  // An economic action writes its prepared receipt (intent to consume) before it runs (spec 1209).
+  const economic = action.do === 'give' ? action : undefined;
+  if (economic) {
+    sink.receipt({
+      receipt_id: receiptIdFor(actionId, 'prepared'),
+      action_id: actionId,
+      life_id: plan.lifeId,
+      kind: economic.do,
+      phase: 'prepared',
+      at: now().toISOString(),
+      item: economic.item,
+      count: economic.count,
+    });
+  }
   let run: Awaited<ReturnType<BodyRuntime['runAction']>>;
   try {
     run = await runtime.runAction(action);
@@ -84,6 +98,7 @@ export async function runPlanAction(
     kind: action.do,
     phase,
     at: now().toISOString(),
+    ...(economic ? { item: economic.item, count: economic.count } : {}),
     ...(run.result.message === undefined ? {} : { detail: run.result.message.slice(0, 256) }),
   };
   record.state = run.state;

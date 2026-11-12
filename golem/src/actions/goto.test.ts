@@ -1,6 +1,8 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FakeWorld } from '../perception/perception.fakes.ts';
+import { NOT_IN_SIGHT } from './give.ts';
 import { gotoAction, targetOf } from './goto.ts';
 import type { ActionOutcome } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -59,21 +61,41 @@ describe('gotoAction', () => {
     );
   });
 
-  it('walks up to a player at range 2 and does not follow', async () => {
-    const bot = fakeBot({ Alex: { entity: { position: new Vec3(5, 64, 6) } } });
-    await runGoto(bot, 'Alex');
+  it('walks up to a visible player at range 2 and does not follow', async () => {
+    const world = new FakeWorld();
+    world.entities[2] = { type: 'player', username: 'Alex', position: new Vec3(0.5, 64, 6.5) };
+    await runGoto(world.bot, 'Alex');
     expect(moveNear).toHaveBeenCalledTimes(1);
-    expect(moveNear).toHaveBeenCalledWith(
-      bot,
-      { x: 5, y: 64, z: 6 },
-      2,
-      expect.objectContaining({ timeScale: 1 }),
-    );
+    const [, aim, range, options] = vi.mocked(moveNear).mock.calls[0] ?? [];
+    expect(aim).toMatchObject({ x: 0.5, y: 64, z: 6.5 });
+    expect(range).toBe(2);
+    expect(options).toMatchObject({ timeScale: 1 });
   });
 
   it('returns not_found for a player with no entity, without walking', async () => {
-    const outcome = await runGoto(fakeBot(), 'NoSuchPlayer');
+    const outcome = await runGoto(new FakeWorld().bot, 'NoSuchPlayer');
     expect(outcome).toMatchObject({ status: 'failed', reason: 'not_found' });
+    expect(moveNear).not.toHaveBeenCalled();
+  });
+
+  it('refuses a loaded player behind a wall with the same outcome as an unknown name', async () => {
+    const world = new FakeWorld();
+    world.entities[2] = { type: 'player', username: 'Alex', position: new Vec3(0.5, 64, 2.5) };
+    for (const [x, y] of [
+      [0, 64],
+      [0, 65],
+      [1, 64],
+      [1, 65],
+    ] as const)
+      world.set('stone', x, y, 1);
+    // The server's player list knows Alex and carries a loaded entity: goto must not read it.
+    (world.bot as unknown as { players: unknown }).players = {
+      Alex: { entity: world.entities[2] },
+    };
+    const walled = await runGoto(world.bot, 'Alex');
+    const absent = await runGoto(world.bot, 'Nobody');
+    expect(walled).toEqual(absent);
+    expect(walled).toMatchObject({ status: 'failed', reason: 'not_found', message: NOT_IN_SIGHT });
     expect(moveNear).not.toHaveBeenCalled();
   });
 
