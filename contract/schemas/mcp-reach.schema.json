@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-reach.schema.json",
+  "title": "McpReach",
+  "description": "The reach tool (wave PX, PX-8b): a free dry run of how the Body would reach a block.",
+  "$defs": {
+    "ReachInput": {
+      "type": "object",
+      "description": "Free. Ask how you would reach a block: in_hand, walk (with the number of steps), needs_digging, blocked, or unknown for a block you have not seen or remembered.",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+      }
+    },
+    "ReachResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "enum": ["in_hand", "walk", "needs_digging", "blocked", "unknown"]
+        },
+        "steps": {
+          "description": "Present only for walk: the number of steps.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

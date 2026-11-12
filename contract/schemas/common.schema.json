@@ -62,6 +62,11 @@
       "type": "string",
       "pattern": "^[a-z0-9_]{1,64}$"
     },
+    "CompassPoint": {
+      "description": "One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.",
+      "type": "string",
+      "enum": ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
+    },
     "ItemStack": {
       "type": "object",
       "additionalProperties": false,
@@ -69,6 +74,11 @@
       "properties": {
         "item": { "$ref": "#/$defs/ItemName" },
         "count": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "wear": {
+          "description": "Durability state of a tool or armour piece: low below 50 percent used, worn from 50, nearly_broken from 90. Absent for items without durability.",
+          "type": "string",
+          "enum": ["low", "worn", "nearly_broken"]
+        },
         "book_id": {
           "description": "Set for written books; identifies the book the agent can read.",
           "type": "string",

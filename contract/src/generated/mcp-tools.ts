@@ -932,6 +932,15 @@ export const mcpToolSchemas: Record<
               "minimum": 1,
               "maximum": 64
             },
+            "wear": {
+              "description": "Durability state of a tool or armour piece: low below 50 percent used, worn from 50, nearly_broken from 90. Absent for items without durability.",
+              "type": "string",
+              "enum": [
+                "low",
+                "worn",
+                "nearly_broken"
+              ]
+            },
             "book_id": {
               "description": "Set for written books; identifies the book the agent can read.",
               "type": "string",
@@ -1305,6 +1314,77 @@ export const mcpToolSchemas: Record<
             "days_since_sleep": {
               "type": "integer",
               "minimum": 0
+            },
+            "ground_below": {
+              "description": "Blocks of air between the feet and solid ground below; 0 when grounded. Leaves do not count as ground. Capped at 32.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "trapped": {
+              "description": "none on open ground; perched on leaves or over air; pit between walls at least 2 high with ground below.",
+              "type": "string",
+              "enum": [
+                "none",
+                "perched",
+                "pit"
+              ]
+            },
+            "sun": {
+              "description": "Coarse sun phase from the world time. Absent when there is no sky above (underground, indoors).",
+              "type": "string",
+              "enum": [
+                "morning",
+                "midday",
+                "afternoon",
+                "low",
+                "set"
+              ]
+            },
+            "light": {
+              "description": "Light at the head: bright from 12, dim from 4 to 11, dark below 4. Absent when unknown.",
+              "type": "string",
+              "enum": [
+                "bright",
+                "dim",
+                "dark"
+              ]
+            },
+            "health_trend": {
+              "description": "Health over a fixed sample window: rising, steady or falling.",
+              "type": "string",
+              "enum": [
+                "rising",
+                "steady",
+                "falling"
+              ]
+            },
+            "regen_hint": {
+              "description": "A fixed sentence stating the natural-regeneration rule, present only while hunger is below the regeneration threshold.",
+              "type": "string",
+              "maxLength": 256
+            },
+            "air": {
+              "description": "Breath bubbles left, 0 to 20. Shown only below 20 (full breath omits the key).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "status_flags": {
+              "description": "The true flags only, in a fixed order. Absent when none is true.",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "burning",
+                  "underwater",
+                  "falling",
+                  "in_water",
+                  "on_ground"
+                ]
+              }
             },
             "unlocked_recipes": {
               "description": "Item names the agent can craft because it has unlocked their recipes (spec 5.2, decision 0048). Optional: a Body without recipe knowledge omits it.",
@@ -1769,7 +1849,9 @@ export const mcpToolSchemas: Record<
                 "action",
                 "action_failed",
                 "reflex",
-                "wake"
+                "wake",
+                "hurt",
+                "heard_sound"
               ]
             },
             "tick": {
@@ -1778,6 +1860,66 @@ export const mcpToolSchemas: Record<
             "text": {
               "type": "string",
               "maxLength": 200
+            },
+            "life": {
+              "description": "Death events: the life number, 1 for the first life and up by one per death.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "where": {
+              "description": "Death events: the coarse place of death, x and z only.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "z"
+              ],
+              "properties": {
+                "x": {
+                  "type": "integer",
+                  "minimum": -30000000,
+                  "maximum": 30000000
+                },
+                "z": {
+                  "type": "integer",
+                  "minimum": -30000000,
+                  "maximum": 30000000
+                }
+              }
+            },
+            "drops": {
+              "description": "Death events: the number of items dropped; a line is emitted only when above 0.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "respawn_point": {
+              "$ref": "#/$defs/Position"
+            }
+          }
+        },
+        "Position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "x": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "y": {
+              "type": "integer",
+              "minimum": -64,
+              "maximum": 320
+            },
+            "z": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
             }
           }
         },
@@ -1913,6 +2055,16 @@ export const mcpToolSchemas: Record<
           }
         },
         "days_alive": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "life": {
+          "description": "The life number: 1 for the first life, up by one for each death.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "days_alive_this_life": {
+          "description": "Days alive in the current life; resets to 0 at each death.",
           "type": "integer",
           "minimum": 0
         },
@@ -2204,6 +2356,15 @@ export const mcpToolSchemas: Record<
               "minimum": 1,
               "maximum": 64
             },
+            "wear": {
+              "description": "Durability state of a tool or armour piece: low below 50 percent used, worn from 50, nearly_broken from 90. Absent for items without durability.",
+              "type": "string",
+              "enum": [
+                "low",
+                "worn",
+                "nearly_broken"
+              ]
+            },
             "book_id": {
               "description": "Set for written books; identifies the book the agent can read.",
               "type": "string",
@@ -2251,7 +2412,9 @@ export const mcpToolSchemas: Record<
                 "action",
                 "action_failed",
                 "reflex",
-                "wake"
+                "wake",
+                "hurt",
+                "heard_sound"
               ]
             },
             "tick": {
@@ -2260,6 +2423,40 @@ export const mcpToolSchemas: Record<
             "text": {
               "type": "string",
               "maxLength": 200
+            },
+            "life": {
+              "description": "Death events: the life number, 1 for the first life and up by one per death.",
+              "type": "integer",
+              "minimum": 1
+            },
+            "where": {
+              "description": "Death events: the coarse place of death, x and z only.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "x",
+                "z"
+              ],
+              "properties": {
+                "x": {
+                  "type": "integer",
+                  "minimum": -30000000,
+                  "maximum": 30000000
+                },
+                "z": {
+                  "type": "integer",
+                  "minimum": -30000000,
+                  "maximum": 30000000
+                }
+              }
+            },
+            "drops": {
+              "description": "Death events: the number of items dropped; a line is emitted only when above 0.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "respawn_point": {
+              "$ref": "#/$defs/Position"
             }
           }
         },
@@ -2510,6 +2707,32 @@ export const mcpToolSchemas: Record<
             }
           }
         },
+        "Position": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "x": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "y": {
+              "type": "integer",
+              "minimum": -64,
+              "maximum": 320
+            },
+            "z": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            }
+          }
+        },
         "SelfPosition": {
           "description": "A Position plus the biome the body stands in. Written out in full, since additionalProperties: false does not combine with allOf.",
           "type": "object",
@@ -2636,6 +2859,77 @@ export const mcpToolSchemas: Record<
             "days_since_sleep": {
               "type": "integer",
               "minimum": 0
+            },
+            "ground_below": {
+              "description": "Blocks of air between the feet and solid ground below; 0 when grounded. Leaves do not count as ground. Capped at 32.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32
+            },
+            "trapped": {
+              "description": "none on open ground; perched on leaves or over air; pit between walls at least 2 high with ground below.",
+              "type": "string",
+              "enum": [
+                "none",
+                "perched",
+                "pit"
+              ]
+            },
+            "sun": {
+              "description": "Coarse sun phase from the world time. Absent when there is no sky above (underground, indoors).",
+              "type": "string",
+              "enum": [
+                "morning",
+                "midday",
+                "afternoon",
+                "low",
+                "set"
+              ]
+            },
+            "light": {
+              "description": "Light at the head: bright from 12, dim from 4 to 11, dark below 4. Absent when unknown.",
+              "type": "string",
+              "enum": [
+                "bright",
+                "dim",
+                "dark"
+              ]
+            },
+            "health_trend": {
+              "description": "Health over a fixed sample window: rising, steady or falling.",
+              "type": "string",
+              "enum": [
+                "rising",
+                "steady",
+                "falling"
+              ]
+            },
+            "regen_hint": {
+              "description": "A fixed sentence stating the natural-regeneration rule, present only while hunger is below the regeneration threshold.",
+              "type": "string",
+              "maxLength": 256
+            },
+            "air": {
+              "description": "Breath bubbles left, 0 to 20. Shown only below 20 (full breath omits the key).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 20
+            },
+            "status_flags": {
+              "description": "The true flags only, in a fixed order. Absent when none is true.",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "burning",
+                  "underwater",
+                  "falling",
+                  "in_water",
+                  "on_ground"
+                ]
+              }
             },
             "unlocked_recipes": {
               "description": "Item names the agent can craft because it has unlocked their recipes (spec 5.2, decision 0048). Optional: a Body without recipe knowledge omits it.",

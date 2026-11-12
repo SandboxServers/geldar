@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/heard-sound-event.schema.json",
+  "title": "HeardSoundPayload",
+  "description": "A sound the Body heard within 24 blocks, as a compass direction and a distance band (wave PX, PX-4). PROVISIONAL vocabulary (decision 0143). Never carries coordinates: the schema rejects x, y and z.",
+  "$ref": "#/$defs/HeardSoundEvent",
+  "$defs": {
+    "HeardSoundEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "sound", "dir", "band"],
+      "properties": {
+        "type": { "const": "heard_sound" },
+        "sound": {
+          "type": "string",
+          "enum": ["hiss", "bow", "groan", "growl", "explosion", "thunder", "digging"]
+        },
+        "dir": {
+          "description": "World-fixed direction of the sound: n is -z, s is +z, e is +x, w is -x.",
+          "$ref": "common.schema.json#/$defs/CompassPoint"
+        },
+        "band": {
+          "description": "Distance band: near up to 8 blocks, mid up to 16, far up to 24.",
+          "type": "string",
+          "enum": ["near", "mid", "far"]
+        }
+      }
+    }
+  }
+}

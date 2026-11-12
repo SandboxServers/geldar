@@ -55,11 +55,34 @@
             "action",
             "action_failed",
             "reflex",
-            "wake"
+            "wake",
+            "hurt",
+            "heard_sound"
           ]
         },
         "tick": { "$ref": "common.schema.json#/$defs/WorldTick" },
-        "text": { "type": "string", "maxLength": 200 }
+        "text": { "type": "string", "maxLength": 200 },
+        "life": {
+          "description": "Death events: the life number, 1 for the first life and up by one per death.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "where": {
+          "description": "Death events: the coarse place of death, x and z only.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "z"],
+          "properties": {
+            "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+            "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+          }
+        },
+        "drops": {
+          "description": "Death events: the number of items dropped; a line is emitted only when above 0.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "respawn_point": { "$ref": "common.schema.json#/$defs/Position" }
       }
     },
     "UntrustedWorldText": {

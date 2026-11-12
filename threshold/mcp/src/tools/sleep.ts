@@ -38,6 +38,8 @@ const EVENT_TEXT: Record<McpPlayerEvent['type'], string> = {
   action_failed: 'An action of yours failed.',
   reflex: 'Your body acted on its own.',
   wake: 'You wake with nothing underway.',
+  hurt: 'Something hurt you.',
+  heard_sound: 'You heard a sound.',
 };
 
 /** Maps a sim event kind to a player event type; unknown kinds are not digested. */
