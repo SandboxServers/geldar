@@ -207,6 +207,10 @@ describe('status', () => {
         body: w.body,
         budget: w.budget,
         sleeps: w.marks,
+        deaths: {
+          read: async () => ({ deaths: 0, lastDeathDay: null }),
+          recordDeath: async () => {},
+        },
         profiles: { profile: async () => ({ personality_seed: 'calm', born_day: 0 }) },
         laws,
         now: w.now,

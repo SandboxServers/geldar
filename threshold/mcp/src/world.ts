@@ -26,6 +26,7 @@ import {
   type BudgetLedger,
   type CallRecorder,
   type Clock,
+  type DeathMarks,
   type JournalStore,
   type PlayerDirectory,
   type PlayerEventLog,
@@ -74,6 +75,8 @@ export interface WorldDeps {
   /** Act budget enforcement (decision 0149). Off by default: every act is metered, none is refused. */
   enforce?: boolean;
   sleeps: SleepMarks;
+  /** The death count of each life (migration 0023): `status` reads it for `life`. */
+  deaths: DeathMarks;
   profiles: AgentProfiles;
   journal: JournalStore;
   recorder: CallRecorder;

@@ -3,6 +3,7 @@ import type { SimEvent } from '@geldar/mcp-mock';
 import { actionFailedPresenter, actionPresenter } from './action.ts';
 import { damagePresenter } from './damage.ts';
 import { deathPresenter } from './death.ts';
+import { heardSoundPresenter } from './heard-sound.ts';
 import { intentPresenter } from './intent.ts';
 import { reflexPresenter } from './reflex.ts';
 import { speechPresenter } from './speech.ts';
@@ -31,6 +32,7 @@ export const PRESENT_HANDLERS: readonly PresentHandler[] = [
   actionFailedPresenter,
   reflexPresenter,
   wakePresenter,
+  heardSoundPresenter,
 ];
 
 /**

@@ -26,6 +26,7 @@ import { type BucketManager, KvPresenceStore, openPresenceBucket } from './prese
 import { SovereignCallRecorder } from './record/sovereign-call.ts';
 import { PgAgentStore } from './store/pg-agents.ts';
 import { PgBudgetLedger } from './store/pg-budget.ts';
+import { PgDeathStore } from './store/pg-deaths.ts';
 import { PgJournalStore } from './store/pg-journal.ts';
 import { PgPlayerDirectory } from './store/pg-players.ts';
 import { listenerConfig, PgTokenStore } from './store/pg-tokens.ts';
@@ -335,6 +336,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       budget: new PgBudgetLedger(pool, config.sovereign.budget),
       enforce: actBudgetEnforced(process.env),
       sleeps: agents,
+      deaths: new PgDeathStore(pool),
       profiles: agents,
       journal: new PgJournalStore(pool),
       recorder,
@@ -358,6 +360,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       identityOf: (lifeId: string) => registry.identity(lifeId),
       log: events,
       lives: () => registry.lives(),
+      deaths: new PgDeathStore(pool),
     };
     const replay = await nats.replay(
       streamSubjects(config.shard),
