@@ -76,6 +76,22 @@ describe('view: hostiles need line of sight', () => {
   });
 });
 
+describe('view: air is the bot own', () => {
+  it('reports full air when oxygenLevel leaked 0 from another entity but the bot has full air', () => {
+    const { bot, raw } = viewBot();
+    (raw.entity as { metadata: unknown[] }).metadata = [0, 300];
+    raw.oxygenLevel = 0;
+    expect(createBodyView(bot).air).toBe(20);
+  });
+
+  it('reports low air from the bot own metadata, not a full oxygenLevel', () => {
+    const { bot, raw } = viewBot();
+    (raw.entity as { metadata: unknown[] }).metadata = [0, 75];
+    raw.oxygenLevel = 20;
+    expect(createBodyView(bot).air).toBe(5);
+  });
+});
+
 describe('view: fluids', () => {
   it('reads water from the physics flag, and kelp or seagrass at the feet as water', () => {
     const { bot, raw, state } = viewBot();
