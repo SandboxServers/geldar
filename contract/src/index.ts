@@ -203,6 +203,7 @@ export type {
   ThoughtEventPayload,
 } from './generated/types.ts';
 export {
+  hurtSentence,
   intentWhy,
   isOutcomeReason,
   OUTCOME_REASONS,

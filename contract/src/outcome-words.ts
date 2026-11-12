@@ -83,6 +83,56 @@ export function intentWhy(program: string, reason: string | undefined): string {
   return `Your plan stopped: ${phrase}.`;
 }
 
+/** The hurt sources the Body may report (PX-1, the `hurt` event). Any other source reads as `other`. */
+const HURT_SOURCE_SENTENCE: Readonly<Record<string, string>> = {
+  melee: 'Something hit you',
+  arrow: 'An arrow hit you',
+  explosion: 'Something exploded near you',
+  fall: 'You fell',
+  fire: 'You are burning',
+  lava: 'You are burning',
+  drowning: 'You are drowning',
+  starvation: 'You are starving',
+  other: 'You were hurt',
+};
+/** Sources that have an attacker, so a bearing may follow them. */
+const HURT_ATTACK_SOURCES: readonly string[] = ['melee', 'arrow', 'explosion', 'other'];
+const HURT_BEARING: Readonly<Record<string, string>> = {
+  front: 'from the front',
+  left: 'from the left',
+  right: 'from the right',
+  behind: 'from behind',
+};
+
+/**
+ * The player's text for a `hurt` event: 'An arrow hit you from behind. You lost 3 health.' Built from the
+ * source code, the bearing code and the amount alone. A bearing is used only for attack sources; an
+ * unknown source reads as 'other'; a missing or zero amount leaves out the loss clause.
+ */
+export function hurtSentence(input: {
+  source: unknown;
+  bearing?: unknown;
+  amount?: unknown;
+}): string {
+  const source =
+    typeof input.source === 'string' && Object.hasOwn(HURT_SOURCE_SENTENCE, input.source)
+      ? input.source
+      : 'other';
+  const usesBearing =
+    typeof input.bearing === 'string' &&
+    Object.hasOwn(HURT_BEARING, input.bearing) &&
+    HURT_ATTACK_SOURCES.includes(source);
+  const lead = usesBearing
+    ? `${HURT_SOURCE_SENTENCE[source]} ${HURT_BEARING[input.bearing as string]}`
+    : (HURT_SOURCE_SENTENCE[source] ?? 'You were hurt');
+  const amount = input.amount;
+  const lost =
+    typeof amount === 'number' && Number.isInteger(amount) && amount > 0
+      ? ` You lost ${amount} health.`
+      : '';
+  return `${lead}.${lost}`;
+}
+
 const VERB = /^[a-z][a-zA-Z0-9_]{0,31}$/;
 
 /**

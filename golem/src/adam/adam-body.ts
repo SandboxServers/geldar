@@ -19,6 +19,8 @@ import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { SnapshotRevision } from '../mind-link/revision.ts';
 import { MindLinkServer, type RequestServer } from '../mind-link/server.ts';
+import { HurtReporter } from '../perception/hurt.ts';
+import { hurtWorldEvent, watchHurts } from '../perception/hurt-trigger.ts';
 import { createPerception } from '../perception/index.ts';
 import { buildSnapshot } from '../snapshot.ts';
 import { BotEars } from '../voice/ears.ts';
@@ -146,6 +148,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   // Wired after the restart: a throw here stops the restarted Body and quits the bot, as above.
   let detachEars: () => void = () => undefined;
   let onHealth: (() => void) | undefined;
+  let hurts: HurtReporter | undefined;
+  let detachHurts: () => void = () => undefined;
   let link: MindLinkServer | undefined;
   try {
     const digest = wrapped.recent;
@@ -169,6 +173,26 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     // No record carries health, so the digest learns of a drop from the bot's own event.
     onHealth = (): void => digest.noteHealth(bot.health, tick());
     bot.on('health', onHealth);
+    // The hurt event (PX-1): a loss of health, with the nearby attacker's bearing when there is one.
+    let hurtSequence = 0;
+    hurts = new HurtReporter((hurt, worldTick) => {
+      hurtSequence += 1;
+      const event = hurtWorldEvent(hurt, {
+        shard: config.shard,
+        lifeId: config.lifeId,
+        worldTick,
+        at: new Date().toISOString(),
+        sequence: hurtSequence,
+      });
+      if (event === null) {
+        log('hurt: dropped an event the contract refuses');
+        return;
+      }
+      env.publisher
+        .publish(`geldar.${config.shard}.damage`, JSON.stringify(event), event.source_event_id)
+        .catch((error: unknown) => log(`hurt event not published: ${String(error)}`));
+    });
+    detachHurts = watchHurts(bot, hurts, tick);
     link = new MindLinkServer({
       shard: config.shard,
       lifeId: config.lifeId,
@@ -188,6 +212,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   } catch (error) {
     bot.off('end', onEnd);
     if (onHealth !== undefined) bot.off('health', onHealth);
+    detachHurts();
+    hurts?.close();
     detachEars();
     await restarted.stop().catch((stopError: unknown) => {
       log(`restarted Body did not stop after a failed start: ${String(stopError)}`);
@@ -206,6 +232,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     async stop() {
       bot.off('end', onEnd);
       if (onHealth !== undefined) bot.off('health', onHealth);
+      detachHurts();
+      hurts?.close();
       detachEars();
       // No new plan is accepted from here on. Then the executor and the running action end, so a
       // plan the link awaits can finish; only after that is the link waited for.
