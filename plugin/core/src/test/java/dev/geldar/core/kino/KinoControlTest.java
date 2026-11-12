@@ -116,7 +116,8 @@ class KinoControlTest {
         for (int i = 0; i < 10; i++) {
             feed.pump();
         }
-        assertEquals(2, out.stream().filter(m -> m.contains("\"chunk_section\"")).count());
+        // One stone section (y -1) in the one loaded chunk: the window is now one section below the agent's.
+        assertEquals(1, out.stream().filter(m -> m.contains("\"chunk_section\"")).count());
         assertTrue(out.stream().noneMatch(m -> m.contains("\"hello\"")));
     }
 

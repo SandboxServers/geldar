@@ -21,4 +21,5 @@ lakitu:
 kino:
   # The Kino data feed (decision 0075). Off by default; false is the kill switch.
   enabled: false
-  radius_chunks: 4
+  # Horizontal view radius in chunks (1 to 8). Sections are read above the agent (6) and below (1).
+  radius_chunks: 8

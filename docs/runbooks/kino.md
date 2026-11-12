@@ -19,6 +19,10 @@ Three switches, all default off:
 5. Set `kino.enabled: true` in the plugin `config.yml`. The plugin re-reads the file every 5 seconds; no restart is needed.
 6. Open `https://glass.<domain>/kino/` while signed in.
 
+## View window
+
+The feed reads the loaded chunks within `kino.radius_chunks` (default 8, the maximum; 1 to 8) horizontally, so the view is wide. Vertically it reads 6 sections above the agent and 1 below. A section that is entirely opaque and sealed by opaque neighbours (no face open to air, cave or water) is not sent, since no camera can see it; a section next to an unloaded chunk or at the world's top or bottom is always sent. The block reads stay within 16384 per tick, so a wide window arrives over a few seconds.
+
 ## Kill switch
 
 Any one of these stops Kino. Use the first for speed.

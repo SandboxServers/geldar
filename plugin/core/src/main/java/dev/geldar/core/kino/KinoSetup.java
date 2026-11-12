@@ -20,7 +20,7 @@ public final class KinoSetup {
     }
 
     public static int radius(ConfigurationSection file) {
-        return Math.max(1, Math.min(8, file.getInt("kino.radius_chunks", 4)));
+        return Math.max(1, Math.min(8, file.getInt("kino.radius_chunks", 8)));
     }
 
     /** The config reload hook: applies {@code kino.enabled} to a running feed. */

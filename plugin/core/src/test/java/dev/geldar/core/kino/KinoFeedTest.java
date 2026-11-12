@@ -65,8 +65,9 @@ class KinoFeedTest {
             assertTrue(w.reads - before <= 8192, "a pump read " + (w.reads - before));
             total += w.reads - before;
         }
-        assertEquals(81 * 5 * 4096, total);
-        assertEquals(81 * 2, count("chunk_section"));
+        // Every window section (8 per column) is read once; a stone section open to the air above also reads its faces.
+        assertTrue(total >= 81 * 8 * 4096 && total <= 81 * (8 * 4096 + 6 * 256), "read " + total);
+        assertEquals(81, count("chunk_section"));
         assertAllValid();
     }
 
@@ -79,10 +80,10 @@ class KinoFeedTest {
             feed.start("steve_bot");
         }
         pumpAll(feed);
-        assertEquals(2 * 2, count("chunk_section"));
+        assertEquals(2, count("chunk_section"));
         assertEquals(1, count("hello"));
         pumpAll(feed);
-        assertEquals(2 * 2, count("chunk_section"));
+        assertEquals(2, count("chunk_section"));
     }
 
     @Test
@@ -90,8 +91,8 @@ class KinoFeedTest {
         KinoFeed feed = new KinoFeed(new FakeWorld(Set.of(FakeWorld.key(0, 0), FakeWorld.key(1, 0))), sink, 1);
         feed.start("steve_bot");
         pumpAll(feed);
-        // Target section 0; sections -2, -1 hold stone, 0, 1, 2 are air: two per loaded chunk.
-        assertEquals(4, count("chunk_section"));
+        // Target section 0; section -1 holds stone (open to the air above), 0 to 6 are air: one per loaded chunk.
+        assertEquals(2, count("chunk_section"));
         assertAllValid();
     }
 
@@ -173,5 +174,102 @@ class KinoFeedTest {
             many.add(new KinoWorld.EntityView("minecraft:cow", null, i, 1, 1, 0f, 0f));
         }
         assertTrue(KinoSchemaCheck.errors(KinoMessages.entityPositions(many)).isEmpty());
+    }
+
+    @Test
+    void aFullyBuriedStoneSectionIsNotPublished() {
+        // Stone below y 200 and a ring of loaded chunks around the window: every window section is sealed by stone.
+        Terrain world = new Terrain(
+                square(2), (x, y, z) -> y < 200 ? "minecraft:stone" : "minecraft:air", new KinoWorld.Position(8, 40, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        assertEquals(0, count("chunk_section"));
+        assertAllValid();
+    }
+
+    @Test
+    void aSurfaceSectionIsPublished() {
+        // Stone below y 64: section 3 has air straight above it, so the nine chunks of the window all send it.
+        Terrain world = new Terrain(
+                square(2), (x, y, z) -> y < 64 ? "minecraft:stone" : "minecraft:air", new KinoWorld.Position(8, 70, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        assertEquals(9, count("chunk_section"));
+        assertEquals(9, out.stream().filter(m -> m.contains("\"section_y\":3,")).count());
+        assertAllValid();
+    }
+
+    @Test
+    void aSectionBesideACaveIsPublished() {
+        // Stone below y 64 with one air cell at (0, 24, 8): it opens section 1 of chunk (0, 0) and the face of chunk (-1, 0).
+        Terrain world = new Terrain(
+                square(2),
+                (x, y, z) -> y < 64 && !(x == 0 && y == 24 && z == 8) ? "minecraft:stone" : "minecraft:air",
+                new KinoWorld.Position(8, 24, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        assertEquals(9 + 2, count("chunk_section"));
+        assertEquals(2, out.stream().filter(m -> m.contains("\"section_y\":1,")).count());
+        assertTrue(out.stream().anyMatch(m -> m.contains("\"chunk_x\":-1,") && m.contains("\"section_y\":1,")));
+        assertAllValid();
+    }
+
+    private static Set<Long> square(int radius) {
+        Set<Long> loaded = new java.util.HashSet<>();
+        for (int x = -radius; x <= radius; x++) {
+            for (int z = -radius; z <= radius; z++) {
+                loaded.add(FakeWorld.key(x, z));
+            }
+        }
+        return loaded;
+    }
+
+    /** Block states by position. */
+    private interface Blocks {
+        String at(int x, int y, int z);
+    }
+
+    /** A world of the given blocks in the given loaded chunks; the agent stands at {@code at}. */
+    private static final class Terrain implements KinoWorld {
+        private final Set<Long> loaded;
+        private final Blocks blocks;
+        private final Position at;
+
+        Terrain(Set<Long> loaded, Blocks blocks, Position at) {
+            this.loaded = loaded;
+            this.blocks = blocks;
+            this.at = at;
+        }
+
+        public String name() {
+            return "world";
+        }
+
+        public boolean isChunkLoaded(int cx, int cz) {
+            return loaded.contains(FakeWorld.key(cx, cz));
+        }
+
+        public int minSectionY() {
+            return -4;
+        }
+
+        public int maxSectionY() {
+            return 19;
+        }
+
+        public String blockState(int x, int y, int z) {
+            return blocks.at(x, y, z);
+        }
+
+        public java.util.Optional<Position> agentPosition(String agentId) {
+            return java.util.Optional.of(at);
+        }
+
+        public ChunkEntities entitiesInChunk(int cx, int cz, int from, int max) {
+            return new ChunkEntities(0, List.of());
+        }
     }
 }
