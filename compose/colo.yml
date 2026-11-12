@@ -375,7 +375,7 @@ services:
     restart: unless-stopped
 
   # [C2-08c] The register service (decision 0135, threshold/register): Microsoft (Entra) sign-in for sovereign-player owners.
-  # OFF BY DEFAULT: profile `register`, REGISTER_KILL_SWITCH true, no Caddy site. Loopback 8090 only; Postgres role geldar_register.
+  # OFF BY DEFAULT: profile `register`, REGISTER_KILL_SWITCH true, no Caddy site. Loopback 18090 only (decision 0150); Postgres role geldar_register.
   register:
     profiles: [register]
     # Budget: 0.25 CPU, 128m (no swap, 64 pids). Read-only root, as geldar-mcp runs.
@@ -424,8 +424,8 @@ services:
       start_period: 10s
     secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-ms-secret, register-session-key]
     ports:
-      # The loopback register port. Literal: the loopback rule rejects interpolation.
-      - "127.0.0.1:8090:8090"
+      # The loopback register port (decision 0150: 8090 is held on the shared node by another tenant). Literal: the loopback rule rejects interpolation. The container still listens on 8090.
+      - "127.0.0.1:18090:8090"
     user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
     read_only: true
     tmpfs:
