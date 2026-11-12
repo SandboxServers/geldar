@@ -135,6 +135,9 @@ describe('submit: actions', () => {
     expect(result.intent).toBe('skipped');
     expect(h.sink.receipts.map((r) => r.phase)).toEqual(['committed', 'aborted']);
     expect(h.sink.wakes.map((w) => w.reason)).toEqual(['action_failed']);
+    expect(h.sink.wakes[0]?.detail).toBe(
+      'action 1 (eat) did not complete; completed before it: wait; not run: wait',
+    );
     expect(h.sink.intents).toEqual([]);
   });
 
