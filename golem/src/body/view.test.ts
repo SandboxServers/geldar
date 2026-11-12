@@ -208,3 +208,17 @@ describe('view: enclosed', () => {
     expect(view.enclosed).toBe(false);
   });
 });
+
+describe('view: lightAtHead', () => {
+  it('is the raw 0 to 15 number at the head, not a word, so reflexes can compare levels', () => {
+    const { bot, raw } = viewBot();
+    raw.blockAt = () => ({ light: 9, skyLight: 0, boundingBox: 'empty' });
+    expect(createBodyView(bot).lightAtHead).toBe(9);
+  });
+
+  it('is null when the head cell is not loaded', () => {
+    const { bot, raw } = viewBot();
+    raw.blockAt = () => null;
+    expect(createBodyView(bot).lightAtHead).toBeNull();
+  });
+});
