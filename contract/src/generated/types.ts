@@ -4882,6 +4882,10 @@ export interface McpRecall {
   [k: string]: unknown;
 }
 
+export interface McpView {
+  [k: string]: unknown;
+}
+
 export interface ActionOutcome {
   accepted: boolean;
   reason?: string;

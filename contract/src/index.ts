@@ -109,6 +109,21 @@ export function validateReachInput(value: unknown): ValidationResult<ReachPositi
   return { ok: false, errors: (validateReachInputSchema.errors ?? []).map(formatError) };
 }
 
+// --- view-tool ---
+import { validateViewInput as validateViewInputSchema } from './generated/validators.js';
+
+/** The optional grid size a `view` call names: each axis optional, checked against mcp-view.schema.json. */
+export interface ViewInput {
+  cols?: number;
+  rows?: number;
+}
+
+/** Checks a `view` input against mcp-view.schema.json. Never throws; an extra key or an out-of-range size is rejected. */
+export function validateViewInput(value: unknown): ValidationResult<ViewInput> {
+  if (validateViewInputSchema(value)) return { ok: true, value: value as ViewInput };
+  return { ok: false, errors: (validateViewInputSchema.errors ?? []).map(formatError) };
+}
+
 // --- SC-30a mcp ---
 export * from './mcp.ts';
 
