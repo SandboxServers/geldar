@@ -198,6 +198,7 @@ export function worldFixture(players: PlayerRecord[]): WorldFixture {
     body,
     budget,
     sleeps: { read: async () => ({ lastSleepDay: 1, cursor: 0 }), write: async () => {} },
+    deaths: { read: async () => ({ deaths: 0, lastDeathDay: null }), recordDeath: async () => {} },
     profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 0 }) },
     journal,
     recorder,
