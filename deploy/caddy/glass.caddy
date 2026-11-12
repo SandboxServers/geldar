@@ -117,10 +117,13 @@ glass.{$GELDAR_DOMAIN} {
 
 	# The register service answers its own 404 for any path it does not serve. It is handed the client address only through
 	# the header set here, as Glass is; the Host header and the cookies pass through unchanged.
+	# colo-public.sh replaces the marked lines with a 503 when GELDAR_REGISTER_UPSTREAM is unset (register not deployed).
 	handle @register {
+		# register-proxy-begin
 		reverse_proxy {$GELDAR_REGISTER_UPSTREAM} {
 			header_up x-geldar-client-ip {remote_host}
 		}
+		# register-proxy-end
 	}
 
 	# Every other path, including the rate limits that Glass itself enforces (C2-03), is 404.

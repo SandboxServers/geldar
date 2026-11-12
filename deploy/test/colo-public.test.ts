@@ -305,11 +305,11 @@ describe('colo-public.sh refusals', () => {
     }
   });
 
-  it('refuses when the register upstream glass routes to is missing', () => {
-    const r = rig(DEFAULT_ENV.replace('GELDAR_REGISTER_UPSTREAM=127.0.0.1:8103', ''));
+  it('refuses when the glass upstream is missing', () => {
+    const r = rig(DEFAULT_ENV.replace('GELDAR_GLASS_UPSTREAM=127.0.0.1:8101', ''));
     const res = r.run(['install']);
     expect(res.status).not.toBe(0);
-    expect(res.out).toContain('GELDAR_REGISTER_UPSTREAM');
+    expect(res.out).toContain('GELDAR_GLASS_UPSTREAM');
     expect(existsSync(r.geldar)).toBe(false);
   });
 
