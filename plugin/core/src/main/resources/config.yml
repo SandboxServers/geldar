@@ -23,3 +23,7 @@ kino:
   enabled: false
   # Horizontal view radius in chunks (1 to 8). Sections are read above the agent (6) and below (1).
   radius_chunks: 8
+maintenance:
+  # Server lines to the online players for a maintenance notice (CD-1), from geldar.<shard>.maintenance.
+  # false turns the broadcast off; the file is re-read every 5 seconds, so no restart is needed.
+  broadcast: true

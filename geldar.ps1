@@ -376,7 +376,8 @@ function Get-NatsUsers([string] $Shard) {
     # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
     velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
     # Kino: the plugin publishes the feed and reads the control subject, and cannot publish control (so it cannot forge a start).
-    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.control", '_INBOX.>') }
+    # Maintenance (CD-1c): the plugin reads the notice subject and says the line; the deploy's publish is CD-1d.
+    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", '_INBOX.>') }
     # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
     kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
   }

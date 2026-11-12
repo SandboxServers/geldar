@@ -32,7 +32,8 @@ export interface WakeEvent {
     | 'reflex'
     | 'plan_result'
     | 'heard_sound'
-    | 'wake';
+    | 'wake'
+    | 'maintenance';
   /** For speech: was the agent addressed directly? */
   addressed?: boolean;
   /** For agent_approached: how far away the other agent is. */
