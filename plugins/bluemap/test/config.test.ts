@@ -94,11 +94,12 @@ describe('BlueMap config: web root and port (C2-07o)', () => {
   });
 
   it('enables the webserver on the port the bluemap-web live proxy targets', () => {
+    // The Caddy handler targets the alias proxy, whose default upstream is Paper's BlueMap port.
     const caddy = readFileSync(
-      join(import.meta.dirname, '..', '..', '..', 'compose', 'bluemap-web', 'Caddyfile'),
+      join(import.meta.dirname, '..', 'alias-proxy', 'alias-proxy.ts'),
       'utf8',
     );
-    const target = /reverse_proxy\s+paper:(\d+)/.exec(caddy);
+    const target = /GELDAR_ALIAS_UPSTREAM_PORT \?\? (\d+)/.exec(caddy);
     expect(target).not.toBeNull();
     expect(value('webserver.conf', 'enabled')).toBe('true');
     expect(value('webserver.conf', 'port')).toBe(target?.[1]);
