@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import type { Duplex } from 'node:stream';
 import { kinoSessionFromHeader } from '../kino-cookie.ts';
+import { readSkinPng, skinAgentId } from './skins.ts';
 import type { SqlClient } from '../query.ts';
 import { KinoAudit, sqlAuditStore } from './audit.ts';
 import { type ControlSink, controlledFeed } from './control.ts';
@@ -114,6 +115,8 @@ export interface KinoWiringOptions {
   trustedProxies?: ReadonlySet<string>;
   allowedOrigins?: readonly string[];
   revalidateMs?: number;
+  /** Read-only directory of <agent_id>.png skins (GELDAR_KINO_SKIN_DIR); unset serves no skins. */
+  skinDir?: string | undefined;
 }
 
 /** Kino with no allowed origin would refuse every browser: fail at startup, naming the variable. */
@@ -199,6 +202,34 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
       json(503, { error: 'unavailable' });
     }
   };
+  /** A skin PNG, only for an agent this viewer may watch (same rule as the picker). Anything else is a plain 404. */
+  const skin = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    agentId: string,
+  ): Promise<void> => {
+    const miss = (): void => void res.writeHead(404, { 'Cache-Control': 'no-store' }).end();
+    const dir = o.skinDir;
+    if (dir === undefined || !enabled()) return miss();
+    try {
+      const session =
+        o.sessionKey === undefined
+          ? null
+          : kinoSessionFromHeader(o.sessionKey, req.headers.cookie, Date.now());
+      const access = session ? await sqlScopeStore(o.db).access(session.identityHash) : ANONYMOUS;
+      const owned =
+        session && access.signedIn && !access.banned
+          ? await ownedIds(o.db, session.identityHash)
+          : new Set<string>();
+      if (!watchableIds(access, await listAgents(o.db), owned).includes(agentId)) return miss();
+      const body = readSkinPng(dir, agentId);
+      if (body === undefined) return miss();
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=60' });
+      res.end(req.method === 'HEAD' ? undefined : body);
+    } catch {
+      miss();
+    }
+  };
   return {
     relay,
     killSwitch,
@@ -209,6 +240,15 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
       if (path.startsWith('/kino/')) res.setHeader('Content-Security-Policy', csp);
       if (path === '/kino/targets') {
         void targets(req, res);
+        return true;
+      }
+      const skinId = skinAgentId(path);
+      if (skinId !== undefined && o.skinDir !== undefined) {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.writeHead(405, { Allow: 'GET, HEAD' }).end();
+          return true;
+        }
+        void skin(req, res, skinId);
         return true;
       }
       const file = files.get(path);

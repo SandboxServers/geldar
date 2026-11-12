@@ -115,6 +115,7 @@ export function buildGlass(
           otlpEndpoint: kinoOtlpEndpoint,
           trustedProxies: policy.trustedProxies,
           allowedOrigins: loadKinoEnv().allowedOrigins,
+          skinDir: process.env.GELDAR_KINO_SKIN_DIR || undefined,
         });
   // The retention purge belongs to Glass, not to Kino: it runs even when Kino is off.
   const purge = startAuditPurge(new KinoAudit(sqlAuditStore(pool), () => {}));
