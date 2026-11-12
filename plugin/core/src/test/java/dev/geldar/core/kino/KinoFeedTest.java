@@ -189,6 +189,26 @@ class KinoFeedTest {
     }
 
     @Test
+    void aSectionOfOpaqueLogsIsBuriedWhileLeavesAreSeeThrough() {
+        Terrain logs = new Terrain(square(2), (x, y, z) -> y < 200 ? "minecraft:oak_log[axis=y]" : "minecraft:air",
+                new KinoWorld.Position(8, 40, 8));
+        KinoFeed feed = new KinoFeed(logs, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        assertEquals(0, count("chunk_section"));
+        out.clear();
+        Terrain leaves = new Terrain(square(2),
+                (x, y, z) -> y < 200 ? "minecraft:oak_leaves[persistent=false]" : "minecraft:air",
+                new KinoWorld.Position(8, 40, 8));
+        feed = new KinoFeed(leaves, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        // Sections 1 to 8 of the nine chunks: leaves are never opaque, so none is sealed.
+        assertEquals(72, count("chunk_section"));
+        assertAllValid();
+    }
+
+    @Test
     void aSurfaceSectionIsPublished() {
         // Stone below y 64: section 3 has air straight above it, so the nine chunks of the window all send it.
         Terrain world = new Terrain(
@@ -217,6 +237,43 @@ class KinoFeedTest {
         assertAllValid();
     }
 
+    /** Glass in every section: see-through, so never skipped; a section is always sent when its window holds it. */
+    @Test
+    void aVerticalMoveWithinTheChunkSendsOnlyTheSectionsThatEnterTheWindow() {
+        Terrain world = new Terrain(square(1), (x, y, z) -> "minecraft:glass", new KinoWorld.Position(8, 8, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        // Target in section 0: window -1..6, eight sections in each of the nine chunks.
+        assertEquals(72, count("chunk_section"));
+        out.clear();
+        world.at = new KinoWorld.Position(8, 24, 8);
+        feed.tick();
+        pumpAll(feed);
+        // Section 1: window 0..7, so only section 7 is new, once per chunk; nothing is re-sent.
+        assertEquals(9, count("chunk_section"));
+        assertEquals(9, out.stream().filter(m -> m.contains("\"section_y\":7,")).count());
+        assertEquals(0, count("target_moved"));
+        assertAllValid();
+    }
+
+    @Test
+    void aVerticalMoveBackDoesNotResendSectionsStillInTheWindowButResendsEvictedOnes() {
+        Terrain world = new Terrain(square(1), (x, y, z) -> "minecraft:glass", new KinoWorld.Position(8, 24, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 1);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        // Section 1 has window 0..7: section 7 is new there and section -1 has left the window (it was evicted).
+        out.clear();
+        world.at = new KinoWorld.Position(8, 8, 8);
+        feed.tick();
+        pumpAll(feed);
+        // Back in section 0: sections 0..6 are still in the window and are not sent again; section -1 left it, so it is.
+        assertEquals(9, count("chunk_section"));
+        assertEquals(9, out.stream().filter(m -> m.contains("\"section_y\":-1,")).count());
+        assertAllValid();
+    }
+
     private static Set<Long> square(int radius) {
         Set<Long> loaded = new java.util.HashSet<>();
         for (int x = -radius; x <= radius; x++) {
@@ -236,7 +293,7 @@ class KinoFeedTest {
     private static final class Terrain implements KinoWorld {
         private final Set<Long> loaded;
         private final Blocks blocks;
-        private final Position at;
+        Position at;
 
         Terrain(Set<Long> loaded, Blocks blocks, Position at) {
             this.loaded = loaded;

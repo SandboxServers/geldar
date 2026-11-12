@@ -32,7 +32,13 @@ public final class KinoFeed {
             "minecraft:tuff", "minecraft:calcite", "minecraft:dirt", "minecraft:coarse_dirt", "minecraft:grass_block",
             "minecraft:podzol", "minecraft:mycelium", "minecraft:gravel", "minecraft:clay", "minecraft:sand",
             "minecraft:red_sand", "minecraft:sandstone", "minecraft:netherrack", "minecraft:bedrock",
-            "minecraft:obsidian");
+            "minecraft:obsidian", "minecraft:bricks", "minecraft:terracotta", "minecraft:rooted_dirt", "minecraft:mud",
+            "minecraft:packed_mud", "minecraft:cobbled_deepslate", "minecraft:polished_deepslate",
+            "minecraft:chiseled_deepslate", "minecraft:deepslate_tiles", "minecraft:reinforced_deepslate");
+
+    /** Suffixes of whole opaque cube families: logs, wood, planks, bricks, concrete, wool, terracotta. */
+    private static final List<String> OPAQUE_SUFFIXES =
+            List.of("_log", "_wood", "_planks", "_bricks", "_concrete", "_wool", "_terracotta");
 
     /** Entities one {@link #tick} may examine per target (the entity_positions message itself is capped at 256). */
     public static final int ENTITY_EXAMINE_PER_TICK = 512;
@@ -50,10 +56,16 @@ public final class KinoFeed {
     private final Map<String, Target> targets = new ConcurrentHashMap<>();
     private volatile boolean killed;
 
+    /** A section by chunk x, section y and chunk z. */
+    private record Section(int x, int y, int z) {}
+
     private static final class Target {
         int chunkX;
         int chunkZ;
-        final Set<Long> sent = new HashSet<>();
+        /** The sections queued or sent and still inside the window; a section leaving the window is evicted. */
+        final Set<Section> sent = new HashSet<>();
+        /** The target's own section Y, as of the last window queue. */
+        int sectionY;
         /** Sections still to read, as {x, y, z}; filled by a window request, drained by {@link #pump}. */
         final Deque<int[]> pending = new ArrayDeque<>();
         /** A resync arrived while a window was still queued: one more pass follows, not one per request. */
@@ -155,12 +167,16 @@ public final class KinoFeed {
             Target t = e.getValue();
             int cx = chunk(at.get().x());
             int cz = chunk(at.get().z());
-            if (cx != t.chunkX || cz != t.chunkZ) {
+            boolean moved = cx != t.chunkX || cz != t.chunkZ;
+            boolean sectionChanged = sectionOf(at.get().y()) != t.sectionY;
+            if (moved) {
                 t.chunkX = cx;
                 t.chunkZ = cz;
                 t.scanChunk = 0;
                 t.scanEntity = 0;
                 sink.publish(id, KinoMessages.targetMoved(id, at.get().x(), at.get().y(), at.get().z()));
+            }
+            if (moved || sectionChanged) {
                 queueWindow(t, at.get());
             }
             sink.publish(id, KinoMessages.entityPositions(scanEntities(id, t)));
@@ -219,6 +235,10 @@ public final class KinoFeed {
         return Math.floorDiv((int) Math.floor(blockCoord), 16);
     }
 
+    private static int sectionOf(double blockY) {
+        return Math.floorDiv((int) Math.floor(blockY), 16);
+    }
+
     /**
      * Reads queued sections for all targets, at most the block budget per call (call it every game tick). It
      * never reads more than the budget, whatever Glass asks for.
@@ -247,22 +267,26 @@ public final class KinoFeed {
         }
     }
 
-    /** Queues each loaded, not yet sent chunk of the window; no block is read here. */
+    /**
+     * Queues each loaded section of the window that is not already sent or queued; no block is read here. Sections
+     * that left the window (by chunk or by section Y) are evicted, so coming back to them queues them again.
+     */
     private void queueWindow(Target t, KinoWorld.Position at) {
-        int sy = Math.floorDiv((int) Math.floor(at.y()), 16);
-        t.lo = Math.max(world.minSectionY(), sy - SECTIONS_BELOW);
-        t.hi = Math.min(world.maxSectionY(), sy + SECTIONS_ABOVE);
-        t.sent.removeIf(k -> Math.abs((int) (k >> 32) - t.chunkX) > radius
-                || Math.abs((int) (long) k - t.chunkZ) > radius);
+        t.sectionY = sectionOf(at.y());
+        t.lo = Math.max(world.minSectionY(), t.sectionY - SECTIONS_BELOW);
+        t.hi = Math.min(world.maxSectionY(), t.sectionY + SECTIONS_ABOVE);
+        t.sent.removeIf(s -> Math.abs(s.x() - t.chunkX) > radius || Math.abs(s.z() - t.chunkZ) > radius
+                || s.y() < t.lo || s.y() > t.hi);
+        t.pending.removeIf(s -> !t.sent.contains(new Section(s[0], s[1], s[2])));
         for (int x = t.chunkX - radius; x <= t.chunkX + radius; x++) {
             for (int z = t.chunkZ - radius; z <= t.chunkZ + radius; z++) {
-                long key = ((long) x << 32) ^ (z & 0xffffffffL);
-                if (t.sent.contains(key) || !world.isChunkLoaded(x, z)) {
+                if (!world.isChunkLoaded(x, z)) {
                     continue;
                 }
-                t.sent.add(key);
                 for (int y = t.lo; y <= t.hi; y++) {
-                    t.pending.add(new int[] {x, y, z});
+                    if (t.sent.add(new Section(x, y, z))) {
+                        t.pending.add(new int[] {x, y, z});
+                    }
                 }
             }
         }
@@ -328,6 +352,14 @@ public final class KinoFeed {
     private static boolean opaque(String state) {
         int bracket = state.indexOf('[');
         String id = bracket < 0 ? state : state.substring(0, bracket);
-        return OPAQUE.contains(id) || id.endsWith("_ore");
+        if (OPAQUE.contains(id) || id.endsWith("_ore")) {
+            return true;
+        }
+        for (String suffix : OPAQUE_SUFFIXES) {
+            if (id.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
