@@ -39,6 +39,7 @@ async function main(): Promise<void> {
     const pos = rig.update(state.world, target, Math.min(0.1, (now - last) / 1000));
     last = now;
     view.camera.position.set(pos.x, pos.y, pos.z);
+    view.setFadeFocus(pos, target ? { x: target.x, y: target.y + 1.2, z: target.z } : null);
     const look = rig.lookTarget(target);
     view.camera.lookAt(look.x, look.y, look.z);
     renderer.setSize(el.clientWidth, el.clientHeight, false);

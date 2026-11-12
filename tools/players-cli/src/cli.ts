@@ -2,7 +2,13 @@
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { type FetchFn, type SignedTexture, SigningError, uploadSkin } from './mineskin.ts';
+import {
+  type FetchFn,
+  type SignedTexture,
+  SigningError,
+  uploadSkin,
+  validateTexture,
+} from './mineskin.ts';
 import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
 import { openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
@@ -26,6 +32,8 @@ export const USAGE = `usage: players-cli skin set <player-id> <png> [--model cla
 export interface CliDeps {
   readShard: () => Promise<string>;
   readSkin: (path: string) => Promise<Buffer>;
+  /** Reads a ranger-skins.json file (keyed by player id). Optional so older fakes still type-check. */
+  readJson?: ((path: string) => Promise<string>) | undefined;
   readKey: () => Promise<string>;
   upload: (png: Buffer, model: 'classic' | 'slim', apiKey: string) => ReturnType<typeof uploadSkin>;
   openBucket: (natsUrl: string) => Promise<{ kv: SkinKv; close: () => Promise<void> }>;
@@ -38,6 +46,15 @@ export interface CliDeps {
 /** Runs one command and returns the exit code. Output lines never include a key, a request or a texture value. */
 export async function runCli(argv: readonly string[], deps: CliDeps): Promise<number> {
   const [group, verb, player, file, ...rest] = argv;
+  if (
+    group === 'skin' &&
+    verb === 'import' &&
+    player !== undefined &&
+    file !== undefined &&
+    rest.length === 0
+  ) {
+    return runImport(player, file, deps);
+  }
   if (group !== 'skin' || verb !== 'set' || player === undefined || file === undefined) {
     deps.out(USAGE);
     return 2;
@@ -77,6 +94,50 @@ export async function runCli(argv: readonly string[], deps: CliDeps): Promise<nu
     return 0;
   } catch (error) {
     deps.out(`error: ${errorMessage(error)}`);
+    return 1;
+  }
+}
+
+/**
+ * Stores signed textures from a ranger-skins.json file (player id to {value, signature, model}) under the player's
+ * life id. The file lives outside the repo; every texture is re-validated, and nothing is uploaded.
+ */
+async function runImport(player: string, file: string, deps: CliDeps): Promise<number> {
+  try {
+    const roster = findPlayer(await deps.readShard(), player);
+    if (deps.readJson === undefined) {
+      throw new RosterError('this build cannot read a skins file');
+    }
+    const all = JSON.parse(await deps.readJson(file)) as Record<
+      string,
+      { value?: unknown; signature?: unknown; model?: unknown } | undefined
+    >;
+    const entry = all[roster.playerId];
+    if (typeof entry?.value !== 'string' || typeof entry.signature !== 'string') {
+      throw new RosterError(`the skins file has no signed texture for ${roster.playerId}`);
+    }
+    const model = entry.model === 'slim' ? 'slim' : 'classic';
+    const texture = validateTexture(entry.value, entry.signature, model);
+    const url = deps.natsUrl();
+    if (url === undefined || url.trim() === '') {
+      throw new RosterError('GELDAR_NATS_URL is not set; nothing was stored');
+    }
+    const { kv, close } = await deps.openBucket(url);
+    try {
+      await putSkin(kv, roster.lifeId, texture, deps.now());
+    } finally {
+      await close();
+    }
+    deps.out(
+      `imported the ${model} skin for ${roster.playerId} (life ${roster.lifeId}) into geldar-skins`,
+    );
+    return 0;
+  } catch (error) {
+    deps.out(
+      error instanceof SyntaxError
+        ? 'error: the skins file is not JSON'
+        : `error: ${errorMessage(error)}`,
+    );
     return 1;
   }
 }
@@ -130,6 +191,7 @@ export function productionDeps(fetchFn?: FetchFn): CliDeps {
   return {
     readShard: () => readFile(SHARD_FILE, 'utf8'),
     readSkin: readSkinFile,
+    readJson: (path) => readFile(path, 'utf8'),
     readKey: async () => {
       const key = (await readFile(KEY_FILE, 'utf8').catch(() => '')).trim();
       if (key === '') {
