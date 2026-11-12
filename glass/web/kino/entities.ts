@@ -41,6 +41,20 @@ export interface LabelStyle {
   scale: number;
 }
 
+/** A label sprite's base width in blocks, and the most of the view it may take per block of camera distance. */
+export const LABEL_BASE_WIDTH = 2.4;
+export const LABEL_MAX_PER_BLOCK = 0.25;
+export const LABEL_MIN_CLAMP = 0.15;
+
+/**
+ * A scale multiplier that keeps a label from filling the screen when the camera is close: the sprite is
+ * at most LABEL_MAX_PER_BLOCK * distance blocks wide, never below LABEL_MIN_CLAMP, never above 1.
+ */
+export function labelClamp(cameraDistance: number): number {
+  const k = (LABEL_MAX_PER_BLOCK * Math.max(0, cameraDistance)) / LABEL_BASE_WIDTH;
+  return Math.max(LABEL_MIN_CLAMP, Math.min(1, k));
+}
+
 /** Agents are always labelled; other entities only near the camera target, smaller and fading with distance. */
 export function labelStyle(isAgent: boolean, distance: number): LabelStyle {
   if (isAgent) return { visible: true, opacity: 1, scale: 1 };

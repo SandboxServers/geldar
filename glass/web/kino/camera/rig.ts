@@ -23,7 +23,7 @@ export interface MoveInput {
 }
 
 export const FREE_SPEED = 12; // blocks per second
-export const FOLLOW_OFFSET: Vec3 = { x: 0, y: 3, z: 8 };
+export const FOLLOW_OFFSET: Vec3 = { x: 0, y: 3.5, z: 7 };
 
 export class CameraRig {
   mode: CameraMode = 'orbit';

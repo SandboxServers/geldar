@@ -81,6 +81,19 @@ export const FADE_FRAGMENT_BODY = `
   }
 `;
 
+export const WATER_OPACITY = 0.6;
+
+/** Water: the atlas drawn with alpha blending and no depth write, so it is a smooth translucent surface. */
+export function makeWaterMaterial(base: Material): Material {
+  return new MeshBasicMaterial({
+    map: base instanceof MeshBasicMaterial ? base.map : null,
+    vertexColors: true,
+    transparent: true,
+    opacity: WATER_OPACITY,
+    depthWrite: false,
+  });
+}
+
 /**
  * A per-scene copy of the atlas material (the shared one cannot carry per-pane uniforms) whose
  * shader reads the `soft` vertex attribute and applies the see-through and far-leaf rules.

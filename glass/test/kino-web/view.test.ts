@@ -103,7 +103,8 @@ describe('agent ghost', () => {
       renderOrder: number;
       visible: boolean;
     };
-    expect(ghost.material.depthTest).toBe(false);
+    // K15: the ghost draws only where the figure is occluded (depth GREATER), not over unoccluded pixels.
+    expect((ghost.material as unknown as { depthFunc: number }).depthFunc).toBe(6); // three's GreaterDepth
     expect(ghost.material.transparent).toBe(true);
     expect(ghost.material.opacity).toBe(GHOST_OPACITY);
     expect(ghost.children.length).toBe(2);
