@@ -114,10 +114,11 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       ? [target.offset(0, -1, 0)]
       : NEIGHBOR_OFFSETS.map((o) => target.offset(o.x, o.y, o.z));
   const cells = candidates.map((position) => bot.blockAt(position));
-  const index = pickReference(cells.map((cell) => cell?.boundingBox === 'block'));
-  const reference = index === null ? undefined : cells[index];
-  const referencePos = index === null ? undefined : candidates[index];
-  if (!reference || !referencePos) return failed('blocked', MESSAGE.noReference);
+  // Every solid neighbour is a reference in turn: one can be out of sight or refused by the server.
+  const solidAt = cells.flatMap((cell, i) => (cell?.boundingBox === 'block' ? [i] : []));
+  if (pickReference(cells.map((cell) => cell?.boundingBox === 'block')) === null) {
+    return failed('blocked', MESSAGE.noReference);
+  }
 
   if (bot.heldItem?.name !== block) {
     await bot.equip(stack, 'hand');
@@ -130,27 +131,41 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
     if (ctx.signal.aborted) return cancelled();
   }
 
-  const face = new Vec3(
-    target.x - referencePos.x,
-    target.y - referencePos.y,
-    target.z - referencePos.z,
-  );
-  try {
-    await bot.placeBlock(reference, face);
-  } catch (error) {
-    const message = errorText(error);
-    if (/did not answer the placement|did not fire within timeout/.test(message)) {
-      return failed('timeout', MESSAGE.timeout);
+  let last: ActionOutcome = failed('blocked', MESSAGE.noReference);
+  for (const i of solidAt) {
+    if (ctx.signal.aborted) return cancelled();
+    const reference = cells[i];
+    const referencePos = candidates[i];
+    if (!reference || !referencePos) continue;
+    const face = new Vec3(
+      target.x - referencePos.x,
+      target.y - referencePos.y,
+      target.z - referencePos.z,
+    );
+    try {
+      await bot.placeBlock(reference, face);
+    } catch (error) {
+      const message = errorText(error);
+      if (/did not answer the placement|did not fire within timeout/.test(message)) {
+        return failed('timeout', MESSAGE.timeout);
+      }
+      if (/refused to place/.test(message)) {
+        last = failed('blocked', MESSAGE.refused);
+        continue;
+      }
+      throw error;
     }
-    if (/refused to place/.test(message)) return failed('blocked', MESSAGE.refused);
-    throw error;
-  }
-  if (ctx.signal.aborted) return cancelled();
+    if (ctx.signal.aborted) return cancelled();
 
-  // Only the target block is checked: a bed placed here also makes a second block.
-  const placed = bot.blockAt(target)?.name ?? '';
-  if (!confirmsPlacement(placed, block)) return failed('blocked', MESSAGE.unconfirmed);
-  return completed({ block, at: spot(target), reference: spot(referencePos) });
+    // Only the target block is checked: a bed placed here also makes a second block.
+    const placed = bot.blockAt(target)?.name ?? '';
+    if (!confirmsPlacement(placed, block)) {
+      last = failed('blocked', MESSAGE.unconfirmed);
+      continue;
+    }
+    return completed({ block, at: spot(target), reference: spot(referencePos) });
+  }
+  return last;
 }
 
 /** True when the cell is the bot's feet cell or the cell above it. */

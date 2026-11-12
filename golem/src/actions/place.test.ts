@@ -17,6 +17,7 @@ const BOXES: Record<string, 'block' | 'empty'> = {
   wall_torch: 'empty',
   stone: 'block',
   dirt: 'block',
+  crafting_table: 'block',
   white_bed: 'block',
 };
 
@@ -35,6 +36,8 @@ interface FakeOptions {
   placedAs?: string;
   /** Thrown by `placeBlock` instead of placing. */
   placeError?: string;
+  /** The first N placements are refused by the server, the later ones work. */
+  refuseFirst?: number;
 }
 
 interface FakeBot {
@@ -51,6 +54,7 @@ function key(p: Vec3): string {
 function fakeBot(options: FakeOptions = {}): FakeBot {
   const world = new Map(Object.entries(options.blocks ?? {}));
   let held: { name: string; count: number } | null = null;
+  let attempts = 0;
   const bot = {
     entity: { position: options.at ?? new Vec3(0.5, 64, 0.5), yaw: options.yaw ?? 0 },
     entities: Object.fromEntries(
@@ -75,6 +79,7 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
     },
     placeBlock: vi.fn(async (reference: { position: Vec3 }, face: Vec3) => {
       if (options.placeError) throw new Error(options.placeError);
+      if (attempts++ < (options.refuseFirst ?? 0)) throw new Error('server refused to place');
       world.set(key(reference.position.plus(face)), options.placedAs ?? held?.name ?? 'air');
     }),
   };
@@ -110,6 +115,72 @@ describe('confirmsPlacement', () => {
     expect(confirmsPlacement('torch', 'torch')).toBe(true);
     expect(confirmsPlacement('wall_torch', 'torch')).toBe(true);
     expect(confirmsPlacement('air', 'torch')).toBe(false);
+  });
+});
+
+describe('place reference selection', () => {
+  const ground = { '0,63,0': 'stone', '0,63,1': 'stone', '1,63,1': 'stone' };
+
+  it('places a crafting table next to a solid block with the item in hand', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '0,63,1': 'stone' },
+      items: ['crafting_table'],
+    });
+    const outcome = await place(fake, 'crafting_table', { x: 0, y: 64, z: 1 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.bot.heldItem?.name).toBe('crafting_table');
+  });
+
+  it('places dirt at a coordinate against the block below', async () => {
+    const fake = fakeBot({ blocks: ground, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 1, y: 64, z: 1 });
+    expect(outcome.status).toBe('completed');
+    const [reference, face] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }, Vec3];
+    expect(reference.position).toEqual(new Vec3(1, 63, 1));
+    expect(face).toEqual(new Vec3(0, 1, 0));
+  });
+
+  it('tries the next solid neighbour when the server refuses the first', async () => {
+    const fake = fakeBot({
+      blocks: { ...ground, '2,64,1': 'stone' },
+      items: ['crafting_table'],
+      refuseFirst: 1,
+    });
+    const outcome = await place(fake, 'crafting_table', { x: 1, y: 64, z: 1 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.placeBlock).toHaveBeenCalledTimes(2);
+    const [second] = fake.placeBlock.mock.calls[1] as [{ position: Vec3 }];
+    expect(second.position).toEqual(new Vec3(2, 64, 1));
+  });
+
+  it('fails with the refused text when every neighbour is refused', async () => {
+    const fake = fakeBot({ blocks: ground, items: ['dirt'], refuseFirst: 9 });
+    const outcome = await place(fake, 'dirt', { x: 1, y: 64, z: 1 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: expect.stringContaining('the server refused'),
+    });
+  });
+
+  it('stops at the next neighbour when the action is aborted after a refusal', async () => {
+    const fake = fakeBot({
+      blocks: { ...ground, '2,64,1': 'stone' },
+      items: ['dirt'],
+      refuseFirst: 1,
+    });
+    const abort = new AbortController();
+    fake.placeBlock.mockImplementationOnce(async () => {
+      abort.abort();
+      throw new Error('server refused to place');
+    });
+    const outcome = await placeAction.run(
+      { bot: fake.bot, signal: abort.signal, timeScale: 1 },
+      { do: 'place', block: 'dirt', at: { x: 1, y: 64, z: 1 } },
+    );
+    expect(outcome.status).toBe('cancelled');
+    expect(fake.placeBlock).toHaveBeenCalledTimes(1);
   });
 });
 
