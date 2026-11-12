@@ -4,7 +4,7 @@ description: "Operations agent for the Geldar campaign: pushes branches, opens a
 model: haiku
 omitClaudeMd: false
 effort: medium
-maxTurns: 80
+maxTurns: 40
 tools: Read, Grep, Glob, Bash, PowerShell
 ---
 
