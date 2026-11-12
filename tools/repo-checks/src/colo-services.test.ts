@@ -484,7 +484,11 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
   });
 
   it('publishes only the loopback register port, as a literal', () => {
-    expect(register.ports).toEqual(['127.0.0.1:8090:8090']);
+    expect(register.ports).toEqual(['127.0.0.1:18090:8090']);
+  });
+
+  it('does not publish register on 8090, which another tenant holds on the shared node (decision 0150)', () => {
+    expect(register.ports).not.toContainEqual(expect.stringMatching(/^127\.0\.0\.1:8090:/));
   });
 
   it('builds threshold/register/Dockerfile and takes its image from a deploy variable', () => {

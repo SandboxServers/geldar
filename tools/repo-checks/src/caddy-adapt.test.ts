@@ -48,7 +48,7 @@ function adapt(site: string): Handler[] {
       '-e',
       'GELDAR_MCP_UPSTREAM=mcp.example.test:8788',
       '-e',
-      'GELDAR_REGISTER_UPSTREAM=register.example.test:8090',
+      'GELDAR_REGISTER_UPSTREAM=register.example.test:18090',
       '-v',
       `${dir}:/etc/caddy:ro`,
       IMAGE,
