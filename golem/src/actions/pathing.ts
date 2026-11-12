@@ -59,6 +59,19 @@ export type MoveResult =
 export const MAX_LADDERS = 2;
 
 /**
+ * Lets a route open doors and gates on the way. The server is Paper, where a right-click opens a
+ * village door, so a closed door is a way through, not a wall. The library's openable set (2.4.5)
+ * holds gates only, so wooden doors join it here. Iron doors need redstone, so they stay walls.
+ */
+export function allowDoors(movements: unknown, registry: Bot['registry']): void {
+  const m = movements as { canOpenDoors: boolean; openable: Set<number> };
+  m.canOpenDoors = true;
+  for (const block of registry.blocksArray) {
+    if (block.name.endsWith('_door') && !block.name.startsWith('iron_')) m.openable.add(block.id);
+  }
+}
+
+/**
  * Loads the pathfinder once and sets the movement rules: no digging, no towers, no scaffolding.
  * Digging and placing belong to `mine` and `place`, so `goto` never tunnels or builds.
  */
@@ -74,6 +87,7 @@ export function ensurePathfinder(bot: Bot): void {
   // The library spells this property `scafoldingBlocks` (2.4.5).
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
+  allowDoors(movements, bot.registry);
   bot.pathfinder.setMovements(movements);
   bot.pathfinder.tickTimeout = TICK_SLICE_MS;
   bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
@@ -101,6 +115,7 @@ export function planReach(
     digging.canDig = true;
     digging.allow1by1towers = false;
     digging.scafoldingBlocks = [];
+    allowDoors(digging, bot.registry);
     movements = digging;
   }
   const found = planner.getPathTo(movements, goal);
