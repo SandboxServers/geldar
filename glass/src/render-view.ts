@@ -41,11 +41,12 @@ export function renderRow(doc: Doc, view: ThoughtView, onOpen: (id: string) => v
   const item = doc.createElement('li');
   const button = doc.createElement('button');
   button.type = 'button';
-  button.className = 'row';
+  // `card` is the narrow-screen layout (public/app.css); the desktop row is the same markup.
+  button.className = 'row card';
   const latency = view.latencyMs === null ? '' : `${view.latencyMs} ms`;
   if (view.kind === 'journal') {
     // A journal line shows its text on its own line, 200 characters at first, all of it on a tap.
-    button.className = 'row journal-row';
+    button.className = 'row card journal-row';
     let expanded = false;
     const body = make(doc, 'span', 'plan journal-text', journalShown(view.plan, false).shown);
     button.addEventListener('click', () => {
