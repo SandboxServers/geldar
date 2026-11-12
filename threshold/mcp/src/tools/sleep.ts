@@ -7,8 +7,13 @@ import type {
 } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 import { ToolError } from '@geldar/mcp-mock';
+import { type FailureTracker, factEvents, placeOf } from '../failures/tracker.ts';
 import type { BodyGateway, JournalStore, PlayerEventLog, SleepMarks } from '../ports.ts';
 import { type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
+
+/** The text of a sleep after which the place, health, belongings and events are as they were. */
+export const NOTHING_NEW =
+  'Nothing has changed since you last slept: same place, same belongings, same health, no new events.';
 
 /** The most events a `sleep` result lists, and the most speech lines it carries. */
 export const SLEEP_EVENT_LIMIT = 100;
@@ -20,6 +25,8 @@ export interface SleepDeps {
   journal: JournalStore;
   marks: SleepMarks;
   now: () => number;
+  /** Repeated-failure memory; without it a sleep states no repeats and every sleep is journalled. */
+  failures?: FailureTracker;
   /** Builds the sleep plan for a life from its snapshot (the animus plan builder in the server). */
   buildSleepPlan: (lifeId: string, snapshot: Snapshot) => PlanMessage;
 }
@@ -94,17 +101,29 @@ export async function sleepTool(deps: SleepDeps, call: ToolCall): Promise<SleepR
   const { events, dropped } = await deps.events.since(call.lifeId, mark.cursor);
   const digested = digest(events);
   const total = digested.events.length;
-  await deps.journal.append(
-    call.lifeId,
-    `Day ${day}: asleep. ${total} events since the last sleep, ${dropped} lost before them.`,
-    deps.now(),
-  );
   const cursor = events.at(-1)?.seq ?? mark.cursor;
+  const tracker = deps.failures;
+  const facts = tracker?.observe(call.lifeId, events, placeOf(snapshot), deps.now()) ?? [];
+  const unchanged = tracker?.sameAsLastSleep(call.lifeId, snapshot) === true;
+  const quiet = unchanged && events.length === 0 && dropped === 0;
+  // A sleep with nothing new is no journal thought: the journal keeps only what happened.
+  if (!quiet) {
+    await deps.journal.append(
+      call.lifeId,
+      `Day ${day}: asleep. ${total} events since the last sleep, ${dropped} lost before them.`,
+      deps.now(),
+    );
+  }
   await deps.marks.write(call.lifeId, { lastSleepDay: day, cursor });
+  const shown = digested.events.slice(-SLEEP_EVENT_LIMIT);
+  if (quiet) {
+    shown.push({ seq: Math.max(1, cursor), type: 'wake', tick: 0, text: NOTHING_NEW });
+  }
+  shown.push(...factEvents(facts, cursor, 0));
   return {
     day,
     days_since_sleep: 0,
-    events: digested.events.slice(-SLEEP_EVENT_LIMIT),
+    events: shown,
     event_counts: digested.counts,
     untrusted_world_text: digested.speech.length > 0 ? { speech: digested.speech } : {},
     note: WORLD_TEXT_NOTE,

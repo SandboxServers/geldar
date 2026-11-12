@@ -17,6 +17,7 @@ import {
   processMeter,
   wouldCostOf,
 } from '../budget/meter.ts';
+import type { FailureTracker } from '../failures/tracker.ts';
 import {
   type BodyGateway,
   BodyUnavailable,
@@ -65,6 +66,8 @@ export interface ActDeps {
   enforce?: boolean;
   /** Running totals of the metered acts. Defaults to a meter shared by the process. */
   meter?: ActMeter;
+  /** Remembers what each action aimed at, so a later outcome can name its goal. */
+  failures?: FailureTracker | undefined;
 }
 
 /** What one act's meter adds to its `sovereign_call` event. */
@@ -258,6 +261,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
       const sent = await submitThought(deps, caller.lifeId, thought);
       thoughtId = sent.thoughtId;
       if (sent.ack.accepted) {
+        deps.failures?.submitted(caller.lifeId, thought.actions ?? []);
         slots.forEach((_, i) => {
           if (refused[i] === undefined) result.accepted.push(i);
         });
