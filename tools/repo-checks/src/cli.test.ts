@@ -17,7 +17,9 @@ const releaseDataFiles = [
   'tools/repo-checks/src/release-dates.json',
   'tools/repo-checks/src/first-party-images.json',
   'tools/repo-checks/src/ip-literal-allowlist.json',
+  'tools/repo-checks/src/line-cap-exemptions.json',
 ];
+const LINE_CAP_LIST = 'tools/repo-checks/src/line-cap-exemptions.json';
 
 function releaseData(): Record<string, string> {
   const files: Record<string, string> = {};
@@ -126,6 +128,62 @@ describe('repo-checks gate, compose port wiring', () => {
     const result = runGate(mutated);
     expect(result.status).toBe(1);
     expect(result.output).toContain('service nats');
+  });
+});
+
+/** The gate over one 'golem/src/big.ts' of `lines` lines, with the exemption list `list` (undefined: no list). */
+function lineCapGate(lines: number, list: string | undefined): { status: number; output: string } {
+  const data = releaseData();
+  if (list === undefined) delete data[LINE_CAP_LIST];
+  else data[LINE_CAP_LIST] = list;
+  const text = 'x\n'.repeat(lines);
+  const result = runRepoChecks(
+    fakePort({
+      index: { 'compose/phase0.yml': realComposeText(), ...data, 'golem/src/big.ts': text },
+    }),
+    NOW,
+  );
+  return { status: result.failed ? 1 : 0, output: result.lines.join('\n') };
+}
+
+/** An exemption list with one entry for golem/src/big.ts. */
+function listFor(hardCap: number, reason = 'table-driven pin lists'): string {
+  return JSON.stringify({ exemptions: [{ path: 'golem/src/big.ts', hardCap, reason }] });
+}
+
+describe('repo-checks gate, line cap wiring', () => {
+  it('fails an over-cap file with no exemption', () => {
+    const result = lineCapGate(800, JSON.stringify({ exemptions: [] }));
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('error: golem/src/big.ts has 800 lines (cap 700)');
+  });
+
+  it('passes an exempted file under its override and prints the reason as info', () => {
+    const result = lineCapGate(850, listFor(900));
+    expect(result.status).toBe(0);
+    expect(result.output).toContain(
+      'info: golem/src/big.ts has 850 lines, exempt from the line cap (cap 900): table-driven pin lists',
+    );
+    expect(result.output).toContain('repo checks: ok');
+  });
+
+  it('fails an exempted file over its override', () => {
+    const result = lineCapGate(901, listFor(900));
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('error: golem/src/big.ts has 901 lines (cap 900)');
+  });
+
+  it('fails an entry without a reason, even when the file is under its override', () => {
+    const result = lineCapGate(850, listFor(900, ''));
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('error: tools/repo-checks/src/line-cap-exemptions.json');
+    expect(result.output).toContain('has no reason');
+  });
+
+  it('fails closed when the exemption list is missing', () => {
+    const result = lineCapGate(10, undefined);
+    expect(result.status).toBe(1);
+    expect(result.output).toContain('the line-cap exemption list fails closed');
   });
 });
 

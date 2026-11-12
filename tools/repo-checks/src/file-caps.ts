@@ -1,3 +1,5 @@
+import { exemptionFor, type LineCapExemption } from './line-cap-exemptions.ts';
+
 /** Line caps from the repo rules: a soft cap warns, a hard cap fails CI. */
 export const SOFT_CAP = 500;
 export const HARD_CAP = 700;
@@ -49,7 +51,10 @@ export type CapLevel = 'ok' | 'soft' | 'hard';
 export interface CapFinding {
   path: string;
   lines: number;
-  level: Exclude<CapLevel, 'ok'>;
+  /** 'info' is an exempted file within its override: printed with its reason, never fails. */
+  level: Exclude<CapLevel, 'ok'> | 'info';
+  /** Set only for a file on the exemption list (line-cap-exemptions.ts). */
+  exemption?: { hardCap: number; reason: string };
 }
 
 /** True when the caps apply to this repo-relative, forward-slash path. */
@@ -73,14 +78,33 @@ export function capLevel(lines: number): CapLevel {
   return 'ok';
 }
 
-/** Findings for every capped file over the soft cap, hard findings first. */
-export function checkFileCaps(files: ReadonlyArray<{ path: string; text: string }>): CapFinding[] {
+const LEVEL_ORDER: Record<CapFinding['level'], number> = { hard: 0, soft: 1, info: 2 };
+
+/**
+ * Findings for every capped file over the soft cap, and for every exempted file, hard findings
+ * first. An exempted file is judged by its own hard cap and gets no soft warning.
+ */
+export function checkFileCaps(
+  files: ReadonlyArray<{ path: string; text: string }>,
+  exemptions: readonly LineCapExemption[] = [],
+): CapFinding[] {
   const findings: CapFinding[] = [];
   for (const file of files) {
     if (!isCapped(file.path)) continue;
     const lines = countLines(file.text);
+    const exemption = exemptionFor(file.path, exemptions);
+    if (exemption) {
+      const level = lines > exemption.hardCap ? 'hard' : 'info';
+      findings.push({
+        path: file.path,
+        lines,
+        level,
+        exemption: { hardCap: exemption.hardCap, reason: exemption.reason },
+      });
+      continue;
+    }
     const level = capLevel(lines);
     if (level !== 'ok') findings.push({ path: file.path, lines, level });
   }
-  return findings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'hard' ? -1 : 1));
+  return findings.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
 }
