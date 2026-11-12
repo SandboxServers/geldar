@@ -122,6 +122,7 @@ services:
       GELDAR_MCP_BIND: 0.0.0.0
       GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/postgres-mcp.txt
       GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
+      GELDAR_ACT_BUDGET_ENFORCE: "0"
       GELDAR_MCP_IN_CONTAINER: "1"
       GELDAR_MCP_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
       GELDAR_MCP_TRUSTED_PROXIES: 127.0.0.1

@@ -4771,6 +4771,23 @@ export interface StatusInput {}
 
 export interface StatusResult {
   budget_remaining_thoughts: number;
+  /**
+   * The budget the accepted acts of this life would have cost. Metered while the budget is not enforced.
+   */
+  spent_this_life: number;
+  /**
+   * The balance this life would have if the acts were charged: the balance less spent_this_life. Can be negative.
+   */
+  would_have_been_balance: number;
+  /**
+   * Acts of this life by outcome class: good (an item was accepted), bad (the Body refused or the call failed after sending), impossible (nothing reached the Body).
+   */
+  metered_acts: {
+    calls: number;
+    good: number;
+    bad: number;
+    impossible: number;
+  };
   days_alive: number;
   days_since_sleep: number;
   untrusted_world_text: UntrustedWorldText;
@@ -11431,6 +11448,18 @@ export interface SovereignCallPayload {
    */
   journal_sha256?: string;
   latency_ms: number;
+  /**
+   * The credits the whole thought would have cost, one per say, action and intent, accepted or not (decision 0149).
+   */
+  would_cost?: number;
+  /**
+   * good when an item was accepted; bad when the Body refused the plan or the call failed; impossible when nothing reached the Body (decision 0149).
+   */
+  outcome_class?: "good" | "bad" | "impossible";
+  /**
+   * The running total of credits the accepted items of this life would have cost, including this call (decision 0149).
+   */
+  spent_this_life?: number;
 }
 
 export interface SpeechPayload {

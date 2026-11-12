@@ -314,6 +314,9 @@ const RESULT_ROWS: Row[] = [
     valid: [
       {
         budget_remaining_thoughts: 40,
+        spent_this_life: 7,
+        would_have_been_balance: 33,
+        metered_acts: { calls: 9, good: 5, bad: 2, impossible: 2 },
         days_alive: 3,
         days_since_sleep: 1,
         untrusted_world_text: { signs: ['market_tax: 3'] },
@@ -323,6 +326,9 @@ const RESULT_ROWS: Row[] = [
     invalid: [
       {
         budget_remaining_thoughts: -1,
+        spent_this_life: 7,
+        would_have_been_balance: 33,
+        metered_acts: { calls: 9, good: 5, bad: 2, impossible: 2 },
         days_alive: 3,
         days_since_sleep: 1,
         untrusted_world_text: {},

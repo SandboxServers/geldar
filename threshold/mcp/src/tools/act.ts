@@ -11,6 +11,13 @@ import type { OutputError, OutputValidator } from '@geldar/animus/src/ports/inde
 import type { ActResult, PlanAck, SovereignCallPayload, Thought } from '@geldar/contract';
 import { batchCost, type ChargedItem } from '../budget/cost.ts';
 import {
+  type ActMeter,
+  type OutcomeClass,
+  outcomeClassOf,
+  processMeter,
+  wouldCostOf,
+} from '../budget/meter.ts';
+import {
   type BodyGateway,
   BodyUnavailable,
   type BudgetLedger,
@@ -51,6 +58,20 @@ export interface ActDeps {
   expiresAfterTicks: number;
   /** Receives the cause of a presence write that failed; the refusal stands without it. */
   log?: (line: Record<string, unknown>) => void;
+  /**
+   * True to reserve credits, refuse on a short balance and rate-limit acts (`GELDAR_ACT_BUDGET_ENFORCE=1`).
+   * Off by default: the budget is suspended and every act is only metered (decision 0149).
+   */
+  enforce?: boolean;
+  /** Running totals of the metered acts. Defaults to a meter shared by the process. */
+  meter?: ActMeter;
+}
+
+/** What one act's meter adds to its `sovereign_call` event. */
+interface Metering {
+  wouldCost: number;
+  outcomeClass: OutcomeClass;
+  spentThisLife: number;
 }
 
 /** The `act` input as the tool receives it, before the contract's union narrows it. */
@@ -181,7 +202,8 @@ async function recordCall(deps: ActDeps, call: SovereignCallPayload): Promise<vo
 /** `act`: validates the thought, reserves its credits, sends the plan, and settles the charge. */
 export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Promise<ActResult> {
   const started = deps.clock.nowMs();
-  if (!deps.limiter.take(`act:${caller.lifeId}`, started).allowed) {
+  const enforce = deps.enforce === true;
+  if (enforce && !deps.limiter.take(`act:${caller.lifeId}`, started).allowed) {
     throw new ActToolError('rate_limited', 'Too many acts in a short time. Wait, then try again.');
   }
   const slots = slotsOf(input);
@@ -219,7 +241,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     // All-or-nothing: the whole surviving batch is reserved at once. A short balance refuses every
     // surviving item with `budget_exhausted`; nothing is taken and nothing is sent.
     const reserve =
-      survivors.length === 0
+      !enforce || survivors.length === 0
         ? undefined
         : await deps.budget.reserve(caller.lifeId, batchCost(kinds), started);
     if (reserve !== undefined) remaining = reserve.remaining;
@@ -241,7 +263,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
         });
       } else {
         const reason = playerReason(sent.ack.rejection?.reason);
-        remaining = await deps.budget.refund(caller.lifeId, batchCost(kinds));
+        if (reserved) remaining = await deps.budget.refund(caller.lifeId, batchCost(kinds));
         slots.forEach((_, i) => {
           if (refused[i] === undefined) reject(i, reason);
         });
@@ -257,7 +279,11 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
       deps.presence.wantBody(caller.lifeId, deps.clock.nowMs()),
     );
     outcome = 'error';
-    await recordCall(deps, callPayload(caller, input, result, remaining, started, deps, outcome));
+    const metering = meterCall(deps, caller.lifeId, slots, result, started, false, true);
+    await recordCall(
+      deps,
+      callPayload(caller, input, result, remaining, started, deps, outcome, undefined, metering),
+    );
     throw new ActToolError(
       'body_unavailable',
       'Your body is not reachable right now. Try again soon.',
@@ -265,15 +291,49 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
   }
 
   result.rejected.sort((a, b) => a.index - b.index);
+  const metering = meterCall(
+    deps,
+    caller.lifeId,
+    slots,
+    result,
+    started,
+    thoughtId !== undefined,
+    false,
+  );
   await recordCall(
     deps,
-    callPayload(caller, input, result, remaining, started, deps, outcome, thoughtId),
+    callPayload(caller, input, result, remaining, started, deps, outcome, thoughtId, metering),
   );
   return {
     accepted: result.accepted,
     rejected: result.rejected,
     budget_remaining_thoughts: remaining,
   };
+}
+
+/**
+ * Meters one act (decision 0149): what the whole thought would cost, the credits its accepted items
+ * would take, its outcome class and its duration. Runs on every path, enforced or not.
+ */
+function meterCall(
+  deps: ActDeps,
+  lifeId: string,
+  slots: Slot[],
+  result: { accepted: number[] },
+  started: number,
+  sent: boolean,
+  failed: boolean,
+): Metering {
+  const wouldCost = wouldCostOf(kindsOf(slots));
+  const charged = batchCost(result.accepted.map((i) => slots[i]?.kind ?? 'action'));
+  const outcomeClass = outcomeClassOf(result.accepted.length, sent, failed);
+  const totals = (deps.meter ?? processMeter).record(lifeId, {
+    wouldCost,
+    charged,
+    outcome: outcomeClass,
+    durationMs: Math.max(0, deps.clock.nowMs() - started),
+  });
+  return { wouldCost, outcomeClass, spentThisLife: totals.spent };
 }
 
 /** The charged kinds of a list of slots, in order. */
@@ -322,9 +382,13 @@ function callPayload(
   started: number,
   deps: ActDeps,
   outcome: SovereignCallPayload['outcome'],
-  thoughtId?: string,
+  thoughtId: string | undefined,
+  metering: Metering,
 ): SovereignCallPayload {
   return {
+    would_cost: metering.wouldCost,
+    outcome_class: metering.outcomeClass,
+    spent_this_life: metering.spentThisLife,
     player_id: caller.playerId,
     tool: 'act',
     outcome,

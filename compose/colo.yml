@@ -342,6 +342,8 @@ services:
       # Caddy (host network) may reach the publish as the docker bridge gateway: the node's deploy env sets the real peer
       # address (comma-separated; replaces public.trusted_proxies in shards/colo-mind.yaml). Decision 0132: none in the repo.
       GELDAR_MCP_TRUSTED_PROXIES: "${GELDAR_MCP_TRUSTED_PROXIES:-127.0.0.1}"
+      # The act budget is suspended and every act is metered (decision 0149). Only "1" enforces the budget again.
+      GELDAR_ACT_BUDGET_ENFORCE: "${GELDAR_ACT_BUDGET_ENFORCE:-0}"
       # NATS as the mcp user (decision 0080): the overlay compose/nats-auth-mcp.yml is not merged on colo, so the wiring is here.
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: mcp

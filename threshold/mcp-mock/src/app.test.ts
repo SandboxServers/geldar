@@ -285,6 +285,9 @@ describe('createApp', () => {
       },
       status: (_input, ctx) => ({
         budget_remaining_thoughts: 100 - of(ctx.playerId).spent,
+        spent_this_life: 0,
+        would_have_been_balance: 100 - of(ctx.playerId).spent,
+        metered_acts: { calls: 0, good: 0, bad: 0, impossible: 0 },
         days_alive: 0,
         days_since_sleep: of(ctx.playerId).slept,
         untrusted_world_text: {},
