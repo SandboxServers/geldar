@@ -135,7 +135,9 @@ describe('Kino deploy wiring', () => {
     expect(read('compose/colo-kino.yml')).not.toContain('SESSION_KEY');
     const overlay = read('compose/colo-kino-session.yml');
     expect(overlay).toContain('GELDAR_GLASS_SESSION_KEY_FILE: /run/secrets/register-session-key');
-    expect(overlay).toContain('register-session-key.txt');
+    // The secret is declared once, in colo.yml (the register service needs it there); the overlay only mounts it.
+    expect(overlay).not.toMatch(/^secrets:/m);
+    expect(colo).toContain('file: ${GELDAR_SECRETS_DIR:-./secrets}/register-session-key.txt');
     if (hasDocker) {
       const env = { GELDAR_KINO_PUBLIC_ORIGIN: 'https://glass.example.test' };
       const without = JSON.parse(render(['colo.yml', 'colo-kino.yml'], env).stdout);

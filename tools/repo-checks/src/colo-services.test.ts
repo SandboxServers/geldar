@@ -504,14 +504,28 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
       'postgres-register.txt',
       'mcp-token-pepper.txt',
       'register-pepper',
-      'register-github-secret',
-      'register-discord-secret',
+      'register-ms-secret',
+      'register-session-key',
     ];
     expect(register.secrets).toEqual(names);
     for (const name of names) expect(colo.secrets).toHaveProperty([name]);
     expect(env(register).REGISTER_DB_PASSWORD_FILE).toBe('/run/secrets/postgres-register.txt');
     expect(env(register).REGISTER_TOKEN_PEPPER_FILE).toBe('/run/secrets/mcp-token-pepper.txt');
     expect(JSON.stringify(env(register))).not.toMatch(/SECRET["']?:\s*"[^/]/);
+  });
+
+  it('signs in with Microsoft only: the Entra app and the session key come from env and files, no GitHub or Discord', () => {
+    const vars = env(register);
+    expect(vars.REGISTER_MS_CLIENT_ID).toBe('${REGISTER_MS_CLIENT_ID:-}');
+    expect(vars.REGISTER_MS_CLIENT_SECRET_FILE).toBe('/run/secrets/register-ms-secret');
+    expect(vars.REGISTER_SESSION_KEY_FILE).toBe('/run/secrets/register-session-key');
+    expect(vars.REGISTER_PUBLIC_URL).toBe(
+      '${REGISTER_PUBLIC_URL:-https://register.example.invalid}',
+    );
+    expect(Object.keys(vars).join(' ')).not.toMatch(/GITHUB|DISCORD/);
+    expect(register.secrets.join(' ')).not.toMatch(/github|discord/i);
+    expect(colo.secrets).toHaveProperty(['register-ms-secret']);
+    expect(colo.secrets).toHaveProperty(['register-session-key']);
   });
 
   it('trusts the MCP gateway by default, not loopback, for the client address (C2-R5 F5)', () => {

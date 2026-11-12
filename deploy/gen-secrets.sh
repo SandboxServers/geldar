@@ -6,9 +6,11 @@
 # nats-body.txt is the Body's NATS password. It matches the NATS server only with the auth overlay, whose server config
 # is written by `geldar.ps1 shard nats-auth` (PowerShell only, for now; see the P1-C1-04 worknote). Until a shell
 # equivalent exists, the open-NATS default does not read it.
+# register-session-key.txt is the register service's session key (>= 32 characters), shared with Glass by the Kino session
+# overlay. register-ms-secret.txt (the Microsoft/Entra client secret) is owner-provided: it is never generated here.
 # The files this script can create. The list of secrets the deploy requires is not kept here: it comes from the
 # merged compose config (common.sh, check_secrets). The NATS files and nats-auth.conf are never created here.
-GENERATED="postgres.txt rcon.txt velocity-forwarding.txt nats-body.txt postgres-mcp.txt postgres-glass.txt postgres-register.txt register-pepper.txt mcp-token-pepper.txt"
+GENERATED="postgres.txt rcon.txt velocity-forwarding.txt nats-body.txt postgres-mcp.txt postgres-glass.txt postgres-register.txt register-pepper.txt mcp-token-pepper.txt register-session-key.txt"
 set -eu
 . "$(dirname "$0")/common.sh"
 
