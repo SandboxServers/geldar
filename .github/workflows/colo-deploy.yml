@@ -204,7 +204,8 @@ jobs:
               return 1
             fi
             notes="$(api "$api_url/repos/$repo/check-runs/$job_id/annotations?per_page=100")" || return 1
-            jq -r '[.[] | select(.title == "release.env")][0].message // empty' <<<"$notes" >"$work/note.env"
+            # -j: no newline added after the message (it already ends with one); tr: drop CRs a Windows jq adds.
+            jq -j '[.[] | select(.title == "release.env")][0].message // empty' <<<"$notes" | tr -d '\r' >"$work/note.env"
             valid_manifest "$work/note.env" || return 1
             cat "$work/note.env" >"$out"
           }

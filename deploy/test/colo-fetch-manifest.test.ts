@@ -135,7 +135,7 @@ function run(blobFails: number): { status: number | null; out: string; manifest:
   );
   let manifest: string | null = null;
   try {
-    // A Windows jq.exe (local runs) ends lines with CRLF; the Linux jq in CI does not.
+    // The step strips CR itself; this normalisation is a second guard for a Windows jq.exe (local runs).
     manifest = readFileSync(outFile, 'utf8').replaceAll('\r\n', '\n');
   } catch {
     manifest = null;

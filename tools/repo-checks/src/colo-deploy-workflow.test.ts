@@ -15,7 +15,7 @@ type Job = {
   permissions?: Record<string, string>;
   'timeout-minutes'?: number;
   if?: string;
-  steps: { name?: string; uses?: string; run?: string }[];
+  steps: { name?: string; uses?: string; run?: string; 'timeout-minutes'?: number }[];
 };
 const workflow = parse(text) as {
   on: Record<string, unknown>;
@@ -52,8 +52,12 @@ describe('colo-deploy.yml deploy job', () => {
 
   it('has read-only token permissions and a timeout', () => {
     const job = workflow.jobs.deploy as Job;
-    expect(job.permissions).toEqual({ contents: 'read', actions: 'read' });
-    expect(job['timeout-minutes']).toBeGreaterThan(0);
+    // checks: read is read-only; the manifest step needs it to read the check-run annotation fallback.
+    // toEqual fails on any write permission or any other added permission.
+    expect(job.permissions).toEqual({ contents: 'read', actions: 'read', checks: 'read' });
+    expect(job['timeout-minutes']).toBe(30);
+    const download = job.steps.find((s) => s.name?.startsWith('download the release manifest'));
+    expect(download?.['timeout-minutes']).toBe(5);
   });
 
   it('checks out no repository code: it calls the entrypoint, which fetches main itself', () => {
