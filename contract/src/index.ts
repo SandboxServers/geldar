@@ -260,7 +260,7 @@ export {
   outcomeMessage,
   playerOutcomeText,
 } from './outcome-words.ts';
-export { planSubject, snapshotSubject } from './subjects.ts';
+export { planSubject, snapshotSubject, viewImageSubject } from './subjects.ts';
 
 /** Largest serialized `response_format.schema` of a job frame, in bytes (decision 0049: 64 KiB). */
 export const MAX_RESPONSE_FORMAT_BYTES = 65_536;
