@@ -62,6 +62,15 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # The runner has no GitHub CLI: the REST API is called with curl, and jq reads the reply.
+          # The token goes in the Authorization header only; it is never printed.
+          api() {
+            curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$REPO/$1"
+          }
           if [[ "$EVENT_NAME" == "workflow_run" ]]; then
             sha="$WORKFLOW_RUN_SHA"
             run_id="$WORKFLOW_RUN_ID"
@@ -70,21 +79,21 @@ jobs:
             plan_only="${INPUT_PLAN_ONLY:-false}"
             sha="$INPUT_SHA"
             if [[ -z "$sha" ]]; then
-              sha="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+              sha="$(api "commits/main" | jq -r '.sha')"
             fi
             if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
               echo "::error::not a full commit sha: $sha" >&2
               exit 1
             fi
-            # compare/<sha>...main: "ahead" means main is ahead of sha; "identical" means they are the same.
-            # Any other status ("behind", "diverged") means sha is not on main.
-            status="$(gh api "repos/$REPO/compare/$sha...main" --jq '.status')"
-            if [[ "$status" != "ahead" && "$status" != "identical" ]]; then
+            # compare/main...<sha>: "identical" means main is at sha; "behind" means sha is an ancestor of main.
+            # Any other status ("ahead", "diverged") means sha is not on main.
+            status="$(api "compare/main...$sha" | jq -r '.status')"
+            if [[ "$status" != "identical" && "$status" != "behind" ]]; then
               echo "::error::$sha is not on main (compare status: $status); refusing to deploy it" >&2
               exit 1
             fi
             # The images must exist before the node pulls them: the successful colo-images run for this commit.
-            run_id="$(gh api "repos/$REPO/actions/workflows/colo-images.yml/runs?head_sha=$sha&branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')"
+            run_id="$(api "actions/workflows/colo-images.yml/runs?head_sha=$sha&branch=main&status=success&per_page=1" | jq -r '.workflow_runs[0].id // empty')"
             if [[ -z "$run_id" ]]; then
               echo "::error::no successful colo-images run for $sha on main; the images must be published first" >&2
               exit 1

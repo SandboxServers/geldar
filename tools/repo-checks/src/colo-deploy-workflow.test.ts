@@ -63,6 +63,14 @@ describe('colo-deploy.yml deploy job', () => {
   });
 });
 
+describe('colo-deploy.yml commands', () => {
+  it('runs no gh command: the runner has no GitHub CLI, so the steps call the REST API with curl and jq', () => {
+    const ghCommand = /(^|[^\w.-])gh(\s|$)/m;
+    const runs = (workflow.jobs.deploy as Job).steps.map((step) => step.run ?? '');
+    expect(runs.filter((run) => ghCommand.test(run))).toEqual([]);
+  });
+});
+
 describe('colo-deploy.yml pins', () => {
   it('pins every action by full commit SHA', () => {
     expect(checkActionPins(WORKFLOW, text)).toEqual([]);
