@@ -111,6 +111,12 @@ export class FakeBody implements BodyGateway {
     return this.books.get(lifeId) ?? NO_BOOK;
   }
 
+  /** A fixed viewport text; a life whose Body is offline cannot read it. */
+  async view(lifeId: string): Promise<{ text: string } | { error: 'unavailable' }> {
+    this.requireOnline(lifeId);
+    return { text: 'Open ground to the north; a wall of stone three blocks east.' };
+  }
+
   private requireOnline(lifeId: string): void {
     if (this.offline.has(lifeId))
       throw new BodyUnavailable(`the Body of ${lifeId} does not answer`);

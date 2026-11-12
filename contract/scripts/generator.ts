@@ -102,7 +102,8 @@ function snakeCase(pascal: string): string {
 
 /**
  * Schema files whose tools are not in the generated tool list yet: their validators are still
- * generated, but no agent sees the tool until its wave PX packet lands (recall: PX-6, reach: PX-8b).
+ * generated, but no agent sees the tool until its wave PX packet lands (recall: PX-6, reach: PX-8b,
+ * view: the view-tool packet, lifted once the Body and threshold wiring is complete).
  */
 const NOT_YET_EXPOSED = new Set(['mcp-recall', 'mcp-reach']);
 

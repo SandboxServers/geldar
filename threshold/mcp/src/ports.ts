@@ -111,6 +111,11 @@ export interface BodyGateway {
   submitPlan(lifeId: string, plan: PlanMessage): Promise<PlanAck>;
   /** The carried written book, or `no_book`. */
   book(lifeId: string): Promise<BookReply>;
+  /** The Body's text viewport from where its body looks; `unavailable` when the Body cannot read it. */
+  view(
+    lifeId: string,
+    size: { cols?: number; rows?: number },
+  ): Promise<{ text: string } | { error: 'unavailable' }>;
 }
 
 /** The error a `BodyGateway` rejects with when its Body does not answer. */

@@ -4,6 +4,7 @@ import {
   planSubject,
   type Snapshot,
   snapshotSubject,
+  viewSubject,
   type WorldEvent,
 } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
@@ -81,10 +82,10 @@ describe('SnapshotRevision', () => {
 });
 
 describe('MindLinkServer snapshots', () => {
-  it('serves exactly the two subjects of its life', () => {
+  it('serves exactly the three subjects of its life', () => {
     const { transport } = rig();
     expect(transport.subjects.sort()).toEqual(
-      [snapshotSubject(SHARD, LIFE), planSubject(SHARD, LIFE)].sort(),
+      [snapshotSubject(SHARD, LIFE), planSubject(SHARD, LIFE), viewSubject(SHARD, LIFE)].sort(),
     );
   });
 

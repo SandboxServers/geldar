@@ -24,6 +24,7 @@ import { HurtReporter } from '../perception/hurt.ts';
 import { hurtWorldEvent, watchHurts } from '../perception/hurt-trigger.ts';
 import { createPerception } from '../perception/index.ts';
 import { watchSounds } from '../perception/sounds.ts';
+import { viewTextFromBot } from '../perception/view/view-from-bot.ts';
 import { buildSnapshot } from '../snapshot.ts';
 import { BotEars } from '../voice/ears.ts';
 import { SpeechEvents } from '../voice/speech-event.ts';

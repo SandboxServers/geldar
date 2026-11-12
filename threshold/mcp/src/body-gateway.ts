@@ -4,12 +4,25 @@ import {
   type RequestTransport,
 } from '@geldar/animus/src/link/nats-body-link.ts';
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
-import { bookSubject, validateBookReply } from '@geldar/contract';
+import { bookSubject, validateBookReply, validateViewResult, viewSubject } from '@geldar/contract';
 import type { BodyGateway } from './ports.ts';
 import { BodyUnavailable } from './ports.ts';
+import type { ViewRead } from './tools/view.ts';
 
 /** How long a `book` request waits for the Body's reply (the packet's 5 s). */
 export const BOOK_TIMEOUT_MS = 5_000;
+
+/** How long a `view` request waits for the Body's reply (the packet's 5 s). */
+const VIEW_TIMEOUT_MS = 5_000;
+
+/** True for the Body's own `{"error":"unavailable"}` reply to a view request. */
+function isUnavailable(reply: unknown): boolean {
+  return (
+    typeof reply === 'object' &&
+    reply !== null &&
+    (reply as { error?: unknown }).error === 'unavailable'
+  );
+}
 
 /** Why a snapshot is asked for; the Body logs it, so it names the caller, not the world. */
 const SNAPSHOT_REASON = 'mcp_request';
@@ -61,6 +74,23 @@ export class NatsBodyGateway implements BodyGateway {
       const verdict = validateBookReply(JSON.parse(text) as unknown);
       if (!verdict.ok) throw new Error('book reply failed validation');
       return verdict.value;
+    });
+  }
+
+  /** The Body's text viewport; the Body's own `unavailable` reply comes back as data, the rest as failure. */
+  view(lifeId: string, size: { cols?: number; rows?: number }): Promise<ViewRead> {
+    return this.guard(lifeId, 'view', async (): Promise<ViewRead> => {
+      const body = JSON.stringify(size);
+      const text = await this.transport.request(
+        viewSubject(this.shard, lifeId),
+        body,
+        VIEW_TIMEOUT_MS,
+      );
+      const reply = JSON.parse(text) as unknown;
+      if (isUnavailable(reply)) return { error: 'unavailable' };
+      const verdict = validateViewResult(reply);
+      if (!verdict.ok) throw new Error('view reply failed validation');
+      return { text: verdict.value.text };
     });
   }
 

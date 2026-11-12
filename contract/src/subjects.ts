@@ -45,6 +45,16 @@ export function bookSubject(shard: string, lifeId: string): string {
   return `geldar.${shard}.body.${lifeId}.book`;
 }
 
+/**
+ * Where the Body listens for a `view` request (the view-tool packet): `geldar.<shard>.body.<life_id>.view`.
+ * The request is a ViewInput (mcp-view.schema.json); the reply is a ViewResult or `{"error":"unavailable"}`.
+ * Five tokens, so it is outside the sink's `geldar.*.*` filter. Throws on a shard or life id the contract rejects.
+ */
+export function viewSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.body.${lifeId}.view`;
+}
+
 /** The KV bucket of presence records, one key per life id (`PresenceRecord`, WM-01 sovereign). */
 export const PRESENCE_BUCKET = 'geldar-presence';
 

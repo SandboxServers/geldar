@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-view.schema.json",
+  "title": "McpView",
+  "description": "The view tool (wave PX, view-tool packet): a free text picture of what the player's viewport shows, from where the body looks.",
+  "$defs": {
+    "ViewInput": {
+      "type": "object",
+      "description": "Free. The text viewport: what fills the field of view the body faces, ray by ray, as a short summary and a small grid. No arguments, or optional cols and rows (the grid size, clamped by the Body to a small range).",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1, "maximum": 41 },
+        "rows": { "type": "integer", "minimum": 1, "maximum": 15 }
+      }
+    },
+    "ViewResult": {
+      "type": "object",
+      "description": "The viewport as text: a summary, the bands, the enclosed or open read, and the grid with its legend. Only what line of sight reveals.",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 4000 }
+      }
+    }
+  }
+}
