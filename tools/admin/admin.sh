@@ -10,7 +10,7 @@ usage() {
   echo "usage: admin <migrate|owner-add|player-add|token-mint|token-revoke|players-status> [args...]" >&2
   echo "  migrate [--dry-run] | migrate --set-role-password geldar_mcp --password-file <file>" >&2
   echo "  owner-add <id> [--cap N] | player-add <id> --owner <o> --life <l> --name <n> --harness <h>" >&2
-  echo "  token-mint <player> --out <file> | token-revoke <tk_id> | players-status (lists tokens, no values)" >&2
+  echo "  token-mint <player> --out <file> | token-revoke <tk_id> | skin-import <player-id> <json under /run/skins> | players-status (lists tokens, no values)" >&2
   exit 2
 }
 
@@ -19,7 +19,7 @@ cmd=$1
 shift
 
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body) ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import) ;;
   *) usage ;;
 esac
 
@@ -39,6 +39,7 @@ case $cmd in
   player-add) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" player add "$@" ;;
   token-mint) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token mint "$@" ;;
   token-revoke) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token revoke "$@" ;;
+  skin-import) exec node "$ROOT/tools/players-cli/src/cli.ts" skin import "$@" ;;
   ensure-skins-bucket) exec node "$ROOT/golem/src/ensure-skins-bucket.ts" "$@" ;;
   whitelist-house-body) exec node "$ROOT/golem/src/whitelist-house-body.ts" "$@" ;;
   players-status) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token list "$@" ;;

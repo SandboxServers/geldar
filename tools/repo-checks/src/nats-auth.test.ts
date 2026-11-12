@@ -62,6 +62,7 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
         kv('geldar-life-registry'),
         kv('geldar-checkpoints'),
         kv('geldar-body-generation'),
+        kv('geldar-skins'),
       ],
       sub: [`geldar.${s}.body.>`, '_INBOX.>'],
     },
