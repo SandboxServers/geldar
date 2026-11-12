@@ -1,5 +1,11 @@
-import type { Bot } from 'mineflayer';
+import type { Bot, Furnace } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import {
+  type ContainerStack,
+  type FurnaceSlots,
+  type OpenedContents,
+  RememberedContainers,
+} from '../perception/remembered-containers.ts';
 import type { Block, Container, Position } from './bot-types.ts';
 import { transferItems } from './container-transfer.ts';
 import { outcomeOfMove } from './move-outcome.ts';
@@ -19,11 +25,15 @@ const LATE_WINDOW_WAIT_MS = 3 * OPEN_WAIT_MS;
 const SETTLE_WAIT_MS = 5_000;
 /** The late-window cleanup of the last open per bot, so the next open can remove a stale one. */
 const lateWindowDrop = new WeakMap<Bot, () => void>();
+/** The containers the Body has opened, per bot. A bot that ends takes its store with it. */
+const remembered = new WeakMap<Bot, RememberedContainers>();
 /**
- * The window types a late container window can have: the 9-wide chest, trapped chest and barrel
- * types, which are `generic_<cols>x<rows>`. A crafting window is not one of them.
+ * The window types a late window can have: the 9-wide chest, trapped chest and barrel types,
+ * which are `generic_<cols>x<rows>`, and the furnace. A crafting window is not one of them.
  */
-const CONTAINER_WINDOW = /^minecraft:generic_\d+x\d+$/;
+const CONTAINER_WINDOW = /^minecraft:(generic_\d+x\d+|furnace)$/;
+/** The window type mineflayer gives a furnace. */
+const FURNACE_WINDOW = 'minecraft:furnace';
 /**
  * The library's message when the bot's inventory cannot take the withdrawn stacks: "Bot inventory
  * is full" from the pre-check, "destination full" when a transfer stops part-way.
@@ -33,14 +43,35 @@ const INVENTORY_FULL = /full/i;
 const CONTAINER_FULL = /full/i;
 
 type Window = NonNullable<Bot['currentWindow']>;
+/** A window `open` can return: a chest-like container or a furnace. */
+type Opening = Container | Furnace;
 
-/** What the open race produced: the open container, or the outcome that ended it. */
-type Opened = { container: Container } | { outcome: ActionOutcome };
+/** What the open race produced: the open window, or the outcome that ended it. */
+type Opened<W> = { window: W } | { outcome: ActionOutcome };
 
-/** The block at a position when it is a container, else null. */
-function containerAt(bot: Bot, at: Position): Block | null {
+/** A window the action can open: the blocks it accepts and the mineflayer call that opens each. */
+interface Opener<W> {
+  accepts(name: string): boolean;
+  open(bot: Bot, block: Block): Promise<W>;
+}
+
+/** The container blocks only: `deposit` and `withdraw` take these. */
+const CONTAINER_OPENER: Opener<Container> = {
+  accepts: (name) => CONTAINER_BLOCKS.has(name),
+  open: (bot, block) => bot.openContainer(block),
+};
+
+/** `open` takes a container or a furnace; a furnace is opened with mineflayer's own call. */
+const ANY_OPENER: Opener<Opening> = {
+  accepts: (name) => CONTAINER_BLOCKS.has(name) || name === 'furnace',
+  open: (bot, block) =>
+    block.name === 'furnace' ? bot.openFurnace(block) : bot.openContainer(block),
+};
+
+/** The block at a position when the opener accepts it, else null. */
+function blockFor(bot: Bot, at: Position, accepts: (name: string) => boolean): Block | null {
   const block = bot.blockAt(new Vec3(at.x, at.y, at.z));
-  return block && CONTAINER_BLOCKS.has(block.name) ? block : null;
+  return block && accepts(block.name) ? block : null;
 }
 
 /**
@@ -81,10 +112,10 @@ async function settle(ctx: ActionContext, container: Container): Promise<boolean
   }
 }
 
-/** The container's stacks summed per item name. */
-function contentsOf(container: Container): Record<string, number> {
+/** The window's stacks summed per item name. */
+function contentsOf(window: Opening): Record<string, number> {
   const totals = new Map<string, number>();
-  for (const item of container.containerItems()) {
+  for (const item of window.containerItems()) {
     totals.set(item.name, (totals.get(item.name) ?? 0) + item.count);
   }
   return Object.fromEntries(totals);
@@ -96,22 +127,58 @@ function itemIdOf(bot: Bot, name: string): number | null {
   return Object.hasOwn(items, name) ? (items[name]?.id ?? null) : null;
 }
 
+/** Whether an open window is a furnace. */
+function isFurnace(window: Opening): window is Furnace {
+  return window.type === FURNACE_WINDOW;
+}
+
+/** One furnace slot as a stack, or null when the slot is empty. */
+function stackAt(slot: { name: string; count: number } | null | undefined): ContainerStack | null {
+  return slot ? { item: slot.name, count: slot.count } : null;
+}
+
+/**
+ * A furnace's three slots and its progress as a whole percent. Mineflayer gives progress as a
+ * fraction, and holds null until the server sends the first progress value.
+ */
+function furnaceSlots(furnace: Furnace): FurnaceSlots {
+  const fraction = typeof furnace.progress === 'number' ? furnace.progress : 0;
+  const clamped = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
+  return {
+    input: stackAt(furnace.slots[0]),
+    fuel: stackAt(furnace.slots[1]),
+    output: stackAt(furnace.slots[2]),
+    progress: Math.round(clamped * 100),
+  };
+}
+
+/** The store of the containers this bot has opened: what `recall` reads. */
+export function rememberedContainers(bot: Bot): RememberedContainers {
+  let store = remembered.get(bot);
+  if (!store) {
+    store = new RememberedContainers();
+    remembered.set(bot, store);
+  }
+  return store;
+}
+
 /**
  * Walks to the container at `at` when it is out of reach, opens it, runs `fn` and closes it.
  * The open is raced against a timer and the signal, because `openContainer` waits for
  * `windowOpen` with no timeout. A window that opens after the race is lost is closed at once.
  * The close runs in `finally`, so an abort or a throw never leaves a window open.
  */
-async function withContainer(
+async function withContainer<W extends Opening>(
   ctx: ActionContext,
   at: Position,
-  fn: (container: Container) => Promise<ActionOutcome>,
+  opener: Opener<W>,
+  fn: (window: W) => Promise<ActionOutcome>,
 ): Promise<ActionOutcome> {
   const { bot, signal, timeScale } = ctx;
   // An earlier open that lost its race must not close this action's window.
   lateWindowDrop.get(bot)?.();
   if (signal.aborted) return cancelled();
-  const block = containerAt(bot, at);
+  const block = blockFor(bot, at, opener.accepts);
   if (!block) return failed('not_found', 'no container at that position');
   const center = new Vec3(at.x + 0.5, at.y + 0.5, at.z + 0.5);
   if (bot.entity.position.distanceTo(center) > REACH) {
@@ -144,9 +211,9 @@ async function withContainer(
     if (lateWindowDrop.get(bot) === dropLateWindow) lateWindowDrop.delete(bot);
   };
   lateWindowDrop.set(bot, dropLateWindow);
-  const attempt: Promise<Opened> = bot.openContainer(block).then(
-    (container): Opened => ({ container }),
-    (error: unknown): Opened => ({
+  const attempt: Promise<Opened<W>> = opener.open(bot, block).then(
+    (window): Opened<W> => ({ window }),
+    (error: unknown): Opened<W> => ({
       outcome: failed('blocked', `container did not open: ${errorText(error)}`),
     }),
   );
@@ -156,7 +223,7 @@ async function withContainer(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
-  const lostRace = new Promise<Opened>((resolve) => {
+  const lostRace = new Promise<Opened<W>>((resolve) => {
     timer = setTimeout(() => {
       lost = true;
       resolve({ outcome: failed('blocked', 'container did not open') });
@@ -168,7 +235,7 @@ async function withContainer(
     signal.addEventListener('abort', onAbort, { once: true });
   });
 
-  let opened: Opened;
+  let opened: Opened<W>;
   try {
     opened = await Promise.race([attempt, lostRace]);
   } finally {
@@ -184,11 +251,11 @@ async function withContainer(
   if ('outcome' in opened) return opened.outcome;
 
   try {
-    return await fn(opened.container);
+    return await fn(opened.window);
   } finally {
     // A close error must not replace the outcome that `fn` produced.
     try {
-      await opened.container.close();
+      await opened.window.close();
     } catch (error: unknown) {
       console.warn(`container did not close: ${errorText(error)}`);
     }
@@ -250,15 +317,21 @@ async function deposit(
   return completed({ moved, container: contentsOf(container) });
 }
 
-/** `open`: opens the container and reports what it holds. */
+/**
+ * `open`: opens the container or furnace and reports what it holds. A furnace also reports its
+ * input, fuel, output and progress. A completed open is remembered, so `recall` can read it later;
+ * an open that fails, is cancelled or loses its race remembers nothing.
+ */
 export const openAction: ActionHandler<'open'> = {
   kind: 'open',
   timeoutMs: 30_000,
   async run(ctx, action) {
-    return withContainer(ctx, action.at, async (container) => {
-      const contents = contentsOf(container);
-      const list = Object.entries(contents).map(([item, count]) => ({ item, count }));
-      return completed({ contents: list });
+    return withContainer(ctx, action.at, ANY_OPENER, async (window) => {
+      const contents = Object.entries(contentsOf(window)).map(([item, count]) => ({ item, count }));
+      const stored: OpenedContents = { contents };
+      if (isFurnace(window)) stored.furnace = furnaceSlots(window);
+      rememberedContainers(ctx.bot).record(action.at, stored, Date.now());
+      return completed({ ...stored });
     });
   },
 };
@@ -270,7 +343,7 @@ export const depositAction: ActionHandler<'deposit'> = {
   async run(ctx, action) {
     const itemId = itemIdOf(ctx.bot, action.item);
     if (itemId === null) return failed('invalid_args', 'unknown item');
-    return withContainer(ctx, action.at, (container) =>
+    return withContainer(ctx, action.at, CONTAINER_OPENER, (container) =>
       deposit(ctx, container, itemId, action.count, action.item),
     );
   },
@@ -283,7 +356,7 @@ export const withdrawAction: ActionHandler<'withdraw'> = {
   async run(ctx, action) {
     const itemId = itemIdOf(ctx.bot, action.item);
     if (itemId === null) return failed('invalid_args', 'unknown item');
-    return withContainer(ctx, action.at, (container) =>
+    return withContainer(ctx, action.at, CONTAINER_OPENER, (container) =>
       withdraw(ctx, container, itemId, action.count, action.item),
     );
   },
