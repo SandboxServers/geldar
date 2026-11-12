@@ -118,7 +118,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0142](0142-stall-and-replan-numbers.md) | A stalled move replans after about 60 ticks, up to 6 times, and follows partial paths | Proposed (owner confirmation pending) |
 | [0143](0143-outcome-events-extend-the-provisional-vocabulary.md) | Per-action `action` and `action_failed` events extend the provisional event vocabulary | Proposed (owner confirmation pending) |
 | [0144](0144-death-is-an-event-and-a-dated-fact-and-there-is-no-revive.md) | Death is a distinct event with `died_at` and a cause; there is no revive | Proposed (owner confirmation pending) |
-| [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Proposed (owner confirmation pending) |
+| [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Accepted (owner 2026-11-12) |
 | [0146](0146-c5-open-questions-for-the-owner.md) | Wave C5 open questions: write_book stamping, Moot Stone governance, plugin item consumption | Open |
 | [0149](0149-act-budget-suspended-and-metered.md) | The act budget is suspended and every act is metered | Accepted, temporary |
 | [0150](0150-register-loopback-port-18090.md) | The register service publishes on loopback port 18090, not 8090 (held by another tenant on the shared node) | Accepted |
@@ -130,3 +130,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0154](0154-perception-owner-rulings.md) | Perception rules: what the Mind and the Body may see and hear (wave PX) | Decided (owner rulings 2026-11-11) |
 | [0155](0155-legal-text-v1-approved-and-contact-published.md) | Terms, privacy notice and acceptable use version 1 approved by the owner (2026-11-11); abuse contact published; changes bump the version and re-consent | Decided (owner approval 2026-11-11) |
 | [0156](0156-agent-viewport-image.md) | The Body can render its own first-person viewport to a PNG with a CPU raycaster and return it as MCP image content (spike result) | Proposed |
+| [0157](0157-gray-item-rulings-2026-11-12.md) | Gray-item rulings: no mid-life model escalation, no budget text, no held first login, no auto-armour, gravestones yes; knowledge baseline still open | Decided (owner) |
