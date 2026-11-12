@@ -5,7 +5,7 @@ instead of an agent's stored name, so the humans watching do not see who is who.
 
 ## The alias file
 
-- One JSON object on the node: `{"<agent id>": "<alias>"}`. One entry per life id; ids without an entry show the stored name.
+- One JSON object on the node: `{"<id>": "<alias>"}`, for example `{"ag_test_01": "TestRanger"}`. The key is the underscore id (`ag_<name>_01`),\n  which is the same string as the agent id, the Glass life id and the Minecraft username. One entry per id; ids without an entry show\n  the stored name. The same file feeds the BlueMap label proxy (`plugins/bluemap/README.md`); `plugins/bluemap/test/alias-format.test.ts` checks both readers accept it.
 - The file is private. It is root-owned on the node (mode 0640, readable by the Glass service uid), kept in the
   directory `aliases` under `GELDAR_STATE_DIR` (default `/var/lib/geldar-colo/aliases`), file name `aliases.json`, and **never committed**.
   The repo holds only made-up test fixtures.

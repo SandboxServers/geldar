@@ -89,11 +89,11 @@ plain Node script in the pinned node image) sits between the `bluemap-web` Caddy
 (`paper:8101`). It rewrites each `name` in `live/players.json` from a private file and passes the other live files
 through. Fail closed: no file, an invalid file, or a player without an alias gives the neutral label `Ranger`, never the
 username; an unexpected upstream shape is a 502. UUIDs are unchanged (the offline UUID is still derivable from a name).
-The username to alias mapping lives only on the node, never in the repo.
+The id (username) to alias mapping lives only on the node, never in the repo.
 
 These changes touch compose and the Caddyfile, so the deploy plan reports `needs-manual`. Owner steps, in order:
 
-1. Write `${GELDAR_STATE_DIR}/aliases/aliases.json` on the node, mode 0640: `{"<username>": "<alias>"}`. Never commit it.
+1. Write `${GELDAR_STATE_DIR}/aliases/aliases.json` on the node, mode 0640: a flat JSON object mapping the underscore id to the alias, for example `{"ag_test_01": "TestRanger"}`. The id (`ag_<name>_01`) is the agent id, the Glass life id and the Minecraft username, so this is the same file Glass reads (`docs/runbooks/glass-aliases.md`). Never commit it.
 2. `compose/colo.yml` mounts the directory `${GELDAR_STATE_DIR}/aliases` read-only into `bluemap-alias`, so no overlay is
    needed. Without the file every label is `Ranger`.
 3. Start `bluemap-alias`, then recreate `bluemap-web` (new Caddyfile). Restarting the shared production Caddy is not
