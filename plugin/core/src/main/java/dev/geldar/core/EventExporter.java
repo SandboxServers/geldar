@@ -1,11 +1,15 @@
 package dev.geldar.core;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -74,15 +78,16 @@ public final class EventExporter implements Listener {
         emit("damage", player.getName(), p);
     }
 
-    /** Exports a player death with the last damage cause. */
+    /** Exports a player death: the last damage cause, the place and dimension, each dropped stack, the respawn point. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
         JsonObject p = new JsonObject();
         EntityDamageEvent last = player.getLastDamageCause();
         p.addProperty("cause", last == null ? "UNKNOWN" : last.getCause().name());
+        org.bukkit.Location at = null;
         try {
-            org.bukkit.Location at = player.getLocation();
+            at = player.getLocation();
             if (at != null) {
                 p.addProperty("x", at.getBlockX());
                 p.addProperty("y", at.getBlockY());
@@ -91,13 +96,12 @@ public final class EventExporter implements Listener {
         } catch (RuntimeException e) {
             // Coordinates are optional; a listener must never drop the death event.
         }
-        int dropped = 0;
-        for (ItemStack stack : event.getDrops()) {
-            if (stack != null) {
-                dropped += stack.getAmount();
-            }
+        try {
+            p.addProperty("dimension", dimension(player));
+        } catch (RuntimeException e) {
+            // The dimension is optional, as the coordinates are: the death event is never dropped.
         }
-        p.addProperty("drops", dropped);
+        addDrops(p, dropsOf(event.getDrops()), at);
         try {
             org.bukkit.Location spawn = player.getBedSpawnLocation();
             if (spawn == null) {
@@ -110,6 +114,60 @@ public final class EventExporter implements Listener {
             // The respawn point is optional, as the death coordinates are: the death event is never dropped.
         }
         emit("death", player.getName(), p);
+    }
+
+    /** The dimension in the contract's words; a missing or custom world reads as {@code other}. */
+    static String dimension(Player player) {
+        World world = player.getWorld();
+        World.Environment env = world == null ? null : world.getEnvironment();
+        if (env == null) {
+            return "other";
+        }
+        return switch (env) {
+            case NORMAL -> "overworld";
+            case NETHER -> "nether";
+            case THE_END -> "end";
+            default -> "other";
+        };
+    }
+
+    /** One dropped stack: its item name (the key without the namespace) and its count. */
+    record Drop(String item, int count) {}
+
+    /** The stacks that dropped, as names and counts; empty stacks are skipped. Touches Bukkit's Material. */
+    static List<Drop> dropsOf(List<ItemStack> stacks) {
+        List<Drop> out = new ArrayList<>();
+        for (ItemStack stack : stacks) {
+            if (stack != null && stack.getAmount() > 0) {
+                out.add(new Drop(stack.getType().getKey().getKey(), stack.getAmount()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * One {@code drop_items} record per dropped stack, each with the death block where the stack falls; {@code drops}
+     * is the total count. Nothing is added when no item dropped.
+     */
+    static void addDrops(JsonObject p, List<Drop> drops, org.bukkit.Location at) {
+        JsonArray items = new JsonArray();
+        int total = 0;
+        for (Drop drop : drops) {
+            total += drop.count();
+            JsonObject d = new JsonObject();
+            d.addProperty("item", drop.item());
+            d.addProperty("count", drop.count());
+            if (at != null) {
+                d.addProperty("x", at.getBlockX());
+                d.addProperty("y", at.getBlockY());
+                d.addProperty("z", at.getBlockZ());
+            }
+            items.add(d);
+        }
+        if (total > 0) {
+            p.addProperty("drops", total);
+            p.add("drop_items", items);
+        }
     }
 
     /** Exports a player getting into a bed; refused attempts (monsters near, wrong time) are not sleep. */
