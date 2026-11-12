@@ -14,7 +14,11 @@ const REFLEX_TRIGGERS: Readonly<Record<string, string>> = {
   hazard_escape: 'you were in a hazard, you got out',
   unstick: 'you were stuck, you tried to get free',
   blocked_path: 'your path was blocked, you looked for a way round',
+  dark_shelter: 'it was dark and you were exposed, you took cover',
 };
+
+/** The reflex names that have a line; a test checks it covers every reflex the Body can fire. */
+export const REFLEX_LINE_NAMES: readonly string[] = Object.keys(REFLEX_TRIGGERS);
 
 /**
  * The fixed reflex line: the reflex's name, what set it off and, when it did not finish, that.
