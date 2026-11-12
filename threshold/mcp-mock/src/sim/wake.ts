@@ -27,6 +27,8 @@ export interface WakeEvent {
     | 'proposal'
     | 'day_night'
     | 'intent_finished'
+    | 'action'
+    | 'action_failed'
     | 'reflex'
     | 'plan_result'
     | 'wake';
@@ -174,6 +176,10 @@ export function evaluateWake(i: WakeInput): WakeDecision {
 
   const survivors: Candidate[] = [];
   for (const e of i.events) {
+    if (e.kind === 'action' || e.kind === 'action_failed') {
+      // Per-action outcomes are news for the log, never a reason to wake (C5-02).
+      continue;
+    }
     if (e.kind === 'reflex') {
       note(e, 'reflex');
     } else if (e.kind === 'speech' && e.addressed !== true) {

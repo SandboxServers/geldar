@@ -1,4 +1,4 @@
-import type { ActionRecord, Receipt, Snapshot } from '@geldar/contract';
+import type { ActionOutcomePayload, ActionRecord, Receipt, Snapshot } from '@geldar/contract';
 import type { IntentChange, RecordSink, ReflexFiredRecord } from '../body/records.ts';
 import type { WakeRequest } from '../body/wake.ts';
 
@@ -78,6 +78,10 @@ export class RecentEvents implements RecordSink {
       tick: request.tick,
       ...detailOf(request.detail),
     });
+  }
+
+  actionOutcome(payload: ActionOutcomePayload, tick: number): void {
+    this.inner.actionOutcome?.(payload, tick);
   }
 
   /**

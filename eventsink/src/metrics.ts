@@ -165,6 +165,7 @@ export const EVENT_TYPE_LABELS = [
   'server_tps',
   'intent',
   'receipt',
+  'action_outcome',
   'reflex_fired',
   'wake',
   'dlq',

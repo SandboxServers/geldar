@@ -347,6 +347,7 @@ export function countingSink(inner: RecordSink, metrics: GolemMetrics): RecordSi
       metrics.wake(request.reason);
       inner.wake(request);
     },
+    actionOutcome: (payload, tick) => inner.actionOutcome?.(payload, tick),
   };
 }
 

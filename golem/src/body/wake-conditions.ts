@@ -1,3 +1,4 @@
+import type { ActionOutcomePayload } from '@geldar/contract';
 import type { RecordSink, ReflexFiredRecord } from './records.ts';
 import type { WakeReason, WakeRequest } from './wake.ts';
 
@@ -103,5 +104,9 @@ export class WakeTap implements RecordSink {
   wake(request: WakeRequest): void {
     this.inner.wake(request);
     for (const listener of [...this.wakeListeners]) listener(request);
+  }
+
+  actionOutcome(payload: ActionOutcomePayload, tick: number): void {
+    this.inner.actionOutcome?.(payload, tick);
   }
 }

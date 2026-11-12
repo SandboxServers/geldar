@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/action-outcome-event.schema.json",
+  "title": "ActionOutcomePayload",
+  "description": "Payload of a WorldEvent of type `action_outcome` (C5-02 outcome events, Proposed; provisional vocabulary like decisions 0033 and 0069): one small event per action the Body finished, success or failure, in the order they finished. The type is not `action` (that is the durable ActionRecord) nor `action_failed` (that is a wake reason): ok=true is the player's `action` entry, ok=false its `action_failed` entry. Fixed text only: message and why are built from the verb and reason code with fixed templates (contract/src/outcome-words.ts) and never quote world or agent text. A batch of at most 6 actions emits at most 6 of these, plus at most one for a failed intent. Events only, no table. source_event_id derives from (life, tick, verb, index, ok).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verb", "index", "ok", "message"],
+  "properties": {
+    "verb": {
+      "description": "The action verb (`do`) or, for an intent, its program name.",
+      "type": "string",
+      "pattern": "^[a-z][a-zA-Z0-9_]{0,63}$"
+    },
+    "index": {
+      "description": "Position in the batch (0 to 5); 0 for an intent.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "ok": { "type": "boolean" },
+    "reason": {
+      "description": "The action's failure reason code. Present only when ok is false.",
+      "type": "string",
+      "enum": [
+        "invalid_args",
+        "timeout",
+        "blocked",
+        "not_found",
+        "out_of_reach",
+        "missing_materials",
+        "missing_station",
+        "not_possible",
+        "interrupted",
+        "unsupported",
+        "internal"
+      ]
+    },
+    "message": {
+      "description": "Short fixed text, for example 'Your mine failed: the way was blocked.'",
+      "type": "string",
+      "maxLength": 160
+    },
+    "intent": {
+      "description": "True when the event is for an intent (a program), not an immediate action.",
+      "type": "boolean"
+    },
+    "why": {
+      "description": "For a failed intent: the plain-words reason, a fixed template keyed by program and reason.",
+      "type": "string",
+      "maxLength": 200
+    }
+  }
+}
