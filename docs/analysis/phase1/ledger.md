@@ -94,6 +94,26 @@ Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md). Review: [wo
 | C5-09 | `propose` and `vote`, social laws only | C5c | H | C5-08 | BlockedDecision (0146 item 2) | 0146 | Y |
 | C5-10 | `offer` and the Shrine (plugin consumes items) | C5c | H | C5-09, C4-05 | BlockedDecision (0146 item 3, owner approval) | 0146 | Y |
 
+## Wave PX: perception for body and mind
+
+Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md). Decision: [0154](../../decisions/0154-perception-owner-rulings.md) (owner rulings, Decided). Statuses: Ready, BlockedDecision, Writing. Each card's branch is `phase1/px-<id>-<slug>`.
+
+| id | title | wave | lane | depends | status | decision numbers | owner-blocked? |
+|---|---|---|---|---|---|---|---|
+| PX-0 | Death fields: per-life counter, location, drops, respawn point (C6-DEATH) | PX | A | C6-BODY-EVENTS, C5-03 | Ready after deps | 0144 | N |
+| PX-1 | Hurt event with source and bearing | PX | A | C6-BODY-EVENTS, C5-00 | Ready after deps | 0154 | N [live: pending] |
+| PX-2a | Entity coordinates and item names | PX | A | none | Ready | 0154 | N |
+| PX-2b | Threat reading and sight for reflexes | PX | B | PX-2a | Ready after deps | 0154 | N |
+| PX-3a | Sun phase, ground below, trapped state | PX | B | PX-2a | Ready | 0154 | N |
+| PX-3b | Light, health trend, regeneration rule | PX | B | PX-3a | Ready | 0154 | N [threshold checked in card] |
+| PX-3c | Armour, status flags, air, tool wear | PX | B | PX-3b | Ready | 0154 | N |
+| PX-4 | Heard sounds as compass and band | PX | C | PX-1, PX-2b | Ready after deps | 0154, 0143 | N |
+| PX-5 | Hazard list and line of sight for block counts | PX | C | PX-3c | Ready | 0154 | N |
+| PX-6 | Furnace state, remembered containers, `recall` | PX | C | PX-3c | Ready | 0154 | N |
+| PX-7 | Reflex use: hiss, arrows, dark (body only) | PX | D | PX-1, PX-4 | Ready after deps | 0154 | N |
+| PX-8a | `reach` dry run in the Body | PX | D | PX-2a, C5-01 | Ready after deps | 0154 | N |
+| PX-8b | `reach` tool, free of credits | PX | D | PX-8a | Ready after deps | 0154 | N |
+
 ## Wave C7: User management, bodies as a service, terms before sign-up
 
 Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md). Decisions: [0151](../../decisions/0151-bodies-run-only-in-the-colo.md), [0152](../../decisions/0152-programmatic-body-management-for-owners.md), [0153](../../decisions/0153-terms-consent-and-deletion-before-sign-up.md) (Decided, owner rulings 2026-11-11). Statuses: Ready, BlockedDecision, Writing.
