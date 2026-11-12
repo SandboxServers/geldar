@@ -1,0 +1,29 @@
+{
+  "exemptions": [
+    {
+      "path": "sql/test/check-schema.sql",
+      "hardCap": 1200,
+      "reason": "one ordered schema ledger: a single RAISE EXCEPTION script over every table and rule in spec Appendix D"
+    },
+    {
+      "path": "compose/colo.yml",
+      "hardCap": 900,
+      "reason": "the production Colo compose file for the whole shared-node stack, standalone by design (no overlay), so each service lives in one file"
+    },
+    {
+      "path": "tools/repo-checks/src/loopback-ports.test.ts",
+      "hardCap": 900,
+      "reason": "table-driven pin lists: one case per compose port, bypass and label rule"
+    },
+    {
+      "path": "tools/repo-checks/src/colo-services.test.ts",
+      "hardCap": 900,
+      "reason": "table-driven pin lists: one describe per Colo service and its caps, uid and ports"
+    },
+    {
+      "path": "tools/adam-run/src/adapters.test.ts",
+      "hardCap": 900,
+      "reason": "one describe per adapter surface (start, sampler, flags, run-folder store, SQL reads) over one module"
+    }
+  ]
+}

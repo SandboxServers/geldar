@@ -9,6 +9,7 @@ import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
 import { checkIntegrationFloor, countIntegrationFiles } from './integration-floor.ts';
 import { findIpLiterals, parseIpAllowlist } from './ip-literals.ts';
+import { parseLineCapExemptions } from './line-cap-exemptions.ts';
 import { findPublicPorts, isComposeFile } from './loopback-ports.ts';
 import { findMcpTokens } from './mcp-token.ts';
 import { checkPins } from './pin-rules.ts';
@@ -24,6 +25,7 @@ const RELEASE_DATES = 'tools/repo-checks/src/release-dates.json';
 const FIRST_PARTY_IMAGES = 'tools/repo-checks/src/first-party-images.json';
 const INTEGRATION_FLOOR = 'tools/repo-checks/src/integration-floor.json';
 const IP_ALLOWLIST = 'tools/repo-checks/src/ip-literal-allowlist.json';
+const LINE_CAP_EXEMPTIONS = 'tools/repo-checks/src/line-cap-exemptions.json';
 
 /** What the gate reads from a repository. Paths are relative to the repo root. */
 export interface RepoPort {
@@ -64,8 +66,25 @@ export function runRepoChecks(port: RepoPort, now: Date): RepoChecksResult {
   const untracked = readFiles(untrackedPaths);
   const all = [...tracked, ...untracked];
 
-  for (const finding of checkFileCaps(all)) {
-    const cap = finding.level === 'hard' ? HARD_CAP : SOFT_CAP;
+  /** Reasoned exemptions from the line caps; a defective list fails the gate. */
+  const exemptions = parseLineCapExemptions(
+    port.readText(LINE_CAP_EXEMPTIONS),
+    LINE_CAP_EXEMPTIONS,
+    HARD_CAP,
+  );
+  for (const problem of exemptions.problems) {
+    log(`error: ${problem}`);
+    failed = true;
+  }
+  for (const finding of checkFileCaps(all, exemptions.exemptions)) {
+    const { exemption } = finding;
+    if (finding.level === 'info' && exemption) {
+      log(
+        `info: ${finding.path} has ${finding.lines} lines, exempt from the line cap (cap ${exemption.hardCap}): ${exemption.reason}`,
+      );
+      continue;
+    }
+    const cap = exemption?.hardCap ?? (finding.level === 'hard' ? HARD_CAP : SOFT_CAP);
     const tag = finding.level === 'hard' ? 'error' : 'warning';
     log(`${tag}: ${finding.path} has ${finding.lines} lines (cap ${cap})`);
     if (finding.level === 'hard') failed = true;
