@@ -44,24 +44,30 @@ function wallHeight(bot: Bot, cell: Vec3): number {
 const open = (block: Block | null): boolean =>
   block !== null && block.boundingBox === 'empty' && block.name !== 'lava';
 
-/** A neighbour cell the bot could stand in: open at feet and head, with solid ground under the feet. */
-function standable(bot: Bot, cell: Vec3): boolean {
+/**
+ * A neighbour cell the bot can jump onto: solid at feet level with two free cells above it. This is
+ * the jump-up half of `nearestLedge` (escape-ladder.ts). A floor one block lower is not a way up.
+ */
+function jumpLedge(bot: Bot, cell: Vec3): boolean {
+  const above = bot.blockAt(cell.offset(0, 1, 0));
   return (
-    open(bot.blockAt(cell)) &&
-    open(bot.blockAt(cell.offset(0, 1, 0))) &&
-    solid(bot.blockAt(cell.offset(0, -1, 0)))
+    solid(bot.blockAt(cell)) &&
+    (open(above) || above?.name === 'water') &&
+    open(bot.blockAt(cell.offset(0, 2, 0)))
   );
 }
 
 /**
- * True when the bot stands on solid ground and no neighbour cell is standable: a pit. An open side
- * that is only a hole (air over air) does not count as a way out, so a cavity with one such side is
- * still a pit. Standing in air (no solid ground under the feet) is not a pit.
+ * True when the bot stands on solid ground in a pit: at least one side is a pit wall (`WALL_HEIGHT`
+ * solid blocks high) and no side is a ledge the jump rung can use. The floor beside the bot may be
+ * flat and open: a flat-floored cavity is still a pit. Open ground with no wall is not. Standing in
+ * air (no solid ground under the feet) is not a pit.
  */
 export function inPit(bot: Bot): boolean {
   const feet = (bot as StairBot).entity.position.floored();
   if (!solid(bot.blockAt(feet.offset(0, -1, 0)))) return false;
-  return DIRS.every((d) => !standable(bot, feet.plus(d)));
+  if (!DIRS.some((d) => wallHeight(bot, feet.plus(d)) >= WALL_HEIGHT)) return false;
+  return DIRS.every((d) => !jumpLedge(bot, feet.plus(d)));
 }
 
 /** The wall to dig into: the side facing the goal when it is a wall, else the first wall. */
