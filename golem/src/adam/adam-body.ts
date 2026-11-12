@@ -14,6 +14,9 @@ import {
   type RestartOutcome,
   restartBody,
 } from '../body/restart.ts';
+import { serveBodyImages } from '../body-image/image-serve.ts';
+import { ImageLimiter } from '../body-image/limiter.ts';
+import { RenderHost } from '../body-image/render-host.ts';
 import { countingSink, type GolemMetrics } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
@@ -171,6 +174,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   let hurts: HurtReporter | undefined;
   let detachHurts: () => void = () => undefined;
   let link: MindLinkServer | undefined;
+  let renders: RenderHost | undefined;
+  let stopImages: (() => void) | undefined;
   try {
     const digest = wrapped.recent;
     if (digest === null) throw new Error('the Body did not wrap its record sink');
@@ -229,12 +234,21 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       log,
     });
     link.start();
+    // The image server (decision 0156, VP-2): its own renderer worker and rate limiter, per run.
+    renders = new RenderHost();
+    stopImages = serveBodyImages(env.server, config.shard, config.lifeId, {
+      bot,
+      render: renders,
+      limiter: new ImageLimiter(),
+    });
   } catch (error) {
     bot.off('end', onEnd);
     if (onHealth !== undefined) bot.off('health', onHealth);
     detachHurts();
     hurts?.close();
     detachEars();
+    stopImages?.();
+    await renders?.close();
     await restarted.stop().catch((stopError: unknown) => {
       log(`restarted Body did not stop after a failed start: ${String(stopError)}`);
     });
@@ -258,9 +272,11 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       // No new plan is accepted from here on. Then the executor and the running action end, so a
       // plan the link awaits can finish; only after that is the link waited for.
       link?.stopServing();
+      stopImages?.();
       await executor.stop();
       await runtime.cancelAction();
       await link?.idle();
+      await renders?.close();
       await restarted.stop();
     },
   };
