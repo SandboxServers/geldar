@@ -117,4 +117,30 @@ describe('fight_or_flee arrow sidestep', () => {
     await fightOrFleeReflex.run(trigger, ctx);
     expect(walk.mock.calls[0]?.[3]).toMatchObject({ signal: ctx.signal });
   });
+
+  it('gives up at its 5 s wall deadline when the move never ends', async () => {
+    vi.useFakeTimers();
+    try {
+      walk.mockImplementation(
+        (...args) =>
+          new Promise((resolve) => {
+            args[3]?.signal?.addEventListener(
+              'abort',
+              () => resolve({ ok: false, reason: 'aborted' } as never),
+              { once: true },
+            );
+          }) as never,
+      );
+      const view = arrowView([arrow('left')]);
+      const trigger = fightOrFleeReflex.check(view);
+      if (trigger === null) throw new Error('arrow did not fire');
+      const run = fightOrFleeReflex.run(trigger, sceneContext(calmScene(), { view }));
+      await vi.advanceTimersByTimeAsync(5_000);
+      const outcome = await run;
+      expect(outcome).toMatchObject({ result: 'failed' });
+      expect(outcome.detail).toContain('sidestep ended');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
