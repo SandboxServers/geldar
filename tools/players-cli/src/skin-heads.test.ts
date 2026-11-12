@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { runCli } from './cli.ts';
+import { makeRawPng, packRows } from './skin-fixture.ts';
 import { offlineUuid, writeHeads } from './skin-heads.ts';
 
 type Px = [number, number, number, number];
@@ -110,6 +111,36 @@ describe('writeHeads', () => {
     expect(() => writeHeads(setup({ 'ag_x_01.png': wrong }).skins, '/x', 'overworld')).toThrow();
     const ok = setup({ 'ag_x_01.png': skin(64, FACE) });
     expect(() => writeHeads(ok.skins, ok.out, '../etc')).toThrow(/map id/);
+  });
+
+  it('reads a 4-bit palette skin, and a transparent palette entry shows through', () => {
+    // Index 1 is the hat pixel (40,8), index 2 is the face at x 8..11, index 0 (transparent) elsewhere.
+    const at = (x: number, y: number) =>
+      x === 40 && y === 8 ? 1 : x >= 8 && x < 12 && y >= 8 && y < 16 ? 2 : 0;
+    const palette = Buffer.from([0, 0, 0, 200, 100, 50, 10, 20, 30]);
+    const s = makeRawPng({
+      width: 64,
+      height: 64,
+      colorType: 3,
+      bitDepth: 4,
+      rows: packRows(64, 64, 4, at),
+      palette,
+      trns: Buffer.from([0]),
+    });
+    const { skins, out } = setup({ 'ag_jason_01.png': s });
+    writeHeads(skins, out, 'overworld');
+    const file = join(
+      out,
+      'maps',
+      'overworld',
+      'assets',
+      'playerheads',
+      `${offlineUuid('ag_jason_01')}.png`,
+    );
+    const png = readFileSync(file);
+    expect(headPixel(png, 0, 0)).toEqual([200, 100, 50, 255]);
+    expect(headPixel(png, 4, 0)).toEqual([10, 20, 30, 255]);
+    expect(headPixel(png, 16, 0)).toEqual([0, 0, 0, 0]);
   });
 
   it('prints usage and exits 2 without the directories', async () => {
