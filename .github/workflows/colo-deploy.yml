@@ -1,0 +1,192 @@
+# Deploys the Colo node once the colo-images workflow has published a commit's images (CD-2b, decision 0084).
+# The job runs only on the self-hosted runner `geldar-colo-deploy`, whose user `ghdeploy` is unprivileged. Its one
+# privileged action is `sudo -n /usr/local/libexec/geldar-deploy/run {plan|deploy} <sha>`. The root-owned entrypoint
+# refuses any sha not reachable from main, reads the release manifest from the inbox, fetches main itself and runs
+# deploy/colo-cd.sh from its own verified export. So a workflow on any branch can reach the runner label, but it can
+# deploy only main. This job checks out no repository code. Runbook: docs/runbooks/colo-deploy.md.
+name: colo-deploy
+
+on:
+  workflow_run:
+    workflows: [colo-images]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit to deploy: 40 lowercase hex, on main. Empty: the head of main.'
+        required: false
+        type: string
+        default: ''
+      plan_only:
+        description: 'Print the plan and stop; do not deploy.'
+        required: false
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: deploy the Colo
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+      github.event.workflow_run.repository.full_name == github.repository &&
+      github.event.workflow_run.head_repository.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, geldar-colo-deploy]
+    environment: colo
+    concurrency:
+      group: colo-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: resolve the commit and the colo-images run that built it
+        id: target
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_PLAN_ONLY: ${{ inputs.plan_only }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            sha="$WORKFLOW_RUN_SHA"
+            run_id="$WORKFLOW_RUN_ID"
+            plan_only=false
+          else
+            plan_only="${INPUT_PLAN_ONLY:-false}"
+            sha="$INPUT_SHA"
+            if [[ -z "$sha" ]]; then
+              sha="$(gh api "repos/$REPO/git/ref/heads/main" --jq '.object.sha')"
+            fi
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::not a full commit sha: $sha" >&2
+              exit 1
+            fi
+            # compare/<sha>...main: "ahead" means main is ahead of sha; "identical" means they are the same.
+            # Any other status ("behind", "diverged") means sha is not on main.
+            status="$(gh api "repos/$REPO/compare/$sha...main" --jq '.status')"
+            if [[ "$status" != "ahead" && "$status" != "identical" ]]; then
+              echo "::error::$sha is not on main (compare status: $status); refusing to deploy it" >&2
+              exit 1
+            fi
+            # The images must exist before the node pulls them: the successful colo-images run for this commit.
+            run_id="$(gh api "repos/$REPO/actions/workflows/colo-images.yml/runs?head_sha=$sha&branch=main&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')"
+            if [[ -z "$run_id" ]]; then
+              echo "::error::no successful colo-images run for $sha on main; the images must be published first" >&2
+              exit 1
+            fi
+          fi
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ || ! "$run_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::bad sha or run id" >&2
+            exit 1
+          fi
+          {
+            echo "sha=$sha"
+            echo "run_id=$run_id"
+            echo "plan_only=$plan_only"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: download the release manifest of that colo-images run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release.env
+          path: ${{ runner.temp }}/release-manifest
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.target.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: write the release manifest into the inbox (atomic, mode 0600)
+        env:
+          INBOX: /var/lib/geldar-deploy/inbox
+          SRC: ${{ runner.temp }}/release-manifest/release.env
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$SRC" ]]; then
+            echo "::error::the artifact has no release.env" >&2
+            exit 1
+          fi
+          if [[ ! -d "$INBOX" ]]; then
+            echo "::error::the inbox is missing: $INBOX" >&2
+            exit 1
+          fi
+          tmp="$(mktemp "$INBOX/.release.env.XXXXXX")"
+          cat "$SRC" > "$tmp"
+          chmod 0600 "$tmp"
+          mv -f "$tmp" "$INBOX/release.env"
+          echo "release manifest written to the inbox"
+
+      - name: plan (the entrypoint prints it)
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/libexec/geldar-deploy/run plan "$SHA" 2>&1 | tee "$RUNNER_TEMP/plan.log"
+
+      - name: deploy (the entrypoint prints the log)
+        if: steps.target.outputs.plan_only != 'true'
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          sudo -n /usr/local/libexec/geldar-deploy/run deploy "$SHA" 2>&1 | tee "$RUNNER_TEMP/deploy.log"
+
+      - name: job summary (commit, plan, result, manual steps)
+        if: always()
+        env:
+          SHA: ${{ steps.target.outputs.sha }}
+          PLAN_ONLY: ${{ steps.target.outputs.plan_only }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -uo pipefail
+          mode="plan and deploy"
+          if [[ "$PLAN_ONLY" == "true" ]]; then mode="plan only"; fi
+          {
+            echo "## Colo deploy"
+            echo ""
+            echo "- Commit: \`$SHA\`"
+            echo "- Mode: $mode"
+            echo "- Result: $JOB_STATUS"
+            echo ""
+            echo "### Needs manual"
+            echo ""
+            echo "The pipeline does not apply plugin jar, Paper, Velocity, Caddy or NATS changes. An operator does those."
+            echo ""
+            manual="$(grep -h -i 'needs manual' "$RUNNER_TEMP/plan.log" "$RUNNER_TEMP/deploy.log" 2>/dev/null || true)"
+            if [[ -n "$manual" ]]; then
+              echo '```'
+              echo "$manual"
+              echo '```'
+            else
+              echo "None reported."
+            fi
+            echo ""
+            echo "<details><summary>Plan</summary>"
+            echo ""
+            echo '```'
+            cat "$RUNNER_TEMP/plan.log" 2>/dev/null || echo "no plan output"
+            echo '```'
+            echo "</details>"
+            if [[ -f "$RUNNER_TEMP/deploy.log" ]]; then
+              echo ""
+              echo "<details><summary>Deploy log</summary>"
+              echo ""
+              echo '```'
+              cat "$RUNNER_TEMP/deploy.log"
+              echo '```'
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
