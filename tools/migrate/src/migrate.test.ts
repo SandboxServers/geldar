@@ -35,6 +35,7 @@ describe('listMigrations', () => {
       '0017_kino_scope_functions.sql',
       '0018_kino_agent_list.sql',
       '0019_kino_agent_list_no_owner.sql',
+      '0020_glass_journal_thoughts.sql',
     ]);
   });
 

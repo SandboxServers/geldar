@@ -4,12 +4,13 @@ import { Pool } from 'pg';
 import { assertLoopback, type GlassConfig, HEARTBEAT_MS } from './config.ts';
 import { RateLimiter } from './guard.ts';
 import { createHandler } from './http.ts';
+import { thoughtsAndJournalAfter } from './journal.ts';
 import { KinoAudit, sqlAuditStore } from './kino/audit.ts';
 import { startAuditPurge } from './kino/purge.ts';
 import type { FeedSource } from './kino/relay.ts';
 import { buildKino, loadKinoEnv } from './kino/wiring.ts';
 import { type PublicPolicy, visibilityAt } from './policy.ts';
-import { type SqlClient, streamStartCursor, type ThoughtCursor, thoughtsAfter } from './query.ts';
+import { type SqlClient, streamStartCursor, type ThoughtCursor } from './query.ts';
 import { SseHub } from './sse.ts';
 
 /** Rows the stream reads per poll: a burst is spread over ticks, not held in memory. */
@@ -44,7 +45,7 @@ export interface GlassParts {
 /** The stream's feed: the thoughts after a cursor that the policy lets a reader see. */
 export function streamFeed(db: SqlClient, policy: PublicPolicy) {
   return (after: ThoughtCursor) =>
-    thoughtsAfter(db, after, STREAM_BATCH_ROWS, visibilityAt(policy));
+    thoughtsAndJournalAfter(db, after, STREAM_BATCH_ROWS, visibilityAt(policy));
 }
 
 /** Builds Glass without listening. The loopback check runs here too, before any socket exists. */

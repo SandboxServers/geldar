@@ -34,7 +34,8 @@ function recorder(): { db: SqlClient; calls: Call[] } {
 
 /** The value bound to the predicate's show flag in the last statement. */
 function flagOf(calls: Call[]): unknown {
-  const last = calls[calls.length - 1];
+  // The journal function call (migration 0020) carries its own predicate inside SQL; only thought statements match.
+  const last = calls.filter((c) => PREDICATE.test(c.text)).pop();
   if (last === undefined) throw new Error('no statement ran');
   const n = Number(/\(\$(\d+)::boolean OR a\.mode/.exec(last.text)?.[1]);
   return last.values[n - 1];
