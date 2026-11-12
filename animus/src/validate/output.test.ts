@@ -459,7 +459,7 @@ describe('the allow-list and the MCP verb list', () => {
 
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v5.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v6.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];
