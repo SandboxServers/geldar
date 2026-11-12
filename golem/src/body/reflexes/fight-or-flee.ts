@@ -30,6 +30,8 @@ const ARROW_RADIUS = 6;
 const SIDESTEP_BLOCKS = 3;
 /** How close to the sidestep point counts as arrived. */
 const SIDESTEP_RANGE = 1;
+/** Wall ms a sidestep may last (a 3-block step); past it the reflex gives up, as a flight does. */
+const SIDESTEP_LIMIT_MS = 5_000;
 /** How often (wall ms) a fight checks that the Body's health is still above the floor. */
 const HEALTH_WATCH_MS = 100;
 /** Flight directions tried in turn, in radians off the line straight away from the attacker. */
@@ -168,10 +170,11 @@ export async function sidestep(ctx: ReflexContext, bearing: string): Promise<Ref
     y: here.y,
     z: here.z + 0.5 - sign * Math.sin(yaw) * SIDESTEP_BLOCKS,
   };
+  const limit = deadline(ctx.signal, SIDESTEP_LIMIT_MS * ctx.timeScale);
   const move = await moveNear(ctx.bot, goal, SIDESTEP_RANGE, {
-    signal: ctx.signal,
+    signal: limit.signal,
     timeScale: ctx.timeScale,
-  });
+  }).finally(() => limit.clear());
   const side = sign > 0 ? 'right' : 'left';
   if (move.ok) return { result: 'handled', detail: `arrow from ${bearing}: sidestepped ${side}` };
   return { result: 'failed', detail: `arrow from ${bearing}: sidestep ended ${move.reason}` };

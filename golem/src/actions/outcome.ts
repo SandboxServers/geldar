@@ -13,6 +13,7 @@ export type FailReason =
   | 'not_possible'
   | 'interrupted'
   | 'unsupported'
+  | 'busy'
   | 'internal';
 
 /** What a handler returns. `runAction` turns it into the stored `ActionRecord.result` and state. */

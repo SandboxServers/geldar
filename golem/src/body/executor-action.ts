@@ -1,8 +1,9 @@
 import type { ActionRecord, Receipt, Thought } from '@geldar/contract';
 import { errorText } from '../actions/outcome.ts';
+import type { ActionRun } from '../actions/registry.ts';
 import { receiptIdFor } from './derived-id.ts';
 import type { ActionReport, PlanEnvelope } from './executor.ts';
-import type { BodyRuntime } from './runtime.ts';
+import { ActionBusyError, type BodyRuntime } from './runtime.ts';
 
 /** Longest wall wait (at time scale 1) for a busy reflex before a plan's action starts anyway. */
 const REFLEX_IDLE_MS = 10_000;
@@ -26,6 +27,40 @@ export async function waitForReflexIdle(runtime: BodyRuntime): Promise<boolean> 
       `a reflex is still running after ${limit} ms; the plan's next action starts anyway`,
     );
   return timedOut;
+}
+
+/**
+ * The failed run for a runtime that threw. An action that finds the slot taken is `busy` (the agent
+ * should wait); any other throw is `internal`, and its message and stack go to the body log so the
+ * next `internal` can be diagnosed. The detail names no action: the slot's holder may be a reflex.
+ */
+function thrownRun(error: unknown): ActionRun {
+  if (error instanceof ActionBusyError) {
+    return {
+      state: 'failed',
+      result: {
+        status: 'failed',
+        reason: 'busy',
+        message: errorText(error),
+        latency_ms: 0,
+        world_ticks: null,
+        detail: {},
+      },
+    };
+  }
+  const trace = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  console.error(`action failed inside the body: ${trace}`);
+  return {
+    state: 'failed',
+    result: {
+      status: 'failed',
+      reason: 'internal',
+      message: errorText(error),
+      latency_ms: 0,
+      world_ticks: null,
+      detail: {},
+    },
+  };
 }
 
 /**
@@ -78,17 +113,7 @@ export async function runPlanAction(
   try {
     run = await runtime.runAction(action);
   } catch (error) {
-    run = {
-      state: 'failed',
-      result: {
-        status: 'failed',
-        reason: 'internal',
-        message: errorText(error),
-        latency_ms: 0,
-        world_ticks: null,
-        detail: {},
-      },
-    };
+    run = thrownRun(error);
   }
   const phase = run.state === 'completed' ? 'committed' : 'aborted';
   const receipt: Receipt = {

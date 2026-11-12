@@ -22,6 +22,17 @@ export function sanitiseTimeScale(requested: number | undefined): number {
   return requested !== undefined && Number.isFinite(requested) && requested > 0 ? requested : 1;
 }
 
+/**
+ * Thrown by `runAction` when another action still holds the one slot. The executor maps it to the
+ * `busy` reason, so the agent is told to wait rather than that the body is broken.
+ */
+export class ActionBusyError extends Error {
+  constructor() {
+    super('an action is already running');
+    this.name = 'ActionBusyError';
+  }
+}
+
 /** What a `BodyRuntime` is built from. */
 export interface BodyRuntimeOptions {
   /** The agent life this Body serves (`life_id`). */
@@ -139,12 +150,12 @@ export class BodyRuntime {
    */
   async runAction(action: unknown, signal?: AbortSignal): Promise<ActionRun> {
     if (this.stopped) throw new Error('body runtime stopped');
-    if (this.current) throw new Error('an action is already running');
+    if (this.current) throw new ActionBusyError();
     if (this.winding) {
       // Only when a handler still winds down: an idle runtime fills the slot before the first await.
       await this.winding;
       if (this.stopped) throw new Error('body runtime stopped');
-      if (this.current) throw new Error('an action is already running');
+      if (this.current) throw new ActionBusyError();
     }
     const controller = new AbortController();
     const forward = (): void => controller.abort();

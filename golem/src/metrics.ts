@@ -243,6 +243,7 @@ export const OUTCOME_REASON_LABELS = [
   'not_possible',
   'interrupted',
   'unsupported',
+  'busy',
   'internal',
   'other',
 ] as const;

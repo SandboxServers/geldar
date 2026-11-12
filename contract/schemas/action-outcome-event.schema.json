@@ -33,6 +33,7 @@
         "not_possible",
         "interrupted",
         "unsupported",
+        "busy",
         "internal"
       ]
     },

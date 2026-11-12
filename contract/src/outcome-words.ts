@@ -17,6 +17,7 @@ const REASON_PHRASE: Readonly<Record<string, string>> = {
   not_possible: 'that was not possible right now',
   interrupted: 'something interrupted it',
   unsupported: 'the body cannot do that',
+  busy: 'another action is still running; wait for it to finish before you send the next one',
   internal: 'something went wrong inside the body',
 };
 
