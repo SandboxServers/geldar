@@ -28,7 +28,7 @@ export function sampleSnapshot(over: Partial<Snapshot> = {}): Snapshot {
     surroundings: {
       blocks_summary: 'grass and oak trees',
       notable_blocks: [{ type: 'oak_sign', x: 12, y: 64, z: -18, text: 'Welcome' }],
-      entities: [{ type: 'cow', distance: 8.2, direction: 'north' }],
+      entities: [{ type: 'cow', distance: 8.2, direction: 'north', x: 0, y: 64, z: -8 }],
       agents: [{ name: 'Eve', distance: 5, held_item: null, health_estimate: 'healthy' }],
     },
     heard: [{ from: 'Eve', text: 'Hello there', age_seconds: 4 }],

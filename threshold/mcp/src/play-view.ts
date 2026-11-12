@@ -13,6 +13,9 @@ export const PLAY_SPEECH_LIMIT = 40;
 /** Sign texts kept in the play view (the `signs` maxItems of the contract). */
 export const PLAY_SIGN_LIMIT = 20;
 
+/** Entity records kept in the play view, nearest first (the Body's snapshot keeps more). */
+export const PLAY_ENTITY_LIMIT = 12;
+
 type PlaySnapshot = LookResult['snapshot'];
 type Signs = NonNullable<UntrustedWorldText['signs']>;
 
@@ -83,7 +86,7 @@ export function toPlayView(snapshot: Snapshot, options: PlayViewOptions): PlayVi
         ? {}
         : { enclosed: snapshot.surroundings.enclosed }),
       notable_blocks: notableBlocks,
-      entities: snapshot.surroundings.entities,
+      entities: snapshot.surroundings.entities?.slice(0, PLAY_ENTITY_LIMIT),
       agents: snapshot.surroundings.agents,
     },
     heard: [],
