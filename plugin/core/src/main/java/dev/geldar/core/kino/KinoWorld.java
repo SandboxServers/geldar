@@ -10,7 +10,15 @@ import java.util.Optional;
  */
 public interface KinoWorld {
     /** One entity in view; {@code agentId} is null unless the entity is an agent. */
-    record EntityView(String type, String agentId, double x, double y, double z, float yaw, float pitch) {}
+    /**
+     * One entity. {@code uid} is the server's per-world entity id, stable while the entity lives, so the viewer
+     * can match it across pages; 0 means unknown (the feed then falls back to the list position).
+     */
+    record EntityView(int uid, String type, String agentId, double x, double y, double z, float yaw, float pitch) {
+        public EntityView(String type, String agentId, double x, double y, double z, float yaw, float pitch) {
+            this(0, type, agentId, x, y, z, yaw, pitch);
+        }
+    }
 
     /** An agent's position. */
     record Position(double x, double y, double z) {}

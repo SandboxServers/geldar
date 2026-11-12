@@ -2,6 +2,7 @@
 // this module never sends anything.
 
 import type { EntityPosition, KinoFeed } from '../../../contract/src/generated/types.ts';
+import { EntityStore } from './entities.ts';
 import { parseKey, VoxelWorld } from './world.ts';
 
 export interface FeedChange {
@@ -14,10 +15,14 @@ export interface FeedChange {
 
 export class FeedState {
   readonly world = new VoxelWorld();
-  entities: EntityPosition[] = [];
+  /** Entities merged by feed id across the plugin's partial pages. */
+  readonly store = new EntityStore();
+  get entities(): EntityPosition[] {
+    return this.store.list();
+  }
   focus: { x: number; y: number; z: number } | null = null;
 
-  apply(msg: KinoFeed): FeedChange {
+  apply(msg: KinoFeed, now: number = Date.now()): FeedChange {
     switch (msg.type) {
       case 'chunk_section': {
         const key = this.world.applySection(msg);
@@ -44,8 +49,7 @@ export class FeedState {
         return { dirty: dirty.filter((k) => this.world.has(k)) };
       }
       case 'entity_positions':
-        this.entities = msg.entities;
-        return { dirty: [], entities: msg.entities };
+        return { dirty: [], entities: this.store.merge(msg.entities, now) };
       case 'target_moved':
         this.focus = { x: msg.x, y: msg.y, z: msg.z };
         return { dirty: [] };

@@ -92,7 +92,7 @@ public final class BukkitKinoWorld implements KinoWorld {
     private EntityView view(Entity e) {
         Location at = e.getLocation();
         String agent = e instanceof Player p && isAgent.test(p.getName()) ? p.getName() : null;
-        return new EntityView(e.getType().getKey().toString(), agent, at.getX(), at.getY(), at.getZ(),
+        return new EntityView(e.getEntityId(), e.getType().getKey().toString(), agent, at.getX(), at.getY(), at.getZ(),
                 at.getYaw(), at.getPitch());
     }
 }

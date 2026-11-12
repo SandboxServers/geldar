@@ -34,7 +34,8 @@ describe('KinoScene with the mocked feed', () => {
 
   it('removes a marker that leaves the feed', () => {
     const { state, view } = play();
-    view.update(state.apply({ type: 'entity_positions', entities: [] }));
+    // A page without them is not a removal; only silence is (see entities.test.ts).
+    view.update(state.apply({ type: 'entity_positions', entities: [] }, Date.now() + 60_000));
     expect(view.markerIds()).toEqual([]);
   });
 
