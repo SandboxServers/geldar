@@ -27,14 +27,31 @@ describe('probe registries', () => {
     expect(probeFiles(new URL('./surroundings/', import.meta.url))).toEqual(registered);
   });
 
-  it('gives the stub probes their current values, and the sky probe reads the world', () => {
-    // Open air with sky above and no time: no ground in 32 cells (perched), no sun phase.
-    expect(selfProbes(new FakeWorld().bot)).toEqual({
-      armor: 0,
+  it('lists the self probes in a fixed composition order', () => {
+    // Order decides which probe wins a shared key, so a change here must fail this test.
+    expect(SELF_PROBES.map((entry) => entry.file)).toEqual([
+      'sky-ground',
+      'light-regen',
+      'gear-flags',
+    ]);
+  });
+
+  it('lists the surroundings probes in a fixed composition order', () => {
+    expect(SURROUNDINGS_PROBES.map((entry) => entry.file)).toEqual([
+      'hazards',
+      'containers',
+      'threat-sight',
+      'reach',
+    ]);
+  });
+
+  it('keeps the sky probe output in the self registry, whichever other probes are filled in', () => {
+    // Open air with sky above and no time: no ground in 32 cells (perched). Superset check, so a
+    // later PX packet that fills another self probe does not break this test.
+    expect(selfProbes(new FakeWorld().bot)).toMatchObject({
       ground_below: 32,
       trapped: 'perched',
     });
-    expect(surroundingsProbes(bot)).toEqual({});
   });
 });
 
@@ -61,10 +78,10 @@ describe('composeProbes', () => {
       file: 'injected',
       probe: () => ({ unlocked_recipes: ['injected'] }),
     };
-    expect(composeProbes([...SELF_PROBES, extra], new FakeWorld().bot)).toEqual({
-      armor: 0,
-      ground_below: 32,
-      trapped: 'perched',
+    const world = new FakeWorld().bot;
+    // Exact: the injected field is added on top of whatever the registry returns, and nothing else.
+    expect(composeProbes([...SELF_PROBES, extra], world)).toEqual({
+      ...selfProbes(world),
       unlocked_recipes: ['injected'],
     });
   });
@@ -75,6 +92,7 @@ describe('composeProbes', () => {
       probe: () => ({ blocks_summary: 'lava nearby' }),
     };
     expect(composeProbes([...SURROUNDINGS_PROBES, extra], bot)).toEqual({
+      ...surroundingsProbes(bot),
       blocks_summary: 'lava nearby',
     });
   });
