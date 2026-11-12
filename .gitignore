@@ -57,3 +57,6 @@ compose/cloudflared/*.json
 # Local agent tool state (per-user settings and session data)
 .agents/
 .codex/
+
+# kino-shot evidence output (screenshots, logs)
+.claude/kino-shots/

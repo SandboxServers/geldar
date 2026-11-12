@@ -38,3 +38,18 @@ Pane opens, targets, mode changes and closes are recorded in `kino_audit` with a
 `/kino/` is the production page (`glass/web/kino/index.html`, module `main.ts`); `/kino/dev.html` is the mock-feed dev page. The page reads `/kino/targets` (signed-in state and the agents the server lets this viewer watch; anonymous viewers get public-camera agents only), shows a sign-in link when not signed in, and ends a pane on `bye` (including `kill_switch`). Set the `kino-signin-url` and `kino-textures-url` meta tags in `index.html` per deploy (`kino-textures-url` must be the same-origin `/kino/tex/maps/<map>/textures.json`; a `?textures=` URL on another origin is blocked by the CSP).
 
 Glass asks the plugin to read an agent over NATS on `geldar.<shard>.kino.control` (`kino-control.schema.json`): `start` for the first pane, `resync` for later panes, `refresh` every 15 s while watched, `stop` 10 s after the last pane leaves. The plugin applies these on the server thread only when `kino.enabled` is true; a target not refreshed for 45 s is stopped, so a Glass restart leaves nothing running. NATS permissions (generated in `Get-NatsUsers`, proved by `tools/repo-checks/src/nats-auth.test.ts`): Glass (`kino`) may publish `geldar.<shard>.kino.control` and subscribe `geldar.<shard>.kino.*.feed`; the plugin (`paper`) may subscribe `geldar.<shard>.kino.control` and publish the feed, and is denied publishing control. Glass reads agent ownership through the definer functions `kino_viewer` and `kino_agent_scope` (migration 0017); `geldar_glass` has no grant on `mcp_identities` or `agents.owner`.
+## Seeing the live site: kino-shot
+
+`tools/kino-shot` opens a Kino page in headless Chromium (Playwright 1.64.1) and saves evidence, so you can look at the live site without a desktop browser. It is optional: nothing in `setup`, CI or `pnpm -r` runs it, the install uses `--ignore-scripts`, and the package has no postinstall. The browser is a separate download, once per machine (cached under the user-level Playwright cache, not in the repo):
+
+```
+./geldar.ps1 pnpm --filter @geldar/kino-shot browsers
+$env:KINO_URL = 'https://<glass host>/kino/'   # never commit the host
+./geldar.ps1 pnpm --filter @geldar/kino-shot shot -- --agent ag_jason_01 --mode follow --seconds 25
+```
+
+Options: `--url` (or `KINO_URL`; https only, http only for localhost), `--agent`, `--mode follow|orbit|free`, `--seconds` (default 25), `--viewport 430x900` (mobile viewport and touch UA by default), `--out` (default `.claude/kino-shots/`, gitignored, relative to where you typed the command). One run is one anonymous page load: no sign-in, no cookies or tokens stored, console text is redacted for anything token-like. Do not loop it; the site rate-limits.
+
+Software WebGL needs the flags `--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`; these work on Windows (the canvas renders).
+
+Outputs: `screenshot.png` (full page), `canvas.png` (the pane canvas, composited), `status.txt` (every visible status text; the bar line stays at its first value, the pane line at the bottom of the canvas is the live one), `console.log` (console messages, page errors, failed requests, same-origin HTTP errors, 429s marked `!!!`), `network-summary.json` (counts by HTTP status and by WebSocket message `type`; no payloads). Stdout is one JSON line: `checks` (picker populated, connected, chunks, canvas rendered), pixel `fractions` of near-magenta (a missing texture) and near-black, `count429`, and `ok`. The exit code is 1 when a check fails (picker empty, not connected, no chunks, canvas mostly magenta or black), 2 on a crash.
