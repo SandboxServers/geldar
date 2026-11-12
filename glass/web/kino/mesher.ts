@@ -2,10 +2,13 @@
 // hide it. The neighbour is read from the world, so faces on a section border are culled against
 // the next section; where no section is loaded, the neighbour counts as air and the face is drawn.
 
+import { type Shape, shapeOf } from './blockshape.ts';
 import type { StateReader } from './cull.ts';
+import { FACES, type Face } from './faces.ts';
+import { pushBox, pushCross, pushQuad } from './shape-mesh.ts';
 import { isAir } from './world.ts';
 
-export type Face = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
+export type { Face };
 
 export interface Uv {
   u0: number;
@@ -14,8 +17,13 @@ export interface Uv {
   v1: number;
 }
 
-/** Maps a block state and face to its atlas rectangle. */
-export type UvLookup = (state: string, face: Face) => Uv;
+/**
+ * Maps a block state and face to its atlas rectangle. coverage (optional) is the average alpha of the
+ * state's side texture, 0..1; the mesher draws a rule-less block with mostly transparent art as a plant.
+ */
+export type UvLookup = ((state: string, face: Face) => Uv) & {
+  coverage?: (state: string) => number | undefined;
+};
 
 export interface MeshData {
   positions: number[];
@@ -28,7 +36,7 @@ export interface MeshData {
 
 /** The `soft` attribute value of a block state. */
 export function softOf(state: string): number {
-  if (occludes(state)) return 0;
+  if (!SEE_THROUGH.test(state)) return 0;
   return /leaves(?:\[|$)/.test(state) ? 1 : 0.5;
 }
 
@@ -37,78 +45,10 @@ const SEE_THROUGH =
 
 /** True when a block hides the faces of its neighbours. */
 export function occludes(state: string | undefined): boolean {
-  return !isAir(state) && !SEE_THROUGH.test(state as string);
+  return (
+    !isAir(state) && !SEE_THROUGH.test(state as string) && shapeOf(state as string).kind === 'cube'
+  );
 }
-
-interface FaceDef {
-  face: Face;
-  d: [number, number, number];
-  corners: [number, number, number][];
-}
-
-// Corner order is counter-clockwise seen from outside, so the winding faces outward.
-const FACES: FaceDef[] = [
-  {
-    face: 'px',
-    d: [1, 0, 0],
-    corners: [
-      [1, 0, 1],
-      [1, 0, 0],
-      [1, 1, 0],
-      [1, 1, 1],
-    ],
-  },
-  {
-    face: 'nx',
-    d: [-1, 0, 0],
-    corners: [
-      [0, 0, 0],
-      [0, 0, 1],
-      [0, 1, 1],
-      [0, 1, 0],
-    ],
-  },
-  {
-    face: 'py',
-    d: [0, 1, 0],
-    corners: [
-      [0, 1, 1],
-      [1, 1, 1],
-      [1, 1, 0],
-      [0, 1, 0],
-    ],
-  },
-  {
-    face: 'ny',
-    d: [0, -1, 0],
-    corners: [
-      [0, 0, 0],
-      [1, 0, 0],
-      [1, 0, 1],
-      [0, 0, 1],
-    ],
-  },
-  {
-    face: 'pz',
-    d: [0, 0, 1],
-    corners: [
-      [0, 0, 1],
-      [1, 0, 1],
-      [1, 1, 1],
-      [0, 1, 1],
-    ],
-  },
-  {
-    face: 'nz',
-    d: [0, 0, -1],
-    corners: [
-      [1, 0, 0],
-      [0, 0, 0],
-      [0, 1, 0],
-      [1, 1, 0],
-    ],
-  },
-];
 
 export function meshSection(
   world: StateReader,
@@ -119,6 +59,18 @@ export function meshSection(
 ): MeshData {
   const soft: number[] = [];
   const mesh: MeshData = { positions: [], normals: [], uvs: [], indices: [], soft };
+  const shapes = new Map<string, Shape>();
+  const shapeFor = (s: string): Shape => {
+    let sh = shapes.get(s);
+    if (!sh) {
+      sh = shapeOf(s, uvFor.coverage?.(s));
+      shapes.set(s, sh);
+    }
+    return sh;
+  };
+  // Only a full cube hides what lies behind it; a slab, a fern or a fence does not.
+  const hides = (s: string | undefined): boolean =>
+    occludes(s) && shapeFor(s as string).kind === 'cube';
   const ox = cx * 16;
   const oy = sy * 16;
   const oz = cz * 16;
@@ -130,27 +82,46 @@ export function meshSection(
         const wz = oz + z;
         const state = world.stateAt(wx, wy, wz) as string;
         if (isAir(state)) continue;
+        const shape = shapeFor(state);
+        if (shape.kind === 'skip') continue;
+        const s = shape.kind === 'cross' ? 0.5 : softOf(state);
+        if (shape.kind === 'cross') {
+          pushCross(mesh, [wx, wy, wz], uvFor(state, 'pz'), s);
+          continue;
+        }
+        const neighbour = (f: { d: [number, number, number] }): string | undefined =>
+          world.stateAt(wx + f.d[0], wy + f.d[1], wz + f.d[2]);
+        if (shape.kind === 'boxes') {
+          for (const b of shape.boxes)
+            pushBox(
+              mesh,
+              b,
+              [wx, wy, wz],
+              (face) => uvFor(state, face),
+              (f) => hides(neighbour(f)),
+              s,
+            );
+          continue;
+        }
         for (const f of FACES) {
-          const neighbour = world.stateAt(wx + f.d[0], wy + f.d[1], wz + f.d[2]);
-          if (occludes(neighbour)) continue;
+          const n = neighbour(f);
+          if (hides(n)) continue;
           // A see-through block does not draw faces against an identical neighbour.
-          if (!occludes(state) && neighbour === state) continue;
+          if (!occludes(state) && n === state) continue;
           const uv = uvFor(state, f.face);
-          const base = mesh.positions.length / 3;
           const quadUv: [number, number][] = [
             [uv.u0, uv.v0],
             [uv.u1, uv.v0],
             [uv.u1, uv.v1],
             [uv.u0, uv.v1],
           ];
-          f.corners.forEach((c, i) => {
-            mesh.positions.push(wx + c[0], wy + c[1], wz + c[2]);
-            mesh.normals.push(f.d[0], f.d[1], f.d[2]);
-            const [u, v] = quadUv[i] ?? [0, 0];
-            mesh.uvs.push(u, v);
-            soft.push(softOf(state));
-          });
-          mesh.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+          pushQuad(
+            mesh,
+            f.corners.map((c) => [wx + c[0], wy + c[1], wz + c[2]] as const),
+            f.d,
+            quadUv,
+            s,
+          );
         }
       }
     }
