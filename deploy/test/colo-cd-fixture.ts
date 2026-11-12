@@ -5,7 +5,7 @@
 // The export dir (git-less, a plain copy of the tree) and the src extract (GELDAR_COLO_ROOT) are plain directories. Every
 // run has a wall-clock timeout, so a hung child fails its test in seconds. No real docker, node, git or network is used.
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   DEPLOY,
@@ -31,6 +31,31 @@ export const FROM_SHA = 'b'.repeat(40);
 // `exec -T postgres` prints a line for the dump. Every other call succeeds.
 export const CD_DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >>"$DOCKER_CALLS_LOG"
+hn=
+for a; do case $a in name=^*) hn=\${a#name=^}; hn=\${hn%\\$} ;; geldar-colo-players-host-*) hn=$a ;; esac; done
+prev=
+for a; do if [ "$prev" = --name ]; then hn=$a; fi; prev=$a; done
+case "$*" in
+  *"ps "*"name=^geldar-colo-players-host-"*)
+    if [ -f "$FAKE_HOSTS_DIR/$hn" ]; then echo "$hn"; fi
+    exit 0 ;;
+  "inspect "*"geldar-colo-players-host-"*)
+    [ -f "$FAKE_HOSTS_DIR/$hn" ] || exit 1
+    img=$(cat "$FAKE_HOSTS_DIR/$hn")
+    case "$*" in
+      *Config.Image*) echo "$img" ;;
+      *Labels*)
+        if [ "$img" = "\${FAKE_OLD_IMAGE:-}" ]; then echo "$FAKE_OLD_REVISION"
+        elif [ -n "\${FAKE_BAD_LABEL:-}" ]; then echo "$FAKE_OLD_REVISION"
+        else echo "$FAKE_REVISION"; fi ;;
+      *) echo running ;;
+    esac
+    exit 0 ;;
+  "stop geldar-colo-players-host-"* | "rm geldar-colo-players-host-"*) rm -f "$FAKE_HOSTS_DIR/$hn"; exit 0 ;;
+  *" run -d "*" players-host "*)
+    if [ -n "\${FAKE_RUN_FAIL:-}" ] && [ "$GELDAR_BODY_IMAGE" != "\${FAKE_OLD_IMAGE:-}" ]; then exit 1; fi
+    printf '%s\\n' "$GELDAR_BODY_IMAGE" >"$FAKE_HOSTS_DIR/$hn"; exit 0 ;;
+esac
 case "$*" in
   *"config --quiet"*) exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
@@ -140,6 +165,32 @@ export function cdRun(
   });
   const spawnErr = r.error ? `\n[spawn: ${r.error.message}]` : '';
   return { code: r.status ?? -1, out: `${r.stdout ?? ''}${r.stderr ?? ''}${spawnErr}` };
+}
+
+// The body image an old player host runs (not the manifest's), and the revision its label reports.
+export const OLD_HOST_IMAGE = `${GHCR}/geldar-body@sha256:${'7'.repeat(64)}`;
+export const OLD_HOST_REV = 'a'.repeat(40);
+
+// Gives the fake docker some running player hosts (container name -> image) and a shard file listing `ids`.
+// A listed id without a container is a hibernating player.
+export function withHosts(cd: Cd, ids: string[], running: Record<string, string>) {
+  const dir = join(cd.fx.dir, 'hosts');
+  mkdirSync(dir, { recursive: true });
+  for (const [id, image] of Object.entries(running)) {
+    writeFileSync(join(dir, `geldar-colo-players-host-${id}`), `${image}\n`);
+  }
+  const shard = join(cd.fx.dir, 'colo-mind.yaml');
+  writeFileSync(shard, `${ids.map((id) => `- {player_id: ${id}}\n`).join('')}`);
+  cd.fx.env.FAKE_HOSTS_DIR = posix(dir);
+  cd.fx.env.GELDAR_COLO_SHARD = posix(shard);
+  cd.fx.env.FAKE_OLD_IMAGE = OLD_HOST_IMAGE;
+  cd.fx.env.FAKE_OLD_REVISION = OLD_HOST_REV;
+  cd.fx.env.COLO_CD_PLAYER_SETTLE = '0';
+  cd.fx.env.COLO_CD_PLAYER_WAIT = '1';
+  return (id: string) => {
+    const f = join(dir, `geldar-colo-players-host-${id}`);
+    return existsSync(f) ? readFileSync(f, 'utf8').trim() : null;
+  };
 }
 
 export const cdCalls = (cd: Cd): string[] => readCalls(cd.fx);
