@@ -112,6 +112,7 @@ function fixture(opts: { manifest?: string[]; skipSecret?: string } = {}): Fx {
     GELDAR_RELEASE_FILE: posix(release),
     GELDAR_STATE_DIR: posix(join(dir, 'state')),
     GELDAR_BLUEMAP_LOCK: posix(join(dir, 'no-lock.json')),
+    GELDAR_CHUNKY_LOCK: posix(join(dir, 'no-chunky-lock.json')),
     GELDAR_MIN_FREE_KB: '1',
     GELDAR_SERVICE_UID: '1000',
     DEPLOY_DRY_RUN: '0',

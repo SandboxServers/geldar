@@ -20,6 +20,7 @@ STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
 export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bluemap.jar into Paper (C2-07o)
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
+CHUNKY_LOCK=${GELDAR_CHUNKY_LOCK:-$ROOT/plugins/chunky/chunky.lock.json}
 DRY_RUN=${DEPLOY_DRY_RUN:-0}
 # The uid the containers run as (compose/colo.yml user:, Paper UID). The secrets directory and every secret file must be
 # owned by it, so the deploy checks owners against it. Exported so compose sees the same value.
@@ -314,6 +315,41 @@ fetch_bluemap() {
     mkdir -p "$STATE_DIR/bluemap" && mv "$WORK/bluemap.jar" "$STATE_DIR/bluemap/bluemap.jar" ||
       die "bluemap: cannot store the verified jar in $STATE_DIR/bluemap"
     say "bluemap: jar verified and stored in $STATE_DIR/bluemap"
+  fi
+}
+
+# Fetches the Chunky jar named by the lock file (plugins/chunky/chunky.lock.json, pregeneration; see plugins/chunky/README.md)
+# and checks its sha256 before anything uses it. A mismatch stops the deploy. Same rules as fetch_bluemap: https only,
+# and file:// only for the tests.
+fetch_chunky() {
+  if [ ! -f "$CHUNKY_LOCK" ]; then
+    say "chunky: no lock file at $CHUNKY_LOCK; skipped"
+    return 0
+  fi
+  need curl
+  need sha256sum
+  url=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CHUNKY_LOCK")
+  want=$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CHUNKY_LOCK")
+  [ -n "$url" ] || die "chunky lock has no url"
+  printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "chunky lock: sha256 is not 64 lowercase hex characters"
+  case $url in
+    https://*) ;;
+    file://*)
+      [ "${GELDAR_DEPLOY_ALLOW_FILE_URL:-0}" = 1 ] || die "chunky lock: the url must be https (file:// is test-only)"
+      ;;
+    *) die "chunky lock: the url must be https" ;;
+  esac
+  curl -fsSL -o "$WORK/chunky.jar" "$url" || die "chunky: download failed"
+  got=$(sha256sum "$WORK/chunky.jar" | awk '{print $1}')
+  if [ "$got" != "$want" ]; then
+    die "chunky: sha256 mismatch (lock says $want, download is $got); nothing installed"
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    say "chunky: jar verified against the lock (dry run keeps nothing)"
+  else
+    mkdir -p "$STATE_DIR/chunky" && mv "$WORK/chunky.jar" "$STATE_DIR/chunky/chunky.jar" ||
+      die "chunky: cannot store the verified jar in $STATE_DIR/chunky"
+    say "chunky: jar verified and stored in $STATE_DIR/chunky"
   fi
 }
 

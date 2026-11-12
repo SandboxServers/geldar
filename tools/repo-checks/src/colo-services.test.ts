@@ -615,3 +615,17 @@ describe('compose/colo.yml: BlueMap in Paper (C2-07o)', () => {
     expect(volumes).toContain('../plugins/bluemap/config:/plugins/BlueMap:ro');
   });
 });
+
+describe('compose/colo.yml: Chunky in Paper (pregeneration)', () => {
+  const volumes = (colo.services.paper?.volumes ?? []) as (string | Record<string, unknown>)[];
+
+  it('mounts the verified Chunky jar read-only and nothing else of Chunky', () => {
+    expect(volumes).toContainEqual({
+      type: 'bind',
+      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar',
+      target: '/plugins/chunky.jar',
+      read_only: true,
+    });
+    expect(volumes.filter((v) => JSON.stringify(v).includes('chunky'))).toHaveLength(1);
+  });
+});

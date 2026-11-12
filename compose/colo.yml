@@ -140,6 +140,7 @@ services:
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
       - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar', target: /plugins/bluemap.jar, read_only: true} # BlueMap (C2-07o, R38): verified jar, read-only; web server on 8101, colo network only
       - ../plugins/bluemap/config:/plugins/BlueMap:ro
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar', target: /plugins/chunky.jar, read_only: true} # Chunky (pregeneration): verified jar, read-only. Its data dir plugins/Chunky is created by the plugin in the writable paper-data volume.
     # No ports: the game port and RCON are not published. Velocity is the only game listener.
     networks: [colo]
     healthcheck:
