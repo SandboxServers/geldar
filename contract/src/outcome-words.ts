@@ -36,6 +36,8 @@ const INTENT_WHY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     missing_materials: 'You lack the materials to craft that.',
     missing_station: 'There is no crafting table within reach.',
     not_found: 'You do not know how to craft that.',
+    not_possible: 'You cannot make that right now.',
+    blocked: 'The way to the furnace was blocked.',
   },
   rest: {
     not_found: 'There is no bed within reach to rest in.',

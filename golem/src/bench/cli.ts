@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import type { Bot } from 'mineflayer';
 import { watchRecipeBook } from '../actions/craft-table.ts';
 import { createRegistry } from '../actions/index.ts';
+import { watchSmeltBook } from '../actions/smelt-book.ts';
 import { restoreWorld } from '../arena.ts';
 import { type GolemConfig, loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
@@ -173,7 +174,10 @@ function defaultManager(
     host: cfg.mcHost,
     port: cfg.mcPort,
     username: BENCH_NAME,
-    onBot: watchRecipeBook,
+    onBot: (bot) => {
+      watchRecipeBook(bot);
+      watchSmeltBook(bot);
+    },
     registry: registryFromConfig(cfg),
     log: () => undefined,
   });
