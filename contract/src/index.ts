@@ -337,7 +337,14 @@ export type {
   PresenceRecord,
   SovereignCallPayload,
 } from './generated/types.ts';
-export { bookSubject, kinoFeedSubject, PRESENCE_BUCKET, viewSubject } from './subjects.ts';
+export { validateMaintenanceNotice } from './generated/validators.js';
+export {
+  bookSubject,
+  kinoFeedSubject,
+  maintenanceSubject,
+  PRESENCE_BUCKET,
+  viewSubject,
+} from './subjects.ts';
 
 /** Checks a value against sovereign-call-event.schema.json (the payload of a `sovereign_call` event). Never throws. */
 export function validateSovereignCallPayload(
