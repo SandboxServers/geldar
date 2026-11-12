@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import minecraftData from 'minecraft-data';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { installSoftDig, isSoftDigName, MIN_DIG_HEALTH } from './soft-dig.ts';
 
 const { Movements, goals } = pathfinderPkg;
@@ -85,6 +85,20 @@ function movementsFor(
   return m;
 }
 
+/**
+ * The library reads the wall clock (`performance.now`) for its per-step and total budgets, so a
+ * search's outcome would depend on machine speed. This scripts the clock instead: each read
+ * advances `step` ms. `0` freezes it, so no budget runs out and a search ends only on its own
+ * result. A positive step runs the budgets out after a fixed number of search steps.
+ */
+function scriptedClock(step: number): void {
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => {
+    now += step;
+    return now;
+  });
+}
+
 function search(
   movements: unknown,
   from: [number, number, number],
@@ -130,12 +144,17 @@ describe('isSoftDigName', () => {
 });
 
 describe('soft-dig pathing over fake terrain', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('cannot leave a 6-block canopy without digging', () => {
     const result = search(movementsFor(canopy(), false), [1, 71, 1], [5, 65, 1]);
     expect(result.status).not.toBe('success');
   });
 
   it('digs down through the leaves and reaches the ground', () => {
+    scriptedClock(0);
     const result = search(movementsFor(canopy(), true), [1, 71, 1], [5, 65, 1]);
     expect(result.status).toBe('success');
     const dug = result.path.flatMap((n) => n.toBreak);
@@ -180,6 +199,7 @@ describe('soft-dig pathing over fake terrain', () => {
   it('prefers walking around a leaf to digging through it when the detour is short', () => {
     const t = new FakeTerrain();
     t.fill(5, 5, 65, 66, -1, 1, 'oak_leaves');
+    scriptedClock(0);
     const result = search(movementsFor(t, true), [3, 65, 0], [7, 65, 0]);
     expect(result.status).toBe('success');
     expect(result.path.flatMap((n) => n.toBreak)).toHaveLength(0);
@@ -187,6 +207,8 @@ describe('soft-dig pathing over fake terrain', () => {
 
   it('returns a timeout status with a tiny search budget instead of running on', () => {
     const t = new FakeTerrain();
+    // One ms per read: the total budget (1 ms) runs out on the first step, before the tick budget.
+    scriptedClock(1);
     const result = search(movementsFor(t, true), [0, 65, 0], [400, 65, 0], 1);
     expect(['timeout', 'noPath']).toContain(result.status);
   });
