@@ -211,6 +211,52 @@ export interface DayNightPayload {
   tick: number;
 }
 
+export type BlockCoord = number;
+
+export interface DeathPayload {
+  /**
+   * The last damage cause (a Bukkit DamageCause name), or UNKNOWN.
+   */
+  cause: string;
+  player?: string;
+  x?: BlockCoord;
+  y?: BlockCoord;
+  z?: BlockCoord;
+  /**
+   * The dimension the player died in: overworld, nether, end, or other for a custom one.
+   */
+  dimension?: "overworld" | "nether" | "end" | "other";
+  /**
+   * The total count of items dropped, over every stack. Absent when nothing dropped.
+   */
+  drops?: number;
+  /**
+   * One record per dropped stack. Absent when nothing dropped.
+   *
+   * @minItems 1
+   * @maxItems 41
+   */
+  drop_items?: [
+    {
+      item: string;
+      count: number;
+      x?: BlockCoord;
+      y?: BlockCoord;
+      z?: BlockCoord;
+    },
+    ...{
+      item: string;
+      count: number;
+      x?: BlockCoord;
+      y?: BlockCoord;
+      z?: BlockCoord;
+    }[]
+  ];
+  respawn_x?: BlockCoord;
+  respawn_y?: BlockCoord;
+  respawn_z?: BlockCoord;
+}
+
 export interface WorldEvent {
   source_event_id: string;
   at: string;

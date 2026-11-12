@@ -33,6 +33,18 @@ final class ListenerDoubles {
             List<NamespacedKey> sink,
             EntityDamageEvent lastDamage,
             org.bukkit.Location location) {
+        return player(name, recipeKeys, sink, lastDamage, location, null, null);
+    }
+
+    /** As above, with {@code getWorld} returning {@code world} and {@code getBedSpawnLocation} returning {@code bed}. */
+    static Player player(
+            String name,
+            List<NamespacedKey> recipeKeys,
+            List<NamespacedKey> sink,
+            EntityDamageEvent lastDamage,
+            org.bukkit.Location location,
+            org.bukkit.World world,
+            org.bukkit.Location bed) {
         List<Recipe> recipes = new ArrayList<>();
         // A recipe that is not Keyed must be skipped by the listener, so the server always holds one.
         recipes.add((Recipe) Proxy.newProxyInstance(
@@ -59,10 +71,24 @@ final class ListenerDoubles {
                     case "getServer" -> server;
                     case "getLastDamageCause" -> lastDamage;
                     case "getLocation" -> location;
+                    case "getWorld" -> world;
+                    case "getBedSpawnLocation" -> bed;
                     case "discoverRecipes" -> {
                         sink.addAll((Collection<NamespacedKey>) a[0]);
                         yield a[0] instanceof Collection<?> c ? c.size() : 0;
                     }
+                    default -> null;
+                });
+    }
+
+    /** A World whose {@code getEnvironment} is {@code env} and whose {@code getSpawnLocation} is {@code spawn}. */
+    static org.bukkit.World world(org.bukkit.World.Environment env, org.bukkit.Location spawn) {
+        return (org.bukkit.World) Proxy.newProxyInstance(
+                ListenerDoubles.class.getClassLoader(),
+                new Class<?>[] {org.bukkit.World.class},
+                (p, m, a) -> switch (m.getName()) {
+                    case "getEnvironment" -> env;
+                    case "getSpawnLocation" -> spawn;
                     default -> null;
                 });
     }

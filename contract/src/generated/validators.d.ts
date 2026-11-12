@@ -7,6 +7,7 @@ export declare const validateBookReply: ValidateFunction;
 export declare const validateBookRequest: ValidateFunction;
 export declare const validateCheckpointManifest: ValidateFunction;
 export declare const validateDayNightPayload: ValidateFunction;
+export declare const validateDeathPayload: ValidateFunction;
 export declare const validateWorldEvent: ValidateFunction;
 export declare const validateHeardSoundPayload: ValidateFunction;
 export declare const validateHeardSoundEvent: ValidateFunction;
