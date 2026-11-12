@@ -2,6 +2,7 @@ import { type Snapshot, validateSnapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { isEnclosed } from './body/view.ts';
+import { selfProbes } from './perception/self/index.ts';
 import { ulid } from './ulid.ts';
 
 const DAY_TICKS = 24000;
@@ -118,8 +119,8 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
       // Health Boost can lift the current health above the contract's 20; the contract caps it.
       health: Math.min(20, bot.health),
       hunger: bot.food,
-      // Armor is computed in wave 4 from the equipped items; 0 until then.
-      armor: 0,
+      // Per-feature self fields (armor among them) come from the probe registry, in its order.
+      ...selfProbes(bot),
       held_item: bot.heldItem?.name ?? null,
       // Mineflayer's bare item names (`cobblestone`); the contract's item name is a free string.
       inventory: bot.inventory.items().map((stack) => ({ item: stack.name, count: stack.count })),

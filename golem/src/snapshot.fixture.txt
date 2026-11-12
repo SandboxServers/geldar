@@ -1,0 +1,174 @@
+{
+  "bare_bot": {
+    "snapshot_id": "sn_FIXTURE",
+    "agent_id": "ag_kestrel_01",
+    "shard": "phase0",
+    "revision": 3,
+    "world_time": {
+      "day": 0,
+      "time_of_day": "day",
+      "ticks": 1000,
+      "weather": "clear"
+    },
+    "self": {
+      "position": {
+        "x": 10,
+        "y": 64,
+        "z": -4
+      },
+      "health": 20,
+      "hunger": 18,
+      "armor": 0,
+      "held_item": null,
+      "inventory": [],
+      "effects": [],
+      "budget_remaining_thoughts": 0,
+      "days_since_sleep": 0
+    },
+    "surroundings": {
+      "blocks_summary": "",
+      "notable_blocks": [],
+      "entities": [],
+      "agents": [],
+      "enclosed": false
+    },
+    "heard": [],
+    "events_since_last_thought": []
+  },
+  "time_weather_biome": {
+    "snapshot_id": "sn_FIXTURE",
+    "agent_id": "ag_kestrel_01",
+    "shard": "phase0",
+    "revision": 3,
+    "world_time": {
+      "day": 2,
+      "time_of_day": "dusk",
+      "ticks": 50000,
+      "weather": "thunder"
+    },
+    "self": {
+      "position": {
+        "x": 10,
+        "y": 64,
+        "z": -4,
+        "biome": "dark_forest"
+      },
+      "health": 20,
+      "hunger": 18,
+      "armor": 0,
+      "held_item": null,
+      "inventory": [],
+      "effects": [],
+      "budget_remaining_thoughts": 0,
+      "days_since_sleep": 0
+    },
+    "surroundings": {
+      "blocks_summary": "",
+      "notable_blocks": [],
+      "entities": [],
+      "agents": [],
+      "enclosed": false
+    },
+    "heard": [],
+    "events_since_last_thought": []
+  },
+  "held_inventory_effects": {
+    "snapshot_id": "sn_FIXTURE",
+    "agent_id": "ag_kestrel_01",
+    "shard": "phase0",
+    "revision": 3,
+    "world_time": {
+      "day": 0,
+      "time_of_day": "day",
+      "ticks": 1000,
+      "weather": "clear"
+    },
+    "self": {
+      "position": {
+        "x": 0,
+        "y": 64,
+        "z": 0
+      },
+      "health": 20,
+      "hunger": 18,
+      "armor": 0,
+      "held_item": "stone_pickaxe",
+      "inventory": [
+        {
+          "item": "cobblestone",
+          "count": 10
+        }
+      ],
+      "effects": [
+        "speed",
+        "mining_fatigue"
+      ],
+      "budget_remaining_thoughts": 7,
+      "days_since_sleep": 2
+    },
+    "surroundings": {
+      "blocks_summary": "",
+      "notable_blocks": [],
+      "entities": [],
+      "agents": [],
+      "enclosed": false
+    },
+    "heard": [],
+    "events_since_last_thought": []
+  },
+  "every_optional_field": {
+    "snapshot_id": "sn_FIXTURE",
+    "agent_id": "ag_kestrel_01",
+    "shard": "phase0",
+    "revision": 3,
+    "world_time": {
+      "day": 0,
+      "time_of_day": "day",
+      "ticks": 1000,
+      "weather": "clear"
+    },
+    "self": {
+      "position": {
+        "x": 10,
+        "y": 64,
+        "z": -4
+      },
+      "health": 20,
+      "hunger": 4,
+      "armor": 0,
+      "held_item": null,
+      "inventory": [],
+      "effects": [],
+      "budget_remaining_thoughts": 0,
+      "days_since_sleep": 0,
+      "unlocked_recipes": [
+        "stone_pickaxe"
+      ]
+    },
+    "surroundings": {
+      "blocks_summary": "stone x3",
+      "notable_blocks": [],
+      "entities": [],
+      "agents": [],
+      "enclosed": false
+    },
+    "body_generation": 4,
+    "heard": [
+      {
+        "from": "Kestrel",
+        "text": "hello",
+        "age_seconds": 4
+      }
+    ],
+    "events_since_last_thought": [],
+    "current_plan": {
+      "goal": "mine",
+      "action": "dig",
+      "status": "running"
+    },
+    "stuck": {
+      "action": "dig",
+      "repeat_count": 2
+    }
+  }
+}

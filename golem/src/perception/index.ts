@@ -8,6 +8,7 @@ import { summaryWithCounts } from './nearby-counts.ts';
 import { knownNotableBlocks } from './notable-blocks.ts';
 import { unlockedRecipes } from './recipes.ts';
 import { RememberedBlocks } from './remembered.ts';
+import { surroundingsProbes } from './surroundings/index.ts';
 
 export { compass, summarizeBlocks } from './blocks-summary.ts';
 export { RememberedBlocks } from './remembered.ts';
@@ -28,6 +29,7 @@ export function createPerception(bot: Bot): Perception {
         notable_blocks: notable,
         ...footing(bot),
         ...observeEntities(bot),
+        ...surroundingsProbes(bot),
       };
     },
     unlockedRecipes: () => unlockedRecipes(bot),
