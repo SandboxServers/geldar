@@ -11,7 +11,10 @@ interface FakeOpts {
   velocityY?: number;
   /** Entity flags metadata; bit 0 is on fire. */
   flags?: number;
+  /** The bot's own air on the 0-20 scale; stored in its entity metadata as ticks (x15). */
   oxygen?: number | undefined;
+  /** What `bot.oxygenLevel` holds: mineflayer sets it from any entity's air, so it can leak. */
+  leakedOxygen?: number | undefined;
   /** Water in the block at the feet (y 64) or at the eye (y 65, floor of 64 + 1.62). */
   feetWater?: boolean;
   headWater?: boolean;
@@ -30,10 +33,10 @@ function fakeBot(o: FakeOpts = {}): Bot {
           onGround: o.onGround ?? true,
           isInWater: o.isInWater ?? false,
           velocity: new Vec3(0, o.velocityY ?? 0, 0),
-          metadata: [o.flags ?? 0],
+          metadata: [o.flags ?? 0, o.oxygen === undefined ? undefined : o.oxygen * 15],
         },
     inventory: { slots },
-    oxygenLevel: o.oxygen,
+    oxygenLevel: o.leakedOxygen,
     blockAt: (at: Vec3) => {
       const water =
         (Math.floor(at.y) === 64 && o.feetWater === true) ||
@@ -114,6 +117,21 @@ describe('selfFlags: status flags', () => {
   it('gives no flags and does not throw when the entity is not spawned', () => {
     const result = selfFlags(fakeBot({ noEntity: true }));
     expect(result).toEqual({ armor: 0 });
+  });
+});
+
+describe('selfFlags: air reads the bot, not the last entity', () => {
+  it('ignores a leaked oxygenLevel of 0 when the bot itself has full air', () => {
+    const flags = selfFlags(fakeBot({ oxygen: 20, leakedOxygen: 0 }));
+    expect(flags).not.toHaveProperty('air');
+  });
+
+  it('shows the bot own low air even when oxygenLevel holds a full breath', () => {
+    expect(selfFlags(fakeBot({ oxygen: 5, leakedOxygen: 20 })).air).toBe(5);
+  });
+
+  it('shows full air when the bot has no air metadata, whatever oxygenLevel holds', () => {
+    expect(selfFlags(fakeBot({ oxygen: undefined, leakedOxygen: 3 }))).not.toHaveProperty('air');
   });
 });
 
