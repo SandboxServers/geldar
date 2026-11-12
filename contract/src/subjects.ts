@@ -78,3 +78,13 @@ export function kinoFeedSubject(shard: string, agentId: string): string {
     throw new Error(`invalid agent id for a subject: ${agentId}`);
   return `geldar.${shard}.kino.${agentId}.feed`;
 }
+
+/**
+ * Where the deploy publishes a maintenance notice (maintenance-notice.schema.json, CD-1):
+ * `geldar.<shard>.maintenance`. Three tokens, like the event subjects; the notice is not a WorldEvent.
+ * Throws on a shard name the contract rejects.
+ */
+export function maintenanceSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.maintenance`;
+}

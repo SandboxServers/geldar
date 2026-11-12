@@ -28,6 +28,7 @@ export declare const validateRateLimitedMessage: ValidateFunction;
 export declare const validateByeMessage: ValidateFunction;
 export declare const validateLakituAudit: ValidateFunction;
 export declare const validateLakituFeed: ValidateFunction;
+export declare const validateMaintenanceNotice: ValidateFunction;
 export declare const validateLookInput: ValidateFunction;
 export declare const validateLookResult: ValidateFunction;
 export declare const validateWaitInput: ValidateFunction;

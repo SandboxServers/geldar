@@ -664,6 +664,29 @@ export interface LakituPosition {
   on_ground: boolean;
 }
 
+export interface MaintenanceNotice {
+  /**
+   * The notice id, one per deploy step, so a repeated delivery is recognised.
+   */
+  id: string;
+  /**
+   * pause: the world will stop for about `seconds`; restart: the restart is now; back: the restart is done and the world moves again.
+   */
+  kind: "pause" | "restart" | "back";
+  /**
+   * What is affected: bodies, the world (Paper), or the MCP and threshold.
+   */
+  scope: "bodies" | "world" | "mcp";
+  /**
+   * The countdown in whole seconds, 0 to 600. Absent when there is no countdown.
+   */
+  seconds?: number;
+  /**
+   * Why, as a code. Absent when the deployer gives none.
+   */
+  reason?: "update" | "plugin_update" | "config";
+}
+
 export type McpCursor = string;
 
 export type McpInterest =
