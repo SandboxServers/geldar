@@ -16,19 +16,38 @@ import java.util.concurrent.ConcurrentHashMap;
  * switch ({@link #kill}) says bye to every target and silences the feed for good.
  */
 public final class KinoFeed {
-    /** Sections read above and below the target's own section. */
-    public static final int SECTIONS_BELOW = 2;
+    /** Sections read below the target's own section: little, since the ground below the agent is mostly hidden. */
+    public static final int SECTIONS_BELOW = 1;
 
-    public static final int SECTIONS_ABOVE = 2;
+    /** Sections read above the target's own section: the sky and the surface above the agent are what it sees. */
+    public static final int SECTIONS_ABOVE = 6;
     private static final String AIR = "minecraft:air";
 
     /** Blocks one {@link #pump} may read on the server thread (one section is 4096). */
     public static final int BLOCK_BUDGET_PER_TICK = 16_384;
 
+    /** Blocks that are full opaque cubes; any other state counts as see-through, so a section is only skipped when sure. */
+    private static final Set<String> OPAQUE = Set.of(
+            "minecraft:stone", "minecraft:deepslate", "minecraft:granite", "minecraft:diorite", "minecraft:andesite",
+            "minecraft:tuff", "minecraft:calcite", "minecraft:dirt", "minecraft:coarse_dirt", "minecraft:grass_block",
+            "minecraft:podzol", "minecraft:mycelium", "minecraft:gravel", "minecraft:clay", "minecraft:sand",
+            "minecraft:red_sand", "minecraft:sandstone", "minecraft:netherrack", "minecraft:bedrock",
+            "minecraft:obsidian", "minecraft:bricks", "minecraft:terracotta", "minecraft:rooted_dirt", "minecraft:mud",
+            "minecraft:packed_mud", "minecraft:cobbled_deepslate", "minecraft:polished_deepslate",
+            "minecraft:chiseled_deepslate", "minecraft:deepslate_tiles", "minecraft:reinforced_deepslate");
+
+    /** Suffixes of whole opaque cube families: logs, wood, planks, bricks, concrete, wool, terracotta. */
+    private static final List<String> OPAQUE_SUFFIXES =
+            List.of("_log", "_wood", "_planks", "_bricks", "_concrete", "_wool", "_terracotta");
+
     /** Entities one {@link #tick} may examine per target (the entity_positions message itself is capped at 256). */
     public static final int ENTITY_EXAMINE_PER_TICK = 512;
 
     private static final int SECTION_BLOCKS = PaletteEncoder.CELLS;
+    /** The six face layers (16 x 16 cells each) read only for a section whose own cells are all opaque. */
+    private static final int FACE_BLOCKS = 6 * 256;
+    /** The most one section can cost; a section is read only when this much of the budget is left. */
+    private static final int WORST_SECTION = SECTION_BLOCKS + FACE_BLOCKS;
 
     private final KinoWorld world;
     private final int budget;
@@ -37,10 +56,16 @@ public final class KinoFeed {
     private final Map<String, Target> targets = new ConcurrentHashMap<>();
     private volatile boolean killed;
 
+    /** A section by chunk x, section y and chunk z. */
+    private record Section(int x, int y, int z) {}
+
     private static final class Target {
         int chunkX;
         int chunkZ;
-        final Set<Long> sent = new HashSet<>();
+        /** The sections queued or sent and still inside the window; a section leaving the window is evicted. */
+        final Set<Section> sent = new HashSet<>();
+        /** The target's own section Y, as of the last window queue. */
+        int sectionY;
         /** Sections still to read, as {x, y, z}; filled by a window request, drained by {@link #pump}. */
         final Deque<int[]> pending = new ArrayDeque<>();
         /** A resync arrived while a window was still queued: one more pass follows, not one per request. */
@@ -57,7 +82,7 @@ public final class KinoFeed {
     }
 
     public KinoFeed(KinoWorld world, KinoSink sink, int radiusChunks, int blockBudgetPerTick) {
-        this.budget = Math.max(SECTION_BLOCKS, blockBudgetPerTick);
+        this.budget = Math.max(WORST_SECTION, blockBudgetPerTick);
         this.world = world;
         this.sink = sink;
         this.radius = Math.max(1, Math.min(8, radiusChunks));
@@ -142,12 +167,16 @@ public final class KinoFeed {
             Target t = e.getValue();
             int cx = chunk(at.get().x());
             int cz = chunk(at.get().z());
-            if (cx != t.chunkX || cz != t.chunkZ) {
+            boolean moved = cx != t.chunkX || cz != t.chunkZ;
+            boolean sectionChanged = sectionOf(at.get().y()) != t.sectionY;
+            if (moved) {
                 t.chunkX = cx;
                 t.chunkZ = cz;
                 t.scanChunk = 0;
                 t.scanEntity = 0;
                 sink.publish(id, KinoMessages.targetMoved(id, at.get().x(), at.get().y(), at.get().z()));
+            }
+            if (moved || sectionChanged) {
                 queueWindow(t, at.get());
             }
             sink.publish(id, KinoMessages.entityPositions(scanEntities(id, t)));
@@ -206,6 +235,10 @@ public final class KinoFeed {
         return Math.floorDiv((int) Math.floor(blockCoord), 16);
     }
 
+    private static int sectionOf(double blockY) {
+        return Math.floorDiv((int) Math.floor(blockY), 16);
+    }
+
     /**
      * Reads queued sections for all targets, at most the block budget per call (call it every game tick). It
      * never reads more than the budget, whatever Glass asks for.
@@ -217,11 +250,10 @@ public final class KinoFeed {
         int left = budget;
         for (Map.Entry<String, Target> e : targets.entrySet()) {
             Target t = e.getValue();
-            while (left >= SECTION_BLOCKS && !t.pending.isEmpty() && !killed) {
+            while (left >= WORST_SECTION && !t.pending.isEmpty() && !killed) {
                 int[] s = t.pending.poll();
-                left -= SECTION_BLOCKS;
                 if (world.isChunkLoaded(s[0], s[2])) {
-                    sendSection(e.getKey(), s[0], s[1], s[2]);
+                    left -= sendSection(e.getKey(), s[0], s[1], s[2]);
                 }
             }
             if (t.pending.isEmpty() && t.again) {
@@ -235,42 +267,99 @@ public final class KinoFeed {
         }
     }
 
-    /** Queues each loaded, not yet sent chunk of the window; no block is read here. */
+    /**
+     * Queues each loaded section of the window that is not already sent or queued; no block is read here. Sections
+     * that left the window (by chunk or by section Y) are evicted, so coming back to them queues them again.
+     */
     private void queueWindow(Target t, KinoWorld.Position at) {
-        int sy = Math.floorDiv((int) Math.floor(at.y()), 16);
-        t.lo = Math.max(world.minSectionY(), sy - SECTIONS_BELOW);
-        t.hi = Math.min(world.maxSectionY(), sy + SECTIONS_ABOVE);
-        t.sent.removeIf(k -> Math.abs((int) (k >> 32) - t.chunkX) > radius
-                || Math.abs((int) (long) k - t.chunkZ) > radius);
+        t.sectionY = sectionOf(at.y());
+        t.lo = Math.max(world.minSectionY(), t.sectionY - SECTIONS_BELOW);
+        t.hi = Math.min(world.maxSectionY(), t.sectionY + SECTIONS_ABOVE);
+        t.sent.removeIf(s -> Math.abs(s.x() - t.chunkX) > radius || Math.abs(s.z() - t.chunkZ) > radius
+                || s.y() < t.lo || s.y() > t.hi);
+        t.pending.removeIf(s -> !t.sent.contains(new Section(s[0], s[1], s[2])));
         for (int x = t.chunkX - radius; x <= t.chunkX + radius; x++) {
             for (int z = t.chunkZ - radius; z <= t.chunkZ + radius; z++) {
-                long key = ((long) x << 32) ^ (z & 0xffffffffL);
-                if (t.sent.contains(key) || !world.isChunkLoaded(x, z)) {
+                if (!world.isChunkLoaded(x, z)) {
                     continue;
                 }
-                t.sent.add(key);
                 for (int y = t.lo; y <= t.hi; y++) {
-                    t.pending.add(new int[] {x, y, z});
+                    if (t.sent.add(new Section(x, y, z))) {
+                        t.pending.add(new int[] {x, y, z});
+                    }
                 }
             }
         }
     }
 
-    private void sendSection(String agentId, int sx, int sy, int sz) {
+    /**
+     * Publishes one section unless it is empty or buried. Returns the blocks it may have read, which the caller
+     * takes from the budget: a fully opaque section is charged for its face layers too, read or not.
+     */
+    private int sendSection(String agentId, int sx, int sy, int sz) {
         String[] cells = new String[PaletteEncoder.CELLS];
         boolean allAir = true;
+        boolean allOpaque = true;
         int i = 0;
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
                     String s = PaletteEncoder.normalize(world.blockState(sx * 16 + x, sy * 16 + y, sz * 16 + z));
                     allAir &= AIR.equals(s);
+                    allOpaque &= opaque(s);
                     cells[i++] = s;
                 }
             }
         }
-        if (!allAir) {
+        if (!allAir && !(allOpaque && sealed(sx, sy, sz))) {
             sink.publish(agentId, KinoMessages.chunkSection(sx, sz, sy, PaletteEncoder.encode(cells)));
         }
+        return allOpaque ? WORST_SECTION : SECTION_BLOCKS;
+    }
+
+    /**
+     * True when no camera can see into a section: its six face layers, one block outside it, are all opaque (the
+     * caller has checked that the section itself is). Conservative: a section at the top or bottom of the world, or
+     * a face in a chunk that is not loaded, is not sealed, so it is sent.
+     */
+    private boolean sealed(int sx, int sy, int sz) {
+        if (sy <= world.minSectionY() || sy >= world.maxSectionY()) {
+            return false;
+        }
+        int[] base = {sx * 16, sy * 16, sz * 16};
+        for (int axis = 0; axis < 3; axis++) {
+            int u = (axis + 1) % 3;
+            int v = (axis + 2) % 3;
+            for (int offset : new int[] {-1, 16}) {
+                for (int a = 0; a < 16; a++) {
+                    for (int b = 0; b < 16; b++) {
+                        int[] c = {base[0], base[1], base[2]};
+                        c[axis] = base[axis] + offset;
+                        c[u] = base[u] + a;
+                        c[v] = base[v] + b;
+                        if (!world.isChunkLoaded(Math.floorDiv(c[0], 16), Math.floorDiv(c[2], 16))
+                                || !opaque(PaletteEncoder.normalize(world.blockState(c[0], c[1], c[2])))) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    /** Whether a block state is a full opaque cube; unknown states are not. */
+    private static boolean opaque(String state) {
+        int bracket = state.indexOf('[');
+        String id = bracket < 0 ? state : state.substring(0, bracket);
+        if (OPAQUE.contains(id) || id.endsWith("_ore")) {
+            return true;
+        }
+        for (String suffix : OPAQUE_SUFFIXES) {
+            if (id.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
