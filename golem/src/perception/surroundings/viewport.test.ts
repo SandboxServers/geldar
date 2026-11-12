@@ -74,6 +74,21 @@ describe('viewport: nothing behind an opaque block', () => {
     expect(text).not.toContain('diamond');
   });
 
+  it('a ray stops at the first opaque block: its solid distance is the first wall, not a later one', () => {
+    // Two stone walls on the centre ray (north of the body): the first at z=-3, the second at z=-6.
+    const twoWalls = scene((x, y, z) => {
+      if ((z === -3 || z === -6) && y >= 0 && y <= 3 && Math.abs(x) <= 10) return STONE;
+      return undefined;
+    });
+    const ray = castViewport(twoWalls, STAND, 1, 1).rays[0]?.[0];
+    expect(ray).toMatchObject({
+      kind: 'solid',
+      name: 'stone',
+      distance: 2.75,
+      solidDistance: 2.75,
+    });
+  });
+
   it('does not report a mob behind a stone wall, and does report one in sight', () => {
     const mobs: ViewMob[] = [
       { name: 'zombie', x: 0.5, y: 0, z: -2, width: 0.6, height: 1.95 },
