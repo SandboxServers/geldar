@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/hurt-event.schema.json",
+  "title": "HurtPayload",
+  "description": "The hurt event the Body reports when it takes damage (wave PX, PX-1). PROVISIONAL vocabulary (decision 0143). Carries no coordinates. Bearing is relative to the Body's facing, not compass.",
+  "$ref": "#/$defs/HurtEvent",
+  "$defs": {
+    "HurtEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "source", "amount"],
+      "properties": {
+        "type": { "const": "hurt" },
+        "source": {
+          "type": "string",
+          "enum": ["melee", "arrow", "explosion", "fall", "fire", "lava", "drowning", "starvation", "other"]
+        },
+        "bearing": {
+          "description": "Where the attacker stood relative to the Body's facing. Absent when the attacker is unknown.",
+          "type": "string",
+          "enum": ["front", "left", "right", "behind"]
+        },
+        "mob": {
+          "description": "The attacking mob type, when the source is a mob.",
+          "type": "string",
+          "pattern": "^[a-z_]{1,64}$"
+        },
+        "amount": {
+          "description": "Health lost, rounded and capped at the health left. Zero-amount hurts are not emitted.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

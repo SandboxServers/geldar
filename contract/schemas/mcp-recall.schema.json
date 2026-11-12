@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-recall.schema.json",
+  "title": "McpRecall",
+  "description": "The recall tool (wave PX, PX-6): the contents a container had when the Body last opened it.",
+  "$defs": {
+    "RecallInput": {
+      "type": "object",
+      "description": "Free. Recall what a container held when you last opened it, and how many days ago. A container you have never opened gives status unknown, never its contents.",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+      }
+    },
+    "RecallResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "type": "string", "enum": ["known", "unknown"] },
+        "age_days": {
+          "description": "Days since the container was last opened. Present when status is known.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "contents": {
+          "description": "The stacks the container held at the last open. Present when status is known.",
+          "type": "array",
+          "maxItems": 54,
+          "items": { "$ref": "common.schema.json#/$defs/ItemStack" }
+        },
+        "furnace": { "$ref": "#/$defs/FurnaceState" }
+      }
+    },
+    "FurnaceState": {
+      "description": "A furnace's slots and progress at the last open (wave PX, PX-6). Each slot is null when empty.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "fuel", "output", "progress"],
+      "properties": {
+        "input": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }] },
+        "fuel": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }] },
+        "output": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }] },
+        "progress": {
+          "description": "Smelting progress, 0 to 100 percent.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      }
+    }
+  }
+}

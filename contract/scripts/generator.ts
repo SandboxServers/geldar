@@ -100,10 +100,17 @@ function snakeCase(pascal: string): string {
   return pascal.replace(/(?<=[a-z0-9])([A-Z])/g, '_$1').toLowerCase();
 }
 
+/**
+ * Schema files whose tools are not in the generated tool list yet: their validators are still
+ * generated, but no agent sees the tool until its wave PX packet lands (recall: PX-6, reach: PX-8b).
+ */
+const NOT_YET_EXPOSED = new Set(['mcp-recall', 'mcp-reach']);
+
 /** The tool pairs, sorted by tool name. Throws on an unpaired Input or Result, or an Input with no description. */
 function toolPairs(schemas: LoadedSchema[]): ToolPair[] {
   const found = new Map<string, Partial<ToolPair>>();
   for (const { name: schemaName, schema } of schemas) {
+    if (NOT_YET_EXPOSED.has(schemaName)) continue;
     const defs = (schema.$defs ?? {}) as Defs;
     for (const [defName, definition] of Object.entries(defs)) {
       const match = TOOL_DEF.exec(defName);

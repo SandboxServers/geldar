@@ -237,6 +237,16 @@
           }
         },
         "days_alive": { "type": "integer", "minimum": 0 },
+        "life": {
+          "description": "The life number: 1 for the first life, up by one for each death.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "days_alive_this_life": {
+          "description": "Days alive in the current life; resets to 0 at each death.",
+          "type": "integer",
+          "minimum": 0
+        },
         "days_since_sleep": { "type": "integer", "minimum": 0 },
         "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
         "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
