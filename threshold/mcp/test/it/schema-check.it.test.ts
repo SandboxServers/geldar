@@ -64,6 +64,7 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       /^schema check passed: role geldar_register and mcp_identities$/,
       /^schema check passed: register role reads through functions and the sign-up gates refuse$/,
       /^schema check passed: Kino definer functions answer for the named identity and refuse the rest$/,
+      /^schema check passed: the journal functions apply the decision 0138 rules$/,
     ];
     expect(passed, 'one NOTICE per check block that passed').toHaveLength(expected.length);
     expected.forEach((pattern, index) => {
