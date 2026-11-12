@@ -20,6 +20,10 @@ export interface SimEvent extends WakeEvent {
   where?: { x: number; z: number };
   /** For death: the number of items dropped. Absent or 0 means none dropped. */
   drops?: number;
+  /** For death: the dimension the player died in (a contract name). Absent when unknown. */
+  dimension?: 'overworld' | 'nether' | 'end' | 'other';
+  /** For death: the dropped stacks, the item name without namespace, count and place. */
+  drop_items?: { item: string; count: number; x?: number; y?: number; z?: number }[];
   /** For death: the respawn point, stated once per death. */
   respawn_point?: { x: number; y: number; z: number };
   /** For agent_approached: who came; for reflex: the item eaten. */

@@ -55,4 +55,77 @@ describe('death presenter: place, drops and respawn', () => {
     const out = deathPresenter.present(death({ where: { x: -40, z: 25 } }), base, call);
     expect(out[0]).toMatchObject({ where: { x: -40, z: 25 } });
   });
+
+  it('says the dimension in the death line, and keeps the old line when it is absent', () => {
+    const out = deathPresenter.present(death({ dimension: 'nether' }), base, call);
+    expect(out[0]).toMatchObject({
+      text: 'You died in the nether. You fell too far. You wake at the spawn with nothing.',
+    });
+    const none = deathPresenter.present(death(), base, call);
+    expect(none[0]).toMatchObject({
+      text: 'You died. You fell too far. You wake at the spawn with nothing.',
+    });
+  });
+
+  it('words each dimension, and an unknown one as another world', () => {
+    const words: [NonNullable<SimEvent['dimension']>, string][] = [
+      ['overworld', 'the overworld'],
+      ['end', 'the end'],
+      ['other', 'another world'],
+    ];
+    for (const [dimension, phrase] of words) {
+      const out = deathPresenter.present(death({ dimension }), base, call);
+      expect(out[0]).toMatchObject({
+        text: `You died in ${phrase}. You fell too far. You wake at the spawn with nothing.`,
+      });
+    }
+  });
+
+  it('names the dropped stacks with counts and the place, in one drop line', () => {
+    const out = deathPresenter.present(
+      death({
+        drops: 4,
+        drop_items: [
+          { item: 'oak_log', count: 3, x: 190, y: 61, z: 224 },
+          { item: 'stone_pickaxe', count: 1, x: 190, y: 61, z: 224 },
+        ],
+      }),
+      base,
+      call,
+    );
+    expect(out).toHaveLength(2);
+    expect(out[1]).toMatchObject({
+      type: 'death',
+      text: 'You dropped 3 oak_log, 1 stone_pickaxe near x=190 y=61 z=224.',
+    });
+  });
+
+  it('lists five stacks, then says how many more there are', () => {
+    const drop_items = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((item, i) => ({
+      item,
+      count: i + 1,
+    }));
+    const out = deathPresenter.present(death({ drops: 28, drop_items }), base, call);
+    expect(out).toHaveLength(2);
+    expect(out[1]?.text).toBe('You dropped 1 a, 2 b, 3 c, 4 d, 5 e, and 2 more.');
+  });
+
+  it('gives no place when no stack carries all three coordinates', () => {
+    const out = deathPresenter.present(
+      death({ drop_items: [{ item: 'dirt', count: 2, x: 1, z: 2 }] }),
+      base,
+      call,
+    );
+    expect(out[1]?.text).toBe('You dropped 2 dirt.');
+  });
+
+  it('with no drop_items it falls back to the count line, and never names items', () => {
+    const out = deathPresenter.present(death({ drops: 5 }), base, call);
+    expect(out[1]).toMatchObject({ text: 'You dropped 5 items where you died.', drops: 5 });
+    expect(out[1]?.text).not.toMatch(/oak_log|stone/);
+  });
+
+  it('a death with no drops, and an empty drop_items list, gives no drop line', () => {
+    expect(deathPresenter.present(death({ drops: 0, drop_items: [] }), base, call)).toHaveLength(1);
+  });
 });

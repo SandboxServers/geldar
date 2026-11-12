@@ -712,9 +712,25 @@ export interface McpPlayerEvent {
     z: number;
   };
   /**
+   * Death events: the dimension the player died in. Absent when the server could not read it.
+   */
+  dimension?: "overworld" | "nether" | "end" | "other";
+  /**
    * Death events: the number of items dropped; a line is emitted only when above 0.
    */
   drops?: number;
+  /**
+   * Death events: the dropped stacks, one record each, with the item name (no namespace), its count and where it lies. At most 41 records.
+   *
+   * @maxItems 41
+   */
+  drop_items?: {
+    item: string;
+    count: number;
+    x?: number;
+    y?: number;
+    z?: number;
+  }[];
   respawn_point?: Position;
 }
 

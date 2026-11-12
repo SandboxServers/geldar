@@ -54,4 +54,57 @@ describe('death handler: place, drops and respawn point', () => {
     const out = deathHandler.map(death({ cause: 'FALL', x: 1, z: 1, drops: 2 }), base, ctx);
     expect(out).toHaveLength(1);
   });
+
+  it('carries the dimension when it is one of the four contract names, and drops it otherwise', () => {
+    for (const dimension of ['overworld', 'nether', 'end', 'other']) {
+      const out = deathHandler.map(death({ cause: 'FALL', dimension }), base, ctx);
+      expect(out[0]).toMatchObject({ dimension });
+    }
+    for (const dimension of [undefined, 'Nether', 'the_nether', 7]) {
+      const out = deathHandler.map(death({ cause: 'FALL', dimension }), base, ctx);
+      expect(out[0]).not.toHaveProperty('dimension');
+    }
+  });
+
+  it('carries each dropped stack by name, count and place, and drops invalid records', () => {
+    const out = deathHandler.map(
+      death({
+        cause: 'FALL',
+        drops: 4,
+        drop_items: [
+          { item: 'oak_log', count: 3, x: 190, y: 61, z: 224 },
+          { item: 'stone', count: 1 },
+          { item: 'minecraft:stone', count: 1 },
+          { item: 'Stone', count: 1 },
+          { item: 'dirt', count: 0 },
+          { item: 'dirt', count: 2.5 },
+          'apple',
+        ],
+      }),
+      base,
+      ctx,
+    );
+    expect(out[0]).toMatchObject({
+      drop_items: [
+        { item: 'oak_log', count: 3, x: 190, y: 61, z: 224 },
+        { item: 'stone', count: 1 },
+      ],
+    });
+  });
+
+  it('omits drop_items when none of the records is valid, and keeps the dropped count', () => {
+    const out = deathHandler.map(
+      death({ cause: 'FALL', drops: 2, drop_items: [{ item: 'DIRT', count: 2 }] }),
+      base,
+      ctx,
+    );
+    expect(out[0]).not.toHaveProperty('drop_items');
+    expect(out[0]).toMatchObject({ drops: 2 });
+  });
+
+  it('keeps at most 41 stacks, the plugin maximum', () => {
+    const many = Array.from({ length: 50 }, () => ({ item: 'dirt', count: 1 }));
+    const out = deathHandler.map(death({ cause: 'FALL', drop_items: many }), base, ctx);
+    expect((out[0] as { drop_items: unknown[] }).drop_items).toHaveLength(41);
+  });
 });
