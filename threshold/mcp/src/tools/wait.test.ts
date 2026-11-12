@@ -292,6 +292,58 @@ describe('wait max_seconds cap', () => {
 });
 
 describe('wait through callTool', () => {
+  it('passes a hostile creeper and a lit furnace through the wait result with no invalid_output', async () => {
+    const fake = new FakeBody();
+    const creeper = {
+      type: 'creeper',
+      distance: 4,
+      direction: 'north',
+      x: 120,
+      y: 64,
+      z: -49,
+      hostile: true,
+      state: 'closing',
+      closing: true,
+      held_item: 'bow',
+      fuse: 'hissing',
+    };
+    const body = {
+      snapshot: async (lifeId: string): Promise<Snapshot> => {
+        const full = await fake.snapshot(lifeId);
+        return {
+          ...full,
+          surroundings: {
+            ...full.surroundings,
+            notable_blocks: [{ x: 123, y: 64, z: -45, type: 'furnace', lit: true }],
+            entities: [creeper],
+          },
+        } as unknown as Snapshot;
+      },
+    };
+    const { clock, log, deps } = setup({ body });
+    const handlers = {
+      wait: async (input: unknown) => {
+        const maxSeconds = (input as { max_seconds: number }).max_seconds;
+        const out = await wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds });
+        if (!out.ok) throw new Error(out.error);
+        return out.result;
+      },
+    } as unknown as ToolHandlers;
+    const ctx = { playerId: 'ag-jason-01', signal: new AbortController().signal };
+    const p = callTool(handlers, 'wait', { max_seconds: 60 }, ctx);
+    await flush();
+    await log.append(LIFE, speech(1, 0, true, 'SPOKEN-LINE'));
+    await advance(clock, 1);
+    const response = await p;
+    const first = response.content[0];
+    const text = first?.type === 'text' ? first.text : '';
+    expect(response.isError).toBeUndefined();
+    expect(text).not.toContain('invalid_output');
+    expect(text).toContain('"hostile":true');
+    expect(text).toContain('"fuse":"hissing"');
+    expect(text).toContain('"lit":true');
+  });
+
   it('returns a valid result for a hostile heard line and sign, with the text only under untrusted_world_text', async () => {
     // A full Body snapshot from the fake, with a hostile heard line and a hostile sign added to it.
     const fake = new FakeBody();

@@ -173,19 +173,7 @@
           "description": "Lava, deep water, drops, fire and cactus within 8 blocks in line of sight, nearest first, at most 4. Absent when none is in sight.",
           "type": "array",
           "maxItems": 4,
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["kind", "dir", "dist"],
-            "properties": {
-              "kind": {
-                "type": "string",
-                "enum": ["lava", "deep_water", "drop", "fire", "cactus"]
-              },
-              "dir": { "$ref": "common.schema.json#/$defs/CompassPoint" },
-              "dist": { "type": "integer", "minimum": 0, "maximum": 8 }
-            }
-          }
+          "items": { "$ref": "snapshot.schema.json#/$defs/SnapshotHazard" }
         },
         "notable_blocks": {
           "type": "array",
@@ -197,27 +185,17 @@
               "type": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
               "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
               "y": { "type": "integer", "minimum": -64, "maximum": 320 },
-              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "lit": {
+                "description": "Furnaces only: true while the furnace is burning fuel.",
+                "type": "boolean"
+              }
             }
           }
         },
         "entities": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["type", "distance", "direction", "x", "y", "z"],
-            "properties": {
-              "type": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
-              "distance": { "type": "number", "minimum": 0 },
-              "direction": { "type": "string", "pattern": "^[a-z_]{1,16}$" },
-              "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
-              "y": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
-              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
-              "item": { "$ref": "common.schema.json#/$defs/ItemName" },
-              "count": { "type": "integer", "minimum": 1 }
-            }
-          }
+          "items": { "$ref": "snapshot.schema.json#/$defs/SnapshotEntity" }
         },
         "agents": {
           "type": "array",

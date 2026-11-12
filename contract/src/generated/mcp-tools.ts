@@ -1049,33 +1049,7 @@ export const mcpToolSchemas: Record<
               "type": "array",
               "maxItems": 4,
               "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "kind",
-                  "dir",
-                  "dist"
-                ],
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "lava",
-                      "deep_water",
-                      "drop",
-                      "fire",
-                      "cactus"
-                    ]
-                  },
-                  "dir": {
-                    "$ref": "#/$defs/CompassPoint"
-                  },
-                  "dist": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 8
-                  }
-                }
+                "$ref": "#/$defs/SnapshotHazard"
               }
             },
             "notable_blocks": {
@@ -1108,6 +1082,10 @@ export const mcpToolSchemas: Record<
                     "type": "integer",
                     "minimum": -30000000,
                     "maximum": 30000000
+                  },
+                  "lit": {
+                    "description": "Furnaces only: true while the furnace is burning fuel.",
+                    "type": "boolean"
                   }
                 }
               }
@@ -1115,52 +1093,7 @@ export const mcpToolSchemas: Record<
             "entities": {
               "type": "array",
               "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "type",
-                  "distance",
-                  "direction",
-                  "x",
-                  "y",
-                  "z"
-                ],
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "pattern": "^[a-z_]{1,64}$"
-                  },
-                  "distance": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "direction": {
-                    "type": "string",
-                    "pattern": "^[a-z_]{1,16}$"
-                  },
-                  "x": {
-                    "type": "integer",
-                    "minimum": -30000000,
-                    "maximum": 30000000
-                  },
-                  "y": {
-                    "type": "integer",
-                    "minimum": -30000000,
-                    "maximum": 30000000
-                  },
-                  "z": {
-                    "type": "integer",
-                    "minimum": -30000000,
-                    "maximum": 30000000
-                  },
-                  "item": {
-                    "$ref": "#/$defs/ItemName"
-                  },
-                  "count": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                }
+                "$ref": "#/$defs/SnapshotEntity"
               }
             },
             "agents": {
@@ -1264,6 +1197,112 @@ export const mcpToolSchemas: Record<
             "biome": {
               "type": "string",
               "pattern": "^[a-z_]{1,64}$"
+            }
+          }
+        },
+        "SnapshotEntity": {
+          "description": "A being in sight. The MCP entities copy in mcp-common.schema.json refers to this definition, so the two cannot drift.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "distance",
+            "direction",
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,64}$"
+            },
+            "distance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "direction": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,16}$"
+            },
+            "x": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "y": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "z": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "item": {
+              "$ref": "#/$defs/ItemName"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "hostile": {
+              "description": "True for a mob that is always hostile by its type. Conditional and neutral mobs are not flagged from type alone.",
+              "type": "boolean"
+            },
+            "state": {
+              "description": "Observed state of a mob: idle, closing (distance fell over the last samples), attacking or fleeing.",
+              "type": "string",
+              "enum": [
+                "idle",
+                "closing",
+                "attacking",
+                "fleeing"
+              ]
+            },
+            "closing": {
+              "description": "True when the distance to the Body fell over the last two samples.",
+              "type": "boolean"
+            },
+            "held_item": {
+              "$ref": "#/$defs/ItemName"
+            },
+            "fuse": {
+              "description": "A creeper that is ignited shows hissing.",
+              "type": "string",
+              "enum": [
+                "hissing"
+              ]
+            }
+          }
+        },
+        "SnapshotHazard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "dir",
+            "dist"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "lava",
+                "deep_water",
+                "drop",
+                "fire",
+                "cactus"
+              ]
+            },
+            "dir": {
+              "$ref": "#/$defs/CompassPoint"
+            },
+            "dist": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
             }
           }
         },
@@ -2792,33 +2831,7 @@ export const mcpToolSchemas: Record<
               "type": "array",
               "maxItems": 4,
               "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "kind",
-                  "dir",
-                  "dist"
-                ],
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "lava",
-                      "deep_water",
-                      "drop",
-                      "fire",
-                      "cactus"
-                    ]
-                  },
-                  "dir": {
-                    "$ref": "#/$defs/CompassPoint"
-                  },
-                  "dist": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 8
-                  }
-                }
+                "$ref": "#/$defs/SnapshotHazard"
               }
             },
             "notable_blocks": {
@@ -2851,6 +2864,10 @@ export const mcpToolSchemas: Record<
                     "type": "integer",
                     "minimum": -30000000,
                     "maximum": 30000000
+                  },
+                  "lit": {
+                    "description": "Furnaces only: true while the furnace is burning fuel.",
+                    "type": "boolean"
                   }
                 }
               }
@@ -2858,52 +2875,7 @@ export const mcpToolSchemas: Record<
             "entities": {
               "type": "array",
               "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "type",
-                  "distance",
-                  "direction",
-                  "x",
-                  "y",
-                  "z"
-                ],
-                "properties": {
-                  "type": {
-                    "type": "string",
-                    "pattern": "^[a-z_]{1,64}$"
-                  },
-                  "distance": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "direction": {
-                    "type": "string",
-                    "pattern": "^[a-z_]{1,16}$"
-                  },
-                  "x": {
-                    "type": "integer",
-                    "minimum": -30000000,
-                    "maximum": 30000000
-                  },
-                  "y": {
-                    "type": "integer",
-                    "minimum": -30000000,
-                    "maximum": 30000000
-                  },
-                  "z": {
-                    "type": "integer",
-                    "minimum": -30000000,
-                    "maximum": 30000000
-                  },
-                  "item": {
-                    "$ref": "#/$defs/ItemName"
-                  },
-                  "count": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                }
+                "$ref": "#/$defs/SnapshotEntity"
               }
             },
             "agents": {
@@ -3033,6 +3005,112 @@ export const mcpToolSchemas: Record<
             "biome": {
               "type": "string",
               "pattern": "^[a-z_]{1,64}$"
+            }
+          }
+        },
+        "SnapshotEntity": {
+          "description": "A being in sight. The MCP entities copy in mcp-common.schema.json refers to this definition, so the two cannot drift.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "distance",
+            "direction",
+            "x",
+            "y",
+            "z"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,64}$"
+            },
+            "distance": {
+              "type": "number",
+              "minimum": 0
+            },
+            "direction": {
+              "type": "string",
+              "pattern": "^[a-z_]{1,16}$"
+            },
+            "x": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "y": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "z": {
+              "type": "integer",
+              "minimum": -30000000,
+              "maximum": 30000000
+            },
+            "item": {
+              "$ref": "#/$defs/ItemName"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "hostile": {
+              "description": "True for a mob that is always hostile by its type. Conditional and neutral mobs are not flagged from type alone.",
+              "type": "boolean"
+            },
+            "state": {
+              "description": "Observed state of a mob: idle, closing (distance fell over the last samples), attacking or fleeing.",
+              "type": "string",
+              "enum": [
+                "idle",
+                "closing",
+                "attacking",
+                "fleeing"
+              ]
+            },
+            "closing": {
+              "description": "True when the distance to the Body fell over the last two samples.",
+              "type": "boolean"
+            },
+            "held_item": {
+              "$ref": "#/$defs/ItemName"
+            },
+            "fuse": {
+              "description": "A creeper that is ignited shows hissing.",
+              "type": "string",
+              "enum": [
+                "hissing"
+              ]
+            }
+          }
+        },
+        "SnapshotHazard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "dir",
+            "dist"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "lava",
+                "deep_water",
+                "drop",
+                "fire",
+                "cactus"
+              ]
+            },
+            "dir": {
+              "$ref": "#/$defs/CompassPoint"
+            },
+            "dist": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
             }
           }
         },
