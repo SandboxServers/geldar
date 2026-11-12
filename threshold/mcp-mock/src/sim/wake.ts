@@ -31,6 +31,7 @@ export interface WakeEvent {
     | 'action_failed'
     | 'reflex'
     | 'plan_result'
+    | 'heard_sound'
     | 'wake';
   /** For speech: was the agent addressed directly? */
   addressed?: boolean;

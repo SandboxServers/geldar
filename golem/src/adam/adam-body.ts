@@ -19,9 +19,11 @@ import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { SnapshotRevision } from '../mind-link/revision.ts';
 import { MindLinkServer, type RequestServer } from '../mind-link/server.ts';
+import { heardSoundEvent } from '../perception/heard-sound-event.ts';
 import { HurtReporter } from '../perception/hurt.ts';
 import { hurtWorldEvent, watchHurts } from '../perception/hurt-trigger.ts';
 import { createPerception } from '../perception/index.ts';
+import { watchSounds } from '../perception/sounds.ts';
 import { buildSnapshot } from '../snapshot.ts';
 import { BotEars } from '../voice/ears.ts';
 import { SpeechEvents } from '../voice/speech-event.ts';
@@ -84,6 +86,22 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     worldTick: tick,
     log,
   });
+  // Heard sounds (PX-4): each leaves as a heard_sound event with a compass point and a band, never coordinates.
+  let heardCount = 0;
+  const stopSounds = watchSounds(bot, (sound) => {
+    heardCount += 1;
+    const event = heardSoundEvent(sound, {
+      shard: config.shard,
+      lifeId: config.lifeId,
+      tick: tick(),
+      at: new Date(),
+      seq: heardCount,
+    });
+    if (event === null) return;
+    env.publisher
+      .publish(`geldar.${config.shard}.heard_sound`, JSON.stringify(event), event.source_event_id)
+      .catch((error: unknown) => log(`heard sound not published: ${String(error)}`));
+  });
   // Listens before the awaited restart, so a bot that ends during the start is seen.
   let gone = false;
   let end: (reason: string) => void = () => undefined;
@@ -98,6 +116,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   bot.on('time', onTime);
   const onEnd = (reason?: string): void => {
     gone = true;
+    stopSounds();
     bot.off('time', onTime);
     end(`bot ended: ${reason ?? 'unknown'}`);
   };

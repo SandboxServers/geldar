@@ -6,6 +6,7 @@
 import {
   validateActionOutcomePayload,
   validateActionRecord,
+  validateHeardSoundEvent,
   validateIntentEventPayload,
   validatePlanResultPayload,
   validateReflexFiredPayload,
@@ -28,6 +29,7 @@ export const MIND_EVENT_TYPES: readonly MindEventType[] = [
   'damage',
   'death',
   'sleep',
+  'heard_sound',
 ];
 
 /** The subjects the Mind's event source filters on: `geldar.<shard>.<type>` for each Mind type. */
@@ -73,6 +75,8 @@ const PAYLOAD_CHECKS: Record<MindEventType, PayloadCheck> = {
   damage: freeForm,
   death: freeForm,
   sleep: freeForm,
+  heard_sound: (payload) =>
+    validateHeardSoundEvent(payload) ? null : ['heard_sound payload does not match the schema'],
 };
 
 function isMindType(type: string): type is MindEventType {
