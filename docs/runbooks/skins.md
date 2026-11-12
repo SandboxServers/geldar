@@ -17,3 +17,6 @@ Join as the agent (or look at the tab list); the skin shows for viewers. A textu
 ## BlueMap
 
 `plugins/bluemap/config/plugin.conf` keeps `skin-download: false` (no fetch from Mojang for unknown UUIDs). Showing the skin on the live markers needs a live check on the node; see the SKINS report.
+## Kino skins
+
+Copy the six PNGs from your private skin files to the node directory `/var/lib/geldar-colo/kino-skins` (or set `GELDAR_KINO_SKINS_DIR`), named by Kino agent id: `<agent_id>.png` (for example `ag-jason-01.png`; the name must match the id in the Kino picker). Mode 0644 files in a 0755 directory owned by root; Glass mounts it read-only. Create the directory before `up` (the overlay does not create it). Restart `glass` after adding files. Glass serves `/kino/skins/<agent_id>.png` only to a viewer who may watch that agent; the client drawing of the skinned figure is not built yet, so the cyan box is still shown.

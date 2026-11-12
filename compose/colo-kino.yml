@@ -27,6 +27,10 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: "${GELDAR_KINO_NATS_USER:-kino}"
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-kino.txt
+      # Agent skin PNGs (<agent_id>.png) served at /kino/skins/ to viewers who may watch that agent (decision 0140). Not in the repo.
+      GELDAR_KINO_SKIN_DIR: /kino-skins
+    volumes:
+      - {type: bind, source: ./secrets/kino-skins, target: /kino-skins, read_only: true, bind: {create_host_path: false}}
     secrets: [nats-kino.txt]
 secrets:
   nats-kino.txt:
