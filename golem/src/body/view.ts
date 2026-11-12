@@ -22,6 +22,17 @@ export interface HostileView {
   hissing?: boolean;
 }
 
+/** An arrow in flight that the Body can see (PX-7). */
+export interface ArrowView {
+  /** Straight-line distance from the Body in blocks. */
+  distance: number;
+  position: { x: number; y: number; z: number };
+  /** Where the arrow stands relative to the Body's facing: front, behind, left or right. */
+  bearing: 'front' | 'behind' | 'left' | 'right';
+  /** True when the arrow flies toward the Body (its horizontal velocity points at it). */
+  closing: boolean;
+}
+
 /**
  * What a reflex may see of the Body: plain data, no bot, no way to act. Like `limitedControl`
  * for the bench, it narrows the bot to reads. Every value is read at call time, so one view
@@ -38,6 +49,13 @@ export interface BodyView {
   readonly position: { x: number; y: number; z: number };
   /** Hostile mobs within `radius` blocks (default 16), nearest first. */
   nearbyHostiles(radius?: number): HostileView[];
+  /**
+   * Arrows in flight within `radius` blocks (default 8) that the Body can see, nearest first. Optional
+   * so a hand-built view may leave it out; a reflex reads a missing value as no arrows.
+   */
+  arrowsNear?(radius?: number): ArrowView[];
+  /** The Body's yaw in radians, mineflayer's convention (0 faces -z). Optional like `arrowsNear`. */
+  readonly yaw?: number;
   /** How many of the named item the Body carries (`bread`), summed over stacks. */
   inventoryCount(item: string): number;
   /** The fluid the Body's feet are in, or null. */
@@ -87,6 +105,25 @@ export interface TrackedBodyView extends BodyView {
 }
 
 const DEFAULT_HOSTILE_RADIUS = 16;
+const DEFAULT_ARROW_RADIUS = 8;
+
+/**
+ * Where an arrow at `at` stands from the Body at `self` with mineflayer's yaw: forward is
+ * (-sin yaw, -cos yaw) and right is (cos yaw, -sin yaw). The larger component decides the side;
+ * a tie goes to front or behind. Only horizontal distances count.
+ */
+export function arrowBearing(
+  yaw: number,
+  self: { x: number; z: number },
+  at: { x: number; z: number },
+): ArrowView['bearing'] {
+  const dx = at.x - self.x;
+  const dz = at.z - self.z;
+  const forward = dx * -Math.sin(yaw) + dz * -Math.cos(yaw);
+  const right = dx * Math.cos(yaw) + dz * -Math.sin(yaw);
+  if (Math.abs(forward) >= Math.abs(right)) return forward >= 0 ? 'front' : 'behind';
+  return right >= 0 ? 'right' : 'left';
+}
 /** Entity metadata slot that is true while a creeper's fuse is lit (the same slot perception/entities.ts reads). */
 const CREEPER_IGNITED_SLOT = 18;
 /** A mob within this many blocks can melee the Body. */
@@ -198,6 +235,30 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         });
       }
       return found.sort((a, b) => a.distance - b.distance);
+    },
+    arrowsNear(radius = DEFAULT_ARROW_RADIUS) {
+      const here = bot.entity.position;
+      const yaw = bot.entity.yaw ?? 0;
+      const found: ArrowView[] = [];
+      for (const entity of Object.values(bot.entities)) {
+        if (entity === bot.entity || entity.name !== 'arrow') continue;
+        const distance = entity.position.distanceTo(here);
+        if (distance > radius) continue;
+        const body = entity.position.offset(0, (entity.height ?? 0.5) / 2, 0);
+        if (!canSeePoint(bot, body)) continue;
+        const v = entity.velocity ?? new Vec3(0, 0, 0);
+        const toBody = here.minus(entity.position);
+        found.push({
+          distance,
+          position: { x: entity.position.x, y: entity.position.y, z: entity.position.z },
+          bearing: arrowBearing(yaw, here, entity.position),
+          closing: v.x * toBody.x + v.z * toBody.z > 0,
+        });
+      }
+      return found.sort((a, b) => a.distance - b.distance);
+    },
+    get yaw() {
+      return bot.entity.yaw;
     },
     inventoryCount(item) {
       return bot.inventory
