@@ -144,6 +144,65 @@ describe('escapeLadder', () => {
     expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
   });
 
+  it('pillar places only once the feet are a full block up, along a real jump curve', async () => {
+    // Feet height above the start on each tick of a jump: 0.42, 0.75, 1.0, then the apex.
+    const curve = [0.42, 0.753, 1.0, 1.166, 1.249];
+    let airTicks = 0;
+    let heightAtPlace = Number.NaN;
+    const fake = scriptedBot({
+      items: ['dirt'],
+      blocks: { '0,63,0': block('stone') },
+      physics: (s) => {
+        if (!s.held || !s.controls.jump || fake.bot.placeBlock.mock.calls.length > 0) return;
+        s.position.y = 64 + (curve[Math.min(airTicks, curve.length - 1)] ?? 1.249);
+        airTicks++;
+      },
+    });
+    fake.bot.placeBlock.mockImplementation(async () => {
+      heightAtPlace = fake.state.position.y - 64;
+    });
+    const { result } = run(fake);
+    expect(await result).toEqual({ ok: true, rung: 'pillar' });
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(heightAtPlace).toBeGreaterThanOrEqual(1.0);
+  });
+
+  it('pillar digs a diggable ceiling cell first, then jumps and places', async () => {
+    const ceiling = block('stone');
+    const fake = scriptedBot({
+      items: ['dirt'],
+      blocks: { '0,63,0': block('stone'), '0,66,0': ceiling },
+      physics: (s) => {
+        if (s.held && s.controls.jump && !fake.bot.placeBlock.mock.calls.length)
+          s.position.y += 0.3;
+        if (fake.bot.placeBlock.mock.calls.length) s.position.y = 65;
+      },
+    });
+    const { result } = run(fake);
+    expect(await result).toEqual({ ok: true, rung: 'pillar' });
+    expect(fake.bot.dig).toHaveBeenCalledWith(ceiling, true);
+    expect(fake.bot.dig.mock.invocationCallOrder[0]).toBeLessThan(
+      fake.bot.placeBlock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('pillar with a low ceiling it cannot dig skips the jump, naming the headroom', async () => {
+    const fake = scriptedBot({
+      items: ['dirt'],
+      blocks: { '0,63,0': block('stone'), '0,66,0': block('bedrock') },
+    });
+    const { result, lines } = run(fake);
+    expect(await result).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining('no headroom'),
+    });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+    // Only the plain jump and the sprint-jump rungs jump: the pillar does not.
+    const jumps = fake.bot.setControlState.mock.calls.filter(([c, on]) => c === 'jump' && on);
+    expect(jumps).toHaveLength(2);
+    expect(lines.find((l) => l.rung === 'pillar')).toMatchObject({ worked: false });
+  });
+
   it('returns a typed needs_rescue with facts only when every rung fails', async () => {
     const fake = scriptedBot({});
     const { result, lines } = run(fake);
@@ -197,6 +256,37 @@ describe('escapeLadder', () => {
         [3, 2],
       ]);
       // The dig rung did not tunnel along the floor of a pit first.
+      expect(rungs(lines)).toEqual([
+        ['jump', false],
+        ['sprint_jump', false],
+        ['dig', false],
+        ['stairs', true],
+      ]);
+    });
+
+    it('digs a stair out of an L-shaped cavity whose open side is not standable', async () => {
+      // Floor under the bot; stone walls west, north and south; east is air over a hole, so no
+      // neighbour is standable. The goal lies east, so the stairs must take the walled west side.
+      const blocks: Record<string, ReturnType<typeof block>> = { '0,63,0': block('stone') };
+      for (let y = 64; y <= 66; y++) {
+        for (const key of [`-1,${y},0`, `0,${y},1`, `0,${y},-1`]) blocks[key] = block('stone');
+      }
+      const fake = scriptedBot({
+        blocks,
+        physics: (s) => {
+          if (!(s.controls.jump && s.controls.forward)) return;
+          const x = Math.floor(s.position.x) - 1;
+          const y = Math.floor(s.position.y);
+          const at = (dy: number) => s.blockAt(new Vec3(x, y + dy, 0)).boundingBox;
+          if (at(0) === 'block' && at(1) !== 'block' && at(2) !== 'block') {
+            s.position.x -= 1;
+            s.position.y += 1;
+          }
+        },
+      });
+      const { result, lines } = run(fake);
+      expect(await result).toEqual({ ok: true, rung: 'stairs' });
+      expect(fake.bot.dig).toHaveBeenCalledTimes(2);
       expect(rungs(lines)).toEqual([
         ['jump', false],
         ['sprint_jump', false],

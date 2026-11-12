@@ -1,8 +1,9 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
 import type { ActionContext } from './registry.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 import { dropAllowed, EIGHT, MAX_DROP, planMoves, scanDrop, unstick } from './unstick.ts';
 
 type Grid = Map<string, string>;
@@ -181,6 +182,20 @@ describe('unstick action', () => {
     const stone = fakeBot(hard);
     expect(await unstick(ctxOf(stone.bot))).toMatchObject({ status: 'failed' });
     expect(stone.dug).toEqual([]);
+  });
+
+  it('names every step it tried in the no_way_out diag line', async () => {
+    const { bot } = fakeBot(island());
+    const sink = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => undefined);
+    try {
+      expect(await unstick(ctxOf(bot))).toMatchObject({ status: 'failed' });
+      const lines = sink.mock.calls.map(([text]) => JSON.parse(text) as Record<string, unknown>);
+      expect(lines.find((l) => l.reason === 'no_way_out')).toMatchObject({
+        tried: ['walk', 'dig_down', 'stair_dig', 'dig_sideways'],
+      });
+    } finally {
+      sink.mockRestore();
+    }
   });
 
   it('ends cancelled when the signal is already aborted', async () => {

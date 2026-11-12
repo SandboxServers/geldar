@@ -41,10 +41,33 @@ function wallHeight(bot: Bot, cell: Vec3): number {
   return n;
 }
 
-/** True when a wall of at least `WALL_HEIGHT` stands on every side of the feet cell: a pit. */
+const open = (block: Block | null): boolean =>
+  block !== null && block.boundingBox === 'empty' && block.name !== 'lava';
+
+/**
+ * A neighbour cell the bot can jump onto: solid at feet level with two free cells above it. This is
+ * the jump-up half of `nearestLedge` (escape-ladder.ts). A floor one block lower is not a way up.
+ */
+function jumpLedge(bot: Bot, cell: Vec3): boolean {
+  const above = bot.blockAt(cell.offset(0, 1, 0));
+  return (
+    solid(bot.blockAt(cell)) &&
+    (open(above) || above?.name === 'water') &&
+    open(bot.blockAt(cell.offset(0, 2, 0)))
+  );
+}
+
+/**
+ * True when the bot stands on solid ground in a pit: at least one side is a pit wall (`WALL_HEIGHT`
+ * solid blocks high) and no side is a ledge the jump rung can use. The floor beside the bot may be
+ * flat and open: a flat-floored cavity is still a pit. Open ground with no wall is not. Standing in
+ * air (no solid ground under the feet) is not a pit.
+ */
 export function inPit(bot: Bot): boolean {
   const feet = (bot as StairBot).entity.position.floored();
-  return DIRS.every((d) => wallHeight(bot, feet.plus(d)) >= WALL_HEIGHT);
+  if (!solid(bot.blockAt(feet.offset(0, -1, 0)))) return false;
+  if (!DIRS.some((d) => wallHeight(bot, feet.plus(d)) >= WALL_HEIGHT)) return false;
+  return DIRS.every((d) => !jumpLedge(bot, feet.plus(d)));
 }
 
 /** The wall to dig into: the side facing the goal when it is a wall, else the first wall. */
