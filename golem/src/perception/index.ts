@@ -26,6 +26,8 @@ export function createPerception(bot: Bot): Perception {
       const notable = knownNotableBlocks(bot, memory);
       return {
         blocks_summary: summaryWithCounts(summarizeBlocks(bot.entity.position, notable), bot),
+        // Counts only include cells the Body can see (ruling 5, decision 0154).
+        blocks_counted_in_sight: true,
         notable_blocks: notable,
         ...footing(bot),
         ...observeEntities(bot),

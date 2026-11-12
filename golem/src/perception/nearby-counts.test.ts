@@ -10,8 +10,9 @@ function summary(world: FakeWorld): string {
 }
 
 describe('counts of natural blocks in the summary', () => {
-  it('counts a log the Body cannot see, under a canopy it stands on', () => {
+  it('does not count a log the Body cannot see, under a canopy it stands on', () => {
     // A 3x3 patch of oak leaves in the row under the feet, and the oak log below it, hidden by them.
+    // Ruling 5 (0154): the log is out of sight, so only the leaves are counted.
     const world = new FakeWorld();
     for (let x = -1; x <= 1; x++) {
       for (let z = -1; z <= 1; z++) world.set('oak_leaves', x, 63, z);
@@ -20,7 +21,33 @@ describe('counts of natural blocks in the summary', () => {
     const surroundings = createPerception(world.bot).surroundings();
     expect(surroundings.standing_on).toBe('oak_leaves');
     expect(surroundings.notable_blocks).toEqual([]);
-    expect(surroundings.blocks_summary).toBe('1 oak_log, 9 oak_leaves nearby');
+    expect(surroundings.blocks_summary).toBe('9 oak_leaves nearby');
+  });
+
+  it('counts only the cells in sight: a dirt block behind a wall is not counted', () => {
+    // A chest wall at x = 2 (rows 64 and 65) hides the dirt at (4, 64, 0); the sand at (0, 64, 4) is open.
+    const world = new FakeWorld();
+    for (let z = -1; z <= 1; z++) {
+      world.set('chest', 2, 64, z);
+      world.set('chest', 2, 65, z);
+    }
+    world.set('dirt', 4, 64, 0);
+    world.set('sand', 0, 64, 4);
+    expect(summary(world)).toContain('; 1 sand nearby');
+    expect(summary(world)).not.toContain('dirt');
+  });
+
+  it('counts a block in sight beside a wall, whose ray clears the wall', () => {
+    // The same wall at x = 2, but the stone sits off to the side at (4, 64, -6), clear of the wall.
+    const world = new FakeWorld();
+    for (let z = -1; z <= 1; z++) world.set('chest', 2, 64, z);
+    world.set('stone', 4, 64, -6);
+    expect(summary(world)).toContain('; 1 stone nearby');
+  });
+
+  it('flags the surroundings as counted in sight', () => {
+    const surroundings = createPerception(new FakeWorld().bot).surroundings();
+    expect(surroundings.blocks_counted_in_sight).toBe(true);
   });
 
   it('is empty in open air, where the summary stays the empty string', () => {

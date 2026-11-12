@@ -143,6 +143,24 @@
           "type": "boolean",
           "description": "True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it."
         },
+        "hazards": {
+          "description": "Lava, deep water, drops, fire and cactus within 8 blocks in line of sight, nearest first, at most 4. Absent when none is in sight.",
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "dir", "dist"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["lava", "deep_water", "drop", "fire", "cactus"]
+              },
+              "dir": { "$ref": "common.schema.json#/$defs/CompassPoint" },
+              "dist": { "type": "integer", "minimum": 0, "maximum": 8 }
+            }
+          }
+        },
         "notable_blocks": {
           "type": "array",
           "items": {

@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
+import { canSeeBlock } from './notable-blocks.ts';
 
-/** How far the Body counts natural blocks, in blocks. Counts need no line of sight. */
+/** How far the Body counts natural blocks, in blocks. Only cells in line of sight are counted. */
 export const COUNT_RADIUS = 8;
 /** The longest counts clause, in characters: whole entries are kept in order, the rest dropped. */
 export const MAX_COUNTS_TEXT = 256;
@@ -44,7 +45,8 @@ export function countNearby(bot: Bot): Map<string, number> {
   const counts = new Map<string, number>();
   for (const at of found) {
     const block = bot.blockAt(at);
-    if (!block) continue;
+    // Ruling 5 (0154): a cell behind a wall is not counted, so the counts match what the Body sees.
+    if (!block || !canSeeBlock(bot, block)) continue;
     counts.set(block.name, (counts.get(block.name) ?? 0) + 1);
   }
   return counts;
