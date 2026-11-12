@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from './bot-types.ts';
+import { type Cell, cellsOf, type IngredientDisplay, shortfallOf } from './craft-ingredients.ts';
 import { dropLateTableWindow, openTable } from './craft-table-window.ts';
 import { heldCount } from './inventory-count.ts';
 import { type ActionOutcome, cancelled, errorText, failed } from './outcome.ts';
@@ -37,7 +38,10 @@ interface RecipeBookAdd {
   entries: {
     recipe: {
       displayId: number;
-      display: { type: string; data?: { result?: SlotDisplay } };
+      display: {
+        type: string;
+        data?: { result?: SlotDisplay; ingredients?: IngredientDisplay[] };
+      };
     };
   }[];
 }
@@ -56,13 +60,15 @@ interface WindowState {
 /** A `set_slot` packet: one slot of one window, with its stack (absent or empty when cleared). */
 interface SetSlot extends WindowState {
   slot: number;
-  item?: { present?: boolean; itemCount?: number } | null;
+  item?: { present?: boolean; itemId?: number; itemCount?: number } | null;
 }
 
 /** A crafting display the book unlocked: the item one craft of it makes, and how many. */
 interface Display {
   itemId: number;
   count: number;
+  /** The grid cells the recipe fills, as item-id alternatives (tags are left out). */
+  cells: Cell[];
 }
 
 /**
@@ -117,7 +123,10 @@ export function watchRecipeBook(bot: Bot): void {
     for (const { recipe } of entries) {
       const result = resultOf(recipe.display.data?.result);
       if (CRAFTING_DISPLAYS.has(recipe.display.type) && result) {
-        displays.set(recipe.displayId, result);
+        displays.set(recipe.displayId, {
+          ...result,
+          cells: cellsOf(recipe.display.data?.ingredients),
+        });
       }
     }
   });
@@ -141,7 +150,7 @@ export function unlockedResultItems(bot: Bot): string[] {
  * What a recipe's result display makes, and how many per craft. Null when the display is not an item
  * (a tag or a composite), which a craft cannot read a count from.
  */
-function resultOf(result: SlotDisplay | undefined): Display | null {
+function resultOf(result: SlotDisplay | undefined): Omit<Display, 'cells'> | null {
   const data = result?.data;
   if (result?.type === 'item' && typeof data === 'number') return { itemId: data, count: 1 };
   if (result?.type === 'item_stack' && typeof data === 'object') {
@@ -150,15 +159,24 @@ function resultOf(result: SlotDisplay | undefined): Display | null {
   return null;
 }
 
+/** An unlocked display a craft can request: its id, its yield and its grid cells. */
+interface BookDisplay {
+  displayId: number;
+  count: number;
+  cells: Cell[];
+}
+
 /**
  * The unlocked crafting displays whose result is this item, the working one first. One item can have
  * several (a bed has its wool-and-planks shape and a dye recolour), and the server answers a wrong
  * one with nothing.
  */
-function unlockedDisplays(bot: Bot, resultId: number): { displayId: number; count: number }[] {
-  const found: { displayId: number; count: number }[] = [];
+function unlockedDisplays(bot: Bot, resultId: number): BookDisplay[] {
+  const found: BookDisplay[] = [];
   for (const [displayId, display] of unlocked.get(bot) ?? []) {
-    if (display.itemId === resultId) found.push({ displayId, count: display.count });
+    if (display.itemId === resultId) {
+      found.push({ displayId, count: display.count, cells: display.cells });
+    }
   }
   const working = workingDisplay.get(bot)?.get(resultId);
   // The sort is stable: the working display first, the rest in the book's order.
@@ -235,6 +253,7 @@ export async function craftFromBook(
   client.on('set_slot', trackState);
   // Set once every craft ran. Until then a grid may still hold the ingredients of a craft that stopped.
   let clean = false;
+  let leftovers = false;
   try {
     let windowId = PLAYER_WINDOW_ID;
     if (table) {
@@ -258,7 +277,7 @@ export async function craftFromBook(
         windowId,
         unlockedDisplays(bot, item.id),
         states,
-        item.name,
+        item,
       );
       if ('outcome' in crafted) return crafted.outcome;
       rememberWorking(bot, item.id, crafted.displayId);
@@ -280,6 +299,8 @@ export async function craftFromBook(
       }
     }
     clean = true;
+    // A recipe can leave items in the grid (a bucket from a cake): closing the grid returns them.
+    leftovers = windowId === PLAYER_WINDOW_ID && gridHoldsItems(bot);
     return null;
   } finally {
     client.removeListener('window_items', trackState);
@@ -289,7 +310,7 @@ export async function craftFromBook(
       await bot.closeWindow(bot.currentWindow).catch((error: unknown) => {
         console.warn(`crafting table window did not close: ${errorText(error)}`);
       });
-    } else if (!table && !clean) {
+    } else if (!table && (!clean || leftovers)) {
       closePlayerGrid(client);
     }
   }
@@ -310,6 +331,13 @@ function heldNow(bot: Bot, itemId: number): number {
   }
   return Math.max(own, inWindow);
 }
+
+/** Whether the player's own 2x2 grid (inventory slots 1 to 4) still holds an item. */
+function gridHoldsItems(bot: Bot): boolean {
+  const slots = bot.inventory?.slots as unknown[] | undefined;
+  return (slots ?? []).slice(1, 5).some((stack) => stack != null);
+}
+
 /**
  * Closes the player's 2x2 grid (window 0) after a stopped craft. The server then returns the ingredients
  * a request moved into the grid to the inventory. A failed write is logged, not thrown over the outcome.
@@ -332,20 +360,44 @@ async function craftOnce(
   ctx: ActionContext,
   client: RecipeClient,
   windowId: number,
-  candidates: { displayId: number }[],
+  candidates: BookDisplay[],
   states: Map<number, number>,
-  name: string,
+  item: TableTarget,
 ): Promise<{ displayId: number } | { outcome: ActionOutcome }> {
-  for (const { displayId } of candidates) {
+  const { name } = item;
+  // Pre-check: a variant the inventory cannot cover is never requested, so no ingredient moves.
+  let shortest: { name: string; short: number } | null = null;
+  for (const { displayId, cells } of candidates) {
     if (ctx.signal.aborted) return { outcome: cancelled() };
+    const lack = shortfallOf(cells, (id) => heldNow(ctx.bot, id));
+    if (lack) {
+      shortest ??= {
+        name: ctx.bot.registry?.items[lack.id]?.name ?? 'an ingredient',
+        short: lack.short,
+      };
+      continue;
+    }
     const write = (): void =>
       client.write('craft_recipe_request', { windowId, recipeId: displayId, makeAll: false });
-    const result = await awaitResult(ctx, client, windowId, write);
+    const result = await awaitResult(ctx, client, windowId, write, item.id);
     if (result === 'aborted') return { outcome: cancelled() };
     if (result === 'filled') {
       await shiftClick(ctx, client, windowId, states);
       return { displayId };
     }
+  }
+  // Every variant was short: say which item and how many, with no request sent.
+  if (
+    shortest &&
+    candidates.every(({ cells }) => shortfallOf(cells, (id) => heldNow(ctx.bot, id)))
+  ) {
+    return {
+      outcome: failed(
+        'missing_materials',
+        `missing ${shortest.short} more ${shortest.name} to craft ${name}`,
+        { item: name, missing: { [shortest.name]: shortest.short } },
+      ),
+    };
   }
   // With no table the craft is the player's grid: the message does not name a table it never used.
   const source = windowId === PLAYER_WINDOW_ID ? 'the recipe' : 'the crafting table';
@@ -414,6 +466,7 @@ function awaitResult(
   client: RecipeClient,
   windowId: number,
   send: () => void,
+  itemId: number,
 ): Promise<ResultWait> {
   const { signal, timeScale } = ctx;
   return new Promise((resolve, reject) => {
@@ -430,7 +483,10 @@ function awaitResult(
     };
     const onSlot = (packet: unknown): void => {
       const set = packet as SetSlot;
-      if (set.windowId === windowId && set.slot === RESULT_SLOT && isStack(set.item)) {
+      // State-based: only the wanted item in the result slot counts. A different item (the server
+      // filled another recipe) is not shift-clicked, and the wait ends as a miss or timeout.
+      const wrong = set.item?.itemId !== undefined && set.item.itemId !== itemId;
+      if (set.windowId === windowId && set.slot === RESULT_SLOT && isStack(set.item) && !wrong) {
         finish('filled');
       }
     };
