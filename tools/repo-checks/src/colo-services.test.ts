@@ -523,7 +523,7 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
       '${REGISTER_PUBLIC_URL:-https://register.example.invalid}',
     );
     expect(Object.keys(vars).join(' ')).not.toMatch(/GITHUB|DISCORD/);
-    expect(register.secrets.join(' ')).not.toMatch(/github|discord/i);
+    expect((register.secrets as string[]).join(' ')).not.toMatch(/github|discord/i);
     expect(colo.secrets).toHaveProperty(['register-ms-secret']);
     expect(colo.secrets).toHaveProperty(['register-session-key']);
   });
