@@ -42,6 +42,12 @@ export const PAYLOADS: Record<string, Record<string, unknown>> = {
     actions: [],
     said: false,
   },
+  action_outcome: {
+    verb: 'mine',
+    index: 0,
+    ok: true,
+    message: 'Your mine worked.',
+  },
   reflex_fired: {
     name: 'eat',
     life_id: LIFE,

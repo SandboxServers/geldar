@@ -172,6 +172,7 @@ export function validateThinkerFrame(value: unknown): ValidationResult<ThinkerFr
 
 // --- P0-20 Mind channel ---
 import type {
+  ActionOutcomePayload,
   PlanAck,
   PlanMessage,
   PlanResultPayload,
@@ -181,6 +182,7 @@ import type {
   ThoughtEventPayload,
 } from './generated/types.ts';
 import {
+  validateActionOutcomePayload as validateActionOutcomePayloadSchema,
   validatePlanAck as validatePlanAckSchema,
   validatePlanMessage as validatePlanMessageSchema,
   validatePlanResultPayload as validatePlanResultPayloadSchema,
@@ -191,6 +193,7 @@ import {
 } from './generated/validators.js';
 
 export type {
+  ActionOutcomePayload,
   PlanAck,
   PlanMessage,
   PlanResultPayload,
@@ -199,6 +202,13 @@ export type {
   SpeechPayload,
   ThoughtEventPayload,
 } from './generated/types.ts';
+export {
+  intentWhy,
+  isOutcomeReason,
+  OUTCOME_REASONS,
+  outcomeMessage,
+  playerOutcomeText,
+} from './outcome-words.ts';
 export { planSubject, snapshotSubject } from './subjects.ts';
 
 /** Largest serialized `response_format.schema` of a job frame, in bytes (decision 0049: 64 KiB). */
@@ -307,4 +317,14 @@ export function validatePresenceRecord(value: unknown): ValidationResult<Presenc
 export function validateDayNightPayload(value: unknown): ValidationResult<DayNightPayload> {
   if (validateDayNightPayloadSchema(value)) return { ok: true, value: value as DayNightPayload };
   return { ok: false, errors: (validateDayNightPayloadSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a value against action-outcome-event.schema.json (the payload of an action_outcome event). Never throws. */
+export function validateActionOutcomePayload(
+  value: unknown,
+): ValidationResult<ActionOutcomePayload> {
+  if (validateActionOutcomePayloadSchema(value)) {
+    return { ok: true, value: value as ActionOutcomePayload };
+  }
+  return { ok: false, errors: (validateActionOutcomePayloadSchema.errors ?? []).map(formatError) };
 }

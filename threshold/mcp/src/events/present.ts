@@ -1,4 +1,4 @@
-import type { McpPlayerEvent, UntrustedWorldText } from '@geldar/contract';
+import { type McpPlayerEvent, playerOutcomeText, type UntrustedWorldText } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 
 /*
@@ -54,6 +54,19 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
         break;
       case 'intent_finished':
         out.push({ ...base, type: 'intent_finished', text: intentText(e) });
+        break;
+      case 'action':
+      case 'action_failed':
+        out.push({
+          ...base,
+          type: e.kind,
+          text: playerOutcomeText({
+            verb: e.name,
+            ok: e.kind === 'action',
+            reason: e.reason,
+            intent: e.intent,
+          }),
+        });
         break;
       case 'reflex':
         out.push({ ...base, type: 'reflex', text: 'Your body ate on its own.' });

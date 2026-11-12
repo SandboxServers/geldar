@@ -1740,6 +1740,8 @@ export const mcpToolSchemas: Record<
                 "proposal",
                 "day_night",
                 "intent_finished",
+                "action",
+                "action_failed",
                 "reflex",
                 "wake"
               ]
@@ -2178,6 +2180,8 @@ export const mcpToolSchemas: Record<
                 "proposal",
                 "day_night",
                 "intent_finished",
+                "action",
+                "action_failed",
                 "reflex",
                 "wake"
               ]

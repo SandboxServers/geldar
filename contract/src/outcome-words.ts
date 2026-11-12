@@ -1,0 +1,100 @@
+/**
+ * Fixed wording for action outcome events (C5-02 outcome events, Proposed). The Body builds the
+ * `message` and `why` of an `action_outcome` payload with these, and the MCP server rebuilds the
+ * player's text from the verb and reason code alone, so nothing the world or an agent wrote is ever
+ * quoted. Every function returns fixed text; an unknown reason or verb falls back to a generic line.
+ */
+
+/** Plain-words clause for each action failure reason code. */
+const REASON_PHRASE: Readonly<Record<string, string>> = {
+  invalid_args: 'that was not asked for in a way the body could use',
+  timeout: 'it took too long',
+  blocked: 'the way was blocked',
+  not_found: 'what you looked for was not found',
+  out_of_reach: 'it was out of reach',
+  missing_materials: 'you lack the materials',
+  missing_station: 'there is no crafting table within reach',
+  not_possible: 'that was not possible right now',
+  interrupted: 'something interrupted it',
+  unsupported: 'the body cannot do that',
+  internal: 'something went wrong inside the body',
+};
+
+/** Intent failure wording, keyed by program then reason. Programs without an entry use the reason phrase. */
+const INTENT_WHY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  travel: {
+    blocked: 'You could not get there: the way was blocked.',
+    not_found: 'You could not get there: the place was not found.',
+    timeout: 'You could not get there in time.',
+  },
+  gather: {
+    not_found: 'You found none of what you wanted to gather nearby.',
+    blocked: 'You could not reach what you wanted to gather.',
+    out_of_reach: 'What you wanted to gather was out of reach.',
+  },
+  craft: {
+    missing_materials: 'You lack the materials to craft that.',
+    missing_station: 'There is no crafting table within reach.',
+    not_found: 'You do not know how to craft that.',
+  },
+  rest: {
+    not_found: 'There is no bed within reach to rest in.',
+    not_possible: 'You cannot rest right now.',
+    blocked: 'The way to the bed was blocked.',
+  },
+  flee: {
+    blocked: 'You could not run: the way was blocked.',
+    not_possible: 'There was nowhere safe to run.',
+  },
+  build: {
+    missing_materials: 'You lack the blocks to finish the build.',
+    not_possible: 'That build was not possible where you stand.',
+    blocked: 'The build site was blocked.',
+  },
+  follow: {
+    not_found: 'The one you were following is out of sight.',
+    blocked: 'You lost the one you were following: the way was blocked.',
+  },
+};
+
+/** The reason codes the schema allows. */
+export const OUTCOME_REASONS: readonly string[] = Object.keys(REASON_PHRASE);
+
+/** Whether `reason` is a code the outcome event may carry. */
+export function isOutcomeReason(reason: unknown): reason is string {
+  return typeof reason === 'string' && Object.hasOwn(REASON_PHRASE, reason);
+}
+
+/** The event's `message` for an action that ended: 'Your <verb> failed: <reason>.' or 'Your <verb> worked.'. */
+export function outcomeMessage(verb: string, ok: boolean, reason?: string): string {
+  const name = verb.replaceAll('_', ' ');
+  if (ok) return `Your ${name} worked.`;
+  const phrase = isOutcomeReason(reason) ? REASON_PHRASE[reason] : 'it did not complete';
+  return `Your ${name} failed: ${phrase}.`;
+}
+
+/** The plain-words `why` of an intent that failed, a fixed template keyed by program and reason. */
+export function intentWhy(program: string, reason: string | undefined): string {
+  const own = isOutcomeReason(reason) ? INTENT_WHY[program]?.[reason] : undefined;
+  if (own) return own;
+  const phrase = isOutcomeReason(reason) ? REASON_PHRASE[reason] : 'it did not complete';
+  return `Your plan stopped: ${phrase}.`;
+}
+
+const VERB = /^[a-z][a-zA-Z0-9_]{0,31}$/;
+
+/**
+ * The player's text for an `action` or `action_failed` entry. Rebuilt from the verb and reason code
+ * alone: a verb that is not a plain identifier reads as 'action', a reason that is not a known code
+ * reads as a generic failure, so no world or agent text can ride in on an outcome event.
+ */
+export function playerOutcomeText(input: {
+  verb: string | undefined;
+  ok: boolean;
+  reason?: string | undefined;
+  intent?: boolean | undefined;
+}): string {
+  const verb = input.verb !== undefined && VERB.test(input.verb) ? input.verb : 'action';
+  if (input.ok || input.intent !== true) return outcomeMessage(verb, input.ok, input.reason);
+  return intentWhy(verb, input.reason);
+}

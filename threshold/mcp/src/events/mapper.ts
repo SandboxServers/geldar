@@ -96,6 +96,19 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
         },
       ];
     }
+    case 'action_outcome': {
+      // Only the fixed fields cross: the verb and reason code. The presenter rebuilds the text.
+      const p = event.payload;
+      return [
+        {
+          ...base,
+          kind: p.ok ? 'action' : 'action_failed',
+          name: p.verb,
+          ...(p.reason ? { reason: p.reason } : {}),
+          ...(p.intent ? { intent: true } : {}),
+        },
+      ];
+    }
     case 'wake':
       return mapWake(
         event.payload.reason,
