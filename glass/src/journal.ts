@@ -5,6 +5,9 @@
  * fields only a Mind thought has (no template version, no outcome, no latency). `text` is agent-written and
  * untrusted: the page shows it as text only. The merge keeps the page order and the stream cursor exact.
  */
+
+/** A journal function row as a thought row. */
+import { withAlias } from './alias.ts';
 import {
   listThoughts,
   type Row,
@@ -15,7 +18,6 @@ import {
   type Visibility,
 } from './query.ts';
 
-/** A journal function row as a thought row. */
 function asThought(row: Row): Row {
   const { journal_text: text, ...rest } = row;
   return {
@@ -92,7 +94,7 @@ export async function listThoughtsWithJournal(
   );
   // No journal line to merge: the thoughts page is already the page, as listThoughts returned it.
   if (result.rows.length === 0) return thoughts;
-  return [...thoughts, ...result.rows.map(asThought)]
+  return [...thoughts, ...result.rows.map((r) => withAlias(asThought(r), 'life_id'))]
     .sort((a, b) => compare(b, a))
     .slice(0, filter.limit);
 }
@@ -115,5 +117,7 @@ export async function thoughtsAndJournalAfter(
                                 $5::integer) j`,
     [after.at, after.id, shown.shownUntil, shown.showLivingSovereign, limit],
   );
-  return [...thoughts, ...result.rows.map(asThought)].sort((a, b) => compare(a, b)).slice(0, limit);
+  return [...thoughts, ...result.rows.map((r) => withAlias(asThought(r), 'life_id'))]
+    .sort((a, b) => compare(a, b))
+    .slice(0, limit);
 }

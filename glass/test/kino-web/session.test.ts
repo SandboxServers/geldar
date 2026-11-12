@@ -110,15 +110,19 @@ describe('targets', () => {
   it('parses a reply and drops bad agent ids', () => {
     expect(
       parseTargets({ signed_in: true, enabled: true, agents: ['a_bot', 'Bad Id', 3] }),
-    ).toEqual({ enabled: true, signedIn: true, agents: ['a_bot'] });
+    ).toEqual({ enabled: true, signedIn: true, agents: [{ id: 'a_bot', label: 'a_bot' }] });
     expect(parseTargets(null)).toEqual({ enabled: true, signedIn: false, agents: [] });
     expect(parseTargets({ enabled: false }).enabled).toBe(false);
   });
 
   it('asks an anonymous viewer to sign in, and still lists public cameras', () => {
     expect(targetsNotice({ enabled: true, signedIn: false, agents: [] })).toMatch(/Sign in/);
-    expect(targetsNotice({ enabled: true, signedIn: false, agents: ['a_bot'] })).toMatch(/Sign in/);
-    expect(targetsNotice({ enabled: true, signedIn: true, agents: ['a_bot'] })).toBeNull();
+    expect(
+      targetsNotice({ enabled: true, signedIn: false, agents: [{ id: 'a_bot', label: 'a_bot' }] }),
+    ).toMatch(/Sign in/);
+    expect(
+      targetsNotice({ enabled: true, signedIn: true, agents: [{ id: 'a_bot', label: 'a_bot' }] }),
+    ).toBeNull();
     expect(targetsNotice({ enabled: false, signedIn: true, agents: [] })).toMatch(/off/);
   });
 

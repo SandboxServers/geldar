@@ -472,6 +472,11 @@ services:
       GELDAR_KINO_ENABLED: "${GELDAR_KINO_ENABLED:-0}"
       GELDAR_SHARD: "${GELDAR_SHARD:-phase0}"
       GELDAR_KINO_OTLP_ENDPOINT: "${GELDAR_KINO_OTLP_ENDPOINT:-}"
+      # Private display aliases (docs/runbooks/glass-aliases.md): the file may be absent; then names show as stored.
+      GELDAR_ALIASES_FILE: /run/geldar-aliases/aliases.json
+    volumes:
+      # A directory, not the file, so the stack starts when the node has no alias file (a missing file source would fail or become a directory).
+      - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/aliases', target: /run/geldar-aliases, read_only: true}
     secrets: [postgres-glass.txt]
     ports:
       # The loopback Glass port. Literal: the loopback rule rejects interpolation.

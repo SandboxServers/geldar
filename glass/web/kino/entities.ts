@@ -31,6 +31,14 @@ export class EntityStore {
   }
 }
 
+/** The most characters a name sprite shows. */
+export const LABEL_MAX_CHARS = 18;
+
+/** The text of an agent's name sprite: its label (the alias) when the picker gave one, else the id. */
+export function agentLabelText(id: string, labels: ReadonlyMap<string, string>): string {
+  return (labels.get(id) ?? id).slice(0, LABEL_MAX_CHARS);
+}
+
 export const LABEL_RADIUS = 12;
 
 export interface LabelStyle {

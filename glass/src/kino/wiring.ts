@@ -17,7 +17,14 @@ import { KinoMetrics } from './metrics.ts';
 import { normalizeOrigin, parseAllowedOrigins } from './origins.ts';
 import { startOtlpExporter } from './otlp.ts';
 import { type FeedSource, KinoRelay } from './relay.ts';
-import { ANONYMOUS, listAgents, ownedIds, sqlScopeStore, watchableIds } from './scope.ts';
+import {
+  ANONYMOUS,
+  listAgents,
+  ownedIds,
+  sqlScopeStore,
+  targetEntries,
+  watchableIds,
+} from './scope.ts';
 import { readSkinPng, skinAgentId } from './skins.ts';
 import { handleKinoUpgrade } from './ws.ts';
 
@@ -196,7 +203,7 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
       json(200, {
         signed_in: access.signedIn,
         enabled: true,
-        agents: watchableIds(access, await listAgents(o.db), owned),
+        agents: targetEntries(watchableIds(access, await listAgents(o.db), owned)),
       });
     } catch {
       json(503, { error: 'unavailable' });

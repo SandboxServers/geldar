@@ -3,6 +3,7 @@
  * statements read only the five tables migration 0005 grants to `geldar_glass`. query.test.ts
  * fails when a statement names any other table.
  */
+import { withAlias } from './alias.ts';
 
 /** The one method Glass needs from a Postgres client (pg's Pool and Client both satisfy it). */
 export interface SqlClient {
@@ -68,7 +69,7 @@ export async function listAgents(
       ORDER BY a.agent_id LIMIT 500`,
     [shown.showLivingSovereign, owned(shown)],
   );
-  return result.rows;
+  return result.rows.map((r) => withAlias(r, 'agent_id'));
 }
 
 /** Lists thoughts, newest first, one page at a time. Each filter is optional. */
@@ -106,7 +107,7 @@ export async function listThoughts(
       owned(shown),
     ],
   );
-  return result.rows;
+  return result.rows.map((r) => withAlias(r, 'life_id'));
 }
 
 /** One thought. The prompt and the raw reply are not selected: they are not public (R21). */
@@ -127,7 +128,8 @@ export async function getThought(
              OR a.agent_id = ANY($4::text[]))`,
     [thoughtId, shown.showLivingSovereign, shown.shownUntil, owned(shown)],
   );
-  return result.rows[0] ?? null;
+  const row = result.rows[0];
+  return row === undefined ? null : withAlias(row, 'life_id');
 }
 
 /** The receipts of one action, oldest first (prepared before committed or aborted), no newer than the cut-off. */
@@ -184,5 +186,5 @@ export async function thoughtsAfter(
       LIMIT $3`,
     [after.at, after.id, limit, shown.showLivingSovereign, shown.shownUntil],
   );
-  return result.rows;
+  return result.rows.map((r) => withAlias(r, 'life_id'));
 }

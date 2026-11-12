@@ -6,7 +6,7 @@ describe('targetsOutcome', () => {
     const o = targetsOutcome(200, null, { signed_in: false, enabled: true, agents: ['ag_a'] });
     expect(o).toEqual({
       ok: true,
-      targets: { enabled: true, signedIn: false, agents: ['ag_a'] },
+      targets: { enabled: true, signedIn: false, agents: [{ id: 'ag_a', label: 'ag_a' }] },
     });
   });
 
