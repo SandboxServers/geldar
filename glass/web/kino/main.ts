@@ -7,10 +7,11 @@ import { bindControls } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
 import { CameraRig } from './camera/rig.ts';
 import type { FeedState } from './feed.ts';
+import { foliageSafeCamera } from './foliage.ts';
 import { PaneSet } from './panes/pane-set.ts';
 import { KinoScene } from './scene.ts';
 import { byeText, KinoSession, type SocketLike } from './session.ts';
-import { type StatusInfo, statusLine } from './status.ts';
+import { aggregateStatus, type StatusInfo, statusLine } from './status.ts';
 import {
   type TargetsOutcome,
   targetsFetchFailed,
@@ -132,6 +133,11 @@ async function main(): Promise<void> {
   const host = el('panes');
   const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/kino/ws`;
 
+  // One source of truth: the top bar is the aggregate of the pane lines.
+  const paneInfos = new Map<number, { connected: boolean; chunks: number; entities: number }>();
+  const showBar = (): void => {
+    barStatus.textContent = statusLine(aggregateStatus([...paneInfos.values()], atlasInfo));
+  };
   const panes = new PaneSet((id, target, mode) => {
     const root = document.createElement('div');
     root.className = 'pane';
@@ -146,12 +152,10 @@ async function main(): Promise<void> {
     let connected = false;
     let entityCount = 0;
     const showStatus = (): void => {
-      status.textContent = statusLine({
-        connected,
-        chunks: state?.world.keys().length ?? 0,
-        entities: entityCount,
-        atlas: atlasInfo,
-      });
+      const mine = { connected, chunks: state?.world.keys().length ?? 0, entities: entityCount };
+      paneInfos.set(id, mine);
+      status.textContent = statusLine({ ...mine, atlas: atlasInfo });
+      showBar();
     };
     host.appendChild(root);
     const renderer = new WebGLRenderer({ canvas, antialias: false });
@@ -212,12 +216,18 @@ async function main(): Promise<void> {
       if (view && state) {
         const now = performance.now();
         const focus = state.focus;
-        const pos = rig.update(state.world, focus, Math.min(0.1, (now - last) / 1000));
+        const raw = rig.update(state.world, focus, Math.min(0.1, (now - last) / 1000));
         last = now;
+        // Follow: pull in and up when foliage sits between the camera and the agent's head.
+        const pos =
+          focus && rig.mode === 'follow'
+            ? foliageSafeCamera(state.world, { x: focus.x, y: focus.y + 1.6, z: focus.z }, raw)
+            : raw;
         view.camera.position.set(pos.x, pos.y, pos.z);
         view.cullAround(pos);
         const look = rig.lookTarget(focus);
         view.camera.lookAt(look.x, look.y, look.z);
+        view.updateLabels(look);
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
         view.camera.aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
         view.camera.updateProjectionMatrix();
@@ -234,6 +244,8 @@ async function main(): Promise<void> {
       setMode,
       dispose() {
         live = false;
+        paneInfos.delete(id);
+        showBar();
         session.close();
         renderer.dispose();
         root.remove();

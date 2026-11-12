@@ -172,7 +172,7 @@ public final class KinoFeed {
             KinoWorld.ChunkEntities part = world.entitiesInChunk(cx, cz, from, left);
             for (KinoWorld.EntityView v : part.views()) {
                 boolean hide = v.agentId() != null && !v.agentId().equals(targetId);
-                out.add(hide ? new KinoWorld.EntityView(v.type(), null, v.x(), v.y(), v.z(), v.yaw(), v.pitch()) : v);
+                out.add(hide ? new KinoWorld.EntityView(v.uid(), v.type(), null, v.x(), v.y(), v.z(), v.yaw(), v.pitch()) : v);
             }
             left -= part.views().size();
             if (from + part.views().size() < part.total()) {
