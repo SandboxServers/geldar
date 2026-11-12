@@ -14,11 +14,38 @@ The scripts are POSIX `sh`. The tests (`deploy/test/`) run on the desktop throug
 | `common.sh` | Shared checks, sourced by the other scripts. Holds every refusal listed below. |
 | `colo-up.sh` | Checks, validates the merged config, verifies the BlueMap jar, records the release, then pulls and starts the project. |
 | `colo-rollback.sh` | Re-applies the previous recorded release with `--pull never`, and swaps the two records. |
+| `colo-cd-plan.sh` | Read-only. Prints the delta between two releases: changed image digests, sql yes or no, the files to refresh, and the `needs manual` items (plugin/, compose/, deploy/caddy/, NATS). |
+| `colo-cd.sh` | CD-2a delta deploy, run on the node as the operator account: `[--dry-run] [<release.env> <sha> <export dir>]`. With no positional args it reads `GELDAR_RELEASE_MANIFEST`, `GELDAR_RELEASE_SHA` and the working directory (the git-less export). Verifies the images, then restarts only the services whose digest changed, in order, with health checks, and rolls back on a failed check. Never restarts Paper, Velocity, Caddy, Postgres or NATS, and never starts the mind. |
+| `colo-cd-verify.sh` | Sourced by `colo-cd.sh`. Before anything changes, every `*_IMAGE` must be under `ghcr.io/sandboxservers/geldar-<name>` and its OCI revision label (`org.opencontainers.image.revision`, read with `docker buildx imagetools inspect`) must equal the release sha. A mismatch, a missing label or a foreign prefix stops the run with nothing restarted or refreshed. |
 | `colo-down.sh` | Stops the project. Containers, networks and volumes are kept. |
 | `colo-status.sh` | Read-only. Lists the project's containers, ports and one resource sample. |
 | `gen-secrets.sh` | Creates the missing secret files from `/dev/urandom`. Never overwrites a file, never prints a value. |
 | `compose.secrets.yml` | Overlay that points the secret names at the node's secrets directory. |
 | `release.env.example` | The release manifest template. Copy it and fill in digests; it holds no values. |
+
+`colo-cd.sh` keeps its own copy of the manifest: `$COLO_CD_RELEASE_FILE`, default `<state dir>/release.env`
+(`/var/lib/geldar-colo/release.env` unless `GELDAR_STATE_DIR` is set). The root-owned `/etc/geldar-colo/release.env`
+is not readable by the operator account on the node (root, mode 700 directory), so the CD copy lives in the state dir.
+`colo-up.sh` and `colo-rollback.sh` still read `$GELDAR_RELEASE_FILE` (the `/etc` copy), so after a CD run keep the two
+in step by hand or move the CD copy's path into `GELDAR_RELEASE_FILE` on a node where the operator can read it.
+`colo-cd.sh` also needs `<state dir>/release.commit` (the commit the node runs) before its first run; it records the new
+one on success, and writes a log to `<state dir>/cd.log` (no secrets, no addresses).
+
+CD-2a inputs on the node (the entrypoint runs `bash deploy/colo-cd.sh` from a read-only, git-less export of a main sha,
+with a cleared environment):
+
+- `GELDAR_RELEASE_MANIFEST`: path to a validated copy of the release manifest. `GELDAR_RELEASE_SHA`: the 40-character
+  main sha. The working directory is the export. Positional args (`[--dry-run] <release.env> <sha> <repo dir>`) still work.
+- `PATH` and `HOME` are set by the script when the environment is empty. `COLO_CD_ENV_FILE` (default
+  `/home/claude/colo-env.sh`) is sourced when it exists.
+- `GELDAR_COLO_ROOT` is the node's src extract the run refreshes (default `/mnt/nvme/geldar-colo/src`).
+- The delta is computed by `cmp` of each exported file against the src extract, not by `git diff`. The previous sha is
+  still `<state dir>/release.commit`.
+- Before anything changes, `colo-cd-verify.sh` reads each image's revision label through
+  `docker buildx imagetools inspect <ref> --format '{{json .}}'` (`COLO_CD_IMAGE_INSPECT` replaces the command in tests).
+  The image must be under `ghcr.io/sandboxservers/geldar-<name>` and carry `org.opencontainers.image.revision` equal to
+  the release sha. `mind` and `admin` are checked the same way.
+- The export has no `.git`, so a file deleted upstream is not detected; it stays in the src extract.
 
 Every compose call names the project `geldar-colo` (`-p`), so the scripts reach only that project's containers,
 volumes and networks. No script runs `down`, and no script removes a volume.
