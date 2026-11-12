@@ -380,6 +380,8 @@ function Get-NatsUsers([string] $Shard) {
     paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", '_INBOX.>') }
     # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
     kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
+    # Deploy (CD-1d): colo-notice.sh publishes the maintenance notice as this user and nothing else (no JetStream API, no Kino).
+    deploy = @{ Pub = @("geldar.$s.maintenance"); Sub = @('_INBOX.>') }
   }
 }
 

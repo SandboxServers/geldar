@@ -1,0 +1,9 @@
+# The deploy's NATS password for the maintenance notice (CD-1d). deploy/colo-notice.sh merges this file only when
+# GELDAR_SECRETS_DIR/nats-deploy.txt exists, after the NATS auth overlay and before the secrets overlay. Up and the admin
+# subcommands never merge it, so a node without the file keeps working. The file is the real password, never a placeholder.
+services:
+  admin:
+    secrets: [{ source: nats-deploy, target: nats-deploy.txt }]
+secrets:
+  nats-deploy:
+    file: ${GELDAR_SECRETS_DIR}/nats-deploy.txt
