@@ -22,6 +22,7 @@ const inputs: Record<McpToolName, unknown> = {
   say: { text: 'hello' },
   read_book: undefined,
   view: undefined,
+  see: undefined,
   write_book: { title: 'T', text: 'body' },
   define_skill: { name: 'chop', description: 'chops', code: 'return 1;' },
   use_skill: { name: 'chop', args: {} },

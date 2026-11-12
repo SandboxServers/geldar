@@ -109,6 +109,29 @@ export function validateReachInput(value: unknown): ValidationResult<ReachPositi
   return { ok: false, errors: (validateReachInputSchema.errors ?? []).map(formatError) };
 }
 
+// --- see-tool ---
+import { validateSeeInput as validateSeeInputSchema } from './generated/validators.js';
+
+/** The optional pixel size a `see` call names: each axis optional, checked against the see input schema. */
+export interface SeeInput {
+  width?: number;
+  height?: number;
+}
+
+/** Checks a `see` input against the see input schema. Never throws; an extra key or a non-integer size is rejected. */
+export function validateSeeInput(value: unknown): ValidationResult<SeeInput> {
+  if (validateSeeInputSchema(value)) return { ok: true, value: value as SeeInput };
+  return { ok: false, errors: (validateSeeInputSchema.errors ?? []).map(formatError) };
+}
+
+import { validateSeeResult as validateSeeResultSchema } from './generated/validators.js';
+
+/** The picture reply the Body gives for `see`, checked against the see result schema. Never throws. */
+export function validateSeeResult(value: unknown): ValidationResult<{ png: string }> {
+  if (validateSeeResultSchema(value)) return { ok: true, value: value as { png: string } };
+  return { ok: false, errors: (validateSeeResultSchema.errors ?? []).map(formatError) };
+}
+
 // --- view-tool ---
 import {
   validateViewInput as validateViewInputSchema,

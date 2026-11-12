@@ -11,6 +11,7 @@ import type {
   WaitInput,
 } from '@geldar/contract';
 import {
+  type ImageToolResult,
   type ToolContext,
   ToolError,
   type ToolHandler,
@@ -41,6 +42,7 @@ import { JOURNAL_LINE_LIMIT, journalTool } from './tools/journal.ts';
 import { lookTool, type ToolCall } from './tools/look.ts';
 import { readBookTool } from './tools/read-book.ts';
 import { sayTool } from './tools/say.ts';
+import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/see.ts';
 import { type SleepDeps, sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
@@ -128,6 +130,23 @@ async function callerOf(deps: Wired, ctx: ToolContext): Promise<ToolCall> {
   if (player === null) throw new ToolError('unknown_player', UNKNOWN_PLAYER_MESSAGE);
   deps.lives.add(player.lifeId);
   return { playerId: ctx.playerId, lifeId: player.lifeId };
+}
+
+/** The fixed messages for the `see` codes that carry no detail (refusals come from SEE_REFUSALS). */
+const SEE_MESSAGES = {
+  invalid_input: 'see takes an optional width and height in pixels, and no other input.',
+  session_closed: 'The session ended, so no picture was taken.',
+  body_unavailable: BODY_UNAVAILABLE_MESSAGE,
+} as const;
+
+/** The picture, or a typed ToolError for each failure: a failed `see` is never returned as data. */
+async function seeOf(deps: SeeDeps, call: ToolCall, input: unknown): Promise<ImageToolResult> {
+  const outcome: SeeOutcome = await seeTool(deps, call, input);
+  if ('picture' in outcome) return outcome.picture;
+  if (outcome.error === 'view_unavailable') {
+    throw new ToolError('view_unavailable', SEE_REFUSALS[outcome.detail]);
+  }
+  throw new ToolError(outcome.error, SEE_MESSAGES[outcome.error]);
 }
 
 /**
@@ -311,6 +330,17 @@ export function createWorld(deps: WorldDeps): World {
       viewTool(
         {
           view: (lifeId, size) => wired.body.view(lifeId, size),
+          budget: wired.budget,
+          isOpen: () => !ctx.signal.aborted,
+        },
+        call,
+        input,
+      ),
+    ),
+    see: bound(wired, (call, input, ctx) =>
+      seeOf(
+        {
+          see: (lifeId, size) => wired.body.see(lifeId, size),
           budget: wired.budget,
           isOpen: () => !ctx.signal.aborted,
         },

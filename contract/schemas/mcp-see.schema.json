@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/mcp-see.schema.json",
+  "title": "McpSee",
+  "description": "The see tool (decision 0156, VP-3): a small picture of what the body sees from its eyes, as a PNG with a fixed caption.",
+  "$defs": {
+    "SeeInput": {
+      "type": "object",
+      "description": "A picture of what your body sees from its eyes, drawn as a small image. No arguments, or an optional width and height in pixels; the picture is drawn at most 640 by 360, and a larger size is brought down to that. Pictures are limited to one every 5 seconds and 30 an hour.",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "SeeResult": {
+      "type": "object",
+      "description": "The picture: a base64 PNG and its caption. The MCP layer sends the picture as an image content block and the caption as a text block.",
+      "additionalProperties": false,
+      "required": ["png", "caption"],
+      "properties": {
+        "png": { "type": "string", "minLength": 1, "maxLength": 349528 },
+        "caption": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

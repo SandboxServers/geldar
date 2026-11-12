@@ -126,7 +126,7 @@ describe.skipIf(!ready)('mcp-mock image', () => {
     const port = await start({ mountTokens: true });
     const c = await connect(port);
     const tools = await c.listTools();
-    expect(tools.tools).toHaveLength(15);
+    expect(tools.tools).toHaveLength(16);
     const anonymous = await fetch(`http://127.0.0.1:${port}/p/${PLAYER}`, {
       method: 'POST',
       signal: AbortSignal.timeout(10_000),
