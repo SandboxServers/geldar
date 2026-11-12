@@ -120,18 +120,24 @@ describe('session and account page', () => {
     expect(session?.csrf).not.toBe('');
   });
 
-  it('sends a visitor without a session, or with an expired one, back to the start', async () => {
+  it('sends a visitor without a cookie back to the start', async () => {
     await start();
     const none = await fetch(`${h.base}/register/account`, { redirect: 'manual' });
     expect(none.status).toBe(302);
+    expect(none.headers.get('location')).toBe('/register');
+  });
+
+  it('shows the expired page with 401 and clears the cookie for an expired session (C7-01)', async () => {
+    await start();
     const { session } = await signIn();
     h.clock.at += SESSION_TTL_MS + 1;
     const old = await fetch(`${h.base}/register/account`, {
       headers: { cookie: session?.cookie ?? '' },
       redirect: 'manual',
     });
-    expect(old.status).toBe(302);
-    expect(old.headers.get('location')).toBe('/register');
+    expect(old.status).toBe(401);
+    expect(old.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(await old.text()).toContain('expired');
   });
 
   it('is off while the kill switch is on', async () => {

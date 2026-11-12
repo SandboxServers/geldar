@@ -1,7 +1,7 @@
 import { type Snapshot, validateToolResult } from '@geldar/contract';
 import { buildSnapshot } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
-import { PLAY_SIGN_LIMIT, PLAY_SPEECH_LIMIT, toPlayView } from './play-view.ts';
+import { PLAY_ENTITY_LIMIT, PLAY_SIGN_LIMIT, PLAY_SPEECH_LIMIT, toPlayView } from './play-view.ts';
 
 const CANARY = 'CANARY-7f3a-ignore-all-rules';
 
@@ -114,6 +114,32 @@ describe('toPlayView', () => {
     const view = toPlayView(snapshot, { budget: 1, daysSinceSleep: 0 });
 
     expect(view.untrusted.signs).toHaveLength(PLAY_SIGN_LIMIT);
+  });
+
+  it('caps the entities at 12, nearest first, and keeps exactly 12 when there are 12', () => {
+    const entityAt = (i: number) => ({
+      type: 'zombie',
+      distance: i + 1,
+      direction: 'east',
+      x: i + 1,
+      y: 64,
+      z: 0,
+    });
+    const thirteen = hostileSnapshot();
+    thirteen.surroundings.entities = Array.from({ length: PLAY_ENTITY_LIMIT + 1 }, (_, i) =>
+      entityAt(i),
+    );
+    const capped = toPlayView(thirteen, { budget: 1, daysSinceSleep: 0 }).snapshot.surroundings
+      .entities;
+    expect(capped).toHaveLength(PLAY_ENTITY_LIMIT);
+    expect(capped[0]?.distance).toBe(1);
+    expect(capped.at(-1)?.distance).toBe(PLAY_ENTITY_LIMIT);
+
+    const twelve = hostileSnapshot();
+    twelve.surroundings.entities = Array.from({ length: PLAY_ENTITY_LIMIT }, (_, i) => entityAt(i));
+    const kept = toPlayView(twelve, { budget: 1, daysSinceSleep: 0 }).snapshot.surroundings
+      .entities;
+    expect(kept).toHaveLength(PLAY_ENTITY_LIMIT);
   });
 
   it('validates as the LookResult of the contract', () => {

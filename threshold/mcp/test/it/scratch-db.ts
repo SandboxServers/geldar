@@ -30,10 +30,25 @@ export function adminConfig(database: string): PoolConfig {
   };
 }
 
+/**
+ * Keeps a pool's idle-client errors from becoming uncaught exceptions. pg-pool re-emits an idle
+ * client's socket error on the pool, and an unlistened 'error' is thrown. When a scratch database
+ * is dropped with FORCE, the server ends each open backend with 57P01 (admin shutdown); the pool
+ * drops that client itself and the next query opens a new one, so 57P01 is ignored. Any other
+ * error is logged.
+ */
+export function absorbIdleErrors(pool: Pool): Pool {
+  pool.on('error', (error: Error & { code?: string }) => {
+    if (error.code === '57P01') return;
+    console.error('scratch pool: idle client error', error.message);
+  });
+  return pool;
+}
+
 /** A pool on one database; with `role`, every connection starts as that role (SET ROLE). */
 export function scratchPool(database: string, role?: string): Pool {
   const options = role === undefined ? {} : { options: `-c role=${role}` };
-  return new Pool({ ...adminConfig(database), max: 10, ...options });
+  return absorbIdleErrors(new Pool({ ...adminConfig(database), max: 10, ...options }));
 }
 
 /** A short random id: lower-case hex, safe in an identifier and in an id regex. */

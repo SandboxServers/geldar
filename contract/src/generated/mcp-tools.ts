@@ -1063,7 +1063,10 @@ export const mcpToolSchemas: Record<
                 "required": [
                   "type",
                   "distance",
-                  "direction"
+                  "direction",
+                  "x",
+                  "y",
+                  "z"
                 ],
                 "properties": {
                   "type": {
@@ -1077,6 +1080,28 @@ export const mcpToolSchemas: Record<
                   "direction": {
                     "type": "string",
                     "pattern": "^[a-z_]{1,16}$"
+                  },
+                  "x": {
+                    "type": "integer",
+                    "minimum": -30000000,
+                    "maximum": 30000000
+                  },
+                  "y": {
+                    "type": "integer",
+                    "minimum": -30000000,
+                    "maximum": 30000000
+                  },
+                  "z": {
+                    "type": "integer",
+                    "minimum": -30000000,
+                    "maximum": 30000000
+                  },
+                  "item": {
+                    "$ref": "#/$defs/ItemName"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }
@@ -2369,7 +2394,10 @@ export const mcpToolSchemas: Record<
                 "required": [
                   "type",
                   "distance",
-                  "direction"
+                  "direction",
+                  "x",
+                  "y",
+                  "z"
                 ],
                 "properties": {
                   "type": {
@@ -2383,6 +2411,28 @@ export const mcpToolSchemas: Record<
                   "direction": {
                     "type": "string",
                     "pattern": "^[a-z_]{1,16}$"
+                  },
+                  "x": {
+                    "type": "integer",
+                    "minimum": -30000000,
+                    "maximum": 30000000
+                  },
+                  "y": {
+                    "type": "integer",
+                    "minimum": -30000000,
+                    "maximum": 30000000
+                  },
+                  "z": {
+                    "type": "integer",
+                    "minimum": -30000000,
+                    "maximum": 30000000
+                  },
+                  "item": {
+                    "$ref": "#/$defs/ItemName"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 }
               }

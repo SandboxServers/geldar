@@ -139,11 +139,16 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["type", "distance", "direction"],
+            "required": ["type", "distance", "direction", "x", "y", "z"],
             "properties": {
               "type": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
               "distance": { "type": "number", "minimum": 0 },
-              "direction": { "type": "string", "pattern": "^[a-z_]{1,16}$" }
+              "direction": { "type": "string", "pattern": "^[a-z_]{1,16}$" },
+              "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "y": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+              "count": { "type": "integer", "minimum": 1 }
             }
           }
         },

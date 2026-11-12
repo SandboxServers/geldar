@@ -36,7 +36,7 @@ const example = {
         text: "KESTREL'S FIELD - DO NOT TAKE",
       },
     ],
-    entities: [{ type: 'zombie', distance: 22, direction: 'north' }],
+    entities: [{ type: 'zombie', distance: 22, direction: 'north', x: 0, y: 64, z: -22 }],
     agents: [{ name: 'Pike', distance: 6, held_item: 'iron_sword', health_estimate: 'healthy' }],
   },
   heard: [{ from: 'Pike', text: "Kestrel, do you have bread? I'll give iron.", age_seconds: 4 }],

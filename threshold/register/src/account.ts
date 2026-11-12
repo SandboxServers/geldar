@@ -1,16 +1,24 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
 import { accountPage, tokenPage } from './account-pages.ts';
 import type { RegisterConfig } from './config.ts';
 import type { Identity } from './identity.ts';
-import { BASE, REFUSED_PAGE, SECURITY_HEADERS } from './pages.ts';
+import { BASE, EXPIRED_PAGE, REFUSED_PAGE, SECURITY_HEADERS } from './pages.ts';
 import { STATE_COOKIE } from './pkce.ts';
 import { KINO_COOKIE_TTL_MS, kinoCookieHeader, signKinoSession } from './session-cookie.ts';
+import {
+  SESSION_CAP_MS,
+  SESSION_IDLE_MS,
+  type SessionStore,
+  sessionHash,
+  slideExpiry,
+} from './session-store.ts';
 import type { Store } from './store.ts';
 
 export const SESSION_COOKIE = 'gr_session';
-export const SESSION_TTL_MS = 30 * 60 * 1000;
+/** The idle window (C7-01). Kept under its old name for the tests that step the clock past it. */
+export const SESSION_TTL_MS = SESSION_IDLE_MS;
 /** The draft terms version an owner accepts at sign-up (C7-08). Bump it when the approved text changes. */
 export const TERMS_VERSION = 'draft-1';
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -21,12 +29,13 @@ interface Session {
   readonly ownerId: string;
   readonly identityHash: string;
   readonly csrf: string;
-  readonly expiresAt: number;
 }
 
 export interface AccountDeps {
   readonly config: RegisterConfig;
   readonly store: Store;
+  /** Where sessions live (C7-01): a row per session, so a restart does not end them. */
+  readonly sessions: SessionStore;
   readonly now: () => number;
   readonly log: (line: string) => void;
   /** Per-owner limiter (R41): seconds to wait, or 0. */
@@ -43,6 +52,10 @@ const cookieOf = (req: IncomingMessage, name: string): string | null => {
 
 const sessionCookie = (value: string, maxAge: number): string =>
   `${SESSION_COOKIE}=${value}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+
+/** The form token is derived from the session id, so the table holds no copy of it. */
+const csrfFor = (key: string, id: string): string =>
+  createHmac('sha256', key).update(`register-csrf-v1:${id}`).digest('base64url');
 
 function html(res: ServerResponse, status: number, body: string, extra = {}): void {
   res.writeHead(status, {
@@ -73,16 +86,10 @@ const same = (a: string, b: string): boolean =>
 
 /** Sessions, owner and player creation, and the account pages. */
 export class Account {
-  private readonly sessions = new Map<string, Session>();
   private readonly deps: AccountDeps;
   private lock: Promise<unknown> = Promise.resolve();
   constructor(deps: AccountDeps) {
     this.deps = deps;
-  }
-
-  /** Live session count, for the sweep test. */
-  get sessionCount(): number {
-    return this.sessions.size;
   }
 
   /** One sign-up at a time, so the daily cap cannot be passed by two parallel callbacks. */
@@ -98,7 +105,7 @@ export class Account {
     res: ServerResponse,
     consent = false,
   ): Promise<void> => {
-    const { store, config, now, log } = this.deps;
+    const { store, sessions, config, now, log } = this.deps;
     const outcome = await this.serial(async () => {
       const found = await store.findOwner(identity.identityHash);
       if (found?.banned) return 'banned' as const;
@@ -118,23 +125,27 @@ export class Account {
       log(`sign-up refused provider=${identity.provider} reason=consent`);
       return html(res, 403, REFUSED_PAGE, { 'set-cookie': clearState });
     }
-    for (const [key, s] of this.sessions) if (now() >= s.expiresAt) this.sessions.delete(key);
+    const nowMs = now();
+    // A database error here throws: no session row and no cookie, so the sign-in fails closed.
+    await sessions.sweep(nowMs);
     const id = randomBytes(32).toString('base64url');
-    this.sessions.set(id, {
+    await sessions.create({
+      sessionHash: sessionHash(id),
       ownerId: outcome,
       identityHash: identity.identityHash,
-      csrf: randomBytes(24).toString('base64url'),
-      expiresAt: now() + SESSION_TTL_MS,
+      signedInMs: nowMs,
+      lastSeenMs: nowMs,
+      expiresMs: slideExpiry(nowMs, nowMs),
     });
     res.writeHead(302, {
       location: `${BASE}/account`,
       'set-cookie': [
         clearState,
-        sessionCookie(id, SESSION_TTL_MS / 1000),
+        sessionCookie(id, SESSION_CAP_MS / 1000),
         kinoCookieHeader(
           signKinoSession(config.sessionKey, {
             identityHash: identity.identityHash,
-            expiresAt: now() + KINO_COOKIE_TTL_MS,
+            expiresAt: nowMs + KINO_COOKIE_TTL_MS,
           }),
           KINO_COOKIE_TTL_MS / 1000,
         ),
@@ -144,15 +155,15 @@ export class Account {
     res.end();
   };
 
-  private sessionOf(req: IncomingMessage): Session | null {
-    const id = cookieOf(req, SESSION_COOKIE);
-    const s = id === null ? undefined : this.sessions.get(id);
-    if (!s) return null;
-    if (this.deps.now() >= s.expiresAt) {
-      if (id) this.sessions.delete(id);
-      return null;
-    }
-    return s;
+  /** The live session behind a cookie id; slides its expiry. Null when it is unknown or ended. Throws on a database error. */
+  private async liveSession(id: string): Promise<Session | null> {
+    const row = await this.deps.sessions.touch(sessionHash(id), this.deps.now());
+    if (!row) return null;
+    return {
+      ownerId: row.ownerId,
+      identityHash: row.identityHash,
+      csrf: csrfFor(this.deps.config.sessionKey, id),
+    };
   }
 
   /** Handles an account route; false when the path is not one of them. */
@@ -162,10 +173,23 @@ export class Account {
         url.pathname,
       );
     if (!m) return false;
-    const session = this.sessionOf(req);
-    if (!session) {
+    const id = cookieOf(req, SESSION_COOKIE);
+    if (id === null) {
       res.writeHead(302, { location: BASE, ...SECURITY_HEADERS });
       res.end();
+      return true;
+    }
+    let session: Session | null;
+    try {
+      session = await this.liveSession(id);
+    } catch {
+      // Fail closed: a lookup error refuses the request. The log names no database text.
+      this.deps.log('session lookup failed');
+      session = null;
+    }
+    if (!session) {
+      this.deps.log('session expired');
+      html(res, 401, EXPIRED_PAGE, { 'set-cookie': sessionCookie('', 0) });
       return true;
     }
     if (m[1] === 'account') {
@@ -185,8 +209,7 @@ export class Account {
       return true;
     }
     if (m[1] === 'logout') {
-      const sid = cookieOf(req, SESSION_COOKIE);
-      if (sid) this.sessions.delete(sid);
+      await this.deps.sessions.delete(sessionHash(id));
       res.writeHead(302, {
         location: BASE,
         'set-cookie': [sessionCookie('', 0), kinoCookieHeader('', 0)],

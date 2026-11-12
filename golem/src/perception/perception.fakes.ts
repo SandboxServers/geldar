@@ -21,6 +21,8 @@ export interface FakeEntity {
   position: Vec3;
   height?: number;
   heldItem?: { name: string } | null;
+  /** Mineflayer's metadata by index; a dropped item's stack is in slot 8. */
+  metadata?: unknown[];
 }
 
 const NOT_SOLID = new Set(['water', 'lava', 'air']);

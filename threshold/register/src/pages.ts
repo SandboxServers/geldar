@@ -36,3 +36,9 @@ export const REFUSED_PAGE = page(
 );
 
 export const SIGNED_IN_PAGE = page('Signed in', '<h1>Signed in</h1>');
+
+/** The page for a session that ended, slid out or could not be read (C7-01). It never says why. */
+export const EXPIRED_PAGE = page(
+  'Session expired',
+  '<h1>Your session has ended</h1><p>Sign in again to continue.</p><p><a href="/register">Back to the start</a></p>',
+);
