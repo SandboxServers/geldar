@@ -1,4 +1,4 @@
-import type { McpInterest, Snapshot, WaitResult } from '@geldar/contract';
+import type { McpInterest, McpPlayerEvent, Snapshot, WaitResult } from '@geldar/contract';
 import {
   decodeCursor,
   encodeCursor,
@@ -69,6 +69,8 @@ export interface WaitDeps {
   /** Repeated-failure memory: when set, a goal that failed three times in a row is stated as an event. */
   failures?: FailureTracker | undefined;
   touchPresence?: TouchPresence;
+  /** Asks for the life's Body to be up; called once when a `wait` meets a Body that does not answer. */
+  wantBody?: (lifeId: string) => Promise<void>;
   /** Receives a failed touch as `presence_error`; the wait goes on without it. */
   presenceLog?: (line: Record<string, unknown>) => void;
   keepAliveMs?: number;
@@ -95,6 +97,24 @@ export type WaitError =
   | 'wait_replaced';
 
 export type WaitOutcome = { ok: true; result: WaitResult } | { ok: false; error: WaitError };
+
+/** The plain line a `wait` ends with when it held through a waking Body. Fixed wording, no harness meta. */
+export const BODY_AWAKE_TEXT = 'Your body is awake.' as const;
+
+function awakeEvent(seq: number): McpPlayerEvent {
+  return { seq: Math.max(1, seq), type: 'wake', tick: 0, text: BODY_AWAKE_TEXT };
+}
+
+/** True when the Body answers a snapshot now; any other fault passes on. */
+async function bodyAnswers(deps: WaitDeps, lifeId: string): Promise<boolean> {
+  try {
+    await deps.body.snapshot(lifeId);
+    return true;
+  } catch (err) {
+    if (err instanceof BodyUnavailable) return false;
+    throw err;
+  }
+}
 
 /** Per-process wait state: the open wait per life and the last wake per life (the spacing window). */
 export interface WaitState {
@@ -157,8 +177,33 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   let reason: WakeReason = 'timeout';
   let wakingSeqs: number[] = [];
   let now = clock.nowMs();
+  let awoke = false;
   try {
-    for (;;) {
+    // A waking Body: ask for it, then hold until it answers or the deadline passes.
+    if (!(await bodyAnswers(deps, lifeId))) {
+      await deps.wantBody?.(lifeId).catch((err: unknown) => {
+        deps.presenceLog?.({ event: 'presence_error', cause: causeOf(err) });
+      });
+      for (;;) {
+        if (end.error !== null) return { ok: false, error: end.error };
+        now = clock.nowMs();
+        if (await bodyAnswers(deps, lifeId)) {
+          awoke = true;
+          break;
+        }
+        if (now >= deadline) return { ok: false, error: 'body_unavailable' };
+        try {
+          await clock.sleep(
+            Math.max(1, Math.min(deps.pollMs ?? POLL_MS, deadline - now)),
+            control.signal,
+          );
+        } catch {
+          // an abort ends the wait on the next check
+        }
+        await touch();
+      }
+    }
+    while (!awoke) {
       if (end.error !== null) return { ok: false, error: end.error };
       now = clock.nowMs();
       const { events } = await log.since(lifeId, from);
@@ -221,7 +266,11 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     deps.failures?.observe(lifeId, since.events, placeOf(bodySnapshot), clock.nowMs()) ?? [];
   const result: WaitResult = {
     snapshot: view.snapshot as unknown as WaitResult['snapshot'],
-    events: [...toPlayerEvents(since.events), ...factEvents(facts, log.head(lifeId), 0)],
+    events: [
+      ...toPlayerEvents(since.events),
+      ...factEvents(facts, log.head(lifeId), 0),
+      ...(awoke ? [awakeEvent(log.head(lifeId))] : []),
+    ],
     cursor: encodeCursor(log.head(lifeId)),
     wake_reason: reason,
     dropped_events: since.dropped,

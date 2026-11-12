@@ -417,7 +417,7 @@ describe('a presence fault does not take down a tool', () => {
     const { tools, body } = rig();
     body.setOffline(PLAYER.lifeId, true);
     const reply = await run(tools, 'look');
-    expect(reply.text).toBe('body_unavailable: Your body is waking. Try again in a few seconds.');
+    expect(reply.text).toBe('body_unavailable: Your body is waking. Try again in about 5 seconds.');
     expect(markedWords(reply.text)).toEqual([]);
   });
 
