@@ -4,7 +4,8 @@
   "description": "The logic behind ./geldar.ps1 players: one supervised Body process per sovereign ranger.",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p . --noEmit"
+    "typecheck": "tsc -p . --noEmit",
+    "heads": "node src/cli.ts skin heads"
   },
   "dependencies": {
     "@geldar/contract": "workspace:*",

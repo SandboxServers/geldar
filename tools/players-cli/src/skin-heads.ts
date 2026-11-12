@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { crc32, deflateSync, inflateSync } from 'node:zlib';
-import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
+import { crc32, deflateSync } from 'node:zlib';
+import { MAX_SKIN_BYTES, SkinFileError } from './png.ts';
+import { decodeSkinPng, type Rgba } from './png-decode.ts';
 
 /** The same agent id whitelist Glass uses to serve /kino/skins/<id>.png (glass/web/kino/skin-uv.ts). */
 const AGENT_ID = /^[a-z][a-z0-9_-]{0,31}$/;
@@ -20,66 +21,6 @@ export function offlineUuid(name: string): string {
   b[8] = ((b[8] ?? 0) & 0x3f) | 0x80;
   const h = b.toString('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
-}
-
-interface Rgba {
-  width: number;
-  height: number;
-  data: Buffer;
-}
-
-/** Decodes a validated 8-bit RGB or RGBA skin PNG to RGBA pixels. */
-export function decodeSkin(bytes: Buffer): Rgba {
-  const { width, height, colorType } = validateSkinPng(bytes);
-  const channels = colorType === 2 ? 3 : 4;
-  const idat: Buffer[] = [];
-  for (let o = 8; o < bytes.length; ) {
-    const len = bytes.readUInt32BE(o);
-    if (bytes.subarray(o + 4, o + 8).toString('latin1') === 'IDAT') {
-      idat.push(bytes.subarray(o + 8, o + 8 + len));
-    }
-    o += 12 + len;
-  }
-  const raw = inflateSync(Buffer.concat(idat));
-  const stride = width * channels;
-  const px = Buffer.alloc(height * stride);
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)] ?? 0;
-    for (let x = 0; x < stride; x++) {
-      const cur = raw[y * (stride + 1) + 1 + x] ?? 0;
-      const a = x >= channels ? (px[y * stride + x - channels] ?? 0) : 0;
-      const b = y > 0 ? (px[(y - 1) * stride + x] ?? 0) : 0;
-      const c = x >= channels && y > 0 ? (px[(y - 1) * stride + x - channels] ?? 0) : 0;
-      px[y * stride + x] = (cur + predict(filter, a, b, c)) & 0xff;
-    }
-  }
-  const data = Buffer.alloc(width * height * 4, 255);
-  for (let i = 0; i < width * height; i++) {
-    for (let k = 0; k < channels; k++) data[i * 4 + k] = px[i * channels + k] ?? 0;
-  }
-  return { width, height, data };
-}
-
-function predict(filter: number, a: number, b: number, c: number): number {
-  switch (filter) {
-    case 0:
-      return 0;
-    case 1:
-      return a;
-    case 2:
-      return b;
-    case 3:
-      return (a + b) >> 1;
-    case 4: {
-      const p = a + b - c;
-      const pa = Math.abs(p - a);
-      const pb = Math.abs(p - b);
-      const pc = Math.abs(p - c);
-      return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
-    }
-    default:
-      throw new SkinFileError('the skin PNG uses an unknown filter');
-  }
 }
 
 /** The 8x8 face with the hat layer composed over it (the "over" operator), as RGBA. */
@@ -156,7 +97,7 @@ export function writeHeads(skinsDir: string, outDir: string, map: string): strin
     if (statSync(path).size > MAX_SKIN_BYTES) throw new SkinFileError(`${file} is too large`);
     let head: Buffer;
     try {
-      head = composeHead(decodeSkin(readFileSync(path)));
+      head = composeHead(decodeSkinPng(readFileSync(path)));
     } catch (error) {
       throw new SkinFileError(`${file}: ${error instanceof Error ? error.message : 'bad skin'}`);
     }

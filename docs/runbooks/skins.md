@@ -17,7 +17,7 @@ On the Colo node (no node or pnpm on the host; the admin image carries `players-
 
 Needs: an admin image built from this change (it adds `tools/players-cli`), and a NATS auth config whose `body` user may publish `$KV.geldar-skins.>` (regenerate `nats-auth.conf` with `./geldar.ps1 shard nats-auth colo` and recreate the NATS container; this is a separate owner approval step, and the passwords stay unchanged). `ensure-skins-bucket` must have run once (colo-up does it).
 
-On a dev machine with the Phase 0 shard, the original path still works: `pnpm --filter ./tools/players-cli exec tsx src/cli.ts skin import ag-jason-01 <json outside the repo>` with `GELDAR_NATS_URL` and the NATS user set.
+On a dev machine with the Phase 0 shard, the original path still works: `pnpm --filter ./tools/players-cli exec node src/cli.ts skin import ag-jason-01 <json outside the repo>` with `GELDAR_NATS_URL` and the NATS user set.
 
 ## Check
 
@@ -41,7 +41,7 @@ docker logs geldar-colo-velocity-1 | grep skin:
 Read-only check of what is stored (prints the variant, texture host and signature length, never the value or the signature; needs `GELDAR_NATS_URL`):
 
 ```
-pnpm --filter ./tools/players-cli exec tsx src/cli.ts skin show ag-jason-01
+pnpm --filter ./tools/players-cli exec node src/cli.ts skin show ag-jason-01
 ```
 
 (`colo-admin.sh` has no `skin-show` verb yet; run it from a checkout with `GELDAR_NATS_URL` and the NATS user set.) If the plugin says `applied` but the head is still Steve, the proxy did its part: the client or the map is not using the forwarded textures (see BlueMap below).
@@ -58,13 +58,15 @@ Kino fetches the skin lazily when an agent first appears and draws a Minecraft p
 
 ## Show the skin on the BlueMap markers
 
-BlueMap 5.29 shows a player head from `maps/<mapId>/assets/playerheads/<uuid>.png` in its web root and falls back to `assets/steve.png` on a 404. BlueMap only downloads skins from Mojang by UUID, and our agents have offline UUIDs with no Mojang profile, so nothing writes those files. `skin heads` generates them from the skin PNGs Kino serves (`<agent_id>.png`, for example `ag_jason_01.png`): the 8x8 face with the hat layer composed over it, scaled 4x by nearest neighbour to 32x32 so the browser's smoothing stays crisp. The file name is the Java offline UUID of the life id (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`; `ag_jason_01` is `a380937d-20dd-39b8-83ae-4219fa1c156d`). The command prints only `name uuid` lines.
+BlueMap 5.29 shows a player head from `maps/<mapId>/assets/playerheads/<uuid>.png` in its web root and falls back to `assets/steve.png` on a 404. BlueMap only downloads skins from Mojang by UUID, and our agents have offline UUIDs with no Mojang profile, so nothing writes those files. `skin heads` generates them from the skin PNGs Kino serves (`<agent_id>.png`, for example `ag_jason_01.png`): the 8x8 face with the hat layer composed over it, scaled 4x by nearest neighbour to 32x32 so the browser's smoothing stays crisp. The file name is the Java offline UUID of the life id (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`; `ag_jason_01` is `a380937d-20dd-39b8-83ae-4219fa1c156d`). The command prints only `name uuid` lines. It reads 8-bit grey, grey+alpha, RGB and RGBA PNGs, and palette PNGs of 1, 2, 4 or 8 bits with tRNS transparency (some Kino skin files are palette-indexed). A file it cannot read stops the run with `<file>: <reason>`; the heads written before it stay, and nothing is written for that file. The upload path is unchanged: `skin set` and `skin import` still take 8-bit RGB or RGBA only.
 
 On the desktop (a checkout), against the Kino skin files:
 
 ```
-./geldar.ps1 pnpm --filter @geldar/players-cli exec tsx src/cli.ts skin heads --skins-dir <kino skins dir> --out-dir <scratch dir> --map overworld
+./geldar.ps1 pnpm --filter @geldar/players-cli run heads -- --skins-dir <kino skins dir> --out-dir <scratch dir> --map overworld
 ```
+
+The script runs `node src/cli.ts`: Node 22 (the repo's `.nvmrc`) strips the TypeScript types itself, so no `tsx` is needed. The same `node src/cli.ts` form is what the admin image runs.
 
 Then, on the Colo as the operator, copy the output tree into Paper's data volume web root (no restart; the files persist in the `paper-data` volume; refresh the browser):
 
