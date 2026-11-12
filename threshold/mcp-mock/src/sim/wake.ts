@@ -22,6 +22,7 @@ export interface WakeEvent {
   kind:
     | 'speech'
     | 'damage'
+    | 'death'
     | 'agent_approached'
     | 'proposal'
     | 'day_night'
@@ -123,6 +124,8 @@ function passesWakeOn(e: WakeEvent): boolean {
       return wakeOn.includes('directly_addressed');
     case 'damage':
       return wakeOn.includes('unexpected_damage');
+    case 'death':
+      return true; // a death wakes whatever the intent listed: the intent is gone with the body
     case 'agent_approached':
       return wakeOn.some((entry) => {
         const m = /^new_agent_within_(\d+)$/.exec(entry);
@@ -138,6 +141,7 @@ function reasonOf(e: WakeEvent): WakeReason {
     case 'speech':
       return 'directly_addressed';
     case 'damage':
+    case 'death':
       return 'unexpected_damage';
     case 'agent_approached':
       return 'new_agent_nearby';
@@ -151,6 +155,7 @@ function reasonOf(e: WakeEvent): WakeReason {
 const INTEREST_OF: Record<string, string> = {
   speech: 'directly_addressed',
   damage: 'damage',
+  death: 'damage',
   agent_approached: 'agent_approached',
   proposal: 'proposal',
   day_night: 'day_night',
