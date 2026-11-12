@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
+import { viewSubject } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import type { RestartBodyOptions, RestartedBody } from '../body/restart.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
@@ -152,6 +154,21 @@ describe('startAdamBody', () => {
     digest.wake({ reason: 'directly_addressed', tick: 90 } as never);
     expect(r.inner.wake).toHaveBeenCalledTimes(1);
     expect(digest.drainEvents().map((e) => e.type)).toEqual(['wake']);
+    await running.stop();
+  });
+
+  it('answers a view request with the bot text viewport, not unavailable', async () => {
+    const r = rig();
+    const bot = fakeBot();
+    Object.assign(bot, { world: { getBlock: () => null }, entities: {} });
+    // A real Vec3 position: the view reads the eyes with `position.offset`, as mineflayer's does.
+    Object.assign(bot.entity, { yaw: 0, pitch: 0, position: new Vec3(0, 64, 0) });
+    const running = await startAdamBody(r.env, bot);
+    const { shard, lifeId } = config();
+    const reply = await r.deliver(viewSubject(shard, lifeId), '{}');
+    const parsed = JSON.parse(reply ?? '{}') as { text?: unknown; error?: unknown };
+    expect(parsed.error).toBeUndefined();
+    expect(typeof parsed.text).toBe('string');
     await running.stop();
   });
 
