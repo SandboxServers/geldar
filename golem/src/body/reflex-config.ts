@@ -12,6 +12,7 @@ export const REFLEX_NAMES = [
   'fight_or_flee',
   'blocked_path',
   'panic_burrow',
+  'dark_shelter',
   'unstick',
 ] as const;
 

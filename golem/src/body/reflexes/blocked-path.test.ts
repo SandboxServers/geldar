@@ -155,7 +155,12 @@ describe('blocked path: geometry and registration', () => {
   });
 
   it('shelterReflexes holds its reflexes under their shard names', () => {
-    expect(shelterReflexes.map((r) => r.name)).toEqual(['panic_burrow', 'blocked_path', 'unstick']);
+    expect(shelterReflexes.map((r) => r.name)).toEqual([
+      'panic_burrow',
+      'dark_shelter',
+      'blocked_path',
+      'unstick',
+    ]);
   });
 });
 
