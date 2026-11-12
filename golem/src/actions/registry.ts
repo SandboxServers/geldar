@@ -194,7 +194,15 @@ async function runUnobserved(
   // The receipt: a completed action must have changed the body or the world as it claims.
   const checked =
     opts.receipts === true
-      ? withReceipt(outcome, judge(valid, before, snapshot(bot, valid)))
+      ? withReceipt(
+          outcome,
+          judge(
+            valid,
+            before,
+            snapshot(bot, valid),
+            outcome.status === 'completed' ? outcome.detail : {},
+          ),
+        )
       : outcome;
   return finish(checked, latencyMs, worldTicks);
 }

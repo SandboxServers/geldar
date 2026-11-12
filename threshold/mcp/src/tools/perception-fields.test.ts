@@ -112,6 +112,15 @@ describe('look with the PX perception fields', () => {
     });
   });
 
+  it('shows light, health trend, the regeneration hint and a situation line', async () => {
+    const result = await lookTool(lookDeps(fullBodySnapshot()), CALL);
+    expect(result.snapshot.self).toMatchObject({ light: 'dim', health_trend: 'falling' });
+    expect(result.snapshot.self.regen_hint).toContain('does not regenerate');
+    expect(result.situation).toBe(
+      'Afternoon sun; dim here; not enclosed; closing: creeper north; health falling; hunger 15.',
+    );
+  });
+
   it('keeps sign text out of the snapshot; it goes to untrusted_world_text only', async () => {
     const result = await lookTool(lookDeps(fullBodySnapshot()), CALL);
     expect(JSON.stringify(result.snapshot)).not.toContain('SIGN-HOSTILE');

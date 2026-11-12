@@ -156,7 +156,11 @@ describe('wait', () => {
   it('answers body_unavailable without advancing the cursor or the spacing window', async () => {
     const { log, deps } = setup({ config: { minSpacingMs: 10_000, intentRunTooLongMs: 600_000 } });
     await log.append(LIFE, speech(1, 0, true, 'hi'));
-    const body = vi.fn().mockRejectedValueOnce(new BodyUnavailable('down'));
+    // the first call is the wait's readiness probe; the Body drops before the snapshot it returns
+    const body = vi
+      .fn()
+      .mockResolvedValueOnce(worldSnapshot())
+      .mockRejectedValueOnce(new BodyUnavailable('down'));
     const down = await wait(
       { ...deps, body: { snapshot: body } },
       { lifeId: LIFE, cursor: 'c_0', maxSeconds: 5 },

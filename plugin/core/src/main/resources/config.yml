@@ -9,6 +9,10 @@ tps_interval_seconds: 20
 recipes:
   # Recipes unlock through play (decision 0048). true grants every recipe on join, for a test shard only.
   grant_on_join: false
+gravestones:
+  # A stone-brick block with a sign where an agent character dies. No loot: drops are unchanged.
+  enabled: true
+  max_per_chunk: 4
 lakitu:
   # The Lakitu camera feed (decision 0100). Off until the owner confirms decisions 0075 and 0077.
   # Values above their maximum are clamped at enable and logged once.
