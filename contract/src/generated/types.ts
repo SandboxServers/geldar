@@ -935,6 +935,363 @@ export interface PlaySurroundings {
     | [SnapshotHazard, SnapshotHazard]
     | [SnapshotHazard, SnapshotHazard, SnapshotHazard]
     | [SnapshotHazard, SnapshotHazard, SnapshotHazard, SnapshotHazard];
+  /**
+   * Food sources the Body has seen (animals, crops, berries, dropped food), newest first, at most 10. An empty list means no food is known.
+   *
+   * @maxItems 10
+   */
+  food_known?:
+    | []
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ];
   notable_blocks: {
     type: string;
     x: number;
@@ -11436,6 +11793,363 @@ export interface SnapshotSurroundings {
     | [SnapshotHazard, SnapshotHazard]
     | [SnapshotHazard, SnapshotHazard, SnapshotHazard]
     | [SnapshotHazard, SnapshotHazard, SnapshotHazard, SnapshotHazard];
+  /**
+   * Food sources the Body has seen (animals, crops, berries, dropped food), newest first, at most 10. An empty list means no food is known.
+   *
+   * @maxItems 10
+   */
+  food_known?:
+    | []
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ]
+    | [
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        },
+        {
+          kind: string;
+          x: number;
+          y: number;
+          z: number;
+        }
+      ];
   /**
    * True when block counts only include cells the Body can see (line of sight).
    */

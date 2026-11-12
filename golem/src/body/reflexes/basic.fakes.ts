@@ -11,6 +11,7 @@ import type { BlockReader } from './hazard-escape.ts';
 /** The view fields the basic reflexes read, settable. */
 export interface BasicViewState {
   hunger: number;
+  health: number;
   foods: string[];
   inFluid: 'water' | 'lava' | null;
   onFire: boolean;
@@ -28,6 +29,7 @@ export function basicView(init: Partial<BasicViewState> = {}): {
 } {
   const state: BasicViewState = {
     hunger: 20,
+    health: 20,
     foods: [],
     inFluid: null,
     onFire: false,
@@ -45,6 +47,9 @@ export function basicView(init: Partial<BasicViewState> = {}): {
     },
     get hunger() {
       return state.hunger;
+    },
+    get health() {
+      return state.health;
     },
     get inFluid() {
       return state.inFluid;

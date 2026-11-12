@@ -1,4 +1,5 @@
 import type { Snapshot } from '@geldar/contract';
+import { foodKnownPart } from './food-known.ts';
 import { hazardsPart } from './hazards.ts';
 import { PLAY_ENTITY_LIMIT, type SnapshotProjector } from './types.ts';
 
@@ -25,6 +26,7 @@ export const surroundingsProjector: SnapshotProjector = (snapshot) => {
       entities: snapshot.surroundings.entities?.slice(0, PLAY_ENTITY_LIMIT),
       agents: snapshot.surroundings.agents,
       ...hazardsPart(snapshot.surroundings),
+      ...foodKnownPart(snapshot.surroundings),
     },
   };
 };
