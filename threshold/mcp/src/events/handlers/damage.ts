@@ -1,3 +1,4 @@
+import { hurtSentence } from '@geldar/contract';
 import { defineMindHandler } from './types.ts';
 
 /** Bukkit damage causes to what the player is told hit them. The plugin does not send the attacker,
@@ -27,11 +28,18 @@ function amountOf(payload: Record<string, unknown>): number {
   return typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
 }
 
-export const damageHandler = defineMindHandler('damage', (event, base) => [
-  {
-    ...base,
-    kind: 'damage',
-    amount: amountOf(event.payload),
-    cause: hurtText(event.payload.cause),
-  },
-]);
+/**
+ * The player's line for a damage. A payload with a hurt `source` (PX-1) reads as the hurt sentence, with
+ * the bearing and the loss; any other payload keeps the cause wording.
+ */
+function damageText(payload: Record<string, unknown>, amount: number): string {
+  if (typeof payload.source === 'string') {
+    return hurtSentence({ source: payload.source, bearing: payload.bearing, amount });
+  }
+  return hurtText(payload.cause);
+}
+
+export const damageHandler = defineMindHandler('damage', (event, base) => {
+  const amount = amountOf(event.payload);
+  return [{ ...base, kind: 'damage', amount, cause: damageText(event.payload, amount) }];
+});
