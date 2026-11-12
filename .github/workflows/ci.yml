@@ -90,7 +90,7 @@ jobs:
           # Overlays (rcon-host.yml, nats-auth.yml) only add to a base file, so each is checked merged
           # with its base, the same chains as ./geldar.ps1 check.
           for f in "${files[@]}"; do
-            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml|nats-auth-mcp.yml|colo-public.yml|colo-kino.yml|colo-kino-session.yml) continue ;; esac
+            case "$(basename "$f")" in rcon-host.yml|nats-auth.yml|nats-auth-mcp.yml|colo-public.yml|colo-kino.yml|colo-kino-session.yml|colo-notice.yml) continue ;; esac
             echo "::group::$f"
             docker compose -f "$f" config --quiet
             echo "::endgroup::"
@@ -103,6 +103,12 @@ jobs:
           echo "::endgroup::"
           echo "::group::colo.yml with colo-kino.yml and colo-kino-session.yml (dummy origin)"
           GELDAR_KINO_NATS_USER=kino GELDAR_KINO_PUBLIC_ORIGIN=https://glass.example.test docker compose -f compose/colo.yml -f compose/colo-kino.yml -f compose/colo-kino-session.yml config --quiet
+          echo "::endgroup::"
+          echo "::group::colo.yml with nats-auth.yml and colo-notice.yml (dummy deploy password file)"
+          notice_secrets=$RUNNER_TEMP/notice-secrets
+          mkdir -p "$notice_secrets"
+          printf '%s' ci > "$notice_secrets/nats-deploy.txt"
+          GELDAR_SECRETS_DIR=$notice_secrets docker compose -f compose/colo.yml -f compose/nats-auth.yml -f compose/colo-notice.yml config --quiet
           echo "::endgroup::"
           echo "::group::phase0.yml with rcon-host.yml"
           docker compose -f compose/phase0.yml -f compose/rcon-host.yml config --quiet

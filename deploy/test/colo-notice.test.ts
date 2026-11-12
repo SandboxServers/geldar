@@ -1,7 +1,15 @@
 // Tests for deploy/colo-notice.sh (CD-1d). The script runs under `sh` with a fake `docker` first on PATH. The fake records
 // its arguments, one per line, in $FAKE_LOG, and exits 1 when FAKE_DOCKER_FAIL=1 (NATS unreachable). Nothing is published.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 
@@ -24,7 +32,10 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'colo-notice-'));
   fakeBin = join(dir, 'bin');
   mkdirSync(fakeBin);
-  writeFileSync(join(fakeBin, 'docker'), FAKE_DOCKER);
+  // The fake must be executable: on Linux a file written without a mode is not run from PATH (sh exits 126 and never logs).
+  // The umask masks the mode at create time and Windows ignores it, so chmod sets it explicitly.
+  writeFileSync(join(fakeBin, 'docker'), FAKE_DOCKER, { mode: 0o755 });
+  chmodSync(join(fakeBin, 'docker'), 0o755);
   // The script checks only that the password file exists; its value is never read, so this fixture is a placeholder.
   writeFileSync(join(dir, 'nats-deploy.txt'), 'placeholder\n');
   log = join(dir, 'docker.log');

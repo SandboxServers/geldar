@@ -151,7 +151,7 @@ function Invoke-Check {
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
     # Overlays (rcon-host.yml, nats-auth.yml, nats-auth-mcp.yml) only add to a base file, so each is checked merged with its base.
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml', 'colo-kino.yml', 'colo-kino-session.yml') }) {
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml', 'colo-kino.yml', 'colo-kino-session.yml', 'colo-notice.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
     Invoke-Step 'docker compose config (colo.yml with nats-auth.yml, the merge `shard up colo` starts)' { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
@@ -168,6 +168,14 @@ function Invoke-Check {
     Invoke-Step 'docker compose config (colo.yml with colo-kino.yml and colo-kino-session.yml, dummy origin)' {
         $env:GELDAR_KINO_PUBLIC_ORIGIN = 'https://glass.example.test'
         try { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/colo-kino.yml') -f (Join-Path $Root 'compose/colo-kino-session.yml') config --quiet } finally { Remove-Item Env:GELDAR_KINO_PUBLIC_ORIGIN -ErrorAction SilentlyContinue }
+    }
+    # The notice overlay needs GELDAR_SECRETS_DIR with nats-deploy.txt in it (the real one never leaves the node): a dummy file in a temp dir.
+    Invoke-Step 'docker compose config (colo.yml + nats-auth.yml + colo-notice.yml, dummy secrets dir)' {
+        $noticeSecrets = Join-Path ([System.IO.Path]::GetTempPath()) 'geldar-notice-secrets'
+        New-Item -ItemType Directory -Force -Path $noticeSecrets | Out-Null
+        Set-Content -Path (Join-Path $noticeSecrets 'nats-deploy.txt') -Value 'ci' -NoNewline
+        $env:GELDAR_SECRETS_DIR = $noticeSecrets
+        try { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/nats-auth.yml') -f (Join-Path $Root 'compose/colo-notice.yml') config --quiet } finally { Remove-Item Env:GELDAR_SECRETS_DIR -ErrorAction SilentlyContinue }
     }
     Invoke-Step 'docker compose config (phase0.yml with rcon-host.yml)'{ docker compose -f (Join-Path $Root 'compose/phase0.yml') -f (Join-Path $Root 'compose/rcon-host.yml') config --quiet }
     $natsBase = Join-Path $Root 'compose/phase0.yml'
