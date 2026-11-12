@@ -19,5 +19,10 @@ export const selfProjector: SnapshotProjector = (snapshot, options) => ({
       ? {}
       : { status_flags: snapshot.self.status_flags }),
     ...(snapshot.self.air === undefined ? {} : { air: snapshot.self.air }),
+    ...(snapshot.self.ground_below === undefined
+      ? {}
+      : { ground_below: snapshot.self.ground_below }),
+    ...(snapshot.self.trapped === undefined ? {} : { trapped: snapshot.self.trapped }),
+    ...(snapshot.self.sun === undefined ? {} : { sun: snapshot.self.sun }),
   },
 });

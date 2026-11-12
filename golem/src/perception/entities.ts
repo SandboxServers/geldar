@@ -1,7 +1,9 @@
 import type { Snapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { worldAge } from '../world-clock.ts';
 import { compass } from './blocks-summary.ts';
+import { ALWAYS_HOSTILE } from './hostile-types.ts';
 import { canSeePoint } from './notable-blocks.ts';
 
 type Surroundings = Snapshot['surroundings'];
@@ -14,9 +16,23 @@ export const MAX_ENTITIES = 32;
 export const MAX_AGENTS = 16;
 /** Dropped items of one name within this many blocks of the nearest one are one record. */
 export const ITEM_CLUSTER_RADIUS = 4;
+/**
+ * Two samples of an entity compare for `closing` only when they are this many world ticks apart or
+ * less; an older sample is discarded. The window edge itself still counts.
+ */
+export const CLOSING_WINDOW_TICKS = 100;
 
 /** The metadata slot that holds a dropped item's stack (the protocol's item index). */
 const ITEM_STACK_SLOT = 8;
+/**
+ * The metadata slot of a creeper's ignited flag (the Creeper data slots of the pinned 1.20.x line).
+ * The live case `creeper-behind-wall` checks it against a real creeper.
+ */
+const CREEPER_IGNITED_SLOT = 18;
+/** A mob this close and facing the Body is attacking it (the same reach and cone the Body uses). */
+const MELEE_REACH = 4;
+/** Cosine of the half-angle (60 degrees) within which a mob faces the Body. */
+const FACING_COS = 0.5;
 
 /** The fields of a Mineflayer entity read here. */
 interface SeenEntity {
@@ -25,6 +41,7 @@ interface SeenEntity {
   username?: string;
   position: Vec3;
   height?: number;
+  yaw?: number;
   heldItem?: { name?: string } | null;
   metadata?: unknown[];
 }
@@ -36,10 +53,26 @@ interface Sighted {
   distance: number;
   /** For a dropped item: its name when it reads cleanly, and its count. */
   stack?: { name: string | null; count: number };
+  /** The threat fields of a mob (hostile, state, closing, held item, fuse). */
+  threat?: Partial<Entity>;
+}
+
+/** The distance and the tick at which one entity in sight was last seen. */
+interface Sample {
+  tick: number;
+  distance: number;
 }
 
 const KIND = /^[a-z_]{1,64}$/;
 const ITEM = /^[a-z0-9_]{1,64}$/;
+
+/** The last sample of each entity in sight, per bot. Replaced on every observation, so an entity out of sight drops out. */
+const samples = new WeakMap<Bot, Map<number, Sample>>();
+
+/** How many entities the closing tracker holds for a bot; a bound for the tests. */
+export function trackedSampleCount(bot: Bot): number {
+  return samples.get(bot)?.size ?? 0;
+}
 
 function byDistance<T extends { distance: number }>(a: T, b: T, nameA: string, nameB: string) {
   return a.distance - b.distance || (nameA < nameB ? -1 : nameA > nameB ? 1 : 0);
@@ -61,6 +94,51 @@ function droppedStack(entity: SeenEntity): { name: string | null; count: number 
       ? stack.count
       : 1;
   return { name, count };
+}
+
+/** True when the mob's body yaw points at `target` within the facing cone (horizontal only). */
+function facesBody(entity: SeenEntity, target: Vec3): boolean {
+  const dx = target.x - entity.position.x;
+  const dz = target.z - entity.position.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 0.01) return true;
+  const yaw = entity.yaw ?? 0;
+  // mineflayer's forward vector for a yaw is (-sin yaw, -cos yaw): yaw 0 faces north (-z).
+  return (-Math.sin(yaw) * dx - Math.cos(yaw) * dz) / length >= FACING_COS;
+}
+
+/**
+ * Whether the entity closed in: its distance fell since the last sample, and that sample is inside
+ * the window. An equal distance, a first sighting, or a sample out of the window is not closing.
+ */
+function closedIn(prev: Sample | undefined, tick: number, distance: number): boolean {
+  if (prev === undefined || tick < prev.tick || tick - prev.tick > CLOSING_WINDOW_TICKS) {
+    return false;
+  }
+  return distance < prev.distance;
+}
+
+/** The threat fields of a mob: the always-hostile flag, the observed state, the held item, the fuse. */
+function threatFields(
+  entity: SeenEntity,
+  kind: string,
+  here: Vec3,
+  closing: boolean,
+): Partial<Entity> {
+  const fields: Partial<Entity> = {};
+  if (ALWAYS_HOSTILE.has(kind)) fields.hostile = true;
+  const held = entity.heldItem?.name;
+  if (held && ITEM.test(held)) fields.held_item = held;
+  if (kind === 'creeper' && entity.metadata?.[CREEPER_IGNITED_SLOT] === true) {
+    fields.fuse = 'hissing';
+  }
+  if (closing) fields.closing = true;
+  if (here.distanceTo(entity.position) <= MELEE_REACH && facesBody(entity, here)) {
+    fields.state = 'attacking';
+  } else if (closing) {
+    fields.state = 'closing';
+  }
+  return fields;
 }
 
 /** A record at a position: the integer block coordinates, the distance and the compass direction. */
@@ -85,7 +163,10 @@ function toRecords(here: Vec3, sighted: Sighted[]): Entity[] {
   const clusters: { name: string; at: Vec3; record: Entity }[] = [];
   for (const seen of sighted) {
     if (seen.kind !== 'item' || seen.stack === undefined) {
-      records.push(place(here, seen.kind, seen.position, seen.distance));
+      records.push({
+        ...place(here, seen.kind, seen.position, seen.distance),
+        ...seen.threat,
+      });
       continue;
     }
     const { name, count } = seen.stack;
@@ -115,18 +196,28 @@ function toRecords(here: Vec3, sighted: Sighted[]): Entity[] {
  * The entities and the other players the agent sees: within `ENTITY_RANGE` and with a clear line
  * from the eyes to the middle of the body. Nothing out of sight is reported. Players go to
  * `agents` (name, distance, held item, health unknown) and everything else to `entities`, each
- * with its integer block coordinates.
+ * with its integer block coordinates. A mob carries its threat fields; an arrow is reported only
+ * while it is closing.
  */
 export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agents'> {
   const here = bot.entity.position;
+  const tick = worldAge(bot);
+  const previous = samples.get(bot) ?? new Map<number, Sample>();
+  const current = new Map<number, Sample>();
   const sighted: (Sighted & { key: string })[] = [];
   const agents: (Surroundings['agents'][number] & { sort: string })[] = [];
-  for (const entity of Object.values(bot.entities) as SeenEntity[]) {
+  for (const [key, entity] of Object.entries(bot.entities) as [string, SeenEntity][]) {
     if (entity === (bot.entity as unknown as SeenEntity)) continue;
     const distance = here.distanceTo(entity.position);
     if (distance > ENTITY_RANGE) continue;
     const body = entity.position.offset(0, (entity.height ?? 1) / 2, 0);
     if (!canSeePoint(bot, body)) continue;
+    const id = Number(key);
+    const closing =
+      tick !== null && Number.isInteger(id) && Number.isFinite(distance)
+        ? closedIn(previous.get(id), tick, distance)
+        : false;
+    if (tick !== null && Number.isInteger(id)) current.set(id, { tick, distance });
     if (entity.type === 'player') {
       const name = entity.username ?? '';
       if (name.length < 1 || name.length > 32 || name === bot.username) continue;
@@ -153,8 +244,11 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
       });
       continue;
     }
-    sighted.push({ kind, position: entity.position, distance, key: kind });
+    if (kind === 'arrow' && !closing) continue;
+    const threat = threatFields(entity, kind, here, closing);
+    sighted.push({ kind, position: entity.position, distance, threat, key: kind });
   }
+  samples.set(bot, current);
   sighted.sort((a, b) => byDistance(a, b, a.key, b.key));
   agents.sort((a, b) => byDistance(a, b, a.sort, b.sort));
   return {
