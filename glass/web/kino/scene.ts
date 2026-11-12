@@ -27,6 +27,8 @@ import { labelStyle } from './entities.ts';
 import { makeFadeMaterial, makeFadeUniforms, setFadeFocus } from './fade.ts';
 import type { FeedChange, FeedState } from './feed.ts';
 import { type MeshData, meshSection, type UvLookup } from './mesher.ts';
+import { buildFigure, loadSkinCanvas } from './skin-figure.ts';
+import { skinUrl } from './skin-uv.ts';
 
 const AGENT_COLOUR = 0x00e5ff;
 const MOB_COLOUR = 0x8a7f72;
@@ -63,6 +65,8 @@ export class KinoScene {
   private readonly sections = new Map<string, Mesh>();
   private readonly markers = new Map<string, Mesh>();
   private readonly markerGeometry = new BoxGeometry(0.6, 1.8, 0.6);
+  /** One skin load per agent id; undefined results (404, bad image) are cached too, so a failure is silent and final. */
+  private readonly skins = new Map<string, Promise<HTMLCanvasElement | undefined>>();
   // orbit state
   private yaw = 0;
   private pitch = 0.5;
@@ -190,21 +194,42 @@ export class KinoScene {
       this.markerGeometry,
       new MeshBasicMaterial({ color: new Color(AGENT_COLOUR) }),
     );
-    body.add(
-      new LineSegments(
-        new EdgesGeometry(this.markerGeometry),
-        new LineBasicMaterial({ color: 0xffffff }),
-      ),
+    const outline = new LineSegments(
+      new EdgesGeometry(this.markerGeometry),
+      new LineBasicMaterial({ color: 0xffffff }),
     );
+    outline.name = 'plain';
+    body.add(outline);
     const head = new Mesh(
       new BoxGeometry(0.5, 0.5, 0.5),
       new MeshBasicMaterial({ color: 0xffe0b0 }),
     );
     head.position.y = 1.05;
+    head.name = 'plain';
     body.add(head);
     addGhost(body, this.markerGeometry, AGENT_COLOUR, 0xffe0b0);
     this.addLabel(body, label, 1.7);
+    this.attachSkin(body, label);
     return body;
+  }
+
+  /** Replaces the cyan box with the skinned figure once the agent's skin loads; any failure keeps the box. */
+  private attachSkin(body: Mesh, agentId: string): void {
+    const url = skinUrl(agentId);
+    if (url === undefined || typeof document === 'undefined') return;
+    let pending = this.skins.get(agentId);
+    if (!pending) {
+      pending = loadSkinCanvas(url);
+      this.skins.set(agentId, pending);
+    }
+    void pending.then((canvas) => {
+      if (!canvas) return;
+      const figure = buildFigure(canvas);
+      // The marker may have been rebuilt or removed while the skin loaded; a detached body is harmless.
+      body.add(figure);
+      (body.material as MeshBasicMaterial).visible = false;
+      for (const c of body.children) if (c.name === 'plain') c.visible = false;
+    });
   }
 
   /** A mob: a small neutral box, labelled only when the camera target is near (see labelStyle). */
