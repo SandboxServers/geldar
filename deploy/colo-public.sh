@@ -79,7 +79,7 @@ render_all() {
       reg_sed=""
       if [ "$reg_off" = 1 ] && [ "$f" = glass.caddy ]; then
         printf '%s\n' '/# register-proxy-begin/,/# register-proxy-end/c\' \
-          '		respond "the register service is not deployed" 503' >"$WORK/reg503.sed"
+          '	handle @register {\' '		respond "the register service is not deployed" 503\' '	}' >"$WORK/reg503.sed"
         reg_sed="-f $WORK/reg503.sed"
       fi
       # shellcheck disable=SC2086

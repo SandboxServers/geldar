@@ -172,7 +172,10 @@ describe('register shares the Glass host (decision 0135, amendment R42)', () => 
   it('is not a separate site: no register site file, and colo-public.sh installs map glass mcp only', () => {
     const script = readFileSync(resolve(repo, 'deploy/colo-public.sh'), 'utf8');
     expect(script).toMatch(/^SITES="map glass mcp"$/m);
-    expect(script).not.toContain('register');
+    // No separate register SITE: the SITES list above is exact, and no register site file is named or installed. The
+    // GELDAR_REGISTER_UPSTREAM placeholder on the glass site is allowed. Would fail on e.g. SITES="map glass mcp register",
+    // a `$s-register` variable, or an 'install register.caddy' line.
+    expect(script).not.toMatch(/register(-off)?\.caddy|-register\b|SITES=[^\n]*register/);
     expect(existsSync(resolve(dir, 'register.caddy'))).toBe(false);
     expect(existsSync(resolve(dir, 'register-off.caddy'))).toBe(false);
   });
