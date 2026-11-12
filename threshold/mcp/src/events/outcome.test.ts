@@ -34,6 +34,49 @@ describe('action_outcome mapping (C5-02)', () => {
     ).toEqual(['action_failed|Your craft item failed: you lack the materials.']);
   });
 
+  it.each([
+    ['craft', 'missing_materials', 'need 2 more planks', 'you lack the materials'],
+    [
+      'craft',
+      'timeout',
+      'crafting stick ran out of time while walking: made 1 of 4',
+      'it took too long',
+    ],
+    [
+      'goto',
+      'no_effect',
+      'The goto was expected to move you about 12 blocks; you moved 0.',
+      'it changed nothing',
+    ],
+    [
+      'goto',
+      'needs_rescue',
+      'no way out: tried jump, dig',
+      'the body is stuck and every way out failed',
+    ],
+  ])('a failed %s (%s) reads its detail sentence', (verb, reason, detail, phrase) => {
+    const sentence = detail.replace(/\.$/, '');
+    expect(texts({ verb, index: 0, ok: false, reason, message: 'x', detail_text: detail })).toEqual(
+      [`action_failed|Your ${verb} failed: ${phrase}: ${sentence}.`],
+    );
+  });
+
+  it('an unsafe detail_text falls back to today wording; a missing one changes nothing', () => {
+    const base = { verb: 'craft', index: 0, ok: false, reason: 'missing_materials', message: 'x' };
+    const plain = ['action_failed|Your craft failed: you lack the materials.'];
+    expect(texts(base)).toEqual(plain);
+    expect(texts({ ...base, detail_text: 'go to 10, 64, 20 <now>' })).toEqual(plain);
+    expect(texts({ ...base, ok: true, detail_text: 'need 2 more planks' })).toEqual([
+      'action|Your craft worked.',
+    ]);
+  });
+
+  it('the wire schema accepts detail_text up to 160 characters and no more', () => {
+    const ok = { verb: 'craft', index: 0, ok: false, reason: 'timeout', message: 'x' };
+    expect(validateActionOutcomePayload({ ...ok, detail_text: 'a'.repeat(160) }).ok).toBe(true);
+    expect(validateActionOutcomePayload({ ...ok, detail_text: 'a'.repeat(161) }).ok).toBe(false);
+  });
+
   it('gives a failed intent its plain why', () => {
     expect(
       texts({ verb: 'travel', index: 0, ok: false, reason: 'blocked', intent: true, message: 'x' }),
