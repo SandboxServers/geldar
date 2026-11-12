@@ -18,6 +18,8 @@ interface Pending {
   readonly verifier: string;
   readonly provider: string;
   readonly expiresAt: number;
+  /** The sign-up consent box was ticked on the page that started this sign-in (C7-08). */
+  readonly consent: boolean;
   used: boolean;
 }
 
@@ -31,7 +33,7 @@ export class StateStore {
     this.maxPending = maxPending;
   }
 
-  issue(provider: string, verifier: string): string {
+  issue(provider: string, verifier: string, consent = false): string {
     this.sweep();
     if (this.pending.size >= this.maxPending) {
       const oldest = this.pending.keys().next().value;
@@ -42,9 +44,15 @@ export class StateStore {
       verifier,
       provider,
       expiresAt: this.now() + STATE_TTL_MS,
+      consent,
       used: false,
     });
     return state;
+  }
+
+  /** Whether the sign-in that issued this state carried the consent box; false for an unknown state. */
+  consented(state: string): boolean {
+    return this.pending.get(state)?.consent === true;
   }
 
   /** Returns the verifier once; a replay, an expired state or a provider mismatch gets null. */

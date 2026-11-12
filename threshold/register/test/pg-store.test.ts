@@ -87,13 +87,76 @@ describe('PgStore error mapping', () => {
   });
 
   it('createOwner goes through register_create_owner and maps nothing itself', async () => {
-    const { store, sql } = storeFailingWith({ code: '23505' });
-    await expect(
-      store.createOwner(
-        { identityHash: 'ab'.repeat(32), provider: 'github', display: 'd' },
-        'reg-1',
-      ),
-    ).rejects.toMatchObject({ code: '23505' });
-    expect(sql[0]).toContain('register_create_owner');
+    const { store, sql } = ownerStore((text) =>
+      text.includes('register_create_owner') ? { code: '23505' } : undefined,
+    );
+    await expect(store.createOwner(owner, 'reg-1', 'draft-1')).rejects.toMatchObject({
+      code: '23505',
+    });
+    expect(sql[0]).toBe('BEGIN');
+    expect(sql[1]).toContain('register_create_owner');
+  });
+
+  it('createOwner writes the owner and the consent row in one transaction (C7-08)', async () => {
+    const { store, sql } = ownerStore(() => undefined);
+    await store.createOwner(owner, 'reg-1', 'draft-1');
+    expect(sql.map((text) => text.split(' ')[0])).toEqual([
+      'BEGIN',
+      'SELECT',
+      'INSERT',
+      'COMMIT',
+      'RELEASE',
+    ]);
+    expect(sql[2]).toContain('register_consents');
+  });
+
+  it('a failed consent insert rolls the owner back and rethrows: nothing commits', async () => {
+    const { store, sql } = ownerStore((text) =>
+      text.includes('register_consents') ? { code: '23505', message: 'duplicate' } : undefined,
+    );
+    await expect(store.createOwner(owner, 'reg-1', 'draft-1')).rejects.toMatchObject({
+      code: '23505',
+    });
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+    expect(sql.at(-1)).toBe('RELEASE');
+  });
+
+  it('a failed owner write never reaches the consent insert', async () => {
+    const { store, sql } = ownerStore((text) =>
+      text.includes('register_create_owner') ? { code: '42501' } : undefined,
+    );
+    await expect(store.createOwner(owner, 'reg-1', 'draft-1')).rejects.toMatchObject({
+      code: '42501',
+    });
+    expect(sql.some((text) => text.includes('register_consents'))).toBe(false);
+    expect(sql).toContain('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
   });
 });
+
+const owner = { identityHash: 'ab'.repeat(32), provider: 'github', display: 'd' };
+
+/**
+ * A PgStore whose pool hands out one client. `failOn` gives the error for a statement, or
+ * undefined to let it succeed. Every statement, including BEGIN, COMMIT, ROLLBACK, is kept.
+ */
+function ownerStore(failOn: (text: string) => unknown): { store: PgStore; sql: string[] } {
+  const sql: string[] = [];
+  const client = {
+    query: async (text: string) => {
+      sql.push(text);
+      const error = failOn(text);
+      if (error !== undefined) throw error;
+      return { rows: [] };
+    },
+    release: () => {
+      sql.push('RELEASE');
+    },
+  };
+  const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1' });
+  (store as unknown as { pool: unknown }).pool = {
+    connect: async () => client,
+  };
+  return { store, sql };
+}

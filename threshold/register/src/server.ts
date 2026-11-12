@@ -2,7 +2,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Account } from './account.ts';
 import type { RegisterConfig } from './config.ts';
 import { type Identity, identityHash } from './identity.ts';
-import { BASE, HOME_PAGE, REFUSED_PAGE, SECURITY_HEADERS, SIGNED_IN_PAGE } from './pages.ts';
+import {
+  BASE,
+  HOME_PAGE,
+  REFUSED_PAGE,
+  SECURITY_HEADERS,
+  SIGNED_IN_PAGE,
+  TERMS_PAGE,
+} from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
 import type { FetchFn, Provider } from './providers.ts';
 import type { Store } from './store.ts';
@@ -24,7 +31,11 @@ export interface RegisterDeps {
   /** Owner and player creation. Without a store the default shows a plain "signed in" page. */
   readonly store?: Store;
   /** Overrides the store-backed sign-in (tests of the sign-in alone). */
-  readonly onSignedIn?: (identity: Identity, res: ServerResponse) => Promise<void> | void;
+  readonly onSignedIn?: (
+    identity: Identity,
+    res: ServerResponse,
+    consent: boolean,
+  ) => Promise<void> | void;
 }
 
 function send(
@@ -147,6 +158,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
     const cookie = cookieOf(req, STATE_COOKIE);
     const clear = { 'set-cookie': stateCookie('', 0) };
     // The state is marked used before anything else, so a replay can never reach the provider.
+    const consent = states.consented(state);
     const verifier =
       cookie !== null && cookie === state ? states.consume(state, provider.name) : null;
     if (verifier === null || code === '') {
@@ -166,7 +178,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
         display: 'microsoft',
       };
       log(`signed in provider=${provider.name}`);
-      if (onSignedIn) await onSignedIn(identity, res);
+      if (onSignedIn) await onSignedIn(identity, res, consent);
       else send(res, 200, SIGNED_IN_PAGE, clear);
     } catch {
       log(`callback refused provider=${provider.name} reason=provider`);
@@ -189,6 +201,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
           error: { code: 'method_not_allowed', message: 'Method not allowed' },
         });
       if (url.pathname === '/') return send(res, 200, HOME_PAGE);
+      if (url.pathname === '/terms') return send(res, 200, TERMS_PAGE);
       const m = /^\/(login|callback)$/.exec(url.pathname);
       if (!m) return sendJson(res, 404, { error: { code: 'not_found', message: 'Not found' } });
       const signWait = signInLimiter.charge(clientAddress(req, config.trustedPeers));
@@ -197,7 +210,9 @@ export function createRegisterServer(deps: RegisterDeps): Server {
       const provider = deps.providers.microsoft;
       if (m[1] === 'callback') return callback(provider, url, req, res);
       const verifier = newVerifier();
-      const state = states.issue(provider.name, verifier);
+      // The consent box travels with the sign-in state, so the callback knows whether it was ticked.
+      const consent = url.searchParams.get('consent') === 'yes';
+      const state = states.issue(provider.name, verifier, consent);
       res.writeHead(302, {
         location: provider.authorizeUrl(`${config.publicUrl}${BASE}/callback`, state, verifier),
         'set-cookie': stateCookie(state, STATE_TTL_MS / 1000),

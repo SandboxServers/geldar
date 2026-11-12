@@ -33,9 +33,11 @@ export interface MintRequest {
 export interface Store {
   /** The owner behind an identity hash, or null when the identity never registered. */
   findOwner(identityHash: string): Promise<OwnerRecord | null>;
+  /** Writes the owner, its identity and the consent row (C7-08) in one transaction; all or nothing. */
   createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
+    termsVersion: string,
   ): Promise<void>;
   listPlayers(identityHash: string): Promise<PlayerRow[]>;
   /** Creates the life, player, budget and first token in register_create_player; limit is the lifetime cap of 10 (R36). */

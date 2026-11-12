@@ -40,12 +40,20 @@ export class FakeStore implements Store {
     this.thoughtFlags.set(playerId, value);
     return true;
   }
+  /** The consent rows (0022): the identity hash, the terms version and the time, nothing else. */
+  consents: { identityHash: string; termsVersion: string; acceptedAt: number }[] = [];
   async createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
+    termsVersion: string,
   ): Promise<void> {
     this.writes.push(JSON.stringify({ identity, ownerId }));
     this.owners.set(identity.identityHash, { ownerId, banned: false, createdAt: this.now() });
+    this.consents.push({
+      identityHash: identity.identityHash,
+      termsVersion,
+      acceptedAt: this.now(),
+    });
   }
   async listPlayers(identityHash: string): Promise<PlayerRow[]> {
     const ownerId = this.owners.get(identityHash)?.ownerId;

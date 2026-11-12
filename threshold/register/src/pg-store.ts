@@ -28,14 +28,30 @@ export class PgStore implements Store {
   async createOwner(
     identity: { identityHash: string; provider: string; display: string },
     ownerId: string,
+    termsVersion: string,
   ): Promise<void> {
-    // One definer function writes the owner and its identity (0011); the role has no direct insert.
-    await this.pool.query('SELECT register_create_owner($1, $2, $3, $4)', [
-      hex(identity.identityHash),
-      identity.provider,
-      ownerId,
-      identity.display,
-    ]);
+    // One transaction (C7-08): the owner and identity (0011) and the consent row (0022) commit together
+    // or not at all. The role has no direct insert on owners or identities.
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT register_create_owner($1, $2, $3, $4)', [
+        hex(identity.identityHash),
+        identity.provider,
+        ownerId,
+        identity.display,
+      ]);
+      await client.query(
+        'INSERT INTO register_consents (identity_hash, terms_version) VALUES ($1, $2)',
+        [hex(identity.identityHash), termsVersion],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async setPublicCamera(identityHash: string, playerId: string, value: boolean): Promise<boolean> {

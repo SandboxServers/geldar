@@ -34,10 +34,16 @@ interface Session {
   csrf: string;
 }
 
-/** Signs in with the fake GitHub as `userId`; returns the session cookie and the form token. */
-async function signIn(userId = RAW_ID): Promise<{ res: Response; session: Session | null }> {
+/**
+ * Signs in with the fake GitHub as `userId`; returns the session cookie and the form token.
+ * `consent` is the sign-up consent box (C7-08); it is ticked unless a test says otherwise.
+ */
+async function signIn(
+  userId = RAW_ID,
+  consent = true,
+): Promise<{ res: Response; session: Session | null }> {
   h.idp.userId = userId;
-  const { state, cookie } = await h.begin();
+  const { state, cookie } = await h.begin(undefined, consent);
   const res = await fetch(`${h.base}/register/callback?code=c&state=${state}`, {
     headers: { cookie },
     redirect: 'manual',
@@ -69,6 +75,34 @@ function post(path: string, s: Session, fields: Record<string, string>, csrf = s
 
 const newPlayer = (id = 'ag-one-01') => ({ player_id: id, name: 'One', harness: 'claude-code' });
 const tokenIn = (html: string) => /gmcp-[0-9a-f]{64}/.exec(html)?.[0] ?? '';
+
+describe('sign-up consent (C7-08)', () => {
+  it('refuses a new owner who did not tick the consent box, and writes no owner or consent row', async () => {
+    await start();
+    const { session } = await signIn('5001', false);
+    expect(session).toBeNull();
+    expect(store.owners.size).toBe(0);
+    expect(store.consents).toEqual([]);
+  });
+
+  it('writes one consent row with the draft terms version when the box was ticked', async () => {
+    await start();
+    await signIn('5002', true);
+    expect(store.consents).toHaveLength(1);
+    expect(store.consents[0]?.termsVersion).toBe('draft-1');
+    // The consent row is for the same identity as the owner it was written with.
+    expect(store.consents[0]?.identityHash).toBe([...store.owners.keys()][0]);
+  });
+
+  it('lets an existing owner sign in again without the box', async () => {
+    await start();
+    await signIn('5003', true);
+    const { session } = await signIn('5003', false);
+    expect(session).not.toBeNull();
+    expect(store.owners.size).toBe(1);
+    expect(store.consents).toHaveLength(1);
+  });
+});
 
 describe('session and account page', () => {
   it('sets a HttpOnly Secure SameSite=Lax session cookie, clears the state cookie, and creates the owner', async () => {

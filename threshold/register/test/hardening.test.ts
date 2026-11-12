@@ -119,10 +119,10 @@ describe('session sweep (F8)', () => {
     const clock = { at: NOW };
     const store = new FakeStore(() => clock.at);
     const account = new Account({ config: config(), store, now: () => clock.at, log: () => {} });
-    await account.signedIn(identity(1), stubRes().res);
+    await account.signedIn(identity(1), stubRes().res, true);
     expect(account.sessionCount).toBe(1);
     clock.at += SESSION_TTL_MS + 1;
-    await account.signedIn(identity(2), stubRes().res);
+    await account.signedIn(identity(2), stubRes().res, true);
     expect(account.sessionCount).toBe(1);
   });
 });
