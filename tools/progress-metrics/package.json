@@ -1,0 +1,11 @@
+{
+  "name": "@geldar/progress-metrics",
+  "private": true,
+  "description": "Operator-only progress metrics per agent and time window, from Paper logs, Body logs, position and inventory samples and a Glass thought export. Reads files only.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run",
+    "report": "node src/cli.ts"
+  }
+}
