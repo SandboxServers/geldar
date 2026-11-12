@@ -4,6 +4,7 @@
  * player's text from the verb and reason code alone, so nothing the world or an agent wrote is ever
  * quoted. Every function returns fixed text; an unknown reason or verb falls back to a generic line.
  */
+import { markedWords } from './agent-text.ts';
 
 /** Plain-words clause for each action failure reason code. */
 const REASON_PHRASE: Readonly<Record<string, string>> = {
@@ -138,6 +139,55 @@ export function hurtSentence(input: {
 
 const VERB = /^[a-z][a-zA-Z0-9_]{0,31}$/;
 
+/** The longest `detail_text` a character reads. */
+export const DETAIL_TEXT_MAX = 160;
+const DETAIL_SAFE = /^[A-Za-z0-9 _.,;:'()+/-]+$/;
+const DETAIL_COORDS = /-?\d+\s*[, ]\s*-?\d+\s*[, ]\s*-?\d+/;
+
+/**
+ * Cleans a Body failure detail before a character reads it: control characters become spaces, white
+ * space collapses, a text with any character outside plain words, a coordinate triple or an agent-text
+ * marker word is dropped whole (undefined), and the rest is cut to 160 characters. Facts only.
+ */
+export function playerDetailText(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const spaced = Array.from(raw, (ch) => {
+    const code = ch.codePointAt(0) ?? 0;
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : ch;
+  }).join('');
+  const text = spaced.replace(/\s+/g, ' ').trim();
+  if (text === '' || !DETAIL_SAFE.test(text)) return undefined;
+  if (DETAIL_COORDS.test(text) || markedWords(text).length > 0) return undefined;
+  const cut = text.slice(0, DETAIL_TEXT_MAX).replace(/[\s.,;:]+$/, '');
+  return cut === '' ? undefined : cut;
+}
+
+/** Reasons whose Body message the Body may send on as `detail_text`. */
+const DETAIL_REASONS: readonly string[] = [
+  'missing_materials',
+  'missing_station',
+  'needs_rescue',
+  'no_effect',
+];
+
+/**
+ * The `detail_text` for a failed action, or undefined. Only a few cases carry a plain sentence worth
+ * sending: the reasons above, a craft that ran out of time, and a refused mine. `message` is the
+ * action's own failure message.
+ */
+export function outcomeDetailText(
+  verb: string,
+  reason: string | undefined,
+  message: unknown,
+): string | undefined {
+  if (reason === undefined) return undefined;
+  const wanted =
+    DETAIL_REASONS.includes(reason) ||
+    (reason === 'timeout' && verb === 'craft') ||
+    (reason === 'not_possible' && verb === 'mine');
+  return wanted ? playerDetailText(message) : undefined;
+}
+
 /**
  * The player's text for an `action` or `action_failed` entry. Rebuilt from the verb and reason code
  * alone: a verb that is not a plain identifier reads as 'action', a reason that is not a known code
@@ -148,9 +198,14 @@ export function playerOutcomeText(input: {
   ok: boolean;
   reason?: string | undefined;
   intent?: boolean | undefined;
+  detail?: unknown;
 }): string {
   const verb = input.verb !== undefined && VERB.test(input.verb) ? input.verb : 'action';
-  if (input.ok || input.intent !== true) return outcomeMessage(verb, input.ok, input.reason);
+  if (input.ok || input.intent !== true) {
+    const line = outcomeMessage(verb, input.ok, input.reason);
+    const detail = input.ok ? undefined : playerDetailText(input.detail);
+    return detail === undefined ? line : `${line.replace(/\.$/, '')}: ${detail}.`;
+  }
   return intentWhy(verb, input.reason);
 }
 
