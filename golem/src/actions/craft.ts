@@ -31,6 +31,11 @@ const PREFERRED_INGREDIENTS = ['cobblestone', 'oak_planks', 'oak_log'];
  * `timeScale`. The server's inventory correction can arrive late, so the craft waits for it.
  */
 const SETTLE_WALL_MS = 3_000;
+/**
+ * The craft's own wall-clock deadline at `timeScale` 1, under the handler's 60 s so that the report
+ * (what was made so far, and where it stood) is the outcome, not the registry's bare timeout.
+ */
+const CRAFT_DEADLINE_MS = 55_000;
 
 /**
  * Crafts `count` of an item. A recipe with a table needs the table in reach: the bot walks to the
@@ -48,6 +53,48 @@ async function runCraft(
   ctx: ActionContext,
   action: Extract<Action, { do: 'craft' }>,
 ): Promise<ActionOutcome> {
+  const progress: CraftProgress = { phase: 'starting', crafted: () => 0 };
+  const limit = new AbortController();
+  const forward = (): void => limit.abort();
+  if (ctx.signal.aborted) forward();
+  ctx.signal.addEventListener('abort', forward, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // The craft's own deadline is under the registry's, so the report below wins the race and the
+  // registry's bare "no result within" never replaces it.
+  const expired = new Promise<ActionOutcome>((resolve) => {
+    timer = setTimeout(() => {
+      limit.abort();
+      resolve(
+        failed(
+          'timeout',
+          `crafting ${action.item} ran out of time while ${progress.phase}: made ${progress.crafted()} of ${action.count}`,
+          { item: action.item, crafted: progress.crafted(), wanted: action.count },
+        ),
+      );
+    }, CRAFT_DEADLINE_MS * ctx.timeScale);
+  });
+  const body = craftBody({ ...ctx, signal: limit.signal }, action, progress);
+  // A body that outlives the deadline (the library's craft cannot be aborted) must not reject unseen.
+  body.catch(() => undefined);
+  try {
+    return await Promise.race([body, expired]);
+  } finally {
+    clearTimeout(timer);
+    ctx.signal.removeEventListener('abort', forward);
+  }
+}
+
+/** Where a craft is, for the report when its deadline passes. */
+interface CraftProgress {
+  phase: string;
+  crafted: () => number;
+}
+
+async function craftBody(
+  ctx: ActionContext,
+  action: Extract<Action, { do: 'craft' }>,
+  progress: CraftProgress,
+): Promise<ActionOutcome> {
   const { bot, signal, timeScale } = ctx;
   const def: CraftItem | undefined = bot.registry.itemsByName[action.item];
   if (!def) return failed('invalid_args', `unknown item ${action.item}`);
@@ -58,6 +105,7 @@ async function runCraft(
   let recipes = bot.recipesFor(item.id, null, action.count, null);
   if (recipes.length === 0 && table) {
     // The recipe may need the table: walk to it, then look again with the table as the station.
+    progress.phase = 'walking to the crafting table';
     const move = await moveNear(bot, table.position, TABLE_STANDOFF, { signal, timeScale });
     if (!move.ok) {
       return outcomeOfMove(move);
@@ -83,6 +131,8 @@ async function runCraft(
   const before = heldCount(bot, item.id);
   // What the library crafts are expected to make: the recipe's count per craft.
   let expected = times * recipe.result.count;
+  progress.phase = usedTable ? 'crafting at the table' : 'crafting';
+  progress.crafted = () => Math.max(0, heldCount(bot, item.id) - before);
   let stop: ActionOutcome | null = null;
   try {
     if (usedTable || hasUnlockedDisplay(bot, item)) {
@@ -208,18 +258,22 @@ export function diagnoseCraft(
   table: Block | null,
   count: number,
 ): ActionOutcome {
-  if (bot.recipesAll(item.id, null, true).length === 0) {
+  const all = bot.recipesAll(item.id, null, true);
+  if (all.length === 0) {
     return failed('not_possible', 'not craftable');
   }
-  if (!table && bot.recipesAll(item.id, null, null).length === 0) {
-    return failed('missing_station', 'needs a crafting table');
-  }
-  const candidates = bot.recipesAll(item.id, null, table);
-  const best = pickRecipe(bot, candidates, count);
+  // Preflight: the recipe, the ingredients and the station are checked together, so one failure
+  // names everything that is missing, not only the first thing.
+  const needsStation = !table && bot.recipesAll(item.id, null, null).length === 0;
+  const best = pickRecipe(bot, needsStation ? all : bot.recipesAll(item.id, null, table), count);
   if (!best) return failed('not_possible', 'not craftable');
   const missing = shortfall(bot, best, count);
-  const names = Object.keys(missing).join(', ');
-  return failed('missing_materials', `missing ${names || 'materials'}`, { missing });
+  const parts = Object.entries(missing).map(([name, n]) => `need ${n} more ${name}`);
+  if (needsStation) {
+    parts.push(`no crafting table within ${TABLE_RANGE} blocks`);
+    return failed('missing_station', parts.join('; '), { item: item.name, missing });
+  }
+  return failed('missing_materials', parts.join('; ') || 'missing materials', { missing });
 }
 
 /**

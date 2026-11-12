@@ -413,4 +413,91 @@ describe('diagnoseCraft', () => {
       detail: { missing: { cobblestone: 3 } },
     });
   });
+
+  it('names the short items and the absent table together', () => {
+    const held: Record<number, number> = { 10: 1 };
+    const bot = {
+      recipesAll: (_id: number, _m: unknown, station: unknown) =>
+        station ? [recipe(1, 1, { 10: 3 }, true)] : [],
+      inventory: { count: (id: number) => held[id] ?? 0 },
+      registry: { items: { 10: { id: 10, name: 'cobblestone' } } },
+    } as unknown as Bot;
+    expect(diagnoseCraft(bot, item, null, 1)).toMatchObject({
+      status: 'failed',
+      reason: 'missing_station',
+      message: 'need 2 more cobblestone; no crafting table within 32 blocks',
+      detail: { missing: { cobblestone: 2 } },
+    });
+  });
+
+  it('says only the table is missing when the ingredients are all held', () => {
+    const bot = {
+      recipesAll: (_id: number, _m: unknown, station: unknown) =>
+        station ? [recipe(1, 1, { 10: 3 }, true)] : [],
+      inventory: { count: () => 5 },
+      registry: { items: { 10: { id: 10, name: 'cobblestone' } } },
+    } as unknown as Bot;
+    expect(diagnoseCraft(bot, item, null, 1)).toMatchObject({
+      reason: 'missing_station',
+      message: 'no crafting table within 32 blocks',
+    });
+  });
+
+  it('names the shortfall with a table in reach', () => {
+    const bot = {
+      recipesAll: (_id: number, _m: unknown, station: unknown) =>
+        station ? [recipe(1, 1, { 10: 3 }, true)] : [],
+      inventory: { count: () => 1 },
+      registry: { items: { 10: { id: 10, name: 'cobblestone' } } },
+    } as unknown as Bot;
+    expect(diagnoseCraft(bot, item, TABLE, 1)).toMatchObject({
+      reason: 'missing_materials',
+      message: 'need 2 more cobblestone',
+    });
+  });
+});
+
+describe('craft deadline', () => {
+  it('reports what was made and where it stopped, not a bare timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const planks = recipe(5, 4, { 6: 1 });
+      const fake = fakeBot({ recipes: [planks], inventory: { 6: 3 } });
+      // The first library craft finishes; the second never answers (it cannot be aborted).
+      let calls = 0;
+      vi.mocked(fake.craft).mockImplementation(async (r: FakeRecipe) => {
+        calls += 1;
+        if (calls > 1) return new Promise<void>(() => {});
+        fake.give(r.result.id, r.result.count);
+      });
+      const pending = run(fake.bot, 'oak_planks', 12);
+      pending.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(600);
+      const out = await pending;
+      expect(out).toMatchObject({
+        status: 'failed',
+        reason: 'timeout',
+        detail: { item: 'oak_planks', crafted: 4, wanted: 12 },
+      });
+      expect(out.status === 'failed' && out.message).toContain('made 4 of 12');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('names the walk to the table when that is where the time went', async () => {
+    vi.useFakeTimers();
+    try {
+      const pickaxe = recipe(1, 1, { 10: 3 }, true);
+      const fake = fakeBot({ recipes: [pickaxe], inventory: { 10: 3 }, table: TABLE });
+      vi.mocked(moveNear).mockImplementation(() => new Promise(() => {}));
+      const pending = run(fake.bot, 'wooden_pickaxe', 1);
+      await vi.advanceTimersByTimeAsync(600);
+      const out = await pending;
+      expect(out).toMatchObject({ status: 'failed', reason: 'timeout', detail: { crafted: 0 } });
+      expect(out.status === 'failed' && out.message).toContain('walking to the crafting table');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
