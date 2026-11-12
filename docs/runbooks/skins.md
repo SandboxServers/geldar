@@ -54,3 +54,24 @@ pnpm --filter ./tools/players-cli exec tsx src/cli.ts skin show ag-jason-01
 Copy the six PNGs from your private skin files to `compose/secrets/kino-skins/` in the source tree on the node (the overlay `compose/colo-kino.yml` mounts `./secrets/kino-skins` relative to `compose/`; git-ignored), named by Kino agent id: `<agent_id>.png` (for example `ag_jason_01.png`: Kino agent ids are the underscore life ids shown in `/kino/targets`, not the hyphen player ids; lower case letters, digits, `_` and `-` are accepted, so the file name must match the id exactly). The files must be readable by the Glass uid (mode 0644 in a 0755 directory is enough); Glass mounts it read-only. Create the directory before `up` (the overlay does not create it). Restart `glass` after adding files. Glass serves `/kino/skins/<agent_id>.png` only to a viewer who may watch that agent.
 
 Kino fetches the skin lazily when an agent first appears and draws a Minecraft player model (head, body, arms, legs, and the overlay layer on 64x64 skins; 64x32 legacy skins mirror the left limbs). A 404, a bad image or a size other than 64x64 or 64x32 silently keeps the cyan box; the result is cached until the page reloads, so reload after adding a skin. Slim (3 px) arms are detected from the image: a 64x64 skin whose pixels x 54..55, y 20..31 are all fully transparent is slim, otherwise classic.
+
+
+## Show the skin on the BlueMap markers
+
+BlueMap 5.29 shows a player head from `maps/<mapId>/assets/playerheads/<uuid>.png` in its web root and falls back to `assets/steve.png` on a 404. BlueMap only downloads skins from Mojang by UUID, and our agents have offline UUIDs with no Mojang profile, so nothing writes those files. `skin heads` generates them from the skin PNGs Kino serves (`<agent_id>.png`, for example `ag_jason_01.png`): the 8x8 face with the hat layer composed over it, scaled 4x by nearest neighbour to 32x32 so the browser's smoothing stays crisp. The file name is the Java offline UUID of the life id (`UUID.nameUUIDFromBytes("OfflinePlayer:" + name)`; `ag_jason_01` is `a380937d-20dd-39b8-83ae-4219fa1c156d`). The command prints only `name uuid` lines.
+
+On the desktop (a checkout), against the Kino skin files:
+
+```
+./geldar.ps1 pnpm --filter @geldar/players-cli exec tsx src/cli.ts skin heads --skins-dir <kino skins dir> --out-dir <scratch dir> --map overworld
+```
+
+Then, on the Colo as the operator, copy the output tree into Paper's data volume web root (no restart; the files persist in the `paper-data` volume; refresh the browser):
+
+```
+docker cp <scratch dir>/maps/. geldar-colo-paper-1:/data/bluemap/web/maps/
+```
+
+BlueMap serves them through bluemap-web at `maps/<map>/assets/playerheads/<uuid>.png`. Run it again when a skin changes.
+
+Finding: the node's BlueMap config is copied from the repo's `plugins/bluemap/config/plugin.conf` at Paper start (host path `src/plugins/bluemap/config/plugin.conf`). Changing it live in the volume is reverted at the next Paper recreate unless the repo file (now `skin-download: true`, PR #177) is also deployed to `src/plugins/bluemap/config/plugin.conf` on the node.
