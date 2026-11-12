@@ -36,15 +36,26 @@ export const PLANKS_STICK = 2001;
 export const BAMBOO_STICK = 2002;
 
 /** A `recipe_book_add` packet with one entry per `[displayId, type, resultId, yield = 1]`. */
-export function bookAdd(entries: [number, string, number, number?][], replace = false) {
+export function bookAdd(
+  entries: [number, string, number, number?, number[][]?][],
+  replace = false,
+) {
   return {
     replace,
-    entries: entries.map(([displayId, type, resultId, yieldPer = 1]) => ({
+    entries: entries.map(([displayId, type, resultId, yieldPer = 1, cells = []]) => ({
       recipe: {
         displayId,
         display: {
           type,
-          data: { result: { type: 'item_stack', data: { itemId: resultId, itemCount: yieldPer } } },
+          data: {
+            result: { type: 'item_stack', data: { itemId: resultId, itemCount: yieldPer } },
+            // Each cell is a list of alternative item ids: one id is an `item`, several a `composite`.
+            ingredients: cells.map((ids) =>
+              ids.length === 1
+                ? { type: 'item', data: ids[0] }
+                : { type: 'composite', data: ids.map((id) => ({ type: 'item', data: id })) },
+            ),
+          },
         },
       },
     })),

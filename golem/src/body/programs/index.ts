@@ -2,6 +2,7 @@ import type { Intent } from '@geldar/contract';
 import type { IntentProgram, ProgramCheckpoint, ProgramContext, StepResult } from '../program.ts';
 import { ProgramRegistry } from '../program.ts';
 import { ProgramError } from './args.ts';
+import { BuildProgram } from './build.ts';
 import { CraftProgram } from './craft.ts';
 import { FleeProgram } from './flee.ts';
 import { FollowProgram } from './follow.ts';
@@ -13,7 +14,7 @@ export { ProgramError, type ProgramErrorReason } from './args.ts';
 export { CraftProgram, FleeProgram, FollowProgram, GatherProgram, RestProgram, TravelProgram };
 
 /** Programs in the contract's `program` list that the Body does not run in Phase 0. */
-export const UNSUPPORTED_PROGRAMS = ['build', 'trade_wait'] as const;
+export const UNSUPPORTED_PROGRAMS = ['trade_wait'] as const;
 
 /** A program the Body does not run: `start` and `resume` throw `ProgramError('unsupported')`. */
 class UnsupportedProgram implements IntentProgram {
@@ -49,6 +50,7 @@ export function createProgramRegistry(): ProgramRegistry {
   registry.register('travel', () => new TravelProgram());
   registry.register('gather', () => new GatherProgram());
   registry.register('craft', () => new CraftProgram());
+  registry.register('build', () => new BuildProgram());
   registry.register('rest', () => new RestProgram());
   registry.register('flee', () => new FleeProgram());
   registry.register('follow', () => new FollowProgram());
