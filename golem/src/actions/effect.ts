@@ -10,6 +10,8 @@ export type Effect = 'moved' | 'changed' | 'no_effect' | 'partial';
 const MIN_MOVE = 0.5;
 /** A goto whose target is nearer than this to the start has nothing to move for. */
 const ALREADY_THERE = 1.5;
+/** The food level at which eating is refused. */
+const FULL_FOOD = 20;
 
 /** The state read before and after an action. Absent parts were not readable (a bot without them). */
 export interface Snapshot {
@@ -17,10 +19,30 @@ export interface Snapshot {
   items: Map<string, number> | null;
   /** Block names at the cells the action targets, keyed "x,y,z". */
   blocks: Map<string, string> | null;
+  /** Food level, or null when the bot has none. */
+  food: number | null;
+  /** Whether the bot is in a bed, or null when unreadable. */
+  sleeping: boolean | null;
+  /** For attack: every live entity with the target's name, by id. Null for other verbs. */
+  targets: Map<number, { health: number | null }> | null;
 }
 
 /** The verbs whose success is checked against a measured effect. */
-const CHECKED = new Set(['goto', 'mine', 'place', 'give', 'craft', 'unstick']);
+const CHECKED = new Set([
+  'goto',
+  'mine',
+  'place',
+  'give',
+  'craft',
+  'unstick',
+  'eat',
+  'attack',
+  'deposit',
+  'withdraw',
+  'open',
+  'write_sign',
+  'sleep',
+]);
 
 function cells(bot: Bot, action: Action): Vec3[] {
   if (action.do !== 'place') return [];
@@ -33,9 +55,26 @@ function cells(bot: Bot, action: Action): Vec3[] {
   return [new Vec3(action.at.x, action.at.y, action.at.z)];
 }
 
+function emptySnapshot(): Snapshot {
+  return { pos: null, items: null, blocks: null, food: null, sleeping: null, targets: null };
+}
+
+/** The live entities that answer to the target name, with their health when they report it. */
+function targetsOf(bot: Bot, name: string): Map<number, { health: number | null }> | null {
+  if (!bot.entities || !bot.entity) return null;
+  const out = new Map<number, { health: number | null }>();
+  for (const e of Object.values(bot.entities)) {
+    if (e === bot.entity || e.isValid === false) continue;
+    if (e.name !== name && e.username !== name) continue;
+    const health = (e as { health?: unknown }).health;
+    out.set(e.id, { health: typeof health === 'number' ? health : null });
+  }
+  return out;
+}
+
 /** Reads position, inventory totals and (for place) the target blocks. Never throws. */
 export function snapshot(bot: Bot, action: Action): Snapshot {
-  const snap: Snapshot = { pos: null, items: null, blocks: null };
+  const snap = emptySnapshot();
   try {
     const p = bot.entity?.position;
     if (p) snap.pos = { x: p.x, y: p.y, z: p.z };
@@ -44,13 +83,16 @@ export function snapshot(bot: Bot, action: Action): Snapshot {
       snap.items = new Map();
       for (const it of list) snap.items.set(it.name, (snap.items.get(it.name) ?? 0) + it.count);
     }
+    if (typeof bot.food === 'number') snap.food = bot.food;
+    if (typeof bot.isSleeping === 'boolean') snap.sleeping = bot.isSleeping;
+    if (action.do === 'attack') snap.targets = targetsOf(bot, action.target);
     const at = cells(bot, action);
     if (at.length > 0 && typeof bot.blockAt === 'function') {
       snap.blocks = new Map();
       for (const c of at) snap.blocks.set(`${c.x},${c.y},${c.z}`, bot.blockAt(c)?.name ?? 'none');
     }
   } catch {
-    return { pos: null, items: null, blocks: null };
+    return emptySnapshot();
   }
   return snap;
 }
@@ -87,7 +129,12 @@ function round1(n: number): number {
 }
 
 /** Judges one action from two snapshots. Undefined when the verb is not checked or nothing was readable. */
-export function judge(action: Action, before: Snapshot, after: Snapshot): Receipt | undefined {
+export function judge(
+  action: Action,
+  before: Snapshot,
+  after: Snapshot,
+  detail: Record<string, unknown> = {},
+): Receipt | undefined {
   if (!CHECKED.has(action.do)) return undefined;
   const moved = before.pos && after.pos ? round1(dist(before.pos, after.pos)) : null;
   switch (action.do) {
@@ -168,6 +215,116 @@ export function judge(action: Action, before: Snapshot, after: Snapshot): Receip
         effect: 'changed',
         delta: { blocks_changed: changed ? 1 : 0, items_lost: Math.max(lost, 0) },
       };
+    }
+    default:
+      return judgeMore(action, before, after, detail);
+  }
+}
+
+/** Net count lost across all item names. */
+function lostTotal(before: Snapshot, after: Snapshot): number | null {
+  if (!before.items || !after.items) return null;
+  let lost = 0;
+  for (const [n, c] of before.items) lost += Math.max(0, c - (after.items.get(n) ?? 0));
+  return lost;
+}
+
+function judgeMore(
+  action: Action,
+  before: Snapshot,
+  after: Snapshot,
+  detail: Record<string, unknown>,
+): Receipt | undefined {
+  switch (action.do) {
+    case 'eat': {
+      // Nothing to judge when the body is full already: a no-op there is legitimate.
+      if (before.food === null || after.food === null || before.food >= FULL_FOOD) return undefined;
+      const lost = lostTotal(before, after);
+      const rose = after.food - before.food;
+      if (rose <= 0 && (lost ?? 0) <= 0) {
+        return noEffect(
+          { food_gained: 0, items_lost: 0 },
+          'The eat was expected to raise your food level or use up food; neither changed.',
+        );
+      }
+      return {
+        effect: 'changed',
+        delta: { food_gained: Math.max(rose, 0), items_lost: lost ?? 0 },
+      };
+    }
+    case 'attack': {
+      if (!before.targets || !after.targets || before.targets.size === 0) return undefined;
+      // The target removed or hurt counts; a target that died during the swings is gone, which is fine.
+      for (const [id, was] of before.targets) {
+        const now = after.targets.get(id);
+        if (!now || (was.health !== null && now.health !== null && now.health < was.health)) {
+          return { effect: 'changed', delta: { target_gone: now ? 0 : 1 } };
+        }
+      }
+      return noEffect(
+        { target_gone: 0 },
+        `The attack was expected to hurt or remove ${action.target}; it is still there, unhurt.`,
+      );
+    }
+    case 'deposit': {
+      const delta = itemDelta(before, after, action.item);
+      if (delta === null) return undefined;
+      if (delta >= 0) {
+        return noEffect(
+          { items_lost: 0 },
+          `The deposit was expected to move ${action.count} ${action.item} into the container; you lost 0.`,
+        );
+      }
+      return {
+        effect: -delta < action.count ? 'partial' : 'changed',
+        delta: { items_lost: -delta },
+      };
+    }
+    case 'withdraw': {
+      const delta = itemDelta(before, after, action.item);
+      if (delta === null) return undefined;
+      if (delta <= 0) {
+        return noEffect(
+          { items_gained: 0 },
+          `The withdraw was expected to take ${action.count} ${action.item} from the container; you gained 0.`,
+        );
+      }
+      return {
+        effect: delta < action.count ? 'partial' : 'changed',
+        delta: { items_gained: delta },
+      };
+    }
+    case 'open': {
+      // The handler reports the window's contents only when a window opened.
+      if (Array.isArray(detail.contents))
+        return { effect: 'changed', delta: { windows_opened: 1 } };
+      return noEffect(
+        { windows_opened: 0 },
+        'The open was expected to open a container window; none opened.',
+      );
+    }
+    case 'write_sign': {
+      const lost = lostTotal(before, after);
+      const lines = Array.isArray(detail.lines) ? detail.lines.length : 0;
+      if (lost === null) return undefined;
+      if (lost <= 0 || lines === 0) {
+        return noEffect(
+          { signs_written: 0 },
+          'The write_sign was expected to place a sign with your text; no sign was used up.',
+        );
+      }
+      return { effect: 'changed', delta: { signs_written: 1 } };
+    }
+    case 'sleep': {
+      // Already in bed before the action: nothing to enter.
+      if (before.sleeping !== false || after.sleeping === null) return undefined;
+      if (!after.sleeping) {
+        return noEffect(
+          { slept: 0 },
+          'The sleep was expected to put you in a bed; you are not asleep.',
+        );
+      }
+      return { effect: 'changed', delta: { slept: 1 } };
     }
     default:
       return undefined;
