@@ -144,3 +144,88 @@ describe('fight_or_flee arrow sidestep', () => {
     }
   });
 });
+
+describe('fight_or_flee arrow pause (sidestep backoff)', () => {
+  /** Sets the Body's world tick (the tick source the reflex reads). */
+  function setTick(view: BodyView, tick: number): void {
+    (view as { tick: number }).tick = tick;
+  }
+
+  /** Runs the reflex at `tick` if the arrow trigger fires there; null when it does not. */
+  async function fireAt(view: BodyView, tick: number) {
+    setTick(view, tick);
+    const trigger = fightOrFleeReflex.check(view);
+    if (trigger === null) return null;
+    const outcome = await fightOrFleeReflex.run(trigger, sceneContext(calmScene(), { view }));
+    return { trigger, outcome };
+  }
+
+  /** Each tick is an arrow sidestep that is handled. */
+  async function sidestepsAt(view: BodyView, ticks: number[]): Promise<void> {
+    for (const tick of ticks) {
+      expect((await fireAt(view, tick))?.outcome.result).toBe('handled');
+    }
+  }
+
+  /** The arrow at `tick` is the one past the limit: it is a paused trigger, and its run gives up. */
+  async function pauseAt(view: BodyView, tick: number): Promise<string> {
+    const fired = await fireAt(view, tick);
+    expect(fired?.trigger.paused).toBe(true);
+    expect(fired?.outcome.result).toBe('abandoned');
+    return fired?.outcome.detail ?? '';
+  }
+
+  beforeEach(() => {
+    walk.mockResolvedValue({ ok: true } as never);
+  });
+
+  it('sidesteps 4 arrows in 15 s, then the 5th is suppressed with one give-up event', async () => {
+    const view = arrowView([arrow('left')]);
+    await sidestepsAt(view, [0, 40, 80, 120]);
+    expect(await pauseAt(view, 160)).toBe('arrow sidestep paused: still under fire (15s)');
+    expect(walk).toHaveBeenCalledTimes(4);
+    // While paused the check is silent, so no second event is logged.
+    setTick(view, 200);
+    expect(fightOrFleeReflex.check(view)).toBeNull();
+  });
+
+  it('resumes sidestepping when the 15 s pause ends', async () => {
+    const view = arrowView([arrow('left')]);
+    await sidestepsAt(view, [0, 40, 80, 120]);
+    await pauseAt(view, 160);
+    await sidestepsAt(view, [460, 500, 540, 580]);
+    expect(walk).toHaveBeenCalledTimes(8);
+  });
+
+  it('a sidestep older than 15 s no longer counts toward the limit', async () => {
+    const view = arrowView([arrow('left')]);
+    await sidestepsAt(view, [0, 100, 200, 300]);
+    await sidestepsAt(view, [310]);
+    expect(walk).toHaveBeenCalledTimes(5);
+  });
+
+  it('doubles the pause on each pause in a row (15 s, 30 s, 60 s, 120 s) and caps it at 120 s', async () => {
+    const view = arrowView([arrow('left')]);
+    await sidestepsAt(view, [0, 40, 80, 120]);
+    expect(await pauseAt(view, 160)).toContain('(15s)');
+    await sidestepsAt(view, [460, 500, 540, 580]);
+    expect(await pauseAt(view, 600)).toContain('(30s)');
+    await sidestepsAt(view, [1200, 1240, 1280, 1320]);
+    expect(await pauseAt(view, 1340)).toContain('(60s)');
+    await sidestepsAt(view, [2540, 2580, 2620, 2660]);
+    expect(await pauseAt(view, 2680)).toContain('(120s)');
+    await sidestepsAt(view, [5080, 5120, 5160, 5200]);
+    expect(await pauseAt(view, 5220)).toContain('(120s)');
+  });
+
+  it('starts over at 15 s after a quiet minute with no arrow', async () => {
+    const view = arrowView([arrow('left')]);
+    await sidestepsAt(view, [0, 40, 80, 120]);
+    expect(await pauseAt(view, 160)).toContain('(15s)');
+    await sidestepsAt(view, [460, 500, 540, 580]);
+    expect(await pauseAt(view, 600)).toContain('(30s)');
+    await sidestepsAt(view, [3000]);
+    await sidestepsAt(view, [3040, 3080, 3120]);
+    expect(await pauseAt(view, 3160)).toContain('(15s)');
+  });
+});
