@@ -4,13 +4,14 @@ import { createProgramRegistry, UNSUPPORTED_PROGRAMS } from './index.ts';
 import { contextFor, newWorld } from './programs.fakes.ts';
 
 describe('createProgramRegistry', () => {
-  it('registers the six programs and the two unsupported names', () => {
+  it('registers the seven programs and the unsupported names', () => {
     const registry = createProgramRegistry();
     expect(registry).toBeInstanceOf(ProgramRegistry);
     expect(registry.names()).toEqual([
       'travel',
       'gather',
       'craft',
+      'build',
       'rest',
       'flee',
       'follow',
@@ -20,7 +21,7 @@ describe('createProgramRegistry', () => {
     expect(registry.create('mining_skill')).toBeUndefined();
   });
 
-  it('refuses build and trade_wait with unsupported', async () => {
+  it('refuses trade_wait with unsupported', async () => {
     const registry = createProgramRegistry();
     const ctx = contextFor(newWorld());
     for (const name of UNSUPPORTED_PROGRAMS) {
