@@ -90,6 +90,8 @@ export async function listThoughtsWithJournal(
       filter.limit,
     ],
   );
+  // No journal line to merge: the thoughts page is already the page, as listThoughts returned it.
+  if (result.rows.length === 0) return thoughts;
   return [...thoughts, ...result.rows.map(asThought)]
     .sort((a, b) => compare(b, a))
     .slice(0, filter.limit);

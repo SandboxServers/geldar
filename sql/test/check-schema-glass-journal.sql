@@ -16,7 +16,7 @@ BEGIN
       VALUES ('ag_gj_live', 'gjlive', 1, 'ag_gj_live', 'test', 'sovereign', 'reg-gj', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE, NULL, NULL),
              ('ag_gj_opt', 'gjopt', 1, 'ag_gj_opt', 'test', 'sovereign', 'reg-gj', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', TRUE, NULL, NULL),
              ('ag_gj_dead', 'gjdead', 1, 'ag_gj_dead', 'test', 'sovereign', 'reg-gj', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE, now(), 'test'),
-             ('ag_gj_house', 'gjhouse', 1, 'ag_gj_house', 'test', 'house', 'reg-gj', 'claude-code', 'self-reported', 'declared:unverified', 'house', 'seed', FALSE, NULL, NULL);
+             ('ag_gj_house', 'gjhouse', 1, 'ag_gj_house', 'test', 'headless', 'reg-gj', 'claude-code', 'self-reported', 'declared:unverified', 'house', 'seed', FALSE, NULL, NULL);
     INSERT INTO mcp_journal (life_id, at, text)
       SELECT a, t, a || ' ' || age
         FROM unnest(ARRAY['ag_gj_live', 'ag_gj_opt', 'ag_gj_dead', 'ag_gj_house']) a,
