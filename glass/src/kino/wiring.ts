@@ -9,7 +9,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import type { Duplex } from 'node:stream';
 import { kinoSessionFromHeader } from '../kino-cookie.ts';
-import { readSkinPng, skinAgentId } from './skins.ts';
 import type { SqlClient } from '../query.ts';
 import { KinoAudit, sqlAuditStore } from './audit.ts';
 import { type ControlSink, controlledFeed } from './control.ts';
@@ -19,6 +18,7 @@ import { normalizeOrigin, parseAllowedOrigins } from './origins.ts';
 import { startOtlpExporter } from './otlp.ts';
 import { type FeedSource, KinoRelay } from './relay.ts';
 import { ANONYMOUS, listAgents, ownedIds, sqlScopeStore, watchableIds } from './scope.ts';
+import { readSkinPng, skinAgentId } from './skins.ts';
 import { handleKinoUpgrade } from './ws.ts';
 
 const WEB = new URL('../../web/kino/', import.meta.url);
