@@ -20,9 +20,11 @@ import {
   SpriteMaterial,
 } from 'three';
 import type { EntityPosition } from '../../../contract/src/generated/types.ts';
+import { addGhost } from './agent-ghost.ts';
 import { FOG_FAR, FOG_NEAR, faceShade, SKY_COLOUR } from './blocktex.ts';
 import { CullingWorld, cellsToCull, sectionsOfCells } from './cull.ts';
 import { labelStyle } from './entities.ts';
+import { makeFadeMaterial, makeFadeUniforms, setFadeFocus } from './fade.ts';
 import type { FeedChange, FeedState } from './feed.ts';
 import { type MeshData, meshSection, type UvLookup } from './mesher.ts';
 
@@ -44,6 +46,13 @@ export function toGeometry(mesh: MeshData): BufferGeometry {
     shade.push(s, s, s);
   }
   g.setAttribute('color', new BufferAttribute(new Float32Array(shade), 3));
+  g.setAttribute(
+    'soft',
+    new BufferAttribute(
+      new Float32Array(mesh.soft ?? new Array(mesh.positions.length / 3).fill(0)),
+      1,
+    ),
+  );
   g.setIndex(new BufferAttribute(new Uint32Array(mesh.indices), 1));
   return g;
 }
@@ -64,6 +73,7 @@ export class KinoScene {
   private readonly state: FeedState;
   private readonly uvFor: UvLookup;
   private readonly material: Material;
+  private readonly fade = makeFadeUniforms();
 
   constructor(
     state: FeedState,
@@ -72,7 +82,7 @@ export class KinoScene {
   ) {
     this.state = state;
     this.uvFor = uvFor;
-    this.material = material;
+    this.material = makeFadeMaterial(material, this.fade);
     this.scene.background = new Color(SKY_COLOUR);
     this.scene.fog = new Fog(SKY_COLOUR, FOG_NEAR, FOG_FAR);
     this.updateCamera();
@@ -96,6 +106,26 @@ export class KinoScene {
     if (changed.length === 0) return;
     this.culled = next;
     for (const key of sectionsOfCells(changed)) if (this.sections.has(key)) this.remesh(key);
+  }
+
+  /** Moves the see-through zone: leaves near the camera or the camera-agent line are dithered out. */
+  setFadeFocus(
+    camera: { x: number; y: number; z: number },
+    agent: { x: number; y: number; z: number } | null,
+  ): void {
+    setFadeFocus(this.fade, camera, agent);
+    // A camera right next to an agent would be filled by its silhouette: hide the ghost then.
+    for (const m of this.markers.values()) {
+      const ghost = m.getObjectByName('ghost');
+      if (ghost) {
+        const d = Math.hypot(
+          m.position.x - camera.x,
+          m.position.y - camera.y,
+          m.position.z - camera.z,
+        );
+        ghost.visible = d > 2.2;
+      }
+    }
   }
 
   sectionKeys(): string[] {
@@ -172,6 +202,7 @@ export class KinoScene {
     );
     head.position.y = 1.05;
     body.add(head);
+    addGhost(body, this.markerGeometry, AGENT_COLOUR, 0xffe0b0);
     this.addLabel(body, label, 1.7);
     return body;
   }

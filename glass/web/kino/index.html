@@ -25,6 +25,18 @@
       .pane .tools { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
       .pane .msg { position: absolute; bottom: 28px; left: 6px; }
       .pane .status { position: absolute; bottom: 6px; left: 6px; right: 6px; font: 12px ui-monospace, monospace; color: #cde; text-shadow: 0 0 3px #000; }
+      #bar select { max-width: 22rem; }
+      #panes { overflow-y: auto; grid-auto-rows: minmax(240px, 1fr); }
+      /* Wide screens with a mouse: one compact header row, smaller controls, a pane grid. */
+      @media (min-width: 900px) and (pointer: fine) {
+        #bar { flex-wrap: nowrap; gap: 12px; padding: 3px 8px; }
+        #bar select, #bar button, .pane .tools button { min-height: 28px; min-width: 28px; padding: 0 10px; font-size: 13px; }
+        #bar select { flex: 0 1 22rem; }
+        #notice { flex: 0 1 auto; }
+        #status { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #panes { grid-template-columns: repeat(auto-fit, minmax(min(560px, 100%), 1fr)); }
+        .pane .tools { gap: 3px; }
+      }
     </style>
   </head>
   <body>
