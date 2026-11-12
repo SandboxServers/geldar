@@ -46,6 +46,16 @@ export function bookSubject(shard: string, lifeId: string): string {
 }
 
 /**
+ * Where the Body listens for an image request (decision 0156, VP-2) and replies with a base64 PNG
+ * and a caption, or `{"error":"view_unavailable","detail":...}`:
+ * `geldar.<shard>.body.<life_id>.image`. Five tokens. Throws on a shard or life id the contract rejects.
+ */
+export function viewImageSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.body.${lifeId}.image`;
+}
+
+/**
  * Where the Body listens for a `view` request (the view-tool packet): `geldar.<shard>.body.<life_id>.view`.
  * The request is a ViewInput (mcp-view.schema.json); the reply is a ViewResult or `{"error":"unavailable"}`.
  * Five tokens, so it is outside the sink's `geldar.*.*` filter. Throws on a shard or life id the contract rejects.
@@ -67,4 +77,14 @@ export function kinoFeedSubject(shard: string, agentId: string): string {
   if (!/^[a-z][a-z0-9_]{0,63}$/.test(agentId))
     throw new Error(`invalid agent id for a subject: ${agentId}`);
   return `geldar.${shard}.kino.${agentId}.feed`;
+}
+
+/**
+ * Where the deploy publishes a maintenance notice (maintenance-notice.schema.json, CD-1):
+ * `geldar.<shard>.maintenance`. Three tokens, like the event subjects; the notice is not a WorldEvent.
+ * Throws on a shard name the contract rejects.
+ */
+export function maintenanceSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.maintenance`;
 }

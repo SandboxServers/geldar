@@ -137,7 +137,9 @@ describe('startAdamBody', () => {
     expect(o?.timeScale).toBe(2);
     expect(typeof o?.currentRevision).toBe('function');
     expect(running.generation).toBe(4);
-    expect(r.served).toHaveLength(3);
+    // The three Body subjects of the link, and the image subject of VP-2 (decision 0156).
+    expect(r.served).toHaveLength(4);
+    expect(r.served.filter((s) => s.endsWith('.image'))).toHaveLength(1);
     await running.stop();
   });
 
@@ -240,6 +242,7 @@ describe('startAdamBody', () => {
       `unserve ${r.served[0]}`,
       `unserve ${r.served[1]}`,
       `unserve ${r.served[2]}`,
+      `unserve ${r.served[3]}`,
       'executor.stop',
       'runtime.cancelAction',
       'restarted.stop',

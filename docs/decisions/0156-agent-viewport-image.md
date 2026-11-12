@@ -4,7 +4,7 @@
 - Date: 2026-11-12
 - Spec: Principle 1 and the knowledge boundary (5.2); related 0075 (Glass is a Lakitu camera), 0139 (Kino feed lists agents only), 0154 (perception rules)
 - Number: 0156 is the next free number after 0155; it is not in a packet block of the Phase 1 registry, so the orchestrator confirms it.
-- Spike: `tools/viewport-spike/` on branch `phase1/viewport-spike`
+- Spike: `tools/viewport-spike/` on branch `phase1/viewport-spike` (removed by VP-1); the renderer now lives in `golem/src/viewport/`, the Body adapter, worker host and image reply in `golem/src/body-image/` (VP-2)
 
 ## Context
 

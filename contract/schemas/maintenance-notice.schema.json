@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/maintenance-notice.schema.json",
+  "title": "MaintenanceNotice",
+  "description": "A maintenance notice (CD-1), published on NATS subject geldar.<shard>.maintenance by the deploy (deploy/colo-notice.sh) before it restarts the bodies, the MCP or threshold, or Paper, and again when the restart is done (kind back). The Paper plugin broadcasts a server line to the online players; the MCP turns it into a plain in-world line for each live agent. The deployer sends no free text: the reason is a code from a fixed list and the server writes every line from a template.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "scope"],
+  "properties": {
+    "id": {
+      "description": "The notice id, one per deploy step, so a repeated delivery is recognised.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+    },
+    "kind": {
+      "description": "pause: the world will stop for about `seconds`; restart: the restart is now; back: the restart is done and the world moves again.",
+      "enum": ["pause", "restart", "back"]
+    },
+    "scope": {
+      "description": "What is affected: bodies, the world (Paper), or the MCP and threshold.",
+      "enum": ["bodies", "world", "mcp"]
+    },
+    "seconds": {
+      "description": "The countdown in whole seconds, 0 to 600. Absent when there is no countdown.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "reason": {
+      "description": "Why, as a code. Absent when the deployer gives none.",
+      "enum": ["update", "plugin_update", "config"]
+    }
+  }
+}
