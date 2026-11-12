@@ -75,6 +75,19 @@ export function toView(row: Row): ThoughtView {
   };
 }
 
+/** How many characters of a journal line the collapsed row shows. */
+export const JOURNAL_PREVIEW = 200;
+
+/** The text a journal row shows: the first 200 characters with an ellipsis when collapsed, all of it when open. */
+export function journalShown(
+  value: string,
+  expanded: boolean,
+): { shown: string; expandable: boolean } {
+  const expandable = value.length > JOURNAL_PREVIEW;
+  if (!expandable || expanded) return { shown: value, expandable };
+  return { shown: `${value.slice(0, JOURNAL_PREVIEW)}...`, expandable };
+}
+
 /** Shows a bidi override, a zero-width or a control character as a visible marker. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the class names the controls it marks
 const INVISIBLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/gu;

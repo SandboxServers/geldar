@@ -69,6 +69,35 @@ ol li {
   color: #991b1b;
 }
 
+.outcome.none {
+  color: #4b5563;
+}
+
+.row.journal-row {
+  grid-template-columns: 11rem 10rem 5rem 1fr;
+}
+
+.row .journal-text {
+  grid-column: 1 / -1;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: auto 1fr auto auto;
+  }
+
+  .row .template,
+  .row .latency,
+  .row .wake {
+    display: none;
+  }
+
+  .row .plan {
+    grid-column: 1 / -1;
+  }
+}
+
 .detail {
   margin-top: 1rem;
   border-top: 2px solid #374151;

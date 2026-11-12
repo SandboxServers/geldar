@@ -20,11 +20,11 @@ import {
   SpriteMaterial,
 } from 'three';
 import type { EntityPosition } from '../../../contract/src/generated/types.ts';
-import { addGhost } from './agent-ghost.ts';
+import { addGhost, skinGhost } from './agent-ghost.ts';
 import { FOG_FAR, FOG_NEAR, faceShade, SKY_COLOUR } from './blocktex.ts';
 import { CullingWorld, cellsToCull, sectionsOfCells } from './cull.ts';
-import { labelStyle } from './entities.ts';
-import { makeFadeMaterial, makeFadeUniforms, setFadeFocus } from './fade.ts';
+import { labelClamp, labelStyle } from './entities.ts';
+import { makeFadeMaterial, makeFadeUniforms, makeWaterMaterial, setFadeFocus } from './fade.ts';
 import type { FeedChange, FeedState } from './feed.ts';
 import { type MeshData, meshSection, type UvLookup } from './mesher.ts';
 import { buildFigure, loadSkinCanvas } from './skin-figure.ts';
@@ -77,6 +77,8 @@ export class KinoScene {
   private readonly state: FeedState;
   private readonly uvFor: UvLookup;
   private readonly material: Material;
+  private readonly waterMaterial: Material;
+  private readonly waterSections = new Map<string, Mesh>();
   private readonly fade = makeFadeUniforms();
 
   constructor(
@@ -87,6 +89,7 @@ export class KinoScene {
     this.state = state;
     this.uvFor = uvFor;
     this.material = makeFadeMaterial(material, this.fade);
+    this.waterMaterial = makeWaterMaterial(material);
     this.scene.background = new Color(SKY_COLOUR);
     this.scene.fog = new Fog(SKY_COLOUR, FOG_NEAR, FOG_FAR);
     this.updateCamera();
@@ -109,7 +112,9 @@ export class KinoScene {
     for (const c of this.culled) if (!next.has(c)) changed.push(c);
     if (changed.length === 0) return;
     this.culled = next;
-    for (const key of sectionsOfCells(changed)) if (this.sections.has(key)) this.remesh(key);
+    for (const key of sectionsOfCells(changed)) {
+      if (this.sections.has(key) || this.waterSections.has(key)) this.remesh(key);
+    }
   }
 
   /** Moves the see-through zone: leaves near the camera or the camera-agent line are dithered out. */
@@ -175,17 +180,27 @@ export class KinoScene {
       old.geometry.dispose();
       this.sections.delete(key);
     }
-    const data = meshSection(
-      new CullingWorld(this.state.world, this.culled),
-      cx,
-      sy,
-      cz,
-      this.uvFor,
-    );
-    if (data.indices.length === 0) return;
-    const mesh = new Mesh(toGeometry(data), this.material);
-    this.scene.add(mesh);
-    this.sections.set(key, mesh);
+    const oldWater = this.waterSections.get(key);
+    if (oldWater) {
+      this.scene.remove(oldWater);
+      oldWater.geometry.dispose();
+      this.waterSections.delete(key);
+    }
+    const world = new CullingWorld(this.state.world, this.culled);
+    const data = meshSection(world, cx, sy, cz, this.uvFor, 'solid');
+    if (data.indices.length > 0) {
+      const mesh = new Mesh(toGeometry(data), this.material);
+      this.scene.add(mesh);
+      this.sections.set(key, mesh);
+    }
+    // Water is its own blended, depth-write-off mesh so it is a smooth translucent surface, not dither.
+    const water = meshSection(world, cx, sy, cz, this.uvFor, 'water');
+    if (water.indices.length > 0) {
+      const mesh = new Mesh(toGeometry(water), this.waterMaterial);
+      mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      this.waterSections.set(key, mesh);
+    }
   }
 
   /** An agent: a cyan figure with a bright outline, a head block and a name label. */
@@ -229,6 +244,9 @@ export class KinoScene {
       body.add(figure);
       (body.material as MeshBasicMaterial).visible = false;
       for (const c of body.children) if (c.name === 'plain') c.visible = false;
+      // The box ghost is replaced by the figure's own ghost: same depths, so only occluded pixels show.
+      body.getObjectByName('ghost')?.removeFromParent();
+      body.add(skinGhost(figure));
     });
   }
 
@@ -274,7 +292,9 @@ export class KinoScene {
       const st = labelStyle(m.userData.agent === true, d);
       sprite.visible = st.visible;
       sprite.material.opacity = st.opacity;
-      const k = m.userData.agent === true ? 1 : st.scale;
+      const cam = this.camera.position;
+      const camD = Math.hypot(m.position.x - cam.x, m.position.y - cam.y, m.position.z - cam.z);
+      const k = (m.userData.agent === true ? 1 : st.scale) * labelClamp(camD);
       sprite.scale.set(2.4 * k, 0.45 * k, 1);
     }
   }

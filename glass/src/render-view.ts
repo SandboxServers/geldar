@@ -6,7 +6,7 @@
  * glass/ has no DOM library, so the few DOM members used are declared below. The file is served to
  * the browser after type stripping, so it stays erasable TypeScript.
  */
-import { display, type Row, type ThoughtView } from './render-model.ts';
+import { display, journalShown, type Row, type ThoughtView } from './render-model.ts';
 
 /** The DOM members this page uses. */
 export interface El {
@@ -42,18 +42,37 @@ export function renderRow(doc: Doc, view: ThoughtView, onOpen: (id: string) => v
   const button = doc.createElement('button');
   button.type = 'button';
   button.className = 'row';
-  button.addEventListener('click', () => onOpen(view.id));
   const latency = view.latencyMs === null ? '' : `${view.latencyMs} ms`;
+  if (view.kind === 'journal') {
+    // A journal line shows its text on its own line, 200 characters at first, all of it on a tap.
+    button.className = 'row journal-row';
+    let expanded = false;
+    const body = make(doc, 'span', 'plan journal-text', journalShown(view.plan, false).shown);
+    button.addEventListener('click', () => {
+      const { expandable } = journalShown(view.plan, expanded);
+      if (!expandable) {
+        onOpen(view.id);
+        return;
+      }
+      expanded = !expanded;
+      body.textContent = display(journalShown(view.plan, expanded).shown);
+    });
+    button.append(
+      make(doc, 'span', 'when', view.at),
+      make(doc, 'span', 'agent', view.agentName),
+      make(doc, 'span', 'tier', view.tier),
+      make(doc, 'span', 'outcome none', 'journal'),
+      body,
+    );
+    item.append(button);
+    return item;
+  }
+  button.addEventListener('click', () => onOpen(view.id));
   button.append(
     make(doc, 'span', 'when', view.at),
     make(doc, 'span', 'agent', view.agentName),
     make(doc, 'span', 'tier', view.tier),
-    make(
-      doc,
-      'span',
-      `outcome ${view.outcome}`,
-      view.kind === 'journal' ? 'journal' : view.outcome,
-    ),
+    make(doc, 'span', `outcome ${view.outcome}`, view.outcome),
     make(doc, 'span', 'template', view.templateVersion),
     make(doc, 'span', 'latency', latency),
     make(doc, 'span', 'wake', view.wakeReason),
