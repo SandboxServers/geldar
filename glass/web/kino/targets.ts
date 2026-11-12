@@ -31,3 +31,40 @@ export function targetsNotice(t: Targets): string | null {
   if (t.agents.length === 0) return 'No agents you may watch right now.';
   return null;
 }
+
+/** What the targets request came to: a parsed list, or a failure the page must show with a Retry. */
+export type TargetsOutcome =
+  | { ok: true; targets: Targets }
+  | { ok: false; message: string; retryAfterSeconds: number | null };
+
+/** The seconds a Retry-After header asks for (whole seconds only, capped at an hour), or null. */
+export function parseRetryAfter(header: string | null | undefined): number | null {
+  if (header === null || header === undefined || !/^\d{1,5}$/.test(header.trim())) return null;
+  return Math.min(3600, Number(header.trim()));
+}
+
+/** Pure: turns the HTTP status, Retry-After and JSON body (null when unreadable) into an outcome. A non-2xx never passes as "nothing to watch". */
+export function targetsOutcome(
+  status: number,
+  retryAfter: string | null | undefined,
+  body: unknown,
+): TargetsOutcome {
+  if (status >= 200 && status < 300 && typeof body === 'object' && body !== null) {
+    return { ok: true, targets: parseTargets(body) };
+  }
+  const code = status >= 200 && status < 300 ? 'unreadable reply' : `HTTP ${status}`;
+  return {
+    ok: false,
+    message: `Could not load the camera list (${code}). Retry`,
+    retryAfterSeconds: parseRetryAfter(retryAfter),
+  };
+}
+
+/** The outcome when the request itself threw (offline, aborted). */
+export function targetsFetchFailed(): TargetsOutcome {
+  return {
+    ok: false,
+    message: 'Could not load the camera list (no connection). Retry',
+    retryAfterSeconds: null,
+  };
+}

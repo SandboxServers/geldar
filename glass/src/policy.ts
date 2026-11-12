@@ -13,6 +13,10 @@ export interface PublicPolicy {
   publicHosts: ReadonlySet<string>;
   /** The per-client token bucket, or null when rate limiting is off (tests only). */
   limiter: RateLimiter | null;
+  /** Kino's static files (page, modules, vendor): a generous bucket apart from the general one. Null: use `limiter`. */
+  kinoStaticLimiter: RateLimiter | null;
+  /** Kino's /kino/targets: its own bucket. Null: use `limiter`. */
+  kinoTargetsLimiter: RateLimiter | null;
   /** Seconds a thought waits before Glass shows it (0072 item 5). Zero shows it at once. */
   delaySeconds: number;
   /** True only when the owner rules that a living sovereign agent's thoughts and receipts may show. */
@@ -28,6 +32,8 @@ export const OPEN_POLICY: PublicPolicy = {
   trustedProxies: new Set(),
   publicHosts: new Set(),
   limiter: null,
+  kinoStaticLimiter: null,
+  kinoTargetsLimiter: null,
   delaySeconds: 0,
   showLivingSovereign: false,
   enabled: () => true,
@@ -40,4 +46,17 @@ export function visibilityAt(policy: PublicPolicy): Visibility {
   if (policy.delaySeconds <= 0) return { shownUntil: null, showLivingSovereign };
   const cut = policy.now() - policy.delaySeconds * 1000;
   return { shownUntil: new Date(cut).toISOString(), showLivingSovereign };
+}
+
+/**
+ * The bucket a request path is charged to. Kino's static files and its targets list each have their own,
+ * so a page load (about a dozen modules) cannot starve the picker's list. /kino/ws is an upgrade and has its
+ * own per-client limits in the relay. Everything else is the general bucket.
+ */
+export function limiterFor(policy: PublicPolicy, path: string): RateLimiter | null {
+  if (path === '/kino/targets') return policy.kinoTargetsLimiter ?? policy.limiter;
+  if (path.startsWith('/kino/') && path !== '/kino/ws') {
+    return policy.kinoStaticLimiter ?? policy.limiter;
+  }
+  return policy.limiter;
 }

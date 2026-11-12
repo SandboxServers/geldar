@@ -217,7 +217,15 @@ export function buildKino(o: KinoWiringOptions): KinoParts {
         res.writeHead(405, { Allow: 'GET, HEAD' }).end();
         return true;
       }
-      res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-cache' });
+      // Static and cache-friendly: a short max-age and an ETag, so a reload is a 304. /kino/targets stays no-store.
+      const digest = createHash('sha256').update(file.body).digest('base64url').slice(0, 22);
+      const etag = ['"', digest, '"'].join('');
+      const cacheHeaders = { 'Cache-Control': 'public, max-age=60', ETag: etag };
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, cacheHeaders).end();
+        return true;
+      }
+      res.writeHead(200, { 'Content-Type': file.type, ...cacheHeaders });
       res.end(file.body);
       return true;
     },

@@ -73,6 +73,18 @@ export function buildGlass(
     trustedProxies: new Set(config.trustedProxies),
     publicHosts: new Set(config.publicHosts ?? []),
     limiter,
+    kinoStaticLimiter: new RateLimiter({
+      perMinute: 600,
+      burst: 200,
+      maxClients: config.rateLimit.maxClients,
+      now: () => Date.now(),
+    }),
+    kinoTargetsLimiter: new RateLimiter({
+      perMinute: 30,
+      burst: 10,
+      maxClients: config.rateLimit.maxClients,
+      now: () => Date.now(),
+    }),
     delaySeconds: config.delaySeconds,
     showLivingSovereign: config.showLivingSovereign,
     enabled: () => config.enabled,
