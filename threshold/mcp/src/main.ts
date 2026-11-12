@@ -7,6 +7,7 @@ import { checkSovereignIdentity } from '@geldar/repo-checks/src/identity-mode.ts
 import type { Client, ClientConfig, Pool } from 'pg';
 import { parse } from 'yaml';
 import { NatsBodyGateway } from './body-gateway.ts';
+import { actBudgetEnforced } from './budget/meter.ts';
 import { type McpConfig, parseMcpConfig } from './config.ts';
 import type { RunState } from './events/mapper.ts';
 import { RingEventLog } from './events/player-log.ts';
@@ -332,6 +333,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       players: new PgPlayerDirectory(pool),
       body,
       budget: new PgBudgetLedger(pool, config.sovereign.budget),
+      enforce: actBudgetEnforced(process.env),
       sleeps: agents,
       profiles: agents,
       journal: new PgJournalStore(pool),

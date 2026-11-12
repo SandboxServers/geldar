@@ -47,15 +47,28 @@ export function mapMindEvent(event: MindEvent, seq: number, ctx: MapContext): Si
       return [{ ...base, kind: 'speech', addressed, from: p.from, text: p.text }];
     }
     case 'damage':
-      return [{ ...base, kind: 'damage', amount: amountOf(event.payload) }];
+      return [
+        {
+          ...base,
+          kind: 'damage',
+          amount: amountOf(event.payload),
+          cause: hurtText(event.payload.cause),
+        },
+      ];
     case 'death':
       return [{ ...base, kind: 'death', cause: deathCause(event.payload.cause) }];
     case 'reflex_fired': {
-      // The only reflex entry the player hears is "Your body ate on its own", so only a reflex that
-      // really ate is one. Every other reflex firing, and any eat that failed or was abandoned,
-      // is the Body's own business and is not a news item (the first live run heard it falsely).
+      // Every reflex firing is news: the body's own moves (a retreat, a fall stop, an unstick) changed
+      // where the agent is, so each one reaches the player as a fixed line naming the reflex.
       const p = event.payload as { name?: unknown; result?: unknown };
-      return p.name === 'eat' && p.result === 'handled' ? [{ ...base, kind: 'reflex' }] : [];
+      return [
+        {
+          ...base,
+          kind: 'reflex',
+          name: typeof p.name === 'string' ? p.name : 'unknown',
+          result: typeof p.result === 'string' ? p.result : 'unknown',
+        },
+      ];
     }
     case 'sleep':
       // A plugin sleep is no meal either: the wake and day entries already tell the player.
@@ -175,7 +188,8 @@ function mapWake(
   lifeId: string,
   ctx: MapContext,
 ): SimEvent[] {
-  if (DAMAGE_WAKES.has(reason)) return [{ ...base, kind: 'damage', amount: 0 }];
+  // The damage event (or the reflex line) is the news; these wakes repeat it with no amount.
+  if (DAMAGE_WAKES.has(reason)) return [];
   // A restarted Body with nothing to resume: the player never had an intent, so no intent ended.
   if (reason === 'no_plan' && intentId === null) return [{ ...base, kind: 'wake' }];
   if (reason === 'no_plan') {
@@ -222,6 +236,30 @@ const UNKNOWN_DEATH = 'Something killed you';
 /** The fixed phrase for a plugin death cause; the raw value is never copied through. */
 export function deathCause(cause: unknown): string {
   return (typeof cause === 'string' ? DEATH_CAUSES[cause] : undefined) ?? UNKNOWN_DEATH;
+}
+
+/**
+ * Bukkit damage causes to what the player is told hit them. The plugin does not send the attacker,
+ * so no entity is named and nothing is invented: an explosion is "something", a hit is "something".
+ */
+const HURT_CAUSES: Readonly<Record<string, string>> = {
+  ENTITY_ATTACK: 'Something hit you.',
+  ENTITY_SWEEP_ATTACK: 'Something hit you.',
+  PROJECTILE: 'Something shot you.',
+  FALL: 'You fell.',
+  DROWNING: 'You are drowning.',
+  FIRE: 'You are burning.',
+  FIRE_TICK: 'You are burning.',
+  LAVA: 'You are burning.',
+  STARVATION: 'You are starving.',
+  ENTITY_EXPLOSION: 'Something exploded next to you.',
+  BLOCK_EXPLOSION: 'Something exploded next to you.',
+};
+const UNKNOWN_HURT = 'You were hurt.';
+
+/** The fixed sentence for a plugin damage cause; the raw value is never copied through. */
+export function hurtText(cause: unknown): string {
+  return (typeof cause === 'string' ? HURT_CAUSES[cause] : undefined) ?? UNKNOWN_HURT;
 }
 
 function amountOf(payload: Record<string, unknown>): number {

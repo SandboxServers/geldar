@@ -47,7 +47,7 @@ const PLAY_SNAPSHOT = {
 
 const WAIT_RESULT = {
   snapshot: PLAY_SNAPSHOT,
-  events: [{ seq: 4, type: 'damage', tick: 12401, text: 'You took 2 damage.' }],
+  events: [{ seq: 4, type: 'damage', tick: 12401, text: 'You were hurt.' }],
   cursor: 'c_4',
   wake_reason: 'unexpected_damage',
   dropped_events: 0,

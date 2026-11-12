@@ -44,6 +44,10 @@ export function statusTool(hub: SimHub, ctx: ToolContext): StatusResult {
   const sim = hub.player(ctx.playerId);
   return {
     budget_remaining_thoughts: sim.budget,
+    // The sim keeps no act meter (decision 0149): nothing is spent or counted here.
+    spent_this_life: 0,
+    would_have_been_balance: sim.budget,
+    metered_acts: { calls: 0, good: 0, bad: 0, impossible: 0 },
     days_alive: dayAt(hub.scenario, sim.tick) - hub.scenario.character.born_day,
     days_since_sleep: daysSinceSleep(hub, ctx.playerId, sim.tick),
     untrusted_world_text: worldText([], {
