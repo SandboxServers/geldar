@@ -24,5 +24,10 @@ export const selfProjector: SnapshotProjector = (snapshot, options) => ({
       : { ground_below: snapshot.self.ground_below }),
     ...(snapshot.self.trapped === undefined ? {} : { trapped: snapshot.self.trapped }),
     ...(snapshot.self.sun === undefined ? {} : { sun: snapshot.self.sun }),
+    ...(snapshot.self.light === undefined ? {} : { light: snapshot.self.light }),
+    ...(snapshot.self.health_trend === undefined
+      ? {}
+      : { health_trend: snapshot.self.health_trend }),
+    ...(snapshot.self.regen_hint === undefined ? {} : { regen_hint: snapshot.self.regen_hint }),
   },
 });

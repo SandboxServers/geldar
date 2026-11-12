@@ -9,6 +9,7 @@ import {
 import type { RunState } from '../events/mapper.ts';
 import { fitResult, toPlayerEvents, WORLD_TEXT_NOTE, worldText } from '../events/present.ts';
 import { type FailureTracker, factEvents, placeOf } from '../failures/tracker.ts';
+import { situationLine } from '../play-view/situation.ts';
 import { toPlayView } from '../play-view.ts';
 import type {
   BodyGateway,
@@ -264,7 +265,9 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   const since = await log.since(lifeId, from);
   const facts =
     deps.failures?.observe(lifeId, since.events, placeOf(bodySnapshot), clock.nowMs()) ?? [];
+  const situation = situationLine(bodySnapshot);
   const result: WaitResult = {
+    ...(situation === undefined ? {} : { situation }),
     snapshot: view.snapshot as unknown as WaitResult['snapshot'],
     events: [
       ...toPlayerEvents(since.events),

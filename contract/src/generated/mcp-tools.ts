@@ -900,6 +900,9 @@ export const mcpToolSchemas: Record<
         "note"
       ],
       "properties": {
+        "situation": {
+          "$ref": "#/$defs/SituationLine"
+        },
         "snapshot": {
           "$ref": "#/$defs/PlaySnapshot"
         },
@@ -1236,6 +1239,11 @@ export const mcpToolSchemas: Record<
               "pattern": "^[a-z_]{1,64}$"
             }
           }
+        },
+        "SituationLine": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "One sentence of facts from your own senses: sun, light, shelter, creatures closing, health, hunger. Absent when nothing is known."
         },
         "SnapshotEntity": {
           "description": "A being in sight. The MCP entities copy in mcp-common.schema.json refers to this definition, so the two cannot drift.",
@@ -2558,6 +2566,9 @@ export const mcpToolSchemas: Record<
         "note"
       ],
       "properties": {
+        "situation": {
+          "$ref": "#/$defs/SituationLine"
+        },
         "snapshot": {
           "$ref": "#/$defs/PlaySnapshot"
         },
@@ -3081,6 +3092,11 @@ export const mcpToolSchemas: Record<
               "pattern": "^[a-z_]{1,64}$"
             }
           }
+        },
+        "SituationLine": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "One sentence of facts from your own senses: sun, light, shelter, creatures closing, health, hunger. Absent when nothing is known."
         },
         "SnapshotEntity": {
           "description": "A being in sight. The MCP entities copy in mcp-common.schema.json refers to this definition, so the two cannot drift.",

@@ -1,4 +1,5 @@
 import type { LookResult } from '@geldar/contract';
+import { situationLine } from '../play-view/situation.ts';
 import { toPlayView } from '../play-view.ts';
 import type { BodyGateway, BudgetLedger, SleepMarks } from '../ports.ts';
 
@@ -31,7 +32,9 @@ export async function lookTool(deps: LookDeps, call: ToolCall): Promise<LookResu
     budget: Math.floor(budget),
     daysSinceSleep: snapshot.world_time.day - mark.lastSleepDay,
   });
+  const situation = situationLine(snapshot);
   return {
+    ...(situation === undefined ? {} : { situation }),
     snapshot: view.snapshot,
     untrusted_world_text: view.untrusted,
     note: WORLD_TEXT_NOTE,
