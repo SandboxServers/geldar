@@ -1,3 +1,4 @@
+import type { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from '../../actions/pathing.ts';
 import { calmScene, sceneContext, sceneView, zombieAt } from './combat.fakes.ts';
@@ -33,6 +34,52 @@ describe('retreat check', () => {
     expect(retreatReflex.check(sceneView(scene))).toBeNull();
     scene.hostiles = [];
     expect(retreatReflex.check(sceneView(scene))).toBeNull();
+  });
+});
+
+describe('retreat never walks into a canopy', () => {
+  const leavesAt = (cells: string[]) => (p: Vec3) =>
+    cells.includes(`${p.x},${p.y},${p.z}`)
+      ? { name: 'oak_leaves', boundingBox: 'block' }
+      : p.y <= 63
+        ? { name: 'stone', boundingBox: 'block' }
+        : { name: 'air', boundingBox: 'empty' };
+
+  it('walks to the nearest bare ground when the spawn stands on leaves', async () => {
+    const scene = calmScene();
+    scene.health = 4;
+    scene.hostiles = [zombieAt(2)];
+    walk.mockResolvedValue({ ok: true, distance: 1 });
+    const ctx = sceneContext(scene);
+    Object.assign(ctx.bot, { blockAt: leavesAt(['50,63,0']) });
+    const trigger = retreatReflex.check(ctx.view);
+    if (trigger === null) throw new Error('retreat did not fire');
+
+    const outcome = await retreatReflex.run(trigger, ctx);
+
+    expect(outcome.result).toBe('handled');
+    expect(walk.mock.calls[0]?.[1]).toEqual({ x: 49.5, y: 64, z: 0.5 });
+  });
+
+  it('stays to fight and still raises the wake when no solid ground is near the spawn', async () => {
+    const scene = calmScene();
+    scene.health = 4;
+    scene.hostiles = [zombieAt(2)];
+    const ctx = sceneContext(scene);
+    Object.assign(ctx.bot, {
+      blockAt: () => ({ name: 'oak_leaves', boundingBox: 'block' }),
+    });
+    const trigger = retreatReflex.check(ctx.view);
+    if (trigger === null) throw new Error('retreat did not fire');
+
+    const outcome = await retreatReflex.run(trigger, ctx);
+
+    expect(walk).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      result: 'abandoned',
+      detail: 'no solid ground near the spawn: staying to fight',
+    });
+    expect(ctx.sink.wakes).toHaveLength(1);
   });
 });
 

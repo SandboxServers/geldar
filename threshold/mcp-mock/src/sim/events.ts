@@ -12,7 +12,9 @@ export interface SimEvent extends WakeEvent {
   text?: string;
   /** For damage: how much. */
   amount?: number;
-  /** For death: the fixed cause phrase (one of the mapper's templates, never world text). */
+  /** For reflex: how the firing ended (handled, failed, abandoned, ...). */
+  result?: string;
+  /** For death and damage: the fixed cause phrase (one of the mapper's templates, never world text). */
   cause?: string;
   /** For agent_approached: who came; for reflex: the item eaten. */
   name?: string;
