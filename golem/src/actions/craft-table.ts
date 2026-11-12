@@ -107,8 +107,9 @@ const unlocked = new WeakMap<Bot, Map<number, Display>>();
 const workingDisplay = new WeakMap<Bot, Map<number, number>>();
 
 /**
- * Starts recording the bot's recipe book. Call it as soon as the bot exists: the server sends the
- * unlocked recipes at join, and a listener attached later misses them. Idempotent per bot.
+ * Starts recording the bot's recipe book. ConnectionManager calls it on every bot it creates, as
+ * soon as the bot exists: the server sends the unlocked recipes at join, and a listener attached
+ * later misses them. Idempotent per bot.
  */
 export function watchRecipeBook(bot: Bot): void {
   if (unlocked.has(bot)) return;
@@ -227,7 +228,7 @@ export async function craftFromBook(
 ): Promise<ActionOutcome | null> {
   const { bot } = ctx;
   // A bot with a client that was never watched has an empty book it cannot tell from a locked
-  // recipe: the composition root must call watchRecipeBook at bot creation (decision 0032).
+  // recipe: ConnectionManager calls watchRecipeBook at bot creation (decision 0032).
   if (bot._client && !unlocked.has(bot)) {
     console.warn('recipe book is not watched: call watchRecipeBook when the bot is created');
     return failed('internal', 'recipe book is not watched');

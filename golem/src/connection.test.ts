@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { Bot, BotOptions } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import { hasUnlockedDisplay, watchRecipeBook } from './actions/craft-table.ts';
+import { smeltRecipesFor } from './actions/smelt-book.ts';
 import { ConnectionManager } from './connection.ts';
 import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
@@ -117,6 +118,55 @@ describe('ConnectionManager', () => {
       ],
     });
     expect(hasUnlockedDisplay(made[0] as unknown as Bot, bed)).toBe(true);
+    await manager.stop();
+  });
+
+  it('watches the recipe and smelt books on each bot it creates, with no onBot hook', async () => {
+    const made: FakeBot[] = [];
+    const manager = new ConnectionManager({
+      host: '127.0.0.1',
+      port: 25565,
+      username: 'GolemSmoke',
+      createBot: () => {
+        const bot = new FakeBot();
+        made.push(bot);
+        return bot as unknown as Bot;
+      },
+      log: () => {},
+    });
+    manager.start().catch(() => {});
+    const bot = made[0] as unknown as Bot;
+    const bed = { id: 900, name: 'white_bed' };
+    const result = { type: 'item_stack', data: { itemId: bed.id, itemCount: 1 } };
+    // A crafting display the server unlocks at join, as the table craft reads it back.
+    made[0]?._client.emit('recipe_book_add', {
+      replace: false,
+      entries: [
+        { recipe: { displayId: 1454, display: { type: 'crafting_shaped', data: { result } } } },
+      ],
+    });
+    expect(hasUnlockedDisplay(bot, bed)).toBe(true);
+    // A furnace display the server unlocks at join: raw iron (1) smelts to iron ingot (2).
+    const ironIngot = 2;
+    made[0]?._client.emit('recipe_book_add', {
+      replace: false,
+      entries: [
+        {
+          recipe: {
+            displayId: 1,
+            display: {
+              type: 'furnace',
+              data: {
+                ingredient: { type: 'item', data: 1 },
+                result: { type: 'item', data: ironIngot },
+                craftingStation: { type: 'item', data: 6 },
+              },
+            },
+          },
+        },
+      ],
+    });
+    expect(smeltRecipesFor(bot, ironIngot)).toEqual([{ input: 1, output: 2, station: null }]);
     await manager.stop();
   });
 
