@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { absorbIdleErrors } from '../../../threshold/mcp/test/it/scratch-db.ts';
 import { migrate } from '../../migrate/src/migrate.ts';
 import { loadRunData, type PgConfig, pgClientFactory } from '../src/db.ts';
 import { computeReport } from '../src/report.ts';
@@ -102,9 +103,9 @@ describe.skipIf(!enabled)('the Adam report against Postgres (GELDAR_IT)', () => 
   let pool: Pool | undefined;
 
   beforeAll(async () => {
-    admin = new Pool({ ...adminConfig('postgres'), max: 1 });
+    admin = absorbIdleErrors(new Pool({ ...adminConfig('postgres'), max: 1 }));
     await admin.query(`CREATE DATABASE ${DB}`);
-    pool = new Pool({ ...adminConfig(DB), max: 2 });
+    pool = absorbIdleErrors(new Pool({ ...adminConfig(DB), max: 2 }));
     await migrate(pool, { sqlDir: SQL_DIR, dryRun: false, log: () => undefined });
     await seed(pool);
   });
