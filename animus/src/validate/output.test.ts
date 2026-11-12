@@ -67,20 +67,41 @@ const REJECTED: Row[] = [
     path: '/actions/0/do',
   },
   {
-    name: 'write_sign',
-    text: thought({ actions: [{ do: 'write_sign', text: 'hi' }] }),
-    code: 'not_allowed',
-  },
-  {
     name: 'propose',
     text: thought({ actions: [{ do: 'propose', rule: 'r', value: 1, reason: 'x' }] }),
     code: 'not_allowed',
   },
   {
-    name: 'build program',
-    text: thought({ intent: intent({ program: 'build', arguments: {} }) }),
+    name: 'the explicit-blocks build action (only the blueprint program is enabled)',
+    text: thought({
+      actions: [
+        {
+          do: 'build',
+          blueprint: { name: 'hut', blocks: [{ block: 'dirt', dx: 0, dy: 0, dz: 1 }] },
+        },
+      ],
+    }),
     code: 'not_allowed',
-    path: '/intent/program',
+    path: '/actions/0/do',
+  },
+  {
+    name: 'build with an unknown blueprint',
+    text: thought({
+      intent: intent({ program: 'build', arguments: { blueprint: 'castle', block: 'dirt' } }),
+    }),
+    code: 'schema',
+    path: '/intent/arguments/blueprint',
+  },
+  {
+    name: 'build with no block',
+    text: thought({ intent: intent({ program: 'build', arguments: { blueprint: 'wall' } }) }),
+    code: 'schema',
+    path: '/intent/arguments/block',
+  },
+  {
+    name: 'a sign text over 60 characters',
+    text: thought({ actions: [{ do: 'write_sign', text: 'x'.repeat(61) }] }),
+    code: 'schema',
   },
   {
     name: 'a skill as the program',
@@ -369,8 +390,6 @@ describe('corrective message', () => {
 
 /** Verbs the MCP `act` description lists that the Phase 0 allow-list deliberately refuses, with why. */
 const EXCLUDED_FROM_PHASE0: Record<string, string> = {
-  build: 'needs the build planner; Phase 1',
-  write_sign: 'text on signs; Phase 1',
   write_book: 'books; Phase 1',
   read_book: 'books; Phase 1',
   use_skill: 'skills; Phase 1',
@@ -408,6 +427,25 @@ describe('the allow-list and the MCP verb list', () => {
     expect(follow({}).ok).toBe(false);
   });
 
+  it('makes write_sign callable and build a program with named blueprints', () => {
+    expect(PHASE0_VERBS).toContain('write_sign');
+    expect(PHASE0_VERBS).not.toContain('build');
+    expect(PHASE0_PROGRAMS).toContain('build');
+    const build = (args: Record<string, unknown>) =>
+      validator.parseThought(thought({ intent: intent({ program: 'build', arguments: args }) }));
+    for (const blueprint of ['shelter', 'wall', 'pillar']) {
+      expect(build({ blueprint, block: 'cobblestone' }).ok, blueprint).toBe(true);
+    }
+    expect(build({ blueprint: 'castle', block: 'cobblestone' }).ok).toBe(false);
+    expect(build({ blueprint: 'wall', block: 'Cobble Stone' }).ok).toBe(false);
+    expect(build({ blueprint: 'wall', block: 'dirt', extra: 1 }).ok).toBe(false);
+    const sign = (text: string) =>
+      validator.parseThought(thought({ actions: [{ do: 'write_sign', text }] })).ok;
+    expect(sign('Home. Knock first.')).toBe(true);
+    expect(sign('x'.repeat(60))).toBe(true);
+    expect(sign('x'.repeat(61))).toBe(false);
+  });
+
   it('has every listed verb either callable or excluded with a reason', () => {
     expect(listed.length).toBeGreaterThan(10);
     for (const verb of listed) {
@@ -421,7 +459,7 @@ describe('the allow-list and the MCP verb list', () => {
 
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v4.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v5.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];

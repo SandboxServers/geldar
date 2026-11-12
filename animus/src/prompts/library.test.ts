@@ -45,6 +45,7 @@ function promptsWith(edit: (text: string) => string): string {
     'body-api/v2.json',
     'body-api/v3.json',
     'body-api/v4.json',
+    'body-api/v5.json',
   ]) {
     writeFileSync(join(dir, file), readFileSync(join(root, file)));
   }
@@ -104,7 +105,7 @@ describe('prompt library', () => {
     const hex = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
     expect(library.thoughtVersion).toBe(`thought@5+sha256:${hex}`);
     expect(library.reflectionVersion).toMatch(/^reflection@2\+sha256:[0-9a-f]{12}$/);
-    expect(library.bodyApiVersion).toMatch(/^body-api@4\+sha256:[0-9a-f]{12}$/);
+    expect(library.bodyApiVersion).toMatch(/^body-api@5\+sha256:[0-9a-f]{12}$/);
     expect(library.render('thought', sampleThoughtVars()).templateVersion).toBe(
       library.thoughtVersion,
     );
@@ -112,8 +113,8 @@ describe('prompt library', () => {
 
   it('makes thought v5 and body-api v2 the defaults and keeps v1 loadable', () => {
     expect(DEFAULT_THOUGHT_VERSION).toBe(5);
-    expect(DEFAULT_BODY_API_VERSION).toBe(4);
-    expect(library.bodyApiVersion).toMatch(/^body-api@4\+sha256:/);
+    expect(DEFAULT_BODY_API_VERSION).toBe(5);
+    expect(library.bodyApiVersion).toMatch(/^body-api@5\+sha256:/);
     const bodyV1 = createPromptLibrary({ version: 1 });
     expect(bodyV1.bodyApiVersion).toMatch(/^body-api@1\+sha256:[0-9a-f]{12}$/);
     const v1 = createPromptLibrary({ thoughtVersion: 1 });
@@ -186,6 +187,7 @@ describe('prompt library', () => {
       'body-api/v2.json': '8d5d127ee971750f7e8250746b6c55e730b14506d280c0a399a4126b3fb37221',
       'body-api/v3.json': 'b6b5c59f9b06c13a6f208b4298acca593665d66aebc9485643003edbdb490584',
       'body-api/v4.json': 'a0e982ccd77db46bff5605118e1d3593770cb2ce8603ce2974320b0882619cd6',
+      'body-api/v5.json': '10762698128a0e081955d0d997c9223971f93e92738666097c59a8079200b476',
     };
     for (const [file, hash] of Object.entries(pinned)) {
       const bytes = readFileSync(join(repoRoot(), 'prompts', file));

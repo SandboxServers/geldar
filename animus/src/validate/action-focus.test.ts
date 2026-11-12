@@ -4,7 +4,7 @@ import { createOutputValidator } from './index.ts';
 
 const validator = createOutputValidator();
 const VERB_LINE =
-  '- schema at "/actions/0/do": "valid verbs: goto, mine, craft, place, eat, sleep, open, deposit, withdraw, attack, wait, unstick, give, note"';
+  '- schema at "/actions/0/do": "valid verbs: goto, mine, craft, place, eat, sleep, open, deposit, withdraw, attack, wait, unstick, give, note, write_sign"';
 
 /** The corrective text for one rejected thought, as the loop builds it. */
 function correctiveFor(text: string): string {

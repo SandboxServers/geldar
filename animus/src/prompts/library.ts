@@ -128,8 +128,8 @@ const REFLECTION_SLOTS: Record<number, string[]> = {
  */
 export const DEFAULT_THOUGHT_VERSION = 5;
 
-/** The body-api template a new Mind renders: `body-api/v4.json`. `v1` to `v3` stay loadable. */
-export const DEFAULT_BODY_API_VERSION = 4;
+/** The body-api template a new Mind renders: `body-api/v5.json`. `v1` to `v4` stay loadable. */
+export const DEFAULT_BODY_API_VERSION = 5;
 
 /** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
 export const DEFAULT_REFLECTION_VERSION = 2;
