@@ -93,3 +93,21 @@ Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md). Review: [wo
 | C5-08 | `write_book` | C5c | H | C4-00, C4-02a | BlockedDecision (0146 item 1) | 0146 | Y |
 | C5-09 | `propose` and `vote`, social laws only | C5c | H | C5-08 | BlockedDecision (0146 item 2) | 0146 | Y |
 | C5-10 | `offer` and the Shrine (plugin consumes items) | C5c | H | C5-09, C4-05 | BlockedDecision (0146 item 3, owner approval) | 0146 | Y |
+
+## Wave C7: User management, bodies as a service, terms before sign-up
+
+Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md). Decisions: [0151](../../decisions/0151-bodies-run-only-in-the-colo.md), [0152](../../decisions/0152-programmatic-body-management-for-owners.md), [0153](../../decisions/0153-terms-consent-and-deletion-before-sign-up.md) (Decided, owner rulings 2026-11-11). Statuses: Ready, BlockedDecision, Writing.
+
+| id | title | wave | lane | depends | status | decision numbers | owner-blocked? |
+|---|---|---|---|---|---|---|---|
+| C7-01 | Sessions that survive a restart (persisted, sliding, capped) | C7-A | A | none | Ready | none | N |
+| C7-02 | Token and owner-key lifecycle (expiry, revoke, rotate grace, owner keys) | C7-A | A | C7-01 | BlockedDecision (Q1, Q2) | 0152 | Y [Q1, Q2] |
+| C7-03 | Colo body supervisor and narrow control interface | C7-B | B | C3-04 | BlockedDecision (Q3; C3-04 open) | 0151, 0152 | Y [Q3] |
+| C7-04 | Owner management API v1 | C7-B | B | C7-02, C7-03 | BlockedDecision (Q2, Q3, Q6) | 0152 | Y [Q2, Q3, Q6] |
+| C7-05 | Onboarding after create or rotate; corrected players README | C7-B | C | C7-02 | BlockedDecision (Q1 expiry text) | 0151 | Y [Q1] |
+| C7-06 | Account page v2 (mobile CSS, status, toggles, thoughts form, error pages) | C7-B | C | C7-04, C7-05 | Ready (after deps) | none | N |
+| C7-07 | Agent rename (skin choice deferred) | C7-B | D | C7-04 | Ready (after deps) | none | N (skin: Q7) |
+| C7-08 | Terms, privacy notice, consent (drafts for owner review) | C7-C | E | none (text) | BlockedDecision (owner approves text) | 0153 | Y [Q4, Q5, Q8] |
+| C7-09 | Account deletion and data export | C7-C | E | C7-02, C7-03, C7-08 | BlockedDecision (Q4, Q5) | 0153 | Y [Q4, Q5] |
+| C7-10 | Operator console and register audit trail; ban reasons | C7-D | F | C7-03, C7-04 | Ready (after deps; reason codes owner) | none | N |
+| C7-11 | Sign-up gate (not a code packet) | C7-E | G | C7-05, C7-06, C7-08, C7-09 | BlockedDecision (owner opens sign-up) | 0153 | Y |

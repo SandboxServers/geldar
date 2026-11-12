@@ -13,7 +13,7 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Plan:** [plan.md](plan.md) (waves C1, C2, C2b, C3, C4; owner items in section (f); first-ranger lessons in section (g)).
 - **Retrospective:** [phase0-retrospective-for-phase1.md](phase0-retrospective-for-phase1.md).
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
-- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`.
+- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0147 (see item 8 for C5).
 
@@ -37,6 +37,8 @@ Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges.
 7. **Owner items still open:** the C1-10 run; creating the GitHub and Discord OAuth apps; the C2b questions (texture licence, audit retention, the feed load budget); 0079 (credits); and confirming R21 (Glass hides the prompt) or signing a privacy review.
 
 8. **Wave C5, Goldar learnings (drafted 2026-11-11, parallel to C1 to C4):** Body parity and the unavailable tools, from the review of the goldar repo. Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md); review: [worknotes/goldar-review.md](worknotes/goldar-review.md); ledger section "Wave C5"; decisions 0141 to 0146 are Proposed or Open (owner to confirm); rulings R47 to R54. C5a (C5-00 first, then 01 to 04 in parallel) and C5b (05 then 06; 07 parallel) are Ready except C5-01; C5c (08 to 10) waits on 0146. Next free decision number: 0147.
+
+9. **Wave C7, user management (drafted 2026-11-11, docs only):** cards in [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md); ledger section "Wave C7". Owner rulings recorded as Decided: [0151](../../decisions/0151-bodies-run-only-in-the-colo.md) (bodies run only in the Colo; no bring-your-own-body), [0152](../../decisions/0152-programmatic-body-management-for-owners.md) (owner API and keys, Colo supervisor), [0153](../../decisions/0153-terms-consent-and-deletion-before-sign-up.md) (terms, consent, deletion and export before sign-up). Sign-up stays closed until C7-08, C7-09 and C7-05/06 are merged and the owner approves the legal text (C7-11). Owner questions Q1 to Q8 are in the packet file. C7 used decision numbers 0151 to 0153 only.
 
 ## Who does what
 

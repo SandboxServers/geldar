@@ -133,3 +133,13 @@ Still open:
 | 0146 | C5-08 to C5-10 | Open owner questions | Open |
 
 The next free number is 0147 (checked against all remote branches on 2026-11-11).
+
+## Wave C7 numbers (added 2026-11-11)
+
+| Number | Packet(s) | Title | Status |
+|---|---|---|---|
+| 0151 | C7-03, C7-05 | Bodies run only in the Colo; no bring-your-own-body | Decided (owner ruling) |
+| 0152 | C7-02 to C7-04 | Owner management API, owner keys, Colo supervisor | Decided (owner ruling) |
+| 0153 | C7-08 to C7-11 | Terms, consent, deletion and export before sign-up | Decided (owner ruling); legal text Draft |
+
+C7 uses 0151 to 0153 only, as the owner ruled. 0147 to 0150 are not used by C7. The next free number stays 0147 for any other wave; after C7 the highest used number is 0153.
