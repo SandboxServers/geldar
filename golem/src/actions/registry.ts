@@ -174,7 +174,11 @@ async function runUnobserved(
   const typed = handler as ActionHandler;
   // A rejection that arrives after the timeout also lands here; the race has already dropped it, so
   // the warning is the only trace.
-  const ran = (async () => typed.run(ctx, valid))().catch((error: unknown) => {
+  const ran = (async () => {
+    // A bot in a bed does nothing on a move: get up first. Only `sleep` stays in bed.
+    if (valid.do !== 'sleep' && bot.isSleeping) await wakeBot(bot);
+    return typed.run(ctx, valid);
+  })().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`action ${valid.do} handler failed: ${message}`);
     return failed('internal', truncate(message));
@@ -210,6 +214,15 @@ async function runUnobserved(
 /** Builds the run from an outcome, the latency and the world ticks. */
 function finish(outcome: ActionOutcome, latencyMs: number, worldTicks: number | null): ActionRun {
   return { state: recordState(outcome), result: toResult(outcome, latencyMs, worldTicks) };
+}
+
+/** Gets the bot out of bed. A wake that throws is ignored: the handler then reports what it can do. */
+async function wakeBot(bot: Bot): Promise<void> {
+  try {
+    await bot.wake();
+  } catch {
+    // Ignored on purpose, see above.
+  }
 }
 
 /** Cuts an error text to the message limit. */

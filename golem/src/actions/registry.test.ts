@@ -33,6 +33,80 @@ describe('ActionRegistry', () => {
   });
 });
 
+/** A bot that may be in a bed; `wake` gets it up, or throws when given `wakeError`. */
+function sleepingBot(options: { asleep: boolean; wakeError?: Error }) {
+  const state = { asleep: options.asleep };
+  const wake = vi.fn(async () => {
+    if (options.wakeError) throw options.wakeError;
+    state.asleep = false;
+  });
+  const bot = {
+    time: { age: 0 },
+    get isSleeping() {
+      return state.asleep;
+    },
+    wake,
+  } as unknown as Bot;
+  return { bot, wake };
+}
+
+describe('runAction and a sleeping bot', () => {
+  it('wakes the bot before a move runs', async () => {
+    const { bot, wake } = sleepingBot({ asleep: true });
+    const order: string[] = [];
+    wake.mockImplementationOnce(async () => {
+      order.push('wake');
+    });
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(async () => {
+        order.push('run');
+        return completed();
+      }),
+    );
+
+    const out = await runAction(registry, bot, validMine);
+
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['wake', 'run']);
+    expect(out.state).toBe('completed');
+  });
+
+  it('does not wake the bot for a sleep action', async () => {
+    const { bot, wake } = sleepingBot({ asleep: true });
+    const registry = new ActionRegistry();
+    registry.register({ kind: 'sleep', timeoutMs: 1_000, run: async () => completed() });
+
+    const out = await runAction(registry, bot, { do: 'sleep' });
+
+    expect(wake).not.toHaveBeenCalled();
+    expect(out.state).toBe('completed');
+  });
+
+  it('does not wake an awake bot', async () => {
+    const { bot, wake } = sleepingBot({ asleep: false });
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => completed()));
+
+    await runAction(registry, bot, validMine);
+
+    expect(wake).not.toHaveBeenCalled();
+  });
+
+  it('runs the move anyway when the wake throws', async () => {
+    const { bot, wake } = sleepingBot({ asleep: true, wakeError: new Error('no bed') });
+    const run = vi.fn(async () => completed());
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(run));
+
+    const out = await runAction(registry, bot, validMine);
+
+    expect(wake).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(out.state).toBe('completed');
+  });
+});
+
 describe('runAction', () => {
   beforeEach(() => {
     vi.useFakeTimers();
