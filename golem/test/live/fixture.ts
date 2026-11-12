@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { watchRecipeBook } from '../../src/actions/craft-table.ts';
+import { watchSmeltBook } from '../../src/actions/smelt-book.ts';
 import { type Arena, buildArena, quietWorld, restoreWorld } from '../../src/arena.ts';
 import { loadStackConfig, readRconPassword } from '../../src/config.ts';
 import { ConnectionManager } from '../../src/connection.ts';
@@ -31,7 +32,10 @@ export async function withLiveBot(
     host: cfg.mcHost,
     port: cfg.mcPort,
     username: opts.name,
-    onBot: watchRecipeBook,
+    onBot: (bot) => {
+      watchRecipeBook(bot);
+      watchSmeltBook(bot);
+    },
     registry: registryFromConfig(cfg),
   });
   await runWithBot({ ctl: new TestControl(rcon), manager, close: () => rcon.close() }, opts, fn);

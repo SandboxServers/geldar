@@ -8,6 +8,8 @@ import { type ActionOutcome, cancelled, completed, errorText, failed } from './o
 import { moveNear } from './pathing.ts';
 import { pollUntil } from './poll.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { smeltAtFurnace } from './smelt.ts';
+import { smeltRecipesFor } from './smelt-book.ts';
 
 /** The item fields `craft` reads from the registry. */
 interface CraftItem {
@@ -64,7 +66,16 @@ async function runCraft(
     recipes = bot.recipesFor(item.id, null, action.count, table);
     usedTable = table;
   }
-  if (recipes.length === 0) return diagnoseCraft(bot, item, table, action.count);
+  if (recipes.length === 0) {
+    // No grid recipe makes it at all, but the recipe book knows a smelting one (decision 0048).
+    if (
+      bot.recipesAll(item.id, null, true).length === 0 &&
+      smeltRecipesFor(bot, item.id).length > 0
+    ) {
+      return smeltAtFurnace(ctx, { item: item.name, count: action.count });
+    }
+    return diagnoseCraft(bot, item, table, action.count);
+  }
 
   const recipe = pickRecipe(bot, recipes, action.count);
   if (!recipe) return failed('not_possible', 'not craftable');
