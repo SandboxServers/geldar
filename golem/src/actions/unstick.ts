@@ -146,15 +146,30 @@ async function walk(ctx: ActionContext, dir: Vec3, jump: boolean): Promise<boole
   }
 }
 
-/** Digs one block with bare hands; false on any failure. */
+/**
+ * Digs one block, with the best tool held when the inventory has one; false on any failure. The
+ * pathfinder is halted first (its own tick can stop a dig), and a dig that ends "aborted" is tried
+ * once more, since nothing in this call stopped it.
+ */
 async function dig(bot: Bot, block: Block): Promise<boolean> {
-  try {
-    await bot.dig(block, true);
-    return true;
-  } catch (error) {
-    console.warn(`unstick dig failed: ${errorText(error)}`);
-    return false;
+  const loose = bot as unknown as {
+    pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
+  };
+  loose.pathfinder?.stop();
+  loose.pathfinder?.setGoal(null);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const tool = loose.pathfinder?.bestHarvestTool?.(block);
+      if (tool) await bot.equip(tool as never, 'hand');
+      await bot.dig(block, true);
+      return true;
+    } catch (error) {
+      const text = errorText(error);
+      console.warn(`unstick dig failed: ${text}`);
+      if (!/aborted/i.test(text)) return false;
+    }
   }
+  return false;
 }
 
 /** Health the Body keeps after a controlled dig-down. */

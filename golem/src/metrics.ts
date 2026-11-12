@@ -240,6 +240,7 @@ export const OUTCOME_REASON_LABELS = [
   'out_of_reach',
   'missing_materials',
   'missing_station',
+  'needs_rescue',
   'not_possible',
   'interrupted',
   'unsupported',
