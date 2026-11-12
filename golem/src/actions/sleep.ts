@@ -98,21 +98,34 @@ async function sleepInBed(ctx: ActionContext, bed: Block): Promise<ActionOutcome
   return completed({ bed: { x: used.position.x, y: used.position.y, z: used.position.z } });
 }
 
-/** The nearest beds within range, nearest first, at most MAX_BEDS. */
+/**
+ * The nearest beds within range, nearest first, at most MAX_BEDS. A bed is two blocks and `findBlocks`
+ * returns both halves, so it asks for twice as many blocks and keeps one block per bed.
+ */
 function nearbyBeds(bot: Bot): Block[] {
   const from = bot.entity.position;
   const positions = bot.findBlocks({
     matching: (block: Block) => block.name.endsWith('_bed'),
     maxDistance: BED_RANGE,
-    count: MAX_BEDS,
+    count: 2 * MAX_BEDS,
   });
   const sorted = [...positions].sort((a, b) => a.distanceTo(from) - b.distanceTo(from));
   const beds: Block[] = [];
   for (const position of sorted) {
+    if (beds.length === MAX_BEDS) break;
     const block = bot.blockAt(position);
-    if (block) beds.push(block);
+    if (block && !isHalfOfKeptBed(beds, block)) beds.push(block);
   }
   return beds;
+}
+
+/** True when a kept bed block of the same name is next to `block` on a horizontal side: the same bed. */
+function isHalfOfKeptBed(beds: Block[], block: Block): boolean {
+  return beds.some(
+    (bed) =>
+      bed.name === block.name &&
+      HORIZONTAL.some((offset) => bed.position.plus(offset).equals(block.position)),
+  );
 }
 
 /** Walks to within one block of `block`; null when the bot arrived, else the failure. */

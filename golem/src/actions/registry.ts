@@ -92,6 +92,13 @@ export interface ActionRun {
 const MESSAGE_LIMIT = 200;
 /** Longest delay `setTimeout` accepts. A longer one fires at once, so the timeout is capped here. */
 const MAX_TIMER_MS = 2_147_483_647;
+/**
+ * Actions that leave a sleeper in bed: `sleep` itself, `wait` (passing the night needs the sleepers
+ * in bed) and `note` (no world effect). Every other action wakes the bot first.
+ */
+const STAYS_IN_BED: ReadonlySet<ActionKind> = new Set<ActionKind>(['sleep', 'wait', 'note']);
+/** How long a wake is waited for when the server's update does not arrive first. */
+const WAKE_CONFIRM_MS = 1_000;
 
 /**
  * Validates one action against the contract, then runs its handler with a wall-clock timeout and
@@ -175,8 +182,8 @@ async function runUnobserved(
   // A rejection that arrives after the timeout also lands here; the race has already dropped it, so
   // the warning is the only trace.
   const ran = (async () => {
-    // A bot in a bed does nothing on a move: get up first. Only `sleep` stays in bed.
-    if (valid.do !== 'sleep' && bot.isSleeping) await wakeBot(bot);
+    // A bot in a bed does nothing on a move: get up first. See STAYS_IN_BED for the actions that do not.
+    if (!STAYS_IN_BED.has(valid.do) && bot.isSleeping) await wakeBot(bot);
     return typed.run(ctx, valid);
   })().catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -216,12 +223,27 @@ function finish(outcome: ActionOutcome, latencyMs: number, worldTicks: number | 
   return { state: recordState(outcome), result: toResult(outcome, latencyMs, worldTicks) };
 }
 
-/** Gets the bot out of bed. A wake that throws is ignored: the handler then reports what it can do. */
+/**
+ * Gets the bot out of bed. `bot.wake()` only sends the request: `isSleeping` clears when the server's
+ * update arrives, so this waits for the 'wake' event or WAKE_CONFIRM_MS, whichever comes first. A wake
+ * that throws is ignored: the handler then reports what it can do.
+ */
 async function wakeBot(bot: Bot): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onWake: (() => void) | undefined;
+  const confirmed = new Promise<void>((resolve) => {
+    onWake = () => resolve();
+    timer = setTimeout(resolve, WAKE_CONFIRM_MS);
+    bot.once('wake', onWake);
+  });
   try {
     await bot.wake();
+    await confirmed;
   } catch {
     // Ignored on purpose, see above.
+  } finally {
+    clearTimeout(timer);
+    if (onWake) bot.removeListener('wake', onWake);
   }
 }
 

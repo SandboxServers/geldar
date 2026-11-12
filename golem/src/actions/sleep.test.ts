@@ -71,6 +71,14 @@ function sleep(bot: Bot) {
 const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
 const OTHER_HALF = { name: 'white_bed', position: new Vec3(6, 64, 0) };
 
+/** A whole bed as the world holds it: two adjacent blocks along x, both named `name`. */
+function bed(name: string, x: number): FakeBlock[] {
+  return [
+    { name, position: new Vec3(x, 64, 0) },
+    { name, position: new Vec3(x + 1, 64, 0) },
+  ];
+}
+
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();
 });
@@ -186,10 +194,7 @@ describe('sleep', () => {
   });
 
   it('tries at most eight beds', async () => {
-    const blocks = Array.from({ length: 10 }, (_, i) => ({
-      name: 'white_bed',
-      position: new Vec3(i * 2, 64, 0),
-    }));
+    const blocks = Array.from({ length: 10 }, (_, i) => bed('white_bed', i * 3)).flat();
     const bot = fakeBot({
       timeOfDay: 13_000,
       blocks,
@@ -199,6 +204,29 @@ describe('sleep', () => {
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
     expect(outcome.status === 'failed' && outcome.message).toContain('tried 8');
     expect(bot.sleep).toHaveBeenCalledTimes(8);
+  });
+
+  it('counts a two-block bed once when it is occupied', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: bed('white_bed', 5),
+      sleepErrors: ['Bed is occupied'],
+    });
+    const outcome = await sleep(bot);
+    expect(outcome.status === 'failed' && outcome.message).toContain('tried 1 nearby beds');
+    expect(bot.sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('reaches a free sixth bed after five occupied ones, each made of two blocks', async () => {
+    const blocks = Array.from({ length: 6 }, (_, i) => bed('white_bed', i * 3)).flat();
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks,
+      sleepErrors: Array.from({ length: 5 }, () => 'Bed is occupied'),
+    });
+    const outcome = await sleep(bot);
+    expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 15, y: 64, z: 0 } } });
+    expect(bot.sleep).toHaveBeenCalledTimes(6);
   });
 
   it('stops at a non-blocked failure and does not try the next bed', async () => {
