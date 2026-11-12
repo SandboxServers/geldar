@@ -16,6 +16,7 @@ function context(log: RingEventLog) {
     map: { identity: {} as SpeechIdentity, runs: new Map() },
     log,
     lives: () => LIVES,
+    deaths: { recordDeath: async () => {} },
   };
 }
 
@@ -108,7 +109,7 @@ describe('stream', () => {
       expect(subjects).not.toContain(`geldar.phase0.${kind}`);
     }
     expect(subjects).toContain('geldar.phase0.action_outcome');
-    expect(subjects).toHaveLength(12);
+    expect(subjects).toHaveLength(13);
   });
 });
 

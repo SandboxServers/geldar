@@ -6,6 +6,7 @@
 import type {
   ActionOutcomePayload,
   ActionRecord,
+  HeardSoundPayload,
   IntentEventPayload,
   PlanAck,
   PlanMessage,
@@ -80,6 +81,7 @@ export type MindEvent = MindEventBase &
     | { type: 'plan_result'; payload: PlanResultPayload }
     | { type: 'action_outcome'; payload: ActionOutcomePayload }
     | { type: 'reflex_fired'; payload: ReflexFiredPayload }
+    | { type: 'heard_sound'; payload: HeardSoundPayload }
     | { type: 'speech'; payload: SpeechPayload }
     | { type: 'damage'; payload: PluginEventPayload }
     | { type: 'death'; payload: PluginEventPayload }

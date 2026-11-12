@@ -22,6 +22,8 @@ export interface NotableBlock {
   y: number;
   z: number;
   text?: string;
+  /** A furnace only: whether it is lit (burning). */
+  lit?: boolean;
 }
 
 /** The kinds a snapshot reports (spec 5.2), grouped so each group has its own candidate cap. */
@@ -112,6 +114,15 @@ function signText(block: Block): string | undefined {
  * a chest. Each one is written to `memory`; a remembered block now in view that has changed or
  * gone is replaced or forgotten.
  */
+/**
+ * A furnace's `lit` block state. The state may come as a boolean or as the string 'true'; a block
+ * that reports no properties is not lit.
+ */
+function isLit(block: Block): boolean {
+  const properties = (block as { getProperties?: () => Record<string, unknown> }).getProperties?.();
+  return properties?.lit === true || properties?.lit === 'true';
+}
+
 export function observeNotableBlocks(bot: Bot, memory: RememberedBlocks): NotableBlock[] {
   const here = bot.entity.position;
   const seen = new Map<string, NotableBlock>();
@@ -129,6 +140,7 @@ export function observeNotableBlocks(bot: Bot, memory: RememberedBlocks): Notabl
       const text =
         isSign(block.name) && distanceToBlock(here, at) <= SIGN_RANGE ? signText(block) : undefined;
       if (text !== undefined) entry.text = text;
+      if (block.name === 'furnace') entry.lit = isLit(block);
       seen.set(`${at.x},${at.y},${at.z}`, entry);
       memory.remember(entry);
     }

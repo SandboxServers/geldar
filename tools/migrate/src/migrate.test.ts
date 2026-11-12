@@ -38,6 +38,7 @@ describe('listMigrations', () => {
       '0020_glass_journal_thoughts.sql',
       '0021_register_sessions.sql',
       '0022_register_consents.sql',
+      '0023_death_count.sql',
     ]);
   });
 

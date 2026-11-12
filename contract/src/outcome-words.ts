@@ -150,3 +150,48 @@ export function playerOutcomeText(input: {
   if (input.ok || input.intent !== true) return outcomeMessage(verb, input.ok, input.reason);
   return intentWhy(verb, input.reason);
 }
+
+/** The word for each heard sound kind (PX-4, PROVISIONAL vocabulary 0143). Any other kind reads as 'a sound'. */
+const HEARD_SOUND_WORD: Readonly<Record<string, string>> = {
+  hiss: 'hissing',
+  bow: 'a bow being drawn',
+  groan: 'a groan',
+  growl: 'a growl',
+  explosion: 'an explosion',
+  thunder: 'thunder',
+  digging: 'digging',
+};
+/** The lead-in for each distance band. */
+const HEARD_BAND_LEAD: Readonly<Record<string, string>> = {
+  near: 'close to',
+  mid: 'to',
+  far: 'far off to',
+};
+/** The words for each compass point. */
+const HEARD_DIR_WORD: Readonly<Record<string, string>> = {
+  n: 'north',
+  ne: 'northeast',
+  e: 'east',
+  se: 'southeast',
+  s: 'south',
+  sw: 'southwest',
+  w: 'west',
+  nw: 'northwest',
+};
+
+function lookup(table: Readonly<Record<string, string>>, key: unknown): string | undefined {
+  return typeof key === 'string' && Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/**
+ * The player's sentence for a heard sound: 'You hear hissing close to the north.' Built from the sound kind,
+ * the distance band and the compass point alone, so no coordinates ever reach the player. When the band or
+ * the point is unknown the sentence keeps only the sound: 'You hear hissing.'
+ */
+export function heardSoundSentence(input: { sound: unknown; dir: unknown; band: unknown }): string {
+  const word = lookup(HEARD_SOUND_WORD, input.sound) ?? 'a sound';
+  const lead = lookup(HEARD_BAND_LEAD, input.band);
+  const dir = lookup(HEARD_DIR_WORD, input.dir);
+  if (lead === undefined || dir === undefined) return `You hear ${word}.`;
+  return `You hear ${word} ${lead} the ${dir}.`;
+}
