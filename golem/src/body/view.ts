@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { isNightOrStorm } from '../actions/sleep.ts';
 import { worldAge } from '../world-clock.ts';
+import { lightAtHead } from './light.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
 /** A hostile mob near the Body. */
@@ -70,6 +71,8 @@ export interface BodyView {
   readonly bedNearby?: boolean;
   /** True when solid blocks close the Body's cell on every side, above and below. Optional like isNight. */
   readonly enclosed?: boolean;
+  /** Raw light at the head, 0 to 15 (the number reflexes read; the Mind gets a word). Null when unknown. */
+  readonly lightAtHead?: number | null;
 }
 
 /** The deepest drop dropAhead measures, in blocks. */
@@ -269,6 +272,9 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get enclosed() {
       return isEnclosed((at) => bot.blockAt(at), bot.entity.position.floored());
+    },
+    get lightAtHead() {
+      return lightAtHead(bot);
     },
     dispose() {
       bot.off('physicsTick', sample);
