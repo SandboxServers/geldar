@@ -245,6 +245,7 @@ export const OUTCOME_REASON_LABELS = [
   'interrupted',
   'unsupported',
   'busy',
+  'no_effect',
   'internal',
   'other',
 ] as const;

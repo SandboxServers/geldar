@@ -53,6 +53,8 @@ export interface BodyRuntimeOptions {
   programs?: ProgramRegistry;
   /** `20 / target TPS`, passed to every action run. Default 1. */
   timeScale?: number;
+  /** Check each completed action for a measured effect (`no_effect`). Default true. */
+  receipts?: boolean;
 }
 
 /**
@@ -77,6 +79,7 @@ export class BodyRuntime {
   private readonly ticks: TickSource;
   /** `20 / target TPS`: scales the wall limits of every action run. */
   readonly timeScale: number;
+  private readonly receipts: boolean;
   private readonly ownedView: { dispose(): void } | null;
   private readonly stopController = new AbortController();
   private unsubscribe: (() => void) | null = null;
@@ -101,6 +104,7 @@ export class BodyRuntime {
     this.programs = options.programs ?? new ProgramRegistry();
     this.ticks = options.ticks;
     this.timeScale = sanitiseTimeScale(options.timeScale);
+    this.receipts = options.receipts ?? true;
     const tracked = options.view === undefined ? createBodyView(options.bot) : null;
     this.ownedView = tracked;
     this.view = options.view ?? (tracked as BodyView);
@@ -165,6 +169,7 @@ export class BodyRuntime {
     const done = runAction(this.actions, this.bot, action, {
       timeScale: this.timeScale,
       signal: controller.signal,
+      receipts: this.receipts,
       // Called before runAction's first await, so it is set before the slot is filled.
       onHandler: (ended) => {
         handlerEnded = ended;
