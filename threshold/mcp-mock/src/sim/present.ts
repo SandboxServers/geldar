@@ -1,15 +1,10 @@
-import {
-  type LookResult,
-  type McpPlayerEvent,
-  playerOutcomeText,
-  type Snapshot,
-  type UntrustedWorldText,
-} from '@geldar/contract';
+import type { LookResult, McpPlayerEvent, UntrustedWorldText } from '@geldar/contract';
 import { toPlaySnapshot } from '../play-snapshot.ts';
 import { buildSnapshot } from '../snapshot.ts';
 import { TICKS_PER_DAY } from './clock.ts';
 import type { SimEvent } from './events.ts';
 import type { PlayerSim } from './player-sim.ts';
+import { PRESENT_HANDLERS, presentEvents } from './present-events/index.ts';
 import type { Scenario } from './scenario.ts';
 
 /** The note every in-world text wrapper carries. */
@@ -25,82 +20,11 @@ const SPEECH_TEXT_LIMIT = 512;
 const SIGN_LIMIT = 256;
 
 /**
- * Turns sim events into the player-facing list. Fixed templates only: no event text holds a name
- * or any words a neighbour wrote. Overheard speech collapses to one digest, placed at its last line.
+ * Turns sim events into the player-facing list, with the presenters in `present-events/`. Fixed
+ * templates only: no event text holds a name or any words a neighbour wrote.
  */
 export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
-  const out: McpPlayerEvent[] = [];
-  const overheard = events.filter((e) => e.kind === 'speech' && !e.addressed);
-  const lastOverheard = overheard[overheard.length - 1];
-  for (const e of events) {
-    const base = { seq: e.seq, tick: e.tick };
-    switch (e.kind) {
-      case 'speech':
-        if (e.addressed) {
-          out.push({ ...base, type: 'speech_to_me', text: 'Someone spoke to you.' });
-        } else if (e === lastOverheard) {
-          out.push({
-            ...base,
-            type: 'conversation_digest',
-            text: `${overheard.length} lines overheard.`,
-          });
-        }
-        break;
-      case 'damage':
-        out.push({ ...base, type: 'damage', text: e.cause ?? 'You were hurt.' });
-        break;
-      case 'death':
-        out.push({ ...base, type: 'death', text: deathText(e.cause) });
-        break;
-      case 'agent_approached':
-        out.push({
-          ...base,
-          type: 'agent_approached',
-          text: `Someone came within ${e.distance ?? 0} blocks.`,
-        });
-        break;
-      case 'proposal':
-        out.push({ ...base, type: 'proposal', text: 'A proposal was put forward.' });
-        break;
-      case 'day_night':
-        out.push({ ...base, type: 'day_night', text: e.name === 'dusk' ? 'Dusk.' : 'Dawn.' });
-        break;
-      case 'intent_finished':
-        out.push({ ...base, type: 'intent_finished', text: intentText(e) });
-        break;
-      case 'action':
-      case 'action_failed':
-        out.push({
-          ...base,
-          type: e.kind,
-          text: playerOutcomeText({
-            verb: e.name,
-            ok: e.kind === 'action',
-            reason: e.reason,
-            intent: e.intent,
-          }),
-        });
-        break;
-      case 'reflex':
-        out.push({ ...base, type: 'reflex', text: 'Your body ate on its own.' });
-        break;
-      case 'wake':
-        out.push({ ...base, type: 'wake', text: 'You wake with nothing underway.' });
-        break;
-    }
-  }
-  return out;
-}
-
-/** The fixed death line. `cause` is one of the mapper's phrases, never world text. */
-function deathText(cause: string | undefined): string {
-  return `You died. ${cause ?? 'Something killed you'}. You wake at the spawn with nothing.`;
-}
-
-function intentText(e: SimEvent): string {
-  if (e.outcome === 'failed') return 'Your intent failed: precondition_failed.';
-  if (e.outcome === 'limit_reached') return 'Your intent ran out of time.';
-  return 'Your intent finished.';
+  return presentEvents(PRESENT_HANDLERS, events);
 }
 
 /** For each speech array `worldText` built, the event seq behind each line (same order). */
