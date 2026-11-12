@@ -21,7 +21,8 @@ export function recordingPool(rows: Record<string, unknown>[] = []): Recorder {
     pool: {
       async query(text: string) {
         statements.push(text);
-        return { rows };
+        // The canned rows are thoughts; the journal functions answer with none.
+        return { rows: /glass_journal_(page|after)/.test(text) ? [] : rows };
       },
     },
   };

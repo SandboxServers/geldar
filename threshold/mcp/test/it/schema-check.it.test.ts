@@ -22,6 +22,7 @@ import {
 const CHECK_FILE = join(SQL_DIR, 'test', 'check-schema.sql');
 const REGISTER_READS_FILE = join(SQL_DIR, 'test', 'check-schema-register-reads.sql');
 const KINO_FUNCTIONS_FILE = join(SQL_DIR, 'test', 'check-schema-kino-functions.sql');
+const GLASS_JOURNAL_FILE = join(SQL_DIR, 'test', 'check-schema-glass-journal.sql');
 
 describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real Postgres', () => {
   let database = '';
@@ -49,6 +50,7 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       await client.query(check);
       await client.query(readFileSync(REGISTER_READS_FILE, 'utf8'));
       await client.query(readFileSync(KINO_FUNCTIONS_FILE, 'utf8'));
+      await client.query(readFileSync(GLASS_JOURNAL_FILE, 'utf8'));
     } finally {
       await client.end();
     }
@@ -62,6 +64,7 @@ describe.skipIf(!integrationEnabled())('sql/test/check-schema.sql against a real
       /^schema check passed: role geldar_register and mcp_identities$/,
       /^schema check passed: register role reads through functions and the sign-up gates refuse$/,
       /^schema check passed: Kino definer functions answer for the named identity and refuse the rest$/,
+      /^schema check passed: the journal functions apply the decision 0138 rules$/,
     ];
     expect(passed, 'one NOTICE per check block that passed').toHaveLength(expected.length);
     expected.forEach((pattern, index) => {

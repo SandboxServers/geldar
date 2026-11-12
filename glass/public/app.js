@@ -119,6 +119,12 @@ async function loadOlder() {
 
 /** Opens one thought in the detail panel. */
 async function openThought(id) {
+  // A journal line has no thought record to fetch: its detail is the row already loaded.
+  const loaded = state.list.find((view) => view.id === id);
+  if (loaded !== undefined && loaded.kind === 'journal') {
+    els.detail.replaceChildren(renderDetail(document, loaded, []));
+    return;
+  }
   try {
     const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(id)}`);
     const receipts =

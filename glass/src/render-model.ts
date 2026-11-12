@@ -23,7 +23,10 @@ export interface ThoughtView {
   atMs: number;
   templateVersion: string;
   latencyMs: number | null;
-  outcome: 'parsed' | 'unparsed';
+  /** A Mind thought is parsed or not; a journal line has no outcome ('none'). */
+  outcome: 'parsed' | 'unparsed' | 'none';
+  /** 'thought' (a Mind thought) or 'journal' (a line a sovereign player wrote). */
+  kind: 'thought' | 'journal';
   wakeReason: string;
   plan: string;
 }
@@ -55,6 +58,7 @@ function planOf(parsed: unknown): string {
 export function toView(row: Row): ThoughtView {
   const at = text(row.at);
   const parsed = row.parsed ?? null;
+  const journal = row.kind === 'journal';
   return {
     id: text(row.thought_id),
     agentId: text(row.life_id),
@@ -64,9 +68,10 @@ export function toView(row: Row): ThoughtView {
     atMs: Date.parse(at),
     templateVersion: text(row.prompt_template_version),
     latencyMs: typeof row.latency_ms === 'number' ? row.latency_ms : null,
-    outcome: parsed === null ? 'unparsed' : 'parsed',
+    outcome: journal ? 'none' : parsed === null ? 'unparsed' : 'parsed',
+    kind: journal ? 'journal' : 'thought',
     wakeReason: text(row.wake_reason),
-    plan: planOf(parsed),
+    plan: journal ? text(row.text) : planOf(parsed),
   };
 }
 

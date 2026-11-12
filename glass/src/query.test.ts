@@ -25,6 +25,8 @@ const ALLOWED_TABLES = [
   'kino_viewer',
   'kino_agent_scope',
   'kino_agent_list',
+  'glass_journal_page',
+  'glass_journal_after',
 ];
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 const WRITE_WORDS = /\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|COPY)\b/i;

@@ -48,7 +48,12 @@ export function renderRow(doc: Doc, view: ThoughtView, onOpen: (id: string) => v
     make(doc, 'span', 'when', view.at),
     make(doc, 'span', 'agent', view.agentName),
     make(doc, 'span', 'tier', view.tier),
-    make(doc, 'span', `outcome ${view.outcome}`, view.outcome),
+    make(
+      doc,
+      'span',
+      `outcome ${view.outcome}`,
+      view.kind === 'journal' ? 'journal' : view.outcome,
+    ),
     make(doc, 'span', 'template', view.templateVersion),
     make(doc, 'span', 'latency', latency),
     make(doc, 'span', 'wake', view.wakeReason),
@@ -64,19 +69,34 @@ export function renderDetail(doc: Doc, view: ThoughtView, receipts: Row[]): El {
   section.className = 'detail';
   const facts = doc.createElement('dl');
   const latency = view.latencyMs === null ? 'not recorded' : `${view.latencyMs} ms`;
-  const pairs: [string, string][] = [
-    ['Agent', view.agentName],
-    ['Agent id', view.agentId],
-    ['Tier', view.tier],
-    ['When', view.at],
-    ['Wake reason', view.wakeReason],
-    ['Outcome', view.outcome],
-    ['Template version', view.templateVersion],
-    ['Latency', latency],
-    ['Plan', view.plan],
-  ];
+  // A journal line has no wake reason, outcome, template version, latency or receipts: only who, when and what.
+  const pairs: [string, string][] =
+    view.kind === 'journal'
+      ? [
+          ['Agent', view.agentName],
+          ['Agent id', view.agentId],
+          ['Tier', view.tier],
+          ['When', view.at],
+          ['Kind', 'journal'],
+          ['Text', view.plan],
+        ]
+      : [
+          ['Agent', view.agentName],
+          ['Agent id', view.agentId],
+          ['Tier', view.tier],
+          ['When', view.at],
+          ['Wake reason', view.wakeReason],
+          ['Outcome', view.outcome],
+          ['Template version', view.templateVersion],
+          ['Latency', latency],
+          ['Plan', view.plan],
+        ];
   for (const [label, value] of pairs) {
     facts.append(make(doc, 'dt', '', label), make(doc, 'dd', '', value));
+  }
+  if (view.kind === 'journal') {
+    section.append(facts);
+    return section;
   }
   section.append(facts, make(doc, 'h3', '', 'Receipts'));
   const list = doc.createElement('ul');

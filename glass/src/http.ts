@@ -6,13 +6,13 @@ import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
+import { listThoughtsWithJournal } from './journal.ts';
 import { ownedAgentsOf } from './owner-view.ts';
 import { limiterFor, OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
   listAgents,
   listReceipts,
-  listThoughts,
   type Row,
   type SqlClient,
   type ThoughtCursor,
@@ -197,7 +197,7 @@ async function serveRoute(
   }
   if (name === 'thoughts') {
     const filter = thoughtFilter(query);
-    const thoughts = await listThoughts(deps.db, filter, await shown());
+    const thoughts = await listThoughtsWithJournal(deps.db, filter, await shown());
     sendJson(res, 200, {
       thoughts: publicRows(thoughts),
       next: nextCursor(thoughts, filter.limit),
