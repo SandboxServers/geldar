@@ -11,12 +11,18 @@ usage() {
   echo "  migrate [--dry-run] | migrate --set-role-password geldar_mcp --password-file <file>" >&2
   echo "  owner-add <id> [--cap N] | player-add <id> --owner <o> --life <l> --name <n> --harness <h>" >&2
   echo "  token-mint <player> --out <file> | token-revoke <tk_id> | skin-import <player-id> <json under /run/skins> | players-status (lists tokens, no values)" >&2
+  echo "  notice <payload-json> (CD-1d: publishes one maintenance notice as the deploy NATS user; see deploy/colo-notice.sh)" >&2
   exit 2
 }
 
 [ $# -ge 1 ] || usage
 cmd=$1
 shift
+
+# notice (CD-1d) runs as the deploy NATS user and reads no Postgres password, so it is dispatched before that check.
+if [ "$cmd" = notice ]; then
+  exec node "$ROOT/golem/src/publish-maintenance-notice.ts" "$@"
+fi
 
 case $cmd in
   migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import) ;;

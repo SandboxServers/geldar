@@ -8,7 +8,7 @@ import { validateSnapshot as validateSnapshotSchema } from './generated/validato
 import { formatError, type ValidationResult } from './validation.ts';
 
 export { MARKER_WORD, markedWords } from './agent-text.ts';
-export type { Snapshot } from './generated/types.ts';
+export type { MaintenanceNotice, Snapshot } from './generated/types.ts';
 export type { ValidationResult } from './validation.ts';
 
 // --- P0-01 snapshot ---
