@@ -153,6 +153,24 @@ export interface SleepMarks {
   write(lifeId: string, mark: SleepMark): Promise<void>;
 }
 
+/** One life's deaths: how many it has had (0 before the first) and the world day of the last. */
+export interface DeathMark {
+  deaths: number;
+  /** The world day of the last death; null while the life has had none. */
+  lastDeathDay: number | null;
+}
+
+/** The death count of each life (Postgres in the real server, migration 0023). */
+export interface DeathMarks {
+  /** The life's mark; a life with no death reads 0 deaths. */
+  read(lifeId: string): Promise<DeathMark>;
+  /**
+   * Counts one death event. A repeated `eventId` (a redelivery or a retry) counts nothing, so the
+   * count rises once per death event whatever the number of deliveries.
+   */
+  recordDeath(lifeId: string, eventId: string, day: number): Promise<void>;
+}
+
 /** The per-life facts of the `self` resource, from the `agents` row of the life. */
 export interface AgentProfile {
   personality_seed: string;
