@@ -16,6 +16,12 @@ export interface SimEvent extends WakeEvent {
   result?: string;
   /** For death and damage: the fixed cause phrase (one of the mapper's templates, never world text). */
   cause?: string;
+  /** For death: the coarse place, x and z only (the contract's `where`). Absent when the place is unknown. */
+  where?: { x: number; z: number };
+  /** For death: the number of items dropped. Absent or 0 means none dropped. */
+  drops?: number;
+  /** For death: the respawn point, stated once per death. */
+  respawn_point?: { x: number; y: number; z: number };
   /** For agent_approached: who came; for reflex: the item eaten. */
   name?: string;
   /** For proposal: the proposal id. */
