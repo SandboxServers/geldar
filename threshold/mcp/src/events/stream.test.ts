@@ -16,6 +16,7 @@ function context(log: RingEventLog) {
     map: { identity: {} as SpeechIdentity, runs: new Map() },
     log,
     lives: () => LIVES,
+    deaths: { recordDeath: async () => {} },
   };
 }
 

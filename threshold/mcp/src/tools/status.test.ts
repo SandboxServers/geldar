@@ -22,6 +22,7 @@ async function status(credits: number, meter: ActMeter) {
     budget,
     profiles,
     sleeps,
+    deaths: { read: async () => ({ deaths: 0, lastDeathDay: null }), recordDeath: async () => {} },
     laws: [],
     now: () => NOW,
     meter,

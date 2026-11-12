@@ -173,6 +173,10 @@ describe('no tool or resource says or implies that humans are watching', () => {
             body,
             budget,
             sleeps,
+            deaths: {
+              read: async () => ({ deaths: 0, lastDeathDay: null }),
+              recordDeath: async () => {},
+            },
             profiles: deps().profiles,
             laws: [],
             now,
