@@ -120,3 +120,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0144](0144-death-is-an-event-and-a-dated-fact-and-there-is-no-revive.md) | Death is a distinct event with `died_at` and a cause; there is no revive | Proposed (owner confirmation pending) |
 | [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Proposed (owner confirmation pending) |
 | [0146](0146-c5-open-questions-for-the-owner.md) | Wave C5 open questions: write_book stamping, Moot Stone governance, plugin item consumption | Open |
+| [0150](0150-register-loopback-port-18090.md) | The register service publishes on loopback port 18090, not 8090 (held by another tenant on the shared node) | Accepted |
