@@ -1,6 +1,7 @@
 import { type Action, validateThought } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { worldAge } from '../world-clock.ts';
+import { judge, snapshot, withReceipt } from './effect.ts';
 import {
   type ActionOutcome,
   type ActionResult,
@@ -113,6 +114,8 @@ export interface ActionRunOptions {
   timeScale?: number;
   signal?: AbortSignal;
   now?: () => number;
+  /** Check a completed action against the position, inventory and block it should have changed (`no_effect`). */
+  receipts?: boolean;
   /**
    * Called once, before the first await, with a promise that settles when the handler itself has
    * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
@@ -165,6 +168,7 @@ async function runUnobserved(
   // Clocks are read before the handler starts: a handler may run synchronously up to its first await.
   const startedAt = now();
   const startAge = worldAge(bot);
+  const before = snapshot(bot, valid);
   // The async call turns a synchronous throw into a rejection, so both paths reach `catch`.
   // The registry keys handlers by verb, so `valid` is the action type this handler takes.
   const typed = handler as ActionHandler;
@@ -187,7 +191,12 @@ async function runUnobserved(
   const latencyMs = Math.round(now() - startedAt);
   const endAge = worldAge(bot);
   const worldTicks = startAge === null || endAge === null ? null : endAge - startAge;
-  return finish(outcome, latencyMs, worldTicks);
+  // The receipt: a completed action must have changed the body or the world as it claims.
+  const checked =
+    opts.receipts === true
+      ? withReceipt(outcome, judge(valid, before, snapshot(bot, valid)))
+      : outcome;
+  return finish(checked, latencyMs, worldTicks);
 }
 
 /** Builds the run from an outcome, the latency and the world ticks. */

@@ -34,6 +34,7 @@
         "interrupted",
         "unsupported",
         "busy",
+        "no_effect",
         "internal"
       ]
     },
