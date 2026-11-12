@@ -3,6 +3,7 @@ import type { Snapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it } from 'vitest';
 import { composeProbes, type Probe } from './compose-probes.ts';
+import { FakeWorld } from './perception.fakes.ts';
 import { SELF_PROBES, selfProbes } from './self/index.ts';
 import { SURROUNDINGS_PROBES, surroundingsProbes } from './surroundings/index.ts';
 
@@ -26,8 +27,13 @@ describe('probe registries', () => {
     expect(probeFiles(new URL('./surroundings/', import.meta.url))).toEqual(registered);
   });
 
-  it('gives the stub probes their current values (armor 0, nothing else)', () => {
-    expect(selfProbes(bot)).toEqual({ armor: 0 });
+  it('gives the stub probes their current values, and the sky probe reads the world', () => {
+    // Open air with sky above and no time: no ground in 32 cells (perched), no sun phase.
+    expect(selfProbes(new FakeWorld().bot)).toEqual({
+      armor: 0,
+      ground_below: 32,
+      trapped: 'perched',
+    });
     expect(surroundingsProbes(bot)).toEqual({});
   });
 });
@@ -55,8 +61,10 @@ describe('composeProbes', () => {
       file: 'injected',
       probe: () => ({ unlocked_recipes: ['injected'] }),
     };
-    expect(composeProbes([...SELF_PROBES, extra], bot)).toEqual({
+    expect(composeProbes([...SELF_PROBES, extra], new FakeWorld().bot)).toEqual({
       armor: 0,
+      ground_below: 32,
+      trapped: 'perched',
       unlocked_recipes: ['injected'],
     });
   });
