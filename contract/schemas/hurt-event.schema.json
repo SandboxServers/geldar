@@ -13,7 +13,17 @@
         "type": { "const": "hurt" },
         "source": {
           "type": "string",
-          "enum": ["melee", "arrow", "explosion", "fall", "fire", "lava", "drowning", "starvation", "other"]
+          "enum": [
+            "melee",
+            "arrow",
+            "explosion",
+            "fall",
+            "fire",
+            "lava",
+            "drowning",
+            "starvation",
+            "other"
+          ]
         },
         "bearing": {
           "description": "Where the attacker stood relative to the Body's facing. Absent when the attacker is unknown.",

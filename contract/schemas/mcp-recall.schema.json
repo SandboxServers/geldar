@@ -41,9 +41,15 @@
       "additionalProperties": false,
       "required": ["input", "fuel", "output", "progress"],
       "properties": {
-        "input": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }] },
-        "fuel": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }] },
-        "output": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }] },
+        "input": {
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }]
+        },
+        "fuel": {
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }]
+        },
+        "output": {
+          "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemStack" }, { "type": "null" }]
+        },
         "progress": {
           "description": "Smelting progress, 0 to 100 percent.",
           "type": "integer",
