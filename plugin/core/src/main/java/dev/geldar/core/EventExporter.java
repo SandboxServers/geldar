@@ -80,6 +80,9 @@ public final class EventExporter implements Listener {
         JsonObject p = new JsonObject();
         EntityDamageEvent last = player.getLastDamageCause();
         p.addProperty("cause", last == null ? "UNKNOWN" : last.getCause().name());
+        p.addProperty("x", player.getLocation().getBlockX());
+        p.addProperty("y", player.getLocation().getBlockY());
+        p.addProperty("z", player.getLocation().getBlockZ());
         emit("death", player.getName(), p);
     }
 
