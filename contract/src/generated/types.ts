@@ -792,6 +792,14 @@ export interface PlaySurroundings {
     type: string;
     distance: number;
     direction: string;
+    x: number;
+    y: number;
+    z: number;
+    /**
+     * An item ID without its namespace prefix, such as iron_ingot.
+     */
+    item?: string;
+    count?: number;
   }[];
   agents: {
     name: string;
@@ -11193,6 +11201,14 @@ export interface SnapshotSurroundings {
     type: string;
     distance: number;
     direction: string;
+    x: number;
+    y: number;
+    z: number;
+    /**
+     * An item ID without its namespace prefix, such as iron_ingot.
+     */
+    item?: string;
+    count?: number;
   }[];
   agents: {
     name: string;

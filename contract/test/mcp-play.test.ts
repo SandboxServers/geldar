@@ -35,7 +35,7 @@ const PLAY_SNAPSHOT = {
       { type: 'chest', x: 123, y: 64, z: -45 },
       { type: 'oak_sign', x: 118, y: 65, z: -40 },
     ],
-    entities: [{ type: 'zombie', distance: 22, direction: 'north' }],
+    entities: [{ type: 'zombie', distance: 22, direction: 'north', x: 0, y: 64, z: -22 }],
     agents: [{ name: 'Pike', distance: 6, held_item: 'iron_sword', health_estimate: 'healthy' }],
   },
   heard: [],

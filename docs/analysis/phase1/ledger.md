@@ -102,7 +102,7 @@ Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md). Dec
 |---|---|---|---|---|---|---|---|
 | PX-0 | Death fields: per-life counter, location, drops, respawn point (C6-DEATH) | PX | A | C6-BODY-EVENTS, C5-03 | Ready after deps | 0144 | N |
 | PX-1 | Hurt event with source and bearing | PX | A | C6-BODY-EVENTS, C5-00 | Ready after deps | 0154 | N [live: pending] |
-| PX-2a | Entity coordinates and item names | PX | A | none | Ready | 0154 | N |
+| PX-2a | Entity coordinates and item names | PX | A | none | Built, in review | 0154 | N |
 | PX-2b | Threat reading and sight for reflexes | PX | B | PX-2a | Ready after deps | 0154 | N |
 | PX-3a | Sun phase, ground below, trapped state | PX | B | PX-2a | Ready | 0154 | N |
 | PX-3b | Light, health trend, regeneration rule | PX | B | PX-3a | Ready | 0154 | N [threshold checked in card] |

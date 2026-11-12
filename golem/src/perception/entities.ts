@@ -5,12 +5,18 @@ import { compass } from './blocks-summary.ts';
 import { canSeePoint } from './notable-blocks.ts';
 
 type Surroundings = Snapshot['surroundings'];
+type Entity = Surroundings['entities'][number];
 
 /** How far the Body sees entities and other players, in blocks. */
 export const ENTITY_RANGE = 24;
 /** The most entities and the most agents in one snapshot, nearest first. */
 export const MAX_ENTITIES = 32;
 export const MAX_AGENTS = 16;
+/** Dropped items of one name within this many blocks of the nearest one are one record. */
+export const ITEM_CLUSTER_RADIUS = 4;
+
+/** The metadata slot that holds a dropped item's stack (the protocol's item index). */
+const ITEM_STACK_SLOT = 8;
 
 /** The fields of a Mineflayer entity read here. */
 interface SeenEntity {
@@ -20,6 +26,16 @@ interface SeenEntity {
   position: Vec3;
   height?: number;
   heldItem?: { name?: string } | null;
+  metadata?: unknown[];
+}
+
+/** One entity in sight, before dropped items are merged into stacks. */
+interface Sighted {
+  kind: string;
+  position: Vec3;
+  distance: number;
+  /** For a dropped item: its name when it reads cleanly, and its count. */
+  stack?: { name: string | null; count: number };
 }
 
 const KIND = /^[a-z_]{1,64}$/;
@@ -34,14 +50,76 @@ function tenths(distance: number): number {
   return Math.round(distance * 10) / 10;
 }
 
+/** A dropped item's stack from its metadata slot. A missing or unreadable name is null. */
+function droppedStack(entity: SeenEntity): { name: string | null; count: number } {
+  const stack = entity.metadata?.[ITEM_STACK_SLOT] as
+    | { name?: unknown; count?: unknown }
+    | undefined;
+  const name = typeof stack?.name === 'string' && ITEM.test(stack.name) ? stack.name : null;
+  const count =
+    typeof stack?.count === 'number' && Number.isInteger(stack.count) && stack.count >= 1
+      ? stack.count
+      : 1;
+  return { name, count };
+}
+
+/** A record at a position: the integer block coordinates, the distance and the compass direction. */
+function place(here: Vec3, kind: string, position: Vec3, distance: number): Entity {
+  return {
+    type: kind,
+    distance: tenths(distance),
+    direction: compass(position.x - here.x, position.z - here.z),
+    x: Math.floor(position.x),
+    y: Math.floor(position.y),
+    z: Math.floor(position.z),
+  };
+}
+
+/**
+ * Merges the sighted entities, nearest first, into records. Dropped items of one name that lie
+ * within `ITEM_CLUSTER_RADIUS` of the nearest one of that name become one record with the summed
+ * count and the nearest position. An item with no readable name stays a record of its own.
+ */
+function toRecords(here: Vec3, sighted: Sighted[]): Entity[] {
+  const records: Entity[] = [];
+  const clusters: { name: string; at: Vec3; record: Entity }[] = [];
+  for (const seen of sighted) {
+    if (seen.kind !== 'item' || seen.stack === undefined) {
+      records.push(place(here, seen.kind, seen.position, seen.distance));
+      continue;
+    }
+    const { name, count } = seen.stack;
+    if (name === null) {
+      records.push(place(here, 'item', seen.position, seen.distance));
+      continue;
+    }
+    const home = clusters.find(
+      (c) => c.name === name && c.at.distanceTo(seen.position) <= ITEM_CLUSTER_RADIUS,
+    );
+    if (home) {
+      home.record.count = (home.record.count ?? 0) + count;
+      continue;
+    }
+    const record: Entity = {
+      ...place(here, 'item', seen.position, seen.distance),
+      item: name,
+      count,
+    };
+    clusters.push({ name, at: seen.position, record });
+    records.push(record);
+  }
+  return records;
+}
+
 /**
  * The entities and the other players the agent sees: within `ENTITY_RANGE` and with a clear line
  * from the eyes to the middle of the body. Nothing out of sight is reported. Players go to
- * `agents` (name, distance, held item, health unknown) and everything else to `entities`.
+ * `agents` (name, distance, held item, health unknown) and everything else to `entities`, each
+ * with its integer block coordinates.
  */
 export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agents'> {
   const here = bot.entity.position;
-  const entities: (Surroundings['entities'][number] & { sort: string })[] = [];
+  const sighted: (Sighted & { key: string })[] = [];
   const agents: (Surroundings['agents'][number] & { sort: string })[] = [];
   for (const entity of Object.values(bot.entities) as SeenEntity[]) {
     if (entity === (bot.entity as unknown as SeenEntity)) continue;
@@ -64,17 +142,23 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
     }
     const kind = entity.name ?? '';
     if (!KIND.test(kind)) continue;
-    entities.push({
-      type: kind,
-      distance: tenths(distance),
-      direction: compass(entity.position.x - here.x, entity.position.z - here.z),
-      sort: kind,
-    });
+    if (kind === 'item') {
+      const stack = droppedStack(entity);
+      sighted.push({
+        kind,
+        position: entity.position,
+        distance,
+        stack,
+        key: stack.name ?? '',
+      });
+      continue;
+    }
+    sighted.push({ kind, position: entity.position, distance, key: kind });
   }
-  entities.sort((a, b) => byDistance(a, b, a.sort, b.sort));
+  sighted.sort((a, b) => byDistance(a, b, a.key, b.key));
   agents.sort((a, b) => byDistance(a, b, a.sort, b.sort));
   return {
-    entities: entities.slice(0, MAX_ENTITIES).map(({ sort: _sort, ...rest }) => rest),
+    entities: toRecords(here, sighted).slice(0, MAX_ENTITIES),
     agents: agents.slice(0, MAX_AGENTS).map(({ sort: _sort, ...rest }) => rest),
   };
 }
