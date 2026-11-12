@@ -11,14 +11,15 @@ export type BodyEvent = {
     | 'eat'
     | 'body_restart'
     | 'short_session';
-  /** Action outcome reason, or the rung name for escape_rung. */
+  /** Action outcome reason (kind action), the stall reason, or the rung name for escape_rung. */
   reason: string;
   worked: boolean;
 };
 
-const ACTION_EVENTS = new Set(['action_result', 'action_end', 'action_outcome', 'action']);
+/** Agent of Body lines that carry no agent and come from a file that names none. */
+export const UNKNOWN_AGENT = '(unknown)';
 const TIME_KEYS = ['ts', 'time', 'at', 't'];
-const AGENT_KEYS = ['agent', 'agent_id', 'player', 'name'];
+const AGENT_KEYS = ['life_id', 'agent', 'agent_id', 'player'];
 const SHORT_SESSION_MS = 60_000;
 
 function pick(o: Record<string, unknown>, keys: string[]): unknown {
@@ -28,8 +29,8 @@ function pick(o: Record<string, unknown>, keys: string[]): unknown {
 
 /**
  * Parses one Body/player-host JSON log line (optionally with a docker timestamp prefix). The agent
- * comes from `agent`/`agent_id`/`player`/`name`, else from `defaultAgent`. Action outcomes are lines
- * with event action_result|action_end|action_outcome|action and a `reason` (or `outcome`).
+ * comes from `life_id`/`agent`/`agent_id`/`player`, else from `defaultAgent` (the file's agent),
+ * else it is `(unknown)`. The Body never logs action outcomes to the player host: see outcomes.ts.
  * `player_down` lines with `uptime_ms` under a minute are short-session indicators.
  */
 export function parseBodyLine(raw: string, defaultAgent: string | null): BodyEvent[] {
@@ -45,8 +46,8 @@ export function parseBodyLine(raw: string, defaultAgent: string | null): BodyEve
     return [];
   }
   const agentRaw = pick(o, AGENT_KEYS);
-  const agent = typeof agentRaw === 'string' ? agentRaw : defaultAgent;
-  if (agent === null) return [];
+  let agent = typeof agentRaw === 'string' ? agentRaw : defaultAgent;
+  if (agent === null) agent = UNKNOWN_AGENT;
   const at = parseTime(pick(o, TIME_KEYS)) ?? dockerAt;
   const ev = typeof o.event === 'string' ? o.event : '';
   const mk = (kind: BodyEvent['kind'], reason = '', worked = false): BodyEvent => ({
@@ -56,10 +57,6 @@ export function parseBodyLine(raw: string, defaultAgent: string | null): BodyEve
     reason,
     worked,
   });
-  if (ACTION_EVENTS.has(ev)) {
-    const r = o.reason ?? o.outcome;
-    return [mk('action', typeof r === 'string' ? r : o.ok === true ? 'ok' : 'unknown')];
-  }
   if (ev === 'stall_diag') {
     const out = [mk('stall_diag', typeof o.reason === 'string' ? o.reason : '')];
     if (o.reason === 'escape_ladder' && typeof o.rung === 'string') {

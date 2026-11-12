@@ -16,6 +16,7 @@ export function renderMarkdown(rows: Row[]): string {
     'repeated journal',
     'no_effect',
     'escape success',
+    'episode success',
   ];
   const lines = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`];
   for (const r of rows) {
@@ -29,6 +30,7 @@ export function renderMarkdown(rows: Row[]): string {
       pct(r.repeatedJournalShare),
       pct(r.noEffectShare),
       pct(r.escapeSuccessRate),
+      pct(r.episodeSuccessRate),
     ];
     lines.push(`| ${cells.join(' | ')} |`);
   }

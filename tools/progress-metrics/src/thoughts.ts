@@ -2,7 +2,8 @@ import { parseTime } from './time.ts';
 
 export type Thought = { agent: string; at: number; text: string };
 
-/** The /api/thoughts shape: thought_id, life_id, at, name, kind, text. Only journal entries are kept. */
+/** The /api/thoughts shape: thought_id, life_id, at, name, kind, text. Only journal entries are kept.
+ * The agent is the life_id (the id Paper and the Body use); name (a first name such as Zack) is the fallback. */
 export function parseThoughts(json: string): Thought[] {
   const data: unknown = JSON.parse(json);
   const list: unknown = Array.isArray(data)
@@ -16,9 +17,10 @@ export function parseThoughts(json: string): Thought[] {
     if (typeof t !== 'object' || t === null) continue;
     const r = t as Record<string, unknown>;
     const at = parseTime(r.at);
-    if (typeof r.name !== 'string' || typeof r.text !== 'string' || at === null) continue;
+    const agent = typeof r.life_id === 'string' && r.life_id ? r.life_id : r.name;
+    if (typeof agent !== 'string' || typeof r.text !== 'string' || at === null) continue;
     if (typeof r.kind !== 'string' || !r.kind.toLowerCase().includes('journal')) continue;
-    out.push({ agent: r.name, at, text: r.text });
+    out.push({ agent, at, text: r.text });
   }
   return out;
 }

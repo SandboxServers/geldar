@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { aggregate } from '../src/aggregate.ts';
 import { parseBodyLog } from '../src/body.ts';
 import { parseInventory } from '../src/inventory.ts';
+import { parseOutcomes } from '../src/outcomes.ts';
 import { parsePaperLog } from '../src/paper.ts';
 import { parsePositions } from '../src/positions.ts';
 import { renderCsv, renderMarkdown } from '../src/render.ts';
@@ -21,12 +22,18 @@ function inputs() {
   );
   const body = parseBodyLog(
     [
-      `{"event":"action_result","agent":"ag_a","ts":"${iso(1)}","reason":"moved"}`,
-      `{"event":"action_result","agent":"ag_a","ts":"${iso(2)}","reason":"no_effect"}`,
       `{"event":"stall_diag","agent":"ag_a","ts":"${iso(3)}","reason":"escape_ladder","rung":"dig","worked":true}`,
       `{"event":"stall_diag","agent":"ag_a","ts":"${iso(4)}","reason":"escape_ladder","rung":"dig","worked":false}`,
     ].join('\n'),
     null,
+  ).concat(
+    parseOutcomes(
+      [
+        `{"type":"action_outcome","agent_id":"ag_a","at":"${iso(1)}","payload":{"verb":"walk","index":0,"ok":true,"message":"m"}}`,
+        `{"type":"action_outcome","agent_id":"ag_a","at":"${iso(2)}","payload":{"verb":"mine","index":0,"ok":false,"reason":"no_effect","message":"m"}}`,
+      ].join('\n'),
+      null,
+    ),
   );
   const inventory = parseInventory(
     [
@@ -41,17 +48,17 @@ function inputs() {
     JSON.stringify([
       {
         thought_id: '1',
-        life_id: 'l',
+        life_id: 'ag_a',
         at: iso(1),
-        name: 'ag_a',
+        name: 'Amy',
         kind: 'journal',
         text: 'same line here',
       },
       {
         thought_id: '2',
-        life_id: 'l',
+        life_id: 'ag_a',
         at: iso(2),
-        name: 'ag_a',
+        name: 'Amy',
         kind: 'journal',
         text: 'Same line here!',
       },
@@ -77,7 +84,7 @@ describe('aggregate', () => {
       repeatedJournalShare: 0.5,
       timeToFirstToolMin: 12,
     });
-    expect(r?.outcomes).toBe('moved=1 no_effect=1');
+    expect(r?.outcomes).toBe('no_effect=1 ok=1');
     expect(r?.deathCauses).toBe('drowned=1 was slain by Zombie=1');
   });
 
@@ -106,5 +113,38 @@ describe('aggregate', () => {
     expect(
       aggregate({ paper: [], body: [], positions: [], inventory: [], thoughts: [] }, 0),
     ).toEqual([]);
+  });
+
+  it('keeps a short tail inside the last window and counts samples after the last log event', () => {
+    const rows = aggregate(inputs(), 40 * 60_000);
+    // data spans 0..41 min: the 1 minute tail joins the single window, so the 10:41 chat is not a second row
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.windowEnd).toBe(DAY + 10 * 3_600_000 + 41 * 60_000 + 1);
+    expect(rows[0]?.deathsPerHour).toBeCloseTo(2 / (41 / 60), 2);
+  });
+
+  it('derives escape episodes from stalls: rung success, position change, or neither', () => {
+    const stall = (min: number): string =>
+      `{"event":"stall_diag","reason":"stall","life_id":"ag_a","at":"${iso(min)}"}`;
+    const body = parseBodyLog(
+      [
+        stall(0),
+        `{"event":"stall_diag","reason":"escape_ladder","rung":"dig","worked":true,"life_id":"ag_a","at":"${iso(1)}"}`,
+        stall(10),
+        stall(20),
+        stall(30),
+      ].join('\n'),
+      null,
+    );
+    const positions = parsePositions(
+      [
+        `${iso(20)}\tag_a\t[0.0d, 64.0d, 0.0d]`,
+        `${iso(21)}\tag_a\t[9.0d, 64.0d, 0.0d]`,
+        `${iso(30)}\tag_a\t[9.0d, 64.0d, 0.0d]`,
+        `${iso(31)}\tag_a\t[9.5d, 64.0d, 0.0d]`,
+      ].join('\n'),
+    );
+    const [r] = aggregate({ paper: [], body, positions, inventory: [], thoughts: [] }, 0);
+    expect(r).toMatchObject({ episodes: 4, episodesEscaped: 2, episodeSuccessRate: 0.5 });
   });
 });

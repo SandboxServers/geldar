@@ -13,7 +13,8 @@ const DEATH =
   /^(\S+) (was (?:slain|shot|killed|blown|burnt|burned|pricked|squashed|impaled|fireballed|pummeled|doomed|struck|stung|skewered|squished|poked|obliterated|roasted|frozen)\b.*|drowned.*|died.*|fell .*|hit the ground.*|burned to death.*|tried to swim in lava.*|starved to death.*|suffocated.*|experienced kinetic energy.*|went up in flames.*|walked into .*|withered away.*|blew up.*|discovered the floor was lava.*|froze to death.*|was .*)$/;
 const JOIN = /^(\S+) joined the game$/;
 const LEAVE = /^(\S+) left the game$/;
-const CHAT = /^<(\S+)> /;
+/** Paper 1.19+ marks unsigned chat with a [Not Secure]  prefix. */
+const CHAT = /^(?:\[Not Secure\] )?<(\S+)> /;
 
 /**
  * Parses one Paper console line (`[12:34:56 INFO]: ag_x was slain by Zombie`), with an optional
