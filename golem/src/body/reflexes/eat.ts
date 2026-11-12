@@ -5,8 +5,13 @@ import type { Reflex, ReflexOutcome } from '../reflex.ts';
 /** Hunger at or below this (of 20) fires the reflex (spec 5.2). */
 export const EAT_HUNGER_AT = 14;
 
+/** Below this hunger a hurt Body eats too: natural regeneration needs 18 of 20. */
+export const EAT_REGEN_HUNGER = 18;
+
 /** World ticks between firings: a failed meal is not retried at once. */
 const EAT_COOLDOWN_TICKS = 100;
+/** After consecutive failed meals the wait doubles each time, up to this many world ticks. */
+export const EAT_BACKOFF_CAP_TICKS = 1600;
 
 /** The foods the `eat` action would pick from: carried, and not on its banned list. */
 function pickableFoods(names: readonly string[]): string[] {
@@ -19,12 +24,21 @@ function pickableFoods(names: readonly string[]): string[] {
  */
 export function createEatReflex(): Reflex {
   let eating = false;
+  let failures = 0;
+  let failedAt: number | null = null;
+  let lastTick: number | null = null;
   return {
     name: 'eat',
     priority: 30,
     cooldownTicks: EAT_COOLDOWN_TICKS,
     check(view) {
-      if (view.hunger > EAT_HUNGER_AT) return null;
+      const hurtAndHungry = view.health < 20 && view.hunger < EAT_REGEN_HUNGER;
+      if (view.hunger > EAT_HUNGER_AT && !hurtAndHungry) return null;
+      lastTick = view.tick;
+      if (failures > 0 && failedAt !== null && view.tick !== null) {
+        const wait = Math.min(EAT_COOLDOWN_TICKS * 2 ** failures, EAT_BACKOFF_CAP_TICKS);
+        if (view.tick - failedAt < wait) return null;
+      }
       const foods = pickableFoods(view.edibleFoods());
       if (foods.length === 0) return null;
       return { hunger: view.hunger, foods: foods.length };
@@ -42,7 +56,13 @@ export function createEatReflex(): Reflex {
           { do: 'eat' },
           { signal: ctx.signal, timeScale: ctx.timeScale },
         );
-        if (run.state === 'completed') return { result: 'handled', detail: 'ate' };
+        if (run.state === 'completed') {
+          failures = 0;
+          failedAt = null;
+          return { result: 'handled', detail: 'ate' };
+        }
+        failures += 1;
+        failedAt = lastTick;
         return { result: 'failed', detail: run.result.reason ?? run.result.status };
       } finally {
         eating = false;

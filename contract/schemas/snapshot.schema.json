@@ -213,6 +213,22 @@
           "maxItems": 4,
           "items": { "$ref": "#/$defs/SnapshotHazard" }
         },
+        "food_known": {
+          "description": "Food sources the Body has seen (animals, crops, berries, dropped food), newest first, at most 10. An empty list means no food is known.",
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "x", "y", "z"],
+            "properties": {
+              "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+              "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+              "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+            }
+          }
+        },
         "blocks_counted_in_sight": {
           "description": "True when block counts only include cells the Body can see (line of sight).",
           "type": "boolean"

@@ -42,6 +42,7 @@ describe('probe registries', () => {
       'containers',
       'threat-sight',
       'reach',
+      'food-known',
     ]);
   });
 
