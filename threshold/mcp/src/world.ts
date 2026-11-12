@@ -44,6 +44,7 @@ import { sayTool } from './tools/say.ts';
 import { type SleepDeps, sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
+import { viewTool } from './tools/view.ts';
 import { createWaitState, type WaitError, type WaitState, wait } from './tools/wait.ts';
 
 /** The fixed messages the handlers add. None echoes world text or names an observer (decision 0059). */
@@ -273,7 +274,7 @@ function startSettle(deps: Wired): () => void {
 }
 
 /**
- * The 14 tool handlers of the real world and the settle timer. Each handler runs its tool function
+ * The 15 tool handlers of the real world and the settle timer. Each handler runs its tool function
  * against the Body and the stores; the player comes from the bound session.
  */
 export function createWorld(deps: WorldDeps): World {
@@ -306,6 +307,17 @@ export function createWorld(deps: WorldDeps): World {
       journalAndRecord(wired, call, (input as { text: string }).text.slice(0, JOURNAL_LINE_LIMIT)),
     ),
     read_book: bound(wired, (call) => readBookTool(wired, call)),
+    view: bound(wired, (call, input, ctx) =>
+      viewTool(
+        {
+          view: (lifeId, size) => wired.body.view(lifeId, size),
+          budget: wired.budget,
+          isOpen: () => !ctx.signal.aborted,
+        },
+        call,
+        input,
+      ),
+    ),
     write_book: unavailable('write_book'),
     define_skill: unavailable('define_skill'),
     use_skill: unavailable('use_skill'),

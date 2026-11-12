@@ -89,6 +89,7 @@ const SPEC_TOOLS = [
   'act',
   'say',
   'read_book',
+  'view',
   'write_book',
   'define_skill',
   'use_skill',
@@ -172,6 +173,11 @@ const INPUT_ROWS: Row[] = [
     tool: 'status',
     valid: [{}],
     invalid: [{ verbose: true }],
+  },
+  {
+    tool: 'view',
+    valid: [{}, { cols: 21, rows: 9 }],
+    invalid: [{ cols: 42 }, { reach: 1 }],
   },
 ];
 
@@ -308,6 +314,11 @@ const RESULT_ROWS: Row[] = [
     tool: 'journal',
     valid: [{ ok: true, mirrored_chars: 12 }],
     invalid: [{ ok: false, mirrored_chars: 12 }],
+  },
+  {
+    tool: 'view',
+    valid: [{ text: 'Facing north.' }],
+    invalid: [{ text: 'x', grid: [] }, {}],
   },
   {
     tool: 'status',

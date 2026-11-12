@@ -110,7 +110,10 @@ export function validateReachInput(value: unknown): ValidationResult<ReachPositi
 }
 
 // --- view-tool ---
-import { validateViewInput as validateViewInputSchema } from './generated/validators.js';
+import {
+  validateViewInput as validateViewInputSchema,
+  validateViewResult as validateViewResultSchema,
+} from './generated/validators.js';
 
 /** The optional grid size a `view` call names: each axis optional, checked against mcp-view.schema.json. */
 export interface ViewInput {
@@ -118,10 +121,21 @@ export interface ViewInput {
   rows?: number;
 }
 
+/** The viewport as text, checked against mcp-view.schema.json. */
+export interface ViewResult {
+  text: string;
+}
+
 /** Checks a `view` input against mcp-view.schema.json. Never throws; an extra key or an out-of-range size is rejected. */
 export function validateViewInput(value: unknown): ValidationResult<ViewInput> {
   if (validateViewInputSchema(value)) return { ok: true, value: value as ViewInput };
   return { ok: false, errors: (validateViewInputSchema.errors ?? []).map(formatError) };
+}
+
+/** Checks a `view` result against mcp-view.schema.json. Never throws; a text over 4000 characters is rejected. */
+export function validateViewResult(value: unknown): ValidationResult<ViewResult> {
+  if (validateViewResultSchema(value)) return { ok: true, value: value as ViewResult };
+  return { ok: false, errors: (validateViewResultSchema.errors ?? []).map(formatError) };
 }
 
 // --- SC-30a mcp ---
@@ -320,7 +334,7 @@ export type {
   PresenceRecord,
   SovereignCallPayload,
 } from './generated/types.ts';
-export { bookSubject, kinoFeedSubject, PRESENCE_BUCKET } from './subjects.ts';
+export { bookSubject, kinoFeedSubject, PRESENCE_BUCKET, viewSubject } from './subjects.ts';
 
 /** Checks a value against sovereign-call-event.schema.json (the payload of a `sovereign_call` event). Never throws. */
 export function validateSovereignCallPayload(

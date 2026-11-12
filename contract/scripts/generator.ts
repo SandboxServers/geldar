@@ -105,7 +105,7 @@ function snakeCase(pascal: string): string {
  * generated, but no agent sees the tool until its wave PX packet lands (recall: PX-6, reach: PX-8b,
  * view: the view-tool packet, lifted once the Body and threshold wiring is complete).
  */
-const NOT_YET_EXPOSED = new Set(['mcp-recall', 'mcp-reach', 'mcp-view']);
+const NOT_YET_EXPOSED = new Set(['mcp-recall', 'mcp-reach']);
 
 /** The tool pairs, sorted by tool name. Throws on an unpaired Input or Result, or an Input with no description. */
 function toolPairs(schemas: LoadedSchema[]): ToolPair[] {

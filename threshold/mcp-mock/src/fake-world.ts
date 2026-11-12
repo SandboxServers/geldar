@@ -62,6 +62,7 @@ export function createFakeHandlers(): ToolHandlers {
       untrusted_world_text: { book: { title: 'A Short Book', text: 'One page of plain text.' } },
       note: NOTE,
     }),
+    view: () => ({ text: 'Open ground to the north; a wall of stone three blocks east.' }),
     write_book: () => ({ book_id: makeId('bk', 2), budget_remaining_thoughts: BUDGET }),
     define_skill: () => ({
       skill_id: 'sk_mock',

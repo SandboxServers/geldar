@@ -137,7 +137,7 @@ describe('startAdamBody', () => {
     expect(o?.timeScale).toBe(2);
     expect(typeof o?.currentRevision).toBe('function');
     expect(running.generation).toBe(4);
-    expect(r.served).toHaveLength(2);
+    expect(r.served).toHaveLength(3);
     await running.stop();
   });
 
@@ -239,6 +239,7 @@ describe('startAdamBody', () => {
     expect(r.stops).toEqual([
       `unserve ${r.served[0]}`,
       `unserve ${r.served[1]}`,
+      `unserve ${r.served[2]}`,
       'executor.stop',
       'runtime.cancelAction',
       'restarted.stop',

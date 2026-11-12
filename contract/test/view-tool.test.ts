@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMcpTools, loadSchemas } from '../scripts/generator.ts';
 import { validateViewInput, validateViewResult } from '../src/generated/validators.js';
+import { viewSubject } from '../src/subjects.ts';
 
 describe('view tool schema', () => {
   it('accepts no arguments, and optional cols and rows in range', () => {
@@ -25,8 +26,14 @@ describe('view tool schema', () => {
     expect(validateViewResult({})).toBe(false);
   });
 
-  it('is not in the tool list until the wiring lands', async () => {
+  it('names the view subject on the life, with five tokens', () => {
+    expect(viewSubject('phase0', 'ag_jason_01')).toBe('geldar.phase0.body.ag_jason_01.view');
+    expect(() => viewSubject('phase0.*', 'ag_jason_01')).toThrow();
+    expect(() => viewSubject('phase0', 'ag_jason_01.>')).toThrow();
+  });
+
+  it('is in the tool list', async () => {
     const tools = buildMcpTools(await loadSchemas());
-    expect(tools).not.toContain("'view'");
+    expect(tools).toContain("'view'");
   });
 });

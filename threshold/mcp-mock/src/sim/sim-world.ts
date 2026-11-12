@@ -39,7 +39,7 @@ export interface SimWorldOptions {
 }
 
 /**
- * The scripted world: the 14 tool handlers and the three resources over one `SimHub`. Every
+ * The scripted world: the 15 tool handlers and the three resources over one `SimHub`. Every
  * handler gets its player's sim through `hub.player`, so one handler set serves all players.
  */
 export function createSimWorld(opts: SimWorldOptions): McpWorld & { hub: SimHub } {
@@ -54,6 +54,7 @@ export function createSimWorld(opts: SimWorldOptions): McpWorld & { hub: SimHub 
     act: (input, ctx) => actTool(hub, ctx, input as Parameters<typeof actTool>[2]),
     say: (input, ctx) => sayTool(hub, ctx, input as SayInput),
     read_book: (_input, ctx) => readBookTool(hub, ctx),
+    view: () => ({ text: 'Facing north. Grass ahead, a stone wall to the east.' }),
     write_book: (input, ctx) => writeBookTool(hub, ctx, input as WriteBookInputArgs),
     define_skill: (input, ctx) => defineSkillTool(hub, ctx, input as DefineSkillInput),
     use_skill: (input, ctx) => useSkillTool(hub, ctx, input as UseSkillInput),

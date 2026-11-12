@@ -11,12 +11,16 @@ import {
   planSubject,
   type Snapshot,
   snapshotSubject,
+  type ViewInput,
   validatePlanAck,
   validatePlanMessage,
   validatePlanResultPayload,
   validateSnapshot,
   validateSnapshotRequest,
+  validateViewInput,
+  validateViewResult,
   validateWorldEvent,
+  viewSubject,
   type WorldEvent,
 } from '@geldar/contract';
 import type { NatsConnection } from '@nats-io/transport-node';
@@ -41,6 +45,19 @@ const TICKS_PER_DAY = 24_000;
 const DETAIL_LIMIT = 256;
 
 const THOUGHT_ID = /^th_[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/** The view reply when a view is refused or cannot be read: a typed failure, never a bare throw. */
+const VIEW_UNAVAILABLE = JSON.stringify({ error: 'unavailable' });
+
+/** The `ViewInput` of a view request, or null when the request is not one the contract accepts. */
+function parseViewRequest(data: string): ViewInput | null {
+  try {
+    const checked = validateViewInput(JSON.parse(data));
+    return checked.ok ? checked.value : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Where requests arrive: `serve` calls `handler` for each message on `subject`; `reply` sends the
@@ -90,6 +107,8 @@ export interface MindLinkServerOptions {
   voice: Voice;
   /** Builds the snapshot from the bot's state plus the options; throws on an invalid one. */
   buildSnapshot: (options: SnapshotOptions) => Snapshot;
+  /** The text viewport of the bot at the size asked; throws when it cannot be read. Without it `view` is refused. */
+  view?: (size: ViewInput) => Promise<string>;
   /** World age now. */
   tick: () => number;
   /** Where `plan_result` events go (JetStream in production). */
@@ -122,7 +141,25 @@ export class MindLinkServer {
       server.serve(planSubject(shard, lifeId), (data, reply) =>
         Promise.resolve(this.onPlan(data, reply)),
       ),
+      server.serve(viewSubject(shard, lifeId), (data, reply) => this.onViewRequest(data, reply)),
     );
+  }
+
+  /**
+   * Answers a view request with the text viewport, or `{"error":"unavailable"}` when the request is
+   * refused, no view is wired, or the bot cannot be read. Never throws: the Mind always gets a reply.
+   */
+  private async onViewRequest(data: string, reply: (body: string) => void): Promise<void> {
+    const size = parseViewRequest(data);
+    if (size === null || this.opts.view === undefined) return reply(VIEW_UNAVAILABLE);
+    try {
+      const text = await this.opts.view(size);
+      const checked = validateViewResult({ text });
+      return reply(checked.ok ? JSON.stringify({ text }) : VIEW_UNAVAILABLE);
+    } catch (error) {
+      this.log(`view not read: ${String(error)}`);
+      return reply(VIEW_UNAVAILABLE);
+    }
   }
 
   /** Stops serving at once, without waiting: a plan that arrives after this is not accepted. */
