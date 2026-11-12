@@ -24,6 +24,12 @@ const FLEE_RANGE = 3;
 const HISS_RADIUS = 5;
 /** Ticks between two firings of this reflex: a flee within 2 s is suppressed (PX-7 cooldown). */
 const FLEE_COOLDOWN_TICKS = 40;
+/** An arrow in flight this close (blocks) that flies at the Body makes it sidestep (PX-7). */
+const ARROW_RADIUS = 6;
+/** How far (blocks) a sidestep moves the Body across the arrow's line. */
+const SIDESTEP_BLOCKS = 3;
+/** How close to the sidestep point counts as arrived. */
+const SIDESTEP_RANGE = 1;
 /** How often (wall ms) a fight checks that the Body's health is still above the floor. */
 const HEALTH_WATCH_MS = 100;
 /** Flight directions tried in turn, in radians off the line straight away from the attacker. */
@@ -41,6 +47,20 @@ function hissTrigger(view: BodyView): Trigger | null {
     distance: Math.round(creeper.distance * 10) / 10,
     armed: false,
     cause: 'hiss',
+  };
+}
+
+/** The trigger for the nearest closing arrow within ARROW_RADIUS that the view lists (PX-7 sidestep). */
+function arrowTrigger(view: BodyView): Trigger | null {
+  const arrow = view.arrowsNear?.(ARROW_RADIUS).find((a) => a.closing);
+  if (!arrow) return null;
+  return {
+    health: view.health,
+    hostile: 'arrow',
+    distance: Math.round(arrow.distance * 10) / 10,
+    armed: false,
+    cause: 'arrow',
+    bearing: arrow.bearing,
   };
 }
 
@@ -75,12 +95,13 @@ export const fightOrFleeReflex: Reflex = {
         };
       }
     }
-    return hissTrigger(view);
+    return hissTrigger(view) ?? arrowTrigger(view);
   },
   async run(trigger: Trigger, ctx: ReflexContext): Promise<ReflexOutcome> {
     await ctx.cancelAction();
     const name = String(trigger.hostile);
     if (trigger.cause === 'hiss') return flee(ctx, name, 'hiss');
+    if (trigger.cause === 'arrow') return sidestep(ctx, String(trigger.bearing));
     if (trigger.armed === true && ctx.view.health > LOW_HEALTH) {
       const fight = await fightHostile(ctx, name);
       if (fight.outcome.result === 'handled' || !fight.lowHealth) return fight.outcome;
@@ -131,6 +152,29 @@ function attackRegistry(ctx: ReflexContext): ActionRegistry {
   const own = new ActionRegistry();
   own.register(attackAction);
   return own;
+}
+
+/**
+ * Steps across an arrow's line: an arrow on the left sends the Body right, an arrow on the right
+ * sends it left, and an arrow in front or behind sends it right. The step is SIDESTEP_BLOCKS along
+ * the Body's right vector (mineflayer's yaw: right is (cos yaw, -sin yaw)); a missing yaw reads as 0.
+ */
+export async function sidestep(ctx: ReflexContext, bearing: string): Promise<ReflexOutcome> {
+  const sign = bearing === 'right' ? -1 : 1;
+  const yaw = ctx.view.yaw ?? 0;
+  const here = ctx.view.position;
+  const goal = {
+    x: here.x + 0.5 + sign * Math.cos(yaw) * SIDESTEP_BLOCKS,
+    y: here.y,
+    z: here.z + 0.5 - sign * Math.sin(yaw) * SIDESTEP_BLOCKS,
+  };
+  const move = await moveNear(ctx.bot, goal, SIDESTEP_RANGE, {
+    signal: ctx.signal,
+    timeScale: ctx.timeScale,
+  });
+  const side = sign > 0 ? 'right' : 'left';
+  if (move.ok) return { result: 'handled', detail: `arrow from ${bearing}: sidestepped ${side}` };
+  return { result: 'failed', detail: `arrow from ${bearing}: sidestep ended ${move.reason}` };
 }
 
 /** Runs from the named hostile, trying a few directions, then raises the danger wake. */
