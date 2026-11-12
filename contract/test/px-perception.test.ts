@@ -10,7 +10,7 @@ import {
   validateRecallResult,
   validateStatusResult,
 } from '../src/generated/validators.js';
-import { validateSnapshot } from '../src/index.ts';
+import { heardSoundSentence, validateSnapshot } from '../src/index.ts';
 
 /** A minimal valid snapshot: every required field, no optional perception field. */
 const base = {
@@ -151,6 +151,24 @@ describe('PX event payloads', () => {
     expect(
       validateHeardSoundEvent({ type: 'heard_sound', sound: 'hiss', dir: 'up', band: 'near' }),
     ).toBe(false);
+  });
+
+  it('words a heard sound by its band and compass point, and drops both when unknown', () => {
+    expect(heardSoundSentence({ sound: 'hiss', dir: 'n', band: 'near' })).toBe(
+      'You hear hissing close to the north.',
+    );
+    expect(heardSoundSentence({ sound: 'hiss', dir: 'ne', band: 'mid' })).toBe(
+      'You hear hissing to the northeast.',
+    );
+    expect(heardSoundSentence({ sound: 'hiss', dir: 'w', band: 'far' })).toBe(
+      'You hear hissing far off to the west.',
+    );
+    expect(heardSoundSentence({ sound: 'hiss', dir: 'w', band: 'close' })).toBe(
+      'You hear hissing.',
+    );
+    expect(heardSoundSentence({ sound: 'hiss', dir: 'up', band: 'near' })).toBe(
+      'You hear hissing.',
+    );
   });
 });
 

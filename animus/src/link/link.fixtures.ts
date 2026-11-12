@@ -13,6 +13,7 @@ export function idOf(prefix: 'th' | 'sn' | 'in' | 'ac' | 'ev', n: number): strin
 /** A well-formed payload for each type the Mind reads. */
 export const PAYLOADS: Record<string, Record<string, unknown>> = {
   wake: { reason: 'no_plan', tick: 5, intent_id: null },
+  heard_sound: { type: 'heard_sound', sound: 'hiss', dir: 'n', band: 'near' },
   intent: {
     intent_id: idOf('in', 1),
     life_id: LIFE,

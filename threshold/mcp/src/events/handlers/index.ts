@@ -1,6 +1,7 @@
 import { actionOutcomeHandler } from './action-outcome.ts';
 import { damageHandler } from './damage.ts';
 import { deathHandler } from './death.ts';
+import { heardSoundHandler } from './heard-sound.ts';
 import { intentHandler } from './intent.ts';
 import { planResultHandler } from './plan-result.ts';
 import { reflexFiredHandler } from './reflex-fired.ts';
@@ -22,4 +23,5 @@ export const MIND_HANDLERS: readonly MindHandler[] = [
   planResultHandler,
   actionOutcomeHandler,
   wakeHandler,
+  heardSoundHandler,
 ];
