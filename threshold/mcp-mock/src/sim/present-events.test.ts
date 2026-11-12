@@ -54,9 +54,9 @@ describe('mock present-events registry', () => {
     ]);
   });
 
-  it('the built-in registry has one presenter per kind, eleven in all', () => {
+  it('the built-in registry has one presenter per kind, twelve in all', () => {
     const kinds = PRESENT_HANDLERS.map((h) => h.kind);
-    expect(kinds).toHaveLength(11);
+    expect(kinds).toHaveLength(12);
     expect(new Set(kinds).size).toBe(kinds.length);
   });
 });

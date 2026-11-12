@@ -5,6 +5,7 @@ import { damagePresenter } from './damage.ts';
 import { deathPresenter } from './death.ts';
 import { heardSoundPresenter } from './heard-sound.ts';
 import { intentPresenter } from './intent.ts';
+import { maintenancePresenter } from './maintenance.ts';
 import { reflexPresenter } from './reflex.ts';
 import { speechPresenter } from './speech.ts';
 import type { PresentCall, PresentHandler } from './types.ts';
@@ -33,6 +34,7 @@ export const PRESENT_HANDLERS: readonly PresentHandler[] = [
   reflexPresenter,
   wakePresenter,
   heardSoundPresenter,
+  maintenancePresenter,
 ];
 
 /**
