@@ -67,11 +67,6 @@ const REJECTED: Row[] = [
     path: '/actions/0/do',
   },
   {
-    name: 'give',
-    text: thought({ actions: [{ do: 'give', to: 'Eve', item: 'bread', count: 1 }] }),
-    code: 'not_allowed',
-  },
-  {
     name: 'write_sign',
     text: thought({ actions: [{ do: 'write_sign', text: 'hi' }] }),
     code: 'not_allowed',
@@ -80,13 +75,6 @@ const REJECTED: Row[] = [
     name: 'propose',
     text: thought({ actions: [{ do: 'propose', rule: 'r', value: 1, reason: 'x' }] }),
     code: 'not_allowed',
-  },
-  { name: 'note', text: thought({ actions: [{ do: 'note', text: 'x' }] }), code: 'not_allowed' },
-  {
-    name: 'follow program',
-    text: thought({ intent: intent({ program: 'follow', arguments: {} }) }),
-    code: 'not_allowed',
-    path: '/intent/program',
   },
   {
     name: 'build program',
@@ -382,7 +370,6 @@ describe('corrective message', () => {
 /** Verbs the MCP `act` description lists that the Phase 0 allow-list deliberately refuses, with why. */
 const EXCLUDED_FROM_PHASE0: Record<string, string> = {
   build: 'needs the build planner; Phase 1',
-  give: 'item transfer between agents; Phase 1',
   write_sign: 'text on signs; Phase 1',
   write_book: 'books; Phase 1',
   read_book: 'books; Phase 1',
@@ -391,7 +378,6 @@ const EXCLUDED_FROM_PHASE0: Record<string, string> = {
   offer: 'trade; Phase 1',
   propose: 'governance; Phase 1',
   vote: 'governance; Phase 1',
-  note: 'outside the Phase 0 allow-list; the Mind keeps notes through reflection',
 };
 
 describe('the allow-list and the MCP verb list', () => {
@@ -410,6 +396,18 @@ describe('the allow-list and the MCP verb list', () => {
     expect(validator.parseThought(thought({ actions: [{ do: 'unstick' }] })).ok).toBe(true);
   });
 
+  it('makes give and note callable and follow an intent program with its limits', () => {
+    expect(PHASE0_VERBS).toEqual(expect.arrayContaining(['give', 'note']));
+    expect(PHASE0_PROGRAMS).toContain('follow');
+    const follow = (args: Record<string, unknown>) =>
+      validator.parseThought(thought({ intent: intent({ program: 'follow', arguments: args }) }));
+    expect(follow({ target: 'Pike' }).ok).toBe(true);
+    expect(follow({ target: 'Pike', max_unseen_seconds: 30 }).ok).toBe(true);
+    expect(follow({ target: 'Pike', max_unseen_seconds: 500 }).ok).toBe(false);
+    expect(follow({ target: { x: 1, y: 64, z: 1 } }).ok).toBe(false);
+    expect(follow({}).ok).toBe(false);
+  });
+
   it('has every listed verb either callable or excluded with a reason', () => {
     expect(listed.length).toBeGreaterThan(10);
     for (const verb of listed) {
@@ -423,7 +421,7 @@ describe('the allow-list and the MCP verb list', () => {
 
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v3.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v4.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];

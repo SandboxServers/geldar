@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { completed, failed } from '../actions/outcome.ts';
 import { receiptIdFor } from './derived-id.ts';
 import {
   executorHarness,
@@ -79,6 +80,41 @@ describe('submit: validity', () => {
     const missing = await h.executor.submit(thought({ intent: {} }), noIntentId);
     expect(missing.rejection?.reason).toBe('invalid_plan');
     expect(h.handlers.runs).toEqual([]);
+  });
+});
+
+describe('submit: give receipts', () => {
+  const GIVE = { do: 'give', to: 'Eve', item: 'bread', count: 2 } as const;
+  const register = (h: ReturnType<typeof executorHarness>, ok: boolean) =>
+    h.runtime.actions.register({
+      kind: 'give',
+      timeoutMs: 1000,
+      run: async () => (ok ? completed() : failed('not_found', 'no such agent in sight')),
+    });
+
+  it('writes a prepared receipt, then a committed one, for a give that completes', async () => {
+    const h = executorHarness();
+    register(h, true);
+    const r = await h.executor.submit(thought({ actions: [GIVE] }), planFor(1));
+    const id = r.actions[0]?.record.action_id ?? '';
+    expect(h.sink.receipts.map((x) => [x.phase, x.item, x.count, x.receipt_id])).toEqual([
+      ['prepared', 'bread', 2, receiptIdFor(id, 'prepared')],
+      ['committed', 'bread', 2, receiptIdFor(id, 'committed')],
+    ]);
+  });
+
+  it('writes a prepared receipt, then an aborted one, for a give that fails', async () => {
+    const h = executorHarness();
+    register(h, false);
+    await h.executor.submit(thought({ actions: [GIVE] }), planFor(1));
+    expect(h.sink.receipts.map((x) => x.phase)).toEqual(['prepared', 'aborted']);
+    expect(h.sink.receipts[1]?.detail).toBe('no such agent in sight');
+  });
+
+  it('writes no prepared receipt for a non-economic action', async () => {
+    const h = executorHarness();
+    await h.executor.submit(thought({ actions: waits(1) }), planFor(1));
+    expect(h.sink.receipts.map((x) => x.phase)).toEqual(['committed']);
   });
 });
 

@@ -1,5 +1,7 @@
 import type { Action } from '@geldar/contract';
+import { findVisibleAgent } from '../perception/visible-agent.ts';
 import type { Position } from './bot-types.ts';
+import { NOT_IN_SIGHT } from './give.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, completed, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -37,10 +39,10 @@ export const gotoAction: ActionHandler<'goto'> = {
     let aim: Position;
     let range: number;
     if (target.kind === 'player') {
-      const entity = ctx.bot.players[target.name]?.entity;
-      // Also covers a player known to the server but outside render distance (no entity loaded).
-      if (!entity) return failed('not_found', `no player ${target.name} in view`);
-      aim = { x: entity.position.x, y: entity.position.y, z: entity.position.z };
+      // Only an agent the character sees now; a name that is far, hidden or unknown fails alike (0058, 0145).
+      const agent = findVisibleAgent(ctx.bot, target.name);
+      if (!agent) return failed('not_found', NOT_IN_SIGHT);
+      aim = { x: agent.position.x, y: agent.position.y, z: agent.position.z };
       range = 2;
     } else {
       // Aim at the block center; one block of range is enough to stand next to it.
