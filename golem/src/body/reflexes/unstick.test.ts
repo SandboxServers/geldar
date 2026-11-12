@@ -51,9 +51,52 @@ describe('unstick reflex trigger', () => {
     expect(stallCount(view)).toBe(0);
   });
 
+  it.each(['way was blocked', 'no path', 'no path to the goal'])(
+    'counts a blocked failure ("%s") at the same spot as a stall',
+    (text) => {
+      const view = settableView();
+      const here = { x: 18.5, y: 68, z: 81.5 };
+      noteGoto(view, 'failed', 'blocked', text, false, here);
+      noteGoto(view, 'failed', 'blocked', text, false, { ...here, x: here.x + 0.8 });
+      expect(unstickReflex.check(view)).toEqual({ stalls: 2, attempt: 1 });
+    },
+  );
+
+  it('restarts the count when the stalls are more than a block apart, and clears attempts past 3 blocks', () => {
+    const view = settableView();
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, { x: 0, y: 64, z: 0 });
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, { x: 2, y: 64, z: 0 });
+    expect(stallCount(view)).toBe(1);
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, { x: 2, y: 64, z: 0.5 });
+    expect(unstickReflex.check(view)).toEqual({ stalls: 2, attempt: 1 });
+  });
+
+  it('gives attempts back only when the stall is more than 3 blocks from the streak start', async () => {
+    const view = settableView();
+    const at = { x: 0, y: 64, z: 0 };
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, at);
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, at);
+    const { registry } = registryWith('trapped');
+    for (let i = 1; i <= MAX_ATTEMPTS; i++) {
+      await unstickReflex.run({}, reflexContext(fakeBot(), view, registry));
+    }
+    expect(unstickReflex.check(view)).toBeNull();
+    // Two blocks away: a new count, but the attempts stay used up.
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, { x: 2, y: 64, z: 0 });
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, { x: 2, y: 64, z: 0 });
+    expect(unstickReflex.check(view)).toBeNull();
+    // More than 3 blocks from where that streak began: attempts are back.
+    const far = { x: 9, y: 64, z: 0 };
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, far);
+    noteGoto(view, 'failed', 'blocked', 'way was blocked', false, far);
+    expect(unstickReflex.check(view)).toEqual({ stalls: 2, attempt: 1 });
+  });
+
   it('ignores other failures and clears on an arrival', () => {
     const view = settableView();
-    noteGoto(view, 'failed', 'blocked', 'no path');
+    // Failures about the goal, not the bot's own cell, are never stalls (documented on noteGoto).
+    noteGoto(view, 'failed', 'timeout', 'timed out');
+    noteGoto(view, 'failed', 'interrupted', 'interrupted');
     noteGoto(view, 'failed', 'not_found', STALL);
     noteGoto(view, 'cancelled', undefined, undefined);
     expect(stallCount(view)).toBe(0);
