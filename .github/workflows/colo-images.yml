@@ -19,6 +19,7 @@ on:
       - glass/**
       - threshold/register/**
       - tools/mcp-tokens/**
+      - tools/players-cli/**
       - tools/migrate/**
       - golem/src/players/**
       - sql/**

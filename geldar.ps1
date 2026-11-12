@@ -365,7 +365,7 @@ function Get-NatsUsers([string] $Shard) {
   $kv = { param($b) "`$KV.$b.>" }
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
   return [ordered]@{
-    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'));
+    body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
       PubDeny = @("geldar.$s.kino.>");
       Sub = @("geldar.$s.body.>", '_INBOX.>') }
