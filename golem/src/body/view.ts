@@ -18,6 +18,8 @@ export interface HostileView {
    * Optional so a hand-built view may leave it out; a reflex reads a missing value as true.
    */
   attacking?: boolean;
+  /** True for a creeper whose fuse is lit (it hisses). Optional like `attacking`; only a creeper sets it. */
+  hissing?: boolean;
 }
 
 /**
@@ -85,6 +87,8 @@ export interface TrackedBodyView extends BodyView {
 }
 
 const DEFAULT_HOSTILE_RADIUS = 16;
+/** Entity metadata slot that is true while a creeper's fuse is lit (the same slot perception/entities.ts reads). */
+const CREEPER_IGNITED_SLOT = 18;
 /** A mob within this many blocks can melee the Body. */
 const MELEE_REACH = 4;
 /** Cosine of the half-angle (60 degrees) within which a mob counts as facing the Body. */
@@ -183,11 +187,14 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         const body = entity.position.offset(0, (entity.height ?? 1) / 2, 0);
         if (!canSeePoint(bot, body)) continue;
         const { x, y, z } = entity.position;
+        const meta = (entity as unknown as { metadata?: unknown[] }).metadata;
+        const hissing = entity.name === 'creeper' && meta?.[CREEPER_IGNITED_SLOT] === true;
         found.push({
           name: entity.name ?? 'unknown',
           distance,
           position: { x, y, z },
           attacking: distance <= MELEE_REACH && isFacing(entity, here),
+          ...(hissing ? { hissing } : {}),
         });
       }
       return found.sort((a, b) => a.distance - b.distance);

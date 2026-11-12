@@ -32,7 +32,7 @@ describe('probe registries', () => {
     expect(SELF_PROBES.map((entry) => entry.file)).toEqual([
       'sky-ground',
       'light-regen',
-      'gear-flags',
+      'self-flags',
     ]);
   });
 
@@ -47,8 +47,8 @@ describe('probe registries', () => {
 
   it('keeps the sky probe output in the self registry, whichever other probes are filled in', () => {
     // Open air with sky above and no time: no ground in 32 cells (perched). Superset check, so a
-    // later PX packet that fills another self probe does not break this test. armor is the stub
-    // value from main (gear-flags, 0 until wave 4).
+    // later PX packet that fills another self probe does not break this test. armor is 0 because
+    // no armour is equipped (self-flags reads the four equipment slots).
     expect(selfProbes(new FakeWorld().bot)).toMatchObject({
       armor: 0,
       ground_below: 32,
