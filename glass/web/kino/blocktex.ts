@@ -1,9 +1,10 @@
 // Block state -> BlueMap texture ids, biome tints and the fallback colour. Pure; no DOM.
 // The plugin sends Bukkit block data strings: "minecraft:oak_leaves[distance=7,persistent=false]".
 
+import { parseProps } from './blockshape.ts';
 import type { Face } from './mesher.ts';
 
-const DERIVED_SUFFIX = /_(stairs|slab|fence_gate|fence|wall|button|pressure_plate)$/;
+const DERIVED_SUFFIX = /_(stairs|slab|fence_gate|fence|wall|button|pressure_plate|carpet)$/;
 
 /** Block names whose texture lives under another name, per face ('side' means any side). */
 const SPECIAL: Record<string, Partial<Record<'top' | 'bottom' | 'side', string[]>>> = {
@@ -14,12 +15,40 @@ const SPECIAL: Record<string, Partial<Record<'top' | 'bottom' | 'side', string[]
   water: { top: ['water_still'], bottom: ['water_still'], side: ['water_still'] },
   lava: { top: ['lava_still'], bottom: ['lava_still'], side: ['lava_still'] },
   grass: { top: ['short_grass', 'grass'], bottom: ['short_grass'], side: ['short_grass', 'grass'] },
-  tall_grass: {
-    top: ['tall_grass_top'],
-    bottom: ['tall_grass_bottom'],
-    side: ['tall_grass_bottom'],
+  kelp: { top: ['kelp_plant'], bottom: ['kelp_plant'], side: ['kelp_plant'] },
+  wall_torch: { top: ['torch'], bottom: ['torch'], side: ['torch'] },
+  soul_wall_torch: { top: ['soul_torch'], bottom: ['soul_torch'], side: ['soul_torch'] },
+  redstone_wall_torch: {
+    top: ['redstone_torch'],
+    bottom: ['redstone_torch'],
+    side: ['redstone_torch'],
   },
 };
+
+/** Two-block-tall plants and doors have a texture per half. */
+const TWO_HALVES =
+  /^(?:tall_grass|large_fern|sunflower|lilac|rose_bush|peony|tall_seagrass|pitcher_plant|.+_door)$/;
+
+/** Crop stage texture: the block's age mapped to the stage number of its texture set. */
+const CROP_STAGES: Record<string, (age: number) => number> = {
+  sweet_berry_bush: (a) => a,
+  wheat: (a) => a,
+  beetroots: (a) => a,
+  nether_wart: (a) => (a === 0 ? 0 : a < 3 ? 1 : 2),
+  carrots: (a) => (a < 2 ? 0 : a < 4 ? 1 : a < 7 ? 2 : 3),
+  potatoes: (a) => (a < 2 ? 0 : a < 4 ? 1 : a < 7 ? 2 : 3),
+};
+
+/** Texture ids that depend on block-state properties (half, age), best first. */
+function stateTextureIds(ns: string, name: string, props: Record<string, string>): string[] {
+  if (TWO_HALVES.test(name)) {
+    const half = props.half === 'upper' ? 'top' : 'bottom';
+    return [`${ns}:block/${name}_${half}`];
+  }
+  const stage = CROP_STAGES[name];
+  if (stage) return [`${ns}:block/${name}_stage${stage(Number(props.age) || 0)}`];
+  return [];
+}
 
 function parseState(state: string): { ns: string; name: string } | null {
   const m = /^([^:[]+):([^[]+)/.exec(state);
@@ -33,7 +62,7 @@ function stems(name: string): string[] {
   const m = DERIVED_SUFFIX.exec(name);
   if (m) {
     const stem = name.slice(0, m.index);
-    out.push(stem, `${stem}_planks`, `${stem}s`, `${stem}_block`);
+    out.push(stem, `${stem}_planks`, `${stem}s`, `${stem}_block`, `${stem}_wool`);
     if (stem.endsWith('_brick')) out.push(`${stem}s`);
   }
   return out;
@@ -44,7 +73,7 @@ export function faceTextureIds(state: string, face: Face): string[] {
   const p = parseState(state);
   if (!p) return [];
   const kind = face === 'py' ? 'top' : face === 'ny' ? 'bottom' : 'side';
-  const ids: string[] = [];
+  const ids: string[] = stateTextureIds(p.ns, p.name, parseProps(state).props);
   for (const name of stems(p.name)) {
     const base = `${p.ns}:block/${name}`;
     for (const s of SPECIAL[name]?.[kind] ?? []) ids.push(`${p.ns}:block/${s}`);
@@ -58,15 +87,14 @@ export function faceTextureIds(state: string, face: Face): string[] {
 const GRASS = 0x79c05a;
 const FOLIAGE = 0x48b518;
 
+/** Grey vanilla textures the game multiplies by the biome grass colour. Flowers and mushrooms are not here. */
+const GRASS_TINTED =
+  /^(?:grass_block_top|short_grass|grass|tall_grass_(?:top|bottom)|fern|large_fern_(?:top|bottom)|sugar_cane|lily_pad)$/;
+
 /** Vanilla ships these textures grey; the game multiplies them by a biome colour. A fixed plausible one here. */
 export function tintFor(textureId: string): number | null {
   const name = textureId.replace(/^[^:]*:block\//, '');
-  if (
-    /^(grass_block_top|short_grass|grass|tall_grass_(top|bottom)|fern|large_fern_(top|bottom))$/.test(
-      name,
-    )
-  )
-    return GRASS;
+  if (GRASS_TINTED.test(name)) return GRASS;
   if (name === 'spruce_leaves') return 0x619961;
   if (name === 'birch_leaves') return 0x80a755;
   if (/^(oak|jungle|acacia|dark_oak|mangrove)_leaves$|^vine$/.test(name)) return FOLIAGE;

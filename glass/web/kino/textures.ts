@@ -103,12 +103,26 @@ export function buildAtlasLayout(ids: Iterable<string>): AtlasLayout {
 /** The texture ids to try for a block state's face, best first. */
 export const textureCandidates = faceTextureIds;
 
-export function makeUvLookup(layout: AtlasLayout): UvLookup {
-  return (state, face: Face) => {
+export function makeUvLookup(
+  layout: AtlasLayout,
+  textures?: ReadonlyMap<string, { color: readonly number[] }>,
+): UvLookup {
+  const lookup: UvLookup = (state, face: Face) => {
     for (const id of textureCandidates(state, face)) {
       const slot = layout.slotOf.get(id);
       if (slot !== undefined) return layout.uvOfSlot(slot);
     }
     return layout.uvOfSlot(0);
   };
+  if (textures) {
+    // The average alpha of the side texture decides whether a rule-less block may be a cube.
+    lookup.coverage = (state) => {
+      for (const id of textureCandidates(state, 'pz')) {
+        const entry = textures.get(id);
+        if (entry) return entry.color[3] ?? 1;
+      }
+      return undefined;
+    };
+  }
+  return lookup;
 }
