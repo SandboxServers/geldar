@@ -77,7 +77,11 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
     },
     velocity: { pub: [...VELOCITY_PUB], sub: ['_INBOX.>'] },
     // Kino: the plugin reads control and publishes the feed; Glass reads the feed and publishes control (and only that).
-    paper: { pub: [`geldar.${s}.>`, ...JS], sub: [`geldar.${s}.kino.control`, '_INBOX.>'] },
+    // Maintenance (CD-1c): the plugin subscribes to the notice subject; only the deploy publishes it (CD-1d).
+    paper: {
+      pub: [`geldar.${s}.>`, ...JS],
+      sub: [`geldar.${s}.kino.control`, `geldar.${s}.maintenance`, '_INBOX.>'],
+    },
     kino: { pub: [`geldar.${s}.kino.control`], sub: [`geldar.${s}.kino.*.feed`, '_INBOX.>'] },
   };
 }
