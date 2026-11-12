@@ -1,6 +1,6 @@
 /**
  * What each sovereign tool charges (spec 5.15.3, "Budget and fairness"): each action inside `act`,
- * each `say` and each intent costs one credit; `wait`, `look`, `read_book` and `status` are free.
+ * each `say` and each intent costs one credit; `wait`, `look`, `read_book`, `status` and `recall` are free.
  * Every state-changing tool costs the same whichever door it arrives through, so there is no side
  * door around the budget.
  */
@@ -33,7 +33,7 @@ const CHARGED_TOOLS = new Set([
   'vote',
 ]);
 
-/** True for the tools whose accepted items are charged; `wait`, `look`, `read_book` and `status` are not. */
+/** True for the tools whose accepted items are charged; `wait`, `look`, `read_book`, `status` and `recall` are not. */
 export function toolCharges(tool: string): boolean {
   return CHARGED_TOOLS.has(tool);
 }

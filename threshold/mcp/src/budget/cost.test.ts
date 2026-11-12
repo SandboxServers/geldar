@@ -18,6 +18,10 @@ describe('credit cost', () => {
     expect(toolCharges('read_book')).toBe(false);
     expect(toolCharges('status')).toBe(false);
   });
+
+  it('never charges recall: a remembered container read is free', () => {
+    expect(toolCharges('recall')).toBe(false);
+  });
 });
 
 describe('accrual', () => {
