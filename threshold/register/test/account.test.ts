@@ -85,11 +85,11 @@ describe('sign-up consent (C7-08)', () => {
     expect(store.consents).toEqual([]);
   });
 
-  it('writes one consent row with the draft terms version when the box was ticked', async () => {
+  it('writes one consent row with the approved terms version when the box was ticked', async () => {
     await start();
     await signIn('5002', true);
     expect(store.consents).toHaveLength(1);
-    expect(store.consents[0]?.termsVersion).toBe('draft-1');
+    expect(store.consents[0]?.termsVersion).toBe('v1');
     // The consent row is for the same identity as the owner it was written with.
     expect(store.consents[0]?.identityHash).toBe([...store.owners.keys()][0]);
   });

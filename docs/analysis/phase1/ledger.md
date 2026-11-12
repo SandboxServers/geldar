@@ -127,7 +127,7 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-05 | Onboarding after create or rotate; corrected players README | C7-B | C | C7-02 | BlockedDecision (Q1 expiry text) | 0151 | Y [Q1] |
 | C7-06 | Account page v2 (mobile CSS, status, toggles, thoughts form, error pages) | C7-B | C | C7-04, C7-05 | Ready (after deps) | none | N |
 | C7-07 | Agent rename (skin choice deferred) | C7-B | D | C7-04 | Ready (after deps) | none | N (skin: Q7) |
-| C7-08 | Terms, privacy notice, consent (drafts for owner review) | C7-C | E | none (text) | BlockedDecision (owner approves text) | 0153 | Y [Q4, Q5, Q8] |
+| C7-08 | Terms, privacy notice, consent (version 1 approved by owner 2026-11-11) | C7-C | E | none (text) | Done (text approved; Q8 answered; 0155) | 0153, 0155 | Y [Q4, Q5 open for C7-09] |
 | C7-09 | Account deletion and data export | C7-C | E | C7-02, C7-03, C7-08 | BlockedDecision (Q4, Q5) | 0153 | Y [Q4, Q5] |
 | C7-10 | Operator console and register audit trail; ban reasons | C7-D | F | C7-03, C7-04 | Ready (after deps; reason codes owner) | none | N |
-| C7-11 | Sign-up gate (not a code packet) | C7-E | G | C7-05, C7-06, C7-08, C7-09 | BlockedDecision (owner opens sign-up) | 0153 | Y |
+| C7-11 | Sign-up gate (not a code packet) | C7-E | G | C7-05, C7-06, C7-08, C7-09 | Legal gate cleared (C7-08 done, 0155); open: C7-05, C7-06, C7-09; owner opens sign-up | 0153, 0155 | Y |

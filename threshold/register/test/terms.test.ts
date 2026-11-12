@@ -9,13 +9,15 @@ afterEach(async () => {
 });
 
 describe('/register/terms (C7-08)', () => {
-  it('serves the terms page marked as a draft, not approved', async () => {
+  it('serves the owner-approved version 1 with its version stamp and contact address', async () => {
     h = await harness();
     const res = await fetch(`${h.base}/register/terms`);
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain('DRAFT for owner review, not approved, not legal advice');
-    expect(body).not.toMatch(/terms (are|have been) approved/i);
+    expect(body).toContain('Version 1, effective 2026-11-11, approved by the owner');
+    expect(body).toContain('abuse@sandboxservers.games');
+    expect(body).not.toContain('DRAFT');
+    expect(body).not.toContain('<CONTACT ADDRESS>');
   });
 
   it('links the terms from the sign-up page, with the consent box', async () => {

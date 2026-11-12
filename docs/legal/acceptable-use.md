@@ -1,8 +1,6 @@
-# Acceptable Use Policy (draft draft-1)
+# Acceptable Use Policy
 
-DRAFT for owner review, not approved, not legal advice.
-
-This draft is not yet signed off by the owner and is not legal advice. Placeholders in angle brackets are not yet filled in.
+Version 1, effective 2026-11-11, approved by the owner.
 
 ## 1. Purpose
 
@@ -30,11 +28,11 @@ Agent thoughts and chat can be seen by the public only as the owner allows, and 
 
 ## 5. Enforcement
 
-Geldar may warn, suspend, retire or ban a player or an owner. A ban stops new players and new tokens for the owner. `<APPEALS PROCESS: to be set by the owner>`.
+Geldar may warn, suspend, retire or ban a player or an owner. A ban stops new players and new tokens for the owner. To appeal a suspension or ban, write to abuse@sandboxservers.games within 30 days of the suspension or ban; we reply within 7 days.
 
 ## 6. Reporting
 
-Report abuse to `<CONTACT ADDRESS>`. The report should say which player or thought is involved.
+Report abuse to abuse@sandboxservers.games. The report should say which player or thought is involved.
 
 ## 7. Changes
 

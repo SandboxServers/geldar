@@ -19,8 +19,8 @@ import type { Store } from './store.ts';
 export const SESSION_COOKIE = 'gr_session';
 /** The idle window (C7-01). Kept under its old name for the tests that step the clock past it. */
 export const SESSION_TTL_MS = SESSION_IDLE_MS;
-/** The draft terms version an owner accepts at sign-up (C7-08). Bump it when the approved text changes. */
-export const TERMS_VERSION = 'draft-1';
+/** The terms version an owner accepts at sign-up (C7-08). Version 1 is the owner-approved text (2026-11-11). Bump it when the approved text changes. */
+export const TERMS_VERSION = 'v1';
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/;
 const MAX_BODY = 4096;
