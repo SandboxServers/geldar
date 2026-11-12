@@ -27,6 +27,21 @@ export function recordRecovery(bot: object, now: number): void {
   cooldowns.set(bot, { count: count + 1, nextAt: now + wait });
 }
 
+/**
+ * A dig this young is left alone by stall recovery: a bare-handed dig of stone takes longer than the
+ * stall rule's 60 ticks, and a recovery then ends it with "Digging aborted".
+ */
+export const DIG_GRACE_TICKS = 200;
+
+/** True while a `bot.dig` or the pathfinder's own dig is running. */
+export function isDigging(bot: Bot): boolean {
+  const b = bot as unknown as {
+    targetDigBlock?: unknown;
+    pathfinder?: { isMining?: () => boolean };
+  };
+  return Boolean(b.targetDigBlock) || b.pathfinder?.isMining?.() === true;
+}
+
 /** Stops a dig in progress (a `bot.dig` target or the pathfinder's own digging). True when it stopped one. */
 export function stopDigIfDigging(bot: Bot): boolean {
   const b = bot as unknown as {

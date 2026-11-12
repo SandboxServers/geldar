@@ -330,13 +330,23 @@ describe('moveNear stall recovery', () => {
     });
   }
 
-  it('stops a dig, re-sets the goal and pulses a jump at a step after 60 still ticks, and logs one line', async () => {
+  it('leaves a young dig alone: no stopDigging, no replan, for DIG_GRACE_TICKS (Digging aborted)', async () => {
     const fake = fakeBot({ solid: STEP });
     fake.targetDigBlock = {};
     const lines: string[] = [];
     void startMove(fake, lines);
-    await still(fake, 5);
+    await still(fake, 19);
+    expect(fake.stopDigging).not.toHaveBeenCalled();
     expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1);
+    expect(lines).toHaveLength(0);
+  });
+
+  it('stops a dig older than the grace, re-sets the goal and pulses a jump at a step, and logs one line', async () => {
+    const fake = fakeBot({ solid: STEP });
+    fake.targetDigBlock = {};
+    const lines: string[] = [];
+    void startMove(fake, lines);
+    await still(fake, 20);
     expect(fake.stopDigging).not.toHaveBeenCalled();
     await still(fake, 1);
     expect(fake.stopDigging).toHaveBeenCalledTimes(1);
@@ -345,7 +355,7 @@ describe('moveNear stall recovery', () => {
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? '{}')).toMatchObject({
       reason: 'stall',
-      ticks_stalled: 60,
+      ticks_stalled: 210,
       dig_in_progress: true,
       recovery: ['stopDigging', 'replan', 'jump'],
     });
@@ -388,7 +398,7 @@ describe('moveNear stall recovery', () => {
     fake.targetDigBlock = {};
     const lines: string[] = [];
     void startMove(fake, lines);
-    await still(fake, 6);
+    await still(fake, 21);
     expect(fake.stopDigging).toHaveBeenCalledTimes(1);
     // Move one block east, then stand still for another 60 ticks (about 3.5 s of wall time later).
     fake.entity.position = new Vec3(1.5, 64, 0.5);

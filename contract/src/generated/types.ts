@@ -21,6 +21,7 @@ export interface ActionOutcomePayload {
     | "out_of_reach"
     | "missing_materials"
     | "missing_station"
+    | "needs_rescue"
     | "not_possible"
     | "interrupted"
     | "unsupported"

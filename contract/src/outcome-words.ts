@@ -14,6 +14,7 @@ const REASON_PHRASE: Readonly<Record<string, string>> = {
   out_of_reach: 'it was out of reach',
   missing_materials: 'you lack the materials',
   missing_station: 'there is no crafting table within reach',
+  needs_rescue: 'the body is stuck and every way out failed',
   not_possible: 'that was not possible right now',
   interrupted: 'something interrupted it',
   unsupported: 'the body cannot do that',
