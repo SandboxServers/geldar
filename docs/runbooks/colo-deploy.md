@@ -77,6 +77,19 @@ one fixed line to the players. The lines, the rules and how to switch broadcasti
 (players see the brief maintenance line), the restart itself says nothing, and the `back` notice
 says the maintenance has finished.
 
+## Per-player host containers
+
+`colo-cd.sh` restarts compose services only. The per-player hosts (`geldar-colo-players-host-<player-id>`,
+started by `colo-admin.sh player-start`) are one-off containers and keep the image they were started with.
+After the shared services, the deploy lists the running hosts (`colo-admin.sh player-list`) and refreshes each one
+whose image differs from the release's body image, one at a time: a `bodies` maintenance notice, `player-stop`,
+`player-start` (pinned to the node's manifest copy), a wait for the container to be Up and stay Up, and a check of its
+image revision label. Hosts that are already current and hibernating players (no container) are not touched, and no
+other container is. The plan (`plan: player host <id> stale|current`) and `--dry-run` show what would happen.
+If a refresh fails, the loop stops, the host is started again from its previous image when that is possible, and
+the run exits 1 with "needs manual": the shared services stay on the new release, and the next run retries the stale hosts.
+`COLO_CD_PLAYER_WAIT` (seconds to wait for Up, default 60) and `COLO_CD_PLAYER_SETTLE` (seconds the host must stay Up, default 5) tune the wait.
+
 ## Rollback
 
 Two ways, and the first is the usual one:

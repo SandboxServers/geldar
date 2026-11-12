@@ -25,9 +25,11 @@ GELDAR_COLO_ROOT=${GELDAR_COLO_ROOT:-/mnt/nvme/geldar-colo/src}
 export GELDAR_COLO_ROOT
 . "$(dirname "$0")/common.sh"
 . "$DEPLOY_DIR/colo-cd-verify.sh"
+. "$DEPLOY_DIR/colo-cd-players.sh"
 # The node's own copy of the release manifest. The root-owned /etc copy is not readable by the operator account on the
 # node, so colo-cd reads and writes this one (deploy/README.md). colo-up.sh and colo-rollback.sh still read $GELDAR_RELEASE_FILE.
 RELEASE_FILE=${COLO_CD_RELEASE_FILE:-$STATE_DIR/release.env}
+HOST_MANIFEST=$RELEASE_FILE
 
 if [ "${1:-}" = --dry-run ]; then
   DRY_RUN=1
@@ -56,6 +58,10 @@ LOCKED=0
 TOUCHED=
 CHANGED=
 SQL=no
+STALE_HOSTS=
+PLAYER_WAIT=${COLO_CD_PLAYER_WAIT:-60}
+PLAYER_SETTLE=${COLO_CD_PLAYER_SETTLE:-5}
+case $PLAYER_WAIT$PLAYER_SETTLE in '' | *[!0-9]*) die "COLO_CD_PLAYER_WAIT and COLO_CD_PLAYER_SETTLE must be whole numbers of seconds" ;; esac
 OPEN_SCOPE=
 # Restart order: the services that may change. Paper, Velocity, Caddy, Postgres, NATS and mind are never in this list.
 ORDER="eventsink register glass geldar-mcp golem-body"
@@ -134,18 +140,76 @@ close_scope() {
 
 # Recreates each RUNNING player host, one at a time (stop, then start). Hibernating hosts are left as they are.
 recreate_players() {
-  list=$(sh "$DEPLOY_DIR/colo-admin.sh" player-list) || {
+  running_hosts >"$WORK/players.txt" || {
     log "cannot list the player hosts; check them by hand"
     return 1
   }
-  printf '%s\n' "$list" | sed -n 's/^\(ag-[a-z0-9-]*\): running.*/\1/p' >"$WORK/players.txt"
   while IFS= read -r id; do
     [ -n "$id" ] || continue
-    sh "$DEPLOY_DIR/colo-admin.sh" player-stop "$id" >/dev/null || { log "cannot stop player host $id"; return 1; }
-    sh "$DEPLOY_DIR/colo-admin.sh" player-start "$id" >/dev/null || { log "cannot start player host $id"; return 1; }
-    sh "$DEPLOY_DIR/colo-admin.sh" player-list | grep -q "^$id: running" || { log "player host $id is not running after restart"; return 1; }
+    host_admin player-stop "$id" >/dev/null || { log "cannot stop player host $id"; return 1; }
+    host_admin player-start "$id" >/dev/null || { log "cannot start player host $id"; return 1; }
+    running_hosts | grep -q "^$id\$" || { log "player host $id is not running after restart"; return 1; }
     log "recreated player host $id"
   done <"$WORK/players.txt"
+  return 0
+}
+
+# Waits for the player host container to be Up, lets it settle (a host that dies on join is not Up afterwards), then checks
+# that its image carries the release revision label.
+host_up_and_current() {
+  id=$1
+  n=0
+  until [ "$(host_status "$id")" = running ]; do
+    n=$((n + 1))
+    [ "$n" -le "$PLAYER_WAIT" ] || return 1
+    sleep 1
+  done
+  if [ "$PLAYER_SETTLE" -gt 0 ]; then sleep "$PLAYER_SETTLE"; fi
+  [ "$(host_status "$id")" = running ] || return 1
+  [ "$(host_revision "$id")" = "$SHA_FULL" ] || return 1
+}
+
+# Puts the player host back on the image it ran before (a copy of the manifest with that body image), when it is known.
+restore_host() {
+  id=$1
+  old=$2
+  host_admin player-stop "$id" >/dev/null 2>&1 || true
+  if [ -z "$old" ]; then
+    log "player host $id: the previous image is unknown; not restored"
+    return 1
+  fi
+  sed "s|^GELDAR_BODY_IMAGE=.*|GELDAR_BODY_IMAGE=$old|" "$RELEASE_FILE" >"$WORK/restore-$id.env" || return 1
+  if HOST_MANIFEST="$WORK/restore-$id.env" host_admin player-start "$id" >/dev/null; then
+    log "player host $id restored on its previous image"
+    return 0
+  fi
+  log "player host $id could not be restored on its previous image"
+  return 1
+}
+
+# Refreshes each running player host whose image differs from the new body image, one at a time, after the shared services.
+# On a failure the loop stops, the host is put back on its previous image if possible, and the run is needs-manual.
+refresh_hosts() {
+  want=${GELDAR_BODY_IMAGE:-}
+  [ -n "$want" ] || return 0
+  ids=$(running_hosts) || { log "cannot list the player hosts; needs manual"; return 1; }
+  for id in $ids; do
+    old=$(host_image "$id")
+    if [ "$old" = "$want" ]; then continue; fi
+    log "refresh player host $id (image differs from the release body image)"
+    pause_scope bodies
+    if host_admin player-stop "$id" >/dev/null &&
+      host_admin player-start "$id" >/dev/null &&
+      host_up_and_current "$id"; then
+      log "refreshed player host $id"
+      close_scope
+      continue
+    fi
+    log "player host $id failed to refresh; stopping the loop; needs manual"
+    restore_host "$id" "$old" || true
+    close_scope
+    return 1
+  done
   return 0
 }
 
@@ -247,6 +311,11 @@ while IFS= read -r line; do
       if [ "$3" = changed ]; then CHANGED="$CHANGED $2"; fi
       say "plan: image $2 $3"
       ;;
+    "player-host "*)
+      set -- $line
+      if [ "$3" = stale ]; then STALE_HOSTS="$STALE_HOSTS $2"; fi
+      say "plan: player host $2 $3"
+      ;;
     "sql "*) SQL=${line#sql } ;;
     "refresh "*) printf '%s\n' "${line#refresh }" >>"$WORK/refresh.txt" ;;
     "manual "*) say "needs manual: ${line#manual }" ;;
@@ -259,6 +328,7 @@ for svc in $ORDER; do
     *) say "plan: $svc unchanged; not touched" ;;
   esac
 done
+for id in $STALE_HOSTS; do say "plan: refresh player host $id (after the shared services, one at a time)"; done
 say "plan: animus (mind) is never started; its digest is recorded only"
 
 if [ "$DRY_RUN" = 1 ]; then
@@ -318,5 +388,11 @@ for svc in $ORDER; do
   close_scope
 done
 
+HOST_FAILED=
+refresh_hosts || HOST_FAILED=1
+
 printf '%s\n' "$SHA_FULL" >"$STATE_DIR/release.commit.new" && mv "$STATE_DIR/release.commit.new" "$STATE_DIR/release.commit"
+if [ -n "$HOST_FAILED" ]; then
+  die "the services are deployed, but a player host refresh failed: needs manual (see $LOG); the rest of the hosts were not refreshed (exit 1)"
+fi
 log "deployed $SHA_FULL (no volume was removed; the manual items above were not applied)"

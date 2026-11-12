@@ -4,7 +4,7 @@
 # deploy/colo-cd.sh reads these lines and changes the node. This script changes nothing.
 # Usage: colo-cd-plan.sh <installed manifest> <new manifest> <export dir> <src extract dir>
 # Lines: image <service> changed|same | sql yes|no | plugin changed | refresh <path> | skip <path>
-#        | manual <what> (the change is not applied; the Paper path is a later packet)
+#        | player-host <id> stale|current | manual <what> (the change is not applied; the Paper path is a later packet)
 # The export is git-less, so there is no git diff: the tracked set is every file in the export (the export holds the
 # tracked files only). A file removed upstream is not seen here, because it is not in the export.
 set -eu
@@ -50,6 +50,16 @@ for key in $IMAGE_KEYS; do
   if [ "$old" = "$new" ]; then state=same; else state=changed; fi
   echo "image $(svc_of "$key") $state"
 done
+
+# Running per-player host containers whose image differs from the new body image: a service-like delta entry per host.
+# Read-only (player-list and inspect). A hibernating player has no container and is not listed.
+DEPLOY_DIR=$(dirname "$0")
+. "$DEPLOY_DIR/colo-cd-players.sh"
+if hosts=$(host_states "$(value_of "$NEW" GELDAR_BODY_IMAGE)" 2>/dev/null); then
+  [ -z "$hosts" ] || printf '%s\n' "$hosts" | sed 's/^/player-host /'
+else
+  echo "manual cannot list the player hosts; check them by hand"
+fi
 
 files=$(cd "$REPO" && find . -type f -not -path './.git/*' | sed 's|^\./||' | LC_ALL=C sort) ||
   { echo "colo-cd-plan: cannot list the export dir $REPO" >&2; exit 1; }
