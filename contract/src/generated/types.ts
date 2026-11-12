@@ -4905,6 +4905,10 @@ export interface McpRecall {
   [k: string]: unknown;
 }
 
+export interface McpSee {
+  [k: string]: unknown;
+}
+
 export interface McpView {
   [k: string]: unknown;
 }
@@ -11656,7 +11660,7 @@ export interface SovereignCallPayload {
    */
   player_id: string;
   /**
-   * The MCP tool name, one of the fourteen tools of the contract.
+   * The MCP tool name, one of the tools of the contract.
    */
   tool:
     | "act"

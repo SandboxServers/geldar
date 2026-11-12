@@ -323,7 +323,8 @@ describe('wait through callTool', () => {
     await log.append(LIFE, speech(1, 0, true, 'SPOKEN-LINE'));
     await advance(clock, 1);
     const response = await p;
-    const text = response.content[0]?.text ?? '';
+    const first = response.content[0];
+    const text = first?.type === 'text' ? first.text : '';
     expect(response.isError).toBeUndefined();
     expect(text).not.toContain('invalid_output');
     const result = JSON.parse(text);

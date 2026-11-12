@@ -4,9 +4,17 @@ import {
   type RequestTransport,
 } from '@geldar/animus/src/link/nats-body-link.ts';
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
-import { bookSubject, validateBookReply, validateViewResult, viewSubject } from '@geldar/contract';
+import {
+  bookSubject,
+  validateBookReply,
+  validateSeeResult,
+  validateViewResult,
+  viewImageSubject,
+  viewSubject,
+} from '@geldar/contract';
 import type { BodyGateway } from './ports.ts';
 import { BodyUnavailable } from './ports.ts';
+import type { SeeRead } from './tools/see.ts';
 import type { ViewRead } from './tools/view.ts';
 
 /** How long a `book` request waits for the Body's reply (the packet's 5 s). */
@@ -15,6 +23,9 @@ export const BOOK_TIMEOUT_MS = 5_000;
 /** How long a `view` request waits for the Body's reply (the packet's 5 s). */
 const VIEW_TIMEOUT_MS = 5_000;
 
+/** How long a `see` request waits for the Body's picture (the packet's 5 s). */
+const SEE_TIMEOUT_MS = 5_000;
+
 /** True for the Body's own `{"error":"unavailable"}` reply to a view request. */
 function isUnavailable(reply: unknown): boolean {
   return (
@@ -22,6 +33,14 @@ function isUnavailable(reply: unknown): boolean {
     reply !== null &&
     (reply as { error?: unknown }).error === 'unavailable'
   );
+}
+
+/** The Body's typed refusal to a picture request, or null when the reply is not one. */
+function refusalOf(reply: unknown): { error: 'view_unavailable'; detail: string } | null {
+  if (typeof reply !== 'object' || reply === null) return null;
+  const { error, detail } = reply as { error?: unknown; detail?: unknown };
+  if (error !== 'view_unavailable' || typeof detail !== 'string') return null;
+  return { error, detail };
 }
 
 /** Why a snapshot is asked for; the Body logs it, so it names the caller, not the world. */
@@ -91,6 +110,23 @@ export class NatsBodyGateway implements BodyGateway {
       const verdict = validateViewResult(reply);
       if (!verdict.ok) throw new Error('view reply failed validation');
       return { text: verdict.value.text };
+    });
+  }
+
+  /** The Body's picture from where its body looks; its typed refusal comes back as data, the rest as failure. */
+  see(lifeId: string, size: { width?: number; height?: number }): Promise<SeeRead> {
+    return this.guard(lifeId, 'see', async (): Promise<SeeRead> => {
+      const text = await this.transport.request(
+        viewImageSubject(this.shard, lifeId),
+        JSON.stringify(size),
+        SEE_TIMEOUT_MS,
+      );
+      const reply = JSON.parse(text) as unknown;
+      const refusal = refusalOf(reply);
+      if (refusal !== null) return refusal;
+      const verdict = validateSeeResult(reply);
+      if (!verdict.ok) throw new Error('see reply failed validation');
+      return { png: verdict.value.png };
     });
   }
 

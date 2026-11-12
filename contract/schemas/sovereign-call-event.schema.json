@@ -22,7 +22,7 @@
       "pattern": "^[a-z][a-z0-9-]{1,38}$"
     },
     "tool": {
-      "description": "The MCP tool name, one of the fourteen tools of the contract.",
+      "description": "The MCP tool name, one of the tools of the contract.",
       "type": "string",
       "enum": [
         "act",

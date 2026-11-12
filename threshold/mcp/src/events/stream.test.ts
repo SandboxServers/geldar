@@ -26,6 +26,7 @@ describe('stream', () => {
     expect(subjects).toContain('geldar.phase0.speech');
     expect(subjects).toContain('geldar.phase0.sovereign_call');
     expect(subjects).toContain('geldar.phase0.day_night');
+    expect(subjects).toContain('geldar.phase0.maintenance');
   });
 
   it('starts the replay replay_minutes before now', () => {
@@ -109,7 +110,7 @@ describe('stream', () => {
       expect(subjects).not.toContain(`geldar.phase0.${kind}`);
     }
     expect(subjects).toContain('geldar.phase0.action_outcome');
-    expect(subjects).toHaveLength(13);
+    expect(subjects).toHaveLength(14);
   });
 });
 
