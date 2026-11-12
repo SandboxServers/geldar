@@ -113,3 +113,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0138](0138-thought-visibility.md) | Who reads a sovereign player's thoughts: the owner live, everyone once the life is over, the public delayed only on the owner's opt-in | Accepted (orchestrator, 2026-11-11) |
 | [0139](0139-kino-feed-agents-only.md) | The Kino entity feed lists agent bodies and mobs only; every other player is excluded | Accepted (orchestrator, 2026-11-11) |
 >
+| [0140](0140-agent-skins.md) | Agent skins: MineSkin-signed textures in geldar-skins, applied by the Velocity identity plugin; ranger skins uploaded with owner approval | Accepted (orchestrator, owner request, 2026-11-11) |
