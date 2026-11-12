@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cancelled, completed } from '../../actions/outcome.ts';
 import { moveNear } from '../../actions/pathing.ts';
 import type { ActionHandler } from '../../actions/registry.ts';
+import { MemorySink } from '../records.ts';
+import { ReflexRunner } from '../reflex.ts';
+import { allReflexesOn } from '../reflex-config.ts';
+import type { BodyView } from '../view.ts';
 import { type CombatScene, calmScene, sceneContext, sceneView, zombieAt } from './combat.fakes.ts';
 import { fightOrFleeReflex } from './fight-or-flee.ts';
 
@@ -210,5 +214,94 @@ describe('fight_or_flee: time scale', () => {
       sceneContext(attackedScene(), { timeScale: 3 }),
     );
     expect(walk.mock.calls[0]?.[3]).toMatchObject({ timeScale: 3 });
+  });
+});
+
+/** A calm scene with one creeper at the given distance, hissing or not. */
+function hissScene(distance: number, hissing = true): CombatScene {
+  const scene = calmScene();
+  scene.hostiles = [{ ...zombieAt(distance, 'creeper'), hissing }];
+  return scene;
+}
+
+describe('fight_or_flee: a hissing creeper in sight (decision 0154, ruling 6)', () => {
+  it('fires for a hissing creeper within 5 blocks, and only then', () => {
+    expect(fightOrFleeReflex.check(sceneView(hissScene(3)))).toMatchObject({
+      hostile: 'creeper',
+      cause: 'hiss',
+    });
+    expect(fightOrFleeReflex.check(sceneView(hissScene(5)))).not.toBeNull();
+    expect(fightOrFleeReflex.check(sceneView(hissScene(6)))).toBeNull();
+    expect(fightOrFleeReflex.check(sceneView(hissScene(3, false)))).toBeNull();
+  });
+
+  it('a hissing creeper out of sight is absent from the view, so it does not fire', () => {
+    // Sight is applied by nearbyHostiles (PX-2b); a hidden creeper is not in the list at all.
+    const scene = calmScene();
+    scene.hostiles = [];
+    expect(fightOrFleeReflex.check(sceneView(scene))).toBeNull();
+  });
+
+  it('runs from the creeper rather than fighting it, even when armed', async () => {
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    const scene = hissScene(3);
+    scene.items = { iron_sword: 1 };
+    const attack = fakeAttack('kill');
+    const ctx = sceneContext(scene);
+    ctx.registry.register(attack);
+
+    const outcome = await fightOrFleeReflex.run(fire(scene), ctx);
+
+    expect(outcome.result).toBe('handled');
+    expect(outcome.detail).toContain('hiss');
+    expect(attack.runs).toEqual([]);
+    expect(walk).toHaveBeenCalledTimes(1);
+    expect(ctx.sink.wakes.map((w) => w.reason)).toEqual(['reflex_danger']);
+  });
+
+  it('a flight cut short by the bot ending fails with no throw and no walk', async () => {
+    const scene = hissScene(3);
+    const controller = new AbortController();
+    controller.abort();
+    const ctx = sceneContext(scene, { signal: controller.signal });
+
+    const outcome = await fightOrFleeReflex.run(fire(scene), ctx);
+
+    expect(outcome.result).toBe('failed');
+    expect(walk).not.toHaveBeenCalled();
+  });
+
+  it('a creeper gone by the time the reflex runs is handled, with no throw', async () => {
+    const scene = hissScene(3);
+    const trigger = fire(scene);
+    scene.hostiles = [];
+
+    const outcome = await fightOrFleeReflex.run(trigger, sceneContext(scene));
+
+    expect(outcome.result).toBe('handled');
+    expect(outcome.detail).toContain('already gone');
+    expect(walk).not.toHaveBeenCalled();
+  });
+});
+
+describe('fight_or_flee: flee cooldown (2 s = 40 ticks)', () => {
+  it('a second flee within 2 s is suppressed; at 2.0 s it is allowed', async () => {
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    const scene = hissScene(3);
+    const runner = new ReflexRunner({
+      reflexes: [fightOrFleeReflex],
+      config: allReflexesOn(),
+      view: sceneView(scene) as BodyView,
+      sink: new MemorySink(),
+      lifeId: 'life-1',
+      bodyGeneration: 1,
+      context: (tick) => sceneContext(scene, { tick }),
+    });
+
+    await runner.onTick(100);
+    await runner.onTick(139);
+    expect(walk).toHaveBeenCalledTimes(1);
+    await runner.onTick(140);
+    expect(walk).toHaveBeenCalledTimes(2);
   });
 });
