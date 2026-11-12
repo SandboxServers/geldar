@@ -33,6 +33,9 @@ import { unstickAction } from './unstick.ts';
 import { giveAction } from './give.ts';
 import { noteAction } from './note.ts';
 
+// --- C5-07 write_sign ---
+import { writeSignAction } from './write-sign.ts';
+
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
   // --- P0-08a goto, mine ---
@@ -65,6 +68,9 @@ export const allActions: AnyActionHandler[] = [
   giveAction,
   noteAction,
   // --- end C5-04 ---
+  // --- C5-07 write_sign ---
+  writeSignAction,
+  // --- end C5-07 ---
 ];
 
 /** A registry with every handler in `allActions` registered. */
