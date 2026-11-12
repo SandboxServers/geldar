@@ -93,6 +93,22 @@ export function validateWakePayload(value: unknown): ValidationResult<WakePayloa
   return { ok: false, errors: (validateWakePayloadSchema.errors ?? []).map(formatError) };
 }
 
+// --- PX-8b reach ---
+import { validateReachInput as validateReachInputSchema } from './generated/validators.js';
+
+/** The position a `reach` call names: three integers, each checked against mcp-reach.schema.json. */
+export interface ReachPosition {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** Checks a `reach` input against mcp-reach.schema.json. Never throws; a missing axis or an extra key is rejected. */
+export function validateReachInput(value: unknown): ValidationResult<ReachPosition> {
+  if (validateReachInputSchema(value)) return { ok: true, value: value as ReachPosition };
+  return { ok: false, errors: (validateReachInputSchema.errors ?? []).map(formatError) };
+}
+
 // --- SC-30a mcp ---
 export * from './mcp.ts';
 
