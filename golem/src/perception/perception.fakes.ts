@@ -20,6 +20,8 @@ export interface FakeEntity {
   username?: string;
   position: Vec3;
   height?: number;
+  /** Body yaw in radians; mineflayer's convention (yaw 0 faces -z). */
+  yaw?: number;
   heldItem?: { name: string } | null;
   /** Mineflayer's metadata by index; a dropped item's stack is in slot 8. */
   metadata?: unknown[];

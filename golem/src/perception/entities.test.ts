@@ -20,7 +20,7 @@ describe('authorized entities', () => {
     zombie(world, 1, 0.5, -9.5);
     const { entities } = createPerception(world.bot).surroundings();
     expect(entities).toEqual([
-      { type: 'zombie', distance: 10, direction: 'north', x: 0, y: 64, z: -10 },
+      { type: 'zombie', distance: 10, direction: 'north', x: 0, y: 64, z: -10, hostile: true },
     ]);
     world.entities[1] = {
       type: 'hostile',
@@ -29,7 +29,7 @@ describe('authorized entities', () => {
       height: 1.95,
     };
     expect(createPerception(world.bot).surroundings().entities).toEqual([
-      { type: 'zombie', distance: 5, direction: 'south_east', x: 3, y: 64, z: 4 },
+      { type: 'zombie', distance: 5, direction: 'south_east', x: 3, y: 64, z: 4, hostile: true },
     ]);
   });
 
@@ -197,7 +197,7 @@ describe('authorized entities', () => {
     expect(perception.surroundings().entities).toHaveLength(2);
     delete world.entities[2];
     expect(perception.surroundings().entities).toEqual([
-      { type: 'zombie', distance: 6, direction: 'north', x: 0, y: 64, z: -6 },
+      { type: 'zombie', distance: 6, direction: 'north', x: 0, y: 64, z: -6, hostile: true },
     ]);
   });
 });

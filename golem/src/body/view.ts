@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { isNightOrStorm } from '../actions/sleep.ts';
+import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
 import { lightAtHead } from './light.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
@@ -178,6 +179,9 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         if (entity === bot.entity || entity.type !== 'hostile') continue;
         const distance = entity.position.distanceTo(here);
         if (distance > radius) continue;
+        // Reflexes act only on what the Body can see (decision 0154, ruling 6).
+        const body = entity.position.offset(0, (entity.height ?? 1) / 2, 0);
+        if (!canSeePoint(bot, body)) continue;
         const { x, y, z } = entity.position;
         found.push({
           name: entity.name ?? 'unknown',

@@ -12,6 +12,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.event.player.PlayerBedEnterEvent;
 
 /**
@@ -89,6 +90,24 @@ public final class EventExporter implements Listener {
             }
         } catch (RuntimeException e) {
             // Coordinates are optional; a listener must never drop the death event.
+        }
+        int dropped = 0;
+        for (ItemStack stack : event.getDrops()) {
+            if (stack != null) {
+                dropped += stack.getAmount();
+            }
+        }
+        p.addProperty("drops", dropped);
+        try {
+            org.bukkit.Location spawn = player.getBedSpawnLocation();
+            if (spawn == null) {
+                spawn = player.getWorld().getSpawnLocation();
+            }
+            p.addProperty("respawn_x", spawn.getBlockX());
+            p.addProperty("respawn_y", spawn.getBlockY());
+            p.addProperty("respawn_z", spawn.getBlockZ());
+        } catch (RuntimeException e) {
+            // The respawn point is optional, as the death coordinates are: the death event is never dropped.
         }
         emit("death", player.getName(), p);
     }
