@@ -11,7 +11,7 @@ import {
 } from './mineskin.ts';
 import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
-import { openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
+import { describeSkin, openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
 
 /** GELDAR_SHARD_FILE when set (the Colo admin image sets it to the Colo roster), else the phase0 shard config. */
 export function shardFilePath(env: NodeJS.ProcessEnv): string {
@@ -30,6 +30,7 @@ export const USAGE = `usage: players-cli skin set <player-id> <png> [--model cla
 
   skin set    validate the PNG (64x64 or 64x32, no extra chunks), sign it with MineSkin and store the
               signed texture in the geldar-skins bucket under the player's life id (needs GELDAR_NATS_URL)
+  skin show   print the stored skin of a player (variant, texture host, signature length; never the value)
   --check-only  validate the PNG and print the result; nothing is uploaded and no network call runs
   --model       classic (default) or slim (the thin arms)
 `;
@@ -60,6 +61,9 @@ export async function runCli(argv: readonly string[], deps: CliDeps): Promise<nu
     rest.length === 0
   ) {
     return runImport(player, file, deps);
+  }
+  if (group === 'skin' && verb === 'show' && player !== undefined && file === undefined) {
+    return runShow(player, deps);
   }
   if (group !== 'skin' || verb !== 'set' || player === undefined || file === undefined) {
     deps.out(USAGE);
@@ -144,6 +148,27 @@ async function runImport(player: string, file: string, deps: CliDeps): Promise<n
         ? 'error: the skins file is not JSON'
         : `error: ${errorMessage(error)}`,
     );
+    return 1;
+  }
+}
+
+/** Prints what the bucket holds for a player's life: variant, texture host, signature length. Never the value. */
+async function runShow(player: string, deps: CliDeps): Promise<number> {
+  try {
+    const roster = findPlayer(await deps.readShard(), player);
+    const url = deps.natsUrl();
+    if (url === undefined || url.trim() === '') {
+      throw new RosterError('GELDAR_NATS_URL is not set');
+    }
+    const { kv, close } = await deps.openBucket(url);
+    try {
+      deps.out(await describeSkin(kv, roster.lifeId));
+    } finally {
+      await close();
+    }
+    return 0;
+  } catch (error) {
+    deps.out(`error: ${errorMessage(error)}`);
     return 1;
   }
 }

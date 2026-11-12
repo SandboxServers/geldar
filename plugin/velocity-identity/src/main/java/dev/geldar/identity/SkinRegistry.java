@@ -27,7 +27,11 @@ public class SkinRegistry implements RegistryClient.Feed {
     private static final int MAX_SIGNATURE_CHARS = 4_096;
 
     /** A signed texture as the profile property takes it. The value is kept out of {@code toString}. */
-    public record Texture(String value, String signature) {
+    public record Texture(String value, String signature, String variant) {
+        public Texture(String value, String signature) {
+            this(value, signature, "classic");
+        }
+
         @Override
         public String toString() {
             return "Texture[redacted]";
@@ -39,6 +43,8 @@ public class SkinRegistry implements RegistryClient.Feed {
     /** The map being built by a replay in progress, or null. Guarded by {@code this}. */
     private Map<String, Texture> replay;
     private volatile boolean synced;
+    /** Life id to the fixed reason its record was rejected; entries leave on a good put or a delete. */
+    private final Map<String, String> rejected = new ConcurrentHashMap<>();
 
     public SkinRegistry(Logger log) {
         this.log = log;
@@ -56,13 +62,15 @@ public class SkinRegistry implements RegistryClient.Feed {
             return;
         }
         Map<String, Texture> target = replay != null ? replay : textures;
-        Optional<Texture> texture = parse(key, value);
-        if (texture.isPresent()) {
-            target.put(key, texture.get());
+        Parsed parsed = check(key, value);
+        if (parsed.texture() != null) {
+            target.put(key, parsed.texture());
+            rejected.remove(key);
         } else {
             target.remove(key);
-            // The record is not named: its content is not logged.
-            log.warn("A skin record was rejected; the affected ranger keeps the default skin");
+            rejected.put(key, parsed.reason());
+            // Only the key and a fixed reason are logged, never the record.
+            log.warn("skin: record for {} rejected: {}", IdentityPlugin.printable(key), parsed.reason());
         }
     }
 
@@ -70,6 +78,7 @@ public class SkinRegistry implements RegistryClient.Feed {
     @Override
     public synchronized void remove(String key) {
         if (key != null) {
+            rejected.remove(key);
             (replay != null ? replay : textures).remove(key);
         }
     }
@@ -82,6 +91,7 @@ public class SkinRegistry implements RegistryClient.Feed {
         textures = replay;
         replay = null;
         synced = true;
+        log.info("skin: bucket {} synced, {} keys cached, {} rejected", BUCKET, textures.size(), rejected.size());
     }
 
     @Override
@@ -90,37 +100,59 @@ public class SkinRegistry implements RegistryClient.Feed {
         replay = null;
     }
 
+    public boolean isSynced() {
+        return synced;
+    }
+
+    /** The fixed reason this life's record was rejected, or null. */
+    public String rejectionOf(String lifeId) {
+        return lifeId == null ? null : rejected.get(lifeId);
+    }
+
     /** The stored texture for a life; empty when none is stored, the bucket is not synced, or the record was rejected. */
     public Optional<Texture> find(String lifeId) {
         return synced && lifeId != null ? Optional.ofNullable(textures.get(lifeId)) : Optional.empty();
     }
 
+    /** A parse outcome: a texture, or the fixed reason there is none. */
+    record Parsed(Texture texture, String reason) {}
+
     /** Parses one record stored under {@code key}; empty unless it names that life and carries a valid Mojang texture. */
     static Optional<Texture> parse(String key, byte[] value) {
+        return Optional.ofNullable(check(key, value).texture());
+    }
+
+    static Parsed check(String key, byte[] value) {
         if (value == null || value.length == 0) {
-            return Optional.empty();
+            return new Parsed(null, "empty record");
         }
         try {
             JsonElement root = JsonParser.parseString(new String(value, StandardCharsets.UTF_8));
             if (!root.isJsonObject()) {
-                return Optional.empty();
+                return new Parsed(null, "not a JSON object");
             }
             JsonObject record = root.getAsJsonObject();
             String lifeId = text(record, "life_id", MAX_LIFE_ID_CHARS);
             String encoded = text(record, "value", MAX_VALUE_CHARS);
             String signature = text(record, "signature", MAX_SIGNATURE_CHARS);
-            if (!key.equals(lifeId) || encoded == null || signature == null) {
-                return Optional.empty();
+            if (!key.equals(lifeId)) {
+                return new Parsed(null, "life_id does not match the key");
             }
-            if (!isBase64(signature) || !isMojangTexture(encoded)) {
-                return Optional.empty();
+            if (encoded == null || signature == null) {
+                return new Parsed(null, "value or signature missing or too long");
             }
-            return Optional.of(new Texture(encoded, signature));
+            if (!isBase64(signature)) {
+                return new Parsed(null, "signature is not base64");
+            }
+            if (!isMojangTexture(encoded)) {
+                return new Parsed(null, "texture is not on textures.minecraft.net");
+            }
+            String model = text(record, "model", 16);
+            return new Parsed(new Texture(encoded, signature, "slim".equals(model) ? "slim" : "classic"), null);
         } catch (RuntimeException e) {
-            return Optional.empty();
+            return new Parsed(null, "unreadable record");
         }
     }
-
     /** True when the value is base64 JSON whose {@code textures.SKIN.url} is an http(s) URL on the Mojang texture host. */
     static boolean isMojangTexture(String encoded) {
         try {

@@ -201,6 +201,12 @@ describe('evaluateWake', () => {
     expect(dmg.wake?.reason).toBe('unexpected_damage');
   });
 
+  it('a death wakes as unexpected damage even when the intent listed only speech', () => {
+    const d = run([ev({ kind: 'death', wakeOn: ['directly_addressed'] })]);
+    expect(d.wake?.reason).toBe('unexpected_damage');
+    expect(run([ev({ kind: 'death' })]).wake?.reason).toBe('unexpected_damage');
+  });
+
   it('17: recheckAtMs is the earlier of the spacing release and the fallback', () => {
     const d = run([ev({ seq: 3, kind: 'speech', addressed: true })], {
       lastWakeMs: 95_000,

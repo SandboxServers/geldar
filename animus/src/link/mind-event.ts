@@ -4,6 +4,7 @@
  * type. Types the Mind does not act on are not an error: they are `ignored`.
  */
 import {
+  validateActionOutcomePayload,
   validateActionRecord,
   validateIntentEventPayload,
   validatePlanResultPayload,
@@ -21,6 +22,7 @@ export const MIND_EVENT_TYPES: readonly MindEventType[] = [
   'intent',
   'action',
   'plan_result',
+  'action_outcome',
   'reflex_fired',
   'speech',
   'damage',
@@ -65,6 +67,7 @@ const PAYLOAD_CHECKS: Record<MindEventType, PayloadCheck> = {
   intent: schemaCheck(validateIntentEventPayload),
   action: schemaCheck(validateActionRecord),
   plan_result: schemaCheck(validatePlanResultPayload),
+  action_outcome: schemaCheck(validateActionOutcomePayload),
   reflex_fired: schemaCheck(validateReflexFiredPayload),
   speech: schemaCheck(validateSpeechPayload),
   damage: freeForm,

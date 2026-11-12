@@ -1,4 +1,4 @@
-import type { McpPlayerEvent, UntrustedWorldText } from '@geldar/contract';
+import { type McpPlayerEvent, playerOutcomeText, type UntrustedWorldText } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 
 /*
@@ -39,6 +39,9 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
       case 'damage':
         out.push({ ...base, type: 'damage', text: `You took ${e.amount ?? 0} damage.` });
         break;
+      case 'death':
+        out.push({ ...base, type: 'death', text: deathText(e.cause) });
+        break;
       case 'agent_approached':
         out.push({
           ...base,
@@ -55,6 +58,19 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
       case 'intent_finished':
         out.push({ ...base, type: 'intent_finished', text: intentText(e) });
         break;
+      case 'action':
+      case 'action_failed':
+        out.push({
+          ...base,
+          type: e.kind,
+          text: playerOutcomeText({
+            verb: e.name,
+            ok: e.kind === 'action',
+            reason: e.reason,
+            intent: e.intent,
+          }),
+        });
+        break;
       case 'reflex':
         out.push({ ...base, type: 'reflex', text: 'Your body ate on its own.' });
         break;
@@ -64,6 +80,11 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
     }
   }
   return out;
+}
+
+/** The fixed death line. `cause` is one of the mapper's phrases, never world text. */
+function deathText(cause: string | undefined): string {
+  return `You died. ${cause ?? 'Something killed you'}. You wake at the spawn with nothing.`;
 }
 
 function intentText(e: SimEvent): string {

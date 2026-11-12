@@ -4,6 +4,7 @@
  * P0-26 implements these over NATS, the fakes implement them in memory.
  */
 import type {
+  ActionOutcomePayload,
   ActionRecord,
   IntentEventPayload,
   PlanAck,
@@ -77,6 +78,7 @@ export type MindEvent = MindEventBase &
     | { type: 'intent'; payload: IntentEventPayload }
     | { type: 'action'; payload: ActionRecord }
     | { type: 'plan_result'; payload: PlanResultPayload }
+    | { type: 'action_outcome'; payload: ActionOutcomePayload }
     | { type: 'reflex_fired'; payload: ReflexFiredPayload }
     | { type: 'speech'; payload: SpeechPayload }
     | { type: 'damage'; payload: PluginEventPayload }

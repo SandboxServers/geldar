@@ -23,6 +23,29 @@ On a dev machine with the Phase 0 shard, the original path still works: `pnpm --
 
 Join as the agent (or look at the tab list); the skin shows for viewers. A texture host other than `textures.minecraft.net` is refused by `skin import`.
 
+## Verify a skin was applied
+
+The plugin keeps the `geldar-skins` bucket in memory through a live watch, so a key written while Velocity runs is used by the next login (no restart). Every login of a registered life writes one `skin:` line, with no texture value or signature:
+
+```
+docker logs geldar-colo-velocity-1 | grep skin:
+```
+
+- `skin: bucket geldar-skins synced, N keys cached, M rejected` once per sync (start, NATS reconnect). N is the number of valid skins.
+- `skin: applied for <life_id> (variant classic|slim)`: the textures property was set on the profile.
+- `skin: no record for <life_id>`: the bucket is synced but has no key for that life id (check the key with `players-cli skin show`).
+- `skin: record for <life_id> rejected: <reason>`: the record exists but fails validation (life_id does not match the key, texture not on `textures.minecraft.net`, signature not base64, value or signature missing or too long, not JSON).
+- `skin: KV unavailable: <error class>`: the bucket is not synced (NATS down, or the bucket absent), so no skin is set. The watcher logs why (`Bucket geldar-skins is absent` or `unavailable`).
+- `skin: lookup skipped (not a sovereign life)`: the name is not in the life registry; the login gets the default profile.
+
+Read-only check of what is stored (prints the variant, texture host and signature length, never the value or the signature; needs `GELDAR_NATS_URL`):
+
+```
+pnpm --filter ./tools/players-cli exec tsx src/cli.ts skin show ag-jason-01
+```
+
+(`colo-admin.sh` has no `skin-show` verb yet; run it from a checkout with `GELDAR_NATS_URL` and the NATS user set.) If the plugin says `applied` but the head is still Steve, the proxy did its part: the client or the map is not using the forwarded textures (see BlueMap below).
+
 ## BlueMap
 
 `plugins/bluemap/config/plugin.conf` keeps `skin-download: false` (no fetch from Mojang for unknown UUIDs). Showing the skin on the live markers needs a live check on the node; see the SKINS report.

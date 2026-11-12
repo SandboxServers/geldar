@@ -107,7 +107,8 @@ describe('stream', () => {
     for (const kind of ['snapshot', 'plan', 'book']) {
       expect(subjects).not.toContain(`geldar.phase0.${kind}`);
     }
-    expect(subjects).toHaveLength(11);
+    expect(subjects).toContain('geldar.phase0.action_outcome');
+    expect(subjects).toHaveLength(12);
   });
 });
 

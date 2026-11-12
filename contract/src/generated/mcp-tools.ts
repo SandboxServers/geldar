@@ -1736,10 +1736,13 @@ export const mcpToolSchemas: Record<
                 "speech_to_me",
                 "conversation_digest",
                 "damage",
+                "death",
                 "agent_approached",
                 "proposal",
                 "day_night",
                 "intent_finished",
+                "action",
+                "action_failed",
                 "reflex",
                 "wake"
               ]
@@ -2174,10 +2177,13 @@ export const mcpToolSchemas: Record<
                 "speech_to_me",
                 "conversation_digest",
                 "damage",
+                "death",
                 "agent_approached",
                 "proposal",
                 "day_night",
                 "intent_finished",
+                "action",
+                "action_failed",
                 "reflex",
                 "wake"
               ]

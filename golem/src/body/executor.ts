@@ -4,6 +4,7 @@ import { errorText } from '../actions/outcome.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { runPlanAction, waitForReflexIdle } from './executor-action.ts';
 import { ABANDONED_KEY, type IntentStartMode, startIntentRun } from './executor-intent.ts';
+import { emitActionOutcome, emitIntentFailure } from './executor-outcome.ts';
 import {
   type ActionReport,
   type ActiveIntent,
@@ -207,6 +208,7 @@ export class IntentExecutor {
         if (!gaveUp) gaveUp = await waitForReflexIdle(this.runtime);
         const report = await this.runOne(action, id, index, plan);
         reports.push(report);
+        emitActionOutcome(this.runtime.sink, this.tick(), action.do, index, report);
         if (report.record.state !== 'completed') {
           failedAt = index;
           break;
@@ -412,6 +414,7 @@ export class IntentExecutor {
       const wake = a.wake.wants('goal_completed') ? 'goal_completed' : undefined;
       await this.end(a, 'completed', 'goal completed', wake, true);
     } else if (result.status === 'failed') {
+      emitIntentFailure(this.runtime.sink, this.tick(), a.intent.program, result.message);
       await this.end(a, 'failed', result.message, 'action_failed', true);
     } else {
       await this.end(a, 'interrupted', result.message ?? result.reason, result.reason, true);

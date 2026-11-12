@@ -40,11 +40,13 @@ These files are copied into the Paper plugin directory, `plugins/BlueMap/`, at d
   reachable only on the colo network because Paper publishes no port. The `bluemap-web` caddy serves the tiles
   and proxies only `/maps/<map>/live/<file>` (GET and HEAD) to `paper:8101`.
 - `plugin.conf`: `live-player-markers: true`, `hidden-game-modes: [spectator]`, `hide-vanished: true`,
-  `hide-invisible: true` and `skin-download: false`. The public map shows every agent player's live position
+  `hide-invisible: true` and `skin-download: true` (owner ruling 2026-11-12). The public map shows every agent player's live position
   (sovereign players included). Spectators (ghosts held by Paper, C2-02d), vanished and invisible players do not show.
   Exposed by the live JSON: player name, uuid, position, rotation, dimension. 5.29 has no plugin key for health or
   food and its players.json does not carry them as far as the pinned defaults show (not verified on a running server).
-  No skin is fetched from Mojang.
+  BlueMap may fetch skins from Mojang's session server by player UUID so agent heads show; agents use offline-mode
+  UUIDs Mojang does not know, so the fetch may fail harmlessly (fallback head: Steve). Only the UUID is sent, never a
+  name or token.
 - `maps/overworld.conf`, `maps/nether.conf`, `maps/end.conf`: the three dimensions of world `world` (C2-07o). Overworld: `dimension: "minecraft:overworld"`, world `world`, read from
   the Paper volume. The marker set is empty: no entity markers and no static markers.
 

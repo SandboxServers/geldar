@@ -12,10 +12,14 @@ export interface SimEvent extends WakeEvent {
   text?: string;
   /** For damage: how much. */
   amount?: number;
+  /** For death: the fixed cause phrase (one of the mapper's templates, never world text). */
+  cause?: string;
   /** For agent_approached: who came; for reflex: the item eaten. */
   name?: string;
   /** For proposal: the proposal id. */
   id?: string;
+  /** For action and action_failed: true when the event is for an intent (a program), not an action. */
+  intent?: boolean;
   /** For plan_result: the thought it answers. Internal: no player-facing view shows it. */
   thought_id?: string;
   /** For plan_result: whether the thought's say text was spoken. Internal, as thought_id. */

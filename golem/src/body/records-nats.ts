@@ -1,6 +1,8 @@
 import {
+  type ActionOutcomePayload,
   type ActionRecord,
   type Receipt,
+  validateActionOutcomePayload,
   validateActionRecord,
   validateIntentEventPayload,
   validateReceipt,
@@ -218,6 +220,16 @@ export class NatsRecordSink implements RecordSink {
         ...(request.detail === undefined ? {} : { detail: clip(request.detail) }),
       },
       validateWakePayload,
+    );
+  }
+
+  actionOutcome(payload: ActionOutcomePayload, tick: number): void {
+    this.emit(
+      'action_outcome',
+      `action_outcome:${this.opts.lifeId}:${tick}:${payload.verb}:${payload.index}:${payload.ok}`,
+      tick,
+      structuredClone(payload),
+      validateActionOutcomePayload,
     );
   }
 

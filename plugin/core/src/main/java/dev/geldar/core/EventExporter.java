@@ -80,6 +80,16 @@ public final class EventExporter implements Listener {
         JsonObject p = new JsonObject();
         EntityDamageEvent last = player.getLastDamageCause();
         p.addProperty("cause", last == null ? "UNKNOWN" : last.getCause().name());
+        try {
+            org.bukkit.Location at = player.getLocation();
+            if (at != null) {
+                p.addProperty("x", at.getBlockX());
+                p.addProperty("y", at.getBlockY());
+                p.addProperty("z", at.getBlockZ());
+            }
+        } catch (RuntimeException e) {
+            // Coordinates are optional; a listener must never drop the death event.
+        }
         emit("death", player.getName(), p);
     }
 

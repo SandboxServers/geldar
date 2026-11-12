@@ -1,4 +1,4 @@
-import type { ActionRecord, Receipt, Thought } from '@geldar/contract';
+import type { ActionOutcomePayload, ActionRecord, Receipt, Thought } from '@geldar/contract';
 import type { ReflexOutcome } from './reflex.ts';
 import type { WakeRequest } from './wake.ts';
 
@@ -58,6 +58,11 @@ export interface RecordSink {
   reflexFired(record: ReflexFiredRecord): void;
   /** The Body decided to wake the Mind. */
   wake(request: WakeRequest): void;
+  /**
+   * One action (or a failed intent) ended: a small fixed-text outcome for the wake and events stream
+   * (C5-02). Optional, so a sink written before it keeps working.
+   */
+  actionOutcome?(payload: ActionOutcomePayload, tick: number): void;
 }
 
 /** A sink that keeps every record in order, in arrays. For tests and for a Body with no store. */
@@ -67,6 +72,7 @@ export class MemorySink implements RecordSink {
   readonly receipts: Receipt[] = [];
   readonly reflexes: ReflexFiredRecord[] = [];
   readonly wakes: WakeRequest[] = [];
+  readonly outcomes: ActionOutcomePayload[] = [];
 
   intentChanged(change: IntentChange): void {
     this.intents.push({ ...change });
@@ -87,5 +93,9 @@ export class MemorySink implements RecordSink {
 
   wake(request: WakeRequest): void {
     this.wakes.push({ ...request });
+  }
+
+  actionOutcome(payload: ActionOutcomePayload, _tick: number): void {
+    this.outcomes.push(structuredClone(payload));
   }
 }
