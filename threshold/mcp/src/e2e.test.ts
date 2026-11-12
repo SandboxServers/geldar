@@ -78,11 +78,12 @@ interface Reply {
 const rigs: Rig[] = [];
 
 /** The world over fakes, behind the real front door on 127.0.0.1 with an ephemeral port. */
-async function startRig(): Promise<Rig> {
+async function startRig(options: { enforce?: boolean } = {}): Promise<Rig> {
   const fx = worldFixture([PLAYER_A, PLAYER_B]);
   fx.budget.seed(PLAYER_A.lifeId, START_BUDGET, 0);
   fx.budget.seed(PLAYER_B.lifeId, START_BUDGET, 0);
-  const world = createWorld(fx.deps);
+  // The act budget is suspended by default (decision 0149); `enforce` is the GELDAR_ACT_BUDGET_ENFORCE=1 path.
+  const world = createWorld({ ...fx.deps, enforce: options.enforce === true });
   const sessionDeps: WorldSessionDeps = {
     tools: world.tools,
     players: fx.players,
@@ -259,7 +260,7 @@ describe('the MCP server end to end, on loopback with fakes', () => {
     expect(listed.tools.map((t) => t.name).sort()).toEqual([...MCP_TOOL_NAMES].sort());
   });
 
-  it('looks, acts (charging the budget), says and waits on the bound life', async () => {
+  it('looks, acts (metered, not charged), says and waits on the bound life', async () => {
     const rig = await startRig();
     const { fx } = rig;
     const client = await connect(rig, TOKEN_A, PLAYER_A);
@@ -274,7 +275,7 @@ describe('the MCP server end to end, on loopback with fakes', () => {
     const acted = JSON.parse(act.text) as { budget_remaining_thoughts: number };
     const after = await fx.budget.balance(PLAYER_A.lifeId, fx.clock.nowMs());
     expect(acted.budget_remaining_thoughts).toBe(after);
-    expect(after).toBeLessThan(before);
+    expect(after).toBe(before);
     expect(fx.body.plans.map((p) => p.lifeId)).toEqual([PLAYER_A.lifeId]);
 
     const plansBefore = fx.body.plans.length;
@@ -337,6 +338,21 @@ describe('the MCP server end to end, on loopback with fakes', () => {
     await expect(connect(rig, TOKEN_A, PLAYER_A)).rejects.toThrow();
   });
 
+  it('with GELDAR_ACT_BUDGET_ENFORCE=1 an act charges the budget (decision 0149)', async () => {
+    const rig = await startRig({ enforce: true });
+    const { fx } = rig;
+    const client = await connect(rig, TOKEN_A, PLAYER_A);
+
+    const before = await fx.budget.balance(PLAYER_A.lifeId, fx.clock.nowMs());
+    const act = await call(client, 'act', ACT_ARGS);
+    expect(act.isError, act.text).toBe(false);
+    const after = await fx.budget.balance(PLAYER_A.lifeId, fx.clock.nowMs());
+    expect(
+      (JSON.parse(act.text) as { budget_remaining_thoughts: number }).budget_remaining_thoughts,
+    ).toBe(after);
+    expect(after).toBeLessThan(before);
+  });
+
   it('keeps player B on B: another token cannot reach or charge player A', async () => {
     const rig = await startRig();
     const { fx } = rig;
@@ -353,7 +369,7 @@ describe('the MCP server end to end, on loopback with fakes', () => {
     const bBefore = await fx.budget.balance(PLAYER_B.lifeId, fx.clock.nowMs());
     expect((await call(b, 'act', ACT_ARGS)).isError).toBe(false);
     expect(await fx.budget.balance(PLAYER_A.lifeId, fx.clock.nowMs())).toBe(aBefore);
-    expect(await fx.budget.balance(PLAYER_B.lifeId, fx.clock.nowMs())).toBeLessThan(bBefore);
+    expect(await fx.budget.balance(PLAYER_B.lifeId, fx.clock.nowMs())).toBe(bBefore);
     expect(fx.body.plans.map((p) => p.lifeId)).toEqual([PLAYER_B.lifeId]);
 
     fx.body.setBook(PLAYER_A.lifeId, {

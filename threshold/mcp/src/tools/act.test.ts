@@ -3,6 +3,7 @@ import { validateSovereignCallPayload } from '@geldar/contract';
 import { FakeClock } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { batchCost } from '../budget/cost.ts';
+import { ActMeter } from '../budget/meter.ts';
 import {
   FakeBudgetLedger,
   FakePresenceStore,
@@ -46,6 +47,7 @@ function harness(credits = 3, limiter = new ScriptedRateLimiter()): Harness {
     budget,
     presence,
     limiter,
+    enforce: true,
     recorder,
     validator: createOutputValidator(),
     clock,
@@ -126,6 +128,40 @@ describe('act: budget', () => {
     expect(exhausted).toBe(1);
     expect(h.body.plans).toHaveLength(2);
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(0);
+  });
+});
+
+describe('act: the budget is metered, not charged, when not enforced', () => {
+  it('sends an act of an agent at 0 credits to the Body and meters it, with enforcement off', async () => {
+    const h = harness(0);
+    h.deps.enforce = false;
+    h.deps.meter = new ActMeter();
+    const result = await act(h, { actions: [GOTO] });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+    expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(0);
+    const call = h.recorder.calls[0];
+    expect(call?.outcome_class).toBe('good');
+    expect(call?.would_cost).toBe(batchCost(['action']));
+    expect(call?.spent_this_life).toBe(batchCost(['action']));
+    expect(h.deps.meter?.totalsOf(CALLER.lifeId)).toMatchObject({
+      calls: 1,
+      good: 1,
+      spent: batchCost(['action']),
+    });
+  });
+
+  it('refuses an act of an agent at 0 credits when enforced, and meters it as impossible', async () => {
+    const h = harness(0);
+    h.deps.meter = new ActMeter();
+    const result = await act(h, { actions: [GOTO] });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([{ index: 0, reason: 'budget_exhausted' }]);
+    expect(h.body.plans).toHaveLength(0);
+    const call = h.recorder.calls[0];
+    expect(call?.outcome_class).toBe('impossible');
+    expect(call?.spent_this_life).toBe(0);
   });
 });
 

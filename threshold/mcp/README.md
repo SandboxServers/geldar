@@ -84,7 +84,7 @@ only; no IP literal, `localhost`, `*.local`, `*.internal` or userinfo; may be un
 with `GELDAR_MCP_DEV_HOSTS`), `GELDAR_MCP_BIND` (default `127.0.0.1`; `0.0.0.0` only with
 `GELDAR_MCP_IN_CONTAINER=1`). `GELDAR_MCP_TRUSTED_PROXIES` (comma-separated IPs or ranges) replaces
 `sovereign.mcp.trusted_proxies`, and `GELDAR_MCP_CLIENT_IP_HEADER` replaces
-`sovereign.mcp.client_ip_header`. The Caddy deployment sets the header to `x-geldar-client-ip`
+`sovereign.mcp.client_ip_header`. `GELDAR_ACT_BUDGET_ENFORCE=1` turns the act budget back on (decision 0149); unset, the budget is suspended and each act is metered. The Caddy deployment sets the header to `x-geldar-client-ip`
 and names Caddy's container address as the trusted proxy; without a trusted proxy the header is
 never read. The default header is `x-geldar-client-ip` (decision 0090); `cf-connecting-ip` is not used.
 Caddy must set that header on every request: a trusted proxy that sends none (or a malformed one)

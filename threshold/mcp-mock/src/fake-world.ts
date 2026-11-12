@@ -89,6 +89,9 @@ export function createFakeHandlers(): ToolHandlers {
     journal: (input) => ({ ok: true, mirrored_chars: (input as { text: string }).text.length }),
     status: () => ({
       budget_remaining_thoughts: BUDGET,
+      spent_this_life: 0,
+      would_have_been_balance: BUDGET,
+      metered_acts: { calls: 0, good: 0, bad: 0, impossible: 0 },
       days_alive: 0,
       days_since_sleep: 0,
       untrusted_world_text: {},

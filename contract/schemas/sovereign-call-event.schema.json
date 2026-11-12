@@ -89,6 +89,21 @@
       "type": "string",
       "pattern": "^[0-9a-f]{16}$"
     },
-    "latency_ms": { "type": "integer", "minimum": 0 }
+    "latency_ms": { "type": "integer", "minimum": 0 },
+    "would_cost": {
+      "description": "The credits the whole thought would have cost, one per say, action and intent, accepted or not (decision 0149).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "outcome_class": {
+      "description": "good when an item was accepted; bad when the Body refused the plan or the call failed; impossible when nothing reached the Body (decision 0149).",
+      "type": "string",
+      "enum": ["good", "bad", "impossible"]
+    },
+    "spent_this_life": {
+      "description": "The running total of credits the accepted items of this life would have cost, including this call (decision 0149).",
+      "type": "integer",
+      "minimum": 0
+    }
   }
 }

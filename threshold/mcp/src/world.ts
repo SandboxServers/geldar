@@ -71,6 +71,8 @@ export interface WorldDeps {
   players: PlayerDirectory;
   body: BodyGateway;
   budget: BudgetLedger;
+  /** Act budget enforcement (decision 0149). Off by default: every act is metered, none is refused. */
+  enforce?: boolean;
   sleeps: SleepMarks;
   profiles: AgentProfiles;
   journal: JournalStore;

@@ -1836,6 +1836,9 @@ export const mcpToolSchemas: Record<
       "additionalProperties": false,
       "required": [
         "budget_remaining_thoughts",
+        "spent_this_life",
+        "would_have_been_balance",
+        "metered_acts",
         "days_alive",
         "days_since_sleep",
         "untrusted_world_text",
@@ -1845,6 +1848,44 @@ export const mcpToolSchemas: Record<
         "budget_remaining_thoughts": {
           "type": "integer",
           "minimum": 0
+        },
+        "spent_this_life": {
+          "description": "The budget the accepted acts of this life would have cost. Metered while the budget is not enforced.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "would_have_been_balance": {
+          "description": "The balance this life would have if the acts were charged: the balance less spent_this_life. Can be negative.",
+          "type": "integer"
+        },
+        "metered_acts": {
+          "description": "Acts of this life by outcome class: good (an item was accepted), bad (the Body refused or the call failed after sending), impossible (nothing reached the Body).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "calls",
+            "good",
+            "bad",
+            "impossible"
+          ],
+          "properties": {
+            "calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "good": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bad": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "impossible": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
         },
         "days_alive": {
           "type": "integer",
