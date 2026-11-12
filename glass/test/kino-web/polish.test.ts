@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { EntityPosition } from '../../../contract/src/generated/types.ts';
 import {
   AGENT_TTL_MS,
   EntityStore,
@@ -9,6 +8,8 @@ import {
 } from '../../web/kino/entities.ts';
 import { blockedCount, foliageSafeCamera } from '../../web/kino/foliage.ts';
 import { aggregateStatus } from '../../web/kino/status.ts';
+
+type EntityPosition = ReturnType<EntityStore['list']>[number];
 
 const ent = (id: string, type: string, x = 0, agent?: string): EntityPosition => ({
   id,
