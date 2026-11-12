@@ -1,6 +1,16 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { block, COBBLESTONE, fakeBot, mine, OAK_LOG, STONE } from './mine.fakes.ts';
+import {
+  BEDROCK,
+  block,
+  COBBLESTONE,
+  fakeBot,
+  GRAVEL,
+  mine,
+  OAK_LOG,
+  STONE,
+  WATER,
+} from './mine.fakes.ts';
 import { type ItemStack, inventoryDelta } from './mine.ts';
 import { moveNear } from './pathing.ts';
 
@@ -50,19 +60,50 @@ describe('mineAction', () => {
     expect(bot.dig).not.toHaveBeenCalled();
   });
 
-  it('returns missing_materials and never digs when the bare hand cannot harvest', async () => {
-    const stone = block(STONE, new Vec3(3, 64, 0), [COBBLESTONE], { 270: true });
+  it('digs stone bare-handed, and says it took longer and dropped nothing', async () => {
+    const stone = block(STONE, new Vec3(3, 64, 0), [], { 270: true }, 'stone');
     const bot = fakeBot([stone]);
     const outcome = await mine(bot, 1, 'stone');
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'missing_materials' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
     expect(outcome).toMatchObject({
-      message: expect.stringMatching(
-        /^stone needs a pickaxe \(wooden_pickaxe\) and you hold none; without one you can mine: dirt, .*sandstone/,
-      ),
+      status: 'completed',
       detail: {
-        needs_tool: 'pickaxe',
-        can_mine_without: expect.arrayContaining(['sand', 'gravel']),
+        mined: 1,
+        collected: {},
+        note: expect.stringMatching(/stone was dug without a suitable tool.*dropped nothing/),
       },
+    });
+  });
+
+  it('refuses an unbreakable block with a typed reason and never digs', async () => {
+    const bedrock = block(BEDROCK, new Vec3(3, 64, 0), [], undefined, 'bedrock');
+    const bot = fakeBot([bedrock]);
+    expect(await mine(bot, 1, 'bedrock')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'bedrock cannot be broken by anyone, with any tool',
+    });
+    expect(bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('refuses a block with water beside it, and one with gravel above the bot', async () => {
+    const stone = block(STONE, new Vec3(3, 64, 0), [], { 270: true }, 'stone');
+    const water = block(WATER, new Vec3(3, 65, 0), [], undefined, 'water');
+    const wet = fakeBot([stone, water]);
+    expect(await mine(wet, 1, 'stone')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'stone is unsafe to dig: water would flow in on you',
+    });
+    expect(wet.dig).not.toHaveBeenCalled();
+
+    const gravel = block(GRAVEL, new Vec3(0, 66, 0), [], undefined, 'gravel');
+    const above = block(STONE, new Vec3(0, 65, 0), [], undefined, 'stone');
+    const bot = fakeBot([above, gravel]);
+    expect(await mine(bot, 1, 'stone')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'stone is unsafe to dig: gravel above it would fall on you',
     });
     expect(bot.dig).not.toHaveBeenCalled();
   });

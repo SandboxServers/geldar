@@ -1,3 +1,4 @@
+import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { AIR, block, type State, scriptedBot } from './escape-ladder.fakes.ts';
 import { escapeLadder } from './escape-ladder.ts';
@@ -84,17 +85,40 @@ describe('escapeLadder', () => {
     );
   });
 
-  it('rung 3 refuses stone with no pickaxe, naming the block and the tool class', async () => {
+  it('rung 3 digs stone bare-handed when no pickaxe is held', async () => {
     const fake = scriptedBot({
       blocks: { '1,64,0': block('stone', { harvestTools: { 270: true } }) },
       physics: walkEast,
     });
+    const { result } = run(fake);
+    expect(await result).toEqual({ ok: true, rung: 'dig' });
+    expect(fake.bot.dig).toHaveBeenCalledTimes(1);
+    expect(fake.bot.equip).not.toHaveBeenCalled();
+  });
+
+  it('rung 3 refuses an unbreakable block, naming it', async () => {
+    const fake = scriptedBot({ blocks: { '1,64,0': block('bedrock') }, physics: walkEast });
     const { result, lines } = run(fake);
     const outcome = await result;
     expect(outcome).toMatchObject({ ok: false, reason: 'needs_rescue' });
-    expect((outcome as { refusal?: string }).refusal).toMatch(/^stone needs a pickaxe/);
+    expect((outcome as { refusal?: string }).refusal).toBe(
+      'bedrock cannot be broken by anyone, with any tool',
+    );
     expect(fake.bot.dig).not.toHaveBeenCalled();
     expect(lines.find((l) => l.rung === 'dig')).toMatchObject({ worked: false });
+  });
+
+  it('rung 3 refuses a block with lava beside it', async () => {
+    const fake = scriptedBot({
+      blocks: { '1,64,0': block('stone'), '2,64,0': block('lava') },
+      physics: walkEast,
+    });
+    const { result } = run(fake);
+    expect(await result).toMatchObject({
+      ok: false,
+      refusal: 'stone is unsafe to dig: lava would flow in on you',
+    });
+    expect(fake.bot.dig).not.toHaveBeenCalled();
   });
 
   it('rung 4: places a held block under the feet and climbs; needs_rescue only after it fails', async () => {
@@ -109,7 +133,13 @@ describe('escapeLadder', () => {
     });
     const { result, lines } = run(fake);
     expect(await result).toEqual({ ok: true, rung: 'pillar' });
-    expect(rungs(lines).map(([r]) => r)).toEqual(['jump', 'sprint_jump', 'dig', 'pillar']);
+    expect(rungs(lines).map(([r]) => r)).toEqual([
+      'jump',
+      'sprint_jump',
+      'dig',
+      'stairs',
+      'pillar',
+    ]);
     expect(fake.bot.equip).toHaveBeenCalledWith({ name: 'dirt', count: 1 }, 'hand');
     expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
   });
@@ -120,9 +150,88 @@ describe('escapeLadder', () => {
     expect(await result).toEqual({
       ok: false,
       reason: 'needs_rescue',
-      message: 'no way out: tried jump, sprint_jump, dig, pillar',
+      message: 'no way out: tried jump, sprint_jump, dig, stairs, pillar',
     });
-    expect(rungs(lines)).toHaveLength(4);
+    expect(rungs(lines)).toHaveLength(5);
+  });
+
+  describe('stairs', () => {
+    /** A pit at (0,64,0): stone floor and walls, with a tall wall of stone to the east. */
+    function pit(extra: Record<string, ReturnType<typeof block>> = {}, water = false) {
+      const blocks: Record<string, ReturnType<typeof block>> = { '0,63,0': block('stone') };
+      for (let y = 64; y <= 66; y++) {
+        for (const key of [`-1,${y},0`, `0,${y},1`, `0,${y},-1`]) blocks[key] = block('stone');
+      }
+      for (let x = 1; x <= 3; x++) {
+        for (let y = 64; y <= 70; y++) blocks[`${x},${y},0`] = block('stone');
+      }
+      const fake: ReturnType<typeof scriptedBot> = scriptedBot({
+        water,
+        blocks: { ...blocks, ...extra },
+        physics: (s) => {
+          if (!(s.controls.jump && s.controls.forward)) return;
+          // Before the first dig the water holds the bot: only the stairs get it out.
+          if (s.entity.isInWater && fake.bot.dig.mock.calls.length === 0) return;
+          const x = Math.floor(s.position.x) + 1;
+          const y = Math.floor(s.position.y);
+          const at = (dy: number) => s.blockAt(new Vec3(x, y + dy, 0)).boundingBox;
+          if (at(0) === 'block' && at(1) !== 'block' && at(2) !== 'block') {
+            s.position.x += 1;
+            s.position.y += 1;
+          }
+        },
+      });
+      return fake;
+    }
+
+    it('climbs a one-wide staircase out of a pit, one block per two digs, logging each step', async () => {
+      const fake = pit();
+      const { result, lines } = run(fake);
+      expect(await result).toEqual({ ok: true, rung: 'stairs' });
+      expect(fake.state.position.y).toBe(67);
+      expect(fake.bot.dig).toHaveBeenCalledTimes(6);
+      const steps = lines.filter((l) => l.reason === 'escape_stairs' && l.step !== undefined);
+      expect(steps.map((l) => [l.step, l.dug])).toEqual([
+        [1, 2],
+        [2, 2],
+        [3, 2],
+      ]);
+      // The dig rung did not tunnel along the floor of a pit first.
+      expect(rungs(lines)).toEqual([
+        ['jump', false],
+        ['sprint_jump', false],
+        ['dig', false],
+        ['stairs', true],
+      ]);
+    });
+
+    it('in water runs the water exit first, then the stairs', async () => {
+      const fake = pit({}, true);
+      const { result, lines } = run(fake);
+      expect(await result).toEqual({ ok: true, rung: 'stairs' });
+      expect(rungs(lines)[0]).toEqual(['water_exit', false]);
+    });
+
+    it('stops with the typed reason when gravel is above the step', async () => {
+      const fake = pit({ '1,67,0': block('gravel') });
+      const { result, lines } = run(fake);
+      const outcome = await result;
+      expect(outcome).toMatchObject({
+        ok: false,
+        refusal: 'stone is unsafe to dig: gravel above it would fall on you',
+      });
+      // Step 1 dug nothing past the hazard: only the cells it checked first were dug.
+      expect(fake.state.position.y).toBeLessThan(67);
+      expect(lines.some((l) => l.reason === 'escape_stairs' && l.stopped === 'refused')).toBe(true);
+    });
+
+    it('does nothing when the bot is not in a pit', async () => {
+      const fake = scriptedBot({ blocks: { '1,64,0': block('stone') } });
+      const { result, lines } = run(fake);
+      await result;
+      expect(lines.find((l) => l.rung === 'stairs')).toMatchObject({ worked: false });
+      expect(lines.some((l) => l.reason === 'escape_stairs')).toBe(false);
+    });
   });
 
   it('water exit: holds jump to swim up, then jumps toward the nearest ledge, before any dig', async () => {

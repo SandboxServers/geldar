@@ -12,7 +12,7 @@ import {
   watchPathEvents,
 } from './stall-diag.ts';
 import {
-  DIG_GRACE_TICKS,
+  digGraceTicks,
   isDigging,
   JUMP_TICKS,
   pulseJump,
@@ -418,7 +418,7 @@ export function moveNear(
       if (isDigging(bot)) digSeenAge ??= bot.time.age;
       else digSeenAge = undefined;
       /** A young dig is not a stall: recovery would end it with "Digging aborted". */
-      const youngDig = digSeenAge !== undefined && bot.time.age - digSeenAge < DIG_GRACE_TICKS;
+      const youngDig = digSeenAge !== undefined && bot.time.age - digSeenAge < digGraceTicks(bot);
       if (jumpAge !== undefined && bot.time.age - jumpAge >= JUMP_TICKS) releaseJump();
       if (bot.entity.position.distanceTo(lastPos) >= MOVED_BLOCKS) {
         lastPos = bot.entity.position.clone();

@@ -8,6 +8,7 @@ import type { ActionContext } from './registry.ts';
 // Shared by mine.test.ts and mine-drops.test.ts.
 
 export interface FakeBlock {
+  name?: string;
   type: number;
   position: Vec3;
   drops: number[];
@@ -23,8 +24,10 @@ export function block(
   at: Vec3,
   drops: number[],
   harvestTools?: Record<number, boolean>,
+  name?: string,
 ): FakeBlock {
   return {
+    ...(name ? { name } : {}),
     type,
     position: at,
     drops,
@@ -36,6 +39,9 @@ export function block(
 export const OAK_LOG = 17;
 export const STONE = 1;
 export const COBBLESTONE = 4;
+export const BEDROCK = 7;
+export const WATER = 9;
+export const GRAVEL = 13;
 
 /**
  * A fake bot with the parts `mine` reads. Digging clears the block and adds its drops to the
@@ -53,7 +59,12 @@ export function fakeBot(blocks: FakeBlock[], inventory: ItemStack[] = []) {
     entities: {} as Record<number, { name: string; position: Vec3 }>,
     time: { age: 0 },
     registry: {
-      blocksByName: { oak_log: { id: OAK_LOG }, stone: { id: STONE } },
+      blocksByName: {
+        oak_log: { id: OAK_LOG },
+        stone: { id: STONE },
+        bedrock: { id: BEDROCK },
+        gravel: { id: GRAVEL },
+      },
       items: Object.fromEntries(Object.entries(names).map(([id, name]) => [id, { name }])),
     },
     inventory: { items: () => inventory },

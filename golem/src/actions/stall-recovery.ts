@@ -1,5 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { digTicks, digTicksWithMargin } from './bare-hand.ts';
+import type { Block } from './bot-types.ts';
 
 /** How long a recovery jump is held, in world ticks. */
 export const JUMP_TICKS = 5;
@@ -32,6 +34,19 @@ export function recordRecovery(bot: object, now: number): void {
  * stall rule's 60 ticks, and a recovery then ends it with "Digging aborted".
  */
 export const DIG_GRACE_TICKS = 200;
+
+/**
+ * The grace for the dig running now: `DIG_GRACE_TICKS`, or the block's computed dig time (digTime
+ * from minecraft-data, with the held tool) with margin when that is longer. A bare-handed stone
+ * takes about 150 ticks; obsidian about 5000.
+ */
+export function digGraceTicks(bot: Bot): number {
+  const b = bot as unknown as { targetDigBlock?: Block | null; digTime?: (block: Block) => number };
+  const target = b.targetDigBlock;
+  if (!target || typeof b.digTime !== 'function') return DIG_GRACE_TICKS;
+  const ticks = digTicks(bot, target);
+  return ticks === null ? DIG_GRACE_TICKS : Math.max(DIG_GRACE_TICKS, digTicksWithMargin(ticks));
+}
 
 /** True while a `bot.dig` or the pathfinder's own dig is running. */
 export function isDigging(bot: Bot): boolean {
