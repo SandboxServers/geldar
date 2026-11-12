@@ -77,9 +77,13 @@ public final class GeldarCore extends JavaPlugin {
         dev.geldar.core.kino.KinoFeed kino = dev.geldar.core.kino.KinoSetup.register(
                 this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
         dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
+        // The maintenance notice broadcast (CD-1c): maintenance.broadcast, applied by the same 5 s reload.
+        dev.geldar.core.maintenance.MaintenanceNotices maintenance = dev.geldar.core.maintenance.MaintenanceSetup
+                .register(this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();
             dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
+            dev.geldar.core.maintenance.MaintenanceSetup.reload(maintenance, getConfig());
         }, 100L, 100L);
 
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.
