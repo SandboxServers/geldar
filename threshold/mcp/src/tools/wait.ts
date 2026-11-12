@@ -1,4 +1,4 @@
-import type { McpInterest, WaitResult } from '@geldar/contract';
+import type { McpInterest, Snapshot, WaitResult } from '@geldar/contract';
 import {
   decodeCursor,
   encodeCursor,
@@ -8,6 +8,7 @@ import {
 } from '@geldar/mcp-mock';
 import type { RunState } from '../events/mapper.ts';
 import { fitResult, toPlayerEvents, WORLD_TEXT_NOTE, worldText } from '../events/present.ts';
+import { type FailureTracker, factEvents, placeOf } from '../failures/tracker.ts';
 import { toPlayView } from '../play-view.ts';
 import type {
   BodyGateway,
@@ -65,6 +66,8 @@ export interface WaitDeps {
   runs: Map<string, RunState>;
   config: WakeConfig;
   state: WaitState;
+  /** Repeated-failure memory: when set, a goal that failed three times in a row is stated as an event. */
+  failures?: FailureTracker | undefined;
   touchPresence?: TouchPresence;
   /** Receives a failed touch as `presence_error`; the wait goes on without it. */
   presenceLog?: (line: Record<string, unknown>) => void;
@@ -196,8 +199,10 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   // The snapshot goes out as a play view, as `look` sends it: no heard lines, no sign text, and the
   // balance and days since sleep from the server. Speech comes from the event log only.
   let view: ReturnType<typeof toPlayView>;
+  let bodySnapshot: Snapshot;
   try {
     const body = await deps.body.snapshot(lifeId);
+    bodySnapshot = body;
     const budget = await deps.budget.balance(lifeId, clock.nowMs());
     const mark = await deps.sleeps.read(lifeId);
     view = toPlayView(body, {
@@ -212,9 +217,11 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   await touch();
 
   const since = await log.since(lifeId, from);
+  const facts =
+    deps.failures?.observe(lifeId, since.events, placeOf(bodySnapshot), clock.nowMs()) ?? [];
   const result: WaitResult = {
     snapshot: view.snapshot as unknown as WaitResult['snapshot'],
-    events: toPlayerEvents(since.events),
+    events: [...toPlayerEvents(since.events), ...factEvents(facts, log.head(lifeId), 0)],
     cursor: encodeCursor(log.head(lifeId)),
     wake_reason: reason,
     dropped_events: since.dropped,

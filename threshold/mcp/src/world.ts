@@ -19,6 +19,7 @@ import {
   type WakeConfig,
 } from '@geldar/mcp-mock';
 import type { RunState } from './events/mapper.ts';
+import { FailureTracker } from './failures/tracker.ts';
 import { TOOL_OUTCOMES } from './http/log.ts';
 import {
   type AgentProfiles,
@@ -118,6 +119,7 @@ type Wired = WorldDeps & {
   now: () => number;
   lives: Set<string>;
   waitState: WaitState;
+  failures: FailureTracker;
   /** `deps.log` behind the per-kind rate limit: presence and settle failures, once a minute each. */
   presenceLog: (line: Record<string, unknown>) => void;
 };
@@ -202,6 +204,7 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       runs: deps.runs,
       config: deps.wake,
       state: deps.waitState,
+      failures: deps.failures,
       presenceLog: deps.presenceLog,
       touchPresence: async (lifeId) => {
         deps.lives.add(lifeId);
@@ -302,6 +305,7 @@ export function createWorld(deps: WorldDeps): World {
     now: () => deps.clock.nowMs(),
     lives: new Set(),
     waitState: createWaitState(),
+    failures: new FailureTracker(),
     presenceLog: rateLimitedPresenceLog(deps.log, () => deps.clock.nowMs()),
   };
   const unavailable = (tool: NotAvailableTool): ToolHandler =>
@@ -312,6 +316,7 @@ export function createWorld(deps: WorldDeps): World {
     journal: wired.journal,
     marks: wired.sleeps,
     now: wired.now,
+    failures: wired.failures,
     buildSleepPlan: sleepPlanOf(wired.expiresAfterTicks),
   };
   const stopSettle = startSettle(wired);
