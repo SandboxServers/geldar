@@ -41,7 +41,7 @@ describe('texture loader', () => {
     const second = await loadTextures('https://map.example/maps/w/textures.json', src);
     expect(fetches).toBe(1);
     expect(cache.puts).toBe(1);
-    expect(second.get('minecraft:block/stone')).toBe(first.get('minecraft:block/stone'));
+    expect(second.get('minecraft:block/stone')).toEqual(first.get('minecraft:block/stone'));
   });
 
   it('does not cache a failed response', async () => {
@@ -53,9 +53,9 @@ describe('texture loader', () => {
 
   it('parses BlueMap array form and a flat map, ignoring junk', () => {
     expect(parseTextures(BODY).size).toBe(1);
-    expect(parseTextures({ 'minecraft:block/dirt': 'data:x' }).get('minecraft:block/dirt')).toBe(
-      'data:x',
-    );
+    expect(
+      parseTextures({ 'minecraft:block/dirt': 'data:x' }).get('minecraft:block/dirt')?.texture,
+    ).toBe('data:x');
     expect(parseTextures({ textures: [{ id: 3 }, null] }).size).toBe(0);
     expect(parseTextures(null).size).toBe(0);
   });

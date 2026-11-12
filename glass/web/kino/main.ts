@@ -10,6 +10,7 @@ import type { FeedState } from './feed.ts';
 import { PaneSet } from './panes/pane-set.ts';
 import { KinoScene } from './scene.ts';
 import { byeText, KinoSession, type SocketLike } from './session.ts';
+import { type StatusInfo, statusLine } from './status.ts';
 import { parseTargets, targetsNotice } from './targets.ts';
 
 const meta = (name: string): string =>
@@ -61,7 +62,34 @@ async function main(): Promise<void> {
     notice.textContent = 'No map textures are configured for Kino.';
     return;
   }
-  const atlas = await buildAtlas(texturesUrl);
+  const barStatus = el('status');
+  barStatus.textContent = statusLine({
+    connected: false,
+    chunks: 0,
+    entities: 0,
+    atlas: { state: 'loading' },
+  });
+  let atlas: Awaited<ReturnType<typeof buildAtlas>>;
+  let atlasInfo: StatusInfo['atlas'];
+  try {
+    atlas = await buildAtlas(texturesUrl);
+    atlasInfo = { state: 'ready', count: atlas.count };
+    barStatus.textContent = statusLine({
+      connected: false,
+      chunks: 0,
+      entities: 0,
+      atlas: atlasInfo,
+    });
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    barStatus.textContent = statusLine({
+      connected: false,
+      chunks: 0,
+      entities: 0,
+      atlas: { state: 'failed', error },
+    });
+    return;
+  }
   const host = el('panes');
   const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/kino/ws`;
 
@@ -73,7 +101,19 @@ async function main(): Promise<void> {
     msg.className = 'msg';
     const tools = document.createElement('div');
     tools.className = 'tools';
-    root.append(canvas, tools, msg);
+    const status = document.createElement('div');
+    status.className = 'status';
+    root.append(canvas, tools, msg, status);
+    let connected = false;
+    let entityCount = 0;
+    const showStatus = (): void => {
+      status.textContent = statusLine({
+        connected,
+        chunks: state?.world.keys().length ?? 0,
+        entities: entityCount,
+        atlas: atlasInfo,
+      });
+    };
     host.appendChild(root);
     const renderer = new WebGLRenderer({ canvas, antialias: false });
     const rig = new CameraRig();
@@ -86,9 +126,14 @@ async function main(): Promise<void> {
       onReset(s) {
         state = s;
         view = new KinoScene(s, atlas.uv, atlas.material);
+        connected = true;
+        showStatus();
       },
       onChange(change) {
         view?.update(change);
+        connected = true;
+        if (change.entities) entityCount = change.entities.length;
+        showStatus();
         if (change.notice) {
           msg.textContent = change.notice;
           setTimeout(() => {
@@ -98,6 +143,8 @@ async function main(): Promise<void> {
       },
       onEnd(reason) {
         msg.textContent = byeText(reason);
+        connected = false;
+        showStatus();
       },
     });
     let current: CameraMode = mode;
@@ -129,6 +176,7 @@ async function main(): Promise<void> {
         const pos = rig.update(state.world, focus, Math.min(0.1, (now - last) / 1000));
         last = now;
         view.camera.position.set(pos.x, pos.y, pos.z);
+        view.cullAround(pos);
         const look = rig.lookTarget(focus);
         view.camera.lookAt(look.x, look.y, look.z);
         renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
