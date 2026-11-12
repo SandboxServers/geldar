@@ -3,6 +3,22 @@ import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
+import {
+  DEFAULT_DIAG_SINK,
+  type DiagSink,
+  emitStallDiag,
+  type RecoveryStep,
+  type StallFacts,
+  watchPathEvents,
+} from './stall-diag.ts';
+import {
+  JUMP_TICKS,
+  pulseJump,
+  recordRecovery,
+  recoveryAllowed,
+  setJump,
+  stopDigIfDigging,
+} from './stall-recovery.ts';
 
 const { pathfinder, Movements, goals } = pathfinderPkg;
 
@@ -13,6 +29,11 @@ const SEARCH_BUDGET_MS = 4000;
 /** Stall then replan: under this many blocks of movement for this many ticks drops the path. */
 const REPLAN_MOVED = 0.03;
 export const REPLAN_STALL_TICKS = 60;
+/**
+ * Still ticks before the one stall recovery of an episode (stop a dig, re-set the goal, jump at a
+ * step). It shares the replan tick: the existing replan rule pins its first re-set to this tick.
+ */
+export const RECOVERY_STALL_TICKS = 60;
 /** At most this many replans per goto; after that only the long stall rule below ends the move. */
 export const MAX_REPLANS = 6;
 
@@ -169,23 +190,35 @@ function fixedMessage(name: string | undefined, error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The options `moveNear` takes; `diag` is where its stall_diag lines go (the Body's log by default). */
+export interface MoveOptions {
+  signal: AbortSignal;
+  timeScale: number;
+  stallTicks?: number;
+  diag?: DiagSink;
+}
+
 /**
  * Walks the bot to within `range` of `target`. Stops early with `blocked` when the bot has not
  * moved 0.75 blocks for `stallTicks` world ticks (`bot.time.age`, not wall time), and with
  * `cancelled` when the signal aborts. A shorter stall (under 0.03 blocks for 60 ticks) drops the
- * path and replans from where the bot stands, up to 6 times. When the goal is unreachable the bot
- * walks the partial path to the closest reachable spot and the result says `partial`. `timeScale`
- * is accepted for the caller's convenience but the wall timeout is the caller's (through
- * `runAction`), so it is not used here.
+ * path and replans from where the bot stands, up to 6 times. The first stall of an episode (no
+ * movement for 60 ticks, when the stall limit is longer) is one recovery: it stops a dig, re-sets
+ * the goal and pulses a jump at a one-block step, and is logged as a `stall_diag` line. When the
+ * goal is unreachable the bot walks the partial path to the closest reachable spot and the result
+ * says `partial`. `timeScale` is accepted for the caller's convenience but the wall timeout is the
+ * caller's (through `runAction`), so it is not used here.
  */
 export function moveNear(
   bot: Bot,
   target: { x: number; y: number; z: number },
   range: number,
-  opts: { signal: AbortSignal; timeScale: number; stallTicks?: number },
+  opts: MoveOptions,
 ): Promise<MoveResult> {
   ensurePathfinder(bot);
+  watchPathEvents(bot);
   const stallTicks = opts.stallTicks ?? DEFAULT_STALL_TICKS;
+  const sink = opts.diag ?? DEFAULT_DIAG_SINK;
   const goal = new Vec3(target.x, target.y, target.z);
 
   return new Promise<MoveResult>((resolve, reject) => {
@@ -195,6 +228,12 @@ export function moveNear(
     }
     let done = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
+    let jumpAge: number | undefined;
+    const releaseJump = (): void => {
+      if (jumpAge === undefined) return;
+      jumpAge = undefined;
+      setJump(bot, false);
+    };
     const onAbort = (): void => {
       haltPathing(bot);
       settle({ ok: false, reason: 'cancelled', message: 'move cancelled' });
@@ -202,21 +241,35 @@ export function moveNear(
     const cleanup = (): void => {
       clearInterval(watchdog);
       opts.signal.removeEventListener('abort', onAbort);
+      releaseJump();
     };
-    const settle = (result: MoveResult): void => {
+    const settle = (result: MoveResult, facts?: StallFacts): void => {
       if (done) return;
       done = true;
       cleanup();
+      if (facts) emitStallDiag(bot, facts, sink);
       resolve(result);
     };
 
     let lastPos = bot.entity.position.clone();
     let lastMovedAge = bot.time.age;
+    let lastMovedAt = sink.now();
     let replanPos = bot.entity.position.clone();
     let replanAge = bot.time.age;
     let replans = 0;
     let partial = false;
     let generation = 0;
+    let recoveredEpisode: number | undefined;
+    let recoverySteps: readonly RecoveryStep[] = [];
+
+    /** The facts of this move's stall or path failure, for its stall_diag line. */
+    const factsAt = (reason: string, stalledTicks: number): StallFacts => ({
+      reason,
+      stalledTicks,
+      msSinceMove: sink.now() - lastMovedAt,
+      recovery: recoverySteps,
+      toward: target,
+    });
 
     /** Starts (or restarts) a walk to `aim`; answers from an older walk are ignored. */
     const start = (aim: unknown): void => {
@@ -245,7 +298,11 @@ export function moveNear(
           }
           const name = (error as { name?: string } | null)?.name;
           if (name === 'NoPath' && !partial && followPartial()) return;
-          settle({ ok: false, reason, message: fixedMessage(name, error) });
+          const facts =
+            reason === 'blocked'
+              ? factsAt(name ?? 'blocked', bot.time.age - lastMovedAge)
+              : undefined;
+          settle({ ok: false, reason, message: fixedMessage(name, error) }, facts);
         },
       );
     };
@@ -267,18 +324,63 @@ export function moveNear(
       return true;
     };
 
+    /** The one recovery of a stall episode: stop a dig, re-set the goal, pulse a jump at a step. */
+    const recover = (stalledTicks: number): void => {
+      recoveredEpisode = lastMovedAge;
+      recordRecovery(bot, sink.now());
+      const steps: RecoveryStep[] = [];
+      if (stopDigIfDigging(bot)) steps.push('stopDigging');
+      haltPathing(bot);
+      replans++;
+      replanAge = bot.time.age;
+      replanPos = bot.entity.position.clone();
+      try {
+        start(new goals.GoalNear(target.x, target.y, target.z, range));
+      } catch (error) {
+        done = true;
+        cleanup();
+        reject(error);
+        return;
+      }
+      steps.push('replan');
+      if (pulseJump(bot, target)) {
+        jumpAge = bot.time.age;
+        steps.push('jump');
+      }
+      recoverySteps = steps;
+      emitStallDiag(bot, factsAt('stall', stalledTicks), sink);
+    };
+
     watchdog = setInterval(() => {
+      if (jumpAge !== undefined && bot.time.age - jumpAge >= JUMP_TICKS) releaseJump();
       if (bot.entity.position.distanceTo(lastPos) >= MOVED_BLOCKS) {
         lastPos = bot.entity.position.clone();
         lastMovedAge = bot.time.age;
-      } else if (bot.time.age - lastMovedAge >= stallTicks) {
-        haltPathing(bot);
-        settle({
-          ok: false,
-          reason: 'blocked',
-          message: `no movement for ${stallTicks} world ticks`,
-        });
-        return;
+        lastMovedAt = sink.now();
+      } else {
+        const stalledTicks = bot.time.age - lastMovedAge;
+        if (stalledTicks >= stallTicks) {
+          haltPathing(bot);
+          settle(
+            {
+              ok: false,
+              reason: 'blocked',
+              message: `no movement for ${stallTicks} world ticks`,
+            },
+            factsAt('stall', stalledTicks),
+          );
+          return;
+        }
+        if (
+          stalledTicks >= RECOVERY_STALL_TICKS &&
+          RECOVERY_STALL_TICKS < stallTicks &&
+          recoveredEpisode !== lastMovedAge &&
+          bot.entity.position.distanceTo(replanPos) < REPLAN_MOVED &&
+          recoveryAllowed(bot, sink.now())
+        ) {
+          recover(stalledTicks);
+          if (done) return;
+        }
       }
       if (bot.entity.position.distanceTo(replanPos) >= REPLAN_MOVED) {
         replanPos = bot.entity.position.clone();
