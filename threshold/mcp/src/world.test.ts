@@ -74,7 +74,8 @@ function ctx(playerId = PLAYER.playerId): ToolContext {
 /** Runs one tool through the mock's registry, so input and result validation apply. */
 async function run(tools: ToolHandlers, name: string, args: unknown = {}, playerId?: string) {
   const response = await callTool(tools, name, args, ctx(playerId));
-  return { isError: response.isError === true, text: response.content[0]?.text ?? '' };
+  const first = response.content[0];
+  return { isError: response.isError === true, text: first?.type === 'text' ? first.text : '' };
 }
 
 describe('the read-only handlers', () => {
@@ -429,5 +430,16 @@ describe('a presence fault does not take down a tool', () => {
     expect(reply.text).not.toContain('kv down');
     expect(logged).toContainEqual({ event: 'presence_error', cause: 'Error: kv down' });
     world.close();
+  });
+});
+
+describe('see: a refused picture is a tool error, never data', () => {
+  it('turns a Body refusal into a view_unavailable error with the plain words', async () => {
+    const { tools, body } = rig();
+    body.see = async () => ({ error: 'view_unavailable', detail: 'rate_limited' });
+    const reply = await run(tools, 'see', {});
+    expect(reply.isError).toBe(true);
+    expect(reply.text.startsWith('view_unavailable: ')).toBe(true);
+    expect(reply.text).toContain('one every 5 seconds');
   });
 });

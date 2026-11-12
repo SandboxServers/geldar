@@ -9,7 +9,7 @@ import type {
   WriteBookInputArgs,
 } from '@geldar/contract';
 import type { McpWorld } from '../app.ts';
-import type { ToolHandlers } from '../registry.ts';
+import { ImageToolResult, type ToolHandlers } from '../registry.ts';
 import { actTool, sayTool } from './act.ts';
 import {
   defineSkillTool,
@@ -55,6 +55,11 @@ export function createSimWorld(opts: SimWorldOptions): McpWorld & { hub: SimHub 
     say: (input, ctx) => sayTool(hub, ctx, input as SayInput),
     read_book: (_input, ctx) => readBookTool(hub, ctx),
     view: () => ({ text: 'Facing north. Grass ahead, a stone wall to the east.' }),
+    see: () =>
+      new ImageToolResult(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+        'what you see, from your eyes (an approximation, not a photograph)',
+      ),
     write_book: (input, ctx) => writeBookTool(hub, ctx, input as WriteBookInputArgs),
     define_skill: (input, ctx) => defineSkillTool(hub, ctx, input as DefineSkillInput),
     use_skill: (input, ctx) => useSkillTool(hub, ctx, input as UseSkillInput),

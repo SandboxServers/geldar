@@ -12,6 +12,14 @@ import {
 
 const ctx: ToolContext = { playerId: 'a', signal: new AbortController().signal };
 
+type ToolResult = Awaited<ReturnType<typeof callTool>>;
+
+// The first content block's text; an image block (see) has none, so it reads as ''.
+function textOf(res: ToolResult): string {
+  const block = res.content[0];
+  return block && 'text' in block ? block.text : '';
+}
+
 const inputs: Record<McpToolName, unknown> = {
   look: {},
   wait: { max_seconds: 5 },
@@ -19,6 +27,7 @@ const inputs: Record<McpToolName, unknown> = {
   say: { text: 'hello' },
   read_book: {},
   view: {},
+  see: {},
   write_book: { title: 'T', text: 'body' },
   define_skill: { name: 'chop', description: 'chops', code: 'return 1;' },
   use_skill: { name: 'chop', args: {} },
@@ -65,14 +74,19 @@ describe('callTool', () => {
     const handlers = createFakeHandlers();
     for (const name of MCP_TOOL_NAMES) {
       const res = await callTool(handlers, name, inputs[name], ctx);
-      expect(res.isError, `${name}: ${res.content[0]?.text}`).toBeUndefined();
-      expect(() => JSON.parse(res.content[0]?.text ?? '')).not.toThrow();
+      expect(res.isError, `${name}: ${textOf(res)}`).toBeUndefined();
+      if (name === 'see') {
+        // A picture is an image block, not JSON text; its caption follows as a text block.
+        expect(res.content[0]).toMatchObject({ type: 'image', mimeType: 'image/png' });
+        continue;
+      }
+      expect(() => JSON.parse(textOf(res))).not.toThrow();
     }
   });
 
   it('returns the journal under the lowercase title from sleep', async () => {
     const res = await callTool(createFakeHandlers(), 'sleep', {}, ctx);
-    const body = JSON.parse(res.content[0]?.text ?? '') as {
+    const body = JSON.parse(textOf(res)) as {
       untrusted_world_text: { book: { title: string } };
     };
     expect(body.untrusted_world_text.book.title).toBe('journal');
@@ -81,7 +95,7 @@ describe('callTool', () => {
   it('refuses a result over the limit the caller passes, not only the 16 KiB default', async () => {
     const res = await callTool(createFakeHandlers(), 'sleep', {}, ctx, undefined, undefined, 64);
     expect(res.isError).toBe(true);
-    expect(res.content[0]?.text).toBe('result_too_large: sleep');
+    expect(textOf(res)).toBe('result_too_large: sleep');
   });
 
   it('treats missing arguments as an empty object', async () => {
@@ -94,10 +108,10 @@ describe('callTool', () => {
   it('rejects invalid input and unknown tools', async () => {
     const bad = await callTool(createFakeHandlers(), 'wait', { max_seconds: 1 }, ctx);
     expect(bad.isError).toBe(true);
-    expect(bad.content[0]?.text.startsWith('invalid_input:')).toBe(true);
+    expect(textOf(bad).startsWith('invalid_input:')).toBe(true);
     const unknown = await callTool(createFakeHandlers(), 'dance', {}, ctx);
     expect(unknown.isError).toBe(true);
-    expect(unknown.content[0]?.text).toBe('unknown_tool: dance');
+    expect(textOf(unknown)).toBe('unknown_tool: dance');
   });
 
   it('truncates a long invalid_input message to 600 characters', async () => {
@@ -108,7 +122,7 @@ describe('callTool', () => {
       ctx,
     );
     expect(res.isError).toBe(true);
-    const text = res.content[0]?.text ?? '';
+    const text = textOf(res);
     expect(text.startsWith('invalid_input:')).toBe(true);
     expect(text.length).toBe(600);
   });
@@ -136,8 +150,10 @@ describe('callTool', () => {
       ctx,
       (m) => logged.push(m),
     );
-    expect(hidden.content[0]?.text.startsWith('internal_error:')).toBe(true);
-    expect(hidden.content[0]?.text).not.toContain('secret path');
+    const hiddenFirst = hidden.content[0];
+    const hiddenText = hiddenFirst?.type === 'text' ? hiddenFirst.text : '';
+    expect(hiddenText.startsWith('internal_error:')).toBe(true);
+    expect(hiddenText).not.toContain('secret path');
     expect(logged.join('\n')).toContain('secret path');
   });
 
@@ -151,7 +167,8 @@ describe('callTool', () => {
       (m) => logged.push(m),
     );
     expect(res.isError).toBe(true);
-    expect(res.content[0]?.text.startsWith('invalid_output:')).toBe(true);
+    const resFirst = res.content[0];
+    expect(resFirst?.type === 'text' && resFirst.text.startsWith('invalid_output:')).toBe(true);
     expect(logged.length).toBe(1);
     expect(logged[0]).toContain('invalid_output');
   });
@@ -211,8 +228,12 @@ describe('callTool', () => {
   it('answers look and wait with a play snapshot, the same in a fixed order', async () => {
     const view = async (h: ToolHandlers, name: 'look' | 'wait') => {
       const res = await callTool(h, name, name === 'wait' ? { max_seconds: 5 } : {}, ctx);
-      return (JSON.parse(res.content[0]?.text ?? '') as { snapshot: Record<string, unknown> })
-        .snapshot;
+      const first = res.content[0];
+      return (
+        JSON.parse(first?.type === 'text' ? first.text : '') as {
+          snapshot: Record<string, unknown>;
+        }
+      ).snapshot;
     };
     const h = createFakeHandlers();
     const a = await view(h, 'look');
@@ -242,8 +263,10 @@ describe('callTool', () => {
     };
     const big = await waitWith(100);
     expect(big.isError).toBe(true);
-    expect(big.content[0]?.text.startsWith('result_too_large:')).toBe(true);
+    const bigFirst = big.content[0];
+    expect(bigFirst?.type === 'text' && bigFirst.text.startsWith('result_too_large:')).toBe(true);
     const ok = await waitWith(40);
-    expect(ok.isError, ok.content[0]?.text).toBeUndefined();
+    const first = ok.content[0];
+    expect(ok.isError, first?.type === 'text' ? first.text : '').toBeUndefined();
   });
 });

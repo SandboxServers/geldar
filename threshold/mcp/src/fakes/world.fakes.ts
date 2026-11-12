@@ -111,7 +111,17 @@ export class FakeBody implements BodyGateway {
     return this.books.get(lifeId) ?? NO_BOOK;
   }
 
-  /** A fixed viewport text; a life whose Body is offline cannot read it. */
+  /** A fixed picture; a life whose Body is offline cannot draw one. */
+  async see(
+    lifeId: string,
+    _size: { width?: number; height?: number },
+  ): Promise<{ png: string } | { error: 'view_unavailable'; detail: string }> {
+    this.requireOnline(lifeId);
+    return {
+      png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+    };
+  }
+
   async view(lifeId: string): Promise<{ text: string } | { error: 'unavailable' }> {
     this.requireOnline(lifeId);
     return { text: 'Open ground to the north; a wall of stone three blocks east.' };

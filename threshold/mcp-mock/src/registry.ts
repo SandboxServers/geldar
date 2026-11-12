@@ -32,10 +32,31 @@ export class ToolError extends Error {
   }
 }
 
-/** What `callTool` returns: one text part, with `isError` set on a failure. */
+/**
+ * A tool result that is a picture (decision 0156, VP-3): the PNG as base64 and the caption. Only
+ * `see` returns one. It is sent as an image content block plus a text block, not as JSON, and it
+ * is capped by IMAGE_MAX_BASE64_CHARS rather than the JSON result cap.
+ */
+export class ImageToolResult {
+  readonly png: string;
+  readonly caption: string;
+
+  constructor(png: string, caption: string) {
+    this.png = png;
+    this.caption = caption;
+  }
+}
+
+/** The largest picture in base64 characters: the 256 KB PNG cap (decision 0156) encoded. */
+export const IMAGE_MAX_BASE64_CHARS = 349_528;
+
+/** What `callTool` returns: a text part, or an image part and its caption; `isError` set on a failure. */
 export interface ToolResponse {
   isError?: boolean;
-  content: { type: 'text'; text: string }[];
+  content: (
+    | { type: 'text'; text: string }
+    | { type: 'image'; data: string; mimeType: 'image/png' }
+  )[];
 }
 
 /** The tool list, sorted by name, with a copy of the bundled contract input schema for each (callers may mutate it). */
@@ -90,6 +111,24 @@ export async function callTool(
       `handler for ${tool} threw: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
     );
     return failure(`internal_error: ${fault}`);
+  }
+
+  if (result instanceof ImageToolResult) {
+    if (result.png.length > IMAGE_MAX_BASE64_CHARS) {
+      log(`result_too_large from ${tool}: ${result.png.length} base64 characters`);
+      return failure(`result_too_large: ${tool}`);
+    }
+    const picture = validateToolResult(tool, { png: result.png, caption: result.caption });
+    if (!picture.ok) {
+      log(`invalid_output from ${tool}: ${picture.errors.join('; ')}`);
+      return failure(`invalid_output: ${tool}`);
+    }
+    return {
+      content: [
+        { type: 'image', data: result.png, mimeType: 'image/png' },
+        { type: 'text', text: result.caption },
+      ],
+    };
   }
 
   const checked = validateToolResult(tool, result);

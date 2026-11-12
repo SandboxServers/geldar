@@ -1,6 +1,6 @@
 import { makeId } from './ids.ts';
 import { toPlaySnapshot } from './play-snapshot.ts';
-import type { ToolHandlers } from './registry.ts';
+import { ImageToolResult, type ToolHandlers } from './registry.ts';
 import { buildSnapshot } from './snapshot.ts';
 
 const NOTE =
@@ -63,6 +63,11 @@ export function createFakeHandlers(): ToolHandlers {
       note: NOTE,
     }),
     view: () => ({ text: 'Open ground to the north; a wall of stone three blocks east.' }),
+    see: () =>
+      new ImageToolResult(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+        'what you see, from your eyes (an approximation, not a photograph)',
+      ),
     write_book: () => ({ book_id: makeId('bk', 2), budget_remaining_thoughts: BUDGET }),
     define_skill: () => ({
       skill_id: 'sk_mock',
