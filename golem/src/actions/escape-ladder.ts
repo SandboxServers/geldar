@@ -1,11 +1,13 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { inPit, stairs } from './escape-stairs.ts';
 import { errorText } from './outcome.ts';
 import type { DiagSink } from './stall-diag.ts';
 
 /** The rungs of the hard-stuck ladder, in the only order they run. */
-export type Rung = 'water_exit' | 'jump' | 'sprint_jump' | 'dig' | 'pillar';
+export type Rung = 'water_exit' | 'jump' | 'sprint_jump' | 'dig' | 'stairs' | 'pillar';
 
 /** Ticks a rung is given to show movement. */
 const RUNG_TICKS = 20;
@@ -13,19 +15,6 @@ const RUNG_TICKS = 20;
 const FREE_DISTANCE = 1.2;
 /** Ticks the swim-up of the water exit may take. */
 const SWIM_TICKS = 40;
-
-/** Blocks bare hands may dig to get free, when no better tool is in the inventory. */
-export const BARE_HAND_OK: ReadonlySet<string> = new Set([
-  'dirt',
-  'grass_block',
-  'coarse_dirt',
-  'podzol',
-  'sand',
-  'red_sand',
-  'gravel',
-  'sandstone',
-  'red_sandstone',
-]);
 
 /** What a finished ladder reports. `refusal` names a block the dig rung would not take, and why. */
 export type LadderResult =
@@ -160,25 +149,15 @@ async function hop(bot: Bot, o: LadderOptions, sprint: boolean): Promise<boolean
   return moved(bot, start);
 }
 
-/** The tool class of a block: `pickaxe` from `wooden_pickaxe`, or from the block's material. */
-export function toolClass(bot: Bot, block: Block): string {
-  const named = Object.keys(block.harvestTools ?? {})
-    .map((id) => bot.registry.items[Number(id)]?.name)
-    .find((name): name is string => typeof name === 'string');
-  if (named) return named.slice(named.lastIndexOf('_') + 1);
-  const material = String((block as { material?: string }).material ?? '');
-  return /mineable\/(\w+)/.exec(material)?.[1] ?? 'tool';
-}
-
-/** Why a bare-handed dig of `block` is refused, or null when it may go ahead. */
-export function bareHandRefusal(bot: Bot, block: Block, hasTool: boolean): string | null {
-  if (hasTool || BARE_HAND_OK.has(block.name) || block.name.endsWith('_leaves')) return null;
-  return `${block.name} needs a ${toolClass(bot, block)} and you hold none; without one you can still dig: ${[...BARE_HAND_OK].slice(0, 6).join(', ')}`;
-}
-
-/** Digs the block in front (feet then head level) toward the goal, with the best tool or bare hands. */
+/**
+ * Digs the block in front (feet then head level) toward the goal, with the best tool or bare hands.
+ * Any breakable block may be dug by hand (slowly, with no drop); only an unbreakable block or a
+ * dangerous one (water, lava or a falling block behind it) is refused, with the reason.
+ */
 async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise<boolean> {
   const b = bot as LooseBot;
+  // A tunnel out of a pit does not climb, and ruins the wall the stairs would use: stairs go next.
+  if (inPit(bot)) return false;
   const start = b.entity.position.clone();
   const feet = start.floored();
   const dir = stepToward(start, o.toward);
@@ -186,7 +165,9 @@ async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise
     const block = bot.blockAt(feet.plus(dir).offset(0, dy, 0));
     if (!solid(block) || block === null) continue;
     const tool = b.pathfinder?.bestHarvestTool?.(block);
-    const refusal = bareHandRefusal(bot, block, Boolean(tool));
+    const at = feet.plus(dir).offset(0, dy, 0);
+    const refusal =
+      unbreakableReason(block) ?? hazardReason(bot, block, at, [feet, feet.offset(0, 1, 0)], false);
     if (refusal) {
       refusals.push(refusal);
       return false;
@@ -282,6 +263,7 @@ export async function escapeLadder(bot: Bot, o: LadderOptions): Promise<LadderRe
     ['jump', () => hop(bot, o, false)],
     ['sprint_jump', () => hop(bot, o, true)],
     ['dig', () => digAhead(bot, o, refusals)],
+    ['stairs', () => stairs(bot, o, refusals)],
     ['pillar', () => pillar(bot, o)],
   ];
   if (inWater(bot)) rungs.unshift(['water_exit', () => waterExit(bot, o)]);
@@ -296,7 +278,9 @@ export async function escapeLadder(bot: Bot, o: LadderOptions): Promise<LadderRe
         rung,
         worked,
         in_water: inWater(bot),
-        ...(refusals.length > 0 && rung === 'dig' ? { refusal: refusals[0] } : {}),
+        ...(refusals.length > 0 && (rung === 'dig' || rung === 'stairs')
+          ? { refusal: refusals[0] }
+          : {}),
       }),
     );
     if (worked) return { ok: true, rung };

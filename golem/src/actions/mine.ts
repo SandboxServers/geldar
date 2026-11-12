@@ -1,8 +1,8 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { digTicks, handNote, hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block, Item } from './bot-types.ts';
-import { BARE_HAND_OK, toolClass } from './escape-ladder.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { ensurePathfinder, type MoveResult, moveNear } from './pathing.ts';
@@ -79,6 +79,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   const tried = new Set<string>();
   let mined = 0;
   let lastMined = '';
+  const handNotes: string[] = [];
 
   while (mined < action.count) {
     if (signal.aborted) return abort(bot, mined);
@@ -111,18 +112,14 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // The fastest tool in the inventory; null when no item helps. A block that needs a tool
     // cannot be harvested without one of the listed tools.
     const tool = bot.pathfinder.bestHarvestTool(block);
-    if (block.harvestTools && !block.canHarvest(tool?.type ?? null)) {
-      return failed(
-        'missing_materials',
-        refusalText(bot, block, action.block, toolNames(bot, block)),
-        {
-          mined,
-          needs_tool: toolClass(bot, block),
-          can_mine_without: [...BARE_HAND_OK],
-        },
-      );
-    }
+    // Any breakable block may be dug by hand; only an unbreakable or a dangerous one is refused.
+    const refusal =
+      unbreakableReason(block) ??
+      hazardReason(bot, block, at, [feetCell(bot), feetCell(bot).offset(0, 1, 0)], false);
+    if (refusal) return failed('not_possible', refusal, { mined });
     if (tool) await bot.equip(tool, 'hand');
+    const note = handNote(block, tool ?? null, digTicks(bot, block));
+    if (note) handNotes.push(note);
     if (signal.aborted) return abort(bot, mined);
 
     // What the inventory had gained when this block broke: its own drop must add to it.
@@ -149,6 +146,8 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // The drop falls to the lowest air cell under the block. A walk there can fail (a high block
     // has no standing cell); that is not a failed action: the wait and the inventory say whether
     // the drop arrived.
+    // No drop is expected when the tool was wrong: do not walk to or wait for one.
+    if (note) continue;
     const spot = dropSpot(bot, at);
     const pickup = await walkToDrop(ctx, bot, spot);
     if (!pickup.ok && pickup.reason === 'cancelled') return abort(bot, mined);
@@ -162,7 +161,13 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     collected: inventoryDelta(start, snapshot(bot)),
     // Fixed text around the game's own block name: the gap can be walked into with goto.
     hint: `you mined ${lastMined}; the space is open`,
+    ...(handNotes[0] ? { note: handNotes[0] } : {}),
   });
+}
+
+/** The cell the bot's feet are in. */
+function feetCell(bot: Bot): Vec3 {
+  return bot.entity.position.floored();
 }
 
 /**
@@ -209,19 +214,6 @@ function dropNames(bot: Bot, block: Block): string[] {
     if (name) names.push(name);
   }
   return names;
-}
-
-/** The refusal text: the tool class the block needs, the exact tools, and what needs none. */
-export function refusalText(bot: Bot, block: Block, name: string, tools: string[]): string {
-  const free = [...BARE_HAND_OK].filter((other) => other !== name).join(', ');
-  return `${name} needs a ${toolClass(bot, block)} (${tools.join(' or ')}) and you hold none; without one you can mine: ${free}`;
-}
-
-/** The names of the tools a block accepts, from its harvest tool IDs. */
-function toolNames(bot: Bot, block: Block): string[] {
-  return Object.keys(block.harvestTools ?? {}).map(
-    (id) => bot.registry.items[Number(id)]?.name ?? id,
-  );
 }
 
 /**
@@ -395,6 +387,7 @@ function fromMove(bot: Bot, move: FailedMove, mined: number): ActionOutcome {
 /** The `mine` handler: breaks `count` blocks and reports what the inventory gained. */
 export const mineAction: ActionHandler<'mine'> = {
   kind: 'mine',
-  timeoutMs: 180_000,
+  // Long enough for a hand-dug obsidian (about 250 s) with the walks around it.
+  timeoutMs: 600_000,
   run: mineBlocks,
 };
