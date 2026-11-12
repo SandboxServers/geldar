@@ -77,6 +77,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-body:main
             ghcr.io/sandboxservers/geldar-body:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -117,6 +119,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-mind:main
             ghcr.io/sandboxservers/geldar-mind:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -157,6 +161,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-eventsink:main
             ghcr.io/sandboxservers/geldar-eventsink:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -197,6 +203,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-mcp:main
             ghcr.io/sandboxservers/geldar-mcp:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -237,6 +245,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-admin:main
             ghcr.io/sandboxservers/geldar-admin:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -277,6 +287,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-glass:main
             ghcr.io/sandboxservers/geldar-glass:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -317,6 +329,8 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-register:main
             ghcr.io/sandboxservers/geldar-register:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

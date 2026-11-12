@@ -25,7 +25,7 @@ const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 const SHARD = 'phase0';
 /** The compose files that only add to a base: never validated alone (geldar.ps1 Invoke-Check and ci.yml). */
 const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml'];
-const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper', 'kino'];
+const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper', 'kino', 'deploy'];
 const MIND_TYPES = [
   'wake',
   'intent',
@@ -83,6 +83,8 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
       sub: [`geldar.${s}.kino.control`, `geldar.${s}.maintenance`, '_INBOX.>'],
     },
     kino: { pub: [`geldar.${s}.kino.control`], sub: [`geldar.${s}.kino.*.feed`, '_INBOX.>'] },
+    // Deploy (CD-1d): the maintenance subject only; no JetStream API and no Kino subject.
+    deploy: { pub: [`geldar.${s}.maintenance`], sub: ['_INBOX.>'] },
   };
 }
 
@@ -299,6 +301,16 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(inPermissions).toEqual(entries.map(() => true));
   });
 
+  it('gives the deploy role the maintenance subject to publish and nothing else', () => {
+    // CD-1d: the deploy user publishes geldar.<shard>.maintenance only; no JetStream API, no Kino, no bucket.
+    const deploy = parseEntries(rendered?.conf ?? '').find((e) => e.user === 'deploy');
+    expect(deploy).toBeDefined();
+    expect(deploy?.pub).toEqual([`geldar.${SHARD}.maintenance`]);
+    expect(deploy?.sub).toEqual(['_INBOX.>']);
+    expect(deploy?.raw.includes('$JS')).toBe(false);
+    expect(deploy?.raw.includes('kino')).toBe(false);
+  });
+
   it('writes one password file per role, and the config carries the same password', () => {
     const dir = join(rendered?.dir ?? '', 'compose', 'secrets');
     const entries = parseEntries(rendered?.conf ?? '');
@@ -312,7 +324,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(same).toEqual(entries.map(() => true));
   });
 
-  it('writes exactly the seven role users, with no ops user the overlay does not mount', () => {
+  it('writes exactly the eight role users (deploy included), with no ops user the overlay does not mount', () => {
     const names = parseEntries(rendered?.conf ?? '').map((e) => e.user);
     expect(names).toEqual(ROLES);
   });

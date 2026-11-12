@@ -14,11 +14,38 @@ The scripts are POSIX `sh`. The tests (`deploy/test/`) run on the desktop throug
 | `common.sh` | Shared checks, sourced by the other scripts. Holds every refusal listed below. |
 | `colo-up.sh` | Checks, validates the merged config, verifies the BlueMap jar, records the release, then pulls and starts the project. |
 | `colo-rollback.sh` | Re-applies the previous recorded release with `--pull never`, and swaps the two records. |
+| `colo-cd-plan.sh` | Read-only. Prints the delta between two releases: changed image digests, sql yes or no, the files to refresh, and the `needs manual` items (plugin/, compose/, deploy/caddy/, NATS). |
+| `colo-cd.sh` | CD-2a delta deploy, run on the node as the operator account: `[--dry-run] [<release.env> <sha> <export dir>]`. With no positional args it reads `GELDAR_RELEASE_MANIFEST`, `GELDAR_RELEASE_SHA` and the working directory (the git-less export). Verifies the images, then restarts only the services whose digest changed, in order, with health checks, and rolls back on a failed check. Never restarts Paper, Velocity, Caddy, Postgres or NATS, and never starts the mind. |
+| `colo-cd-verify.sh` | Sourced by `colo-cd.sh`. Before anything changes, every `*_IMAGE` must be under `ghcr.io/sandboxservers/geldar-<name>` and its OCI revision label (`org.opencontainers.image.revision`, read with `docker buildx imagetools inspect`) must equal the release sha. A mismatch, a missing label or a foreign prefix stops the run with nothing restarted or refreshed. |
 | `colo-down.sh` | Stops the project. Containers, networks and volumes are kept. |
 | `colo-status.sh` | Read-only. Lists the project's containers, ports and one resource sample. |
 | `gen-secrets.sh` | Creates the missing secret files from `/dev/urandom`. Never overwrites a file, never prints a value. |
 | `compose.secrets.yml` | Overlay that points the secret names at the node's secrets directory. |
 | `release.env.example` | The release manifest template. Copy it and fill in digests; it holds no values. |
+
+`colo-cd.sh` keeps its own copy of the manifest: `$COLO_CD_RELEASE_FILE`, default `<state dir>/release.env`
+(`/var/lib/geldar-colo/release.env` unless `GELDAR_STATE_DIR` is set). The root-owned `/etc/geldar-colo/release.env`
+is not readable by the operator account on the node (root, mode 700 directory), so the CD copy lives in the state dir.
+`colo-up.sh` and `colo-rollback.sh` still read `$GELDAR_RELEASE_FILE` (the `/etc` copy), so after a CD run keep the two
+in step by hand or move the CD copy's path into `GELDAR_RELEASE_FILE` on a node where the operator can read it.
+`colo-cd.sh` also needs `<state dir>/release.commit` (the commit the node runs) before its first run; it records the new
+one on success, and writes a log to `<state dir>/cd.log` (no secrets, no addresses).
+
+CD-2a inputs on the node (the entrypoint runs `bash deploy/colo-cd.sh` from a read-only, git-less export of a main sha,
+with a cleared environment):
+
+- `GELDAR_RELEASE_MANIFEST`: path to a validated copy of the release manifest. `GELDAR_RELEASE_SHA`: the 40-character
+  main sha. The working directory is the export. Positional args (`[--dry-run] <release.env> <sha> <repo dir>`) still work.
+- `PATH` and `HOME` are set by the script when the environment is empty. `COLO_CD_ENV_FILE` (default
+  `/home/claude/colo-env.sh`) is sourced when it exists.
+- `GELDAR_COLO_ROOT` is the node's src extract the run refreshes (default `/mnt/nvme/geldar-colo/src`).
+- The delta is computed by `cmp` of each exported file against the src extract, not by `git diff`. The previous sha is
+  still `<state dir>/release.commit`.
+- Before anything changes, `colo-cd-verify.sh` reads each image's revision label through
+  `docker buildx imagetools inspect <ref> --format '{{json .}}'` (`COLO_CD_IMAGE_INSPECT` replaces the command in tests).
+  The image must be under `ghcr.io/sandboxservers/geldar-<name>` and carry `org.opencontainers.image.revision` equal to
+  the release sha. `mind` and `admin` are checked the same way.
+- The export has no `.git`, so a file deleted upstream is not detected; it stays in the src extract.
 
 Every compose call names the project `geldar-colo` (`-p`), so the scripts reach only that project's containers,
 volumes and networks. No script runs `down`, and no script removes a volume.
@@ -243,6 +270,41 @@ plugin jars did this). So, in this order:
 `colo-up.sh` refuses when `plugin/core/build/libs/geldar-core.jar` or
 `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar` is a directory. It names the path; stop the containers,
 `rmdir` it, restore the jar and run it again.
+
+## Maintenance notice (colo-notice.sh, CD-1d)
+
+`deploy/colo-notice.sh` publishes one maintenance notice on `geldar.<shard>.maintenance` before a restart. The shard is
+`GELDAR_SHARD` (default `colo`), the same variable the script reads. Usage:
+
+```
+deploy/colo-notice.sh [--dry-run] <pause|restart|back> <bodies|world|mcp> [seconds 0-600|-] [update|plugin_update|config]
+```
+
+The arguments are checked against `contract/schemas/maintenance-notice.schema.json` before anything runs. `--dry-run`
+(or `DEPLOY_DRY_RUN=1`) prints the payload and publishes nothing. The publish runs in the one-shot admin container as
+`admin notice <payload>`, which is dispatched before the Postgres password check, as the NATS user `deploy`; the password is
+read from `/run/secrets/nats-deploy.txt` inside the container and is never printed. A failed publish is a warning and exit 0,
+so a missing notice never fails a deploy; `COLO_NOTICE_STRICT=1` exits 1 instead.
+
+The `deploy` NATS role publishes `geldar.<shard>.maintenance` and nothing else (subscribe `_INBOX.>`; no JetStream API, no
+Kino subjects). Its password file `nats-deploy.txt` is written by `./geldar.ps1 shard nats-auth <shard>` next to the other
+role files. It reaches the admin service only through the overlay `compose/colo-notice.yml`, which `deploy/colo-notice.sh`
+merges only when `${GELDAR_SECRETS_DIR}/nats-deploy.txt` exists. It is not in `gen-secrets.sh` (no NATS file is), not in the
+`up` check, and never merged by `up` or the other admin subcommands, so a node without the file keeps working; the notice
+warns, names the file and publishes nothing until the file is copied.
+
+**Existing nodes must regenerate `nats-auth.conf`.** The generator writes `nats-auth.conf` only when it is missing, so an
+existing node keeps the old config without the `deploy` user. Do this in a maintenance window, after the current notice:
+
+1. On the trusted machine, keep the old `compose/secrets/nats-auth.conf` (move it aside; do not delete it), then run
+   `./geldar.ps1 shard nats-auth colo`. It creates `nats-deploy.txt` and writes a new `nats-auth.conf` from the existing role
+   password files, so the other roles keep their passwords.
+2. Copy `nats-deploy.txt` and the new `nats-auth.conf` to `GELDAR_SECRETS_DIR` on the node, owned by `GELDAR_SERVICE_UID`
+   with mode `0600`, as the other NATS files are (the steps in "(c) Secrets").
+3. Restart the `nats` service so it reads the new config (`docker compose ... up -d nats`). This drops every NATS client, so
+   publish a notice first.
+
+Until step 2 is done, `colo-notice.sh` publishes nothing and warns; `colo-up.sh` and the other admin commands are unaffected.
 
 ## What each script refuses
 

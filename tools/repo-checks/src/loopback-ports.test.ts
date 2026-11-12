@@ -331,6 +331,8 @@ describe('coloRole', () => {
     expect(coloRole('compose/colo.yml')).toBe('base');
     expect(coloRole('compose/colo-dev.yaml')).toBe('base');
     expect(coloRole('compose/nats-auth.yml')).toBe('overlay');
+    // The notice overlay (CD-1d) matches colo*.yml, so it is pinned as an overlay: it names only the admin secret.
+    expect(coloRole('compose/colo-notice.yml')).toBe('overlay');
     expect(coloRole('compose/phase0.yml')).toBeNull();
     expect(coloRole('compose/nats-auth-mcp.yml')).toBeNull();
   });
