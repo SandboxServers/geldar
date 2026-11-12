@@ -24,29 +24,34 @@ const ITEM = /id:\s*"minecraft:([a-z0-9_]+)"[^}]*?[Cc]ount:\s*(\d+)/g;
 const ITEM_COUNT_FIRST = /[Cc]ount:\s*(\d+)b?[^}]*?id:\s*"minecraft:([a-z0-9_]+)"/g;
 
 /**
- * Sampler lines: `<iso time>\t<agent>\t<raw rcon reply of data get entity <agent> Inventory>`. Beds
- * (any colour) count as `bed`. Both "id first" (1.20.5+) and "Count first" key orders are read.
+ * Sampler lines: `<iso time>\t<agent>\t<raw rcon reply>`: the reply of `data get entity <agent> Inventory[N]` (one
+ * item per line, `{Slot: 0b, id: "minecraft:x", count: 1}`) or of the whole `Inventory` (rcon-cli cuts that one
+ * at about 110 characters). Lines with the same time and agent form one sample. Beds (any colour) count as
+ * `bed`. Both "id first" (`count:`, 1.20.5+) and "Count first" (`Count:`) key orders are read.
  */
 export function parseInventory(text: string): InvSample[] {
-  const out: InvSample[] = [];
+  const bySample = new Map<string, InvSample>();
   for (const line of text.split('\n')) {
     const [ts, agent, raw] = line.trimEnd().split('\t');
     if (!ts || !agent || !raw) continue;
     const at = parseTime(ts);
     if (at === null) continue;
-    const items = new Map<string, number>();
-    const add = (id: string, n: number): void => {
+    const found: [string, number][] = [...raw.matchAll(ITEM)].map((m) => [
+      m[1] as string,
+      Number(m[2]),
+    ]);
+    if (found.length === 0)
+      for (const m of raw.matchAll(ITEM_COUNT_FIRST)) found.push([m[2] as string, Number(m[1])]);
+    const sampleKey = `${at}\t${agent}`;
+    const smp = bySample.get(sampleKey) ?? { agent, at, items: new Map<string, number>() };
+    bySample.set(sampleKey, smp);
+    for (const [id, n] of found) {
       const key = id.endsWith('_bed') ? 'bed' : id;
-      items.set(key, (items.get(key) ?? 0) + n);
-    };
-    for (const m of raw.matchAll(ITEM)) add(m[1] as string, Number(m[2]));
-    if (items.size === 0)
-      for (const m of raw.matchAll(ITEM_COUNT_FIRST)) add(m[2] as string, Number(m[1]));
-    out.push({ agent, at, items });
+      smp.items.set(key, (smp.items.get(key) ?? 0) + n);
+    }
   }
-  return out;
+  return [...bySample.values()];
 }
-
 export type InvMetrics = {
   distinctItems: number;
   firstSeen: Record<string, number>;

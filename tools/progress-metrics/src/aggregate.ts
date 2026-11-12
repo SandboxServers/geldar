@@ -1,4 +1,5 @@
 import type { BodyEvent } from './body.ts';
+import { escapeEpisodes } from './episodes.ts';
 import { type InvSample, inventoryMetrics, LADDER } from './inventory.ts';
 import type { PaperEvent } from './paper.ts';
 import { type PosSample, positionMetrics } from './positions.ts';
@@ -28,6 +29,9 @@ export type Row = {
   stallDiag: number;
   rungWorked: string;
   escapeSuccessRate: number | null;
+  episodes: number;
+  episodesEscaped: number;
+  episodeSuccessRate: number | null;
   watchdog: number;
   eats: number;
   restarts: number;
@@ -75,7 +79,10 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
   const t0 = Math.min(...times);
   const t1 = Math.max(...times) + 1;
   const width = windowMs > 0 ? windowMs : t1 - t0;
-  const count = Math.max(1, Math.ceil((t1 - t0) / width));
+  // A tail under a quarter of a window joins the last full window instead of making a sliver of its own.
+  const whole = Math.floor((t1 - t0) / width);
+  const tail = t1 - t0 - whole * width;
+  const count = Math.max(1, tail >= width / 4 ? whole + 1 : whole);
   const win = (at: number | null): number =>
     at === null ? 0 : Math.min(count - 1, Math.floor((at - t0) / width));
 
@@ -89,7 +96,7 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
     const invAll = inventoryMetrics(inv);
     for (let w = 0; w < count; w++) {
       const ws = t0 + w * width;
-      const we = Math.min(t1, ws + width);
+      const we = w === count - 1 ? t1 : ws + width;
       const paper = inp.paper.filter((e) => e.agent === agent && win(e.at) === w);
       const body = inp.body.filter((e) => e.agent === agent && win(e.at) === w);
       const pos = inp.positions.filter((e) => e.agent === agent && win(e.at) === w);
@@ -98,6 +105,11 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
       const actions = body.filter((e) => e.kind === 'action');
       const rungs = body.filter((e) => e.kind === 'escape_rung');
       const worked = rungs.filter((e) => e.worked);
+      const ep = escapeEpisodes(
+        inp.body.filter((e) => e.agent === agent),
+        inp.positions.filter((e) => e.agent === agent),
+        (at) => win(at) === w,
+      );
       const pm = positionMetrics(pos);
       const jm = journalMetrics(th);
       const invWin = inv.filter((s) => win(s.at) === w);
@@ -128,6 +140,9 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
         stallDiag: body.filter((e) => e.kind === 'stall_diag').length,
         rungWorked: fmt(tally(worked.map((r) => r.reason))),
         escapeSuccessRate: share(worked.length, rungs.length),
+        episodes: ep.episodes,
+        episodesEscaped: ep.escaped,
+        episodeSuccessRate: share(ep.escaped, ep.episodes),
         watchdog: body.filter((e) => e.kind === 'body_watchdog').length,
         eats: body.filter((e) => e.kind === 'eat').length,
         restarts: body.filter((e) => e.kind === 'body_restart').length,

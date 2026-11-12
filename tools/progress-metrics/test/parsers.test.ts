@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseBodyLog } from '../src/body.ts';
+import { collectThoughts } from '../export-glass.ts';
+import { parseBodyLog, UNKNOWN_AGENT } from '../src/body.ts';
+import { agentFromFilename, agentOfFile, expandGlob } from '../src/files.ts';
 import { inventoryMetrics, parseInventory } from '../src/inventory.ts';
+import { parseOutcomes } from '../src/outcomes.ts';
 import { parsePaperLog } from '../src/paper.ts';
 import { parsePositions, positionMetrics } from '../src/positions.ts';
 import { journalMetrics, parseThoughts } from '../src/thoughts.ts';
@@ -11,6 +14,7 @@ describe('paper log', () => {
   const log = [
     '[10:00:00 INFO]: ag_zack_01 joined the game',
     '[10:00:05 INFO]: <ag_zack_01> hello there',
+    '2026-01-02T10:00:06Z [10:00:06 INFO]: [Not Secure] <ag_zack_01> unsigned hello',
     '[10:10:00 INFO]: ag_zack_01 was slain by Zombie',
     '[10:11:00 INFO]: ag_zack_01 fell from a high place',
     '[10:12:00 INFO]: ag_zack_01 left the game',
@@ -24,13 +28,14 @@ describe('paper log', () => {
     expect(ev.map((e) => [e.agent, e.kind, e.cause])).toEqual([
       ['ag_zack_01', 'join', ''],
       ['ag_zack_01', 'chat', ''],
+      ['ag_zack_01', 'chat', ''],
       ['ag_zack_01', 'death', 'was slain by Zombie'],
       ['ag_zack_01', 'death', 'fell from a high place'],
       ['ag_zack_01', 'leave', ''],
       ['ag_amy_02', 'death', 'drowned'],
     ]);
     expect(ev[0]?.at).toBe(DAY + 10 * 3_600_000);
-    expect(ev[5]?.at).toBe(Date.parse('2026-01-02T10:14:00.123Z'));
+    expect(ev[6]?.at).toBe(Date.parse('2026-01-02T10:14:00.123Z'));
   });
 
   it('rolls the clock over midnight', () => {
@@ -45,7 +50,6 @@ describe('paper log', () => {
 describe('body log', () => {
   const log = [
     '{"event":"action_result","agent":"ag_zack_01","ts":"2026-01-02T10:00:00Z","reason":"moved"}',
-    '{"event":"action_result","agent":"ag_zack_01","ts":"2026-01-02T10:00:10Z","reason":"no_effect"}',
     '{"event":"stall_diag","agent":"ag_zack_01","reason":"escape_ladder","rung":"dig","worked":false}',
     '{"event":"stall_diag","agent":"ag_zack_01","reason":"escape_ladder","rung":"pillar","worked":true}',
     '{"event":"body_watchdog","agent":"ag_zack_01","action":"restart"}',
@@ -54,15 +58,13 @@ describe('body log', () => {
     '{"event":"player_down","agent":"ag_zack_01","uptime_ms":5000}',
     '{"event":"player_down","agent":"ag_zack_01","uptime_ms":900000}',
     'not json',
-    '{"event":"action_result","reason":"moved"}',
+    '{"event":"eat"}',
   ].join('\n');
 
-  it('classifies each event kind and skips lines with no agent', () => {
+  it('classifies each event kind; action_result is not a Body log event and no line is dropped', () => {
     const ev = parseBodyLog(log, null);
     const kinds = ev.map((e) => e.kind);
     expect(kinds).toEqual([
-      'action',
-      'action',
       'stall_diag',
       'escape_rung',
       'stall_diag',
@@ -71,22 +73,24 @@ describe('body log', () => {
       'body_restart',
       'eat',
       'short_session',
+      'eat',
     ]);
-    expect(ev.filter((e) => e.kind === 'action').map((e) => e.reason)).toEqual([
-      'moved',
-      'no_effect',
-    ]);
+    expect(ev.at(-1)?.agent).toBe(UNKNOWN_AGENT);
     expect(ev.filter((e) => e.kind === 'escape_rung').map((e) => [e.reason, e.worked])).toEqual([
       ['dig', false],
       ['pillar', true],
     ]);
-    expect(ev[0]?.at).toBe(Date.parse('2026-01-02T10:00:00Z'));
+    expect(ev.every((e) => e.kind !== 'action')).toBe(true);
   });
 
-  it('uses the default agent when a line names none', () => {
-    expect(parseBodyLog('{"event":"action_result","reason":"moved"}', 'ag_x')[0]?.agent).toBe(
-      'ag_x',
-    );
+  it('uses life_id, else the default agent, and reads a real docker-prefixed line', () => {
+    const line = '2026-01-02T10:00:00.123456789Z {"event":"stall_diag","reason":"stall"}';
+    expect(parseBodyLog(line, 'ag_x')[0]).toMatchObject({
+      agent: 'ag_x',
+      at: Date.parse('2026-01-02T10:00:00.123Z'),
+    });
+    const own = '{"life_id":"ag_b_02","event":"eat"}';
+    expect(parseBodyLog(own, 'ag_x')[0]?.agent).toBe('ag_b_02');
   });
 });
 
@@ -149,6 +153,22 @@ describe('inventory', () => {
     expect(m.firstToolAt).toBe(DAY + 5 * 60_000);
     expect(m.distinctItems).toBe(3);
   });
+
+  it('joins per-slot lines of one sample and reads count: and Count: forms', () => {
+    const slot = (n: number, body: string): string =>
+      `${t(0)}\tag_a\tag_a has the following entity data: {Slot: ${n}b, ${body}}`;
+    const s = parseInventory(
+      [
+        slot(0, 'id: "minecraft:oak_log", count: 3'),
+        slot(1, 'Count: 2b, id: "minecraft:oak_log"'),
+        slot(2, 'id: "minecraft:white_bed", count: 1'),
+        `${t(0)}\tag_a\tFound no elements matching Inventory[3]`,
+      ].join('\n'),
+    );
+    expect(s).toHaveLength(1);
+    expect(s[0]?.items.get('oak_log')).toBe(5);
+    expect(s[0]?.items.get('bed')).toBe(1);
+  });
 });
 
 describe('thoughts', () => {
@@ -181,5 +201,89 @@ describe('thoughts', () => {
     expect(
       journalMetrics([e(1, base), e(2, 'one two three four five x y z w v')]).nearDuplicates,
     ).toBe(0);
+  });
+});
+
+describe('outcomes', () => {
+  it('reads action_outcome events (nats sub output) by reason and agent', () => {
+    const ev = (ok: boolean, reason?: string): string =>
+      JSON.stringify({
+        type: 'action_outcome',
+        agent_id: 'ag_test_01',
+        at: '2026-01-02T10:00:00Z',
+        payload: { verb: 'mine', index: 0, ok, ...(reason ? { reason } : {}), message: 'm' },
+      });
+    const out = parseOutcomes(
+      [
+        '[#1] Received on "geldar.main.action_outcome"',
+        ev(false, 'no_effect'),
+        ev(true),
+        'junk',
+      ].join('\n'),
+      null,
+    );
+    expect(out.map((e) => [e.agent, e.reason, e.kind])).toEqual([
+      ['ag_test_01', 'no_effect', 'action'],
+      ['ag_test_01', 'ok', 'action'],
+    ]);
+    expect(out[0]?.at).toBe(Date.parse('2026-01-02T10:00:00Z'));
+  });
+
+  it('reads the Prometheus counter, expanding by value', () => {
+    const out = parseOutcomes(
+      [
+        '# TYPE geldar_action_outcomes_total counter',
+        'geldar_action_outcomes_total{status="failed",reason="no_effect"} 3',
+        'geldar_action_outcomes_total{status="completed",reason="none"} 2',
+        'geldar_tps 20',
+      ].join('\n'),
+      null,
+    );
+    expect(out.map((e) => e.reason).sort()).toEqual([
+      'no_effect',
+      'no_effect',
+      'no_effect',
+      'ok',
+      'ok',
+    ]);
+    expect(out[0]?.agent).toBe(UNKNOWN_AGENT);
+  });
+});
+
+describe('files', () => {
+  it('infers the agent from both file name styles', () => {
+    expect(agentFromFilename('/x/players-host-ag-test-01.log')).toBe('ag_test_01');
+    expect(agentFromFilename('/x/ag_test_01.log')).toBe('ag_test_01');
+    expect(agentFromFilename('/x/body.log')).toBeNull();
+  });
+  it('prefers a single life_id, gives up on several, expands a glob', () => {
+    expect(agentOfFile('/x/body.log', '{"life_id":"ag_a_01"}\n{"life_id":"ag_a_01"}')).toBe(
+      'ag_a_01',
+    );
+    expect(
+      agentOfFile('/x/ag_c_03.log', '{"life_id":"ag_a_01"}\n{"life_id":"ag_b_02"}'),
+    ).toBeNull();
+    expect(agentOfFile('/x/ag_c_03.log', '{}')).toBe('ag_c_03');
+    expect(expandGlob('tools/progress-metrics/test/*.test.ts').length).toBe(2);
+  });
+});
+
+describe('export-glass paging', () => {
+  it('follows next cursors up to the count and stops at a null cursor', async () => {
+    const seen: (string | null)[] = [];
+    const pages: Record<string, { thoughts: unknown[]; next: string | null }> = {
+      start: { thoughts: [1, 2, 3], next: 'c1' },
+      c1: { thoughts: [4, 5, 6], next: 'c2' },
+      c2: { thoughts: [7], next: null },
+    };
+    const fetchPage = async (c: string | null) => {
+      seen.push(c);
+      return pages[c ?? 'start'] as { thoughts: unknown[]; next: string | null };
+    };
+    expect(await collectThoughts(fetchPage, 5)).toEqual([1, 2, 3, 4, 5]);
+    expect(seen).toEqual([null, 'c1']);
+    seen.length = 0;
+    expect(await collectThoughts(fetchPage, 100)).toHaveLength(7);
+    expect(seen).toEqual([null, 'c1', 'c2']);
   });
 });
