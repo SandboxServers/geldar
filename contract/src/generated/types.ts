@@ -929,113 +929,21 @@ export interface PlaySurroundings {
    */
   hazards?:
     | []
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ]
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ]
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ]
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ];
+    | [SnapshotHazard]
+    | [SnapshotHazard, SnapshotHazard]
+    | [SnapshotHazard, SnapshotHazard, SnapshotHazard]
+    | [SnapshotHazard, SnapshotHazard, SnapshotHazard, SnapshotHazard];
   notable_blocks: {
     type: string;
     x: number;
     y: number;
     z: number;
-  }[];
-  entities: {
-    type: string;
-    distance: number;
-    direction: string;
-    x: number;
-    y: number;
-    z: number;
     /**
-     * An item ID without its namespace prefix, such as iron_ingot.
+     * Furnaces only: true while the furnace is burning fuel.
      */
-    item?: string;
-    count?: number;
+    lit?: boolean;
   }[];
+  entities: SnapshotEntity[];
   agents: {
     name: string;
     distance: number;
@@ -11514,39 +11422,7 @@ export interface SnapshotSurroundings {
      */
     lit?: boolean;
   }[];
-  entities: {
-    type: string;
-    distance: number;
-    direction: string;
-    x: number;
-    y: number;
-    z: number;
-    /**
-     * An item ID without its namespace prefix, such as iron_ingot.
-     */
-    item?: string;
-    count?: number;
-    /**
-     * True for a mob that is always hostile by its type. Conditional and neutral mobs are not flagged from type alone.
-     */
-    hostile?: boolean;
-    /**
-     * Observed state of a mob: idle, closing (distance fell over the last samples), attacking or fleeing.
-     */
-    state?: "idle" | "closing" | "attacking" | "fleeing";
-    /**
-     * True when the distance to the Body fell over the last two samples.
-     */
-    closing?: boolean;
-    /**
-     * An item ID without its namespace prefix, such as iron_ingot.
-     */
-    held_item?: string;
-    /**
-     * A creeper that is ignited shows hissing.
-     */
-    fuse?: "hissing";
-  }[];
+  entities: SnapshotEntity[];
   /**
    * Lava, deep water, drops, fire and cactus within 8 blocks in line of sight, nearest first, at most 4.
    *
@@ -11554,94 +11430,10 @@ export interface SnapshotSurroundings {
    */
   hazards?:
     | []
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ]
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ]
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ]
-    | [
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        },
-        {
-          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
-          /**
-           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
-           */
-          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
-          dist: number;
-        }
-      ];
+    | [SnapshotHazard]
+    | [SnapshotHazard, SnapshotHazard]
+    | [SnapshotHazard, SnapshotHazard, SnapshotHazard]
+    | [SnapshotHazard, SnapshotHazard, SnapshotHazard, SnapshotHazard];
   /**
    * True when block counts only include cells the Body can see (line of sight).
    */
@@ -11652,6 +11444,49 @@ export interface SnapshotSurroundings {
     held_item: string | null;
     health_estimate: string;
   }[];
+}
+
+export interface SnapshotEntity {
+  type: string;
+  distance: number;
+  direction: string;
+  x: number;
+  y: number;
+  z: number;
+  /**
+   * An item ID without its namespace prefix, such as iron_ingot.
+   */
+  item?: string;
+  count?: number;
+  /**
+   * True for a mob that is always hostile by its type. Conditional and neutral mobs are not flagged from type alone.
+   */
+  hostile?: boolean;
+  /**
+   * Observed state of a mob: idle, closing (distance fell over the last samples), attacking or fleeing.
+   */
+  state?: "idle" | "closing" | "attacking" | "fleeing";
+  /**
+   * True when the distance to the Body fell over the last two samples.
+   */
+  closing?: boolean;
+  /**
+   * An item ID without its namespace prefix, such as iron_ingot.
+   */
+  held_item?: string;
+  /**
+   * A creeper that is ignited shows hissing.
+   */
+  fuse?: "hissing";
+}
+
+export interface SnapshotHazard {
+  kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+  /**
+   * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+   */
+  dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+  dist: number;
 }
 
 export interface SovereignCallPayload {
