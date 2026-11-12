@@ -14,7 +14,12 @@ The scripts are described in `deploy/README.md`.
 3. The job takes the `colo` environment, which the repository limits to `main`. Its concurrency group
    is `colo-deploy`, with `cancel-in-progress: false`: a second deploy waits for the first. The job
    timeout is 40 minutes.
-4. It resolves the commit (the run's head SHA) and the `colo-images` run that built it.
+4. It resolves the commit (the run's head SHA) and the `colo-images` run that built it. The runner
+   has no GitHub CLI (`gh`). The steps call the GitHub REST API with `curl` and read the replies with
+   `jq`, using the job's `GITHUB_TOKEN`. On a manual dispatch without a SHA, the head of `main` comes
+   from `GET /repos/{repo}/commits/main`. The SHA must be on `main`: the compare status of
+   `main...<sha>` must be `identical` or `behind`. The successful `colo-images` run for the SHA comes
+   from the workflow runs list, and the job fails when there is none.
 5. It downloads the `release.env` artifact of that run and writes it to the node's inbox
    (`/var/lib/geldar-deploy/inbox/release.env`) through a temporary file, so the file appears whole,
    with mode 0600.
@@ -29,7 +34,8 @@ Nothing is uploaded. The job prints the entrypoint's output, which must never co
 
 ## Manual dispatch
 
-Run it from a clone, with the GitHub CLI and a token that can run workflows:
+The operator dispatches from a clone, on the operator's machine (not on the runner, which has no
+`gh`), with the GitHub CLI and a token that can run workflows:
 
 ```sh
 gh workflow run colo-deploy.yml -f sha=<40-hex commit on main>
