@@ -11,6 +11,7 @@ import {
 } from './mineskin.ts';
 import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
+import { writeHeads } from './skin-heads.ts';
 import { describeSkin, openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
 
 /** GELDAR_SHARD_FILE when set (the Colo admin image sets it to the Colo roster), else the phase0 shard config. */
@@ -31,9 +32,32 @@ export const USAGE = `usage: players-cli skin set <player-id> <png> [--model cla
   skin set    validate the PNG (64x64 or 64x32, no extra chunks), sign it with MineSkin and store the
               signed texture in the geldar-skins bucket under the player's life id (needs GELDAR_NATS_URL)
   skin show   print the stored skin of a player (variant, texture host, signature length; never the value)
+  skin heads  skin heads --skins-dir <dir> --out-dir <dir> [--map overworld]: write BlueMap player head
+              PNGs (maps/<map>/assets/playerheads/<offline uuid>.png) from <agent_id>.png skin files
   --check-only  validate the PNG and print the result; nothing is uploaded and no network call runs
   --model       classic (default) or slim (the thin arms)
 `;
+
+/** `skin heads --skins-dir <dir> --out-dir <dir> [--map overworld]`: BlueMap player heads from skin files. */
+function runHeads(args: readonly string[], deps: CliDeps): number {
+  const opt = (flag: string): string | undefined => {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  };
+  const skinsDir = opt('--skins-dir');
+  const outDir = opt('--out-dir');
+  if (skinsDir === undefined || outDir === undefined) {
+    deps.out(USAGE);
+    return 2;
+  }
+  try {
+    for (const line of writeHeads(skinsDir, outDir, opt('--map') ?? 'overworld')) deps.out(line);
+    return 0;
+  } catch (error) {
+    deps.out(`error: ${error instanceof Error ? error.message : 'could not write the heads'}`);
+    return 1;
+  }
+}
 
 /** Everything the command touches, so a test can pass fakes for each. */
 export interface CliDeps {
@@ -53,6 +77,7 @@ export interface CliDeps {
 /** Runs one command and returns the exit code. Output lines never include a key, a request or a texture value. */
 export async function runCli(argv: readonly string[], deps: CliDeps): Promise<number> {
   const [group, verb, player, file, ...rest] = argv;
+  if (group === 'skin' && verb === 'heads') return runHeads(argv.slice(2), deps);
   if (
     group === 'skin' &&
     verb === 'import' &&
