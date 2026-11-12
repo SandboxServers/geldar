@@ -120,3 +120,16 @@ Still open:
 - The ledger README "pending" retro line.
 - O-soak itself: the owner must answer option (A) or (B) in writing (c3-packets.md section 8 and 10.5, c4-packets.md 10.5).
 - `./geldar.ps1 check` result: see the report.
+
+## Wave C5 numbers (added 2026-11-11)
+
+| Number | Owner (packet) | Use | Status |
+|---|---|---|---|
+| 0141 | C5-01 | Soft-dig pathing | Proposed |
+| 0142 | C5-01 | Stall and replan numbers | Proposed |
+| 0143 | C5-00, C5-02 | Outcome events | Proposed |
+| 0144 | C5-03 | Death event, `died_at`, no revive | Proposed |
+| 0145 | C5-04 | Line of sight for names | Proposed |
+| 0146 | C5-08 to C5-10 | Open owner questions | Open |
+
+The next free number is 0147 (checked against all remote branches on 2026-11-11).

@@ -80,6 +80,15 @@ export class ArgReader {
     return this.name(field);
   }
 
+  /** A required player name (3 to 16 letters, digits, underscores). */
+  playerName(field: string): string {
+    const value = this.raw(field);
+    if (typeof value !== 'string' || !/^[A-Za-z0-9_]{3,16}$/.test(value)) {
+      throw this.bad(field, 'is not a player name');
+    }
+    return value;
+  }
+
   /** A required position `{ x, y, z }` of integers inside the contract's bounds. */
   position(field: string): Position {
     return this.positionOf(field, this.raw(field));

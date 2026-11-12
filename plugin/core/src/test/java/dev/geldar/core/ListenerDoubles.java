@@ -23,6 +23,16 @@ final class ListenerDoubles {
     /** As above, and {@code getLastDamageCause} returns {@code lastDamage}. */
     static Player player(
             String name, List<NamespacedKey> recipeKeys, List<NamespacedKey> sink, EntityDamageEvent lastDamage) {
+        return player(name, recipeKeys, sink, lastDamage, null);
+    }
+
+    /** As above, and {@code getLocation} returns {@code location} (null when the player has none). */
+    static Player player(
+            String name,
+            List<NamespacedKey> recipeKeys,
+            List<NamespacedKey> sink,
+            EntityDamageEvent lastDamage,
+            org.bukkit.Location location) {
         List<Recipe> recipes = new ArrayList<>();
         // A recipe that is not Keyed must be skipped by the listener, so the server always holds one.
         recipes.add((Recipe) Proxy.newProxyInstance(
@@ -48,6 +58,7 @@ final class ListenerDoubles {
                     case "getName" -> name;
                     case "getServer" -> server;
                     case "getLastDamageCause" -> lastDamage;
+                    case "getLocation" -> location;
                     case "discoverRecipes" -> {
                         sink.addAll((Collection<NamespacedKey>) a[0]);
                         yield a[0] instanceof Collection<?> c ? c.size() : 0;

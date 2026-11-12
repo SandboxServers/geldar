@@ -49,6 +49,9 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
       case 'damage':
         out.push({ ...base, type: 'damage', text: `You took ${e.amount ?? 0} damage.` });
         break;
+      case 'death':
+        out.push({ ...base, type: 'death', text: deathText(e.cause) });
+        break;
       case 'agent_approached':
         out.push({
           ...base,
@@ -87,6 +90,11 @@ export function toPlayerEvents(events: SimEvent[]): McpPlayerEvent[] {
     }
   }
   return out;
+}
+
+/** The fixed death line. `cause` is one of the mapper's phrases, never world text. */
+function deathText(cause: string | undefined): string {
+  return `You died. ${cause ?? 'Something killed you'}. You wake at the spawn with nothing.`;
 }
 
 function intentText(e: SimEvent): string {

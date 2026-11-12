@@ -75,3 +75,21 @@ The Phase 0 ledger README (`docs/analysis/phase0/README.md`) is not edited by th
 | C4-06 | Prompt v7 and wake wording | C4 | C | C4-01, C4-02b, C4-03 | B | 0122 | N |
 | C4-07 | Thinker gateway: per-Thinker NATS users, enrolment | C4 | F | C4-00, 0078, 0080 | B; enrolment O | 0123, 0124 | Y [0078, 0080, enrolment] |
 | C4-08 | Integration and ops: Phase 1 exit run on the node | C4 | G | C4-00 to C4-07 | O | 0125 (0126 owner ruling, not used by a packet) | Y [0126] |
+
+## Wave C5: Goldar learnings, Body parity and the unavailable tools
+
+Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md). Review: [worknotes/goldar-review.md](worknotes/goldar-review.md). Statuses: Ready, BlockedDecision, Writing.
+
+| id | title | wave | lane | depends | status | decision numbers | owner-blocked? |
+|---|---|---|---|---|---|---|---|
+| C5-00 | Contract unblocker: outcome and death events, new tools | C5a | A | none | Ready | 0143 | N |
+| C5-01 | Soft-dig pathing and fast stall-then-replan | C5a | B | none | BlockedDecision (0141, 0142 Proposed) | 0141, 0142 | Y [confirm numbers] |
+| C5-02 | Per-action outcome events and `why` wording | C5a | C | C5-00 | Ready | 0143 | N |
+| C5-03 | Death event and `died_at` | C5a | D | C5-00 | Ready | 0144 | N |
+| C5-04 | `give`, `note`, `follow` with line of sight | C5a | E | C5-00 | Ready | 0145 | N |
+| C5-05 | Crafting hardening | C5b | F | C5-02 | Ready | none | N |
+| C5-06 | Smelting on the 0037 click machinery | C5b | F | C5-05 | Ready (sequential after C5-05) | none | N |
+| C5-07 | `write_sign` and `build` programs | C5b | G | C5-00 | Ready | none | N |
+| C5-08 | `write_book` | C5c | H | C4-00, C4-02a | BlockedDecision (0146 item 1) | 0146 | Y |
+| C5-09 | `propose` and `vote`, social laws only | C5c | H | C5-08 | BlockedDecision (0146 item 2) | 0146 | Y |
+| C5-10 | `offer` and the Shrine (plugin consumes items) | C5c | H | C5-09, C4-05 | BlockedDecision (0146 item 3, owner approval) | 0146 | Y |

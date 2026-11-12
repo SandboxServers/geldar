@@ -605,6 +605,7 @@ export interface McpPlayerEvent {
     | "speech_to_me"
     | "conversation_digest"
     | "damage"
+    | "death"
     | "agent_approached"
     | "proposal"
     | "day_night"
