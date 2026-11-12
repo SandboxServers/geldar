@@ -158,6 +158,7 @@ export async function runPlayer(
     },
     body: (bot) => startPlayerBody(bodyEnv, bot, serve),
     log,
+    watchdog: { limitMs: Number(env.GELDAR_BODY_WATCHDOG_MS) || 60_000 },
   });
 
   const abort = new AbortController();
