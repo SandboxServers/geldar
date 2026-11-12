@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { BudgetLedger } from '../ports.ts';
+import { BodyUnavailable, type BudgetLedger } from '../ports.ts';
 import { VIEW_TEXT_LIMIT, type ViewDeps, type ViewRead, viewTool } from './view.ts';
 
 const CALL = { playerId: 'pl_jason', lifeId: 'ag_jason_01' };
@@ -69,12 +69,22 @@ describe('view: the text viewport from where the body looks', () => {
     expect(view).not.toHaveBeenCalled();
   });
 
-  it('answers body_unavailable with no throw when the Body throws or refuses', async () => {
+  it('throws BodyUnavailable when the Body throws, never a result the output schema refuses', async () => {
     const thrown = deps(async () => {
       throw new Error('nats down');
     });
-    await expect(viewTool(thrown.d, CALL, {})).resolves.toEqual({ error: 'body_unavailable' });
+    await expect(viewTool(thrown.d, CALL, {})).rejects.toBeInstanceOf(BodyUnavailable);
+  });
+
+  it('throws BodyUnavailable when the Body replies {error:"unavailable"}', async () => {
     const refused = deps({ error: 'unavailable' });
-    await expect(viewTool(refused.d, CALL, {})).resolves.toEqual({ error: 'body_unavailable' });
+    await expect(viewTool(refused.d, CALL, {})).rejects.toBeInstanceOf(BodyUnavailable);
+  });
+
+  it('passes a valid text reply through unchanged, with no error key', async () => {
+    const { d } = deps({ text: 'Open ground.' });
+    const result = await viewTool(d, CALL, {});
+    expect(result).toEqual({ text: 'Open ground.' });
+    expect(Object.keys(result)).toEqual(['text']);
   });
 });
