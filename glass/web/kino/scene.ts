@@ -23,7 +23,7 @@ import type { EntityPosition } from '../../../contract/src/generated/types.ts';
 import { addGhost, skinGhost } from './agent-ghost.ts';
 import { FOG_FAR, FOG_NEAR, faceShade, SKY_COLOUR } from './blocktex.ts';
 import { CullingWorld, cellsToCull, sectionsOfCells } from './cull.ts';
-import { labelClamp, labelStyle } from './entities.ts';
+import { agentLabelText, labelClamp, labelStyle } from './entities.ts';
 import { makeFadeMaterial, makeFadeUniforms, makeWaterMaterial, setFadeFocus } from './fade.ts';
 import type { FeedChange, FeedState } from './feed.ts';
 import { type MeshData, meshSection, type UvLookup } from './mesher.ts';
@@ -80,12 +80,15 @@ export class KinoScene {
   private readonly waterMaterial: Material;
   private readonly waterSections = new Map<string, Mesh>();
   private readonly fade = makeFadeUniforms();
+  private readonly agentLabels: ReadonlyMap<string, string>;
 
   constructor(
     state: FeedState,
     uvFor: UvLookup,
     material: Material = new MeshBasicMaterial({ color: 0xffffff, vertexColors: true }),
+    agentLabels: ReadonlyMap<string, string> = new Map(),
   ) {
+    this.agentLabels = agentLabels;
     this.state = state;
     this.uvFor = uvFor;
     this.material = makeFadeMaterial(material, this.fade);
@@ -204,7 +207,7 @@ export class KinoScene {
   }
 
   /** An agent: a cyan figure with a bright outline, a head block and a name label. */
-  private makeAgentMarker(label: string): Mesh {
+  private makeAgentMarker(agentId: string): Mesh {
     const body = new Mesh(
       this.markerGeometry,
       new MeshBasicMaterial({ color: new Color(AGENT_COLOUR) }),
@@ -223,8 +226,8 @@ export class KinoScene {
     head.name = 'plain';
     body.add(head);
     addGhost(body, this.markerGeometry, AGENT_COLOUR, 0xffe0b0);
-    this.addLabel(body, label, 1.7);
-    this.attachSkin(body, label);
+    this.addLabel(body, agentLabelText(agentId, this.agentLabels), 1.7);
+    this.attachSkin(body, agentId);
     return body;
   }
 

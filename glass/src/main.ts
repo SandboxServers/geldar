@@ -1,9 +1,11 @@
 /** Glass entry point: `node src/main.ts`. Binds to 127.0.0.1 and refuses any other address. */
+import { initAliases } from './alias.ts';
 import { loadGlassConfig } from './config.ts';
 import type { FeedSource } from './kino/relay.ts';
 import { loadKinoEnv } from './kino/wiring.ts';
 import { buildGlass } from './server.ts';
 
+initAliases();
 const config = loadGlassConfig();
 // Kino is off unless GELDAR_KINO_ENABLED is 1 or true. Off: no NATS connection, no route, no page.
 const kinoEnv = loadKinoEnv();

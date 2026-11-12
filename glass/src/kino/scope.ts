@@ -2,6 +2,7 @@
  * Who may watch which agent (decisions 0075 and 0135, rulings R34 to R37). A pure rule plus a
  * read-only store. The store sends SELECT only: Glass holds no write path (decision 0072).
  */
+import { aliasOf } from '../alias.ts';
 import type { SqlClient } from '../query.ts';
 
 export interface Access {
@@ -86,6 +87,11 @@ export async function ownedIds(db: SqlClient, identityHash: string): Promise<Set
     identityHash,
   ]);
   return new Set(r.rows.map((row) => String(row.agent_id)));
+}
+
+/** The picker entries for these ids: the id routes, the label (the private alias when mapped) is what people see. */
+export function targetEntries(ids: readonly string[]): Array<{ id: string; label: string }> {
+  return ids.map((id) => ({ id, label: aliasOf(id, id) }));
 }
 
 /** The agent ids this viewer may watch: the same rule as a subscribe, so the picker never offers a refusal. */

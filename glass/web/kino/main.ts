@@ -41,6 +41,9 @@ function browserSocket(url: string): SocketLike {
   } as SocketLike;
 }
 
+/** Agent id -> the label people see (the alias), filled from /kino/targets. Ids stay for routing and skin URLs. */
+const agentLabels = new Map<string, string>();
+
 async function loadTargets(): Promise<TargetsOutcome> {
   try {
     const r = await fetch('/kino/targets', { credentials: 'same-origin' });
@@ -96,7 +99,9 @@ async function main(): Promise<void> {
     a.hidden = false;
   }
   const picker = el<HTMLSelectElement>('picker');
-  for (const id of targets.agents) picker.add(new Option(id, id));
+  for (const a of targets.agents) picker.add(new Option(a.label, a.id));
+  agentLabels.clear();
+  for (const a of targets.agents) agentLabels.set(a.id, a.label);
   const openBtn = el<HTMLButtonElement>('open');
   if (!targets.enabled || targets.agents.length === 0) {
     openBtn.disabled = true;
@@ -168,7 +173,7 @@ async function main(): Promise<void> {
     const session = new KinoSession(() => browserSocket(wsUrl), {
       onReset(s) {
         state = s;
-        view = new KinoScene(s, atlas.uv, atlas.material);
+        view = new KinoScene(s, atlas.uv, atlas.material, agentLabels);
         connected = true;
         showStatus();
       },
