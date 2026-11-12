@@ -20,9 +20,17 @@ The scripts are described in `deploy/README.md`.
    from `GET /repos/{repo}/commits/main`. The SHA must be on `main`: the compare status of
    `main...<sha>` must be `identical` or `behind`. The successful `colo-images` run for the SHA comes
    from the workflow runs list, and the job fails when there is none.
-5. It downloads the `release.env` artifact of that run and writes it to the node's inbox
-   (`/var/lib/geldar-deploy/inbox/release.env`) through a temporary file, so the file appears whole,
-   with mode 0600.
+5. It fetches `release.env` of that run with curl and jq (step timeout 5 minutes; the whole job 30).
+   The artifact blob host can time out from the node, so every curl has a 10 s connect and 60 s total
+   limit and `--retry 4`, and the archive download is tried 3 times. The zip must match the sha256
+   digest the API reports for the artifact; a mismatch fails the job with no fallback. If the artifact
+   path fails otherwise (blob timeout, no digest), it reads the same content from the check-run
+   annotation titled `release.env` on the `release manifest` job of the `colo-images` run, through
+   `api.github.com` (this needs `checks: read`). Both sources are the same run under the same token,
+   and step 6 still checks the SHA, the registry prefix and the revision labels. It then writes the file
+   to the node's inbox (`/var/lib/geldar-deploy/inbox/release.env`) through a temporary file, so the
+   file appears whole, with mode 0600. The logic is in the workflow step and is tested by
+   `deploy/test/colo-fetch-manifest.test.ts` (needs bash, jq, unzip or python3).
 6. It runs `plan <sha>`, then `deploy <sha>`, through the root-owned entrypoint with
    `sudo -n /usr/local/libexec/geldar-deploy/run`. The entrypoint refuses a SHA that main does not
    contain, validates the manifest, fetches main itself and runs `deploy/colo-cd.sh` from its own

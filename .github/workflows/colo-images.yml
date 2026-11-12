@@ -389,6 +389,15 @@ jobs:
             echo ""
             echo "The same values are in the \`release.env\` artifact of this run."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: publish release.env as a check-run annotation (fallback for the artifact blob host)
+        run: |
+          set -euo pipefail
+          # The deploy reads this through api.github.com when the artifact download fails. Workflow commands escape % and newlines.
+          msg="$(cat release.env)"
+          msg="${msg//'%'/'%25'}"
+          msg="${msg//$'\r'/'%0D'}"
+          msg="${msg//$'\n'/'%0A'}"
+          echo "::notice title=release.env::$msg"
       - name: upload release.env
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

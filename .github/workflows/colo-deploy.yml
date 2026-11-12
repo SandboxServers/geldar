@@ -44,7 +44,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    timeout-minutes: 40
+      checks: read
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -110,13 +111,118 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: download the release manifest of that colo-images run
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release.env
-          path: ${{ runner.temp }}/release-manifest
-          repository: ${{ github.repository }}
-          run-id: ${{ steps.target.outputs.run_id }}
-          github-token: ${{ github.token }}
+        # The artifact blob host can time out from the node, so this is curl with time limits and retries, a digest check,
+        # and a fallback to the check-run annotation (release.env, title release.env) of the manifest job of that run, which
+        # comes through api.github.com. A digest mismatch is fatal with no fallback. Both sources are the same run under the
+        # same token; the entrypoint still verifies the sha is on main and the image prefix and revision labels. The logic is
+        # inline because this job checks out no repository code. deploy/test/colo-fetch-manifest.test.ts runs this block.
+        timeout-minutes: 5
+        env:
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.target.outputs.run_id }}
+          OUT: ${{ runner.temp }}/release-manifest/release.env
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$OUT")"
+          repo="$REPO"
+          run_id="$RUN_ID"
+          out="$OUT"
+          api_url="${GELDAR_API_URL:-https://api.github.com}"
+          : "${GH_TOKEN:?GH_TOKEN is required}"
+
+          if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::bad run id" >&2
+            exit 1
+          fi
+
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+
+          api() {
+            curl --fail --silent --show-error --location \
+              --connect-timeout 10 --max-time 60 --retry 4 --retry-all-errors --retry-delay 5 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$@"
+          }
+
+          valid_manifest() {
+            [[ -s "$1" ]] && grep -Eq '^GELDAR_[A-Z_]+_IMAGE=' "$1"
+          }
+
+          unzip_one() {
+            # $1 zip, $2 destination directory. unzip, then python3, then bsdtar: whichever the runner has.
+            if command -v unzip >/dev/null 2>&1; then
+              unzip -q -o "$1" -d "$2"
+            elif command -v python3 >/dev/null 2>&1; then
+              python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' "$1" "$2"
+            else
+              tar -xf "$1" -C "$2"
+            fi
+          }
+
+          from_artifact() {
+            local meta url digest actual attempt
+            meta="$(api "$api_url/repos/$repo/actions/runs/$run_id/artifacts?name=release.env&per_page=1")" || return 1
+            url="$(jq -r '[.artifacts[] | select(.name == "release.env" and (.expired | not))][0].archive_download_url // empty' <<<"$meta")"
+            digest="$(jq -r '[.artifacts[] | select(.name == "release.env" and (.expired | not))][0].digest // empty' <<<"$meta")"
+            if [[ -z "$url" ]]; then
+              echo "no release.env artifact in the run" >&2
+              return 1
+            fi
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "the API reports no sha256 digest for the artifact" >&2
+              return 1
+            fi
+            for attempt in 1 2 3; do
+              rm -f "$work/a.zip"
+              if api --output "$work/a.zip" "$url"; then
+                actual="sha256:$(sha256sum "$work/a.zip" | cut -d' ' -f1)"
+                if [[ "$actual" != "$digest" ]]; then
+                  echo "artifact digest mismatch (expected $digest, got $actual)" >&2
+                  return 2
+                fi
+                rm -rf "$work/x"
+                mkdir "$work/x"
+                unzip_one "$work/a.zip" "$work/x" || return 1
+                valid_manifest "$work/x/release.env" || return 1
+                cat "$work/x/release.env" >"$out"
+                return 0
+              fi
+              echo "artifact download attempt $attempt failed" >&2
+            done
+            return 1
+          }
+
+          from_annotation() {
+            local jobs job_id notes
+            jobs="$(api "$api_url/repos/$repo/actions/runs/$run_id/jobs?per_page=100")" || return 1
+            job_id="$(jq -r '[.jobs[] | select(.name == "release manifest")][0].id // empty' <<<"$jobs")"
+            if [[ ! "$job_id" =~ ^[0-9]+$ ]]; then
+              echo "no release manifest job in the run" >&2
+              return 1
+            fi
+            notes="$(api "$api_url/repos/$repo/check-runs/$job_id/annotations?per_page=100")" || return 1
+            jq -r '[.[] | select(.title == "release.env")][0].message // empty' <<<"$notes" >"$work/note.env"
+            valid_manifest "$work/note.env" || return 1
+            cat "$work/note.env" >"$out"
+          }
+
+          rc=0
+          from_artifact || rc=$?
+          if [[ "$rc" == 0 ]]; then
+            echo "release manifest fetched from the artifact"
+          elif [[ "$rc" == 2 ]]; then
+            # A digest mismatch is a tamper signal, not an outage: no fallback.
+            echo "::error::the artifact does not match its digest; refusing to deploy" >&2
+            exit 1
+          elif from_annotation; then
+            echo "release manifest fetched from the check-run annotation (artifact path failed)"
+          else
+            echo "::error::could not fetch the release manifest from the artifact or the annotation" >&2
+            exit 1
+          fi
 
       - name: write the release manifest into the inbox (atomic, mode 0600)
         env:
