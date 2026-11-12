@@ -836,6 +836,101 @@ export interface PlaySurroundings {
    * True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it.
    */
   enclosed?: boolean;
+  /**
+   * Lava, deep water, drops, fire and cactus within 8 blocks in line of sight, nearest first, at most 4. Absent when none is in sight.
+   *
+   * @maxItems 4
+   */
+  hazards?:
+    | []
+    | [
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        }
+      ]
+    | [
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        },
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        }
+      ]
+    | [
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        },
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        },
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        }
+      ]
+    | [
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        },
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        },
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        },
+        {
+          kind: "lava" | "deep_water" | "drop" | "fire" | "cactus";
+          /**
+           * One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.
+           */
+          dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+          dist: number;
+        }
+      ];
   notable_blocks: {
     type: string;
     x: number;

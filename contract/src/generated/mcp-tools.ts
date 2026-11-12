@@ -911,6 +911,20 @@ export const mcpToolSchemas: Record<
         }
       },
       "$defs": {
+        "CompassPoint": {
+          "description": "One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.",
+          "type": "string",
+          "enum": [
+            "n",
+            "ne",
+            "e",
+            "se",
+            "s",
+            "sw",
+            "w",
+            "nw"
+          ]
+        },
         "ItemName": {
           "description": "An item ID without its namespace prefix, such as iron_ingot.",
           "type": "string",
@@ -1029,6 +1043,40 @@ export const mcpToolSchemas: Record<
             "enclosed": {
               "type": "boolean",
               "description": "True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it."
+            },
+            "hazards": {
+              "description": "Lava, deep water, drops, fire and cactus within 8 blocks in line of sight, nearest first, at most 4. Absent when none is in sight.",
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "dir",
+                  "dist"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "lava",
+                      "deep_water",
+                      "drop",
+                      "fire",
+                      "cactus"
+                    ]
+                  },
+                  "dir": {
+                    "$ref": "#/$defs/CompassPoint"
+                  },
+                  "dist": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8
+                  }
+                }
+              }
             },
             "notable_blocks": {
               "type": "array",
@@ -2335,6 +2383,20 @@ export const mcpToolSchemas: Record<
         }
       },
       "$defs": {
+        "CompassPoint": {
+          "description": "One of eight compass points, world-fixed: n is -z, s is +z, e is +x, w is -x.",
+          "type": "string",
+          "enum": [
+            "n",
+            "ne",
+            "e",
+            "se",
+            "s",
+            "sw",
+            "w",
+            "nw"
+          ]
+        },
         "ItemName": {
           "description": "An item ID without its namespace prefix, such as iron_ingot.",
           "type": "string",
@@ -2548,6 +2610,40 @@ export const mcpToolSchemas: Record<
             "enclosed": {
               "type": "boolean",
               "description": "True when solid blocks close the feet cell on every side, above and below (decision 0074). Absent when the Body does not report it."
+            },
+            "hazards": {
+              "description": "Lava, deep water, drops, fire and cactus within 8 blocks in line of sight, nearest first, at most 4. Absent when none is in sight.",
+              "type": "array",
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "dir",
+                  "dist"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "lava",
+                      "deep_water",
+                      "drop",
+                      "fire",
+                      "cactus"
+                    ]
+                  },
+                  "dir": {
+                    "$ref": "#/$defs/CompassPoint"
+                  },
+                  "dist": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8
+                  }
+                }
+              }
             },
             "notable_blocks": {
               "type": "array",

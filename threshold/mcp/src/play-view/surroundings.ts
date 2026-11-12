@@ -1,4 +1,5 @@
 import type { Snapshot } from '@geldar/contract';
+import { hazardsPart } from './hazards.ts';
 import { PLAY_ENTITY_LIMIT, type SnapshotProjector } from './types.ts';
 
 /**
@@ -23,6 +24,7 @@ export const surroundingsProjector: SnapshotProjector = (snapshot) => {
       notable_blocks: notableBlocks,
       entities: snapshot.surroundings.entities?.slice(0, PLAY_ENTITY_LIMIT),
       agents: snapshot.surroundings.agents,
+      ...hazardsPart(snapshot.surroundings),
     },
   };
 };
