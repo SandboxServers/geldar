@@ -1,0 +1,15 @@
+{
+  "name": "@geldar/kino-shot",
+  "private": true,
+  "description": "Developer tool: open a Kino page in headless Chromium and save screenshots and evidence. Optional; the browser download is a separate explicit command.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run",
+    "shot": "node src/cli.ts",
+    "browsers": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "1.64.1"
+  }
+}
