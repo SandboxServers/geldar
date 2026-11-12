@@ -89,6 +89,7 @@ const SPEC_TOOLS = [
   'act',
   'say',
   'read_book',
+  'see',
   'view',
   'write_book',
   'define_skill',
@@ -178,6 +179,11 @@ const INPUT_ROWS: Row[] = [
     tool: 'view',
     valid: [{}, { cols: 21, rows: 9 }],
     invalid: [{ cols: 42 }, { reach: 1 }],
+  },
+  {
+    tool: 'see',
+    valid: [{}, { width: 320, height: 180 }],
+    invalid: [{ width: 'wide' }, { reach: 1 }],
   },
 ];
 
@@ -319,6 +325,16 @@ const RESULT_ROWS: Row[] = [
     tool: 'view',
     valid: [{ text: 'Facing north.' }],
     invalid: [{ text: 'x', grid: [] }, {}],
+  },
+  {
+    tool: 'see',
+    valid: [
+      {
+        png: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==',
+        caption: 'x',
+      },
+    ],
+    invalid: [{ caption: 'x' }, {}],
   },
   {
     tool: 'status',

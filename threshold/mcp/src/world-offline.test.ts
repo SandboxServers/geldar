@@ -33,7 +33,8 @@ async function dispatch(tools: ToolHandlers, name: string, args: unknown = {}) {
   const signal = new AbortController().signal;
   const ctx: ToolContext = { playerId: PLAYER.playerId, signal };
   const response = await callTool(tools, name, args, ctx);
-  return { isError: response.isError === true, text: response.content[0]?.text ?? '' };
+  const first = response.content[0];
+  return { isError: response.isError === true, text: first?.type === 'text' ? first.text : '' };
 }
 
 /** A world whose one bound life has its Body up or down, through the mock's dispatcher. */

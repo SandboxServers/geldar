@@ -1,6 +1,6 @@
 /**
  * The MCP tool surface: bundled tool definitions and validators looked up by tool name.
- * The types cover all fourteen tools.
+ * The types cover every tool.
  */
 import type { ValidateFunction } from 'ajv';
 import { MCP_TOOL_NAMES } from './generated/mcp-tools.ts';
