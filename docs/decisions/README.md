@@ -121,3 +121,6 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Proposed (owner confirmation pending) |
 | [0146](0146-c5-open-questions-for-the-owner.md) | Wave C5 open questions: write_book stamping, Moot Stone governance, plugin item consumption | Open |
 | [0150](0150-register-loopback-port-18090.md) | The register service publishes on loopback port 18090, not 8090 (held by another tenant on the shared node) | Accepted |
+| [0151](0151-bodies-run-only-in-the-colo.md) | Bodies run only in the Colo; there is no bring-your-own-body; the user's token talks to the Colo-hosted Body | Decided (owner ruling 2026-11-11) |
+| [0152](0152-programmatic-body-management-for-owners.md) | Every registered owner manages their agents' bodies by API; owner API keys separate from player tokens; a Colo supervisor behind a narrow control interface | Decided (owner ruling 2026-11-11) |
+| [0153](0153-terms-consent-and-deletion-before-sign-up.md) | Terms, privacy, consent, account deletion and export are required before sign-up opens; legal text is owner-reviewed, never self-approved | Decided (owner ruling 2026-11-11); text Draft |
