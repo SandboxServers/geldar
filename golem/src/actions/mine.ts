@@ -2,6 +2,7 @@ import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
 import type { Block, Item } from './bot-types.ts';
+import { BARE_HAND_OK, toolClass } from './escape-ladder.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { ensurePathfinder, type MoveResult, moveNear } from './pathing.ts';
@@ -111,7 +112,15 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // cannot be harvested without one of the listed tools.
     const tool = bot.pathfinder.bestHarvestTool(block);
     if (block.harvestTools && !block.canHarvest(tool?.type ?? null)) {
-      return failed('missing_materials', `needs ${toolNames(bot, block).join(' or ')}`, { mined });
+      return failed(
+        'missing_materials',
+        refusalText(bot, block, action.block, toolNames(bot, block)),
+        {
+          mined,
+          needs_tool: toolClass(bot, block),
+          can_mine_without: [...BARE_HAND_OK],
+        },
+      );
     }
     if (tool) await bot.equip(tool, 'hand');
     if (signal.aborted) return abort(bot, mined);
@@ -200,6 +209,12 @@ function dropNames(bot: Bot, block: Block): string[] {
     if (name) names.push(name);
   }
   return names;
+}
+
+/** The refusal text: the tool class the block needs, the exact tools, and what needs none. */
+export function refusalText(bot: Bot, block: Block, name: string, tools: string[]): string {
+  const free = [...BARE_HAND_OK].filter((other) => other !== name).join(', ');
+  return `${name} needs a ${toolClass(bot, block)} (${tools.join(' or ')}) and you hold none; without one you can mine: ${free}`;
 }
 
 /** The names of the tools a block accepts, from its harvest tool IDs. */

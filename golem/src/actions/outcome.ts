@@ -10,10 +10,12 @@ export type FailReason =
   | 'out_of_reach'
   | 'missing_materials'
   | 'missing_station'
+  | 'needs_rescue'
   | 'not_possible'
   | 'interrupted'
   | 'unsupported'
   | 'busy'
+  | 'no_effect'
   | 'internal';
 
 /** What a handler returns. `runAction` turns it into the stored `ActionRecord.result` and state. */

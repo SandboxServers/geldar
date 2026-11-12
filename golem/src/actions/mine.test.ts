@@ -55,7 +55,15 @@ describe('mineAction', () => {
     const bot = fakeBot([stone]);
     const outcome = await mine(bot, 1, 'stone');
     expect(outcome).toMatchObject({ status: 'failed', reason: 'missing_materials' });
-    expect(outcome).toMatchObject({ message: 'needs wooden_pickaxe' });
+    expect(outcome).toMatchObject({
+      message: expect.stringMatching(
+        /^stone needs a pickaxe \(wooden_pickaxe\) and you hold none; without one you can mine: dirt, .*sandstone/,
+      ),
+      detail: {
+        needs_tool: 'pickaxe',
+        can_mine_without: expect.arrayContaining(['sand', 'gravel']),
+      },
+    });
     expect(bot.dig).not.toHaveBeenCalled();
   });
 

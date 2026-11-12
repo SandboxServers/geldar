@@ -1,6 +1,7 @@
 import { type PlanMessage, validateToolResult } from '@geldar/contract';
 import { buildSnapshot, type SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
+import { FailureTracker } from '../failures/tracker.ts';
 import {
   FakeBudgetLedger,
   FakeJournalStore,
@@ -12,7 +13,7 @@ import type { SleepMark, SleepMarks } from '../ports.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './journal.ts';
 import { lookTool, type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
 import { readBookTool } from './read-book.ts';
-import { SLEEP_EVENT_LIMIT, sleepTool } from './sleep.ts';
+import { NOTHING_NEW, SLEEP_EVENT_LIMIT, sleepTool } from './sleep.ts';
 import { STATUS_LAW_LIMIT, statusTool } from './status.ts';
 import { NOT_AVAILABLE_MESSAGE, type NotAvailableTool, notAvailableTool } from './unavailable.ts';
 
@@ -158,6 +159,40 @@ describe('sleep', () => {
     expect(second.event_counts).toEqual({ reflex: 1 });
     expect((await w.journal.recent(LIFE, 5)).at(-1)?.text).toBe(
       'Day 1: asleep. 1 events since the last sleep, 0 lost before them.',
+    );
+  });
+
+  it('says nothing is new, and journals nothing, on a second sleep with no change', async () => {
+    const w = world();
+    const failures = new FailureTracker();
+    const d = { ...deps(w), failures };
+    await sleepTool(d, CALL);
+    const before = (await w.journal.recent(LIFE, 5)).length;
+    const again = await sleepTool(d, CALL);
+    expect(again.events.map((e) => e.text)).toEqual([NOTHING_NEW]);
+    expect(await w.journal.recent(LIFE, 5)).toHaveLength(before);
+  });
+
+  it('journals a second sleep when something happened', async () => {
+    const w = world();
+    const d = { ...deps(w), failures: new FailureTracker() };
+    await sleepTool(d, CALL);
+    await w.body.emit(LIFE, simEvent(1, 'damage'));
+    const again = await sleepTool(d, CALL);
+    expect(again.events.map((e) => e.text)).not.toContain(NOTHING_NEW);
+    expect((await w.journal.recent(LIFE, 5)).at(-1)?.text).toContain('1 events');
+  });
+
+  it('states a goal that failed three times in a row in the sleep digest', async () => {
+    const w = world();
+    const failures = new FailureTracker();
+    for (let i = 1; i <= 3; i++) {
+      failures.submitted(LIFE, [{ do: 'goto', target: { x: 5, y: 6, z: 7 } }]);
+      await w.body.emit(LIFE, simEvent(i, 'action_failed', { name: 'goto', reason: 'blocked' }));
+    }
+    const result = await sleepTool({ ...deps(w), failures }, CALL);
+    expect(result.events.map((e) => e.text)).toContain(
+      'goto 5,6,7 has failed 3 times in a row (blocked).',
     );
   });
 

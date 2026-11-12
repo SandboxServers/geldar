@@ -21,10 +21,12 @@ export interface ActionOutcomePayload {
     | "out_of_reach"
     | "missing_materials"
     | "missing_station"
+    | "needs_rescue"
     | "not_possible"
     | "interrupted"
     | "unsupported"
     | "busy"
+    | "no_effect"
     | "internal";
   /**
    * Short fixed text, for example 'Your mine failed: the way was blocked.'

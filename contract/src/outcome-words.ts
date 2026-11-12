@@ -14,10 +14,12 @@ const REASON_PHRASE: Readonly<Record<string, string>> = {
   out_of_reach: 'it was out of reach',
   missing_materials: 'you lack the materials',
   missing_station: 'there is no crafting table within reach',
+  needs_rescue: 'the body is stuck and every way out failed',
   not_possible: 'that was not possible right now',
   interrupted: 'something interrupted it',
   unsupported: 'the body cannot do that',
   busy: 'another action is still running; wait for it to finish before you send the next one',
+  no_effect: 'it changed nothing',
   internal: 'something went wrong inside the body',
 };
 

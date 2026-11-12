@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
-
+import { escapeLadder, inWater } from './escape-ladder.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
   DEFAULT_DIAG_SINK,
@@ -12,6 +12,8 @@ import {
   watchPathEvents,
 } from './stall-diag.ts';
 import {
+  DIG_GRACE_TICKS,
+  isDigging,
   JUMP_TICKS,
   pulseJump,
   recordRecovery,
@@ -47,7 +49,14 @@ const DEFAULT_STALL_TICKS = 600;
 /** How a move ended. A timeout is the caller's (through `runAction`), not this module's. */
 export type MoveResult =
   | { ok: true; distance: number; partial?: true; message?: string }
-  | { ok: false; reason: 'blocked' | 'timeout' | 'interrupted' | 'cancelled'; message: string };
+  | {
+      ok: false;
+      reason: 'blocked' | 'timeout' | 'interrupted' | 'cancelled' | 'needs_rescue';
+      message: string;
+    };
+
+/** Escape ladders one goto may run before the plain `blocked` result stands. */
+export const MAX_LADDERS = 2;
 
 /**
  * Loads the pathfinder once and sets the movement rules: no digging, no towers, no scaffolding.
@@ -259,6 +268,9 @@ export function moveNear(
     let replans = 0;
     let partial = false;
     let generation = 0;
+    let escaping = false;
+    let ladders = 0;
+    let digSeenAge: number | undefined;
     let recoveredEpisode: number | undefined;
     let recoverySteps: readonly RecoveryStep[] = [];
 
@@ -302,9 +314,59 @@ export function moveNear(
             reason === 'blocked'
               ? factsAt(name ?? 'blocked', bot.time.age - lastMovedAge)
               : undefined;
+          if (
+            reason === 'blocked' &&
+            (inWater(bot) || bot.time.age - lastMovedAge >= RECOVERY_STALL_TICKS) &&
+            escalate(facts as StallFacts)
+          ) {
+            return;
+          }
           settle({ ok: false, reason, message: fixedMessage(name, error) }, facts);
         },
       );
+    };
+
+    /**
+     * Runs the hard-stuck ladder (at most `MAX_LADDERS` per move). A rung that frees the bot
+     * restarts the walk; all rungs failing settles `needs_rescue`. False when no ladder was run.
+     */
+    const escalate = (facts: StallFacts): boolean => {
+      // A body that cannot wait on ticks (a bare test fake) cannot run the timed rungs.
+      if (done || escaping || ladders >= MAX_LADDERS) return false;
+      if (typeof bot.waitForTicks !== 'function') return false;
+      ladders++;
+      escaping = true;
+      void escapeLadder(bot, { signal: opts.signal, toward: target, sink }).then(
+        (result) => {
+          escaping = false;
+          if (done) return;
+          if (opts.signal.aborted) return;
+          if (!result.ok) {
+            settle({ ok: false, reason: 'needs_rescue', message: result.message }, facts);
+            return;
+          }
+          lastPos = bot.entity.position.clone();
+          lastMovedAge = bot.time.age;
+          lastMovedAt = sink.now();
+          replanPos = lastPos.clone();
+          replanAge = bot.time.age;
+          try {
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+          } catch (error) {
+            done = true;
+            cleanup();
+            reject(error);
+          }
+        },
+        (error: unknown) => {
+          escaping = false;
+          if (done) return;
+          done = true;
+          cleanup();
+          reject(error);
+        },
+      );
+      return true;
     };
 
     /** On `NoPath`, walks to the closest reachable node when that is a real step toward the goal. */
@@ -352,6 +414,11 @@ export function moveNear(
     };
 
     watchdog = setInterval(() => {
+      if (escaping) return;
+      if (isDigging(bot)) digSeenAge ??= bot.time.age;
+      else digSeenAge = undefined;
+      /** A young dig is not a stall: recovery would end it with "Digging aborted". */
+      const youngDig = digSeenAge !== undefined && bot.time.age - digSeenAge < DIG_GRACE_TICKS;
       if (jumpAge !== undefined && bot.time.age - jumpAge >= JUMP_TICKS) releaseJump();
       if (bot.entity.position.distanceTo(lastPos) >= MOVED_BLOCKS) {
         lastPos = bot.entity.position.clone();
@@ -359,7 +426,8 @@ export function moveNear(
         lastMovedAt = sink.now();
       } else {
         const stalledTicks = bot.time.age - lastMovedAge;
-        if (stalledTicks >= stallTicks) {
+        if (stalledTicks >= stallTicks && !youngDig) {
+          if (escalate(factsAt('stall', stalledTicks))) return;
           haltPathing(bot);
           settle(
             {
@@ -372,6 +440,7 @@ export function moveNear(
           return;
         }
         if (
+          !youngDig &&
           stalledTicks >= RECOVERY_STALL_TICKS &&
           RECOVERY_STALL_TICKS < stallTicks &&
           recoveredEpisode !== lastMovedAge &&
@@ -385,7 +454,11 @@ export function moveNear(
       if (bot.entity.position.distanceTo(replanPos) >= REPLAN_MOVED) {
         replanPos = bot.entity.position.clone();
         replanAge = bot.time.age;
-      } else if (replans < MAX_REPLANS && bot.time.age - replanAge >= REPLAN_STALL_TICKS) {
+      } else if (
+        !youngDig &&
+        replans < MAX_REPLANS &&
+        bot.time.age - replanAge >= REPLAN_STALL_TICKS
+      ) {
         replans++;
         replanAge = bot.time.age;
         haltPathing(bot);

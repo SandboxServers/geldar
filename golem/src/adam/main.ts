@@ -20,6 +20,7 @@ import { golemNatsAuth } from '../nats-credentials.ts';
 import { registryFromConfig } from '../registry.ts';
 import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from './adam-body.ts';
 import { loadAdamConfig } from './adam-config.ts';
+import { BodyWatchdog } from './watchdog.ts';
 
 /** An `acquire` error with this flag ends the supervisor instead of being retried. */
 export class FatalBodyError extends Error {
@@ -40,6 +41,8 @@ export interface SupervisorOptions {
   rng?: () => number;
   /** A run shorter than this does not reset the attempt counter. Default 10 000 ms. */
   stableMs?: number;
+  /** Restarts a Body that is up but makes no progress; its history spans runs. */
+  watchdog?: BodyWatchdog;
 }
 
 const defaultSleep = (ms: number, signal: AbortSignal): Promise<void> =>
@@ -106,10 +109,12 @@ export class BodySupervisor {
           outcome: body.outcome.kind,
         });
         const startedAt = now();
+        const unwatch = this.opts.watchdog?.attach(body, (why) => body.fail(why));
         const stopped = new Promise<string>((resolve) =>
           signal.addEventListener('abort', () => resolve('stop requested'), { once: true }),
         );
         reason = await Promise.race([body.ended, stopped]);
+        unwatch?.();
         this.current = null;
         await body
           .stop()
@@ -218,6 +223,10 @@ export async function main(): Promise<void> {
     acquire: managerAcquire(manager),
     start: (bot) => startAdamBody(env, bot),
     log: jsonLog,
+    watchdog: new BodyWatchdog({
+      log: jsonLog,
+      limitMs: Number(process.env.GELDAR_BODY_WATCHDOG_MS) || 60_000,
+    }),
   });
   const done = supervisor.run();
   const onSignal = (signal: string): void => {
