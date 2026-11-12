@@ -61,8 +61,8 @@ function itemOf(display: SlotDisplay | undefined): number | null {
 }
 
 /**
- * Starts recording the smelting recipes the server unlocks for this bot. Call it at bot creation,
- * next to `watchRecipeBook`: the server sends the book at join.
+ * Starts recording the smelting recipes the server unlocks for this bot. ConnectionManager calls it
+ * at bot creation, next to `watchRecipeBook`: the server sends the book at join.
  */
 export function watchSmeltBook(bot: Bot): void {
   if (books.has(bot)) return;

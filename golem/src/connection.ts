@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
 import mineflayer, { type Bot, type BotOptions } from 'mineflayer';
+import { watchRecipeBook } from './actions/craft-table.ts';
+import { watchSmeltBook } from './actions/smelt-book.ts';
 import { nextDelayMs } from './backoff.ts';
 import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
@@ -15,8 +17,8 @@ export interface ConnectionOptions {
   /** Injectable for tests; the default is `mineflayer.createBot`. */
   createBot?: (o: BotOptions) => Bot;
   /**
-   * Called with each bot right after it is created, before any packet is read. The server sends
-   * the recipe book during the join, so a listener for it must be attached here. Default: none.
+   * Called with each bot right after it is created, before any packet is read. The manager has
+   * already started the recipe and smelting book watches on it. Default: none.
    */
   onBot?: (bot: Bot) => void;
   /**
@@ -275,6 +277,9 @@ export class ConnectionManager extends EventEmitter {
     });
     this.bot = bot;
     try {
+      // The server sends both books during the join, so their listeners go on before any packet.
+      watchRecipeBook(bot);
+      watchSmeltBook(bot);
       this.onBot?.(bot);
     } catch (err) {
       // The bot already holds a socket and no listener is attached yet: close it, then let the
