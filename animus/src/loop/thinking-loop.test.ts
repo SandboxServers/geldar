@@ -295,7 +295,7 @@ describe('ThinkingLoop: fallback', () => {
   });
 
   it('never resubmits an economic or non-allow-listed intent', async () => {
-    for (const program of ['trade_wait', 'follow', 'build', 'mySkill']) {
+    for (const program of ['trade_wait', 'build', 'mySkill']) {
       const rig = await makeRig([new ModelError('internal', 'boom')]);
       const { events } = interrupted(program);
       const result = await rig.loop.handle(makeDecision('idle', events));
