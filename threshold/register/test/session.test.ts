@@ -82,7 +82,7 @@ function world() {
 /** Signs in and returns the gr_session cookie as the browser sends it back. */
 async function signIn(account: Account): Promise<string> {
   const { res, out } = stubRes();
-  await account.signedIn(identity, res);
+  await account.signedIn(identity, res, true);
   const set = (out.headers['set-cookie'] as string[]).find((c) =>
     c.startsWith(`${SESSION_COOKIE}=`),
   );
@@ -187,7 +187,7 @@ describe('fail closed on a database error (C7-01)', () => {
     const a = w.process();
     w.sessions.fail = true;
     const { res, out } = stubRes();
-    await expect(a.signedIn(identity, res)).rejects.toThrow('database unavailable');
+    await expect(a.signedIn(identity, res, true)).rejects.toThrow('database unavailable');
     expect(out.headers['set-cookie']).toBeUndefined();
     w.sessions.fail = false;
     expect(w.sessions.size()).toBe(0);

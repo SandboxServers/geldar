@@ -19,6 +19,8 @@ import type { Store } from './store.ts';
 export const SESSION_COOKIE = 'gr_session';
 /** The idle window (C7-01). Kept under its old name for the tests that step the clock past it. */
 export const SESSION_TTL_MS = SESSION_IDLE_MS;
+/** The draft terms version an owner accepts at sign-up (C7-08). Bump it when the approved text changes. */
+export const TERMS_VERSION = 'draft-1';
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/;
 const MAX_BODY = 4096;
@@ -98,19 +100,29 @@ export class Account {
   }
 
   /** The callback hook: banned and capped checks, then the owner, then a session and a redirect. */
-  readonly signedIn = async (identity: Identity, res: ServerResponse): Promise<void> => {
+  readonly signedIn = async (
+    identity: Identity,
+    res: ServerResponse,
+    consent = false,
+  ): Promise<void> => {
     const { store, sessions, config, now, log } = this.deps;
     const outcome = await this.serial(async () => {
       const found = await store.findOwner(identity.identityHash);
       if (found?.banned) return 'banned' as const;
       if (found) return found.ownerId;
+      // Sign-up needs the consent box (C7-08): no owner row without it.
+      if (!consent) return 'consent' as const;
       const ownerId = `reg-${identity.identityHash.slice(0, 24)}`;
-      await store.createOwner(identity, ownerId);
+      await store.createOwner(identity, ownerId, TERMS_VERSION);
       return ownerId;
     });
     const clearState = `${STATE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`;
     if (outcome === 'banned') {
       log(`sign-in refused provider=${identity.provider} reason=banned`);
+      return html(res, 403, REFUSED_PAGE, { 'set-cookie': clearState });
+    }
+    if (outcome === 'consent') {
+      log(`sign-up refused provider=${identity.provider} reason=consent`);
       return html(res, 403, REFUSED_PAGE, { 'set-cookie': clearState });
     }
     const nowMs = now();

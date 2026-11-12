@@ -37,6 +37,7 @@ describe('listMigrations', () => {
       '0019_kino_agent_list_no_owner.sql',
       '0020_glass_journal_thoughts.sql',
       '0021_register_sessions.sql',
+      '0022_register_consents.sql',
     ]);
   });
 
