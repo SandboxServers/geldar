@@ -21,13 +21,17 @@ describe('houseBodyName (C2-07k)', () => {
 
   it('whitelists the house Body and every sovereign player of the colo shard file, nothing more', () => {
     const shard = parse(readFileSync(join(repoRoot(), 'shards', 'colo-mind.yaml'), 'utf8'));
-    expect(sovereignPlayerNames(shard)).toEqual(['ag_jason_01', 'ag_clara_01', 'ag_kimberly_01']);
-    expect(whitelistNames(shard)).toEqual([
-      'ag_colo_01',
+    const rangers = [
       'ag_jason_01',
       'ag_clara_01',
       'ag_kimberly_01',
-    ]);
+      'ag_tommy_01',
+      'ag_zack_01',
+      'ag_billy_01',
+      'ag_trini_01',
+    ];
+    expect(sovereignPlayerNames(shard)).toEqual(rangers);
+    expect(whitelistNames(shard)).toEqual(['ag_colo_01', ...rangers]);
   });
 
   it('handles no players, duplicates and bad entries', () => {
