@@ -6,6 +6,7 @@ import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, completed, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { reportStall } from './stall-diag.ts';
 
 /** A `goto` that ends within this many blocks of where it began did not move the bot. */
 const FINISHED_STILL = 0.5;
@@ -59,6 +60,7 @@ export const gotoAction: ActionHandler<'goto'> = {
     const at = ctx.bot.entity.position;
     // "Finished" without moving while still far from the goal: the unstick reflex counts it as a stall.
     const stalled = at.distanceTo(from) < FINISHED_STILL && move.distance > range + 1;
+    if (stalled) reportStall(ctx.bot, { reason: 'goto_stalled' });
     return completed({
       position: { x: at.x, y: at.y, z: at.z },
       distance: move.distance,

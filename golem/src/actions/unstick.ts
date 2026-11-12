@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { reportStall } from './stall-diag.ts';
 
 /** Health below this: the Body never drops on purpose (a fall could finish it). */
 export const MIN_HEALTH_TO_DROP = 12;
@@ -286,6 +287,7 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
     return done('dig_down');
   }
   if (ctx.signal.aborted) return cancelled();
+  reportStall(bot, { reason: 'no_way_out' });
   return failed('blocked', `unstick: no way out found; tried ${tried.join(', ')}`, {
     tries,
     tried,
