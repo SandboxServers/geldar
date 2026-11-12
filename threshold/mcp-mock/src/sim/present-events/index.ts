@@ -4,6 +4,7 @@ import { actionFailedPresenter, actionPresenter } from './action.ts';
 import { damagePresenter } from './damage.ts';
 import { deathPresenter } from './death.ts';
 import { intentPresenter } from './intent.ts';
+import { maintenancePresenter } from './maintenance.ts';
 import { reflexPresenter } from './reflex.ts';
 import { speechPresenter } from './speech.ts';
 import type { PresentCall, PresentHandler } from './types.ts';
@@ -30,6 +31,7 @@ export const PRESENT_HANDLERS: readonly PresentHandler[] = [
   actionFailedPresenter,
   reflexPresenter,
   wakePresenter,
+  maintenancePresenter,
 ];
 
 /** Presents `events` with `handlers`: each event takes the first handler of its kind, in event order. */

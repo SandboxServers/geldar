@@ -1,17 +1,27 @@
 import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
 import { mindEventSubjects, normaliseEvent } from '@geldar/animus/src/link/mind-event.ts';
-import { validateDayNightPayload, validateWorldEvent, type WorldEvent } from '@geldar/contract';
+import {
+  maintenanceSubject,
+  validateDayNightPayload,
+  validateWorldEvent,
+  type WorldEvent,
+} from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
 import type { DeathMarks, PlayerEventLog } from '../ports.ts';
 import type { DayPhase } from './day-night.ts';
+import { maintenanceEvent, parseMaintenanceNotice } from './maintenance-notice.ts';
 import { type MapContext, mapMindEvent } from './mapper.ts';
 
-/** The subjects the consumer reads: the Mind's event types plus `sovereign_call` and `day_night`. */
+/**
+ * The subjects the consumer reads: the Mind's event types plus `sovereign_call`, `day_night` and the
+ * maintenance notice (CD-1), which is not a WorldEvent and is told apart by its contract.
+ */
 export function streamSubjects(shard: string): string[] {
   return [
     ...mindEventSubjects(shard),
     `geldar.${shard}.sovereign_call`,
     `geldar.${shard}.day_night`,
+    maintenanceSubject(shard),
   ];
 }
 
@@ -55,7 +65,15 @@ export async function handleStreamMessage(
 ): Promise<void> {
   const envelope = validateWorldEvent(raw);
   if (!envelope.ok) {
-    counters.invalid++;
+    // Not a WorldEvent: it is a maintenance notice if the contract accepts it, else invalid. The
+    // notice fans out to every life, as day_night does, so a redelivery at this seq is one line each.
+    const notice = parseMaintenanceNotice(raw);
+    if (notice === null) {
+      counters.invalid++;
+      return;
+    }
+    const event = maintenanceEvent(seq, notice);
+    for (const lifeId of await ctx.lives()) await ctx.log.append(lifeId, event);
     return;
   }
   const world = envelope.value;
