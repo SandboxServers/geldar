@@ -76,6 +76,26 @@ class EventExporterListenerTest {
         assertEquals("UNKNOWN", mem.events().get(0).payload().get("cause").getAsString());
     }
 
+    @Test
+    void deathCarriesBlockCoordinatesWhenTheLocationIsKnown() {
+        Player dying = ListenerDoubles.player(
+                "ag_wren_02", List.of(), new ArrayList<>(), null, new org.bukkit.Location(null, 10.7, 64.0, -3.2));
+        exporter.onDeath(death(dying));
+        EventEnvelope e = mem.events().get(0);
+        assertEquals(10, e.payload().get("x").getAsInt());
+        assertEquals(64, e.payload().get("y").getAsInt());
+        assertEquals(-4, e.payload().get("z").getAsInt());
+    }
+
+    @Test
+    void deathWithoutALocationStillEmitsWithNoCoordinates() {
+        exporter.onDeath(death(player("ag_wren_02", null)));
+        EventEnvelope e = mem.events().get(0);
+        assertEquals("UNKNOWN", e.payload().get("cause").getAsString());
+        assertTrue(!e.payload().has("x") && !e.payload().has("y") && !e.payload().has("z"));
+        assertTrue(EventSchemaCheck.errors(e).isEmpty());
+    }
+
     private static PlayerDeathEvent death(Player player) {
         return new PlayerDeathEvent(player, SOURCE, new ArrayList<>(), 0, Component.empty(), true);
     }
