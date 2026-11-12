@@ -249,6 +249,22 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
     expect(env(admin).GELDAR_NATS_PASSWORD_FILE).toBe('/run/secrets/nats-body.txt');
   });
 
+  it('mounts the deploy NATS secret only through the notice overlay, never on the default colo file (CD-1d)', () => {
+    const admin = colo.services.admin ?? {};
+    expect(admin.secrets).not.toContainEqual(expect.objectContaining({ source: 'nats-deploy' }));
+    expect(colo.secrets).not.toHaveProperty('nats-deploy');
+    const notice = parse(readFileSync(`${ROOT}compose/colo-notice.yml`, 'utf8')) as {
+      services: { admin: { secrets: unknown[] } };
+      secrets: Record<string, unknown>;
+    };
+    expect(notice.services.admin.secrets).toEqual([
+      { source: 'nats-deploy', target: 'nats-deploy.txt' },
+    ]);
+    expect(notice.secrets['nats-deploy']).toEqual({
+      file: '${GELDAR_SECRETS_DIR}/nats-deploy.txt',
+    });
+  });
+
   it('is gated behind the sovereign profile, so a plain shard up does not start it', () => {
     expect(players.profiles).toEqual(['sovereign']);
   });

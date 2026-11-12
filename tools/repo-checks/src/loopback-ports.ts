@@ -104,6 +104,8 @@ function resourceLimits(definition: Record<string, unknown>): unknown {
  */
 export function coloRole(path: string): 'base' | 'overlay' | null {
   if (path === PUBLIC_OVERLAY_PATH) return 'overlay';
+  // The notice overlay (CD-1d) adds only the deploy secret to admin, so it is an overlay, not a base file (it has no limits).
+  if (path === 'compose/colo-notice.yml') return 'overlay';
   if (/^compose\/colo[^/]*\.ya?ml$/.test(path)) return 'base';
   return path === 'compose/nats-auth.yml' ? 'overlay' : null;
 }

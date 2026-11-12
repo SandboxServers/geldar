@@ -271,6 +271,41 @@ plugin jars did this). So, in this order:
 `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar` is a directory. It names the path; stop the containers,
 `rmdir` it, restore the jar and run it again.
 
+## Maintenance notice (colo-notice.sh, CD-1d)
+
+`deploy/colo-notice.sh` publishes one maintenance notice on `geldar.<shard>.maintenance` before a restart. The shard is
+`GELDAR_SHARD` (default `colo`), the same variable the script reads. Usage:
+
+```
+deploy/colo-notice.sh [--dry-run] <pause|restart|back> <bodies|world|mcp> [seconds 0-600|-] [update|plugin_update|config]
+```
+
+The arguments are checked against `contract/schemas/maintenance-notice.schema.json` before anything runs. `--dry-run`
+(or `DEPLOY_DRY_RUN=1`) prints the payload and publishes nothing. The publish runs in the one-shot admin container as
+`admin notice <payload>`, which is dispatched before the Postgres password check, as the NATS user `deploy`; the password is
+read from `/run/secrets/nats-deploy.txt` inside the container and is never printed. A failed publish is a warning and exit 0,
+so a missing notice never fails a deploy; `COLO_NOTICE_STRICT=1` exits 1 instead.
+
+The `deploy` NATS role publishes `geldar.<shard>.maintenance` and nothing else (subscribe `_INBOX.>`; no JetStream API, no
+Kino subjects). Its password file `nats-deploy.txt` is written by `./geldar.ps1 shard nats-auth <shard>` next to the other
+role files. It reaches the admin service only through the overlay `compose/colo-notice.yml`, which `deploy/colo-notice.sh`
+merges only when `${GELDAR_SECRETS_DIR}/nats-deploy.txt` exists. It is not in `gen-secrets.sh` (no NATS file is), not in the
+`up` check, and never merged by `up` or the other admin subcommands, so a node without the file keeps working; the notice
+warns, names the file and publishes nothing until the file is copied.
+
+**Existing nodes must regenerate `nats-auth.conf`.** The generator writes `nats-auth.conf` only when it is missing, so an
+existing node keeps the old config without the `deploy` user. Do this in a maintenance window, after the current notice:
+
+1. On the trusted machine, keep the old `compose/secrets/nats-auth.conf` (move it aside; do not delete it), then run
+   `./geldar.ps1 shard nats-auth colo`. It creates `nats-deploy.txt` and writes a new `nats-auth.conf` from the existing role
+   password files, so the other roles keep their passwords.
+2. Copy `nats-deploy.txt` and the new `nats-auth.conf` to `GELDAR_SECRETS_DIR` on the node, owned by `GELDAR_SERVICE_UID`
+   with mode `0600`, as the other NATS files are (the steps in "(c) Secrets").
+3. Restart the `nats` service so it reads the new config (`docker compose ... up -d nats`). This drops every NATS client, so
+   publish a notice first.
+
+Until step 2 is done, `colo-notice.sh` publishes nothing and warns; `colo-up.sh` and the other admin commands are unaffected.
+
 ## What each script refuses
 
 `colo-up.sh` exits 1 and names the failing check. Its refusals, in order:
