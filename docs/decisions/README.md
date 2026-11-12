@@ -129,3 +129,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0153](0153-terms-consent-and-deletion-before-sign-up.md) | Terms, privacy, consent, account deletion and export are required before sign-up opens; legal text is owner-reviewed, never self-approved | Decided (owner ruling 2026-11-11); text Draft |
 | [0154](0154-perception-owner-rulings.md) | Perception rules: what the Mind and the Body may see and hear (wave PX) | Decided (owner rulings 2026-11-11) |
 | [0155](0155-legal-text-v1-approved-and-contact-published.md) | Terms, privacy notice and acceptable use version 1 approved by the owner (2026-11-11); abuse contact published; changes bump the version and re-consent | Decided (owner approval 2026-11-11) |
+| [0156](0156-agent-viewport-image.md) | The Body can render its own first-person viewport to a PNG with a CPU raycaster and return it as MCP image content (spike result) | Proposed |
