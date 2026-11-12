@@ -2,7 +2,7 @@ import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
 import { mindEventSubjects, normaliseEvent } from '@geldar/animus/src/link/mind-event.ts';
 import { validateDayNightPayload, validateWorldEvent, type WorldEvent } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
-import type { PlayerEventLog } from '../ports.ts';
+import type { DeathMarks, PlayerEventLog } from '../ports.ts';
 import type { DayPhase } from './day-night.ts';
 import { type MapContext, mapMindEvent } from './mapper.ts';
 
@@ -28,6 +28,8 @@ export interface StreamContext {
   lives: () => readonly string[] | Promise<readonly string[]>;
   /** The speech identity of one life, for its own mapping; `map.identity` is used when absent. */
   identityOf?: (lifeId: string) => Promise<SpeechIdentity>;
+  /** Counts each death event once (migration 0023); a redelivered death is recorded once. */
+  deaths?: Pick<DeathMarks, 'recordDeath'>;
 }
 
 /** Counts of messages the handler set aside. */
@@ -71,6 +73,11 @@ export async function handleStreamMessage(
   }
   if (n.status === 'ignored') return;
   const lifeId = n.event.lifeId;
+  // Recorded before the log append: a retry of this message after a failed append records it again,
+  // which the store's event id makes a no-op.
+  if (n.event.type === 'death' && lifeId !== '' && ctx.deaths !== undefined) {
+    await ctx.deaths.recordDeath(lifeId, n.event.eventId, n.event.day);
+  }
   const identity =
     ctx.identityOf !== undefined && lifeId !== '' ? await ctx.identityOf(lifeId) : ctx.map.identity;
   for (const event of mapMindEvent(n.event, seq, { ...ctx.map, identity })) {
