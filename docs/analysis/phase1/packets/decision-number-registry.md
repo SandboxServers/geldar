@@ -133,3 +133,11 @@ Still open:
 | 0146 | C5-08 to C5-10 | Open owner questions | Open |
 
 The next free number is 0147 (checked against all remote branches on 2026-11-11).
+
+## Wave PX numbers (added 2026-11-11)
+
+| Number | Packet | Use | Status |
+|---|---|---|---|
+| 0154 | PX-0..PX-8b | Perception owner rulings | Decided |
+
+Numbers 0147 to 0153 are taken by other in-flight branches, so they are not free for wave PX: 0147 and 0148 (body events), 0149 (act budget metering), 0150 (register port), 0151 to 0153 (C7 user management). Wave PX uses only 0154.

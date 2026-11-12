@@ -38,6 +38,8 @@ Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges.
 
 8. **Wave C5, Goldar learnings (drafted 2026-11-11, parallel to C1 to C4):** Body parity and the unavailable tools, from the review of the goldar repo. Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md); review: [worknotes/goldar-review.md](worknotes/goldar-review.md); ledger section "Wave C5"; decisions 0141 to 0146 are Proposed or Open (owner to confirm); rulings R47 to R54. C5a (C5-00 first, then 01 to 04 in parallel) and C5b (05 then 06; 07 parallel) are Ready except C5-01; C5c (08 to 10) waits on 0146. Next free decision number: 0147.
 
+9. **Wave PX, perception for body and mind (drafted 2026-11-11):** what a player could see or hear, from the Jason play record (defects D1 to D11). Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md); ledger section "Wave PX"; owner rulings in decision [0154](../../decisions/0154-perception-owner-rulings.md) (Decided; the seven rulings; spider is a conditional mob under ruling 1, settled by the orchestrator). PX-1 and PX-0 wait on C6-BODY-EVENTS merging; PX-2b is unblocked. Decision 0154 is the only number this wave uses; 0147 to 0153 stay free.
+
 ## Who does what
 
 - **The orchestrator writes no code.** It briefs, reserves decision numbers, reads reports, and decides the next packet.
