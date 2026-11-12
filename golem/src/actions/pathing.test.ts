@@ -1,7 +1,14 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { classifyPathError, forbidCornerCutting, type MoveResult, moveNear } from './pathing.ts';
+import {
+  classifyPathError,
+  forbidCornerCutting,
+  MAX_REPLANS,
+  type MoveResult,
+  moveNear,
+} from './pathing.ts';
+import { NO_PATH_TEXT, PARTIAL_TEXT } from './soft-dig.ts';
 
 describe('forbidCornerCutting', () => {
   /** Movements whose foot-level cell at (dx, dz) is solid when `solid` lists it. */
@@ -119,7 +126,6 @@ describe('moveNear', () => {
       await vi.advanceTimersByTimeAsync(500);
     }
     expect(settled).toBeUndefined();
-    expect(fake.pathfinder.stop).not.toHaveBeenCalled();
 
     fake.time.age += 10;
     await vi.advanceTimersByTimeAsync(500);
@@ -230,5 +236,135 @@ describe('moveNear', () => {
     await expect(
       moveNear(asBot(fake), { x: 10, y: 64, z: 0 }, 1, { signal, timeScale: 1 }),
     ).rejects.toThrow('socket closed');
+  });
+});
+
+describe('moveNear stall then replan', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Advances the world one watchdog step (10 ticks, 500 ms) with the bot standing still. */
+  async function still(fake: FakeBot, steps: number): Promise<void> {
+    for (let i = 0; i < steps; i++) {
+      fake.time.age += 10;
+      await vi.advanceTimersByTimeAsync(500);
+    }
+  }
+
+  it('replans after 60 still ticks, and not at 50', async () => {
+    const fake = fakeBot();
+    void moveNear(asBot(fake), { x: 10, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    });
+    await still(fake, 5);
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1);
+    await still(fake, 1);
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(2);
+    expect(fake.pathfinder.setGoal).toHaveBeenCalledWith(null);
+  });
+
+  it('does not replan while the bot moves more than 0.03 blocks per window', async () => {
+    const fake = fakeBot();
+    void moveNear(asBot(fake), { x: 100, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    });
+    for (let i = 1; i <= 30; i++) {
+      fake.time.age += 10;
+      fake.entity.position = new Vec3(i * 0.05, 64, 0);
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1);
+  });
+
+  it('replans at most MAX_REPLANS times, then the long stall rule fails with blocked', async () => {
+    const fake = fakeBot();
+    let settled: MoveResult | undefined;
+    void moveNear(asBot(fake), { x: 10, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+      stallTicks: 600,
+    }).then((r) => {
+      settled = r;
+    });
+    // 6 replans fit in 6 windows of 60 ticks; the last allowed one is the sixth.
+    await still(fake, 6 * 6);
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1 + MAX_REPLANS);
+    await still(fake, 12);
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1 + MAX_REPLANS);
+    expect(settled).toBeUndefined();
+    await still(fake, 12);
+    expect(settled).toMatchObject({ ok: false, reason: 'blocked' });
+  });
+
+  it('ignores the answer of a path that a replan replaced', async () => {
+    const fake = fakeBot();
+    let rejectFirst: (e: unknown) => void = () => undefined;
+    fake.pathfinder.goto = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockImplementation(() => new Promise<void>(() => undefined));
+    let settled: MoveResult | undefined;
+    void moveNear(asBot(fake), { x: 10, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    }).then((r) => {
+      settled = r;
+    });
+    await still(fake, 6);
+    rejectFirst(pathError('GoalChanged'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBeUndefined();
+  });
+
+  it('follows the partial path when the goal is unreachable and says partial', async () => {
+    const fake = fakeBot() as FakeBot & {
+      pathfinder: { getPathTo?: unknown; movements?: unknown };
+    };
+    fake.pathfinder.goto = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw pathError('NoPath');
+      })
+      .mockImplementationOnce(async () => {
+        fake.entity.position = new Vec3(6.5, 64, 0.5);
+      });
+    fake.pathfinder.getPathTo = vi.fn(() => ({
+      status: 'noPath',
+      path: [
+        { x: 3, y: 64, z: 0 },
+        { x: 6, y: 64, z: 0 },
+      ],
+    }));
+    const result = await moveNear(asBot(fake), { x: 20, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    });
+    expect(result).toMatchObject({ ok: true, partial: true, message: PARTIAL_TEXT });
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(2);
+  });
+
+  it('is plain blocked with a fixed text when no partial step exists', async () => {
+    const fake = fakeBot() as FakeBot & { pathfinder: { getPathTo?: unknown } };
+    fake.pathfinder.goto = vi.fn(async () => {
+      throw pathError('NoPath');
+    });
+    fake.pathfinder.getPathTo = vi.fn(() => ({ status: 'noPath', path: [] }));
+    const result = await moveNear(asBot(fake), { x: 20, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    });
+    expect(result).toEqual({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1);
   });
 });

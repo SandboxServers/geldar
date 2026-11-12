@@ -2,7 +2,19 @@ import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 
+import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
+
 const { pathfinder, Movements, goals } = pathfinderPkg;
+
+/** A path search may think this long per tick slice (ms, the library caps it at 50) ... */
+const TICK_SLICE_MS = 40;
+/** ... and this long in total before it gives up with a `Timeout`. */
+const SEARCH_BUDGET_MS = 4000;
+/** Stall then replan: under this many blocks of movement for this many ticks drops the path. */
+const REPLAN_MOVED = 0.03;
+export const REPLAN_STALL_TICKS = 60;
+/** At most this many replans per goto; after that only the long stall rule below ends the move. */
+export const MAX_REPLANS = 6;
 
 /** Blocks the bot must move to count as moving again (the stall rule). */
 const MOVED_BLOCKS = 0.75;
@@ -13,7 +25,7 @@ const DEFAULT_STALL_TICKS = 600;
 
 /** How a move ended. A timeout is the caller's (through `runAction`), not this module's. */
 export type MoveResult =
-  | { ok: true; distance: number }
+  | { ok: true; distance: number; partial?: true; message?: string }
   | { ok: false; reason: 'blocked' | 'timeout' | 'interrupted' | 'cancelled'; message: string };
 
 /**
@@ -26,12 +38,15 @@ export function ensurePathfinder(bot: Bot): void {
   if (loaded) return;
   bot.loadPlugin(pathfinder);
   const movements = new Movements(bot);
-  movements.canDig = false;
+  // Soft-dig (decision C5-01 soft-dig pathing, Proposed): leaves, vines, snow and plant cover only.
+  installSoftDig(movements);
   movements.allow1by1towers = false;
   // The library spells this property `scafoldingBlocks` (2.4.5).
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
   bot.pathfinder.setMovements(movements);
+  bot.pathfinder.tickTimeout = TICK_SLICE_MS;
+  bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
 }
 
 /** A block as the pathfinder's `getBlock` returns it: prismarine fields plus its own flags. */
@@ -97,11 +112,34 @@ function haltPathing(bot: Bot): void {
   bot.pathfinder.setGoal(null);
 }
 
+/** A pathfinder node as `getPathTo` returns it. */
+interface PathNode {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** The slice of `bot.pathfinder` that the partial-path fallback reads (absent on test fakes). */
+interface PartialPlanner {
+  movements?: unknown;
+  getPathTo?: (movements: unknown, goal: unknown) => { status: string; path: PathNode[] };
+}
+
+/** The reason text for a path error: fixed words, never the library's. */
+function fixedMessage(name: string | undefined, error: unknown): string {
+  if (name === 'NoPath') return NO_PATH_TEXT;
+  if (name === 'Timeout') return SEARCH_TIMEOUT_TEXT;
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Walks the bot to within `range` of `target`. Stops early with `blocked` when the bot has not
  * moved 0.75 blocks for `stallTicks` world ticks (`bot.time.age`, not wall time), and with
- * `cancelled` when the signal aborts. `timeScale` is accepted for the caller's convenience but the
- * wall timeout is the caller's (through `runAction`), so it is not used here.
+ * `cancelled` when the signal aborts. A shorter stall (under 0.03 blocks for 60 ticks) drops the
+ * path and replans from where the bot stands, up to 6 times. When the goal is unreachable the bot
+ * walks the partial path to the closest reachable spot and the result says `partial`. `timeScale`
+ * is accepted for the caller's convenience but the wall timeout is the caller's (through
+ * `runAction`), so it is not used here.
  */
 export function moveNear(
   bot: Bot,
@@ -137,6 +175,61 @@ export function moveNear(
 
     let lastPos = bot.entity.position.clone();
     let lastMovedAge = bot.time.age;
+    let replanPos = bot.entity.position.clone();
+    let replanAge = bot.time.age;
+    let replans = 0;
+    let partial = false;
+    let generation = 0;
+
+    /** Starts (or restarts) a walk to `aim`; answers from an older walk are ignored. */
+    const start = (aim: unknown): void => {
+      const mine = ++generation;
+      bot.pathfinder.goto(aim as never).then(
+        () => {
+          if (mine !== generation) return;
+          const distance = bot.entity.position.distanceTo(goal);
+          settle(
+            partial
+              ? { ok: true, distance, partial: true, message: PARTIAL_TEXT }
+              : { ok: true, distance },
+          );
+        },
+        (error: unknown) => {
+          if (mine !== generation) return;
+          const reason = classifyPathError(error);
+          if (reason === null) {
+            // Not a pathing outcome: the run wrapper turns this throw into `internal`.
+            if (!done) {
+              done = true;
+              cleanup();
+              reject(error);
+            }
+            return;
+          }
+          const name = (error as { name?: string } | null)?.name;
+          if (name === 'NoPath' && !partial && followPartial()) return;
+          settle({ ok: false, reason, message: fixedMessage(name, error) });
+        },
+      );
+    };
+
+    /** On `NoPath`, walks to the closest reachable node when that is a real step toward the goal. */
+    const followPartial = (): boolean => {
+      const planner = bot.pathfinder as unknown as PartialPlanner;
+      if (typeof planner.getPathTo !== 'function') return false;
+      const found = planner.getPathTo(
+        planner.movements,
+        new goals.GoalNear(target.x, target.y, target.z, range),
+      );
+      const last = found.path[found.path.length - 1];
+      if (!last) return false;
+      const here = bot.entity.position;
+      if (here.distanceTo(new Vec3(last.x + 0.5, last.y, last.z + 0.5)) < 1.5) return false;
+      partial = true;
+      start(new goals.GoalBlock(last.x, last.y, last.z));
+      return true;
+    };
+
     watchdog = setInterval(() => {
       if (bot.entity.position.distanceTo(lastPos) >= MOVED_BLOCKS) {
         lastPos = bot.entity.position.clone();
@@ -148,35 +241,33 @@ export function moveNear(
           reason: 'blocked',
           message: `no movement for ${stallTicks} world ticks`,
         });
+        return;
+      }
+      if (bot.entity.position.distanceTo(replanPos) >= REPLAN_MOVED) {
+        replanPos = bot.entity.position.clone();
+        replanAge = bot.time.age;
+      } else if (replans < MAX_REPLANS && bot.time.age - replanAge >= REPLAN_STALL_TICKS) {
+        replans++;
+        replanAge = bot.time.age;
+        haltPathing(bot);
+        try {
+          start(new goals.GoalNear(target.x, target.y, target.z, range));
+        } catch (error) {
+          done = true;
+          cleanup();
+          reject(error);
+        }
       }
     }, WATCH_INTERVAL_MS);
     opts.signal.addEventListener('abort', onAbort, { once: true });
 
-    let walk: Promise<void>;
     try {
-      walk = bot.pathfinder.goto(new goals.GoalNear(target.x, target.y, target.z, range));
+      start(new goals.GoalNear(target.x, target.y, target.z, range));
     } catch (error) {
-      // A synchronous throw skips the handlers below, so undo the watchdog and listener here.
+      // A synchronous throw skips the handlers above, so undo the watchdog and listener here.
       done = true;
       cleanup();
       throw error;
     }
-    walk.then(
-      () => settle({ ok: true, distance: bot.entity.position.distanceTo(goal) }),
-      (error: unknown) => {
-        const reason = classifyPathError(error);
-        if (reason === null) {
-          // Not a pathing outcome: the run wrapper turns this throw into `internal`.
-          if (!done) {
-            done = true;
-            cleanup();
-            reject(error);
-          }
-          return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        settle({ ok: false, reason, message });
-      },
-    );
   });
 }

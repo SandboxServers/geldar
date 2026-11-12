@@ -61,6 +61,7 @@ export const gotoAction: ActionHandler<'goto'> = {
       position: { x: at.x, y: at.y, z: at.z },
       distance: move.distance,
       ...(stalled ? { stalled: true } : {}),
+      ...(move.partial ? { partial: true, note: move.message } : {}),
     });
   },
 };
