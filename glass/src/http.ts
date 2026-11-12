@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { stripTypeScriptTypes } from 'node:module';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
 import { ownedAgentsOf } from './owner-view.ts';
-import { OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
+import { limiterFor, OPEN_POLICY, type PublicPolicy, visibilityAt } from './policy.ts';
 import {
   getThought,
   listAgents,
@@ -273,8 +273,9 @@ export function createHandler(deps: GlassHandlerDeps) {
       log({ event: 'glass_untrusted_peer_header', peer });
     }
     const client = clientKey(clientAddress(req, policy.trustedProxies));
-    if (policy.limiter !== null) {
-      const verdict = policy.limiter.take(client);
+    const limiter = limiterFor(policy, pathOf(req.url));
+    if (limiter !== null) {
+      const verdict = limiter.take(client);
       if (!verdict.allowed) {
         res.setHeader('Retry-After', String(verdict.retryAfter));
         sendJson(res, 429, {

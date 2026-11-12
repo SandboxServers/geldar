@@ -11,7 +11,12 @@ import { PaneSet } from './panes/pane-set.ts';
 import { KinoScene } from './scene.ts';
 import { byeText, KinoSession, type SocketLike } from './session.ts';
 import { type StatusInfo, statusLine } from './status.ts';
-import { parseTargets, targetsNotice } from './targets.ts';
+import {
+  type TargetsOutcome,
+  targetsFetchFailed,
+  targetsNotice,
+  targetsOutcome,
+} from './targets.ts';
 
 const meta = (name: string): string =>
   document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content ?? '';
@@ -35,13 +40,54 @@ function browserSocket(url: string): SocketLike {
   } as SocketLike;
 }
 
+async function loadTargets(): Promise<TargetsOutcome> {
+  try {
+    const r = await fetch('/kino/targets', { credentials: 'same-origin' });
+    const body: unknown = await r.json().catch(() => null);
+    return targetsOutcome(r.status, r.headers.get('Retry-After'), body);
+  } catch {
+    return targetsFetchFailed();
+  }
+}
+
+/** A visible failure message with a Retry button; the button waits out Retry-After. */
+function showLoadFailure(notice: HTMLElement, message: string, wait: number | null): void {
+  const text = document.createElement('span');
+  text.textContent = message;
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.textContent = 'Retry';
+  let left = wait ?? 0;
+  const tick = (): void => {
+    retry.disabled = left > 0;
+    retry.textContent = left > 0 ? `Retry (${left}s)` : 'Retry';
+    if (left > 0) {
+      left -= 1;
+      setTimeout(tick, 1000);
+    }
+  };
+  tick();
+  retry.addEventListener('click', () => void main());
+  notice.replaceChildren(text, ' ', retry);
+}
+
 async function main(): Promise<void> {
-  const targets = parseTargets(
-    await fetch('/kino/targets', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null),
-  );
   const notice = el('notice');
+  const barStatus = el('status');
+  // The status line is always shown, even when the camera list cannot be loaded.
+  barStatus.textContent = statusLine({
+    connected: false,
+    chunks: 0,
+    entities: 0,
+    atlas: { state: 'loading' },
+  });
+  notice.replaceChildren();
+  const outcome = await loadTargets();
+  if (!outcome.ok) {
+    showLoadFailure(notice, outcome.message, outcome.retryAfterSeconds);
+    return;
+  }
+  const targets = outcome.targets;
   notice.textContent = targetsNotice(targets) ?? '';
   if (!targets.signedIn && targets.enabled) {
     const a = el<HTMLAnchorElement>('signin');
@@ -62,13 +108,6 @@ async function main(): Promise<void> {
     notice.textContent = 'No map textures are configured for Kino.';
     return;
   }
-  const barStatus = el('status');
-  barStatus.textContent = statusLine({
-    connected: false,
-    chunks: 0,
-    entities: 0,
-    atlas: { state: 'loading' },
-  });
   let atlas: Awaited<ReturnType<typeof buildAtlas>>;
   let atlasInfo: StatusInfo['atlas'];
   try {
