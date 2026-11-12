@@ -15,6 +15,7 @@ COPY threshold ./threshold
 COPY tools/repo-checks ./tools/repo-checks
 COPY tools/migrate ./tools/migrate
 COPY tools/mcp-tokens ./tools/mcp-tokens
+COPY tools/players-cli ./tools/players-cli
 COPY sql ./sql
 COPY tools/admin/admin.sh ./tools/admin/admin.sh
 # mcp-tokens imports golem/src/players/life-removal.ts (and the golem files it imports), so the CLI does not start
@@ -22,7 +23,7 @@ COPY tools/admin/admin.sh ./tools/admin/admin.sh
 COPY golem/package.json ./golem/package.json
 COPY golem/src ./golem/src
 # --ignore-scripts: no dependency runs an install script (no native module), so none runs in the image build.
-RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@geldar/mcp-tokens..." --filter "@geldar/migrate..." --filter "@geldar/golem..."
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@geldar/mcp-tokens..." --filter "@geldar/migrate..." --filter "@geldar/players-cli..." --filter "@geldar/golem..."
 
 FROM node:22.23.2-trixie-slim@sha256:c5849ff9c9ebcd66615412f0b548ca5b8ecaef84003dc9ac2e077ebe46aaa3f6 AS admin
 LABEL org.opencontainers.image.source="https://github.com/SandboxServers/geldar"
