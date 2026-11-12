@@ -8,10 +8,7 @@ import { validateSnapshot as validateSnapshotSchema } from './generated/validato
 import { formatError, type ValidationResult } from './validation.ts';
 
 export { MARKER_WORD, markedWords } from './agent-text.ts';
-// CD-1d: the notice's type, its schema validator and its subject, for the deploy publisher (golem/src/publish-maintenance-notice.ts).
 export type { MaintenanceNotice, Snapshot } from './generated/types.ts';
-export { validateMaintenanceNotice } from './generated/validators.js';
-export { maintenanceSubject } from './subjects.ts';
 export type { ValidationResult } from './validation.ts';
 
 // --- P0-01 snapshot ---

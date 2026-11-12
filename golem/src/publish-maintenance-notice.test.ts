@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { MaintenanceNotice } from '@geldar/contract';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   checkNotice,
@@ -9,7 +10,7 @@ import {
   publishMaintenanceNotice,
 } from './publish-maintenance-notice.ts';
 
-const NOTICE = {
+const NOTICE: MaintenanceNotice = {
   id: 'cd-pause-world-20261112000000-0a1b2c3d',
   kind: 'pause',
   scope: 'world',
