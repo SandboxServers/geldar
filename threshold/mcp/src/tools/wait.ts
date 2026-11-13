@@ -117,14 +117,32 @@ async function bodyAnswers(deps: WaitDeps, lifeId: string): Promise<boolean> {
   }
 }
 
-/** Per-process wait state: the open wait per life and the last wake per life (the spacing window). */
+/** How many lives keep a delivered mark; the oldest mark is forgotten past this. */
+export const MAX_DELIVERED_LIVES = 1_024;
+
+/**
+ * Per-process wait state: the open wait per life, the last wake per life (the spacing window), and
+ * the newest sequence each life was last given in a wait result (`delivered`).
+ */
 export interface WaitState {
   open: Map<string, (why: WaitError) => void>;
   lastWakeMs: Map<string, number>;
+  delivered: Map<string, number>;
 }
 
 export function createWaitState(): WaitState {
-  return { open: new Map(), lastWakeMs: new Map() };
+  return { open: new Map(), lastWakeMs: new Map(), delivered: new Map() };
+}
+
+/** Records the newest sequence a life was given; the map keeps at most MAX_DELIVERED_LIVES lives. */
+export function rememberDelivered(state: WaitState, lifeId: string, seq: number): void {
+  state.delivered.delete(lifeId);
+  state.delivered.set(lifeId, seq);
+  while (state.delivered.size > MAX_DELIVERED_LIVES) {
+    const oldest = state.delivered.keys().next().value;
+    if (oldest === undefined) break;
+    state.delivered.delete(oldest);
+  }
 }
 
 /**
@@ -146,6 +164,10 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     const decoded = decodeCursor(req.cursor);
     if (decoded === null || decoded > head) return { ok: false, error: 'bad_cursor' };
     from = decoded;
+  } else {
+    // No cursor means since the last result this life was given; a life not waited on starts at head.
+    const delivered = state.delivered.get(lifeId);
+    if (delivered !== undefined && delivered <= head) from = delivered;
   }
 
   const seconds = Math.min(deps.waitCapSeconds ?? MAX_WAIT_SECONDS, req.maxSeconds);
@@ -263,6 +285,12 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   await touch();
 
   const since = await log.since(lifeId, from);
+  // The events this result carries are shown; the next cursor-less wait starts after the newest one.
+  rememberDelivered(
+    state,
+    lifeId,
+    since.events.reduce((top, e) => Math.max(top, e.seq), from),
+  );
   const facts =
     deps.failures?.observe(lifeId, since.events, placeOf(bodySnapshot), clock.nowMs()) ?? [];
   const situation = situationLine(bodySnapshot);
