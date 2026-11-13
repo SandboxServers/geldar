@@ -80,10 +80,18 @@ export interface BodyRecord {
   running: boolean;
 }
 
+// `signal` aborts when the supervisor gives up on a start (its timeout). The adapter must then remove
+// the container it may have created, so a late start cannot run an uncounted body.
 export interface BodyRuntimePort {
   inspect(playerName: string): Promise<BodyRecord | null>;
-  start(spec: BodySpec): Promise<void>;
+  start(spec: BodySpec, signal: AbortSignal): Promise<void>;
   stop(playerName: string): Promise<void>;
+}
+
+// Fixed fields only: the lost row's error text never leaves the supervisor.
+export interface AuditLostInfo {
+  action: string;
+  code: 'audit_lost';
 }
 
 export interface LogPort {
@@ -100,4 +108,6 @@ export interface SupervisorDeps {
   now: () => Date;
   // Bound on each runtime (Docker) call; a call that does not answer in time is an error reply.
   runtimeTimeoutMs?: number;
+  // Called when a successful start or stop could not be audited, so the lost row is visible.
+  onAuditLost?: (info: AuditLostInfo) => void;
 }
