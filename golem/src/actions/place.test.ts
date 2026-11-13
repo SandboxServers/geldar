@@ -108,6 +108,13 @@ function place(fake: FakeBot, block: string, at: { x: number; y: number; z: numb
 
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();
+  // A walk that completes leaves the bot within its range of the target, on the x axis, as the real walk does.
+  vi.mocked(moveNear).mockImplementation(async (bot, target, range) => {
+    if (bot.entity.position.distanceTo(target) > range) {
+      bot.entity.position = new Vec3(target.x + 0.5 - range, target.y, target.z + 0.5);
+    }
+    return { ok: true, distance: 0 };
+  });
 });
 
 describe('pickReference', () => {
