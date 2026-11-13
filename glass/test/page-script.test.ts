@@ -1,8 +1,9 @@
 /**
  * The page script, public/app.js, run in happy-dom with a fake fetch and a fake EventSource. The
  * module's /js/ imports are pointed at the render sources on disk, so the code under test is the
- * shipped script and the shipped markup. Covers the filters, pause with its 2000-row buffer, load
- * older, reconnect backoff and the banner.
+ * shipped script and the shipped markup. Covers the filters, the search count and marks, the detail
+ * under an entry, live entries added in place, pause with its 2000-row buffer, load older, reconnect
+ * backoff and the banner.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -32,6 +33,7 @@ function thought(i: number, name = 'Ada'): Record<string, unknown> {
     wake_reason: `w${i}`,
     prompt_template_version: 'v1',
     latency_ms: 10,
+    action_id: 'act-1',
     parsed: { plan: `plan ${i}` },
   };
 }
@@ -96,11 +98,16 @@ async function boot(pages: Pages): Promise<Window> {
     'fetch',
     vi.fn(async (url: string) => {
       fetchUrls.push(url);
+      const one = /^\/api\/thoughts\/([^?]+)/.exec(url);
       const body = url.startsWith('/api/agents')
         ? { agents: pages.agents }
-        : url.includes('cursor=')
-          ? { thoughts: pages.older, next: null }
-          : { thoughts: pages.first, next: pages.firstNext };
+        : one !== null
+          ? { thought: pages.first.find((t) => t.thought_id === decodeURIComponent(one[1] ?? '')) }
+          : url.startsWith('/api/receipts')
+            ? { receipts: [{ kind: 'place', phase: 'settle', item: 'oak_planks', count: 4 }] }
+            : url.includes('cursor=')
+              ? { thoughts: pages.older, next: null }
+              : { thoughts: pages.first, next: pages.firstNext };
       return { ok: true, status: 200, json: async () => body };
     }),
   );
@@ -208,8 +215,98 @@ describe('the page script', () => {
     fire(win, older, 'click');
     await settle();
     expect(fetchUrls.some((u) => u.includes('cursor=CUR1'))).toBe(true);
+    // An older page is the largest the API gives; the first page stays small so the page opens fast.
+    expect(fetchUrls.find((u) => u.includes('cursor=CUR1'))).toContain('limit=100');
     expect(listRows(win)).toBe(4);
     expect(older.disabled).toBe(true);
+  });
+
+  it('says how many entries are loaded, counts the matches of a search and marks them', async () => {
+    const win = await boot(PAGES);
+    const count = win.document.getElementById('count');
+    expect(count?.textContent).toBe('Showing the 3 entries loaded so far.');
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'PLAN 3';
+    fire(win, keyword, 'input');
+    expect(listRows(win)).toBe(1);
+    expect(count?.textContent).toBe(
+      '1 match in the 3 entries loaded so far. Load older to search further back.',
+    );
+    const marks = [...win.document.querySelectorAll('#thoughts mark')].map((m) => m.textContent);
+    expect(marks).toEqual(['plan 3']);
+    keyword.value = 'no-such-word';
+    fire(win, keyword, 'input');
+    expect(count?.textContent).toBe(
+      'No matches in the 3 entries loaded so far. Load older to search further back.',
+    );
+    keyword.value = '';
+    fire(win, keyword, 'input');
+    expect(listRows(win)).toBe(3);
+    expect(win.document.querySelectorAll('#thoughts mark').length).toBe(0);
+  });
+
+  it('opens the detail under its entry on the time button, and closes it on the second press', async () => {
+    const win = await boot(PAGES);
+    const first = win.document.querySelector('#thoughts > li');
+    const time = first?.querySelector('button.when') as HTMLButtonElement;
+    fire(win, time, 'click');
+    await settle();
+    expect(fetchUrls).toContain('/api/thoughts/t1');
+    expect(fetchUrls).toContain('/api/receipts?action_id=act-1');
+    const detail = first?.querySelector('.detail');
+    expect(detail?.textContent).toContain('Template version');
+    expect(detail?.textContent).toContain('place settle oak_planks 4');
+    expect(win.document.querySelectorAll('.detail').length).toBe(1);
+    // Nothing is drawn outside the list: the detail is under the entry, not at the foot of the page.
+    expect(win.document.querySelector('main > .detail, #detail')).toBeNull();
+    fire(win, time, 'click');
+    await settle();
+    expect(win.document.querySelectorAll('.detail').length).toBe(0);
+  });
+
+  it('adds a live entry at the top without redrawing the others, so an open detail stays open', async () => {
+    const win = await boot(PAGES);
+    sources[0]?.onopen?.();
+    const before = [...win.document.querySelectorAll('#thoughts > li')];
+    fire(win, before[0]?.querySelector('button.when') ?? null, 'click');
+    await settle();
+    sources[0]?.emit('thought', thought(50));
+    const after = [...win.document.querySelectorAll('#thoughts > li')];
+    expect(after.length).toBe(4);
+    expect(after[0]?.textContent).toContain('plan 50');
+    // The same nodes, in the same order: a reader's place, selection and open detail are kept.
+    expect(after.slice(1).every((node, i) => node === before[i])).toBe(true);
+    expect(after[1]?.querySelector('.detail')).not.toBeNull();
+    expect(win.document.getElementById('count')?.textContent).toBe(
+      'Showing the 4 entries loaded so far.',
+    );
+    // A live entry the search does not match is kept but not drawn.
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'plan 1';
+    fire(win, keyword, 'input');
+    sources[0]?.emit('thought', thought(51));
+    expect(listRows(win)).toBe(1);
+    expect(win.document.getElementById('count')?.textContent).toContain('1 match in the 5 entries');
+  });
+
+  it('redraws a thought that arrives a second time, instead of keeping its old row', async () => {
+    const win = await boot(PAGES);
+    sources[0]?.emit('thought', { ...thought(1), parsed: { plan: 'a newer plan' } });
+    expect(listRows(win)).toBe(3);
+    expect(win.document.querySelector('#thoughts > li')?.textContent).toContain('a newer plan');
+    expect(win.document.getElementById('thoughts')?.textContent).not.toContain('plan 1');
+  });
+
+  it('colours the status by the state of the feed, and "/" puts the cursor in the search field', async () => {
+    const win = await boot(PAGES);
+    const status = win.document.getElementById('status');
+    expect(status?.className).toBe('status connecting');
+    sources[0]?.onopen?.();
+    expect(status?.className).toBe('status live');
+    const keyword = win.document.getElementById('f-keyword');
+    expect(win.document.activeElement).not.toBe(keyword);
+    win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: '/', cancelable: true }));
+    expect(win.document.activeElement).toBe(keyword);
   });
 
   it('reconnects with the backoff: 500 ms, then 1000 ms, and says Reconnecting in the meantime', async () => {

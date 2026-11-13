@@ -1,14 +1,23 @@
 /**
- * The Thought Stream page: the first page of thoughts, the live feed, the filters, pause and
- * resume, the per-agent view and "load older". Plain browser JavaScript. The render modules come
- * from /js/ with their types stripped. Every value from the API reaches the page through the
- * escaped view in render-view.ts, and nothing here parses markup.
+ * The Thought Stream page: the first page of thoughts, the live feed, the search and filters, pause
+ * and resume, the detail under an entry and "load older". Plain browser JavaScript. The render
+ * modules come from /js/ with their types stripped. Every value from the API reaches the page
+ * through the escaped view in render-view.ts, and nothing here parses markup.
  */
-import { appendOlder, filterThoughts, LIST_CAP, pushThought, toView } from '/js/render-model.ts';
+import {
+  appendOlder,
+  countLabel,
+  filterThoughts,
+  LIST_CAP,
+  pushThought,
+  toView,
+} from '/js/render-model.ts';
 import { createStreamClient } from '/js/render-stream.ts';
 import { fillAgentOptions, renderDetail, renderNote, renderRow } from '/js/render-view.ts';
 
 const PAGE_SIZE = 50;
+/** An older page is the largest the API gives, so a search reaches back faster. */
+const OLDER_PAGE_SIZE = 100;
 const STATUS_TEXT = {
   connecting: 'Connecting...',
   live: 'Live',
@@ -25,9 +34,9 @@ const els = {
   range: document.getElementById('f-range'),
   keyword: document.getElementById('f-keyword'),
   pause: document.getElementById('pause'),
+  count: document.getElementById('count'),
   list: document.getElementById('thoughts'),
   older: document.getElementById('older'),
-  detail: document.getElementById('detail'),
 };
 
 const state = {
@@ -37,6 +46,11 @@ const state = {
   next: null, // cursor for "load older", or null when there is no older page
   agentIds: [], // option position -> agent id, filled from /api/agents
   streamText: STATUS_TEXT.connecting,
+  rows: new Map(), // thought id -> its drawn row, kept so a redraw leaves an open entry open
+  details: new Map(), // thought id -> the detail open under its row
+  loading: new Set(), // thought ids whose detail is being fetched
+  drawnKeyword: '', // the keyword the kept rows were drawn with (they carry its marks)
+  drawnDay: '', // the day the kept rows were drawn on (they show "today" times)
 };
 
 /** The agent filter's selected agent id, or '' for every agent. */
@@ -51,6 +65,17 @@ function sinceMs() {
   return range > 0 ? Date.now() - range : undefined;
 }
 
+/** Every filter as the page has it now. */
+function currentFilter() {
+  return {
+    agentId: selectedAgent() || undefined,
+    outcome: els.outcome.value || undefined,
+    templateVersion: els.template.value.trim() || undefined,
+    sinceMs: sinceMs(),
+    keyword: els.keyword.value.trim() || undefined,
+  };
+}
+
 async function getJson(path) {
   const res = await fetch(path, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -59,7 +84,9 @@ async function getJson(path) {
 
 /** The first page, or the page after `cursor`, with the server-side filters applied. */
 function thoughtsPath(cursor) {
-  const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+  const params = new URLSearchParams({
+    limit: String(cursor === null ? PAGE_SIZE : OLDER_PAGE_SIZE),
+  });
   const agent = selectedAgent();
   if (agent !== '') params.set('agent', agent);
   if (els.outcome.value !== '') params.set('outcome', els.outcome.value);
@@ -74,20 +101,59 @@ function updateStatus() {
   els.status.textContent = `${state.streamText}${waiting}`;
 }
 
+/** The line under the filters: how many entries are shown, and how far a search has reached. */
+function updateCount(shown) {
+  const narrowed = els.keyword.value.trim() !== '' || els.template.value.trim() !== '';
+  els.count.textContent = countLabel(shown, state.list.length, narrowed, state.next !== null);
+}
+
+/** Forgets the kept rows when they would be stale: another keyword to mark, or another day. */
+function refreshKept(keyword) {
+  const day = new Date().toDateString();
+  if (keyword === state.drawnKeyword && day === state.drawnDay) return;
+  state.rows.clear();
+  state.details.clear();
+  state.drawnKeyword = keyword;
+  state.drawnDay = day;
+}
+
+function drawRow(view, keyword) {
+  return renderRow(document, view, toggleDetail, { nowMs: Date.now(), keyword });
+}
+
 /** Draws the list: the loaded thoughts that pass every filter, newest first. */
 function render() {
-  const filter = {
-    agentId: selectedAgent() || undefined,
-    outcome: els.outcome.value || undefined,
-    templateVersion: els.template.value.trim() || undefined,
-    sinceMs: sinceMs(),
-    keyword: els.keyword.value.trim() || undefined,
-  };
+  const filter = currentFilter();
+  const keyword = filter.keyword ?? '';
+  refreshKept(keyword);
   const shown = filterThoughts(state.list, filter);
-  const rows = shown.map((view) => renderRow(document, view, openThought));
-  els.list.replaceChildren(...rows);
+  const rows = new Map();
+  for (const view of shown) rows.set(view.id, state.rows.get(view.id) ?? drawRow(view, keyword));
+  state.rows = rows;
+  for (const id of [...state.details.keys()]) if (!rows.has(id)) state.details.delete(id);
+  els.list.replaceChildren(...rows.values());
   els.older.disabled = state.next === null;
+  updateCount(shown.length);
   updateStatus();
+}
+
+/**
+ * Adds one live thought at the top without redrawing the rest, so the reader's place, selection and
+ * open entries stay put. False when the list needs the full redraw instead.
+ */
+function drawLive(view) {
+  const filter = currentFilter();
+  const keyword = filter.keyword ?? '';
+  const stale = keyword !== state.drawnKeyword || new Date().toDateString() !== state.drawnDay;
+  if (stale || state.rows.has(view.id) || state.list.length >= LIST_CAP) return false;
+  if (filterThoughts([view], filter).length === 1) {
+    const row = drawRow(view, keyword);
+    state.rows.set(view.id, row);
+    els.list.prepend(row);
+  }
+  updateCount(state.rows.size);
+  updateStatus();
+  return true;
 }
 
 /** Replaces the list with the first page, using the current server-side filters. */
@@ -96,6 +162,8 @@ async function reload() {
     const page = await getJson(thoughtsPath(null));
     state.list = page.thoughts.map(toView).slice(0, LIST_CAP);
     state.next = page.next;
+    state.rows.clear();
+    state.details.clear();
     render();
   } catch {
     els.status.textContent = 'Could not load thoughts.';
@@ -117,14 +185,11 @@ async function loadOlder() {
   }
 }
 
-/** Opens one thought in the detail panel. */
-async function openThought(id) {
+/** The detail of one thought: its facts and the receipts of its action, or a note when it fails. */
+async function loadDetail(id) {
   // A journal line has no thought record to fetch: its detail is the row already loaded.
   const loaded = state.list.find((view) => view.id === id);
-  if (loaded !== undefined && loaded.kind === 'journal') {
-    els.detail.replaceChildren(renderDetail(document, loaded, []));
-    return;
-  }
+  if (loaded !== undefined && loaded.kind === 'journal') return renderDetail(document, loaded, []);
   try {
     const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(id)}`);
     const receipts =
@@ -132,10 +197,29 @@ async function openThought(id) {
         ? (await getJson(`/api/receipts?action_id=${encodeURIComponent(thought.action_id)}`))
             .receipts
         : [];
-    els.detail.replaceChildren(renderDetail(document, toView(thought), receipts));
+    return renderDetail(document, toView(thought), receipts);
   } catch {
-    els.detail.replaceChildren(renderNote(document, 'Could not load this thought.'));
+    return renderNote(document, 'Could not load this thought.');
   }
+}
+
+/** Opens the detail under its entry, or closes it when it is open. */
+async function toggleDetail(id) {
+  const row = state.rows.get(id);
+  if (row === undefined || state.loading.has(id)) return;
+  const open = state.details.get(id);
+  if (open !== undefined) {
+    open.remove();
+    state.details.delete(id);
+    return;
+  }
+  state.loading.add(id);
+  const detail = await loadDetail(id);
+  state.loading.delete(id);
+  // The row was redrawn while the detail loaded: the answer belongs to a row that is gone.
+  if (state.rows.get(id) !== row) return;
+  state.details.set(id, detail);
+  row.append(detail);
 }
 
 /** A live thought: shown at once, or held (capped) while the feed is paused. */
@@ -148,6 +232,10 @@ function onThought(data) {
     return;
   }
   state.list = pushThought(state.list, view);
+  if (drawLive(view)) return;
+  // A second copy of a thought replaces the first, so its kept row is stale.
+  state.rows.delete(view.id);
+  state.details.delete(view.id);
   render();
 }
 
@@ -157,10 +245,12 @@ function togglePause() {
   if (!state.paused) {
     for (const view of [...state.pending].reverse()) {
       state.list = pushThought(state.list, view);
+      state.rows.delete(view.id);
+      state.details.delete(view.id);
     }
     state.pending = [];
   }
-  els.pause.textContent = state.paused ? 'Resume live feed' : 'Pause live feed';
+  els.pause.textContent = state.paused ? 'Resume' : 'Pause';
   render();
 }
 
@@ -175,6 +265,15 @@ async function loadAgents() {
   );
 }
 
+/** "/" puts the cursor in the search field, unless the reader is already typing in a field. */
+function onKey(event) {
+  if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+  const tag = document.activeElement?.tagName ?? '';
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  event.preventDefault();
+  els.keyword.focus();
+}
+
 function start() {
   const live = createStreamClient({
     url: '/api/stream',
@@ -187,6 +286,8 @@ function start() {
     onThought,
     onStatus: (status) => {
       state.streamText = STATUS_TEXT[status] ?? status;
+      // The class colours the dot beside the text. It is one of the fixed names above.
+      els.status.className = status in STATUS_TEXT ? `status ${status}` : 'status';
       updateStatus();
     },
   });
@@ -199,6 +300,7 @@ function start() {
   els.keyword.addEventListener('input', render);
   els.pause.addEventListener('click', togglePause);
   els.older.addEventListener('click', loadOlder);
+  document.addEventListener('keydown', onKey);
 
   live.start();
   loadAgents()

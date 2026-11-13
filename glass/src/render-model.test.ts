@@ -4,17 +4,21 @@ import {
   appendOlder,
   backoffMs,
   clip,
+  countLabel,
   display,
   filterThoughts,
+  JOURNAL_PREVIEW,
   journalShown,
   LIST_CAP,
   pushThought,
+  splitMatches,
   TEXT_CAP,
   type ThoughtView,
   toView,
   visible,
+  whenLabel,
 } from './render-model.ts';
-import { renderRow } from './render-view.ts';
+import { type Doc, renderRow } from './render-view.ts';
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the same controls the page marks
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/u;
@@ -141,15 +145,17 @@ describe('the bounded list', () => {
 });
 
 describe('journal rows', () => {
-  const long = `${'a'.repeat(150)}\n${'b'.repeat(150)}`;
-  it('previews 200 characters and expands to all of it', () => {
+  const long = `${'a'.repeat(450)}\n${'b'.repeat(450)}`;
+  it('previews 600 characters and expands to all of it', () => {
+    expect(JOURNAL_PREVIEW).toBe(600);
     expect(journalShown('short', false)).toEqual({ shown: 'short', expandable: false });
+    expect(journalShown('c'.repeat(600), false).expandable).toBe(false);
     const collapsed = journalShown(long, false);
     expect(collapsed.expandable).toBe(true);
-    expect(collapsed.shown).toBe(`${long.slice(0, 200)}...`);
+    expect(collapsed.shown).toBe(`${long.slice(0, 600)}...`);
     expect(journalShown(long, true).shown).toBe(long);
   });
-  it('renders the text, a neutral label, and toggles on tap', () => {
+  it('renders the text, a neutral label, and toggles on "Show more"', () => {
     const made: FakeEl[] = [];
     const doc = {
       createElement: (tag: string): FakeEl => {
@@ -167,22 +173,59 @@ describe('journal rows', () => {
       kind: 'journal',
       text: long,
     });
-    let opened = 0;
-    const item = renderRow(doc, view, () => {
-      opened++;
-    }) as unknown as FakeEl;
+    const opened: string[] = [];
+    renderRow(doc as unknown as Doc, view, (id) => opened.push(id));
     const spans = made.filter((e) => e.tag === 'span');
     const label = spans.find((s) => s.className.startsWith('outcome'));
     expect(label?.textContent).toBe('journal');
     expect(label?.className).not.toContain('unparsed');
     const body = spans.find((s) => s.className.includes('journal-text'));
-    expect(body?.textContent).toBe(`${long.slice(0, 200)}...`);
-    const button = item.children[0] as FakeEl;
-    button.click();
+    expect(body?.textContent).toBe(`${long.slice(0, 600)}...`);
+    const more = made.find((e) => e.tag === 'button' && e.className === 'more');
+    expect(more?.textContent).toBe('Show more');
+    more?.click();
     expect(body?.textContent).toBe(long);
-    button.click();
-    expect(body?.textContent).toBe(`${long.slice(0, 200)}...`);
-    expect(opened).toBe(0);
+    expect(more?.textContent).toBe('Show less');
+    more?.click();
+    expect(body?.textContent).toBe(`${long.slice(0, 600)}...`);
+    expect(opened).toEqual([]);
+    // The time is the button that opens the detail.
+    made.find((e) => e.tag === 'button' && e.className === 'when')?.click();
+    expect(opened).toEqual(['j1']);
+  });
+  it('gives a short journal line no "Show more"', () => {
+    const made: FakeEl[] = [];
+    const doc = {
+      createElement: (tag: string): FakeEl => {
+        const el = new FakeEl(tag);
+        made.push(el);
+        return el;
+      },
+    };
+    const view = toView({ thought_id: 'j2', name: 'Jason', kind: 'journal', text: 'short' });
+    renderRow(doc as unknown as Doc, view, () => {});
+    expect(made.some((e) => e.className === 'more')).toBe(false);
+  });
+  it('opens a long journal line while a search is on, so a match past the preview is in sight', () => {
+    const made: FakeEl[] = [];
+    const doc = {
+      createElement: (tag: string): FakeEl => {
+        const el = new FakeEl(tag);
+        made.push(el);
+        return el;
+      },
+    };
+    const view = toView({
+      thought_id: 'j3',
+      name: 'Jason',
+      kind: 'journal',
+      text: `${long} needle`,
+    });
+    renderRow(doc as unknown as Doc, view, () => {}, { keyword: 'needle' });
+    const body = made.find((e) => e.className.includes('journal-text'));
+    const marks = (body?.children ?? []).filter((c) => typeof c !== 'string' && c.tag === 'mark');
+    expect(marks.map((m) => (m as FakeEl).textContent)).toEqual(['needle']);
+    expect(made.find((e) => e.className === 'more')?.textContent).toBe('Show less');
   });
   it('searches the journal text by keyword', () => {
     const view = toView({ thought_id: 'j', name: 'Jason', kind: 'journal', text: 'found a Cave' });
@@ -195,16 +238,16 @@ class FakeEl {
   textContent: string | null = '';
   type = '';
   value = '';
-  children: FakeEl[] = [];
+  children: (FakeEl | string)[] = [];
   private handler: (() => void) | undefined;
   readonly tag: string;
   constructor(tag: string) {
     this.tag = tag;
   }
-  append(...nodes: FakeEl[]): void {
+  append(...nodes: (FakeEl | string)[]): void {
     this.children.push(...nodes);
   }
-  replaceChildren(...nodes: FakeEl[]): void {
+  replaceChildren(...nodes: (FakeEl | string)[]): void {
     this.children = nodes;
   }
   addEventListener(_type: 'click', listener: () => void): void {
@@ -222,5 +265,92 @@ describe('backoffMs', () => {
     expect(backoffMs(10_000)).toBe(30_000);
     expect(backoffMs(-3)).toBe(500);
     expect(backoffMs(Number.NaN)).toBe(500);
+  });
+});
+
+describe('whenLabel', () => {
+  // Local-time constructors, so the cases hold in any time zone the tests run in.
+  const now = new Date(2026, 10, 12, 21, 30).getTime();
+  const time = (ms: number): string =>
+    new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+  it('shows the clock time alone for today', () => {
+    const at = new Date(2026, 10, 12, 9, 5).getTime();
+    expect(whenLabel(at, now)).toBe(time(at));
+    expect(whenLabel(at, now)).toMatch(/9.05/);
+  });
+
+  it('puts the date in front for another day, and the year for another year', () => {
+    const yesterday = new Date(2026, 10, 11, 23, 59).getTime();
+    expect(whenLabel(yesterday, now)).toBe(
+      `${new Date(yesterday).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}, ${time(yesterday)}`,
+    );
+    expect(whenLabel(yesterday, now)).not.toContain('2026');
+    const lastYear = new Date(2025, 10, 12, 9, 5).getTime();
+    expect(whenLabel(lastYear, now)).toContain('2025');
+    // The same day of the month in another month is not today.
+    const lastMonth = new Date(2026, 9, 12, 9, 5).getTime();
+    expect(whenLabel(lastMonth, now)).not.toBe(time(lastMonth));
+  });
+
+  it('is empty for a time that did not parse', () => {
+    expect(whenLabel(Number.NaN, now)).toBe('');
+  });
+});
+
+describe('splitMatches', () => {
+  it('splits at each match, any case, and the pieces join back to the text', () => {
+    const pieces = splitMatches('The pit. A PIT, a spit.', 'pit');
+    expect(pieces.filter((p) => p.hit).map((p) => p.text)).toEqual(['pit', 'PIT', 'pit']);
+    expect(pieces.map((p) => p.text).join('')).toBe('The pit. A PIT, a spit.');
+  });
+
+  it('reads the keyword as literal text, never as a pattern', () => {
+    expect(splitMatches('aaa', '.').some((p) => p.hit)).toBe(false);
+    expect(splitMatches('cost (4.5) [x]', '(4.5)').filter((p) => p.hit)).toEqual([
+      { text: '(4.5)', hit: true },
+    ]);
+    for (const keyword of ['.*', '[', '\\', '(?<', '$&', '^', 'a{2}', '|']) {
+      const pieces = splitMatches(`x ${keyword} y`, keyword);
+      expect(
+        pieces.filter((p) => p.hit).map((p) => p.text),
+        keyword,
+      ).toEqual([keyword]);
+    }
+  });
+
+  it('gives the whole text as one piece when there is no keyword or no match', () => {
+    expect(splitMatches('abc', '')).toEqual([{ text: 'abc', hit: false }]);
+    expect(splitMatches('abc', 'z')).toEqual([{ text: 'abc', hit: false }]);
+  });
+
+  it('marks hostile text as text: the pieces are strings, split only at the keyword', () => {
+    for (const text of HOSTILE) {
+      const shown = display(text);
+      expect(
+        splitMatches(shown, 'alert')
+          .map((p) => p.text)
+          .join(''),
+      ).toBe(shown);
+    }
+  });
+});
+
+describe('countLabel', () => {
+  it('says how many entries are loaded, and whether that is all of them', () => {
+    expect(countLabel(0, 0, false, false)).toBe('No entries.');
+    expect(countLabel(50, 50, false, true)).toBe('Showing the 50 entries loaded so far.');
+    expect(countLabel(1, 1, false, false)).toBe('Showing all 1 entry.');
+  });
+
+  it('counts the matches of a narrowing filter, and says older entries are not searched yet', () => {
+    expect(countLabel(3, 50, true, true)).toBe(
+      '3 matches in the 50 entries loaded so far. Load older to search further back.',
+    );
+    expect(countLabel(1, 50, true, false)).toBe('1 match in all 50 entries.');
+    expect(countLabel(0, 50, true, true)).toBe(
+      'No matches in the 50 entries loaded so far. Load older to search further back.',
+    );
+    expect(countLabel(0, 50, true, false)).toBe('No matches in all 50 entries.');
   });
 });

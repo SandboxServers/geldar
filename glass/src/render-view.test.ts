@@ -20,6 +20,7 @@ const ALLOWED_TAGS = new Set([
   'SELECT',
   'OPTION',
   'DIV',
+  'MARK',
 ]);
 /** Attributes the page sets. `value` on an option holds an index, never data. */
 const ALLOWED_ATTRS = new Set(['class', 'type', 'value']);
@@ -88,6 +89,93 @@ describe('renderRow with hostile data', () => {
     (doc.body as unknown as El).append(row as unknown as El);
     doc.body.querySelector('button')?.click();
     expect(seen).toEqual(['t-7']);
+  });
+});
+
+describe('renderRow with a search keyword', () => {
+  it('marks each match in the name, the wake reason and the text, and nothing else', () => {
+    const doc = freshDoc();
+    const view = toView({
+      ...plainRow(1),
+      name: 'Pitman',
+      wake_reason: 'fell in a pit',
+      parsed: { plan: 'Leave the PIT. Avoid pits.' },
+    });
+    const row = renderRow(doc as unknown as Doc, view, () => {}, { keyword: 'pit' });
+    (doc.body as unknown as El).append(row as unknown as El);
+    auditTree(doc.body);
+    const marks = Array.from(doc.body.querySelectorAll('mark')).map((m) => m.textContent);
+    expect(marks).toEqual(['Pit', 'pit', 'PIT', 'pit']);
+    expect(doc.body.querySelector('.plan')?.textContent).toBe('Leave the PIT. Avoid pits.');
+    expect(doc.body.querySelector('.tier mark, .outcome mark, .when mark')).toBeNull();
+  });
+
+  it('builds no mark without a keyword', () => {
+    const doc = bodyWithRow('a pit', 0);
+    expect(doc.querySelectorAll('mark').length).toBe(0);
+  });
+
+  it('keeps hostile text as text when a keyword inside it is marked', () => {
+    for (const [index, value] of HOSTILE.entries()) {
+      for (const keyword of ['alert', 'x', '<', value.slice(0, 12)]) {
+        const doc = freshDoc();
+        const view = toView(hostileRow(value, index));
+        const row = renderRow(doc as unknown as Doc, view, () => {}, { keyword });
+        (doc.body as unknown as El).append(row as unknown as El);
+        auditTree(doc.body);
+        expect(doc.body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
+        expect(doc.body.querySelector('.plan')?.textContent).toBe(display(value));
+        for (const mark of Array.from(doc.body.querySelectorAll('mark'))) {
+          expect(mark.children.length).toBe(0);
+        }
+      }
+    }
+  });
+});
+
+describe('renderRow layout', () => {
+  it('shows the time in the button that opens the detail, and leaves the debugging fields to the detail', () => {
+    const doc = freshDoc();
+    const view = toView({ ...plainRow(2), prompt_template_version: 'v-template', latency_ms: 812 });
+    const row = renderRow(doc as unknown as Doc, view, () => {}, {
+      nowMs: Date.parse('2026-11-10T00:00:00.000Z'),
+    });
+    (doc.body as unknown as El).append(row as unknown as El);
+    expect(doc.body.querySelectorAll('button').length).toBe(1);
+    expect(doc.body.querySelector('button.when')?.textContent).toMatch(/\d{1,2}.\d\d.*, details$/);
+    // The text is not inside a button, so a reader can select and copy it.
+    expect(doc.body.querySelector('button .plan')).toBeNull();
+    expect(doc.body.textContent).not.toContain('v-template');
+    expect(doc.body.textContent).not.toContain('812');
+    const detail = renderDetail(doc as unknown as Doc, view, []);
+    (doc.body as unknown as El).append(detail as unknown as El);
+    expect(doc.body.querySelector('.detail')?.textContent).toContain('v-template');
+    expect(doc.body.querySelector('.detail')?.textContent).toContain('812 ms');
+  });
+
+  it('shows a time that did not parse as it came', () => {
+    const doc = freshDoc();
+    const row = renderRow(
+      doc as unknown as Doc,
+      toView({ thought_id: 't', at: 'not a time' }),
+      () => {},
+    );
+    (doc.body as unknown as El).append(row as unknown as El);
+    expect(doc.body.querySelector('button.when')?.textContent).toContain('not a time');
+  });
+
+  it('labels a parsed thought "thought" and an unparsed one "unparsed"', () => {
+    const doc = freshDoc();
+    const parsed = renderRow(doc as unknown as Doc, toView(plainRow(1)), () => {});
+    const unparsed = renderRow(
+      doc as unknown as Doc,
+      toView({ ...plainRow(2), parsed: null }),
+      () => {},
+    );
+    (doc.body as unknown as El).append(parsed as unknown as El, unparsed as unknown as El);
+    const labels = Array.from(doc.body.querySelectorAll('.outcome')).map((n) => n.textContent);
+    expect(labels).toEqual(['thought', 'unparsed']);
+    expect(doc.body.querySelector('.outcome.unparsed')).not.toBeNull();
   });
 });
 

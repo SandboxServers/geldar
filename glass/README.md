@@ -132,7 +132,8 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
   port too. The `Host` check above stops DNS rebinding from a browser; it does not stop a local
   process that sends its own `Host`. Caddy sends `Host: localhost` to Glass for that reason.
 - **Framing and injection in the page.** The CSP above blocks inline script, so an injected
-  attribute or tag cannot run. The page builds its rows with `textContent` only (`glass/src/render-view.ts`).
+  attribute or tag cannot run. The page builds its rows from text only: `textContent` and text nodes, with a
+  search match inside a `<mark>` (`glass/src/render-view.ts`).
   The adversarial corpus (`glass/test/corpus.ts`) runs through the API, the stream and the page.
 - **Model input and raw replies.** The database role may read the prompt and the raw reply of a
   thought, but Glass does not select or send them. Changing that needs an owner-signed privacy review.

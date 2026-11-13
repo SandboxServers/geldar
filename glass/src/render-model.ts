@@ -76,9 +76,9 @@ export function toView(row: Row): ThoughtView {
 }
 
 /** How many characters of a journal line the collapsed row shows. */
-export const JOURNAL_PREVIEW = 200;
+export const JOURNAL_PREVIEW = 600;
 
-/** The text a journal row shows: the first 200 characters with an ellipsis when collapsed, all of it when open. */
+/** The text a journal row shows: the first 600 characters with an ellipsis when collapsed, all of it when open. */
 export function journalShown(
   value: string,
   expanded: boolean,
@@ -86,6 +86,76 @@ export function journalShown(
   const expandable = value.length > JOURNAL_PREVIEW;
   if (!expandable || expanded) return { shown: value, expandable };
   return { shown: `${value.slice(0, JOURNAL_PREVIEW)}...`, expandable };
+}
+
+/**
+ * When an entry was written, in the reader's own time zone and locale: the clock time for today, with the
+ * date in front for any other day and the year too for another year. Empty when the time did not parse.
+ */
+export function whenLabel(atMs: number, nowMs: number): string {
+  if (!Number.isFinite(atMs)) return '';
+  const at = new Date(atMs);
+  const now = new Date(nowMs);
+  const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const sameYear = at.getFullYear() === now.getFullYear();
+  if (sameYear && at.getMonth() === now.getMonth() && at.getDate() === now.getDate()) return time;
+  const date = at.toLocaleDateString(
+    undefined,
+    sameYear
+      ? { day: 'numeric', month: 'short' }
+      : { day: 'numeric', month: 'short', year: 'numeric' },
+  );
+  return `${date}, ${time}`;
+}
+
+export interface TextPiece {
+  text: string;
+  /** True for a run that matches the search keyword. */
+  hit: boolean;
+}
+
+/**
+ * Splits a shown text at each literal, case-insensitive match of the keyword, so the page can mark the
+ * matches. The keyword is escaped: it is never read as a pattern. The pieces join back to the text.
+ */
+export function splitMatches(value: string, keyword: string): TextPiece[] {
+  if (keyword === '' || value === '') return [{ text: value, hit: false }];
+  let pattern: RegExp;
+  try {
+    pattern = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'giu');
+  } catch {
+    return [{ text: value, hit: false }];
+  }
+  return value
+    .split(pattern)
+    .map((text, index) => ({ text, hit: index % 2 === 1 }))
+    .filter((piece) => piece.text !== '');
+}
+
+function entries(count: number): string {
+  return count === 1 ? '1 entry' : `${count} entries`;
+}
+
+/**
+ * The line under the filters: how many entries are on the page, and, when the keyword or template filter
+ * narrows them, how many match and that older entries are searched only once they are loaded.
+ */
+export function countLabel(
+  shown: number,
+  loaded: number,
+  narrowed: boolean,
+  hasOlder: boolean,
+): string {
+  if (loaded === 0) return 'No entries.';
+  if (!narrowed) {
+    return hasOlder
+      ? `Showing the ${entries(loaded)} loaded so far.`
+      : `Showing all ${entries(loaded)}.`;
+  }
+  const scope = hasOlder ? `the ${entries(loaded)} loaded so far` : `all ${entries(loaded)}`;
+  const further = hasOlder ? ' Load older to search further back.' : '';
+  if (shown === 0) return `No matches in ${scope}.${further}`;
+  return `${shown === 1 ? '1 match' : `${shown} matches`} in ${scope}.${further}`;
 }
 
 /** Shows a bidi override, a zero-width or a control character as a visible marker. */
