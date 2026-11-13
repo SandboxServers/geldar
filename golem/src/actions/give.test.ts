@@ -3,7 +3,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from '../perception/perception.fakes.ts';
-import { giveAction, NOT_IN_SIGHT } from './give.ts';
+import { giveAction, NOT_IN_SIGHT, TOSS_PITCH } from './give.ts';
 import type { ActionOutcome } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 
@@ -37,6 +37,7 @@ function setup(held = 5, pickups: Pickups = {}) {
     position: new Vec3(0.5, 64, 3.5),
   });
   const toss = vi.fn(async () => {
+    order.push('toss');
     for (const id of pickups.dropped ?? [7]) events.emit('entitySpawn', item(id));
     for (const id of pickups.picked ?? [7]) {
       if (pickups.after === undefined) events.emit('playerCollect', pike, item(id));
@@ -44,7 +45,19 @@ function setup(held = 5, pickups: Pickups = {}) {
     }
     if (pickups.abortOnToss) controller.abort();
   });
-  const lookAt = vi.fn(async (_at?: Vec3, _force?: boolean) => {});
+  // The calls the Body makes before a toss, in order, as the fake bot saw them.
+  const order: string[] = [];
+  // As mineflayer's lookAt does, minus the packet: it turns the Body to face the point.
+  const lookAt = vi.fn(async (at: Vec3, _force?: boolean) => {
+    order.push('lookAt');
+    bot.entity.yaw = Math.atan2(-(at.x - bot.entity.position.x), -(at.z - bot.entity.position.z));
+  });
+  const look = vi.fn(async (_yaw: number, _pitch: number, _force?: boolean) => {
+    order.push('look');
+  });
+  const waitForTicks = vi.fn(async (_ticks: number) => {
+    order.push('waitForTicks');
+  });
   // The server's full player list: a player listed here is known to the server, not to the agent.
   const players: Record<string, unknown> = { Hidden: { entity: { position: new Vec3(0, 64, 5) } } };
   const bot = Object.assign(world.bot, {
@@ -56,6 +69,8 @@ function setup(held = 5, pickups: Pickups = {}) {
     emit: events.emit.bind(events),
     toss,
     lookAt,
+    look,
+    waitForTicks,
   }) as Bot;
   const run = (to: string, count = 3, item = 'oak_log', timeScale = 1): Promise<ActionOutcome> =>
     giveAction.run(
@@ -67,7 +82,7 @@ function setup(held = 5, pickups: Pickups = {}) {
         count,
       },
     );
-  return { world, run, toss, lookAt, events, controller };
+  return { world, run, toss, lookAt, look, waitForTicks, order, events, controller };
 }
 
 beforeEach(() => walk.mockReset());
@@ -99,6 +114,36 @@ describe('give', () => {
     expect(aim.x).toBeCloseTo(0.5, 6);
     expect(aim.y).toBeCloseTo(64 + 1.8 * 0.9, 6);
     expect(aim.z).toBeCloseTo(2.5, 6);
+  });
+
+  it('looks 30 degrees down, turned to the recipient, before it tosses', async () => {
+    const { world, run, look } = setup();
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(2.5, 64, 2.5) };
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    const sent = look.mock.calls[0] as unknown as [number, number, boolean];
+    // The Body is at (0.5, 0.5) and Pike at (2.5, 2.5): yaw is atan2(-dx, -dz), as mineflayer uses.
+    expect(sent[0]).toBeCloseTo(Math.atan2(-2, -2), 6);
+    expect(sent[1]).toBe(TOSS_PITCH);
+    expect(sent[1]).toBeLessThan(0);
+    expect(sent[2]).toBe(true);
+  });
+
+  it('waits at least two ticks for the look to reach the server, then tosses', async () => {
+    const { world, run, order, waitForTicks } = setup();
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(order).toEqual(['lookAt', 'look', 'waitForTicks', 'toss']);
+    expect(waitForTicks.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(2);
+  });
+
+  it('tosses nothing when the run aborts during the wait for the look', async () => {
+    const { world, run, toss, waitForTicks, controller } = setup();
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    waitForTicks.mockImplementationOnce(async () => {
+      controller.abort();
+    });
+    expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
+    expect(toss).not.toHaveBeenCalled();
   });
 
   it('walks up to a visible agent that is further than 3 blocks, then tosses', async () => {
