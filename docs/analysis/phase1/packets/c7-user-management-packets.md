@@ -123,75 +123,11 @@ Merged: `sql/0021_register_sessions.sql` and `threshold/register/src/session-sto
 - **checks.** `./geldar.ps1 pnpm --filter @geldar/supervisor test`, typecheck, `pnpm format`, the migration check, `./geldar.ps1 check`.
 - **size.** L (two sessions; split at "association and roster" and "quotas, limits and log").
 
-## C7-04: management API v1
+## C7-04: management API v1 (split into three cards)
 
-Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packet:
+C7-04 is replaced by three cards in [c7d-packets.md](c7d-packets.md): **C7-04a** (API core: route tree, auth, problem errors, limiter admin exemption, `onAuditLost`; wave 2 after C7-02b), **C7-04b** (agents and tokens resources, owner-key routes, onboarding hand-off; wave 2 after C7-04a) and **C7-04c** (body routes through the supervisor, with the review-5 carry-forward on repeat starts and 409; wave 3 after C7-04a and C7-03b1). The draft OpenAPI document and the rules of the old card are kept in the cards; the old text is in git history at `c222d2b3`.
 
-- **Repeat start.** Rate-limit a repeat `start` of a running body. The supervisor counts nothing for it, so the API must limit it.
-- **409.** Map a repeat start to the 409 (already running), with the existing body.
-- **Limiter admin exemption.** The `server.ts` limiter exemption for admins lands here, with the route wiring that C7-02a left out. A supervisor bypass of the per-agent quota was a wave 1 review defect, so the exemption needs its own test.
-- **`onAuditLost`.** Pass it in the composition root (see C7-03b).
-
-- **id / wave / lane.** C7-04, wave 2 (starts after C7-02b merges). **depends-on.** C7-02b, C7-03a, C7-12. **branch.** `phase1/c7-04-management-api`. **migration.** none.
-- **Goal.** The authenticated API of 0152, under `/register/api/v1/`. Two credentials: the owner session cookie (for the web UI; state-changing calls need the CSRF token) and an owner key (`Authorization: Bearer gowner-...`, for scripts), with the scope rule of C7-02. Every error is `application/problem+json`. Another owner's agent always gets 404, never 403, so existence is not leaked.
-
-Draft contract (OpenAPI 3.1 style; the generator, not hand-written, produces the types from `contract/` in the implementation):
-
-```yaml
-openapi: 3.1.0
-info: { title: Geldar owner API, version: 1.0.0 }
-servers: [{ url: https://glass.geldar.sandboxservers.games/register/api/v1 }]
-security: [{ sessionCookie: [] }, { ownerKey: [read] }]
-paths:
-  /agents:
-    get: { summary: List my agents, scope: read, responses: { 200: { description: array of Agent } } }
-  /agents/{playerId}:
-    get: { summary: One agent, scope: read, responses: { 200: Agent, 404: NotFound } }
-    patch: { summary: Rename or set visibility flags, scope: manage, requestBody: AgentPatch, responses: { 200: Agent, 422: Invalid } }
-  /agents/{playerId}/body/start:   { post: { scope: body, responses: { 202: BodyOp, 409: Conflict, 429: RateLimited } } }
-  /agents/{playerId}/body/stop:    { post: { scope: body, responses: { 202: BodyOp, 409: Conflict, 429: RateLimited } } }
-  /agents/{playerId}/body/restart: { post: { scope: body, responses: { 202: BodyOp, 429: RateLimited } } }
-  /agents/{playerId}/body/status:  { get: { scope: read, responses: { 200: BodyStatus } } }
-  /agents/{playerId}/body/log:     { get: { scope: read, parameters: [limit (max 200), since], responses: { 200: LogTail } } }
-  /agents/{playerId}/tokens:       { post: { summary: Rotate the player token (shown once), scope: manage, responses: { 201: TokenOnce } } }
-  /agents/{playerId}/tokens/revoke:{ post: { scope: manage, responses: { 204: {} } } }
-  /agents/{playerId}/retire:       { post: { summary: Stop the body, revoke tokens, retire the player, scope: manage, responses: { 202: BodyOp } } }
-  /owner-keys:
-    get:  { scope: manage, responses: { 200: array of KeyMeta } }
-    post: { scope: manage, responses: { 201: KeyOnce } }
-  /owner-keys/{keyId}/revoke: { post: { scope: manage, responses: { 204: {} } } }
-components:
-  securitySchemes:
-    sessionCookie: { type: apiKey, in: cookie, name: gr_session }
-    ownerKey: { type: http, scheme: bearer }
-  schemas:
-    Agent: { required: [playerId, displayName, status, body, creditsLeft, publicCamera, thoughtsDelayedPublic, createdAt], properties: { playerId: string, displayName: string, status: { enum: [active, paused, retired] }, body: { enum: [running, starting, waiting, stopped, unavailable] }, creditsLeft: integer, tokenExpiresAt: date-time, tokenLastUsedAt: date-time, lastSeenAt: date-time, publicCamera: boolean, thoughtsDelayedPublic: boolean, createdAt: date-time } }
-    AgentPatch: { properties: { displayName: { pattern: "^[A-Za-z0-9 _-]{1,32}$" }, publicCamera: boolean, thoughtsDelayedPublic: boolean } }
-    BodyStatus: { required: [state, lastSeenAt], properties: { state: { enum: [running, starting, waiting, stopped, unavailable] }, health: { type: integer, minimum: 0, maximum: 20 }, hunger: { type: integer, minimum: 0, maximum: 20 }, lastSeenAt: date-time } }
-    LogTail: { required: [lines], properties: { lines: { type: array, maxItems: 200, items: { required: [at, text], properties: { at: date-time, text: { description: fixed text from enumerated codes, never model or observer text } } } } } }
-    BodyOp: { required: [opId, state], properties: { opId: string, state: { enum: [queued, done, refused] } } }
-    TokenOnce: { required: [token, expiresAt], properties: { token: { pattern: "^gmcp-[0-9a-f]{64}$" }, expiresAt: date-time } }
-    KeyOnce: { required: [key, keyId, scopes, expiresAt], properties: { key: { pattern: "^gowner-[0-9a-f]{64}$" } } }
-    KeyMeta: { required: [keyId, scopes, createdAt], properties: { keyId: string, label: string, scopes: array, expiresAt: date-time, lastUsedAt: date-time } }
-    Problem: { required: [type, title, status, code], properties: { type: uri, title: string, status: integer, code: { enum: [unauthenticated, csrf_required, scope_missing, not_found, invalid, conflict, quota, rate_limited, body_unavailable, internal] }, retryAfter: integer } }
-```
-
-- **Rules.** Rate limits: the fixed windows of the register service plus the supervisor quotas (Q3); a 429 carries `Retry-After`. The log endpoint returns only the owner's own agent's events (its life id); no other player, no observer data, no raw model text. Log lines are fixed text built from codes (as 0143 does), and the count and window follow Q6.
-- **may-edit.** `threshold/register/src/api/` (new tree, one file per resource), `threshold/register/src/problem.ts`, `contract/` only for the OpenAPI document source and the generated types, `docs/analysis/phase1/worknotes/C7-04.md`. Not `docs/spec.md`.
-- **Tests (each fails on revert).**
-  - Every route: a 401 without credentials; a 404 for another owner's agent (both GET and POST); a 403 `scope_missing` for an owner key without the scope.
-  - CSRF: a cookie POST without the token is refused; with the token, accepted.
-  - Start while running: 409 `conflict`. Start at the quota boundary: last allowed accepted, next 429 with `Retry-After`.
-  - Note (review fix F): a 409 `conflict` on start-while-running cannot come from the supervisor. A repeat start of a running body is idempotent and replies `started` (counts nothing), so the API maps a `started` reply to 202, never 409. Resolve the 409 in C7-04, or drop it from the response table.
-  - Log: at most 200 lines; lines of another agent never appear (a seeded fixture with two owners); text matches the fixed-text table (no digit or free text from a model).
-  - Token rotate returns the token once; a second GET does not return it.
-  - Problem bodies: every error is `application/problem+json` with a `code` from the enum.
-  - Abort/close/error: a supervisor timeout returns `503 body_unavailable` and no pending state is left; a client disconnect mid-stop does not leave a half-retired agent (idempotent retry).
-  - Admin owner (key and cookie): the 4th start in an hour and the 11th in a day are accepted (the supervisor exempts them); a second start while one runs is still 409; another owner's agent is still 404 on every route, including `/body/log`; the register fixed-window 429 does not apply to the admin. The audit row carries `admin = true`. A normal owner at the same boundary: the 3rd start accepted, the 4th is 429 `quota` with `Retry-After`.
-  - Revert: remove the owner check on `/body/log`; the cross-owner log test fails. Remove the admin lookup; the admin boundary test fails.
-- **checks.** `./geldar.ps1 pnpm --filter @geldar/register test`, the OpenAPI lint and generator check, typecheck, `./geldar.ps1 check`.
-- **Owner decisions.** None left (0170: scopes, quotas, 200 events or 7 days).
-- **size.** L (two sessions; split at "agents, token and key routes" and "body routes and log").
+The draft OpenAPI document is the appendix of c7d-packets.md; the rules and tests are in the three cards. Owner decisions: none left (0170).
 
 ## C7-05: onboarding after create or rotate, and the players README
 

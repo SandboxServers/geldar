@@ -131,11 +131,13 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-03b1 | Supervisor NATS contract, user binding, request/reply transport | W2 | B | C7-03a | Waiting | 0067, 0152 | none | N (node auth edits are in the C7-03b2 runbook) |
 | C7-03b2 | Supervisor compose service, deploy script, budget, runbook (geldar-93 MERGE/DONE, no network recreate) | W3 | B | C7-03b1, C7-03b3 | Waiting | 0082, 0152 | none | Y [contact geldar-93; owner approves the node change] |
 | C7-03b3 | Supervisor Postgres adapter and Docker client | W2 | B | C7-03a, C3-04s, C7-12 | Waiting | 0108, 0152, 0170 | none | N (live start is pending, after C7-03b2) |
-| C7-04 | Owner management API v1 | W2 | B | C7-02b, C7-03a, C7-12 | Waiting | 0152, 0170 | none | N |
-| C7-06 | Account page v2 | W3 | C | C7-04, C7-05 | Waiting | none | none | N |
-| C7-13a | Skin upload API and held store | W3 | D | C7-04, C7-12 | Waiting | 0172 | 0031 | N |
-| C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |
-| C7-07 | Agent rename | W3 | D | C7-04, C7-06 | Waiting | none | 0028 | N |
+| C7-04a | Owner API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (split of C7-04) | W2 | B | C7-02b, C7-12 | Waiting | 0152, 0170 | none | N |
+| C7-04b | Owner API agents and tokens resources, owner-key routes, onboarding hand-off (split of C7-04) | W2 | B | C7-04a | Waiting | 0152, 0170 | none | N |
+| C7-04c | Owner API body routes through the supervisor, log tail, retire (split of C7-04) | W3 | B | C7-04a, C7-03b1 | Waiting | 0152, 0170 | none | N |
+| C7-06 | Account page v2 | W3 | C | C7-04b, C7-05 | Waiting | none | none | N |
+| C7-13a | Skin upload API and held store | W3 | D | C7-04b, C7-12 | Waiting | 0172 | 0031 | N |
+| C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04a, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |
+| C7-07 | Agent rename | W3 | D | C7-04b, C7-06 | Waiting | none | 0028 | N |
 | C7-13b | Skin moderation CLI, MineSkin, KV write | W4 | D | C7-13a | Waiting | 0172 | none | N (live: owner's MineSkin key, one call) |
 | C7-09 | Account deletion and data export | W4 | E | C7-02b, C7-03b2, C7-13a | Waiting | 0171 | 0029 | N (legal review of the rule is the owner's, gates C7-11) |
 | C7-13c | Skin form and status on the account page | W4 | C | C7-06, C7-13a | Waiting | 0172 | none | N |
