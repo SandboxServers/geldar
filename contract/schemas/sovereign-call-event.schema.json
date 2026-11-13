@@ -49,7 +49,7 @@
       "items": { "type": "integer", "minimum": 0 }
     },
     "rejected": {
-      "description": "At most eight rejected items, each with its index and the reason code.",
+      "description": "At most eight rejected items, each with its index, the reason code and, for a validator refusal, a plain-words detail of which part was refused (no values).",
       "type": "array",
       "maxItems": 8,
       "items": {
@@ -58,7 +58,8 @@
         "required": ["index", "reason"],
         "properties": {
           "index": { "type": "integer", "minimum": 0 },
-          "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+          "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+          "detail": { "type": "string", "maxLength": 160 }
         }
       }
     },

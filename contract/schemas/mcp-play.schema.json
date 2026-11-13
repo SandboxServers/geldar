@@ -107,7 +107,8 @@
             "required": ["index", "reason"],
             "properties": {
               "index": { "type": "integer", "minimum": 0 },
-              "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" }
+              "reason": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,47}$" },
+              "detail": { "type": "string", "maxLength": 160 }
             }
           }
         },

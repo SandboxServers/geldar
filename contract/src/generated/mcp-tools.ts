@@ -772,6 +772,10 @@ export const mcpToolSchemas: Record<
               "reason": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_]{0,47}$"
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 160
               }
             }
           }

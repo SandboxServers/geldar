@@ -5215,6 +5215,7 @@ export interface ActResult {
   rejected: {
     index: number;
     reason: string;
+    detail?: string;
   }[];
   budget_remaining_thoughts: number;
   note?: string;
@@ -12319,7 +12320,7 @@ export interface SovereignCallPayload {
     | [number, number, number, number, number, number, number]
     | [number, number, number, number, number, number, number, number];
   /**
-   * At most eight rejected items, each with its index and the reason code.
+   * At most eight rejected items, each with its index, the reason code and, for a validator refusal, a plain-words detail of which part was refused (no values).
    *
    * @maxItems 8
    */
@@ -12329,160 +12330,196 @@ export interface SovereignCallPayload {
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ]
     | [
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         },
         {
           index: number;
           reason: string;
+          detail?: string;
         }
       ];
   credits_charged: number;
