@@ -375,8 +375,10 @@ function Get-NatsUsers([string] $Shard) {
   return [ordered]@{
     body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
-      PubDeny = @("geldar.$s.kino.>");
-      Sub = @("geldar.$s.body.>", '_INBOX.>') }
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed");
+      # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
+      # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
+      Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", '_INBOX.>') }
     mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       Sub = @('_INBOX.>') }
     eventsink = @{ Pub = @("geldar.$s.dlq") + $js; Sub = @('_INBOX.>') }
@@ -385,7 +387,9 @@ function Get-NatsUsers([string] $Shard) {
     velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
     # Kino: the plugin publishes the feed and reads the control subject, and cannot publish control (so it cannot forge a start).
     # Maintenance (CD-1c): the plugin reads the notice subject and says the line; the deploy's publish is CD-1d.
-    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", '_INBOX.>') }
+    # Block ownership (decision 0165): the plugin answers blockowner.query (replies go to the inbox) and publishes blockowner.changed;
+    # it is denied publishing the query itself.
+    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
     # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
     kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
     # Deploy (CD-1d): colo-notice.sh publishes the maintenance notice as this user and nothing else (no JetStream API, no Kino).

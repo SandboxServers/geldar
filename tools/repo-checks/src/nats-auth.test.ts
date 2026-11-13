@@ -64,7 +64,7 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
         kv('geldar-body-generation'),
         kv('geldar-skins'),
       ],
-      sub: [`geldar.${s}.body.>`, '_INBOX.>'],
+      sub: [`geldar.${s}.body.>`, `geldar.${s}.blockowner.changed`, '_INBOX.>'],
     },
     mind: {
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
@@ -80,7 +80,12 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
     // Maintenance (CD-1c): the plugin subscribes to the notice subject; only the deploy publishes it (CD-1d).
     paper: {
       pub: [`geldar.${s}.>`, ...JS],
-      sub: [`geldar.${s}.kino.control`, `geldar.${s}.maintenance`, '_INBOX.>'],
+      sub: [
+        `geldar.${s}.kino.control`,
+        `geldar.${s}.maintenance`,
+        `geldar.${s}.blockowner.query`,
+        '_INBOX.>',
+      ],
     },
     kino: { pub: [`geldar.${s}.kino.control`], sub: [`geldar.${s}.kino.*.feed`, '_INBOX.>'] },
     // Deploy (CD-1d): the maintenance subject only; no JetStream API and no Kino subject.
@@ -361,8 +366,11 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     const feed = `geldar.${SHARD}.kino.ag_x.feed`;
     const control = `geldar.${SHARD}.kino.control`;
     // body may publish geldar.<s>.> but its deny list takes the whole kino tree off it; paper is denied control only.
-    expect(by('body')?.deny).toEqual([`geldar.${SHARD}.kino.>`]);
-    expect(by('paper')?.deny).toEqual([control]);
+    expect(by('body')?.deny).toEqual([
+      `geldar.${SHARD}.kino.>`,
+      `geldar.${SHARD}.blockowner.changed`,
+    ]);
+    expect(by('paper')?.deny).toEqual([control, `geldar.${SHARD}.blockowner.query`]);
     expect(by('kino')?.deny).toEqual([]);
     const reach = (subject: string, list: string[]) =>
       list.some((p) => subject === p || (p.endsWith('.>') && subject.startsWith(p.slice(0, -1))));
@@ -380,6 +388,32 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       .filter((e) => e.sub.includes(`geldar.${SHARD}.kino.*.feed`))
       .map((e) => e.user);
     expect(subsFeed).toEqual(['kino']);
+  });
+
+  it('routes block ownership: the plugin answers the query and publishes changed, the body queries and hears changed, no one else', () => {
+    const entries = parseEntries(rendered?.conf ?? '');
+    const by = (u: string) => entries.find((e) => e.user === u);
+    const query = `geldar.${SHARD}.blockowner.query`;
+    const changed = `geldar.${SHARD}.blockowner.changed`;
+    const reach = (subject: string, list: string[]) =>
+      list.some((p) => subject === p || (p.endsWith('.>') && subject.startsWith(p.slice(0, -1))));
+    const canPub = (subject: string) =>
+      entries.filter((e) => reach(subject, e.pub) && !reach(subject, e.deny)).map((e) => e.user);
+    const canSub = (subject: string) =>
+      entries.filter((e) => reach(subject, e.sub)).map((e) => e.user);
+    expect(canPub(query)).toEqual(['body']);
+    expect(canSub(query)).toEqual(['paper']);
+    expect(canPub(changed)).toEqual(['paper']);
+    expect(canSub(changed)).toEqual(['body']);
+    // Replies travel on the request's inbox: the plugin and the body both may publish there.
+    expect(canPub('_INBOX.abc.1')).toEqual(expect.arrayContaining(['body', 'paper']));
+    // The body is denied publishing changed and the whole kino tree; the plugin is denied publishing the query.
+    expect(by('body')?.deny).toContain(changed);
+    expect(canPub(`geldar.${SHARD}.kino.ag_x.feed`)).not.toContain('body');
+    expect(canSub(`geldar.${SHARD}.kino.ag_x.feed`)).not.toContain('body');
+    expect(by('paper')?.deny).toContain(query);
+    expect(canPub(query)).not.toContain('kino');
+    expect(canSub(changed)).not.toContain('kino');
   });
 });
 

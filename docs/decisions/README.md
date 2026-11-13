@@ -134,3 +134,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0160](0160-place-at-feet-pillar-step.md) | `place <solid block> at: "feet"` is a pillar step: the bot jumps and places the block in the cell its feet were in (supersedes the solid-block part of 0031) | Accepted |
 | [0162](0162-perception-vertical-reach-edible.md) | Perception gains `vertical` and `in_reach` on nearby agents and `edible` on items (all optional, facts only); crop ripeness goes in `food_known` text, no contract change | Accepted |
 | [0163](0163-shelter-enclosed-counts-closed-doors.md) | A shelter is enclosed by blocks or a closed door; an open door does not count; the shelter is 25 cells with a doorway | Accepted |
+| [0165](0165-block-owner-subjects.md) | Block ownership: the plugin records each placer per chunk and answers `geldar.<shard>.blockowner.query`; `blockowner.changed` carries owner changes; the Body may query and hear, not publish changes | Accepted |
