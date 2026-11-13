@@ -1,5 +1,6 @@
 import type { Snapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import type { Block } from '../../actions/bot-types.ts';
 import { FoodMemory } from '../food-memory.ts';
 import { canSeeBlock, canSeePoint } from '../notable-blocks.ts';
 
@@ -48,6 +49,29 @@ const FOOD_ITEMS = new Set([
   'pumpkin_pie',
 ]);
 
+/**
+ * The age at which each crop is fully grown, so ripe (the game's own maximum age state, as
+ * minecraft-data gives it for the pinned 26.1 line; the test checks each value against it).
+ */
+export const CROP_MAX_AGE: Readonly<Record<string, number>> = {
+  wheat: 7,
+  carrots: 7,
+  potatoes: 7,
+  beetroots: 3,
+};
+
+/**
+ * A food block's kind. A crop with a readable age reads `wheat (ripe)` or `wheat (unripe)`: ripe at
+ * its maximum age. Any other block, or a crop with no readable age, reads as its bare name.
+ */
+function foodKind(block: Block): string {
+  const max = CROP_MAX_AGE[block.name];
+  const properties = (block as { getProperties?: () => Record<string, unknown> }).getProperties?.();
+  const age = Number(properties?.age);
+  if (max === undefined || !Number.isInteger(age)) return block.name;
+  return `${block.name} (${age >= max ? 'ripe' : 'unripe'})`;
+}
+
 /** The metadata slot that holds a dropped item's stack (the protocol's item index). */
 const ITEM_STACK_SLOT = 8;
 
@@ -93,7 +117,7 @@ export function foodKnown(bot: Bot): Partial<Snapshot['surroundings']> {
   for (const at of found) {
     const block = bot.blockAt(at);
     if (!block || !canSeeBlock(bot, block)) continue;
-    memory.see(`b${at.x},${at.y},${at.z}`, { kind: block.name, x: at.x, y: at.y, z: at.z });
+    memory.see(`b${at.x},${at.y},${at.z}`, { kind: foodKind(block), x: at.x, y: at.y, z: at.z });
   }
   // The generated type is a tuple union of at most 10; the memory holds at most 10.
   return { food_known: memory.list() as NonNullable<Snapshot['surroundings']['food_known']> };

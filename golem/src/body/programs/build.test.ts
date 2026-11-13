@@ -5,7 +5,7 @@ import { ActionRegistry, runAction } from '../../actions/registry.ts';
 import { fakeBot } from '../body.fakes.ts';
 import type { ProgramContext, StepResult } from '../program.ts';
 import { MemorySink } from '../records.ts';
-import { BuildProgram } from './build.ts';
+import { BuildProgram, partsOf } from './build.ts';
 
 interface BuildWorld {
   position: { x: number; y: number; z: number };
@@ -14,6 +14,10 @@ interface BuildWorld {
   log: string[];
   /** Refusals left per cell key: `blocked` while the count is above zero. */
   refusals: Map<string, number>;
+  /** Timeouts left per cell key: `timeout` while the count is above zero. */
+  timeouts: Map<string, number>;
+  /** What the view says about enclosure; absent when the view does not say. */
+  enclosed?: boolean;
 }
 
 const key = (p: { x: number; y: number; z: number }): string => `${p.x},${p.y},${p.z}`;
@@ -25,6 +29,7 @@ function makeWorld(count: number): BuildWorld {
     placed: new Map(),
     log: [],
     refusals: new Map(),
+    timeouts: new Map(),
   };
 }
 
@@ -44,6 +49,11 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
     run: async (_ctx, action) => {
       const k = key(action.at as never);
       world.log.push(`place:${k}`);
+      const timeouts = world.timeouts.get(k) ?? 0;
+      if (timeouts > 0) {
+        world.timeouts.set(k, timeouts - 1);
+        return failed('timeout', 'the path search ran out of time');
+      }
       const refusals = world.refusals.get(k) ?? 0;
       if (refusals > 0) {
         world.refusals.set(k, refusals - 1);
@@ -82,6 +92,7 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
         return { ...world.position };
       },
       inventoryCount: (item: string) => world.inventory[item] ?? 0,
+      enclosed: world.enclosed,
     } as never,
     registry,
     sink: new MemorySink(),
@@ -116,6 +127,36 @@ describe('build blueprints', () => {
       expect(cells.map((c) => c.dy)).toEqual([...cells.map((c) => c.dy)].sort((a, b) => a - b));
     }
     expect(new Set(blueprintCells('shelter').map((c) => c.dy))).toEqual(new Set([0, 1, 2]));
+  });
+});
+
+describe('build part names', () => {
+  const shelter = blueprintCells('shelter');
+  const wall = blueprintCells('wall');
+  const pillar = blueprintCells('pillar');
+
+  it('names a corner cell as on both of its walls', () => {
+    expect(partsOf({ dx: -1, dy: 0, dz: -1 }, shelter)).toEqual(['north wall', 'west wall']);
+    expect(partsOf({ dx: 1, dy: 1, dz: 1 }, shelter)).toEqual(['south wall', 'east wall']);
+  });
+
+  it('names the top layer of a shelter as the roof, its edges included', () => {
+    expect(partsOf({ dx: -1, dy: 2, dz: -1 }, shelter)).toEqual(['roof']);
+    expect(partsOf({ dx: 0, dy: 2, dz: 0 }, shelter)).toEqual(['roof']);
+  });
+
+  it('names the wall blueprint by its outer side, and its ends as walls too', () => {
+    expect(partsOf({ dx: 0, dy: 2, dz: 1 }, wall)).toEqual(['south wall']);
+    expect(partsOf({ dx: 2, dy: 0, dz: 1 }, wall)).toEqual(['south wall', 'east wall']);
+  });
+
+  it('names a pillar top as the roof and the rest as the centre column', () => {
+    expect(partsOf({ dx: 0, dy: 2, dz: 0 }, pillar)).toEqual(['roof']);
+    expect(partsOf({ dx: 0, dy: 0, dz: 0 }, pillar)).toEqual(['centre column']);
+  });
+
+  it('names a cell below the layer the body stood in as the floor', () => {
+    expect(partsOf({ dx: 0, dy: -1, dz: 0 }, shelter)).toEqual(['floor']);
   });
 });
 
@@ -246,22 +287,70 @@ describe('build program', () => {
     expect(world.placed.size).toBe(23);
   });
 
-  it('fails only after every other cell is attempted, and names the count', async () => {
+  it('defers a cell whose placement timed out and retries it after the last cell', async () => {
+    const world = makeWorld(30);
+    world.timeouts.set(cellKey(2), 1);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    const last = await run(program, ctx);
+    expect(last).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+    });
+    const attempts = placesIn(world);
+    expect(attempts.filter((k) => k === cellKey(2))).toHaveLength(2);
+    expect(attempts.at(-1)).toBe(cellKey(2));
+    expect(world.placed.size).toBe(23);
+  });
+
+  it('fails only after every other cell is attempted, and names the parts it could not place', async () => {
     const world = makeWorld(30);
     world.refusals.set(cellKey(4), Number.POSITIVE_INFINITY);
     const ctx = context(world);
     const program = new BuildProgram();
     await program.start(SHELTER, ctx);
     const last = await run(program, ctx);
+    // Cell 4 is the corner at (1, 0, -1): on the north wall and the east wall.
     expect(last).toEqual({
       status: 'failed',
       message:
-        'Built shelter: 22 placed, 0 already solid, of 23. 1 cells could not be placed; first failure: blocked: the server refused.',
+        'Built shelter: 22 placed, 0 already solid, of 23. The north wall and the east wall could not be placed; first failure: blocked: the server refused.',
     });
     expect(world.placed.size).toBe(22);
     const attempts = placesIn(world);
     expect(attempts.filter((k) => k === cellKey(4))).toHaveLength(2);
     expect(attempts.slice(-1)).toEqual([cellKey(4)]);
+  });
+
+  it('names the roof and the north wall when cells there could not be placed', async () => {
+    const world = makeWorld(30);
+    world.refusals.set(key({ x: 10, y: 64, z: 9 }), Number.POSITIVE_INFINITY);
+    world.refusals.set(key({ x: 9, y: 66, z: 9 }), Number.POSITIVE_INFINITY);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    expect(await run(program, ctx)).toEqual({
+      status: 'failed',
+      message:
+        'Built shelter: 21 placed, 0 already solid, of 23. The roof and the north wall could not be placed; first failure: blocked: the server refused.',
+    });
+  });
+
+  it('completes and says the open side when the view reports the body not enclosed', async () => {
+    const world = makeWorld(30);
+    world.enclosed = false;
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    // The shelter's door gap is on the south side: the body is open there only.
+    expect(await run(program, ctx)).toEqual({
+      status: 'completed',
+      detail: {
+        message:
+          'Built shelter: 23 placed, 0 already solid, of 23. Not enclosed: open to the south.',
+      },
+    });
   });
 
   it('keeps a deferred cell across a checkpoint and retries it after a resume', async () => {

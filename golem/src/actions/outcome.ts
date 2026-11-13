@@ -18,10 +18,20 @@ export type FailReason =
   | 'no_effect'
   | 'internal';
 
-/** What a handler returns. `runAction` turns it into the stored `ActionRecord.result` and state. */
+/**
+ * What a handler returns. `runAction` turns it into the stored `ActionRecord.result` and state.
+ * `raw` is the library or server error behind a plain `message`: the action log keeps it, and
+ * `toResult` never copies it into the stored result.
+ */
 export type ActionOutcome =
   | { status: 'completed'; detail: Record<string, JsonValue> }
-  | { status: 'failed'; reason: FailReason; message: string; detail: Record<string, JsonValue> }
+  | {
+      status: 'failed';
+      reason: FailReason;
+      message: string;
+      detail: Record<string, JsonValue>;
+      raw?: string;
+    }
   | { status: 'cancelled'; detail: Record<string, JsonValue> };
 
 /** The object stored in `ActionRecord.result` (snake_case, plain JSON, no `undefined` values). */
@@ -40,13 +50,16 @@ export function completed(detail: Record<string, JsonValue> = {}): ActionOutcome
   return { status: 'completed', detail };
 }
 
-/** An action that could not finish, with the reason the Mind sees. */
+/** An action that could not finish, with the reason the Mind sees and, optionally, the raw error for the log. */
 export function failed(
   reason: FailReason,
   message: string,
   detail: Record<string, JsonValue> = {},
+  raw?: string,
 ): ActionOutcome {
-  return { status: 'failed', reason, message, detail };
+  return raw === undefined
+    ? { status: 'failed', reason, message, detail }
+    : { status: 'failed', reason, message, detail, raw };
 }
 
 /** An action stopped from outside (the caller aborted it). */

@@ -30,7 +30,7 @@ export async function openTable(ctx: ActionContext, table: Block): Promise<Opene
         settle({ window });
       } else {
         settle({
-          outcome: failed('blocked', `opened ${String(window.type)}, not a crafting table`),
+          outcome: failed('blocked', 'that is not a crafting table'),
         });
       }
     };
@@ -42,7 +42,9 @@ export async function openTable(ctx: ActionContext, table: Block): Promise<Opene
       TABLE_OPEN_WAIT_MS * timeScale,
     );
     bot.activateBlock(table).catch((error: unknown) => {
-      settle({ outcome: failed('blocked', `crafting table did not open: ${errorText(error)}`) });
+      const raw = errorText(error);
+      console.warn(`crafting table did not open: ${raw}`);
+      settle({ outcome: failed('blocked', 'the crafting table did not open', {}, raw) });
     });
   });
   try {

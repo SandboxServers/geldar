@@ -1,6 +1,7 @@
 import type { Snapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { GIVE_REACH } from '../actions/give.ts';
 import { worldAge } from '../world-clock.ts';
 import { compass } from './blocks-summary.ts';
 import { ALWAYS_HOSTILE } from './hostile-types.ts';
@@ -141,6 +142,23 @@ function threatFields(
   return fields;
 }
 
+/** Where another agent stands against the Body's feet (decision 0162). */
+export interface AgentStance {
+  vertical: 'above' | 'level' | 'below';
+  in_reach: boolean;
+}
+
+/**
+ * Where another agent stands against the Body: its feet more than one block above or below the
+ * Body's feet are `above` or `below`, else `level`; `in_reach` is true when the straight-line
+ * distance is within give reach (`GIVE_REACH`, inclusive).
+ */
+export function agentStance(here: Vec3, position: Vec3, distance: number): AgentStance {
+  const dy = position.y - here.y;
+  const vertical = dy > 1 ? 'above' : dy < -1 ? 'below' : 'level';
+  return { vertical, in_reach: distance <= GIVE_REACH };
+}
+
 /** A record at a position: the integer block coordinates, the distance and the compass direction. */
 function place(here: Vec3, kind: string, position: Vec3, distance: number): Entity {
   return {
@@ -227,6 +245,7 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
         distance: tenths(distance),
         held_item: held && ITEM.test(held) ? held : null,
         health_estimate: 'unknown',
+        ...agentStance(here, entity.position, distance),
         sort: name,
       });
       continue;

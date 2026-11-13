@@ -74,8 +74,11 @@ async function openFurnace(ctx: ActionContext, block: Block): Promise<Container 
       if (lost) void container.close().catch(() => undefined);
       return container;
     },
-    (error: unknown): Container | ActionOutcome =>
-      failed('blocked', `furnace did not open: ${errorText(error)}`),
+    (error: unknown): Container | ActionOutcome => {
+      const raw = errorText(error);
+      console.warn(`furnace did not open: ${raw}`);
+      return failed('blocked', 'the furnace did not open', {}, raw);
+    },
   );
   const race = new Promise<ActionOutcome>((resolve) => {
     timer = setTimeout(() => {

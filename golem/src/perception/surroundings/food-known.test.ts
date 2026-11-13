@@ -1,8 +1,14 @@
+import { createRequire } from 'node:module';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { MAX_FOOD_KNOWN } from '../food-memory.ts';
 import { FakeWorld } from '../perception.fakes.ts';
-import { foodKnown } from './food-known.ts';
+import { CROP_MAX_AGE, foodKnown } from './food-known.ts';
+
+/** minecraft-data for the pinned 26.1 line: the block states give each crop's age range. */
+const minecraftData = createRequire(import.meta.url)('minecraft-data') as (version: string) => {
+  blocksByName: Record<string, unknown>;
+};
 
 function world(): FakeWorld {
   const w = new FakeWorld();
@@ -59,5 +65,34 @@ describe('food_known probe', () => {
     const known = foodKnown(bot).food_known ?? [];
     expect(known).toHaveLength(MAX_FOOD_KNOWN);
     expect(known[0]?.x).toBe(1 + MAX_FOOD_KNOWN + 2);
+  });
+
+  it('says whether a crop is ripe from its age: wheat at age 7 is ripe, at age 3 unripe', () => {
+    for (const [age, kind] of [
+      [7, 'wheat (ripe)'],
+      [3, 'wheat (unripe)'],
+    ] as const) {
+      const w = world();
+      const block = w.set('wheat', 4, 64, 0);
+      Object.assign(block, { getProperties: () => ({ age }) });
+      expect(foodKnown(w.bot).food_known).toEqual([{ kind, x: 4, y: 64, z: 0 }]);
+    }
+  });
+
+  it('reads each crop as ripe at its maximum age, which minecraft-data gives as the age state', () => {
+    const blocksByName = minecraftData('26.1').blocksByName as Record<
+      string,
+      { states?: { name: string; num_values?: number }[] } | undefined
+    >;
+    for (const crop of Object.keys(CROP_MAX_AGE)) {
+      const age = blocksByName[crop]?.states?.find((state) => state.name === 'age');
+      expect(CROP_MAX_AGE[crop], crop).toBe((age?.num_values ?? -1) - 1);
+      const w = world();
+      const block = w.set(crop, 4, 64, 0);
+      Object.assign(block, { getProperties: () => ({ age: CROP_MAX_AGE[crop] }) });
+      expect(foodKnown(w.bot).food_known?.[0]?.kind).toBe(`${crop} (ripe)`);
+      Object.assign(block, { getProperties: () => ({ age: (CROP_MAX_AGE[crop] ?? 0) - 1 }) });
+      expect(foodKnown(w.bot).food_known?.[0]?.kind).toBe(`${crop} (unripe)`);
+    }
   });
 });

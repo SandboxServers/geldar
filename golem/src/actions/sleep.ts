@@ -39,16 +39,39 @@ export function isNightOrStorm(timeOfDay: number, thundering: boolean): boolean 
 /** Mineflayer's text when the bot is already in a bed. Treated as asleep, not as a failure. */
 const ALREADY_SLEEPING = /already sleeping/i;
 
+/** A sleep error the Body knows: the text it matches, its fail reason, and the fact it reports. */
+interface SleepError {
+  match: RegExp;
+  reason: FailReason;
+  /** The facts-only text the agent reads; absent when the message is kept as it came. */
+  fact?: string;
+}
+
+/** The sleep errors, from Mineflayer's texts and the server's, in the order they are matched. */
+const SLEEP_ERRORS: readonly SleepError[] = [
+  { match: ALREADY_SLEEPING, reason: 'not_possible' },
+  { match: /monsters nearby/i, reason: 'not_possible', fact: 'there are monsters nearby' },
+  { match: /not night|only sleep at night/i, reason: 'not_possible', fact: 'it is not night' },
+  { match: /too far/i, reason: 'out_of_reach', fact: 'the bed is too far away' },
+  { match: /occupied/i, reason: 'blocked', fact: 'the bed is occupied' },
+  { match: /obstructed/i, reason: 'blocked', fact: 'the bed is obstructed' },
+  { match: /not a bed|only half bed/i, reason: 'not_found' },
+  { match: /not sleeping|cant click/i, reason: 'blocked' },
+];
+
+/** The first sleep error whose text the message matches, or undefined. */
+function matchSleepError(message: string): SleepError | undefined {
+  return SLEEP_ERRORS.find((known) => known.match.test(message));
+}
+
 /** Maps a Mineflayer sleep error to a fail reason, by its text. Anything unknown is `internal`. */
 export function classifySleepError(message: string): FailReason {
-  if (ALREADY_SLEEPING.test(message)) return 'not_possible';
-  if (/monsters nearby/i.test(message)) return 'not_possible';
-  if (/too far/i.test(message)) return 'out_of_reach';
-  if (/occupied/i.test(message)) return 'blocked';
-  if (/not a bed|only half bed/i.test(message)) return 'not_found';
-  if (/not sleeping|cant click/i.test(message)) return 'blocked';
-  if (/not night/i.test(message)) return 'not_possible';
-  return 'internal';
+  return matchSleepError(message)?.reason ?? 'internal';
+}
+
+/** The text the agent reads for a sleep error: the fact it states, or the message when no fact is known. */
+export function sleepErrorText(message: string): string {
+  return matchSleepError(message)?.fact ?? message;
 }
 
 async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
@@ -57,13 +80,17 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   const beds = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
   if (!isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0)) {
-    return failed('not_possible', 'you can only sleep at night or in a thunderstorm');
+    return failed('not_possible', 'it is not night');
   }
 
   let last: ActionOutcome = failed('blocked', 'no bed was tried');
   for (const bed of beds) {
     const outcome = await sleepInBed(ctx, bed);
-    if (outcome.status !== 'failed' || outcome.reason !== 'blocked' || ctx.signal.aborted) {
+    if (
+      outcome.status !== 'failed' ||
+      (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
+      ctx.signal.aborted
+    ) {
       return outcome;
     }
     last = outcome;
@@ -146,7 +173,7 @@ async function attemptSleep(bot: Bot, bed: Block): Promise<ActionOutcome | null>
   } catch (error) {
     const message = errorText(error);
     if (ALREADY_SLEEPING.test(message)) return null;
-    return failed(classifySleepError(message), message);
+    return failed(classifySleepError(message), sleepErrorText(message));
   }
 }
 

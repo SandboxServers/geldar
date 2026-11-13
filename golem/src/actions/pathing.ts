@@ -218,12 +218,14 @@ export function forbidCornerCutting(movements: unknown): void {
 }
 
 /**
- * Maps a pathfinder error to a move reason. `NoPath` and `Timeout` (path search) mean the way is
- * blocked; `GoalChanged` means something else took over. Anything else is null: not a move result.
+ * Maps a pathfinder error to a move reason. `NoPath` means the way is blocked; `Timeout` (the path
+ * search ran out of time) is `timeout`, which runs no escape ladder; `GoalChanged` means something
+ * else took over. Anything else is null: not a move result.
  */
-export function classifyPathError(error: unknown): 'blocked' | 'interrupted' | null {
+export function classifyPathError(error: unknown): 'blocked' | 'timeout' | 'interrupted' | null {
   const name = (error as { name?: unknown } | null)?.name;
-  if (name === 'NoPath' || name === 'Timeout') return 'blocked';
+  if (name === 'NoPath') return 'blocked';
+  if (name === 'Timeout') return 'timeout';
   if (name === 'GoalChanged') return 'interrupted';
   return null;
 }
@@ -262,10 +264,10 @@ interface PartialPlanner {
 }
 
 /** The reason text for a path error: fixed words, never the library's. */
-function fixedMessage(name: string | undefined, error: unknown): string {
+function fixedMessage(name: string | undefined): string {
   if (name === 'NoPath') return NO_PATH_TEXT;
   if (name === 'Timeout') return SEARCH_TIMEOUT_TEXT;
-  return error instanceof Error ? error.message : String(error);
+  return 'the walk failed';
 }
 
 /** The options `moveNear` takes; `diag` is where its stall_diag lines go (the Body's log by default). */
@@ -390,7 +392,7 @@ export function moveNear(
           ) {
             return;
           }
-          settle({ ok: false, reason, message: fixedMessage(name, error) }, facts);
+          settle({ ok: false, reason, message: fixedMessage(name) }, facts);
         },
       );
     };
