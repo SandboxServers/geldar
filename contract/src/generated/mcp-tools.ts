@@ -779,6 +779,10 @@ export const mcpToolSchemas: Record<
         "budget_remaining_thoughts": {
           "type": "integer",
           "minimum": 0
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200
         }
       }
     }

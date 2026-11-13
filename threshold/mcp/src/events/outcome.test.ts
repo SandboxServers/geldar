@@ -54,6 +54,16 @@ describe('action_outcome mapping (C5-02)', () => {
       'no way out: tried jump, dig',
       'the body is stuck and every way out failed',
     ],
+    ['place', 'blocked', 'target is occupied', 'the way was blocked'],
+    ['place', 'blocked', 'no free space next to you', 'the way was blocked'],
+    [
+      'give',
+      'not_found',
+      'the items are on the ground near Ada',
+      'what you looked for was not found',
+    ],
+    ['goto', 'timeout', 'the path search ran out of time', 'it took too long'],
+    ['unstick', 'timeout', 'the path search ran out of time', 'it took too long'],
   ])('a failed %s (%s) reads its detail sentence', (verb, reason, detail, phrase) => {
     const sentence = detail.replace(/\.$/, '');
     expect(texts({ verb, index: 0, ok: false, reason, message: 'x', detail_text: detail })).toEqual(

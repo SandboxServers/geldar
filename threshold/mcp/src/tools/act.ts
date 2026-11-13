@@ -96,6 +96,9 @@ const SAY_PATH = /^\/say(\/|$)/;
 const INTENT_PATH = /^\/intent(\/|$)/;
 const ACTIONS_LIST_PATH = /^\/actions$/;
 
+/** The fixed fact an `act` result carries when items were queued: their results come later, in a wait. */
+export const ACT_QUEUED_NOTE = 'These actions are queued. Their results arrive in your next wait.';
+
 /** The Body's rejection reasons that name its own state; the player sees the closest public code. */
 const PLAYER_REASON: Record<string, string> = {
   wrong_life: 'invalid_plan',
@@ -312,6 +315,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     accepted: result.accepted,
     rejected: result.rejected,
     budget_remaining_thoughts: remaining,
+    ...(result.accepted.length > 0 ? { note: ACT_QUEUED_NOTE } : {}),
   };
 }
 
