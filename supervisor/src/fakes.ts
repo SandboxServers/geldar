@@ -15,11 +15,15 @@ export class FakeWorld {
   adminReadFails = false;
   startRows: StartRow[] = [];
   auditRows: AuditRow[] = [];
+  // Bodies are keyed by the roster player name, as the supervisor keys them.
   bodies = new Map<string, BodyRecord>();
   specs: BodySpec[] = [];
   stops: string[] = [];
   startError: Error | null = null;
+  insertError: Error | null = null;
   auditError: Error | null = null;
+  // When set, a runtime start never answers (a hung Docker call).
+  hangStart = false;
   logs = new Map<string, LogEvent[]>();
 
   addPlayer(playerName: string, ownerId: string): void {
@@ -39,11 +43,12 @@ export class FakeWorld {
       },
       starts: {
         insert: async (row) => {
+          if (this.insertError) throw this.insertError;
           this.startRows.push(row);
         },
         // A start exactly at the window's edge is outside it.
-        countAgentSince: async (agentId, since) =>
-          this.startRows.filter((r) => r.agentId === agentId && r.at > since).length,
+        countPlayerSince: async (playerName, since) =>
+          this.startRows.filter((r) => r.playerName === playerName && r.at > since).length,
         countOwnerSince: async (ownerId, since) =>
           this.startRows.filter((r) => r.ownerId === ownerId && r.at > since).length,
       },
@@ -54,27 +59,28 @@ export class FakeWorld {
         },
       },
       runtime: {
-        inspect: async (agentId) => {
-          const body = this.bodies.get(agentId);
+        inspect: async (playerName) => {
+          const body = this.bodies.get(playerName);
           return body ? { ...body } : null;
         },
         start: async (spec) => {
+          if (this.hangStart) return new Promise<void>(() => undefined);
           if (this.startError) throw this.startError;
           this.specs.push(spec);
-          this.bodies.set(spec.agentId, {
+          this.bodies.set(spec.playerName, {
             ownerId: spec.ownerId,
             playerName: spec.playerName,
             running: true,
           });
         },
-        stop: async (agentId) => {
-          this.stops.push(agentId);
-          const body = this.bodies.get(agentId);
+        stop: async (playerName) => {
+          this.stops.push(playerName);
+          const body = this.bodies.get(playerName);
           if (body) body.running = false;
         },
       },
       logs: {
-        recent: async (agentId, limit) => (this.logs.get(agentId) ?? []).slice(-limit),
+        recent: async (playerName, limit) => (this.logs.get(playerName) ?? []).slice(-limit),
       },
       now: () => new Date(this.now),
     };

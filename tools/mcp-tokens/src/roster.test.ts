@@ -60,8 +60,11 @@ class FakeRoster implements Sql {
       return { rows: [{ player_name: name }] };
     }
     if (text.startsWith('DELETE FROM mcp_roster')) {
+      // The fake honours the owner scope only when the statement has it, so a dropped
+      // `AND owner_id = $2` changes what the fake does and a test can see it.
+      const scoped = text.includes('owner_id = $2');
       const entry = this.roster.get(String(values[0]));
-      if (entry === undefined || entry.owner_id !== values[1]) return { rows: [] };
+      if (entry === undefined || (scoped && entry.owner_id !== values[1])) return { rows: [] };
       this.roster.delete(String(values[0]));
       return { rows: [{ player_name: values[0] }] };
     }
@@ -132,6 +135,8 @@ describe('roster remove', () => {
     await addRosterName(sql, 'alice', 'Kimberly');
     await expectCode(removeRosterName(sql, 'bob', 'Kimberly'), ROSTER_NOT_LISTED);
     expect(sql.roster.has('Kimberly')).toBe(true);
+    expect(sql.roster.get('Kimberly')?.owner_id).toBe('alice');
+    expect(sql.log.some((text) => text.includes('owner_id = $2'))).toBe(true);
   });
 
   it('removes the owner’s own row', async () => {
