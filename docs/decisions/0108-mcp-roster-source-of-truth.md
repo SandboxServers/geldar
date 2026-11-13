@@ -21,7 +21,7 @@ A sovereign player start used to check the name against `sovereign.players` in t
 
 - An owner cannot add a name another owner holds; the unique key refuses it (`ROSTER_TAKEN`).
 - Removing a roster name does not retire the agents that run as it. The start check only stops new starts.
-- The shard file is no longer read at start time. Its `sovereign.players` list is only a seed input.
+- Enforcement scope (review fix, orchestrator ruling option a): the roster is enforced at `player add` (the operator CLI, `ROSTER_NOT_LISTED` and `ROSTER_LIMIT`) and by the supervisor's start path for the owner of the name (C7-03a). The body start path in golem still reads `sovereign.players` from the shard file at start time and the roster does not gate it. `max_agents` is enforced by `player add` only. The shard list is a seed input and is also read by golem at start.
 
 ## Open for the owner
 
