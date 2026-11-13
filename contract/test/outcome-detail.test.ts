@@ -12,6 +12,12 @@ const BODY_SENTENCES: ReadonlyArray<[string, string, string]> = [
   ['goto', 'needs_rescue', 'no way out: tried jump, sprint_jump, dig, stairs, pillar'],
   ['mine', 'not_possible', 'bedrock cannot be broken by anyone, with any tool'],
   ['mine', 'not_possible', 'sand is unsafe to dig: water would flow in on you'],
+  ['give', 'not_possible', 'too close to toss, and no room to step back'],
+  ['give', 'not_possible', 'the items are on the ground near Ada'],
+  ['sleep', 'not_possible', 'it is not night'],
+  ['sleep', 'not_possible', 'the bed is too far away'],
+  ['sleep', 'not_possible', 'the bed is occupied'],
+  ['sleep', 'not_possible', 'the bed is obstructed'],
 ];
 
 describe('failure detail text', () => {
@@ -77,6 +83,33 @@ describe('failure detail text', () => {
     expect(outcomeDetailText('mine', 'not_found', 'the ore is near <x>')).toBeUndefined();
     expect(outcomeDetailText('goto', 'timeout', 'path lost at 12 64 9')).toBeUndefined();
     expect(outcomeDetailText('place', 'blocked', 'a'.repeat(200))?.length).toBe(160);
+  });
+
+  it('not_possible carries the Body reason for every verb, and drops unsafe or empty text', () => {
+    expect(outcomeDetailText('give', 'not_possible', 'the items are on the ground near Ada')).toBe(
+      'the items are on the ground near Ada',
+    );
+    expect(outcomeDetailText('sleep', 'not_possible', 'it is not night')).toBe('it is not night');
+    expect(outcomeDetailText('give', 'not_possible', 'blocked at 120, 64, -33')).toBeUndefined();
+    expect(
+      outcomeDetailText('sleep', 'not_possible', 'the observer is near the bed'),
+    ).toBeUndefined();
+    expect(outcomeDetailText('give', 'not_possible', '')).toBeUndefined();
+    expect(outcomeDetailText('sleep', 'not_possible', '   ')).toBeUndefined();
+    expect(outcomeDetailText('give', 'not_possible', undefined)).toBeUndefined();
+  });
+
+  it('the presenter line for a give not_possible names the Body reason', () => {
+    expect(
+      playerOutcomeText({
+        verb: 'give',
+        ok: false,
+        reason: 'not_possible',
+        detail: 'the items are on the ground near Ada',
+      }),
+    ).toBe(
+      'Your give failed: that was not possible right now: the items are on the ground near Ada.',
+    );
   });
 
   it('strips control characters, caps length and drops unsafe text', () => {

@@ -1,3 +1,4 @@
+import { playerDetailText } from '@geldar/contract';
 import { buildFailureReason } from './build-failure.ts';
 import { defineMindHandler } from './types.ts';
 
@@ -45,7 +46,10 @@ export function failureReason(detail: string | undefined): string | undefined {
     return 'that would drop you from where you stand';
   }
   if (text.startsWith('not_found')) return 'what you looked for was not found';
-  if (text.startsWith('not_possible')) return 'that was not possible right now';
+  if (text.startsWith('not_possible')) {
+    const body = playerDetailText(text.slice('not_possible'.length).replace(/^:/, ''));
+    return body ?? 'that was not possible right now';
+  }
   if (text.startsWith('out_of_reach') || text.startsWith('too_far')) {
     return 'too far from the block';
   }

@@ -170,23 +170,22 @@ const DETAIL_REASONS: readonly string[] = [
   'no_effect',
   'blocked',
   'not_found',
+  'not_possible',
 ];
 
 /**
  * The `detail_text` for a failed action, or undefined. The reasons above carry the Body's plain sentence,
- * as does a timeout on any verb (a path search that ran out of time) and a refused mine. `message` is the
- * action's own failure message.
+ * as does a timeout on any verb (a path search that ran out of time). A `not_possible` carries the Body's
+ * reason on every verb (a give, a sleep, a mine). `message` is the action's own failure message; a text
+ * that the sanitiser refuses reads as undefined, so the player hears the plain phrase.
  */
 export function outcomeDetailText(
-  verb: string,
+  _verb: string,
   reason: string | undefined,
   message: unknown,
 ): string | undefined {
   if (reason === undefined) return undefined;
-  const wanted =
-    DETAIL_REASONS.includes(reason) ||
-    reason === 'timeout' ||
-    (reason === 'not_possible' && verb === 'mine');
+  const wanted = DETAIL_REASONS.includes(reason) || reason === 'timeout';
   return wanted ? playerDetailText(message) : undefined;
 }
 
