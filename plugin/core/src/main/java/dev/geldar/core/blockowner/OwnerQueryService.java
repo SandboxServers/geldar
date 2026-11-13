@@ -9,13 +9,14 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongSupplier;
 import java.util.logging.Logger;
 
 /**
  * Answers a chunk query from the cache or from the lookup executor, never on the calling thread. A lookup that fails,
  * is refused (the queue is full) or runs past the timeout answers an empty list with truncated set: the Body must not
- * read an empty list as "nothing here is owned", so truncated says the list is not known to be complete.
+ * read an empty list as "nothing here is owned", so truncated says the list is not known to be complete. A failure is
+ * logged with its root cause through {@link LookupFailureLog}.
  */
 public final class OwnerQueryService {
     /** One chunk's answer, as the reply carries it. */
@@ -26,17 +27,21 @@ public final class OwnerQueryService {
     private final OwnerSource source;
     private final OwnerCache cache;
     private final ExecutorService lookups;
-    private final Logger log;
-    private final AtomicBoolean warned = new AtomicBoolean();
+    private final LookupFailureLog failures;
     private volatile long timeoutMs;
 
     public OwnerQueryService(OwnerSource source, OwnerCache cache, ExecutorService lookups, long timeoutMs,
             Logger log) {
+        this(source, cache, lookups, timeoutMs, log, System::currentTimeMillis);
+    }
+
+    OwnerQueryService(OwnerSource source, OwnerCache cache, ExecutorService lookups, long timeoutMs, Logger log,
+            LongSupplier clockMs) {
         this.source = source;
         this.cache = cache;
         this.lookups = lookups;
         this.timeoutMs = timeoutMs;
-        this.log = log;
+        this.failures = new LookupFailureLog(log, clockMs);
     }
 
     /** Applies a new lookup timeout (the config reload). */
@@ -51,12 +56,12 @@ public final class OwnerQueryService {
         try {
             base = CompletableFuture.supplyAsync(() -> load(key), lookups);
         } catch (RejectedExecutionException e) {
-            warnOnce("the lookup queue is full");
+            failures.failed("the lookup queue is full", null);
             base = CompletableFuture.completedFuture(UNKNOWN);
         }
         return base.completeOnTimeout(UNKNOWN, timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
-                    warnOnce("the lookup failed: " + e.getClass().getSimpleName());
+                    failures.failed("the lookup failed", e);
                     return UNKNOWN;
                 })
                 .thenApply(owners -> {
@@ -75,17 +80,10 @@ public final class OwnerQueryService {
         try {
             owners = source.ownersInChunk(key.world(), key.chunkX(), key.chunkZ());
         } catch (OwnerSource.Unavailable e) {
-            warnOnce(e.getMessage());
+            failures.failed(e.getMessage(), null);
             return UNKNOWN;
         }
         cache.storeBase(key, owners);
-        warned.set(false);
         return owners;
-    }
-
-    private void warnOnce(String reason) {
-        if (warned.compareAndSet(false, true)) {
-            log.warning("Block owner queries answer unknown: " + reason);
-        }
     }
 }
