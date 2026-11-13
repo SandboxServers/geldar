@@ -5,7 +5,9 @@
 -- no UPDATE, no column SELECT. No API route, page or key scope can write the flag.
 -- The flag never grants reach: an admin still sees only their own owner's rows (0170).
 -- register_audit.actor is left(encode(sha256(convert_to(owner_id, 'UTF8')), 'hex'), 16) for an owner's
--- action: the same form the supervisor writes (C7-03a) and the 0032 renew and revoke functions write.
+-- action. The SQL functions (0032 renew and revoke) write this sha256 hex prefix. The TypeScript audit
+-- writer must produce the same value when C7-10 wires it (no code change in this migration); the
+-- supervisor (C7-03a) writes the same form today.
 -- The operator CLI writes 'operator'. The trigger refuses UPDATE and DELETE for every role. The table
 -- owner or a superuser can still TRUNCATE the table or disable the trigger, as 0007 documents.
 
