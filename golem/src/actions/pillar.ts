@@ -26,10 +26,17 @@ export type LooseBot = Bot & {
   };
 };
 
-/** What a pillar step reports: `why` names the failed part, `headroom` with the refusal in `refusals`. */
+/**
+ * What a pillar step reports: `why` names the failed part, `headroom` with the refusal in `refusals`.
+ * `unplaced` carries the error text the placement threw, when it threw.
+ */
 export type PillarResult =
   | { ok: true }
-  | { ok: false; why: 'headroom' | 'entity' | 'unplaced' | 'not_risen' | 'aborted' };
+  | {
+      ok: false;
+      why: 'headroom' | 'entity' | 'unplaced' | 'not_risen' | 'aborted';
+      error?: string | undefined;
+    };
 
 export interface PillarOptions {
   signal: AbortSignal;
@@ -167,6 +174,7 @@ export async function pillarStep(
   if (entityInCell(bot, b.entity.position.floored())) return { ok: false, why: 'entity' };
   const startY = b.entity.position.y;
   let placed = false;
+  let failure: string | undefined;
   try {
     await bot.equip(item as never, 'hand');
     await bot.lookAt(b.entity.position.offset(0, -1, 0), true);
@@ -191,11 +199,12 @@ export async function pillarStep(
       if (placed && b.entity.position.y - startY >= RISE) break;
     }
   } catch (error) {
+    failure = errorText(error);
     o.sink.log(
       JSON.stringify({
         event: 'stall_diag',
         reason: 'escape_pillar_failed',
-        error: errorText(error),
+        error: failure,
       }),
     );
   } finally {
@@ -203,5 +212,6 @@ export async function pillarStep(
   }
   if (placed && b.entity.position.y - startY >= RISE) return { ok: true };
   if (o.signal.aborted) return { ok: false, why: 'aborted' };
-  return { ok: false, why: placed ? 'not_risen' : 'unplaced' };
+  if (!placed) return { ok: false, why: 'unplaced', error: failure };
+  return { ok: false, why: 'not_risen' };
 }
