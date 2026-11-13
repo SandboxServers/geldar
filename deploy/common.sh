@@ -21,6 +21,7 @@ export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bl
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 CHUNKY_LOCK=${GELDAR_CHUNKY_LOCK:-$ROOT/plugins/chunky/chunky.lock.json}
+COREPROTECT_LOCK=${GELDAR_COREPROTECT_LOCK:-$ROOT/plugins/coreprotect/coreprotect.lock.json}
 DRY_RUN=${DEPLOY_DRY_RUN:-0}
 # The uid the containers run as (compose/colo.yml user:, Paper UID). The secrets directory and every secret file must be
 # owned by it, so the deploy checks owners against it. Exported so compose sees the same value.
@@ -350,6 +351,41 @@ fetch_chunky() {
     mkdir -p "$STATE_DIR/chunky" && mv "$WORK/chunky.jar" "$STATE_DIR/chunky/chunky.jar" ||
       die "chunky: cannot store the verified jar in $STATE_DIR/chunky"
     say "chunky: jar verified and stored in $STATE_DIR/chunky"
+  fi
+}
+
+# Fetches the CoreProtect jar named by the lock file (plugins/coreprotect/coreprotect.lock.json, block owner records; see
+# docs/runbooks/coreprotect.md) and checks its sha256 before anything uses it. A mismatch stops the deploy. Same rules as
+# fetch_chunky: https only, and file:// only for the tests. The lock also records a sha512; the helper checks sha256 only.
+fetch_coreprotect() {
+  if [ ! -f "$COREPROTECT_LOCK" ]; then
+    say "coreprotect: no lock file at $COREPROTECT_LOCK; skipped"
+    return 0
+  fi
+  need curl
+  need sha256sum
+  url=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$COREPROTECT_LOCK")
+  want=$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$COREPROTECT_LOCK")
+  [ -n "$url" ] || die "coreprotect lock has no url"
+  printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "coreprotect lock: sha256 is not 64 lowercase hex characters"
+  case $url in
+    https://*) ;;
+    file://*)
+      [ "${GELDAR_DEPLOY_ALLOW_FILE_URL:-0}" = 1 ] || die "coreprotect lock: the url must be https (file:// is test-only)"
+      ;;
+    *) die "coreprotect lock: the url must be https" ;;
+  esac
+  curl -fsSL -o "$WORK/coreprotect.jar" "$url" || die "coreprotect: download failed"
+  got=$(sha256sum "$WORK/coreprotect.jar" | awk '{print $1}')
+  if [ "$got" != "$want" ]; then
+    die "coreprotect: sha256 mismatch (lock says $want, download is $got); nothing installed"
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    say "coreprotect: jar verified against the lock (dry run keeps nothing)"
+  else
+    mkdir -p "$STATE_DIR/coreprotect" && mv "$WORK/coreprotect.jar" "$STATE_DIR/coreprotect/coreprotect.jar" ||
+      die "coreprotect: cannot store the verified jar in $STATE_DIR/coreprotect"
+    say "coreprotect: jar verified and stored in $STATE_DIR/coreprotect"
   fi
 }
 
