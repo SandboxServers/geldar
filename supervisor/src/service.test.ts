@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from './fakes.ts';
 import { BODY_MEMORY_BYTES, BODY_NANO_CPUS } from './limits.ts';
@@ -455,6 +456,86 @@ describe('abort and error paths', () => {
     });
     expect(world.auditRows.at(-1)?.action).toBe('body_invalid');
     expect(world.auditRows.at(-1)?.target).toBe('invalid');
+  });
+});
+
+describe('late start, owner move, abort signal and audit actor (review fix E)', () => {
+  it('a retry after a timed-out start keeps the retry body: the late landing of the first start stops nothing', async () => {
+    const { world, handle } = setup(20);
+    world.lateStartMs = 60;
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
+    world.lateStartMs = null;
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    await sleep(120);
+    expect(world.bodies.get('ranger')?.running).toBe(true);
+    expect(world.startRows).toHaveLength(1);
+    expect(await handle(req('status', A, 'Ranger'))).toEqual({ ok: true, code: 'running' });
+  });
+
+  it('after the roster moves a stopped body to another owner, that owner can start the name', async () => {
+    const { world, handle } = setup();
+    expect(await handle(start('Ranger', A))).toEqual(STARTED);
+    world.addPlayer('Ranger', B);
+    expect(await handle(stop('Ranger', A))).toEqual({ ok: true, code: 'stopped' });
+    expect(await handle(start('Ranger', B))).toEqual(STARTED);
+    expect(world.startRows.map((r) => r.ownerId)).toEqual([A, B]);
+    expect(world.bodies.get('ranger')).toEqual({ ownerId: B, playerName: 'ranger', running: true });
+  });
+
+  it('while the old owner body runs, the new roster owner cannot start the name', async () => {
+    const { world, handle } = setup();
+    expect(await handle(start('Ranger', A))).toEqual(STARTED);
+    world.addPlayer('Ranger', B);
+    expect(await handle(start('Ranger', B))).toEqual(UNKNOWN);
+    expect(world.startRows).toHaveLength(1);
+    expect(world.bodies.get('ranger')?.ownerId).toBe(A);
+  });
+
+  it('after the roster moved on and the old owner stopped its body, the old owner cannot start the name again', async () => {
+    const { world, handle } = setup();
+    await handle(start('Ranger', A));
+    world.addPlayer('Ranger', B);
+    await handle(stop('Ranger', A));
+    expect(await handle(start('Ranger', A))).toEqual(UNKNOWN);
+    expect(world.specs).toHaveLength(1);
+    expect(world.startRows).toHaveLength(1);
+  });
+
+  it('the signal given to a runtime start is aborted when the call times out', async () => {
+    const { world, handle } = setup(20);
+    world.hangStart = true;
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
+    expect(world.signals).toHaveLength(1);
+    expect(world.signals[0]?.aborted).toBe(true);
+  });
+
+  it('the signal is not aborted when the runtime start completes in time', async () => {
+    const { world, handle } = setup();
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    expect(world.signals).toHaveLength(1);
+    expect(world.signals[0]?.aborted).toBe(false);
+  });
+
+  it('after an insert failure whose stop also fails, a retry counts once and a third start is a noop', async () => {
+    const { world, handle } = setup();
+    world.insertError = new Error('database unavailable');
+    world.stopError = new Error('docker stop failed');
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
+    world.insertError = null;
+    world.stopError = null;
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    expect(world.specs).toHaveLength(2);
+    expect(world.startRows).toHaveLength(1);
+    expect(world.auditRows.at(-1)?.outcome).toBe('noop');
+  });
+
+  it('the audit actor is the sha256 prefix of the owner id, never the owner id itself', async () => {
+    const { world, handle } = setup();
+    await handle(start('Ranger', A));
+    const expected = createHash('sha256').update('owner-a').digest('hex').slice(0, 16);
+    expect(world.auditRows.at(-1)?.actor).toBe(expected);
+    expect(world.auditRows.at(-1)?.actor).not.toBe('owner-a');
   });
 });
 

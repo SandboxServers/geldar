@@ -30,6 +30,8 @@ export class FakeWorld {
   // Docker start that was already under way would. The body then runs unless the supervisor stops it.
   lateStartMs: number | null = null;
   logs = new Map<string, LogEvent[]>();
+  // Every abort signal the runtime was given, in call order (review fix E).
+  signals: AbortSignal[] = [];
 
   addPlayer(playerName: string, ownerId: string): void {
     this.roster.set(playerName.toLowerCase(), ownerId);
@@ -68,7 +70,8 @@ export class FakeWorld {
           const body = this.bodies.get(playerName);
           return body ? { ...body } : null;
         },
-        start: async (spec, _signal) => {
+        start: async (spec, signal) => {
+          this.signals.push(signal);
           if (this.hangStart) return new Promise<void>(() => undefined);
           if (this.startError) throw this.startError;
           if (this.lateStartMs !== null) {

@@ -122,10 +122,27 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     }
   }
 
+  // The newest start attempt per name. A late landing is compensated only while its attempt is still
+  // the newest: a newer attempt owns the name, and the adapter removes the aborted container on abort.
+  // Each attempt holds its own token, so a cleared entry can never match an older attempt.
+  const attempts = new Map<string, object>();
+
+  function forgetAttempt(playerName: string, token: object): void {
+    if (attempts.get(playerName) === token) attempts.delete(playerName);
+  }
+
+  async function compensateLate(playerName: string, token: object): Promise<void> {
+    if (attempts.get(playerName) === token) await compensate(playerName);
+    forgetAttempt(playerName, token);
+  }
+
   // Starts the body within the bound. An error or a timeout is compensated. A start that completes
   // after the timeout is stopped as soon as it lands, so no body runs uncounted; the abort signal
   // tells the adapter the caller has given up (the adapter removes the container on abort).
   async function startBody(spec: BodySpec): Promise<void> {
+    const { playerName } = spec;
+    const token = {};
+    attempts.set(playerName, token);
     const controller = new AbortController();
     let expired = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -140,16 +157,20 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     try {
       await Promise.race([work, cutOff]);
     } catch (error) {
-      if (expired)
+      if (expired) {
         void work.then(
-          () => compensate(spec.playerName),
-          () => undefined,
+          () => compensateLate(playerName, token),
+          () => forgetAttempt(playerName, token),
         );
-      await compensate(spec.playerName);
+      } else {
+        forgetAttempt(playerName, token);
+      }
+      await compensate(playerName);
       throw error;
     } finally {
       clearTimeout(timer);
     }
+    forgetAttempt(playerName, token);
   }
 
   // A failed admin-flag read is treated as not admin: the limits apply (decision 0170).
@@ -171,7 +192,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     // the roster has since moved the name to the caller.
     const rosterOwner = await deps.roster.ownerOfPlayer(playerName);
     if (rosterOwner !== ownerId) return outcome({ ok: false, code: 'unknown' }, admin);
-    if (record !== null && record.ownerId !== ownerId) {
+    // Another owner's running body refuses the start. A stopped one does not: the roster owner may
+    // start the name, and the adapter replaces the stopped container (C7-03b).
+    if (record !== null && record.ownerId !== ownerId && record.running) {
       return outcome({ ok: false, code: 'unknown' }, admin);
     }
     // A repeat start while this owner's body runs is the same request again: it changes nothing
