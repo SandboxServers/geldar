@@ -55,6 +55,68 @@ export function release(bot: Bot): void {
   for (const control of ['forward', 'jump', 'sprint'] as const) bot.setControlState(control, false);
 }
 
+/**
+ * Blocks whose right-click opens a screen, rings, toggles or eats. Vanilla uses such a block when a
+ * player right-clicks it, unless the player sneaks: a placement against one needs the sneak.
+ */
+const OPENS_ON_USE = new Set([
+  'crafting_table',
+  'chest',
+  'trapped_chest',
+  'ender_chest',
+  'furnace',
+  'blast_furnace',
+  'smoker',
+  'barrel',
+  'anvil',
+  'chipped_anvil',
+  'damaged_anvil',
+  'enchanting_table',
+  'grindstone',
+  'loom',
+  'cartography_table',
+  'fletching_table',
+  'smithing_table',
+  'stonecutter',
+  'lever',
+  'note_block',
+  'jukebox',
+  'dispenser',
+  'dropper',
+  'hopper',
+  'brewing_stand',
+  'beacon',
+  'bell',
+  'cake',
+  'respawn_anchor',
+]);
+/** Names ending in a door, bed, gate, button, sign or box part: each is used on right-click. */
+const OPENS_ON_USE_SUFFIX = /(^|_)(bed|door|trapdoor|fence_gate|button|shulker_box|sign)$/;
+
+/** True when a right-click on the block uses it (opens, toggles or eats), so a placement against it needs the sneak. */
+export function opensOnUse(name: string): boolean {
+  return OPENS_ON_USE.has(name) || OPENS_ON_USE_SUFFIX.test(name);
+}
+
+/**
+ * Places `face`-ward against `reference`. Holds the sneak for the send when the reference opens on use:
+ * the server then places the block instead of using the reference. The sneak is released after, also when
+ * the placement throws.
+ */
+export async function placeAgainst(
+  bot: Bot,
+  reference: Parameters<Bot['placeBlock']>[0],
+  face: Vec3,
+): Promise<void> {
+  const sneak = opensOnUse(reference.name);
+  if (sneak) bot.setControlState('sneak', true);
+  try {
+    await bot.placeBlock(reference, face);
+  } finally {
+    if (sneak) bot.setControlState('sneak', false);
+  }
+}
+
 /** The first inventory item that is a placeable block, by registry name. */
 export function heldBlock(bot: Bot): unknown {
   return bot.inventory.items().find((item) => {
@@ -99,15 +161,11 @@ export function entityInCell(bot: Bot, cell: Vec3): boolean {
 async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Promise<boolean> {
   const b = bot as LooseBot;
   const feet = b.entity.position.floored();
-  const own = [feet, feet.offset(0, 1, 0)];
   for (const dy of [2, 3]) {
     const at = feet.offset(0, dy, 0);
     const block = bot.blockAt(at);
     if (passable(block)) continue;
-    const refusal =
-      block === null || !solid(block)
-        ? `${block?.name ?? 'unloaded cell'} overhead`
-        : (unbreakableReason(block) ?? hazardReason(bot, block, at, own, true));
+    const refusal = overheadRefusal(bot, feet, at);
     if (refusal) {
       refusals.push(`no headroom for a pillar: ${refusal}`);
       return false;
@@ -127,6 +185,23 @@ async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Pr
   return true;
 }
 
+/**
+ * Why the cell `at` above `feet` cannot be cleared for the pillar's jump, or null when it can: air, or a
+ * solid block the bare hand may dig. Judged without digging.
+ */
+function overheadRefusal(bot: Bot, feet: Vec3, at: Vec3): string | null {
+  const block = bot.blockAt(at);
+  if (passable(block)) return null;
+  if (block === null || !solid(block)) return `${block?.name ?? 'unloaded cell'} overhead`;
+  const own = [feet, feet.offset(0, 1, 0)];
+  return unbreakableReason(block) ?? hazardReason(bot, block, at, own, true);
+}
+
+/** True when both cells above `feet` pass the headroom check a pillar from `feet` makes. */
+function headroomClear(bot: Bot, feet: Vec3): boolean {
+  return [2, 3].every((dy) => overheadRefusal(bot, feet, feet.offset(0, dy, 0)) === null);
+}
+
 /** The four horizontal steps, in a fixed order. */
 const CARDINAL_STEPS: readonly Vec3[] = [
   new Vec3(1, 0, 0),
@@ -138,16 +213,18 @@ const CARDINAL_STEPS: readonly Vec3[] = [
 /**
  * The cell beside the feet cell that a pillar can rise from: solid under it, open and passable with
  * the cell above it free, and no other entity in it. The nearest to the bot's position wins (the
- * block its hitbox stands on is the nearest), and null when none qualifies.
+ * block its hitbox stands on is the nearest), and null when none qualifies. With `needHeadroom`, the cell
+ * must also pass `headroomClear`.
  */
-export function edgeCell(bot: Bot, feet: Vec3): Vec3 | null {
+export function edgeCell(bot: Bot, feet: Vec3, needHeadroom = false): Vec3 | null {
   const at = bot.entity.position;
   const cells = CARDINAL_STEPS.map((step) => feet.plus(step)).filter(
     (cell) =>
       solid(bot.blockAt(cell.offset(0, -1, 0))) &&
       passable(bot.blockAt(cell)) &&
       passable(bot.blockAt(cell.offset(0, 1, 0))) &&
-      !entityInCell(bot, cell),
+      !entityInCell(bot, cell) &&
+      (!needHeadroom || headroomClear(bot, cell)),
   );
   const gap = (cell: Vec3) => (cell.x + 0.5 - at.x) ** 2 + (cell.z + 0.5 - at.z) ** 2;
   cells.sort((a, b) => gap(a) - gap(b));
@@ -194,7 +271,7 @@ export async function pillarStep(
         solid(ground)
       ) {
         if (passable(bot.blockAt(cell))) {
-          await bot.placeBlock(ground, new Vec3(0, 1, 0));
+          await placeAgainst(bot, ground, new Vec3(0, 1, 0));
           placed = true;
         }
       }

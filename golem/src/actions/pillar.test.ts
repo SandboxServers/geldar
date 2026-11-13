@@ -102,7 +102,7 @@ describe('pillar from a block edge and after landing', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no solid block under your feet to build on: stand on solid ground first',
+      message: 'no solid block under your feet to build on',
     });
     expect(moveNear).toHaveBeenCalledTimes(1);
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
@@ -115,7 +115,7 @@ describe('pillar from a block edge and after landing', () => {
     const outcome = await pillar(fake);
     expect(outcome).toMatchObject({
       status: 'failed',
-      message: 'no solid block under your feet to build on: stand on solid ground first',
+      message: 'no solid block under your feet to build on',
     });
     expect(moveNear).not.toHaveBeenCalled();
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
@@ -138,7 +138,7 @@ describe('pillar from a block edge and after landing', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'you are not on the ground: wait until you land, then place again',
+      message: 'you are not on the ground',
     });
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
   });
@@ -156,7 +156,7 @@ describe('pillar from a block edge and after landing', () => {
 });
 
 describe('pillar when another ranger shares the feet cell', () => {
-  const ENTITY_MESSAGE = 'another entity stands where the block goes: step to open ground first';
+  const ENTITY_MESSAGE = 'another entity stands where the block goes';
 
   /** The bot stands on the stone at (0,63,0); another ranger's box covers the feet cell (0,64,0). */
   function sharedCell(fake: Fake) {

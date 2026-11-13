@@ -3,7 +3,7 @@ import type { Position } from './bot-types.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
-import { edgeCell, entityInCell, pillarStep } from './pillar.ts';
+import { edgeCell, entityInCell, pillarStep, placeAgainst } from './pillar.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -41,23 +41,21 @@ const CARDINALS: readonly Vec3[] = [
   new Vec3(-1, 0, 0),
   new Vec3(0, 0, -1),
 ];
-/** Fixed failure texts shown to the model: each says what to try next (under 160 characters). */
+/** Fixed failure texts shown to the model: each states what happened, without advice (decision 0154: facts, never advice). */
 const MESSAGE = {
-  noSpace: 'no free space next to you: step to open ground or name a position',
-  insideBlock: 'you are inside a block: step to open ground first',
-  occupied: 'target is occupied: name an empty position or mine the block first',
-  notLoaded: 'target is not loaded: move closer or name a loaded position',
-  noReference: 'no solid block to place against: name a position next to a solid block',
-  noGround: 'no solid block under your feet to build on: stand on solid ground first',
-  notGrounded: 'you are not on the ground: wait until you land, then place again',
-  headroom: 'no headroom for a pillar: clear the two cells above your head first',
-  entityInCell: 'another entity stands where the block goes: step to open ground first',
-  notRisen: 'you did not rise onto the block: clear the space above you and try again',
-  refused:
-    'the server refused: stand on solid ground within reach and choose a block position next to you',
-  unconfirmed:
-    'the block did not appear at the target: stand on solid ground and choose a block position next to you',
-  timeout: 'the server did not answer the placement: try again',
+  noSpace: 'no free space next to you',
+  insideBlock: 'you are inside a block',
+  occupied: 'target is occupied',
+  notLoaded: 'target is not loaded',
+  noReference: 'no solid block to place against',
+  noGround: 'no solid block under your feet to build on',
+  notGrounded: 'you are not on the ground',
+  headroom: 'no headroom for a pillar: the two cells above your head are not clear',
+  entityInCell: 'another entity stands where the block goes',
+  notRisen: 'you did not rise onto the block',
+  refused: 'the server refused the placement',
+  unconfirmed: 'the block did not appear at the target',
+  timeout: 'the server did not answer the placement',
 } as const;
 /** The pillar's log goes nowhere here: the ladder owns the stall diagnostics. */
 const SILENT = { log: () => undefined, now: () => 0 };
@@ -164,7 +162,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       target.z - referencePos.z,
     );
     try {
-      await bot.placeBlock(reference, face);
+      await placeAgainst(bot, reference, face);
     } catch (error) {
       const message = errorText(error);
       if (/did not answer the placement|did not fire within timeout/.test(message)) {
@@ -224,6 +222,15 @@ async function pillarPlace(
       result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
     }
   }
+  // Unsafe headroom above the feet cell: step to a neighbour whose own headroom is clear, and pillar there.
+  if (!result.ok && result.why === 'headroom') {
+    const beside = await stepToEdge(ctx, cell, true);
+    if (ctx.signal.aborted) return cancelled();
+    if (beside) {
+      cell = beside;
+      result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+    }
+  }
   const below = cell.offset(0, -1, 0);
   if (result.ok) {
     if (!confirmsPlacement(bot.blockAt(cell)?.name ?? '', block)) {
@@ -268,9 +275,13 @@ async function waitForLanding(ctx: ActionContext): Promise<void> {
  * Walks onto the edge cell beside `feet` (see `edgeCell`), to its centre, within `EDGE_WAIT_MS` of
  * wall time. Returns that cell when the bot stands in it on the ground, else null.
  */
-async function stepToEdge(ctx: ActionContext, feet: Vec3): Promise<Vec3 | null> {
+async function stepToEdge(
+  ctx: ActionContext,
+  feet: Vec3,
+  needHeadroom = false,
+): Promise<Vec3 | null> {
   const { bot, signal, timeScale } = ctx;
-  const edge = edgeCell(bot, feet);
+  const edge = edgeCell(bot, feet, needHeadroom);
   if (!edge) return null;
   const bound = new AbortController();
   const stop = () => bound.abort();
