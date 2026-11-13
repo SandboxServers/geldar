@@ -42,6 +42,7 @@ describe('listMigrations', () => {
       '0024_mcp_roster.sql',
       '0025_admin_flag_and_register_audit.sql',
       '0027_body_ops.sql',
+      '0032_token_lifecycle.sql',
     ]);
   });
 
