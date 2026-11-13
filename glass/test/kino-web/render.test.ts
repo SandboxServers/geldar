@@ -181,7 +181,7 @@ describe('status line and page layout', () => {
   });
 
   it('page wraps the toolbar, sizes touch targets and has a status element', () => {
-    // Decision 0161 moved the styles to kino.css; the same properties hold on the monitor wall.
+    // Decision 0166 moved the styles to kino.css; the same properties hold on the monitor wall.
     const html = readFileSync(join(import.meta.dirname, '../../web/kino/index.html'), 'utf8');
     const css = readFileSync(join(import.meta.dirname, '../../web/kino/kino.css'), 'utf8');
     expect(html).toContain('href="./kino.css"');

@@ -1,4 +1,4 @@
-// One monitor's frame on the wall (decision 0161): the screen, the on-screen display (channel, agent,
+// One monitor's frame on the wall (decision 0166): the screen, the on-screen display (channel, agent,
 // mode, live light), the controls and the folded status line. DOM only; the camera and the feed are
 // in pane-view.ts. Agent labels reach the page as text (textContent), never as markup or attributes.
 
@@ -66,7 +66,8 @@ export interface MonitorFrame {
   root: HTMLElement;
   canvas: HTMLCanvasElement;
   setChannel(n: number): void;
-  setLabel(text: string): void;
+  /** The agent's label; while `tuning`, "Tuning in to <label>" (the server has not named it yet). */
+  setLabel(text: string, tuning?: boolean): void;
   setMode(m: CameraMode): void;
   setLive(live: boolean): void;
   setActive(active: boolean): void;
@@ -75,6 +76,8 @@ export interface MonitorFrame {
   toggleInfo(): void;
   /** A short message over the screen; empty clears it. */
   say(text: string): void;
+  /** A message that stays until cleared (null), with an optional button (Try again). */
+  setNotice(text: string | null, action?: { label: string; run: () => void }): void;
   /** The channel-change static, briefly. */
   flicker(): void;
   /** Static and "Tuning in" until the feed has placed the agent. */
@@ -157,7 +160,12 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
   status.className = 'status';
   status.hidden = true;
 
-  root.append(screen, osd, msg, controls, status);
+  const notice = document.createElement('div');
+  notice.className = 'notice';
+  notice.setAttribute('role', 'status');
+  notice.hidden = true;
+
+  root.append(screen, osd, msg, notice, controls, status);
   let flickerTimer: ReturnType<typeof setTimeout> | undefined;
   let sayTimer: ReturnType<typeof setTimeout> | undefined;
   return {
@@ -166,9 +174,10 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
     setChannel(n) {
       ch.textContent = `CH ${n}`;
     },
-    setLabel(text) {
-      name.textContent = text;
-      root.setAttribute('aria-label', `Monitor: ${text}`);
+    setLabel(text, tuning = false) {
+      const shown = tuning ? `Tuning in to ${text}` : text;
+      name.textContent = shown;
+      root.setAttribute('aria-label', `Monitor: ${shown}`);
     },
     setMode(m) {
       mode.textContent = modeText(m);
@@ -199,6 +208,21 @@ export function buildMonitor(onAction: (a: MonitorAction) => void): MonitorFrame
         sayTimer = setTimeout(() => {
           msg.textContent = '';
         }, 4000);
+    },
+    setNotice(text, action) {
+      notice.replaceChildren();
+      notice.hidden = text === null;
+      if (text === null) return;
+      const p = document.createElement('p');
+      p.textContent = text;
+      notice.appendChild(p);
+      if (action) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = action.label;
+        b.addEventListener('click', action.run);
+        notice.appendChild(b);
+      }
     },
     setTuning(on) {
       noise.classList.toggle('tuning', on);

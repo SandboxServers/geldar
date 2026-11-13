@@ -1,13 +1,14 @@
-// Production browser entry (decision 0161): the monitor wall. It loads the camera list and the
+// Production browser entry (decision 0166): the monitor wall. It loads the camera list and the
 // textures, then keeps up to DEFAULT_PANES monitors, one active, in a layout, with the channel guide,
-// the keyboard map and the remembered wall. Not unit tested (needs WebGL and a canvas); the parts it
-// calls are (keys, wall-layout, saved, pane-set, session, targets, rig).
+// the keyboard map and the remembered wall. Not unit tested (it is the page's wiring); the decisions it
+// makes live in tested modules: keys (routeKey), wall-layout, saved (startupPlan), subscribe-gate,
+// pane-set, pane-view, session, guide, targets and the camera rig.
 
 import { buildAtlas } from './atlas.ts';
-import { bindPointer, keyMove, MOVE_KEYS } from './camera/controls.ts';
+import { bindPointer, keyMove } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
 import { ChannelGuide } from './guide.ts';
-import { keyCommand, type Layout, nextLayout, nextMode, suppressesDefault, surf } from './keys.ts';
+import { type Layout, nextLayout, nextMode, routeKey, surf } from './keys.ts';
 import {
   buildEmptySlot,
   buildMonitor,
@@ -16,7 +17,8 @@ import {
 } from './panes/monitor.ts';
 import { DEFAULT_PANES, PaneSet } from './panes/pane-set.ts';
 import { createPaneView, type PaneView } from './panes/pane-view.ts';
-import { browserStorage, readSaved, writeSaved } from './panes/saved.ts';
+import { browserStorage, readSaved, startupPlan, writeSaved } from './panes/saved.ts';
+import { GATE_REFILL_MS, SubscribeGate } from './panes/subscribe-gate.ts';
 import { planWall } from './panes/wall-layout.ts';
 import type { SocketLike } from './session.ts';
 import { aggregateStatus, type StatusInfo, statusLine } from './status.ts';
@@ -32,7 +34,10 @@ import {
 const meta = (name: string): string =>
   document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content ?? '';
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
-/** Surfing waits this long after the last step before it retunes (the server allows 8 subscribes, then one per 2 s). */
+/**
+ * Surfing waits this long after the last step before it retunes, so a run of steps sends one subscribe.
+ * The rate limit itself is kept by the subscribe gate (8 at once, then one per 2 s, like the relay).
+ */
 const SURF_SETTLE_MS = 400;
 
 /** A WebSocket as the session sees it. */
@@ -94,8 +99,21 @@ interface Monitor {
   channel: number;
   frame: MonitorFrame;
   view: PaneView;
-  /** A retune waiting for surfing to settle. */
-  pending: { target: string; timer: ReturnType<typeof setTimeout> } | null;
+}
+
+/** The top bar's Details button folds the status line; bound once, since a Retry runs main() again. */
+function bindStatusToggle(): void {
+  el('toggle-status').addEventListener('click', (e) => {
+    const bar = el('status');
+    bar.hidden = !bar.hidden;
+    (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(!bar.hidden));
+  });
+}
+
+/** Unfolds the status line, for a failure the viewer must see. */
+function showStatusLine(): void {
+  el('status').hidden = false;
+  el('toggle-status').setAttribute('aria-expanded', 'true');
 }
 
 async function main(): Promise<void> {
@@ -146,12 +164,18 @@ async function main(): Promise<void> {
       entities: 0,
       atlas: { state: 'failed', error },
     });
+    showStatusLine();
     return;
   }
   const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/kino/ws`;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const narrowQuery = matchMedia('(max-width: 720px)');
   const storage = browserStorage();
+  const gate = new SubscribeGate({
+    now: () => performance.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  });
 
   const monitors = new Map<number, Monitor>();
   const paneInfos = new Map<number, { connected: boolean; chunks: number; entities: number }>();
@@ -164,10 +188,7 @@ async function main(): Promise<void> {
   const save = (): void =>
     writeSaved(storage, {
       layout,
-      monitors: order().map((m) => ({
-        target: m.pending?.target ?? m.view.target,
-        mode: m.view.mode,
-      })),
+      monitors: order().map((m) => ({ target: m.view.target, mode: m.view.mode })),
     });
 
   const setActive = (id: number | null): void => {
@@ -196,7 +217,7 @@ async function main(): Promise<void> {
     for (const cell of plan.cells) {
       const node =
         cell.id === null
-          ? buildEmptySlot(() => openGuide())
+          ? buildEmptySlot(() => openGuide(true))
           : (monitors.get(cell.id) as Monitor).frame.root;
       node.style.gridArea = cell.area;
       node.hidden = false;
@@ -224,19 +245,8 @@ async function main(): Promise<void> {
   };
 
   const retune = (m: Monitor, target: string, settle: boolean): void => {
-    m.frame.setLabel(labelOf(target));
-    m.frame.flicker();
-    if (m.pending) clearTimeout(m.pending.timer);
-    const go = (): void => {
-      m.pending = null;
-      m.view.setTarget(target);
-      save();
-    };
-    if (!settle) {
-      go();
-      return;
-    }
-    m.pending = { target, timer: setTimeout(go, SURF_SETTLE_MS) };
+    m.view.setTarget(target, settle ? SURF_SETTLE_MS : 0);
+    save();
     announce(`CH ${m.channel}: ${labelOf(target)}`);
   };
 
@@ -258,7 +268,7 @@ async function main(): Promise<void> {
         rig.recentre();
         break;
       case 'surf': {
-        const next = surf(ids, m.pending?.target ?? m.view.target, a.steps);
+        const next = surf(ids, m.view.target, a.steps);
         if (next) retune(m, next, true);
         break;
       }
@@ -277,6 +287,8 @@ async function main(): Promise<void> {
     }
   };
 
+  /** The first-subscribe delay for the monitor being opened (a restored wall spaces them out). */
+  let openDelay = 0;
   const panes = new PaneSet((id, target, mode) => {
     const used = new Set([...monitors.values()].map((x) => x.channel));
     let channel = 1;
@@ -284,32 +296,30 @@ async function main(): Promise<void> {
     let self: Monitor | null = null;
     const frame = buildMonitor((a) => self && action(self, a));
     frame.setChannel(channel);
-    frame.setLabel(labelOf(target));
     const view = createPaneView(frame, target, mode, {
       atlas,
       atlasInfo,
       connect: () => browserSocket(wsUrl),
       labels,
+      labelOf,
       reducedMotion,
+      gate,
+      key: String(id),
+      startDelayMs: openDelay,
       onStatus(info) {
         paneInfos.set(id, info);
         showBar();
       },
-      onTargetKept(kept) {
-        // The server refused the retune (too many clicks): the old agent is still on this monitor.
-        frame.setLabel(labelOf(kept));
-        save();
-      },
+      // The server kept the old agent (a refused retune): remember the wall as it really is.
+      onTargetChanged: () => save(),
     });
     bindPointer(frame.canvas, () => view.rig, { onActivate: () => active !== id && setActive(id) });
-    self = { id, channel, frame, view, pending: null };
+    self = { id, channel, frame, view };
     monitors.set(id, self);
     return {
       setTarget: (t) => view.setTarget(t),
       setMode: (m) => view.setMode(m),
       dispose() {
-        const m = monitors.get(id);
-        if (m?.pending) clearTimeout(m.pending.timer);
         monitors.delete(id);
         paneInfos.delete(id);
         view.dispose();
@@ -321,8 +331,10 @@ async function main(): Promise<void> {
     };
   });
 
-  const openMonitor = (target: string, mode: CameraMode = 'follow'): void => {
+  const openMonitor = (target: string, mode: CameraMode = 'follow', delayMs = 0): void => {
+    openDelay = delayMs;
     const id = panes.open(target, mode);
+    openDelay = 0;
     if (id === null) {
       notice.textContent = `All ${DEFAULT_PANES} monitors are in use: close one first.`;
       return;
@@ -341,27 +353,27 @@ async function main(): Promise<void> {
     },
     watchNew: (agentId) => openMonitor(agentId),
   });
-  function openGuide(): void {
+  /** Opens the channel guide; from an empty slot (`newMonitor`), a choice fills a new monitor. */
+  function openGuide(newMonitor = false): void {
     const onAir = new Map<string, number[]>();
-    for (const m of order()) {
-      const t = m.pending?.target ?? m.view.target;
-      onAir.set(t, [...(onAir.get(t) ?? []), m.channel]);
-    }
+    for (const m of order())
+      onAir.set(m.view.target, [...(onAir.get(m.view.target) ?? []), m.channel]);
     const a = active !== null ? monitors.get(active) : undefined;
     guide.open(
-      { onAir, activeChannel: a?.channel ?? null, canOpen: monitors.size < DEFAULT_PANES },
+      {
+        onAir,
+        activeChannel: a?.channel ?? null,
+        canOpen: monitors.size < DEFAULT_PANES,
+        newMonitor,
+      },
       labelOf,
     );
   }
 
   const help = el<HTMLDialogElement>('help');
   help.querySelector('.help-close')?.addEventListener('click', () => help.close());
-  el('open-guide').addEventListener('click', openGuide);
+  el('open-guide').addEventListener('click', () => openGuide());
   el('open-help').addEventListener('click', () => help.showModal());
-  el('toggle-status').addEventListener('click', (e) => {
-    barStatus.hidden = !barStatus.hidden;
-    (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(!barStatus.hidden));
-  });
   for (const b of layoutButtons)
     b.addEventListener('click', () => setLayout(b.dataset.layout as Layout));
   narrowQuery.addEventListener('change', layoutWall);
@@ -378,18 +390,23 @@ async function main(): Promise<void> {
     const t = e.target as HTMLElement | null;
     if (help.open || guide.isOpen || t?.closest('input, select, textarea')) return;
     const m = active !== null ? monitors.get(active) : undefined;
-    const k = e.key.toLowerCase();
-    if (MOVE_KEYS.has(k) && m?.view.rig.mode === 'free') {
-      held.add(k);
+    const route = routeKey({
+      key: e.key,
+      ctrl: e.ctrlKey,
+      meta: e.metaKey,
+      alt: e.altKey,
+      repeat: e.repeat,
+      onButton: (t?.closest('button, a, summary') ?? null) !== null,
+      freeFly: m?.view.rig.mode === 'free',
+    });
+    if (route.preventDefault) e.preventDefault();
+    if (route.kind === 'move') {
+      held.add(route.key);
       syncMove();
-      if (suppressesDefault(e.key)) e.preventDefault();
       return;
     }
-    const cmd = keyCommand(e.key, { ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey });
-    if (!cmd) return;
-    if (suppressesDefault(e.key)) e.preventDefault();
-    // Buttons keep their own Enter.
-    if (cmd.kind === 'solo' && t?.closest('button, a')) return;
+    if (route.kind === 'ignore') return;
+    const cmd = route.command;
     switch (cmd.kind) {
       case 'select': {
         const pick = order().find((x) => x.channel === cmd.index + 1);
@@ -429,12 +446,10 @@ async function main(): Promise<void> {
     syncMove();
   });
 
-  // The wall the viewer left, or the first agent on CH 1 for a first visit.
+  // The wall the viewer left (one monitor per refill), or the first agent on CH 1 for a first visit.
   const saved = readSaved(storage, ids, DEFAULT_PANES);
   layout = saved?.layout ?? 'wall';
-  if (saved && saved.monitors.length > 0)
-    for (const s of saved.monitors) openMonitor(s.target, s.mode);
-  else openMonitor(ids[0] as string);
+  for (const s of startupPlan(saved, ids, GATE_REFILL_MS)) openMonitor(s.target, s.mode, s.delayMs);
   if (active === null) layoutWall();
 
   const loop = (now: number): void => {
@@ -444,4 +459,5 @@ async function main(): Promise<void> {
   requestAnimationFrame(loop);
 }
 
+bindStatusToggle();
 void main();

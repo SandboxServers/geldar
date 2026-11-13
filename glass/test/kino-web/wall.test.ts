@@ -1,9 +1,22 @@
-// Decision 0161: the keyboard map, channel surfing, the wall layouts and the remembered wall.
+// Decision 0166: the keyboard map, channel surfing, the wall layouts and the remembered wall.
 
 import { describe, expect, it } from 'vitest';
-import { keyCommand, nextLayout, nextMode, suppressesDefault, surf } from '../../web/kino/keys.ts';
+import {
+  keyCommand,
+  nextLayout,
+  nextMode,
+  routeKey,
+  suppressesDefault,
+  surf,
+} from '../../web/kino/keys.ts';
 import { DEFAULT_PANES } from '../../web/kino/panes/pane-set.ts';
-import { readSaved, SAVED_KEY, type StorageLike, writeSaved } from '../../web/kino/panes/saved.ts';
+import {
+  readSaved,
+  SAVED_KEY,
+  type StorageLike,
+  startupPlan,
+  writeSaved,
+} from '../../web/kino/panes/saved.ts';
 import { planWall } from '../../web/kino/panes/wall-layout.ts';
 
 describe('keyboard map', () => {
@@ -175,5 +188,88 @@ describe('remembered wall', () => {
     expect(readSaved(blocked, ['ag_a'], 4)).toBeNull();
     expect(() => writeSaved(blocked, { layout: 'wall', monitors: [] })).not.toThrow();
     expect(readSaved(null, ['ag_a'], 4)).toBeNull();
+  });
+});
+
+describe('key routing (review of decision 0166)', () => {
+  it('never repeats a command from a held key, but still stops the page scrolling', () => {
+    expect(routeKey({ key: 'x' })).toEqual({
+      kind: 'command',
+      command: { kind: 'close' },
+      preventDefault: false,
+    });
+    expect(routeKey({ key: 'x', repeat: true })).toEqual({ kind: 'ignore', preventDefault: false });
+    expect(routeKey({ key: 'Delete', repeat: true }).kind).toBe('ignore');
+    expect(routeKey({ key: 'ArrowRight', repeat: true })).toEqual({
+      kind: 'ignore',
+      preventDefault: true,
+    });
+  });
+
+  it('leaves Space and Enter to a focused button, even in free-fly', () => {
+    expect(routeKey({ key: ' ', onButton: true, freeFly: true })).toEqual({
+      kind: 'ignore',
+      preventDefault: false,
+    });
+    expect(routeKey({ key: 'Enter', onButton: true }).kind).toBe('ignore');
+    expect(routeKey({ key: ' ', freeFly: true })).toEqual({
+      kind: 'move',
+      key: ' ',
+      preventDefault: true,
+    });
+    expect(routeKey({ key: 'Enter' })).toEqual({
+      kind: 'command',
+      command: { kind: 'solo' },
+      preventDefault: false,
+    });
+  });
+
+  it('holds W A S D in free-fly (repeats included) and takes no browser shortcut', () => {
+    expect(routeKey({ key: 'W', freeFly: true, repeat: true })).toEqual({
+      kind: 'move',
+      key: 'w',
+      preventDefault: false,
+    });
+    expect(routeKey({ key: 'w' }).kind).toBe('ignore');
+    expect(routeKey({ key: 'w', freeFly: true, ctrl: true }).kind).toBe('ignore');
+  });
+
+  it('surfs backwards past the first agent', () => {
+    expect(surf(['a', 'b', 'c'], 'a', -1)).toBe('c');
+    expect(surf(['a', 'b', 'c'], 'b', -4)).toBe('a');
+  });
+});
+
+describe('page start (review of decision 0166)', () => {
+  it('a first visit tunes CH 1 to the first agent; a wall the viewer emptied stays empty', () => {
+    expect(startupPlan(null, ['a', 'b'], 2000)).toEqual([
+      { target: 'a', mode: 'follow', delayMs: 0 },
+    ]);
+    expect(startupPlan(null, [], 2000)).toEqual([]);
+    expect(startupPlan({ layout: 'solo', monitors: [] }, ['a', 'b'], 2000)).toEqual([]);
+  });
+
+  it('a saved wall comes back one monitor per refill, so a reload does not spend the burst', () => {
+    const wall = {
+      layout: 'wall' as const,
+      monitors: [
+        { target: 'a', mode: 'follow' as const },
+        { target: 'b', mode: 'orbit' as const },
+        { target: 'c', mode: 'free' as const },
+      ],
+    };
+    expect(startupPlan(wall, ['a', 'b', 'c'], 2000).map((m) => m.delayMs)).toEqual([0, 2000, 4000]);
+  });
+
+  it('an emptied wall reads back as saved and empty, not as a first visit', () => {
+    const store = new Map<string, string>();
+    const storage: StorageLike = {
+      getItem: (k) => store.get(k) ?? null,
+      setItem: (k, v) => void store.set(k, v),
+    };
+    writeSaved(storage, { layout: 'wall', monitors: [] });
+    const saved = readSaved(storage, ['a'], DEFAULT_PANES);
+    expect(saved).toEqual({ layout: 'wall', monitors: [] });
+    expect(startupPlan(saved, ['a'], 2000)).toEqual([]);
   });
 });

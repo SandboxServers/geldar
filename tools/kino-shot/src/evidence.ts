@@ -109,3 +109,15 @@ export function tally(keys: readonly string[]): Record<string, number> {
   for (const k of keys) out[k] = (out[k] ?? 0) + 1;
   return out;
 }
+
+/**
+ * The position of `wanted` in the page's camera list: an exact id first, then an exact label; -1 when
+ * neither matches. Never a substring, so asking for "Moss" never picks "Mossy".
+ */
+export function agentIndex(
+  agents: readonly { id?: unknown; label?: unknown }[],
+  wanted: string,
+): number {
+  const byId = agents.findIndex((a) => a.id === wanted);
+  return byId >= 0 ? byId : agents.findIndex((a) => a.label === wanted);
+}

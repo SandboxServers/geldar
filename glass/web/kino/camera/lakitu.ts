@@ -1,4 +1,4 @@
-// The Lakitu chase camera (decision 0161): behind the agent's heading, swinging round lazily while the
+// The Lakitu chase camera (decision 0166): behind the agent's heading, swinging round lazily while the
 // agent moves, rotated in 45-degree steps, three zoom distances, rising over or pushed in at walls, a swoop-in
 // when it tunes to an agent. Pure: it reads the voxel world and the target, and sends nothing.
 //
@@ -55,6 +55,10 @@ export interface ChaseState {
   lift: number;
   /** Swoop progress: 1 at the start, 0 when done. */
   swoop: number;
+  /** The latest "behind the agent" yaw from its heading, kept for a recentre while it stands still. */
+  behind: number | null;
+  /** A recentre is swinging baseYaw round to `behind`. */
+  recentring: boolean;
   idle: number;
   speed: number;
   last: Vec3 | null;
@@ -73,6 +77,8 @@ export function newChase(): ChaseState {
     shown: null,
     lift: 0,
     swoop: 0,
+    behind: null,
+    recentring: false,
     idle: 0,
     speed: 0,
     last: null,
@@ -154,10 +160,21 @@ export function zoomChase(s: ChaseState, steps: number): boolean {
   return moved;
 }
 
-/** Swings the camera back behind the agent. */
+/**
+ * Swings the camera back behind the agent's current heading, even when it stands still (the lazy swing
+ * only follows a moving agent). The view's yaw so far becomes the base, and the base eases round.
+ */
 export function recentreChase(s: ChaseState): void {
-  s.offsetGoal = Math.round(s.offset / (2 * Math.PI)) * 2 * Math.PI;
   s.idle = 0;
+  if (s.baseYaw === null) {
+    s.offset = 0;
+    s.offsetGoal = 0;
+    return;
+  }
+  s.baseYaw = wrapAngle(s.baseYaw + s.offset);
+  s.offset = 0;
+  s.offsetGoal = 0;
+  s.recentring = true;
 }
 
 /** Starts the swoop-in (a new target). Under reduced motion the camera simply appears in place. */
@@ -166,6 +183,8 @@ export function swoopChase(s: ChaseState, reducedMotion: boolean): void {
   s.shown = null;
   s.baseYaw = null;
   s.headed = false;
+  s.behind = null;
+  s.recentring = false;
   s.last = null;
 }
 
@@ -198,6 +217,18 @@ export function stepChase(s: ChaseState, world: VoxelWorld, input: ChaseInput): 
     s.headed = heading !== null;
   } else if (moving && behind !== null)
     s.baseYaw = approachAngle(s.baseYaw, behind, 1 - Math.exp(-dt * SWING_RATE));
+  if (heading !== null) s.behind = yawBehind(heading);
+  if (s.recentring) {
+    const home = behind ?? s.behind;
+    if (home === null) s.recentring = false;
+    else {
+      s.baseYaw = approachAngle(s.baseYaw ?? home, home, 1 - Math.exp(-dt * OFFSET_RATE));
+      if (Math.abs(wrapAngle(home - s.baseYaw)) < 0.01) {
+        s.baseYaw = home;
+        s.recentring = false;
+      }
+    }
+  }
 
   s.idle += dt;
   if (moving && s.idle > RECENTRE_IDLE_SECONDS) {
@@ -239,7 +270,8 @@ export function stepChase(s: ChaseState, world: VoxelWorld, input: ChaseInput): 
     return { from, to, length: Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z) };
   };
   if (sw > 0.05) {
-    // During the swoop the camera is above the world's walls: it flies in, it does not collide yet.
+    // The swoop flies in from high and far, but stops at a roof or a cave ceiling (and at the edge
+    // of the loaded world) like the rest of the chase, so it never shows the inside of the ground.
     s.lift = 0;
   } else {
     // The lowest lift whose ray is mostly clear; the clearest one when none is.
@@ -267,9 +299,9 @@ export function stepChase(s: ChaseState, world: VoxelWorld, input: ChaseInput): 
   } = sw > 0.05
     ? { from: eye, to: goalAt(0), length: Math.hypot(horizontal, height) }
     : rayAt(s.lift);
-  const clear = sw > 0.05 ? full : clearDistance(world, from, goal);
-  // In fast against a wall, back out slowly, so the view does not pump.
-  if (s.shown === null || clear < s.shown) s.shown = clear;
+  const clear = clearDistance(world, from, goal);
+  // In fast against a wall, back out slowly, so the view does not pump. The swoop follows its ray.
+  if (s.shown === null || clear < s.shown || sw > 0.05) s.shown = clear;
   else s.shown += (clear - s.shown) * (1 - Math.exp(-dt * WALL_OUT_RATE));
   const f = full === 0 ? 0 : s.shown / full;
   return {

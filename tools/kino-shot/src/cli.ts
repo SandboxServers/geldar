@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { parseArgs } from './args.ts';
 import {
+  agentIndex,
   buildSummary,
   checksFrom,
   type PixelFractions,
@@ -83,11 +84,22 @@ async function main(): Promise<number> {
     .waitForResponse((r) => pathOf(r.url()) === '/kino/targets', { timeout: 20_000 })
     .then((r) => r.json() as Promise<{ agents?: { id?: unknown; label?: unknown }[] }>)
     .catch(() => null);
+  if (args.agent) {
+    // An empty saved wall: the page does not tune CH 1 by itself, so the run sends one subscribe, for
+    // the agent asked for (decision 0166; the site rate-limits subscribes).
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('kino-wall-v1', JSON.stringify({ layout: 'wall', monitors: [] }));
+      } catch {
+        // No storage: the page tunes CH 1 first, then the agent below (two subscribes).
+      }
+    });
+  }
   await page.goto(args.url, { waitUntil: 'domcontentloaded' });
   let pickerOptions = 0;
   try {
-    // The channel guide is filled once the texture atlas is built (decision 0161); a first visit
-    // tunes CH 1 to the first agent by itself.
+    // The channel guide is filled once the texture atlas is built (decision 0166). Without --agent, a
+    // first visit tunes CH 1 to the first agent by itself.
     await page.waitForFunction(
       () =>
         document.querySelectorAll('#guide .guide-list li').length > 0 ||
@@ -97,14 +109,12 @@ async function main(): Promise<number> {
     );
     pickerOptions = await page.locator('#guide .guide-list li').count();
     if (args.agent) {
-      const agents = (await targetsReply)?.agents ?? [];
-      const hit = agents.find((a) => a.id === args.agent || a.label === args.agent);
-      const label = typeof hit?.label === 'string' ? hit.label : args.agent;
+      // The guide lists the agents in the order of the page's own camera list: pick by position, an
+      // exact id first, then an exact label (never a substring, so "Moss" never picks "Mossy").
+      const index = agentIndex((await targetsReply)?.agents ?? [], args.agent);
+      if (index < 0) throw new Error(`agent not listed for this viewer: ${args.agent}`);
       await page.locator('#open-guide').click();
-      await page
-        .locator('#guide .guide-list li .tune', { hasText: label })
-        .first()
-        .click({ timeout: 3000 });
+      await page.locator('#guide .guide-list li .tune').nth(index).click({ timeout: 3000 });
     }
     if (args.mode !== 'follow') {
       const name = args.mode === 'orbit' ? 'Orbit camera' : 'Free camera';

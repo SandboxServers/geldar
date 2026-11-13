@@ -87,7 +87,7 @@ It prints `glass listening on 127.0.0.1:<port>` when it is ready. Stop it with C
 
 ### Seeing the Kino page without a shard
 
-The Kino page (`glass/web/kino/`, decision 0161) needs a feed, textures and skins, so it cannot be looked at with Glass alone. The test-only preview serves the real page (types stripped, as Glass does) with an invented world: rolling grass, a pond, trees, a wall and a hut, and three agents walking their own routes. Its textures and skins are drawn from noise, so no game asset is used:
+The Kino page (`glass/web/kino/`, decision 0166) needs a feed, textures and skins, so it cannot be looked at with Glass alone. The test-only preview serves the real page (types stripped, as Glass does) with an invented world: rolling grass, a pond, trees, a wall and a hut, and three agents walking their own routes. Its textures and skins are drawn from noise, so no game asset is used:
 
 ```powershell
 node glass/test/kino-preview/server.ts [port] [web-dir]   # default 8789 and glass/web/kino; binds 127.0.0.1

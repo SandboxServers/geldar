@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { watchableIds } from '../../src/kino/scope.ts';
-import { byeText, KinoSession, type SocketLike } from '../../web/kino/session.ts';
+import type { FeedState } from '../../web/kino/feed.ts';
+import { byeText, KinoSession, type Refusal, type SocketLike } from '../../web/kino/session.ts';
 import { parseTargets, targetsNotice } from '../../web/kino/targets.ts';
 
 class FakeSocket implements SocketLike {
@@ -38,6 +39,58 @@ function setup() {
   return { s, socks, log };
 }
 
+function hello(agent: string) {
+  return { type: 'hello', feed_version: 1, world: 'w', target_agent_id: agent, view_radius: 2 };
+}
+
+function section(x: number) {
+  return {
+    type: 'chunk_section',
+    chunk_x: x,
+    chunk_z: 0,
+    section_y: 0,
+    palette: ['minecraft:air'],
+    bits: 0,
+    data: '',
+  };
+}
+
+/** A session with an open socket that records resets, refusals and the world on screen. */
+function race() {
+  const socks: FakeSocket[] = [];
+  const resets: string[] = [];
+  const refusals: Refusal[] = [];
+  let state: FeedState | null = null;
+  const s = new KinoSession(
+    () => {
+      const f = new FakeSocket();
+      socks.push(f);
+      f.onopen = null;
+      return f;
+    },
+    {
+      onReset: (st, agent) => {
+        resets.push(agent);
+        state = st;
+      },
+      onChange: () => undefined,
+      onEnd: () => undefined,
+      onRefused: (x) => refusals.push(x),
+    },
+  );
+  return {
+    s,
+    resets,
+    refusals,
+    get sock(): FakeSocket {
+      const f = socks[0] as FakeSocket;
+      f.onopen?.();
+      return f;
+    },
+    world: () => (state as FeedState | null)?.world.keys().sort() ?? [],
+  };
+}
+
 describe('KinoSession', () => {
   it('queues the subscribe until open and sends only schema messages', () => {
     const { s, socks } = setup();
@@ -53,72 +106,110 @@ describe('KinoSession', () => {
     ]);
   });
 
-  it('resets the world for a new target only, once the server confirms it (decision 0161)', () => {
+  it('resets the world for a new target only, once the server confirms it (decision 0166)', () => {
     const { s, socks, log } = setup();
     s.subscribe('a_bot', 'follow');
     s.subscribe('a_bot', 'free');
     s.subscribe('b_bot', 'free');
     // The old world stays until the server's hello names the new agent.
     expect(log.resets).toBe(1);
-    expect(s.current).toEqual({ target: 'a_bot', pending: 'b_bot' });
-    socks[0]?.feed({
-      type: 'hello',
-      feed_version: 1,
-      world: 'w',
-      target_agent_id: 'b_bot',
-      view_radius: 2,
-    });
+    expect(s.current).toEqual({ shown: 'a_bot', confirmed: false, wanted: 'b_bot' });
+    socks[0]?.feed(hello('b_bot'));
     expect(log.resets).toBe(2);
-    expect(s.current).toEqual({ target: 'b_bot', pending: null });
+    expect(s.current).toEqual({ shown: 'b_bot', confirmed: true, wanted: 'b_bot' });
   });
 
   it('keeps the old agent when the server refuses a retune, and can retune again', () => {
-    const socks: FakeSocket[] = [];
-    const kept: string[] = [];
-    let resets = 0;
-    let state: { world: { keys(): string[] } } | null = null;
-    const s = new KinoSession(
-      () => {
-        const f = new FakeSocket();
-        socks.push(f);
-        return f;
-      },
-      {
-        onReset: (st) => {
-          resets++;
-          state = st;
-        },
-        onChange: () => undefined,
-        onEnd: () => undefined,
-        onRetuneRefused: (k, refused) => kept.push(`${k}<-${refused}`),
-      },
-    );
-    s.subscribe('a_bot', 'follow');
-    const sock = socks[0] as FakeSocket;
-    sock.onopen?.();
-    const section = {
-      type: 'chunk_section',
-      chunk_x: 0,
-      chunk_z: 0,
-      section_y: 0,
-      palette: ['minecraft:air'],
-      bits: 0,
-      data: '',
-    };
-    sock.feed(section);
-    s.subscribe('b_bot', 'follow');
-    sock.feed({ type: 'rate_limited' });
-    expect(kept).toEqual(['a_bot<-b_bot']);
-    expect(resets).toBe(1);
-    expect(s.current).toEqual({ target: 'a_bot', pending: null });
+    const r = race();
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('a_bot'));
+    r.sock.feed(section(0));
+    r.s.subscribe('b_bot', 'follow');
+    r.sock.feed({ type: 'rate_limited' });
+    expect(r.refusals).toEqual([{ kind: 'retune', kept: 'a_bot', refused: 'b_bot' }]);
+    expect(r.resets).toEqual(['a_bot']);
+    expect(r.s.current).toEqual({ shown: 'a_bot', confirmed: true, wanted: 'a_bot' });
     // A's world was not thrown away, and A's feed keeps landing in it.
-    expect((state as unknown as { world: { keys(): string[] } }).world.keys()).toEqual(['0,0,0']);
-    s.subscribe('b_bot', 'follow');
-    expect(JSON.parse(sock.sent.at(-1) as string)).toEqual({
+    r.sock.feed(section(1));
+    expect(r.world()).toEqual(['0,0,0', '1,0,0']);
+    r.s.subscribe('b_bot', 'follow');
+    expect(JSON.parse(r.sock.sent.at(-1) as string)).toEqual({
       type: 'subscribe',
       target_agent_id: 'b_bot',
       mode: 'follow',
     });
+  });
+
+  it('never mixes two worlds when a second retune comes while one is pending', () => {
+    const r = race();
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('a_bot'));
+    r.sock.feed(section(0));
+    r.s.subscribe('b_bot', 'follow');
+    r.s.subscribe('c_bot', 'follow');
+    // The server answers the first retune: B's world is its own, never A's.
+    r.sock.feed(hello('b_bot'));
+    r.sock.feed(section(5));
+    expect(r.resets).toEqual(['a_bot', 'b_bot']);
+    expect(r.world()).toEqual(['5,0,0']);
+    // Then the second: C starts empty.
+    r.sock.feed(hello('c_bot'));
+    r.sock.feed(section(9));
+    expect(r.resets).toEqual(['a_bot', 'b_bot', 'c_bot']);
+    expect(r.world()).toEqual(['9,0,0']);
+    expect(r.s.current).toEqual({ shown: 'c_bot', confirmed: true, wanted: 'c_bot' });
+  });
+
+  it('never mixes worlds when the viewer goes back to the current agent while a retune is pending', () => {
+    const r = race();
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('a_bot'));
+    r.sock.feed(section(0));
+    r.s.subscribe('b_bot', 'follow');
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('b_bot'));
+    r.sock.feed(section(5));
+    expect(r.world()).toEqual(['5,0,0']);
+    r.sock.feed(hello('a_bot'));
+    r.sock.feed(section(0));
+    expect(r.world()).toEqual(['0,0,0']);
+    expect(r.s.current).toEqual({ shown: 'a_bot', confirmed: true, wanted: 'a_bot' });
+  });
+
+  it('a refusal after the server moved on keeps the agent really shown, not the one before', () => {
+    const r = race();
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('a_bot'));
+    r.s.subscribe('b_bot', 'follow');
+    r.s.subscribe('c_bot', 'follow');
+    r.sock.feed(hello('b_bot'));
+    r.sock.feed({ type: 'rate_limited' });
+    expect(r.refusals).toEqual([{ kind: 'retune', kept: 'b_bot', refused: 'c_bot' }]);
+    expect(r.s.current).toEqual({ shown: 'b_bot', confirmed: true, wanted: 'b_bot' });
+  });
+
+  it('a refusal it read wrongly heals when the server names the agent it is sending', () => {
+    const r = race();
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('a_bot'));
+    r.s.subscribe('a_bot', 'orbit'); // a mode change the server refuses...
+    r.s.subscribe('b_bot', 'orbit'); // ...and a retune it accepts
+    r.sock.feed({ type: 'rate_limited' });
+    expect(r.s.current.wanted).toBe('a_bot');
+    r.sock.feed(hello('b_bot'));
+    expect(r.s.current).toEqual({ shown: 'b_bot', confirmed: true, wanted: 'b_bot' });
+  });
+
+  it('reports a refused first subscribe, and a refused mode change, apart from a retune', () => {
+    const r = race();
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed({ type: 'rate_limited' });
+    expect(r.refusals).toEqual([{ kind: 'open', agent: 'a_bot' }]);
+    r.s.subscribe('a_bot', 'follow');
+    r.sock.feed(hello('a_bot'));
+    r.s.subscribe('a_bot', 'free');
+    r.sock.feed({ type: 'rate_limited' });
+    expect(r.refusals.at(-1)).toEqual({ kind: 'mode' });
   });
 
   it('ends on kill_switch and on any bye but unsubscribed', () => {

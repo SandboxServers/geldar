@@ -1,4 +1,4 @@
-/* Kino: a wall of monitors in a dark room (decision 0161). Colour only from the tokens below. */
+/* Kino: a wall of monitors in a dark room (decision 0166). Colour only from the tokens below. */
 :root {
   color-scheme: dark;
   --room: #07090c;
@@ -114,6 +114,12 @@ kbd { font: 12px var(--mono); padding: 1px 6px; border: 1px solid var(--line); b
 @keyframes blink { 50% { opacity: 0.35; } }
 .msg { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; text-align: center; pointer-events: none; }
 .msg:not(:empty) { padding: 8px 12px; border-radius: 8px; background: var(--veil-strong); }
+/* A notice that stays (a refused tune-in, a lost picture), with its Try again button. */
+.notice { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 85%; display: grid; justify-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; background: var(--veil-strong); text-align: center; z-index: 2; }
+.notice[hidden] { display: none; }
+.notice p { margin: 0; }
+.notice button { min-height: 44px; padding: 0 16px; border-radius: 9px; cursor: pointer; background: var(--veil-strong); border: 1px solid var(--bezel-hi); font-weight: 600; }
+.notice button:hover, .notice button:focus-visible { border-color: var(--accent); color: var(--accent); }
 .status { position: absolute; left: 18px; right: 18px; bottom: 66px; margin: 0; font: 11px var(--mono); color: var(--ink); text-shadow: 0 1px 2px #000; pointer-events: none; overflow-wrap: anywhere; }
 
 /* Monitor controls: shown on hover, on focus, on the active monitor, and always on touch screens */

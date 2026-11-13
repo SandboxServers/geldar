@@ -1,5 +1,5 @@
 // K13: see-through foliage policy and the depth-ghost agent. (The chase camera that replaced follow
-// candidate selection is tested in camera/lakitu.test.ts, decision 0161.)
+// candidate selection is tested in camera/lakitu.test.ts, decision 0166.)
 
 import { describe, expect, it } from 'vitest';
 import { GHOST_OPACITY } from '../../web/kino/agent-ghost.ts';

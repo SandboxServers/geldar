@@ -55,7 +55,7 @@ describe('KinoScene with the mocked feed', () => {
   });
 });
 
-describe('KinoScene.dispose (decision 0161: a monitor drops its scene on each retune)', () => {
+describe('KinoScene.dispose (decision 0166: a monitor drops its scene on each retune)', () => {
   it('frees the scene geometries and keeps the shared material of the caller', () => {
     const { state, view } = play();
     // The caller's material (in production the texture atlas, shared by every monitor).

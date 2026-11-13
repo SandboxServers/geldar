@@ -1,4 +1,4 @@
-// The channel guide (decision 0161): the agents this viewer may watch, as a list in a <dialog>. Pick one
+// The channel guide (decision 0166): the agents this viewer may watch, as a list in a <dialog>. Pick one
 // to tune the active monitor, or put it on a new monitor. The list is the server's (/kino/targets); the
 // server checks every subscribe again. Labels are text only.
 
@@ -18,6 +18,8 @@ export interface GuideState {
   /** The channel the guide tunes, or null when there is no monitor yet. */
   activeChannel: number | null;
   canOpen: boolean;
+  /** Opened from an empty slot: choosing an agent puts it on a new monitor, not the active one. */
+  newMonitor?: boolean;
 }
 
 /** Draws the face of a skin (head front plus the hat layer) on a small canvas; leaves the fallback on any failure. */
@@ -43,8 +45,11 @@ export class ChannelGuide {
   private readonly caption: HTMLElement;
   private readonly items = new Map<
     string,
-    { onAir: HTMLElement; tune: HTMLButtonElement; add: HTMLButtonElement }
+    { onAir: HTMLElement; tune: HTMLButtonElement; add: HTMLButtonElement; face: HTMLCanvasElement }
   >();
+  /** Faces are fetched on the first open, not at page load. */
+  private facesDrawn = false;
+  private newMonitor = false;
 
   constructor(dialog: HTMLDialogElement, agents: readonly TargetAgent[], hooks: GuideHooks) {
     this.dialog = dialog;
@@ -66,7 +71,6 @@ export class ChannelGuide {
       face.height = 32;
       face.className = 'face';
       face.setAttribute('aria-hidden', 'true');
-      drawFace(face, a.id);
       const text = document.createElement('span');
       text.className = 'who';
       const name = document.createElement('span');
@@ -77,7 +81,8 @@ export class ChannelGuide {
       text.append(name, onAir);
       tune.append(face, text);
       tune.addEventListener('click', () => {
-        hooks.tune(a.id);
+        if (this.newMonitor) hooks.watchNew(a.id);
+        else hooks.tune(a.id);
         dialog.close();
       });
       const add = document.createElement('button');
@@ -91,7 +96,7 @@ export class ChannelGuide {
       });
       li.append(tune, add);
       this.list.appendChild(li);
-      this.items.set(a.id, { onAir, tune, add });
+      this.items.set(a.id, { onAir, tune, add, face });
     }
   }
 
@@ -101,20 +106,27 @@ export class ChannelGuide {
 
   /** Opens the guide, showing which channels carry each agent. */
   open(state: GuideState, labelOf: (id: string) => string): void {
+    if (!this.facesDrawn) {
+      this.facesDrawn = true;
+      for (const [id, item] of this.items) drawFace(item.face, id);
+    }
+    this.newMonitor = state.newMonitor === true || state.activeChannel === null;
+    const channel = this.newMonitor ? null : state.activeChannel;
     this.caption.textContent =
-      state.activeChannel === null
-        ? 'Choose an agent to watch.'
-        : `Choose an agent for CH ${state.activeChannel}.`;
+      channel === null
+        ? 'Choose an agent to watch on a new monitor.'
+        : `Choose an agent for CH ${channel}.`;
     for (const [id, item] of this.items) {
       const chans = state.onAir.get(id) ?? [];
       item.onAir.textContent =
         chans.length > 0 ? `On ${chans.map((c) => `CH ${c}`).join(', ')}` : '';
       item.tune.setAttribute(
         'aria-label',
-        state.activeChannel === null
-          ? `Watch ${labelOf(id)}`
-          : `Watch ${labelOf(id)} on CH ${state.activeChannel}`,
+        channel === null
+          ? `Watch ${labelOf(id)} on a new monitor`
+          : `Watch ${labelOf(id)} on CH ${channel}`,
       );
+      item.tune.disabled = channel === null && !state.canOpen;
       item.add.disabled = !state.canOpen;
     }
     if (!this.dialog.open) this.dialog.showModal();

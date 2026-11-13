@@ -1,4 +1,4 @@
-// The camera rig: mode, view angles and position, advanced once per frame (decision 0161).
+// The camera rig: mode, view angles and position, advanced once per frame (decision 0166).
 //   follow: the Lakitu chase camera (lakitu.ts).
 //   orbit:  a collision-bound circle round the agent, eased, drifting slowly when left alone.
 //   free:   collision-bound free-fly with acceleration.
@@ -64,8 +64,11 @@ export class CameraRig {
   reducedMotion = false;
 
   setMode(mode: CameraMode): void {
-    // Orbit and free-fly start from the view on screen: same place, looking the same way.
-    if (mode !== this.mode && mode !== 'follow' && this.lastLook) this.adoptView(this.lastLook);
+    // Orbit starts round the agent from where the camera is; free-fly starts there looking the same way.
+    if (mode !== this.mode && mode === 'orbit' && this.lastFocus)
+      this.adoptView(this.lastFocus, true);
+    if (mode !== this.mode && mode === 'free' && this.lastLook)
+      this.adoptView(this.lastLook, false);
     this.mode = mode;
     this.idle = 0;
     if (mode === 'free') {
@@ -77,9 +80,14 @@ export class CameraRig {
 
   /** The last point lookTarget returned, so a mode change keeps the view. */
   private lastLook: Vec3 | null = null;
+  /** The agent's look point at the last frame that had one (free-fly looks elsewhere). */
+  private lastFocus: Vec3 | null = null;
 
-  /** Sets yaw, pitch and radius so that the orbit or free view matches a camera at `position` looking at `look`. */
-  private adoptView(look: Vec3): void {
+  /**
+   * Sets yaw and pitch so the view matches a camera at `position` looking at `look`; for orbit
+   * (`round`), the radius too, so the camera stays where it is on the circle round the agent.
+   */
+  private adoptView(look: Vec3, round: boolean): void {
     const dx = this.position.x - look.x;
     const dy = this.position.y - look.y;
     const dz = this.position.z - look.z;
@@ -88,7 +96,7 @@ export class CameraRig {
     this.yaw = Math.atan2(dx, dz);
     this.yawGoal = this.yaw;
     this.pitch = clamp(Math.asin(dy / d), -MAX_PITCH, MAX_PITCH);
-    if (this.mode !== 'free') this.radius = clamp(d, MIN_RADIUS, MAX_RADIUS);
+    if (round) this.radius = clamp(d, MIN_RADIUS, MAX_RADIUS);
   }
 
   /** A new target: the chase camera swoops in. */
@@ -118,10 +126,14 @@ export class CameraRig {
     this.radius = clamp(this.radius + dRadius, MIN_RADIUS, MAX_RADIUS);
   }
 
-  /** The C-button rotation: 45 degrees round the agent per step (positive: to the camera's right). */
+  /**
+   * The C-button rotation, 45 degrees per step. Positive: follow and orbit move the camera to its
+   * right round the agent; free-fly turns the view to the right (a smaller yaw: the view faces -yaw).
+   */
   rotateStep(steps: number): void {
     this.idle = 0;
     if (this.mode === 'follow') rotateChase(this.chase, steps);
+    else if (this.mode === 'free') this.yawGoal -= steps * ROTATE_STEP;
     else this.yawGoal += steps * ROTATE_STEP;
   }
 
@@ -185,6 +197,7 @@ export class CameraRig {
 
   /** The point to lookAt: the agent in follow and orbit, straight ahead in free-fly. */
   lookTarget(target: Vec3 | null): Vec3 {
+    if (target) this.lastFocus = lookPoint(target);
     this.lastLook = this.mode !== 'free' && target ? lookPoint(target) : this.ahead();
     return this.lastLook;
   }

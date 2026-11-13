@@ -1,7 +1,8 @@
-// The Kino keyboard map (decision 0161). Pure: a key press becomes a command for the wall or for the
+// The Kino keyboard map (decision 0166). Pure: a key press becomes a command for the wall or for the
 // active monitor. Movement keys held for free-fly (W A S D, Space, Shift) are read by keyMove in
 // camera/controls.ts, not here. Every command is view-only; none reaches the world.
 
+import { MOVE_KEYS } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
 
 export type Layout = 'wall' | 'feature' | 'solo';
@@ -104,4 +105,38 @@ export function surf(ids: readonly string[], current: string | null, steps: numb
   if (i < 0) return ids[0] as string;
   const n = ids.length;
   return ids[(((i + steps) % n) + n) % n] as string;
+}
+
+/** One keydown as the page sees it. */
+export interface KeyPress extends KeyMods {
+  key: string;
+  /** The browser's auto-repeat while the key is held. */
+  repeat?: boolean;
+  /** Focus is on a button or link (it keeps its own Space and Enter). */
+  onButton?: boolean;
+  /** The active monitor is in free-fly (W A S D, Space and Shift move it). */
+  freeFly?: boolean;
+}
+
+/** What the page does with a keydown: hold a free-fly key, run a command, or leave it to the browser. */
+export type KeyRoute =
+  | { kind: 'move'; key: string; preventDefault: boolean }
+  | { kind: 'command'; command: Command; preventDefault: boolean }
+  | { kind: 'ignore'; preventDefault: boolean };
+
+/**
+ * Routes a keydown. A held key's auto-repeat never repeats a command (holding X would close every
+ * monitor), though it still keeps the page from scrolling; a focused button keeps Space and Enter.
+ */
+export function routeKey(p: KeyPress): KeyRoute {
+  const k = p.key.toLowerCase();
+  const own = (p.key === ' ' || p.key === 'Enter') && p.onButton === true;
+  if (own) return { kind: 'ignore', preventDefault: false };
+  if (MOVE_KEYS.has(k) && p.freeFly && !p.ctrl && !p.meta && !p.alt)
+    return { kind: 'move', key: k, preventDefault: suppressesDefault(p.key) };
+  const command = keyCommand(p.key, p);
+  if (!command) return { kind: 'ignore', preventDefault: false };
+  const preventDefault = suppressesDefault(p.key);
+  if (p.repeat) return { kind: 'ignore', preventDefault };
+  return { kind: 'command', command, preventDefault };
 }

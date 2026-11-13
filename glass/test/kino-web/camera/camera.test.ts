@@ -215,7 +215,7 @@ describe('rig', () => {
   });
   it('clamps pitch and radius', () => {
     const rig = new CameraRig();
-    rig.setMode('orbit'); // the default is now follow (the chase camera, decision 0161)
+    rig.setMode('orbit'); // the default is now follow (the chase camera, decision 0166)
     rig.look(0, 10);
     expect(rig.pitch).toBe(1.5);
     rig.zoom(-1000);

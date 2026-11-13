@@ -1,4 +1,4 @@
-// Input binding for one monitor's canvas (decision 0161). The keyboard is not bound here: the page
+// Input binding for one monitor's canvas (decision 0166). The keyboard is not bound here: the page
 // routes keys to the active monitor only (keys.ts), so one key press never drives every camera.
 //   Mouse:  drag = turn (follow and orbit swing round the agent; free looks), wheel = zoom,
 //           double-click = recentre.

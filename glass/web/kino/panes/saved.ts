@@ -1,5 +1,5 @@
 // The wall a viewer left, kept in their own browser (localStorage) and restored on the next visit
-// (decision 0161). Pure apart from the injected storage. Only agents the server lists now are
+// (decision 0166). Pure apart from the injected storage. Only agents the server lists now are
 // restored, so a saved wall never widens what a viewer may watch; the server checks every subscribe.
 
 import type { CameraMode } from '../camera/modes.ts';
@@ -74,4 +74,26 @@ export function browserStorage(): StorageLike | null {
   } catch {
     return null;
   }
+}
+
+export interface StartMonitor {
+  target: string;
+  mode: CameraMode;
+  /** Wait before its first subscribe, so a reload does not spend the relay's whole burst. */
+  delayMs: number;
+}
+
+/**
+ * What a page load opens. A saved wall comes back one monitor per `spacingMs` (the relay's refill), the
+ * first at once. Only a first visit (nothing saved) tunes CH 1 to the first agent (assumption A10); a
+ * wall the viewer emptied stays empty.
+ */
+export function startupPlan(
+  saved: SavedWall | null,
+  ids: readonly string[],
+  spacingMs: number,
+): StartMonitor[] {
+  if (saved === null)
+    return ids.length > 0 ? [{ target: ids[0] as string, mode: 'follow', delayMs: 0 }] : [];
+  return saved.monitors.map((m, i) => ({ ...m, delayMs: i * spacingMs }));
 }

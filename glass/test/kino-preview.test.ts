@@ -1,7 +1,8 @@
-// The Kino preview (decision 0161, test-only): it serves the real page and an invented feed that obeys
+// The Kino preview (decision 0166, test-only): it serves the real page and an invented feed that obeys
 // the contract, so the page can be looked at without a shard.
 
 import type { AddressInfo } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateKinoFeed } from '../../contract/src/generated/validators.js';
 import { decodePaletteIndices } from '../web/kino/palette.ts';
@@ -12,7 +13,7 @@ let base = '';
 let close = (): void => undefined;
 
 beforeAll(async () => {
-  const server = startPreview(0, new URL('../web/kino/', import.meta.url).pathname);
+  const server = startPreview(0, fileURLToPath(new URL('../web/kino/', import.meta.url)));
   await new Promise<void>((r) => server.once('listening', () => r()));
   base = `127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = () => void server.close();

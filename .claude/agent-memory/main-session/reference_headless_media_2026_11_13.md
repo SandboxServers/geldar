@@ -3,7 +3,7 @@ name: reference_headless_media_2026_11_13
 description: Taking screenshots, video and GIFs of the WebGL Kino page on the Linux dev box without a GPU
 ---
 
-Verified 2026-11-13 on the Linux dev box (no GPU, no system ffmpeg, Node 24, no PowerShell) while redesigning Kino (decision 0161).
+Verified 2026-11-13 on the Linux dev box (no GPU, no system ffmpeg, Node 24, no PowerShell) while redesigning Kino (decision 0166).
 
 - **Playwright from `tools/kino-shot`** (1.64.1) works for any script: import `tools/kino-shot/node_modules/playwright/index.mjs` by absolute path from a scratch script; `pnpm --filter @geldar/kino-shot browsers` downloads Chromium and Playwright's own ffmpeg into `~/.cache/ms-playwright`.
 - **WebGL needs SwiftShader** (`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`). It renders correctly but slowly: with three or four Kino monitors it runs at a frame or two per second, so timed animations that advance per frame (the chase camera's swoop, clamped to 0.1 s per frame) take several seconds longer than in a real browser. Wait longer before a screenshot; it is not a page bug.

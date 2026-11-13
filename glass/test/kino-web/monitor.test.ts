@@ -1,4 +1,4 @@
-// Decision 0161: the monitor frame, the channel guide and the canvas binding, in happy-dom.
+// Decision 0166: the monitor frame, the channel guide and the canvas binding, in happy-dom.
 // Agent labels are text only; the canvas binding takes no keyboard (the page routes keys to the
 // active monitor alone, so one key press never drives every camera).
 
@@ -123,6 +123,31 @@ describe('monitor frame', () => {
     expect(f.root.classList.contains('tuning')).toBe(false);
   });
 
+  it('says "Tuning in to" until the server names the agent, as text', () => {
+    const f = mod.buildMonitor(() => undefined);
+    f.setLabel(HOSTILE, true);
+    expect(f.root.querySelector('.name')?.textContent).toBe(`Tuning in to ${HOSTILE}`);
+    expect(f.root.querySelector('img')).toBeNull();
+    f.setLabel('Moss');
+    expect(f.root.querySelector('.name')?.textContent).toBe('Moss');
+    expect(f.root.getAttribute('aria-label')).toBe('Monitor: Moss');
+  });
+
+  it('keeps a notice up with its Try again button until cleared', () => {
+    const f = mod.buildMonitor(() => undefined);
+    let runs = 0;
+    f.setNotice(HOSTILE, { label: 'Try again', run: () => runs++ });
+    const box = f.root.querySelector('.notice') as HTMLElement;
+    expect(box.hidden).toBe(false);
+    expect(box.querySelector('p')?.textContent).toBe(HOSTILE);
+    expect(box.querySelector('img')).toBeNull();
+    (box.querySelector('button') as HTMLButtonElement).click();
+    expect(runs).toBe(1);
+    f.setNotice(null);
+    expect(box.hidden).toBe(true);
+    expect(box.childElementCount).toBe(0);
+  });
+
   it('builds an empty slot that asks to tune in', () => {
     let tuned = 0;
     const slot = mod.buildEmptySlot(() => tuned++);
@@ -170,9 +195,63 @@ describe('channel guide', () => {
     expect(calls).toEqual(['tune ag_b']);
     expect(g.isOpen).toBe(false);
     g.open({ onAir: new Map(), activeChannel: null, canOpen: true }, (id) => id);
-    expect(d.querySelector('.guide-caption')?.textContent).toBe('Choose an agent to watch.');
+    expect(d.querySelector('.guide-caption')?.textContent).toBe(
+      'Choose an agent to watch on a new monitor.',
+    );
     (first.querySelector('.add') as HTMLButtonElement).click();
     expect(calls).toEqual(['tune ag_b', 'new ag_a']);
+  });
+
+  it('from an empty slot, a choice fills a new monitor instead of retuning the active one', () => {
+    const d = dialog();
+    const calls: string[] = [];
+    const g = new guideMod.ChannelGuide(d, [{ id: 'ag_a', label: 'Ember' }], {
+      tune: (id) => calls.push(`tune ${id}`),
+      watchNew: (id) => calls.push(`new ${id}`),
+    });
+    g.open({ onAir: new Map(), activeChannel: 1, canOpen: true, newMonitor: true }, (id) => id);
+    expect(d.querySelector('.guide-caption')?.textContent).toBe(
+      'Choose an agent to watch on a new monitor.',
+    );
+    (d.querySelector('.tune') as HTMLButtonElement).click();
+    expect(calls).toEqual(['new ag_a']);
+    // The ordinary Channels button still retunes the active monitor.
+    g.open({ onAir: new Map(), activeChannel: 1, canOpen: true }, (id) => id);
+    (d.querySelector('.tune') as HTMLButtonElement).click();
+    expect(calls).toEqual(['new ag_a', 'tune ag_a']);
+  });
+
+  it('fetches no skin face until the guide is first opened, and each face once', () => {
+    const g0 = globalThis as Record<string, unknown>;
+    const real = g0.Image;
+    let made = 0;
+    g0.Image = class {
+      onload: (() => void) | null = null;
+      src = '';
+      width = 0;
+      constructor() {
+        made++;
+      }
+    };
+    try {
+      const d = dialog();
+      const g = new guideMod.ChannelGuide(
+        d,
+        [
+          { id: 'ag_a', label: 'Ember' },
+          { id: 'ag_b', label: 'Moss' },
+        ],
+        { tune: () => undefined, watchNew: () => undefined },
+      );
+      expect(made).toBe(0);
+      g.open({ onAir: new Map(), activeChannel: 1, canOpen: true }, (id) => id);
+      expect(made).toBe(2);
+      g.close();
+      g.open({ onAir: new Map(), activeChannel: 1, canOpen: true }, (id) => id);
+      expect(made).toBe(2);
+    } finally {
+      g0.Image = real;
+    }
   });
 });
 

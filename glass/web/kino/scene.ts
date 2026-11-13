@@ -156,7 +156,7 @@ export class KinoScene {
   }
 
   /**
-   * Frees this scene's GPU resources (decision 0161: a monitor drops its scene on every retune).
+   * Frees this scene's GPU resources (decision 0166: a monitor drops its scene on every retune).
    * Geometries, materials and label or skin textures made here are disposed; the caller's material
    * and its atlas texture are shared between scenes and kept.
    */

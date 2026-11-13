@@ -1,7 +1,7 @@
 // Client-side camera collision against the voxels the mesher draws (VoxelWorld).
 // Pure functions: nothing here touches the network or writes world data.
 //
-// Choices (decision 0161):
+// Choices (decision 0166):
 // - A block stops the camera when it is solid and opaque: a full cube or a block with a box shape
 //   (slab, stairs, fence, door). See-through blocks (leaves, glass, water) and plants (grass, flowers,
 //   torches) do not: the renderer fades see-through blocks near the camera and on its line to the

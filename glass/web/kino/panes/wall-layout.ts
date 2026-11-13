@@ -1,4 +1,4 @@
-// Where each monitor goes on the wall (decision 0161). Pure: monitor ids, the active one, the layout
+// Where each monitor goes on the wall (decision 0166). Pure: monitor ids, the active one, the layout
 // and the screen shape in; a CSS grid template and one cell per tile out. A tile is a monitor or an
 // empty "no signal" slot (id null). Hidden monitors keep their feed but are not drawn.
 

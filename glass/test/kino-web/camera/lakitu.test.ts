@@ -1,4 +1,4 @@
-// Decision 0161: the Lakitu chase camera, the rig's orbit and free-fly feel, and camera collision that
+// Decision 0166: the Lakitu chase camera, the rig's orbit and free-fly feel, and camera collision that
 // passes see-through blocks.
 
 import { describe, expect, it } from 'vitest';
@@ -253,7 +253,7 @@ describe('chase camera: walls', () => {
   });
 });
 
-describe('camera collision passes see-through blocks and plants (decision 0161)', () => {
+describe('camera collision passes see-through blocks and plants (decision 0166)', () => {
   it('stops at opaque cubes and box shapes, not at leaves, glass, water or plants', () => {
     expect(blocksCamera(STONE)).toBe(true);
     expect(blocksCamera('minecraft:oak_stairs[facing=north,half=bottom,shape=straight]')).toBe(
@@ -333,7 +333,7 @@ describe('rig: modes keep the view, orbit drifts, free-fly accelerates', () => {
   });
 });
 
-describe('chase camera on the real feed cadence (review of decision 0161)', () => {
+describe('chase camera on the real feed cadence (review of decision 0166)', () => {
   it('follows the entity between chunk changes, so it trails a walking agent', () => {
     const w = airWorld();
     const f = new FeedState();

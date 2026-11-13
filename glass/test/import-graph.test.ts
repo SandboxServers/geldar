@@ -36,7 +36,7 @@ const OUTSIDE_ALLOWED: Record<string, string[]> = {
   ],
   // Kino audit test: checks each audit row against the generated lakitu-audit validator (a test-only read).
   'test/kino/audit.test.ts': ['../../../contract/src/generated/validators.js'],
-  // Kino preview (decision 0161, test-only, never deployed): type-only imports of the generated feed
+  // Kino preview (decision 0166, test-only, never deployed): type-only imports of the generated feed
   // types, so the invented feed it serves is checked against the contract by the type checker.
   'test/kino-preview/server.ts': ['../../../contract/src/generated/types.ts'],
   'test/kino-preview/world.ts': ['../../../contract/src/generated/types.ts'],
