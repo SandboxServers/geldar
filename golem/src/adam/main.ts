@@ -17,6 +17,7 @@ import { ConnectionManager } from '../connection.ts';
 import { startGolemTelemetry } from '../metrics.ts';
 import { natsRequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
+import { installFatalHandlers } from '../process-fatal.ts';
 import { registryFromConfig } from '../registry.ts';
 import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from './adam-body.ts';
 import { loadAdamConfig } from './adam-config.ts';
@@ -245,6 +246,7 @@ export async function main(): Promise<void> {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installFatalHandlers(jsonLog);
   main().catch((error: unknown) => {
     jsonLog({ event: 'fatal', error: error instanceof Error ? error.message : String(error) });
     process.exitCode = 1;

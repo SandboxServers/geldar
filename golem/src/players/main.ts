@@ -23,6 +23,7 @@ import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { natsRequestServer, type RequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
+import { installFatalHandlers } from '../process-fatal.ts';
 import { RconClient } from '../rcon.ts';
 import { registryFromConfig } from '../registry.ts';
 import { parsePlayerConfig } from './player-config.ts';
@@ -210,6 +211,7 @@ export async function runPlayer(
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installFatalHandlers(jsonLog);
   runPlayer(playerIdFromArgs(process.argv.slice(2))).catch((error: unknown) => {
     jsonLog({ event: 'fatal', error: error instanceof Error ? error.message : String(error) });
     process.exitCode = 1;
