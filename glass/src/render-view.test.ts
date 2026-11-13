@@ -29,11 +29,16 @@ const ALLOWED_TAGS = new Set([
   'TD',
 ]);
 /** Attributes the page sets. `value` on an option holds an index, never data. */
-const ALLOWED_ATTRS = new Set(['class', 'type', 'value']);
+const ALLOWED_ATTRS = new Set(['class', 'type', 'value', 'aria-expanded', 'hidden']);
+/** The attributes that may only ever hold one of a few fixed values. */
+const FIXED_VALUES: Record<string, string[]> = {
+  'aria-expanded': ['true', 'false'],
+  hidden: ['until-found', ''],
+};
 
 interface AuditNode {
   tagName: string;
-  attributes: ArrayLike<{ name: string }>;
+  attributes: ArrayLike<{ name: string; value: string }>;
 }
 
 /** Lists every element under a root, failing on any tag or attribute the page does not build. */
@@ -46,6 +51,8 @@ function auditTree(root: { querySelectorAll(selector: string): ArrayLike<AuditNo
         ALLOWED_ATTRS.has(attr.name),
         `unexpected attribute ${attr.name} on ${node.tagName}`,
       ).toBe(true);
+      const fixed = FIXED_VALUES[attr.name];
+      if (fixed !== undefined) expect(fixed, `${attr.name}="${attr.value}"`).toContain(attr.value);
     }
     tags.push(node.tagName);
   }
@@ -229,6 +236,40 @@ describe('renderRow with a copy button', () => {
       expect(copied).toHaveLength(1);
       expect(copied[0]).toContain(display(value));
     }
+  });
+});
+
+describe('renderRow state for a screen reader', () => {
+  it('says the time button opens the detail, and that it is closed at first', () => {
+    const doc = bodyWithRow('plain', 0);
+    expect(doc.body.querySelector('button.when')?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('builds a long hostile journal line from the same fixed tags, with its rest hidden until found', () => {
+    for (const [index, value] of HOSTILE.entries()) {
+      const doc = freshDoc();
+      const long = `${value} ${'y'.repeat(700)}`;
+      const view = toView({ ...hostileRow(value, index), kind: 'journal', text: long });
+      const row = renderRow(doc as unknown as Doc, view, () => {}, { findable: true });
+      (doc.body as unknown as El).append(row as unknown as El);
+      auditTree(doc.body);
+      expect(doc.body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
+      const rest = doc.body.querySelector('.journal-text [hidden]');
+      expect(rest?.getAttribute('hidden')).toBe('until-found');
+      expect(doc.body.querySelector('.journal-text')?.textContent).toBe(
+        `${display(long).slice(0, 600)}...${display(long).slice(600)}`,
+      );
+      expect(doc.body.querySelector('button.more')?.getAttribute('aria-expanded')).toBe('false');
+    }
+  });
+
+  it('hides the rest plainly where the browser has no hidden="until-found"', () => {
+    const doc = freshDoc();
+    const view = toView({ ...plainRow(1), kind: 'journal', text: 'z'.repeat(700) });
+    (doc.body as unknown as El).append(
+      renderRow(doc as unknown as Doc, view, () => {}) as unknown as El,
+    );
+    expect(doc.body.querySelector('.journal-text [hidden]')?.getAttribute('hidden')).toBe('');
   });
 });
 

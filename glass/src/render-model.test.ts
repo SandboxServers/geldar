@@ -10,7 +10,7 @@ import {
   filterQuery,
   filterThoughts,
   JOURNAL_PREVIEW,
-  journalShown,
+  journalSplit,
   LIST_CAP,
   pushThought,
   splitMatches,
@@ -175,14 +175,14 @@ describe('the bounded list', () => {
 
 describe('journal rows', () => {
   const long = `${'a'.repeat(450)}\n${'b'.repeat(450)}`;
-  it('previews 600 characters and expands to all of it', () => {
+  it('previews 600 characters and keeps the rest, never cutting a surrogate pair', () => {
     expect(JOURNAL_PREVIEW).toBe(600);
-    expect(journalShown('short', false)).toEqual({ shown: 'short', expandable: false });
-    expect(journalShown('c'.repeat(600), false).expandable).toBe(false);
-    const collapsed = journalShown(long, false);
-    expect(collapsed.expandable).toBe(true);
-    expect(collapsed.shown).toBe(`${long.slice(0, 600)}...`);
-    expect(journalShown(long, true).shown).toBe(long);
+    expect(journalSplit('short')).toEqual({ head: 'short', rest: '' });
+    expect(journalSplit('c'.repeat(600))).toEqual({ head: 'c'.repeat(600), rest: '' });
+    expect(journalSplit(long)).toEqual({ head: long.slice(0, 600), rest: long.slice(600) });
+    // An emoji across the cut stays whole, in the rest.
+    const emoji = `${'d'.repeat(599)}\u{1F600}tail`;
+    expect(journalSplit(emoji)).toEqual({ head: 'd'.repeat(599), rest: '\u{1F600}tail' });
   });
   it('renders the text, a neutral label, and toggles on "Show more"', () => {
     const made: FakeEl[] = [];
@@ -208,19 +208,51 @@ describe('journal rows', () => {
     const label = spans.find((s) => s.className.startsWith('outcome'));
     expect(label?.textContent).toBe('journal');
     expect(label?.className).not.toContain('unparsed');
-    const body = spans.find((s) => s.className.includes('journal-text'));
-    expect(body?.textContent).toBe(`${long.slice(0, 600)}...`);
+    const body = spans.find((s) => s.className.includes('journal-text')) as FakeEl;
+    expect(shownText(body)).toBe(`${long.slice(0, 600)}...`);
     const more = made.find((e) => e.tag === 'button' && e.className === 'more');
     expect(more?.textContent).toBe('Show more');
+    expect(more?.attrs['aria-expanded']).toBe('false');
     more?.click();
-    expect(body?.textContent).toBe(long);
+    expect(shownText(body)).toBe(long);
     expect(more?.textContent).toBe('Show less');
+    expect(more?.attrs['aria-expanded']).toBe('true');
     more?.click();
-    expect(body?.textContent).toBe(`${long.slice(0, 600)}...`);
+    expect(shownText(body)).toBe(`${long.slice(0, 600)}...`);
+    expect(more?.attrs['aria-expanded']).toBe('false');
     expect(opened).toEqual([]);
     // The time is the button that opens the detail.
     made.find((e) => e.tag === 'button' && e.className === 'when')?.click();
     expect(opened).toEqual(['j1']);
+  });
+  it('keeps the rest of a long line in the page for find-in-page, and opens it on a match', () => {
+    const made: FakeEl[] = [];
+    const doc = {
+      createElement: (tag: string): FakeEl => {
+        const el = new FakeEl(tag);
+        made.push(el);
+        return el;
+      },
+    };
+    const view = toView({ thought_id: 'j4', name: 'Jason', kind: 'journal', text: long });
+    renderRow(doc as unknown as Doc, view, () => {}, { findable: true });
+    const body = made.find((e) => e.className.includes('journal-text')) as FakeEl;
+    const more = made.find((e) => e.className === 'more') as FakeEl;
+    // The rest is in the page, hidden until the browser's find-in-page matches inside it.
+    const rest = made.find((e) => e.attrs.hidden !== undefined) as FakeEl;
+    expect(rest.attrs.hidden).toBe('until-found');
+    expect(rest.textContent).toBe(long.slice(600));
+    expect(body.children).toContain(rest);
+    // A match: the browser fires beforematch and then shows the rest itself.
+    rest.fire('beforematch');
+    delete rest.attrs.hidden;
+    expect(shownText(body)).toBe(long);
+    expect(more.textContent).toBe('Show less');
+    expect(more.attrs['aria-expanded']).toBe('true');
+    // "Show less" then folds it again, with the rest hidden until found.
+    more.click();
+    expect(shownText(body)).toBe(`${long.slice(0, 600)}...`);
+    expect(more.attrs['aria-expanded']).toBe('false');
   });
   it('gives a short journal line no "Show more"', () => {
     const made: FakeEl[] = [];
@@ -264,14 +296,21 @@ describe('journal rows', () => {
 
 class FakeEl {
   className = '';
-  textContent: string | null = '';
   type = '';
   value = '';
   children: (FakeEl | string)[] = [];
-  private handler: (() => void) | undefined;
+  attrs: Record<string, string> = {};
+  private handlers: Record<string, () => void> = {};
   readonly tag: string;
   constructor(tag: string) {
     this.tag = tag;
+  }
+  /** As in the DOM: the text of every child, and setting it replaces the children with one text node. */
+  get textContent(): string {
+    return this.children.map((c) => (typeof c === 'string' ? c : c.textContent)).join('');
+  }
+  set textContent(value: string | null) {
+    this.children = value === null || value === '' ? [] : [value];
   }
   append(...nodes: (FakeEl | string)[]): void {
     this.children.push(...nodes);
@@ -279,12 +318,24 @@ class FakeEl {
   replaceChildren(...nodes: (FakeEl | string)[]): void {
     this.children = nodes;
   }
-  addEventListener(_type: 'click', listener: () => void): void {
-    this.handler = listener;
+  setAttribute(name: string, value: string): void {
+    this.attrs[name] = value;
+  }
+  addEventListener(type: string, listener: () => void): void {
+    this.handlers[type] = listener;
   }
   click(): void {
-    this.handler?.();
+    this.handlers.click?.();
   }
+  fire(type: string): void {
+    this.handlers[type]?.();
+  }
+}
+
+/** The text a reader sees: every child's text, leaving out a hidden child. */
+function shownText(node: FakeEl): string {
+  if (node.attrs.hidden !== undefined) return '';
+  return node.children.map((c) => (typeof c === 'string' ? c : shownText(c))).join('');
 }
 
 describe('backoffMs', () => {

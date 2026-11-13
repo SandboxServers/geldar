@@ -17,7 +17,7 @@
       <div class="top">
         <h1>Glass <span class="sub">Thought Stream</span></h1>
         <div class="feed">
-          <p id="status" class="status connecting" aria-live="polite">Connecting...</p>
+          <p id="status" class="status connecting">Connecting...</p>
           <button id="pause" type="button">Pause</button>
         </div>
       </div>
@@ -76,6 +76,8 @@
         <button id="older" type="button">Load older</button>
       </section>
     </main>
+    <!-- What a screen reader is told as it happens: the feed going live or failing, a copy, new entries. -->
+    <p id="say" class="sr" aria-live="polite"></p>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

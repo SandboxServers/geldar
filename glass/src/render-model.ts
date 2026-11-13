@@ -75,17 +75,19 @@ export function toView(row: Row): ThoughtView {
   };
 }
 
-/** How many characters of a journal line the collapsed row shows. */
+/** How many characters of a journal line the collapsed row shows; the rest stays findable in the page. */
 export const JOURNAL_PREVIEW = 600;
 
-/** The text a journal row shows: the first 600 characters with an ellipsis when collapsed, all of it when open. */
-export function journalShown(
-  value: string,
-  expanded: boolean,
-): { shown: string; expandable: boolean } {
-  const expandable = value.length > JOURNAL_PREVIEW;
-  if (!expandable || expanded) return { shown: value, expandable };
-  return { shown: `${value.slice(0, JOURNAL_PREVIEW)}...`, expandable };
+/**
+ * Splits the shown text of a journal line (after display()) where the collapsed row stops: the first 600
+ * characters, and the rest, which is '' when the line is short enough to show whole. The two join back to
+ * the text, and the cut never falls inside a surrogate pair.
+ */
+export function journalSplit(shown: string): { head: string; rest: string } {
+  if (shown.length <= JOURNAL_PREVIEW) return { head: shown, rest: '' };
+  const code = shown.charCodeAt(JOURNAL_PREVIEW - 1);
+  const cut = code >= 0xd800 && code <= 0xdbff ? JOURNAL_PREVIEW - 1 : JOURNAL_PREVIEW;
+  return { head: shown.slice(0, cut), rest: shown.slice(cut) };
 }
 
 /**
