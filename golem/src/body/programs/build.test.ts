@@ -12,7 +12,8 @@ interface BuildWorld {
   inventory: Record<string, number>;
   placed: Map<string, string>;
   log: string[];
-  refuseAtStep: number | null;
+  /** Refusals left per cell key: `blocked` while the count is above zero. */
+  refusals: Map<string, number>;
 }
 
 const key = (p: { x: number; y: number; z: number }): string => `${p.x},${p.y},${p.z}`;
@@ -23,8 +24,15 @@ function makeWorld(count: number): BuildWorld {
     inventory: { cobblestone: count },
     placed: new Map(),
     log: [],
-    refuseAtStep: null,
+    refusals: new Map(),
   };
+}
+
+/** The key of a shelter cell, given the body starts at (10, 64, 10). */
+function cellKey(index: number): string {
+  const cell = blueprintCells('shelter')[index];
+  if (!cell) throw new Error(`no shelter cell ${index}`);
+  return key({ x: 10 + cell.dx, y: 64 + cell.dy, z: 10 + cell.dz });
 }
 
 /** A context whose place and goto handlers change a block map instead of a server. */
@@ -34,11 +42,17 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
     kind: 'place',
     timeoutMs: 1000,
     run: async (_ctx, action) => {
-      world.log.push(`place:${key(action.at as never)}`);
-      if (world.refuseAtStep === world.placed.size) return failed('blocked', 'the server refused');
+      const k = key(action.at as never);
+      world.log.push(`place:${k}`);
+      const refusals = world.refusals.get(k) ?? 0;
+      if (refusals > 0) {
+        world.refusals.set(k, refusals - 1);
+        return failed('blocked', 'the server refused');
+      }
+      if (world.placed.has(k)) return failed('blocked', 'target is occupied');
       if ((world.inventory[action.block] ?? 0) < 1) return failed('missing_materials', 'none');
       world.inventory[action.block] = (world.inventory[action.block] ?? 0) - 1;
-      world.placed.set(key(action.at as never), action.block);
+      world.placed.set(k, action.block);
       return completed();
     },
   });
@@ -85,6 +99,9 @@ async function run(program: BuildProgram, ctx: ProgramContext): Promise<StepResu
   return last;
 }
 
+const placesIn = (world: BuildWorld): string[] =>
+  world.log.filter((l) => l.startsWith('place:')).map((l) => l.slice('place:'.length));
+
 const SHELTER = { blueprint: 'shelter', block: 'cobblestone' };
 
 describe('build blueprints', () => {
@@ -111,7 +128,7 @@ describe('build program', () => {
     const last = await run(program, ctx);
     expect(last).toEqual({
       status: 'completed',
-      detail: { message: 'Built shelter: 23 of 23 blocks placed.' },
+      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
     });
     const ys = world.log.filter((l) => l.startsWith('place:')).map((l) => Number(l.split(',')[1]));
     expect(ys).toEqual([...ys].sort((a, b) => a - b));
@@ -130,7 +147,8 @@ describe('build program', () => {
     expect(last).toEqual({
       status: 'wake',
       reason: 'precondition_failed',
-      message: 'Built shelter: 20 of 23 blocks placed. Out of cobblestone: 3 more needed.',
+      message:
+        'Built shelter: 20 placed, 0 already solid, of 23. Out of cobblestone: 3 more needed.',
     });
     world.inventory.cobblestone = 3;
     const saved = JSON.parse(JSON.stringify(program.checkpoint()));
@@ -171,20 +189,6 @@ describe('build program', () => {
     ]);
   });
 
-  it('fails at the first refused placement with the step number', async () => {
-    const world = makeWorld(30);
-    world.refuseAtStep = 4;
-    const ctx = context(world);
-    const program = new BuildProgram();
-    await program.start(SHELTER, ctx);
-    const last = await run(program, ctx);
-    expect(last).toEqual({
-      status: 'failed',
-      message:
-        'Built shelter: 4 of 23 blocks placed. Stopped at step 5: blocked: the server refused',
-    });
-  });
-
   it('leaves the state unchanged when aborted before a placement', async () => {
     const world = makeWorld(30);
     const controller = new AbortController();
@@ -203,6 +207,109 @@ describe('build program', () => {
       new BuildProgram().start({ blueprint: 'castle', block: 'dirt' }, ctx),
     ).rejects.toMatchObject({ reason: 'invalid_args' });
     await expect(new BuildProgram().start({ ...SHELTER, extra: 1 }, ctx)).rejects.toMatchObject({
+      reason: 'invalid_args',
+    });
+  });
+
+  it('counts cells that already hold stone as done and places only the open cells', async () => {
+    const world = makeWorld(30);
+    const cells = blueprintCells('shelter');
+    const filled = cells.flatMap((_c, i) => (i < 17 ? [cellKey(i)] : []));
+    for (const k of filled) world.placed.set(k, 'stone');
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    const last = await run(program, ctx);
+    const open = cells.length - filled.length;
+    expect(last).toEqual({
+      status: 'completed',
+      detail: { message: `Built shelter: ${open} placed, ${filled.length} already solid, of 23.` },
+    });
+    expect(placesIn(world)).toEqual(cells.slice(17).map((_c, i) => cellKey(i + 17)));
+  });
+
+  it('retries a cell refused as blocked after the last cell, then completes', async () => {
+    const world = makeWorld(30);
+    world.refusals.set(cellKey(2), 1);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    const last = await run(program, ctx);
+    expect(last).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+    });
+    const attempts = placesIn(world);
+    expect(attempts.filter((k) => k === cellKey(2))).toHaveLength(2);
+    // The refused cell is tried again only after the cells after it.
+    expect(attempts.at(-1)).toBe(cellKey(2));
+    expect(world.placed.size).toBe(23);
+  });
+
+  it('fails only after every other cell is attempted, and names the count', async () => {
+    const world = makeWorld(30);
+    world.refusals.set(cellKey(4), Number.POSITIVE_INFINITY);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    const last = await run(program, ctx);
+    expect(last).toEqual({
+      status: 'failed',
+      message:
+        'Built shelter: 22 placed, 0 already solid, of 23. 1 cells could not be placed; first failure: blocked: the server refused.',
+    });
+    expect(world.placed.size).toBe(22);
+    const attempts = placesIn(world);
+    expect(attempts.filter((k) => k === cellKey(4))).toHaveLength(2);
+    expect(attempts.slice(-1)).toEqual([cellKey(4)]);
+  });
+
+  it('keeps a deferred cell across a checkpoint and retries it after a resume', async () => {
+    const world = makeWorld(30);
+    world.refusals.set(cellKey(1), 1);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    await program.step(ctx);
+    expect(program.checkpoint()).toMatchObject({ deferred: [1] });
+    const saved = JSON.parse(JSON.stringify(program.checkpoint()));
+    const again = new BuildProgram();
+    await again.resume(saved, ctx);
+    expect(await run(again, ctx)).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+    });
+  });
+
+  it('resumes from an old-format checkpoint without the new fields', async () => {
+    const world = makeWorld(30);
+    for (let i = 0; i < 5; i++) world.placed.set(cellKey(i), 'cobblestone');
+    const ctx = context(world);
+    const program = new BuildProgram();
+    const old = {
+      blueprint: 'shelter',
+      block: 'cobblestone',
+      origin: { x: 10, y: 64, z: 10 },
+      next: 5,
+    };
+    await program.resume(old, ctx);
+    expect(await run(program, ctx)).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+    });
+    expect(placesIn(world)).toHaveLength(18);
+  });
+
+  it('rejects a checkpoint whose deferred list names a cell the blueprint lacks', async () => {
+    const ctx = context(makeWorld(1));
+    const bad = {
+      blueprint: 'pillar',
+      block: 'cobblestone',
+      origin: { x: 10, y: 64, z: 10 },
+      next: 3,
+      deferred: [7],
+    };
+    await expect(new BuildProgram().resume(bad, ctx)).rejects.toMatchObject({
       reason: 'invalid_args',
     });
   });

@@ -7,7 +7,7 @@ import { edgeCell, entityInCell, pillarStep } from './pillar.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
-const REPLACEABLE = new Set([
+export const REPLACEABLE = new Set([
   'air',
   'cave_air',
   'void_air',
