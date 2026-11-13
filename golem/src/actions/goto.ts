@@ -66,12 +66,13 @@ export const gotoAction: ActionHandler<'goto'> = {
     if (stalled) reportStall(ctx.bot, { reason: 'goto_stalled' });
     const position = { x: at.x, y: at.y, z: at.z };
     const note = move.message ? { note: move.message } : {};
-    // A partial walk is the closest reachable spot to an unreachable goal: far from the goal, the way was blocked.
-    if (move.partial && move.distance > range + 1) {
+    // Far from the goal when the walk settled: the way was blocked. A partial walk is the closest
+    // reachable spot to an unreachable goal; an ok walk that never moved (an empty route) is the same.
+    if (move.distance > range + 1) {
       return failed('blocked', BLOCKED_TEXT, {
         position,
         distance: move.distance,
-        partial: true,
+        ...(move.partial ? { partial: true } : {}),
         ...(stalled ? { stalled: true } : {}),
         ...note,
       });
