@@ -26,6 +26,7 @@ public final class GeldarCore extends JavaPlugin {
     private volatile EventExporter tpsExporter;
     private ScheduledExecutorService tpsTimer;
     private ReadyMarker readyMarker;
+    private volatile dev.geldar.core.blockowner.BlockOwnerSetup blockOwner;
 
     @Override
     public void onEnable() {
@@ -84,10 +85,15 @@ public final class GeldarCore extends JavaPlugin {
         // The maintenance notice broadcast (CD-1c): maintenance.broadcast, applied by the same 5 s reload.
         dev.geldar.core.maintenance.MaintenanceNotices maintenance = dev.geldar.core.maintenance.MaintenanceSetup
                 .register(this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
+        // Block ownership (CoreProtect-backed owner queries): blockowner.* is applied by the same 5 s reload.
+        dev.geldar.core.blockowner.BlockOwnerSetup owners = dev.geldar.core.blockowner.BlockOwnerSetup.register(
+                this, config.natsUrl(), config.shard(), System::getenv);
+        blockOwner = owners;
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();
             dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
             dev.geldar.core.maintenance.MaintenanceSetup.reload(maintenance, getConfig());
+            owners.reload(getConfig());
         }, 100L, 100L);
 
         // A wall-clock timer: a tick-based task thins out when the server lags, which is when the figure matters.
@@ -143,6 +149,9 @@ public final class GeldarCore extends JavaPlugin {
     public void onDisable() {
         if (tpsTimer != null) {
             tpsTimer.shutdownNow();
+        }
+        if (blockOwner != null) {
+            blockOwner.close();
         }
         if (publisher != null) {
             publisher.close();
