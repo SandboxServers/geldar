@@ -412,7 +412,9 @@ export class IntentExecutor {
     }
     if (result.status === 'completed') {
       const wake = a.wake.wants('goal_completed') ? 'goal_completed' : undefined;
-      await this.end(a, 'completed', 'goal completed', wake, true);
+      const said = result.detail?.message;
+      const text = typeof said === 'string' && said.trim() !== '' ? said.trim() : 'goal completed';
+      await this.end(a, 'completed', text, wake, true);
     } else if (result.status === 'failed') {
       emitIntentFailure(this.runtime.sink, this.tick(), a.intent.program, result.message);
       await this.end(a, 'failed', result.message, 'action_failed', true);
