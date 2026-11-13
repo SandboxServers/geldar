@@ -51,6 +51,7 @@ export function scriptedBot(scene: Scene) {
   const keyOf = (v: Vec3) => `${v.x},${v.y},${v.z}`;
   const bot = {
     entity: state.entity,
+    entities: {},
     time: { age: 0 },
     health: 20,
     registry: {

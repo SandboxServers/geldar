@@ -1,6 +1,7 @@
 # 0031. `place ... at: "feet"` means the cell the bot's feet are in
 
 - Status: Accepted
+- Superseded in part by 0160 (a solid block at feet is a pillar step, not a move beside the bot).
 - Date: 2026-11-09
 - Spec: Appendix C (the `place` action and its torch example); `contract/schemas/thought.schema.json` (`at`); packet P0-09a
 
