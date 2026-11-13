@@ -172,7 +172,7 @@ jobs:
       - name: check schema (Appendix D tables and pgvector)
         env:
           PGPASSWORD: ci
-        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql -f sql/test/check-schema-kino-functions.sql -f sql/test/check-schema-glass-journal.sql -f sql/test/check-schema-mcp-roster.sql -f sql/test/check-schema-admin-flag.sql -f sql/test/check-schema-token-lifecycle.sql
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql -f sql/test/check-schema-kino-functions.sql -f sql/test/check-schema-glass-journal.sql -f sql/test/check-schema-mcp-roster.sql -f sql/test/check-schema-admin-flag.sql -f sql/test/check-schema-token-lifecycle.sql -f sql/test/check-schema-body-ops.sql
 
   images:
     name: images
