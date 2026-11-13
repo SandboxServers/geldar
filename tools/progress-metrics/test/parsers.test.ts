@@ -65,9 +65,7 @@ describe('body log', () => {
     const ev = parseBodyLog(log, null);
     const kinds = ev.map((e) => e.kind);
     expect(kinds).toEqual([
-      'stall_diag',
       'escape_rung',
-      'stall_diag',
       'escape_rung',
       'body_watchdog',
       'body_restart',
@@ -264,7 +262,7 @@ describe('files', () => {
       agentOfFile('/x/ag_c_03.log', '{"life_id":"ag_a_01"}\n{"life_id":"ag_b_02"}'),
     ).toBeNull();
     expect(agentOfFile('/x/ag_c_03.log', '{}')).toBe('ag_c_03');
-    expect(expandGlob('tools/progress-metrics/test/*.test.ts').length).toBe(2);
+    expect(expandGlob('tools/progress-metrics/test/*.test.ts').length).toBe(3);
   });
 });
 

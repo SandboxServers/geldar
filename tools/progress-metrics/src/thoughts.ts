@@ -45,10 +45,17 @@ export const DUP_JACCARD = 0.9;
 
 export type JournalMetrics = { entries: number; nearDuplicates: number; asleep: number };
 
-/** Entries are compared in time order; one is a near-duplicate of any of the previous 20. */
-export function journalMetrics(entries: Thought[]): JournalMetrics {
+/**
+ * Entries are compared in time order; one is a near-duplicate of any of the previous 20. The `before` entries
+ * come from before the first one (the end of the previous window): they seed the look-back but are not counted.
+ */
+export function journalMetrics(entries: Thought[], before: Thought[] = []): JournalMetrics {
   const s = [...entries].sort((a, b) => a.at - b.at);
   const prev: { norm: string; words: Set<string> }[] = [];
+  for (const e of [...before].sort((a, b) => a.at - b.at).slice(-DUP_WINDOW)) {
+    const norm = normalise(e.text);
+    prev.push({ norm, words: new Set(norm.split(' ').filter(Boolean)) });
+  }
   let nearDuplicates = 0;
   let asleep = 0;
   for (const e of s) {

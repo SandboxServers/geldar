@@ -2,7 +2,8 @@ import type { BodyEvent } from './body.ts';
 import { escapeEpisodes } from './episodes.ts';
 import { type InvSample, inventoryMetrics, LADDER } from './inventory.ts';
 import type { PaperEvent } from './paper.ts';
-import { type PosSample, positionMetrics } from './positions.ts';
+import { type PosSample, positionMetrics, stillNote } from './positions.ts';
+import { HIGH_CORRECTIONS, RUBBER_MIN_LINES, RUBBER_SHARE } from './stalldiag.ts';
 import { journalMetrics, type Thought } from './thoughts.ts';
 
 export type Inputs = {
@@ -11,12 +12,44 @@ export type Inputs = {
   positions: PosSample[];
   inventory: InvSample[];
   thoughts: Thought[];
+  /** Journal lines from before a cut: look-back for the repeated-journal share only. */
+  thoughtContext?: Thought[];
 };
+
+export type AggregateOptions = {
+  /** Windows with fewer events than this are reported as insufficient data. */
+  minEvents?: number;
+  /** Name of the single window (named-window runs). */
+  name?: string;
+  /** Forces the span [start, end) instead of the span of the data. */
+  range?: { start: number; end: number };
+  /** Agents to give a row even if they have no data in the span. */
+  agents?: string[];
+};
+
+export const DEFAULT_MIN_EVENTS = 5;
 
 export type Row = {
   agent: string;
   windowStart: number;
   windowEnd: number;
+  /** Name from a --windows file, else empty. */
+  window: string;
+  /** Events of the agent in the window (paper, body, position, journal). */
+  events: number;
+  /** First and last event time actually covered; empty without events. */
+  dataFrom: string;
+  dataTo: string;
+  /** 1 when events is under the minimum: the rates are not meaningful. */
+  insufficient: number;
+  forcedMoves: number;
+  maxCorrections10s: number | null;
+  /** Stall lines with corrections_10s >= 10 over stall lines that carry a corrections value. */
+  highCorrectionShare: number | null;
+  rubberBanding: string;
+  rungLines: number;
+  rungTried: string;
+  positionNote: string;
   deaths: number;
   deathCauses: string;
   deathsPerHour: number;
@@ -67,7 +100,8 @@ const share = (n: number, d: number): number | null => (d === 0 ? null : n / d);
  * time go to the first window. Time-to-first-tool and first-seen are measured from the agent's first
  * inventory sample over its whole run, and shown in the window that holds the first tool.
  */
-export function aggregate(inp: Inputs, windowMs: number): Row[] {
+export function aggregate(inp: Inputs, windowMs: number, opts: AggregateOptions = {}): Row[] {
+  const minEvents = opts.minEvents ?? DEFAULT_MIN_EVENTS;
   const times: number[] = [
     ...inp.paper.map((e) => e.at),
     ...inp.body.flatMap((e) => (e.at === null ? [] : [e.at])),
@@ -75,9 +109,9 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
     ...inp.inventory.map((e) => e.at),
     ...inp.thoughts.map((e) => e.at),
   ];
-  if (times.length === 0) return [];
-  const t0 = Math.min(...times);
-  const t1 = Math.max(...times) + 1;
+  if (times.length === 0 && !opts.range) return [];
+  const t0 = opts.range ? opts.range.start : Math.min(...times);
+  const t1 = opts.range ? opts.range.end : Math.max(...times) + 1;
   const width = windowMs > 0 ? windowMs : t1 - t0;
   // A tail under a quarter of a window joins the last full window instead of making a sliver of its own.
   const whole = Math.floor((t1 - t0) / width);
@@ -86,7 +120,7 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
   const win = (at: number | null): number =>
     at === null ? 0 : Math.min(count - 1, Math.floor((at - t0) / width));
 
-  const agents = new Set<string>();
+  const agents = new Set<string>(opts.agents ?? []);
   for (const l of [inp.paper, inp.body, inp.positions, inp.inventory, inp.thoughts]) {
     for (const e of l) agents.add(e.agent);
   }
@@ -111,7 +145,23 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
         (at) => win(at) === w,
       );
       const pm = positionMetrics(pos);
-      const jm = journalMetrics(th);
+      const before = [...(inp.thoughtContext ?? []), ...inp.thoughts]
+        .filter((e) => e.agent === agent && e.at < ws && !(w > 0 && win(e.at) === w))
+        .sort((a, b) => a.at - b.at);
+      const jm = journalMetrics(th, before);
+      const stalls = body.filter((e) => e.kind === 'stall_diag');
+      const corr = stalls.flatMap((e) =>
+        e.diag?.corrections10s == null ? [] : [e.diag.corrections10s],
+      );
+      const high = corr.filter((c) => c >= HIGH_CORRECTIONS).length;
+      const highShare = share(high, corr.length);
+      const evTimes = [
+        ...paper.map((e) => e.at),
+        ...body.flatMap((e) => (e.at === null ? [] : [e.at])),
+        ...pos.map((e) => e.at),
+        ...th.map((e) => e.at),
+      ];
+      const events = paper.length + body.length + pos.length + th.length;
       const invWin = inv.filter((s) => win(s.at) === w);
       const toolAt = invAll.firstToolAt;
       const hasTool = toolAt !== null && win(toolAt) === w;
@@ -125,6 +175,21 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
         agent,
         windowStart: ws,
         windowEnd: we,
+        window: opts.name ?? '',
+        events,
+        dataFrom: evTimes.length === 0 ? '' : new Date(Math.min(...evTimes)).toISOString(),
+        dataTo: evTimes.length === 0 ? '' : new Date(Math.max(...evTimes)).toISOString(),
+        insufficient: events < minEvents ? 1 : 0,
+        forcedMoves: body.filter((e) => e.kind === 'forced_move').length,
+        maxCorrections10s: corr.length === 0 ? null : Math.max(...corr),
+        highCorrectionShare: highShare,
+        rubberBanding:
+          corr.length >= RUBBER_MIN_LINES && (highShare ?? 0) >= RUBBER_SHARE
+            ? 'rubber-banding'
+            : '',
+        rungLines: rungs.length,
+        rungTried: fmt(tally(rungs.map((r) => r.reason))),
+        positionNote: stillNote(pm),
         deaths: deaths.length,
         deathCauses: fmt(tally(deaths.map((d) => d.cause))),
         deathsPerHour: deaths.length / ((we - ws) / 3_600_000),
@@ -137,7 +202,7 @@ export function aggregate(inp: Inputs, windowMs: number): Row[] {
           actions.filter((a) => a.reason === 'no_effect').length,
           actions.length,
         ),
-        stallDiag: body.filter((e) => e.kind === 'stall_diag').length,
+        stallDiag: stalls.length,
         rungWorked: fmt(tally(worked.map((r) => r.reason))),
         escapeSuccessRate: share(worked.length, rungs.length),
         episodes: ep.episodes,
