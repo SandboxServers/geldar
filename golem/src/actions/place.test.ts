@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { block, type FakeBlock, type Scene, scriptedBot } from './escape-ladder.fakes.ts';
 import { moveNear } from './pathing.ts';
 import { confirmsPlacement, pickReference, placeAction } from './place.ts';
 
@@ -195,12 +196,12 @@ describe('place', () => {
     expect(face).toEqual(new Vec3(0, 1, 0));
   });
 
-  it('moves a colliding block at feet to the free cell the bot faces', async () => {
+  it('moves a colliding block on the feet cell to the free cell the bot faces', async () => {
     const fake = fakeBot({
       blocks: { '0,63,0': 'stone', '0,63,1': 'stone' },
       items: ['dirt'],
     });
-    const outcome = await place(fake, 'dirt', 'feet');
+    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
     expect(outcome.status).toBe('completed');
     const [reference, face] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }, Vec3];
     expect(reference.position).toEqual(new Vec3(0, 63, 1));
@@ -224,7 +225,7 @@ describe('place', () => {
       items: ['dirt'],
       entities: [new Vec3(0.5, 64, 1.5)],
     });
-    const outcome = await place(fake, 'dirt', 'feet');
+    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
     expect(outcome.status).toBe('completed');
     const [reference] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }];
     expect(reference.position).toEqual(new Vec3(1, 63, 0));
@@ -241,7 +242,7 @@ describe('place', () => {
       },
       items: ['dirt'],
     });
-    const outcome = await place(fake, 'dirt', 'feet');
+    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
@@ -261,7 +262,7 @@ describe('place', () => {
         new Vec3(0.5, 64, -0.5),
       ],
     });
-    const outcome = await place(fake, 'dirt', 'feet');
+    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
@@ -414,5 +415,142 @@ describe('place', () => {
     const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
     const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
     expect(outcome.status).toBe('cancelled');
+  });
+});
+
+describe('place at feet as a pillar (decision 0160)', () => {
+  /** A bot that jumps on the escape-ladder jump curve; placing puts dirt in the cell it left. */
+  function pillarFake(blocks: Record<string, FakeBlock>, onGround = true) {
+    const curve = [0.42, 0.753, 1.0, 1.166, 1.249];
+    let airTicks = 0;
+    const scene: Scene = {
+      items: ['dirt'],
+      blocks,
+      physics: (s) => {
+        if (!s.held || !s.controls.jump || fake.bot.placeBlock.mock.calls.length > 0) return;
+        s.position.y = 64 + (curve[Math.min(airTicks, curve.length - 1)] ?? 1.249);
+        airTicks++;
+      },
+    };
+    const fake = scriptedBot(scene);
+    Object.assign(fake.bot.entity, { onGround });
+    fake.bot.placeBlock.mockImplementation(async () => {
+      scene.blocks = { ...scene.blocks, '0,64,0': block('dirt') };
+    });
+    return fake;
+  }
+
+  const pillar = (fake: ReturnType<typeof pillarFake>, signal = new AbortController().signal) =>
+    placeAction.run(
+      { bot: fake.asBot, signal, timeScale: 1 },
+      { do: 'place', block: 'dirt', at: 'feet' },
+    );
+
+  it('places the block in the cell the feet were in, and the bot ends a block higher', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    const [reference, face] = fake.bot.placeBlock.mock.calls[0] as unknown as [unknown, Vec3];
+    expect(reference).toEqual(block('stone'));
+    expect(face).toEqual(new Vec3(0, 1, 0));
+    expect(fake.state.blockAt(new Vec3(0, 64, 0)).name).toBe('dirt');
+    expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
+    expect(fake.bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('refuses with a no-headroom message and places nothing under bedrock two cells above the head', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone'), '0,66,0': block('bedrock') });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: expect.stringContaining('no headroom for a pillar'),
+    });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the bot is not on the ground', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') }, false);
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: expect.stringContaining('not on the ground'),
+    });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('refuses when no solid block is under the feet', async () => {
+    const fake = pillarFake({});
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: expect.stringContaining('no solid block under your feet'),
+    });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('fails without placing when the bot never rises high enough', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    fake.bot.waitForTicks.mockImplementation(async () => undefined);
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('is cancelled, and places nothing, when the signal aborts mid-jump', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    const abort = new AbortController();
+    fake.bot.waitForTicks.mockImplementationOnce(async () => {
+      abort.abort();
+    });
+    const outcome = await pillar(fake, abort.signal);
+    expect(outcome.status).toBe('cancelled');
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a pillar when another entity box overlaps the cell the block goes into', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    Object.assign(fake.bot.entities, {
+      '1': { position: new Vec3(0.3, 64, 0.3), width: 0.6, height: 1.8 },
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'another entity stands where the block goes: step to open ground first',
+    });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a pillar when a friend in the next cell reaches into the cell', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    Object.assign(fake.bot.entities, {
+      '1': { position: new Vec3(1.1, 64, 0.5), width: 0.6, height: 1.8 },
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('places when a friend stands in the next cell 0.35 from the target face', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    Object.assign(fake.bot.entities, {
+      '1': { position: new Vec3(1.65, 64, 0.5), width: 0.6, height: 1.8 },
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('places when a friend only touches the cell face (flush contact is not a collision)', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    Object.assign(fake.bot.entities, {
+      '1': { position: new Vec3(-0.3, 64, 0.5), width: 0.6, height: 1.8 },
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
   });
 });
