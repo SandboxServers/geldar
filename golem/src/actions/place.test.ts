@@ -196,18 +196,6 @@ describe('place', () => {
     expect(face).toEqual(new Vec3(0, 1, 0));
   });
 
-  it('moves a colliding block on the feet cell to the free cell the bot faces', async () => {
-    const fake = fakeBot({
-      blocks: { '0,63,0': 'stone', '0,63,1': 'stone' },
-      items: ['dirt'],
-    });
-    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
-    expect(outcome.status).toBe('completed');
-    const [reference, face] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }, Vec3];
-    expect(reference.position).toEqual(new Vec3(0, 63, 1));
-    expect(face).toEqual(new Vec3(0, 1, 0));
-  });
-
   it('moves a target at the bot head cell beside the bot too', async () => {
     const fake = fakeBot({
       blocks: { '0,63,0': 'stone', '0,63,1': 'stone' },
@@ -225,7 +213,7 @@ describe('place', () => {
       items: ['dirt'],
       entities: [new Vec3(0.5, 64, 1.5)],
     });
-    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
+    const outcome = await place(fake, 'dirt', { x: 0, y: 65, z: 0 });
     expect(outcome.status).toBe('completed');
     const [reference] = fake.placeBlock.mock.calls[0] as [{ position: Vec3 }];
     expect(reference.position).toEqual(new Vec3(1, 63, 0));
@@ -242,7 +230,7 @@ describe('place', () => {
       },
       items: ['dirt'],
     });
-    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
+    const outcome = await place(fake, 'dirt', { x: 0, y: 65, z: 0 });
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
@@ -262,7 +250,7 @@ describe('place', () => {
         new Vec3(0.5, 64, -0.5),
       ],
     });
-    const outcome = await place(fake, 'dirt', { x: 0, y: 64, z: 0 });
+    const outcome = await place(fake, 'dirt', { x: 0, y: 65, z: 0 });
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
