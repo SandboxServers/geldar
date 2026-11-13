@@ -8,6 +8,7 @@ import {
 } from '../../actions/build/blueprints.ts';
 import { REPLACEABLE } from '../../actions/place.ts';
 import type { IntentProgram, ProgramCheckpoint, ProgramContext, StepResult } from '../program.ts';
+import { isClosedCell } from '../view.ts';
 import { runStepAction, stopOf } from './action-step.ts';
 import { ArgReader, checkpointReader, ProgramError } from './args.ts';
 
@@ -128,14 +129,17 @@ export class BuildProgram implements IntentProgram {
         y: state.origin.y + cell.dy,
         z: state.origin.z + cell.dz,
       };
-      if (isSolid(ctx.bot.blockAt(new Vec3(at.x, at.y, at.z)))) {
+      if (isSolid(ctx.bot.blockAt(new Vec3(at.x, at.y, at.z))) || doorTopDone(ctx, state, cell)) {
         state.solid++;
         settle(state, retrying);
         continue;
       }
       const aside = await this.stepAside(ctx, at, cells);
       if (aside) return aside;
-      const run = await runStepAction(ctx, { do: 'place', block: state.block, at });
+      const doorway =
+        state.blueprint === 'shelter' && cell.dx === 0 && cell.dy === 0 && cell.dz === 1;
+      const block = doorway ? (heldWoodenDoor(ctx) ?? state.block) : state.block;
+      const run = await runStepAction(ctx, { do: 'place', block, at });
       if (run.state === 'completed') {
         state.placed++;
         acted++;
@@ -179,6 +183,7 @@ export class BuildProgram implements IntentProgram {
           blueprint: s.blueprint,
           block: s.block,
           origin: { ...s.origin },
+          cells: blueprintCells(s.blueprint).length,
           next: s.next,
           deferred: [...s.deferred],
           retried: s.retried,
@@ -194,7 +199,7 @@ export class BuildProgram implements IntentProgram {
   async resume(saved: ProgramCheckpoint, _ctx: ProgramContext): Promise<void> {
     // The fields added after the first checkpoint format are read by hand, so that an old
     // checkpoint without them still resumes; the reader sees only the fields it knows.
-    const { deferred, refused, retried, firstFailure, ...core } = saved;
+    const { deferred, refused, retried, firstFailure, cells, ...core } = saved;
     const reader = checkpointReader('build', core);
     const blueprint = reader.name('blueprint');
     const block = reader.name('block');
@@ -208,6 +213,24 @@ export class BuildProgram implements IntentProgram {
       throw new ProgramError('invalid_args', 'build', `unknown blueprint ${blueprint}`);
     }
     const cellCount = blueprintCells(blueprint).length;
+    // A shelter checkpoint from before decision 0163 counts 23 cells, not 25, so its `next` does not
+    // index the same cells. Such a build starts again from cell 0; the cells already built are solid.
+    if (blueprint === 'shelter' && cells !== cellCount) {
+      this.state = {
+        blueprint,
+        block,
+        origin,
+        next: 0,
+        deferred: [],
+        retried: false,
+        placed: 0,
+        solid: 0,
+        unplaced: 0,
+        refused: [],
+        firstFailure: null,
+      };
+      return;
+    }
     this.state = {
       blueprint,
       block,
@@ -291,6 +314,41 @@ export class BuildProgram implements IntentProgram {
     if (!this.state) throw new Error('build was not started');
     return this.state;
   }
+}
+
+/** The wooden door items a shelter's doorway can take (decision 0163: iron doors are not wooden). */
+const WOODEN_DOORS = [
+  'oak_door',
+  'spruce_door',
+  'birch_door',
+  'jungle_door',
+  'acacia_door',
+  'dark_oak_door',
+  'mangrove_door',
+  'cherry_door',
+  'bamboo_door',
+  'crimson_door',
+  'warped_door',
+] as const;
+
+/** The first wooden door the body holds, for the shelter's doorway; null when it holds none. */
+function heldWoodenDoor(ctx: ProgramContext): string | null {
+  return WOODEN_DOORS.find((name) => ctx.view.inventoryCount(name) > 0) ?? null;
+}
+
+/**
+ * True for the shelter's upper doorway cell once a door stands in the lower one: a placed door fills
+ * both halves, so the upper half is never placed separately (decision 0163).
+ */
+function doorTopDone(
+  ctx: ProgramContext,
+  state: BuildState,
+  cell: { dx: number; dy: number; dz: number },
+): boolean {
+  if (state.blueprint !== 'shelter' || cell.dx !== 0 || cell.dy !== 1 || cell.dz !== 1)
+    return false;
+  const lower = ctx.bot.blockAt(new Vec3(state.origin.x, state.origin.y, state.origin.z + 1));
+  return lower?.name.endsWith('_door') === true;
 }
 
 /** A block that stops a placement: not replaceable, and with a collision box. */
@@ -397,12 +455,17 @@ function joinWords(words: readonly string[]): string {
  */
 function enclosureNote(ctx: ProgramContext, origin: { x: number; y: number; z: number }): string {
   if (ctx.view.enclosed !== false) return '';
-  const open = SIDES.filter((side) =>
-    [0, 1].some(
-      (dy) =>
-        !isSolid(ctx.bot.blockAt(new Vec3(origin.x + side.dx, origin.y + dy, origin.z + side.dz))),
-    ),
-  ).map((side) => side.name);
-  if (open.length === 0) return ' Not enclosed.';
+  const gaps = SIDES.flatMap((side) =>
+    [0, 1].map((dy) => ({
+      side,
+      block: ctx.bot.blockAt(new Vec3(origin.x + side.dx, origin.y + dy, origin.z + side.dz)),
+    })),
+  ).filter((gap) => !isClosedCell(gap.block));
+  if (gaps.length === 0) return ' Not enclosed.';
+  if (gaps.every((gap) => gap.block?.name.endsWith('_door')))
+    return ' Not enclosed: the door is open.';
+  const open = SIDES.filter((side) => gaps.some((gap) => gap.side === side)).map(
+    (side) => side.name,
+  );
   return ` Not enclosed: open to the ${joinWords(open)}.`;
 }
