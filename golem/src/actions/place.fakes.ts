@@ -1,3 +1,4 @@
+import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { vi } from 'vitest';
 import { placeAction } from './place.ts';
