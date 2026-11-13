@@ -70,8 +70,8 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 ## C7 status (2026-11-13)
 
 - **Wave C7-1 done** (merge bbb5ed6b, PR #315): C3-04s, C7-12, C7-03a (package only), C7-02a (SQL and service only). Migrations 0024, 0025, 0027 and 0032 are applied on the node; spare left: 0033. Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
-- **Wave 2 next:** C7-02b (owner keys), C7-05 (onboarding), C7-03b (supervisor wiring; needs geldar-93 contact first), then C7-04 (API v1). Deploy protocol: MERGE and DONE go to geldar-93 and geldar-ops; every image-changing merge refreshes the ranger hosts, so batch them.
-- **Open owner items:** the erasure rule review (0171; gates C7-11 only); the geldar_supervisor Postgres password (an operator step, by hand, before C7-03b); the C7-10 reason codes and its two count and index decisions.
+- **Wave 2 next:** C7-02b (owner keys), C7-05 (onboarding), C7-03b1 (supervisor NATS binding), C7-03b3 (adapters), then C7-04 (API v1). Wave 3 gets C7-03b2 (compose, needs geldar-93 contact first) before any live use. Deploy protocol: MERGE and DONE go to geldar-93 and geldar-ops; every image-changing merge refreshes the ranger hosts, so batch them.
+- **Open owner items:** the erasure rule review (0171; gates C7-11 only); the geldar_supervisor Postgres password (an operator step, by hand, before C7-03b2 in wave 3); the C7-10 reason codes and its two count and index decisions.
 
 ## Open contradictions
 
