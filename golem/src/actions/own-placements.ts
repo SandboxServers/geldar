@@ -16,6 +16,8 @@ export interface Cell {
 
 /** The records per bot: a cell key to the block name the bot placed there. */
 const records = new WeakMap<object, Map<string, string>>();
+/** At most this many records per bot; the oldest is dropped first (review N6). */
+export const MAX_OWN_RECORDS = 4096;
 /** The bots whose `blockUpdate` is already watched. */
 const watched = new WeakSet<object>();
 
@@ -36,9 +38,13 @@ function watch(bot: Bot): void {
     const placed = table?.get(key);
     if (table && placed !== undefined && block.name !== placed) table.delete(key);
   });
+  // A respawn or a dimension change (which also respawns the bot) leaves every placed block behind.
+  emitter.on?.('respawn', () => {
+    records.delete(bot);
+  });
 }
 
-/** Records that this bot placed `name` at `cell`. */
+/** Records that this bot placed `name` at `cell`; the table keeps at most MAX_OWN_RECORDS cells. */
 export function recordOwnPlacement(bot: Bot, cell: Cell, name: string): void {
   watch(bot);
   let table = records.get(bot);
@@ -46,7 +52,13 @@ export function recordOwnPlacement(bot: Bot, cell: Cell, name: string): void {
     table = new Map();
     records.set(bot, table);
   }
-  table.set(keyOf(cell), name);
+  const key = keyOf(cell);
+  table.delete(key);
+  table.set(key, name);
+  if (table.size > MAX_OWN_RECORDS) {
+    const oldest = table.keys().next().value;
+    if (oldest !== undefined) table.delete(oldest);
+  }
 }
 
 /** True while the block at `cell` is still the one this bot placed there. */

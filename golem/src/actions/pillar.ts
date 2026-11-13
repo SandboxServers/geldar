@@ -116,8 +116,9 @@ export async function placeAgainst(
   const sneak = opensOnUse(reference.name);
   if (sneak) bot.setControlState('sneak', true);
   try {
-    await bot.placeBlock(reference, face);
+    // Read before the placement: the last block of a stack leaves no held item after it (review N5).
     const held = bot.heldItem?.name;
+    await bot.placeBlock(reference, face);
     const cell = placedCell(reference, face);
     if (held && cell) recordOwnPlacement(bot, cell, held);
   } finally {

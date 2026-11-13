@@ -3,9 +3,16 @@ import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 
+import { escapeLadder } from './escape-ladder.ts';
 import { applyDigRules, DigTally, digAllowed, MAX_DIG_TICKS } from './goto-dig.ts';
 import { moveNear, TIER_TWO_BUDGET_MS } from './pathing.ts';
 import { NO_PATH_TEXT } from './soft-dig.ts';
+
+// The ladder is replaced by a stub that fails: these tests only ask whether it was run (0164).
+vi.mock('./escape-ladder.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./escape-ladder.ts')>()),
+  escapeLadder: vi.fn(async () => ({ ok: false, message: 'stuck' })),
+}));
 
 const { Movements } = pathfinderPkg;
 const registry = minecraftData('1.21.4');
@@ -309,7 +316,13 @@ describe('goto tier 2 fallback (0164)', () => {
   it('puts the plain movements back for the next walk after a tier-2 walk', async () => {
     const { bot, goto, setMovements, entity } = pathBot(noPath, () => Promise.resolve());
     await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
-    expect(setMovements.mock.calls.at(-1)?.[0]).toMatchObject({ allow1by1towers: true });
+    // The walk used tier-2 movements, and its end (success) already puts the plain ones back (0164).
+    expect(
+      setMovements.mock.calls.some(
+        ([m]) => (m as { allow1by1towers?: boolean }).allow1by1towers === true,
+      ),
+    ).toBe(true);
+    expect(setMovements.mock.calls.at(-1)?.[0]).toMatchObject({ allow1by1towers: false });
     goto.mockImplementation(walkTo(entity, TARGET_VEC));
     await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
     expect(setMovements.mock.calls.at(-1)?.[0]).toMatchObject({ allow1by1towers: false });
@@ -462,6 +475,85 @@ describe('a stalled tier-1 walk recovers into tier 2 (0164)', () => {
       await move;
       expect(before).toBe(false);
       expect(digging).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('tier 2 hands the search budget back when its walk ends (0164)', () => {
+  it('gives the next plain walk the normal search budget after a tier-2 walk succeeds', async () => {
+    const { bot, goto, entity, pathfinder } = pathBot(noPath, () => Promise.resolve());
+    goto.mockImplementation(walkTo(entity, TARGET_VEC));
+    await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(pathfinder.thinkTimeout).toBe(4000);
+    const seen: unknown[] = [];
+    goto.mockImplementation(() => {
+      seen.push(pathfinder.thinkTimeout);
+      return walkTo(entity, TARGET_VEC)();
+    });
+    await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(seen).toEqual([4000]);
+  });
+
+  it('hands the budget back when a tier-2 walk is cancelled', async () => {
+    const controller = new AbortController();
+    const { bot, goto, pathfinder } = pathBot(noPath, () => new Promise<void>(() => undefined));
+    goto.mockImplementation(() => new Promise<void>(() => undefined));
+    const pending = moveNear(bot as never, TARGET, 1, { signal: controller.signal, timeScale: 1 });
+    await vi.waitFor(() => expect(goto).toHaveBeenCalledTimes(2));
+    controller.abort();
+    await pending;
+    expect(pathfinder.thinkTimeout).toBe(4000);
+  });
+});
+
+describe('a tier-2 walk that finds no path still runs the escape ladder (0164)', () => {
+  it('runs the ladder when tier 2 fails at a stall, as the plain walk does', async () => {
+    vi.mocked(escapeLadder).mockClear();
+    const { bot, goto } = pathBot(noPath, () => {
+      (bot.time as { age: number }).age = 100;
+      return noPath();
+    });
+    bot.waitForTicks = vi.fn(async () => undefined);
+    goto.mockImplementation(noPath);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(escapeLadder).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
+  });
+});
+
+describe('a stall put tier 2 on only for the stuck spot (0164)', () => {
+  it('goes back to plain movements once the bot has moved on from the stall', async () => {
+    vi.useFakeTimers();
+    try {
+      const { bot, goto, setMovements, entity, pathfinder } = pathBot(
+        () => new Promise(() => undefined),
+        () => new Promise(() => undefined),
+      );
+      goto.mockImplementation(() => new Promise(() => undefined));
+      const controller = new AbortController();
+      const move = moveNear(bot as never, TARGET, 1, {
+        signal: controller.signal,
+        timeScale: 1,
+        stallTicks: 600,
+        diag: { log: () => undefined, now: () => Date.now() },
+      });
+      // Still for 12 steps of 10 ticks: the stall recovery puts tier 2 on.
+      for (let i = 0; i < 12; i++) {
+        (bot as unknown as { time: { age: number } }).time.age += 10;
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      expect(setMovements.mock.calls.at(-1)?.[0]).toMatchObject({ allow1by1towers: true });
+      const gotoCalls = goto.mock.calls.length;
+      // The bot walks four blocks from the stuck spot: the next watchdog step plans on tier 1.
+      entity.position = new Vec3(4.5, 65, 0.5);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(setMovements.mock.calls.at(-1)?.[0]).toMatchObject({ allow1by1towers: false });
+      expect(goto.mock.calls.length).toBeGreaterThan(gotoCalls);
+      expect(pathfinder.thinkTimeout).toBe(4000);
+      controller.abort();
+      await move;
     } finally {
       vi.useRealTimers();
     }

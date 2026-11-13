@@ -24,7 +24,7 @@ The pit saga: a body that stands in a pit with stone around it cannot walk out. 
 `moveNear` walks in two tiers.
 
 1. Tier 1 is today's walk: soft digs only (0141), no towers, doors as before, corner rules, the stall watchdog, the replan limit and the escape ladder.
-2. Tier 2 starts when tier 1 finds no path (`NoPath`), when tier 1 resolves without reaching the goal (the library resolves an empty route, as in a sealed pit, as success without moving), or when a walk stalls for the first recovery. It uses library Movements with:
+2. Tier 2 starts when tier 1 finds no path (`NoPath`), when tier 1 resolves without reaching the goal (the library resolves an empty route, as in a sealed pit, as success without moving), or when a walk stalls for the first recovery. A tier 2 that a stall started is left as soon as the bot is 3 blocks from the spot it stalled at: the rest of the walk plans on tier 1 again. A tier 2 that `NoPath` started stays for the walk (it has no walking route at all). It uses library Movements with:
    - `canDig=true`, `digCost=4`;
    - `allow1by1towers=true`, scaffolding `dirt`, `cobblestone`, `cobbled_deepslate`, `netherrack` (the library uses only the held ones);
    - `placeCost=2`, `maxDropDown=3`, `liquidCost=3`;
@@ -33,7 +33,7 @@ The pit saga: a body that stands in a pit with stone around it cannot walk out. 
 3. If tier 2 finds no path or runs out of its search, tier 1's movements come back and the plain walk's partial route stands (0142). The reason stays `blocked` with the fixed text, never `timeout`.
 4. A tier-1 walk that is started again (the next `moveNear`) begins on tier 1 movements, so a tier-2 walk never leaks into the next one. `planReach` plans with the tier-1 movements unless it is asked for digging.
 
-The escape ladder stays as the last fallback. The door handling, the hitbox and feet-cell fixes and the search budget are unchanged.
+The escape ladder stays as the last fallback: it also runs when tier 2 finds no path (a blocked walk in water, or stalled 60 ticks or more, runs the ladder as before). The door handling, the hitbox and feet-cell fixes and the search budget are unchanged.
 
 When a tier-2 walk completes, its result says in plain words what it dug and placed, for example "dug through two blocks and placed one dirt block to climb". Scaffold is placed from the ranger's own throwaway blocks and the text names each type ("placed two dirt blocks and one cobblestone block"). Digs and placements are counted by wrapping `bot.dig` and `bot.placeBlock` while the walk runs, because the library clears `diggingCompleted` listeners itself.
 
@@ -41,7 +41,7 @@ When a tier-2 walk completes, its result says in plain words what it dug and pla
 
 Digging by tier 2 is refused for a block when any of these holds:
 
-- Its name is a block entity or a utility block: chests and other storage, furnaces, hoppers, droppers, dispensers, signs, banners, beds, shulker boxes, lecterns, spawners, campfires, decorated pots, crafting and enchanting tables, anvils, ladders, torches, rails, glass and glass panes, doors, trapdoors and fence gates, obsidian, bedrock and command blocks.
+- Its name is a block entity or a utility block: chests and other storage, furnaces, hoppers, droppers, dispensers, signs, banners, beds, shulker boxes, lecterns, spawners, campfires, decorated pots, crafting and enchanting tables, anvils, ladders, torches, rails, glass and glass panes, doors, trapdoors and fence gates, obsidian, bedrock and command blocks, end portal frames, barriers, structure blocks, jigsaws and reinforced deepslate. Player redstone (levers, buttons, pressure plates, redstone dust, repeaters, comparators, sculk sensors), lights, slime and honey blocks and the decor on the by-type list are built material and are never dug by goto.
 - It is protected (below).
 - The library never breaks it (`blocksCantBreak`).
 - Liquid touches it on any face.
@@ -61,6 +61,10 @@ A block whose dig time the bot cannot read is not refused for that reason alone 
 - "Part of an enclosed space" is not checked yet. No cheap local check was found; it is a TODO in `isProtected`.
 
 ## Consequences
+
+- Every tier-2 walk ends on tier 1: success, cancel, failure or a throw puts the plain movements and the 4 s search budget back, so a later plain walk is never planned with the 1.5 s tier-2 budget (review 2, N1).
+- The panic-burrow reflex digs (`dig-cell`) go through the same protection as goto: a player's cobblestone or any other protected block is refused, and the reflex's dig is not counted as made (review 2, N8).
+- The own-placement record holds at most 4096 cells per bot (the oldest is dropped) and clears on respawn or dimension change. A chunk unload does not clear it, so a cell a player changed while the chunk was unloaded can read as the bot's own until the next block update there (review 2, N6, accepted).
 
 - A body can leave a pit, climb a canopy and cross a stone wall, where before it reported `blocked`. A pit whose walls are all stone is now left by tier 2 even when the library resolves the empty route.
 - Natural placed blocks that are not on a built block and not owned can still be dug. A natural cobblestone or dirt pile built by a player is protected only when it touches a built block (see above). Until the ownership record exists, a player's natural-material work (a dirt mound, a stone path) can be dug by a `goto` in tier 2. This risk stays until the record is in.

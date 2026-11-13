@@ -32,6 +32,8 @@ const TICK_SLICE_MS = 40;
 const SEARCH_BUDGET_MS = 4000;
 /** Tier 2's search budget (ms): an unreachable goal costs this much, not the whole 4 s (decision 0164). */
 export const TIER_TWO_BUDGET_MS = 1500;
+/** A stall's tier 2 ends once the bot is this far from the spot it stalled at (decision 0164). */
+export const STALL_DIG_LEAVE_BLOCKS = 3;
 /** Stall then replan: under this many blocks of movement for this many ticks drops the path. */
 const REPLAN_MOVED = 0.03;
 export const REPLAN_STALL_TICKS = 60;
@@ -363,6 +365,8 @@ export function moveNear(
     };
     const cleanup = (): void => {
       clearInterval(watchdog);
+      // Every exit (success, cancel, failure, throw) leaves tier 2: its budget must not outlive the walk.
+      leaveDigTier();
       tally.stop();
       opts.signal.removeEventListener('abort', onAbort);
       releaseJump();
@@ -388,6 +392,8 @@ export function moveNear(
     let digSeenAge: number | undefined;
     let recoveredEpisode: number | undefined;
     let recoverySteps: readonly RecoveryStep[] = [];
+    /** Where a stall put tier 2 on: tier 2 is left once the bot is this far from it (decision 0164). */
+    let stallDigFrom: Vec3 | undefined;
 
     /** The facts of this move's stall or path failure, for its stall_diag line. */
     const factsAt = (reason: string, stalledTicks: number): StallFacts => ({
@@ -427,7 +433,7 @@ export function moveNear(
         },
         (error: unknown) => {
           if (mine !== generation) return;
-          const reason = classifyPathError(error);
+          let reason = classifyPathError(error);
           if (reason === null) {
             // Not a pathing outcome: the run wrapper turns this throw into `internal`.
             if (!done) {
@@ -438,20 +444,25 @@ export function moveNear(
             return;
           }
           const name = (error as { name?: string } | null)?.name;
-          // Tier 1 found no path: the same goal again with digging and towers allowed.
+          let message = fixedMessage(name);
+          // Tier 1 found no path: the same goal again with digging and towers allowed. This
+          // trigger is a walk with no route at all, so tier 2 stays for the rest of the walk.
           if (name === 'NoPath' && enterDigTier()) {
+            stallDigFrom = undefined;
             start(new goals.GoalNear(target.x, target.y, target.z, range));
             return;
           }
           // Tier 2 found no way (or ran out of its short search): the plain walk's partial route
-          // stands, so the reason stays blocked and never becomes timeout (decision 0142).
+          // stands, and the failure is blocked (decision 0142), so the escape ladder still runs below.
           if (tier === 2 && !partial && (name === 'NoPath' || name === 'Timeout')) {
+            stallDigFrom = undefined;
             leaveDigTier();
             if (followPartial()) return;
-            settle({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
+            reason = 'blocked';
+            message = NO_PATH_TEXT;
+          } else if (name === 'NoPath' && !partial && followPartial()) {
             return;
           }
-          if (name === 'NoPath' && !partial && followPartial()) return;
           const facts =
             reason === 'blocked'
               ? factsAt(name ?? 'blocked', bot.time.age - lastMovedAge)
@@ -463,7 +474,7 @@ export function moveNear(
           ) {
             return;
           }
-          settle({ ok: false, reason, message: fixedMessage(name) }, facts);
+          settle({ ok: false, reason, message }, facts);
         },
       );
     };
@@ -546,8 +557,8 @@ export function moveNear(
       replans++;
       replanAge = bot.time.age;
       replanPos = bot.entity.position.clone();
-      // A stalled tier-1 walk tries tier 2 (digging, towers) on this recovery.
-      enterDigTier();
+      // A stalled tier-1 walk tries tier 2 (digging, towers) on this recovery, to get past this spot.
+      if (enterDigTier()) stallDigFrom = bot.entity.position.clone();
       try {
         start(new goals.GoalNear(target.x, target.y, target.z, range));
       } catch (error) {
@@ -572,6 +583,26 @@ export function moveNear(
       /** A young dig is not a stall: recovery would end it with "Digging aborted". */
       const youngDig = digSeenAge !== undefined && bot.time.age - digSeenAge < digGraceTicks(bot);
       if (jumpAge !== undefined && bot.time.age - jumpAge >= JUMP_TICKS) releaseJump();
+      // A stall's tier 2 only gets the bot past the stuck spot: once it has moved on, plan on tier 1.
+      if (
+        stallDigFrom !== undefined &&
+        tier === 2 &&
+        bot.entity.position.distanceTo(stallDigFrom) >= STALL_DIG_LEAVE_BLOCKS
+      ) {
+        stallDigFrom = undefined;
+        leaveDigTier();
+        haltPathing(bot);
+        replanPos = bot.entity.position.clone();
+        replanAge = bot.time.age;
+        try {
+          start(new goals.GoalNear(target.x, target.y, target.z, range));
+        } catch (error) {
+          done = true;
+          cleanup();
+          reject(error);
+        }
+        return;
+      }
       if (bot.entity.position.distanceTo(lastPos) >= MOVED_BLOCKS) {
         lastPos = bot.entity.position.clone();
         lastMovedAge = bot.time.age;
@@ -629,6 +660,7 @@ export function moveNear(
     if (plain !== undefined && (bot.pathfinder as { movements?: unknown }).movements !== plain) {
       bot.pathfinder.setMovements(plain as never);
     }
+    bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
 
     try {
       start(new goals.GoalNear(target.x, target.y, target.z, range));

@@ -56,6 +56,9 @@ const BUILT_SUFFIXES = [
   '_wood',
   '_sign',
   '_lantern',
+  // Player redstone: buttons and pressure plates of every wood and stone (review N7).
+  '_button',
+  '_pressure_plate',
 ];
 
 /** Built materials by exact name (plain terracotta is natural, so it is not here). */
@@ -121,6 +124,38 @@ const BUILT_NAMES = new Set([
   'purpur_block',
   'bone_block',
   'infested_cobblestone',
+  // Player lights, redstone, slime and honey blocks, and decor the builders place (review N7).
+  'glowstone',
+  'shroomlight',
+  'slime_block',
+  'honey_block',
+  'target',
+  'dried_kelp_block',
+  'bamboo_block',
+  'bamboo_mosaic',
+  'crimson_hyphae',
+  'lightning_rod',
+  'copper_bulb',
+  'exposed_cut_copper',
+  'scaffolding',
+  'end_rod',
+  'cake',
+  'tripwire_hook',
+  'lever',
+  'redstone_wire',
+  'repeater',
+  'comparator',
+  'sculk_sensor',
+  'respawn_anchor',
+  'conduit',
+  'flower_pot',
+  'item_frame',
+  'painting',
+  'chain',
+  'iron_chain',
+  'purpur_pillar',
+  'trial_spawner',
+  'vault',
 ]);
 
 /** Natural blocks that a built prefix would catch (amethyst geodes' smooth basalt). */
@@ -186,6 +221,12 @@ const REFUSED_NAMES = new Set([
   'chain_command_block',
   'command_block',
   'repeating_command_block',
+  // Engine and structure blocks that no survival walk should ever break (review N7).
+  'end_portal_frame',
+  'barrier',
+  'structure_block',
+  'jigsaw',
+  'reinforced_deepslate',
 ]);
 
 /** Why `goto` never digs this block at all (independent of who built it), or false. */
