@@ -8,6 +8,7 @@ These rules apply to Claude Code, Codex, Copilot and any other harness. Read [CL
 | work on Phase 0 | [docs/analysis/phase0/RESUME.md](docs/analysis/phase0/RESUME.md), then its `README.md` ledger |
 | implement a packet | your packet's section of [docs/analysis/phase0/work-packets.md](docs/analysis/phase0/work-packets.md) and [.claude/agents/packet-coder.md](.claude/agents/packet-coder.md) |
 | review a packet or PR | [.claude/agents/packet-reviewer.md](.claude/agents/packet-reviewer.md) |
+| change a page people look at (Glass, Kino, register) | [.claude/agents/web-designer.md](.claude/agents/web-designer.md), and see the page with `node glass/test/preview.ts` |
 | open, update or merge a PR | [.claude/skills/ship-pr/SKILL.md](.claude/skills/ship-pr/SKILL.md) |
 | close a wave | `work-packets.md` § Wave close and the [campaign-packet skill](.claude/skills/campaign-packet/SKILL.md) § 6 |
 | start the stack or run the benchmark | [.claude/skills/run-shard/SKILL.md](.claude/skills/run-shard/SKILL.md), [.claude/skills/body-bench/SKILL.md](.claude/skills/body-bench/SKILL.md) |
