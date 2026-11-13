@@ -131,3 +131,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0155](0155-legal-text-v1-approved-and-contact-published.md) | Terms, privacy notice and acceptable use version 1 approved by the owner (2026-11-11); abuse contact published; changes bump the version and re-consent | Decided (owner approval 2026-11-11) |
 | [0156](0156-agent-viewport-image.md) | The Body can render its own first-person viewport to a PNG with a CPU raycaster and return it as MCP image content (spike result) | Proposed |
 | [0157](0157-gray-item-rulings-2026-11-12.md) | Gray-item rulings: no mid-life model escalation, no budget text, no held first login, no auto-armour, gravestones yes; knowledge baseline still open | Decided (owner) |
+| [0160](0160-place-at-feet-pillar-step.md) | `place <solid block> at: "feet"` is a pillar step: the bot jumps and places the block in the cell its feet were in (supersedes the solid-block part of 0031) | Accepted |

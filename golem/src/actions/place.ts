@@ -3,6 +3,7 @@ import type { Position } from './bot-types.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
+import { entityInCell, pillarStep } from './pillar.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -43,12 +44,19 @@ const MESSAGE = {
   occupied: 'target is occupied: name an empty position or mine the block first',
   notLoaded: 'target is not loaded: move closer or name a loaded position',
   noReference: 'no solid block to place against: name a position next to a solid block',
+  noGround: 'no solid block under your feet to build on: stand on solid ground first',
+  notGrounded: 'you are not on the ground: wait until you land, then place again',
+  headroom: 'no headroom for a pillar: clear the two cells above your head first',
+  entityInCell: 'another entity stands where the block goes: step to open ground first',
+  notRisen: 'you did not rise onto the block: clear the space above you and try again',
   refused:
     'the server refused: stand on solid ground within reach and choose a block position next to you',
   unconfirmed:
     'the block did not appear at the target: stand on solid ground and choose a block position next to you',
   timeout: 'the server did not answer the placement: try again',
 } as const;
+/** The pillar's log goes nowhere here: the ladder owns the stall diagnostics. */
+const SILENT = { log: () => undefined, now: () => 0 };
 
 /** Where the block goes: a position, or `'feet'` for the cell the bot's feet are in (decision 0031). */
 type Spot = { x: number; y: number; z: number } | 'feet';
@@ -84,9 +92,12 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
   if (!REPLACEABLE.has(targetCell.name)) return failed('blocked', MESSAGE.occupied);
 
+  // A solid block at feet is a pillar: the bot jumps and places it in the cell its feet were in
+  // (decision 0160). A bed keeps the beside path.
+  const pillarAtFeet = at === 'feet' && boundingBox !== 'empty' && !block.endsWith('_bed');
   // A solid block on the bot's own cells moves to the first free cell beside the bot.
   let beside: { target: Vec3; step: Vec3 } | null = null;
-  if (boundingBox !== 'empty' && inBody(bot, target)) {
+  if (!pillarAtFeet && boundingBox !== 'empty' && inBody(bot, target)) {
     beside = freeBeside(bot, floor(bot.entity.position), block.endsWith('_bed'));
     if (!beside) return failed('blocked', MESSAGE.noSpace);
     target = beside.target;
@@ -107,6 +118,8 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
     const cell = bot.blockAt(new Vec3(body.x, body.y + dy, body.z));
     if (cell && cell.boundingBox !== 'empty') return failed('blocked', MESSAGE.insideBlock);
   }
+
+  if (pillarAtFeet) return pillarPlace(ctx, stack, block, target);
 
   // At `feet` the reference is the block below; otherwise the first solid neighbor in order.
   const candidates =
@@ -168,6 +181,36 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   return last;
 }
 
+/**
+ * Pillars a solid block up into the cell the feet are in: the bot must stand on the ground over a
+ * solid block, and completes only when the block is placed there and the bot ends a block higher.
+ */
+async function pillarPlace(
+  ctx: ActionContext,
+  stack: unknown,
+  block: string,
+  cell: Vec3,
+): Promise<ActionOutcome> {
+  const { bot } = ctx;
+  if (!bot.entity.onGround) return failed('blocked', MESSAGE.notGrounded);
+  const below = cell.offset(0, -1, 0);
+  if (bot.blockAt(below)?.boundingBox !== 'block') return failed('blocked', MESSAGE.noGround);
+  const refusals: string[] = [];
+  const result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+  if (result.ok) {
+    if (!confirmsPlacement(bot.blockAt(cell)?.name ?? '', block)) {
+      return failed('blocked', MESSAGE.unconfirmed);
+    }
+    return completed({ block, at: spot(cell), reference: spot(below) });
+  }
+  if (result.why === 'aborted') return cancelled();
+  if (result.why === 'headroom') {
+    return failed('blocked', refusals[refusals.length - 1] ?? MESSAGE.headroom);
+  }
+  if (result.why === 'entity') return failed('blocked', MESSAGE.entityInCell);
+  return failed('blocked', MESSAGE.notRisen);
+}
+
 /** True when the cell is the bot's feet cell or the cell above it. */
 function inBody(bot: Bot, cell: Vec3): boolean {
   const feet = floor(bot.entity.position);
@@ -197,10 +240,10 @@ function stepsFromFacing(yaw: number): Vec3[] {
   return [facing, ...CARDINALS.filter((step) => !step.equals(facing))];
 }
 
-/** True when a block may replace the cell and no entity stands in it. */
+/** True when a block may replace the cell and no entity's box overlaps it. */
 function isOpen(bot: Bot, cell: Vec3): boolean {
   const name = bot.blockAt(cell)?.name;
-  return name !== undefined && REPLACEABLE.has(name) && !occupiedByEntity(bot, cell);
+  return name !== undefined && REPLACEABLE.has(name) && !entityInCell(bot, cell);
 }
 
 /** True when the cell is open and one of its neighbors is solid to place against. */
@@ -209,15 +252,6 @@ function isFree(bot: Bot, cell: Vec3): boolean {
     isOpen(bot, cell) &&
     NEIGHBOR_OFFSETS.some((o) => bot.blockAt(cell.plus(o))?.boundingBox === 'block')
   );
-}
-
-/** True when another entity's feet or head cell is the cell. */
-function occupiedByEntity(bot: Bot, cell: Vec3): boolean {
-  return Object.values(bot.entities).some((entity) => {
-    if (entity === bot.entity) return false;
-    const feet = floor(entity.position);
-    return feet.equals(cell) || feet.offset(0, 1, 0).equals(cell);
-  });
 }
 
 /** The cell a position is in. */

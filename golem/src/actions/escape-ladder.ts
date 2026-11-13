@@ -1,9 +1,9 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { hazardReason, unbreakableReason } from './bare-hand.ts';
-import type { Block } from './bot-types.ts';
 import { inPit, stairs } from './escape-stairs.ts';
 import { errorText } from './outcome.ts';
+import { heldBlock, type LooseBot, passable, pillarStep, release, solid } from './pillar.ts';
 import type { DiagSink } from './stall-diag.ts';
 
 /** The rungs of the hard-stuck ladder, in the only order they run. */
@@ -15,10 +15,6 @@ const RUNG_TICKS = 20;
 const FREE_DISTANCE = 1.2;
 /** Ticks the swim-up of the water exit may take. */
 const SWIM_TICKS = 40;
-/** The pillar places once the feet are this far above the start: the box has left the new block's cell. */
-const PILLAR_CLEAR = 1.0;
-/** A pillar worked when the bot ends this far above its start, on the placed block. */
-const RISE = 0.9;
 
 /** What a finished ladder reports. `refusal` names a block the dig rung would not take, and why. */
 export type LadderResult =
@@ -30,15 +26,6 @@ interface LadderOptions {
   toward: { x: number; z: number };
   sink: DiagSink;
 }
-
-type LooseBot = Bot & {
-  entity: { position: Vec3; isInWater?: boolean; height?: number };
-  pathfinder?: {
-    bestHarvestTool?: (block: Block) => unknown;
-    stop(): void;
-    setGoal(g: null): void;
-  };
-};
 
 const horizontal = (a: Vec3, b: Vec3): number => Math.hypot(a.x - b.x, a.z - b.z);
 
@@ -57,10 +44,6 @@ function stepToward(from: Vec3, toward: { x: number; z: number }): Vec3 {
   if (Math.abs(dx) >= Math.abs(dz)) return new Vec3(Math.sign(dx) || 1, 0, 0);
   return new Vec3(0, 0, Math.sign(dz));
 }
-
-const solid = (block: Block | null): boolean => block !== null && block.boundingBox === 'block';
-const passable = (block: Block | null): boolean =>
-  block !== null && block.boundingBox === 'empty' && block.name !== 'lava';
 
 /** The nearest horizontal neighbour (feet cell side) that is solid with two free cells above it. */
 export function nearestLedge(bot: Bot): Vec3 | null {
@@ -102,10 +85,6 @@ async function ticks(
     await bot.waitForTicks(1);
     if (stop?.()) return;
   }
-}
-
-function release(bot: Bot): void {
-  for (const control of ['forward', 'jump', 'sprint'] as const) bot.setControlState(control, false);
 }
 
 async function lookHorizontal(bot: Bot, dir: Vec3): Promise<void> {
@@ -202,97 +181,11 @@ async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise
   return moved(bot, start);
 }
 
-/** The first inventory item that is a placeable block, by registry name. */
-function heldBlock(bot: Bot): unknown {
-  return bot.inventory.items().find((item) => {
-    const info = bot.registry.blocksByName[item.name];
-    return info !== undefined && info.boundingBox === 'block' && info.diggable !== false;
-  });
-}
-
-/**
- * Makes the two cells above the bot's head free for the pillar's jump: air passes, and a solid block
- * the bare hand may dig is dug first. Anything else (unbreakable, hazardous, lava) is refused with a
- * reason that names the headroom, and the jump is not tried.
- */
-async function clearHeadroom(bot: Bot, o: LadderOptions, refusals: string[]): Promise<boolean> {
-  const b = bot as LooseBot;
-  const feet = b.entity.position.floored();
-  const own = [feet, feet.offset(0, 1, 0)];
-  for (const dy of [2, 3]) {
-    const at = feet.offset(0, dy, 0);
-    const block = bot.blockAt(at);
-    if (passable(block)) continue;
-    const refusal =
-      block === null || !solid(block)
-        ? `${block?.name ?? 'unloaded cell'} overhead`
-        : (unbreakableReason(block) ?? hazardReason(bot, block, at, own, true));
-    if (refusal) {
-      refusals.push(`no headroom for a pillar: ${refusal}`);
-      return false;
-    }
-    // A superseded ladder takes no second cell: the first dig may have aborted the move.
-    if (o.signal.aborted) return false;
-    try {
-      const tool = b.pathfinder?.bestHarvestTool?.(block as Block);
-      if (tool) await bot.equip(tool as never, 'hand');
-      await bot.dig(block as Block, true);
-    } catch (error) {
-      refusals.push(`no headroom for a pillar: ${errorText(error)}`);
-      return false;
-    }
-  }
-  if (o.signal.aborted) return false;
-  return true;
-}
-
-/**
- * Jumps and places a held block under the feet; true when the bot ends higher than it began and the
- * block went down. The block is placed only once the feet are a full block up (`PILLAR_CLEAR`):
- * earlier the bot's own box still fills the cell and the server refuses the placement.
- */
+/** The pillar rung: places the first held block under the feet, true when the bot rose onto it. */
 async function pillar(bot: Bot, o: LadderOptions, refusals: string[]): Promise<boolean> {
-  const b = bot as LooseBot;
   const item = heldBlock(bot);
   if (!item) return false;
-  if (!(await clearHeadroom(bot, o, refusals))) return false;
-  const startY = b.entity.position.y;
-  let placed = false;
-  try {
-    await bot.equip(item as never, 'hand');
-    await bot.lookAt(b.entity.position.offset(0, -1, 0), true);
-    bot.setControlState('jump', true);
-    // The cell the bot began in becomes the new floor: place on the block under it once the bot is up.
-    const cell = b.entity.position.floored();
-    const ground = bot.blockAt(cell.offset(0, -1, 0));
-    for (let i = 0; i < RUNG_TICKS && !o.signal.aborted; i++) {
-      await bot.waitForTicks(1);
-      if (
-        !placed &&
-        !o.signal.aborted &&
-        b.entity.position.y - startY >= PILLAR_CLEAR &&
-        ground &&
-        solid(ground)
-      ) {
-        if (passable(bot.blockAt(cell))) {
-          await bot.placeBlock(ground, new Vec3(0, 1, 0));
-          placed = true;
-        }
-      }
-      if (placed && b.entity.position.y - startY >= RISE) break;
-    }
-  } catch (error) {
-    o.sink.log(
-      JSON.stringify({
-        event: 'stall_diag',
-        reason: 'escape_pillar_failed',
-        error: errorText(error),
-      }),
-    );
-  } finally {
-    release(bot);
-  }
-  return placed && b.entity.position.y - startY >= RISE;
+  return (await pillarStep(bot, item, o, refusals)).ok;
 }
 
 /** Fixed text of the last-resort outcome: facts only. */
