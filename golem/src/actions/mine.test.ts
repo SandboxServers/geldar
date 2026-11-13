@@ -1,16 +1,6 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  BEDROCK,
-  block,
-  COBBLESTONE,
-  fakeBot,
-  GRAVEL,
-  mine,
-  OAK_LOG,
-  STONE,
-  WATER,
-} from './mine.fakes.ts';
+import { BEDROCK, block, fakeBot, GRAVEL, mine, OAK_LOG, STONE, WATER } from './mine.fakes.ts';
 import { type ItemStack, inventoryDelta } from './mine.ts';
 import { moveNear } from './pathing.ts';
 
@@ -232,5 +222,86 @@ describe('mineAction', () => {
       detail: { mined: 0 },
     });
     expect(bot.dig).toHaveBeenCalledTimes(1);
+  });
+
+  it('digs the wall beside the bot, not the stone under its feet', async () => {
+    // The floor is listed first: the fake returns matches in order, as Mineflayer returns the nearest.
+    const floor = block(STONE, new Vec3(0, 63, 0), [], undefined, 'stone');
+    const wall = block(STONE, new Vec3(1, 64, 0), [], undefined, 'stone');
+    const bot = fakeBot([floor, wall]);
+    expect(await mine(bot, 1, 'stone')).toMatchObject({
+      status: 'completed',
+      detail: { mined: 1 },
+    });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
+    expect(bot.dig.mock.calls[0]?.[0]).toBe(wall);
+    expect(floor.type).toBe(STONE);
+  });
+
+  it('fails would drop the bot when the only stone in reach is under its feet', async () => {
+    const floor = block(STONE, new Vec3(0, 63, 0), [], undefined, 'stone');
+    const bot = fakeBot([floor]);
+    expect(await mine(bot, 1, 'stone')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'would drop the bot',
+      detail: { mined: 0 },
+    });
+    expect(bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('digs the next block when the walk to a target ends with the bot on it', async () => {
+    const target = block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]);
+    const next = block(OAK_LOG, new Vec3(6, 64, 0), [OAK_LOG]);
+    const bot = fakeBot([target, next]);
+    // The walk to the first target ends on it, so the bot stands on it.
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      bot.entity.position = new Vec3(3, 64, 0);
+      return { ok: true, distance: 0 };
+    });
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
+    expect(bot.dig.mock.calls[0]?.[0]).toBe(next);
+    expect(target.type).toBe(OAK_LOG);
+  });
+
+  it('digs the next block when the retry walk ends with the bot on the block', async () => {
+    const target = block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]);
+    const next = block(OAK_LOG, new Vec3(6, 64, 0), [OAK_LOG]);
+    const bot = fakeBot([target, next]);
+    bot.canDigBlock.mockReturnValue(true);
+    bot.dig.mockRejectedValueOnce(new Error('Block is not in view'));
+    // The retry walk ends on the first target, so the bot stands on it and it is skipped.
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      bot.entity.position = new Vec3(3, 64, 0);
+      return { ok: true, distance: 0 };
+    });
+    expect(await mine(bot, 1)).toMatchObject({ status: 'completed', detail: { mined: 1 } });
+    expect(bot.dig).toHaveBeenCalledTimes(2);
+    expect(bot.dig.mock.calls[0]?.[0]).toBe(target);
+    expect(bot.dig.mock.calls[1]?.[0]).toBe(next);
+    expect(target.type).toBe(OAK_LOG);
+  });
+
+  it('ends with would drop the bot when every walk target ends under it, one walk each', async () => {
+    const targets = [
+      block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]),
+      block(OAK_LOG, new Vec3(4, 63, 0), [OAK_LOG]),
+      block(OAK_LOG, new Vec3(5, 63, 0), [OAK_LOG]),
+    ];
+    const bot = fakeBot(targets);
+    // Every walk ends on its target, so each candidate is skipped once and none is dug.
+    vi.mocked(moveNear).mockImplementation(async (_walker, at) => {
+      bot.entity.position = new Vec3(at.x, at.y + 1, at.z);
+      return { ok: true, distance: 0 };
+    });
+    expect(await mine(bot, 1)).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'would drop the bot',
+      detail: { mined: 0 },
+    });
+    expect(vi.mocked(moveNear)).toHaveBeenCalledTimes(3);
+    expect(bot.dig).not.toHaveBeenCalled();
   });
 });
