@@ -1,6 +1,7 @@
+import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { createPerception } from './index.ts';
-import { MAX_NOTABLE, MAX_SIGN_TEXT } from './notable-blocks.ts';
+import { canSeePoint, MAX_NOTABLE, MAX_SIGN_TEXT } from './notable-blocks.ts';
 import { FakeWorld } from './perception.fakes.ts';
 
 // The bot stands at (0.5, 64, 0.5): its eyes are in block (0, 65, 0). Every block below is at y 65
@@ -147,5 +148,48 @@ describe('authorized notable blocks', () => {
     const notable = world.findCalls.filter((call) => call.maxDistance === 16);
     expect(notable.length).toBeGreaterThan(0);
     expect(notable.every((call) => call.count === 32)).toBe(true);
+  });
+});
+
+describe('canSeePoint through glass', () => {
+  // The eyes are at (0.5, 65.62, 0.5). The point is level with them, two blocks out along z, so the
+  // ray crosses block (0, 65, 1) at its middle.
+  const point = new Vec3(0.5, 65.62, 2.5);
+
+  it('sees through a glass pane between the eyes and the point', () => {
+    const world = new FakeWorld();
+    world.set('glass_pane', 0, 65, 1);
+    expect(canSeePoint(world.bot, point)).toBe(true);
+  });
+
+  it('sees through every transparent name the sight line may cross', () => {
+    for (const name of [
+      'glass',
+      'tinted_glass',
+      'iron_bars',
+      'glass_pane',
+      'white_stained_glass',
+      'light_blue_stained_glass_pane',
+    ]) {
+      const world = new FakeWorld();
+      world.set(name, 0, 65, 1);
+      expect(canSeePoint(world.bot, point), name).toBe(true);
+    }
+  });
+
+  it('still lets stone and leaves block the sight line', () => {
+    for (const name of ['stone', 'oak_leaves']) {
+      const world = new FakeWorld();
+      world.set(name, 0, 65, 1);
+      expect(canSeePoint(world.bot, point), name).toBe(false);
+    }
+  });
+
+  it('counts glass as a block when solidOnly is set', () => {
+    const world = new FakeWorld();
+    world.set('glass_pane', 0, 65, 1);
+    expect(canSeePoint(world.bot, point, { solidOnly: true })).toBe(false);
+    world.clear(0, 65, 1);
+    expect(canSeePoint(world.bot, point, { solidOnly: true })).toBe(true);
   });
 });

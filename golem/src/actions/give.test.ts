@@ -156,6 +156,53 @@ describe('give', () => {
     expect(toss).not.toHaveBeenCalled();
   });
 
+  it('fails not_possible and tosses nothing to a recipient 1.5 blocks up and over 2 out', async () => {
+    const { world, run, toss } = setup();
+    // The Body is at (0.5, 64, 0.5); Pike is 1.5 blocks up and 2.4 out, 2.83 blocks away.
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 65.5, 2.9),
+      height: 1.8,
+    };
+    expect(await run('Pike')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'too far up to toss to',
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('still tosses to a recipient 1.5 blocks up and exactly 2 out', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 65.5, 2.5),
+      height: 1.8,
+    };
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(toss).toHaveBeenCalledOnce();
+  });
+
+  it('fails blocked and tosses nothing when glass is between the Body and the recipient', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 2.5),
+      height: 1.8,
+    };
+    // The eyes are at (0.5, 65.62, 0.5); the ray to Pike's middle crosses block (0, 65, 1).
+    world.set('glass_pane', 0, 65, 1);
+    expect(await run('Pike')).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'something is in the way of the toss',
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
   it('walks up to a visible agent that is further than 3 blocks, then tosses', async () => {
     const { world, run, toss } = setup();
     const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 8.5) };
@@ -402,7 +449,13 @@ describe('tossPitch', () => {
   it('looks 30 degrees down when the recipient is level with the Body or below it', () => {
     expect(tossPitch(0, 2)).toBe(TOSS_PITCH);
     expect(tossPitch(-1, 2)).toBe(TOSS_PITCH);
-    expect(tossPitch(-1, 1.5)).toBeCloseTo(-Math.PI / 6, 12);
+    expect(tossPitch(0, 1.75)).toBe(TOSS_PITCH);
+  });
+
+  it('looks 40 degrees down when the recipient is level or below and under 1.75 blocks out', () => {
+    expect(tossPitch(-1, 1.5)).toBeCloseTo(degrees(-40), 12);
+    expect(tossPitch(0, 1.5)).toBeCloseTo(degrees(-40), 12);
+    expect(tossPitch(0, 1.74)).toBeCloseTo(degrees(-40), 12);
   });
 
   it('looks up at one block up, flatter as the recipient is farther out', () => {

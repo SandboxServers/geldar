@@ -1,5 +1,6 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { canSeePoint } from '../perception/notable-blocks.ts';
 import { findVisibleAgent } from '../perception/visible-agent.ts';
 import { STEP_BACK_BELOW, STEP_BACK_TO, stepBackPoint } from './give-spot.ts';
 import { outcomeOfMove } from './move-outcome.ts';
@@ -15,11 +16,20 @@ type Entity = Bot['entities'][string];
 export const GIVE_REACH = 3;
 /** The pitch (radians) the Body looks down at when it tosses: 30 degrees down. Positive is up. */
 export const TOSS_PITCH = -Math.PI / 6;
+/** The steeper pitch (radians): 40 degrees down, for a recipient level or lower and under STEEP_GAP out. */
+const STEEP_TOSS_PITCH = (-40 * Math.PI) / 180;
+/** Level or lower, a recipient closer than this (blocks, horizontal) gets STEEP_TOSS_PITCH. */
+const STEEP_GAP = 1.75;
+/** A recipient this far up (blocks, feet) is too high to toss to from beyond TALL_MAX_GAP. */
+const TALL_RISE = 1.5;
+/** The horizontal gap (blocks) beyond which a recipient TALL_RISE or more up cannot be tossed to. */
+const TALL_MAX_GAP = 2;
 
 /**
  * The pitch (radians, positive is up) the Body tosses at, given how far the recipient's feet are
- * above the Body's (`dy`, blocks) and how far out it stands (`d`, blocks). Level or lower, it is
- * `TOSS_PITCH`. One block up, a 30-degree throw hits the step's face, so it goes up: 65 degrees at
+ * above the Body's (`dy`, blocks) and how far out it stands (`d`, blocks). Level or lower it is
+ * `TOSS_PITCH`, or 40 degrees down under 1.75 blocks out (sweep: P 1.00 against 0.82 at -30). One
+ * block up, a 30-degree throw hits the step's face, so it goes up: 65 degrees at
  * 1.5 blocks, 45 at 3 (a straight line in between, clamped). Two or more blocks up it is 60 degrees
  * out to 2 blocks and 50 beyond. Any rise from 0 to 1.5 uses the one-block pitch, which only whole
  * blocks were simulated for. Simulated with vanilla constants (see the report): at dy 1 these
@@ -27,7 +37,7 @@ export const TOSS_PITCH = -Math.PI / 6;
  * chance falls to 0.24 at 3 blocks.
  */
 export function tossPitch(dy: number, d: number): number {
-  if (dy <= 0) return TOSS_PITCH;
+  if (dy <= 0) return d < STEEP_GAP ? STEEP_TOSS_PITCH : TOSS_PITCH;
   if (dy < 1.5) {
     const reach = Math.min(Math.max(d, 1.5), 3);
     return ((65 - ((reach - 1.5) * 40) / 3) * Math.PI) / 180;
@@ -271,12 +281,21 @@ export const giveAction: ActionHandler<'give'> = {
       if (horizontalGap(bot.entity.position, target.position) < STEP_BACK_BELOW)
         return failed('not_possible', 'too close to toss, and no room to step back');
     }
+    // Too high to throw to from beyond the step's reach: a toss from there lands short (simulated).
+    const rise = target.position.y - bot.entity.position.y;
+    if (rise >= TALL_RISE && horizontalGap(bot.entity.position, target.position) > TALL_MAX_GAP) {
+      return failed('not_possible', 'too far up to toss to');
+    }
+    // Glass lets the recipient be seen, but a toss stops at it: any block shape in the line blocks.
+    const middle = target.position.offset(0, target.height / 2, 0);
+    if (!canSeePoint(bot, middle, { solidOnly: true })) {
+      return failed('blocked', 'something is in the way of the toss');
+    }
 
     const watch = watchPickup(bot, action.to);
     try {
       // Aim at about the recipient's middle, not its feet, so the toss carries past the Body.
       await bot.lookAt(target.position.offset(0, target.height * 0.9, 0), true);
-      const rise = target.position.y - bot.entity.position.y;
       const pitch = tossPitch(rise, horizontalGap(bot.entity.position, target.position));
       await bot.look(bot.entity.yaw, pitch, true);
       // The look reaches the server on the next tick; tossing before then throws the old look.
