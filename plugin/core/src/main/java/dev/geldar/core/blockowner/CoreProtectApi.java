@@ -18,14 +18,6 @@ import org.bukkit.plugin.Plugin;
  */
 public final class CoreProtectApi implements CoreProtectPort {
     static final int MIN_API_VERSION = 12;
-    /** CoreProtect's action ids: 0 is a break, 1 a place. */
-    static final int ACTION_BREAK = 0;
-    static final int ACTION_PLACE = 1;
-    /** Ten years in seconds: the window is "seconds back" and every row of the columns is wanted. */
-    static final int LOOKUP_SECONDS = 315_360_000;
-    /** CoreProtect's radius is an inclusive square around the centre; 8 from the chunk middle covers its 16 columns. */
-    static final int RADIUS = 8;
-    private static final int CENTRE_Y = 64;
 
     private final CoreProtectAPI api;
 
@@ -51,9 +43,10 @@ public final class CoreProtectApi implements CoreProtectPort {
         if (bukkitWorld == null) {
             throw new IllegalStateException("world is not loaded: " + world);
         }
-        Location centre = new Location(bukkitWorld, chunkX * 16 + 8.0, CENTRE_Y, chunkZ * 16 + 8.0);
-        List<String[]> raw = api.performLookup(LOOKUP_SECONDS, null, null, null, null,
-                List.of(ACTION_BREAK, ACTION_PLACE), RADIUS, centre);
+        ChunkLookupCall call = ChunkLookupCall.forChunk(chunkX, chunkZ);
+        Location centre = new Location(bukkitWorld, call.centreX(), call.centreY(), call.centreZ());
+        List<String[]> raw = api.performLookup(call.seconds(), call.restrictUsers(), call.excludeUsers(),
+                call.restrictBlocks(), call.excludeBlocks(), call.actions(), call.radius(), centre);
         if (raw == null) {
             throw new IllegalStateException("CoreProtect lookup returned no result");
         }
@@ -66,7 +59,7 @@ public final class CoreProtectApi implements CoreProtectPort {
             // The lookup is centred in the queried world and the API 12 result carries no world accessor, so the
             // queried world is the row's world.
             rows.add(new LogRow(world, p.getX(), p.getY(), p.getZ(),
-                    p.getActionId() == ACTION_PLACE, p.getPlayer(), p.isRolledBack()));
+                    p.getActionId() == ChunkLookupCall.ACTION_PLACE, p.getPlayer(), p.isRolledBack()));
         }
         return rows;
     }
