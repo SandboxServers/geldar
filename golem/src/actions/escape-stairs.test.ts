@@ -128,6 +128,23 @@ describe('stairs gate: the pit test', () => {
     },
   );
 
+  it("the stairs refuse a step whose dirt touches someone else's built block, and dig nothing", async () => {
+    // Pit open to the south; the north wall's first cell is dirt touching planks behind it.
+    const open = new Vec3(0, 0, 1);
+    const blocks = {
+      ...sideBlocks(open, false),
+      '0,65,-1': block('dirt'),
+      '0,65,-2': block('oak_planks'),
+    };
+    const fake = scriptedBot({ blocks });
+    expect(inPit(fake.asBot)).toBe(true);
+    const { result, lines } = run(fake, towardWall(open));
+    await result;
+    expect(stairLines(lines)[0]).toMatchObject({ step: 1, stopped: 'refused' });
+    expect(String(stairLines(lines)[0]?.refusal)).toContain("someone else's work");
+    expect(fake.bot.dig).not.toHaveBeenCalled();
+  });
+
   it.each(SIDES)(
     'does not dig a stair in a pit whose %s side is a ledge the jump rung can use',
     async (_name, open) => {

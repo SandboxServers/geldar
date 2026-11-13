@@ -214,12 +214,17 @@ const FACES: ReadonlyArray<readonly [number, number, number]> = [
   [0, 0, -1],
 ];
 
-/** True when a face of the block touches a built-material block (a natural block in a built wall). */
+/**
+ * True when a face of the block touches a built-material block (a natural block in a built wall). A
+ * built block this Body placed itself does not count: its own pillar or scaffold shields nothing, so
+ * the dirt and stone beside it stay diggable (decision 0164).
+ */
 function touchesBuilt(bot: Bot, block: ProtectBlock): boolean {
   const at = new Vec3(block.position.x, block.position.y, block.position.z);
   for (const [dx, dy, dz] of FACES) {
-    const next = bot.blockAt(at.offset(dx, dy, dz), false) as { name?: string } | null;
-    if (next && isBuiltName(next.name)) return true;
+    const cell = at.offset(dx, dy, dz);
+    const next = bot.blockAt(cell, false) as { name?: string } | null;
+    if (next && isBuiltName(next.name) && !isOwnPlacement(bot, cell)) return true;
   }
   return false;
 }

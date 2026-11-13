@@ -133,3 +133,21 @@ describe("the pillar side dig never digs someone else's work (0164)", () => {
     expect(protectedReason(asBot, stone, stone.position)).toBeNull();
   });
 });
+
+describe('own blocks do not shield terrain beside them (0164)', () => {
+  const DIRT = { name: 'dirt', position: new Vec3(0, 64, 0) };
+
+  it("dirt beside the bot's own cobblestone is diggable", () => {
+    const bot = emittingBody({ '0,64,0': 'dirt', '1,64,0': 'cobblestone', ...GROUND });
+    recordOwnPlacement(bot, { x: 1, y: 64, z: 0 }, 'cobblestone');
+    expect(isProtected(bot, DIRT)).toBe(false);
+    expect(protectedReason(bot, DIRT, DIRT.position)).toBeNull();
+  });
+
+  it("dirt beside someone else's cobblestone stays protected", () => {
+    const bot = emittingBody({ '0,64,0': 'dirt', '1,64,0': 'cobblestone', ...GROUND });
+    recordOwnPlacement(bot, { x: 5, y: 64, z: 5 }, 'cobblestone');
+    expect(isProtected(bot, DIRT)).toBe(true);
+    expect(protectedReason(bot, DIRT, DIRT.position)).toContain('someone else');
+  });
+});
