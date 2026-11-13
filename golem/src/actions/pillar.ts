@@ -178,7 +178,8 @@ async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Pr
       if (tool) await bot.equip(tool as never, 'hand');
       await bot.dig(block as Block, true);
     } catch (error) {
-      refusals.push(`no headroom for a pillar: ${errorText(error)}`);
+      console.warn(`pillar dig failed: ${errorText(error)}`);
+      refusals.push('no headroom for a pillar: the dig failed');
       return false;
     }
   }

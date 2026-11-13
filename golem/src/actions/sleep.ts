@@ -57,7 +57,7 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   const beds = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
   if (!isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0)) {
-    return failed('not_possible', 'you can only sleep at night or in a thunderstorm');
+    return failed('not_possible', 'it is not night');
   }
 
   let last: ActionOutcome = failed('blocked', 'no bed was tried');

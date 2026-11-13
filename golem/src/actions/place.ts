@@ -50,7 +50,7 @@ const CARDINALS: readonly Vec3[] = [
   new Vec3(0, 0, -1),
 ];
 /** Fixed failure texts shown to the model: each states what happened, without advice (decision 0154: facts, never advice). */
-const MESSAGE = {
+export const MESSAGE = {
   noSpace: 'no free space next to you',
   insideBlock: 'you are inside a block',
   occupied: 'target is occupied',

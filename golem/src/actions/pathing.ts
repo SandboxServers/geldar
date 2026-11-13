@@ -262,10 +262,10 @@ interface PartialPlanner {
 }
 
 /** The reason text for a path error: fixed words, never the library's. */
-function fixedMessage(name: string | undefined, error: unknown): string {
+function fixedMessage(name: string | undefined): string {
   if (name === 'NoPath') return NO_PATH_TEXT;
   if (name === 'Timeout') return SEARCH_TIMEOUT_TEXT;
-  return error instanceof Error ? error.message : String(error);
+  return 'the walk failed';
 }
 
 /** The options `moveNear` takes; `diag` is where its stall_diag lines go (the Body's log by default). */
@@ -390,7 +390,7 @@ export function moveNear(
           ) {
             return;
           }
-          settle({ ok: false, reason, message: fixedMessage(name, error) }, facts);
+          settle({ ok: false, reason, message: fixedMessage(name) }, facts);
         },
       );
     };
