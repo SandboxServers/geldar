@@ -25,7 +25,18 @@ const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
 const SHARD = 'phase0';
 /** The compose files that only add to a base: never validated alone (geldar.ps1 Invoke-Check and ci.yml). */
 const OVERLAYS = ['rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml'];
-const ROLES = ['body', 'mind', 'eventsink', 'mcp', 'velocity', 'paper', 'kino', 'deploy'];
+const ROLES = [
+  'body',
+  'mind',
+  'eventsink',
+  'mcp',
+  'velocity',
+  'paper',
+  'kino',
+  'deploy',
+  'supervisor',
+  'register',
+];
 const MIND_TYPES = [
   'wake',
   'intent',
@@ -90,6 +101,9 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
     kino: { pub: [`geldar.${s}.kino.control`], sub: [`geldar.${s}.kino.*.feed`, '_INBOX.>'] },
     // Deploy (CD-1d): the maintenance subject only; no JetStream API and no Kino subject.
     deploy: { pub: [`geldar.${s}.maintenance`], sub: ['_INBOX.>'] },
+    // Body control (C7-03b1): the supervisor answers ctl.body and replies to inboxes; register requests and needs its inbox.
+    supervisor: { pub: ['_INBOX.>'], sub: [`geldar.${s}.ctl.body.>`] },
+    register: { pub: [`geldar.${s}.ctl.body.>`], sub: ['_INBOX.>'] },
   };
 }
 
@@ -115,6 +129,19 @@ function renderCompose(...files: string[]) {
 
 /** The quoted strings in one allow list, in order. */
 const quoted = (s: string) => [...s.matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? '');
+
+/** Whether one allow or deny list matches a concrete subject: `*` is one token, `>` the rest (one or more tokens). */
+function allowed(list: string[], subject: string): boolean {
+  const s = subject.split('.');
+  return list.some((p) => {
+    const t = p.split('.');
+    for (let i = 0; i < t.length; i++) {
+      if (t[i] === '>') return i < s.length;
+      if (i >= s.length || (t[i] !== '*' && t[i] !== s[i])) return false;
+    }
+    return t.length === s.length;
+  });
+}
 
 interface Entry {
   user: string;
@@ -360,6 +387,34 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(bare).toBe(false);
   });
 
+  it('denies a ctl.body publish to every role but supervisor and register, and the body and paper by explicit deny', () => {
+    // NATS deny wins over allow: body and paper have a wide allow, so the explicit deny is what keeps them off ctl.body.
+    const entries = parseEntries(rendered?.conf ?? '');
+    const byUser = (u: string) => entries.find((e) => e.user === u);
+    const ctl = `geldar.${SHARD}.ctl.body.start`;
+    for (const role of ROLES.filter((r) => r !== 'supervisor' && r !== 'register')) {
+      const e = byUser(role);
+      expect(e).toBeDefined();
+      expect(allowed(e?.pub ?? [], ctl) && !allowed(e?.deny ?? [], ctl)).toBe(false);
+    }
+    expect(byUser('body')?.deny).toContain(`geldar.${SHARD}.ctl.body.>`);
+    expect(byUser('paper')?.deny).toContain(`geldar.${SHARD}.ctl.body.>`);
+  });
+
+  it('lets supervisor subscribe to ctl.body and publish only inbox replies, and lets register publish ctl.body only', () => {
+    const entries = parseEntries(rendered?.conf ?? '');
+    const sup = entries.find((e) => e.user === 'supervisor');
+    const reg = entries.find((e) => e.user === 'register');
+    const ctl = `geldar.${SHARD}.ctl.body.start`;
+    expect(allowed(sup?.sub ?? [], ctl)).toBe(true);
+    expect(allowed(sup?.pub ?? [], ctl)).toBe(false);
+    expect(allowed(sup?.pub ?? [], `_INBOX.abc`)).toBe(true);
+    expect(allowed(reg?.pub ?? [], ctl)).toBe(true);
+    // Widening register's subscribe to geldar.<s>.> would make this true; the deny test catches it.
+    expect(allowed(reg?.sub ?? [], ctl)).toBe(false);
+    expect(allowed(reg?.pub ?? [], `geldar.${SHARD}.body.x.plan`)).toBe(false);
+  });
+
   it('keeps the Kino subjects to the plugin and to Glass: only paper publishes the feed, only kino publishes control', () => {
     const entries = parseEntries(rendered?.conf ?? '');
     const by = (u: string) => entries.find((e) => e.user === u);
@@ -369,8 +424,13 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(by('body')?.deny).toEqual([
       `geldar.${SHARD}.kino.>`,
       `geldar.${SHARD}.blockowner.changed`,
+      `geldar.${SHARD}.ctl.body.>`,
     ]);
-    expect(by('paper')?.deny).toEqual([control, `geldar.${SHARD}.blockowner.query`]);
+    expect(by('paper')?.deny).toEqual([
+      control,
+      `geldar.${SHARD}.blockowner.query`,
+      `geldar.${SHARD}.ctl.body.>`,
+    ]);
     expect(by('kino')?.deny).toEqual([]);
     const reach = (subject: string, list: string[]) =>
       list.some((p) => subject === p || (p.endsWith('.>') && subject.startsWith(p.slice(0, -1))));
