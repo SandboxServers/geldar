@@ -14,6 +14,16 @@ export const BANNED_FOODS = [
   'suspicious_stew',
   'chorus_fruit',
 ];
+/**
+ * Banned foods the Body eats only when no other food is carried, and at or below LAST_RESORT_HUNGER
+ * (decision 0168). The other banned foods stay banned.
+ */
+export const LAST_RESORT_FOODS = ['rotten_flesh'];
+/** The hunger (of 20) at or below which a last-resort food is eaten. */
+export const LAST_RESORT_HUNGER = 6;
+/** The refusal when the only food carried is a last-resort food and hunger is above the threshold. */
+export const LAST_RESORT_REFUSAL =
+  'only rotten flesh is carried; it is eaten only when hunger is 6 or below';
 /** At this hunger the bot is full, and `eat` is refused. */
 const FULL_FOOD = 20;
 /** Wall ms, before scaling, to wait for the health packet after `consume()` resolves. */
@@ -23,6 +33,17 @@ const FOOD_WAIT_MS = 3_000;
 export interface FoodInfo {
   foodPoints: number;
   saturation: number;
+}
+
+/**
+ * The names the Body may eat at this hunger: the ordinary (non-banned) ones; when none is carried,
+ * the last-resort ones, and only at or below LAST_RESORT_HUNGER.
+ */
+export function edibleAtHunger(names: readonly string[], hunger: number): string[] {
+  const ordinary = names.filter((name) => !BANNED_FOODS.includes(name));
+  if (ordinary.length > 0) return ordinary;
+  if (hunger > LAST_RESORT_HUNGER) return [];
+  return names.filter((name) => LAST_RESORT_FOODS.includes(name));
 }
 
 /**
@@ -61,11 +82,12 @@ async function eat(ctx: ActionContext): Promise<ActionOutcome> {
   const { bot } = ctx;
   const held = bot.heldItem ? [bot.heldItem] : [];
   const carried = [...held, ...bot.inventory.items()];
-  const name = bestFood(
-    carried.map((item) => item.name),
-    bot.registry.foodsByName,
-    BANNED_FOODS,
-  );
+  const names = carried.map((item) => item.name);
+  let name = bestFood(names, bot.registry.foodsByName, BANNED_FOODS);
+  if (!name && names.some((n) => LAST_RESORT_FOODS.includes(n))) {
+    if (bot.food > LAST_RESORT_HUNGER) return failed('not_possible', LAST_RESORT_REFUSAL);
+    name = bestFood(edibleAtHunger(names, bot.food), bot.registry.foodsByName, []);
+  }
   if (!name) return failed('missing_materials', 'no food');
   if (bot.food >= FULL_FOOD) return failed('not_possible', 'not hungry');
   const item = carried.find((stack) => stack.name === name);

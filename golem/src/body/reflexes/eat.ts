@@ -1,4 +1,4 @@
-import { BANNED_FOODS } from '../../actions/eat.ts';
+import { edibleAtHunger } from '../../actions/eat.ts';
 import { runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexOutcome } from '../reflex.ts';
 
@@ -12,11 +12,6 @@ export const EAT_REGEN_HUNGER = 18;
 const EAT_COOLDOWN_TICKS = 100;
 /** After consecutive failed meals the wait doubles each time, up to this many world ticks. */
 export const EAT_BACKOFF_CAP_TICKS = 1600;
-
-/** The foods the `eat` action would pick from: carried, and not on its banned list. */
-function pickableFoods(names: readonly string[]): string[] {
-  return names.filter((name) => !BANNED_FOODS.includes(name));
-}
 
 /**
  * Eats when hunger is at or below 14 of 20 and the Body carries food. It runs the existing `eat`
@@ -39,7 +34,7 @@ export function createEatReflex(): Reflex {
         const wait = Math.min(EAT_COOLDOWN_TICKS * 2 ** failures, EAT_BACKOFF_CAP_TICKS);
         if (view.tick - failedAt < wait) return null;
       }
-      const foods = pickableFoods(view.edibleFoods());
+      const foods = edibleAtHunger(view.edibleFoods(), view.hunger);
       if (foods.length === 0) return null;
       return { hunger: view.hunger, foods: foods.length };
     },
