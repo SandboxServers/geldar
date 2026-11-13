@@ -217,6 +217,20 @@ describe('sleep', () => {
     expect(moveNear).toHaveBeenLastCalledWith(bot, far.position, 1, expect.anything());
   });
 
+  it('names the bed as not usable, not the raw click error, when every bed refuses the click', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED }, { ...OTHER_HALF, name: 'red_bed' }],
+      sleepErrors: ['cant click the bed', 'cant click the bed'],
+    });
+    const outcome = await sleep(bot);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(outcome.status === 'failed' && outcome.message).toBe(
+      'tried 2 nearby beds, all occupied or blocked; last: the bed could not be used',
+    );
+    expect(classifySleepError('cant click the bed')).toBe('blocked');
+  });
+
   it('is blocked, naming the count tried, when every nearby bed is occupied', async () => {
     const bot = fakeBot({
       timeOfDay: 13_000,

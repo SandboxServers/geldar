@@ -56,7 +56,7 @@ const SLEEP_ERRORS: readonly SleepError[] = [
   { match: /occupied/i, reason: 'blocked', fact: 'the bed is occupied' },
   { match: /obstructed/i, reason: 'blocked', fact: 'the bed is obstructed' },
   { match: /not a bed|only half bed/i, reason: 'not_found' },
-  { match: /not sleeping|cant click/i, reason: 'blocked' },
+  { match: /not sleeping|cant click/i, reason: 'blocked', fact: 'the bed could not be used' },
 ];
 
 /** The first sleep error whose text the message matches, or undefined. */

@@ -133,3 +133,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0157](0157-gray-item-rulings-2026-11-12.md) | Gray-item rulings: no mid-life model escalation, no budget text, no held first login, no auto-armour, gravestones yes; knowledge baseline still open | Decided (owner) |
 | [0160](0160-place-at-feet-pillar-step.md) | `place <solid block> at: "feet"` is a pillar step: the bot jumps and places the block in the cell its feet were in (supersedes the solid-block part of 0031) | Accepted |
 | [0162](0162-perception-vertical-reach-edible.md) | Perception gains `vertical` and `in_reach` on nearby agents and `edible` on items (all optional, facts only); crop ripeness goes in `food_known` text, no contract change | Accepted |
+| [0163](0163-shelter-enclosed-counts-closed-doors.md) | A shelter is enclosed by blocks or a closed door; an open door does not count; the shelter is 25 cells with a doorway | Accepted |

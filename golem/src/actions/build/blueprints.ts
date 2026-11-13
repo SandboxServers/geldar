@@ -9,7 +9,11 @@ export interface Cell {
 export const BLUEPRINT_NAMES = ['shelter', 'wall', 'pillar'] as const;
 export type BlueprintName = (typeof BLUEPRINT_NAMES)[number];
 
-/** `shelter`: a ring of walls two high around the body's cell, a door gap on the +z side, a roof. */
+/**
+ * `shelter`: a ring of walls two high around the body's cell, a roof. The +z doorway (two cells,
+ * `dy` 0 and 1) is part of the ring: the build puts a wooden door there when the body holds one, else
+ * the build block (decision 0163).
+ */
 function shelterCells(): Cell[] {
   const cells: Cell[] = [];
   for (let dy = 0; dy < 3; dy++) {
@@ -18,7 +22,6 @@ function shelterCells(): Cell[] {
         const centre = dx === 0 && dz === 0;
         const roof = dy === 2;
         if (centre && !roof) continue; // the body stands here
-        if (!roof && dx === 0 && dz === 1) continue; // the door gap
         cells.push({ dx, dy, dz });
       }
     }

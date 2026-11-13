@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ActionOutcome, completed, failed } from './outcome.ts';
+import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
 import { type ActionHandler, ActionRegistry, runAction } from './registry.ts';
 
 /** A fake bot with only the world clock: `runAction` reads nothing else. */
@@ -449,6 +449,23 @@ describe('runAction failure log', () => {
       pos: { x: 10.5, y: 64, z: -3.25 },
     });
     expect(typeof parsed(lines)[0]?.ms).toBe('number');
+  });
+
+  it('logs a fixed message for a cancelled run, never an empty one (unstick and goto cancel with no message)', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => cancelled()));
+    const { lines, sink } = lineSink();
+
+    const out = await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    expect(out.result.status).toBe('cancelled');
+    expect(out.result.message).toBeUndefined();
+    expect(parsed(lines)[0]).toMatchObject({
+      event: 'action_failed',
+      do: 'mine',
+      reason: 'cancelled',
+      message: 'the action was stopped before it finished',
+    });
   });
 
   it('logs the raw error behind a plain failure as raw, cut to 200 characters', async () => {

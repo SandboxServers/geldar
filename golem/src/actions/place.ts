@@ -188,6 +188,10 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
         last = failed('blocked', MESSAGE.refused, {}, message);
         continue;
       }
+      // The held stack ran out mid-build: the placement needs an item the inventory no longer has.
+      if (/must be holding an item/.test(message)) {
+        return failed('missing_materials', `no ${block} in the inventory`);
+      }
       throw error;
     }
     if (ctx.signal.aborted) return cancelled();
