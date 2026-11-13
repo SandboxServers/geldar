@@ -132,3 +132,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0156](0156-agent-viewport-image.md) | The Body can render its own first-person viewport to a PNG with a CPU raycaster and return it as MCP image content (spike result) | Proposed |
 | [0157](0157-gray-item-rulings-2026-11-12.md) | Gray-item rulings: no mid-life model escalation, no budget text, no held first login, no auto-armour, gravestones yes; knowledge baseline still open | Decided (owner) |
 | [0160](0160-place-at-feet-pillar-step.md) | `place <solid block> at: "feet"` is a pillar step: the bot jumps and places the block in the cell its feet were in (supersedes the solid-block part of 0031) | Accepted |
+| [0162](0162-perception-vertical-reach-edible.md) | Perception gains `vertical` and `in_reach` on nearby agents and `edible` on items (all optional, facts only); crop ripeness goes in `food_known` text, no contract change | Accepted |

@@ -208,6 +208,10 @@ export interface ItemStack {
    */
   wear?: "low" | "worn" | "nearly_broken";
   /**
+   * True when the item is food the agent can eat. Absent when the Body does not report it.
+   */
+  edible?: boolean;
+  /**
    * Set for written books; identifies the book the agent can read.
    */
   book_id?: string;
@@ -1312,6 +1316,14 @@ export interface PlaySurroundings {
     distance: number;
     held_item: string | null;
     health_estimate: string;
+    /**
+     * Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.
+     */
+    vertical?: "above" | "level" | "below";
+    /**
+     * True when the other agent is within give reach, 3 blocks. Absent when the Body does not report it.
+     */
+    in_reach?: boolean;
   }[];
 }
 
@@ -12168,6 +12180,14 @@ export interface SnapshotSurroundings {
     distance: number;
     held_item: string | null;
     health_estimate: string;
+    /**
+     * Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.
+     */
+    vertical?: "above" | "level" | "below";
+    /**
+     * True when the other agent is within give reach, 3 blocks. Absent when the Body does not report it.
+     */
+    in_reach?: boolean;
   }[];
 }
 
