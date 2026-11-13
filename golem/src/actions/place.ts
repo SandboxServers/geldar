@@ -8,6 +8,7 @@ import {
   digSideCell,
   edgeCell,
   entityInCell,
+  entityOverlapsCell,
   pillarStep,
   placeAgainst,
   sideDigCell,
@@ -60,6 +61,8 @@ export const MESSAGE = {
   notGrounded: 'you are not on the ground',
   headroom: 'no headroom for a pillar: the two cells above your head are not clear',
   entityInCell: 'another entity stands where the block goes',
+  somePlayer: 'someone is standing there',
+  someEntity: 'something is standing there',
   notRisen: 'you did not rise onto the block',
   refused: 'the server refused the placement',
   unconfirmed: 'the block did not appear at the target',
@@ -142,6 +145,9 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   }
 
   if (pillarAtFeet) return pillarPlace(ctx, stack, block, target);
+  // An entity standing in the target cell refuses the placement before it is sent.
+  const occupant = occupantText(bot, target);
+  if (occupant !== null) return failed('blocked', occupant);
 
   // At `feet` the reference is the block below; otherwise the first solid neighbor in order.
   const candidates =
@@ -358,6 +364,22 @@ function stepsFromFacing(yaw: number): Vec3[] {
   const facing =
     Math.abs(dx) > Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
   return [facing, ...CARDINALS.filter((step) => !step.equals(facing))];
+}
+
+/** Dropped items and XP orbs lie in the world without blocking a placement. */
+const LOOSE_ENTITY_NAMES: ReadonlySet<string> = new Set(['item', 'experience_orb']);
+
+/** The text for the entity whose box overlaps the cell, or null when none does (the bot's own box does not count). */
+function occupantText(bot: Bot, cell: Vec3): string | null {
+  const occupant = Object.values(bot.entities).find(
+    (entity) =>
+      entity !== bot.entity &&
+      entity.type !== 'orb' &&
+      !LOOSE_ENTITY_NAMES.has(entity.name ?? '') &&
+      entityOverlapsCell(entity, cell),
+  );
+  if (occupant === undefined) return null;
+  return occupant.type === 'player' ? MESSAGE.somePlayer : MESSAGE.someEntity;
 }
 
 /** True when a block may replace the cell and no entity's box overlaps it. */
