@@ -1,33 +1,19 @@
-/** What a stopped build step reports as its reason (the Body's fixed words), as a plain fact. */
-const STOP_PHRASE: Record<string, string> = {
-  blocked: 'the next spot was blocked',
-  not_found: 'the block for the next spot was not found',
-  not_possible: 'the next block could not be placed',
-  out_of_reach: 'the next spot was too far to reach',
-  too_far: 'the next spot was too far to reach',
-  no_effect: 'placing the next block changed nothing',
-  missing_materials: 'you lacked the block for the next spot',
-};
-
-const PROGRESS = /^Built ([a-z]+): (\d{1,3}) of (\d{1,3}) blocks placed\./;
-const OUT_OF = /^ Out of ([a-z_]+): (\d{1,4}) more needed\./;
-const STOPPED = /^ Stopped at step \d{1,3}: ([a-z_]+):/;
-const NO_ROOM = /^ No room to step aside\./;
+import { playerDetailText } from '@geldar/contract';
 
 /**
- * Plain facts from the Body's build detail (`Built shelter: 12 of 23 blocks placed. ...`), rebuilt from
- * fixed templates: only digits and lowercase item words are quoted. Undefined when the detail is not a
- * build detail, so the caller tries its other shapes.
+ * The shape of the Body's build text: the progress sentence (`Built shelter: 9 placed, 12 already solid,
+ * of 25.`) that opens a failed or completed build. Its counts are never read; the whole text is the Body's.
+ */
+const BUILD_TEXT = /^Built [a-z]+: \d{1,3} placed, \d{1,3} already solid, of \d{1,3}\./;
+
+/**
+ * The Body's own build text for a failed intent, as the player reads it: the progress sentence and what
+ * came after it (`... could not be placed; first failure: ...`, `... Out of dirt: 11 more needed.`).
+ * `playerDetailText` drops a text with coordinates, marker words or unsafe characters, and cuts it to 160
+ * characters. Undefined when the detail is not a build text of the current shape (an older format, or any
+ * other detail), so the caller falls back to the bare failure.
  */
 export function buildFailureReason(detail: string): string | undefined {
-  const head = PROGRESS.exec(detail);
-  if (!head?.[2] || !head[3]) return undefined;
-  const placed = `you placed ${head[2]} of ${head[3]} blocks`;
-  const rest = detail.slice(head[0].length);
-  const out = OUT_OF.exec(rest);
-  if (out?.[1] && out[2]) return `${placed} and lack ${out[2]} more ${out[1].replaceAll('_', ' ')}`;
-  if (NO_ROOM.test(rest)) return `${placed}, then there was no free cell to step aside into`;
-  const stop = STOPPED.exec(rest);
-  if (stop?.[1]) return `${placed}, then ${STOP_PHRASE[stop[1]] ?? 'it stopped'}`;
-  return placed;
+  if (!BUILD_TEXT.test(detail)) return undefined;
+  return playerDetailText(detail);
 }
