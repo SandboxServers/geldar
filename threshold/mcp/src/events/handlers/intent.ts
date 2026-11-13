@@ -1,3 +1,4 @@
+import { buildFailureReason } from './build-failure.ts';
 import { defineMindHandler } from './types.ts';
 
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
@@ -28,6 +29,8 @@ function endOutcome(
  */
 export function failureReason(detail: string | undefined): string | undefined {
   const text = detail ?? '';
+  const built = buildFailureReason(text);
+  if (built) return built;
   const missing = /^missing_materials: missing (.+)$/.exec(text);
   if (missing?.[1] && ITEM_LIST.test(missing[1])) {
     return `you lack ${missing[1].replaceAll('_', ' ')}`;

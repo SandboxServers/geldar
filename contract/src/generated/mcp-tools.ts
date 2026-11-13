@@ -34,7 +34,7 @@ export const mcpToolSchemas: Record<
         },
         "intent": {
           "$ref": "#/$defs/Intent",
-          "description": "The durable thing to pursue. Replaces the current intent. To put up a structure use program build with arguments {blueprint: shelter, wall or pillar; block: one block you carry}."
+          "description": "The durable thing to pursue. Replaces the current intent. To put up a structure use program build with arguments {blueprint: shelter, wall or pillar; block: one exact item id you carry, such as oak_planks, not planks}. A shelter takes 23 blocks of that one kind, a wall 15, a pillar 3. Free-form build actions are not available."
         },
         "actions": {
           "type": "array",
