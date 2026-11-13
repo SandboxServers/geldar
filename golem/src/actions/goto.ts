@@ -11,6 +11,9 @@ import { reportStall } from './stall-diag.ts';
 /** A `goto` that ends within this many blocks of where it began did not move the bot. */
 const FINISHED_STILL = 0.5;
 
+/** The failure text when a walk stopped short of an unreachable goal. Facts only, no coordinates. */
+const BLOCKED_TEXT = 'the way was blocked; you got as close as you could';
+
 /** The `goto` action as the contract types it. */
 type GotoAction = Extract<Action, { do: 'goto' }>;
 
@@ -61,12 +64,24 @@ export const gotoAction: ActionHandler<'goto'> = {
     // "Finished" without moving while still far from the goal: the unstick reflex counts it as a stall.
     const stalled = at.distanceTo(from) < FINISHED_STILL && move.distance > range + 1;
     if (stalled) reportStall(ctx.bot, { reason: 'goto_stalled' });
+    const position = { x: at.x, y: at.y, z: at.z };
+    const note = move.message ? { note: move.message } : {};
+    // A partial walk is the closest reachable spot to an unreachable goal: far from the goal, the way was blocked.
+    if (move.partial && move.distance > range + 1) {
+      return failed('blocked', BLOCKED_TEXT, {
+        position,
+        distance: move.distance,
+        partial: true,
+        ...(stalled ? { stalled: true } : {}),
+        ...note,
+      });
+    }
     return completed({
-      position: { x: at.x, y: at.y, z: at.z },
+      position,
       distance: move.distance,
       ...(stalled ? { stalled: true } : {}),
       ...(move.partial ? { partial: true } : {}),
-      ...(move.message ? { note: move.message } : {}),
+      ...note,
     });
   },
 };
