@@ -93,7 +93,8 @@ async function boot(pages: Pages, navigator: object = {}, search = ''): Promise<
   vi.stubGlobal('window', {
     location: win.location,
     history: win.history,
-    addEventListener: () => undefined,
+    scrollTo: vi.fn(),
+    addEventListener: win.addEventListener.bind(win),
     removeEventListener: () => undefined,
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
@@ -162,6 +163,42 @@ const PAGES: Pages = {
 };
 
 describe('the page script', () => {
+  it('counts matching new entries only while away, and resets on click or manual scroll', async () => {
+    const win = await boot(PAGES);
+    const list = win.document.getElementById('thoughts');
+    const fresh = win.document.getElementById('fresh') as HTMLButtonElement;
+    let top = 20;
+    if (list) list.getBoundingClientRect = () => new win.DOMRect(0, top, 300, 1000);
+    sources[0]?.emit('thought', thought(40));
+    expect(fresh.hidden).toBe(true);
+    top = -100;
+    sources[0]?.emit('thought', thought(41));
+    expect(fresh.hidden).toBe(false);
+    expect(fresh.textContent).toBe('1 new entry');
+    sources[0]?.emit('thought', thought(42));
+    sources[0]?.emit('thought', thought(42));
+    expect(fresh.textContent).toBe('2 new entries');
+    fire(win, fresh, 'click');
+    expect(fresh.hidden).toBe(true);
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    sources[0]?.emit('thought', thought(43));
+    expect(fresh.textContent).toBe('1 new entry');
+    top = 0;
+    win.dispatchEvent(new win.Event('scroll'));
+    expect(fresh.hidden).toBe(true);
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'plan 1';
+    fire(win, keyword, 'input');
+    top = -100;
+    sources[0]?.emit('thought', thought(44));
+    expect(fresh.hidden).toBe(true);
+    sources[0]?.emit('thought', thought(100));
+    expect(fresh.textContent).toBe('1 new entry');
+    keyword.value = 'no-match';
+    fire(win, keyword, 'input');
+    expect(fresh.hidden).toBe(true);
+  });
+
   it('marks a dead agent in options, rows and detail without changing copy text', async () => {
     const written: string[] = [];
     const win = await boot(

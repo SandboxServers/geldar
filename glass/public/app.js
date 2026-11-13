@@ -29,6 +29,7 @@ const STATUS_TEXT = {
 };
 
 const els = {
+  fresh: document.getElementById('fresh'),
   status: document.getElementById('status'),
   agent: document.getElementById('f-agent'),
   outcome: document.getElementById('f-outcome'),
@@ -42,6 +43,7 @@ const els = {
 };
 
 const state = {
+  fresh: 0,
   list: [], // thoughts, newest first, at most LIST_CAP
   pending: [], // thoughts that arrived while paused, newest first, at most LIST_CAP
   paused: false,
@@ -91,6 +93,7 @@ function restoreFilters() {
 }
 
 function saveFilters() {
+  clearFresh();
   const query = filterQuery({
     q: els.keyword.value.trim(),
     agent: selectedAgent(),
@@ -210,6 +213,7 @@ function drawLive(view) {
 
 /** Replaces the list with the first page, using the current server-side filters. */
 async function reload() {
+  clearFresh();
   try {
     const page = await getJson(thoughtsPath(null));
     state.list = page.thoughts.map(toView).slice(0, LIST_CAP);
@@ -276,6 +280,21 @@ async function toggleDetail(id) {
   row.append(detail);
 }
 
+/** Only newly drawn, matching entries count while the list top is above the viewport. */
+function countFresh(view) {
+  if (els.list.getBoundingClientRect().top >= 0) return clearFresh();
+  if (state.list.some((entry) => entry.id === view.id)) return;
+  if (filterThoughts([view], currentFilter()).length === 0) return;
+  state.fresh += 1;
+  els.fresh.textContent = state.fresh === 1 ? '1 new entry' : `${state.fresh} new entries`;
+  els.fresh.hidden = false;
+}
+
+function clearFresh() {
+  state.fresh = 0;
+  els.fresh.hidden = true;
+}
+
 /** A live thought: shown at once, or held (capped) while the feed is paused. */
 function onThought(data) {
   if (typeof data !== 'object' || data === null) return;
@@ -285,6 +304,7 @@ function onThought(data) {
     updateStatus();
     return;
   }
+  countFresh(view);
   state.list = pushThought(state.list, view);
   if (drawLive(view)) return;
   // A second copy of a thought replaces the first, so its kept row is stale.
@@ -298,6 +318,7 @@ function togglePause() {
   state.paused = !state.paused;
   if (!state.paused) {
     for (const view of [...state.pending].reverse()) {
+      countFresh(view);
       state.list = pushThought(state.list, view);
       state.rows.delete(view.id);
       state.details.delete(view.id);
@@ -331,6 +352,18 @@ function onKey(event) {
 }
 
 function start() {
+  els.fresh.addEventListener('click', () => {
+    window.scrollTo(0, 0);
+    clearFresh();
+  });
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (els.list.getBoundingClientRect().top >= 0) clearFresh();
+    },
+    { passive: true },
+  );
+
   const live = createStreamClient({
     url: '/api/stream',
     open: EventSource,

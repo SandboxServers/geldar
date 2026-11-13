@@ -396,3 +396,15 @@ mark {
   color: var(--muted);
   font-size: 0.8125rem;
 }
+
+#fresh {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  max-width: calc(100% - 2rem);
+  border-color: var(--accent);
+  border-radius: 2rem;
+  color: var(--accent);
+}
