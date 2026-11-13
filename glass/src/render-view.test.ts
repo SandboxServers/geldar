@@ -1,7 +1,7 @@
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
 import { HOSTILE, hostileRow, plainRow } from './render-fixtures.ts';
-import { display, toView } from './render-model.ts';
+import { copyText, display, toView } from './render-model.ts';
 import { type Doc, type El, fillAgentOptions, renderDetail, renderRow } from './render-view.ts';
 
 /** Every tag the page builds itself. A data value can never add a tag outside this list. */
@@ -176,6 +176,53 @@ describe('renderRow layout', () => {
     const labels = Array.from(doc.body.querySelectorAll('.outcome')).map((n) => n.textContent);
     expect(labels).toEqual(['thought', 'unparsed']);
     expect(doc.body.querySelector('.outcome.unparsed')).not.toBeNull();
+  });
+});
+
+describe('renderRow with a copy button', () => {
+  it('has no "Copy" button unless the page can copy', () => {
+    const doc = bodyWithRow('plain', 0);
+    expect(doc.querySelector('button.copy')).toBeNull();
+  });
+
+  it('hands the entry as plain text to the callback on a press, and shows the label it is told', () => {
+    const doc = freshDoc();
+    const view = toView(plainRow(4));
+    const copied: string[] = [];
+    let say: (label: string) => void = () => {};
+    const row = renderRow(doc as unknown as Doc, view, () => {}, {
+      onCopy: (text, setLabel) => {
+        copied.push(text);
+        say = setLabel;
+      },
+    });
+    (doc.body as unknown as El).append(row as unknown as El);
+    auditTree(doc.body);
+    const copy = doc.body.querySelector('button.copy');
+    expect(copy?.textContent).toBe('Copy');
+    expect(copied).toEqual([]);
+    (copy as unknown as { click(): void }).click();
+    expect(copied).toEqual([copyText(view)]);
+    say('Copied');
+    expect(copy?.textContent).toBe('Copied');
+    // The controls sit together: "Copy", then the time.
+    const acts = Array.from(doc.body.querySelectorAll('.acts > button')).map((b) => b.className);
+    expect(acts).toEqual(['copy', 'when']);
+  });
+
+  it('copies hostile text as the text on the page, never as markup', () => {
+    for (const [index, value] of HOSTILE.entries()) {
+      const doc = freshDoc();
+      const copied: string[] = [];
+      const row = renderRow(doc as unknown as Doc, toView(hostileRow(value, index)), () => {}, {
+        onCopy: (text) => copied.push(text),
+      });
+      (doc.body as unknown as El).append(row as unknown as El);
+      auditTree(doc.body);
+      (doc.body.querySelector('button.copy') as unknown as { click(): void }).click();
+      expect(copied).toHaveLength(1);
+      expect(copied[0]).toContain(display(value));
+    }
   });
 });
 

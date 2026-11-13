@@ -2,8 +2,8 @@
  * The page script, public/app.js, run in happy-dom with a fake fetch and a fake EventSource. The
  * module's /js/ imports are pointed at the render sources on disk, so the code under test is the
  * shipped script and the shipped markup. Covers the filters, the search count and marks, the detail
- * under an entry, live entries added in place, pause with its 2000-row buffer, load older, reconnect
- * backoff and the banner.
+ * under an entry, "Copy", live entries added in place, pause with its 2000-row buffer, load older,
+ * reconnect backoff and the banner.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -72,7 +72,7 @@ interface Pages {
 }
 
 /** Sets up the page and runs app.js once; returns the document and the window it lives in. */
-async function boot(pages: Pages): Promise<Window> {
+async function boot(pages: Pages, navigator: object = {}): Promise<Window> {
   const win = new Window({
     url: 'http://127.0.0.1:8787/',
     settings: {
@@ -87,6 +87,8 @@ async function boot(pages: Pages): Promise<Window> {
   fetchUrls = [];
   sources = [];
   vi.stubGlobal('document', win.document);
+  // The browser's navigator. Without a clipboard on it, the page draws no "Copy" button.
+  vi.stubGlobal('navigator', navigator);
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('window', {
     addEventListener: () => undefined,
@@ -328,6 +330,63 @@ describe('the page script', () => {
     // The failed connection is closed before its retry, so only one stream is ever open.
     expect(sources[1]?.closed).toBe(true);
     expect(sources[2]?.closed).toBe(false);
+  });
+
+  it('has no "Copy" button where the browser gives the page no clipboard', async () => {
+    const win = await boot(PAGES);
+    expect(listRows(win)).toBe(3);
+    expect(win.document.querySelectorAll('button.copy').length).toBe(0);
+  });
+
+  it('copies an entry as plain text on a press of "Copy", says so, and puts the label back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const written: string[] = [];
+    const win = await boot(PAGES, {
+      clipboard: { writeText: async (text: string) => void written.push(text) },
+    });
+    const copy = win.document.querySelector('#thoughts > li button.copy') as HTMLButtonElement;
+    expect(win.document.querySelectorAll('button.copy').length).toBe(3);
+    // Nothing is written until the reader presses the button.
+    expect(written).toEqual([]);
+    fire(win, copy, 'click');
+    await settle();
+    expect(written).toEqual(['Ada, 2026-11-10 00:00 UTC\nplan 1']);
+    expect(copy.textContent).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(copy.textContent).toBe('Copy');
+    // The hostile name goes to the clipboard as the same text the page shows.
+    const second = win.document.querySelectorAll('#thoughts > li button.copy')[1];
+    fire(win, second ?? null, 'click');
+    await settle();
+    expect(written[1]).toBe(
+      '<script>globalThis.__glassCanary=1</script>, 2026-11-10 00:00 UTC\nplan 2',
+    );
+  });
+
+  it('says so when the browser refuses the copy', async () => {
+    const win = await boot(PAGES, {
+      clipboard: { writeText: () => Promise.reject(new Error('denied')) },
+    });
+    const copy = win.document.querySelector('#thoughts > li button.copy') as HTMLButtonElement;
+    fire(win, copy, 'click');
+    await settle();
+    expect(copy.textContent).toBe('Could not copy');
+  });
+
+  it('only ever writes plain text to the clipboard: no read, no markup, no legacy copy command', () => {
+    const sources = [
+      APP_JS,
+      ...['render-model', 'render-view', 'render-stream'].map((name) =>
+        readFileSync(new URL(`../src/${name}.ts`, import.meta.url), 'utf8'),
+      ),
+    ].join('\n');
+    expect(sources).toMatch(/clipboard\s*\.writeText\(/);
+    expect(sources).not.toMatch(
+      /readText|clipboard\s*\.read\b|clipboard\s*\.write\(|ClipboardItem/,
+    );
+    expect(sources).not.toMatch(
+      /execCommand|text\/html|addEventListener\(\s*['"](copy|cut|paste)['"]/,
+    );
   });
 
   it('is read-only: no request uses a method other than GET, and the banner says it is for humans', async () => {

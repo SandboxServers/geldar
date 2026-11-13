@@ -125,8 +125,11 @@ describe('thought rows', () => {
       'tier',
       'outcome',
       'wake',
-      'when',
+      'acts',
     ]);
+    // The entry's controls sit together at the end of the line; with no clipboard, only the time.
+    const acts = elements(meta)[4] as FakeEl;
+    expect(elements(acts).map((c) => classes(c)[0])).toEqual(['when']);
   });
 });
 
@@ -137,6 +140,9 @@ describe('app.css', () => {
     expect(FLAT).not.toMatch(/\.row[^{]*\{[^}]*grid-template-columns/);
     expect(declarations(base, '.meta')).toMatch(/display: flex/);
     expect(declarations(base, '.meta')).toMatch(/flex-wrap: wrap/);
+    // The controls wrap as one piece, so "Copy" never parts from the time on a narrow screen.
+    expect(declarations(base, '.meta .acts')).toMatch(/white-space: nowrap/);
+    expect(declarations(base, '.meta .acts')).toMatch(/margin-left: auto/);
   });
 
   it('gives the text cell its own line, keeps its line breaks and breaks long words, at every width', () => {

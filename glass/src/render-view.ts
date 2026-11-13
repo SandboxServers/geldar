@@ -7,6 +7,7 @@
  * the browser after type stripping, so it stays erasable TypeScript.
  */
 import {
+  copyText,
   display,
   journalShown,
   type Row,
@@ -36,6 +37,11 @@ export interface RowOptions {
   nowMs?: number;
   /** The search keyword. Each match in the name, the wake reason and the text is marked. */
   keyword?: string;
+  /**
+   * Given, each entry gets a "Copy" button. It is called with the entry as plain text (copyText) and with
+   * `say`, which sets the button's label: the caller says how the copy went, in its own fixed words.
+   */
+  onCopy?: (text: string, say: (label: string) => void) => void;
 }
 
 /** A node with one text value. The value is shown as text only, never parsed as markup. */
@@ -93,7 +99,7 @@ function str(value: unknown): string {
 /**
  * One entry of the thought list: a line of facts (who, what kind, when), then the text. The text is plain
  * text the reader can select. The time is a button that opens the entry with the given callback; a long
- * journal line also gets "Show more".
+ * journal line also gets "Show more", and "Copy" puts the entry on the clipboard as plain text.
  */
 export function renderRow(
   doc: Doc,
@@ -122,7 +128,20 @@ export function renderRow(
   const toggle = action(doc, 'when', '', () => onOpen(view.id));
   // The label a screen reader adds to the time, so the button says what it does. Hidden on screen.
   toggle.append(display(when === '' ? view.at : when), make(doc, 'span', 'sr', ', details'));
-  meta.append(toggle);
+  // The entry's controls stay together at the end of the line: "Copy" when the page can copy, then the time.
+  const acts = doc.createElement('span');
+  acts.className = 'acts';
+  const { onCopy } = options;
+  if (onCopy !== undefined) {
+    const copy = action(doc, 'copy', 'Copy', () => {
+      onCopy(copyText(view), (label) => {
+        copy.textContent = label;
+      });
+    });
+    acts.append(copy);
+  }
+  acts.append(toggle);
+  meta.append(acts);
   row.append(meta);
 
   if (!journal) {

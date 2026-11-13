@@ -254,8 +254,25 @@ ol > li {
   color: var(--bad);
 }
 
+/* The entry's controls, kept together at the end of the line. */
+.meta .acts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* A phone: the tier gives its place to the controls, so they stay on the name's line. It is in the detail. */
+@media (max-width: 480px) {
+  .meta .tier {
+    display: none;
+  }
+}
+
 /* The time is the button that opens the detail under the entry; "Show more" opens a long journal line. */
 button.when,
+button.copy,
 button.more {
   min-height: 1.5rem;
   padding: 0;
@@ -268,15 +285,14 @@ button.more {
 }
 
 button.when:hover,
+button.copy:hover,
 button.more:hover {
   color: var(--fg);
   text-decoration-style: solid;
 }
 
 button.when {
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 button.more {

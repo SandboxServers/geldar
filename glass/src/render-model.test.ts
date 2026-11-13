@@ -4,6 +4,7 @@ import {
   appendOlder,
   backoffMs,
   clip,
+  copyText,
   countLabel,
   display,
   filterThoughts,
@@ -63,6 +64,33 @@ describe('visible and clip', () => {
     }
     expect(visible('‮evil')).toBe('[U+202E]evil');
     expect(visible('nul\u0000byte')).toBe('nul[U+0000]byte');
+  });
+
+  it('marks every other character a reader cannot see: tags, format marks, separators, selectors', () => {
+    const hidden: [string, string][] = [
+      ['\u{E0041}', '[U+E0041]'], // an invisible "tag" letter, used to smuggle text past a reader
+      ['\u{E007F}', '[U+E007F]'],
+      ['\u00AD', '[U+00AD]'], // soft hyphen
+      ['\u061C', '[U+061C]'], // Arabic letter mark (bidi)
+      ['\u2060', '[U+2060]'], // word joiner
+      ['\u2028', '[U+2028]'], // line separator
+      ['\u2029', '[U+2029]'],
+      ['\u0085', '[U+0085]'], // a C1 control
+      ['\u180E', '[U+180E]'],
+      ['\u034F', '[U+034F]'], // combining grapheme joiner
+      ['\uFE00', '[U+FE00]'], // a variation selector that is not the emoji one
+      ['\u{E0100}', '[U+E0100]'], // a variation selector supplement
+    ];
+    for (const [ch, marker] of hidden) {
+      expect(visible(`a${ch}b`), marker).toBe(`a${marker}b`);
+    }
+  });
+
+  it('keeps the emoji selector, so an emoji stays an emoji', () => {
+    expect(visible('warn \u26A0\uFE0F done \u2705')).toBe('warn \u26A0\uFE0F done \u2705');
+    expect(visible('caf\u00E9 \u65E5\u672C\u8A9E \u0645\u0631\u062D\u0628\u0627')).toBe(
+      'caf\u00E9 \u65E5\u672C\u8A9E \u0645\u0631\u062D\u0628\u0627',
+    );
   });
 
   it('keeps ordinary text, including newlines, unchanged', () => {
@@ -352,5 +380,87 @@ describe('countLabel', () => {
       'No matches in the 50 entries loaded so far. Load older to search further back.',
     );
     expect(countLabel(0, 50, true, false)).toBe('No matches in all 50 entries.');
+  });
+});
+
+describe('copyText', () => {
+  /** No character a reader cannot see, besides the line feed between lines and the emoji selector. */
+  const HIDDEN = /(?![\n]|\uFE0F)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+
+  it('is who and when in UTC on the first line, then the text', () => {
+    const view = toView({
+      thought_id: 'j1',
+      name: 'GreenRanger',
+      at: '2026-11-13T01:38:44.219Z',
+      kind: 'journal',
+      text: 'Night, day 108.\nStill in the pit.',
+    });
+    expect(copyText(view)).toBe(
+      'GreenRanger, 2026-11-13 01:38 UTC\nNight, day 108.\nStill in the pit.',
+    );
+  });
+
+  it('copies a thought as its plan, and only the first line when there is no plan', () => {
+    const parsed = toView({
+      thought_id: 't',
+      name: 'Adam',
+      at: '2026-11-13T01:38:00Z',
+      parsed: { plan: 'walk' },
+    });
+    expect(copyText(parsed)).toBe('Adam, 2026-11-13 01:38 UTC\nwalk');
+    const unparsed = toView({
+      thought_id: 't',
+      name: 'Adam',
+      at: '2026-11-13T01:38:00Z',
+      parsed: null,
+    });
+    expect(copyText(unparsed)).toBe('Adam, 2026-11-13 01:38 UTC');
+  });
+
+  it('shows a time that did not parse as it came, and leaves out what is missing', () => {
+    expect(
+      copyText(
+        toView({ thought_id: 't', name: 'Adam', at: 'not a time', kind: 'journal', text: 'x' }),
+      ),
+    ).toBe('Adam, not a time\nx');
+    expect(copyText(toView({ thought_id: 't', kind: 'journal', text: 'x' }))).toBe('x');
+  });
+
+  it('carries no invisible character: each is a marker, as on the page', () => {
+    const view = toView({
+      thought_id: 'j',
+      name: 'Ja\u202Eson',
+      at: '2026-11-13T01:38:00Z',
+      kind: 'journal',
+      text: 'run this\u{E0072}\u{E006D}\u200B now\u0000',
+    });
+    const text = copyText(view);
+    expect(text).toBe(
+      'Ja[U+202E]son, 2026-11-13 01:38 UTC\nrun this[U+E0072][U+E006D][U+200B] now[U+0000]',
+    );
+    for (const [index, hostile] of HOSTILE.entries()) {
+      const copied = copyText(
+        toView({ ...hostileRow(hostile, index), kind: 'journal', text: hostile }),
+      );
+      expect(HIDDEN.test(copied), hostile.slice(0, 20)).toBe(false);
+    }
+  });
+
+  it('keeps the first line to one line, and turns every line end into a line feed', () => {
+    const view = toView({
+      thought_id: 'j',
+      name: 'Jason\nrm -rf ~\r\n',
+      at: '2026-11-13T01:38:00Z',
+      kind: 'journal',
+      text: 'one\r\ntwo\rthree\nfour',
+    });
+    expect(copyText(view)).toBe('Jason rm -rf ~, 2026-11-13 01:38 UTC\none\ntwo\nthree\nfour');
+    expect(copyText(view)).not.toContain('\r');
+  });
+
+  it('is bounded: a huge entry is clipped as on the page', () => {
+    const view = toView({ thought_id: 'j', name: 'A', kind: 'journal', text: 'x'.repeat(50_000) });
+    expect(copyText(view).length).toBeLessThan(TEXT_CAP + 100);
+    expect(copyText(view)).toContain('more characters]');
   });
 });

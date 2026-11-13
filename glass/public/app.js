@@ -1,6 +1,6 @@
 /**
  * The Thought Stream page: the first page of thoughts, the live feed, the search and filters, pause
- * and resume, the detail under an entry and "load older". Plain browser JavaScript. The render
+ * and resume, the detail under an entry, "copy" and "load older". Plain browser JavaScript. The render
  * modules come from /js/ with their types stripped. Every value from the API reaches the page
  * through the escaped view in render-view.ts, and nothing here parses markup.
  */
@@ -117,8 +117,34 @@ function refreshKept(keyword) {
   state.drawnDay = day;
 }
 
+/**
+ * True when this browser lets a page write to the clipboard (a secure context with the Clipboard API).
+ * Without it no entry gets a "Copy" button.
+ */
+const CAN_COPY =
+  typeof navigator === 'object' && typeof navigator.clipboard?.writeText === 'function';
+const COPY_LABEL_MS = 2000;
+
+/**
+ * Puts one entry on the reader's clipboard as plain text, on their click. The page only ever writes
+ * text, never markup, and never reads the clipboard. `say` sets the button's label.
+ */
+function copyEntry(text, say) {
+  navigator.clipboard
+    .writeText(text)
+    .then(
+      () => say('Copied'),
+      () => say('Could not copy'),
+    )
+    .then(() => window.setTimeout(() => say('Copy'), COPY_LABEL_MS));
+}
+
 function drawRow(view, keyword) {
-  return renderRow(document, view, toggleDetail, { nowMs: Date.now(), keyword });
+  return renderRow(document, view, toggleDetail, {
+    nowMs: Date.now(),
+    keyword,
+    onCopy: CAN_COPY ? copyEntry : undefined,
+  });
 }
 
 /** Draws the list: the loaded thoughts that pass every filter, newest first. */

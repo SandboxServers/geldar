@@ -158,10 +158,18 @@ export function countLabel(
   return `${shown === 1 ? '1 match' : `${shown} matches`} in ${scope}.${further}`;
 }
 
-/** Shows a bidi override, a zero-width or a control character as a visible marker. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: the class names the controls it marks
-const INVISIBLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-‮⁦-⁩﻿]/gu;
+/**
+ * Every character a reader cannot see: controls, format characters (bidi overrides, zero-width
+ * characters, the invisible "tag" letters, soft hyphens), line and paragraph separators and the other
+ * default-ignorable code points. Tab, line feed and carriage return are kept, and so is U+FE0F, which
+ * only picks the emoji form of the character before it.
+ */
+const INVISIBLE = /(?![\t\n\r]|\uFE0F)[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu;
 
+/**
+ * Shows each invisible character as a visible marker, so the text on the page, and the text a reader
+ * selects or copies from it, holds nothing they cannot see.
+ */
 export function visible(value: string): string {
   return value.replace(
     INVISIBLE,
@@ -178,6 +186,23 @@ export function clip(value: string, cap: number = TEXT_CAP): string {
 /** The text a field shows on the page: clipped first, so a huge run stays bounded. */
 export function display(value: string): string {
   return visible(clip(value));
+}
+
+/**
+ * The plain text the "Copy" button puts on the clipboard for one entry: who and when (UTC) on the first
+ * line, then the text. It is the text the page shows, through display(), so it carries no invisible
+ * character; the first line is kept to one line, and every line end is a line feed.
+ */
+export function copyText(view: ThoughtView): string {
+  const when = Number.isFinite(view.atMs)
+    ? `${new Date(view.atMs).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+    : view.at;
+  const head = [view.agentName, when]
+    .map((part) => display(part).replace(/\s+/g, ' ').trim())
+    .filter((part) => part !== '')
+    .join(', ');
+  const body = display(view.plan).replace(/\r\n?/g, '\n');
+  return [head, body].filter((part) => part !== '').join('\n');
 }
 
 /** Keeps the thoughts that pass every set filter. The keyword is a literal, case-insensitive match. */
