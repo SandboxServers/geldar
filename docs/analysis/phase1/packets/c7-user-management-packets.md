@@ -70,7 +70,8 @@ Merged: `sql/0021_register_sessions.sql` and `threshold/register/src/session-sto
 
 ## C7-02a: player token lifecycle
 
-- **id / wave / lane.** C7-02a, wave 1. **depends-on.** C7-12 (the audit table). **branch.** `phase1/c7-02a-token-lifecycle`. **migration.** none (if a column is needed, ask the orchestrator; 0033 is spare).
+- **id / wave / lane.** C7-02a, wave 1. **depends-on.** C7-12 (the audit table). **branch.** `phase1/c7-02a-token-lifecycle`. **migration.** 0032 (`sql/0032_token_lifecycle.sql`). The plan said "none", which was wrong: the lifecycle needed a column, and the orchestrator ruled 0032. 0033 is the only spare left.
+- **Status.** Done, merged in bbb5ed6b (PR #315). SQL and service only. Route wiring, the `server.ts` limiter admin exemption and the `account.ts` token lines moved to C7-04 and C7-06.
 - **Goal.** Player tokens (0170 point 1): the account data shows the expiry date and `last_used_at` (mcp already writes it); the token lifetime is 90 days; a `renewal_due` flag is true from 14 days before expiry; a renewal action rotates the token, keeps the player id and shows the new token once; a revoke-only action (no replacement); the rotate grace of 10 minutes the operator CLI already has is available to the renewal. Each action writes a `register_audit` row. Rate limits on token actions use the register fixed windows, and an admin owner is exempt from those windows (0170).
 - **may-edit.** `threshold/register/src/tokens*.ts` and tests (new), `threshold/register/src/account.ts` (token lines only), `tools/mcp-tokens/src/` only to read the 90 day default from one shared constant (no behaviour change to the CLI), `docs/analysis/phase1/worknotes/C7-02a.md`.
 - **must-not-edit.** `threshold/mcp/src/` (the separation is tested from the register side; a change there goes in the worknote), `sql/`, `contract/`, `docs/spec.md`.
@@ -123,6 +124,13 @@ Merged: `sql/0021_register_sessions.sql` and `threshold/register/src/session-sto
 - **size.** L (two sessions; split at "association and roster" and "quotas, limits and log").
 
 ## C7-04: management API v1
+
+Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packet:
+
+- **Repeat start.** Rate-limit a repeat `start` of a running body. The supervisor counts nothing for it, so the API must limit it.
+- **409.** Map a repeat start to the 409 (already running), with the existing body.
+- **Limiter admin exemption.** The `server.ts` limiter exemption for admins lands here, with the route wiring that C7-02a left out. A supervisor bypass of the per-agent quota was a wave 1 review defect, so the exemption needs its own test.
+- **`onAuditLost`.** Pass it in the composition root (see C7-03b).
 
 - **id / wave / lane.** C7-04, wave 2 (starts after C7-02b merges). **depends-on.** C7-02b, C7-03a, C7-12. **branch.** `phase1/c7-04-management-api`. **migration.** none.
 - **Goal.** The authenticated API of 0152, under `/register/api/v1/`. Two credentials: the owner session cookie (for the web UI; state-changing calls need the CSRF token) and an owner key (`Authorization: Bearer gowner-...`, for scripts), with the scope rule of C7-02. Every error is `application/problem+json`. Another owner's agent always gets 404, never 403, so existence is not leaked.
@@ -202,6 +210,8 @@ components:
 - **size.** M.
 
 ## C7-06: account page v2
+
+Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packet: the account token lines show expiry, last used, and renewal due for each token. C7-02a stored the data; the page lines are this packet's.
 
 - **id / wave / lane.** C7-06, wave 3. **depends-on.** C7-04, C7-05. **branch.** `phase1/c7-06-account-page-v2`. **migration.** none. It owns `pages/account*.ts`; C7-13c adds the skin section after it merges.
 - **Goal.** Replace the bare HTML account page with a page that works on a phone. It adds: a linked stylesheet (CSP `style-src 'self'`) and a viewport meta; labelled inputs; a status line per agent (body running, starting, waiting or stopped; credits left; token expiry date; last used); the start, stop and restart buttons that call the C7-04 API; links to the agent's Glass and Kino views where 0138 and 0139 allow; the visibility toggles with a plain explanation of public camera and delayed public thoughts; the missing thoughts form (the route exists); and HTML error pages for 403, 404, 429 and 503 (JSON only under `/api/`).
