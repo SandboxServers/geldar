@@ -76,6 +76,13 @@ function post(path: string, s: Session, fields: Record<string, string>, csrf = s
 const newPlayer = (id = 'ag-one-01') => ({ player_id: id, name: 'One', harness: 'claude-code' });
 const tokenIn = (html: string) => /gmcp-[0-9a-f]{64}/.exec(html)?.[0] ?? '';
 
+/** The token a mint shows: the onboarding page its 303 redirect leads to (C7-05). A 200 page is read as it is. */
+async function shownToken(s: Session, res: Response): Promise<string> {
+  if (res.status !== 303) return tokenIn(await res.text());
+  const page = await fetch(`${h.base}/register/onboarding`, { headers: { cookie: s.cookie } });
+  return tokenIn(await page.text());
+}
+
 describe('sign-up consent (C7-08)', () => {
   it('refuses a new owner who did not tick the consent box, and writes no owner or consent row', async () => {
     await start();
@@ -178,9 +185,10 @@ describe('player creation and the once-only token', () => {
     await start();
     const s = (await signIn()).session as Session;
     const res = await post('/register/players', s, newPlayer());
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(303);
+    expect(res.headers.get('location')).toBe('/register/onboarding');
     expect(res.headers.get('cache-control')).toBe('no-store');
-    const token = tokenIn(await res.text());
+    const token = await shownToken(s, res);
     expect(token).not.toBe('');
     const stored = store.mints[0];
     expect(stored?.tokenHash.equals(hashToken(config().tokenPepper, token))).toBe(true);
@@ -193,7 +201,7 @@ describe('player creation and the once-only token', () => {
   it('keeps the token, the email, the raw id and the provider token out of every write and log', async () => {
     await start();
     const s = (await signIn()).session as Session;
-    const token = tokenIn(await (await post('/register/players', s, newPlayer())).text());
+    const token = await shownToken(s, await post('/register/players', s, newPlayer()));
     const all = [...store.writes, ...h.logs].join('\n');
     for (const secret of [token, EMAIL, PROVIDER_TOKEN, `"${RAW_ID}"`, `microsoft:${RAW_ID}`]) {
       expect(all).not.toContain(secret);
@@ -205,9 +213,7 @@ describe('player creation and the once-only token', () => {
     await start();
     const s = (await signIn()).session as Session;
     for (const id of ['ag-a-01', 'ag-b-01', 'ag-c-01']) {
-      expect(tokenIn(await (await post('/register/players', s, newPlayer(id))).text())).not.toBe(
-        '',
-      );
+      expect(await shownToken(s, await post('/register/players', s, newPlayer(id)))).not.toBe('');
     }
     const fourth = await (await post('/register/players', s, newPlayer('ag-d-01'))).text();
     expect(tokenIn(fourth)).toBe('');
@@ -238,7 +244,7 @@ describe('list, mint and retire', () => {
     const b = (await signIn('2002')).session as Session;
     await post('/register/players', a, newPlayer('ag-mine-01'));
     const ok = await post('/register/players/ag-mine-01/token', a, {});
-    expect(tokenIn(await ok.text())).not.toBe('');
+    expect(await shownToken(a, ok)).not.toBe('');
     const mintsBefore = store.mints.length;
     const stolen = await post('/register/players/ag-mine-01/token', b, {});
     expect(tokenIn(await stolen.text())).toBe('');
@@ -281,9 +287,7 @@ describe('lifetime player limit (R36)', () => {
     const a = (await signIn('6001')).session as Session;
     for (let i = 1; i <= 10; i++) {
       const id = `ag-churn-${String(i).padStart(2, '0')}`;
-      expect(tokenIn(await (await post('/register/players', a, newPlayer(id))).text())).not.toBe(
-        '',
-      );
+      expect(await shownToken(a, await post('/register/players', a, newPlayer(id)))).not.toBe('');
       expect(await (await post(`/register/players/${id}/retire`, a, {})).text()).toContain(
         'retired',
       );
@@ -363,8 +367,8 @@ describe('per-owner limits (R41)', () => {
   it('lets the last allowed player create pass, refuses the next with 429, and reopens after a minute', async () => {
     await start({ ownerPerMinute: 2, perMinute: 1000 });
     const s = (await signIn()).session as Session;
-    expect((await post('/register/players', s, newPlayer('ag-a-01'))).status).toBe(200);
-    expect((await post('/register/players', s, newPlayer('ag-b-01'))).status).toBe(200);
+    expect((await post('/register/players', s, newPlayer('ag-a-01'))).status).toBe(303);
+    expect((await post('/register/players', s, newPlayer('ag-b-01'))).status).toBe(303);
     const third = await post('/register/players', s, newPlayer('ag-c-01'));
     expect(third.status).toBe(429);
     expect(third.headers.get('retry-after')).not.toBeNull();
@@ -372,16 +376,16 @@ describe('per-owner limits (R41)', () => {
     // A retire is never limited.
     expect((await post('/register/players/ag-a-01/retire', s, {})).status).toBe(200);
     h.clock.at += 60_000;
-    expect((await post('/register/players', s, newPlayer('ag-c-01'))).status).toBe(200);
+    expect((await post('/register/players', s, newPlayer('ag-c-01'))).status).toBe(303);
   });
 
   it('counts per owner, not per address', async () => {
     await start({ ownerPerMinute: 1, perMinute: 1000 });
     const a = (await signIn('8001')).session as Session;
     const b = (await signIn('8002')).session as Session;
-    expect((await post('/register/players', a, newPlayer('ag-a-01'))).status).toBe(200);
+    expect((await post('/register/players', a, newPlayer('ag-a-01'))).status).toBe(303);
     expect((await post('/register/players', a, newPlayer('ag-a-02'))).status).toBe(429);
-    expect((await post('/register/players', b, newPlayer('ag-b-01'))).status).toBe(200);
+    expect((await post('/register/players', b, newPlayer('ag-b-01'))).status).toBe(303);
   });
 });
 
