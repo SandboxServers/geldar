@@ -333,7 +333,11 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
 
-  supervisor: {}
+  supervisor:
+    dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../contract
 
   threshold/mcp:
     dependencies:
@@ -393,6 +397,9 @@ importers:
 
   threshold/register:
     dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../../contract
       pg:
         specifier: 8.23.1
         version: 8.23.1

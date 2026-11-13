@@ -6,5 +6,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@geldar/contract": "workspace:*"
   }
 }
