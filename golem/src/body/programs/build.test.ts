@@ -14,6 +14,8 @@ interface BuildWorld {
   log: string[];
   /** Refusals left per cell key: `blocked` while the count is above zero. */
   refusals: Map<string, number>;
+  /** Timeouts left per cell key: `timeout` while the count is above zero. */
+  timeouts: Map<string, number>;
 }
 
 const key = (p: { x: number; y: number; z: number }): string => `${p.x},${p.y},${p.z}`;
@@ -25,6 +27,7 @@ function makeWorld(count: number): BuildWorld {
     placed: new Map(),
     log: [],
     refusals: new Map(),
+    timeouts: new Map(),
   };
 }
 
@@ -44,6 +47,11 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
     run: async (_ctx, action) => {
       const k = key(action.at as never);
       world.log.push(`place:${k}`);
+      const timeouts = world.timeouts.get(k) ?? 0;
+      if (timeouts > 0) {
+        world.timeouts.set(k, timeouts - 1);
+        return failed('timeout', 'the path search ran out of time');
+      }
       const refusals = world.refusals.get(k) ?? 0;
       if (refusals > 0) {
         world.refusals.set(k, refusals - 1);
@@ -242,6 +250,23 @@ describe('build program', () => {
     const attempts = placesIn(world);
     expect(attempts.filter((k) => k === cellKey(2))).toHaveLength(2);
     // The refused cell is tried again only after the cells after it.
+    expect(attempts.at(-1)).toBe(cellKey(2));
+    expect(world.placed.size).toBe(23);
+  });
+
+  it('defers a cell whose placement timed out and retries it after the last cell', async () => {
+    const world = makeWorld(30);
+    world.timeouts.set(cellKey(2), 1);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    const last = await run(program, ctx);
+    expect(last).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+    });
+    const attempts = placesIn(world);
+    expect(attempts.filter((k) => k === cellKey(2))).toHaveLength(2);
     expect(attempts.at(-1)).toBe(cellKey(2));
     expect(world.placed.size).toBe(23);
   });

@@ -229,6 +229,20 @@ describe('sleep', () => {
     expect(bot.sleep).toHaveBeenCalledTimes(6);
   });
 
+  it('tries the second bed when the walk to the first times out', async () => {
+    const far = { name: 'red_bed', position: new Vec3(9, 64, 0) };
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: false,
+      reason: 'timeout',
+      message: 'the path search ran out of time',
+    });
+    const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }, far] });
+    const outcome = await sleep(bot);
+    expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 9, y: 64, z: 0 } } });
+    expect(moveNear).toHaveBeenCalledTimes(2);
+    expect(bot.sleep).toHaveBeenCalledTimes(1);
+  });
+
   it('stops at a non-blocked failure and does not try the next bed', async () => {
     const bot = fakeBot({
       timeOfDay: 13_000,

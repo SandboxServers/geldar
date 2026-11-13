@@ -63,7 +63,11 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   let last: ActionOutcome = failed('blocked', 'no bed was tried');
   for (const bed of beds) {
     const outcome = await sleepInBed(ctx, bed);
-    if (outcome.status !== 'failed' || outcome.reason !== 'blocked' || ctx.signal.aborted) {
+    if (
+      outcome.status !== 'failed' ||
+      (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
+      ctx.signal.aborted
+    ) {
       return outcome;
     }
     last = outcome;

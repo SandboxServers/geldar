@@ -46,8 +46,8 @@ interface BuildState {
  * `build`: puts up a named blueprint (`shelter`, `wall`, `pillar`) of one block the body holds,
  * through `place`, lowest layer first. Arguments: `{ blueprint, block }`. Offsets are relative to
  * the cell the body stood in at the start. When the next cell is the body's own, it steps aside
- * first. A cell that already holds a solid block counts as done. A cell refused as `blocked` is
- * deferred: after the last cell one retry pass runs over the deferred cells, and the intent fails
+ * first. A cell that already holds a solid block counts as done. A cell refused as `blocked` or
+ * `timeout` is deferred: after the last cell one retry pass runs over the deferred cells, and the intent fails
  * only if some cell is still refused. Checkpoint: the blueprint, block, origin, `next`, the
  * deferred cells, the retry flag and the counts; a cell in an old checkpoint before `next` counts
  * as placed. Out of blocks wakes the Mind (`precondition_failed`) and says how many are missing;
@@ -121,7 +121,7 @@ export class BuildProgram implements IntentProgram {
           message: `${this.progress(cells.length)} Out of ${state.block}: ${missing} more needed.`,
         };
       }
-      if (reason !== 'blocked') {
+      if (reason !== 'blocked' && reason !== 'timeout') {
         return {
           status: 'failed',
           message: `${this.progress(cells.length)} Stopped at step ${index + 1}: ${reason}: ${message}`,

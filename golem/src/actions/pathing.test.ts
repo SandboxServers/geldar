@@ -77,7 +77,7 @@ function pathError(name: string): Error {
 }
 
 describe('classifyPathError', () => {
-  it('maps NoPath and Timeout to blocked, and GoalChanged to interrupted', () => {
+  it('maps NoPath to blocked, Timeout to timeout, and GoalChanged to interrupted', () => {
     expect(classifyPathError(pathError('NoPath'))).toBe('blocked');
     expect(classifyPathError(pathError('Timeout'))).toBe('timeout');
     expect(classifyPathError(pathError('GoalChanged'))).toBe('interrupted');
