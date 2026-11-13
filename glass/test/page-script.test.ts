@@ -238,6 +238,18 @@ describe('the page script', () => {
     expect(win.history.length).toBe(1);
   });
 
+  it('keeps searching when the browser refuses a URL update', async () => {
+    const win = await boot(PAGES);
+    win.history.replaceState = () => {
+      throw new Error('SecurityError: too many calls');
+    };
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'plan 3';
+    fire(win, keyword, 'input');
+    expect(listRows(win)).toBe(1);
+    expect(win.document.getElementById('count')?.textContent).toContain('1 match');
+  });
+
   it('ignores invalid URL choices and bounds text before assigning controls', async () => {
     const win = await boot(
       PAGES,

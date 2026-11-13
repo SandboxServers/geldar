@@ -270,5 +270,7 @@ export function filterQuery(filter: {
   if (filter.outcome === 'parsed' || filter.outcome === 'unparsed')
     params.set('outcome', filter.outcome);
   if (filter.template) params.set('template', filter.template.slice(0, 64));
-  return params.size ? `?${params}` : '';
+  // Not params.size: older Safari has no such property, and the query would always come out empty.
+  const query = params.toString();
+  return query === '' ? '' : `?${query}`;
 }

@@ -421,6 +421,11 @@ mark {
   font-size: 0.8125rem;
 }
 
+/* "died" follows the name; the same dot as between the other facts sets the tier apart from it. */
+.meta .died + .tier::before {
+  content: "\00b7\00a0";
+}
+
 #fresh {
   position: fixed;
   top: 0.75rem;

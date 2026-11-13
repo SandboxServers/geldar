@@ -214,6 +214,13 @@ it('offers a closed About disclosure under the banner with only two fixed links'
   ]);
   expect(HTML.match(/<a\s/g)).toHaveLength(2);
 });
+it('sets the tier apart from the "died" tag with the same dot as the other facts', () => {
+  const base = baseRules(FLAT).replace(/\s+/g, ' ');
+  const dot = declarations(base, '.meta .outcome::before, .meta .wake::before');
+  expect(dot).toMatch(/content: "\\00b7\\00a0"/);
+  expect(declarations(base, '.meta .died + .tier::before')).toBe(dot);
+});
+
 it('keeps receipt columns readable inside their own scrolling container', () => {
   const base = baseRules(FLAT).replace(/\s+/g, ' ');
   expect(declarations(base, '.receipts')).toMatch(/overflow-x: auto/);

@@ -7,6 +7,7 @@ import {
   copyText,
   countLabel,
   display,
+  filterQuery,
   filterThoughts,
   JOURNAL_PREVIEW,
   journalShown,
@@ -462,5 +463,30 @@ describe('copyText', () => {
     const view = toView({ thought_id: 'j', name: 'A', kind: 'journal', text: 'x'.repeat(50_000) });
     expect(copyText(view).length).toBeLessThan(TEXT_CAP + 100);
     expect(copyText(view)).toContain('more characters]');
+  });
+});
+
+describe('filterQuery', () => {
+  const none = { q: '', agent: '', range: '0', outcome: '', template: '' };
+
+  it('is empty for the default filters, so the plain page has no query string', () => {
+    expect(filterQuery(none)).toBe('');
+  });
+
+  it('builds the query from its own text, not from a property an older browser lacks', () => {
+    const saved = Object.getOwnPropertyDescriptor(URLSearchParams.prototype, 'size');
+    // Safari before 17 has no URLSearchParams.size.
+    Object.defineProperty(URLSearchParams.prototype, 'size', {
+      get: () => undefined,
+      configurable: true,
+    });
+    try {
+      expect(filterQuery({ ...none, q: 'coal pit', range: '86400000' })).toBe(
+        '?q=coal+pit&range=day',
+      );
+      expect(filterQuery(none)).toBe('');
+    } finally {
+      if (saved) Object.defineProperty(URLSearchParams.prototype, 'size', saved);
+    }
   });
 });

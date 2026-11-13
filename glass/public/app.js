@@ -101,7 +101,13 @@ function saveFilters() {
     outcome: els.outcome.value,
     template: els.template.value.trim(),
   });
-  window.history.replaceState(null, '', window.location.pathname + query + window.location.hash);
+  // A browser may refuse a burst of URL updates (Safari throws past 100 in 30 seconds). The filter
+  // still applies; only the address bar lags.
+  try {
+    window.history.replaceState(null, '', window.location.pathname + query + window.location.hash);
+  } catch {
+    // Nothing to do: the next change tries again.
+  }
 }
 
 async function getJson(path) {
