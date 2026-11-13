@@ -87,9 +87,15 @@ async function awaitUntil(done: () => boolean, signal: AbortSignal, waitMs: numb
   }
 }
 
+/** The distance (blocks) between two points, counting only the x and z axes. */
+function horizontalGap(a: Entity['position'], b: Entity['position']): number {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
 /**
  * Steps the Body back to `STEP_BACK_TO` blocks from a recipient closer than `STEP_BACK_BELOW`, so
- * the toss flies past them. No room, or no path, just means the Body tosses from where it stands.
+ * the toss flies past them. A step that fails leaves the Body where it is; the caller checks the
+ * distance it ends at.
  */
 async function stepBackFrom(
   ctx: ActionContext,
@@ -103,12 +109,14 @@ async function stepBackFrom(
 
 /**
  * Walks to each tossed item the recipient did not pick up and waits for the Body to collect it.
- * True when the Body took every one back. An abort or a walk that fails leaves them on the ground.
+ * An item the Body already collected counts as taken back, with no walk. True when the Body took
+ * every one back. An abort or a walk that fails leaves them on the ground.
  */
 async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promise<boolean> {
   const missing = [...watch.dropped].filter((id) => !watch.collected.has(id));
   const everyTaken = () => missing.every((id) => watch.taken.has(id));
   for (const id of missing) {
+    if (watch.taken.has(id)) continue;
     const item = bot.entities[id];
     if (!item) return false;
     const move = await moveNear(bot, item.position, TAKE_BACK_RANGE, {
@@ -150,7 +158,8 @@ async function settle(
  * A name that is not in sight fails `not_found` with one fixed text. The Body walks up to
  * `WALK_RANGE` blocks from the recipient, checks again that it is in sight and within
  * `GIVE_REACH`, steps back to `STEP_BACK_TO` blocks if the recipient is closer than
- * `STEP_BACK_BELOW`, faces the recipient's feet and tosses. The give completes only when the
+ * `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
+ * its height, and tosses. The give completes only when the
  * recipient picks up every tossed item within `PICKUP_WAIT_MS`. When the recipient picks up none,
  * the Body takes the items back and says so; if it cannot, it says where the items are, with no
  * advice. Receipts for economic operations are a later packet.
@@ -192,11 +201,15 @@ export const giveAction: ActionHandler<'give'> = {
       target = findVisibleAgent(bot, action.to);
       if (!target) return failed('not_found', NOT_IN_SIGHT);
       if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
+      // A toss from this close lands in the Body's own pickup box, so it is not thrown.
+      if (horizontalGap(bot.entity.position, target.position) < STEP_BACK_BELOW)
+        return failed('not_possible', 'too close to toss, and no room to step back');
     }
 
     const watch = watchPickup(bot, action.to);
     try {
-      await bot.lookAt(target.position, true);
+      // Aim at about the recipient's middle, not its feet, so the toss carries past the Body.
+      await bot.lookAt(target.position.offset(0, target.height * 0.9, 0), true);
       if (ctx.signal.aborted) return cancelled();
       await bot.toss(info.id, null, action.count);
       await awaitUntil(() => allPicked(watch), ctx.signal, PICKUP_WAIT_MS * ctx.timeScale);
