@@ -169,7 +169,14 @@ async function dig(bot: Bot, block: Block, at: Vec3, relaxed = false): Promise<b
       // Every block the last-resort pass breaks is logged by name and cell (owner ruling 2026-11-13).
       if (relaxed) {
         DEFAULT_DIAG_SINK.log(
-          JSON.stringify({ event: 'unstick_breach', block: block.name, x: at.x, y: at.y, z: at.z }),
+          JSON.stringify({
+            event: 'unstick_breach',
+            block: block.name,
+            x: at.x,
+            y: at.y,
+            z: at.z,
+            dimension: bot.game?.dimension,
+          }),
         );
       }
       return true;
