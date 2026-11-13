@@ -1,6 +1,7 @@
 import type { Snapshot } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { GIVE_REACH } from '../actions/give.ts';
 import { worldAge } from '../world-clock.ts';
 import { compass } from './blocks-summary.ts';
 import { ALWAYS_HOSTILE } from './hostile-types.ts';
@@ -141,6 +142,18 @@ function threatFields(
   return fields;
 }
 
+/**
+ * Where another agent stands against the Body, as the words `health_estimate` carries (the contract
+ * has no field for it yet): its feet more than one block above or below, or level; and whether it is
+ * within give reach. Health stays `unknown`. Example: "unknown, below, in reach".
+ */
+export function agentNote(here: Vec3, position: Vec3, distance: number): string {
+  const dy = position.y - here.y;
+  const vertical = dy > 1 ? 'above' : dy < -1 ? 'below' : 'level';
+  const reach = distance <= GIVE_REACH ? 'in reach' : 'out of reach';
+  return `unknown, ${vertical}, ${reach}`;
+}
+
 /** A record at a position: the integer block coordinates, the distance and the compass direction. */
 function place(here: Vec3, kind: string, position: Vec3, distance: number): Entity {
   return {
@@ -226,7 +239,7 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
         name,
         distance: tenths(distance),
         held_item: held && ITEM.test(held) ? held : null,
-        health_estimate: 'unknown',
+        health_estimate: agentNote(here, entity.position, distance),
         sort: name,
       });
       continue;

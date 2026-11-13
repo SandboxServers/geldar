@@ -66,7 +66,7 @@ describe('authorized entities', () => {
     expect(createPerception(world.bot).surroundings().entities).toHaveLength(1);
   });
 
-  it('reports other players as agents with name, distance and held item, health unknown', () => {
+  it('reports other players as agents with name, distance, held item and their height and reach', () => {
     const world = new FakeWorld();
     world.entities[1] = {
       type: 'player',
@@ -86,7 +86,12 @@ describe('authorized entities', () => {
     world.set('stone', 0, 64, -3);
     const { agents, entities } = createPerception(world.bot).surroundings();
     expect(agents).toEqual([
-      { name: 'Pike', distance: 6, held_item: 'iron_sword', health_estimate: 'unknown' },
+      {
+        name: 'Pike',
+        distance: 6,
+        held_item: 'iron_sword',
+        health_estimate: 'unknown, level, out of reach',
+      },
     ]);
     expect(entities).toEqual([]);
   });
