@@ -20,3 +20,5 @@ $fn$;
 
 REVOKE ALL ON FUNCTION supervisor_player_display_name(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION supervisor_player_display_name(TEXT, TEXT) TO geldar_supervisor;
+
+INSERT INTO schema_migrations (version) VALUES ('0033') ON CONFLICT DO NOTHING;
