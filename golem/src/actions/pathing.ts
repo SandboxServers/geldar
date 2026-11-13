@@ -218,12 +218,14 @@ export function forbidCornerCutting(movements: unknown): void {
 }
 
 /**
- * Maps a pathfinder error to a move reason. `NoPath` and `Timeout` (path search) mean the way is
- * blocked; `GoalChanged` means something else took over. Anything else is null: not a move result.
+ * Maps a pathfinder error to a move reason. `NoPath` means the way is blocked; `Timeout` (the path
+ * search ran out of time) is `timeout`, which runs no escape ladder; `GoalChanged` means something
+ * else took over. Anything else is null: not a move result.
  */
-export function classifyPathError(error: unknown): 'blocked' | 'interrupted' | null {
+export function classifyPathError(error: unknown): 'blocked' | 'timeout' | 'interrupted' | null {
   const name = (error as { name?: unknown } | null)?.name;
-  if (name === 'NoPath' || name === 'Timeout') return 'blocked';
+  if (name === 'NoPath') return 'blocked';
+  if (name === 'Timeout') return 'timeout';
   if (name === 'GoalChanged') return 'interrupted';
   return null;
 }
