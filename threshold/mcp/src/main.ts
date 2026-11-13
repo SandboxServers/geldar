@@ -24,6 +24,7 @@ import { declareMcpMetrics, MetricRegistry, recordToolCall, startTelemetry } fro
 import type { KeepAlive, RateDecision, RateLimiter } from './ports.ts';
 import { type BucketManager, KvPresenceStore, openPresenceBucket } from './presence.ts';
 import { SovereignCallRecorder } from './record/sovereign-call.ts';
+import { WorldClock } from './record/world-clock.ts';
 import { PgAgentStore } from './store/pg-agents.ts';
 import { PgBudgetLedger } from './store/pg-budget.ts';
 import { PgDeathStore } from './store/pg-deaths.ts';
@@ -324,7 +325,13 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       minSpacingMs: config.sovereign.wake.minSpacingSeconds * 1000,
       intentRunTooLongMs: config.sovereign.wake.intentRunTooLongSeconds * 1000,
     };
-    const recorder = new SovereignCallRecorder({ publish: (id, p) => nats.publishCall(id, p) });
+    const worldClock = new WorldClock();
+    const recorder = new SovereignCallRecorder({
+      sink: { publish: (id, event) => nats.publishCall(id, event) },
+      shard: config.shard,
+      clock: worldClock,
+      drop: (reason) => log({ event: 'sovereign_call_dropped', reason }),
+    });
     const limiter = tokenBucketLimiter(
       bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
     );
@@ -361,6 +368,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       log: events,
       lives: () => registry.lives(),
       deaths: new PgDeathStore(pool),
+      clock: worldClock,
     };
     const replay = await nats.replay(
       streamSubjects(config.shard),

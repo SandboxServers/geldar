@@ -40,6 +40,8 @@ export interface StreamContext {
   identityOf?: (lifeId: string) => Promise<SpeechIdentity>;
   /** Counts each death event once (migration 0023); a redelivered death is recorded once. */
   deaths?: Pick<DeathMarks, 'recordDeath'>;
+  /** Told the day and tick of every valid WorldEvent, so a sovereign_call envelope can be stamped. */
+  clock?: { observe(event: { world_day: number; world_tick: number }): void };
 }
 
 /** Counts of messages the handler set aside. */
@@ -77,6 +79,7 @@ export async function handleStreamMessage(
     return;
   }
   const world = envelope.value;
+  ctx.clock?.observe(world);
   if (world.type === 'day_night') {
     const event = dayNightEvent(seq, world);
     if (event === null) counters.invalid++;
