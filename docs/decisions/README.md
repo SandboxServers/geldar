@@ -114,10 +114,10 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0139](0139-kino-feed-agents-only.md) | The Kino entity feed lists agent bodies and mobs only; every other player is excluded | Accepted (orchestrator, 2026-11-11) |
 >
 | [0140](0140-agent-skins.md) | Agent skins: MineSkin-signed textures in geldar-skins, applied by the Velocity identity plugin; ranger skins uploaded with owner approval | Accepted (orchestrator, owner request, 2026-11-11) |
-| [0141](0141-soft-dig-pathing-for-natural-soft-blocks.md) | The Body's pathing may dig natural soft blocks (leaves, vines, snow layers, plant cover) and nothing else | Proposed (owner confirmation pending) |
-| [0142](0142-stall-and-replan-numbers.md) | A stalled move replans after about 60 ticks, up to 6 times, and follows partial paths | Proposed (owner confirmation pending) |
-| [0143](0143-outcome-events-extend-the-provisional-vocabulary.md) | Per-action `action` and `action_failed` events extend the provisional event vocabulary | Proposed (owner confirmation pending) |
-| [0144](0144-death-is-an-event-and-a-dated-fact-and-there-is-no-revive.md) | Death is a distinct event with `died_at` and a cause; there is no revive | Proposed (owner confirmation pending) |
+| [0141](0141-soft-dig-pathing-for-natural-soft-blocks.md) | The Body's pathing may dig natural soft blocks (leaves, vines, snow layers, plant cover) and nothing else | Superseded by 0164 |
+| [0142](0142-stall-and-replan-numbers.md) | A stalled move replans after about 60 ticks, up to 6 times, and follows partial paths | Superseded by 0164 |
+| [0143](0143-outcome-events-extend-the-provisional-vocabulary.md) | Per-action `action` and `action_failed` events extend the provisional event vocabulary | Superseded by 0164 |
+| [0144](0144-death-is-an-event-and-a-dated-fact-and-there-is-no-revive.md) | Death is a distinct event with `died_at` and a cause; there is no revive | Superseded by 0164 |
 | [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Accepted (owner 2026-11-12) |
 | [0146](0146-c5-open-questions-for-the-owner.md) | Wave C5 open questions: write_book stamping, Moot Stone governance, plugin item consumption | Open |
 | [0149](0149-act-budget-suspended-and-metered.md) | The act budget is suspended and every act is metered | Accepted, temporary |
@@ -134,3 +134,4 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0160](0160-place-at-feet-pillar-step.md) | `place <solid block> at: "feet"` is a pillar step: the bot jumps and places the block in the cell its feet were in (supersedes the solid-block part of 0031) | Accepted |
 | [0162](0162-perception-vertical-reach-edible.md) | Perception gains `vertical` and `in_reach` on nearby agents and `edible` on items (all optional, facts only); crop ripeness goes in `food_known` text, no contract change | Accepted |
 | [0163](0163-shelter-enclosed-counts-closed-doors.md) | A shelter is enclosed by blocks or a closed door; an open door does not count; the shelter is 25 cells with a doorway | Accepted |
+| [0164](0164-goto-digs-and-builds-its-way.md) | goto digs and builds its own way when the plain walk finds no path, and never digs through protected work | Accepted |

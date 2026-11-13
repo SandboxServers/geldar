@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { escapeLadder, inWater } from './escape-ladder.ts';
+import { applyDigRules, DigTally } from './goto-dig.ts';
 import { nearDoor, onPathUpdate } from './path-doors.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
@@ -113,9 +114,24 @@ export function allowDoors(movements: unknown, bot: Bot): void {
   };
 }
 
+/** Tier 1 movements per bot: the plain walk (soft digs only, no towers) that `goto` starts with. */
+const tierOne = new WeakMap<Bot, unknown>();
+
 /**
- * Loads the pathfinder once and sets the movement rules: no digging, no towers, no scaffolding.
- * Digging and placing belong to `mine` and `place`, so `goto` never tunnels or builds.
+ * Tier 2 movements (decision 0164): digging at cost 4, towers with scaffolding, and the safety
+ * rules of `goto-dig.ts`. Built fresh per walk, with the same doors and corner rules as tier 1.
+ */
+function digMovements(bot: Bot): unknown {
+  const digging = new Movements(bot);
+  applyDigRules(digging, bot);
+  forbidCornerCutting(digging);
+  allowDoors(digging, bot);
+  return digging;
+}
+
+/**
+ * Loads the pathfinder once and sets the tier-1 movement rules: soft digs only, no towers, no
+ * scaffolding. `goto` digs and builds only in tier 2, after the plain walk finds no path (0164).
  */
 export function ensurePathfinder(bot: Bot): void {
   // Read through `unknown` so the check does not narrow `bot.pathfinder` to never below.
@@ -123,13 +139,14 @@ export function ensurePathfinder(bot: Bot): void {
   if (loaded) return;
   bot.loadPlugin(pathfinder);
   const movements = new Movements(bot);
-  // Soft-dig (decision C5-01 soft-dig pathing, Proposed): leaves, vines, snow and plant cover only.
+  // Soft-dig (decision 0141, amended by 0164): leaves, vines, snow and plant cover only in tier 1.
   installSoftDig(movements);
   movements.allow1by1towers = false;
   // The library spells this property `scafoldingBlocks` (2.4.5).
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
   allowDoors(movements, bot);
+  tierOne.set(bot, movements);
   bot.pathfinder.setMovements(movements);
   // Fake bodies in tests have no emitter; the trail and the door snap need one (as watchPathEvents).
   if (typeof bot.on === 'function') bot.on('path_update', (update) => onPathUpdate(bot, update));
@@ -300,6 +317,16 @@ export function moveNear(
   const stallTicks = opts.stallTicks ?? DEFAULT_STALL_TICKS;
   const sink = opts.diag ?? DEFAULT_DIAG_SINK;
   const goal = new Vec3(target.x, target.y, target.z);
+  // Tier 1 is the plain walk; tier 2 (digging, towers) starts only when tier 1 finds no path or stalls.
+  let tier = 1;
+  const tally = new DigTally();
+  const enterDigTier = (): boolean => {
+    if (tier === 2 || typeof bot.pathfinder?.setMovements !== 'function') return false;
+    tier = 2;
+    bot.pathfinder.setMovements(digMovements(bot) as never);
+    tally.start(bot);
+    return true;
+  };
 
   return new Promise<MoveResult>((resolve, reject) => {
     if (opts.signal.aborted) {
@@ -320,6 +347,7 @@ export function moveNear(
     };
     const cleanup = (): void => {
       clearInterval(watchdog);
+      tally.stop();
       opts.signal.removeEventListener('abort', onAbort);
       releaseJump();
     };
@@ -361,10 +389,18 @@ export function moveNear(
         () => {
           if (mine !== generation) return;
           const distance = bot.entity.position.distanceTo(goal);
+          const note = tally.note();
           settle(
             partial
-              ? { ok: true, distance, partial: true, message: PARTIAL_TEXT }
-              : { ok: true, distance },
+              ? {
+                  ok: true,
+                  distance,
+                  partial: true,
+                  message: note ? `${PARTIAL_TEXT}; ${note}` : PARTIAL_TEXT,
+                }
+              : note
+                ? { ok: true, distance, message: note }
+                : { ok: true, distance },
           );
         },
         (error: unknown) => {
@@ -380,6 +416,11 @@ export function moveNear(
             return;
           }
           const name = (error as { name?: string } | null)?.name;
+          // Tier 1 found no path: the same goal again with digging and towers allowed.
+          if (name === 'NoPath' && enterDigTier()) {
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
           if (name === 'NoPath' && !partial && followPartial()) return;
           const facts =
             reason === 'blocked'
@@ -475,6 +516,8 @@ export function moveNear(
       replans++;
       replanAge = bot.time.age;
       replanPos = bot.entity.position.clone();
+      // A stalled tier-1 walk tries tier 2 (digging, towers) on this recovery.
+      enterDigTier();
       try {
         start(new goals.GoalNear(target.x, target.y, target.z, range));
       } catch (error) {
@@ -551,6 +594,11 @@ export function moveNear(
       }
     }, WATCH_INTERVAL_MS);
     opts.signal.addEventListener('abort', onAbort, { once: true });
+    // Every walk starts on tier 1; a walk left on tier 2 by an earlier goto is put back.
+    const plain = tierOne.get(bot);
+    if (plain !== undefined && (bot.pathfinder as { movements?: unknown }).movements !== plain) {
+      bot.pathfinder.setMovements(plain as never);
+    }
 
     try {
       start(new goals.GoalNear(target.x, target.y, target.z, range));

@@ -200,7 +200,7 @@ Packet worktrees branch from the integration branch `phase0/wave1` (created from
 |---|---|---|
 | P0-07a | `golem/` package, config, RCON client, test control, arena, live-test lane | wave 1 |
 | P0-07b | connection with reconnect and backoff, snapshot builder, live fixture, smoke test, protocol verdict | P0-07a |
-| P0-07c | action outcome shape, action registry, run wrapper with timeouts, `moveNear` | P0-07b |
+| P0-07c | action outcome shape, action registry, run wrapper with timeouts, `moveNear` | P0-07b (Note: the canDig=false and no-tower rule of this packet is superseded by 0164.) |
 | P0-08a | `goto`, `mine` | P0-07c |
 | P0-08b | `craft` | P0-07c |
 | P0-09a | `place`, `eat`, `sleep` | P0-07c |

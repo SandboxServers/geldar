@@ -1,6 +1,6 @@
 # 0141. The Body's pathing may dig natural soft blocks, and nothing else
 
-- Status: Proposed (owner confirmation pending)
+- Status: Superseded by 0164
 - Date: 2026-11-11
 - Spec: section 5.2 (Body API, pathing); amends the `canDig=false` setting of packet P0-07c (`docs/analysis/phase0/work-packets.md`, `ensurePathfinder`); related 0039, 0063
 - Packet: C5-01
