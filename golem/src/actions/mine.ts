@@ -3,6 +3,7 @@ import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
 import { digTicks, handNote, hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block, Item } from './bot-types.ts';
+import { feetCell } from './feet-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { ensurePathfinder, type MoveResult, moveNear } from './pathing.ts';
@@ -181,11 +182,6 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   });
 }
 
-/** The cell the bot's feet are in. */
-function feetCell(bot: Bot): Vec3 {
-  return bot.entity.position.floored();
-}
-
 /**
  * Waits for the drops of `mined` blocks to reach the inventory. Polls once per world tick
  * (`waitForTicks(1)`), at most `60 * timeScale` times, and stops at once when a dropped item name
@@ -269,7 +265,7 @@ function wantedAt(wanted: Set<number>, tried: Set<string>, block: Block): boolea
 
 /** Whether the bot stands on the block at `at`: breaking it would drop the bot. */
 function standsOn(bot: Bot, at: Vec3): boolean {
-  return at.equals(bot.entity.position.floored().offset(0, -1, 0));
+  return at.equals(feetCell(bot).offset(0, -1, 0));
 }
 
 /** The lowest air cell under `at`, where a drop from the block at `at` falls to. */

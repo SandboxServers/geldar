@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import type { DiagSink } from './stall-diag.ts';
 
@@ -160,7 +161,7 @@ export function entityInCell(bot: Bot, cell: Vec3): boolean {
  */
 async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Promise<boolean> {
   const b = bot as LooseBot;
-  const feet = b.entity.position.floored();
+  const feet = feetCell(bot);
   for (const dy of [2, 3]) {
     const at = feet.offset(0, dy, 0);
     const block = bot.blockAt(at);
@@ -326,14 +327,14 @@ export async function pillarStep(
     return { ok: false, why: o.signal.aborted ? 'aborted' : 'headroom' };
   }
   // Another entity's box in the cell the block goes into would refuse the placement.
-  if (entityInCell(bot, b.entity.position.floored())) return { ok: false, why: 'entity' };
+  if (entityInCell(bot, feetCell(bot))) return { ok: false, why: 'entity' };
   const startY = b.entity.position.y;
   let placed = false;
   let failure: string | undefined;
   try {
     await bot.equip(item as never, 'hand');
     // The cell the bot began in becomes the new floor: place on the block under it once the bot is up.
-    const cell = b.entity.position.floored();
+    const cell = feetCell(bot);
     const ground = bot.blockAt(cell.offset(0, -1, 0));
     // Aim, forced, at the point placeBlock aims at (the top face's centre of the ground block), before the
     // jump. Its own unforced turn to that point can take ~11 ticks, and the placement would go out too late.
