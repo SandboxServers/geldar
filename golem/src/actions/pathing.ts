@@ -8,6 +8,7 @@ import { Vec3 } from 'vec3';
 import { escapeLadder, inWater } from './escape-ladder.ts';
 import { applyDigRules, DigTally } from './goto-dig.ts';
 import { nearDoor, onPathUpdate } from './path-doors.ts';
+import { prefetchOwners } from './protected-blocks.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
   DEFAULT_DIAG_SINK,
@@ -353,6 +354,16 @@ export function moveNear(
       toward: target,
     });
 
+    /**
+     * Tier 2's first plan waits (bounded, abort-aware) for the ownership record around the bot and the
+     * goal, so the plan usually has data (decisions 0164, 0165). Its walk starts once that is done.
+     */
+    const startTierTwo = (): void => {
+      void prefetchOwners([bot.entity.position.clone(), goal], opts.signal).then(() => {
+        if (!done) start(new goals.GoalNear(target.x, target.y, target.z, range));
+      });
+    };
+
     /** Starts (or restarts) a walk to `aim`; answers from an older walk are ignored. */
     const start = (aim: unknown): void => {
       const mine = ++generation;
@@ -398,14 +409,14 @@ export function moveNear(
           // trigger is a walk with no route at all, so tier 2 stays for the rest of the walk.
           if (name === 'NoPath' && enterDigTier()) {
             stallDigFrom = undefined;
-            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            startTierTwo();
             return;
           }
           // Tier 1's search ran out of time with no partial walk behind it: a sealed area costs the
           // whole 4 s budget, so tier 2 gets the same chance as after NoPath (decision 0164).
           if (name === 'Timeout' && !partial && enterDigTier()) {
             stallDigFrom = undefined;
-            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            startTierTwo();
             return;
           }
           // Tier 2 found no way (or ran out of its short search): the plain walk's partial route
@@ -516,7 +527,11 @@ export function moveNear(
       replanAge = bot.time.age;
       replanPos = bot.entity.position.clone();
       // A stalled tier-1 walk tries tier 2 (digging, towers) on this recovery, to get past this spot.
-      if (enterDigTier()) stallDigFrom = bot.entity.position.clone();
+      if (enterDigTier()) {
+        stallDigFrom = bot.entity.position.clone();
+        // A stall's tier 2 starts at once (no wait): the chunks are asked for, for the replans.
+        void prefetchOwners([stallDigFrom, goal], opts.signal);
+      }
       try {
         start(new goals.GoalNear(target.x, target.y, target.z, range));
       } catch (error) {

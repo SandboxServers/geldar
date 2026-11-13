@@ -15,20 +15,43 @@ export interface ProtectBlock {
 }
 
 /**
- * The ownership record (plugin, later; subject `geldar.<shard>.blockowner.query`). It returns the
- * owner's name for a cell, or null and undefined when nobody is recorded. Off until a lookup is set
+ * What the ownership record says about one cell (decision 0165): `known: true` with the owner's name,
+ * or null when no record holds the cell (world-generated); `known: false` when the record cannot
+ * answer (not cached, truncated, a failed query). Unknown is protected (decision 0164).
+ */
+export type OwnerAnswer = { known: false } | { known: true; owner: string | null };
+
+/**
+ * The ownership record reader (the Body's cache, `body/block-owners.ts`). Off until a lookup is set
  * and `OWNERSHIP_RULE` is true, so the default walk ignores owners.
  */
-export type OwnerLookup = (pos: Vec3) => string | null | undefined;
+export type OwnerLookup = (pos: Vec3) => OwnerAnswer;
 
-/** The feature flag for the owner rule. Off: the ownership record is not read yet (0164). */
-export const OWNERSHIP_RULE = false;
+/**
+ * Fetches the chunks around the given points before a tier-2 walk plans, waiting a bounded time.
+ * Resolves when the chunks are in, the wait runs out or the signal aborts.
+ */
+export type OwnerPrefetch = (points: ReadonlyArray<Vec3>, signal: AbortSignal) => Promise<void>;
+
+/** The feature flag for the owner rule. On: the CoreProtect record is read (decision 0164, 0165). */
+export const OWNERSHIP_RULE = true;
 
 let ownerLookup: OwnerLookup | null = null;
+let ownerPrefetch: OwnerPrefetch | null = null;
 
-/** Sets the ownership record reader (the plugin packet calls this); null clears it. */
+/** Sets the ownership record reader (the Body's cache calls this); null clears it. */
 export function setOwnerLookup(lookup: OwnerLookup | null): void {
   ownerLookup = lookup;
+}
+
+/** Sets the tier-2 prefetch of the ownership record; null clears it. */
+export function setOwnerPrefetch(prefetch: OwnerPrefetch | null): void {
+  ownerPrefetch = prefetch;
+}
+
+/** Fetches the owner records around `points` before a tier-2 walk plans; resolves at once when unset. */
+export function prefetchOwners(points: ReadonlyArray<Vec3>, signal: AbortSignal): Promise<void> {
+  return ownerPrefetch ? ownerPrefetch(points, signal) : Promise.resolve();
 }
 
 /** Built materials by name suffix: planks, slabs, stairs, walls, fences, wool, concrete, terracotta. */
@@ -282,8 +305,11 @@ export function isProtected(bot: Bot, block: ProtectBlock): boolean {
   if (isBuiltName(block.name)) return true;
   if (touchesBuilt(bot, block)) return true;
   if (OWNERSHIP_RULE && ownerLookup) {
-    const owner = ownerLookup(new Vec3(block.position.x, block.position.y, block.position.z));
-    if (owner && owner !== bot.username) return true;
+    const answer = ownerLookup(new Vec3(block.position.x, block.position.y, block.position.z));
+    // Unknown is protected: a truncated or unanswered record may hide another player's work (0165).
+    if (!answer.known) return true;
+    // Someone else's record protects it; the bot's own record (owner === self) and none do not.
+    if (answer.owner !== null && answer.owner !== bot.username) return true;
   }
   return false;
 }

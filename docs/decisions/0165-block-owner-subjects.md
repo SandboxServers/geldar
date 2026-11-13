@@ -20,6 +20,7 @@ Minecraft keeps no owner for a block. The Body's goto must not dig a block anoth
 ## Consequences
 
 - The Java half (the CoreProtect bridge and its reply) and the Body's cache are separate packets. Until the plugin answers, a query gets no reply, and the Body must treat that as unknown, not as unowned.
+- The Body's cache is live (`golem/src/body/block-owners.ts`, 2026-11-13): it reads on the Body's own NATS connection, subscribes to `changed`, and treats a missing, failed or truncated answer as unknown (protected by goto, decision 0164). Its query names the Body's world by the bot's dimension; the plugin's world name must match it (checked live).
 - Ownership is only as complete as CoreProtect's log: blocks placed before CoreProtect was installed are unknown and read as world-generated (runbook, pre-tracking gap).
 - CoreProtect is a third-party jar fetched at deploy, not bundled. Its lookups are off the server thread and the Body treats any failed answer as unknown.
 - The records are facts about placement only. No agent-facing text is involved.
