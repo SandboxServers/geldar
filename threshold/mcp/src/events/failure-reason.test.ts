@@ -12,7 +12,12 @@ describe('failureReason: real Body details become fixed world facts', () => {
     ['not_found: no bed', 'no bed within reach'],
     ['not_possible: would drop the bot', 'that would drop you from where you stand'],
     ['not_found: something the world named', 'what you looked for was not found'],
-    ['not_possible: you can only sleep at night', 'that was not possible right now'],
+    ['not_possible: you can only sleep at night', 'you can only sleep at night'],
+    ['not_possible: the bed is occupied', 'the bed is occupied'],
+    ['not_possible: at 12, 64, 9 the bed is occupied', 'that was not possible right now'],
+    ['not_possible: the observer is near the bed', 'that was not possible right now'],
+    ['not_possible: ', 'that was not possible right now'],
+    ['not_possible', 'that was not possible right now'],
   ])('%s', (detail, expected) => {
     expect(failureReason(detail)).toBe(expected);
   });
