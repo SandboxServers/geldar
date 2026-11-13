@@ -118,6 +118,36 @@ describe('gotoAction', () => {
     });
   });
 
+  it('fails blocked when a partial walk stops far from an unreachable goal', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: true,
+      distance: 12,
+      partial: true,
+      message: 'dug through two blocks',
+    });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the way was blocked; you got as close as you could',
+      detail: {
+        position: { x: 10, y: 64, z: 10 },
+        distance: 12,
+        partial: true,
+        note: 'dug through two blocks',
+      },
+    });
+  });
+
+  it('keeps a partial walk that ends within range plus one completed', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, distance: 2, partial: true });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toEqual({
+      status: 'completed',
+      detail: { position: { x: 10, y: 64, z: 10 }, distance: 2, partial: true },
+    });
+  });
+
   it.each([
     ['blocked', 'blocked'],
     ['timeout', 'timeout'],
