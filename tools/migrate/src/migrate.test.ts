@@ -43,6 +43,7 @@ describe('listMigrations', () => {
       '0025_admin_flag_and_register_audit.sql',
       '0027_body_ops.sql',
       '0032_token_lifecycle.sql',
+      '0033_supervisor_display_name.sql',
     ]);
   });
 
