@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/block-owner.schema.json",
+  "title": "BlockOwner",
+  "description": "Block ownership on the plugin side, the three messages of geldar.<shard>.blockowner.query (BlockOwnerQuery, answered by BlockOwnerReply) and geldar.<shard>.blockowner.changed (BlockOwnerChanged). Minecraft keeps no owner for a block, so geldar-core records the placer of each block the agents place, per chunk, and answers from that record. A block with no record has no owner in these messages: a block that is not in a reply is not owned, and a Body treats it as world-generated. Facts only: an owner is an agent or player id and nothing else; no text is agent-facing. A reply lists at most 4096 owned blocks of one chunk; when the chunk holds more, the plugin sets truncated to true and the Body must not assume the list is complete. Block coordinates are the same as BlockPos in kino-feed.schema.json.",
+  "oneOf": [
+    { "$ref": "#/$defs/BlockOwnerQuery" },
+    { "$ref": "#/$defs/BlockOwnerReply" },
+    { "$ref": "#/$defs/BlockOwnerChanged" }
+  ],
+  "$defs": {
+    "WorldName": {
+      "description": "The world name.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "ChunkCoordinate": {
+      "description": "A chunk x or z coordinate.",
+      "type": "integer",
+      "minimum": -1875000,
+      "maximum": 1875000
+    },
+    "BlockCoordinateXZ": {
+      "description": "A block x or z coordinate.",
+      "type": "integer",
+      "minimum": -30000000,
+      "maximum": 30000000
+    },
+    "BlockCoordinateY": {
+      "description": "A block y coordinate.",
+      "type": "integer",
+      "minimum": -2048,
+      "maximum": 2048
+    },
+    "OwnerId": {
+      "description": "The placer's agent or player id. Opaque to this contract.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "BlockOwnerQuery": {
+      "description": "A Body asks who placed the blocks of one chunk. The plugin replies with a BlockOwnerReply on the reply inbox.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["world", "chunk_x", "chunk_z"],
+      "properties": {
+        "world": { "$ref": "#/$defs/WorldName" },
+        "chunk_x": { "$ref": "#/$defs/ChunkCoordinate" },
+        "chunk_z": { "$ref": "#/$defs/ChunkCoordinate" }
+      }
+    },
+    "OwnedBlock": {
+      "description": "One block of the chunk that has an owner.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z", "owner"],
+      "properties": {
+        "x": { "$ref": "#/$defs/BlockCoordinateXZ" },
+        "y": { "$ref": "#/$defs/BlockCoordinateY" },
+        "z": { "$ref": "#/$defs/BlockCoordinateXZ" },
+        "owner": { "$ref": "#/$defs/OwnerId" }
+      }
+    },
+    "BlockOwnerReply": {
+      "description": "The owned blocks of one chunk. blocks holds at most 4096 entries. truncated is true when the chunk has more owned blocks than the list holds.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["world", "chunk_x", "chunk_z", "blocks", "truncated"],
+      "properties": {
+        "world": { "$ref": "#/$defs/WorldName" },
+        "chunk_x": { "$ref": "#/$defs/ChunkCoordinate" },
+        "chunk_z": { "$ref": "#/$defs/ChunkCoordinate" },
+        "blocks": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/OwnedBlock" }
+        },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "BlockOwnerChanged": {
+      "description": "One block's owner changed: a placement sets it, a break or a replacement by another block clears it (owner null). Published by the plugin on geldar.<shard>.blockowner.changed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["world", "x", "y", "z", "owner"],
+      "properties": {
+        "world": { "$ref": "#/$defs/WorldName" },
+        "x": { "$ref": "#/$defs/BlockCoordinateXZ" },
+        "y": { "$ref": "#/$defs/BlockCoordinateY" },
+        "z": { "$ref": "#/$defs/BlockCoordinateXZ" },
+        "owner": {
+          "description": "The new owner, or null when the ownership is cleared.",
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    }
+  }
+}

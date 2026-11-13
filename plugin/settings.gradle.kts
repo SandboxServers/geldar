@@ -20,6 +20,10 @@ dependencyResolutionManagement {
                 includeGroup("com.velocitypowered")
             }
         }
+        // CoreProtect (block owner queries) comes from its own repository, for its group only.
+        maven("https://maven.playpro.com") {
+            content { includeGroup("net.coreprotect") }
+        }
         mavenCentral()
     }
 }
