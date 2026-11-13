@@ -26,12 +26,15 @@ class ChunkLookupCallTest {
     }
 
     @Test
-    void actionListAsksForBreaksAndPlacesOnly() {
+    void actionListAsksForBreaksPlacesAndClicksSoANewerClickDecidesItsPosition() {
+        // A click is a newer row at a position than the place under it; without it the older place wins.
         List<Integer> actions = ChunkLookupCall.forChunk(0, 0).actions();
 
-        assertEquals(List.of(ChunkLookupCall.ACTION_BREAK, ChunkLookupCall.ACTION_PLACE), actions);
+        assertEquals(List.of(ChunkLookupCall.ACTION_BREAK, ChunkLookupCall.ACTION_PLACE, ChunkLookupCall.ACTION_CLICK),
+                actions);
         assertEquals(0, ChunkLookupCall.ACTION_BREAK);
         assertEquals(1, ChunkLookupCall.ACTION_PLACE);
+        assertEquals(2, ChunkLookupCall.ACTION_CLICK);
     }
 
     @Test

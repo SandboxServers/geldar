@@ -26,19 +26,23 @@ public final class BlockOwnerSetup implements AutoCloseable {
     private final ExecutorService lookups;
     private final NatsBlockOwnerLink link;
     private final OwnerQueryService service;
+    private final LookupDebugLog debug;
     private volatile boolean enabled = true;
 
-    private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service) {
+    private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service,
+            LookupDebugLog debug) {
         this.lookups = lookups;
         this.link = link;
         this.service = service;
+        this.debug = debug;
     }
 
     /** Starts the feature; call from {@code onEnable}. The config is read again by {@link #reload}. */
     public static BlockOwnerSetup register(JavaPlugin plugin, String natsUrl, String shard,
             Function<String, String> env) {
         Logger log = plugin.getLogger();
-        OwnerSource source = sourceFor(plugin.getServer().getPluginManager().getPlugin(COREPROTECT), log);
+        LookupDebugLog debug = new LookupDebugLog(log, System::currentTimeMillis);
+        OwnerSource source = sourceFor(plugin.getServer().getPluginManager().getPlugin(COREPROTECT), log, debug);
         ExecutorService lookups = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(LOOKUP_QUEUE), r -> {
                     Thread t = new Thread(r, "geldar-blockowner-lookup");
@@ -47,9 +51,10 @@ public final class BlockOwnerSetup implements AutoCloseable {
                 });
         OwnerCache cache = new OwnerCache(System::currentTimeMillis);
         OwnerQueryService service = new OwnerQueryService(source, cache, lookups, DEFAULT_TIMEOUT_MS, log);
+        service.attachDebug(debug);
         NatsBlockOwnerLink link = new NatsBlockOwnerLink(natsUrl, shard, env, log);
         BlockOwnerPublisher publisher = new BlockOwnerPublisher(link::changed, log);
-        BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service);
+        BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug);
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
         plugin.getServer().getPluginManager().registerEvents(
@@ -64,20 +69,21 @@ public final class BlockOwnerSetup implements AutoCloseable {
         enabled = config.getBoolean("blockowner.enabled", true);
         long timeout = config.getLong("blockowner.lookup_timeout_ms", DEFAULT_TIMEOUT_MS);
         service.setTimeoutMs(Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, timeout)));
+        debug.setEnabled(config.getBoolean("blockowner.debug", false));
     }
 
     /** The owner source: CoreProtect when it is loaded, enabled and new enough; otherwise one that always says unknown. */
-    static OwnerSource sourceFor(Plugin coreProtect, Logger log) {
+    static OwnerSource sourceFor(Plugin coreProtect, Logger log, LookupDebugLog debug) {
         if (coreProtect == null) {
             log.warning("CoreProtect is not installed: block owner queries answer unknown; placements are not recorded.");
             return unavailable("CoreProtect is not installed");
         }
-        Optional<CoreProtectApi> api = CoreProtectApi.connect(coreProtect);
+        Optional<CoreProtectApi> api = CoreProtectApi.connect(coreProtect, debug);
         if (api.isEmpty()) {
             log.warning("CoreProtect's API is disabled or older than version 12: block owner queries answer unknown.");
             return unavailable("CoreProtect's API is not usable");
         }
-        return new CoreProtectOwnerSource(api.get());
+        return new CoreProtectOwnerSource(api.get(), debug);
     }
 
     private static OwnerSource unavailable(String reason) {
