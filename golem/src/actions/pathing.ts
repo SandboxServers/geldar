@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { escapeLadder, inWater } from './escape-ladder.ts';
+import { nearDoor, onPathUpdate } from './path-doors.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
   DEFAULT_DIAG_SINK,
@@ -130,6 +131,8 @@ export function ensurePathfinder(bot: Bot): void {
   forbidCornerCutting(movements);
   allowDoors(movements, bot);
   bot.pathfinder.setMovements(movements);
+  // Fake bodies in tests have no emitter; the trail and the door snap need one (as watchPathEvents).
+  if (typeof bot.on === 'function') bot.on('path_update', (update) => onPathUpdate(bot, update));
   bot.pathfinder.tickTimeout = TICK_SLICE_MS;
   bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
 }
@@ -233,6 +236,16 @@ export function classifyPathError(error: unknown): 'blocked' | 'interrupted' | n
 function haltPathing(bot: Bot): void {
   bot.pathfinder.stop();
   bot.pathfinder.setGoal(null);
+}
+
+/**
+ * Why the escape ladder must not run here, or null when it may. A door beside the bot or beside the
+ * next path node is a doorway, which digging and pillaring only make worse. Nothing else skips: a
+ * followPartial walk reports success even inside a pit, so the path status says nothing about a pit.
+ */
+function ladderSkip(bot: Bot): string | null {
+  if (nearDoor(bot)) return 'door_adjacent';
+  return null;
 }
 
 /** A pathfinder node as `getPathTo` returns it. */
@@ -390,8 +403,16 @@ export function moveNear(
       // A body that cannot wait on ticks (a bare test fake) cannot run the timed rungs.
       if (done || escaping || ladders >= MAX_LADDERS) return false;
       if (typeof bot.waitForTicks !== 'function') return false;
+      const skip = ladderSkip(bot);
+      if (skip) {
+        sink.log(JSON.stringify({ event: 'stall_diag', reason: 'ladder_skipped', why: skip }));
+        return false;
+      }
       ladders++;
       escaping = true;
+      // The ladder ends this goto itself (escapeLadder's setGoal(null)): that GoalChanged is not a
+      // new outcome, so the goto's answer is ignored from here on.
+      generation++;
       void escapeLadder(bot, { signal: opts.signal, toward: target, sink }).then(
         (result) => {
           escaping = false;

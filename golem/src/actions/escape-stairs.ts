@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { digTicks, hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
 import { errorText } from './outcome.ts';
+import { isDoorLike } from './path-doors.ts';
 import type { DiagSink } from './stall-diag.ts';
 
 /** Steps (one block of height each) a staircase climbs at most. */
@@ -32,7 +33,9 @@ interface StairOptions {
   sink: DiagSink;
 }
 
-const solid = (block: Block | null): boolean => block !== null && block.boundingBox === 'block';
+/** A solid block that is a wall for the climb. A door or a fence gate is not: the bot walks through it. */
+const solid = (block: Block | null): boolean =>
+  block !== null && block.boundingBox === 'block' && !isDoorLike(block);
 
 /** Solid cells stacked above `cell` (inclusive), up to `WALL_HEIGHT` + 1. */
 function wallHeight(bot: Bot, cell: Vec3): number {
@@ -116,6 +119,8 @@ export async function stairs(bot: Bot, o: StairOptions, refusals: string[]): Pro
         log(o, { step, stopped: 'refused', refusal });
         return b.entity.position.y - startY >= RISE;
       }
+      // A superseded ladder digs no second cell and no further tool.
+      if (o.signal.aborted) return b.entity.position.y - startY >= RISE;
       try {
         const tool = b.pathfinder?.bestHarvestTool?.(target);
         if (tool) await bot.equip(tool as never, 'hand');

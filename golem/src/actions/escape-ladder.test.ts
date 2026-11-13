@@ -243,6 +243,21 @@ describe('escapeLadder', () => {
       return fake;
     }
 
+    it('a stair dig that aborts the move digs no second cell of that step', async () => {
+      const controller = new AbortController();
+      const fake = pit();
+      fake.bot.dig.mockImplementationOnce(async () => {
+        controller.abort();
+      });
+      const out = await escapeLadder(fake.asBot, {
+        signal: controller.signal,
+        toward: TOWARD,
+        sink: { log: () => undefined, now: () => 0 },
+      });
+      expect(out.ok).toBe(false);
+      expect(fake.bot.dig).toHaveBeenCalledTimes(1);
+    });
+
     it('climbs a one-wide staircase out of a pit, one block per two digs, logging each step', async () => {
       const fake = pit();
       const { result, lines } = run(fake);
@@ -344,6 +359,58 @@ describe('escapeLadder', () => {
     expect(fake.bot.setControlState.mock.calls[0]).toEqual(['jump', true]);
     // It looked east, toward the ledge cell, not at the goal-less default.
     expect(fake.bot.lookAt).toHaveBeenCalledWith(expect.objectContaining({ x: 4.5 }), true);
+  });
+
+  it('a dig that aborts the move ends the dig: the cell above it is not dug', async () => {
+    const controller = new AbortController();
+    const fake = scriptedBot({ blocks: { '1,64,0': block('dirt'), '1,65,0': block('dirt') } });
+    fake.bot.dig.mockImplementationOnce(async () => {
+      controller.abort();
+    });
+    const out = await escapeLadder(fake.asBot, {
+      signal: controller.signal,
+      toward: TOWARD,
+      sink: { log: () => undefined, now: () => 0 },
+    });
+    expect(out.ok).toBe(false);
+    expect(fake.bot.dig).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pillar whose move is aborted while it rises places nothing', async () => {
+    const controller = new AbortController();
+    const fake = scriptedBot({ items: ['dirt'], blocks: { '0,63,0': block('stone') } });
+    fake.bot.waitForTicks.mockImplementation(async () => {
+      if (!fake.state.held) return;
+      // The bot rises a full block, and the move is superseded on that same tick.
+      fake.state.position.y = 65.2;
+      controller.abort();
+    });
+    const out = await escapeLadder(fake.asBot, {
+      signal: controller.signal,
+      toward: TOWARD,
+      sink: { log: () => undefined, now: () => 0 },
+    });
+    expect(out.ok).toBe(false);
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('a pillar digs no second headroom cell once its first dig aborts the move', async () => {
+    const controller = new AbortController();
+    const fake = scriptedBot({
+      items: ['dirt'],
+      blocks: { '0,63,0': block('stone'), '0,66,0': block('stone'), '0,67,0': block('stone') },
+    });
+    fake.bot.dig.mockImplementationOnce(async () => {
+      controller.abort();
+    });
+    const out = await escapeLadder(fake.asBot, {
+      signal: controller.signal,
+      toward: TOWARD,
+      sink: { log: () => undefined, now: () => 0 },
+    });
+    expect(out.ok).toBe(false);
+    expect(fake.bot.dig).toHaveBeenCalledTimes(1);
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
   });
 
   it('stops at once when the signal is already aborted', async () => {

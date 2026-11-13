@@ -176,6 +176,8 @@ async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise
       refusals.push(refusal);
       return false;
     }
+    // A superseded ladder (its move aborted) takes no more blocks.
+    if (o.signal.aborted) return false;
     try {
       if (tool) await bot.equip(tool as never, 'hand');
       await bot.dig(block, true);
@@ -229,6 +231,8 @@ async function clearHeadroom(bot: Bot, o: LadderOptions, refusals: string[]): Pr
       refusals.push(`no headroom for a pillar: ${refusal}`);
       return false;
     }
+    // A superseded ladder takes no second cell: the first dig may have aborted the move.
+    if (o.signal.aborted) return false;
     try {
       const tool = b.pathfinder?.bestHarvestTool?.(block as Block);
       if (tool) await bot.equip(tool as never, 'hand');
@@ -263,7 +267,13 @@ async function pillar(bot: Bot, o: LadderOptions, refusals: string[]): Promise<b
     const ground = bot.blockAt(cell.offset(0, -1, 0));
     for (let i = 0; i < RUNG_TICKS && !o.signal.aborted; i++) {
       await bot.waitForTicks(1);
-      if (!placed && b.entity.position.y - startY >= PILLAR_CLEAR && ground && solid(ground)) {
+      if (
+        !placed &&
+        !o.signal.aborted &&
+        b.entity.position.y - startY >= PILLAR_CLEAR &&
+        ground &&
+        solid(ground)
+      ) {
         if (passable(bot.blockAt(cell))) {
           await bot.placeBlock(ground, new Vec3(0, 1, 0));
           placed = true;
