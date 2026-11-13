@@ -30,22 +30,9 @@ Continues [c7-user-management-packets.md](c7-user-management-packets.md) (ruling
 - **checks.** `./geldar.ps1 pnpm --filter @geldar/mcp-tokens test`, `--filter @geldar/register test`, the migration check, `./geldar.ps1 check`.
 - **size.** M.
 
-## C7-03b: supervisor wiring in the Colo compose (needs geldar-93 contact)
+## C7-03b: replaced by three cards
 
-Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packet:
-
-- **Adapter.** Honour the abort signal, and remove the aborted call's container by the id the Docker call returned, never by name. Bound `LogPort.recent` to the current roster record (creation time or owner). Replace a stopped container left by the previous roster owner. Log in with the exact `mcp_players.display_name`. Call `supervisor_is_admin` for the admin check. Key containers by the lower-cased name. Pass `onAuditLost` in the composition root (it is optional today, and a lost audit row after an `ok` reply is otherwise silent).
-- **Compensation by name.** A roster move inside one Docker call can stop the new owner's body. Consider an attempt id or owner id on the runtime stop if this packet can support it.
-- **Operator step.** The `geldar_supervisor` Postgres password is set by the operator by hand; the packet writes no secret. The compose change follows geldar-93's plan and does not recreate the `geldar-colo` network (see above).
-
-- **id / wave / lane.** C7-03b, wave 2. **depends-on.** C7-03a. **branch.** `phase1/c7-03b-supervisor-wiring`. **migration.** none. Two sessions (compose work, conventions section 1).
-- **Goal.** The `supervisor` service in `compose/colo*.yml` with the Docker socket mounted for it alone, the 0082 limits on the service, a NATS user for it (the supervisor may subscribe to `ctl.body.*` and publish replies; the register service's NATS user may publish only to `ctl.body.*` request subjects), `deploy/colo-admin.sh player-start/stop` delegating to the supervisor for DB players (house rangers keep the yaml path), and the real Docker client in `supervisor/`.
-- **Change plan and the geldar-93 flag.** This change adds a compose service, a NATS auth entry and a socket mount on the shared node, and the node also runs a production game server and CI runners (header of `compose/colo.yml`). **Contact geldar-93 before the packet is dispatched and again before the node change**, with the exact diff and the time. The plan must not recreate the `geldar-colo` network: the supervisor joins the existing network, and the rollout is `docker compose up -d supervisor` plus a NATS config reload (a recreate of the NATS container only if the auth change needs it, as the skins runbook notes, with a separate owner approval); never `docker compose down`, never `--force-recreate` on the other services, never a network remove. The packet's runbook note states each command and its rollback (remove the service, restore the NATS auth file from the previous generation). The coder writes files only; ops and the owner run the node steps.
-- **may-edit.** `compose/colo.yml` (or a new `compose/colo-supervisor.yml` overlay if that keeps the base unchanged; prefer the overlay), `deploy/colo-admin.sh`, `deploy/colo-up.sh` (only to add the overlay), the NATS auth generator and its test, `supervisor/` (Docker client), `docs/runbooks/colo-deploy.md` (a supervisor section), `docs/analysis/phase1/worknotes/C7-03b.md`.
-- **must-not-edit.** `threshold/register/` (its NATS user comes from the generator in this packet), `docs/spec.md`, other services' definitions.
-- **Tests (each fails on revert).** Only the `supervisor` service mounts the Docker socket (a compose-config test over every service); the register service's NATS user cannot publish outside `ctl.body.*` (an auth-config test); the supervisor has the 0082 limits; the overlay file changes no other service (a compose-config diff test); `docs/runbooks/colo-deploy.md` carries the rollback lines (repo check). Revert: add the socket mount to the register service; the isolation test fails.
-- **checks.** The compose config check, `./geldar.ps1 pnpm --filter @geldar/supervisor test`, `./geldar.ps1 check`. Live (`live: pending`): start and stop of a DB-listed test player on the node, after geldar-93 is told.
-- **size.** L (two sessions).
+C7-03b is split into C7-03b1 (NATS contract, user binding and request/reply transport), C7-03b2 (compose service, deploy script, budget and runbook) and C7-03b3 (Postgres adapter and Docker client). The cards, with the carry-forward list, are in [c7c-packets.md](c7c-packets.md). Wave placement is in [c7-wave-plan.md](c7-wave-plan.md).
 
 ## C7-08: terms, privacy notice and consent (DONE)
 
