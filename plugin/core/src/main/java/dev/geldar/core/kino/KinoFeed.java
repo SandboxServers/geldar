@@ -2,6 +2,7 @@ package dev.geldar.core.kino;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
@@ -16,11 +17,20 @@ import java.util.concurrent.ConcurrentHashMap;
  * switch ({@link #kill}) says bye to every target and silences the feed for good.
  */
 public final class KinoFeed {
-    /** Sections read below the target's own section: little, since the ground below the agent is mostly hidden. */
+    /** The default view radius in chunks; the schema allows 1 to 8. */
+    public static final int DEFAULT_RADIUS_CHUNKS = 5;
+
+    /** Sections read below the target's own section (within {@link #NEAR_CHUNKS}): the ground below is mostly hidden. */
     public static final int SECTIONS_BELOW = 1;
 
-    /** Sections read above the target's own section: the sky and the surface above the agent are what it sees. */
+    /** Sections read above the target's own section (within {@link #NEAR_CHUNKS}): the sky and the surface above. */
     public static final int SECTIONS_ABOVE = 6;
+
+    /** Chunks from the agent (the larger of the horizontal offsets) inside which the full vertical band is read. */
+    public static final int NEAR_CHUNKS = 4;
+
+    /** Sections read above and below the target's own section beyond {@link #NEAR_CHUNKS}: the band tapers with distance. */
+    public static final int FAR_SECTIONS = 2;
     private static final String AIR = "minecraft:air";
 
     /** Blocks one {@link #pump} may read on the server thread (one section is 4096). */
@@ -70,8 +80,6 @@ public final class KinoFeed {
         final Deque<int[]> pending = new ArrayDeque<>();
         /** A resync arrived while a window was still queued: one more pass follows, not one per request. */
         boolean again;
-        int lo;
-        int hi;
         /** Where the next entity scan resumes: a window cell index and an entity index inside that chunk. */
         int scanChunk;
         int scanEntity;
@@ -269,27 +277,64 @@ public final class KinoFeed {
 
     /**
      * Queues each loaded section of the window that is not already sent or queued; no block is read here. Sections
-     * that left the window (by chunk or by section Y) are evicted, so coming back to them queues them again.
+     * that left the window (by chunk or by section Y) are evicted, so coming back to them queues them again. The
+     * queue is then sorted nearest-first from the target's section, so the agent's own section is read first.
      */
     private void queueWindow(Target t, KinoWorld.Position at) {
         t.sectionY = sectionOf(at.y());
-        t.lo = Math.max(world.minSectionY(), t.sectionY - SECTIONS_BELOW);
-        t.hi = Math.min(world.maxSectionY(), t.sectionY + SECTIONS_ABOVE);
         t.sent.removeIf(s -> Math.abs(s.x() - t.chunkX) > radius || Math.abs(s.z() - t.chunkZ) > radius
-                || s.y() < t.lo || s.y() > t.hi);
+                || !inBand(t, s.x(), s.y(), s.z()));
         t.pending.removeIf(s -> !t.sent.contains(new Section(s[0], s[1], s[2])));
         for (int x = t.chunkX - radius; x <= t.chunkX + radius; x++) {
             for (int z = t.chunkZ - radius; z <= t.chunkZ + radius; z++) {
                 if (!world.isChunkLoaded(x, z)) {
                     continue;
                 }
-                for (int y = t.lo; y <= t.hi; y++) {
+                int dist = horizontal(t, x, z);
+                int lo = Math.max(world.minSectionY(), t.sectionY - below(dist));
+                int hi = Math.min(world.maxSectionY(), t.sectionY + above(dist));
+                for (int y = lo; y <= hi; y++) {
                     if (t.sent.add(new Section(x, y, z))) {
                         t.pending.add(new int[] {x, y, z});
                     }
                 }
             }
         }
+        List<int[]> ordered = new ArrayList<>(t.pending);
+        ordered.sort(Comparator.comparingLong((int[] s) -> distance(t, s))
+                .thenComparingInt(s -> s[0]).thenComparingInt(s -> s[2]).thenComparingInt(s -> s[1]));
+        t.pending.clear();
+        t.pending.addAll(ordered);
+    }
+
+    /** Chunks from the target, the larger of the two horizontal offsets: the window is square. */
+    private static int horizontal(Target t, int x, int z) {
+        return Math.max(Math.abs(x - t.chunkX), Math.abs(z - t.chunkZ));
+    }
+
+    /** Sections read above the target's section in a column this many chunks away: the full band near, the taper far. */
+    private static int above(int chunks) {
+        return chunks <= NEAR_CHUNKS ? SECTIONS_ABOVE : FAR_SECTIONS;
+    }
+
+    /** Sections read below the target's section in a column this many chunks away. */
+    private static int below(int chunks) {
+        return chunks <= NEAR_CHUNKS ? SECTIONS_BELOW : FAR_SECTIONS;
+    }
+
+    /** Whether a section lies in the vertical band of its column, given the target's current section. */
+    private boolean inBand(Target t, int x, int y, int z) {
+        int dist = horizontal(t, x, z);
+        return y >= Math.max(world.minSectionY(), t.sectionY - below(dist))
+                && y <= Math.min(world.maxSectionY(), t.sectionY + above(dist));
+    }
+
+    /** Squared distance in sections from the target's own section: the sort key of the queue. */
+    private static long distance(Target t, int[] s) {
+        long dx = s[0] - t.chunkX;
+        long dy = s[1] - t.sectionY;
+        long dz = s[2] - t.chunkZ;
+        return dx * dx + dy * dy + dz * dz;
     }
 
     /**
