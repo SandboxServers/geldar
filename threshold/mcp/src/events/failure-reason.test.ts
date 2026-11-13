@@ -11,6 +11,23 @@ describe('failureReason: real Body details become fixed world facts', () => {
     ['blocked: no alternate route (x)', 'the way was blocked'],
     ['not_found: no bed', 'no bed within reach'],
     ['not_possible: would drop the bot', 'that would drop you from where you stand'],
+    ['not_possible: would drop you', 'that would drop you from where you stand'],
+    ['blocked: you did not move for a long while', 'you could not move and may be stuck'],
+    ['not_possible: the items went to Ann, Bob', 'the items went to Ann, Bob'],
+    ['not_possible: someone else picked the items up', 'someone else picked the items up'],
+    [
+      'not_possible: the items went to Ann; someone else picked the items up',
+      'the items went to Ann; someone else picked the items up',
+    ],
+    [
+      'not_possible: 2 of 5 were picked up; the rest went to Ann, Bob',
+      '2 of 5 were picked up; the rest went to Ann, Bob',
+    ],
+    [
+      'not_possible: 2 of 5 were picked up; someone else picked up the rest',
+      '2 of 5 were picked up; someone else picked up the rest',
+    ],
+    ['not_possible: the items went to 12, 64, 9', 'that was not possible right now'],
     ['not_found: something the world named', 'what you looked for was not found'],
     ['not_possible: you can only sleep at night', 'you can only sleep at night'],
     ['not_possible: the bed is occupied', 'the bed is occupied'],

@@ -38,11 +38,15 @@ export function failureReason(detail: string | undefined): string | undefined {
   }
   if (text.startsWith('no_effect')) return 'it changed nothing';
   if (text.startsWith('missing_station')) return 'no crafting table within reach';
-  if (text.startsWith('blocked: no movement')) return 'you could not move and may be stuck';
+  // The Body's stalled-walk text: the old "no movement for N world ticks" and the new "you did not move".
+  if (/^blocked: (no movement|you did not move)\b/.test(text)) {
+    return 'you could not move and may be stuck';
+  }
   if (text.startsWith('blocked: unstick')) return 'no way out was found without risking a fall';
   if (text.startsWith('blocked')) return 'the way was blocked';
   if (text.startsWith('not_found: no bed')) return 'no bed within reach';
-  if (text.startsWith('not_possible: would drop the bot')) {
+  // The drop text: "would drop the bot" before the Body's rewording, "would drop you" after it.
+  if (/^not_possible: would drop (the bot|you)\b/.test(text)) {
     return 'that would drop you from where you stand';
   }
   if (text.startsWith('not_found')) return 'what you looked for was not found';
