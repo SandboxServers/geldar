@@ -87,6 +87,22 @@ describe('place reach after a full walk', () => {
     expect(fake.placeBlock).toHaveBeenCalledTimes(1);
   });
 
+  it('walks within reach before placing', async () => {
+    const fake = fakeBot(new Vec3(0.5, 64, 0.5));
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      fake.bot.entity.position = new Vec3(8.5, 64, 0.5);
+      return { ok: true, distance: 8 } as never;
+    });
+    const outcome = await placeAtTarget(fake);
+    expect(outcome.status).toBe('completed');
+    expect(moveNear).toHaveBeenCalledWith(
+      fake.bot,
+      new Vec3(10, 64, 0),
+      3,
+      expect.objectContaining({ timeScale: 1 }),
+    );
+  });
+
   it('places at 4.4 blocks from the target and refuses at 4.6 (the reach edge)', async () => {
     const near = fakeBot(new Vec3(0.5, 64, 0.5));
     vi.mocked(moveNear).mockImplementationOnce(async () => {
