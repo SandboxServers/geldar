@@ -33,7 +33,6 @@ const { Physics } = fromMineflayer('prismarine-physics') as {
 
 /** The cell the bot's feet are in: the dirt goes here, on the stone at (0,63,0). */
 const PLACED_AT = '0,64,0';
-const LIVE_MESSAGE = 'you did not rise onto the block: clear the space above you and try again';
 const UNCONFIRMED =
   'the block did not appear at the target: stand on solid ground and choose a block position next to you';
 const NO_CONTROLS = {
@@ -160,6 +159,10 @@ describe('pillar against a late block update (real prismarine physics)', () => {
   it('refuses with the live message when the server refuses the placement', async () => {
     const fake = serverFake(3, () => undefined, new Error('Server refused to place dirt'));
     const outcome = await pillar(fake);
-    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: LIVE_MESSAGE });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the server did not place the block: Server refused to place dirt',
+    });
   });
 });

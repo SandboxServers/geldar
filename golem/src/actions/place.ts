@@ -227,7 +227,14 @@ async function pillarPlace(
     return failed('blocked', refusals[refusals.length - 1] ?? MESSAGE.headroom);
   }
   if (result.why === 'entity') return failed('blocked', MESSAGE.entityInCell);
+  if (result.why === 'unplaced') return failed('blocked', unplacedMessage(result.error));
   return failed('blocked', MESSAGE.notRisen);
+}
+
+/** Names the server's refusal, trimmed to 80 characters; with no error text, that no block appeared. */
+function unplacedMessage(error: string | undefined): string {
+  const cause = (error ?? 'no block appeared at the target').slice(0, 80);
+  return `the server did not place the block: ${cause}`;
 }
 
 /** Waits for the bot to land, up to `LAND_WAIT_MS` of wall time; stops early on abort. */
