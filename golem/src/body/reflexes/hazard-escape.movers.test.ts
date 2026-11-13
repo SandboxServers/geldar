@@ -67,7 +67,7 @@ describe('walkOutOfHazard', () => {
     const { bot, controls, state } = controlBot();
     await walkOutOfHazard(walkFor(bot, () => state.ticks >= 2));
     expect(move).toHaveBeenCalledTimes(1);
-    expect(move.mock.calls[0]?.[3]).toMatchObject({ timeScale: 2, stallTicks: 40 });
+    expect(move.mock.calls[0]?.[3]).toMatchObject({ digTier: false, timeScale: 2, stallTicks: 40 });
     expect(controls).toContain('forward:true');
     expect(controls).toContain('jump:true');
     expect(controls.slice(-2)).toEqual(['forward:false', 'jump:false']);

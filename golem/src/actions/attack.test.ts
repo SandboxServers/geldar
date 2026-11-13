@@ -83,6 +83,15 @@ describe('findTarget and bestWeapon', () => {
   });
 });
 
+describe('attack: the approach never digs (decision 0164)', () => {
+  it('walks up to an out-of-reach target with digTier false', async () => {
+    const { bot } = fakeBot({ items: ['stone_sword'], zombieAt: new Vec3(20, 64, 0) });
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' });
+    await attack(bot);
+    expect(walk.mock.calls[0]?.[3]).toMatchObject({ digTier: false });
+  });
+});
+
 describe('attack action', () => {
   it('equips the best weapon, swings until the target is gone and completes', async () => {
     const { bot, raw } = fakeBot({ items: ['stone_sword', 'iron_axe'], hitsToKill: 3 });

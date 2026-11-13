@@ -61,6 +61,17 @@ describe('gotoAction', () => {
     );
   });
 
+  it('reports the dig and place summary as the result note', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: true,
+      distance: 0.4,
+      message: 'dug through one block',
+    });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome.status).toBe('completed');
+    expect(outcome.detail).toMatchObject({ note: 'dug through one block' });
+  });
+
   it('walks up to a visible player at range 2 and does not follow', async () => {
     const world = new FakeWorld();
     world.entities[2] = { type: 'player', username: 'Alex', position: new Vec3(0.5, 64, 6.5) };

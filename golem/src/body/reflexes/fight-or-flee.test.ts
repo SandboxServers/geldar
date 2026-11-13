@@ -191,6 +191,17 @@ describe('fight_or_flee: who is blamed', () => {
   });
 });
 
+describe('fight_or_flee: a flight never digs (decision 0164)', () => {
+  it('flees from an unarmed Body with digTier false', async () => {
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    await fightOrFleeReflex.run(
+      fire(attackedScene()),
+      sceneContext(attackedScene(), { timeScale: 1 }),
+    );
+    expect(walk.mock.calls[0]?.[3]).toMatchObject({ digTier: false });
+  });
+});
+
 describe('fight_or_flee: time scale', () => {
   it('passes the runtime time scale to the attack action and to the flight', async () => {
     const scene = attackedScene({ iron_sword: 1 });

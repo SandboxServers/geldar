@@ -63,7 +63,7 @@ A block whose dig time the bot cannot read is not refused for that reason alone 
 ## Consequences
 
 - Every tier-2 walk ends on tier 1: success, cancel, failure or a throw puts the plain movements and the 4 s search budget back, so a later plain walk is never planned with the 1.5 s tier-2 budget (review 2, N1).
-- The panic-burrow reflex digs (`dig-cell`) go through the same protection as goto: a player's cobblestone or any other protected block is refused, and the reflex's dig is not counted as made (review 2, N8).
+- The panic-burrow reflex digs (`dig-cell`) go through the same protection as goto: a player's cobblestone or any other protected block is refused, and the reflex returns ok:false with the protection reason (review 2, N8).
 - The own-placement record holds at most 4096 cells per bot (the oldest is dropped) and clears on respawn or dimension change. A chunk unload does not clear it, so a cell a player changed while the chunk was unloaded can read as the bot's own until the next block update there (review 2, N6, accepted).
 
 - A body can leave a pit, climb a canopy and cross a stone wall, where before it reported `blocked`. A pit whose walls are all stone is now left by tier 2 even when the library resolves the empty route.
