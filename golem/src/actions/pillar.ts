@@ -161,15 +161,11 @@ export function entityInCell(bot: Bot, cell: Vec3): boolean {
 async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Promise<boolean> {
   const b = bot as LooseBot;
   const feet = b.entity.position.floored();
-  const own = [feet, feet.offset(0, 1, 0)];
   for (const dy of [2, 3]) {
     const at = feet.offset(0, dy, 0);
     const block = bot.blockAt(at);
     if (passable(block)) continue;
-    const refusal =
-      block === null || !solid(block)
-        ? `${block?.name ?? 'unloaded cell'} overhead`
-        : (unbreakableReason(block) ?? hazardReason(bot, block, at, own, true));
+    const refusal = overheadRefusal(bot, feet, at);
     if (refusal) {
       refusals.push(`no headroom for a pillar: ${refusal}`);
       return false;
@@ -189,6 +185,23 @@ async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Pr
   return true;
 }
 
+/**
+ * Why the cell `at` above `feet` cannot be cleared for the pillar's jump, or null when it can: air, or a
+ * solid block the bare hand may dig. Judged without digging.
+ */
+function overheadRefusal(bot: Bot, feet: Vec3, at: Vec3): string | null {
+  const block = bot.blockAt(at);
+  if (passable(block)) return null;
+  if (block === null || !solid(block)) return `${block?.name ?? 'unloaded cell'} overhead`;
+  const own = [feet, feet.offset(0, 1, 0)];
+  return unbreakableReason(block) ?? hazardReason(bot, block, at, own, true);
+}
+
+/** True when both cells above `feet` pass the headroom check a pillar from `feet` makes. */
+function headroomClear(bot: Bot, feet: Vec3): boolean {
+  return [2, 3].every((dy) => overheadRefusal(bot, feet, feet.offset(0, dy, 0)) === null);
+}
+
 /** The four horizontal steps, in a fixed order. */
 const CARDINAL_STEPS: readonly Vec3[] = [
   new Vec3(1, 0, 0),
@@ -200,16 +213,18 @@ const CARDINAL_STEPS: readonly Vec3[] = [
 /**
  * The cell beside the feet cell that a pillar can rise from: solid under it, open and passable with
  * the cell above it free, and no other entity in it. The nearest to the bot's position wins (the
- * block its hitbox stands on is the nearest), and null when none qualifies.
+ * block its hitbox stands on is the nearest), and null when none qualifies. With `needHeadroom`, the cell
+ * must also pass `headroomClear`.
  */
-export function edgeCell(bot: Bot, feet: Vec3): Vec3 | null {
+export function edgeCell(bot: Bot, feet: Vec3, needHeadroom = false): Vec3 | null {
   const at = bot.entity.position;
   const cells = CARDINAL_STEPS.map((step) => feet.plus(step)).filter(
     (cell) =>
       solid(bot.blockAt(cell.offset(0, -1, 0))) &&
       passable(bot.blockAt(cell)) &&
       passable(bot.blockAt(cell.offset(0, 1, 0))) &&
-      !entityInCell(bot, cell),
+      !entityInCell(bot, cell) &&
+      (!needHeadroom || headroomClear(bot, cell)),
   );
   const gap = (cell: Vec3) => (cell.x + 0.5 - at.x) ** 2 + (cell.z + 0.5 - at.z) ** 2;
   cells.sort((a, b) => gap(a) - gap(b));

@@ -224,6 +224,15 @@ async function pillarPlace(
       result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
     }
   }
+  // Unsafe headroom above the feet cell: step to a neighbour whose own headroom is clear, and pillar there.
+  if (!result.ok && result.why === 'headroom') {
+    const beside = await stepToEdge(ctx, cell, true);
+    if (ctx.signal.aborted) return cancelled();
+    if (beside) {
+      cell = beside;
+      result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+    }
+  }
   const below = cell.offset(0, -1, 0);
   if (result.ok) {
     if (!confirmsPlacement(bot.blockAt(cell)?.name ?? '', block)) {
@@ -268,9 +277,13 @@ async function waitForLanding(ctx: ActionContext): Promise<void> {
  * Walks onto the edge cell beside `feet` (see `edgeCell`), to its centre, within `EDGE_WAIT_MS` of
  * wall time. Returns that cell when the bot stands in it on the ground, else null.
  */
-async function stepToEdge(ctx: ActionContext, feet: Vec3): Promise<Vec3 | null> {
+async function stepToEdge(
+  ctx: ActionContext,
+  feet: Vec3,
+  needHeadroom = false,
+): Promise<Vec3 | null> {
   const { bot, signal, timeScale } = ctx;
-  const edge = edgeCell(bot, feet);
+  const edge = edgeCell(bot, feet, needHeadroom);
   if (!edge) return null;
   const bound = new AbortController();
   const stop = () => bound.abort();
