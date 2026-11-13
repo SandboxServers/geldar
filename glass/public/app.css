@@ -391,3 +391,8 @@ mark {
 .about a {
   color: var(--accent);
 }
+
+.meta .died {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}

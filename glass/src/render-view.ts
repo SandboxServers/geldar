@@ -33,6 +33,7 @@ export interface Doc {
 
 /** What a row needs besides its thought: the reader's clock, and the search keyword to mark. */
 export interface RowOptions {
+  death?: Row;
   /** The time now in epoch ms, for the "today" form of the time. Left out: the system clock. */
   nowMs?: number;
   /** The search keyword. Each match in the name, the wake reason and the text is marked. */
@@ -117,8 +118,9 @@ export function renderRow(
   const meta = doc.createElement('div');
   meta.className = 'meta';
   const kind = journal ? 'journal' : view.outcome === 'unparsed' ? 'unparsed' : 'thought';
+  meta.append(marked(doc, 'span', 'agent', view.agentName, keyword));
+  if (options.death?.died_at != null) meta.append(make(doc, 'span', 'died', 'died'));
   meta.append(
-    marked(doc, 'span', 'agent', view.agentName, keyword),
     make(doc, 'span', 'tier', view.tier),
     make(doc, 'span', `outcome ${view.outcome}`, kind),
   );
@@ -173,7 +175,7 @@ export function renderRow(
  * The detail of one entry, shown under its row: the facts the row leaves out, and the receipts of a
  * thought's action. The text itself is in the row, so it is not repeated here.
  */
-export function renderDetail(doc: Doc, view: ThoughtView, receipts: Row[]): El {
+export function renderDetail(doc: Doc, view: ThoughtView, receipts: Row[], death?: Row): El {
   const section = doc.createElement('section');
   section.className = 'detail';
   const facts = doc.createElement('dl');
@@ -198,6 +200,8 @@ export function renderDetail(doc: Doc, view: ThoughtView, receipts: Row[]): El {
           ['Template version', view.templateVersion],
           ['Latency', latency],
         ];
+  if (death?.died_at != null)
+    pairs.push(['Died', str(death.died_at)], ['Cause', str(death.death_cause)]);
   for (const [label, value] of pairs) {
     facts.append(make(doc, 'dt', '', label), make(doc, 'dd', '', value));
   }
@@ -224,7 +228,12 @@ export function renderNote(doc: Doc, message: string): El {
  * Fills the agent filter. The first option means every agent. Each other option's value is its
  * position in `names`, so no agent id or name becomes an attribute.
  */
-export function fillAgentOptions(doc: Doc, select: El, names: string[]): void {
+export function fillAgentOptions(
+  doc: Doc,
+  select: El,
+  names: string[],
+  dead: boolean[] = [],
+): void {
   const all = doc.createElement('option');
   all.value = '';
   all.textContent = 'All agents';
@@ -232,7 +241,7 @@ export function fillAgentOptions(doc: Doc, select: El, names: string[]): void {
   names.forEach((name, index) => {
     const option = doc.createElement('option');
     option.value = String(index);
-    option.textContent = display(name);
+    option.textContent = display(name) + (dead[index] ? ' (died)' : '');
     options.push(option);
   });
   select.replaceChildren(...options);

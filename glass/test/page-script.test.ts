@@ -162,6 +162,29 @@ const PAGES: Pages = {
 };
 
 describe('the page script', () => {
+  it('marks a dead agent in options, rows and detail without changing copy text', async () => {
+    const written: string[] = [];
+    const win = await boot(
+      {
+        ...PAGES,
+        agents: [
+          { agent_id: 'life-1', name: 'Ada', died_at: '2026-11-11', death_cause: '<img>\u202E' },
+        ],
+      },
+      { clipboard: { writeText: async (text: string) => void written.push(text) } },
+    );
+    expect(win.document.querySelectorAll('#f-agent option')[1]?.textContent).toBe('Ada (died)');
+    expect(win.document.querySelector('.meta .agent + .died')?.textContent).toBe('died');
+    fire(win, win.document.querySelector('button.when'), 'click');
+    await settle();
+    const detail = win.document.querySelector('.detail');
+    expect(detail?.textContent).toContain('Died2026-11-11Cause<img>[U+202E]');
+    expect(detail?.querySelector('img')).toBeNull();
+    fire(win, win.document.querySelector('button.copy'), 'click');
+    await settle();
+    expect(written[0]).toBe('Ada, 2026-11-10 00:00 UTC\nplan 1');
+  });
+
   it('restores a bookmark before its single first fetch and replaces the URL on edits', async () => {
     const win = await boot(PAGES, {}, '?q=plan%203&agent=a1&range=day&outcome=parsed&template=v1');
     expect(fetchUrls.filter((u) => u.startsWith('/api/thoughts?'))).toHaveLength(1);

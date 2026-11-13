@@ -46,6 +46,7 @@ const state = {
   pending: [], // thoughts that arrived while paused, newest first, at most LIST_CAP
   paused: false,
   next: null, // cursor for "load older", or null when there is no older page
+  agents: new Map(),
   agentIds: [], // option position -> agent id, filled from /api/agents
   streamText: STATUS_TEXT.connecting,
   rows: new Map(), // thought id -> its drawn row, kept so a redraw leaves an open entry open
@@ -165,6 +166,7 @@ function copyEntry(text, say) {
 
 function drawRow(view, keyword) {
   return renderRow(document, view, toggleDetail, {
+    death: state.agents.get(view.agentId),
     nowMs: Date.now(),
     keyword,
     onCopy: CAN_COPY ? copyEntry : undefined,
@@ -239,7 +241,8 @@ async function loadOlder() {
 async function loadDetail(id) {
   // A journal line has no thought record to fetch: its detail is the row already loaded.
   const loaded = state.list.find((view) => view.id === id);
-  if (loaded !== undefined && loaded.kind === 'journal') return renderDetail(document, loaded, []);
+  if (loaded !== undefined && loaded.kind === 'journal')
+    return renderDetail(document, loaded, [], state.agents.get(loaded.agentId));
   try {
     const { thought } = await getJson(`/api/thoughts/${encodeURIComponent(id)}`);
     const receipts =
@@ -247,7 +250,8 @@ async function loadDetail(id) {
         ? (await getJson(`/api/receipts?action_id=${encodeURIComponent(thought.action_id)}`))
             .receipts
         : [];
-    return renderDetail(document, toView(thought), receipts);
+    const view = toView(thought);
+    return renderDetail(document, view, receipts, state.agents.get(view.agentId));
   } catch {
     return renderNote(document, 'Could not load this thought.');
   }
@@ -307,11 +311,13 @@ function togglePause() {
 /** Fills the agent filter from the agents list. */
 async function loadAgents() {
   const { agents } = await getJson('/api/agents');
+  state.agents = new Map(agents.map((agent) => [String(agent.agent_id), agent]));
   state.agentIds = agents.map((agent) => String(agent.agent_id));
   fillAgentOptions(
     document,
     els.agent,
     agents.map((agent) => String(agent.name ?? '')),
+    agents.map((agent) => agent.died_at != null),
   );
 }
 
