@@ -64,6 +64,11 @@ describe('the real door blocks the rules read', () => {
     expect(realBlock(OAK_DOOR_OPEN_LOWER).name).toBe('oak_door');
   });
 
+  it('an iron door and an iron trapdoor are walls, not doors', () => {
+    expect(isDoorLike(defaultBlock('iron_door'))).toBe(false);
+    expect(isDoorLike({ name: 'iron_trapdoor' })).toBe(false);
+  });
+
   it('a door and a fence gate are door-like, stone is not', () => {
     expect(isDoorLike(realBlock(OAK_DOOR_OPEN_LOWER))).toBe(true);
     expect(isDoorLike({ name: 'oak_fence_gate' })).toBe(true);
@@ -138,10 +143,36 @@ describe('nearDoor: a door beside the bot or the next path node', () => {
   });
 
   it('is true when the path node nearest the bot touches a door', () => {
+    // Nodes are centred on their cells, as the library hands them over.
     const { bot } = fakeBot(liveDoor(), new Vec3(-270.5, 68, 365.5));
-    onPathUpdate(bot, { status: 'success', path: [{ x: -274, y: 68, z: 365 }] });
+    onPathUpdate(bot, { status: 'success', path: [{ x: -273.5, y: 68, z: 365.5 }] });
     expect(nearDoor(bot)).toBe(true);
-    onPathUpdate(bot, { status: 'success', path: [{ x: -268, y: 68, z: 365 }] });
+    onPathUpdate(bot, { status: 'success', path: [{ x: -267.5, y: 68, z: 365.5 }] });
+    expect(nearDoor(bot)).toBe(false);
+  });
+
+  it('measures the nearest node from its centre: a decoy half a block away does not win', () => {
+    // The bot is at (-272.5, 365.5). Node Q is 1.41 away, node R is 1.0 away and beside the door
+    // at (-271, 365). Only R is the nearest node, so only R's door counts.
+    const { bot } = fakeBot(
+      { '-271,68,365': realBlock(OAK_DOOR_OPEN_LOWER) },
+      new Vec3(-272.5, 68, 365.5),
+    );
+    onPathUpdate(bot, {
+      status: 'success',
+      path: [
+        { x: -273.5, y: 68, z: 364.5 },
+        { x: -271.5, y: 68, z: 365.5 },
+      ],
+    });
+    expect(nearDoor(bot)).toBe(true);
+  });
+
+  it('is false beside an iron door, which is a wall', () => {
+    const { bot } = fakeBot(
+      { '-274,68,365': defaultBlock('iron_door') },
+      new Vec3(-273.5, 68, 365.5),
+    );
     expect(nearDoor(bot)).toBe(false);
   });
 });

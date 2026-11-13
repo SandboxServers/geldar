@@ -22,9 +22,13 @@ interface PathRecord {
 
 const records = new WeakMap<object, PathRecord>();
 
-/** A door or a fence gate: a block the body walks through or opens, not a wall for an escape. */
+/**
+ * A wooden door or a fence gate: a block the body walks through or opens, not a wall for an escape.
+ * An iron door needs redstone to open, so it stays a wall.
+ */
 export function isDoorLike(cell: CellProbe | null | undefined): boolean {
   const name = cell?.name ?? '';
+  if (name.startsWith('iron_')) return false;
   return name.endsWith('_door') || name.endsWith('_fence_gate');
 }
 
@@ -94,7 +98,8 @@ export function nearDoor(bot: Bot): boolean {
   let nearest: PathNodeLike | undefined;
   let best = Number.POSITIVE_INFINITY;
   for (const node of records.get(bot)?.path ?? []) {
-    const d = Math.hypot(node.x + 0.5 - here.x, node.z + 0.5 - here.z);
+    // The library hands over nodes already centred on their cell: compare them as they are.
+    const d = Math.hypot(node.x - here.x, node.z - here.z);
     if (d < best) {
       best = d;
       nearest = node;

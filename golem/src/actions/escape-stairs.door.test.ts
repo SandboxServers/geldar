@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { OAK_DOOR_OPEN_LOWER, OAK_DOOR_OPEN_UPPER, realBlock } from './door-blocks.fakes.ts';
+import {
+  defaultBlock,
+  OAK_DOOR_OPEN_LOWER,
+  OAK_DOOR_OPEN_UPPER,
+  realBlock,
+} from './door-blocks.fakes.ts';
 import { block, scriptedBot } from './escape-ladder.fakes.ts';
 import { inPit } from './escape-stairs.ts';
 
@@ -22,6 +27,10 @@ describe('inPit: doors and fence gates are not pit walls', () => {
     expect(inPit(pitWith(realBlock(OAK_DOOR_OPEN_LOWER), realBlock(OAK_DOOR_OPEN_UPPER)))).toBe(
       false,
     );
+  });
+
+  it('a two-high wall of iron doors is a pit wall: iron needs redstone, so it stays a wall', () => {
+    expect(inPit(pitWith(defaultBlock('iron_door'), defaultBlock('iron_door')))).toBe(true);
   });
 
   it('a two-high fence gate beside the bot is not a pit wall', () => {

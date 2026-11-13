@@ -119,6 +119,8 @@ export async function stairs(bot: Bot, o: StairOptions, refusals: string[]): Pro
         log(o, { step, stopped: 'refused', refusal });
         return b.entity.position.y - startY >= RISE;
       }
+      // A superseded ladder digs no second cell and no further tool.
+      if (o.signal.aborted) return b.entity.position.y - startY >= RISE;
       try {
         const tool = b.pathfinder?.bestHarvestTool?.(target);
         if (tool) await bot.equip(tool as never, 'hand');

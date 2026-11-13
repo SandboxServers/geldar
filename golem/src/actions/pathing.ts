@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { escapeLadder, inWater } from './escape-ladder.ts';
-import { lastPathStatus, nearDoor, onPathUpdate } from './path-doors.ts';
+import { nearDoor, onPathUpdate } from './path-doors.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
   DEFAULT_DIAG_SINK,
@@ -240,12 +240,11 @@ function haltPathing(bot: Bot): void {
 
 /**
  * Why the escape ladder must not run here, or null when it may. A door beside the bot or beside the
- * next path node is a doorway, which digging and pillaring only make worse. A path the library found
- * (status success) with the bot on dry land is a path to follow, not a pit.
+ * next path node is a doorway, which digging and pillaring only make worse. Nothing else skips: a
+ * followPartial walk reports success even inside a pit, so the path status says nothing about a pit.
  */
 function ladderSkip(bot: Bot): string | null {
   if (nearDoor(bot)) return 'door_adjacent';
-  if (!inWater(bot) && lastPathStatus(bot) === 'success') return 'path_success';
   return null;
 }
 

@@ -85,17 +85,15 @@ describe('a stall next to a door, or on a found path, runs no ladder', () => {
     );
   });
 
-  it('the last path succeeded and the bot is on dry land: no ladder', async () => {
+  it('a found path (status success) that stalls on dry land still runs the ladder', async () => {
     vi.useFakeTimers();
     const { move, bot, sink, asBot } = stalledMove({ blocks: {} });
     onPathUpdate(asBot, { status: 'success', path: [] });
     await vi.advanceTimersByTimeAsync(5000);
     const result = await move;
-    expect(bot.waitForTicks).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ ok: false, reason: 'blocked' });
-    expect(logged(sink)).toContainEqual(
-      expect.objectContaining({ reason: 'ladder_skipped', why: 'path_success' }),
-    );
+    expect(bot.waitForTicks).toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
+    expect(logged(sink)).not.toContainEqual(expect.objectContaining({ reason: 'ladder_skipped' }));
   });
 
   it('the last path succeeded but the bot is in water: the ladder runs', async () => {

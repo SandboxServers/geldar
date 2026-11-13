@@ -231,6 +231,8 @@ async function clearHeadroom(bot: Bot, o: LadderOptions, refusals: string[]): Pr
       refusals.push(`no headroom for a pillar: ${refusal}`);
       return false;
     }
+    // A superseded ladder takes no second cell: the first dig may have aborted the move.
+    if (o.signal.aborted) return false;
     try {
       const tool = b.pathfinder?.bestHarvestTool?.(block as Block);
       if (tool) await bot.equip(tool as never, 'hand');
