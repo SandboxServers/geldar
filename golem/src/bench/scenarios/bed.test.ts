@@ -127,7 +127,7 @@ describe('bed', () => {
         on: () => undefined,
         removeListener: () => undefined,
         _client: { write: () => calls.push('wake') },
-      entity: { id: 1 },
+        entity: { id: 1 },
         wake: async () => {
           calls.push('wake');
         },
