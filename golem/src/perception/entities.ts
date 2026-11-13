@@ -143,9 +143,9 @@ function threatFields(
 }
 
 /**
- * Where another agent stands against the Body, as the words `health_estimate` carries (the contract
- * has no field for it yet): its feet more than one block above or below, or level; and whether it is
- * within give reach. Health stays `unknown`. Example: "unknown, below, in reach".
+ * Where another agent stands against the Body: its feet more than one block above or below, or level;
+ * and whether it is within give reach. Not emitted yet: the contract has no field for it, so
+ * `health_estimate` stays `unknown`. Example: "unknown, below, in reach".
  */
 export function agentNote(here: Vec3, position: Vec3, distance: number): string {
   const dy = position.y - here.y;
@@ -239,7 +239,7 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
         name,
         distance: tenths(distance),
         held_item: held && ITEM.test(held) ? held : null,
-        health_estimate: agentNote(here, entity.position, distance),
+        health_estimate: 'unknown',
         sort: name,
       });
       continue;

@@ -1,14 +1,13 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { GIVE_REACH } from '../actions/give.ts';
-import { createPerception } from './index.ts';
-import { FakeWorld } from './perception.fakes.ts';
+import { agentNote } from './entities.ts';
 
-/** The `health_estimate` text of one player standing at `position`, the Body at (0.5, 64, 0.5). */
-function noteAt(position: Vec3): string | undefined {
-  const world = new FakeWorld();
-  world.entities[1] = { type: 'player', username: 'Pike', position };
-  return createPerception(world.bot).surroundings().agents[0]?.health_estimate;
+const HERE = new Vec3(0.5, 64, 0.5);
+
+/** The note for one agent standing at `position`, the Body at HERE; distance is the straight line. */
+function noteAt(position: Vec3): string {
+  return agentNote(HERE, position, HERE.distanceTo(position));
 }
 
 describe('another agent: above, below and in reach', () => {
