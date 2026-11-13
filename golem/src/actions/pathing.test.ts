@@ -77,9 +77,9 @@ function pathError(name: string): Error {
 }
 
 describe('classifyPathError', () => {
-  it('maps NoPath and Timeout to blocked, and GoalChanged to interrupted', () => {
+  it('maps NoPath to blocked, Timeout to timeout, and GoalChanged to interrupted', () => {
     expect(classifyPathError(pathError('NoPath'))).toBe('blocked');
-    expect(classifyPathError(pathError('Timeout'))).toBe('blocked');
+    expect(classifyPathError(pathError('Timeout'))).toBe('timeout');
     expect(classifyPathError(pathError('GoalChanged'))).toBe('interrupted');
   });
 
@@ -365,6 +365,24 @@ describe('moveNear stall then replan', () => {
       timeScale: 1,
     });
     expect(result).toEqual({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
+    expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1);
+  });
+
+  it('a search that runs out of time is timeout with its own text, and runs no escape ladder', async () => {
+    const fake = fakeBot() as FakeBot & { pathfinder: { getPathTo?: unknown } };
+    fake.pathfinder.goto = vi.fn(async () => {
+      throw pathError('Timeout');
+    });
+    fake.pathfinder.getPathTo = vi.fn(() => ({ status: 'timeout', path: [] }));
+    const result = await moveNear(asBot(fake), { x: 20, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: 'timeout',
+      message: 'the path search ran out of time',
+    });
     expect(fake.pathfinder.goto).toHaveBeenCalledTimes(1);
   });
 });

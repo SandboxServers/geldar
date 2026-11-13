@@ -18,9 +18,13 @@ const BOXES: Record<string, 'block' | 'empty'> = {
   wall_torch: 'empty',
   stone: 'block',
   dirt: 'block',
+  dirt_path: 'block',
+  cobblestone: 'block',
   crafting_table: 'block',
   white_bed: 'block',
 };
+
+const SHAPES: Record<string, number[][]> = { dirt_path: [[0, 0, 0, 1, 0.9375, 1]] };
 
 interface FakeOptions {
   /** Cells that hold something, by `x,y,z`; every other cell is air. */
@@ -45,6 +49,7 @@ interface FakeBot {
   bot: Bot;
   placeBlock: ReturnType<typeof vi.fn>;
   look: ReturnType<typeof vi.fn>;
+  setControlState: ReturnType<typeof vi.fn>;
 }
 
 function key(p: Vec3): string {
@@ -74,9 +79,10 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
       held = stack;
     }),
     look: vi.fn(async () => undefined),
+    setControlState: vi.fn(),
     blockAt: (p: Vec3) => {
       const name = world.get(key(p)) ?? 'air';
-      return { name, position: p, boundingBox: BOXES[name] };
+      return { name, position: p, boundingBox: BOXES[name], shapes: SHAPES[name] ?? [] };
     },
     placeBlock: vi.fn(async (reference: { position: Vec3 }, face: Vec3) => {
       if (options.placeError) throw new Error(options.placeError);
@@ -84,7 +90,12 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
       world.set(key(reference.position.plus(face)), options.placedAs ?? held?.name ?? 'air');
     }),
   };
-  return { bot: bot as unknown as Bot, placeBlock: bot.placeBlock, look: bot.look };
+  return {
+    bot: bot as unknown as Bot,
+    placeBlock: bot.placeBlock,
+    look: bot.look,
+    setControlState: bot.setControlState,
+  };
 }
 
 /** Runs the `place` handler with a fresh abort signal. */
@@ -97,6 +108,14 @@ function place(fake: FakeBot, block: string, at: { x: number; y: number; z: numb
 
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();
+  // A completed walk leaves the bot within its range of the target, on the x axis.
+  vi.mocked(moveNear).mockImplementation(async (bot, target, range) => {
+    const goal = new Vec3(target.x, target.y, target.z);
+    if (bot.entity.position.distanceTo(goal) > range) {
+      bot.entity.position = new Vec3(goal.x + 0.5 - range, goal.y, goal.z + 0.5);
+    }
+    return { ok: true, distance: 0 };
+  });
 });
 
 describe('pickReference', () => {
@@ -234,7 +253,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no free space next to you: step to open ground or name a position',
+      message: 'no free space next to you',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
@@ -254,7 +273,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no free space next to you: step to open ground or name a position',
+      message: 'no free space next to you',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
@@ -278,7 +297,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'target is occupied: name an empty position or mine the block first',
+      message: 'target is occupied',
     });
   });
 
@@ -295,18 +314,6 @@ describe('place', () => {
     expect(outcome).toMatchObject({ status: 'failed', reason: 'not_possible' });
   });
 
-  it('walks within reach before placing', async () => {
-    const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
-    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
-    expect(outcome.status).toBe('completed');
-    expect(moveNear).toHaveBeenCalledWith(
-      fake.bot,
-      new Vec3(10, 64, 0),
-      3,
-      expect.objectContaining({ timeScale: 1 }),
-    );
-  });
-
   it('returns the move failure without placing', async () => {
     vi.mocked(moveNear).mockResolvedValueOnce({
       ok: false,
@@ -316,6 +323,18 @@ describe('place', () => {
     const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
     const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
     expect(outcome).toMatchObject({ status: 'failed', reason: 'timeout', message: 'too slow' });
+    expect(fake.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('does not place after a partial walk, and says the target is out of reach', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, partial: true, distance: 6 } as never);
+    const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the target is out of reach',
+    });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
 
@@ -344,8 +363,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message:
-        'the block did not appear at the target: stand on solid ground and choose a block position next to you',
+      message: 'the block did not appear at the target',
     });
   });
 
@@ -355,7 +373,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no solid block to place against: name a position next to a solid block',
+      message: 'no solid block to place against',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
@@ -370,7 +388,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'timeout',
-      message: 'the server did not answer the placement: try again',
+      message: 'the server did not answer the placement',
     });
   });
 
@@ -384,8 +402,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message:
-        'the server refused: stand on solid ground within reach and choose a block position next to you',
+      message: 'the server refused the placement',
     });
   });
 
@@ -406,9 +423,20 @@ describe('place', () => {
   });
 });
 
+it('a block beside a dirt path under the feet is placed, not refused inside a block', async () => {
+  const fake = fakeBot({
+    blocks: { '0,62,0': 'dirt_path', '1,62,0': 'stone' },
+    items: ['cobblestone'],
+    at: new Vec3(0.5, 62.9375, 0.5),
+  });
+  const outcome = await place(fake, 'cobblestone', { x: 1, y: 63, z: 0 });
+  expect(outcome).toMatchObject({ status: 'completed' });
+  expect(fake.placeBlock).toHaveBeenCalledTimes(1);
+});
+
 describe('place at feet as a pillar (decision 0160)', () => {
   /** A bot that jumps on the escape-ladder jump curve; placing puts dirt in the cell it left. */
-  function pillarFake(blocks: Record<string, FakeBlock>, onGround = true) {
+  function pillarFake(blocks: Record<string, FakeBlock>, onGround = true, placeAt = '0,64,0') {
     const curve = [0.42, 0.753, 1.0, 1.166, 1.249];
     let airTicks = 0;
     const scene: Scene = {
@@ -423,7 +451,7 @@ describe('place at feet as a pillar (decision 0160)', () => {
     const fake = scriptedBot(scene);
     Object.assign(fake.bot.entity, { onGround });
     fake.bot.placeBlock.mockImplementation(async () => {
-      scene.blocks = { ...scene.blocks, '0,64,0': block('dirt') };
+      scene.blocks = { ...scene.blocks, [placeAt]: block('dirt') };
     });
     return fake;
   }
@@ -445,6 +473,18 @@ describe('place at feet as a pillar (decision 0160)', () => {
     expect(fake.state.blockAt(new Vec3(0, 64, 0)).name).toBe('dirt');
     expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
     expect(fake.bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('uses a dirt path under the feet as the ground: the feet cell is above it, so the pillar goes up from it', async () => {
+    const fake = pillarFake({
+      '0,63,0': { ...block('dirt_path'), shapes: [[0, 0, 0, 1, 0.9375, 1]] },
+    });
+    fake.state.position.y = 63.9375;
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
+    const [reference] = fake.bot.placeBlock.mock.calls[0] as unknown as [{ name: string }, Vec3];
+    expect(reference.name).toBe('dirt_path');
+    expect(fake.state.blockAt(new Vec3(0, 64, 0)).name).toBe('dirt');
   });
 
   it('refuses with a no-headroom message and places nothing under bedrock two cells above the head', async () => {
@@ -508,7 +548,7 @@ describe('place at feet as a pillar (decision 0160)', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'another entity stands where the block goes: step to open ground first',
+      message: 'another entity stands where the block goes',
     });
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
   });
@@ -540,5 +580,116 @@ describe('place at feet as a pillar (decision 0160)', () => {
     });
     const outcome = await pillar(fake);
     expect(outcome).toMatchObject({ status: 'completed' });
+  });
+
+  it('holds the sneak through a placement against a crafting table, and releases it after', async () => {
+    const fake = pillarFake({ '0,63,0': block('crafting_table') });
+    const held: unknown[] = [];
+    fake.bot.placeBlock.mockImplementation(async () => {
+      held.push(fake.state.controls.sneak);
+    });
+    await pillar(fake);
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(held).toEqual([true]);
+    expect(fake.state.controls.sneak).toBe(false);
+  });
+
+  it('does not sneak for a pillar on plain stone', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    await pillar(fake);
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.bot.setControlState).not.toHaveBeenCalledWith('sneak', expect.anything());
+  });
+
+  describe('when the headroom above the feet is unsafe', () => {
+    // Stone two cells up with gravel above it: digging the stone would drop the gravel on the bot.
+    const unsafe = { '0,66,0': block('stone'), '0,67,0': block('gravel') };
+
+    it('steps to a neighbour whose headroom is clear, and pillars there', async () => {
+      const fake = pillarFake(
+        { '0,63,0': block('stone'), '1,63,0': block('stone'), ...unsafe },
+        true,
+        '1,64,0',
+      );
+      vi.mocked(moveNear).mockClear();
+      vi.mocked(moveNear).mockImplementationOnce(async () => {
+        fake.state.position.x = 1.5;
+        return { ok: true, distance: 0 };
+      });
+      const outcome = await pillar(fake);
+      expect(outcome).toMatchObject({ status: 'completed' });
+      expect(moveNear).toHaveBeenCalledTimes(1);
+      expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+      expect(fake.state.blockAt(new Vec3(1, 64, 0)).name).toBe('dirt');
+      expect(fake.bot.dig).not.toHaveBeenCalled();
+    });
+
+    it('keeps the headroom refusal, and does not move, when no neighbour has a solid ground', async () => {
+      const fake = pillarFake({ '0,63,0': block('stone'), ...unsafe });
+      vi.mocked(moveNear).mockClear();
+      const outcome = await pillar(fake);
+      expect(outcome).toMatchObject({
+        status: 'failed',
+        reason: 'blocked',
+        message: expect.stringContaining('no headroom for a pillar: stone is unsafe to dig'),
+      });
+      expect(moveNear).not.toHaveBeenCalled();
+      expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+    });
+
+    it('does not step to a neighbour whose own headroom is unsafe too', async () => {
+      const fake = pillarFake({
+        '0,63,0': block('stone'),
+        '1,63,0': block('stone'),
+        '1,66,0': block('stone'),
+        '1,67,0': block('gravel'),
+        ...unsafe,
+      });
+      vi.mocked(moveNear).mockClear();
+      const outcome = await pillar(fake);
+      expect(outcome).toMatchObject({
+        status: 'failed',
+        reason: 'blocked',
+        message: expect.stringContaining('no headroom for a pillar'),
+      });
+      expect(moveNear).not.toHaveBeenCalled();
+      expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('placing against a block that opens on use', () => {
+  it('holds the sneak while placing against a crafting table, and releases it after', async () => {
+    const fake = fakeBot({ blocks: { '10,63,0': 'crafting_table' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.setControlState.mock.calls).toEqual([
+      ['sneak', true],
+      ['sneak', false],
+    ]);
+    const [on, off] = fake.setControlState.mock.invocationCallOrder;
+    const placed = fake.placeBlock.mock.invocationCallOrder[0] ?? 0;
+    expect(on).toBeLessThan(placed);
+    expect(placed).toBeLessThan(off ?? 0);
+  });
+
+  it('releases the sneak when the placement throws', async () => {
+    const fake = fakeBot({
+      blocks: { '10,63,0': 'crafting_table' },
+      items: ['dirt'],
+      placeError: 'socket closed',
+    });
+    await expect(place(fake, 'dirt', { x: 10, y: 64, z: 0 })).rejects.toThrow('socket closed');
+    expect(fake.setControlState.mock.calls).toEqual([
+      ['sneak', true],
+      ['sneak', false],
+    ]);
+  });
+
+  it('does not sneak when the reference is plain stone', async () => {
+    const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.setControlState).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import { classifySleepError, isNightOrStorm, sleepAction } from './sleep.ts';
+import { classifySleepError, isNightOrStorm, sleepAction, sleepErrorText } from './sleep.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
@@ -109,6 +109,42 @@ describe('classifySleepError', () => {
     expect(classifySleepError('You are already sleeping')).toBe('not_possible');
     expect(classifySleepError('something else')).toBe('internal');
   });
+
+  it('maps the Mineflayer and server texts of each failure to its reason', () => {
+    expect(classifySleepError('You may not rest now; there are monsters nearby')).toBe(
+      'not_possible',
+    );
+    expect(classifySleepError("it's not night and it's not a thunderstorm")).toBe('not_possible');
+    expect(classifySleepError('You can only sleep at night or during a thunderstorm')).toBe(
+      'not_possible',
+    );
+    expect(classifySleepError('the bed is too far')).toBe('out_of_reach');
+    expect(classifySleepError('the bed is occupied')).toBe('blocked');
+    expect(classifySleepError('This bed is obstructed')).toBe('blocked');
+  });
+});
+
+describe('sleepErrorText', () => {
+  it('states the fact each known failure reports, in plain words', () => {
+    expect(sleepErrorText('There are monsters nearby')).toBe('there are monsters nearby');
+    expect(sleepErrorText('You may not rest now; there are monsters nearby')).toBe(
+      'there are monsters nearby',
+    );
+    expect(sleepErrorText("it's not night and it's not a thunderstorm")).toBe('it is not night');
+    expect(sleepErrorText('You can only sleep at night or during a thunderstorm')).toBe(
+      'it is not night',
+    );
+    expect(sleepErrorText('the bed is too far')).toBe('the bed is too far away');
+    expect(sleepErrorText('You are too far away')).toBe('the bed is too far away');
+    expect(sleepErrorText('the bed is occupied')).toBe('the bed is occupied');
+    expect(sleepErrorText('This bed is occupied')).toBe('the bed is occupied');
+    expect(sleepErrorText('This bed is obstructed')).toBe('the bed is obstructed');
+  });
+
+  it('keeps the message as it came when no fact is known', () => {
+    expect(sleepErrorText('wrong block : not a bed block')).toBe('wrong block : not a bed block');
+    expect(sleepErrorText('something else')).toBe('something else');
+  });
 });
 
 describe('sleep', () => {
@@ -181,6 +217,20 @@ describe('sleep', () => {
     expect(moveNear).toHaveBeenLastCalledWith(bot, far.position, 1, expect.anything());
   });
 
+  it('names the bed as not usable, not the raw click error, when every bed refuses the click', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED }, { ...OTHER_HALF, name: 'red_bed' }],
+      sleepErrors: ['cant click the bed', 'cant click the bed'],
+    });
+    const outcome = await sleep(bot);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(outcome.status === 'failed' && outcome.message).toBe(
+      'tried 2 nearby beds, all occupied or blocked; last: the bed could not be used',
+    );
+    expect(classifySleepError('cant click the bed')).toBe('blocked');
+  });
+
   it('is blocked, naming the count tried, when every nearby bed is occupied', async () => {
     const bot = fakeBot({
       timeOfDay: 13_000,
@@ -189,7 +239,9 @@ describe('sleep', () => {
     });
     const outcome = await sleep(bot);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
-    expect(outcome.status === 'failed' && outcome.message).toContain('tried 2');
+    expect(outcome.status === 'failed' && outcome.message).toBe(
+      'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied',
+    );
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });
 
@@ -229,6 +281,20 @@ describe('sleep', () => {
     expect(bot.sleep).toHaveBeenCalledTimes(6);
   });
 
+  it('tries the second bed when the walk to the first times out', async () => {
+    const far = { name: 'red_bed', position: new Vec3(9, 64, 0) };
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: false,
+      reason: 'timeout',
+      message: 'the path search ran out of time',
+    });
+    const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }, far] });
+    const outcome = await sleep(bot);
+    expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 9, y: 64, z: 0 } } });
+    expect(moveNear).toHaveBeenCalledTimes(2);
+    expect(bot.sleep).toHaveBeenCalledTimes(1);
+  });
+
   it('stops at a non-blocked failure and does not try the next bed', async () => {
     const bot = fakeBot({
       timeOfDay: 13_000,
@@ -251,7 +317,7 @@ describe('sleep', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'There are monsters nearby',
+      message: 'there are monsters nearby',
     });
   });
 

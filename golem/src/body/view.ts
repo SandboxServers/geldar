@@ -151,15 +151,32 @@ const ENCLOSURE: readonly Vec3[] = [
   new Vec3(0, -1, 0),
 ];
 
+/** The parts of a block the enclosure reads: its name, its collision box, and its state (for doors). */
+export interface EnclosureBlock {
+  name?: string;
+  boundingBox?: string;
+  getProperties?: () => Record<string, unknown>;
+}
+
 /**
- * True when every cell of ENCLOSURE around `feet` is a solid block: the Body's enclosure, the same
- * test the view's `enclosed` reads and the snapshot's surroundings report (decision 0074).
+ * True when a cell closes a side of the Body: a solid block, or a door that is shut (decision 0163).
+ * An open door never closes a side, whatever its collision box says.
+ */
+export function isClosedCell(block: EnclosureBlock | null | undefined): boolean {
+  if (!block) return false;
+  if (block.name?.endsWith('_door')) return String(block.getProperties?.()?.open) === 'false';
+  return block.boundingBox === 'block';
+}
+
+/**
+ * True when every cell of ENCLOSURE around `feet` is a closed cell: the Body's enclosure, the same
+ * test the view's `enclosed` reads and the snapshot's surroundings report (decisions 0074, 0163).
  */
 export function isEnclosed(
-  blockAt: (at: Vec3) => { boundingBox?: string } | null | undefined,
+  blockAt: (at: Vec3) => EnclosureBlock | null | undefined,
   feet: Vec3,
 ): boolean {
-  return ENCLOSURE.every((o) => blockAt(feet.plus(o))?.boundingBox === 'block');
+  return ENCLOSURE.every((o) => isClosedCell(blockAt(feet.plus(o))));
 }
 
 /** One of the physics plugin's boolean flags on the bot's entity (the typings omit them). */

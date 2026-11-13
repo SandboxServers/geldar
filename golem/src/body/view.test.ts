@@ -2,7 +2,14 @@ import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
-import { createBodyView } from './view.ts';
+import { blueprintCells } from '../actions/build/blueprints.ts';
+import {
+  defaultBlock,
+  OAK_DOOR_OPEN_LOWER,
+  OAK_DOOR_OPEN_UPPER,
+  realBlock,
+} from '../actions/door-blocks.fakes.ts';
+import { createBodyView, type EnclosureBlock, isEnclosed } from './view.ts';
 
 /** A bot with just what `createBodyView` reads; the test changes the fields between reads. */
 function viewBot() {
@@ -222,6 +229,61 @@ describe('view: enclosed', () => {
     expect(view.enclosed).toBe(true);
     delete state.blocks['0,66,0'];
     expect(view.enclosed).toBe(false);
+  });
+});
+
+describe('isEnclosed: doors (decision 0163)', () => {
+  const SHELL = [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+    [1, 1, 0],
+    [-1, 1, 0],
+    [0, 1, 1],
+    [0, 1, -1],
+    [0, 2, 0],
+    [0, -1, 0],
+  ] as const;
+  const solid: EnclosureBlock = { name: 'stone', boundingBox: 'block' };
+  const air: EnclosureBlock = { name: 'air', boundingBox: 'empty' };
+  /** The shell as solid stone, with `doorway` at the two +z cells (the lower and the upper half). */
+  function shell(doorway: (half: string) => EnclosureBlock) {
+    return (at: { x: number; y: number; z: number }): EnclosureBlock => {
+      const hit = SHELL.find(([x, y, z]) => x === at.x && y === at.y && z === at.z);
+      if (!hit) return air;
+      return hit[2] === 1 && hit[0] === 0 ? doorway(String(hit[1])) : solid;
+    };
+  }
+  const feet = new Vec3(0, 0, 0);
+
+  it('is true for a shelter of blocks, and for a closed door in the doorway', () => {
+    expect(
+      isEnclosed(
+        shell(() => solid),
+        feet,
+      ),
+    ).toBe(true);
+    expect(
+      isEnclosed(
+        shell(() => defaultBlock('oak_door')),
+        feet,
+      ),
+    ).toBe(true);
+  });
+
+  it('is false when the doorway holds an open door', () => {
+    const open = (half: string) =>
+      half === '0' ? realBlock(OAK_DOOR_OPEN_LOWER) : realBlock(OAK_DOOR_OPEN_UPPER);
+    expect(isEnclosed(shell(open), feet)).toBe(false);
+  });
+
+  it('is true for the shelter the build puts up, with no door gap', () => {
+    const built = new Set(blueprintCells('shelter').map((c) => `${c.dx},${c.dy},${c.dz}`));
+    // The floor under the start cell is ground, not part of the blueprint.
+    const blockAt = (at: { x: number; y: number; z: number }): EnclosureBlock =>
+      built.has(`${at.x},${at.y},${at.z}`) || at.y === -1 ? solid : air;
+    expect(isEnclosed(blockAt, feet)).toBe(true);
   });
 });
 

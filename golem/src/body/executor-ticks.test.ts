@@ -27,6 +27,30 @@ describe('ticks: program steps', () => {
     }
   });
 
+  it("passes a finished program's own message to the intent and the wake", async () => {
+    const h = executorHarness({
+      script: [{ status: 'completed', detail: { message: 'Built X' } }],
+    });
+    await h.executor.submit(thought({ intent: { wake_on: ['goal_completed'] } }), planFor(0));
+    await h.executor.onTick(1);
+    expect(h.sink.intents.at(-1)).toMatchObject({ state: 'completed', detail: 'Built X' });
+    expect(h.sink.wakes[0]).toMatchObject({ reason: 'goal_completed', detail: 'Built X' });
+  });
+
+  it.each([[undefined], ['   '], [42]])(
+    'completes with goal completed when the program gives no usable message (%s)',
+    async (message) => {
+      const detail = message === undefined ? {} : { message };
+      const h = executorHarness({
+        script: [{ status: 'completed', detail: detail as Record<string, never> }],
+      });
+      await h.executor.submit(thought({ intent: { wake_on: ['goal_completed'] } }), planFor(0));
+      await h.executor.onTick(1);
+      expect(h.sink.intents.at(-1)).toMatchObject({ state: 'completed', detail: 'goal completed' });
+      expect(h.sink.wakes[0]).toMatchObject({ reason: 'goal_completed', detail: 'goal completed' });
+    },
+  );
+
   it('fails the intent and wakes with action_failed when the program fails', async () => {
     const h = executorHarness({ script: [{ status: 'failed', message: 'no path' }] });
     await h.executor.submit(thought({ intent: {} }), planFor(0));

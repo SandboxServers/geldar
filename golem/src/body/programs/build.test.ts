@@ -5,7 +5,7 @@ import { ActionRegistry, runAction } from '../../actions/registry.ts';
 import { fakeBot } from '../body.fakes.ts';
 import type { ProgramContext, StepResult } from '../program.ts';
 import { MemorySink } from '../records.ts';
-import { BuildProgram } from './build.ts';
+import { BuildProgram, partsOf } from './build.ts';
 
 interface BuildWorld {
   position: { x: number; y: number; z: number };
@@ -14,6 +14,12 @@ interface BuildWorld {
   log: string[];
   /** Refusals left per cell key: `blocked` while the count is above zero. */
   refusals: Map<string, number>;
+  /** Timeouts left per cell key: `timeout` while the count is above zero. */
+  timeouts: Map<string, number>;
+  /** What the view says about enclosure; absent when the view does not say. */
+  enclosed?: boolean;
+  /** Whether a door the build placed stands open (decision 0163). */
+  doorOpen?: boolean;
 }
 
 const key = (p: { x: number; y: number; z: number }): string => `${p.x},${p.y},${p.z}`;
@@ -25,6 +31,7 @@ function makeWorld(count: number): BuildWorld {
     placed: new Map(),
     log: [],
     refusals: new Map(),
+    timeouts: new Map(),
   };
 }
 
@@ -44,6 +51,11 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
     run: async (_ctx, action) => {
       const k = key(action.at as never);
       world.log.push(`place:${k}`);
+      const timeouts = world.timeouts.get(k) ?? 0;
+      if (timeouts > 0) {
+        world.timeouts.set(k, timeouts - 1);
+        return failed('timeout', 'the path search ran out of time');
+      }
       const refusals = world.refusals.get(k) ?? 0;
       if (refusals > 0) {
         world.refusals.set(k, refusals - 1);
@@ -53,6 +65,11 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
       if ((world.inventory[action.block] ?? 0) < 1) return failed('missing_materials', 'none');
       world.inventory[action.block] = (world.inventory[action.block] ?? 0) - 1;
       world.placed.set(k, action.block);
+      if (action.block.endsWith('_door')) {
+        // A placed door fills both halves.
+        const at = action.at as { x: number; y: number; z: number };
+        world.placed.set(key({ ...at, y: at.y + 1 }), action.block);
+      }
       return completed();
     },
   });
@@ -69,7 +86,13 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
   Object.assign(bot, {
     blockAt: (p: { x: number; y: number; z: number }) => {
       const name = world.placed.get(key(p));
-      return name ? { name } : null;
+      if (!name) return null;
+      if (!name.endsWith('_door')) return { name, boundingBox: 'block' };
+      return {
+        name,
+        boundingBox: 'block',
+        getProperties: () => ({ open: world.doorOpen === true }),
+      };
     },
   });
   return {
@@ -82,6 +105,7 @@ function context(world: BuildWorld, signal = new AbortController().signal): Prog
         return { ...world.position };
       },
       inventoryCount: (item: string) => world.inventory[item] ?? 0,
+      enclosed: world.enclosed,
     } as never,
     registry,
     sink: new MemorySink(),
@@ -105,9 +129,9 @@ const placesIn = (world: BuildWorld): string[] =>
 const SHELTER = { blueprint: 'shelter', block: 'cobblestone' };
 
 describe('build blueprints', () => {
-  it('counts 23, 15 and 3 blocks, lowest layer first', () => {
+  it('counts 25, 15 and 3 blocks, lowest layer first', () => {
     for (const [name, count] of [
-      ['shelter', 23],
+      ['shelter', 25],
       ['wall', 15],
       ['pillar', 3],
     ] as const) {
@@ -116,6 +140,36 @@ describe('build blueprints', () => {
       expect(cells.map((c) => c.dy)).toEqual([...cells.map((c) => c.dy)].sort((a, b) => a - b));
     }
     expect(new Set(blueprintCells('shelter').map((c) => c.dy))).toEqual(new Set([0, 1, 2]));
+  });
+});
+
+describe('build part names', () => {
+  const shelter = blueprintCells('shelter');
+  const wall = blueprintCells('wall');
+  const pillar = blueprintCells('pillar');
+
+  it('names a corner cell as on both of its walls', () => {
+    expect(partsOf({ dx: -1, dy: 0, dz: -1 }, shelter)).toEqual(['north wall', 'west wall']);
+    expect(partsOf({ dx: 1, dy: 1, dz: 1 }, shelter)).toEqual(['south wall', 'east wall']);
+  });
+
+  it('names the top layer of a shelter as the roof, its edges included', () => {
+    expect(partsOf({ dx: -1, dy: 2, dz: -1 }, shelter)).toEqual(['roof']);
+    expect(partsOf({ dx: 0, dy: 2, dz: 0 }, shelter)).toEqual(['roof']);
+  });
+
+  it('names the wall blueprint by its outer side, and its ends as walls too', () => {
+    expect(partsOf({ dx: 0, dy: 2, dz: 1 }, wall)).toEqual(['south wall']);
+    expect(partsOf({ dx: 2, dy: 0, dz: 1 }, wall)).toEqual(['south wall', 'east wall']);
+  });
+
+  it('names a pillar top as the roof and the rest as the centre column', () => {
+    expect(partsOf({ dx: 0, dy: 2, dz: 0 }, pillar)).toEqual(['roof']);
+    expect(partsOf({ dx: 0, dy: 0, dz: 0 }, pillar)).toEqual(['centre column']);
+  });
+
+  it('names a cell below the layer the body stood in as the floor', () => {
+    expect(partsOf({ dx: 0, dy: -1, dz: 0 }, shelter)).toEqual(['floor']);
   });
 });
 
@@ -128,14 +182,14 @@ describe('build program', () => {
     const last = await run(program, ctx);
     expect(last).toEqual({
       status: 'completed',
-      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+      detail: { message: 'Built shelter: 25 placed, 0 already solid, of 25.' },
     });
     const ys = world.log.filter((l) => l.startsWith('place:')).map((l) => Number(l.split(',')[1]));
     expect(ys).toEqual([...ys].sort((a, b) => a - b));
     expect(ys[0]).toBe(64);
     expect(ys.at(-1)).toBe(66);
     expect(world.log[0]).toBe('place:9,64,9');
-    expect(world.inventory.cobblestone).toBe(7);
+    expect(world.inventory.cobblestone).toBe(5);
   });
 
   it('stops with the missing count when the blocks run out, and resumes after a refill', async () => {
@@ -148,14 +202,14 @@ describe('build program', () => {
       status: 'wake',
       reason: 'precondition_failed',
       message:
-        'Built shelter: 20 placed, 0 already solid, of 23. Out of cobblestone: 3 more needed.',
+        'Built shelter: 20 placed, 0 already solid, of 25. Out of cobblestone: 5 more needed.',
     });
-    world.inventory.cobblestone = 3;
+    world.inventory.cobblestone = 5;
     const saved = JSON.parse(JSON.stringify(program.checkpoint()));
     const again = new BuildProgram();
     await again.resume(saved, ctx);
     expect((await run(again, ctx)).status).toBe('completed');
-    expect(world.placed.size).toBe(23);
+    expect(world.placed.size).toBe(25);
   });
 
   it('does not place again a cell that already holds the block after a restart', async () => {
@@ -170,7 +224,7 @@ describe('build program', () => {
     const again = new BuildProgram();
     await again.resume(saved, ctx);
     await run(again, ctx);
-    expect(world.log.filter((l) => l.startsWith('place:'))).toHaveLength(23);
+    expect(world.log.filter((l) => l.startsWith('place:'))).toHaveLength(25);
     expect(placedBefore).toBe(3);
   });
 
@@ -223,7 +277,7 @@ describe('build program', () => {
     const open = cells.length - filled.length;
     expect(last).toEqual({
       status: 'completed',
-      detail: { message: `Built shelter: ${open} placed, ${filled.length} already solid, of 23.` },
+      detail: { message: `Built shelter: ${open} placed, ${filled.length} already solid, of 25.` },
     });
     expect(placesIn(world)).toEqual(cells.slice(17).map((_c, i) => cellKey(i + 17)));
   });
@@ -237,18 +291,37 @@ describe('build program', () => {
     const last = await run(program, ctx);
     expect(last).toEqual({
       status: 'completed',
-      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+      detail: { message: 'Built shelter: 25 placed, 0 already solid, of 25.' },
     });
     const attempts = placesIn(world);
     expect(attempts.filter((k) => k === cellKey(2))).toHaveLength(2);
     // The refused cell is tried again only after the cells after it.
     expect(attempts.at(-1)).toBe(cellKey(2));
-    expect(world.placed.size).toBe(23);
+    expect(world.placed.size).toBe(25);
   });
 
-  it('fails only after every other cell is attempted, and names the count', async () => {
+  it('defers a cell whose placement timed out and retries it after the last cell', async () => {
     const world = makeWorld(30);
-    world.refusals.set(cellKey(4), Number.POSITIVE_INFINITY);
+    world.timeouts.set(cellKey(2), 1);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    const last = await run(program, ctx);
+    expect(last).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 25 placed, 0 already solid, of 25.' },
+    });
+    const attempts = placesIn(world);
+    expect(attempts.filter((k) => k === cellKey(2))).toHaveLength(2);
+    expect(attempts.at(-1)).toBe(cellKey(2));
+    expect(world.placed.size).toBe(25);
+  });
+
+  it('fails only after every other cell is attempted, and names the parts it could not place', async () => {
+    const world = makeWorld(30);
+    // The corner at (1, 0, -1): on the north wall and the east wall. (Cell index 4 is now the doorway.)
+    const corner = key({ x: 11, y: 64, z: 9 });
+    world.refusals.set(corner, Number.POSITIVE_INFINITY);
     const ctx = context(world);
     const program = new BuildProgram();
     await program.start(SHELTER, ctx);
@@ -256,12 +329,61 @@ describe('build program', () => {
     expect(last).toEqual({
       status: 'failed',
       message:
-        'Built shelter: 22 placed, 0 already solid, of 23. 1 cells could not be placed; first failure: blocked: the server refused.',
+        'Built shelter: 24 placed, 0 already solid, of 25. The north wall and the east wall could not be placed; first failure: blocked: the server refused.',
     });
-    expect(world.placed.size).toBe(22);
+    expect(world.placed.size).toBe(24);
     const attempts = placesIn(world);
-    expect(attempts.filter((k) => k === cellKey(4))).toHaveLength(2);
-    expect(attempts.slice(-1)).toEqual([cellKey(4)]);
+    expect(attempts.filter((k) => k === corner)).toHaveLength(2);
+    expect(attempts.slice(-1)).toEqual([corner]);
+  });
+
+  it('names the roof and the north wall when cells there could not be placed', async () => {
+    const world = makeWorld(30);
+    world.refusals.set(key({ x: 10, y: 64, z: 9 }), Number.POSITIVE_INFINITY);
+    world.refusals.set(key({ x: 9, y: 66, z: 9 }), Number.POSITIVE_INFINITY);
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    expect(await run(program, ctx)).toEqual({
+      status: 'failed',
+      message:
+        'Built shelter: 23 placed, 0 already solid, of 25. The roof and the north wall could not be placed; first failure: blocked: the server refused.',
+    });
+  });
+
+  it('says the door is open when the only gap in the shelter is an open door', async () => {
+    const world = makeWorld(30);
+    world.inventory.oak_door = 1;
+    world.doorOpen = true;
+    world.enclosed = false;
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    // The held door goes in the doorway; open, it closes no side (decision 0163).
+    expect(await run(program, ctx)).toEqual({
+      status: 'completed',
+      detail: {
+        message:
+          'Built shelter: 24 placed, 1 already solid, of 25. Not enclosed: the door is open.',
+      },
+    });
+  });
+
+  it('places a held oak door in the doorway, and never places the upper half', async () => {
+    const world = makeWorld(30);
+    world.inventory.oak_door = 1;
+    const ctx = context(world);
+    const program = new BuildProgram();
+    await program.start(SHELTER, ctx);
+    expect(await run(program, ctx)).toEqual({
+      status: 'completed',
+      detail: { message: 'Built shelter: 24 placed, 1 already solid, of 25.' },
+    });
+    const lower = key({ x: 10, y: 64, z: 11 });
+    expect(world.placed.get(lower)).toBe('oak_door');
+    expect(placesIn(world)).toContain(lower);
+    expect(placesIn(world)).not.toContain(key({ x: 10, y: 65, z: 11 }));
+    expect(world.inventory.oak_door).toBe(0);
   });
 
   it('keeps a deferred cell across a checkpoint and retries it after a resume', async () => {
@@ -277,11 +399,11 @@ describe('build program', () => {
     await again.resume(saved, ctx);
     expect(await run(again, ctx)).toEqual({
       status: 'completed',
-      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+      detail: { message: 'Built shelter: 25 placed, 0 already solid, of 25.' },
     });
   });
 
-  it('resumes from an old-format checkpoint without the new fields', async () => {
+  it('restarts an old 23-cell shelter checkpoint from cell 0, counting built cells as solid', async () => {
     const world = makeWorld(30);
     for (let i = 0; i < 5; i++) world.placed.set(cellKey(i), 'cobblestone');
     const ctx = context(world);
@@ -295,9 +417,9 @@ describe('build program', () => {
     await program.resume(old, ctx);
     expect(await run(program, ctx)).toEqual({
       status: 'completed',
-      detail: { message: 'Built shelter: 23 placed, 0 already solid, of 23.' },
+      detail: { message: 'Built shelter: 20 placed, 5 already solid, of 25.' },
     });
-    expect(placesIn(world)).toHaveLength(18);
+    expect(placesIn(world)).toHaveLength(20);
   });
 
   it('rejects a checkpoint whose deferred list names a cell the blueprint lacks', async () => {

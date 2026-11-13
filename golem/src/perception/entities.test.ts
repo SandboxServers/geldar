@@ -66,7 +66,7 @@ describe('authorized entities', () => {
     expect(createPerception(world.bot).surroundings().entities).toHaveLength(1);
   });
 
-  it('reports other players as agents with name, distance and held item, health unknown', () => {
+  it('reports other players as agents with name, distance, held item, health unknown', () => {
     const world = new FakeWorld();
     world.entities[1] = {
       type: 'player',
@@ -86,9 +86,51 @@ describe('authorized entities', () => {
     world.set('stone', 0, 64, -3);
     const { agents, entities } = createPerception(world.bot).surroundings();
     expect(agents).toEqual([
-      { name: 'Pike', distance: 6, held_item: 'iron_sword', health_estimate: 'unknown' },
+      {
+        name: 'Pike',
+        distance: 6,
+        held_item: 'iron_sword',
+        health_estimate: 'unknown',
+        vertical: 'level',
+        in_reach: false,
+      },
     ]);
     expect(entities).toEqual([]);
+  });
+
+  it('gives an agent below within 3 blocks vertical below and in_reach true, a far level agent level and false', () => {
+    const world = new FakeWorld();
+    world.entities[1] = {
+      type: 'player',
+      username: 'Ledge',
+      position: new Vec3(2.5, 62, 0.5),
+      height: 1.8,
+    };
+    world.entities[2] = {
+      type: 'player',
+      username: 'Far',
+      position: new Vec3(0.5, 64, 20.5),
+      height: 1.8,
+    };
+    const { agents } = createPerception(world.bot).surroundings();
+    expect(agents).toEqual([
+      {
+        name: 'Ledge',
+        distance: 2.8,
+        held_item: null,
+        health_estimate: 'unknown',
+        vertical: 'below',
+        in_reach: true,
+      },
+      {
+        name: 'Far',
+        distance: 20,
+        held_item: null,
+        health_estimate: 'unknown',
+        vertical: 'level',
+        in_reach: false,
+      },
+    ]);
   });
 
   it('caps the lists and keeps the nearest', () => {

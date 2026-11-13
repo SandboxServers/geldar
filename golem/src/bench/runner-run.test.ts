@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActionRun } from '../actions/registry.ts';
 import { type CommandSource, TestControl } from '../test-control.ts';
 import { type RunnerDeps, runCell } from './runner.ts';
-import { fakeBot, GOTO, pass, scenarioOf, setup } from './runner-fixtures.ts';
+import { GOTO, pass, scenarioOf, setup } from './runner-fixtures.ts';
 
 describe('runCell run bookkeeping', () => {
   it('records the world age at the start and end of a run and the achieved TPS', async () => {
@@ -117,12 +117,16 @@ describe('runCell cleanup between runs', () => {
         calls.push('closeWindow');
         throw new Error('window already gone');
       },
-      async wake() {
-        calls.push('wake');
+      on() {},
+      removeListener() {},
+      entity: { ...bot.entity, id: 7 },
+      _client: {
+        write: (name: string, packet: { actionId: string }) =>
+          calls.push(`${name}:${packet.actionId}`),
       },
     });
     const cell = await runCell(scenarioOf({ run: pass }), 20, 1, deps);
-    expect(calls).toEqual(['closeWindow', 'wake']);
+    expect(calls).toEqual(['closeWindow', 'entity_action:stop_sleeping']);
     expect(cell.passed).toBe(1);
   });
 

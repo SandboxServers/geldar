@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { RingEventLog } from '../events/player-log.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
 import { BodyUnavailable } from '../ports.ts';
-import { createWaitState, type WaitDeps, wait } from './wait.ts';
+import {
+  createWaitState,
+  MAX_DELIVERED_LIVES,
+  rememberDelivered,
+  type WaitDeps,
+  wait,
+} from './wait.ts';
 
 const LIFE = 'ag_jason_01';
 const NO_SPACING = { minSpacingMs: 0, intentRunTooLongMs: 600_000 };
@@ -292,6 +298,108 @@ describe('wait max_seconds cap', () => {
     await advance(clock, 5);
     const out = await p;
     expect(out.ok && out.result.wake_reason).toBe('timeout');
+  });
+});
+
+function giveFailed(seq: number): SimEvent[] {
+  return [
+    {
+      seq,
+      tick: seq,
+      atMs: 0,
+      kind: 'action_failed',
+      name: 'give',
+      detail: 'no one',
+      wakeOn: null,
+    },
+    {
+      seq: seq + 1,
+      tick: seq + 1,
+      atMs: 0,
+      kind: 'intent_finished',
+      outcome: 'failed',
+      wakeOn: null,
+    },
+  ];
+}
+
+describe('wait since the last result', () => {
+  it('a cursor-less wait wakes at once on a give that failed after the last wait returned', async () => {
+    const { clock, log, deps } = setup();
+    const first = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
+    expect(await first).toMatchObject({ ok: true, result: { wake_reason: 'timeout' } });
+    for (const e of giveFailed(1)) await log.append(LIFE, e);
+    let settled = false;
+    const second = wait(deps, { lifeId: LIFE, maxSeconds: 5 }).then((out) => {
+      settled = true;
+      return out;
+    });
+    await flush();
+    expect(settled).toBe(true);
+    const out = await second;
+    expect(out.ok && out.result.wake_reason).toBe('precondition_failed');
+    expect(out.ok && JSON.stringify(out.result.events)).toContain('Your give failed');
+  });
+
+  it('never delivers an event twice across cursor-less waits', async () => {
+    const { clock, log, deps } = setup();
+    const first = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
+    await first;
+    for (const e of giveFailed(1)) await log.append(LIFE, e);
+    const woke = await wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    expect(woke.ok && woke.result.wake_reason).toBe('precondition_failed');
+    const again = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
+    expect(await again).toMatchObject({ ok: true, result: { wake_reason: 'timeout', events: [] } });
+  });
+
+  it('an explicit cursor still returns the events after it, whatever was last delivered', async () => {
+    const { clock, log, deps } = setup();
+    const first = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
+    await first;
+    for (const e of giveFailed(1)) await log.append(LIFE, e);
+    await wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    const out = await wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 5 });
+    expect(out.ok && out.result.wake_reason).toBe('precondition_failed');
+    expect(out.ok && JSON.stringify(out.result.events)).toContain('Your give failed');
+  });
+
+  it('a life never waited on starts at its head, so its older events are not delivered', async () => {
+    const { clock, log, deps } = setup();
+    for (const e of giveFailed(1)) await log.append(LIFE, e);
+    await wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 5 });
+    for (const e of giveFailed(1)) await log.append('ag_jason_02', e);
+    const fresh = wait(deps, { lifeId: 'ag_jason_02', maxSeconds: 5 });
+    await advance(clock, 5);
+    expect(await fresh).toMatchObject({ ok: true, result: { wake_reason: 'timeout', events: [] } });
+  });
+
+  it('a wait that ends in body_unavailable does not mark its events as given', async () => {
+    const { clock, log, deps } = setup();
+    const first = wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    await advance(clock, 5);
+    await first;
+    for (const e of giveFailed(1)) await log.append(LIFE, e);
+    // the probe answers, the wake fires, then the Body drops before the snapshot it returns
+    const body = vi
+      .fn()
+      .mockResolvedValueOnce(worldSnapshot())
+      .mockRejectedValueOnce(new BodyUnavailable('down'));
+    const down = await wait({ ...deps, body: { snapshot: body } }, { lifeId: LIFE, maxSeconds: 5 });
+    expect(down).toEqual({ ok: false, error: 'body_unavailable' });
+    const up = await wait(deps, { lifeId: LIFE, maxSeconds: 5 });
+    expect(up.ok && up.result.wake_reason).toBe('precondition_failed');
+    expect(up.ok && JSON.stringify(up.result.events)).toContain('Your give failed');
+  });
+
+  it('forgets the oldest life past MAX_DELIVERED_LIVES and keeps the map at that size', () => {
+    const state = createWaitState();
+    for (let i = 0; i <= MAX_DELIVERED_LIVES + 4; i++) rememberDelivered(state, `ag_${i}`, i);
+    expect(state.delivered.size).toBe(MAX_DELIVERED_LIVES);
+    expect(state.delivered.has('ag_0')).toBe(false);
   });
 });
 

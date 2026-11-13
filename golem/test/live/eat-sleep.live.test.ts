@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRegistry } from '../../src/actions/index.ts';
 import { runAction } from '../../src/actions/registry.ts';
+import { wakeBot } from '../../src/actions/wake.ts';
 import { withLiveBot } from './fixture.ts';
 
 /** The arena slot for this file (P0-09a: slot 3) and the bot that plays it. */
@@ -69,7 +70,7 @@ describe('sleep: the sleep action against a real server', () => {
       expect(run.result).toMatchObject({ status: 'completed' });
       expect(bot.isSleeping).toBe(true);
       // The server may already have woken the bot; the waking belongs to the intent layer, not this test.
-      if (bot.isSleeping) await bot.wake();
+      if (bot.isSleeping) await wakeBot(bot);
     });
   });
 

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ActionOutcome, completed, failed } from './outcome.ts';
+import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
 import { type ActionHandler, ActionRegistry, runAction } from './registry.ts';
 
 /** A fake bot with only the world clock: `runAction` reads nothing else. */
@@ -35,13 +35,14 @@ describe('ActionRegistry', () => {
 });
 
 /**
- * A bot that may be in a bed. `wake` sends the request; the server's update clears `isSleeping` and
- * emits 'wake' a moment later (10 ms), unless `serverWakes` is false. `wakeError` makes `wake` throw.
+ * A bot that may be in a bed. The client's `entity_action` write is the wake request (`wake`); the
+ * server's update clears `isSleeping` and emits 'wake' a moment later (10 ms), unless `serverWakes` is
+ * false. `wakeError` makes the write throw.
  */
 function sleepingBot(options: { asleep: boolean; wakeError?: Error; serverWakes?: boolean }) {
   const state = { asleep: options.asleep };
   const emitter = new EventEmitter();
-  const wake = vi.fn(async () => {
+  const wake = vi.fn((_name: string, _params: Record<string, unknown>) => {
     if (options.wakeError) throw options.wakeError;
     if (options.serverWakes === false) return;
     setTimeout(() => {
@@ -49,7 +50,11 @@ function sleepingBot(options: { asleep: boolean; wakeError?: Error; serverWakes?
       emitter.emit('wake');
     }, 10);
   });
-  const bot = Object.assign(emitter, { time: { age: 0 }, wake });
+  const bot = Object.assign(emitter, {
+    time: { age: 0 },
+    entity: { id: 7 },
+    _client: { write: wake },
+  });
   Object.defineProperty(bot, 'isSleeping', { get: () => state.asleep });
   return { bot: bot as unknown as Bot, wake, emitter };
 }
@@ -74,7 +79,7 @@ describe('runAction and a sleeping bot', () => {
     expect(out.state).toBe('completed');
   });
 
-  it('runs the move after 1 s when the server never confirms the wake, and drops its listener', async () => {
+  it('fails "you are still in bed" without running the move when the server never confirms the wake', async () => {
     const { bot, emitter } = sleepingBot({ asleep: true, serverWakes: false });
     const run = vi.fn(async () => completed());
     const registry = new ActionRegistry();
@@ -82,9 +87,11 @@ describe('runAction and a sleeping bot', () => {
 
     const out = await runAction(registry, bot, validMine);
 
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).not.toHaveBeenCalled();
     expect(emitter.listenerCount('wake')).toBe(0);
-    expect(out.state).toBe('completed');
+    expect(out.state).toBe('failed');
+    expect(out.result.reason).toBe('blocked');
+    expect(out.result.message).toBe('you are still in bed');
   }, 5_000);
 
   it('does not wake the bot for a sleep action', async () => {
@@ -132,7 +139,7 @@ describe('runAction and a sleeping bot', () => {
     expect(wake).not.toHaveBeenCalled();
   });
 
-  it('runs the move anyway when the wake throws', async () => {
+  it('fails "you are still in bed" without running the move when the wake cannot be written', async () => {
     const { bot, wake, emitter } = sleepingBot({ asleep: true, wakeError: new Error('no bed') });
     const run = vi.fn(async () => completed());
     const registry = new ActionRegistry();
@@ -141,9 +148,9 @@ describe('runAction and a sleeping bot', () => {
     const out = await runAction(registry, bot, validMine);
 
     expect(wake).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).not.toHaveBeenCalled();
     expect(emitter.listenerCount('wake')).toBe(0);
-    expect(out.state).toBe('completed');
+    expect(out.result.message).toBe('you are still in bed');
   });
 });
 
@@ -442,6 +449,65 @@ describe('runAction failure log', () => {
       pos: { x: 10.5, y: 64, z: -3.25 },
     });
     expect(typeof parsed(lines)[0]?.ms).toBe('number');
+  });
+
+  it('logs a fixed message for a cancelled run, never an empty one (unstick and goto cancel with no message)', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => cancelled()));
+    const { lines, sink } = lineSink();
+
+    const out = await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    expect(out.result.status).toBe('cancelled');
+    expect(out.result.message).toBeUndefined();
+    expect(parsed(lines)[0]).toMatchObject({
+      event: 'action_failed',
+      do: 'mine',
+      reason: 'cancelled',
+      message: 'the action was stopped before it finished',
+    });
+  });
+
+  it('logs the raw error behind a plain failure as raw, cut to 200 characters', async () => {
+    const registry = new ActionRegistry();
+    const raw = `Server refused to place dirt at (1, 2, 3): the block is still air ${'x'.repeat(300)}`;
+    registry.register(
+      mineHandler(async () =>
+        failed('blocked', 'the server did not place the block: it is still air', {}, raw),
+      ),
+    );
+    const { lines, sink } = lineSink();
+
+    await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    const line = parsed(lines)[0];
+    expect(line?.message).toBe('the server did not place the block: it is still air');
+    expect(typeof line?.raw).toBe('string');
+    expect(line?.raw).toBe(raw.slice(0, 200));
+    expect(String(line?.raw)).toContain('Server refused to place');
+  });
+
+  it('keeps raw out of the stored result the Mind sees, and writes no raw key without one', async () => {
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(async () =>
+        failed('blocked', 'the server did not place the block', {}, 'Server refused to place dirt'),
+      ),
+    );
+    const { lines, sink } = lineSink();
+
+    const out = await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    expect(out.result).not.toHaveProperty('raw');
+    expect(JSON.stringify(out.result)).not.toContain('Server refused');
+    expect(out.result.message).toBe('the server did not place the block');
+    expect(parsed(lines)[0]?.raw).toBe('Server refused to place dirt');
+
+    const plain = new ActionRegistry();
+    plain.register(mineHandler(async () => failed('blocked', 'plain words')));
+    const quiet = lineSink();
+    await runAction(plain, positionedBot(), validMine, { failureSink: quiet.sink });
+    expect(parsed(quiet.lines)[0]).not.toHaveProperty('raw');
   });
 
   it('writes no line when the handler completes', async () => {

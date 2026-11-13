@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import { inPit, stairs } from './escape-stairs.ts';
+import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import { heldBlock, type LooseBot, passable, pillarStep, release, solid } from './pillar.ts';
 import type { DiagSink } from './stall-diag.ts';
@@ -47,7 +48,7 @@ function stepToward(from: Vec3, toward: { x: number; z: number }): Vec3 {
 
 /** The nearest horizontal neighbour (feet cell side) that is solid with two free cells above it. */
 export function nearestLedge(bot: Bot): Vec3 | null {
-  const feet = (bot as LooseBot).entity.position.floored();
+  const feet = feetCell(bot);
   let best: Vec3 | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const [dx, dz] of [
@@ -142,7 +143,7 @@ async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise
   // A tunnel out of a pit does not climb, and ruins the wall the stairs would use: stairs go next.
   if (inPit(bot)) return false;
   const start = b.entity.position.clone();
-  const feet = start.floored();
+  const feet = feetCell(bot);
   const dir = stepToward(start, o.toward);
   for (const dy of [0, 1]) {
     const block = bot.blockAt(feet.plus(dir).offset(0, dy, 0));

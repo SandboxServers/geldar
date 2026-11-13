@@ -61,8 +61,8 @@ export const writeSignAction: ActionHandler<'write_sign'> = {
     if (ctx.signal.aborted) return cancelled();
 
     const block = ctx.bot.blockAt(new Vec3(x, y, z));
-    if (!block || !block.name.endsWith('sign')) {
-      return failed('blocked', 'the sign is not there any more: try again');
+    if (!block?.name.endsWith('sign')) {
+      return failed('blocked', 'the sign is not there any more');
     }
     try {
       ctx.bot.updateSign(block, lines.join('\n'));

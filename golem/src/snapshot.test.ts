@@ -71,6 +71,44 @@ describe('buildSnapshot', () => {
     expect(weather({ isRaining: false, thunderState: 1 })).toBe('thunder');
   });
 
+  it('marks each inventory item edible from the 26.1 food table, and the snapshot stays valid', () => {
+    const { foodsByName } = require('minecraft-data')('26.1') as {
+      foodsByName: Record<string, unknown>;
+    };
+    const bot = fakeBot({
+      registry: { effects: REGISTRY_EFFECTS, foodsByName },
+      inventory: {
+        items: () => [
+          { name: 'wheat', count: 4 },
+          { name: 'bread', count: 2 },
+        ],
+      },
+    });
+    const snap = buildSnapshot(bot, opts);
+    expect(snap.self.inventory).toEqual([
+      { item: 'wheat', count: 4, edible: false },
+      { item: 'bread', count: 2, edible: true },
+    ]);
+    expect(validateSnapshot(snap).ok).toBe(true);
+  });
+
+  it('carries an agent entry with vertical and in_reach through the contract', () => {
+    const agent = {
+      name: 'Ledge',
+      distance: 2.8,
+      held_item: null,
+      health_estimate: 'unknown' as const,
+      vertical: 'below' as const,
+      in_reach: true,
+    };
+    const snap = buildSnapshot(fakeBot(), {
+      ...opts,
+      surroundings: { blocks_summary: '', notable_blocks: [], entities: [], agents: [agent] },
+    });
+    expect(snap.surroundings.agents).toEqual([agent]);
+    expect(validateSnapshot(snap).ok).toBe(true);
+  });
+
   it('takes ticks from the world age and the day from age / 24000', () => {
     const snap = buildSnapshot(fakeBot({ time: { age: 50_000, timeOfDay: 2000 } }), opts);
     expect(snap.world_time).toMatchObject({ ticks: 50_000, day: 2 });
@@ -110,7 +148,7 @@ describe('buildSnapshot', () => {
       registry: { effects: REGISTRY_EFFECTS },
     });
     const snap = buildSnapshot(bot, { ...opts, budgetRemainingThoughts: 7 });
-    expect(snap.self.inventory).toEqual([{ item: 'cobblestone', count: 10 }]);
+    expect(snap.self.inventory).toEqual([{ item: 'cobblestone', count: 10, edible: false }]);
     expect(snap.self.held_item).toBe('stone_pickaxe');
     expect(snap.self.effects).toEqual(['slowness']);
     expect(snap.self.budget_remaining_thoughts).toBe(7);

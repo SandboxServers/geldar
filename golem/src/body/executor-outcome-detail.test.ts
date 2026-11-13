@@ -26,7 +26,8 @@ describe('action_outcome detail_text', () => {
   it('carries nothing for a success or an unrelated failure', () => {
     const done = { record: { state: 'completed', result: { status: 'completed' } } };
     expect(actionOutcomeOf('mine', 0, done as unknown as ActionReport).detail_text).toBeUndefined();
+    // blocked and timeout now carry their plain detail; only unrelated reasons carry nothing.
     const blocked = actionOutcomeOf('goto', 0, failedReport('blocked', 'path is blocked'));
-    expect(blocked.detail_text).toBeUndefined();
+    expect(blocked.detail_text).toBe('path is blocked');
   });
 });

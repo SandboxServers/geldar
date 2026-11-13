@@ -213,9 +213,11 @@ async function withContainer<W extends Opening>(
   lateWindowDrop.set(bot, dropLateWindow);
   const attempt: Promise<Opened<W>> = opener.open(bot, block).then(
     (window): Opened<W> => ({ window }),
-    (error: unknown): Opened<W> => ({
-      outcome: failed('blocked', `container did not open: ${errorText(error)}`),
-    }),
+    (error: unknown): Opened<W> => {
+      const raw = errorText(error);
+      console.warn(`container did not open: ${raw}`);
+      return { outcome: failed('blocked', 'the container did not open', {}, raw) };
+    },
   );
   // The late-window listener stays until the open settles: a window that opens after the race
   // is lost arrives through it.

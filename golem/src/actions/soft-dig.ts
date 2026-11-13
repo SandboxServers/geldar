@@ -37,7 +37,7 @@ export const SOFT_DIG_COST = 2;
 
 /** Fixed texts for a failed or partial walk (no library message reaches the agent). */
 export const NO_PATH_TEXT = 'no path to the target';
-export const SEARCH_TIMEOUT_TEXT = 'path search ran out of time';
+export const SEARCH_TIMEOUT_TEXT = 'the path search ran out of time';
 export const PARTIAL_TEXT =
   'partial: the goal is unreachable, walked to the closest reachable spot';
 

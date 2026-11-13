@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import type { DiagSink } from './stall-diag.ts';
 
@@ -26,10 +27,19 @@ export type LooseBot = Bot & {
   };
 };
 
-/** What a pillar step reports: `why` names the failed part, `headroom` with the refusal in `refusals`. */
+/**
+ * What a pillar step reports: `why` names the failed part, `headroom` with the refusal in `refusals`.
+ * `unplaced` carries the error text the placement threw, when it threw. `headroom` carries the
+ * error a headroom dig threw, when it threw (raw text for the log, not for the agent).
+ */
 export type PillarResult =
   | { ok: true }
-  | { ok: false; why: 'headroom' | 'entity' | 'unplaced' | 'not_risen' | 'aborted' };
+  | {
+      ok: false;
+      why: 'headroom' | 'entity' | 'unplaced' | 'not_risen' | 'aborted';
+      error?: string | undefined;
+      raw?: string | undefined;
+    };
 
 export interface PillarOptions {
   signal: AbortSignal;
@@ -46,6 +56,68 @@ export const passable = (block: Block | null): boolean =>
 /** Stops the movement controls a rung may hold. */
 export function release(bot: Bot): void {
   for (const control of ['forward', 'jump', 'sprint'] as const) bot.setControlState(control, false);
+}
+
+/**
+ * Blocks whose right-click opens a screen, rings, toggles or eats. Vanilla uses such a block when a
+ * player right-clicks it, unless the player sneaks: a placement against one needs the sneak.
+ */
+const OPENS_ON_USE = new Set([
+  'crafting_table',
+  'chest',
+  'trapped_chest',
+  'ender_chest',
+  'furnace',
+  'blast_furnace',
+  'smoker',
+  'barrel',
+  'anvil',
+  'chipped_anvil',
+  'damaged_anvil',
+  'enchanting_table',
+  'grindstone',
+  'loom',
+  'cartography_table',
+  'fletching_table',
+  'smithing_table',
+  'stonecutter',
+  'lever',
+  'note_block',
+  'jukebox',
+  'dispenser',
+  'dropper',
+  'hopper',
+  'brewing_stand',
+  'beacon',
+  'bell',
+  'cake',
+  'respawn_anchor',
+]);
+/** Names ending in a door, bed, gate, button, sign or box part: each is used on right-click. */
+const OPENS_ON_USE_SUFFIX = /(^|_)(bed|door|trapdoor|fence_gate|button|shulker_box|sign)$/;
+
+/** True when a right-click on the block uses it (opens, toggles or eats), so a placement against it needs the sneak. */
+export function opensOnUse(name: string): boolean {
+  return OPENS_ON_USE.has(name) || OPENS_ON_USE_SUFFIX.test(name);
+}
+
+/**
+ * Places `face`-ward against `reference`. Holds the sneak for the send when the reference opens on use:
+ * the server then places the block instead of using the reference. The sneak is released after, also when
+ * the placement throws.
+ */
+export async function placeAgainst(
+  bot: Bot,
+  reference: Parameters<Bot['placeBlock']>[0],
+  face: Vec3,
+): Promise<void> {
+  const sneak = opensOnUse(reference.name);
+  if (sneak) bot.setControlState('sneak', true);
+  try {
+    await bot.placeBlock(reference, face);
+  } finally {
+    if (sneak) bot.setControlState('sneak', false);
+  }
 }
 
 /** The first inventory item that is a placeable block, by registry name. */
@@ -89,35 +161,53 @@ export function entityInCell(bot: Bot, cell: Vec3): boolean {
  * the bare hand may dig is dug first. Anything else (unbreakable, hazardous, lava) is refused with a
  * reason that names the headroom, and the jump is not tried.
  */
-async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Promise<boolean> {
+async function clearHeadroom(
+  bot: Bot,
+  o: PillarOptions,
+  refusals: string[],
+): Promise<{ cleared: boolean; raw?: string | undefined }> {
   const b = bot as LooseBot;
-  const feet = b.entity.position.floored();
-  const own = [feet, feet.offset(0, 1, 0)];
+  const feet = feetCell(bot);
   for (const dy of [2, 3]) {
     const at = feet.offset(0, dy, 0);
     const block = bot.blockAt(at);
     if (passable(block)) continue;
-    const refusal =
-      block === null || !solid(block)
-        ? `${block?.name ?? 'unloaded cell'} overhead`
-        : (unbreakableReason(block) ?? hazardReason(bot, block, at, own, true));
+    const refusal = overheadRefusal(bot, feet, at);
     if (refusal) {
       refusals.push(`no headroom for a pillar: ${refusal}`);
-      return false;
+      return { cleared: false };
     }
     // A superseded ladder takes no second cell: the first dig may have aborted the move.
-    if (o.signal.aborted) return false;
+    if (o.signal.aborted) return { cleared: false };
     try {
       const tool = b.pathfinder?.bestHarvestTool?.(block as Block);
       if (tool) await bot.equip(tool as never, 'hand');
       await bot.dig(block as Block, true);
     } catch (error) {
-      refusals.push(`no headroom for a pillar: ${errorText(error)}`);
-      return false;
+      const raw = errorText(error);
+      console.warn(`pillar dig failed: ${raw}`);
+      refusals.push('no headroom for a pillar: the dig failed');
+      return { cleared: false, raw };
     }
   }
-  if (o.signal.aborted) return false;
-  return true;
+  return { cleared: !o.signal.aborted };
+}
+
+/**
+ * Why the cell `at` above `feet` cannot be cleared for the pillar's jump, or null when it can: air, or a
+ * solid block the bare hand may dig. Judged without digging.
+ */
+function overheadRefusal(bot: Bot, feet: Vec3, at: Vec3): string | null {
+  const block = bot.blockAt(at);
+  if (passable(block)) return null;
+  if (block === null || !solid(block)) return `${block?.name ?? 'unloaded cell'} overhead`;
+  const own = [feet, feet.offset(0, 1, 0)];
+  return unbreakableReason(block) ?? hazardReason(bot, block, at, own, true);
+}
+
+/** True when both cells above `feet` pass the headroom check a pillar from `feet` makes. */
+function headroomClear(bot: Bot, feet: Vec3): boolean {
+  return [2, 3].every((dy) => overheadRefusal(bot, feet, feet.offset(0, dy, 0)) === null);
 }
 
 /** The four horizontal steps, in a fixed order. */
@@ -131,20 +221,100 @@ const CARDINAL_STEPS: readonly Vec3[] = [
 /**
  * The cell beside the feet cell that a pillar can rise from: solid under it, open and passable with
  * the cell above it free, and no other entity in it. The nearest to the bot's position wins (the
- * block its hitbox stands on is the nearest), and null when none qualifies.
+ * block its hitbox stands on is the nearest), and null when none qualifies. With `needHeadroom`, the cell
+ * must also pass `headroomClear`.
  */
-export function edgeCell(bot: Bot, feet: Vec3): Vec3 | null {
+export function edgeCell(bot: Bot, feet: Vec3, needHeadroom = false): Vec3 | null {
   const at = bot.entity.position;
   const cells = CARDINAL_STEPS.map((step) => feet.plus(step)).filter(
     (cell) =>
       solid(bot.blockAt(cell.offset(0, -1, 0))) &&
       passable(bot.blockAt(cell)) &&
       passable(bot.blockAt(cell.offset(0, 1, 0))) &&
-      !entityInCell(bot, cell),
+      !entityInCell(bot, cell) &&
+      (!needHeadroom || headroomClear(bot, cell)),
   );
   const gap = (cell: Vec3) => (cell.x + 0.5 - at.x) ** 2 + (cell.z + 0.5 - at.z) ** 2;
   cells.sort((a, b) => gap(a) - gap(b));
   return cells[0] ?? null;
+}
+
+/**
+ * True when `cell` may be dug for a crowded pillar: solid, not unbreakable, and digging it now is hazard-free
+ * (`strictFalling`). `own` are the bot's cells, which do not count as a neighbour.
+ */
+function sideDiggable(bot: Bot, cell: Vec3, own: readonly Vec3[]): boolean {
+  const block = bot.blockAt(cell);
+  return (
+    block !== null &&
+    solid(block) &&
+    unbreakableReason(block) === null &&
+    hazardReason(bot, block, cell, own, true) === null
+  );
+}
+
+/**
+ * The cell a crowded pillar digs into: a cardinal neighbour of `feet` on solid ground, whose feet and head
+ * cells are solid and diggable with no hazard. Of those, the one farthest from the entities sharing the
+ * feet cell. Null when none qualifies.
+ */
+export function sideDigCell(bot: Bot, feet: Vec3): Vec3 | null {
+  const own = [feet, feet.offset(0, 1, 0)];
+  const crowd = Object.values(bot.entities).filter(
+    (entity) => entity !== bot.entity && entityOverlapsCell(entity, feet),
+  );
+  const away = (cell: Vec3): number =>
+    crowd.length === 0
+      ? 0
+      : Math.min(
+          ...crowd.map(
+            (entity) =>
+              (cell.x + 0.5 - entity.position.x) ** 2 + (cell.z + 0.5 - entity.position.z) ** 2,
+          ),
+        );
+  const cells = CARDINAL_STEPS.map((step) => feet.plus(step)).filter(
+    (cell) =>
+      solid(bot.blockAt(cell.offset(0, -1, 0))) &&
+      sideDiggable(bot, cell, own) &&
+      sideDiggable(bot, cell.offset(0, 1, 0), own),
+  );
+  cells.sort((a, b) => away(b) - away(a));
+  return cells[0] ?? null;
+}
+
+/**
+ * Digs the side cell `cell` for a crowded pillar: its head first, then its feet, each with the best tool or
+ * the hand, and each judged again at dig time. False when a gate refuses, a dig throws, or the signal
+ * aborts; the caller then keeps the refusal.
+ */
+export async function digSideCell(
+  bot: Bot,
+  feet: Vec3,
+  cell: Vec3,
+  o: PillarOptions,
+): Promise<boolean> {
+  const b = bot as LooseBot;
+  const own = [feet, feet.offset(0, 1, 0)];
+  for (const at of [cell.offset(0, 1, 0), cell]) {
+    // A superseded pillar takes no second cell: the first dig may have aborted the move.
+    if (o.signal.aborted || !sideDiggable(bot, at, own)) return false;
+    try {
+      const block = bot.blockAt(at) as Block;
+      const tool = b.pathfinder?.bestHarvestTool?.(block);
+      if (tool) await bot.equip(tool as never, 'hand');
+      await bot.dig(block, true);
+    } catch (error) {
+      o.sink.log(
+        JSON.stringify({
+          event: 'stall_diag',
+          reason: 'pillar_side_dig_failed',
+          error: errorText(error),
+        }),
+      );
+      return false;
+    }
+  }
+  return !o.signal.aborted;
 }
 
 /**
@@ -160,20 +330,24 @@ export async function pillarStep(
   refusals: string[],
 ): Promise<PillarResult> {
   const b = bot as LooseBot;
-  if (!(await clearHeadroom(bot, o, refusals))) {
-    return { ok: false, why: o.signal.aborted ? 'aborted' : 'headroom' };
+  const headroom = await clearHeadroom(bot, o, refusals);
+  if (!headroom.cleared) {
+    return { ok: false, why: o.signal.aborted ? 'aborted' : 'headroom', raw: headroom.raw };
   }
   // Another entity's box in the cell the block goes into would refuse the placement.
-  if (entityInCell(bot, b.entity.position.floored())) return { ok: false, why: 'entity' };
+  if (entityInCell(bot, feetCell(bot))) return { ok: false, why: 'entity' };
   const startY = b.entity.position.y;
   let placed = false;
+  let failure: string | undefined;
   try {
     await bot.equip(item as never, 'hand');
-    await bot.lookAt(b.entity.position.offset(0, -1, 0), true);
-    bot.setControlState('jump', true);
     // The cell the bot began in becomes the new floor: place on the block under it once the bot is up.
-    const cell = b.entity.position.floored();
+    const cell = feetCell(bot);
     const ground = bot.blockAt(cell.offset(0, -1, 0));
+    // Aim, forced, at the point placeBlock aims at (the top face's centre of the ground block), before the
+    // jump. Its own unforced turn to that point can take ~11 ticks, and the placement would go out too late.
+    await bot.lookAt(cell.offset(0.5, 0, 0.5), true);
+    bot.setControlState('jump', true);
     for (let i = 0; i < PILLAR_TICKS && !o.signal.aborted; i++) {
       await bot.waitForTicks(1);
       if (
@@ -184,18 +358,19 @@ export async function pillarStep(
         solid(ground)
       ) {
         if (passable(bot.blockAt(cell))) {
-          await bot.placeBlock(ground, new Vec3(0, 1, 0));
+          await placeAgainst(bot, ground, new Vec3(0, 1, 0));
           placed = true;
         }
       }
       if (placed && b.entity.position.y - startY >= RISE) break;
     }
   } catch (error) {
+    failure = errorText(error);
     o.sink.log(
       JSON.stringify({
         event: 'stall_diag',
         reason: 'escape_pillar_failed',
-        error: errorText(error),
+        error: failure,
       }),
     );
   } finally {
@@ -203,5 +378,6 @@ export async function pillarStep(
   }
   if (placed && b.entity.position.y - startY >= RISE) return { ok: true };
   if (o.signal.aborted) return { ok: false, why: 'aborted' };
-  return { ok: false, why: placed ? 'not_risen' : 'unplaced' };
+  if (!placed) return { ok: false, why: 'unplaced', error: failure };
+  return { ok: false, why: 'not_risen' };
 }
