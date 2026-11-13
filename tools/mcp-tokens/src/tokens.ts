@@ -12,8 +12,8 @@ import { isInsideRepo, REPO_ROOT, readPepper, writeOwnerOnly } from './secret-fi
 /** At most this many active tokens per player: the one in use and, while rotating, its successor. */
 export const MAX_ACTIVE_TOKENS = 2;
 
-/** A new token lives this many days (spec 5.15.3: a default expiry of 30 days). */
-export const TOKEN_EXPIRY_DAYS = 30;
+/** A new token lives this many days (decision 0170 point 1: 90 days, was 30). Must equal the register's TOKEN_LIFETIME_MS. */
+export const TOKEN_EXPIRY_DAYS = 90;
 
 /** How long a rotated-out token keeps working when `--grace-minutes` is not given. */
 export const DEFAULT_GRACE_MINUTES = 10;

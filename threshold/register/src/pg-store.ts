@@ -6,6 +6,7 @@ import {
   type SessionStore,
 } from './session-store.ts';
 import type { MintRequest, NewPlayerRequest, OwnerRecord, PlayerRow, Store } from './store.ts';
+import type { IssuedToken } from './tokens-service.ts';
 
 export interface PgStoreOptions {
   readonly shard: string;
@@ -172,6 +173,58 @@ export class PgStore implements Store, SessionStore {
       return true;
     } catch (error) {
       if ((error as { code?: string }).code === '42501') return false;
+      throw error;
+    }
+  }
+
+  async renewToken(
+    identityHash: string,
+    playerId: string,
+    token: IssuedToken,
+    graceUntil: Date,
+  ): Promise<boolean> {
+    try {
+      await this.pool.query('SELECT register_renew_token($1, $2, $3, $4, $5)', [
+        hex(identityHash),
+        playerId,
+        token.tokenId,
+        token.tokenHash,
+        graceUntil,
+      ]);
+      return true;
+    } catch (error) {
+      if ((error as { code?: string }).code === '42501') return false;
+      throw error;
+    }
+  }
+
+  async revokeTokens(identityHash: string, playerId: string): Promise<number | null> {
+    try {
+      const r = await this.pool.query('SELECT register_revoke_tokens($1, $2) AS n', [
+        hex(identityHash),
+        playerId,
+      ]);
+      return Number(r.rows[0]?.n ?? 0);
+    } catch (error) {
+      if ((error as { code?: string }).code === '42501') return null;
+      throw error;
+    }
+  }
+
+  async tokenInfo(
+    identityHash: string,
+    playerId: string,
+  ): Promise<{ expiresAt: Date; lastUsedAt: Date | null } | null> {
+    try {
+      const r = await this.pool.query(
+        'SELECT token_expires_at, token_last_used_at FROM register_token_info($1, $2)',
+        [hex(identityHash), playerId],
+      );
+      const row = r.rows[0];
+      if (!row) return null;
+      return { expiresAt: row.token_expires_at, lastUsedAt: row.token_last_used_at ?? null };
+    } catch (error) {
+      if ((error as { code?: string }).code === '42501') return null;
       throw error;
     }
   }
