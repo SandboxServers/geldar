@@ -92,6 +92,32 @@ const chunkOf = (block: number): number => Math.floor(block / 16);
 const chunkKey = (world: string, cx: number, cz: number): string => `${world}|${cx}|${cz}`;
 const cellKey = (x: number, y: number, z: number): string => `${x},${y},${z}`;
 
+/** The Bukkit world each dimension is (decision 0164); the plugin answers to these names. */
+const BUKKIT_WORLDS = new Map<string, string>([
+  ['overworld', 'world'],
+  ['the_nether', 'world_nether'],
+  ['the_end', 'world_the_end'],
+]);
+const NAMESPACE = 'minecraft:';
+
+/**
+ * The Bukkit world the bot is in, or null when its dimension is not one the record names: the
+ * namespace is stripped first (`minecraft:overworld` and `overworld` are the same). Null means no
+ * query: the ownership is unknown, so goto protects the block.
+ */
+export function bukkitWorldOf(bot: { game?: { dimension?: string } }): string | null {
+  const dimension = bot.game?.dimension;
+  if (dimension === undefined) return null;
+  const name = dimension.startsWith(NAMESPACE) ? dimension.slice(NAMESPACE.length) : dimension;
+  return BUKKIT_WORLDS.get(name) ?? null;
+}
+
+const applyChange = (owners: Map<string, string>, change: ChangedEvent): void => {
+  const cell = cellKey(change.x, change.y, change.z);
+  if (change.owner === null) owners.delete(cell);
+  else owners.set(cell, change.owner);
+};
+
 /** Starts one Body's ownership client: subscribes to the change events and answers lookups. */
 export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
   const { transport } = options;
@@ -104,6 +130,11 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
   /** Insertion order is the LRU order: the first key is the least recently used. */
   const chunks = new Map<string, ChunkEntry>();
   const pending = new Map<string, Promise<void>>();
+  /**
+   * Change events that arrived while a chunk's query was in flight. The reply may predate them, so
+   * they are applied on top of it when it lands (in arrival order); cleared when the query settles.
+   */
+  const racing = new Map<string, ChangedEvent[]>();
   let stopped = false;
 
   const store = (key: string, entry: ChunkEntry): void => {
@@ -147,6 +178,7 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     }
     const owners = new Map<string, string>();
     for (const block of answer.blocks) owners.set(cellKey(block.x, block.y, block.z), block.owner);
+    for (const change of racing.get(key) ?? []) applyChange(owners, change);
     store(key, {
       owners,
       complete: answer.truncated !== true,
@@ -165,7 +197,11 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
       if (entry.failed ? age < OWNER_RETRY_MS : age < OWNER_TTL_MS) return Promise.resolve();
     }
     if (stopped) return Promise.resolve();
-    const job = fetchChunk(world, cx, cz, key).finally(() => pending.delete(key));
+    racing.set(key, []);
+    const job = fetchChunk(world, cx, cz, key).finally(() => {
+      pending.delete(key);
+      racing.delete(key);
+    });
     pending.set(key, job);
     return job;
   };
@@ -193,11 +229,10 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     }
     if (!validateBlockOwner(event) || !('x' in (event as object))) return;
     const change = event as ChangedEvent;
-    const entry = chunks.get(chunkKey(change.world, chunkOf(change.x), chunkOf(change.z)));
-    if (entry === undefined) return;
-    const cell = cellKey(change.x, change.y, change.z);
-    if (change.owner === null) entry.owners.delete(cell);
-    else entry.owners.set(cell, change.owner);
+    const key = chunkKey(change.world, chunkOf(change.x), chunkOf(change.z));
+    racing.get(key)?.push(change);
+    const entry = chunks.get(key);
+    if (entry !== undefined) applyChange(entry.owners, change);
   };
 
   const subscription = transport.subscribe(blockownerChangedSubject(options.shard), {
@@ -253,22 +288,25 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
   };
 }
 
-/** The world name the Body asks about: the bot's dimension (decision 0165 query field). */
-export function worldOf(bot: { game?: { dimension?: string } }): string {
-  return bot.game?.dimension ?? 'overworld';
-}
-
 /**
  * Wires one Body's ownership client into the goto planner: the lookup and the tier-2 prefetch. The
- * returned `stop` clears both and drops the subscription (the Body is stopped or replaced).
+ * world is read at each call, so a portal changes it at once. A dimension with no Bukkit world is
+ * unknown without a query. The returned `stop` clears both and drops the subscription (the Body is
+ * stopped or replaced).
  */
 export function wireBlockOwners(
   options: BlockOwnersOptions & { bot: { game?: { dimension?: string } } },
 ): { stop(): void } {
   const owners = startBlockOwners(options);
-  const world = worldOf(options.bot);
-  setOwnerLookup((pos) => owners.ownerAt(world, pos.x, pos.y, pos.z));
-  setOwnerPrefetch((points, signal) => owners.prefetch(world, points, signal));
+  setOwnerLookup((pos) => {
+    const world = bukkitWorldOf(options.bot);
+    if (world === null) return { known: false };
+    return owners.ownerAt(world, pos.x, pos.y, pos.z);
+  });
+  setOwnerPrefetch((points, signal) => {
+    const world = bukkitWorldOf(options.bot);
+    return world === null ? Promise.resolve() : owners.prefetch(world, points, signal);
+  });
   return {
     stop(): void {
       setOwnerLookup(null);

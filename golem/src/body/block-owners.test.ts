@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bukkitWorldOf,
   OWNER_CACHE_CHUNKS,
   OWNER_PREFETCH_WAIT_MS,
   OWNER_REQUEST_TIMEOUT_MS,
@@ -201,5 +202,63 @@ describe('block owner cache', () => {
     expect(owners.chunkCount()).toBe(0);
     await owners.ensureChunk(WORLD, 0, 0);
     expect(nats.requests).toHaveLength(1);
+  });
+
+  it('a change that arrives while the query is in flight is applied on top of the reply', async () => {
+    let release!: (value: unknown) => void;
+    const nats = fakeNats(() => new Promise((resolve) => (release = resolve)));
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    const fetched = owners.ensureChunk(WORLD, 0, 0);
+    // The reply predates both changes: the first clears a listed cell, the second sets an unlisted one.
+    nats.emit({ world: WORLD, x: 1, y: 64, z: 2, owner: null });
+    nats.emit({ world: WORLD, x: 3, y: 64, z: 3, owner: 'ag_jason_01' });
+    release(reply(0, 0, [owned(1, 64, 2, 'ag_other_01')]));
+    await fetched;
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toEqual({ known: true, owner: null });
+    expect(owners.ownerAt(WORLD, 3, 64, 3)).toEqual({ known: true, owner: 'ag_jason_01' });
+  });
+
+  it('a change from a failed query is dropped, and the retry starts from its own reply', async () => {
+    let clock = 0;
+    let fail = true;
+    let release!: (value: unknown) => void;
+    const nats = fakeNats(() => {
+      if (fail) throw new Error('timeout');
+      return new Promise((resolve) => (release = resolve));
+    });
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD, now: () => clock });
+    await owners.ensureChunk(WORLD, 0, 0);
+    fail = false;
+    clock = OWNER_RETRY_MS;
+    const retried = owners.ensureChunk(WORLD, 0, 0);
+    nats.emit({ world: WORLD, x: 1, y: 64, z: 2, owner: null });
+    release(reply(0, 0, [owned(1, 64, 2, 'ag_other_01')]));
+    await retried;
+    // The change came in during the retry, so it applies: the failed query's list did not carry over.
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toEqual({ known: true, owner: null });
+    expect(nats.requests).toHaveLength(2);
+  });
+});
+
+describe('the Bukkit world a dimension asks about', () => {
+  const bot = (dimension: string | undefined) => ({
+    game: dimension === undefined ? {} : { dimension },
+  });
+
+  it('strips the namespace, and maps the three dimensions to their Bukkit worlds', () => {
+    expect(bukkitWorldOf(bot('minecraft:overworld'))).toBe('world');
+    expect(bukkitWorldOf(bot('overworld'))).toBe('world');
+    expect(bukkitWorldOf(bot('minecraft:the_nether'))).toBe('world_nether');
+    expect(bukkitWorldOf(bot('the_nether'))).toBe('world_nether');
+    expect(bukkitWorldOf(bot('minecraft:the_end'))).toBe('world_the_end');
+    expect(bukkitWorldOf(bot('the_end'))).toBe('world_the_end');
+  });
+
+  it('an unknown or missing dimension names no world', () => {
+    expect(bukkitWorldOf(bot('minecraft:overworld_caves'))).toBeNull();
+    expect(bukkitWorldOf(bot('minecraft:the_moon'))).toBeNull();
+    expect(bukkitWorldOf(bot('world'))).toBeNull();
+    expect(bukkitWorldOf(bot(undefined))).toBeNull();
+    expect(bukkitWorldOf({})).toBeNull();
   });
 });

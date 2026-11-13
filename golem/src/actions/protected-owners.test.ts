@@ -15,6 +15,57 @@ const answering = (answer: OwnerAnswer): void => setOwnerLookup(() => answer);
 
 afterEach(() => setOwnerLookup(null));
 
+/** A transport that records each query's world and answers it with no blocks. */
+function recordingTransport(worlds: string[]) {
+  const enc = new TextEncoder();
+  return {
+    request: async (_subject: string, data: Uint8Array) => {
+      const query = JSON.parse(new TextDecoder().decode(data)) as {
+        world: string;
+        chunk_x: number;
+        chunk_z: number;
+      };
+      worlds.push(query.world);
+      const body = { ...query, blocks: [], truncated: false };
+      return { data: enc.encode(JSON.stringify(body)) };
+    },
+    subscribe: () => ({ unsubscribe: () => undefined }),
+  };
+}
+
+describe('the query names the Bukkit world of the bot dimension (decision 0164)', () => {
+  it.each([
+    ['minecraft:overworld', 'world'],
+    ['overworld', 'world'],
+    ['minecraft:the_nether', 'world_nether'],
+    ['minecraft:the_end', 'world_the_end'],
+  ])('dimension %s asks for world %s', async (dimension, world) => {
+    const worlds: string[] = [];
+    const wired = wireBlockOwners({
+      bot: { game: { dimension } },
+      shard: 'phase0',
+      transport: recordingTransport(worlds),
+    });
+    isProtected(botNamed(), dirt);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(worlds).toEqual([world]);
+    wired.stop();
+  });
+
+  it('an unknown dimension asks nothing, and the block is protected', async () => {
+    const worlds: string[] = [];
+    const wired = wireBlockOwners({
+      bot: { game: { dimension: 'minecraft:the_moon' } },
+      shard: 'phase0',
+      transport: recordingTransport(worlds),
+    });
+    expect(isProtected(botNamed(), dirt)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(worlds).toEqual([]);
+    wired.stop();
+  });
+});
+
 describe('the ownership record in the protection rule (decision 0165)', () => {
   it('a block another player placed is protected', () => {
     answering({ known: true, owner: 'ag_other_01' });

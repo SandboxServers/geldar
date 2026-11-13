@@ -97,6 +97,30 @@ async function* presenceEntries(kv: KV, lifeId: string): AsyncGenerator<string |
   for await (const entry of watch) yield entry.operation === 'PUT' ? entry.string() : null;
 }
 
+type PlayerNats = Awaited<ReturnType<typeof connectNats>>;
+
+/**
+ * The Body's env in a player host. The host's own connection is the ownership transport (decision
+ * 0165), so every ranger Body runs the ownership client, as Adam's Body does.
+ */
+export function playerBodyEnv(input: {
+  config: AdamBodyEnv['config'];
+  kv: AdamBodyEnv['kv'];
+  publisher: AdamBodyEnv['publisher'];
+  nc: PlayerNats;
+  server: AdamBodyEnv['server'];
+  log: AdamBodyEnv['log'];
+}): AdamBodyEnv {
+  return {
+    config: input.config,
+    kv: input.kv,
+    publisher: input.publisher,
+    server: input.server,
+    owners: input.nc,
+    log: input.log,
+  };
+}
+
 /** Runs the player's Body until a signal; the presence record decides when it is up. */
 export async function runPlayer(
   playerId: string,
@@ -119,13 +143,14 @@ export async function runPlayer(
   const restartKv = await openRestartKv(natsUrl);
   const presence = await new Kvm(jetstream(nc)).open(PRESENCE_BUCKET);
   const server = natsRequestServer(nc);
-  const bodyEnv: AdamBodyEnv = {
+  const bodyEnv = playerBodyEnv({
     config,
     kv: restartKv.kv,
     publisher: jetStreamPublisher(jetstream(nc)),
+    nc,
     server,
     log: (line) => log({ event: 'body', line }),
-  };
+  });
   const serve =
     extraServe ??
     bookServe({
