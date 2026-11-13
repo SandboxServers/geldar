@@ -120,6 +120,33 @@ async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Pr
   return true;
 }
 
+/** The four horizontal steps, in a fixed order. */
+const CARDINAL_STEPS: readonly Vec3[] = [
+  new Vec3(1, 0, 0),
+  new Vec3(0, 0, 1),
+  new Vec3(-1, 0, 0),
+  new Vec3(0, 0, -1),
+];
+
+/**
+ * The cell beside the feet cell that a pillar can rise from: solid under it, open and passable with
+ * the cell above it free, and no other entity in it. The nearest to the bot's position wins (the
+ * block its hitbox stands on is the nearest), and null when none qualifies.
+ */
+export function edgeCell(bot: Bot, feet: Vec3): Vec3 | null {
+  const at = bot.entity.position;
+  const cells = CARDINAL_STEPS.map((step) => feet.plus(step)).filter(
+    (cell) =>
+      solid(bot.blockAt(cell.offset(0, -1, 0))) &&
+      passable(bot.blockAt(cell)) &&
+      passable(bot.blockAt(cell.offset(0, 1, 0))) &&
+      !entityInCell(bot, cell),
+  );
+  const gap = (cell: Vec3) => (cell.x + 0.5 - at.x) ** 2 + (cell.z + 0.5 - at.z) ** 2;
+  cells.sort((a, b) => gap(a) - gap(b));
+  return cells[0] ?? null;
+}
+
 /**
  * Jumps and places `item` under the feet, then reports whether the bot ended higher than it began
  * and the block went down. The block is placed only once the feet are a full block up (`PILLAR_CLEAR`):

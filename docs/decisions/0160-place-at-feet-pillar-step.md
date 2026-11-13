@@ -23,4 +23,5 @@ Non-colliding blocks at feet (torch and the like) keep today's behaviour. A bed 
 
 - The escape ladder's pillar rung and `place` share one pillar step (`golem/src/actions/pillar.ts`), so the ladder and the placement cannot drift apart.
 - The contract description of `at` ("block under the agent") now matches what the server does. No schema change.
+- A named position equal to the bot's feet cell is the feet spot for a solid block, and a bot not standing on the ground first waits up to 1 s to land, then steps onto the nearest edge cell that has solid ground under it when the cell under its feet is air.
 - Other entities count as occupying a cell only when their box overlaps it (strict overlap, flush contact is not a collision).
