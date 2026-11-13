@@ -35,7 +35,7 @@ export const MOVED_AWAY = 3;
 /**
  * Tells the reflex how a `goto` ended. The stall rule: a stall is a walk that went nowhere because
  * of the bot's own cell, that is a failure with reason `blocked` (whatever its message: "no path",
- * "way was blocked", "no movement for N world ticks") or a `goto` that finished without moving
+ * "way was blocked", "you did not move for a long while") or a `goto` that finished without moving
  * (`stalled`). Failures about the goal itself (`not_found`, `timeout`, `interrupted`) are not stalls.
  * Stalls add up only while the bot stays within `SAME_SPOT` of where the streak began; a stall
  * further away starts a new count, and one beyond `MOVED_AWAY` also clears the attempts. An arrival

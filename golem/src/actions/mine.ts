@@ -79,7 +79,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   const start = snapshot(bot);
   const tried = new Set<string>();
   // Set when a candidate was the block under the feet and was skipped: when nothing else is left
-  // in reach, the action fails as "would drop the bot".
+  // in reach, the action fails as "would drop you".
   let skippedFloor = false;
   let mined = 0;
   let lastMined = '';
@@ -94,12 +94,12 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     });
     const at = found[0];
     if (!at) {
-      if (skippedFloor) return failed('not_possible', 'would drop the bot', { mined });
+      if (skippedFloor) return failed('not_possible', 'would drop you', { mined });
       return failed('not_found', `no ${action.block} within ${SEARCH_DISTANCE} blocks`, { mined });
     }
     // Every pass adds a new cell to `tried`, so the loop ends within the blocks in range.
     tried.add(at.toString());
-    // Breaking the block under the feet would drop the bot: skip it and take the next nearest.
+    // Breaking the block under the feet would drop you: skip it and take the next nearest.
     if (standsOn(bot, at)) {
       skippedFloor = true;
       continue;
@@ -263,7 +263,7 @@ function wantedAt(wanted: Set<number>, tried: Set<string>, block: Block): boolea
   return !at || !tried.has(at.toString());
 }
 
-/** Whether the bot stands on the block at `at`: breaking it would drop the bot. */
+/** Whether the bot stands on the block at `at`: breaking it would drop you. */
 function standsOn(bot: Bot, at: Vec3): boolean {
   return at.equals(feetCell(bot).offset(0, -1, 0));
 }

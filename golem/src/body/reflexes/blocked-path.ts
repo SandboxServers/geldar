@@ -10,7 +10,7 @@ export interface BlockedReport {
   range: number;
   /** The intent that asked for the walk, if any; the wake names it. */
   intentId: string | null;
-  /** The walk's own message (for example `no movement for 600 world ticks`). */
+  /** The walk's own message (for example `you did not move for a long while`). */
   message?: string;
 }
 

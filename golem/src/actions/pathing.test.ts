@@ -134,6 +134,29 @@ describe('moveNear', () => {
     expect(fake.pathfinder.setGoal).toHaveBeenCalledWith(null);
   });
 
+  it('fails a stalled walk as blocked with the stall text, exactly', async () => {
+    const fake = fakeBot();
+    const signal = new AbortController().signal;
+    let settled: MoveResult | undefined;
+    void moveNear(asBot(fake), { x: 10, y: 64, z: 0 }, 1, {
+      signal,
+      timeScale: 1,
+      stallTicks: 600,
+    }).then((result) => {
+      settled = result;
+    });
+
+    for (let i = 0; i < 60; i++) {
+      fake.time.age += 10;
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    expect(settled).toMatchObject({
+      ok: false,
+      reason: 'blocked',
+      message: 'you did not move for a long while',
+    });
+  });
+
   it('does not count stall ticks while the bot keeps moving 0.75 blocks per watchdog tick', async () => {
     const fake = fakeBot();
     const signal = new AbortController().signal;

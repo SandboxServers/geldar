@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
+import { STALL_TEXT } from '../actions/pathing.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody, enabledReflexes } from './create-body.ts';
@@ -31,7 +32,7 @@ const failedBlocked: ActionRun = {
   result: {
     status: 'failed',
     reason: 'blocked',
-    message: 'no movement for 600 world ticks',
+    message: STALL_TEXT,
     latency_ms: 1,
     world_ticks: 600,
     detail: {},
