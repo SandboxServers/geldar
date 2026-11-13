@@ -213,9 +213,18 @@ async function pillarPlace(
     if (!edge) return failed('blocked', MESSAGE.noGround);
     cell = edge;
   }
-  const below = cell.offset(0, -1, 0);
   const refusals: string[] = [];
-  const result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+  let result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+  // Another ranger's box in the feet cell: step to a free neighbour and pillar there, which re-runs the checks.
+  if (!result.ok && result.why === 'entity') {
+    const beside = await stepToEdge(ctx, cell);
+    if (ctx.signal.aborted) return cancelled();
+    if (beside) {
+      cell = beside;
+      result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+    }
+  }
+  const below = cell.offset(0, -1, 0);
   if (result.ok) {
     if (!confirmsPlacement(bot.blockAt(cell)?.name ?? '', block)) {
       return failed('blocked', MESSAGE.unconfirmed);
