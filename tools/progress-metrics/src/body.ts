@@ -1,3 +1,4 @@
+import { readStallDiag, type StallDiag } from './stalldiag.ts';
 import { parseTime, splitDockerPrefix } from './time.ts';
 
 export type BodyEvent = {
@@ -10,10 +11,13 @@ export type BodyEvent = {
     | 'body_watchdog'
     | 'eat'
     | 'body_restart'
-    | 'short_session';
+    | 'short_session'
+    | 'forced_move';
   /** Action outcome reason (kind action), the stall reason, or the rung name for escape_rung. */
   reason: string;
   worked: boolean;
+  /** Stall diagnostics, on kind stall_diag only. */
+  diag?: StallDiag;
 };
 
 /** Agent of Body lines that carry no agent and come from a file that names none. */
@@ -30,7 +34,7 @@ function pick(o: Record<string, unknown>, keys: string[]): unknown {
 /**
  * Parses one Body/player-host JSON log line (optionally with a docker timestamp prefix). The agent
  * comes from `life_id`/`agent`/`agent_id`/`player`, else from `defaultAgent` (the file's agent),
- * else it is `(unknown)`. The Body never logs action outcomes to the player host: see outcomes.ts.
+ * else it is `(unknown)`. A forced_move line carries no agent: the file name gives it. The Body never logs action outcomes to the player host: see outcomes.ts.
  * `player_down` lines with `uptime_ms` under a minute are short-session indicators.
  */
 export function parseBodyLine(raw: string, defaultAgent: string | null): BodyEvent[] {
@@ -58,12 +62,15 @@ export function parseBodyLine(raw: string, defaultAgent: string | null): BodyEve
     worked,
   });
   if (ev === 'stall_diag') {
-    const out = [mk('stall_diag', typeof o.reason === 'string' ? o.reason : '')];
-    if (o.reason === 'escape_ladder' && typeof o.rung === 'string') {
-      out.push(mk('escape_rung', o.rung, o.worked === true));
+    // A ladder rung line is a rung, not a stall: it does not add to the stall count.
+    if (o.reason === 'escape_ladder') {
+      return typeof o.rung === 'string' ? [mk('escape_rung', o.rung, o.worked === true)] : [];
     }
-    return out;
+    return [
+      { ...mk('stall_diag', typeof o.reason === 'string' ? o.reason : ''), diag: readStallDiag(o) },
+    ];
   }
+  if (ev === 'forced_move') return [mk('forced_move')];
   if (ev === 'body_watchdog')
     return [mk('body_watchdog', typeof o.action === 'string' ? o.action : '')];
   if (ev === 'body_restart')
