@@ -115,7 +115,7 @@ describe('unstick on a canopy', () => {
     expect(cells).toEqual([]);
     if (out.status === 'failed') {
       expect(out.message).toBe(
-        'unstick: no way out found; tried walk, dig_down, stair_dig, dig_sideways',
+        'unstick: no way out found; tried walk, dig_down, stair_dig, dig_sideways, dig_unowned',
       );
     }
   });
