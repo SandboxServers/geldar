@@ -122,10 +122,10 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 |---|---|---|---|---|---|---|---|---|
 | C7-01 | Sessions that survive a restart | W0 | A | none | Done (0021) | none | 0021 | N |
 | C7-08 | Terms, privacy notice, consent (v1 approved) | W0 | E | none | Done (0022; 0155) | 0153, 0155 | 0022 | N |
-| C3-04s | DB roster slice (first packet) | W1 | D | C1-08 | Ready | 0108 | 0024 | N |
-| C7-12 | Admin flag, operator CLI, audit table base | W1 | A | none | Ready | 0170 | 0025 | N |
-| C7-03a | Colo body supervisor (package, quotas, audit) | W1 | B | C3-04s, C7-12 | Waiting | 0151, 0152, 0170 | 0027 | N |
-| C7-02a | Player token lifecycle | W1 | A | C7-12 | Waiting | 0170 | none | N |
+| C3-04s | DB roster slice (first packet) | W1 | D | C1-08 | Done (merged bbb5ed6b, PR #315) | 0108 | 0024 (applied on node) | N |
+| C7-12 | Admin flag, operator CLI, audit table base | W1 | A | none | Done (merged bbb5ed6b, PR #315) | 0170 | 0025 (applied on node) | N |
+| C7-03a | Colo body supervisor (package, quotas, audit) | W1 | B | C3-04s, C7-12 | Done (merged bbb5ed6b, PR #315). Package only: no NATS binding, Postgres adapter or Docker client (C7-03b) | 0151, 0152, 0170 | 0027 (applied on node) | N |
+| C7-02a | Player token lifecycle | W1 | A | C7-12 | Done (merged bbb5ed6b, PR #315). SQL and service only: route wiring, server.ts limiter admin exemption and account.ts token lines go to C7-04 and C7-06 | 0170 | 0032 (applied on node; orchestrator ruling) | N |
 | C7-02b | Owner API keys | W2 | A | C7-02a | Waiting | 0152, 0170 | 0026 | N |
 | C7-05 | Onboarding and corrected players README | W2 | C | C7-02a | Waiting | 0151 | none | N |
 | C7-03b | Supervisor compose wiring (geldar-93 contact, no network recreate) | W2 | B | C7-03a | Waiting | 0082, 0152 | none | Y [contact geldar-93; owner approves the node change] |
@@ -138,3 +138,5 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-09 | Account deletion and data export | W4 | E | C7-02b, C7-03b, C7-13a | Waiting | 0171 | 0029 | N (legal review of the rule is the owner's, gates C7-11) |
 | C7-13c | Skin form and status on the account page | W4 | C | C7-06, C7-13a | Waiting | 0172 | none | N |
 | C7-11 | Sign-up gate (not a code packet) | W4 | G | C7-05, C7-06, C7-09, C7-13c | Waiting; owner opens sign-up | 0153, 0155, 0171 | none | Y |
+
+Wave C7-1 closed 2026-11-13 (merge bbb5ed6b, PR #315). Migrations 0024, 0025, 0027 and 0032 are applied on the node (deploy run 43522419766; pre-deploy pg dump taken). Spares left: 0033 only. Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md).
