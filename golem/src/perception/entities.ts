@@ -142,16 +142,21 @@ function threatFields(
   return fields;
 }
 
+/** Where another agent stands against the Body's feet (decision 0162). */
+export interface AgentStance {
+  vertical: 'above' | 'level' | 'below';
+  in_reach: boolean;
+}
+
 /**
- * Where another agent stands against the Body: its feet more than one block above or below, or level;
- * and whether it is within give reach. Not emitted yet: the contract has no field for it, so
- * `health_estimate` stays `unknown`. Example: "unknown, below, in reach".
+ * Where another agent stands against the Body: its feet more than one block above or below the
+ * Body's feet are `above` or `below`, else `level`; `in_reach` is true when the straight-line
+ * distance is within give reach (`GIVE_REACH`, inclusive).
  */
-export function agentNote(here: Vec3, position: Vec3, distance: number): string {
+export function agentStance(here: Vec3, position: Vec3, distance: number): AgentStance {
   const dy = position.y - here.y;
   const vertical = dy > 1 ? 'above' : dy < -1 ? 'below' : 'level';
-  const reach = distance <= GIVE_REACH ? 'in reach' : 'out of reach';
-  return `unknown, ${vertical}, ${reach}`;
+  return { vertical, in_reach: distance <= GIVE_REACH };
 }
 
 /** A record at a position: the integer block coordinates, the distance and the compass direction. */
@@ -240,6 +245,7 @@ export function observeEntities(bot: Bot): Pick<Surroundings, 'entities' | 'agen
         distance: tenths(distance),
         held_item: held && ITEM.test(held) ? held : null,
         health_estimate: 'unknown',
+        ...agentStance(here, entity.position, distance),
         sort: name,
       });
       continue;
