@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { escapeLadder } from './escape-ladder.ts';
 import { applyDigRules, DigTally, digAllowed, MAX_DIG_TICKS } from './goto-dig.ts';
 import { moveNear, TIER_TWO_BUDGET_MS } from './pathing.ts';
-import { NO_PATH_TEXT } from './soft-dig.ts';
+import { NO_PATH_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 
 // The ladder is replaced by a stub that fails: these tests only ask whether it was run (0164).
 vi.mock('./escape-ladder.ts', async (importOriginal) => ({
@@ -341,6 +341,68 @@ const tallyBot = (): TallyBot => ({
   heldItem: null,
 });
 
+describe('a fruitless tier-1 search hands over to tier 2 (0164)', () => {
+  it('enters tier 2 when tier 1 times out with no partial walk behind it', async () => {
+    let tierTwoBudget = 0;
+    const { bot, goto, setMovements, entity, pathfinder } = pathBot(timedOut, () => {
+      tierTwoBudget = pathfinder.thinkTimeout as number;
+      return Promise.resolve();
+    });
+    goto.mockImplementation(walkTo(entity, TARGET_VEC));
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(result.ok).toBe(true);
+    expect(goto).toHaveBeenCalledTimes(2);
+    // Plain, tier 2 (towers on), then the plain movements back when the walk ends.
+    const modes = setMovements.mock.calls.map(
+      (call) => (call[0] as { allow1by1towers: boolean }).allow1by1towers,
+    );
+    expect(modes).toEqual([false, true, false]);
+    expect(tierTwoBudget).toBe(TIER_TWO_BUDGET_MS);
+  });
+
+  it('does not enter tier 2 on a timeout after a partial walk, and keeps the timeout outcome', async () => {
+    const { bot, goto, setMovements, pathfinder } = pathBot(noPath, noPath);
+    goto.mockImplementation(timedOut);
+    pathfinder.getPathTo = () => ({ status: 'partial', path: [{ x: 2, y: 65, z: 2 }] });
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(result).toMatchObject({ ok: false, reason: 'timeout', message: SEARCH_TIMEOUT_TEXT });
+    // Plain, tier 2 for the first NoPath, then the plain movements: the partial walk adds none.
+    expect(goto).toHaveBeenCalledTimes(3);
+    const modes = setMovements.mock.calls.map(
+      (call) => (call[0] as { allow1by1towers: boolean }).allow1by1towers,
+    );
+    expect(modes).toEqual([false, true, false]);
+  });
+
+  it('ends blocked when tier 2 finds no path after a tier-1 timeout (both tiers failed)', async () => {
+    const { bot, goto } = pathBot(timedOut, noPath);
+    goto.mockImplementation(noPath);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(result).toMatchObject({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
+    expect(goto).toHaveBeenCalledTimes(2);
+  });
+
+  it('ends blocked when tier 2 also times out (both tiers failed)', async () => {
+    const { bot, goto } = pathBot(timedOut, timedOut);
+    goto.mockImplementation(timedOut);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(result).toMatchObject({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
+    expect(goto).toHaveBeenCalledTimes(2);
+  });
+
+  it('never starts tier 2 on a timeout for a reflex walk (digTier false)', async () => {
+    const { bot, goto, setMovements } = pathBot(timedOut, timedOut);
+    const result = await moveNear(bot as never, TARGET, 1, {
+      signal: SIGNAL,
+      timeScale: 1,
+      digTier: false,
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'timeout', message: SEARCH_TIMEOUT_TEXT });
+    expect(goto).toHaveBeenCalledTimes(1);
+    expect(setMovements).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('goto completion text for tier 2 (0164)', () => {
   it('says what was dug and placed in words, with no digits', () => {
     const tally = new DigTally();
@@ -517,6 +579,32 @@ describe('a tier-2 walk that finds no path still runs the escape ladder (0164)',
     });
     bot.waitForTicks = vi.fn(async () => undefined);
     goto.mockImplementation(noPath);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(escapeLadder).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
+  });
+
+  it('runs the ladder when tier 2 finds no path after a tier-1 timeout (blocked, not timeout)', async () => {
+    vi.mocked(escapeLadder).mockClear();
+    const { bot, goto } = pathBot(timedOut, () => {
+      (bot.time as { age: number }).age = 100;
+      return noPath();
+    });
+    bot.waitForTicks = vi.fn(async () => undefined);
+    goto.mockImplementation(noPath);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(escapeLadder).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
+  });
+
+  it('runs the ladder when tier 2 also times out after a tier-1 timeout (blocked, not timeout)', async () => {
+    vi.mocked(escapeLadder).mockClear();
+    const { bot, goto } = pathBot(timedOut, () => {
+      (bot.time as { age: number }).age = 100;
+      return timedOut();
+    });
+    bot.waitForTicks = vi.fn(async () => undefined);
+    goto.mockImplementation(timedOut);
     const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
     expect(escapeLadder).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });

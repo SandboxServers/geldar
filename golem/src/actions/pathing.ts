@@ -401,8 +401,17 @@ export function moveNear(
             start(new goals.GoalNear(target.x, target.y, target.z, range));
             return;
           }
+          // Tier 1's search ran out of time with no partial walk behind it: a sealed area costs the
+          // whole 4 s budget, so tier 2 gets the same chance as after NoPath (decision 0164).
+          if (name === 'Timeout' && !partial && enterDigTier()) {
+            stallDigFrom = undefined;
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
           // Tier 2 found no way (or ran out of its short search): the plain walk's partial route
-          // stands, and the failure is blocked (decision 0142), so the escape ladder still runs below.
+          // stands. Both tiers searched and found no way, so the result is blocked (decision 0142,
+          // 0164) whichever search ran out, and the escape ladder runs below. A tier-1 timeout that
+          // tier 2 does not resolve is blocked too; a plain timeout (no tier 2) keeps `timeout`.
           if (tier === 2 && !partial && (name === 'NoPath' || name === 'Timeout')) {
             stallDigFrom = undefined;
             leaveDigTier();
