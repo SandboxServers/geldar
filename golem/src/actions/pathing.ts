@@ -276,10 +276,13 @@ export function moveNear(
   // Tier 1 is the plain walk; tier 2 (digging, towers) starts only when tier 1 finds no path or stalls.
   let tier = 1;
   const tally = new DigTally();
-  const enterDigTier = (): boolean => {
+  /** Whether the tier 2 now running was started by a tier-1 search timeout (decision 0164). */
+  let digFromTimeout = false;
+  const enterDigTier = (fromTimeout = false): boolean => {
     if (opts.digTier === false || tier === 2) return false;
     if (typeof bot.pathfinder?.setMovements !== 'function') return false;
     tier = 2;
+    digFromTimeout = fromTimeout;
     bot.pathfinder.setMovements(digMovements(bot) as never);
     bot.pathfinder.thinkTimeout = TIER_TWO_BUDGET_MS;
     tally.start(bot);
@@ -401,14 +404,27 @@ export function moveNear(
             start(new goals.GoalNear(target.x, target.y, target.z, range));
             return;
           }
+          // Tier 1's search ran out of time with no partial walk behind it: a sealed area costs the
+          // whole 4 s budget, so tier 2 gets the same chance as after NoPath (decision 0164).
+          if (name === 'Timeout' && !partial && enterDigTier(true)) {
+            stallDigFrom = undefined;
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
           // Tier 2 found no way (or ran out of its short search): the plain walk's partial route
-          // stands, and the failure is blocked (decision 0142), so the escape ladder still runs below.
+          // stands. A blocked tier 2 ends blocked (decision 0142), so the escape ladder runs below;
+          // a tier 2 that a tier-1 timeout started ends with that timeout, as the plain walk did.
           if (tier === 2 && !partial && (name === 'NoPath' || name === 'Timeout')) {
             stallDigFrom = undefined;
             leaveDigTier();
             if (followPartial()) return;
-            reason = 'blocked';
-            message = NO_PATH_TEXT;
+            if (digFromTimeout) {
+              reason = 'timeout';
+              message = SEARCH_TIMEOUT_TEXT;
+            } else {
+              reason = 'blocked';
+              message = NO_PATH_TEXT;
+            }
           } else if (name === 'NoPath' && !partial && followPartial()) {
             return;
           }
