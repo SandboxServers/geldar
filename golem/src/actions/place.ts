@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3';
 import type { Position } from './bot-types.ts';
+import { feetCell } from './feet-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -96,11 +97,11 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   const boundingBox = bot.registry.blocksByName[block]?.boundingBox;
   if (boundingBox === undefined) return failed('not_possible', `${block} is not a block`);
 
-  const feetCell = floor(bot.entity.position);
+  const feet = feetCell(bot);
   const named = at === 'feet' ? null : new Vec3(at.x, at.y, at.z);
   // A position equal to the feet cell is the feet spot for a solid block (decision 0160).
-  const atFeet = named === null || (boundingBox !== 'empty' && named.equals(feetCell));
-  let target = named === null || atFeet ? feetCell : named;
+  const atFeet = named === null || (boundingBox !== 'empty' && named.equals(feet));
+  let target = named === null || atFeet ? feet : named;
   const targetCell = bot.blockAt(target);
   if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
   if (!REPLACEABLE.has(targetCell.name)) return failed('blocked', MESSAGE.occupied);
@@ -111,7 +112,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   // A solid block on the bot's own cells moves to the first free cell beside the bot.
   let beside: { target: Vec3; step: Vec3 } | null = null;
   if (!pillarAtFeet && boundingBox !== 'empty' && inBody(bot, target)) {
-    beside = freeBeside(bot, floor(bot.entity.position), block.endsWith('_bed'));
+    beside = freeBeside(bot, feetCell(bot), block.endsWith('_bed'));
     if (!beside) return failed('blocked', MESSAGE.noSpace);
     target = beside.target;
   }
@@ -130,7 +131,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   if (ctx.signal.aborted) return cancelled();
 
   // The bot's own body is the two cells from its feet up; a colliding block there blocks the placement.
-  const body = floor(bot.entity.position);
+  const body = feet;
   for (const dy of [0, 1]) {
     const cell = bot.blockAt(new Vec3(body.x, body.y + dy, body.z));
     if (cell && cell.boundingBox !== 'empty') return failed('blocked', MESSAGE.insideBlock);
@@ -322,7 +323,7 @@ async function stepToEdge(
 
 /** True when the cell is the bot's feet cell or the cell above it. */
 function inBody(bot: Bot, cell: Vec3): boolean {
-  const feet = floor(bot.entity.position);
+  const feet = feetCell(bot);
   return cell.equals(feet) || cell.equals(feet.offset(0, 1, 0));
 }
 
@@ -361,11 +362,6 @@ function isFree(bot: Bot, cell: Vec3): boolean {
     isOpen(bot, cell) &&
     NEIGHBOR_OFFSETS.some((o) => bot.blockAt(cell.plus(o))?.boundingBox === 'block')
   );
-}
-
-/** The cell a position is in. */
-function floor(position: Vec3): Vec3 {
-  return new Vec3(Math.floor(position.x), Math.floor(position.y), Math.floor(position.z));
 }
 
 /** A plain position for the outcome detail. */
