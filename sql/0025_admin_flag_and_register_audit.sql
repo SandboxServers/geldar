@@ -4,6 +4,10 @@
 -- fixed-window limits) only through register_is_admin below, and gets no privilege on mcp_owners:
 -- no UPDATE, no column SELECT. No API route, page or key scope can write the flag.
 -- The flag never grants reach: an admin still sees only their own owner's rows (0170).
+-- register_audit.actor is left(encode(sha256(convert_to(owner_id, 'UTF8')), 'hex'), 16) for an owner's
+-- action: the same form the supervisor writes (C7-03a) and the 0032 renew and revoke functions write.
+-- The operator CLI writes 'operator'. The trigger refuses UPDATE and DELETE for every role. The table
+-- owner or a superuser can still TRUNCATE the table or disable the trigger, as 0007 documents.
 
 ALTER TABLE mcp_owners ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
 
@@ -19,7 +23,7 @@ REVOKE ALL ON FUNCTION register_is_admin(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION register_is_admin(TEXT) TO geldar_register;
 
 -- The audit base (0085): one row per state-changing action. Rows are never updated or deleted.
--- actor is an owner id hash or 'operator'; detail is short and carries no names or emails.
+-- actor is the owner id hash (the form in the header) or 'operator'; detail is short and carries no names or emails.
 CREATE TABLE IF NOT EXISTS register_audit (
   id BIGSERIAL PRIMARY KEY,
   at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -51,5 +55,8 @@ REVOKE ALL ON FUNCTION register_audit_append_only() FROM PUBLIC;
 REVOKE ALL ON register_audit FROM PUBLIC;
 GRANT SELECT, INSERT ON register_audit TO geldar_register;
 REVOKE UPDATE, DELETE, TRUNCATE ON register_audit FROM geldar_register;
+-- The register writes its own audit rows by a direct INSERT (renew and revoke rows come from 0032, and
+-- the TypeScript audit writes), so it needs the id sequence too.
+GRANT USAGE ON SEQUENCE register_audit_id_seq TO geldar_register;
 
 INSERT INTO schema_migrations (version) VALUES ('0025') ON CONFLICT DO NOTHING;

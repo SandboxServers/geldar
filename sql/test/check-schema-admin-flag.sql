@@ -25,6 +25,18 @@ BEGIN
     RAISE EXCEPTION 'schema check (%): register_audit grants are not insert and select only', step;
   END IF;
 
+  step := 'grant: register role can write its own audit row (the id sequence needs USAGE)';
+  IF NOT has_sequence_privilege('geldar_register', 'register_audit_id_seq', 'USAGE') THEN
+    RAISE EXCEPTION 'schema check (%): geldar_register has no USAGE on register_audit_id_seq', step;
+  END IF;
+  BEGIN
+    SET LOCAL ROLE geldar_register;
+    INSERT INTO register_audit (actor, action, target, outcome) VALUES ('probe', 'probe', 'probe', 'ok');
+    RESET ROLE;
+  EXCEPTION WHEN insufficient_privilege THEN
+    RAISE EXCEPTION 'schema check (%): geldar_register cannot insert its own audit row', step;
+  END;
+
   step := 'grant: register role reads the flag through register_is_admin, which fails closed';
   IF NOT has_function_privilege('geldar_register', 'register_is_admin(text)', 'EXECUTE')
      OR register_is_admin('no-such-owner-0025') IS DISTINCT FROM false THEN

@@ -48,5 +48,34 @@ BEGIN
   IF has_column_privilege('geldar_supervisor', 'mcp_owners', 'is_admin', 'UPDATE') THEN
     RAISE EXCEPTION 'schema check (%): geldar_supervisor must not update mcp_owners.is_admin', step;
   END IF;
+
+  step := 'admin flag: supervisor_is_admin has no PUBLIC or other-role EXECUTE and pins search_path';
+  IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+             WHERE p.proname = 'supervisor_is_admin' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE') THEN
+    RAISE EXCEPTION 'schema check (%): supervisor_is_admin must not be executable by PUBLIC', step;
+  END IF;
+  IF has_function_privilege('geldar_register', 'supervisor_is_admin(text)', 'EXECUTE')
+     OR has_function_privilege('geldar_mcp', 'supervisor_is_admin(text)', 'EXECUTE')
+     OR has_function_privilege('geldar_glass', 'supervisor_is_admin(text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'schema check (%): only geldar_supervisor may execute supervisor_is_admin', step;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p
+                 WHERE p.proname = 'supervisor_is_admin'
+                   AND coalesce(p.proconfig, '{}') @> ARRAY['search_path=pg_catalog, public, pg_temp']) THEN
+    RAISE EXCEPTION 'schema check (%): supervisor_is_admin must pin its search_path', step;
+  END IF;
+
+  step := 'body_ops: the row holds player_name, 1 to 64 characters, and no agent_id';
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'body_ops' AND column_name = 'player_name')
+     OR EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'body_ops' AND column_name = 'agent_id') THEN
+    RAISE EXCEPTION 'schema check (%): body_ops must hold player_name and no agent_id', step;
+  END IF;
+  BEGIN
+    INSERT INTO body_ops (owner_id, player_name, op) VALUES ('no-such-owner-0027', repeat('x', 65), 'start');
+    RAISE EXCEPTION 'schema check (%): body_ops accepted a 65 character player_name', step;
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
 END
 $check$;
