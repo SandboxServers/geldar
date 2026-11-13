@@ -390,4 +390,80 @@ describe('goto completion text for tier 2 (0164)', () => {
     expect(first.placed).toEqual([]);
     expect(second.placed).toEqual([]);
   });
+
+  it('puts back the original dig and placeBlock when the first of two overlapping walks stops first', () => {
+    const bot = tallyBot();
+    const { dig, placeBlock } = bot;
+    const first = new DigTally();
+    const second = new DigTally();
+    first.start(bot as never);
+    second.start(bot as never);
+    first.stop();
+    second.stop();
+    expect(bot.dig).toBe(dig);
+    expect(bot.placeBlock).toBe(placeBlock);
+  });
+
+  it('puts back the original dig and placeBlock when a nested walk stops before the outer one', () => {
+    const bot = tallyBot();
+    const { dig, placeBlock } = bot;
+    const outer = new DigTally();
+    const inner = new DigTally();
+    outer.start(bot as never);
+    inner.start(bot as never);
+    inner.stop();
+    outer.stop();
+    expect(bot.dig).toBe(dig);
+    expect(bot.placeBlock).toBe(placeBlock);
+  });
+
+  it('keeps counting digs for the walk still running after the other one stops', async () => {
+    const bot = tallyBot();
+    const first = new DigTally();
+    const second = new DigTally();
+    first.start(bot as never);
+    second.start(bot as never);
+    first.stop();
+    await bot.dig();
+    second.stop();
+    expect(first.dug).toBe(0);
+    expect(second.dug).toBe(1);
+  });
+});
+
+describe('a stalled tier-1 walk recovers into tier 2 (0164)', () => {
+  it('starts digging movements on the first stall recovery, after the stall ticks', async () => {
+    vi.useFakeTimers();
+    try {
+      const { bot, goto, setMovements } = pathBot(
+        () => new Promise(() => undefined),
+        () => new Promise(() => undefined),
+      );
+      goto.mockImplementation(() => new Promise(() => undefined));
+      const controller = new AbortController();
+      const move = moveNear(bot as never, TARGET, 1, {
+        signal: controller.signal,
+        timeScale: 1,
+        stallTicks: 600,
+        diag: { log: () => undefined, now: () => Date.now() },
+      });
+      const before = setMovements.mock.calls.some(
+        ([m]) => (m as { digCost?: number }).digCost === 4,
+      );
+      // The bot stands still for 10 watchdog steps of 10 ticks: past the 60-tick recovery.
+      for (let i = 0; i < 12; i++) {
+        (bot as unknown as { time: { age: number } }).time.age += 10;
+        await vi.advanceTimersByTimeAsync(500);
+      }
+      const digging = setMovements.mock.calls.some(
+        ([m]) => (m as { digCost?: number }).digCost === 4,
+      );
+      controller.abort();
+      await move;
+      expect(before).toBe(false);
+      expect(digging).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

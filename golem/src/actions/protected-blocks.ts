@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { isOwnPlacement } from './own-placements.ts';
 
 /**
  * Which blocks `goto` may never dig (decision 0164). The owner's rule: a walk never digs through
@@ -227,9 +228,11 @@ function touchesBuilt(bot: Bot, block: ProtectBlock): boolean {
  * True when `goto` must not dig this block. Built materials by type are protected. A natural block
  * on a face of a built block is protected too (a stone wall's floor, a dirt path beside a planked
  * floor). The ownership record protects any block recorded to someone else, once the flag is on.
+ * A block this bot placed itself is its own work, so it is not protected (decision 0164).
  * TODO (0164): "part of an enclosed space" is not checked yet; no cheap local check was found.
  */
 export function isProtected(bot: Bot, block: ProtectBlock): boolean {
+  if (isOwnPlacement(bot, block.position)) return false;
   if (isBuiltName(block.name)) return true;
   if (touchesBuilt(bot, block)) return true;
   if (OWNERSHIP_RULE && ownerLookup) {
@@ -237,4 +240,19 @@ export function isProtected(bot: Bot, block: ProtectBlock): boolean {
     if (owner && owner !== bot.username) return true;
   }
   return false;
+}
+
+/**
+ * The refusal an escape dig (the ladder, the stairs, a pillar's headroom or side cell) gives for a
+ * protected block, or null. The escape ladder never digs someone else's work (decision 0164).
+ */
+export function protectedReason(
+  bot: Bot,
+  block: { name?: string },
+  at: ProtectBlock['position'],
+): string | null {
+  const probe: ProtectBlock =
+    block.name === undefined ? { position: at } : { name: block.name, position: at };
+  if (!isProtected(bot, probe)) return null;
+  return "the block is someone else's work, and the way out does not dig it";
 }

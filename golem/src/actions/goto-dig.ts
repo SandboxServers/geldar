@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { placedCell, recordOwnPlacement } from './own-placements.ts';
 import { isProtected, refusedByName } from './protected-blocks.ts';
 import { MIN_DIG_HEALTH } from './soft-dig.ts';
 
@@ -204,49 +205,99 @@ interface TallyEmitter {
 }
 
 /**
+ * One bot's wrappers, shared by every tally counting on that bot. Overlapping or nested walks join
+ * the same pair, so the originals are put back exactly once, by the last tally to leave.
+ */
+interface Wrapped {
+  originalDig?: TallyEmitter['dig'];
+  originalPlace?: TallyEmitter['placeBlock'];
+  dig: (...args: unknown[]) => Promise<unknown>;
+  place: (...args: unknown[]) => Promise<unknown>;
+  tallies: Set<DigTally>;
+}
+
+const wrapped = new WeakMap<object, Wrapped>();
+
+/** Adds `tally` to the bot's wrappers, installing them on the first join. */
+function joinWrappers(bot: Bot, tally: DigTally): void {
+  const emitter = bot as unknown as TallyEmitter;
+  let entry = wrapped.get(bot);
+  if (!entry) {
+    const originalDig = emitter.dig;
+    const originalPlace = emitter.placeBlock;
+    const made: Wrapped = {
+      originalDig,
+      originalPlace,
+      tallies: new Set(),
+      dig: async (...args: unknown[]): Promise<unknown> => {
+        const result = await originalDig?.apply(bot, args);
+        for (const t of made.tallies) t.countDig();
+        return result;
+      },
+      place: async (...args: unknown[]): Promise<unknown> => {
+        const held = emitter.heldItem?.name;
+        const result = await originalPlace?.apply(bot, args);
+        for (const t of made.tallies) t.countPlace(held ?? 'block');
+        // The scaffold this walk placed is the bot's own work (its digs are not someone else's).
+        const cell = placedCell(args[0], args[1]);
+        if (held && cell) recordOwnPlacement(bot, cell, held);
+        return result;
+      },
+    };
+    if (originalDig) emitter.dig = made.dig;
+    if (originalPlace) emitter.placeBlock = made.place;
+    wrapped.set(bot, made);
+    entry = made;
+  }
+  entry.tallies.add(tally);
+}
+
+/** Removes `tally`; the last one out puts the bot's original methods back, if they are still ours. */
+function leaveWrappers(bot: Bot, tally: DigTally): void {
+  const entry = wrapped.get(bot);
+  if (!entry) return;
+  entry.tallies.delete(tally);
+  if (entry.tallies.size > 0) return;
+  const emitter = bot as unknown as TallyEmitter;
+  if (entry.originalDig && emitter.dig === entry.dig) emitter.dig = entry.originalDig;
+  if (entry.originalPlace && emitter.placeBlock === entry.place) {
+    emitter.placeBlock = entry.originalPlace;
+  }
+  wrapped.delete(bot);
+}
+
+/**
  * What a tier-2 walk dug and placed, for its completion text. Both are counted by wrapping the
  * bot's own methods while the walk runs: `bot.dig` (a dig that completes) and `bot.placeBlock`.
- * The library clears `diggingCompleted` listeners on its own, so the event is not used. `stop`
- * restores each method only when it is still the one this tally put there; a later wrapper stays
- * in place, and this tally's copy then passes calls through without counting.
+ * The library clears `diggingCompleted` listeners on its own, so the event is not used. Each
+ * placed scaffold block is recorded as the bot's own work (see own-placements.ts). Walks may
+ * overlap or nest: `stop` leaves the wrappers in place until the last tally has stopped.
  */
 export class DigTally {
   dug = 0;
   placed: string[] = [];
-  private restore: (() => void) | null = null;
-  private live = false;
+  private bot: Bot | null = null;
 
   /** Starts counting on `bot` (the walk has just switched to tier 2). Idempotent. */
   start(bot: Bot): void {
-    if (this.restore) return;
-    const emitter = bot as unknown as TallyEmitter;
-    this.live = true;
-    const originalDig = emitter.dig;
-    const originalPlace = emitter.placeBlock;
-    const dig = async (...args: unknown[]): Promise<unknown> => {
-      const result = await originalDig?.apply(bot, args);
-      if (this.live) this.dug++;
-      return result;
-    };
-    const place = async (...args: unknown[]): Promise<unknown> => {
-      const name = emitter.heldItem?.name ?? 'block';
-      const result = await originalPlace?.apply(bot, args);
-      if (this.live) this.placed.push(name.replace(/_/g, ' '));
-      return result;
-    };
-    if (originalDig) emitter.dig = dig;
-    if (originalPlace) emitter.placeBlock = place;
-    this.restore = () => {
-      this.live = false;
-      if (originalDig && emitter.dig === dig) emitter.dig = originalDig;
-      if (originalPlace && emitter.placeBlock === place) emitter.placeBlock = originalPlace;
-    };
+    if (this.bot) return;
+    this.bot = bot;
+    joinWrappers(bot, this);
   }
 
-  /** Stops counting and restores the bot's methods. Safe to call twice. */
+  /** Stops counting and lets go of the bot's methods. Safe to call twice. */
   stop(): void {
-    this.restore?.();
-    this.restore = null;
+    if (!this.bot) return;
+    leaveWrappers(this.bot, this);
+    this.bot = null;
+  }
+
+  countDig(): void {
+    this.dug++;
+  }
+
+  countPlace(name: string): void {
+    this.placed.push(name.replace(/_/g, ' '));
   }
 
   /** The completion text, or undefined when nothing was dug or placed. No digits, plain words. */

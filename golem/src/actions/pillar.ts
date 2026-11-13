@@ -4,6 +4,8 @@ import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
 import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
+import { placedCell, recordOwnPlacement } from './own-placements.ts';
+import { protectedReason } from './protected-blocks.ts';
 import type { DiagSink } from './stall-diag.ts';
 
 /** Ticks a pillar's jump is given to rise and place the block. */
@@ -115,6 +117,9 @@ export async function placeAgainst(
   if (sneak) bot.setControlState('sneak', true);
   try {
     await bot.placeBlock(reference, face);
+    const held = bot.heldItem?.name;
+    const cell = placedCell(reference, face);
+    if (held && cell) recordOwnPlacement(bot, cell, held);
   } finally {
     if (sneak) bot.setControlState('sneak', false);
   }
@@ -202,7 +207,11 @@ function overheadRefusal(bot: Bot, feet: Vec3, at: Vec3): string | null {
   if (passable(block)) return null;
   if (block === null || !solid(block)) return `${block?.name ?? 'unloaded cell'} overhead`;
   const own = [feet, feet.offset(0, 1, 0)];
-  return unbreakableReason(block) ?? hazardReason(bot, block, at, own, true);
+  return (
+    unbreakableReason(block) ??
+    hazardReason(bot, block, at, own, true) ??
+    protectedReason(bot, block, at)
+  );
 }
 
 /** True when both cells above `feet` pass the headroom check a pillar from `feet` makes. */
@@ -249,7 +258,8 @@ function sideDiggable(bot: Bot, cell: Vec3, own: readonly Vec3[]): boolean {
     block !== null &&
     solid(block) &&
     unbreakableReason(block) === null &&
-    hazardReason(bot, block, cell, own, true) === null
+    hazardReason(bot, block, cell, own, true) === null &&
+    protectedReason(bot, block, cell) === null
   );
 }
 
