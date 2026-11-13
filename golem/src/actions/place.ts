@@ -127,6 +127,10 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
     if (move.partial) {
       return failed('blocked', 'the target is out of reach');
     }
+    // A full walk can also end short of reach: the placement is then not sent.
+    if (bot.entity.position.distanceTo(target) > REACH) {
+      return failed('blocked', 'the target is out of reach');
+    }
   }
   if (ctx.signal.aborted) return cancelled();
 

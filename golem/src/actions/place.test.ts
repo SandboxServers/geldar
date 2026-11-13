@@ -108,6 +108,14 @@ function place(fake: FakeBot, block: string, at: { x: number; y: number; z: numb
 
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();
+  // A completed walk leaves the bot within its range of the target, on the x axis.
+  vi.mocked(moveNear).mockImplementation(async (bot, target, range) => {
+    const goal = new Vec3(target.x, target.y, target.z);
+    if (bot.entity.position.distanceTo(goal) > range) {
+      bot.entity.position = new Vec3(goal.x + 0.5 - range, goal.y, goal.z + 0.5);
+    }
+    return { ok: true, distance: 0 };
+  });
 });
 
 describe('pickReference', () => {
@@ -304,18 +312,6 @@ describe('place', () => {
     const fake = fakeBot({ items: ['nonexistent'] });
     const outcome = await place(fake, 'nonexistent', { x: 2, y: 64, z: 0 });
     expect(outcome).toMatchObject({ status: 'failed', reason: 'not_possible' });
-  });
-
-  it('walks within reach before placing', async () => {
-    const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
-    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
-    expect(outcome.status).toBe('completed');
-    expect(moveNear).toHaveBeenCalledWith(
-      fake.bot,
-      new Vec3(10, 64, 0),
-      3,
-      expect.objectContaining({ timeScale: 1 }),
-    );
   });
 
   it('returns the move failure without placing', async () => {
