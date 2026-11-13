@@ -154,3 +154,71 @@ describe('pillar from a block edge and after landing', () => {
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
   });
 });
+
+describe('pillar when another ranger shares the feet cell', () => {
+  const ENTITY_MESSAGE = 'another entity stands where the block goes: step to open ground first';
+
+  /** The bot stands on the stone at (0,63,0); another ranger's box covers the feet cell (0,64,0). */
+  function sharedCell(fake: Fake) {
+    Object.assign(fake.bot.entities, {
+      '1': { position: new Vec3(0.3, 64, 0.3), width: 0.6, height: 1.8 },
+    });
+  }
+
+  it('steps to a free neighbour with solid ground, and pillars there', async () => {
+    const fake = pillarFake({
+      blocks: { '0,63,0': block('stone'), '1,63,0': block('stone') },
+      placedAt: '1,64,0',
+    });
+    sharedCell(fake);
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      fake.state.position.set(1.5, 64, 0.5);
+      return { ok: true, distance: 1 } as never;
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed', detail: { at: { x: 1, y: 64, z: 0 } } });
+    expect(moveNear).toHaveBeenCalledTimes(1);
+    expect(moveNear).toHaveBeenCalledWith(
+      fake.bot,
+      expect.objectContaining({ x: 1.5, z: 0.5 }),
+      0.5,
+      expect.anything(),
+    );
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('keeps the another-entity refusal when the only free neighbour is also taken by a ranger', async () => {
+    const fake = pillarFake({ blocks: { '0,63,0': block('stone'), '1,63,0': block('stone') } });
+    sharedCell(fake);
+    Object.assign(fake.bot.entities, {
+      '2': { position: new Vec3(1.5, 64, 0.5), width: 0.6, height: 1.8 },
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: ENTITY_MESSAGE });
+    expect(moveNear).not.toHaveBeenCalled();
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the another-entity refusal when the step to the neighbour does not arrive', async () => {
+    const fake = pillarFake({ blocks: { '0,63,0': block('stone'), '1,63,0': block('stone') } });
+    sharedCell(fake);
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: ENTITY_MESSAGE });
+    expect(moveNear).toHaveBeenCalledTimes(1);
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('is cancelled, and places nothing, when the signal aborts during the step', async () => {
+    const fake = pillarFake({ blocks: { '0,63,0': block('stone'), '1,63,0': block('stone') } });
+    sharedCell(fake);
+    const abort = new AbortController();
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      abort.abort();
+      return { ok: false, distance: 1 } as never;
+    });
+    const outcome = await pillar(fake, 'feet', 1, abort.signal);
+    expect(outcome.status).toBe('cancelled');
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+});
