@@ -5,6 +5,7 @@
 // Angles: the camera yaw follows orbitGoal (yaw 0 puts the camera on +z of the agent). Minecraft yaw
 // is degrees, 0 facing +z (south), 90 facing -x (west), so "behind" is camera yaw = PI - mcYaw.
 
+import { foliageSafeCamera } from '../foliage.ts';
 import type { VoxelWorld } from '../world.ts';
 import { CAMERA_HALF, collides, type Vec3 } from './collision.ts';
 import { lookPoint } from './modes.ts';
@@ -276,4 +277,14 @@ export function stepChase(s: ChaseState, world: VoxelWorld, input: ChaseInput): 
     y: from.y + (goal.y - from.y) * f,
     z: from.z + (goal.z - from.z) * f,
   };
+}
+
+/**
+ * The chase camera's foliage pull-in (foliage.ts): closer to the agent when leaves hide it, but never
+ * into a solid block. The pull-in counts every block and checks no collision, so after an agent drops
+ * off a bank it could land the camera inside the bank, where the near plane cuts the terrain open.
+ */
+export function chaseFoliageCamera(world: VoxelWorld, eye: Vec3, cam: Vec3): Vec3 {
+  const p = foliageSafeCamera(world, eye, cam);
+  return p !== cam && collides(world, p) ? cam : p;
 }

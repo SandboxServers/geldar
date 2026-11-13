@@ -70,6 +70,7 @@ Now:
 - **The camera follows the agent's entity, not `target_moved`.** The plugin sends `target_moved` only when the agent enters another chunk; the agent's entity (position and yaw) comes every tick. The page now takes the followed agent's position from its entity, so the chase camera sees the agent walk and swings behind it. The old follow camera jumped once per chunk for the same reason. The preview now sends `target_moved` as the plugin does, so it cannot hide this again.
 - **A heading that arrives late still counts.** The first frames often have a position but no entity; the camera's first guess is replaced by the first heading.
 - **A retune keeps the old picture until the server confirms it.** The world is swapped when the new agent's `hello` (or `target_moved`) arrives. If the server answers `rate_limited`, the monitor keeps its agent and its label. A retune on a monitor whose connection ended opens a new connection.
+- **The foliage pull-in never moves the camera into a solid block.** It counts every block on the line and checked no collision, so after an agent dropped off a bank it could put the camera inside the bank.
 - **A monitor frees its scene's GPU memory on every retune** (`KinoScene.dispose`), keeping the texture atlas shared by all monitors.
 
 ## Why

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { blocksCamera, collides, type Vec3 } from '../../../web/kino/camera/collision.ts';
 import {
+  chaseFoliageCamera,
   clearDistance,
   newChase,
   ROTATE_STEP,
@@ -214,6 +215,33 @@ describe('chase camera: walls', () => {
     expect(agent.z - p.z).toBeGreaterThan(5);
     // Fully inside a block, there is nowhere clear to start from: the camera stays at the eyes.
     expect(clearDistance(w, { x: 0.5, y: 1.5, z: 1.5 }, { x: 0.5, y: 1.5, z: 1.5 })).toBe(0);
+  });
+
+  it('never takes a foliage pull-in that would put the camera inside a solid block', () => {
+    const w = airWorld();
+    const eye = { x: 0.5, y: 1.6, z: 0.5 };
+    const raw = { x: 0.5, y: 5.1, z: -6.5 };
+    // Leaves fill the line, so the pull-in wants its closest point (3 blocks out, half a block up)...
+    for (let x = -3; x <= 4; x++)
+      for (let y = -2; y <= 8; y++)
+        for (let z = -8; z <= -1; z++)
+          w.applyUpdate({ type: 'block_update', pos: { x, y, z }, state: LEAVES });
+    const d = Math.hypot(raw.x - eye.x, raw.y - eye.y, raw.z - eye.z);
+    const near = {
+      x: eye.x + ((raw.x - eye.x) * 3) / d,
+      y: eye.y + ((raw.y - eye.y) * 3) / d + 0.5,
+      z: eye.z + ((raw.z - eye.z) * 3) / d,
+    };
+    expect(collides(w, chaseFoliageCamera(w, eye, raw))).toBe(false);
+    expect(chaseFoliageCamera(w, eye, raw)).not.toEqual(raw);
+    // ...and that point is stone (a bank the agent has just stepped down from).
+    for (let x = Math.floor(near.x) - 1; x <= Math.floor(near.x) + 1; x++)
+      for (let y = Math.floor(near.y) - 1; y <= Math.floor(near.y) + 1; y++)
+        for (let z = Math.floor(near.z) - 1; z <= Math.floor(near.z) + 1; z++)
+          w.applyUpdate({ type: 'block_update', pos: { x, y, z }, state: STONE });
+    const p = chaseFoliageCamera(w, eye, raw);
+    expect(collides(w, p)).toBe(false);
+    expect(p).toEqual(raw);
   });
 
   it('measures the clear distance up to the first blocking block', () => {

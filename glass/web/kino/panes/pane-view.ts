@@ -3,10 +3,10 @@
 // parts it calls (session, rig, feed) are tested.
 
 import { type Material, WebGLRenderer } from 'three';
+import { chaseFoliageCamera } from '../camera/lakitu.ts';
 import type { CameraMode } from '../camera/modes.ts';
 import { CameraRig } from '../camera/rig.ts';
 import type { FeedState } from '../feed.ts';
-import { foliageSafeCamera } from '../foliage.ts';
 import type { UvLookup } from '../mesher.ts';
 import { KinoScene } from '../scene.ts';
 import { byeText, KinoSession, type SocketLike } from '../session.ts';
@@ -149,7 +149,7 @@ export function createPaneView(
       // Chase: pull in and up when foliage sits between the camera and the agent's head.
       const pos =
         focus && rig.mode === 'follow'
-          ? foliageSafeCamera(state.world, { x: focus.x, y: focus.y + 1.6, z: focus.z }, raw)
+          ? chaseFoliageCamera(state.world, { x: focus.x, y: focus.y + 1.6, z: focus.z }, raw)
           : raw;
       view.camera.position.set(pos.x, pos.y, pos.z);
       view.cullAround(pos);
