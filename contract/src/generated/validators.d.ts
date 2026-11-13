@@ -3,6 +3,7 @@ import type { ValidateFunction } from 'ajv';
 
 export declare const validateActionOutcomePayload: ValidateFunction;
 export declare const validateActionRecord: ValidateFunction;
+export declare const validateBlockOwner: ValidateFunction;
 export declare const validateBookReply: ValidateFunction;
 export declare const validateBookRequest: ValidateFunction;
 export declare const validateCheckpointManifest: ValidateFunction;

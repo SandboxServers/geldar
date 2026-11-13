@@ -80,6 +80,26 @@ export function kinoFeedSubject(shard: string, agentId: string): string {
 }
 
 /**
+ * Where the plugin answers a `BlockOwnerQuery` (block-owner.schema.json) with a `BlockOwnerReply`:
+ * `geldar.<shard>.blockowner.query`, a NATS request/reply subject. Four tokens, so outside the sink's
+ * `geldar.*.*` filter. Throws on a shard name the contract rejects.
+ */
+export function blockownerQuerySubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.blockowner.query`;
+}
+
+/**
+ * Where the plugin publishes a `BlockOwnerChanged` (block-owner.schema.json) when one block's owner changes:
+ * `geldar.<shard>.blockowner.changed`. Four tokens, so outside the sink's `geldar.*.*` filter.
+ * Throws on a shard name the contract rejects.
+ */
+export function blockownerChangedSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.blockowner.changed`;
+}
+
+/**
  * Where the deploy publishes a maintenance notice (maintenance-notice.schema.json, CD-1):
  * `geldar.<shard>.maintenance`. Three tokens, like the event subjects; the notice is not a WorldEvent.
  * Throws on a shard name the contract rejects.
