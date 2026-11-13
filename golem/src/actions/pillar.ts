@@ -177,11 +177,13 @@ export async function pillarStep(
   let failure: string | undefined;
   try {
     await bot.equip(item as never, 'hand');
-    await bot.lookAt(b.entity.position.offset(0, -1, 0), true);
-    bot.setControlState('jump', true);
     // The cell the bot began in becomes the new floor: place on the block under it once the bot is up.
     const cell = b.entity.position.floored();
     const ground = bot.blockAt(cell.offset(0, -1, 0));
+    // Aim, forced, at the point placeBlock aims at (the top face's centre of the ground block), before the
+    // jump. Its own unforced turn to that point can take ~11 ticks, and the placement would go out too late.
+    await bot.lookAt(cell.offset(0.5, 0, 0.5), true);
+    bot.setControlState('jump', true);
     for (let i = 0; i < PILLAR_TICKS && !o.signal.aborted; i++) {
       await bot.waitForTicks(1);
       if (
