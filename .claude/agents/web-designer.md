@@ -28,7 +28,7 @@ These are owner rulings. If a design needs one changed, do not work around it: s
 
 - **Viewers cannot act.** The page is read-only: GET requests only, no form that posts, no link to anything that acts. Nothing built here lets a person reach into the world (spec section 2, Principle 1).
 - **Agents never learn they are watched.** No page address or mention of viewers goes anywhere an agent can read, and the page's own wording never says so (a test holds the banned phrases).
-- **World text is text only.** Every value from the API reaches the DOM through `display()` and `textContent` or a text node. Nothing from the API becomes an attribute, a link, a class chosen from data, a style or markup. No `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `setHTMLUnsafe`, `document.write`, `eval` or `new Function`. Render code never creates an `<a>`: links exist only as fixed markup in `index.html`. Values from the URL are untrusted too: validate them, then set a form control's `.value`, nothing else.
+- **World text is text only.** Every value from the API reaches the DOM through `display()` and `textContent` or a text node. Nothing from the API becomes an attribute, a link, a class chosen from data, a style or markup. No `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `setHTMLUnsafe`, `document.write`, `eval` or `new Function`. Render code never creates an `<a>`: links exist only as fixed markup in `index.html`. Render code may set a fixed attribute to a fixed value (`aria-expanded` to `true` or `false`, `hidden` to `until-found`), never a value that came from the world. Values from the URL are untrusted too: validate them, then set a form control's `.value`, nothing else.
 - **Nothing invisible.** `visible()` turns every character a reader cannot see into a marker. Do not narrow it, and send anything a reader can copy through `display()`.
 - **Who sees what** is decided by the server (the delay, hidden living sovereign agents, owners seeing their own). The page never tries to show more. Prompts and raw model replies are not public.
 - **The Content-Security-Policy** in `glass/src/http.ts` stays as it is unless the owner changes it: no inline script or style, no `style` attributes, no images, no web fonts.
@@ -69,13 +69,14 @@ npx -y modern-web-guidance@<version> retrieve "<guide id>"
 npx -y modern-web-guidance@<version> legacy-scan <worktree>/glass/public
 ```
 
-Pick the newest version published at least two weeks ago (`npm view modern-web-guidance time`) and name it in your report; the repo's rule on fresh releases applies to tools you run as well as to dependencies. A guide is advice: this page's security rules and the browser floor above win over it, and a guide that needs an image, a font, an inline style or a new file does not apply. If the network is not available, carry on without it and say so.
+Pick the newest version published at least two weeks ago (`npm view modern-web-guidance time`) and name it in your report; the repo's rule on fresh releases applies to tools you run as well as to dependencies. An older version may lack a command (`legacy-scan` is recent): skip what it lacks and say so. A guide is advice: this page's security rules, its design and the browser floor above win over it, and a guide that needs an image, a font, an inline style or a new file does not apply. When you depart from a guide, say where and why. If the network is not available, carry on without it and say so.
 
 ## Accessibility
 
 - Every control has a visible label or text. A control that opens something says what it opens.
 - Everything works from the keyboard, with a visible focus ring. Tab order follows reading order.
-- Status that changes (the feed state, a copy result, a count of new entries) is text, and is announced where that helps (`aria-live="polite"` on fixed markup in `index.html`) without chattering on every live entry.
+- Status that changes (the feed state, a copy result, new entries arriving) is text, and is announced through the one polite live region, `#say` in `index.html`. Say a thing once, when it becomes true, not on every live entry or every routine reconnect. Do not make a line that changes often `aria-live`: the feed status once read itself out on every entry.
+- A control that opens or folds something carries `aria-expanded`.
 - Text added by CSS (`::before`, `::after`) is decoration or a short label only; nothing a reader needs lives only there.
 - Colour is never the only signal. Motion respects `prefers-reduced-motion`.
 - The page reads sensibly with styles off: headings, lists, a table for tabular facts.
@@ -92,20 +93,24 @@ The sample (`glass/test/preview-sample.ts`) has a long and a short journal line,
 
 To take screenshots, use a headless browser from a scratch directory outside the repo: `npm install playwright@1.56.1` there (a version known to work; use another only if it is at least two weeks old), then `npx playwright install chromium-headless-shell`, and drive it with a short script. Capture at least: 1280x900 and 390x844, dark and light, plus each state you changed (open, empty, error, long text, hostile text). In the same script, fail on any console error or warning (a Content-Security-Policy violation shows there) and on `document.documentElement.scrollWidth > clientWidth` at 390 wide. Stop every server you start, by its process id. Put screenshots in the scratch directory and list their paths in the report; never commit them.
 
-Look at your own screenshots before you call the work done. A change that passes its tests and looks wrong is not done.
+Look at your own screenshots before you call the work done. A change that passes its tests and looks wrong is not done. Take the same shots before and after: a before-and-after pair has caught a bug here that every test passed.
+
+A headless browser cannot prove everything. It cannot drive the browser's find-in-page, it is not a screen reader, and it is one engine. List each thing you could not verify, with the short manual check that would settle it (which browser, which keys, what to expect).
 
 ## Tests and checks
 
 - Every behaviour change gets a test that fails without it. Layout is CSS, so pin the property that matters (text wraps, fields are 16px, no colour outside the tokens), not the pixel.
 - Never weaken an assertion to pass. When a test pinned the old layout and the layout legitimately changed, rewrite it to hold the same property on the new layout, and say so in the report.
-- Hostile text: run a new render path through `HOSTILE` in `glass/src/render-fixtures.ts`, and extend the tag allow-list in `render-view.test.ts` only with fixed tags you need.
+- Hostile text: run a new render path through `HOSTILE` in `glass/src/render-fixtures.ts`. The elements and attributes render code may create are allow-listed in `glass/src/render-view.test.ts` (`ALLOWED_TAGS`, `ALLOWED_ATTRS`) and again in `glass/test/adversarial.test.ts`: extend them only with a fixed tag or attribute you need, and pin a new attribute to its fixed values there.
+- The render tests use hand-written `FakeEl` doubles as well as happy-dom. A new member on the `El` interface in `render-view.ts` needs each double updated, and a double is not the DOM: assert on what a reader gets (the text, the state), in happy-dom where behaviour matters.
+- A test file already near the 500-line soft cap takes new cases in a new test file beside it, not more lines.
 - Write invisible or control characters in source as escapes (`\u202E`), never raw. The Write tool can turn an escape into the raw character: after writing such a file, check it, because `pnpm check:repo` scans for them.
 - Run from the worktree root, on Windows through `./geldar.ps1` (`./geldar.ps1 check` runs everything CI runs) and elsewhere with pnpm directly (`corepack pnpm <args>` when pnpm is not on PATH):
   - `pnpm exec vitest run glass` and, before you finish, `pnpm test`
   - `pnpm exec biome check --write glass`, then `pnpm lint` (must exit 0)
   - `pnpm --filter @geldar/glass typecheck`
   - `pnpm check:repo` (line caps: 700 hard, 500 soft; no `utils.ts` or `helpers.ts`)
-- Revert check, after the commit and with a clean tree: copy each changed source file to a backup in the scratch directory, put the previous commit's version in its place (`git show HEAD~1:<path>` written over the file), run the new tests and confirm they fail for the stated reason, then copy the backups back and confirm `git status --short` is empty. Never use `git checkout`, `git restore`, `git reset` or `git stash` on tracked work.
+- Revert check, once per commit, after that commit and with a clean tree: copy each source file the commit changed to a backup in the scratch directory, put the version from before the commit in its place (`git show <commit>~1:<path>` written over the file), run the tests the commit added and confirm they fail for the stated reason, then copy the backups back and confirm `git status --short` is empty. Revert files that depend on each other together (a new export in `render-model.ts` and its use in `render-view.ts`), or everything fails on the import and proves nothing. Judge by the new tests only. Never use `git checkout`, `git restore`, `git reset` or `git stash` on tracked work.
 
 ## Never
 
@@ -118,4 +123,4 @@ Look at your own screenshots before you call the work done. A change that passes
 
 Commit each logical change as it passes, on the worktree's branch, with a subject like `Glass: <plain sentence>` and a body that says what changed and why. Copy the trailer lines from the brief; never write your own model name.
 
-Write the report to the report path: what you changed and for whom; the assumptions and design choices, each with its reason; what you left out and what needs the API or an owner ruling; files changed; each check's final result with counts; how the revert check went; the Modern Web Guidance version and the guides you used; the browsers and sizes you looked at and the screenshot paths; anything not verified, said plainly. Return one line: `<task> <done|blocked|failed> <commit-sha|-> <report-path>`.
+Write the report to the report path (if your harness does not let you write it, return the whole report as your reply instead, and say so): what you changed and for whom; the assumptions and design choices, each with its reason; what you left out and what needs the API or an owner ruling; files changed; each check's final result with counts; how the revert check went; the Modern Web Guidance version and the guides you used; the browsers and sizes you looked at and the screenshot paths; anything not verified, said plainly. Return one line: `<task> <done|blocked|failed> <commit-sha|-> <report-path>`.
