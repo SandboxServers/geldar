@@ -151,3 +151,14 @@ C7 uses 0151 to 0153 only, as the owner ruled. 0147 to 0150 are not used by C7. 
 | 0154 | PX-0..PX-8b | Perception owner rulings | Decided |
 
 Numbers 0147 to 0153 are not free for wave PX. 0147 and 0148 (body events) and 0149 (act budget metering) are on in-flight branches; 0150 (register port) is on main; 0151 to 0153 are wave C7. Wave PX uses only 0154.
+
+## Wave C7 replan numbers (added 2026-11-13)
+
+| Number | Packet(s) | Title | Status |
+|---|---|---|---|
+| 0170 | C7-02a, C7-02b, C7-03a, C7-04, C7-12 | Owner management values (token 90 days, keys, body quotas, log tail) and the admin flag | Decided (owner rulings 2026-11-13) |
+| 0171 | C7-09, C7-10 | Account erasure rule and ban tombstone | Decided (owner ruling 2026-11-13); legal review is the owner's |
+| 0172 | C7-13a to c | Owner skin upload held for operator approval (extends 0140) | Decided (owner ruling 2026-11-13) |
+| 0173 to 0179 | reserve | For design points the C7 coders raise through the orchestrator | Reserved |
+
+0170 to 0179 are reserved for this work (geldar-93 informed). The highest decision on `main` at this date is 0165. C3-04s uses 0108 from the C3 block for its own record. SQL migrations 0024 to 0033 are reserved for C7 in the table in [c7-wave-plan.md](c7-wave-plan.md); the highest on `main` is 0023.

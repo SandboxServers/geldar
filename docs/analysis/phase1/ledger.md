@@ -116,18 +116,25 @@ Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md). Dec
 
 ## Wave C7: User management, bodies as a service, terms before sign-up
 
-Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md). Decisions: [0151](../../decisions/0151-bodies-run-only-in-the-colo.md), [0152](../../decisions/0152-programmatic-body-management-for-owners.md), [0153](../../decisions/0153-terms-consent-and-deletion-before-sign-up.md) (Decided, owner rulings 2026-11-11). Statuses: Ready, BlockedDecision, Writing.
+Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md) and [packets/c7b-packets.md](packets/c7b-packets.md). Plan (graph, waves, migrations, live lane): [packets/c7-wave-plan.md](packets/c7-wave-plan.md). Decisions: 0151 to 0153, 0155, [0170](../../decisions/0170-owner-management-values-and-admin-flag.md), [0171](../../decisions/0171-account-erasure-rule.md), [0172](../../decisions/0172-human-skin-upload-held-for-approval.md) (Decided). Owner questions Q1 to Q8 are answered (2026-11-13). Statuses: Ready, Waiting (on a packet), Done.
 
-| id | title | wave | lane | depends | status | decision numbers | owner-blocked? |
-|---|---|---|---|---|---|---|---|
-| C7-01 | Sessions that survive a restart (persisted, sliding, capped) | C7-A | A | none | Ready | none | N |
-| C7-02 | Token and owner-key lifecycle (expiry, revoke, rotate grace, owner keys) | C7-A | A | C7-01 | BlockedDecision (Q1, Q2) | 0152 | Y [Q1, Q2] |
-| C7-03 | Colo body supervisor and narrow control interface | C7-B | B | C3-04 | BlockedDecision (Q3; C3-04 open) | 0151, 0152 | Y [Q3] |
-| C7-04 | Owner management API v1 | C7-B | B | C7-02, C7-03 | BlockedDecision (Q2, Q3, Q6) | 0152 | Y [Q2, Q3, Q6] |
-| C7-05 | Onboarding after create or rotate; corrected players README | C7-B | C | C7-02 | BlockedDecision (Q1 expiry text) | 0151 | Y [Q1] |
-| C7-06 | Account page v2 (mobile CSS, status, toggles, thoughts form, error pages) | C7-B | C | C7-04, C7-05 | Ready (after deps) | none | N |
-| C7-07 | Agent rename (skin choice deferred) | C7-B | D | C7-04 | Ready (after deps) | none | N (skin: Q7) |
-| C7-08 | Terms, privacy notice, consent (version 1 approved by owner 2026-11-11) | C7-C | E | none (text) | Done (text approved; Q8 answered; 0155) | 0153, 0155 | Y [Q4, Q5 open for C7-09] |
-| C7-09 | Account deletion and data export | C7-C | E | C7-02, C7-03, C7-08 | BlockedDecision (Q4, Q5) | 0153 | Y [Q4, Q5] |
-| C7-10 | Operator console and register audit trail; ban reasons | C7-D | F | C7-03, C7-04 | Ready (after deps; reason codes owner) | none | N |
-| C7-11 | Sign-up gate (not a code packet) | C7-E | G | C7-05, C7-06, C7-08, C7-09 | Legal gate cleared (C7-08 done, 0155); open: C7-05, C7-06, C7-09; owner opens sign-up | 0153, 0155 | Y |
+| id | title | wave | lane | depends | status | decision numbers | migration | owner-blocked? |
+|---|---|---|---|---|---|---|---|---|
+| C7-01 | Sessions that survive a restart | W0 | A | none | Done (0021) | none | 0021 | N |
+| C7-08 | Terms, privacy notice, consent (v1 approved) | W0 | E | none | Done (0022; 0155) | 0153, 0155 | 0022 | N |
+| C3-04s | DB roster slice (first packet) | W1 | D | C1-08 | Ready | 0108 | 0024 | N |
+| C7-12 | Admin flag, operator CLI, audit table base | W1 | A | none | Ready | 0170 | 0025 | N |
+| C7-03a | Colo body supervisor (package, quotas, audit) | W1 | B | C3-04s, C7-12 | Waiting | 0151, 0152, 0170 | 0027 | N |
+| C7-02a | Player token lifecycle | W1 | A | C7-12 | Waiting | 0170 | none | N |
+| C7-02b | Owner API keys | W2 | A | C7-02a | Waiting | 0152, 0170 | 0026 | N |
+| C7-05 | Onboarding and corrected players README | W2 | C | C7-02a | Waiting | 0151 | none | N |
+| C7-03b | Supervisor compose wiring (geldar-93 contact, no network recreate) | W2 | B | C7-03a | Waiting | 0082, 0152 | none | Y [contact geldar-93; owner approves the node change] |
+| C7-04 | Owner management API v1 | W2 | B | C7-02b, C7-03a, C7-12 | Waiting | 0152, 0170 | none | N |
+| C7-06 | Account page v2 | W3 | C | C7-04, C7-05 | Waiting | none | none | N |
+| C7-13a | Skin upload API and held store | W3 | D | C7-04, C7-12 | Waiting | 0172 | 0031 | N |
+| C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |
+| C7-07 | Agent rename | W3 | D | C7-04, C7-06 | Waiting | none | 0028 | N |
+| C7-13b | Skin moderation CLI, MineSkin, KV write | W4 | D | C7-13a | Waiting | 0172 | none | N (live: owner's MineSkin key, one call) |
+| C7-09 | Account deletion and data export | W4 | E | C7-02b, C7-03b, C7-13a | Waiting | 0171 | 0029 | N (legal review of the rule is the owner's, gates C7-11) |
+| C7-13c | Skin form and status on the account page | W4 | C | C7-06, C7-13a | Waiting | 0172 | none | N |
+| C7-11 | Sign-up gate (not a code packet) | W4 | G | C7-05, C7-06, C7-09, C7-13c | Waiting; owner opens sign-up | 0153, 0155, 0171 | none | Y |
