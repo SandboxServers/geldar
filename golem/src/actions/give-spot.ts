@@ -28,3 +28,36 @@ export function stepBackPoint(
     recipient.z + (dz / length) * distance,
   );
 }
+
+/**
+ * The turns (radians) the Body tries around the recipient when the straight-back spot is blocked:
+ * 45 and 90 degrees either side. The straight-back turn comes first.
+ */
+export const STEP_BACK_TURNS: readonly number[] = [
+  0,
+  Math.PI / 4,
+  -Math.PI / 4,
+  Math.PI / 2,
+  -Math.PI / 2,
+];
+
+/**
+ * The spots the Body may step back to, in the order it tries them: the straight-back point, then
+ * the same point rotated around `recipient` by each of `STEP_BACK_TURNS`, at the body's height and
+ * `distance` blocks out. Empty when the two stand on the same spot.
+ */
+export function stepBackSpots(
+  body: Vec3,
+  recipient: Vec3,
+  distance: number = STEP_BACK_TO,
+): Vec3[] {
+  const straight = stepBackPoint(body, recipient, distance);
+  if (!straight) return [];
+  const dx = straight.x - recipient.x;
+  const dz = straight.z - recipient.z;
+  return STEP_BACK_TURNS.map((turn) => {
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+    return new Vec3(recipient.x + dx * cos - dz * sin, body.y, recipient.z + dx * sin + dz * cos);
+  });
+}

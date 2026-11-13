@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOSS_PITCH, tossPitch } from './give.ts';
+import { stepBackSpots } from './give-spot.ts';
 import { setup } from './give-test-fixture.ts';
 import { moveNear } from './pathing.ts';
 
@@ -204,7 +205,54 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
       reason: 'not_possible',
       message: 'too close to toss, and no room to step back',
     });
-    expect(walk).toHaveBeenCalledOnce();
+    expect(walk).toHaveBeenCalledTimes(5);
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('walks to the first turned spot when the straight-back walk fails, then tosses', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    walk
+      .mockResolvedValueOnce({ ok: false, reason: 'blocked', message: 'no path' } as never)
+      .mockImplementationOnce(async (_bot, spot) => {
+        world.me.position = spot as Vec3;
+        return { ok: true, distance: 2 } as never;
+      });
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk).toHaveBeenCalledTimes(2);
+    const recipient = new Vec3(0.6, 64, 0.5);
+    const [straight, plus45] = stepBackSpots(new Vec3(0.5, 64, 0.5), recipient);
+    expect(walk.mock.calls[0]?.[1]).toEqual(straight);
+    expect(walk.mock.calls[1]?.[1]).toEqual(plus45);
+    expect(toss).toHaveBeenCalledOnce();
+  });
+
+  it('refuses not_possible when all five spots are blocked, and tries each one', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
+    expect(await run('Pike')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'too close to toss, and no room to step back',
+    });
+    expect(walk).toHaveBeenCalledTimes(5);
+    expect(world.me.position).toEqual(new Vec3(0.5, 64, 0.5));
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('is cancelled, and walks no further, when the run aborts between the tries', async () => {
+    const { world, run, toss, controller } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    walk
+      .mockResolvedValueOnce({ ok: false, reason: 'blocked', message: 'no path' } as never)
+      .mockImplementationOnce(async () => {
+        controller.abort();
+        return { ok: false, reason: 'cancelled', message: 'stopped' } as never;
+      });
+    expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
+    expect(walk).toHaveBeenCalledTimes(2);
+    expect(world.me.position).toEqual(new Vec3(0.5, 64, 0.5));
     expect(toss).not.toHaveBeenCalled();
   });
 

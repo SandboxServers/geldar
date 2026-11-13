@@ -19,7 +19,6 @@ const FOOD_BLOCKS = new Set([
   'beetroots',
   'sweet_berry_bush',
   'melon',
-  'pumpkin',
 ]);
 /** Dropped items that are food when picked up. */
 const FOOD_ITEMS = new Set([
