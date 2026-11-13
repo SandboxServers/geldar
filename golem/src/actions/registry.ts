@@ -10,6 +10,7 @@ import {
   recordState,
   toResult,
 } from './outcome.ts';
+import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 
 /** The contract verbs an action can name (`goto`, `mine`, ...). */
 export type ActionKind = Action['do'];
@@ -112,6 +113,7 @@ export async function runAction(
   opts: ActionRunOptions = {},
 ): Promise<ActionRun> {
   const run = await runUnobserved(registry, bot, action, opts);
+  logFailure(opts.failureSink ?? DEFAULT_DIAG_SINK, bot, action, run);
   registry.notifyFinished(action, run);
   return run;
 }
@@ -121,6 +123,8 @@ export interface ActionRunOptions {
   timeScale?: number;
   signal?: AbortSignal;
   now?: () => number;
+  /** Where a failed action's log line goes. Defaults to the Body's stdout log. */
+  failureSink?: DiagSink;
   /** Check a completed action against the position, inventory and block it should have changed (`no_effect`). */
   receipts?: boolean;
   /**
@@ -250,4 +254,89 @@ async function wakeBot(bot: Bot): Promise<void> {
 /** Cuts an error text to the message limit. */
 function truncate(text: string): string {
   return text.slice(0, MESSAGE_LIMIT);
+}
+
+/** Longest kept text of one argument; a longer one is cut. */
+const ARG_LIMIT = 80;
+/** A failure line longer than this loses its args to a cut. */
+const FAILURE_LINE_LIMIT = 400;
+/** A failure with the same verb, reason and message as one logged this recently is counted, not logged. */
+const FAILURE_REPEAT_MS = 2_000;
+/** Distinct failure keys remembered per bot; the least recently logged is forgotten past this. */
+const FAILURE_KEYS_PER_BOT = 200;
+
+/** When one failure key was last logged, and how many repeats were suppressed since. */
+interface FailureKey {
+  last: number;
+  repeats: number;
+}
+
+/** Per bot, the failure keys seen. A WeakMap, so a bot that goes away takes its keys with it. */
+const failureKeys = new WeakMap<object, Map<string, FailureKey>>();
+
+/**
+ * Writes one JSON line for a failed or cancelled action: the verb, its arguments (cut), the reason,
+ * the full message, the position and the wall time. Repeats of one (verb, reason, message) within
+ * FAILURE_REPEAT_MS of the last logged line are counted and reported as `repeats` on the next one.
+ * It only logs: the run it is given is not changed.
+ */
+function logFailure(sink: DiagSink, bot: Bot, action: unknown, run: ActionRun): void {
+  if (run.state === 'completed') return;
+  const source =
+    typeof action === 'object' && action !== null ? (action as Record<string, unknown>) : {};
+  const verb = typeof source.do === 'string' ? source.do : 'unknown';
+  const reason = run.state === 'cancelled' ? 'cancelled' : (run.result.reason ?? 'unknown');
+  const message = run.result.message ?? '';
+  const now = sink.now();
+
+  let keys = failureKeys.get(bot);
+  if (!keys) {
+    keys = new Map<string, FailureKey>();
+    failureKeys.set(bot, keys);
+  }
+  const key = `${verb}\u0000${reason}\u0000${message}`;
+  const seen = keys.get(key);
+  if (seen && now - seen.last < FAILURE_REPEAT_MS) {
+    seen.repeats += 1;
+    return;
+  }
+  const repeats = seen?.repeats ?? 0;
+  keys.delete(key);
+  keys.set(key, { last: now, repeats: 0 });
+  while (keys.size > FAILURE_KEYS_PER_BOT) {
+    const oldest = keys.keys().next().value;
+    if (oldest === undefined) break;
+    keys.delete(oldest);
+  }
+
+  const position = bot.entity?.position;
+  const line: Record<string, unknown> = {
+    event: 'action_failed',
+    do: verb,
+    args: compactArgs(source),
+    reason,
+    message,
+    pos: position ? { x: round2(position.x), y: round2(position.y), z: round2(position.z) } : null,
+    ms: run.result.latency_ms,
+  };
+  if (repeats > 0) line.repeats = repeats;
+  if (JSON.stringify(line).length > FAILURE_LINE_LIMIT) {
+    line.args = { cut: JSON.stringify(line.args).slice(0, ARG_LIMIT) };
+  }
+  sink.log(JSON.stringify(line));
+}
+
+/** The arguments without `do`, each string cut to ARG_LIMIT. */
+function compactArgs(source: Record<string, unknown>): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(source)) {
+    if (name === 'do') continue;
+    args[name] = typeof value === 'string' ? value.slice(0, ARG_LIMIT) : value;
+  }
+  return args;
+}
+
+/** A coordinate to two decimals, enough for a block position and short in the log. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

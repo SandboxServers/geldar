@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type ActionOutcome, completed } from './outcome.ts';
+import { type ActionOutcome, completed, failed } from './outcome.ts';
 import { type ActionHandler, ActionRegistry, runAction } from './registry.ts';
 
 /** A fake bot with only the world clock: `runAction` reads nothing else. */
@@ -399,5 +399,136 @@ describe('ActionRegistry.onFinished', () => {
     expect(out.state).toBe('completed');
     expect(second).toHaveBeenCalledOnce();
     warn.mockRestore();
+  });
+});
+
+/** A sink that keeps every line; its clock is `clock.t`. */
+function lineSink() {
+  const lines: string[] = [];
+  const clock = { t: 0 };
+  return { lines, clock, sink: { log: (line: string) => lines.push(line), now: () => clock.t } };
+}
+
+/** The parsed JSON of each line. */
+function parsed(lines: string[]): Record<string, unknown>[] {
+  return lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+/** A bot with a clock and a position, for the failure log. */
+function positionedBot(): Bot {
+  return {
+    time: { age: 0 },
+    entity: { position: { x: 10.5, y: 64, z: -3.25 } },
+  } as unknown as Bot;
+}
+
+describe('runAction failure log', () => {
+  it('writes exactly one action_failed line for a failing handler, with do, reason, message and position', async () => {
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(async () => failed('blocked', 'the way was blocked: target occupied')),
+    );
+    const { lines, sink } = lineSink();
+
+    const out = await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    expect(out.result.reason).toBe('blocked');
+    expect(lines).toHaveLength(1);
+    expect(parsed(lines)[0]).toMatchObject({
+      event: 'action_failed',
+      do: 'mine',
+      reason: 'blocked',
+      message: 'the way was blocked: target occupied',
+      pos: { x: 10.5, y: 64, z: -3.25 },
+    });
+    expect(typeof parsed(lines)[0]?.ms).toBe('number');
+  });
+
+  it('writes no line when the handler completes', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => completed()));
+    const { lines, sink } = lineSink();
+
+    const out = await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    expect(out.state).toBe('completed');
+    expect(lines).toEqual([]);
+  });
+
+  it('logs a timeout and a cancel as failures', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(() => new Promise<never>(() => undefined), 5));
+    const { lines, sink } = lineSink();
+    await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    const controller = new AbortController();
+    controller.abort();
+    await runAction(registry, positionedBot(), validMine, {
+      failureSink: sink,
+      signal: controller.signal,
+    });
+
+    expect(parsed(lines).map((line) => line.reason)).toEqual(['timeout', 'cancelled']);
+  });
+
+  it('suppresses duplicates for 2 s per bot and counts them on the next line for that key', async () => {
+    const registry = new ActionRegistry();
+    registry.register(mineHandler(async () => failed('blocked', 'no path')));
+    const bot = positionedBot();
+    const { lines, clock, sink } = lineSink();
+    const run = (): Promise<unknown> => runAction(registry, bot, validMine, { failureSink: sink });
+
+    await run();
+    clock.t = 500;
+    await run();
+    clock.t = 1_000;
+    await run();
+    expect(lines).toHaveLength(1);
+
+    clock.t = 2_500;
+    await run();
+    expect(lines).toHaveLength(2);
+    expect(parsed(lines)[1]).toMatchObject({ message: 'no path', repeats: 2 });
+    expect(parsed(lines)[0]).not.toHaveProperty('repeats');
+  });
+
+  it('keeps a different message on its own rate limit', async () => {
+    let calls = 0;
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(async () => failed('blocked', calls++ === 0 ? 'no path' : 'target occupied')),
+    );
+    const bot = positionedBot();
+    const { lines, clock, sink } = lineSink();
+
+    await runAction(registry, bot, validMine, { failureSink: sink });
+    clock.t = 100;
+    await runAction(registry, bot, validMine, { failureSink: sink });
+
+    expect(parsed(lines).map((line) => line.message)).toEqual(['no path', 'target occupied']);
+  });
+
+  it('truncates long args so the line stays near 400 characters', async () => {
+    const registry = new ActionRegistry();
+    const { lines, sink } = lineSink();
+    const huge = { do: 'mine', block: 'x'.repeat(5_000), count: 2 };
+
+    await runAction(registry, positionedBot(), huge, { failureSink: sink });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.length ?? 0).toBeLessThanOrEqual(480);
+    expect(parsed(lines)[0]?.args).toEqual({ block: 'x'.repeat(80), count: 2 });
+  });
+
+  it('cuts args that stay too long after per-string truncation, so the line stays short', async () => {
+    const registry = new ActionRegistry();
+    const { lines, sink } = lineSink();
+    const many = { do: 'mine', block: 'oak_log', list: Array.from({ length: 2_000 }, () => 7) };
+
+    await runAction(registry, positionedBot(), many, { failureSink: sink });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.length ?? 0).toBeLessThanOrEqual(480);
+    expect(parsed(lines)[0]?.args).toHaveProperty('cut');
   });
 });
