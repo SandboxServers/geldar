@@ -130,6 +130,25 @@ function rig(): Rig {
   return { env, options, inner, addressed, stops, served, deliver };
 }
 
+describe('the ownership client in a Body (decisions 0164, 0165)', () => {
+  it('a Body given a transport subscribes to the change subject, so goto reads the record', async () => {
+    const r = rig();
+    const subscribed: string[] = [];
+    const owners = {
+      request: async () => {
+        throw new Error('no query in this test');
+      },
+      subscribe: (subject: string) => {
+        subscribed.push(subject);
+        return { unsubscribe: () => undefined };
+      },
+    };
+    const running = await startAdamBody({ ...r.env, owners }, fakeBot());
+    expect(subscribed).toEqual(['geldar.phase0.blockowner.changed']);
+    await running.stop();
+  });
+});
+
 describe('startAdamBody', () => {
   it('passes the life, the next generation source and the config to restartBody', async () => {
     const r = rig();

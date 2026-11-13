@@ -6,6 +6,7 @@
  * reports a fault; the supervisor (`main.ts`) then stops this run and starts the next.
  */
 import type { Bot } from 'mineflayer';
+import { type OwnerTransport, wireBlockOwners } from '../body/block-owners.ts';
 import type { Body } from '../body/create-body.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
 import {
@@ -44,6 +45,8 @@ export interface AdamBodyEnv {
   publisher: EventPublisher;
   /** Where the Mind's requests arrive (core NATS in production). */
   server: RequestServer;
+  /** The Body's NATS connection for the block ownership record (decision 0165); absent in tests. */
+  owners?: OwnerTransport;
   log: (line: string) => void;
   /** Replaced in tests; the real `restartBody` otherwise. */
   restart?: (options: RestartBodyOptions) => Promise<RestartedBody>;
@@ -73,6 +76,11 @@ export interface RunningAdamBody {
  */
 export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<RunningAdamBody> {
   const { config, log } = env;
+  // The ownership record for goto's digging (decisions 0164, 0165): on the Body's own connection.
+  const owners =
+    env.owners === undefined
+      ? undefined
+      : wireBlockOwners({ bot, shard: config.shard, transport: env.owners, log });
   const revision = new SnapshotRevision();
   const tick = (): number => worldAge(bot) ?? 0;
   const speech = new SpeechEvents({
@@ -270,6 +278,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       detachHurts();
       hurts?.close();
       detachEars();
+      owners?.stop();
       // No new plan is accepted from here on. Then the executor and the running action end, so a
       // plan the link awaits can finish; only after that is the link waited for.
       link?.stopServing();

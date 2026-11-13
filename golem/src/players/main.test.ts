@@ -3,7 +3,7 @@ import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import type { AdamBodyEnv } from '../adam/adam-body.ts';
 import { FakeRequestServer, LIFE, SHARD } from '../mind-link/server.fakes.ts';
-import { bookServe, playerIdFromArgs, startPlayerBody } from './main.ts';
+import { bookServe, playerBodyEnv, playerIdFromArgs, startPlayerBody } from './main.ts';
 
 // The Body itself is not under test here: the stub stands in for `startAdamBody`, so the
 // `extraServe` path of `startPlayerBody` runs for real.
@@ -26,6 +26,21 @@ const OTHER_LIFE = 'ag_jason_01';
 function bot(): Bot {
   return { heldItem: WRITTEN, inventory: { items: () => [] } } as unknown as Bot;
 }
+
+describe('the player host body env (decision 0165)', () => {
+  it('carries the host connection as the ownership transport, so the ranger Body wires it', () => {
+    const nc = {} as Parameters<typeof playerBodyEnv>[0]['nc'];
+    const env = playerBodyEnv({
+      config: {} as AdamBodyEnv['config'],
+      kv: {} as AdamBodyEnv['kv'],
+      publisher: { publish: async () => undefined },
+      nc,
+      server: new FakeRequestServer(),
+      log: () => {},
+    });
+    expect(env.owners).toBe(nc);
+  });
+});
 
 describe('playerIdFromArgs', () => {
   it('reads the id after --player', () => {
