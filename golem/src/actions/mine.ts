@@ -77,6 +77,9 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   const wanted = new Set<number>([info.id]);
   const start = snapshot(bot);
   const tried = new Set<string>();
+  // Set when a candidate was the block under the feet and was skipped: when nothing else is left
+  // in reach, the action fails as "would drop the bot".
+  let skippedFloor = false;
   let mined = 0;
   let lastMined = '';
   const handNotes: string[] = [];
@@ -90,11 +93,16 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     });
     const at = found[0];
     if (!at) {
+      if (skippedFloor) return failed('not_possible', 'would drop the bot', { mined });
       return failed('not_found', `no ${action.block} within ${SEARCH_DISTANCE} blocks`, { mined });
     }
+    // Every pass adds a new cell to `tried`, so the loop ends within the blocks in range.
     tried.add(at.toString());
-    // Breaking the block under the feet would drop the bot.
-    if (standsOn(bot, at)) return failed('not_possible', 'would drop the bot', { mined });
+    // Breaking the block under the feet would drop the bot: skip it and take the next nearest.
+    if (standsOn(bot, at)) {
+      skippedFloor = true;
+      continue;
+    }
 
     // Mineflayer's own dig reach comes first. A block in reach needs no walk, and a high block of
     // a trunk has no standing cell for the pathfinder to walk to.
@@ -102,7 +110,11 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (!(target && bot.canDigBlock(target))) {
       const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
       if (!reach.ok) return fromMove(bot, reach, mined);
-      if (standsOn(bot, at)) return failed('not_possible', 'would drop the bot', { mined });
+      // The walk ended on the block: skip it, as above.
+      if (standsOn(bot, at)) {
+        skippedFloor = true;
+        continue;
+      }
     }
     if (signal.aborted) return abort(bot, mined);
 
@@ -131,7 +143,11 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
       const reach = await moveNear(bot, at, DIG_RANGE, { signal, timeScale: ctx.timeScale });
       if (!reach.ok) return fromMove(bot, reach, mined);
       if (signal.aborted) return abort(bot, mined);
-      if (standsOn(bot, at)) return failed('not_possible', 'would drop the bot', { mined });
+      // The retry walk ended on the block: skip it, as above, and dig nothing more here.
+      if (standsOn(bot, at)) {
+        skippedFloor = true;
+        continue;
+      }
       error = await digOnce(bot, block, signal);
     }
     if (error !== null) {
