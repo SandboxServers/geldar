@@ -101,3 +101,53 @@ docker exec -i geldar-colo-glass-1 node --input-type=module-typescript - --out /
 
 `--agent <life id>` limits it to one agent. Journal entries are only part of the thought stream, so a count of 1500 may
 hold fewer journal entries than you expect; page further for a longer run.
+
+## Change-window table (one run)
+
+`--since <iso>` and `--until <iso>` cut every input (Paper, Body, outcomes, positions, inventory, thoughts) to
+`[since, until)`. Body lines with no time cannot be placed and are dropped when a cut is given; give docker logs
+`--timestamps`. `--windows <file>` takes a JSON list of named windows and prints one row per agent per window:
+
+```json
+[
+  {"name": "W0 old pacing", "start": "2026-01-02T10:00:00Z", "end": "2026-01-02T12:00:00Z"},
+  {"name": "W1 new pacing", "start": "2026-01-02T12:00:00Z", "end": "2026-01-02T13:00:00Z"}
+]
+```
+
+```bash
+node tools/progress-metrics/src/cli.ts --paper paper.log --date 2026-01-02 --body 'host-*.log' \
+  --thoughts thoughts.json --positions pos.tsv --windows windows.json --min-events 5 --csv windows.csv
+```
+
+`--windows` cannot be combined with `--window-minutes`. The repeated-journal share carries the previous 20 journal
+lines across every window start (also `--since`), so a window start is not low by construction.
+
+A window or agent with fewer than `--min-events` events (default 5; Paper, Body, position and journal events) shows
+`n/a` in the rate columns and `insufficient data (N events, covered <from> to <to>)` in the note. Host logs only
+reach back to the last container recreate: read the covered range before reading a rate.
+
+## Stall diagnostics columns
+
+- stall lines: `stall_diag` lines that are not ladder rungs. Ladder rung lines (`reason: escape_ladder`) are counted
+  in `rungs` and kept per rung in the CSV (`rungTried`, `rungWorked`); they never add to the stall count.
+- forced_move: count of `forced_move` lines. They carry no life id: pass the file of one host per `--body` (the file
+  name or `--agent` gives the agent) and use `docker logs --timestamps`.
+- max corr/10s: highest `corrections_10s` of a stall line. high corr: share of stall lines with `corrections_10s` of
+  10 or more. note `rubber-banding`: at least two stall lines carry the value and at least half are high.
+- other stall_diag fields read: `control`, `blocks.below`, `blocks.at`, `ticks_since_correction`, `path_status`,
+  `recovery` (parsed into `BodyEvent.diag`; not columns).
+
+## Position samples from an rcon log
+
+`--positions` takes tab separated lines `<iso time>\t<agent>\t<raw rcon reply>` (`sample.sh` writes them; the reply
+is `<agent> has the following entity data: [x, y, z]`). A run of only a few samples (for example 3 samples 5 s apart)
+is enough for the note `did not move in 3 samples (every 5 s)`: all samples within 1 block of the first, the
+sample interval is the median gap. Chunks, stuck seconds and time to first tool mean nothing on a few seconds of data.
+
+## Outcomes feed
+
+Action outcomes are not in the player-host logs. Capture the NATS `action_outcome` envelopes (one JSON per line,
+fields `type`, `agent_id`, `at`, `payload.{verb,ok,reason}`) during the window into a file and pass it with
+`--outcomes <file|glob>`. Without it the no_effect column is empty. Start the capture before the change and keep it
+running: it cannot be recovered afterwards.

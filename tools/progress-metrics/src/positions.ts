@@ -29,7 +29,21 @@ export type PosMetrics = {
   stuckMs: number;
   /** From the start of that longest stuck stretch to the first sample outside it; null if never left. */
   escapeMs: number | null;
+  samples: number;
+  /** Median gap between samples in seconds; null under two samples. */
+  intervalSec: number | null;
+  /** Largest distance of any sample from the first one. */
+  maxDisplacement: number;
 };
+
+/** An agent whose samples all stay within this many blocks of the first one did not move. */
+export const MOVED_BLOCKS = 1;
+
+/** did not move in 3 samples (every 5 s), or empty when there is movement or under two samples. */
+export function stillNote(m: PosMetrics): string {
+  if (m.samples < 2 || m.intervalSec === null || m.maxDisplacement >= MOVED_BLOCKS) return '';
+  return `did not move in ${m.samples} samples (every ${m.intervalSec.toFixed(0)} s)`;
+}
 
 /** A jump larger than this between two samples is a teleport or respawn, not travel. */
 const TELEPORT_BLOCKS = 100;
@@ -71,5 +85,20 @@ export function positionMetrics(samples: PosSample[]): PosMetrics {
       escapeMs = out ? out.at - (s[i] as PosSample).at : null;
     }
   }
-  return { distance, chunks: chunks.size, stuckMs, escapeMs };
+  const gaps = s
+    .slice(1)
+    .map((p, i) => p.at - (s[i] as PosSample).at)
+    .sort((a, b) => a - b);
+  const first = s[0];
+  return {
+    distance,
+    chunks: chunks.size,
+    stuckMs,
+    escapeMs,
+    samples: s.length,
+    intervalSec: gaps.length === 0 ? null : (gaps[Math.floor(gaps.length / 2)] as number) / 1000,
+    maxDisplacement: first
+      ? Math.max(...s.map((p) => Math.hypot(p.x - first.x, p.y - first.y, p.z - first.z)))
+      : 0,
+  };
 }

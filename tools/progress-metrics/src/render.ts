@@ -17,20 +17,40 @@ export function renderMarkdown(rows: Row[]): string {
     'no_effect',
     'escape success',
     'episode success',
+    'stall lines',
+    'rungs',
+    'forced_move',
+    'max corr/10s',
+    'high corr',
+    'note',
   ];
   const lines = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`];
   for (const r of rows) {
+    const n = r.insufficient === 1 ? 'n/a' : null;
+    const note = [
+      r.insufficient === 1
+        ? `insufficient data (${r.events} events, covered ${r.dataFrom ? `${r.dataFrom.slice(0, 16)} to ${r.dataTo.slice(0, 16)}` : 'nothing'})`
+        : '',
+      r.rubberBanding,
+      r.positionNote,
+    ].filter(Boolean);
     const cells = [
       r.agent,
-      iso(r.windowStart),
+      r.window || iso(r.windowStart),
       num(r.timeToFirstToolMin),
-      num(r.deathsPerHour, 2),
-      String(r.chunks),
-      num(r.stuckSeconds, 0),
-      pct(r.repeatedJournalShare),
-      pct(r.noEffectShare),
-      pct(r.escapeSuccessRate),
-      pct(r.episodeSuccessRate),
+      n ?? num(r.deathsPerHour, 2),
+      n ?? String(r.chunks),
+      n ?? num(r.stuckSeconds, 0),
+      n ?? pct(r.repeatedJournalShare),
+      n ?? pct(r.noEffectShare),
+      n ?? pct(r.escapeSuccessRate),
+      n ?? pct(r.episodeSuccessRate),
+      String(r.stallDiag),
+      String(r.rungLines),
+      String(r.forcedMoves),
+      num(r.maxCorrections10s, 0),
+      pct(r.highCorrectionShare),
+      note.join('; '),
     ];
     lines.push(`| ${cells.join(' | ')} |`);
   }
