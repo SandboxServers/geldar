@@ -30,6 +30,7 @@ function fakeBot(grid: Grid, health = 20) {
   let dir = new Vec3(0, 0, 0);
   const bot = {
     health,
+    game: { dimension: 'minecraft:the_nether' },
     entity: { position: new Vec3(0.5, 64, 0.5), height: 1.62 },
     blockAt: (cell: Vec3) => blockOf(grid, cell),
     async lookAt(target: Vec3) {
@@ -97,7 +98,13 @@ describe('unstick last resort (owner ruling 2026-11-13)', () => {
     expect(lines).toHaveLength(dug.length);
     // The sideways dig takes the head cell (y 65) first, then the feet cell (y 64).
     expect(lines.map((line) => JSON.parse(line))).toContainEqual(
-      expect.objectContaining({ event: 'unstick_breach', block: 'oak_planks', x: 1, z: 0 }),
+      expect.objectContaining({
+        event: 'unstick_breach',
+        block: 'oak_planks',
+        x: 1,
+        z: 0,
+        dimension: 'minecraft:the_nether',
+      }),
     );
     log.mockRestore();
   });
