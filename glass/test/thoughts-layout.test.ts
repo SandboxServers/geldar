@@ -199,3 +199,18 @@ describe('index.html', () => {
     expect(folded).not.toContain('id="f-keyword"');
   });
 });
+
+it('offers a closed About disclosure under the banner with only two fixed links', () => {
+  const about = HTML.slice(HTML.indexOf('<details class="about">'), HTML.indexOf('</header>'));
+  expect(about).toContain('<summary>About this page</summary>');
+  expect(about).not.toMatch(/<details[^>]* open/);
+  expect(HTML.indexOf('<details class="about">')).toBeGreaterThan(HTML.indexOf('class="banner"'));
+  expect(about).toContain('some living agents are not shown');
+  expect(
+    [...HTML.matchAll(/<a href="([^"]+)" rel="([^"]+)">([^<]+)<\/a>/g)].map((m) => m.slice(1)),
+  ).toEqual([
+    ['https://map.geldar.sandboxservers.games', 'noopener noreferrer', 'Live map'],
+    ['https://github.com/SandboxServers/geldar', 'noopener noreferrer', 'Source code'],
+  ]);
+  expect(HTML.match(/<a\s/g)).toHaveLength(2);
+});
