@@ -140,6 +140,14 @@ BEGIN
   IF n <> 1 THEN
     RAISE EXCEPTION 'schema check (%): a renewal wrote % audit rows, expected 1', step, n;
   END IF;
+  -- the actor is the owner id hash (0025 header), the same form the supervisor writes
+  step := 'audit: the renewal actor is the owner id hash, not the raw owner id';
+  SELECT count(*) INTO n FROM register_audit
+    WHERE target = 'ag-tl-a-01' AND action = 'token.renew'
+      AND actor = left(encode(sha256(convert_to((SELECT i.owner_id FROM mcp_identities i WHERE i.identity_hash = a_hash), 'UTF8')), 'hex'), 16);
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'schema check (%): the renewal actor is not the owner id hash', step;
+  END IF;
 
   -- refusals: each is 42501 and stores no token
   step := 'refusals: another owner player, banned identity, retired player, no live token';

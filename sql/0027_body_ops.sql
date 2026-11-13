@@ -1,6 +1,7 @@
 -- Migration 0027 (C7-03a, decision 0170): the body supervisor's counters and its grants.
 -- body_ops keeps one row per accepted start or restart (refused and failed requests keep no row).
--- The supervisor counts its per-agent hourly and per-owner daily starts from it. Rows are never
+-- The supervisor counts its per-player hourly and per-owner daily starts from it. player_name is the
+-- roster name the body runs as (not an agent id). Rows are never
 -- updated or deleted by the supervisor role. The supervisor role reads the admin flag through
 -- register_is_admin (0025) and appends to register_audit (0025); it gets no write on mcp_owners.
 
@@ -8,11 +9,11 @@ CREATE TABLE IF NOT EXISTS body_ops (
   id BIGSERIAL PRIMARY KEY,
   at TIMESTAMPTZ NOT NULL DEFAULT now(),
   owner_id TEXT NOT NULL CHECK (char_length(owner_id) BETWEEN 1 AND 64),
-  agent_id TEXT NOT NULL CHECK (char_length(agent_id) BETWEEN 1 AND 128),
+  player_name TEXT NOT NULL CHECK (char_length(player_name) BETWEEN 1 AND 64),
   op TEXT NOT NULL CHECK (op IN ('start', 'restart'))
 );
 
-CREATE INDEX IF NOT EXISTS body_ops_agent_at ON body_ops (agent_id, at);
+CREATE INDEX IF NOT EXISTS body_ops_player_at ON body_ops (player_name, at);
 CREATE INDEX IF NOT EXISTS body_ops_owner_at ON body_ops (owner_id, at);
 
 DO $role$

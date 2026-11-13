@@ -1,6 +1,6 @@
 -- Fails with RAISE EXCEPTION unless mcp_roster (migration 0024) has its shape and its checks:
 -- max_agents defaults to 1 and refuses 0 and 5, owner_id must name an owner, and player_name is
--- unique. Each probe row is rolled back by the final raise, so the check leaves no rows behind.
+-- unique in any letter case. Each probe row is rolled back by the final raise, so the check leaves no rows behind.
 -- Run after the migrations, with the other check-schema files.
 DO $roster$
 BEGIN
@@ -38,6 +38,13 @@ BEGIN
   BEGIN
     INSERT INTO mcp_roster (player_name, owner_id) VALUES ('RosterProbe', 'roster-probe');
     RAISE EXCEPTION 'a duplicate name was accepted' USING ERRCODE = 'XX000';
+  EXCEPTION WHEN unique_violation THEN NULL;
+  END;
+
+  INSERT INTO mcp_roster (player_name, owner_id) VALUES ('Ranger', 'roster-probe');
+  BEGIN
+    INSERT INTO mcp_roster (player_name, owner_id) VALUES ('ranger', 'roster-probe');
+    RAISE EXCEPTION 'a roster name differing only by case was accepted' USING ERRCODE = 'XX000';
   EXCEPTION WHEN unique_violation THEN NULL;
   END;
 

@@ -97,7 +97,7 @@ BEGIN
   -- The audit row commits with the rotation: if the insert fails, the renewal is rolled back and the
   -- old token keeps its expiry (no new secret is returned for an unaudited renewal).
   INSERT INTO public.register_audit (actor, action, target, outcome, admin)
-    VALUES (who, 'token.renew', p_player_id, 'renewed', public.register_is_admin(who));
+    VALUES (left(encode(sha256(convert_to(who, 'UTF8')), 'hex'), 16), 'token.renew', p_player_id, 'renewed', public.register_is_admin(who));
 END
 $renew$;
 
@@ -126,7 +126,7 @@ BEGIN
     WHERE t.player_id = p_player_id AND t.revoked_at IS NULL;
   GET DIAGNOSTICS ended = ROW_COUNT;
   INSERT INTO public.register_audit (actor, action, target, outcome, admin)
-    VALUES (who, 'token.revoke', p_player_id, 'revoked', public.register_is_admin(who));
+    VALUES (left(encode(sha256(convert_to(who, 'UTF8')), 'hex'), 16), 'token.revoke', p_player_id, 'revoked', public.register_is_admin(who));
   RETURN ended;
 END
 $revoke$;
