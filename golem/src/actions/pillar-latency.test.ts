@@ -1,0 +1,165 @@
+import { createRequire } from 'node:module';
+import { Vec3 } from 'vec3';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { defaultBlock, realBlock, registry } from './door-blocks.fakes.ts';
+import {
+  AIR,
+  block,
+  type FakeBlock,
+  type Scene,
+  type State,
+  scriptedBot,
+} from './escape-ladder.fakes.ts';
+import { moveNear } from './pathing.ts';
+import { placeAction } from './place.ts';
+
+vi.mock('./pathing.ts', () => ({
+  moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
+}));
+
+/** prismarine-physics as mineflayer runs it (golem does not declare it). */
+const fromMineflayer = createRequire(createRequire(import.meta.url).resolve('mineflayer'));
+const { Physics } = fromMineflayer('prismarine-physics') as {
+  Physics: (
+    mcData: unknown,
+    world: unknown,
+  ) => {
+    simulatePlayer(
+      state: unknown,
+      world: unknown,
+    ): Record<string, unknown> & { pos: Vec3; onGround: boolean };
+  };
+};
+
+/** The cell the bot's feet are in: the dirt goes here, on the stone at (0,63,0). */
+const PLACED_AT = '0,64,0';
+const LIVE_MESSAGE = 'you did not rise onto the block: clear the space above you and try again';
+const UNCONFIRMED =
+  'the block did not appear at the target: stand on solid ground and choose a block position next to you';
+const NO_CONTROLS = {
+  forward: false,
+  back: false,
+  left: false,
+  right: false,
+  jump: false,
+  sprint: false,
+  sneak: false,
+};
+
+const keyOf = (v: Vec3) => `${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}`;
+
+/** The scene's blocks as the real block states prismarine-physics reads. */
+function physicsWorld(scene: Scene) {
+  return {
+    getBlock(pos: Vec3) {
+      const fake: FakeBlock = scene.blocks?.[keyOf(pos)] ?? AIR;
+      const real = defaultBlock(fake.name) as unknown as { position: Vec3 };
+      real.position = pos.clone();
+      return real;
+    },
+  };
+}
+
+/** Steps the bot on real prismarine physics each tick the scene ticks, reading its jump control. */
+function realPhysics(scene: Scene): (s: State) => void {
+  const world = physicsWorld(scene);
+  const physics = Physics(registry, world);
+  let state: Record<string, unknown> | undefined;
+  return (s) => {
+    state ??= {
+      pos: s.position.clone(),
+      vel: new Vec3(0, 0, 0),
+      onGround: true,
+      isInWater: false,
+      isInLava: false,
+      isInWeb: false,
+      isCollidedHorizontally: false,
+      isCollidedVertically: false,
+      elytraFlying: false,
+      jumpTicks: 0,
+      jumpQueued: false,
+      fireworkRocketDuration: 0,
+      jumpBoost: 0,
+      speed: 0,
+      attributes: {},
+      yaw: 0,
+      pitch: 0,
+      control: NO_CONTROLS,
+    };
+    state.control = { ...NO_CONTROLS, jump: s.controls.jump === true };
+    const out = physics.simulatePlayer(state, world);
+    state = { ...state, ...out };
+    s.position.set(out.pos.x, out.pos.y, out.pos.z);
+    (s.entity as { onGround?: boolean }).onGround = out.onGround;
+  };
+}
+
+/**
+ * A bot on real physics whose server answers a placement after `ticks` ticks, as mineflayer's
+ * `placeBlock` resolves on the block update: `answer` writes that update into the scene.
+ */
+function serverFake(ticks: number, answer: (scene: Scene) => void, placeError?: Error) {
+  const scene: Scene = { items: ['dirt'], blocks: { '0,63,0': block('stone') } };
+  scene.physics = realPhysics(scene);
+  const fake = scriptedBot(scene);
+  // The real registry gives the dirt's default state; the world takes state ids as mineflayer's does.
+  Object.assign(fake.bot, {
+    registry,
+    world: {
+      setBlockStateId(pos: Vec3, stateId: number) {
+        scene.blocks = {
+          ...scene.blocks,
+          [keyOf(pos)]: realBlock(stateId) as unknown as FakeBlock,
+        };
+      },
+    },
+  });
+  Object.assign(fake.bot.entity, { onGround: true });
+  fake.bot.placeBlock.mockImplementation(async () => {
+    // Each call of the scripted wait is one tick of the scene's physics.
+    for (let i = 0; i < ticks; i++) await fake.bot.waitForTicks();
+    if (placeError) throw placeError;
+    answer(scene);
+  });
+  return fake;
+}
+
+const pillar = (fake: ReturnType<typeof serverFake>) =>
+  placeAction.run(
+    { bot: fake.asBot, signal: new AbortController().signal, timeScale: 1 },
+    { do: 'place', block: 'dirt', at: 'feet' },
+  );
+
+const dirtUpdate = (scene: Scene) => {
+  scene.blocks = { ...scene.blocks, [PLACED_AT]: block('dirt') };
+};
+
+beforeEach(() => {
+  vi.mocked(moveNear).mockClear();
+});
+
+describe('pillar against a late block update (real prismarine physics)', () => {
+  it.each([0, 4, 6, 8, 10])(
+    'lands on the dirt when the server answers after %i ticks',
+    async (ticks) => {
+      const fake = serverFake(ticks, dirtUpdate);
+      const outcome = await pillar(fake);
+      expect(outcome).toMatchObject({ status: 'completed' });
+      expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
+    },
+  );
+
+  it('refuses with the unconfirmed message when the placement resolves but the cell is air', async () => {
+    const fake = serverFake(3, (scene) => {
+      scene.blocks = { ...scene.blocks, [PLACED_AT]: AIR };
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: UNCONFIRMED });
+  });
+
+  it('refuses with the live message when the server refuses the placement', async () => {
+    const fake = serverFake(3, () => undefined, new Error('Server refused to place dirt'));
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: LIVE_MESSAGE });
+  });
+});
