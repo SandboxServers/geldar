@@ -31,6 +31,15 @@ BEGIN
     RAISE EXCEPTION 'schema check (%): register_is_admin must be executable and false for an unknown owner', step;
   END IF;
 
+  step := 'definer: register_is_admin and the audit trigger pin search_path, and PUBLIC has no EXECUTE on the trigger';
+  IF EXISTS (SELECT 1 FROM pg_proc p
+             WHERE p.proname IN ('register_is_admin', 'register_audit_append_only')
+               AND NOT (coalesce(p.proconfig, '{}') @> ARRAY['search_path=pg_catalog, public, pg_temp']))
+     OR EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                WHERE p.proname = 'register_audit_append_only' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE') THEN
+    RAISE EXCEPTION 'schema check (%): the audit trigger and register_is_admin must pin the search_path and not be public', step;
+  END IF;
+
   step := 'trigger: register_audit refuses UPDATE and DELETE';
   INSERT INTO register_audit (actor, action, target, outcome)
   VALUES ('operator', 'admin_set', 'probe-owner', 'ok')

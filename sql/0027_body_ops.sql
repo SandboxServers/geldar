@@ -34,7 +34,7 @@ GRANT SELECT ON mcp_roster TO geldar_supervisor;
 -- register_* function is executable by geldar_register only (check-schema.sql, gates of 0011).
 -- It delegates to register_is_admin, so the flag rule has one implementation.
 CREATE OR REPLACE FUNCTION supervisor_is_admin(p_owner TEXT) RETURNS BOOLEAN
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $fn$
   SELECT public.register_is_admin(p_owner)
 $fn$;
 REVOKE ALL ON FUNCTION supervisor_is_admin(TEXT) FROM PUBLIC;

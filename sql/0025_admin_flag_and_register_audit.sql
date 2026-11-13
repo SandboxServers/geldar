@@ -11,7 +11,7 @@ ALTER TABLE mcp_owners ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAUL
 -- owner_id would need a column grant on owner_id, which the 0012 read gates forbid. Fails closed:
 -- an unknown owner reads false.
 CREATE OR REPLACE FUNCTION register_is_admin(p_owner TEXT) RETURNS BOOLEAN
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $fn$
   SELECT coalesce((SELECT o.is_admin FROM public.mcp_owners o WHERE o.owner_id = p_owner), false)
 $fn$;
 
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS register_audit (
 );
 
 CREATE OR REPLACE FUNCTION register_audit_append_only() RETURNS trigger
-LANGUAGE plpgsql AS $fn$
+LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $fn$
 BEGIN
   RAISE EXCEPTION 'append-only: % on % is refused', TG_OP, TG_TABLE_NAME
     USING ERRCODE = 'check_violation',
@@ -44,6 +44,9 @@ DROP TRIGGER IF EXISTS register_audit_append_only ON register_audit;
 CREATE TRIGGER register_audit_append_only
 BEFORE UPDATE OR DELETE ON register_audit
 FOR EACH ROW EXECUTE FUNCTION register_audit_append_only();
+
+-- A trigger function is not an API: no role but the migration owner may execute it (gates of 0011).
+REVOKE ALL ON FUNCTION register_audit_append_only() FROM PUBLIC;
 
 REVOKE ALL ON register_audit FROM PUBLIC;
 GRANT SELECT, INSERT ON register_audit TO geldar_register;
