@@ -45,6 +45,7 @@ interface FakeBot {
   bot: Bot;
   placeBlock: ReturnType<typeof vi.fn>;
   look: ReturnType<typeof vi.fn>;
+  setControlState: ReturnType<typeof vi.fn>;
 }
 
 function key(p: Vec3): string {
@@ -74,6 +75,7 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
       held = stack;
     }),
     look: vi.fn(async () => undefined),
+    setControlState: vi.fn(),
     blockAt: (p: Vec3) => {
       const name = world.get(key(p)) ?? 'air';
       return { name, position: p, boundingBox: BOXES[name] };
@@ -84,7 +86,12 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
       world.set(key(reference.position.plus(face)), options.placedAs ?? held?.name ?? 'air');
     }),
   };
-  return { bot: bot as unknown as Bot, placeBlock: bot.placeBlock, look: bot.look };
+  return {
+    bot: bot as unknown as Bot,
+    placeBlock: bot.placeBlock,
+    look: bot.look,
+    setControlState: bot.setControlState,
+  };
 }
 
 /** Runs the `place` handler with a fresh abort signal. */
@@ -540,5 +547,60 @@ describe('place at feet as a pillar (decision 0160)', () => {
     });
     const outcome = await pillar(fake);
     expect(outcome).toMatchObject({ status: 'completed' });
+  });
+
+  it('holds the sneak through a placement against a crafting table, and releases it after', async () => {
+    const fake = pillarFake({ '0,63,0': block('crafting_table') });
+    const held: unknown[] = [];
+    fake.bot.placeBlock.mockImplementation(async () => {
+      held.push(fake.state.controls.sneak);
+    });
+    await pillar(fake);
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(held).toEqual([true]);
+    expect(fake.state.controls.sneak).toBe(false);
+  });
+
+  it('does not sneak for a pillar on plain stone', async () => {
+    const fake = pillarFake({ '0,63,0': block('stone') });
+    await pillar(fake);
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.bot.setControlState).not.toHaveBeenCalledWith('sneak', expect.anything());
+  });
+});
+
+describe('placing against a block that opens on use', () => {
+  it('holds the sneak while placing against a crafting table, and releases it after', async () => {
+    const fake = fakeBot({ blocks: { '10,63,0': 'crafting_table' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.setControlState.mock.calls).toEqual([
+      ['sneak', true],
+      ['sneak', false],
+    ]);
+    const [on, off] = fake.setControlState.mock.invocationCallOrder;
+    const placed = fake.placeBlock.mock.invocationCallOrder[0] ?? 0;
+    expect(on).toBeLessThan(placed);
+    expect(placed).toBeLessThan(off ?? 0);
+  });
+
+  it('releases the sneak when the placement throws', async () => {
+    const fake = fakeBot({
+      blocks: { '10,63,0': 'crafting_table' },
+      items: ['dirt'],
+      placeError: 'socket closed',
+    });
+    await expect(place(fake, 'dirt', { x: 10, y: 64, z: 0 })).rejects.toThrow('socket closed');
+    expect(fake.setControlState.mock.calls).toEqual([
+      ['sneak', true],
+      ['sneak', false],
+    ]);
+  });
+
+  it('does not sneak when the reference is plain stone', async () => {
+    const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.setControlState).not.toHaveBeenCalled();
   });
 });

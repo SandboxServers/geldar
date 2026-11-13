@@ -3,7 +3,7 @@ import type { Position } from './bot-types.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
-import { edgeCell, entityInCell, pillarStep } from './pillar.ts';
+import { edgeCell, entityInCell, pillarStep, placeAgainst } from './pillar.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -164,7 +164,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       target.z - referencePos.z,
     );
     try {
-      await bot.placeBlock(reference, face);
+      await placeAgainst(bot, reference, face);
     } catch (error) {
       const message = errorText(error);
       if (/did not answer the placement|did not fire within timeout/.test(message)) {

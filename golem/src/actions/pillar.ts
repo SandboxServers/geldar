@@ -55,6 +55,68 @@ export function release(bot: Bot): void {
   for (const control of ['forward', 'jump', 'sprint'] as const) bot.setControlState(control, false);
 }
 
+/**
+ * Blocks whose right-click opens a screen, rings, toggles or eats. Vanilla uses such a block when a
+ * player right-clicks it, unless the player sneaks: a placement against one needs the sneak.
+ */
+const OPENS_ON_USE = new Set([
+  'crafting_table',
+  'chest',
+  'trapped_chest',
+  'ender_chest',
+  'furnace',
+  'blast_furnace',
+  'smoker',
+  'barrel',
+  'anvil',
+  'chipped_anvil',
+  'damaged_anvil',
+  'enchanting_table',
+  'grindstone',
+  'loom',
+  'cartography_table',
+  'fletching_table',
+  'smithing_table',
+  'stonecutter',
+  'lever',
+  'note_block',
+  'jukebox',
+  'dispenser',
+  'dropper',
+  'hopper',
+  'brewing_stand',
+  'beacon',
+  'bell',
+  'cake',
+  'respawn_anchor',
+]);
+/** Names ending in a door, bed, gate, button, sign or box part: each is used on right-click. */
+const OPENS_ON_USE_SUFFIX = /(^|_)(bed|door|trapdoor|fence_gate|button|shulker_box|sign)$/;
+
+/** True when a right-click on the block uses it (opens, toggles or eats), so a placement against it needs the sneak. */
+export function opensOnUse(name: string): boolean {
+  return OPENS_ON_USE.has(name) || OPENS_ON_USE_SUFFIX.test(name);
+}
+
+/**
+ * Places `face`-ward against `reference`. Holds the sneak for the send when the reference opens on use:
+ * the server then places the block instead of using the reference. The sneak is released after, also when
+ * the placement throws.
+ */
+export async function placeAgainst(
+  bot: Bot,
+  reference: Parameters<Bot['placeBlock']>[0],
+  face: Vec3,
+): Promise<void> {
+  const sneak = opensOnUse(reference.name);
+  if (sneak) bot.setControlState('sneak', true);
+  try {
+    await bot.placeBlock(reference, face);
+  } finally {
+    if (sneak) bot.setControlState('sneak', false);
+  }
+}
+
 /** The first inventory item that is a placeable block, by registry name. */
 export function heldBlock(bot: Bot): unknown {
   return bot.inventory.items().find((item) => {
@@ -194,7 +256,7 @@ export async function pillarStep(
         solid(ground)
       ) {
         if (passable(bot.blockAt(cell))) {
-          await bot.placeBlock(ground, new Vec3(0, 1, 0));
+          await placeAgainst(bot, ground, new Vec3(0, 1, 0));
           placed = true;
         }
       }
