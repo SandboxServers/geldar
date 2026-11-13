@@ -15,6 +15,25 @@ type Entity = Bot['entities'][string];
 export const GIVE_REACH = 3;
 /** The pitch (radians) the Body looks down at when it tosses: 30 degrees down. Positive is up. */
 export const TOSS_PITCH = -Math.PI / 6;
+
+/**
+ * The pitch (radians, positive is up) the Body tosses at, given how far the recipient's feet are
+ * above the Body's (`dy`, blocks) and how far out it stands (`d`, blocks). Level or lower, it is
+ * `TOSS_PITCH`. One block up, a 30-degree throw hits the step's face, so it goes up: 65 degrees at
+ * 1.5 blocks, 45 at 3 (a straight line in between, clamped). Two or more blocks up it is 60 degrees
+ * out to 2 blocks and 50 beyond. Any rise from 0 to 1.5 uses the one-block pitch, which only whole
+ * blocks were simulated for. Simulated with vanilla constants (see the report): at dy 1 these
+ * pitches reach the recipient's pickup box with P 0.87 to 1.00 and clear the step; at dy 2 the
+ * chance falls to 0.24 at 3 blocks.
+ */
+export function tossPitch(dy: number, d: number): number {
+  if (dy <= 0) return TOSS_PITCH;
+  if (dy < 1.5) {
+    const reach = Math.min(Math.max(d, 1.5), 3);
+    return ((65 - ((reach - 1.5) * 40) / 3) * Math.PI) / 180;
+  }
+  return ((d <= 2 ? 60 : 50) * Math.PI) / 180;
+}
 /** The Body walks up to this close (blocks) to the recipient first. */
 const WALK_RANGE = 2;
 /**
@@ -204,7 +223,8 @@ async function settle(
  * `WALK_RANGE` blocks from the recipient, checks again that it is in sight and within
  * `GIVE_REACH`, steps back to `STEP_BACK_TO` blocks if the recipient is closer than
  * `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
- * its height and `TOSS_PITCH` down, waits two ticks for the look to reach the server, and tosses.
+ * its height, looks at the `tossPitch` for the height difference and distance, waits two ticks for
+ * the look to reach the server, and tosses.
  * The give completes only when the
  * recipient picks up every tossed item within `PICKUP_WAIT_MS`. When the recipient picks up none,
  * the Body takes the items back and says so; if it cannot, it says where the items are, with no
@@ -256,7 +276,9 @@ export const giveAction: ActionHandler<'give'> = {
     try {
       // Aim at about the recipient's middle, not its feet, so the toss carries past the Body.
       await bot.lookAt(target.position.offset(0, target.height * 0.9, 0), true);
-      await bot.look(bot.entity.yaw, TOSS_PITCH, true);
+      const rise = target.position.y - bot.entity.position.y;
+      const pitch = tossPitch(rise, horizontalGap(bot.entity.position, target.position));
+      await bot.look(bot.entity.yaw, pitch, true);
       // The look reaches the server on the next tick; tossing before then throws the old look.
       await bot.waitForTicks(2);
       if (ctx.signal.aborted) return cancelled();
