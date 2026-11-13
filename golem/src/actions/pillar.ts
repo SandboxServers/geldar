@@ -232,6 +232,84 @@ export function edgeCell(bot: Bot, feet: Vec3, needHeadroom = false): Vec3 | nul
 }
 
 /**
+ * True when `cell` may be dug for a crowded pillar: solid, not unbreakable, and digging it now is hazard-free
+ * (`strictFalling`). `own` are the bot's cells, which do not count as a neighbour.
+ */
+function sideDiggable(bot: Bot, cell: Vec3, own: readonly Vec3[]): boolean {
+  const block = bot.blockAt(cell);
+  return (
+    block !== null &&
+    solid(block) &&
+    unbreakableReason(block) === null &&
+    hazardReason(bot, block, cell, own, true) === null
+  );
+}
+
+/**
+ * The cell a crowded pillar digs into: a cardinal neighbour of `feet` on solid ground, whose feet and head
+ * cells are solid and diggable with no hazard. Of those, the one farthest from the entities sharing the
+ * feet cell. Null when none qualifies.
+ */
+export function sideDigCell(bot: Bot, feet: Vec3): Vec3 | null {
+  const own = [feet, feet.offset(0, 1, 0)];
+  const crowd = Object.values(bot.entities).filter(
+    (entity) => entity !== bot.entity && entityOverlapsCell(entity, feet),
+  );
+  const away = (cell: Vec3): number =>
+    crowd.length === 0
+      ? 0
+      : Math.min(
+          ...crowd.map(
+            (entity) =>
+              (cell.x + 0.5 - entity.position.x) ** 2 + (cell.z + 0.5 - entity.position.z) ** 2,
+          ),
+        );
+  const cells = CARDINAL_STEPS.map((step) => feet.plus(step)).filter(
+    (cell) =>
+      solid(bot.blockAt(cell.offset(0, -1, 0))) &&
+      sideDiggable(bot, cell, own) &&
+      sideDiggable(bot, cell.offset(0, 1, 0), own),
+  );
+  cells.sort((a, b) => away(b) - away(a));
+  return cells[0] ?? null;
+}
+
+/**
+ * Digs the side cell `cell` for a crowded pillar: its head first, then its feet, each with the best tool or
+ * the hand, and each judged again at dig time. False when a gate refuses, a dig throws, or the signal
+ * aborts; the caller then keeps the refusal.
+ */
+export async function digSideCell(
+  bot: Bot,
+  feet: Vec3,
+  cell: Vec3,
+  o: PillarOptions,
+): Promise<boolean> {
+  const b = bot as LooseBot;
+  const own = [feet, feet.offset(0, 1, 0)];
+  for (const at of [cell.offset(0, 1, 0), cell]) {
+    // A superseded pillar takes no second cell: the first dig may have aborted the move.
+    if (o.signal.aborted || !sideDiggable(bot, at, own)) return false;
+    try {
+      const block = bot.blockAt(at) as Block;
+      const tool = b.pathfinder?.bestHarvestTool?.(block);
+      if (tool) await bot.equip(tool as never, 'hand');
+      await bot.dig(block, true);
+    } catch (error) {
+      o.sink.log(
+        JSON.stringify({
+          event: 'stall_diag',
+          reason: 'pillar_side_dig_failed',
+          error: errorText(error),
+        }),
+      );
+      return false;
+    }
+  }
+  return !o.signal.aborted;
+}
+
+/**
  * Jumps and places `item` under the feet, then reports whether the bot ended higher than it began
  * and the block went down. The block is placed only once the feet are a full block up (`PILLAR_CLEAR`):
  * earlier the bot's own box still fills the cell and the server refuses the placement. The caller

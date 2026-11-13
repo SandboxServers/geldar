@@ -222,3 +222,93 @@ describe('pillar when another ranger shares the feet cell', () => {
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
   });
 });
+
+describe('pillar when two entities share a cell in a 1-wide shaft', () => {
+  const ENTITY_MESSAGE = 'another entity stands where the block goes';
+
+  /**
+   * A 1-wide shaft: stone under the shared feet cell (0,64,0) and beside the side cell (1,64,0), whose
+   * head is (1,65,0). Bedrock walls close the other three sides. The other entity's box is in (0,64,0).
+   */
+  function shaft(extra: Record<string, FakeBlock> = {}) {
+    const fake = pillarFake({
+      blocks: {
+        '0,63,0': block('stone'),
+        '1,63,0': block('stone'),
+        '1,64,0': block('stone'),
+        '1,65,0': block('stone'),
+        '-1,64,0': block('bedrock'),
+        '0,64,1': block('bedrock'),
+        '0,64,-1': block('bedrock'),
+        ...extra,
+      },
+      placedAt: '1,64,0',
+    });
+    Object.assign(fake.bot.entities, {
+      '1': { position: new Vec3(0.3, 64, 0.3), width: 0.6, height: 1.8 },
+    });
+    return fake;
+  }
+
+  it('digs the side cell head then feet, steps in, and pillars there', async () => {
+    const fake = shaft();
+    vi.mocked(moveNear).mockImplementationOnce(async () => {
+      fake.state.position.set(1.5, 64, 0.5);
+      return { ok: true, distance: 1 } as never;
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed', detail: { at: { x: 1, y: 64, z: 0 } } });
+    expect(fake.bot.dig).toHaveBeenCalledTimes(2);
+    expect(fake.bot.dig.mock.calls[0]?.[0]).toEqual(block('stone'));
+    expect(moveNear).toHaveBeenCalledWith(
+      fake.bot,
+      expect.objectContaining({ x: 1.5, z: 0.5 }),
+      0.5,
+      expect.anything(),
+    );
+    expect(fake.bot.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('keeps the another-entity refusal, and digs nothing, when water lies beside the side cell', async () => {
+    const fake = shaft({ '1,64,1': { name: 'water', boundingBox: 'empty' } });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: ENTITY_MESSAGE });
+    expect(fake.bot.dig).not.toHaveBeenCalled();
+    expect(moveNear).not.toHaveBeenCalled();
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the another-entity refusal, and digs nothing, when gravel lies above the side cell head', async () => {
+    const fake = shaft({ '1,66,0': block('gravel') });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: ENTITY_MESSAGE });
+    expect(fake.bot.dig).not.toHaveBeenCalled();
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the another-entity refusal when a dig throws, and pillars nowhere', async () => {
+    const fake = shaft();
+    fake.bot.dig.mockImplementationOnce(async () => {
+      throw new Error('dig refused');
+    });
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: ENTITY_MESSAGE });
+    expect(fake.bot.dig).toHaveBeenCalledTimes(1);
+    expect(moveNear).not.toHaveBeenCalled();
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+
+  it('is cancelled, and places nothing, when the signal aborts during the head dig', async () => {
+    const fake = shaft();
+    const abort = new AbortController();
+    fake.bot.dig.mockImplementationOnce(async () => {
+      abort.abort();
+    });
+    const outcome = await pillar(fake, 'feet', 1, abort.signal);
+    expect(outcome.status).toBe('cancelled');
+    expect(fake.bot.dig).toHaveBeenCalledTimes(1);
+    expect(moveNear).not.toHaveBeenCalled();
+    expect(fake.bot.placeBlock).not.toHaveBeenCalled();
+  });
+});
