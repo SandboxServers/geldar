@@ -175,6 +175,8 @@ export interface Fixture {
   jarText: string;
   chunkyLock: string;
   chunkyText: string;
+  coreprotectLock: string;
+  coreprotectText: string;
 }
 
 const dirs: string[] = [];
@@ -216,6 +218,15 @@ export function fixture(publishedPort = '25567'): Fixture {
   writeFileSync(chunkyJar, chunkyText);
   const chunkyLock = join(dir, 'chunky.lock.json');
   writeFileSync(chunkyLock, lockText(pathToFileURL(chunkyJar).href, sha256(chunkyText)));
+  // CoreProtect gets a local fixture lock too: the real lock names the Modrinth CDN, and no test reaches it.
+  const coreprotectText = 'coreprotect-test-jar';
+  const coreprotectJar = join(dir, 'coreprotect.jar');
+  writeFileSync(coreprotectJar, coreprotectText);
+  const coreprotectLock = join(dir, 'coreprotect.lock.json');
+  writeFileSync(
+    coreprotectLock,
+    lockText(pathToFileURL(coreprotectJar).href, sha256(coreprotectText)),
+  );
   const calls = join(dir, 'calls.log');
   const env: Record<string, string> = { ...(process.env as Record<string, string>) };
   delete env.Path;
@@ -237,6 +248,7 @@ export function fixture(publishedPort = '25567'): Fixture {
     GELDAR_STATE_DIR: posix(join(dir, 'state')),
     GELDAR_BLUEMAP_LOCK: posix(lock),
     GELDAR_CHUNKY_LOCK: posix(chunkyLock),
+    GELDAR_COREPROTECT_LOCK: posix(coreprotectLock),
     GELDAR_DEPLOY_ALLOW_FILE_URL: '1',
     GELDAR_MIN_FREE_KB: '1',
     DEPLOY_DRY_RUN: '1',
@@ -260,6 +272,8 @@ export function fixture(publishedPort = '25567'): Fixture {
     jarText,
     chunkyLock,
     chunkyText,
+    coreprotectLock,
+    coreprotectText,
   };
 }
 
