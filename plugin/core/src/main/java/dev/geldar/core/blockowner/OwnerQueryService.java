@@ -24,11 +24,19 @@ public final class OwnerQueryService {
 
     static final Owners UNKNOWN = new Owners(List.of(), true);
 
+    /** At most one "CoreProtect did not report" line in this many milliseconds. */
+    static final long MISS_LOG_MS = 60_000L;
+
     private final OwnerSource source;
     private final OwnerCache cache;
     private final ExecutorService lookups;
     private final LookupFailureLog failures;
+    private final Logger log;
+    private final LongSupplier clockMs;
     private volatile long timeoutMs;
+    private long nextMissLogAt;
+    private int missedSinceLog;
+    private volatile LookupDebugLog debug = LookupDebugLog.disabled();
 
     public OwnerQueryService(OwnerSource source, OwnerCache cache, ExecutorService lookups, long timeoutMs,
             Logger log) {
@@ -42,11 +50,18 @@ public final class OwnerQueryService {
         this.lookups = lookups;
         this.timeoutMs = timeoutMs;
         this.failures = new LookupFailureLog(log, clockMs);
+        this.log = log;
+        this.clockMs = clockMs;
     }
 
     /** Applies a new lookup timeout (the config reload). */
     public void setTimeoutMs(long ms) {
         timeoutMs = ms;
+    }
+
+    /** The debug log the overlay line goes to (the {@code blockowner.debug} switch). */
+    void attachDebug(LookupDebugLog log) {
+        debug = log;
     }
 
     /** The answer for one chunk; completes within the timeout whatever the source does. */
@@ -65,9 +80,37 @@ public final class OwnerQueryService {
                     return UNKNOWN;
                 })
                 .thenApply(owners -> {
+                    if (!owners.truncated()) {
+                        noteMissed(key, cache.countMissedPlacements(key, owners));
+                    }
                     Owners merged = cache.withChanges(key, owners);
+                    if (debug.enabled()) {
+                        debug.info("answer chunk " + chunkX + "," + chunkZ + " in " + world + ": owners from the base "
+                                + owners.blocks().size() + ", net change from the overlay "
+                                + (merged.blocks().size() - owners.blocks().size()) + ", answered "
+                                + merged.blocks().size());
+                    }
                     return new Answer(world, chunkX, chunkZ, merged.blocks(), merged.truncated());
                 });
+    }
+
+    /**
+     * Counts the placements the cache holds that CoreProtect's answer lacks, and logs the count at most once a minute.
+     * The count names no player: it measures how often CoreProtect misses a placement the server saw.
+     */
+    private synchronized void noteMissed(ChunkKey key, int count) {
+        if (count == 0) {
+            return;
+        }
+        missedSinceLog += count;
+        long now = clockMs.getAsLong();
+        if (now < nextMissLogAt) {
+            return;
+        }
+        log.info("CoreProtect did not report " + missedSinceLog + " placed block(s) the cache holds; last seen in "
+                + key.world() + " chunk " + key.chunkX() + "," + key.chunkZ() + ". Lines are at most one a minute.");
+        missedSinceLog = 0;
+        nextMissLogAt = now + MISS_LOG_MS;
     }
 
     /** Runs on the lookup thread: the stored answer when it is fresh, else a new lookup. */

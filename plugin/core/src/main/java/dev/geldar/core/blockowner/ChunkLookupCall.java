@@ -13,9 +13,13 @@ record ChunkLookupCall(int seconds, List<String> restrictUsers, List<String> exc
         List<Object> restrictBlocks, List<Object> excludeBlocks, List<Integer> actions, int radius,
         double centreX, double centreY, double centreZ) {
 
-    /** CoreProtect's action ids: 0 is a break, 1 a place. */
+    /**
+     * CoreProtect's action ids: 0 is a break, 1 a place, 2 a click. A click is asked for so that a newer click decides
+     * its position: the rule is that only a newest row that is a player place gives an owner.
+     */
     static final int ACTION_BREAK = 0;
     static final int ACTION_PLACE = 1;
+    static final int ACTION_CLICK = 2;
     /** Ten years in seconds: the window is "seconds back" and every row of the columns is wanted. */
     static final int LOOKUP_SECONDS = 315_360_000;
     /** CoreProtect's radius is an inclusive square around the centre; 8 from the chunk middle covers its 16 columns. */
@@ -24,7 +28,7 @@ record ChunkLookupCall(int seconds, List<String> restrictUsers, List<String> exc
 
     static ChunkLookupCall forChunk(int chunkX, int chunkZ) {
         return new ChunkLookupCall(LOOKUP_SECONDS, new ArrayList<>(), new ArrayList<>(), new ArrayList<>(),
-                new ArrayList<>(), new ArrayList<>(List.of(ACTION_BREAK, ACTION_PLACE)), RADIUS,
+                new ArrayList<>(), new ArrayList<>(List.of(ACTION_BREAK, ACTION_PLACE, ACTION_CLICK)), RADIUS,
                 chunkX * 16 + 8.0, CENTRE_Y, chunkZ * 16 + 8.0);
     }
 }

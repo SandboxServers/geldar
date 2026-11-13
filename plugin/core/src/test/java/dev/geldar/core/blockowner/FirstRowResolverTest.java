@@ -94,6 +94,26 @@ class FirstRowResolverTest {
     }
 
     @Test
+    void aNewerClickDecidesThePositionAsUnowned() {
+        // Newest first: a click on alice's placed block is the newest row, so the position has no owner by the rule.
+        List<LogRow> rows = List.of(new LogRow(WORLD, 9, 64, 9, false, "zack", false), place(9, 64, 9, "alice"));
+
+        assertTrue(FirstRowResolver.resolve(rows, WORLD, 0, 0).blocks().isEmpty());
+    }
+
+    @Test
+    void sameSecondRowsKeepTheOrderCoreProtectGave() {
+        // Two rows in the same second carry no time order, so the resolver takes the first one as listed.
+        List<LogRow> newestFirst = List.of(place(10, 64, 10, "bob"), place(10, 64, 10, "alice"));
+        List<LogRow> reversed = List.of(place(10, 64, 10, "alice"), place(10, 64, 10, "bob"));
+
+        assertEquals(List.of(new OwnedBlock(10, 64, 10, "bob")),
+                FirstRowResolver.resolve(newestFirst, WORLD, 0, 0).blocks());
+        assertEquals(List.of(new OwnedBlock(10, 64, 10, "alice")),
+                FirstRowResolver.resolve(reversed, WORLD, 0, 0).blocks());
+    }
+
+    @Test
     void nonPlayerBreakIsNotAnOwner() {
         List<LogRow> rows = List.of(breakRow(8, 64, 8, "#creeper"));
 

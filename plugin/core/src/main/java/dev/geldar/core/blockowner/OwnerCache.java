@@ -21,6 +21,8 @@ public final class OwnerCache {
     public static final int MAX_CHUNKS = 128;
     public static final long BASE_TTL_MS = 30_000L;
     public static final long CHANGE_TTL_MS = 60_000L;
+    /** CoreProtect writes about every half second, so a change younger than this may be missing from its answer. */
+    public static final long CHANGE_GRACE_MS = 5_000L;
     private static final int CHUNK_SIZE = 16;
 
     /** A block position in a world. */
@@ -31,7 +33,8 @@ public final class OwnerCache {
 
     private record Base(Owners owners, long expiresAt) {}
 
-    private record Change(String owner, long expiresAt) {}
+    /** One recorded change; {@code counted} is set once the change is known to be missing from CoreProtect's answer. */
+    private record Change(String owner, long recordedAt, long expiresAt, boolean counted) {}
 
     private final LongSupplier clock;
     private final Map<ChunkKey, Base> bases = lru();
@@ -62,8 +65,42 @@ public final class OwnerCache {
 
     /** Records one block's new owner (null when cleared). Called on the server thread for each block change. */
     public synchronized void recordChange(Pos pos, String owner) {
-        long expiresAt = clock.getAsLong() + CHANGE_TTL_MS;
-        changes.computeIfAbsent(chunkOf(pos), k -> new HashMap<>()).put(pos, new Change(owner, expiresAt));
+        long now = clock.getAsLong();
+        changes.computeIfAbsent(chunkOf(pos), k -> new HashMap<>())
+                .put(pos, new Change(owner, now, now + CHANGE_TTL_MS, false));
+    }
+
+    /**
+     * Counts the placements of a chunk that are still held, are older than the grace period and that the lookup's
+     * answer does not hold, each one once. Those are placements CoreProtect did not report. Returns how many were
+     * counted now.
+     */
+    public synchronized int countMissedPlacements(ChunkKey key, Owners base) {
+        Map<Pos, Change> recent = changes.get(key);
+        if (recent == null) {
+            return 0;
+        }
+        long now = clock.getAsLong();
+        int missed = 0;
+        for (Map.Entry<Pos, Change> e : recent.entrySet()) {
+            Change c = e.getValue();
+            if (c.owner() == null || c.counted() || now >= c.expiresAt() || now - c.recordedAt() < CHANGE_GRACE_MS
+                    || reports(base, e.getKey(), c.owner())) {
+                continue;
+            }
+            e.setValue(new Change(c.owner(), c.recordedAt(), c.expiresAt(), true));
+            missed++;
+        }
+        return missed;
+    }
+
+    private static boolean reports(Owners base, Pos pos, String owner) {
+        for (OwnedBlock b : base.blocks()) {
+            if (b.x() == pos.x() && b.y() == pos.y() && b.z() == pos.z()) {
+                return owner.equals(b.owner());
+            }
+        }
+        return false;
     }
 
     /**
