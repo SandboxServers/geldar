@@ -7,10 +7,19 @@ import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { identityHash } from '../../../threshold/register/src/identity.ts';
 import { banIdentity, grantKinoAdmin, revokeKinoAdmin, unbanIdentity } from './identities.ts';
+import { parseOwnerAdmin, runOwnerAdmin } from './owner-admin.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
+import {
+  addRosterName,
+  listRoster,
+  parseMaxAgents,
+  readRosterNames,
+  removeRosterName,
+  seedRoster,
+} from './roster.ts';
 import { initSecretFiles, PASSWORD_FILE, REPO_ROOT, SECRET_DIR } from './secret-files.ts';
 import {
   checkOutPath,
@@ -47,6 +56,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   init [--force --i-understand]         create the pepper and the Postgres password files
   owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
+  owner admin set|unset <id>            set or clear the admin flag (one audit row); owner admin list
   identity ban <id>                     ban a registered identity (64 hex digits) and revoke its owner's tokens
   identity ban --provider microsoft|github|discord --user-id <id> [--pepper-file <f>]
                                         the same, the id derived from the provider account (decision 0136)
@@ -57,6 +67,11 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
   player pause|resume|retire <id>
+  roster add|remove <name> --owner <o> [--max N]
+                                        add or remove a Minecraft name an owner may run agents as (N 1 to 4, default 1)
+  roster list [--owner <o>]             list the roster
+  roster seed --owner <o> --from <shard file>
+                                        add the sovereign.players names once; a second run adds nothing
   persona export <character> --out <dir> [--dry-run] [--allow-meta]
                                         write memory/identity.md and goals.md (--out must not exist)
   token mint <player> --out <file>      write a new token to a file only you can read
@@ -196,6 +211,15 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
     io.out(`owner ${id} cap set to ${value}`);
     return;
   }
+  if (verb === 'admin') {
+    const action = parseOwnerAdmin(args.slice(1));
+    const lines: string[] = [];
+    await withSql(env, async (sql) => {
+      lines.push(...(await runOwnerAdmin(sql, action)));
+    });
+    for (const line of lines) io.out(line);
+    return;
+  }
   throw new Error(USAGE);
 }
 
@@ -309,6 +333,46 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
   throw new Error(USAGE);
 }
 
+async function runRoster(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
+  const [verb, name] = args;
+  if (verb === 'list' && args.length === 1) {
+    let rows: Array<Record<string, unknown>> = [];
+    await withSql(env, async (sql) => {
+      rows = await listRoster(sql, optionalFlag(parsed, '--owner'));
+    });
+    for (const row of rows) {
+      io.out(`${row.player_name} owner ${row.owner_id} max_agents ${row.max_agents}`);
+    }
+    return;
+  }
+  if ((verb === 'add' || verb === 'remove') && name !== undefined && args.length === 2) {
+    const owner = requireFlag(parsed, '--owner');
+    if (verb === 'remove') {
+      await withSql(env, (sql) => removeRosterName(sql, owner, name));
+      io.out(`removed ${name} from the roster of ${owner}`);
+      return;
+    }
+    const max = optionalFlag(parsed, '--max');
+    const maxAgents = max === undefined ? 1 : parseMaxAgents(max);
+    await withSql(env, (sql) => addRosterName(sql, owner, name, maxAgents));
+    io.out(`added ${name} to the roster of ${owner} (max_agents ${maxAgents})`);
+    return;
+  }
+  if (verb === 'seed' && args.length === 1) {
+    const owner = requireFlag(parsed, '--owner');
+    const names = readRosterNames(await readFile(resolve(requireFlag(parsed, '--from')), 'utf8'));
+    let added = 0;
+    await withSql(env, async (sql) => {
+      added = await seedRoster(sql, owner, names);
+    });
+    io.out(`seeded ${added} of ${names.length} names for ${owner}; the others were already listed`);
+    return;
+  }
+  throw new Error(
+    'roster takes add or remove <name> --owner <o> [--max N], list [--owner <o>], or seed --owner <o> --from <file>',
+  );
+}
+
 async function runToken(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
   const [verb, target] = args;
   if (verb === 'mint' && target !== undefined && args.length === 2) {
@@ -392,6 +456,8 @@ export async function run(
       await runAdmin(io, env, rest, parsed);
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
+    } else if (command === 'roster') {
+      await runRoster(parsed, io, env, rest);
     } else if (command === 'token') {
       await runToken(parsed, io, env, rest);
     } else if (command === 'persona') {

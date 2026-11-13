@@ -113,7 +113,7 @@ Merged: `sql/0021_register_sessions.sql` and `threshold/register/src/session-sto
   - Association: owner A stops owner B's agent; the reply equals the unknown-agent reply and no row is inserted.
   - Roster from DB: a DB-listed player absent from the yaml can start; a yaml-only id is refused for an owner request.
   - Quotas at the boundary: the third start in the hour is accepted, the fourth is refused with `quota` and audited; the tenth start of the owner's day is accepted, the eleventh refused; a refused request does not count; stop, status and log do not count.
-  - Admin: the same sequence for an admin owner accepts the fourth and the eleventh start; an admin still gets a refusal for a second running body on one agent and for another owner's agent. A flag read that errors is treated as not admin (the fourth start is refused).
+  - Admin: the same sequence for an admin owner accepts the fourth and the eleventh start; an admin's repeat start of a running body returns `started` and counts nothing (`conflict` is not a reply code any more), and an admin still gets a refusal for another owner's agent. A flag read that errors is treated as not admin (the fourth start is refused).
   - Concurrency: two starts for one agent race; exactly one body starts.
   - Generated container config carries the 0082 limits.
   - Abort/error: a NATS disconnect mid-request leaves no timer and no half-started body (the start is idempotent on retry); a Docker error is reported and audited, and no `body_ops` row is kept for it.
@@ -174,6 +174,7 @@ components:
   - Every route: a 401 without credentials; a 404 for another owner's agent (both GET and POST); a 403 `scope_missing` for an owner key without the scope.
   - CSRF: a cookie POST without the token is refused; with the token, accepted.
   - Start while running: 409 `conflict`. Start at the quota boundary: last allowed accepted, next 429 with `Retry-After`.
+  - Note (review fix F): a 409 `conflict` on start-while-running cannot come from the supervisor. A repeat start of a running body is idempotent and replies `started` (counts nothing), so the API maps a `started` reply to 202, never 409. Resolve the 409 in C7-04, or drop it from the response table.
   - Log: at most 200 lines; lines of another agent never appear (a seeded fixture with two owners); text matches the fixed-text table (no digit or free text from a model).
   - Token rotate returns the token once; a second GET does not return it.
   - Problem bodies: every error is `application/problem+json` with a `code` from the enum.

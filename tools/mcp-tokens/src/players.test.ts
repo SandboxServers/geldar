@@ -14,11 +14,22 @@ import {
   seedText,
   setPlayerStatus,
 } from './players.ts';
+import { ROSTER_LIMIT, ROSTER_NOT_LISTED } from './roster.ts';
 
 /** An in-memory stand-in for the tables the commands touch; it answers only those statements. */
 class FakeSql implements Sql {
   owners = new Map<string, number>();
-  players: Array<{ player_id: string; owner_id: string; life_id: string; status: string }> = [];
+  /** The starting roster: the names `player()` uses, listed for owner jo with one agent each. */
+  roster = new Map<string, { owner_id: string; max_agents: number }>(
+    Array.from({ length: 30 }, (_, i) => [`player ${i + 1}`, { owner_id: 'jo', max_agents: 1 }]),
+  );
+  players: Array<{
+    player_id: string;
+    owner_id: string;
+    life_id: string;
+    display_name: string;
+    status: string;
+  }> = [];
   agents: string[] = [];
   budgets: string[] = [];
   revokedFor: string[] = [];
@@ -41,6 +52,18 @@ class FakeSql implements Sql {
       const id = String(values[0]);
       return { rows: this.owners.has(id) ? [{ player_cap: this.owners.get(id) }] : [] };
     }
+    if (text.includes('FOR UPDATE') && text.includes('FROM mcp_roster')) {
+      const entry = this.roster.get(String(values[0]));
+      return { rows: entry === undefined ? [] : [{ ...entry }] };
+    }
+    if (text.includes('count(*)') && text.includes('lower(display_name) = $1')) {
+      // Mirrors the SQL: the roster count compares lower(display_name) to the lower-cased name.
+      const wanted = String(values[0]);
+      const n = this.players.filter(
+        (p) => p.display_name.toLowerCase() === wanted && p.status !== 'retired',
+      ).length;
+      return { rows: [{ n }] };
+    }
     if (text.includes('count(*)')) {
       const n = this.players.filter(
         (p) => p.owner_id === values[0] && p.status !== 'retired',
@@ -56,6 +79,7 @@ class FakeSql implements Sql {
         player_id: String(values[0]),
         owner_id: String(values[1]),
         life_id: String(values[2]),
+        display_name: String(values[3]),
         status: 'active',
       });
       return { rows: [] };
@@ -166,7 +190,13 @@ describe('player add checks', () => {
     await addPlayer(sql, player(1), SHARD);
     expect(sql.agents).toEqual(['ag_jo_01']);
     expect(sql.players).toEqual([
-      { player_id: 'ag-jo-01', owner_id: 'jo', life_id: 'ag_jo_01', status: 'active' },
+      {
+        player_id: 'ag-jo-01',
+        owner_id: 'jo',
+        life_id: 'ag_jo_01',
+        display_name: 'Player 1',
+        status: 'active',
+      },
     ]);
     expect(sql.budgets).toEqual(['ag_jo_01']);
   });
@@ -246,6 +276,40 @@ describe('seed checks', () => {
       expect(String(error)).toContain('8192 bytes');
       expect(String(error)).not.toContain('SECRET-LOOKING-TEXT');
     });
+  });
+});
+
+describe('sovereign start checks the roster (sql 0024)', () => {
+  it('refuses a name that is not on the roster, and writes no agent row', async () => {
+    const sql = new FakeSql();
+    await addOwner(sql, 'jo');
+    await expect(addPlayer(sql, { ...player(1), name: 'Stranger' }, SHARD)).rejects.toMatchObject({
+      code: ROSTER_NOT_LISTED,
+    });
+    expect(sql.agents).toEqual([]);
+    expect(sql.log).toContain('ROLLBACK');
+  });
+
+  it('refuses a name that another owner holds', async () => {
+    const sql = new FakeSql();
+    await addOwner(sql, 'jo');
+    sql.roster.set('player 1', { owner_id: 'bob', max_agents: 1 });
+    await expect(addPlayer(sql, player(1), SHARD)).rejects.toMatchObject({
+      code: ROSTER_NOT_LISTED,
+    });
+    expect(sql.agents).toEqual([]);
+  });
+
+  it('at max_agents 2: the 1st and the last allowed (2nd) start pass, the 3rd is refused', async () => {
+    const sql = new FakeSql();
+    await addOwner(sql, 'jo');
+    sql.roster.set('player 1', { owner_id: 'jo', max_agents: 2 });
+    await addPlayer(sql, player(1), SHARD);
+    await addPlayer(sql, { ...player(2), name: 'Player 1' }, SHARD);
+    await expect(addPlayer(sql, { ...player(3), name: 'Player 1' }, SHARD)).rejects.toMatchObject({
+      code: ROSTER_LIMIT,
+    });
+    expect(sql.agents).toHaveLength(2);
   });
 });
 
