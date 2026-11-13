@@ -86,7 +86,7 @@ describe('renewal', () => {
     expect(tokenUsable(graceUntil, null, new Date(NOW.getTime() + 10 * MIN + 1000))).toBe(false);
   });
 
-  it('refuses a renewal the database refuses (not the owner, banned, retired): not_found, no secret', async () => {
+  it('maps a database refusal to not_found with no secret (TS mapping only; the owner, ban and retired checks are SQL, see sql/test/check-schema-token-lifecycle.sql)', async () => {
     const { deps, probe } = makeDeps({ store: { renewToken: async () => false } });
     const result = await renewPlayerToken(deps, ACTOR, PLAYER);
     expect(result).toEqual({ status: 'not_found' });
@@ -132,7 +132,7 @@ describe('renewal', () => {
     expect(probe.renews).toHaveLength(2);
   });
 
-  it('an admin owner renewing another owner player is still not_found and is audited as admin', async () => {
+  it('an admin owner renewing another owner player is still not_found and is audited (TS mapping only; the owner check is SQL)', async () => {
     const { deps, probe } = makeDeps({
       admin: true,
       store: { renewToken: async () => false },
@@ -151,22 +151,42 @@ describe('renewal', () => {
     ]);
   });
 
-  it('writes exactly one audit row per renewal, admin only for the admin', async () => {
+  it('a successful renewal writes no TS audit row: the database writes it in the same transaction', async () => {
     const normal = makeDeps();
-    await renewPlayerToken(normal.deps, ACTOR, PLAYER);
-    expect(normal.probe.audits).toEqual([
-      {
-        ownerId: 'owner-1',
-        action: 'token.renew',
-        target: PLAYER,
-        outcome: 'renewed',
-        admin: false,
-      },
-    ]);
+    expect((await renewPlayerToken(normal.deps, ACTOR, PLAYER)).status).toBe('renewed');
+    expect(normal.probe.audits).toEqual([]);
     const admin = makeDeps({ admin: true });
-    await renewPlayerToken(admin.deps, ACTOR, PLAYER);
-    expect(admin.probe.audits).toHaveLength(1);
-    expect(admin.probe.audits[0]?.admin).toBe(true);
+    expect((await renewPlayerToken(admin.deps, ACTOR, PLAYER)).status).toBe('renewed');
+    expect(admin.probe.audits).toEqual([]);
+  });
+
+  it('an audit failure inside the database fails the renewal: the error propagates and no secret is returned', async () => {
+    const { deps, probe } = makeDeps({
+      store: {
+        renewToken: async () => {
+          throw new Error('register_audit insert failed');
+        },
+      },
+    });
+    await expect(renewPlayerToken(deps, ACTOR, PLAYER)).rejects.toThrow(
+      'register_audit insert failed',
+    );
+    expect(probe.renews).toHaveLength(0);
+    expect(probe.audits.map((entry) => entry.outcome)).toEqual(['error']);
+  });
+
+  it('a failing error-row audit does not hide the database error', async () => {
+    const { deps } = makeDeps({
+      store: {
+        renewToken: async () => {
+          throw new Error('connection reset');
+        },
+      },
+    });
+    deps.audit = async () => {
+      throw new Error('audit unavailable');
+    };
+    await expect(renewPlayerToken(deps, ACTOR, PLAYER)).rejects.toThrow('connection reset');
   });
 });
 
@@ -176,9 +196,10 @@ describe('revoke-only', () => {
     expect(await revokePlayerTokens(deps, ACTOR, PLAYER)).toEqual({ status: 'revoked', count: 2 });
     expect(probe.issued()).toBe(0);
     expect(probe.renews).toHaveLength(0);
+    expect(probe.audits).toEqual([]);
   });
 
-  it('is refused for a banned owner or another owner player (null from the store) with one audit row', async () => {
+  it('maps a null from the store (banned, not the owner, another owner player) to not_found with one audit row (TS mapping only; the checks are SQL)', async () => {
     const { deps, probe } = makeDeps({ store: { revokeTokens: async () => null } });
     expect(await revokePlayerTokens(deps, ACTOR, PLAYER)).toEqual({ status: 'not_found' });
     expect(probe.audits).toHaveLength(1);

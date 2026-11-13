@@ -9,18 +9,18 @@ BEGIN
   step := 'start';
   -- 0012 (F19): the register role reads no table; the identity hash is not readable by it
   step := 'gates of 0012: no direct reads';
+  -- 0025: the flag is read through register_is_admin, so the register role gets no column of owners
   IF has_table_privilege('geldar_register', 'mcp_identities', 'SELECT')
      OR has_table_privilege('geldar_register', 'mcp_owners', 'SELECT')
      OR has_table_privilege('geldar_register', 'mcp_players', 'SELECT')
      OR has_any_column_privilege('geldar_register', 'mcp_identities', 'SELECT')
      OR EXISTS (SELECT 1 FROM information_schema.columns c
                 WHERE c.table_schema = 'public' AND c.table_name = 'mcp_owners'
-                  AND c.column_name <> 'is_admin'
                   AND has_column_privilege('geldar_register', 'mcp_owners', c.column_name, 'SELECT'))
      OR has_any_column_privilege('geldar_register', 'mcp_players', 'SELECT')
      OR has_any_column_privilege('geldar_register', 'agents', 'SELECT')
      OR has_any_column_privilege('geldar_register', 'mcp_tokens', 'SELECT') THEN
-    RAISE EXCEPTION 'schema check: geldar_register must have no SELECT on identities, owners (but is_admin, 0025), players, agents or tokens';
+    RAISE EXCEPTION 'schema check: geldar_register must have no SELECT on identities, owners, players, agents or tokens';
   END IF;
   BEGIN
     SET LOCAL ROLE geldar_register;

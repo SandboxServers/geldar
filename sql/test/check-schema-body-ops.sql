@@ -37,9 +37,13 @@ BEGIN
     RAISE EXCEPTION 'schema check (%): geldar_supervisor must append register_audit only', step;
   END IF;
 
-  step := 'admin flag: supervisor role reads through register_is_admin';
-  IF NOT has_function_privilege('geldar_supervisor', 'register_is_admin(text)', 'EXECUTE') THEN
-    RAISE EXCEPTION 'schema check (%): geldar_supervisor must execute register_is_admin', step;
+  step := 'admin flag: supervisor role reads through supervisor_is_admin, never register_is_admin';
+  IF NOT has_function_privilege('geldar_supervisor', 'supervisor_is_admin(text)', 'EXECUTE')
+     OR has_function_privilege('geldar_supervisor', 'register_is_admin(text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'schema check (%): geldar_supervisor must execute supervisor_is_admin and not register_is_admin', step;
+  END IF;
+  IF supervisor_is_admin('no-such-owner-0027') IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'schema check (%): supervisor_is_admin must be false for an unknown owner', step;
   END IF;
   IF has_column_privilege('geldar_supervisor', 'mcp_owners', 'is_admin', 'UPDATE') THEN
     RAISE EXCEPTION 'schema check (%): geldar_supervisor must not update mcp_owners.is_admin', step;

@@ -1,13 +1,11 @@
 -- Migration 0025 (decision 0170, C7-12): the admin flag and the append-only register audit table.
 -- is_admin is set and unset only by the operator CLI (tools/mcp-tokens owner admin set|unset), which
 -- runs with the operator database role. The register role reads the flag (to exempt an admin's
--- fixed-window limits) and gets no UPDATE on it; no API route, page or key scope can write it.
+-- fixed-window limits) only through register_is_admin below, and gets no privilege on mcp_owners:
+-- no UPDATE, no column SELECT. No API route, page or key scope can write the flag.
 -- The flag never grants reach: an admin still sees only their own owner's rows (0170).
 
 ALTER TABLE mcp_owners ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
-
-REVOKE UPDATE (is_admin) ON mcp_owners FROM PUBLIC;
-GRANT SELECT (is_admin) ON mcp_owners TO geldar_register;
 
 -- The register reads the flag through this definer function, not through the table: a WHERE on
 -- owner_id would need a column grant on owner_id, which the 0012 read gates forbid. Fails closed:

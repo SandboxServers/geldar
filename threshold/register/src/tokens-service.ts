@@ -37,7 +37,7 @@ export interface TokenDeps {
   isAdmin: (ownerId: string) => Promise<boolean>;
   /** The register fixed window for this owner: seconds to wait, or 0 when the action may run. */
   charge: (ownerId: string) => number;
-  /** Appends one register_audit row. */
+  /** Appends one register_audit row for an outcome the database did not write (limited, not_found, error). */
   audit: (entry: AuditActionEntry) => Promise<void>;
   /** Makes the new token. Called after the window check; a refused renewal stores nothing and its secret is dropped. */
   issue: () => IssuedToken;
@@ -56,9 +56,10 @@ export type TokenResult =
   | { status: 'limited'; retryAfter: number };
 
 /**
- * Runs one token action: the admin check, the window (skipped for an admin), the database call,
- * and exactly one audit row whatever the outcome. A database error is audited as 'error' and rethrown,
- * so no value is returned for it.
+ * Runs one token action: the admin check, the window (skipped for an admin), and the database call.
+ * A renewal or a revoke writes its audit row inside the database transaction (0032), so it commits or
+ * rolls back with the change. Every other outcome (a limit, a refusal, a database error) changed nothing
+ * and is audited here. A database error is rethrown; a failing audit on that path does not hide it.
  */
 async function act(
   deps: TokenDeps,
@@ -72,16 +73,20 @@ async function act(
   try {
     result = await run(admin);
   } catch (error) {
-    await deps.audit({ ownerId: actor.ownerId, action, target: playerId, outcome: 'error', admin });
+    await deps
+      .audit({ ownerId: actor.ownerId, action, target: playerId, outcome: 'error', admin })
+      .catch(() => undefined);
     throw error;
   }
-  await deps.audit({
-    ownerId: actor.ownerId,
-    action,
-    target: playerId,
-    outcome: result.status,
-    admin,
-  });
+  if (result.status !== 'renewed' && result.status !== 'revoked') {
+    await deps.audit({
+      ownerId: actor.ownerId,
+      action,
+      target: playerId,
+      outcome: result.status,
+      admin,
+    });
+  }
   return result;
 }
 

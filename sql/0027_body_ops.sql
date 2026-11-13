@@ -20,6 +20,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar_supervisor') THEN
     CREATE ROLE geldar_supervisor NOLOGIN;
   END IF;
+EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
 END
 $role$;
 
@@ -29,7 +30,15 @@ REVOKE UPDATE, DELETE, TRUNCATE ON body_ops FROM geldar_supervisor;
 GRANT USAGE ON SEQUENCE body_ops_id_seq TO geldar_supervisor;
 
 GRANT SELECT ON mcp_roster TO geldar_supervisor;
-GRANT EXECUTE ON FUNCTION register_is_admin(TEXT) TO geldar_supervisor;
+-- The supervisor reads the admin flag through its own definer function, not register_is_admin: every
+-- register_* function is executable by geldar_register only (check-schema.sql, gates of 0011).
+-- It delegates to register_is_admin, so the flag rule has one implementation.
+CREATE OR REPLACE FUNCTION supervisor_is_admin(p_owner TEXT) RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+  SELECT public.register_is_admin(p_owner)
+$fn$;
+REVOKE ALL ON FUNCTION supervisor_is_admin(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION supervisor_is_admin(TEXT) TO geldar_supervisor;
 GRANT INSERT ON register_audit TO geldar_supervisor;
 GRANT USAGE ON SEQUENCE register_audit_id_seq TO geldar_supervisor;
 

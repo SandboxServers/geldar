@@ -5,6 +5,8 @@
 -- as usable until the grace ends. A revoke-only action ends every live token of one player at once.
 -- Every function is owner-scoped: an unknown or banned identity, or a player that is not the caller's,
 -- is refused with 42501. The register role gets EXECUTE only; it has no write to expires_at.
+-- A renewal and a revoke write their register_audit row in the same transaction (the admin flag
+-- is read through register_is_admin), so an audit failure rolls the action back.
 
 -- The mint: 90 days (was 30 in 0010). The rest is unchanged: a mint revokes the older tokens at once.
 CREATE OR REPLACE FUNCTION register_mint_token(
@@ -92,6 +94,10 @@ BEGIN
     WHERE t.player_id = p_player_id AND t.revoked_at IS NULL AND t.expires_at > now();
   INSERT INTO public.mcp_tokens (token_id, player_id, token_hash, expires_at)
     VALUES (p_token_id, p_player_id, p_token_hash, now() + interval '90 days');
+  -- The audit row commits with the rotation: if the insert fails, the renewal is rolled back and the
+  -- old token keeps its expiry (no new secret is returned for an unaudited renewal).
+  INSERT INTO public.register_audit (actor, action, target, outcome, admin)
+    VALUES (who, 'token.renew', p_player_id, 'renewed', public.register_is_admin(who));
 END
 $renew$;
 
@@ -119,6 +125,8 @@ BEGIN
   UPDATE public.mcp_tokens t SET revoked_at = now()
     WHERE t.player_id = p_player_id AND t.revoked_at IS NULL;
   GET DIAGNOSTICS ended = ROW_COUNT;
+  INSERT INTO public.register_audit (actor, action, target, outcome, admin)
+    VALUES (who, 'token.revoke', p_player_id, 'revoked', public.register_is_admin(who));
   RETURN ended;
 END
 $revoke$;
