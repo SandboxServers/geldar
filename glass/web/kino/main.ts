@@ -295,6 +295,11 @@ async function main(): Promise<void> {
         paneInfos.set(id, info);
         showBar();
       },
+      onTargetKept(kept) {
+        // The server refused the retune (too many clicks): the old agent is still on this monitor.
+        frame.setLabel(labelOf(kept));
+        save();
+      },
     });
     bindPointer(frame.canvas, () => view.rig, { onActivate: () => active !== id && setActive(id) });
     self = { id, channel, frame, view, pending: null };

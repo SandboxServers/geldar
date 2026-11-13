@@ -53,12 +53,72 @@ describe('KinoSession', () => {
     ]);
   });
 
-  it('resets the world for a new target only', () => {
-    const { s, log } = setup();
+  it('resets the world for a new target only, once the server confirms it (decision 0161)', () => {
+    const { s, socks, log } = setup();
     s.subscribe('a_bot', 'follow');
     s.subscribe('a_bot', 'free');
     s.subscribe('b_bot', 'free');
+    // The old world stays until the server's hello names the new agent.
+    expect(log.resets).toBe(1);
+    expect(s.current).toEqual({ target: 'a_bot', pending: 'b_bot' });
+    socks[0]?.feed({
+      type: 'hello',
+      feed_version: 1,
+      world: 'w',
+      target_agent_id: 'b_bot',
+      view_radius: 2,
+    });
     expect(log.resets).toBe(2);
+    expect(s.current).toEqual({ target: 'b_bot', pending: null });
+  });
+
+  it('keeps the old agent when the server refuses a retune, and can retune again', () => {
+    const socks: FakeSocket[] = [];
+    const kept: string[] = [];
+    let resets = 0;
+    let state: { world: { keys(): string[] } } | null = null;
+    const s = new KinoSession(
+      () => {
+        const f = new FakeSocket();
+        socks.push(f);
+        return f;
+      },
+      {
+        onReset: (st) => {
+          resets++;
+          state = st;
+        },
+        onChange: () => undefined,
+        onEnd: () => undefined,
+        onRetuneRefused: (k, refused) => kept.push(`${k}<-${refused}`),
+      },
+    );
+    s.subscribe('a_bot', 'follow');
+    const sock = socks[0] as FakeSocket;
+    sock.onopen?.();
+    const section = {
+      type: 'chunk_section',
+      chunk_x: 0,
+      chunk_z: 0,
+      section_y: 0,
+      palette: ['minecraft:air'],
+      bits: 0,
+      data: '',
+    };
+    sock.feed(section);
+    s.subscribe('b_bot', 'follow');
+    sock.feed({ type: 'rate_limited' });
+    expect(kept).toEqual(['a_bot<-b_bot']);
+    expect(resets).toBe(1);
+    expect(s.current).toEqual({ target: 'a_bot', pending: null });
+    // A's world was not thrown away, and A's feed keeps landing in it.
+    expect((state as unknown as { world: { keys(): string[] } }).world.keys()).toEqual(['0,0,0']);
+    s.subscribe('b_bot', 'follow');
+    expect(JSON.parse(sock.sent.at(-1) as string)).toEqual({
+      type: 'subscribe',
+      target_agent_id: 'b_bot',
+      mode: 'follow',
+    });
   });
 
   it('ends on kill_switch and on any bye but unsubscribed', () => {

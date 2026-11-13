@@ -65,6 +65,13 @@ Now:
 
 **Assumption A10: a first visit tunes CH 1 to the first agent the server lists**, so the page shows a picture at once instead of an empty wall. Opening that camera is an ordinary audited subscribe, as clicking "Open pane" was.
 
+### 3. Feed details the camera depends on (found in review)
+
+- **The camera follows the agent's entity, not `target_moved`.** The plugin sends `target_moved` only when the agent enters another chunk; the agent's entity (position and yaw) comes every tick. The page now takes the followed agent's position from its entity, so the chase camera sees the agent walk and swings behind it. The old follow camera jumped once per chunk for the same reason. The preview now sends `target_moved` as the plugin does, so it cannot hide this again.
+- **A heading that arrives late still counts.** The first frames often have a position but no entity; the camera's first guess is replaced by the first heading.
+- **A retune keeps the old picture until the server confirms it.** The world is swapped when the new agent's `hello` (or `target_moved`) arrives. If the server answers `rate_limited`, the monitor keeps its agent and its label. A retune on a monitor whose connection ended opens a new connection.
+- **A monitor frees its scene's GPU memory on every retune** (`KinoScene.dispose`), keeping the texture atlas shared by all monitors.
+
 ## Why
 
 - The owner described the intent in two pictures: Lakitu and the Back to the Future Part II wall. The old page met neither. Its camera ignored the agent's heading, and its panes shared one keyboard.
@@ -73,5 +80,5 @@ Now:
 ## Consequences
 
 - `camera/follow-pick.ts` (the five-candidate follow framing) is removed. Its job is done by the chase camera and the foliage pull-in. Its tests are replaced by chase-camera tests.
-- `main.ts` is split: `panes/pane-view.ts` (one monitor's renderer, feed and camera), `panes/monitor.ts` (the monitor's frame and controls), `panes/wall.ts` (layout and the active monitor), `guide.ts` and `keys.ts`.
+- `main.ts` is split: `panes/pane-view.ts` (one monitor's renderer, feed and camera), `panes/monitor.ts` (the monitor's frame and controls), `panes/wall-layout.ts` (where each monitor goes), `guide.ts` and `keys.ts`.
 - A test-only preview, `glass/test/kino-preview/server.ts`, serves the real page with an invented world and three walking agents, so the page can be seen and screenshotted without a shard. `dev.html` is unchanged apart from the new pointer binding.

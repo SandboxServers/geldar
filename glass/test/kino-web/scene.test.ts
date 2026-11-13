@@ -54,3 +54,25 @@ describe('KinoScene with the mocked feed', () => {
     expect(r(view.camera.position)).toBeCloseTo(2, 5);
   });
 });
+
+describe('KinoScene.dispose (decision 0161: a monitor drops its scene on each retune)', () => {
+  it('frees the scene geometries and keeps the shared material of the caller', () => {
+    const { state, view } = play();
+    // The caller's material (in production the texture atlas, shared by every monitor).
+    const base = (view as unknown as { base: { addEventListener(t: string, f: () => void): void } })
+      .base;
+    const freed: string[] = [];
+    base.addEventListener('dispose', () => freed.push('base'));
+    expect(state.world.keys().length).toBeGreaterThan(0);
+    const geometry = view.sectionMesh('0,0,0')?.geometry;
+    let geometryFreed = false;
+    geometry?.addEventListener('dispose', () => {
+      geometryFreed = true;
+    });
+    view.dispose();
+    expect(geometryFreed).toBe(true);
+    expect(freed).toEqual([]);
+    expect(view.scene.children).toHaveLength(0);
+    expect(view.sectionKeys()).toEqual([]);
+  });
+});

@@ -21,6 +21,8 @@ export interface PaneDeps {
   reducedMotion: boolean;
   /** Called whenever this pane's counts or connection change (the top bar sums them). */
   onStatus(info: { connected: boolean; chunks: number; entities: number }): void;
+  /** The server refused a retune: the monitor keeps showing `kept` (the page restores its label). */
+  onTargetKept?(kept: string): void;
 }
 
 export interface PaneView {
@@ -54,6 +56,8 @@ export function createPaneView(
   let currentTarget = target;
   let last = performance.now();
   let tuning = true;
+  /** A retune waits for the server; the screen shows static until the new agent is placed. */
+  let retuning = false;
   const setTuning = (on: boolean): void => {
     tuning = on;
     frame.setTuning(on);
@@ -66,28 +70,43 @@ export function createPaneView(
     deps.onStatus(mine);
   };
 
-  const session = new KinoSession(deps.connect, {
-    onReset(s) {
-      state = s;
-      view = new KinoScene(s, deps.atlas.uv, deps.atlas.material, deps.labels);
-      rig.retarget();
-      setTuning(true);
-      frame.flicker();
-      showStatus();
-    },
-    onChange(change) {
-      view?.update(change);
-      connected = true;
-      if (change.entities) entityCount = change.entities.length;
-      showStatus();
-      if (change.notice) frame.say(change.notice);
-    },
-    onEnd(reason) {
-      frame.say(byeText(reason));
-      connected = false;
-      showStatus();
-    },
-  });
+  const makeSession = (): KinoSession =>
+    new KinoSession(deps.connect, {
+      onReset(s) {
+        state = s;
+        retuning = false;
+        view?.dispose();
+        view = new KinoScene(s, deps.atlas.uv, deps.atlas.material, deps.labels);
+        rig.retarget();
+        setTuning(true);
+        frame.flicker();
+        showStatus();
+      },
+      onChange(change) {
+        view?.update(change);
+        connected = true;
+        if (change.entities) entityCount = change.entities.length;
+        showStatus();
+        if (change.notice) frame.say(change.notice);
+      },
+      onRetuneRefused(kept) {
+        currentTarget = kept;
+        retuning = false;
+        deps.onTargetKept?.(kept);
+      },
+      onEnd(reason) {
+        frame.say(byeText(reason));
+        connected = false;
+        retuning = false;
+        showStatus();
+      },
+    });
+  let session = makeSession();
+  /** Subscribes, first opening a new connection when the last one ended (a retune revives a dead monitor). */
+  const subscribe = (t: string, m: CameraMode): void => {
+    if (session.isEnded) session = makeSession();
+    session.subscribe(t, m);
+  };
   session.subscribe(target, mode);
   setTuning(true);
   frame.setMode(mode);
@@ -102,18 +121,19 @@ export function createPaneView(
       return current;
     },
     setTarget(t) {
-      if (t === currentTarget) return;
+      const now = session.current;
+      if (!session.isEnded && t === now.target && now.pending === null) return;
       currentTarget = t;
-      connected = false;
-      entityCount = 0;
-      session.subscribe(t, current);
+      retuning = !session.isEnded && now.target !== null && t !== now.target;
+      if (retuning) setTuning(true);
+      subscribe(t, current);
     },
     setMode(m) {
-      if (m === current) return;
+      if (m === current && !session.isEnded) return;
       current = m;
       rig.setMode(m);
       frame.setMode(m);
-      session.subscribe(currentTarget, m);
+      subscribe(currentTarget, m);
     },
     frame(now) {
       const dt = Math.min(0.1, (now - last) / 1000);
@@ -123,7 +143,8 @@ export function createPaneView(
       const h = canvas.clientHeight;
       if (w === 0 || h === 0) return;
       const focus = state.focus;
-      if (tuning === (focus !== null)) setTuning(focus === null);
+      const want = focus === null || retuning;
+      if (tuning !== want) setTuning(want);
       const raw = rig.update(state.world, focus, dt, state.heading);
       // Chase: pull in and up when foliage sits between the camera and the agent's head.
       const pos =
@@ -146,6 +167,7 @@ export function createPaneView(
     },
     dispose() {
       session.close();
+      view?.dispose();
       renderer.dispose();
       frame.root.remove();
     },

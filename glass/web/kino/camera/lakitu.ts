@@ -39,6 +39,8 @@ const LIFT_DOWN_RATE = 1;
 export interface ChaseState {
   /** The yaw that "behind the agent" has swung to so far; null until the first update. */
   baseYaw: number | null;
+  /** True once baseYaw came from a heading; until then the first heading that arrives replaces it. */
+  headed: boolean;
   /** The viewer's rotation away from behind, shown and wanted. */
   offset: number;
   offsetGoal: number;
@@ -61,6 +63,7 @@ export function newChase(): ChaseState {
   const level = ZOOM_LEVELS[DEFAULT_ZOOM] as { distance: number; height: number };
   return {
     baseYaw: null,
+    headed: false,
     offset: 0,
     offsetGoal: 0,
     zoom: DEFAULT_ZOOM,
@@ -161,6 +164,7 @@ export function swoopChase(s: ChaseState, reducedMotion: boolean): void {
   s.swoop = reducedMotion ? 0 : 1;
   s.shown = null;
   s.baseYaw = null;
+  s.headed = false;
   s.last = null;
 }
 
@@ -187,8 +191,11 @@ export function stepChase(s: ChaseState, world: VoxelWorld, input: ChaseInput): 
   s.last = { ...target };
   const moving = s.speed > MOVING_SPEED;
   const behind = heading !== null ? yawBehind(heading) : moving ? motionYaw : null;
-  if (s.baseYaw === null) s.baseYaw = behind ?? 0;
-  else if (moving && behind !== null)
+  if (s.baseYaw === null || (!s.headed && heading !== null)) {
+    // The first frames often have a position but no entity yet: a guess until the heading arrives.
+    s.baseYaw = behind ?? s.baseYaw ?? 0;
+    s.headed = heading !== null;
+  } else if (moving && behind !== null)
     s.baseYaw = approachAngle(s.baseYaw, behind, 1 - Math.exp(-dt * SWING_RATE));
 
   s.idle += dt;

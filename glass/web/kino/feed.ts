@@ -59,6 +59,10 @@ export class FeedState {
         const entities = this.store.merge(msg.entities, now);
         const me = entities.find((e) => e.agent_id !== undefined && e.agent_id === this.target);
         if (me && Number.isFinite(me.yaw)) this.heading = me.yaw;
+        // The plugin sends target_moved only when the agent enters another chunk; its entity comes
+        // every tick. The camera follows the entity, so it moves smoothly (decision 0161).
+        if (me && [me.x, me.y, me.z].every(Number.isFinite))
+          this.focus = { x: me.x, y: me.y, z: me.z };
         return { dirty: [], entities };
       }
       case 'target_moved':

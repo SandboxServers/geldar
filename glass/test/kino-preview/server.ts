@@ -144,14 +144,22 @@ function feed(socket: Duplex, key: string): void {
           view_radius: 3,
         });
         for (const s of SECTIONS) send(s);
-        timer = setInterval(() => {
+        // Like the plugin (KinoFeed.tick): entity positions every tick, target_moved only when the
+        // agent enters another chunk. The page must follow the entity between chunk changes.
+        let chunk = '';
+        const tick = (): void => {
           const t = (Date.now() - START) / 1000;
           const entities = entityPositions(t);
           send({ type: 'entity_positions', entities });
           const me = entities.find((e) => e.agent_id === agent.id);
-          if (me)
+          const now = me ? `${Math.floor(me.x / 16)},${Math.floor(me.z / 16)}` : chunk;
+          if (me && now !== chunk) {
+            chunk = now;
             send({ type: 'target_moved', target_agent_id: agent.id, x: me.x, y: me.y, z: me.z });
-        }, TICK_MS);
+          }
+        };
+        tick();
+        timer = setInterval(tick, TICK_MS);
       },
       () => socket.end(),
     );

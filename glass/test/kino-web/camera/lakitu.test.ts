@@ -305,6 +305,61 @@ describe('rig: modes keep the view, orbit drifts, free-fly accelerates', () => {
   });
 });
 
+describe('chase camera on the real feed cadence (review of decision 0161)', () => {
+  it('follows the entity between chunk changes, so it trails a walking agent', () => {
+    const w = airWorld();
+    const f = new FeedState();
+    f.apply({
+      type: 'hello',
+      feed_version: 1,
+      world: 'w',
+      target_agent_id: 'ag_a',
+      view_radius: 2,
+    });
+    const s = newChase();
+    let p: Vec3 = { x: 0, y: 0, z: 0 };
+    let chunk = '';
+    // Walking +x at 4 blocks a second, facing +x (yaw -90). The plugin sends the entity every tick
+    // and target_moved only on entering another chunk (KinoFeed.tick).
+    for (let i = 0; i < 6 * 20; i++) {
+      const x = -10 + i * 0.2;
+      const e = {
+        id: 'e1',
+        type: 'minecraft:player',
+        agent_id: 'ag_a',
+        x,
+        y: 0,
+        z: 0.5,
+        yaw: -90,
+        pitch: 0,
+      };
+      f.apply({ type: 'entity_positions', entities: [e] });
+      const c = `${Math.floor(x / 16)}`;
+      if (c !== chunk) {
+        chunk = c;
+        f.apply({ type: 'target_moved', target_agent_id: 'ag_a', x, y: 0, z: 0.5 });
+      }
+      for (let k = 0; k < 3; k++)
+        p = stepChase(s, w, { target: f.focus as Vec3, heading: f.heading, dt: 1 / 60 });
+    }
+    const agentX = -10 + 119 * 0.2;
+    expect(f.focus?.x).toBeCloseTo(agentX, 6);
+    expect(s.speed).toBeGreaterThan(3);
+    expect(p.x).toBeLessThan(agentX - 4);
+  });
+
+  it('takes the first heading that arrives after frames without one', () => {
+    const w = airWorld();
+    const s = newChase();
+    run(s, w, 3 / 60, () => ({ target: AGENT, heading: null }));
+    const p = run(s, w, 2, () => ({ target: AGENT, heading: 0 }), 3 / 60);
+    expect(p.z).toBeLessThan(AGENT.z - 4);
+    recentreChase(s);
+    const back = run(s, w, 2, () => ({ target: AGENT, heading: 0 }), 2);
+    expect(back.z).toBeLessThan(AGENT.z - 4);
+  });
+});
+
 describe('feed heading', () => {
   it('takes the heading from the followed agent only', () => {
     const f = new FeedState();

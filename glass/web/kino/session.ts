@@ -18,6 +18,8 @@ export interface SessionHooks {
   /** A fresh world for a new target: the view drops the old scene. */
   onReset(state: FeedState): void;
   onChange(change: FeedChange, state: FeedState): void;
+  /** The server refused a retune (rate_limited): the old target keeps playing (decision 0161). */
+  onRetuneRefused?(kept: string, refused: string): void;
   /** The server ended the feed (`bye` reason), or the socket dropped (`disconnected`). */
   onEnd(reason: string): void;
 }
@@ -51,6 +53,8 @@ export class KinoSession {
   private readonly connect: () => SocketLike;
   private readonly hooks: SessionHooks;
   private target: string | null = null;
+  /** A retune the server has not confirmed yet: the old world stays until a hello names this agent. */
+  private retune: string | null = null;
 
   constructor(connect: () => SocketLike, hooks: SessionHooks) {
     this.connect = connect;
@@ -63,12 +67,28 @@ export class KinoSession {
 
   subscribe(agent: string, mode: CameraMode): void {
     if (this.ended) return;
-    if (this.target !== agent) {
-      this.target = agent;
-      this.state = new FeedState();
-      this.hooks.onReset(this.state);
+    if (this.target === null) {
+      this.reset(agent);
+    } else if (this.target !== agent) {
+      // Keep showing the current agent until the server's hello confirms the new one: a refused
+      // retune (rate_limited) must not leave the old feed playing into an empty world.
+      this.retune = agent;
+    } else {
+      this.retune = null;
     }
     this.out({ type: 'subscribe', target_agent_id: agent, mode });
+  }
+
+  /** The agent shown now, and the one a retune is waiting for. */
+  get current(): { target: string | null; pending: string | null } {
+    return { target: this.target, pending: this.retune };
+  }
+
+  private reset(agent: string): void {
+    this.target = agent;
+    this.retune = null;
+    this.state = new FeedState();
+    this.hooks.onReset(this.state);
   }
 
   unsubscribe(): void {
@@ -112,6 +132,15 @@ export class KinoSession {
       return;
     }
     if (typeof msg !== 'object' || msg === null || typeof msg.type !== 'string') return;
+    // The new target's first message (hello, or target_moved) switches the world over.
+    const names =
+      msg.type === 'hello' || msg.type === 'target_moved' ? msg.target_agent_id : undefined;
+    if (names !== undefined && names !== this.target && names === this.retune) this.reset(names);
+    if (msg.type === 'rate_limited' && this.retune !== null && this.target !== null) {
+      const refused = this.retune;
+      this.retune = null;
+      this.hooks.onRetuneRefused?.(this.target, refused);
+    }
     const change = this.state.apply(msg);
     this.hooks.onChange(change, this.state);
     if (change.bye !== undefined && change.bye !== 'unsubscribed') this.end(change.bye);
