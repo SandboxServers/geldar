@@ -188,3 +188,66 @@ describe('pillar against a late block update (real prismarine physics)', () => {
     expect(text.length).toBeLessThan(160);
   });
 });
+
+/** Mineflayer's unforced look turns at most this far a tick, and finishes when it arrives. */
+const TURN_PER_TICK = 0.15;
+/** Where placeBlock aims for the block under the cell (0, 63, 0): the top face's centre. */
+const FACE_OF_STONE = new Vec3(0.5, 64, 0.5);
+
+/** The yaw mineflayer's lookAt sets for a point: atan2(-dx, -dz). */
+const yawTo = (from: Vec3, to: Vec3) => Math.atan2(-(to.x - from.x), -(to.z - from.z));
+/** The turn between two yaws, the short way round. */
+const turnBetween = (a: number, b: number) =>
+  Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a)));
+
+/**
+ * A bot with mineflayer's turning: a forced look sets the yaw at once, an unforced one turns
+ * `TURN_PER_TICK` a tick. The fake placeBlock first turns unforced to the face centre, as mineflayer
+ * does, and then sends: the server refuses while the feet are under a block up, because the bot's own
+ * box still fills the cell.
+ */
+function turningBot(start: Vec3) {
+  const fake = serverFake(0, dirtUpdate);
+  fake.state.position.set(start.x, start.y, start.z);
+  let yaw = 0;
+  const turnTo = async (point: Vec3, force: boolean | undefined) => {
+    const target = yawTo(fake.state.position, point);
+    if (force) {
+      yaw = target;
+      return;
+    }
+    const ticks = Math.ceil(turnBetween(yaw, target) / TURN_PER_TICK);
+    for (let i = 0; i < ticks; i++) await fake.bot.waitForTicks();
+    yaw = target;
+  };
+  fake.bot.lookAt.mockImplementation(async (...args: unknown[]) => {
+    await turnTo(args[0] as Vec3, args[1] === true);
+    return undefined;
+  });
+  fake.bot.placeBlock.mockImplementation(async () => {
+    await turnTo(FACE_OF_STONE, false);
+    if (fake.state.position.y - 64 < 1) {
+      throw new Error('Server refused to place dirt at (0, 64, 0): the block is still air');
+    }
+    dirtUpdate(fake.state.scene);
+  });
+  return fake;
+}
+
+describe('pillar aims before it jumps (mineflayer turns at 0.15 rad a tick)', () => {
+  // Tommy: 0.2 east and 0.2 north of the cell centre, a 0.785 rad turn to the face.
+  it('places from a diagonal start, before the bot is a block up', async () => {
+    const fake = turningBot(new Vec3(0.7, 64, 0.3));
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
+    expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
+  });
+
+  // Trini: 0.2 west of the cell centre, a quarter turn to the face.
+  it('places from a quarter-turn start, before the bot is a block up', async () => {
+    const fake = turningBot(new Vec3(0.3, 64, 0.5));
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
+    expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
+  });
+});
