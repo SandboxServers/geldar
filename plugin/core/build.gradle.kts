@@ -11,8 +11,10 @@ java {
 dependencies {
     compileOnly(libs.paper.api)
     compileOnly(libs.gson)
-    // CoreProtect's API (block owner queries). The server provides the plugin; its jar is not in this build.
-    compileOnly(libs.coreprotect)
+    // CoreProtect's API (block owner queries). The server provides the plugin and its log4j; its jar is not in this build.
+    compileOnly(libs.coreprotect) {
+        isTransitive = false
+    }
     implementation(libs.jnats)
 
     testImplementation(libs.paper.api)
