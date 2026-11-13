@@ -2,6 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { checkCap, checkOwnerId, type Sql } from './owners.ts';
 import { markText, personaMarks } from './persona-lint.ts';
+import { checkRosterStart } from './roster.ts';
 
 /** A player's identity, in bytes of UTF-8 (spec 5.15.5; multi-line markdown is allowed). */
 export const IDENTITY_MAX_BYTES = 8192;
@@ -158,6 +159,8 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     );
     const owner = owners.rows[0];
     if (owner === undefined) throw new Error(`no owner ${player.owner}`);
+    // The name must be on this owner's roster and under its max_agents (sql 0024, decision 0108).
+    await checkRosterStart(sql, player.owner, player.name);
     const used = await sql.query(
       "SELECT count(*)::int AS n FROM mcp_players WHERE owner_id = $1 AND status <> 'retired'",
       [player.owner],
