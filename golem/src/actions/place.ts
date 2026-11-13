@@ -3,7 +3,14 @@ import type { Position } from './bot-types.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
-import { edgeCell, entityInCell, pillarStep, placeAgainst } from './pillar.ts';
+import {
+  digSideCell,
+  edgeCell,
+  entityInCell,
+  pillarStep,
+  placeAgainst,
+  sideDigCell,
+} from './pillar.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -220,6 +227,18 @@ async function pillarPlace(
     if (beside) {
       cell = beside;
       result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+    } else {
+      // No free neighbour (a 1-wide shaft): dig a side cell, step into it, and pillar there.
+      const side = sideDigCell(bot, cell);
+      const dug =
+        side !== null && (await digSideCell(bot, cell, side, { signal: ctx.signal, sink: SILENT }));
+      if (ctx.signal.aborted) return cancelled();
+      const climb = dug ? await stepToEdge(ctx, cell) : null;
+      if (ctx.signal.aborted) return cancelled();
+      if (climb) {
+        cell = climb;
+        result = await pillarStep(bot, stack, { signal: ctx.signal, sink: SILENT }, refusals);
+      }
     }
   }
   // Unsafe headroom above the feet cell: step to a neighbour whose own headroom is clear, and pillar there.
