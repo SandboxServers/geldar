@@ -1,5 +1,5 @@
 // The Lakitu chase camera (decision 0161): behind the agent's heading, swinging round lazily while the
-// agent moves, rotated in 45-degree steps, three zoom distances, pushed in at walls, and a swoop-in
+// agent moves, rotated in 45-degree steps, three zoom distances, rising over or pushed in at walls, a swoop-in
 // when it tunes to an agent. Pure: it reads the voxel world and the target, and sends nothing.
 //
 // Angles: the camera yaw follows orbitGoal (yaw 0 puts the camera on +z of the agent). Minecraft yaw
@@ -29,6 +29,12 @@ const OFFSET_RATE = 8;
 const ZOOM_RATE = 5;
 const WALL_OUT_RATE = 2;
 const RAY_STEP = 0.2;
+/** When the way behind is blocked, the camera tries these extra heights and rises over the wall. */
+export const LIFTS: readonly number[] = [0, 2.5, 5, 8];
+/** A lift is good enough when its ray is clear for this share of its length. */
+const LIFT_CLEAR = 0.8;
+const LIFT_UP_RATE = 4;
+const LIFT_DOWN_RATE = 1;
 
 export interface ChaseState {
   /** The yaw that "behind the agent" has swung to so far; null until the first update. */
@@ -42,6 +48,8 @@ export interface ChaseState {
   levelHeight: number;
   /** The distance actually shown along the camera ray, after walls. */
   shown: number | null;
+  /** Extra height over a wall behind the agent, eased (Super Mario 64's camera rises over walls). */
+  lift: number;
   /** Swoop progress: 1 at the start, 0 when done. */
   swoop: number;
   idle: number;
@@ -59,6 +67,7 @@ export function newChase(): ChaseState {
     levelDistance: level.distance,
     levelHeight: level.height,
     shown: null,
+    lift: 0,
     swoop: 0,
     idle: 0,
     speed: 0,
@@ -201,21 +210,63 @@ export function stepChase(s: ChaseState, world: VoxelWorld, input: ChaseInput): 
 
   const yaw = s.baseYaw + s.offset;
   const eye = lookPoint(target);
-  const goal = {
+  const goalAt = (extra: number): Vec3 => ({
     x: eye.x + Math.sin(yaw) * horizontal,
-    y: eye.y + height,
+    y: eye.y + height + extra,
     z: eye.z + Math.cos(yaw) * horizontal,
+  });
+  // A lifted camera first rises straight up from the eyes (as far as that is clear), then goes out:
+  // an agent pressed against a wall is filmed from over the wall's top, not through it.
+  const originAt = (extra: number): Vec3 =>
+    extra === 0
+      ? eye
+      : {
+          x: eye.x,
+          y: eye.y + clearDistance(world, eye, { x: eye.x, y: eye.y + extra, z: eye.z }),
+          z: eye.z,
+        };
+  const rayAt = (extra: number): { from: Vec3; to: Vec3; length: number } => {
+    const from = originAt(extra);
+    const to = goalAt(extra);
+    return { from, to, length: Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z) };
   };
-  const full = Math.hypot(horizontal, height);
-  // During the swoop the camera is above the world's walls: it flies in, it does not collide yet.
-  const clear = sw > 0.05 ? full : clearDistance(world, eye, goal);
+  if (sw > 0.05) {
+    // During the swoop the camera is above the world's walls: it flies in, it does not collide yet.
+    s.lift = 0;
+  } else {
+    // The lowest lift whose ray is mostly clear; the clearest one when none is.
+    let want = 0;
+    let best = -1;
+    for (const extra of LIFTS) {
+      const r = rayAt(extra);
+      const share = r.length === 0 ? 0 : clearDistance(world, r.from, r.to) / r.length;
+      if (share > best + 1e-6) {
+        best = share;
+        want = extra;
+      }
+      if (share >= LIFT_CLEAR) {
+        want = extra;
+        break;
+      }
+    }
+    const rate = want > s.lift ? LIFT_UP_RATE : LIFT_DOWN_RATE;
+    s.lift += (want - s.lift) * (1 - Math.exp(-dt * rate));
+  }
+  const {
+    from,
+    to: goal,
+    length: full,
+  } = sw > 0.05
+    ? { from: eye, to: goalAt(0), length: Math.hypot(horizontal, height) }
+    : rayAt(s.lift);
+  const clear = sw > 0.05 ? full : clearDistance(world, from, goal);
   // In fast against a wall, back out slowly, so the view does not pump.
   if (s.shown === null || clear < s.shown) s.shown = clear;
   else s.shown += (clear - s.shown) * (1 - Math.exp(-dt * WALL_OUT_RATE));
   const f = full === 0 ? 0 : s.shown / full;
   return {
-    x: eye.x + (goal.x - eye.x) * f,
-    y: eye.y + (goal.y - eye.y) * f,
-    z: eye.z + (goal.z - eye.z) * f,
+    x: from.x + (goal.x - from.x) * f,
+    y: from.y + (goal.y - from.y) * f,
+    z: from.z + (goal.z - from.z) * f,
   };
 }

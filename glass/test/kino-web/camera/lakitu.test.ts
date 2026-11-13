@@ -175,6 +175,28 @@ describe('chase camera: walls', () => {
     expect(later.z).toBeLessThan(-5);
   });
 
+  it('rises over a wall right behind the agent instead of ending up in its head', () => {
+    const w = airWorld();
+    // A bank three blocks high, one block behind an agent facing +z: the camera is on the -z side.
+    for (let x = -20; x <= 30; x++)
+      for (let y = -20; y <= 2; y++)
+        for (let z = -20; z <= -1; z++)
+          w.applyUpdate({ type: 'block_update', pos: { x, y, z }, state: STONE });
+    const s = newChase();
+    const p = run(s, w, 4, () => ({ target: AGENT, heading: 0 }));
+    const eye = { x: AGENT.x, y: AGENT.y + 1.6, z: AGENT.z };
+    expect(Math.hypot(p.x - eye.x, p.y - eye.y, p.z - eye.z)).toBeGreaterThan(3);
+    expect(p.y).toBeGreaterThan(3);
+    expect(collides(w, p)).toBe(false);
+    // With the bank gone it settles back down to the normal height.
+    for (let x = -20; x <= 30; x++)
+      for (let y = -20; y <= 2; y++)
+        for (let z = -20; z <= -1; z++)
+          w.applyUpdate({ type: 'block_update', pos: { x, y, z }, state: AIR });
+    const back = run(s, w, 8, () => ({ target: AGENT, heading: 0 }));
+    expect(back.y - eye.y).toBeCloseTo(3.5, 0);
+  });
+
   it('is not pushed in by leaves, which the renderer fades instead', () => {
     const w = airWorld();
     wallZ(w, -3, LEAVES);
