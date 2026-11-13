@@ -1,8 +1,9 @@
 /**
  * The page script, public/app.js, run in happy-dom with a fake fetch and a fake EventSource. The
  * module's /js/ imports are pointed at the render sources on disk, so the code under test is the
- * shipped script and the shipped markup. Covers the filters, pause with its 2000-row buffer, load
- * older, reconnect backoff and the banner.
+ * shipped script and the shipped markup. Covers the filters, the search count and marks, the detail
+ * under an entry, "Copy", live entries added in place, pause with its 2000-row buffer, load older,
+ * reconnect backoff and the banner.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -32,6 +33,7 @@ function thought(i: number, name = 'Ada'): Record<string, unknown> {
     wake_reason: `w${i}`,
     prompt_template_version: 'v1',
     latency_ms: 10,
+    action_id: 'act-1',
     parsed: { plan: `plan ${i}` },
   };
 }
@@ -70,9 +72,9 @@ interface Pages {
 }
 
 /** Sets up the page and runs app.js once; returns the document and the window it lives in. */
-async function boot(pages: Pages): Promise<Window> {
+async function boot(pages: Pages, navigator: object = {}, search = ''): Promise<Window> {
   const win = new Window({
-    url: 'http://127.0.0.1:8787/',
+    url: `http://127.0.0.1:8787/${search}`,
     settings: {
       disableJavaScriptEvaluation: true,
       disableJavaScriptFileLoading: true,
@@ -85,9 +87,14 @@ async function boot(pages: Pages): Promise<Window> {
   fetchUrls = [];
   sources = [];
   vi.stubGlobal('document', win.document);
+  // The browser's navigator. Without a clipboard on it, the page draws no "Copy" button.
+  vi.stubGlobal('navigator', navigator);
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('window', {
-    addEventListener: () => undefined,
+    location: win.location,
+    history: win.history,
+    scrollTo: vi.fn(),
+    addEventListener: win.addEventListener.bind(win),
     removeEventListener: () => undefined,
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
     clearTimeout: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
@@ -96,11 +103,16 @@ async function boot(pages: Pages): Promise<Window> {
     'fetch',
     vi.fn(async (url: string) => {
       fetchUrls.push(url);
+      const one = /^\/api\/thoughts\/([^?]+)/.exec(url);
       const body = url.startsWith('/api/agents')
         ? { agents: pages.agents }
-        : url.includes('cursor=')
-          ? { thoughts: pages.older, next: null }
-          : { thoughts: pages.first, next: pages.firstNext };
+        : one !== null
+          ? { thought: pages.first.find((t) => t.thought_id === decodeURIComponent(one[1] ?? '')) }
+          : url.startsWith('/api/receipts')
+            ? { receipts: [{ kind: 'place', phase: 'settle', item: 'oak_planks', count: 4 }] }
+            : url.includes('cursor=')
+              ? { thoughts: pages.older, next: null }
+              : { thoughts: pages.first, next: pages.firstNext };
       return { ok: true, status: 200, json: async () => body };
     }),
   );
@@ -151,6 +163,104 @@ const PAGES: Pages = {
 };
 
 describe('the page script', () => {
+  it('counts matching new entries only while away, and resets on click or manual scroll', async () => {
+    const win = await boot(PAGES);
+    const list = win.document.getElementById('thoughts');
+    const fresh = win.document.getElementById('fresh') as HTMLButtonElement;
+    let top = 20;
+    if (list) list.getBoundingClientRect = () => new win.DOMRect(0, top, 300, 1000);
+    sources[0]?.emit('thought', thought(40));
+    expect(fresh.hidden).toBe(true);
+    top = -100;
+    sources[0]?.emit('thought', thought(41));
+    expect(fresh.hidden).toBe(false);
+    expect(fresh.textContent).toBe('1 new entry');
+    sources[0]?.emit('thought', thought(42));
+    sources[0]?.emit('thought', thought(42));
+    expect(fresh.textContent).toBe('2 new entries');
+    fire(win, fresh, 'click');
+    expect(fresh.hidden).toBe(true);
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    sources[0]?.emit('thought', thought(43));
+    expect(fresh.textContent).toBe('1 new entry');
+    top = 0;
+    win.dispatchEvent(new win.Event('scroll'));
+    expect(fresh.hidden).toBe(true);
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'plan 1';
+    fire(win, keyword, 'input');
+    top = -100;
+    sources[0]?.emit('thought', thought(44));
+    expect(fresh.hidden).toBe(true);
+    sources[0]?.emit('thought', thought(100));
+    expect(fresh.textContent).toBe('1 new entry');
+    keyword.value = 'no-match';
+    fire(win, keyword, 'input');
+    expect(fresh.hidden).toBe(true);
+  });
+
+  it('marks a dead agent in options, rows and detail without changing copy text', async () => {
+    const written: string[] = [];
+    const win = await boot(
+      {
+        ...PAGES,
+        agents: [
+          { agent_id: 'life-1', name: 'Ada', died_at: '2026-11-11', death_cause: '<img>\u202E' },
+        ],
+      },
+      { clipboard: { writeText: async (text: string) => void written.push(text) } },
+    );
+    expect(win.document.querySelectorAll('#f-agent option')[1]?.textContent).toBe('Ada (died)');
+    expect(win.document.querySelector('.meta .agent + .died')?.textContent).toBe('died');
+    fire(win, win.document.querySelector('button.when'), 'click');
+    await settle();
+    const detail = win.document.querySelector('.detail');
+    expect(detail?.textContent).toContain('Died2026-11-11Cause<img>[U+202E]');
+    expect(detail?.querySelector('img')).toBeNull();
+    fire(win, win.document.querySelector('button.copy'), 'click');
+    await settle();
+    expect(written[0]).toBe('Ada, 2026-11-10 00:00 UTC\nplan 1');
+  });
+
+  it('restores a bookmark before its single first fetch and replaces the URL on edits', async () => {
+    const win = await boot(PAGES, {}, '?q=plan%203&agent=a1&range=day&outcome=parsed&template=v1');
+    expect(fetchUrls.filter((u) => u.startsWith('/api/thoughts?'))).toHaveLength(1);
+    expect(fetchUrls[1]).toContain('agent=a1');
+    expect(fetchUrls[1]).toContain('outcome=parsed');
+    expect(fetchUrls[1]).toContain('since=');
+    expect(listRows(win)).toBe(0); // fixture entries are outside the last day
+    expect(win.document.querySelector('details.more')?.hasAttribute('open')).toBe(true);
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    expect(keyword.value).toBe('plan 3');
+    keyword.value = 'pit';
+    fire(win, keyword, 'input');
+    expect(win.location.search).toContain('q=pit');
+    expect(win.history.length).toBe(1);
+  });
+
+  it('keeps searching when the browser refuses a URL update', async () => {
+    const win = await boot(PAGES);
+    win.history.replaceState = () => {
+      throw new Error('SecurityError: too many calls');
+    };
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'plan 3';
+    fire(win, keyword, 'input');
+    expect(listRows(win)).toBe(1);
+    expect(win.document.getElementById('count')?.textContent).toContain('1 match');
+  });
+
+  it('ignores invalid URL choices and bounds text before assigning controls', async () => {
+    const win = await boot(
+      PAGES,
+      {},
+      '?agent=unknown&range=week&outcome=bad&q=' + 'x'.repeat(220) + '&template=' + 't'.repeat(80),
+    );
+    expect(fetchUrls[1]).toBe('/api/thoughts?limit=50');
+    expect((win.document.getElementById('f-keyword') as HTMLInputElement).value).toHaveLength(200);
+    expect((win.document.getElementById('f-template') as HTMLInputElement).value).toHaveLength(64);
+  });
+
   it('loads the agents and the first page, and draws one row per thought with names as text only', async () => {
     const win = await boot(PAGES);
     expect(fetchUrls[0]).toBe('/api/agents');
@@ -208,8 +318,100 @@ describe('the page script', () => {
     fire(win, older, 'click');
     await settle();
     expect(fetchUrls.some((u) => u.includes('cursor=CUR1'))).toBe(true);
+    // An older page is the largest the API gives; the first page stays small so the page opens fast.
+    expect(fetchUrls.find((u) => u.includes('cursor=CUR1'))).toContain('limit=100');
     expect(listRows(win)).toBe(4);
     expect(older.disabled).toBe(true);
+  });
+
+  it('says how many entries are loaded, counts the matches of a search and marks them', async () => {
+    const win = await boot(PAGES);
+    const count = win.document.getElementById('count');
+    expect(count?.textContent).toBe('Showing the 3 entries loaded so far.');
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'PLAN 3';
+    fire(win, keyword, 'input');
+    expect(listRows(win)).toBe(1);
+    expect(count?.textContent).toBe(
+      '1 match in the 3 entries loaded so far. Load older to search further back.',
+    );
+    const marks = [...win.document.querySelectorAll('#thoughts mark')].map((m) => m.textContent);
+    expect(marks).toEqual(['plan 3']);
+    keyword.value = 'no-such-word';
+    fire(win, keyword, 'input');
+    expect(count?.textContent).toBe(
+      'No matches in the 3 entries loaded so far. Load older to search further back.',
+    );
+    keyword.value = '';
+    fire(win, keyword, 'input');
+    expect(listRows(win)).toBe(3);
+    expect(win.document.querySelectorAll('#thoughts mark').length).toBe(0);
+  });
+
+  it('opens the detail under its entry on the time button, and closes it on the second press', async () => {
+    const win = await boot(PAGES);
+    const first = win.document.querySelector('#thoughts > li');
+    const time = first?.querySelector('button.when') as HTMLButtonElement;
+    fire(win, time, 'click');
+    await settle();
+    expect(fetchUrls).toContain('/api/thoughts/t1');
+    expect(fetchUrls).toContain('/api/receipts?action_id=act-1');
+    const detail = first?.querySelector('.detail');
+    expect(detail?.textContent).toContain('Template version');
+    expect(
+      [...(detail?.querySelectorAll('tbody td') ?? [])].map((cell) => cell.textContent),
+    ).toEqual(['place', 'settle', 'oak_planks', '4', '']);
+    expect(win.document.querySelectorAll('.detail').length).toBe(1);
+    // Nothing is drawn outside the list: the detail is under the entry, not at the foot of the page.
+    expect(win.document.querySelector('main > .detail, #detail')).toBeNull();
+    fire(win, time, 'click');
+    await settle();
+    expect(win.document.querySelectorAll('.detail').length).toBe(0);
+  });
+
+  it('adds a live entry at the top without redrawing the others, so an open detail stays open', async () => {
+    const win = await boot(PAGES);
+    sources[0]?.onopen?.();
+    const before = [...win.document.querySelectorAll('#thoughts > li')];
+    fire(win, before[0]?.querySelector('button.when') ?? null, 'click');
+    await settle();
+    sources[0]?.emit('thought', thought(50));
+    const after = [...win.document.querySelectorAll('#thoughts > li')];
+    expect(after.length).toBe(4);
+    expect(after[0]?.textContent).toContain('plan 50');
+    // The same nodes, in the same order: a reader's place, selection and open detail are kept.
+    expect(after.slice(1).every((node, i) => node === before[i])).toBe(true);
+    expect(after[1]?.querySelector('.detail')).not.toBeNull();
+    expect(win.document.getElementById('count')?.textContent).toBe(
+      'Showing the 4 entries loaded so far.',
+    );
+    // A live entry the search does not match is kept but not drawn.
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    keyword.value = 'plan 1';
+    fire(win, keyword, 'input');
+    sources[0]?.emit('thought', thought(51));
+    expect(listRows(win)).toBe(1);
+    expect(win.document.getElementById('count')?.textContent).toContain('1 match in the 5 entries');
+  });
+
+  it('redraws a thought that arrives a second time, instead of keeping its old row', async () => {
+    const win = await boot(PAGES);
+    sources[0]?.emit('thought', { ...thought(1), parsed: { plan: 'a newer plan' } });
+    expect(listRows(win)).toBe(3);
+    expect(win.document.querySelector('#thoughts > li')?.textContent).toContain('a newer plan');
+    expect(win.document.getElementById('thoughts')?.textContent).not.toContain('plan 1');
+  });
+
+  it('colours the status by the state of the feed, and "/" puts the cursor in the search field', async () => {
+    const win = await boot(PAGES);
+    const status = win.document.getElementById('status');
+    expect(status?.className).toBe('status connecting');
+    sources[0]?.onopen?.();
+    expect(status?.className).toBe('status live');
+    const keyword = win.document.getElementById('f-keyword');
+    expect(win.document.activeElement).not.toBe(keyword);
+    win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: '/', cancelable: true }));
+    expect(win.document.activeElement).toBe(keyword);
   });
 
   it('reconnects with the backoff: 500 ms, then 1000 ms, and says Reconnecting in the meantime', async () => {
@@ -231,6 +433,63 @@ describe('the page script', () => {
     // The failed connection is closed before its retry, so only one stream is ever open.
     expect(sources[1]?.closed).toBe(true);
     expect(sources[2]?.closed).toBe(false);
+  });
+
+  it('has no "Copy" button where the browser gives the page no clipboard', async () => {
+    const win = await boot(PAGES);
+    expect(listRows(win)).toBe(3);
+    expect(win.document.querySelectorAll('button.copy').length).toBe(0);
+  });
+
+  it('copies an entry as plain text on a press of "Copy", says so, and puts the label back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const written: string[] = [];
+    const win = await boot(PAGES, {
+      clipboard: { writeText: async (text: string) => void written.push(text) },
+    });
+    const copy = win.document.querySelector('#thoughts > li button.copy') as HTMLButtonElement;
+    expect(win.document.querySelectorAll('button.copy').length).toBe(3);
+    // Nothing is written until the reader presses the button.
+    expect(written).toEqual([]);
+    fire(win, copy, 'click');
+    await settle();
+    expect(written).toEqual(['Ada, 2026-11-10 00:00 UTC\nplan 1']);
+    expect(copy.textContent).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(copy.textContent).toBe('Copy');
+    // The hostile name goes to the clipboard as the same text the page shows.
+    const second = win.document.querySelectorAll('#thoughts > li button.copy')[1];
+    fire(win, second ?? null, 'click');
+    await settle();
+    expect(written[1]).toBe(
+      '<script>globalThis.__glassCanary=1</script>, 2026-11-10 00:00 UTC\nplan 2',
+    );
+  });
+
+  it('says so when the browser refuses the copy', async () => {
+    const win = await boot(PAGES, {
+      clipboard: { writeText: () => Promise.reject(new Error('denied')) },
+    });
+    const copy = win.document.querySelector('#thoughts > li button.copy') as HTMLButtonElement;
+    fire(win, copy, 'click');
+    await settle();
+    expect(copy.textContent).toBe('Could not copy');
+  });
+
+  it('only ever writes plain text to the clipboard: no read, no markup, no legacy copy command', () => {
+    const sources = [
+      APP_JS,
+      ...['render-model', 'render-view', 'render-stream'].map((name) =>
+        readFileSync(new URL(`../src/${name}.ts`, import.meta.url), 'utf8'),
+      ),
+    ].join('\n');
+    expect(sources).toMatch(/clipboard\s*\.writeText\(/);
+    expect(sources).not.toMatch(
+      /readText|clipboard\s*\.read\b|clipboard\s*\.write\(|ClipboardItem/,
+    );
+    expect(sources).not.toMatch(
+      /execCommand|text\/html|addEventListener\(\s*['"](copy|cut|paste)['"]/,
+    );
   });
 
   it('is read-only: no request uses a method other than GET, and the banner says it is for humans', async () => {
