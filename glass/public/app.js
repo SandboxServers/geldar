@@ -7,9 +7,11 @@
 import {
   appendOlder,
   countLabel,
+  filterQuery,
   filterThoughts,
   LIST_CAP,
   pushThought,
+  readFilters,
   toView,
 } from '/js/render-model.ts';
 import { createStreamClient } from '/js/render-stream.ts';
@@ -74,6 +76,28 @@ function currentFilter() {
     sinceMs: sinceMs(),
     keyword: els.keyword.value.trim() || undefined,
   };
+}
+
+/** URL values are validated before they reach form controls. */
+function restoreFilters() {
+  const filter = readFilters(window.location.search, state.agentIds);
+  els.keyword.value = filter.q;
+  els.template.value = filter.template;
+  els.outcome.value = filter.outcome;
+  els.range.value = filter.range;
+  els.agent.value = filter.agent;
+  if (filter.outcome || filter.template) document.querySelector('details.more').open = true;
+}
+
+function saveFilters() {
+  const query = filterQuery({
+    q: els.keyword.value.trim(),
+    agent: selectedAgent(),
+    range: els.range.value,
+    outcome: els.outcome.value,
+    template: els.template.value.trim(),
+  });
+  window.history.replaceState(null, '', window.location.pathname + query + window.location.hash);
 }
 
 async function getJson(path) {
@@ -319,11 +343,26 @@ function start() {
   });
 
   // Server-side filters reload the first page; the text filters only narrow the loaded list.
-  els.agent.addEventListener('change', reload);
-  els.outcome.addEventListener('change', reload);
-  els.range.addEventListener('change', reload);
-  els.template.addEventListener('input', render);
-  els.keyword.addEventListener('input', render);
+  els.agent.addEventListener('change', () => {
+    saveFilters();
+    reload();
+  });
+  els.outcome.addEventListener('change', () => {
+    saveFilters();
+    reload();
+  });
+  els.range.addEventListener('change', () => {
+    saveFilters();
+    reload();
+  });
+  els.template.addEventListener('input', () => {
+    saveFilters();
+    render();
+  });
+  els.keyword.addEventListener('input', () => {
+    saveFilters();
+    render();
+  });
   els.pause.addEventListener('click', togglePause);
   els.older.addEventListener('click', loadOlder);
   document.addEventListener('keydown', onKey);
@@ -333,7 +372,10 @@ function start() {
     .catch(() => {
       els.status.textContent = 'Could not load the agents.';
     })
-    .then(reload);
+    .then(() => {
+      restoreFilters();
+      return reload();
+    });
 }
 
 start();

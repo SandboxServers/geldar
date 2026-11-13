@@ -72,9 +72,9 @@ interface Pages {
 }
 
 /** Sets up the page and runs app.js once; returns the document and the window it lives in. */
-async function boot(pages: Pages, navigator: object = {}): Promise<Window> {
+async function boot(pages: Pages, navigator: object = {}, search = ''): Promise<Window> {
   const win = new Window({
-    url: 'http://127.0.0.1:8787/',
+    url: `http://127.0.0.1:8787/${search}`,
     settings: {
       disableJavaScriptEvaluation: true,
       disableJavaScriptFileLoading: true,
@@ -91,6 +91,8 @@ async function boot(pages: Pages, navigator: object = {}): Promise<Window> {
   vi.stubGlobal('navigator', navigator);
   vi.stubGlobal('EventSource', FakeSource);
   vi.stubGlobal('window', {
+    location: win.location,
+    history: win.history,
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
     setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
@@ -160,6 +162,33 @@ const PAGES: Pages = {
 };
 
 describe('the page script', () => {
+  it('restores a bookmark before its single first fetch and replaces the URL on edits', async () => {
+    const win = await boot(PAGES, {}, '?q=plan%203&agent=a1&range=day&outcome=parsed&template=v1');
+    expect(fetchUrls.filter((u) => u.startsWith('/api/thoughts?'))).toHaveLength(1);
+    expect(fetchUrls[1]).toContain('agent=a1');
+    expect(fetchUrls[1]).toContain('outcome=parsed');
+    expect(fetchUrls[1]).toContain('since=');
+    expect(listRows(win)).toBe(0); // fixture entries are outside the last day
+    expect(win.document.querySelector('details.more')?.hasAttribute('open')).toBe(true);
+    const keyword = win.document.getElementById('f-keyword') as HTMLInputElement;
+    expect(keyword.value).toBe('plan 3');
+    keyword.value = 'pit';
+    fire(win, keyword, 'input');
+    expect(win.location.search).toContain('q=pit');
+    expect(win.history.length).toBe(1);
+  });
+
+  it('ignores invalid URL choices and bounds text before assigning controls', async () => {
+    const win = await boot(
+      PAGES,
+      {},
+      '?agent=unknown&range=week&outcome=bad&q=' + 'x'.repeat(220) + '&template=' + 't'.repeat(80),
+    );
+    expect(fetchUrls[1]).toBe('/api/thoughts?limit=50');
+    expect((win.document.getElementById('f-keyword') as HTMLInputElement).value).toHaveLength(200);
+    expect((win.document.getElementById('f-template') as HTMLInputElement).value).toHaveLength(64);
+  });
+
   it('loads the agents and the first page, and draws one row per thought with names as text only', async () => {
     const win = await boot(PAGES);
     expect(fetchUrls[0]).toBe('/api/agents');

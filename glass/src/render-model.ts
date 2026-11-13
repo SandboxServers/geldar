@@ -238,3 +238,37 @@ export function backoffMs(attempt: number): number {
   const n = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
   return Math.min(30_000, 500 * 2 ** Math.min(n, 16));
 }
+
+/** A bookmark's filters, validated before assigning any control value. */
+export function readFilters(search: string, agentIds: string[]) {
+  const params = new URLSearchParams(search);
+  const agent = agentIds.indexOf(params.get('agent') ?? '');
+  const range = params.get('range');
+  const outcome = params.get('outcome');
+  return {
+    q: (params.get('q') ?? '').slice(0, 200),
+    template: (params.get('template') ?? '').slice(0, 64),
+    agent: agent < 0 ? '' : String(agent),
+    range: range === 'hour' ? '3600000' : range === 'day' ? '86400000' : '0',
+    outcome: outcome === 'parsed' || outcome === 'unparsed' ? outcome : '',
+  };
+}
+
+/** Defaults are omitted; this query is used only by history.replaceState. */
+export function filterQuery(filter: {
+  q: string;
+  agent: string;
+  range: string;
+  outcome: string;
+  template: string;
+}): string {
+  const params = new URLSearchParams();
+  if (filter.q) params.set('q', filter.q.slice(0, 200));
+  if (filter.agent) params.set('agent', filter.agent);
+  if (filter.range === '3600000') params.set('range', 'hour');
+  if (filter.range === '86400000') params.set('range', 'day');
+  if (filter.outcome === 'parsed' || filter.outcome === 'unparsed')
+    params.set('outcome', filter.outcome);
+  if (filter.template) params.set('template', filter.template.slice(0, 64));
+  return params.size ? `?${params}` : '';
+}
