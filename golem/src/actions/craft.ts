@@ -1,8 +1,10 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Block, Recipe } from './bot-types.ts';
+import { craftsPossible, FEWER_MESSAGE, pickUpSpareTable, placeSpareTable } from './craft-spare.ts';
 import { bookYield, craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
 import { heldCount } from './inventory-count.ts';
+import { mineAction } from './mine.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -95,12 +97,29 @@ async function craftBody(
   action: Extract<Action, { do: 'craft' }>,
   progress: CraftProgress,
 ): Promise<ActionOutcome> {
-  const { bot, signal, timeScale } = ctx;
+  const { bot } = ctx;
   const def: CraftItem | undefined = bot.registry.itemsByName[action.item];
   if (!def) return failed('invalid_args', `unknown item ${action.item}`);
   const item = { id: def.id, name: def.name };
 
-  const table = findTable(bot);
+  const spare = await placeSpareTable(ctx, item.id, action.count);
+  if (spare.outcome) return spare.outcome;
+  try {
+    return await craftAtTable(ctx, action, progress, item, spare.table);
+  } finally {
+    if (spare.placed) await pickUpSpareTable(ctx);
+  }
+}
+
+/** The craft once the station is known: the walk, the recipe, the craft and the settle. */
+async function craftAtTable(
+  ctx: ActionContext,
+  action: Extract<Action, { do: 'craft' }>,
+  progress: CraftProgress,
+  item: { id: number; name: string },
+  table: Block | null,
+): Promise<ActionOutcome> {
+  const { bot, signal, timeScale } = ctx;
   let usedTable: Block | null = null;
   let recipes = bot.recipesFor(item.id, null, action.count, null);
   if (recipes.length === 0 && table) {
@@ -127,7 +146,15 @@ async function craftBody(
 
   const recipe = pickRecipe(bot, recipes, action.count);
   if (!recipe) return failed('not_possible', 'not craftable');
-  const times = Math.ceil(action.count / recipe.result.count);
+  // Partial: the materials may allow fewer crafts than asked. Craft what they allow, and say so.
+  const crafts = Math.min(
+    Math.ceil(action.count / recipe.result.count),
+    craftsPossible(bot, recipe),
+  );
+  if (crafts === 0) return diagnoseCraft(bot, item, table, action.count);
+  const count = Math.min(action.count, crafts * recipe.result.count);
+  const fewer = count < action.count;
+  const times = crafts;
   const before = heldCount(bot, item.id);
   // What the library crafts are expected to make: the recipe's count per craft.
   let expected = times * recipe.result.count;
@@ -145,19 +172,17 @@ async function craftBody(
       // judged against what was asked.
       const yieldPer = bookYield(bot, item) || recipe.result.count;
       stop = await craftFromBook(
-        { ...ctx, want: action.count },
+        { ...ctx, want: count },
         item,
-        Math.ceil(action.count / yieldPer),
+        Math.ceil(count / yieldPer),
         usedTable,
       );
-      expected = action.count;
+      expected = count;
       // With no table, a display that never fills means this item has no 2x2 recipe the book can make.
       // bot.craft makes the rest, so the craft does not fail on a display that was never the right one.
       if (!usedTable && stop?.status === 'failed' && stop.reason === 'timeout') {
         stop = null;
-        const left = Math.ceil(
-          (action.count - (heldCount(bot, item.id) - before)) / recipe.result.count,
-        );
+        const left = Math.ceil((count - (heldCount(bot, item.id) - before)) / recipe.result.count);
         await craftByLibrary(ctx, recipe, left);
       }
     } else {
@@ -202,7 +227,8 @@ async function craftBody(
       crafted,
     });
   }
-  return completed({ item: item.name, crafted, used_table: usedTable !== null });
+  const detail = { item: item.name, crafted, used_table: usedTable !== null };
+  return completed(fewer ? { ...detail, message: FEWER_MESSAGE } : detail);
 }
 
 /** The player's own window: its 2x2 grid is closed by this id, never opened. */
@@ -238,13 +264,6 @@ function withCrafted(stop: ActionOutcome, item: string, crafted: number): Action
     return failed('timeout', stop.message, { ...stop.detail, crafted });
   }
   return stop;
-}
-
-/** The nearest crafting table within range, or null when there is none (or no such block). */
-function findTable(bot: Bot): Block | null {
-  const id = bot.registry.blocksByName.crafting_table?.id;
-  if (id === undefined) return null;
-  return bot.findBlock({ matching: id, maxDistance: TABLE_RANGE });
 }
 
 /**

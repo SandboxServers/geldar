@@ -5,6 +5,7 @@ import type { Block } from './bot-types.ts';
 import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import { isDoorLike } from './path-doors.ts';
+import { protectedReason } from './protected-blocks.ts';
 import type { DiagSink } from './stall-diag.ts';
 
 /** Steps (one block of height each) a staircase climbs at most. */
@@ -114,7 +115,10 @@ export async function stairs(bot: Bot, o: StairOptions, refusals: string[]): Pro
       const at = stand.offset(0, dy, 0);
       const target = bot.blockAt(at);
       if (!solid(target) || target === null) continue;
-      const refusal = unbreakableReason(target) ?? hazardReason(bot, target, at, own, true);
+      const refusal =
+        unbreakableReason(target) ??
+        hazardReason(bot, target, at, own, true) ??
+        protectedReason(bot, target, at);
       if (refusal) {
         refusals.push(refusal);
         log(o, { step, stopped: 'refused', refusal });

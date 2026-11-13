@@ -97,6 +97,7 @@ describe('isIpScanned', () => {
       'pnpm-lock.yaml',
       'plugin/core/gradle.lockfile',
       'plugins/bluemap/bluemap.lock.json',
+      'plugins/coreprotect/coreprotect.lock.json',
       'tools/repo-checks/src/release-dates.json',
       'CHANGELOG.md',
       'plugin/gradle/verification-metadata.xml',

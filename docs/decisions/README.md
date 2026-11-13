@@ -114,7 +114,7 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0139](0139-kino-feed-agents-only.md) | The Kino entity feed lists agent bodies and mobs only; every other player is excluded | Accepted (orchestrator, 2026-11-11) |
 >
 | [0140](0140-agent-skins.md) | Agent skins: MineSkin-signed textures in geldar-skins, applied by the Velocity identity plugin; ranger skins uploaded with owner approval | Accepted (orchestrator, owner request, 2026-11-11) |
-| [0141](0141-soft-dig-pathing-for-natural-soft-blocks.md) | The Body's pathing may dig natural soft blocks (leaves, vines, snow layers, plant cover) and nothing else | Proposed (owner confirmation pending) |
+| [0141](0141-soft-dig-pathing-for-natural-soft-blocks.md) | The Body's pathing may dig natural soft blocks (leaves, vines, snow layers, plant cover) and nothing else | Superseded by 0164 |
 | [0142](0142-stall-and-replan-numbers.md) | A stalled move replans after about 60 ticks, up to 6 times, and follows partial paths | Proposed (owner confirmation pending) |
 | [0143](0143-outcome-events-extend-the-provisional-vocabulary.md) | Per-action `action` and `action_failed` events extend the provisional event vocabulary | Proposed (owner confirmation pending) |
 | [0144](0144-death-is-an-event-and-a-dated-fact-and-there-is-no-revive.md) | Death is a distinct event with `died_at` and a cause; there is no revive | Proposed (owner confirmation pending) |
@@ -135,3 +135,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0161](0161-kino-monitor-wall-and-lakitu-camera.md) | Kino redesign: a monitor wall (Wall, Feature, Solo; channel guide; one active monitor drives the keyboard) of Lakitu chase cameras (behind the heading, lazy swing, 45-degree steps, three zooms, swoop-in); wire protocol and the 4-monitor cap unchanged; cameras pass see-through blocks | Accepted (implementer; owner review in the PR) |
 | [0162](0162-perception-vertical-reach-edible.md) | Perception gains `vertical` and `in_reach` on nearby agents and `edible` on items (all optional, facts only); crop ripeness goes in `food_known` text, no contract change | Accepted |
 | [0163](0163-shelter-enclosed-counts-closed-doors.md) | A shelter is enclosed by blocks or a closed door; an open door does not count; the shelter is 25 cells with a doorway | Accepted |
+| [0164](0164-goto-digs-and-builds-its-way.md) | goto digs and builds its own way when the plain walk finds no path, and never digs through protected work | Accepted |
+| [0165](0165-block-owner-subjects.md) | Block ownership: the plugin records each placer per chunk and answers `geldar.<shard>.blockowner.query`; `blockowner.changed` carries owner changes; the Body may query and hear, not publish changes | Accepted |

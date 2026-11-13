@@ -2,4 +2,5 @@ name: GeldarCore
 version: "${version}"
 main: dev.geldar.core.GeldarCore
 api-version: "26.1"
+softdepend: [CoreProtect]
 description: Geldar-Core, event export to NATS and agent command block.

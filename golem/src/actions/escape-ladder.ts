@@ -5,6 +5,7 @@ import { inPit, stairs } from './escape-stairs.ts';
 import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import { heldBlock, type LooseBot, passable, pillarStep, release, solid } from './pillar.ts';
+import { protectedReason } from './protected-blocks.ts';
 import type { DiagSink } from './stall-diag.ts';
 
 /** The rungs of the hard-stuck ladder, in the only order they run. */
@@ -151,7 +152,9 @@ async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise
     const tool = b.pathfinder?.bestHarvestTool?.(block);
     const at = feet.plus(dir).offset(0, dy, 0);
     const refusal =
-      unbreakableReason(block) ?? hazardReason(bot, block, at, [feet, feet.offset(0, 1, 0)], false);
+      unbreakableReason(block) ??
+      hazardReason(bot, block, at, [feet, feet.offset(0, 1, 0)], false) ??
+      protectedReason(bot, block, at);
     if (refusal) {
       refusals.push(refusal);
       return false;

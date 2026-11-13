@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MoveResult } from '../../actions/pathing.ts';
+import { type MoveResult, STALL_TEXT } from '../../actions/pathing.ts';
 import { ActionRegistry } from '../../actions/registry.ts';
 import { fakeBot } from '../body.fakes.ts';
 import { allReflexesOn, MemorySink, ReflexRunner } from '../index.ts';
@@ -19,7 +19,7 @@ const REPORT: BlockedReport = {
   goal: { x: 14, y: 64, z: 0 },
   range: 1,
   intentId: 'int_1',
-  message: 'no movement for 600 world ticks',
+  message: STALL_TEXT,
 };
 
 /** A walk that returns the scripted results in order and logs each call. */

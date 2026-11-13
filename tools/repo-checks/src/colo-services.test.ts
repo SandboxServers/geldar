@@ -635,3 +635,19 @@ describe('compose/colo.yml: Chunky in Paper (pregeneration)', () => {
     expect(volumes.filter((v) => JSON.stringify(v).includes('chunky'))).toHaveLength(1);
   });
 });
+
+describe('compose/colo.yml: CoreProtect in Paper (block owner records)', () => {
+  const volumes = (colo.services.paper?.volumes ?? []) as (string | Record<string, unknown>)[];
+
+  it('mounts the verified CoreProtect jar read-only and no CoreProtect data or config path', () => {
+    expect(volumes).toContainEqual({
+      type: 'bind',
+      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/coreprotect/coreprotect.jar',
+      target: '/plugins/coreprotect.jar',
+      read_only: true,
+    });
+    // The plugin creates plugins/CoreProtect in the writable paper-data volume and rewrites its config, so no bind is made there.
+    expect(volumes.filter((v) => JSON.stringify(v).includes('CoreProtect'))).toHaveLength(0);
+    expect(volumes.filter((v) => JSON.stringify(v).includes('coreprotect'))).toHaveLength(1);
+  });
+});

@@ -161,6 +161,17 @@ describe('unstick action', () => {
     expect(dug).toEqual(['oak_leaves']);
   });
 
+  it("refuses to dig someone else's work on the way out: dirt beside built planks stays", async () => {
+    // The dirt under the feet touches planks below it (built, not this bot's): a dig-down would dig it.
+    const grid = island();
+    grid.set(key(0, 63, 0), 'dirt');
+    grid.set(key(0, 62, 0), 'oak_planks');
+    grid.set(key(0, 61, 0), 'dirt');
+    const { bot, dug } = fakeBot(grid);
+    expect(await unstick(ctxOf(bot))).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(dug).toEqual([]);
+  });
+
   it('does not dig down at low health, over lava, or through hard blocks', async () => {
     const soft = island();
     soft.set(key(0, 63, 0), 'oak_leaves');

@@ -14,7 +14,7 @@ const TABLE = { x: 2, z: 0 };
 export const BED = { x: 2, z: 2 };
 /**
  * The bed on the side away from the table, for `bed-clear`: the sleep walk stalled in the spec
- * layout (live: no movement for 600 world ticks), so this tells a Body stall from a scenario fault.
+ * layout (live: you did not move for a long while), so this tells a Body stall from a scenario fault.
  */
 export const BED_CLEAR = { x: -2, z: 2 };
 

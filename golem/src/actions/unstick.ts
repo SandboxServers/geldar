@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
+import { protectedReason } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
 
@@ -149,9 +150,11 @@ async function walk(ctx: ActionContext, dir: Vec3, jump: boolean): Promise<boole
 /**
  * Digs one block, with the best tool held when the inventory has one; false on any failure. The
  * pathfinder is halted first (its own tick can stop a dig), and a dig that ends "aborted" is tried
- * once more, since nothing in this call stopped it.
+ * once more, since nothing in this call stopped it. Every dig here goes through `protectedReason`
+ * first: someone else's work is never dug on the way out (decision 0164).
  */
-async function dig(bot: Bot, block: Block): Promise<boolean> {
+async function dig(bot: Bot, block: Block, at: Vec3): Promise<boolean> {
+  if (protectedReason(bot, block, at)) return false;
   const loose = bot as unknown as {
     pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
   };
@@ -199,7 +202,7 @@ async function digDown(bot: Bot, feet: Vec3, elevated: boolean): Promise<boolean
   if (elevated && below.blocks === 0 && below.lands === 'solid') return false;
   const drop: Drop = { blocks: below.blocks + 1, lands: below.lands };
   if (!digDownAllowed(bot.health ?? 20, drop)) return false;
-  return dig(bot, block);
+  return dig(bot, block, floor);
 }
 
 /**
@@ -210,14 +213,15 @@ async function digDown(bot: Bot, feet: Vec3, elevated: boolean): Promise<boolean
 async function digStair(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at, at.offset(0, -STAIR_STEP, 0)];
-  const blocks = cells.map((cell) => bot.blockAt(cell));
-  if (!blocks.every((block) => empty(block) || isSoft(block))) return false;
+  const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
+  if (!blocks.every(({ block }) => empty(block) || isSoft(block))) return false;
   const landing = bot.blockAt(at.offset(0, -STAIR_STEP - 1, 0));
   if (landing === null || landing.boundingBox === 'empty' || HARMFUL.has(landing.name))
     return false;
   if (landing.name === 'water' || landing.name === 'lava') return false;
-  for (const block of blocks) {
-    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block))) return false;
+  for (const { cell, block } of blocks) {
+    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block, cell)))
+      return false;
   }
   return true;
 }
@@ -226,9 +230,9 @@ async function digStair(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
 async function digSideways(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at];
-  const blocks = cells.map((cell) => bot.blockAt(cell));
-  if (!blocks.every((block) => empty(block) || isSoft(block))) return false;
-  if (!blocks.some(isSoft)) return false;
+  const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
+  if (!blocks.every(({ block }) => empty(block) || isSoft(block))) return false;
+  if (!blocks.some(({ block }) => isSoft(block))) return false;
   if (
     !dropAllowed(
       bot.health ?? 20,
@@ -237,8 +241,9 @@ async function digSideways(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
   ) {
     return false;
   }
-  for (const block of blocks) {
-    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block))) return false;
+  for (const { cell, block } of blocks) {
+    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block, cell)))
+      return false;
   }
   return true;
 }

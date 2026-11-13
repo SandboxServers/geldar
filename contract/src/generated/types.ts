@@ -93,6 +93,53 @@ export interface ActionRecord {
   receipt_id: string | null;
 }
 
+export type BlockOwner = BlockOwnerQuery | BlockOwnerReply | BlockOwnerChanged;
+
+export type WorldName = string;
+
+export type ChunkCoordinate = number;
+
+export type BlockCoordinateXZ = number;
+
+export type BlockCoordinateY = number;
+
+export type OwnerId = string;
+
+export interface BlockOwnerQuery {
+  world: WorldName;
+  chunk_x: ChunkCoordinate;
+  chunk_z: ChunkCoordinate;
+}
+
+export interface BlockOwnerReply {
+  world: WorldName;
+  chunk_x: ChunkCoordinate;
+  chunk_z: ChunkCoordinate;
+  /**
+   * @maxItems 4096
+   */
+  blocks: OwnedBlock[];
+  truncated: boolean;
+}
+
+export interface OwnedBlock {
+  x: BlockCoordinateXZ;
+  y: BlockCoordinateY;
+  z: BlockCoordinateXZ;
+  owner: OwnerId;
+}
+
+export interface BlockOwnerChanged {
+  world: WorldName;
+  x: BlockCoordinateXZ;
+  y: BlockCoordinateY;
+  z: BlockCoordinateXZ;
+  /**
+   * The new owner, or null when the ownership is cleared.
+   */
+  owner: string | null;
+}
+
 export interface BookReply {
   status: "ok" | "no_book" | "unreadable";
   title: string;
@@ -386,8 +433,6 @@ export type KinoFeed =
   | TargetMovedMessage
   | RateLimitedMessage
   | ByeMessage;
-
-export type WorldName = string;
 
 export type AgentId = string;
 

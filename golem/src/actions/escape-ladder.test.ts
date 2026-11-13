@@ -121,6 +121,19 @@ describe('escapeLadder', () => {
     expect(fake.bot.dig).not.toHaveBeenCalled();
   });
 
+  it("rung 3 refuses dirt that touches someone else's built block, and digs nothing", async () => {
+    // The dirt ahead touches planks: built material, not this bot's, so the dig rung protects it.
+    const fake = scriptedBot({
+      blocks: { '1,64,0': block('dirt'), '2,64,0': block('oak_planks') },
+      physics: walkEast,
+    });
+    const { result } = run(fake);
+    const outcome = await result;
+    expect(outcome).toMatchObject({ ok: false, reason: 'needs_rescue' });
+    expect((outcome as { refusal?: string }).refusal).toContain("someone else's work");
+    expect(fake.bot.dig).not.toHaveBeenCalled();
+  });
+
   it('rung 4: places a held block under the feet and climbs; needs_rescue only after it fails', async () => {
     const fake = scriptedBot({
       items: ['dirt'],
