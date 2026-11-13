@@ -3,7 +3,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from '../perception/perception.fakes.ts';
-import { giveAction, NOT_IN_SIGHT, TOSS_PITCH } from './give.ts';
+import { giveAction, NOT_IN_SIGHT, TOSS_PITCH, tossPitch } from './give.ts';
 import type { ActionOutcome } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 
@@ -126,6 +126,16 @@ describe('give', () => {
     expect(sent[1]).toBe(TOSS_PITCH);
     expect(sent[1]).toBeLessThan(0);
     expect(sent[2]).toBe(true);
+  });
+
+  it('looks up at the pitch tossPitch gives when the recipient is one block up', async () => {
+    const { world, run, look } = setup();
+    // The Body is at (0.5, 64, 0.5) and Pike at (2.5, 65, 1.5): one block up, 2.24 blocks out.
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(2.5, 65, 1.5) };
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    const sent = look.mock.calls[0] as unknown as [number, number, boolean];
+    expect(sent[1]).toBeCloseTo(tossPitch(1, Math.hypot(2, 1)), 12);
+    expect(sent[1]).toBeGreaterThan(0);
   });
 
   it('waits at least two ticks for the look to reach the server, then tosses', async () => {
@@ -383,6 +393,27 @@ describe('give', () => {
     const { world, run } = setup(5, { dropped: [7], picked: [], abortOnToss: true });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
     expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
+  });
+});
+
+describe('tossPitch', () => {
+  const degrees = (deg: number) => (deg * Math.PI) / 180;
+
+  it('looks 30 degrees down when the recipient is level with the Body or below it', () => {
+    expect(tossPitch(0, 2)).toBe(TOSS_PITCH);
+    expect(tossPitch(-1, 2)).toBe(TOSS_PITCH);
+    expect(tossPitch(-1, 1.5)).toBeCloseTo(-Math.PI / 6, 12);
+  });
+
+  it('looks up at one block up, flatter as the recipient is farther out', () => {
+    expect(tossPitch(1, 1.5)).toBeCloseTo(degrees(65), 12);
+    expect(tossPitch(1, 2)).toBeCloseTo(degrees(175 / 3), 12);
+    expect(tossPitch(1, 3)).toBeCloseTo(degrees(45), 12);
+  });
+
+  it('keeps the high pitch for a recipient two blocks up', () => {
+    expect(tossPitch(2, 2)).toBeCloseTo(degrees(60), 12);
+    expect(tossPitch(2, 3)).toBeCloseTo(degrees(50), 12);
   });
 });
 
