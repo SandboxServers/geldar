@@ -2,6 +2,7 @@ import { validateActionRecord } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { ensurePathfinder } from '../actions/pathing.ts';
 import { type ActionRegistry, type ActionRun, runAction } from '../actions/registry.ts';
+import { wakeBot } from '../actions/wake.ts';
 import { buildArena, quietWorld } from '../arena.ts';
 import type { TestControl } from '../test-control.ts';
 import { ulid } from '../ulid.ts';
@@ -144,7 +145,7 @@ async function cleanupBot(bot: Bot): Promise<void> {
       if (bot.currentWindow) bot.closeWindow(bot.currentWindow);
     },
     async () => {
-      if (bot.isSleeping) await bot.wake();
+      if (bot.isSleeping) await wakeBot(bot);
     },
   ];
   for (const step of steps) {

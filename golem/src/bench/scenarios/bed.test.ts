@@ -124,6 +124,10 @@ describe('bed', () => {
         username: 'GolemBenchB',
         isSleeping: true,
         time: { timeOfDay: 1000 },
+        on: () => undefined,
+        removeListener: () => undefined,
+        _client: { write: () => calls.push('wake') },
+      entity: { id: 1 },
         wake: async () => {
           calls.push('wake');
         },

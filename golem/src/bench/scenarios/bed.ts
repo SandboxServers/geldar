@@ -1,4 +1,5 @@
 import { Vec3 } from 'vec3';
+import { wakeBot } from '../../actions/wake.ts';
 import { waitUntil } from '../runner.ts';
 import type { BenchEnv, Scenario } from '../types.ts';
 
@@ -103,7 +104,7 @@ function makeBedScenario(
         const note = `sleep ${result.status} (${result.reason ?? '-'}: ${result.message ?? ''}), client isSleeping ${client}, server ${server}${mismatch}`;
         return { passed, note };
       } finally {
-        if (bot.isSleeping) await bot.wake().catch(() => undefined);
+        if (bot.isSleeping) await wakeBot(bot).catch(() => undefined);
         await ctl.timeSet('day');
       }
     },
