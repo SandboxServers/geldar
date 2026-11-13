@@ -23,6 +23,11 @@ export const OWNER_TTL_MS = 10 * 60_000;
 export const OWNER_RETRY_MS = 5_000;
 /** The longest a tier-2 walk waits for its neighbourhood's chunks before it plans with what it has. */
 export const OWNER_PREFETCH_WAIT_MS = 300;
+/**
+ * Queries one Body has in flight at once. The plugin answers on one thread with a queue of 32, and
+ * six Bodies at 18 chunks each would overflow it (a full queue answers truncated), so the rest wait.
+ */
+export const OWNER_QUERIES_IN_FLIGHT = 4;
 
 /** The slice of a NATS connection the client uses (the Body's own connection in production). */
 export interface OwnerTransport {
@@ -136,6 +141,24 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
    */
   const racing = new Map<string, ChangedEvent[]>();
   let stopped = false;
+  /** Queries in flight, and the ones waiting for a slot (first come, first sent). */
+  let inFlight = 0;
+  const waiting: Array<() => void> = [];
+  const releaseSlot = (): void => {
+    const next = waiting.shift();
+    // The slot passes straight to the next waiter, so the count stays as it was.
+    if (next) next();
+    else inFlight--;
+  };
+  /** Runs one query now when a slot is free (its request leaves at once), else when one frees. */
+  const runQuery = (query: () => Promise<void>): Promise<void> => {
+    const run = (): Promise<void> => query().finally(releaseSlot);
+    if (inFlight < OWNER_QUERIES_IN_FLIGHT) {
+      inFlight++;
+      return run();
+    }
+    return new Promise<void>((resolve) => waiting.push(resolve)).then(run);
+  };
 
   const store = (key: string, entry: ChunkEntry): void => {
     chunks.delete(key);
@@ -198,7 +221,7 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     }
     if (stopped) return Promise.resolve();
     racing.set(key, []);
-    const job = fetchChunk(world, cx, cz, key).finally(() => {
+    const job = runQuery(() => fetchChunk(world, cx, cz, key)).finally(() => {
       pending.delete(key);
       racing.delete(key);
     });
@@ -245,6 +268,13 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     signal: AbortSignal,
   ): Promise<void> => {
     const wanted = new Map<string, [number, number]>();
+    // The chunk each point stands in goes first (the bot's, then the goal's), then the rest of the 3x3.
+    for (const point of points) {
+      wanted.set(chunkKey(world, chunkOf(point.x), chunkOf(point.z)), [
+        chunkOf(point.x),
+        chunkOf(point.z),
+      ]);
+    }
     for (const point of points) {
       for (let dx = -1; dx <= 1; dx++) {
         for (let dz = -1; dz <= 1; dz++) {
