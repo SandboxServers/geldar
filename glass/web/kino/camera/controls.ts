@@ -1,16 +1,14 @@
-// Input binding. Keyboard and mouse on desktop, touch on a phone.
-//   Desktop: drag = look/orbit, wheel = zoom, W A S D = move, Space/Shift = up/down (free),
-//            1 = follow, 2 = orbit, 3 = free.
-//   Touch:   one-finger drag = look/orbit, two-finger pinch = zoom (orbit) or fly
-//            forward/back (free), on-screen mode buttons call rig.setMode.
-// keyMove and pinchDelta are pure and tested; bindControls needs a DOM and is not.
+// Input binding for one monitor's canvas (decision 0161). The keyboard is not bound here: the page
+// routes keys to the active monitor only (keys.ts), so one key press never drives every camera.
+//   Mouse:  drag = turn (follow and orbit swing round the agent; free looks), wheel = zoom,
+//           double-click = recentre.
+//   Touch:  one-finger drag = turn, two-finger pinch = zoom (follow and orbit) or fly (free),
+//           double-tap = recentre.
+// keyMove and pinchDelta are pure and tested; bindPointer needs a DOM.
 
-import type { CameraMode } from './modes.ts';
 import type { CameraRig, MoveInput } from './rig.ts';
 
-const KEY_MODES: Record<string, CameraMode> = { '1': 'follow', '2': 'orbit', '3': 'free' };
-
-/** Maps the set of held keys to a move vector. */
+/** Maps the set of held keys to a move vector (free-fly). */
 export function keyMove(held: ReadonlySet<string>): MoveInput {
   const axis = (pos: string, neg: string): number =>
     (held.has(pos) ? 1 : 0) - (held.has(neg) ? 1 : 0);
@@ -21,31 +19,39 @@ export function keyMove(held: ReadonlySet<string>): MoveInput {
   };
 }
 
+/** The keys keyMove reads. */
+export const MOVE_KEYS: ReadonlySet<string> = new Set(['w', 'a', 's', 'd', ' ', 'shift']);
+
 /** Pinch: spreading fingers (distance grows) zooms in, so the radius shrinks. */
 export function pinchDelta(prevDist: number, nextDist: number, scale = 0.1): number {
   return (prevDist - nextDist) * scale;
 }
 
-export function bindControls(el: HTMLElement, rig: CameraRig): () => void {
-  const held = new Set<string>();
+/** Wheel: one notch of accumulated delta is one step (follow zoom levels need whole steps). */
+export const WHEEL_NOTCH = 100;
+
+export interface PointerHooks {
+  /** Any press on the canvas: the page makes this monitor active. */
+  onActivate(): void;
+}
+
+export function bindPointer(
+  el: HTMLElement,
+  getRig: () => CameraRig,
+  hooks: PointerHooks,
+): () => void {
   const touches = new Map<number, { x: number; y: number }>();
-  const sync = (): void => {
-    rig.move = rig.mode === 'free' ? keyMove(held) : { right: 0, up: 0, forward: 0 };
-  };
-  const onKeyDown = (e: KeyboardEvent): void => {
-    const k = e.key.toLowerCase();
-    const mode = KEY_MODES[k];
-    if (mode) rig.setMode(mode);
-    held.add(k);
-    sync();
-  };
-  const onKeyUp = (e: KeyboardEvent): void => {
-    held.delete(e.key.toLowerCase());
-    sync();
-  };
+  let wheel = 0;
+  let lastTap = 0;
   const onDown = (e: PointerEvent): void => {
+    hooks.onActivate();
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     el.setPointerCapture?.(e.pointerId);
+    if (e.pointerType === 'touch') {
+      const now = performance.now();
+      if (now - lastTap < 300 && touches.size === 1) getRig().recentre();
+      lastTap = now;
+    }
   };
   const onUp = (e: PointerEvent): void => {
     touches.delete(e.pointerId);
@@ -53,6 +59,7 @@ export function bindControls(el: HTMLElement, rig: CameraRig): () => void {
   const onMove = (e: PointerEvent): void => {
     const prev = touches.get(e.pointerId);
     if (!prev) return;
+    const rig = getRig();
     const others = [...touches.entries()].filter(([id]) => id !== e.pointerId);
     const next = { x: e.clientX, y: e.clientY };
     if (others.length === 0) {
@@ -62,26 +69,44 @@ export function bindControls(el: HTMLElement, rig: CameraRig): () => void {
       const d0 = Math.hypot(prev.x - other.x, prev.y - other.y);
       const d1 = Math.hypot(next.x - other.x, next.y - other.y);
       if (rig.mode === 'free') rig.fly(-pinchDelta(d0, d1));
-      else rig.zoom(pinchDelta(d0, d1));
+      else if (rig.mode === 'follow') {
+        wheel += (d0 - d1) * 2;
+        if (Math.abs(wheel) >= WHEEL_NOTCH) {
+          rig.zoomStep(Math.sign(wheel));
+          wheel = 0;
+        }
+      } else rig.zoom(pinchDelta(d0, d1));
     }
     touches.set(e.pointerId, next);
   };
-  const onWheel = (e: WheelEvent): void => rig.zoom(e.deltaY * 0.02);
+  const onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    hooks.onActivate();
+    const rig = getRig();
+    if (rig.mode === 'orbit') {
+      rig.zoom(e.deltaY * 0.02);
+      return;
+    }
+    wheel += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    if (Math.abs(wheel) >= WHEEL_NOTCH) {
+      rig.zoomStep(Math.sign(wheel));
+      wheel = 0;
+    }
+  };
+  const onDouble = (): void => getRig().recentre();
 
   el.addEventListener('pointerdown', onDown);
   el.addEventListener('pointermove', onMove);
-  el.addEventListener('wheel', onWheel);
-  addEventListener('pointerup', onUp);
-  addEventListener('pointercancel', onUp);
-  addEventListener('keydown', onKeyDown);
-  addEventListener('keyup', onKeyUp);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+  el.addEventListener('wheel', onWheel, { passive: false });
+  el.addEventListener('dblclick', onDouble);
   return () => {
     el.removeEventListener('pointerdown', onDown);
     el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onUp);
     el.removeEventListener('wheel', onWheel);
-    removeEventListener('pointerup', onUp);
-    removeEventListener('pointercancel', onUp);
-    removeEventListener('keydown', onKeyDown);
-    removeEventListener('keyup', onKeyUp);
+    el.removeEventListener('dblclick', onDouble);
   };
 }

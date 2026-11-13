@@ -3,7 +3,7 @@
 
 import { WebGLRenderer } from 'three';
 import { buildAtlas } from './atlas.ts';
-import { bindControls } from './camera/controls.ts';
+import { bindPointer } from './camera/controls.ts';
 import { CameraRig } from './camera/rig.ts';
 import { devFeed } from './dev-feed.ts';
 import { FeedState } from './feed.ts';
@@ -21,7 +21,7 @@ async function main(): Promise<void> {
   const el = document.getElementById('kino') as HTMLCanvasElement;
   const renderer = new WebGLRenderer({ canvas: el, antialias: false });
   const rig = new CameraRig();
-  bindControls(el, rig);
+  bindPointer(el, () => rig, { onActivate: () => undefined });
   for (const [label, mode] of [
     ['Follow', 'follow'],
     ['Orbit', 'orbit'],
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   const frame = (): void => {
     const now = performance.now();
     const target = state.focus;
-    const pos = rig.update(state.world, target, Math.min(0.1, (now - last) / 1000));
+    const pos = rig.update(state.world, target, Math.min(0.1, (now - last) / 1000), state.heading);
     last = now;
     view.camera.position.set(pos.x, pos.y, pos.z);
     view.setFadeFocus(pos, target ? { x: target.x, y: target.y + 1.2, z: target.z } : null);

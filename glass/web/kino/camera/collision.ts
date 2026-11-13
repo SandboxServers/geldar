@@ -1,13 +1,17 @@
 // Client-side camera collision against the voxels the mesher draws (VoxelWorld).
 // Pure functions: nothing here touches the network or writes world data.
 //
-// Choices:
-// - A block is solid when its state is not air. Fluids and plants count as solid, because the
-//   mesher draws them as blocks; the camera never enters anything it can see as a block.
+// Choices (decision 0161):
+// - A block stops the camera when it is solid and opaque: a full cube or a block with a box shape
+//   (slab, stairs, fence, door). See-through blocks (leaves, glass, water) and plants (grass, flowers,
+//   torches) do not: the renderer fades see-through blocks near the camera and on its line to the
+//   agent, so the camera passes through a canopy instead of collapsing onto the agent under a tree.
 // - An unloaded section counts as solid: the camera cannot fly into void the renderer has not
 //   drawn, and it cannot leave the loaded area.
 // - A camera box that starts inside a solid does not move (it is never pushed through walls).
 
+import { shapeOf } from '../blockshape.ts';
+import { softOf } from '../mesher.ts';
 import { isAir, type VoxelWorld } from '../world.ts';
 
 export interface Vec3 {
@@ -22,8 +26,16 @@ export const CAMERA_HALF = 0.3;
 export const EPS = 1e-4;
 const STEP = 0.2;
 
+/** A block state the camera cannot pass (undefined, unloaded, counts as solid). */
+export function blocksCamera(state: string | undefined): boolean {
+  if (state === undefined) return true;
+  if (isAir(state) || softOf(state) > 0) return false;
+  const kind = shapeOf(state).kind;
+  return kind === 'cube' || kind === 'boxes';
+}
+
 export function isSolid(world: VoxelWorld, x: number, y: number, z: number): boolean {
-  return !isAir(world.stateAt(Math.floor(x), Math.floor(y), Math.floor(z)));
+  return blocksCamera(world.stateAt(Math.floor(x), Math.floor(y), Math.floor(z)));
 }
 
 /** True when the camera box centred on p overlaps any solid or unloaded block. */

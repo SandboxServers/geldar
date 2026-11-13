@@ -21,6 +21,10 @@ export class FeedState {
     return this.store.list();
   }
   focus: { x: number; y: number; z: number } | null = null;
+  /** The agent this feed follows (from hello). */
+  target: string | null = null;
+  /** The followed agent's Minecraft yaw in degrees, from its entity; null until the feed has it. */
+  heading: number | null = null;
 
   apply(msg: KinoFeed, now: number = Date.now()): FeedChange {
     switch (msg.type) {
@@ -48,8 +52,15 @@ export class FeedState {
         edge(lz, [0, 0, 1]);
         return { dirty: dirty.filter((k) => this.world.has(k)) };
       }
-      case 'entity_positions':
-        return { dirty: [], entities: this.store.merge(msg.entities, now) };
+      case 'hello':
+        this.target = msg.target_agent_id;
+        return { dirty: [] };
+      case 'entity_positions': {
+        const entities = this.store.merge(msg.entities, now);
+        const me = entities.find((e) => e.agent_id !== undefined && e.agent_id === this.target);
+        if (me && Number.isFinite(me.yaw)) this.heading = me.yaw;
+        return { dirty: [], entities };
+      }
       case 'target_moved':
         this.focus = { x: msg.x, y: msg.y, z: msg.z };
         return { dirty: [] };

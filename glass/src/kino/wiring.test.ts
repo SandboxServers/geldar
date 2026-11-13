@@ -91,6 +91,12 @@ describe('Kino default off', () => {
     expect(index).not.toContain('dev.ts');
     expect((await fetch(`http://127.0.0.1:${port}/kino/main.ts`)).status).toBe(200);
     expect((await fetch(`http://127.0.0.1:${port}/kino/session.ts`)).status).toBe(200);
+    // Decision 0161: the page's stylesheet is a file of its own, served as CSS under the Kino CSP.
+    expect(index).toContain('href="./kino.css"');
+    const css = await fetch(`http://127.0.0.1:${port}/kino/kino.css`);
+    expect(css.status).toBe(200);
+    expect(css.headers.get('content-type')).toBe('text/css; charset=utf-8');
+    expect(css.headers.get('content-security-policy')).toContain("style-src 'self'");
     const dev = await (await fetch(`http://127.0.0.1:${port}/kino/dev.html`)).text();
     expect(dev).toContain('dev.ts');
     expect((await fetch(`http://127.0.0.1:${port}/kino/targets`, { method: 'POST' })).status).toBe(
