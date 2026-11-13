@@ -2,7 +2,7 @@ import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { findVisibleAgent } from '../perception/visible-agent.ts';
-import { STEP_BACK_BELOW, STEP_BACK_TO, stepBackPoint } from './give-spot.ts';
+import { STEP_BACK_BELOW, STEP_BACK_TO, stepBackSpots } from './give-spot.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -60,6 +60,8 @@ const DROP_RANGE = 8;
 const TAKE_BACK_RANGE = 1;
 /** How close (blocks) the Body walks to the spot it steps back to. */
 const STEP_RANGE = 0.5;
+/** The most wall time (ms at timeScale 1) the step back takes over all its tries. */
+const STEP_BACK_MS = 3_000;
 
 /** The one text for a recipient the agent cannot see. It never says whether the name exists. */
 export const NOT_IN_SIGHT = 'no such agent in sight';
@@ -132,17 +134,35 @@ function horizontalGap(a: Entity['position'], b: Entity['position']): number {
 
 /**
  * Steps the Body back to `STEP_BACK_TO` blocks from a recipient closer than `STEP_BACK_BELOW`, so
- * the toss flies past them. A step that fails leaves the Body where it is; the caller checks the
- * distance it ends at.
+ * the toss flies past them. It walks to the straight-back spot first, then to the first of the
+ * turned spots (`stepBackSpots`) that it reaches, and stops trying after `STEP_BACK_MS` (scaled by
+ * `timeScale`) or on an abort. When none is reached the Body is where it was; the caller checks
+ * the distance it ends at.
  */
 async function stepBackFrom(
   ctx: ActionContext,
   bot: Bot,
   recipient: Entity['position'],
 ): Promise<void> {
-  const spot = stepBackPoint(bot.entity.position, recipient, STEP_BACK_TO);
-  if (!spot) return;
-  await moveNear(bot, spot, STEP_RANGE, { signal: ctx.signal, timeScale: ctx.timeScale });
+  const spots = stepBackSpots(bot.entity.position, recipient, STEP_BACK_TO);
+  // One signal for every try: the run's abort, or the whole-step cap, stops the walk in progress.
+  const tries = new AbortController();
+  const stop = (): void => tries.abort();
+  ctx.signal.addEventListener('abort', stop, { once: true });
+  const cap = setTimeout(stop, STEP_BACK_MS * ctx.timeScale);
+  try {
+    for (const spot of spots) {
+      if (tries.signal.aborted) return;
+      const move = await moveNear(bot, spot, STEP_RANGE, {
+        signal: tries.signal,
+        timeScale: ctx.timeScale,
+      });
+      if (move.ok) return;
+    }
+  } finally {
+    clearTimeout(cap);
+    ctx.signal.removeEventListener('abort', stop);
+  }
 }
 
 /**
