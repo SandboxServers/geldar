@@ -22,6 +22,7 @@ export function renderMarkdown(rows: Row[]): string {
     'forced_move',
     'max corr/10s',
     'high corr',
+    'action_failed (do/reason)',
     'note',
   ];
   const lines = [`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`];
@@ -50,6 +51,7 @@ export function renderMarkdown(rows: Row[]): string {
       String(r.forcedMoves),
       num(r.maxCorrections10s, 0),
       pct(r.highCorrectionShare),
+      `${r.actionFailed}${r.actionFailures ? ` ${r.actionFailures}` : ''}`,
       note.join('; '),
     ];
     lines.push(`| ${cells.join(' | ')} |`);
