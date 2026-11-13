@@ -275,7 +275,7 @@ function touchesBuilt(bot: Bot, block: ProtectBlock): boolean {
  * on a face of a built block is protected too (a stone wall's floor, a dirt path beside a planked
  * floor). The ownership record protects any block recorded to someone else, once the flag is on.
  * A block this bot placed itself is its own work, so it is not protected (decision 0164).
- * TODO (0164): "part of an enclosed space" is not checked yet; no cheap local check was found.
+ * "Part of an enclosed space" is not protected: owner decision 2026-11-13 (natural caves look the same).
  */
 export function isProtected(bot: Bot, block: ProtectBlock): boolean {
   if (isOwnPlacement(bot, block.position)) return false;
