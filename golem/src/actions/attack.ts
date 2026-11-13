@@ -1,7 +1,10 @@
 import type { Bot } from 'mineflayer';
+import type { Vec3 } from 'vec3';
+import type { ItemStack } from './mine.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
+import { pickUpDrops, pickupNote } from './pickup.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** The entity type Mineflayer hands out in `bot.entities`. */
@@ -76,6 +79,8 @@ export const attackAction: ActionHandler<'attack'> = {
     const name = action.target;
     const first = findTarget(bot, name);
     if (!first) return failed('not_found', `no ${name} in view`);
+    const start = bot.inventory.items();
+    let lastAt = first.position.clone();
 
     const weapon = bestWeapon(bot);
     if (weapon && bot.heldItem?.name !== weapon.name) {
@@ -92,8 +97,9 @@ export const attackAction: ActionHandler<'attack'> = {
       if (signal.aborted) return cancelled({ target: name, swings });
       const entity = bot.entities[first.id];
       if (!entity || entity.isValid === false) {
-        return completed({ target: name, swings, killed: true, weapon: armed });
+        return afterKill(ctx, { target: name, swings, weapon: armed, at: lastAt, start });
       }
+      lastAt = entity.position.clone();
       if (entity.position.distanceTo(bot.entity.position) > REACH) {
         const move = await moveNear(bot, entity.position, APPROACH_RANGE, {
           digTier: false,
@@ -115,3 +121,31 @@ export const attackAction: ActionHandler<'attack'> = {
     });
   },
 };
+
+/** What a kill leaves for the pickup: where the target was last seen, and the inventory before. */
+interface KillRecord {
+  target: string;
+  swings: number;
+  weapon: string | null;
+  at: Vec3;
+  start: ItemStack[];
+}
+
+/**
+ * After a kill, takes the drops near where the target died. The outcome says in plain words what
+ * was picked up, or that drops were left. An abort during the pickup cancels the action.
+ */
+async function afterKill(ctx: ActionContext, kill: KillRecord): Promise<ActionOutcome> {
+  const { target, swings, weapon, at, start } = kill;
+  const pickup = await pickUpDrops(ctx, at, start);
+  if (pickup.aborted) return cancelled({ target, swings, killed: true, picked: pickup.picked });
+  const note = pickupNote(pickup);
+  return completed({
+    target,
+    swings,
+    killed: true,
+    weapon,
+    picked: pickup.picked,
+    ...(note ? { note } : {}),
+  });
+}

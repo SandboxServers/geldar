@@ -53,6 +53,9 @@ function fakeBot(options: FakeOptions = {}) {
       }
     }),
     waitForTicks: vi.fn(async () => undefined),
+    // The kill pickup listens for playerCollect; no drop is ever collected in these fakes.
+    on: vi.fn(),
+    removeListener: vi.fn(),
   };
   return { bot: bot as unknown as Bot, zombie, raw: bot };
 }
