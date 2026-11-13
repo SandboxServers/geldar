@@ -107,6 +107,7 @@ export const walkOutOfHazard: EscapeMover = async (walk) => {
   }, 100);
   try {
     await moveNear(bot, target, 1, {
+      digTier: false,
       signal: controller.signal,
       timeScale: walk.timeScale,
       stallTicks: 40,

@@ -140,6 +140,20 @@ describe('retreat: who counts as a danger', () => {
   });
 });
 
+describe('retreat: a walk never digs (decision 0164)', () => {
+  it('walks to the safe spot with digTier false', async () => {
+    const scene = calmScene();
+    scene.health = 4;
+    scene.hostiles = [zombieAt(2)];
+    walk.mockResolvedValue({ ok: true, distance: 1 });
+    await retreatReflex.run(
+      { health: 4, hostile: 'zombie' },
+      sceneContext(scene, { timeScale: 1 }),
+    );
+    expect(walk.mock.calls[0]?.[3]).toMatchObject({ digTier: false });
+  });
+});
+
 describe('retreat: time scale', () => {
   it('passes the runtime time scale to the walk', async () => {
     const scene = calmScene();

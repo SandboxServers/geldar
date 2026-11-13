@@ -61,6 +61,17 @@ describe('gotoAction', () => {
     );
   });
 
+  it('reports the dig and place summary as the result note', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: true,
+      distance: 0.4,
+      message: 'dug through one block',
+    });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome.status).toBe('completed');
+    expect(outcome.detail).toMatchObject({ note: 'dug through one block' });
+  });
+
   it('walks up to a visible player at range 2 and does not follow', async () => {
     const world = new FakeWorld();
     world.entities[2] = { type: 'player', username: 'Alex', position: new Vec3(0.5, 64, 6.5) };
@@ -104,6 +115,73 @@ describe('gotoAction', () => {
     expect(outcome).toEqual({
       status: 'completed',
       detail: { position: { x: 10, y: 64, z: 10 }, distance: 0.4 },
+    });
+  });
+
+  it('fails blocked when a partial walk stops far from an unreachable goal', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: true,
+      distance: 12,
+      partial: true,
+      message: 'dug through two blocks',
+    });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the way was blocked; you got as close as you could',
+      detail: {
+        position: { x: 10, y: 64, z: 10 },
+        distance: 12,
+        partial: true,
+        note: 'dug through two blocks',
+      },
+    });
+  });
+
+  it('fails blocked when a walk resolves ok far from the goal with no partial flag', async () => {
+    // An empty route (a sealed pit) settles as success without moving: far from the goal, it was blocked.
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, distance: 12 });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toEqual({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the way was blocked; you got as close as you could',
+      // The bot never left its spot, so the stall is reported too.
+      detail: { position: { x: 10, y: 64, z: 10 }, distance: 12, stalled: true },
+    });
+  });
+
+  it('keeps the note and leaves out partial when an unflagged walk is blocked', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: true,
+      distance: 12,
+      message: 'dug through one block',
+    });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      detail: { distance: 12, note: 'dug through one block' },
+    });
+    expect(outcome.detail).not.toHaveProperty('partial');
+  });
+
+  it('completes an ok walk that ends within range plus one with no partial flag', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, distance: 2 });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toEqual({
+      status: 'completed',
+      detail: { position: { x: 10, y: 64, z: 10 }, distance: 2 },
+    });
+  });
+
+  it('keeps a partial walk that ends within range plus one completed', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, distance: 2, partial: true });
+    const outcome = await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(outcome).toEqual({
+      status: 'completed',
+      detail: { position: { x: 10, y: 64, z: 10 }, distance: 2, partial: true },
     });
   });
 

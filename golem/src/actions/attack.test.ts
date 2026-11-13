@@ -53,6 +53,9 @@ function fakeBot(options: FakeOptions = {}) {
       }
     }),
     waitForTicks: vi.fn(async () => undefined),
+    // The kill pickup listens for playerCollect; no drop is ever collected in these fakes.
+    on: vi.fn(),
+    removeListener: vi.fn(),
   };
   return { bot: bot as unknown as Bot, zombie, raw: bot };
 }
@@ -80,6 +83,15 @@ describe('findTarget and bestWeapon', () => {
     const { bot } = fakeBot({ items: ['wooden_axe', 'stone_sword', 'iron_sword', 'bread'] });
     expect(bestWeapon(bot)?.name).toBe('iron_sword');
     expect(bestWeapon(fakeBot({ items: ['bread'] }).bot)).toBeNull();
+  });
+});
+
+describe('attack: the approach never digs (decision 0164)', () => {
+  it('walks up to an out-of-reach target with digTier false', async () => {
+    const { bot } = fakeBot({ items: ['stone_sword'], zombieAt: new Vec3(20, 64, 0) });
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' });
+    await attack(bot);
+    expect(walk.mock.calls[0]?.[3]).toMatchObject({ digTier: false });
   });
 });
 

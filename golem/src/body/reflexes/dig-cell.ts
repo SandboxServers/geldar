@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { protectedReason } from '../../actions/protected-blocks.ts';
 import type { ReflexContext } from '../reflex.ts';
 
 /**
@@ -68,6 +69,9 @@ export async function digCellWhy(
   if (!allow.has(block.name) || block.diggable === false) {
     return { ok: false, cause: `${block.name} is not diggable` };
   }
+  // The owner's rule covers the Body's automatic digging too: someone else's work is not dug (review N8).
+  const protectedBy = protectedReason(bot, block, cell);
+  if (protectedBy !== null) return { ok: false, cause: protectedBy };
   const eye = bot.entity.position.offset(0, bot.entity.height ?? 1.62, 0);
   if (eye.distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH)
     return { ok: false, cause: 'out of reach' };

@@ -76,6 +76,20 @@ export function pickFuel(
   return { choice: null, need };
 }
 
+/**
+ * How many items the fuel the bot holds can smelt in full: the best burnable candidate's whole
+ * items (floor of its burn ticks over the ticks per item). 0 when no fuel is held.
+ */
+export function fuelLimit(held: HeldItem[], input: string): number {
+  let best = 0;
+  for (const h of held) {
+    if (h.name === input || h.damageable) continue;
+    const burn = burnTicks(h.name);
+    if (burn > 0) best = Math.max(best, Math.floor((h.count * burn) / TICKS_PER_ITEM));
+  }
+  return best;
+}
+
 /** The ticks to wait for `count` items. */
 export function smeltTicks(count: number): number {
   return count * TICKS_PER_ITEM + SMELT_SLACK_TICKS;

@@ -1,7 +1,12 @@
+import { classifyPathError, forbidCornerCutting } from './path-rules.ts';
+
+export { classifyPathError, forbidCornerCutting };
+
 import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { escapeLadder, inWater } from './escape-ladder.ts';
+import { applyDigRules, DigTally } from './goto-dig.ts';
 import { nearDoor, onPathUpdate } from './path-doors.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
@@ -29,6 +34,10 @@ const { pathfinder, Movements, goals } = pathfinderPkg;
 const TICK_SLICE_MS = 40;
 /** ... and this long in total before it gives up with a `Timeout`. */
 const SEARCH_BUDGET_MS = 4000;
+/** Tier 2's search budget (ms): an unreachable goal costs this much, not the whole 4 s (decision 0164). */
+export const TIER_TWO_BUDGET_MS = 1500;
+/** A stall's tier 2 ends once the bot is this far from the spot it stalled at (decision 0164). */
+export const STALL_DIG_LEAVE_BLOCKS = 3;
 /** Stall then replan: under this many blocks of movement for this many ticks drops the path. */
 const REPLAN_MOVED = 0.03;
 export const REPLAN_STALL_TICKS = 60;
@@ -113,9 +122,24 @@ export function allowDoors(movements: unknown, bot: Bot): void {
   };
 }
 
+/** Tier 1 movements per bot: the plain walk (soft digs only, no towers) that `goto` starts with. */
+const tierOne = new WeakMap<Bot, unknown>();
+
 /**
- * Loads the pathfinder once and sets the movement rules: no digging, no towers, no scaffolding.
- * Digging and placing belong to `mine` and `place`, so `goto` never tunnels or builds.
+ * Tier 2 movements (decision 0164): digging at cost 4, towers with scaffolding, and the safety
+ * rules of `goto-dig.ts`. Built fresh per walk, with the same doors and corner rules as tier 1.
+ */
+function digMovements(bot: Bot): unknown {
+  const digging = new Movements(bot);
+  applyDigRules(digging, bot);
+  forbidCornerCutting(digging);
+  allowDoors(digging, bot);
+  return digging;
+}
+
+/**
+ * Loads the pathfinder once and sets the tier-1 movement rules: soft digs only, no towers, no
+ * scaffolding. `goto` digs and builds only in tier 2, after the plain walk finds no path (0164).
  */
 export function ensurePathfinder(bot: Bot): void {
   // Read through `unknown` so the check does not narrow `bot.pathfinder` to never below.
@@ -123,13 +147,14 @@ export function ensurePathfinder(bot: Bot): void {
   if (loaded) return;
   bot.loadPlugin(pathfinder);
   const movements = new Movements(bot);
-  // Soft-dig (decision C5-01 soft-dig pathing, Proposed): leaves, vines, snow and plant cover only.
+  // Soft-dig (decision 0141, amended by 0164): leaves, vines, snow and plant cover only in tier 1.
   installSoftDig(movements);
   movements.allow1by1towers = false;
   // The library spells this property `scafoldingBlocks` (2.4.5).
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
   allowDoors(movements, bot);
+  tierOne.set(bot, movements);
   bot.pathfinder.setMovements(movements);
   // Fake bodies in tests have no emitter; the trail and the door snap need one (as watchPathEvents).
   if (typeof bot.on === 'function') bot.on('path_update', (update) => onPathUpdate(bot, update));
@@ -153,7 +178,8 @@ export function planReach(
   ensurePathfinder(bot);
   const goal = new goals.GoalNear(target.x, target.y, target.z, REACH_RANGE);
   const planner = bot.pathfinder as unknown as ReachPlanner;
-  let movements: unknown = planner.movements;
+  // The plain movements, not the last walk's tier 2 (a goto may have left digging movements set).
+  let movements: unknown = tierOne.get(bot) ?? planner.movements;
   if (canDig) {
     const digging = new Movements(bot);
     digging.canDig = true;
@@ -173,61 +199,6 @@ interface ReachPlanner {
     movements: unknown,
     goal: unknown,
   ): { status: string; path: PathNode[]; visitedNodes?: number };
-}
-
-/** A block as the pathfinder's `getBlock` returns it: prismarine fields plus its own flags. */
-interface PathBlock {
-  physical?: boolean;
-  safe?: boolean;
-  type?: number;
-}
-
-/** The parts of a pathfinder `Movements` that the corner rule reads and wraps. */
-interface DiagonalMovements {
-  carpets?: Set<number>;
-  getBlock(node: unknown, dx: number, dy: number, dz: number): PathBlock;
-  getMoveDiagonal(node: unknown, dir: { x: number; z: number }, neighbors: unknown[]): void;
-}
-
-/** True for a carpet: `physical` to the library, but flat, so it never presses the bot sideways. */
-function isFlat(m: DiagonalMovements, block: PathBlock): boolean {
-  return block.type !== undefined && Boolean(m.carpets?.has(block.type));
-}
-
-/**
- * Allows a diagonal step only when both orthogonal side cells are free. At foot level a side cell
- * blocks when it is solid, or unsafe (fences, walls, fire, lava, unloaded: `safe` is false and
- * `physical` may be too); flat blocks do not. At head level only a solid block blocks (an overhang).
- * The library accepts a diagonal when one side is free, so the bot cuts a corner, presses against
- * the block and Paper rejects its position every tick (live: the bed walk past the crafting table
- * rubber-banded until the 600-tick stall rule fired). With both sides free it never touches one.
- */
-export function forbidCornerCutting(movements: unknown): void {
-  const m = movements as DiagonalMovements;
-  const original = m.getMoveDiagonal.bind(m);
-  const sideBlocked = (node: unknown, dx: number, dz: number): boolean => {
-    const foot = m.getBlock(node, dx, 0, dz);
-    if (foot.safe === false || (foot.physical && !isFlat(m, foot))) return true;
-    const head = m.getBlock(node, dx, 1, dz);
-    return Boolean(head.physical) && !isFlat(m, head);
-  };
-  m.getMoveDiagonal = (node, dir, neighbors) => {
-    if (sideBlocked(node, dir.x, 0) || sideBlocked(node, 0, dir.z)) return;
-    original(node, dir, neighbors);
-  };
-}
-
-/**
- * Maps a pathfinder error to a move reason. `NoPath` means the way is blocked; `Timeout` (the path
- * search ran out of time) is `timeout`, which runs no escape ladder; `GoalChanged` means something
- * else took over. Anything else is null: not a move result.
- */
-export function classifyPathError(error: unknown): 'blocked' | 'timeout' | 'interrupted' | null {
-  const name = (error as { name?: unknown } | null)?.name;
-  if (name === 'NoPath') return 'blocked';
-  if (name === 'Timeout') return 'timeout';
-  if (name === 'GoalChanged') return 'interrupted';
-  return null;
 }
 
 /**
@@ -276,6 +247,8 @@ export interface MoveOptions {
   timeScale: number;
   stallTicks?: number;
   diag?: DiagSink;
+  /** Tier 2 (digging and towers) may start after tier 1 fails. Default on; `false` for reflex walks. */
+  digTier?: boolean;
 }
 
 /**
@@ -300,6 +273,27 @@ export function moveNear(
   const stallTicks = opts.stallTicks ?? DEFAULT_STALL_TICKS;
   const sink = opts.diag ?? DEFAULT_DIAG_SINK;
   const goal = new Vec3(target.x, target.y, target.z);
+  // Tier 1 is the plain walk; tier 2 (digging, towers) starts only when tier 1 finds no path or stalls.
+  let tier = 1;
+  const tally = new DigTally();
+  const enterDigTier = (): boolean => {
+    if (opts.digTier === false || tier === 2) return false;
+    if (typeof bot.pathfinder?.setMovements !== 'function') return false;
+    tier = 2;
+    bot.pathfinder.setMovements(digMovements(bot) as never);
+    bot.pathfinder.thinkTimeout = TIER_TWO_BUDGET_MS;
+    tally.start(bot);
+    return true;
+  };
+  /** Back to the plain walk: tier-1 movements, the normal search budget. The tally keeps its counts. */
+  const leaveDigTier = (): void => {
+    if (tier !== 2) return;
+    tier = 1;
+    tally.stop();
+    const plain = tierOne.get(bot);
+    if (plain !== undefined) bot.pathfinder.setMovements(plain as never);
+    bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
+  };
 
   return new Promise<MoveResult>((resolve, reject) => {
     if (opts.signal.aborted) {
@@ -320,6 +314,9 @@ export function moveNear(
     };
     const cleanup = (): void => {
       clearInterval(watchdog);
+      // Every exit (success, cancel, failure, throw) leaves tier 2: its budget must not outlive the walk.
+      leaveDigTier();
+      tally.stop();
       opts.signal.removeEventListener('abort', onAbort);
       releaseJump();
     };
@@ -344,6 +341,8 @@ export function moveNear(
     let digSeenAge: number | undefined;
     let recoveredEpisode: number | undefined;
     let recoverySteps: readonly RecoveryStep[] = [];
+    /** Where a stall put tier 2 on: tier 2 is left once the bot is this far from it (decision 0164). */
+    let stallDigFrom: Vec3 | undefined;
 
     /** The facts of this move's stall or path failure, for its stall_diag line. */
     const factsAt = (reason: string, stalledTicks: number): StallFacts => ({
@@ -361,15 +360,29 @@ export function moveNear(
         () => {
           if (mine !== generation) return;
           const distance = bot.entity.position.distanceTo(goal);
+          // The library resolves an empty route (a sealed pit) as success without moving: no walk
+          // happened, so the plain walk did not reach the goal and tier 2 starts (decision 0164).
+          if (!partial && distance > range + 1 && enterDigTier()) {
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
+          const note = tally.note();
           settle(
             partial
-              ? { ok: true, distance, partial: true, message: PARTIAL_TEXT }
-              : { ok: true, distance },
+              ? {
+                  ok: true,
+                  distance,
+                  partial: true,
+                  message: note ? `${PARTIAL_TEXT}; ${note}` : PARTIAL_TEXT,
+                }
+              : note
+                ? { ok: true, distance, message: note }
+                : { ok: true, distance },
           );
         },
         (error: unknown) => {
           if (mine !== generation) return;
-          const reason = classifyPathError(error);
+          let reason = classifyPathError(error);
           if (reason === null) {
             // Not a pathing outcome: the run wrapper turns this throw into `internal`.
             if (!done) {
@@ -380,7 +393,34 @@ export function moveNear(
             return;
           }
           const name = (error as { name?: string } | null)?.name;
-          if (name === 'NoPath' && !partial && followPartial()) return;
+          let message = fixedMessage(name);
+          // Tier 1 found no path: the same goal again with digging and towers allowed. This
+          // trigger is a walk with no route at all, so tier 2 stays for the rest of the walk.
+          if (name === 'NoPath' && enterDigTier()) {
+            stallDigFrom = undefined;
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
+          // Tier 1's search ran out of time with no partial walk behind it: a sealed area costs the
+          // whole 4 s budget, so tier 2 gets the same chance as after NoPath (decision 0164).
+          if (name === 'Timeout' && !partial && enterDigTier()) {
+            stallDigFrom = undefined;
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
+          // Tier 2 found no way (or ran out of its short search): the plain walk's partial route
+          // stands. Both tiers searched and found no way, so the result is blocked (decision 0142,
+          // 0164) whichever search ran out, and the escape ladder runs below. A tier-1 timeout that
+          // tier 2 does not resolve is blocked too; a plain timeout (no tier 2) keeps `timeout`.
+          if (tier === 2 && !partial && (name === 'NoPath' || name === 'Timeout')) {
+            stallDigFrom = undefined;
+            leaveDigTier();
+            if (followPartial()) return;
+            reason = 'blocked';
+            message = NO_PATH_TEXT;
+          } else if (name === 'NoPath' && !partial && followPartial()) {
+            return;
+          }
           const facts =
             reason === 'blocked'
               ? factsAt(name ?? 'blocked', bot.time.age - lastMovedAge)
@@ -392,7 +432,7 @@ export function moveNear(
           ) {
             return;
           }
-          settle({ ok: false, reason, message: fixedMessage(name) }, facts);
+          settle({ ok: false, reason, message }, facts);
         },
       );
     };
@@ -475,6 +515,8 @@ export function moveNear(
       replans++;
       replanAge = bot.time.age;
       replanPos = bot.entity.position.clone();
+      // A stalled tier-1 walk tries tier 2 (digging, towers) on this recovery, to get past this spot.
+      if (enterDigTier()) stallDigFrom = bot.entity.position.clone();
       try {
         start(new goals.GoalNear(target.x, target.y, target.z, range));
       } catch (error) {
@@ -499,6 +541,26 @@ export function moveNear(
       /** A young dig is not a stall: recovery would end it with "Digging aborted". */
       const youngDig = digSeenAge !== undefined && bot.time.age - digSeenAge < digGraceTicks(bot);
       if (jumpAge !== undefined && bot.time.age - jumpAge >= JUMP_TICKS) releaseJump();
+      // A stall's tier 2 only gets the bot past the stuck spot: once it has moved on, plan on tier 1.
+      if (
+        stallDigFrom !== undefined &&
+        tier === 2 &&
+        bot.entity.position.distanceTo(stallDigFrom) >= STALL_DIG_LEAVE_BLOCKS
+      ) {
+        stallDigFrom = undefined;
+        leaveDigTier();
+        haltPathing(bot);
+        replanPos = bot.entity.position.clone();
+        replanAge = bot.time.age;
+        try {
+          start(new goals.GoalNear(target.x, target.y, target.z, range));
+        } catch (error) {
+          done = true;
+          cleanup();
+          reject(error);
+        }
+        return;
+      }
       if (bot.entity.position.distanceTo(lastPos) >= MOVED_BLOCKS) {
         lastPos = bot.entity.position.clone();
         lastMovedAge = bot.time.age;
@@ -551,6 +613,12 @@ export function moveNear(
       }
     }, WATCH_INTERVAL_MS);
     opts.signal.addEventListener('abort', onAbort, { once: true });
+    // Every walk starts on tier 1; a walk left on tier 2 by an earlier goto is put back.
+    const plain = tierOne.get(bot);
+    if (plain !== undefined && (bot.pathfinder as { movements?: unknown }).movements !== plain) {
+      bot.pathfinder.setMovements(plain as never);
+    }
+    bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
 
     try {
       start(new goals.GoalNear(target.x, target.y, target.z, range));
