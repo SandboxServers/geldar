@@ -41,23 +41,21 @@ const CARDINALS: readonly Vec3[] = [
   new Vec3(-1, 0, 0),
   new Vec3(0, 0, -1),
 ];
-/** Fixed failure texts shown to the model: each says what to try next (under 160 characters). */
+/** Fixed failure texts shown to the model: each states what happened, without advice (decision 0154: facts, never advice). */
 const MESSAGE = {
-  noSpace: 'no free space next to you: step to open ground or name a position',
-  insideBlock: 'you are inside a block: step to open ground first',
-  occupied: 'target is occupied: name an empty position or mine the block first',
-  notLoaded: 'target is not loaded: move closer or name a loaded position',
-  noReference: 'no solid block to place against: name a position next to a solid block',
-  noGround: 'no solid block under your feet to build on: stand on solid ground first',
-  notGrounded: 'you are not on the ground: wait until you land, then place again',
-  headroom: 'no headroom for a pillar: clear the two cells above your head first',
-  entityInCell: 'another entity stands where the block goes: step to open ground first',
-  notRisen: 'you did not rise onto the block: clear the space above you and try again',
-  refused:
-    'the server refused: stand on solid ground within reach and choose a block position next to you',
-  unconfirmed:
-    'the block did not appear at the target: stand on solid ground and choose a block position next to you',
-  timeout: 'the server did not answer the placement: try again',
+  noSpace: 'no free space next to you',
+  insideBlock: 'you are inside a block',
+  occupied: 'target is occupied',
+  notLoaded: 'target is not loaded',
+  noReference: 'no solid block to place against',
+  noGround: 'no solid block under your feet to build on',
+  notGrounded: 'you are not on the ground',
+  headroom: 'no headroom for a pillar: the two cells above your head are not clear',
+  entityInCell: 'another entity stands where the block goes',
+  notRisen: 'you did not rise onto the block',
+  refused: 'the server refused the placement',
+  unconfirmed: 'the block did not appear at the target',
+  timeout: 'the server did not answer the placement',
 } as const;
 /** The pillar's log goes nowhere here: the ladder owns the stall diagnostics. */
 const SILENT = { log: () => undefined, now: () => 0 };

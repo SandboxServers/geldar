@@ -241,7 +241,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no free space next to you: step to open ground or name a position',
+      message: 'no free space next to you',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
@@ -261,7 +261,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no free space next to you: step to open ground or name a position',
+      message: 'no free space next to you',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
@@ -285,7 +285,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'target is occupied: name an empty position or mine the block first',
+      message: 'target is occupied',
     });
   });
 
@@ -351,8 +351,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message:
-        'the block did not appear at the target: stand on solid ground and choose a block position next to you',
+      message: 'the block did not appear at the target',
     });
   });
 
@@ -362,7 +361,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'no solid block to place against: name a position next to a solid block',
+      message: 'no solid block to place against',
     });
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
@@ -377,7 +376,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'timeout',
-      message: 'the server did not answer the placement: try again',
+      message: 'the server did not answer the placement',
     });
   });
 
@@ -391,8 +390,7 @@ describe('place', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message:
-        'the server refused: stand on solid ground within reach and choose a block position next to you',
+      message: 'the server refused the placement',
     });
   });
 
@@ -515,7 +513,7 @@ describe('place at feet as a pillar (decision 0160)', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'another entity stands where the block goes: step to open ground first',
+      message: 'another entity stands where the block goes',
     });
     expect(fake.bot.placeBlock).not.toHaveBeenCalled();
   });

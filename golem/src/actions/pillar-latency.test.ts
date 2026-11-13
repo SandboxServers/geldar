@@ -33,8 +33,7 @@ const { Physics } = fromMineflayer('prismarine-physics') as {
 
 /** The cell the bot's feet are in: the dirt goes here, on the stone at (0,63,0). */
 const PLACED_AT = '0,64,0';
-const UNCONFIRMED =
-  'the block did not appear at the target: stand on solid ground and choose a block position next to you';
+const UNCONFIRMED = 'the block did not appear at the target';
 const NO_CONTROLS = {
   forward: false,
   back: false,
