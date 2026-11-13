@@ -7,6 +7,7 @@ import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { identityHash } from '../../../threshold/register/src/identity.ts';
 import { banIdentity, grantKinoAdmin, revokeKinoAdmin, unbanIdentity } from './identities.ts';
+import { parseOwnerAdmin, runOwnerAdmin } from './owner-admin.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
@@ -55,6 +56,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   init [--force --i-understand]         create the pepper and the Postgres password files
   owner add <id> [--cap N]              add an owner (cap from owner_cap_default; --cap at most owner_cap_owner)
   owner set-cap <id> <N>                change an owner's cap (at most 50)
+  owner admin set|unset <id>            set or clear the admin flag (one audit row); owner admin list
   identity ban <id>                     ban a registered identity (64 hex digits) and revoke its owner's tokens
   identity ban --provider microsoft|github|discord --user-id <id> [--pepper-file <f>]
                                         the same, the id derived from the provider account (decision 0136)
@@ -207,6 +209,15 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   if (verb === 'set-cap' && id !== undefined && value !== undefined && args.length === 3) {
     await withSql(env, (sql) => setOwnerCap(sql, id, parseCap(value)));
     io.out(`owner ${id} cap set to ${value}`);
+    return;
+  }
+  if (verb === 'admin') {
+    const action = parseOwnerAdmin(args.slice(1));
+    const lines: string[] = [];
+    await withSql(env, async (sql) => {
+      lines.push(...(await runOwnerAdmin(sql, action)));
+    });
+    for (const line of lines) io.out(line);
     return;
   }
   throw new Error(USAGE);
