@@ -5,6 +5,8 @@ import { vi } from 'vitest';
 export interface FakeBlock {
   name: string;
   boundingBox: 'block' | 'empty';
+  /** Collision boxes as prismarine gives them, for partial-height blocks; absent means none. */
+  shapes?: number[][];
   harvestTools?: Record<number, boolean>;
 }
 

@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { digTicks, hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import { isDoorLike } from './path-doors.ts';
 import type { DiagSink } from './stall-diag.ts';
@@ -67,7 +68,7 @@ function jumpLedge(bot: Bot, cell: Vec3): boolean {
  * air (no solid ground under the feet) is not a pit.
  */
 export function inPit(bot: Bot): boolean {
-  const feet = (bot as StairBot).entity.position.floored();
+  const feet = feetCell(bot);
   if (!solid(bot.blockAt(feet.offset(0, -1, 0)))) return false;
   if (!DIRS.some((d) => wallHeight(bot, feet.plus(d)) >= WALL_HEIGHT)) return false;
   return DIRS.every((d) => !jumpLedge(bot, feet.plus(d)));
@@ -98,13 +99,13 @@ export async function stairs(bot: Bot, o: StairOptions, refusals: string[]): Pro
   const b = bot as StairBot;
   if (!inPit(bot)) return false;
   const startY = b.entity.position.y;
-  const first = b.entity.position.floored();
+  const first = feetCell(bot);
   let dir = pickDirection(b.entity.position, o.toward);
   if (wallHeight(bot, first.plus(dir)) < WALL_HEIGHT) {
     dir = DIRS.find((d) => wallHeight(bot, first.plus(d)) >= WALL_HEIGHT) ?? dir;
   }
   for (let step = 1; step <= MAX_STAIR_STEPS && !o.signal.aborted; step++) {
-    const feet = b.entity.position.floored();
+    const feet = feetCell(bot);
     const stand = feet.plus(dir);
     if (!solid(bot.blockAt(stand))) break;
     const own = [feet, feet.offset(0, 1, 0)];

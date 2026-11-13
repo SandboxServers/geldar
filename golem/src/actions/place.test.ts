@@ -18,9 +18,13 @@ const BOXES: Record<string, 'block' | 'empty'> = {
   wall_torch: 'empty',
   stone: 'block',
   dirt: 'block',
+  dirt_path: 'block',
+  cobblestone: 'block',
   crafting_table: 'block',
   white_bed: 'block',
 };
+
+const SHAPES: Record<string, number[][]> = { dirt_path: [[0, 0, 0, 1, 0.9375, 1]] };
 
 interface FakeOptions {
   /** Cells that hold something, by `x,y,z`; every other cell is air. */
@@ -78,7 +82,7 @@ function fakeBot(options: FakeOptions = {}): FakeBot {
     setControlState: vi.fn(),
     blockAt: (p: Vec3) => {
       const name = world.get(key(p)) ?? 'air';
-      return { name, position: p, boundingBox: BOXES[name] };
+      return { name, position: p, boundingBox: BOXES[name], shapes: SHAPES[name] ?? [] };
     },
     placeBlock: vi.fn(async (reference: { position: Vec3 }, face: Vec3) => {
       if (options.placeError) throw new Error(options.placeError);
@@ -423,6 +427,17 @@ describe('place', () => {
   });
 });
 
+it('a block beside a dirt path under the feet is placed, not refused inside a block', async () => {
+  const fake = fakeBot({
+    blocks: { '0,62,0': 'dirt_path', '1,62,0': 'stone' },
+    items: ['cobblestone'],
+    at: new Vec3(0.5, 62.9375, 0.5),
+  });
+  const outcome = await place(fake, 'cobblestone', { x: 1, y: 63, z: 0 });
+  expect(outcome).toMatchObject({ status: 'completed' });
+  expect(fake.placeBlock).toHaveBeenCalledTimes(1);
+});
+
 describe('place at feet as a pillar (decision 0160)', () => {
   /** A bot that jumps on the escape-ladder jump curve; placing puts dirt in the cell it left. */
   function pillarFake(blocks: Record<string, FakeBlock>, onGround = true, placeAt = '0,64,0') {
@@ -462,6 +477,18 @@ describe('place at feet as a pillar (decision 0160)', () => {
     expect(fake.state.blockAt(new Vec3(0, 64, 0)).name).toBe('dirt');
     expect(fake.state.position.y - 64).toBeGreaterThanOrEqual(0.9);
     expect(fake.bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('uses a dirt path under the feet as the ground: the feet cell is above it, so the pillar goes up from it', async () => {
+    const fake = pillarFake({
+      '0,63,0': { ...block('dirt_path'), shapes: [[0, 0, 0, 1, 0.9375, 1]] },
+    });
+    fake.state.position.y = 63.9375;
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({ status: 'completed' });
+    const [reference] = fake.bot.placeBlock.mock.calls[0] as unknown as [{ name: string }, Vec3];
+    expect(reference.name).toBe('dirt_path');
+    expect(fake.state.blockAt(new Vec3(0, 64, 0)).name).toBe('dirt');
   });
 
   it('refuses with a no-headroom message and places nothing under bedrock two cells above the head', async () => {

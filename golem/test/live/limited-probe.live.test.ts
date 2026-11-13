@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRegistry } from '../../src/actions/index.ts';
 import { runAction } from '../../src/actions/registry.ts';
+import { wakeBot } from '../../src/actions/wake.ts';
 import { limitedControl } from '../../src/bench/limited-control.ts';
 import { withLiveBot } from './fixture.ts';
 
@@ -45,7 +46,7 @@ describe('limited control reads against a real server', () => {
       expect(run.result).toMatchObject({ status: 'completed' });
       expect(await limited.isSleeping(BOT)).toBe(true);
       expect(await limited.isSleeping(BOT.toLowerCase())).toBe(true);
-      if (bot.isSleeping) await bot.wake();
+      if (bot.isSleeping) await wakeBot(bot);
     });
   });
 });
