@@ -4,6 +4,7 @@ import { watchRecipeBook } from './actions/craft-table.ts';
 import { watchSmeltBook } from './actions/smelt-book.ts';
 import { watchCorrections } from './actions/stall-diag.ts';
 import { nextDelayMs } from './backoff.ts';
+import { matchServerHitbox } from './body/hitbox.ts';
 import type { BotRegistry } from './registry.ts';
 import { stackVersions } from './versions.ts';
 import { watchWorldTicks } from './world-clock.ts';
@@ -282,6 +283,7 @@ export class ConnectionManager extends EventEmitter {
       watchRecipeBook(bot);
       watchSmeltBook(bot);
       watchCorrections(bot);
+      matchServerHitbox(bot);
       this.onBot?.(bot);
     } catch (err) {
       // The bot already holds a socket and no listener is attached yet: close it, then let the
