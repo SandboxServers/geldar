@@ -538,8 +538,14 @@ describe('the page script', () => {
     sources[0]?.emit('thought', thought(71));
     expect(win.document.getElementById('status')?.textContent).toBe('Live, 2 waiting');
     expect(say?.textContent).toBe('');
+    // A routine reconnect that comes back live says nothing: neither the passing state nor "Live" again.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     sources[0]?.onerror?.();
-    expect(say?.textContent).toBe('Reconnecting...');
+    expect(win.document.getElementById('status')?.textContent).toContain('Reconnecting...');
+    await vi.advanceTimersByTimeAsync(500);
+    sources[1]?.onopen?.();
+    expect(win.document.getElementById('status')?.textContent).toContain('Live');
+    expect(say?.textContent).toBe('');
   });
 
   it('shows and says a failed load', async () => {

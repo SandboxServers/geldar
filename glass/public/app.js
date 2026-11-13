@@ -52,6 +52,7 @@ const state = {
   agents: new Map(),
   agentIds: [], // option position -> agent id, filled from /api/agents
   streamText: STATUS_TEXT.connecting,
+  saidFeed: '', // the feed state last said to a screen reader
   rows: new Map(), // thought id -> its drawn row, kept so a redraw leaves an open entry open
   details: new Map(), // thought id -> the detail open under its row
   loading: new Set(), // thought ids whose detail is being fetched
@@ -412,8 +413,13 @@ function start() {
     onThought,
     onStatus: (status) => {
       const text = STATUS_TEXT[status] ?? status;
-      // The status line is not a live region, so its waiting count is not read out per entry.
-      if (text !== state.streamText) say(text);
+      // The status line is not a live region, so its waiting count is not read out per entry. A settled
+      // state is said when it is new; the passing "Connecting..." and "Reconnecting..." are not, so the
+      // stream's routine reconnect every ten minutes stays quiet.
+      if (status !== 'connecting' && status !== 'reconnecting' && text !== state.saidFeed) {
+        state.saidFeed = text;
+        say(text);
+      }
       state.streamText = text;
       // The class colours the dot beside the text. It is one of the fixed names above.
       els.status.className = status in STATUS_TEXT ? `status ${status}` : 'status';
