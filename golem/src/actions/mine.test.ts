@@ -238,13 +238,13 @@ describe('mineAction', () => {
     expect(floor.type).toBe(STONE);
   });
 
-  it('fails would drop the bot when the only stone in reach is under its feet', async () => {
+  it('fails would drop you when the only stone in reach is under its feet', async () => {
     const floor = block(STONE, new Vec3(0, 63, 0), [], undefined, 'stone');
     const bot = fakeBot([floor]);
     expect(await mine(bot, 1, 'stone')).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'would drop the bot',
+      message: 'would drop you',
       detail: { mined: 0 },
     });
     expect(bot.dig).not.toHaveBeenCalled();
@@ -283,7 +283,7 @@ describe('mineAction', () => {
     expect(target.type).toBe(OAK_LOG);
   });
 
-  it('ends with would drop the bot when every walk target ends under it, one walk each', async () => {
+  it('ends with would drop you when every walk target ends under it, one walk each', async () => {
     const targets = [
       block(OAK_LOG, new Vec3(3, 63, 0), [OAK_LOG]),
       block(OAK_LOG, new Vec3(4, 63, 0), [OAK_LOG]),
@@ -298,7 +298,7 @@ describe('mineAction', () => {
     expect(await mine(bot, 1)).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'would drop the bot',
+      message: 'would drop you',
       detail: { mined: 0 },
     });
     expect(vi.mocked(moveNear)).toHaveBeenCalledTimes(3);

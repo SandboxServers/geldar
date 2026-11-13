@@ -33,11 +33,15 @@ const STEP_RANGE = 0.5;
 /** The one text for a recipient the agent cannot see. It never says whether the name exists. */
 export const NOT_IN_SIGHT = 'no such agent in sight';
 
-/** The item entities one toss created, and the ones picked up since: by the recipient or the Body. */
+/**
+ * The item entities one toss created, and the ones picked up since: by the recipient, by the Body,
+ * or by another player (`others`, item id to that player's name).
+ */
 interface PickupWatch {
   dropped: Set<number>;
   collected: Set<number>;
   taken: Set<number>;
+  others: Map<number, string>;
   stop(): void;
 }
 
@@ -49,6 +53,7 @@ function watchPickup(bot: Bot, to: string): PickupWatch {
   const dropped = new Set<number>();
   const collected = new Set<number>();
   const taken = new Set<number>();
+  const others = new Map<number, string>();
   const onDrop = (entity: Entity): void => {
     if (entity.name !== 'item') return;
     if (entity.position.distanceTo(bot.entity.position) > DROP_RANGE) return;
@@ -58,6 +63,7 @@ function watchPickup(bot: Bot, to: string): PickupWatch {
     if (!dropped.has(item.id)) return;
     if (collector.username === to) collected.add(item.id);
     else if (collector === bot.entity) taken.add(item.id);
+    else if (collector.username) others.set(item.id, collector.username);
   };
   bot.on('entitySpawn', onDrop);
   bot.on('itemDrop', onDrop);
@@ -66,6 +72,7 @@ function watchPickup(bot: Bot, to: string): PickupWatch {
     dropped,
     collected,
     taken,
+    others,
     stop: () => {
       bot.removeListener('entitySpawn', onDrop);
       bot.removeListener('itemDrop', onDrop);
@@ -113,7 +120,9 @@ async function stepBackFrom(
  * every one back. An abort or a walk that fails leaves them on the ground.
  */
 async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promise<boolean> {
-  const missing = [...watch.dropped].filter((id) => !watch.collected.has(id));
+  const missing = [...watch.dropped].filter(
+    (id) => !watch.collected.has(id) && !watch.others.has(id),
+  );
   const everyTaken = () => missing.every((id) => watch.taken.has(id));
   for (const id of missing) {
     if (watch.taken.has(id)) continue;
@@ -129,6 +138,32 @@ async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promi
   return !ctx.signal.aborted && everyTaken();
 }
 
+/**
+ * Who else picked items up, as the agent can see them now: the names in sight, and whether anyone
+ * out of sight did. A name is said only when the agent can see that player (decision 0145).
+ */
+function bystanders(bot: Bot, watch: PickupWatch): { names: string; unseen: boolean } {
+  const all = [...new Set(watch.others.values())];
+  const seen = all.filter((name) => findVisibleAgent(bot, name) !== null);
+  return { names: seen.join(', '), unseen: seen.length < all.length };
+}
+
+/** The text when no item stayed on the ground and none was the recipient's or the Body's. */
+function wentToOthers(bot: Bot, watch: PickupWatch): string {
+  const { names, unseen } = bystanders(bot, watch);
+  if (names === '') return 'someone else picked the items up';
+  const went = `the items went to ${names}`;
+  return unseen ? `${went}; someone else picked the items up` : went;
+}
+
+/** The part after "N of M were picked up" when other players took the rest. */
+function restWentToOthers(bot: Bot, watch: PickupWatch): string {
+  const { names, unseen } = bystanders(bot, watch);
+  if (names === '') return 'someone else picked up the rest';
+  const went = `the rest went to ${names}`;
+  return unseen ? `${went}; someone else picked up the rest` : went;
+}
+
 /** The outcome once the toss has run and the wait is over. */
 async function settle(
   ctx: ActionContext,
@@ -140,6 +175,14 @@ async function settle(
   const picked = watch.collected.size;
   if (total === 0) return failed('interrupted', 'the tossed items were not seen on the ground');
   if (picked === total) return completed({ to: action.to, item: action.item, count: action.count });
+  const onGround = [...watch.dropped].filter(
+    (id) => !watch.collected.has(id) && !watch.others.has(id) && !watch.taken.has(id),
+  );
+  if (watch.others.size > 0 && onGround.length === 0) {
+    if (picked === 0) return failed('not_possible', wentToOthers(bot, watch));
+    const partial = `${picked} of ${total} were picked up`;
+    return failed('not_possible', `${partial}; ${restWentToOthers(bot, watch)}`);
+  }
   if (picked === 0) {
     const took = await takeBack(ctx, bot, watch);
     if (ctx.signal.aborted) return cancelled();

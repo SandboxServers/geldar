@@ -198,11 +198,121 @@ describe('give', () => {
   it('does not count a pickup by someone other than the recipient', async () => {
     const { world, run } = setup(5, { dropped: [7], picked: [7], by: 'Other' });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    // Other is not in sight, so the text names no one.
     expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'the items are on the ground near Pike',
+      message: 'someone else picked the items up',
     });
+  });
+
+  it('says the items went to a bystander in sight who collected every one, with no walk', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7, 8], picked: [7, 8], by: 'Other' });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    world.entities[3] = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'the items went to Other',
+      detail: {},
+    });
+    expect(walk).not.toHaveBeenCalled();
+    expect(toss).toHaveBeenCalledOnce();
+  });
+
+  it('names no one when the bystander is out of sight, and says someone else picked them up', async () => {
+    const { world, run } = setup(5, { dropped: [7, 8], picked: [7, 8], by: 'Other' });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const out = await run('Pike', 3, 'oak_log', 0.01);
+    expect(out).toMatchObject({
+      reason: 'not_possible',
+      message: 'someone else picked the items up',
+    });
+    expect(JSON.stringify(out)).not.toContain('Other');
+  });
+
+  it('gives the combined text when the recipient got one item and a bystander in sight the other', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    world.entities[3] = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    const recipient = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const bystander = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    const item = (id: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    });
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', item(7));
+      events.emit('entitySpawn', item(8));
+      events.emit('playerCollect', recipient, item(7));
+      events.emit('playerCollect', bystander, item(8));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: '1 of 2 were picked up; the rest went to Other',
+      detail: {},
+    });
+  });
+
+  it('names no one for a bystander out of sight in the combined text', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const recipient = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const bystander = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    const item = (id: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    });
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', item(7));
+      events.emit('entitySpawn', item(8));
+      events.emit('playerCollect', recipient, item(7));
+      events.emit('playerCollect', bystander, item(8));
+    });
+    const out = await run('Pike', 3, 'oak_log', 0.01);
+    expect(out).toMatchObject({
+      message: '1 of 2 were picked up; someone else picked up the rest',
+    });
+    expect(JSON.stringify(out)).not.toContain('Other');
+  });
+
+  it('takes back only the items no one else picked up, with one walk', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const bystander = { type: 'player', username: 'Other', position: new Vec3(-1.5, 64, 2.5) };
+    const item = (id: number, z: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, z),
+    });
+    const gone = item(7, 3.5);
+    const onGround = item(8, 4.5);
+    world.entities[7] = gone;
+    world.entities[8] = onGround;
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', gone);
+      events.emit('entitySpawn', onGround);
+      events.emit('playerCollect', bystander, gone);
+    });
+    walk.mockImplementation(async () => {
+      events.emit('playerCollect', world.me, onGround);
+      delete world.entities[8];
+      return { ok: true, distance: 0 } as never;
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'Pike did not pick the items up; you took them back',
+      detail: {},
+    });
+    expect(walk).toHaveBeenCalledOnce();
+    expect(walk.mock.calls[0]?.[1]).toEqual(onGround.position);
   });
 
   it('says how many were picked up when only some were', async () => {

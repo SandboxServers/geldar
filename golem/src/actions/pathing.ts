@@ -56,6 +56,8 @@ const MOVED_BLOCKS = 0.75;
 const WATCH_INTERVAL_MS = 500;
 /** Default stall limit: 600 world ticks, which is 30 s at 20 TPS. */
 const DEFAULT_STALL_TICKS = 600;
+/** The message of a walk that stalled; reflexes key on the reason `blocked`, not on this text. */
+export const STALL_TEXT = 'you did not move for a long while';
 
 /** How a move ended. A timeout is the caller's (through `runAction`), not this module's. */
 export type MoveResult =
@@ -589,7 +591,7 @@ export function moveNear(
             {
               ok: false,
               reason: 'blocked',
-              message: `no movement for ${stallTicks} world ticks`,
+              message: STALL_TEXT,
             },
             factsAt('stall', stalledTicks),
           );

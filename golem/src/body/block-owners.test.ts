@@ -3,6 +3,7 @@ import {
   bukkitWorldOf,
   OWNER_CACHE_CHUNKS,
   OWNER_PREFETCH_WAIT_MS,
+  OWNER_QUERIES_IN_FLIGHT,
   OWNER_REQUEST_TIMEOUT_MS,
   OWNER_RETRY_MS,
   OWNER_TTL_MS,
@@ -181,6 +182,67 @@ describe('block owner cache', () => {
     const waited = Date.now() - started;
     expect(waited).toBeGreaterThanOrEqual(OWNER_PREFETCH_WAIT_MS - 20);
     expect(waited).toBeLessThan(OWNER_PREFETCH_WAIT_MS + 400);
+  });
+
+  it('prefetch never has more than OWNER_QUERIES_IN_FLIGHT queries in flight, and still asks for all 18', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const nats = fakeNats(async (q) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return reply(q.chunk_x, q.chunk_z, []);
+    });
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    await owners.prefetch(
+      WORLD,
+      [
+        { x: 0, z: 0 },
+        { x: 200, z: 200 },
+      ],
+      new AbortController().signal,
+    );
+    expect(nats.requests).toHaveLength(18);
+    expect(peak).toBe(OWNER_QUERIES_IN_FLIGHT);
+  });
+
+  it("prefetch asks for the bot's chunk and the goal's chunk before the rest", async () => {
+    const nats = fakeNats((q) => reply(q.chunk_x, q.chunk_z, []));
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    // The bot stands in chunk (0, 0); the goal in chunk (12, 12).
+    await owners.prefetch(
+      WORLD,
+      [
+        { x: 0, z: 0 },
+        { x: 200, z: 200 },
+      ],
+      new AbortController().signal,
+    );
+    const first = nats.requests.slice(0, 2).map((r) => [r.query.chunk_x, r.query.chunk_z]);
+    expect(first).toEqual([
+      [0, 0],
+      [12, 12],
+    ]);
+  });
+
+  it('prefetch of 18 chunks still returns within the wait when the plugin never answers', async () => {
+    const nats = fakeNats(() => new Promise(() => undefined));
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    const started = Date.now();
+    await owners.prefetch(
+      WORLD,
+      [
+        { x: 0, z: 0 },
+        { x: 200, z: 200 },
+      ],
+      new AbortController().signal,
+    );
+    const waited = Date.now() - started;
+    expect(waited).toBeLessThan(OWNER_PREFETCH_WAIT_MS + 400);
+    // Only the first slots reached the plugin; the rest wait, and stay unknown.
+    expect(nats.requests).toHaveLength(OWNER_QUERIES_IN_FLIGHT);
+    expect(owners.ownerAt(WORLD, 200, 64, 200)).toEqual({ known: false });
   });
 
   it('prefetch returns at once when the walk aborts', async () => {

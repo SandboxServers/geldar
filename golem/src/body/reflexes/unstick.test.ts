@@ -3,6 +3,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { completed, failed } from '../../actions/outcome.ts';
+import { STALL_TEXT } from '../../actions/pathing.ts';
 import { ActionRegistry } from '../../actions/registry.ts';
 import { fakeBot, fakeView, manualTicks } from '../body.fakes.ts';
 import { createBody } from '../create-body.ts';
@@ -10,7 +11,7 @@ import { FIRST_PAUSE_TICKS, MAX_PAUSE_TICKS, panicBurrowReflex } from './panic-b
 import { reflexContext, settableView } from './reflexes.fakes.ts';
 import { MAX_ATTEMPTS, noteGoto, STUCK_GOTOS, stallCount, unstickReflex } from './unstick.ts';
 
-const STALL = 'no movement for 600 world ticks';
+const STALL = STALL_TEXT;
 
 function stall(view: Parameters<typeof noteGoto>[0]): void {
   noteGoto(view, 'failed', 'blocked', STALL);
