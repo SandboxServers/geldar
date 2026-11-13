@@ -214,8 +214,9 @@ async function withContainer<W extends Opening>(
   const attempt: Promise<Opened<W>> = opener.open(bot, block).then(
     (window): Opened<W> => ({ window }),
     (error: unknown): Opened<W> => {
-      console.warn(`container did not open: ${errorText(error)}`);
-      return { outcome: failed('blocked', 'the container did not open') };
+      const raw = errorText(error);
+      console.warn(`container did not open: ${raw}`);
+      return { outcome: failed('blocked', 'the container did not open', {}, raw) };
     },
   );
   // The late-window listener stays until the open settles: a window that opens after the race

@@ -42,8 +42,9 @@ export async function openTable(ctx: ActionContext, table: Block): Promise<Opene
       TABLE_OPEN_WAIT_MS * timeScale,
     );
     bot.activateBlock(table).catch((error: unknown) => {
-      console.warn(`crafting table did not open: ${errorText(error)}`);
-      settle({ outcome: failed('blocked', 'the crafting table did not open') });
+      const raw = errorText(error);
+      console.warn(`crafting table did not open: ${raw}`);
+      settle({ outcome: failed('blocked', 'the crafting table did not open', {}, raw) });
     });
   });
   try {

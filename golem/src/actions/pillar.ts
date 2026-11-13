@@ -29,7 +29,8 @@ export type LooseBot = Bot & {
 
 /**
  * What a pillar step reports: `why` names the failed part, `headroom` with the refusal in `refusals`.
- * `unplaced` carries the error text the placement threw, when it threw.
+ * `unplaced` carries the error text the placement threw, when it threw. `headroom` carries the
+ * error a headroom dig threw, when it threw (raw text for the log, not for the agent).
  */
 export type PillarResult =
   | { ok: true }
@@ -37,6 +38,7 @@ export type PillarResult =
       ok: false;
       why: 'headroom' | 'entity' | 'unplaced' | 'not_risen' | 'aborted';
       error?: string | undefined;
+      raw?: string | undefined;
     };
 
 export interface PillarOptions {
@@ -159,7 +161,11 @@ export function entityInCell(bot: Bot, cell: Vec3): boolean {
  * the bare hand may dig is dug first. Anything else (unbreakable, hazardous, lava) is refused with a
  * reason that names the headroom, and the jump is not tried.
  */
-async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Promise<boolean> {
+async function clearHeadroom(
+  bot: Bot,
+  o: PillarOptions,
+  refusals: string[],
+): Promise<{ cleared: boolean; raw?: string | undefined }> {
   const b = bot as LooseBot;
   const feet = feetCell(bot);
   for (const dy of [2, 3]) {
@@ -169,22 +175,22 @@ async function clearHeadroom(bot: Bot, o: PillarOptions, refusals: string[]): Pr
     const refusal = overheadRefusal(bot, feet, at);
     if (refusal) {
       refusals.push(`no headroom for a pillar: ${refusal}`);
-      return false;
+      return { cleared: false };
     }
     // A superseded ladder takes no second cell: the first dig may have aborted the move.
-    if (o.signal.aborted) return false;
+    if (o.signal.aborted) return { cleared: false };
     try {
       const tool = b.pathfinder?.bestHarvestTool?.(block as Block);
       if (tool) await bot.equip(tool as never, 'hand');
       await bot.dig(block as Block, true);
     } catch (error) {
-      console.warn(`pillar dig failed: ${errorText(error)}`);
+      const raw = errorText(error);
+      console.warn(`pillar dig failed: ${raw}`);
       refusals.push('no headroom for a pillar: the dig failed');
-      return false;
+      return { cleared: false, raw };
     }
   }
-  if (o.signal.aborted) return false;
-  return true;
+  return { cleared: !o.signal.aborted };
 }
 
 /**
@@ -324,8 +330,9 @@ export async function pillarStep(
   refusals: string[],
 ): Promise<PillarResult> {
   const b = bot as LooseBot;
-  if (!(await clearHeadroom(bot, o, refusals))) {
-    return { ok: false, why: o.signal.aborted ? 'aborted' : 'headroom' };
+  const headroom = await clearHeadroom(bot, o, refusals);
+  if (!headroom.cleared) {
+    return { ok: false, why: o.signal.aborted ? 'aborted' : 'headroom', raw: headroom.raw };
   }
   // Another entity's box in the cell the block goes into would refuse the placement.
   if (entityInCell(bot, feetCell(bot))) return { ok: false, why: 'entity' };

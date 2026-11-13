@@ -181,7 +181,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
         return failed('timeout', MESSAGE.timeout);
       }
       if (/refused to place/.test(message)) {
-        last = failed('blocked', MESSAGE.refused);
+        last = failed('blocked', MESSAGE.refused, {}, message);
         continue;
       }
       throw error;
@@ -264,10 +264,12 @@ async function pillarPlace(
   }
   if (result.why === 'aborted') return cancelled();
   if (result.why === 'headroom') {
-    return failed('blocked', refusals[refusals.length - 1] ?? MESSAGE.headroom);
+    return failed('blocked', refusals[refusals.length - 1] ?? MESSAGE.headroom, {}, result.raw);
   }
   if (result.why === 'entity') return failed('blocked', MESSAGE.entityInCell);
-  if (result.why === 'unplaced') return failed('blocked', unplacedMessage(result.error));
+  if (result.why === 'unplaced') {
+    return failed('blocked', unplacedMessage(result.error), {}, result.error);
+  }
   return failed('blocked', MESSAGE.notRisen);
 }
 

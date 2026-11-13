@@ -186,6 +186,19 @@ describe('pillar against a late block update (real prismarine physics)', () => {
     expect(text).not.toContain('(');
     expect(text.length).toBeLessThan(160);
   });
+
+  it('keeps the library error as raw and out of the agent message', async () => {
+    const raw = 'Server refused to place dirt at (1, 2, 3): the block is still air';
+    const fake = serverFake(3, () => undefined, new Error(raw));
+    const outcome = await pillar(fake);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the server did not place the block: it is still air',
+      raw,
+    });
+    expect((outcome as { message: string }).message).not.toContain('Server refused');
+  });
 });
 
 /** Mineflayer's unforced look turns at most this far a tick, and finishes when it arrives. */

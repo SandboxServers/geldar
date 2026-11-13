@@ -88,10 +88,14 @@ export class ActionRegistry {
 export interface ActionRun {
   state: 'completed' | 'failed' | 'cancelled';
   result: ActionResult;
+  /** The raw error behind a failure's plain message. Body log only: never part of `result`. */
+  raw?: string;
 }
 
 /** Longest error text kept in a failure message. */
 const MESSAGE_LIMIT = 200;
+/** Longest raw library or server error kept in a failure's log line. */
+const RAW_LIMIT = 200;
 /** Longest delay `setTimeout` accepts. A longer one fires at once, so the timeout is capped here. */
 const MAX_TIMER_MS = 2_147_483_647;
 /**
@@ -226,7 +230,12 @@ async function runUnobserved(
 
 /** Builds the run from an outcome, the latency and the world ticks. */
 function finish(outcome: ActionOutcome, latencyMs: number, worldTicks: number | null): ActionRun {
-  return { state: recordState(outcome), result: toResult(outcome, latencyMs, worldTicks) };
+  const run: ActionRun = {
+    state: recordState(outcome),
+    result: toResult(outcome, latencyMs, worldTicks),
+  };
+  if (outcome.status === 'failed' && outcome.raw !== undefined) run.raw = outcome.raw;
+  return run;
 }
 
 /** Cuts an error text to the message limit. */
@@ -298,6 +307,7 @@ function logFailure(sink: DiagSink, bot: Bot, action: unknown, run: ActionRun): 
     ms: run.result.latency_ms,
   };
   if (repeats > 0) line.repeats = repeats;
+  if (run.raw !== undefined) line.raw = run.raw.slice(0, RAW_LIMIT);
   if (JSON.stringify(line).length > FAILURE_LINE_LIMIT) {
     line.args = { cut: JSON.stringify(line.args).slice(0, ARG_LIMIT) };
   }

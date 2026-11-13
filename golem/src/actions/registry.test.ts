@@ -451,6 +451,48 @@ describe('runAction failure log', () => {
     expect(typeof parsed(lines)[0]?.ms).toBe('number');
   });
 
+  it('logs the raw error behind a plain failure as raw, cut to 200 characters', async () => {
+    const registry = new ActionRegistry();
+    const raw = `Server refused to place dirt at (1, 2, 3): the block is still air ${'x'.repeat(300)}`;
+    registry.register(
+      mineHandler(async () =>
+        failed('blocked', 'the server did not place the block: it is still air', {}, raw),
+      ),
+    );
+    const { lines, sink } = lineSink();
+
+    await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    const line = parsed(lines)[0];
+    expect(line?.message).toBe('the server did not place the block: it is still air');
+    expect(typeof line?.raw).toBe('string');
+    expect(line?.raw).toBe(raw.slice(0, 200));
+    expect(String(line?.raw)).toContain('Server refused to place');
+  });
+
+  it('keeps raw out of the stored result the Mind sees, and writes no raw key without one', async () => {
+    const registry = new ActionRegistry();
+    registry.register(
+      mineHandler(async () =>
+        failed('blocked', 'the server did not place the block', {}, 'Server refused to place dirt'),
+      ),
+    );
+    const { lines, sink } = lineSink();
+
+    const out = await runAction(registry, positionedBot(), validMine, { failureSink: sink });
+
+    expect(out.result).not.toHaveProperty('raw');
+    expect(JSON.stringify(out.result)).not.toContain('Server refused');
+    expect(out.result.message).toBe('the server did not place the block');
+    expect(parsed(lines)[0]?.raw).toBe('Server refused to place dirt');
+
+    const plain = new ActionRegistry();
+    plain.register(mineHandler(async () => failed('blocked', 'plain words')));
+    const quiet = lineSink();
+    await runAction(plain, positionedBot(), validMine, { failureSink: quiet.sink });
+    expect(parsed(quiet.lines)[0]).not.toHaveProperty('raw');
+  });
+
   it('writes no line when the handler completes', async () => {
     const registry = new ActionRegistry();
     registry.register(mineHandler(async () => completed()));
