@@ -9,5 +9,5 @@ export interface FoodRegistry {
  * or an inherited property name such as `constructor`, is not food.
  */
 export function isEdibleItem(registry: FoodRegistry, name: string): boolean {
-  return Object.prototype.hasOwnProperty.call(registry.foodsByName ?? {}, name);
+  return Object.hasOwn(registry.foodsByName ?? {}, name);
 }
