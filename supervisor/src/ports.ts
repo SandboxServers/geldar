@@ -36,6 +36,12 @@ export interface AdminFlagPort {
   isAdmin(ownerId: string): Promise<boolean>;
 }
 
+// The exact-case login name of the owner's player for a roster name (0033), or null when no single
+// spelling is known. The Docker runtime refuses a start on null; a failed read throws.
+export interface DisplayNamePort {
+  displayName(ownerId: string, playerName: string): Promise<string | null>;
+}
+
 export interface StartRow {
   ownerId: string;
   playerName: string;

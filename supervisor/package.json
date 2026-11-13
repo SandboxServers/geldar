@@ -8,6 +8,10 @@
     "typecheck": "tsc -p . --noEmit"
   },
   "dependencies": {
-    "@geldar/contract": "workspace:*"
+    "@geldar/contract": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
   }
 }
