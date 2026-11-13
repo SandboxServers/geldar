@@ -62,8 +62,27 @@ interface DiagBot {
 
 type Listener = (value: unknown) => void;
 
+/** The controls the line reports. mineflayer keeps them in non-enumerable getters, so a spread shows `{}`. */
+const CONTROLS = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'] as const;
+
+/** A server position correction (mineflayer's `forcedMove`) counts toward `corrections_10s` for this long. */
+const CORRECTION_WINDOW_MS = 10_000;
+
+/** At most one forced_move line per body in this many ms. */
+export const FORCED_MOVE_INTERVAL_MS = 5_000;
+
+/** The corrections one body has had: wall-clock times in the window, and the world tick of the last. */
+interface CorrectionTrail {
+  recent: number[];
+  lastTick: number | null;
+  /** The body's position at the last physics tick, or after the last correction. */
+  before: Vec3 | null;
+}
+
 const trails = new WeakMap<object, PathTrail>();
 const lastLineAt = new WeakMap<object, number>();
+const corrections = new WeakMap<object, CorrectionTrail>();
+const lastForcedMoveAt = new WeakMap<object, number>();
 
 /** Records the pathfinder's `path_update` and `path_reset` for this body. Calling it again is a no-op. */
 export function watchPathEvents(bot: Bot): void {
@@ -79,6 +98,44 @@ export function watchPathEvents(bot: Bot): void {
   });
   emitter.on('path_reset', (reason) => {
     trail.reset = String(reason);
+  });
+}
+
+/**
+ * Counts the server's position corrections (mineflayer's `forcedMove`) for this body, and writes a
+ * rate-limited `forced_move` line with the server position and the client position just before it.
+ * Attach it once per body, where the body is created; calling it again is a no-op.
+ */
+export function watchCorrections(bot: Bot, sink: DiagSink = DEFAULT_DIAG_SINK): void {
+  if (corrections.has(bot)) return;
+  const trail: CorrectionTrail = { recent: [], lastTick: null, before: null };
+  corrections.set(bot, trail);
+  const emitter = bot as unknown as { on?: (event: string, listener: Listener) => unknown };
+  if (typeof emitter.on !== 'function') return;
+  emitter.on('physicsTick', () => {
+    const position = (bot as unknown as DiagBot).entity?.position;
+    if (position) trail.before = position.clone();
+  });
+  emitter.on('forcedMove', () => {
+    const b = bot as unknown as DiagBot;
+    const now = sink.now();
+    const server = b.entity?.position;
+    const before = trail.before;
+    trail.recent = trail.recent.filter((at) => now - at < CORRECTION_WINDOW_MS);
+    trail.recent.push(now);
+    trail.lastTick = b.time?.age ?? null;
+    // The client now stands where the server put it, until the next physics tick says otherwise.
+    trail.before = server ? server.clone() : null;
+    const last = lastForcedMoveAt.get(bot);
+    if (last !== undefined && now - last < FORCED_MOVE_INTERVAL_MS) return;
+    lastForcedMoveAt.set(bot, now);
+    sink.log(
+      JSON.stringify({
+        event: 'forced_move',
+        server: vec(server),
+        client_before: vec(before ?? undefined),
+      }),
+    );
   });
 }
 
@@ -119,7 +176,7 @@ function stepToward(from: Vec3, toward: { x: number; z: number }): [number, numb
   return [0, Math.sign(dz)];
 }
 
-/** Names of the blocks around the feet cell: the four sides at feet and head height, the cell above, and the step-up cell. */
+/** Names of the blocks around the feet cell: the feet cell and the one below it, the four sides at feet and head height, the cell above, and the step-up cell. */
 function blocksAround(bot: DiagBot, at: Vec3, toward?: { x: number; z: number }) {
   const fx = Math.floor(at.x);
   const fy = Math.floor(at.y);
@@ -130,6 +187,8 @@ function blocksAround(bot: DiagBot, at: Vec3, toward?: { x: number; z: number })
     );
   const step = toward ? stepToward(at, toward) : null;
   return {
+    at: nameAt(bot, fx, fy, fz),
+    below: nameAt(bot, fx, fy - 1, fz),
     feet: sides(fy),
     head: sides(fy + 1),
     feet_up: nameAt(bot, fx, fy + 1, fz),
@@ -155,13 +214,25 @@ function nextNodes(
   return out;
 }
 
-/** Every field of one stall_diag line, from the bot as it stands now. */
-function snapshot(bot: Bot, facts: StallFacts): Record<string, unknown> {
+/** The controls that are held now, by name. */
+function heldControls(bot: DiagBot): Record<string, true> {
+  const held: Record<string, true> = {};
+  for (const name of CONTROLS) {
+    if (bot.controlState?.[name]) held[name] = true;
+  }
+  return held;
+}
+
+/** Every field of one stall_diag line, from the bot as it stands now, at wall-clock `now`. */
+function snapshot(bot: Bot, facts: StallFacts, now: number): Record<string, unknown> {
   const b = bot as unknown as DiagBot;
   const trail = trails.get(bot);
+  const correctionTrail = corrections.get(bot);
   const entity = b.entity;
   const position = entity?.position;
   const isMining = b.pathfinder?.isMining?.() ?? null;
+  const tick = b.time?.age;
+  const lastTick = correctionTrail?.lastTick;
   return {
     reason: facts.reason,
     world_tick: b.time?.age ?? null,
@@ -171,7 +242,10 @@ function snapshot(bot: Bot, facts: StallFacts): Record<string, unknown> {
     pitch: round(entity?.pitch, 3),
     on_ground: entity?.onGround ?? null,
     in_water: entity?.isInWater ?? null,
-    control: { ...(b.controlState ?? {}) },
+    control: heldControls(b),
+    corrections_10s:
+      correctionTrail?.recent.filter((at) => now - at < CORRECTION_WINDOW_MS).length ?? 0,
+    ticks_since_correction: lastTick != null && tick != null ? tick - lastTick : null,
     is_mining: isMining,
     dig_in_progress: Boolean(b.targetDigBlock) || isMining === true,
     goal: b.pathfinder?.goal?.constructor?.name ?? null,
@@ -197,7 +271,7 @@ export function emitStallDiag(bot: Bot, facts: StallFacts, sink: DiagSink): bool
   lastLineAt.set(bot, now);
   let body: Record<string, unknown>;
   try {
-    body = snapshot(bot, facts);
+    body = snapshot(bot, facts, now);
   } catch (error) {
     body = { reason: facts.reason, error: error instanceof Error ? error.message : String(error) };
   }
