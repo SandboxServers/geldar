@@ -44,7 +44,7 @@ function setup(held = 5, pickups: Pickups = {}) {
     }
     if (pickups.abortOnToss) controller.abort();
   });
-  const lookAt = vi.fn(async () => {});
+  const lookAt = vi.fn(async (_at?: Vec3, _force?: boolean) => {});
   // The server's full player list: a player listed here is known to the server, not to the agent.
   const players: Record<string, unknown> = { Hidden: { entity: { position: new Vec3(0, 64, 5) } } };
   const bot = Object.assign(world.bot, {
@@ -84,6 +84,21 @@ describe('give', () => {
     expect(walk).not.toHaveBeenCalled();
     expect(lookAt).toHaveBeenCalled();
     expect(toss).toHaveBeenCalledWith(42, null, 3);
+  });
+
+  it('aims at the recipient about 0.9 of its height up, not at its feet', async () => {
+    const { world, run, lookAt } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 2.5),
+      height: 1.8,
+    };
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    const aim = lookAt.mock.calls[0]?.[0] as Vec3;
+    expect(aim.x).toBeCloseTo(0.5, 6);
+    expect(aim.y).toBeCloseTo(64 + 1.8 * 0.9, 6);
+    expect(aim.z).toBeCloseTo(2.5, 6);
   });
 
   it('walks up to a visible agent that is further than 3 blocks, then tosses', async () => {
@@ -246,12 +261,30 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
     expect(toss).toHaveBeenCalledOnce();
   });
 
-  it('tosses anyway when there is no room to step back', async () => {
+  it('fails not_possible and tosses nothing when there is no room to step back', async () => {
     const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
     walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
-    expect(await run('Pike')).toMatchObject({ status: 'completed' });
-    expect(toss).toHaveBeenCalledOnce();
+    expect(await run('Pike')).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'too close to toss, and no room to step back',
+      detail: {},
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('fails not_possible and tosses nothing when the recipient is 1.0 blocks away and the step back fails', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(1, 64, 0) };
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
+    expect(await run('Pike')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'too close to toss, and no room to step back',
+    });
+    expect(walk).toHaveBeenCalledOnce();
+    expect(toss).not.toHaveBeenCalled();
   });
 
   it('is cancelled, and does not toss, when the run aborts during the step back', async () => {
@@ -303,6 +336,26 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
       reason: 'not_possible',
       message: 'the items are on the ground near Pike',
     });
+  });
+
+  it('says the recipient did not pick up when the Body collected its own toss', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [7], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const item = { id: 7, name: 'item', type: 'other', position: new Vec3(0.5, 64, 3.5) };
+    world.entities[7] = item;
+    // The Body's own pickup: the item is collected, so the server removes it from the world.
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', item);
+      events.emit('playerCollect', world.me, item);
+      delete world.entities[7];
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'Pike did not pick the items up; you took them back',
+      detail: {},
+    });
+    expect(walk).not.toHaveBeenCalled();
   });
 
   it('is cancelled when the run aborts while taking the items back', async () => {
