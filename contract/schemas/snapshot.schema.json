@@ -245,7 +245,16 @@
               "held_item": {
                 "anyOf": [{ "$ref": "common.schema.json#/$defs/ItemName" }, { "type": "null" }]
               },
-              "health_estimate": { "type": "string", "maxLength": 32 }
+              "health_estimate": { "type": "string", "maxLength": 32 },
+              "vertical": {
+                "description": "Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.",
+                "type": "string",
+                "enum": ["above", "level", "below"]
+              },
+              "in_reach": {
+                "description": "True when the other agent is within give reach, 3 blocks. Absent when the Body does not report it.",
+                "type": "boolean"
+              }
             }
           }
         }
