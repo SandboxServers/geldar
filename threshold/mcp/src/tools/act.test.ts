@@ -11,7 +11,15 @@ import {
   ScriptedRateLimiter,
 } from '../fakes/stores.fakes.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
-import { type ActDeps, ActToolError, actTool, type Caller, refusalsOf, slotsOf } from './act.ts';
+import {
+  ACT_QUEUED_NOTE,
+  type ActDeps,
+  ActToolError,
+  actTool,
+  type Caller,
+  refusalsOf,
+  slotsOf,
+} from './act.ts';
 
 const CALLER: Caller = { playerId: 'ag-jason-01', lifeId: 'ag_jason_01' };
 const POS = { x: 1, y: 64, z: 1 };
@@ -317,6 +325,17 @@ describe('act: partial batches', () => {
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(
       3 - batchCost(['say', 'action', 'intent']),
     );
+  });
+
+  it('says in the result that accepted actions are queued, and says nothing when none is accepted', async () => {
+    const h = harness();
+    const queued = await act(h, { actions: [GOTO] });
+    expect(queued.note).toBe(ACT_QUEUED_NOTE);
+    expect(ACT_QUEUED_NOTE).toBe(
+      'These actions are queued. Their results arrive in your next wait.',
+    );
+    const refused = await act(h, { actions: [{ do: 'teleport' }] });
+    expect(refused.note).toBeUndefined();
   });
 });
 

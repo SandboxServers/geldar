@@ -5160,6 +5160,7 @@ export interface ActResult {
     reason: string;
   }[];
   budget_remaining_thoughts: number;
+  note?: string;
 }
 
 export interface SayInput {
