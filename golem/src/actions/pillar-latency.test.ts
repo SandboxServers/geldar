@@ -156,13 +156,35 @@ describe('pillar against a late block update (real prismarine physics)', () => {
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message: UNCONFIRMED });
   });
 
-  it('refuses with the live message when the server refuses the placement', async () => {
-    const fake = serverFake(3, () => undefined, new Error('Server refused to place dirt'));
+  // Mineflayer's own texts, as the placement throws them: they carry coordinates, ms and event names.
+  it.each([
+    [
+      'a refusal that names the block still there',
+      'Server refused to place dirt at (0, 64, 0): the block is still stone',
+      'the server did not place the block: it is still stone',
+    ],
+    [
+      'a refusal whose block name has underscores',
+      'Server refused to place dirt at (0, 64, 0): the block is still oak_planks',
+      'the server did not place the block: it is still oak planks',
+    ],
+    [
+      'a placement the server never answered',
+      'Server did not answer the placement at (0, 64, 0): Event blockUpdate:(0,64,0) did not fire within timeout of 5000ms',
+      'the server did not answer the placement',
+    ],
+    [
+      'an error that is neither a refusal nor a timeout',
+      'Connection reset at (0, 64, 0) after 3 tries',
+      'the server did not place the block',
+    ],
+  ])('says %s in plain words, with no coordinates or library text', async (_, raw, message) => {
+    const fake = serverFake(3, () => undefined, new Error(raw));
     const outcome = await pillar(fake);
-    expect(outcome).toMatchObject({
-      status: 'failed',
-      reason: 'blocked',
-      message: 'the server did not place the block: Server refused to place dirt',
-    });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked', message });
+    const text = (outcome as { message: string }).message;
+    expect(text).not.toMatch(/\d/);
+    expect(text).not.toContain('(');
+    expect(text.length).toBeLessThan(160);
   });
 });

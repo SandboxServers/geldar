@@ -231,10 +231,20 @@ async function pillarPlace(
   return failed('blocked', MESSAGE.notRisen);
 }
 
-/** Names the server's refusal, trimmed to 80 characters; with no error text, that no block appeared. */
+/**
+ * Says why the pillar's block did not go down, in our own words: the library's text carries
+ * coordinates, ms and event names, which the agent must not see. A refusal names the block still there.
+ */
 function unplacedMessage(error: string | undefined): string {
-  const cause = (error ?? 'no block appeared at the target').slice(0, 80);
-  return `the server did not place the block: ${cause}`;
+  const still = /the block is still ([a-z_]+)/i.exec(error ?? '');
+  if (still && /refused to place/i.test(error ?? '')) {
+    const name = (still[1] ?? '').replace(/_/g, ' ').slice(0, 80);
+    return `the server did not place the block: it is still ${name}`;
+  }
+  if (/did not answer|did not fire|timed out|timeout/i.test(error ?? '')) {
+    return 'the server did not answer the placement';
+  }
+  return 'the server did not place the block';
 }
 
 /** Waits for the bot to land, up to `LAND_WAIT_MS` of wall time; stops early on abort. */
