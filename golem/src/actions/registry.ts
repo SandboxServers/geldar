@@ -261,6 +261,11 @@ interface FailureKey {
 /** Per bot, the failure keys seen. A WeakMap, so a bot that goes away takes its keys with it. */
 const failureKeys = new WeakMap<object, Map<string, FailureKey>>();
 
+/** The log text of a cancelled run: a cancelled result carries no message of its own (outcome.ts). */
+const CANCELLED_TEXT = 'the action was stopped before it finished';
+/** The log text of a failure that carries no message; no handler's failure is left empty. */
+const FAILED_TEXT = 'the action failed with no message';
+
 /**
  * Writes one JSON line for a failed or cancelled action: the verb, its arguments (cut), the reason,
  * the full message, the position and the wall time. Repeats of one (verb, reason, message) within
@@ -273,7 +278,7 @@ function logFailure(sink: DiagSink, bot: Bot, action: unknown, run: ActionRun): 
     typeof action === 'object' && action !== null ? (action as Record<string, unknown>) : {};
   const verb = typeof source.do === 'string' ? source.do : 'unknown';
   const reason = run.state === 'cancelled' ? 'cancelled' : (run.result.reason ?? 'unknown');
-  const message = run.result.message ?? '';
+  const message = run.result.message ?? (run.state === 'cancelled' ? CANCELLED_TEXT : FAILED_TEXT);
   const now = sink.now();
 
   let keys = failureKeys.get(bot);
