@@ -25,8 +25,9 @@ lakitu:
 kino:
   # The Kino data feed (decision 0075). Off by default; false is the kill switch.
   enabled: false
-  # Horizontal view radius in chunks (1 to 8). Sections are read above the agent (6) and below (1).
-  radius_chunks: 8
+  # Horizontal view radius in chunks (1 to 8, default 5). Within 4 chunks, sections are read 6 above the agent and 1
+  # below; beyond 4 chunks, 2 above and 2 below. Sections are read nearest-first.
+  radius_chunks: 5
 maintenance:
   # Server lines to the online players for a maintenance notice (CD-1), from geldar.<shard>.maintenance.
   # false turns the broadcast off; the file is re-read every 5 seconds, so no restart is needed.

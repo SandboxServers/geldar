@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class KinoFeedTest {
@@ -271,6 +275,108 @@ class KinoFeedTest {
         // Back in section 0: sections 0..6 are still in the window and are not sent again; section -1 left it, so it is.
         assertEquals(9, count("chunk_section"));
         assertEquals(9, out.stream().filter(m -> m.contains("\"section_y\":-1,")).count());
+        assertAllValid();
+    }
+
+    /** The chunk_section messages published so far, as {chunk_x, section_y, chunk_z}, in publication order. */
+    private List<int[]> published() {
+        List<int[]> sections = new ArrayList<>();
+        for (String m : out) {
+            if (m.contains("\"type\":\"chunk_section\"")) {
+                sections.add(new int[] {field(m, "chunk_x"), field(m, "section_y"), field(m, "chunk_z")});
+            }
+        }
+        return sections;
+    }
+
+    private static int field(String message, String key) {
+        Matcher m = Pattern.compile("\"" + key + "\":(-?\\d+)").matcher(message);
+        assertTrue(m.find(), key + " missing in " + message);
+        return Integer.parseInt(m.group(1));
+    }
+
+    /** Squared distance in sections from the centre {cx, cy, cz} (the target's own section). */
+    private static long sq(int[] s, int cx, int cy, int cz) {
+        long dx = s[0] - cx;
+        long dy = s[1] - cy;
+        long dz = s[2] - cz;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    @Test
+    void theAgentsOwnSectionIsPublishedFirstAndTheRestNearestFirst() {
+        // Glass in every section, so every window section is published. Agent in section 0 of chunk (0, 0).
+        Terrain world = new Terrain(square(3), (x, y, z) -> "minecraft:glass", new KinoWorld.Position(8, 8, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 3, 8192);
+        feed.start("steve_bot");
+        for (int i = 0; i < 1000; i++) {
+            feed.pump();
+            feed.tick();
+        }
+        List<int[]> s = published();
+        assertEquals(8 * 49, s.size());
+        assertEquals(0, s.get(0)[0]);
+        assertEquals(0, s.get(0)[1]);
+        assertEquals(0, s.get(0)[2]);
+        for (int i = 1; i < s.size(); i++) {
+            assertTrue(sq(s.get(i - 1), 0, 0, 0) <= sq(s.get(i), 0, 0, 0),
+                    "section " + i + " is nearer than section " + (i - 1));
+        }
+        assertAllValid();
+    }
+
+    @Test
+    void aMovedAgentGetsItsNewSectionFirstAndTheQueueIsResorted() {
+        Terrain world = new Terrain(square(5), (x, y, z) -> "minecraft:glass", new KinoWorld.Position(8, 8, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 3);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        out.clear();
+        // Chunk 1 now: the window gains column x = 4 and loses x = -3; the new own section comes first.
+        world.at = new KinoWorld.Position(24, 8, 8);
+        feed.tick();
+        pumpAll(feed);
+        List<int[]> s = published();
+        assertEquals(8 * 7, s.size(), "one window column of 7 sections is new");
+        assertEquals(4, s.get(0)[0]);
+        assertEquals(0, s.get(0)[1]);
+        assertEquals(0, s.get(0)[2]);
+        for (int i = 1; i < s.size(); i++) {
+            assertTrue(sq(s.get(i - 1), 1, 0, 0) <= sq(s.get(i), 1, 0, 0), "section " + i + " is nearer than the one before");
+        }
+        assertAllValid();
+    }
+
+    @Test
+    void sectionsOutsideTheTaperedBandAreNotRead() {
+        // Glass is never skipped, so a published section is a read one. Radius 5, agent in section 0 of chunk (0, 0).
+        Terrain world = new Terrain(square(5), (x, y, z) -> "minecraft:glass", new KinoWorld.Position(8, 8, 8));
+        KinoFeed feed = new KinoFeed(world, sink, 5);
+        feed.start("steve_bot");
+        pumpAll(feed);
+        List<int[]> s = published();
+        // Within 4 chunks: 9 x 9 columns of 8 sections (-1 to 6). At 5 chunks: the ring of 40 columns of 5 (-2 to 2).
+        assertEquals(81 * 8 + 40 * 5, s.size());
+        for (int[] c : s) {
+            int dist = Math.max(Math.abs(c[0]), Math.abs(c[2]));
+            if (dist > 4) {
+                assertTrue(c[1] >= -2 && c[1] <= 2, "section " + c[1] + " at " + dist + " chunks is outside the band");
+            } else {
+                assertTrue(c[1] >= -1 && c[1] <= 6, "section " + c[1] + " at " + dist + " chunks is outside the band");
+            }
+        }
+        assertAllValid();
+    }
+
+    @Test
+    void theDefaultRadiusIsFiveChunksAndTheShippedConfigSaysSo() throws IOException {
+        assertEquals(5, KinoFeed.DEFAULT_RADIUS_CHUNKS);
+        new KinoFeed(new FakeWorld(Set.of()), sink, KinoFeed.DEFAULT_RADIUS_CHUNKS).start("steve_bot");
+        assertTrue(out.get(0).contains("\"view_radius\":5"), out.get(0));
+        String yml = new String(KinoFeedTest.class.getResourceAsStream("/config.yml").readAllBytes(), StandardCharsets.UTF_8);
+        Matcher m = Pattern.compile("(?ms)^kino:.*?^  radius_chunks: (\\d+)$").matcher(yml);
+        assertTrue(m.find());
+        assertEquals(5, Integer.parseInt(m.group(1)));
         assertAllValid();
     }
 

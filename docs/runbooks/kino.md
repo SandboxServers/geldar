@@ -21,7 +21,7 @@ Three switches, all default off:
 
 ## View window
 
-The feed reads the loaded chunks within `kino.radius_chunks` (default 8, the maximum; 1 to 8) horizontally, so the view is wide. Vertically it reads 6 sections above the agent and 1 below. A section that is entirely opaque and sealed by opaque neighbours (no face open to air, cave or water) is not sent, since no camera can see it; a section next to an unloaded chunk or at the world's top or bottom is always sent. The block reads stay within 16384 per tick, so a wide window arrives over a few seconds.
+The feed reads the loaded chunks within `kino.radius_chunks` (default 5; 1 to 8) horizontally. The vertical band tapers with distance: within 4 chunks it reads 6 sections above the agent and 1 below; beyond 4 chunks, only 2 above and 2 below the agent's height. The feed queues the sections nearest-first from the agent's own section, so the view fills outward from the agent, and it re-sorts the queue when the agent changes chunk. A section that is entirely opaque and sealed by opaque neighbours (no face open to air, cave or water) is not sent, since no camera can see it; a section next to an unloaded chunk or at the world's top or bottom is always sent. The block reads stay within 16384 per tick, so a wide window arrives over a few seconds.
 
 ## Kill switch
 
