@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import {
   type BlueprintName,
   blueprintCells,
+  type Cell,
   isBlueprintName,
 } from '../../actions/build/blueprints.ts';
 import { REPLACEABLE } from '../../actions/place.ts';
@@ -18,6 +19,33 @@ const ASIDE = [
   { x: 0, z: 1 },
   { x: -1, z: 0 },
   { x: 0, z: -1 },
+];
+/** The four horizontal sides of the body, north is -z. */
+const SIDES = [
+  { name: 'north', dx: 0, dz: -1 },
+  { name: 'south', dx: 0, dz: 1 },
+  { name: 'east', dx: 1, dz: 0 },
+  { name: 'west', dx: -1, dz: 0 },
+];
+
+/** A part of a blueprint, as the failure message names it. */
+export type Part =
+  | 'roof'
+  | 'north wall'
+  | 'south wall'
+  | 'east wall'
+  | 'west wall'
+  | 'floor'
+  | 'centre column';
+/** The order the parts are named in. */
+const PART_ORDER: readonly Part[] = [
+  'roof',
+  'north wall',
+  'south wall',
+  'east wall',
+  'west wall',
+  'floor',
+  'centre column',
 ];
 
 interface BuildState {
@@ -38,6 +66,8 @@ interface BuildState {
   solid: number;
   /** Cells still refused after the retry pass. */
   unplaced: number;
+  /** The cell numbers behind `unplaced`, in build order: the failure message names their parts. */
+  refused: number[];
   /** The first refusal seen, as `reason: message`. */
   firstFailure: string | null;
 }
@@ -47,11 +77,13 @@ interface BuildState {
  * through `place`, lowest layer first. Arguments: `{ blueprint, block }`. Offsets are relative to
  * the cell the body stood in at the start. When the next cell is the body's own, it steps aside
  * first. A cell that already holds a solid block counts as done. A cell refused as `blocked` or
- * `timeout` is deferred: after the last cell one retry pass runs over the deferred cells, and the intent fails
- * only if some cell is still refused. Checkpoint: the blueprint, block, origin, `next`, the
- * deferred cells, the retry flag and the counts; a cell in an old checkpoint before `next` counts
- * as placed. Out of blocks wakes the Mind (`precondition_failed`) and says how many are missing;
- * any other refusal fails the intent with the step number.
+ * `timeout` is deferred: after the last cell one retry pass runs over the deferred cells, and the
+ * intent fails only if some cell is still refused. The failure names the parts of the blueprint
+ * the refused cells lie in. A completed build of a body that is not enclosed names the open sides.
+ * Checkpoint: the blueprint, block, origin, `next`, the deferred and refused cells, the retry flag
+ * and the counts; a cell in an old checkpoint before `next` counts as placed. Out of blocks wakes
+ * the Mind (`precondition_failed`) and says how many are missing; any other refusal fails the
+ * intent with the step number.
  */
 export class BuildProgram implements IntentProgram {
   readonly name = 'build';
@@ -76,6 +108,7 @@ export class BuildProgram implements IntentProgram {
       placed: 0,
       solid: 0,
       unplaced: 0,
+      refused: [],
       firstFailure: null,
     };
   }
@@ -88,7 +121,7 @@ export class BuildProgram implements IntentProgram {
       const retrying = state.next >= cells.length;
       const index = retrying ? state.deferred[0] : state.next;
       const cell = index === undefined ? undefined : cells[index];
-      if (index === undefined || !cell) return this.finish(cells.length);
+      if (index === undefined || !cell) return this.finish(ctx, cells);
       if (retrying) state.retried = true;
       const at = {
         x: state.origin.x + cell.dx,
@@ -128,8 +161,12 @@ export class BuildProgram implements IntentProgram {
         };
       }
       state.firstFailure ??= `${reason}: ${message}`;
-      if (!retrying) state.deferred.push(index);
-      else state.unplaced++;
+      if (!retrying) {
+        state.deferred.push(index);
+      } else {
+        state.unplaced++;
+        state.refused.push(index);
+      }
       settle(state, retrying);
     }
     return { status: 'running' };
@@ -148,6 +185,7 @@ export class BuildProgram implements IntentProgram {
           placed: s.placed,
           solid: s.solid,
           unplaced: s.unplaced,
+          refused: [...s.refused],
           firstFailure: s.firstFailure,
         }
       : null;
@@ -156,7 +194,7 @@ export class BuildProgram implements IntentProgram {
   async resume(saved: ProgramCheckpoint, _ctx: ProgramContext): Promise<void> {
     // The fields added after the first checkpoint format are read by hand, so that an old
     // checkpoint without them still resumes; the reader sees only the fields it knows.
-    const { deferred, retried, firstFailure, ...core } = saved;
+    const { deferred, refused, retried, firstFailure, ...core } = saved;
     const reader = checkpointReader('build', core);
     const blueprint = reader.name('blueprint');
     const block = reader.name('block');
@@ -169,16 +207,18 @@ export class BuildProgram implements IntentProgram {
     if (!isBlueprintName(blueprint)) {
       throw new ProgramError('invalid_args', 'build', `unknown blueprint ${blueprint}`);
     }
+    const cellCount = blueprintCells(blueprint).length;
     this.state = {
       blueprint,
       block,
       origin,
       next,
-      deferred: readDeferred(deferred, blueprintCells(blueprint).length),
+      deferred: readCellList(deferred, cellCount, 'deferred'),
       retried: retried === true,
       placed,
       solid,
       unplaced,
+      refused: readCellList(refused, cellCount, 'refused'),
       firstFailure: typeof firstFailure === 'string' ? firstFailure : null,
     };
   }
@@ -195,15 +235,21 @@ export class BuildProgram implements IntentProgram {
     return `Built ${state.blueprint}: ${state.placed} placed, ${state.solid} already solid, of ${total}.`;
   }
 
-  /** Done when every cell is placed or solid; otherwise it names the cells still refused. */
-  private finish(total: number): StepResult {
+  /**
+   * Done when every cell is placed or solid. Otherwise it names the parts the refused cells lie
+   * in, for example `The roof and the north wall could not be placed; first failure: ...`.
+   */
+  private finish(ctx: ProgramContext, cells: readonly Cell[]): StepResult {
     const state = this.need();
+    const progress = this.progress(cells.length);
     if (state.unplaced === 0) {
-      return { status: 'completed', detail: { message: this.progress(total) } };
+      const note = enclosureNote(ctx, state.origin);
+      return { status: 'completed', detail: { message: `${progress}${note}` } };
     }
+    const subject = refusedSubject(state.refused, cells);
     return {
       status: 'failed',
-      message: `${this.progress(total)} ${state.unplaced} cells could not be placed; first failure: ${state.firstFailure ?? 'unknown'}.`,
+      message: `${progress} ${subject} could not be placed; first failure: ${state.firstFailure ?? 'unknown'}.`,
     };
   }
 
@@ -263,12 +309,100 @@ function settle(state: BuildState, retrying: boolean): void {
   else state.next++;
 }
 
-/** The deferred cell list from a checkpoint: absent is empty; anything else must be valid. */
-function readDeferred(raw: unknown, cellCount: number): number[] {
+/** A cell list from a checkpoint: absent is empty; anything else must be valid cell numbers. */
+function readCellList(raw: unknown, cellCount: number, field: string): number[] {
   if (raw === undefined) return [];
   const valid =
     Array.isArray(raw) &&
     raw.every((v) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < cellCount);
-  if (!valid) throw new ProgramError('invalid_args', 'build', 'deferred must list cell numbers');
+  if (!valid) throw new ProgramError('invalid_args', 'build', `${field} must list cell numbers`);
   return raw as number[];
+}
+
+interface Extents {
+  minX: number;
+  maxX: number;
+  minDy: number;
+  maxDy: number;
+  minZ: number;
+  maxZ: number;
+}
+
+function extentsOf(cells: readonly Cell[]): Extents {
+  const xs = cells.map((c) => c.dx);
+  const ys = cells.map((c) => c.dy);
+  const zs = cells.map((c) => c.dz);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minDy: Math.min(...ys),
+    maxDy: Math.max(...ys),
+    minZ: Math.min(...zs),
+    maxZ: Math.max(...zs),
+  };
+}
+
+/**
+ * The walls a cell is on. A side is an outer edge of the blueprint that reaches past the origin:
+ * the north edge is the least z when that is below the origin, and so on. A corner is on two walls.
+ */
+function wallsOf(cell: Cell, e: Extents): Part[] {
+  const walls: Part[] = [];
+  if (e.minZ < 0 && cell.dz === e.minZ) walls.push('north wall');
+  if (e.maxZ > 0 && cell.dz === e.maxZ) walls.push('south wall');
+  if (e.maxX > 0 && cell.dx === e.maxX) walls.push('east wall');
+  if (e.minX < 0 && cell.dx === e.minX) walls.push('west wall');
+  return walls;
+}
+
+/**
+ * The parts of a blueprint a cell lies in, from the blueprint's extents and the origin. A cell in a
+ * layer below the origin's is the floor. A blueprint more than one layer high has a roof when its
+ * top layer has a cell off the outer edges: then the whole top layer is the roof, and a roof cell
+ * is on no wall. Otherwise a cell on an outer edge is on the wall, and any other cell is in the
+ * centre column.
+ */
+export function partsOf(cell: Cell, cells: readonly Cell[]): Part[] {
+  if (cell.dy < 0) return ['floor'];
+  const e = extentsOf(cells);
+  const roof =
+    e.maxDy > e.minDy && cells.some((c) => c.dy === e.maxDy && wallsOf(c, e).length === 0);
+  if (roof && cell.dy === e.maxDy) return ['roof'];
+  const walls = wallsOf(cell, e);
+  return walls.length > 0 ? walls : ['centre column'];
+}
+
+/** The subject of the failure sentence: the parts of the refused cells, in `PART_ORDER`. */
+function refusedSubject(refused: readonly number[], cells: readonly Cell[]): string {
+  const found = new Set<Part>();
+  for (const index of refused) {
+    const cell = cells[index];
+    if (cell) for (const part of partsOf(cell, cells)) found.add(part);
+  }
+  const names = PART_ORDER.filter((part) => found.has(part)).map((part) => `the ${part}`);
+  if (names.length === 0) return 'Some cells';
+  const words = joinWords(names);
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`;
+}
+
+/** Joins words as `a`, `a and b`, or `a, b and c`. */
+function joinWords(words: readonly string[]): string {
+  if (words.length <= 1) return words[0] ?? '';
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+}
+
+/**
+ * The sentence added to a completed build when the view says the body is not enclosed: the sides
+ * open at the feet or head. Empty when the view says the body is enclosed, or does not say.
+ */
+function enclosureNote(ctx: ProgramContext, origin: { x: number; y: number; z: number }): string {
+  if (ctx.view.enclosed !== false) return '';
+  const open = SIDES.filter((side) =>
+    [0, 1].some(
+      (dy) =>
+        !isSolid(ctx.bot.blockAt(new Vec3(origin.x + side.dx, origin.y + dy, origin.z + side.dz))),
+    ),
+  ).map((side) => side.name);
+  if (open.length === 0) return ' Not enclosed.';
+  return ` Not enclosed: open to the ${joinWords(open)}.`;
 }
