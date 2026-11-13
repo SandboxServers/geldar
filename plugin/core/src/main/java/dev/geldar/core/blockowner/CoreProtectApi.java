@@ -20,13 +20,15 @@ public final class CoreProtectApi implements CoreProtectPort {
     static final int MIN_API_VERSION = 12;
 
     private final CoreProtectAPI api;
+    private final LookupDebugLog debug;
 
-    private CoreProtectApi(CoreProtectAPI api) {
+    private CoreProtectApi(CoreProtectAPI api, LookupDebugLog debug) {
         this.api = api;
+        this.debug = debug;
     }
 
     /** The API when CoreProtect is loaded, its API is enabled and it is version 12 or newer; empty otherwise. */
-    public static Optional<CoreProtectApi> connect(Plugin plugin) {
+    public static Optional<CoreProtectApi> connect(Plugin plugin, LookupDebugLog debug) {
         if (!(plugin instanceof CoreProtect coreProtect)) {
             return Optional.empty();
         }
@@ -34,7 +36,7 @@ public final class CoreProtectApi implements CoreProtectPort {
         if (api == null || !api.isEnabled() || api.APIVersion() < MIN_API_VERSION) {
             return Optional.empty();
         }
-        return Optional.of(new CoreProtectApi(api));
+        return Optional.of(new CoreProtectApi(api, debug));
     }
 
     @Override
@@ -45,16 +47,27 @@ public final class CoreProtectApi implements CoreProtectPort {
         }
         ChunkLookupCall call = ChunkLookupCall.forChunk(chunkX, chunkZ);
         Location centre = new Location(bukkitWorld, call.centreX(), call.centreY(), call.centreZ());
+        if (debug.enabled()) {
+            debug.info("performLookup chunk " + chunkX + "," + chunkZ + " in " + world + ": window seconds="
+                    + call.seconds() + " actions=" + call.actions() + " radius=" + call.radius() + " centre="
+                    + call.centreX() + "," + call.centreY() + "," + call.centreZ() + " user filters="
+                    + call.restrictUsers().size() + "/" + call.excludeUsers().size() + " block filters="
+                    + call.restrictBlocks().size() + "/" + call.excludeBlocks().size());
+        }
         List<String[]> raw = api.performLookup(call.seconds(), call.restrictUsers(), call.excludeUsers(),
                 call.restrictBlocks(), call.excludeBlocks(), call.actions(), call.radius(), centre);
         if (raw == null) {
             throw new IllegalStateException("CoreProtect lookup returned no result");
         }
         List<LogRow> rows = new ArrayList<>(raw.size());
-        for (String[] line : raw) {
-            ParseResult p = api.parseResult(line);
+        for (int i = 0; i < raw.size(); i++) {
+            ParseResult p = api.parseResult(raw.get(i));
             if (p == null) {
+                debug.info("raw row " + i + ": not parsed");
                 continue;
+            }
+            if (debug.enabled()) {
+                debug.info(describe(i, p));
             }
             // The lookup is centred in the queried world and the API 12 result carries no world accessor, so the
             // queried world is the row's world.
@@ -62,5 +75,12 @@ public final class CoreProtectApi implements CoreProtectPort {
                     p.getActionId() == ChunkLookupCall.ACTION_PLACE, p.getPlayer(), p.isRolledBack()));
         }
         return rows;
+    }
+
+    /** One raw row for the debug log: its index, action, rollback flag, user kind, block type and position. No name. */
+    private static String describe(int index, ParseResult p) {
+        String user = FirstRowResolver.isPlayer(p.getPlayer()) ? "player" : "system";
+        return "raw row " + index + ": action=" + p.getActionId() + " rolledBack=" + p.isRolledBack() + " user=" + user
+                + " block=" + p.getType() + " at " + p.getX() + "," + p.getY() + "," + p.getZ();
     }
 }

@@ -50,6 +50,17 @@ public final class FirstRowResolver {
         return user != null && !user.isEmpty() && !user.startsWith(NON_PLAYER_PREFIX);
     }
 
+    /** How many rows are in this chunk of this world, rolled back or not: the rows kept for the chunk. */
+    static int countInChunk(List<LogRow> rows, String world, int chunkX, int chunkZ) {
+        int kept = 0;
+        for (LogRow row : rows) {
+            if (world.equals(row.world()) && inChunk(row, chunkX, chunkZ)) {
+                kept++;
+            }
+        }
+        return kept;
+    }
+
     private static boolean inChunk(LogRow row, int chunkX, int chunkZ) {
         return Math.floorDiv(row.x(), 16) == chunkX && Math.floorDiv(row.z(), 16) == chunkZ;
     }
