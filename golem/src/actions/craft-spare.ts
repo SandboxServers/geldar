@@ -80,13 +80,18 @@ export async function placeSpareTable(
   return { outcome: null, table: nearestTable(bot), placed: true };
 }
 
-/** Mines the spare table back, so its drop returns to the inventory. Never throws. */
-export async function pickUpSpareTable(ctx: ActionContext): Promise<void> {
+/** Mines a carried block back by name, so its drop returns to the inventory. Never throws. */
+export async function pickUpSpareBlock(ctx: ActionContext, block: string): Promise<void> {
   const clean = { ...ctx, signal: new AbortController().signal };
   const out = await mineAction
-    .run(clean, { do: 'mine', block: SPARE_TABLE, count: 1 })
-    .catch(() => failed('internal', 'the spare table was not picked up'));
-  if (out.status !== 'completed') console.warn(`spare crafting table was not picked up`);
+    .run(clean, { do: 'mine', block, count: 1 })
+    .catch(() => failed('internal', `the spare ${block} was not picked up`));
+  if (out.status !== 'completed') console.warn(`spare ${block} was not picked up`);
+}
+
+/** Mines the spare table back, so its drop returns to the inventory. Never throws. */
+export function pickUpSpareTable(ctx: ActionContext): Promise<void> {
+  return pickUpSpareBlock(ctx, SPARE_TABLE);
 }
 
 /** How many crafts of this recipe the ingredients in the inventory allow now. */
