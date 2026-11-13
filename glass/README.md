@@ -85,6 +85,20 @@ To run it in the foreground instead, start it by hand from the repository root, 
 
 It prints `glass listening on 127.0.0.1:<port>` when it is ready. Stop it with Ctrl+C.
 
+## Seeing the page without a shard
+
+```powershell
+node glass/test/preview.ts          # http://127.0.0.1:8788/, sample data, a live entry every 6 seconds
+node glass/test/preview.ts 8790 0   # another port, no live entries
+```
+
+The preview is the real handler (static files, Content-Security-Policy, Host check and routes) over invented
+rows from `glass/test/preview-sample.ts`: long and short journal lines, a parsed and an unparsed thought, a dead
+agent, a day of entries to page through, and hostile text. It needs no Postgres, binds loopback only and is not
+part of the runtime. It does not model the visibility rules (the delay, hidden living sovereign agents), and its
+sample thoughts carry an `action_id` so the receipts table can be seen; the live API returns none today. The
+`web-designer` agent (`.claude/agents/web-designer.md`) uses it to look at a change in a browser.
+
 ## The `geldar_glass` role
 
 Glass reads Postgres as the role `geldar_glass`. Migration `sql/0005_glass_reader.sql` creates the

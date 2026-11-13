@@ -236,14 +236,19 @@ ol > li {
   font-weight: 600;
 }
 
-/* The facts after the name are set apart by a dot; the wake reason says what it is. */
+/*
+ * The facts after the name are set apart by a dot; the wake reason says what it is. The text after "/" is
+ * what a screen reader says: nothing for the dot. A browser without that form keeps the first line.
+ */
 .meta .outcome::before,
 .meta .wake::before {
   content: "\00b7\00a0";
+  content: "\00b7\00a0" / "";
 }
 
 .meta .wake::before {
   content: "\00b7\00a0woke: ";
+  content: "\00b7\00a0woke: " / "woke: ";
 }
 
 .meta .wake:empty {
@@ -320,6 +325,15 @@ button.more {
 
 .row .plan:empty {
   display: none;
+}
+
+/*
+ * The folded rest of a long journal line, hidden until the browser's find-in-page matches inside it. The
+ * browser hides it with content-visibility, which an inline box ignores, so it is an inline block while
+ * folded; once found, the attribute goes and it flows on in the line.
+ */
+.journal-text [hidden="until-found"] {
+  display: inline-block;
 }
 
 mark {
@@ -424,6 +438,7 @@ mark {
 /* "died" follows the name; the same dot as between the other facts sets the tier apart from it. */
 .meta .died + .tier::before {
   content: "\00b7\00a0";
+  content: "\00b7\00a0" / "";
 }
 
 #fresh {

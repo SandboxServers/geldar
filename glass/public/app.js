@@ -30,6 +30,7 @@ const STATUS_TEXT = {
 
 const els = {
   fresh: document.getElementById('fresh'),
+  say: document.getElementById('say'),
   status: document.getElementById('status'),
   agent: document.getElementById('f-agent'),
   outcome: document.getElementById('f-outcome'),
@@ -51,6 +52,7 @@ const state = {
   agents: new Map(),
   agentIds: [], // option position -> agent id, filled from /api/agents
   streamText: STATUS_TEXT.connecting,
+  saidFeed: '', // the feed state last said to a screen reader
   rows: new Map(), // thought id -> its drawn row, kept so a redraw leaves an open entry open
   details: new Map(), // thought id -> the detail open under its row
   loading: new Set(), // thought ids whose detail is being fetched
@@ -130,6 +132,20 @@ function thoughtsPath(cursor) {
   return `/api/thoughts?${params.toString()}`;
 }
 
+/**
+ * Tells a screen reader a short change, through the polite live region in index.html. Only changes a
+ * reader would want to hear go here: never one per live entry.
+ */
+function say(text) {
+  els.say.textContent = text;
+}
+
+/** A failure the reader should know about: shown in the status line, and said. */
+function showError(text) {
+  els.status.textContent = text;
+  say(text);
+}
+
 function updateStatus() {
   const waiting = state.paused ? `, ${state.pending.length} waiting` : '';
   els.status.textContent = `${state.streamText}${waiting}`;
@@ -159,18 +175,28 @@ const CAN_COPY =
   typeof navigator === 'object' && typeof navigator.clipboard?.writeText === 'function';
 const COPY_LABEL_MS = 2000;
 
+/** True when the browser supports hidden="until-found", so find-in-page reaches a folded journal line. */
+const FINDABLE = typeof HTMLElement === 'function' && 'onbeforematch' in HTMLElement.prototype;
+
 /**
  * Puts one entry on the reader's clipboard as plain text, on their click. The page only ever writes
- * text, never markup, and never reads the clipboard. `say` sets the button's label.
+ * text, never markup, and never reads the clipboard. `setLabel` sets the button's label; the result is
+ * said too, since a screen reader may not read out a label that changes under focus.
  */
-function copyEntry(text, say) {
-  navigator.clipboard
-    .writeText(text)
-    .then(
-      () => say('Copied'),
-      () => say('Could not copy'),
-    )
-    .then(() => window.setTimeout(() => say('Copy'), COPY_LABEL_MS));
+function copyEntry(text, setLabel) {
+  const tell = (label) => {
+    setLabel(label);
+    say(label);
+    window.setTimeout(() => {
+      setLabel('Copy');
+      // Emptied, so the next copy is said again even though its words are the same.
+      if (els.say.textContent === label) say('');
+    }, COPY_LABEL_MS);
+  };
+  navigator.clipboard.writeText(text).then(
+    () => tell('Copied'),
+    () => tell('Could not copy'),
+  );
 }
 
 function drawRow(view, keyword) {
@@ -179,6 +205,7 @@ function drawRow(view, keyword) {
     nowMs: Date.now(),
     keyword,
     onCopy: CAN_COPY ? copyEntry : undefined,
+    findable: FINDABLE,
   });
 }
 
@@ -228,7 +255,7 @@ async function reload() {
     state.details.clear();
     render();
   } catch {
-    els.status.textContent = 'Could not load thoughts.';
+    showError('Could not load thoughts.');
   }
 }
 
@@ -242,7 +269,7 @@ async function loadOlder() {
     state.next = page.next;
     render();
   } catch {
-    els.status.textContent = 'Could not load older thoughts.';
+    showError('Could not load older thoughts.');
     els.older.disabled = state.next === null;
   }
 }
@@ -272,9 +299,11 @@ async function toggleDetail(id) {
   const row = state.rows.get(id);
   if (row === undefined || state.loading.has(id)) return;
   const open = state.details.get(id);
+  const toggle = row.querySelector('button.when');
   if (open !== undefined) {
     open.remove();
     state.details.delete(id);
+    toggle?.setAttribute('aria-expanded', 'false');
     return;
   }
   state.loading.add(id);
@@ -284,6 +313,7 @@ async function toggleDetail(id) {
   if (state.rows.get(id) !== row) return;
   state.details.set(id, detail);
   row.append(detail);
+  toggle?.setAttribute('aria-expanded', 'true');
 }
 
 /** Only newly drawn, matching entries count while the list top is above the viewport. */
@@ -294,6 +324,8 @@ function countFresh(view) {
   state.fresh += 1;
   els.fresh.textContent = state.fresh === 1 ? '1 new entry' : `${state.fresh} new entries`;
   els.fresh.hidden = false;
+  // Said once when the button appears, not again for every entry that raises its count.
+  if (state.fresh === 1) say('New entries at the top of the list.');
 }
 
 function clearFresh() {
@@ -380,7 +412,15 @@ function start() {
     page: window,
     onThought,
     onStatus: (status) => {
-      state.streamText = STATUS_TEXT[status] ?? status;
+      const text = STATUS_TEXT[status] ?? status;
+      // The status line is not a live region, so its waiting count is not read out per entry. A settled
+      // state is said when it is new; the passing "Connecting..." and "Reconnecting..." are not, so the
+      // stream's routine reconnect every ten minutes stays quiet.
+      if (status !== 'connecting' && status !== 'reconnecting' && text !== state.saidFeed) {
+        state.saidFeed = text;
+        say(text);
+      }
+      state.streamText = text;
       // The class colours the dot beside the text. It is one of the fixed names above.
       els.status.className = status in STATUS_TEXT ? `status ${status}` : 'status';
       updateStatus();
@@ -415,7 +455,7 @@ function start() {
   live.start();
   loadAgents()
     .catch(() => {
-      els.status.textContent = 'Could not load the agents.';
+      showError('Could not load the agents.');
     })
     .then(() => {
       restoreFilters();

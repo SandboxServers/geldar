@@ -9,7 +9,7 @@
 import {
   copyText,
   display,
-  journalShown,
+  journalSplit,
   type Row,
   splitMatches,
   type ThoughtView,
@@ -24,7 +24,9 @@ export interface El {
   value: string;
   append(...nodes: (El | string)[]): void;
   replaceChildren(...nodes: (El | string)[]): void;
-  addEventListener(type: 'click', listener: () => void): void;
+  /** Used only with fixed names and fixed values, never with a value from the world. */
+  setAttribute(name: 'aria-expanded' | 'hidden', value: string): void;
+  addEventListener(type: 'click' | 'beforematch', listener: () => void): void;
 }
 
 export interface Doc {
@@ -43,6 +45,11 @@ export interface RowOptions {
    * `say`, which sets the button's label: the caller says how the copy went, in its own fixed words.
    */
   onCopy?: (text: string, say: (label: string) => void) => void;
+  /**
+   * True when the browser supports hidden="until-found": the hidden rest of a long journal line is then
+   * still reached by find-in-page. Left out, the rest is plainly hidden, as a browser without it would do.
+   */
+  findable?: boolean;
 }
 
 /** A node with one text value. The value is shown as text only, never parsed as markup. */
@@ -58,7 +65,11 @@ function make(doc: Doc, tag: string, className: string, value: string): El {
  * without a match, the node gets the one text value, as make() gives it.
  */
 function fill(doc: Doc, node: El, value: string, keyword: string): void {
-  const shown = display(value);
+  fillShown(doc, node, display(value), keyword);
+}
+
+/** fill() for text that has been through display() already. */
+function fillShown(doc: Doc, node: El, shown: string, keyword: string): void {
   const pieces = splitMatches(shown, keyword);
   if (!pieces.some((piece) => piece.hit)) {
     node.textContent = shown;
@@ -128,6 +139,8 @@ export function renderRow(
   // The time in the reader's zone; a time that did not parse is shown as it came.
   const when = whenLabel(view.atMs, options.nowMs ?? Date.now());
   const toggle = action(doc, 'when', '', () => onOpen(view.id));
+  // Closed at first; the page sets it to "true" while the detail is open under the entry.
+  toggle.setAttribute('aria-expanded', 'false');
   // The label a screen reader adds to the time, so the button says what it does. Hidden on screen.
   toggle.append(display(when === '' ? view.at : when), make(doc, 'span', 'sr', ', details'));
   // The entry's controls stay together at the end of the line: "Copy" when the page can copy, then the time.
@@ -153,21 +166,46 @@ export function renderRow(
   }
 
   // A journal line shows 600 characters at first. A search opens it, so no match stays out of sight.
-  const { expandable } = journalShown(view.plan, false);
-  let expanded = keyword !== '';
+  const shown = display(view.plan);
+  const { head, rest } = journalSplit(shown);
   const body = doc.createElement('span');
   body.className = 'plan journal-text';
-  fill(doc, body, journalShown(view.plan, expanded).shown, keyword);
   row.append(body);
-  if (expandable) {
-    const more = action(doc, 'more', expanded ? 'Show less' : 'Show more', () => {
-      expanded = !expanded;
-      fill(doc, body, journalShown(view.plan, expanded).shown, keyword);
-      more.textContent = expanded ? 'Show less' : 'Show more';
-    });
-    row.append(more);
-  }
   item.append(row);
+  if (rest === '') {
+    fillShown(doc, body, shown, keyword);
+    return item;
+  }
+  let expanded = keyword !== '';
+  const more = action(doc, 'more', '', () => draw(!expanded));
+  /** Shows the whole line, or its first 600 characters with the rest kept in the page but hidden. */
+  const draw = (open: boolean): void => {
+    expanded = open;
+    more.textContent = open ? 'Show less' : 'Show more';
+    more.setAttribute('aria-expanded', String(open));
+    if (open) {
+      fillShown(doc, body, shown, keyword);
+      return;
+    }
+    const start = doc.createElement('span');
+    fillShown(doc, start, head, keyword);
+    const ellipsis = make(doc, 'span', '', '...');
+    // hidden="until-found": the browser's find-in-page reaches the hidden rest and opens it. Where the
+    // browser lacks it (Safari today), the rest is plainly hidden, as before.
+    const after = doc.createElement('span');
+    fillShown(doc, after, rest, keyword);
+    after.setAttribute('hidden', options.findable === true ? 'until-found' : '');
+    after.addEventListener('beforematch', () => {
+      // The browser shows the rest itself, so this keeps the nodes and only says the line is open.
+      expanded = true;
+      ellipsis.textContent = '';
+      more.textContent = 'Show less';
+      more.setAttribute('aria-expanded', 'true');
+    });
+    body.replaceChildren(start, ellipsis, after);
+  };
+  draw(expanded);
+  row.append(more);
   return item;
 }
 

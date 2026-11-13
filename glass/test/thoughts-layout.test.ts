@@ -63,6 +63,7 @@ class FakeEl {
   replaceChildren(...nodes: (FakeEl | string)[]): void {
     this.children = [...nodes];
   }
+  setAttribute(_name: string, _value: string): void {}
   addEventListener(_type: string, fn: () => void): void {
     this.handler = fn;
   }
@@ -219,6 +220,22 @@ it('sets the tier apart from the "died" tag with the same dot as the other facts
   const dot = declarations(base, '.meta .outcome::before, .meta .wake::before');
   expect(dot).toMatch(/content: "\\00b7\\00a0"/);
   expect(declarations(base, '.meta .died + .tier::before')).toBe(dot);
+});
+
+it('gives every dot added by CSS an empty spoken text, and keeps the wake label spoken', () => {
+  const base = baseRules(FLAT).replace(/\s+/g, ' ');
+  // Each dot rule has the plain form for an older browser, then the form with the spoken text.
+  for (const selector of [
+    '.meta .outcome::before, .meta .wake::before',
+    '.meta .died + .tier::before',
+  ]) {
+    expect(declarations(base, selector)).toMatch(
+      /content: "\\00b7\\00a0"; content: "\\00b7\\00a0" \/ "";/,
+    );
+  }
+  expect(declarations(base, '.meta .wake::before')).toMatch(
+    /content: "\\00b7\\00a0woke: " \/ "woke: ";/,
+  );
 });
 
 it('keeps receipt columns readable inside their own scrolling container', () => {

@@ -150,9 +150,13 @@ describe('adversarial fixtures through the page', () => {
         expect(PAGE_TAGS.has(el.tagName), `tag ${el.tagName}`).toBe(true);
         for (const attr of [...el.attributes]) {
           expect(attr.name.startsWith('on'), `handler ${attr.name}`).toBe(false);
-          expect(['class', 'type', 'value'].includes(attr.name), `attribute ${attr.name}`).toBe(
-            true,
-          );
+          expect(
+            ['class', 'type', 'value', 'aria-expanded', 'hidden'].includes(attr.name),
+            `attribute ${attr.name}`,
+          ).toBe(true);
+          // The two state attributes hold fixed values only, never text from the world.
+          if (attr.name === 'aria-expanded') expect(['true', 'false']).toContain(attr.value);
+          if (attr.name === 'hidden') expect(['until-found', '']).toContain(attr.value);
         }
       }
       expect(

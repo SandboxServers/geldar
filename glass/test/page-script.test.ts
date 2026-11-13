@@ -492,6 +492,88 @@ describe('the page script', () => {
     );
   });
 
+  it('tells a screen reader that a copy worked or failed, and empties the message after', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const win = await boot(PAGES, {
+      clipboard: { writeText: async () => undefined },
+    });
+    const say = win.document.getElementById('say');
+    expect(say?.getAttribute('aria-live')).toBe('polite');
+    fire(win, win.document.querySelector('button.copy'), 'click');
+    await settle();
+    expect(say?.textContent).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(say?.textContent).toBe('');
+    const refused = await boot(PAGES, {
+      clipboard: { writeText: () => Promise.reject(new Error('denied')) },
+    });
+    fire(refused, refused.document.querySelector('button.copy'), 'click');
+    await settle();
+    expect(refused.document.getElementById('say')?.textContent).toBe('Could not copy');
+  });
+
+  it('says when new entries appear above the reader, once, not for every entry', async () => {
+    const win = await boot(PAGES);
+    const say = win.document.getElementById('say');
+    const list = win.document.getElementById('thoughts');
+    if (list) list.getBoundingClientRect = () => new win.DOMRect(0, -100, 300, 1000);
+    sources[0]?.emit('thought', thought(60));
+    expect(say?.textContent).toBe('New entries at the top of the list.');
+    say?.replaceChildren();
+    sources[0]?.emit('thought', thought(61));
+    expect(win.document.getElementById('fresh')?.textContent).toBe('2 new entries');
+    expect(say?.textContent).toBe('');
+  });
+
+  it('says the state of the feed when it changes, but not the waiting count of each paused entry', async () => {
+    const win = await boot(PAGES);
+    const say = win.document.getElementById('say');
+    // The visible status line is not a live region: its count changes with every entry while paused.
+    expect(win.document.getElementById('status')?.hasAttribute('aria-live')).toBe(false);
+    sources[0]?.onopen?.();
+    expect(say?.textContent).toBe('Live');
+    say?.replaceChildren();
+    fire(win, win.document.getElementById('pause'), 'click');
+    sources[0]?.emit('thought', thought(70));
+    sources[0]?.emit('thought', thought(71));
+    expect(win.document.getElementById('status')?.textContent).toBe('Live, 2 waiting');
+    expect(say?.textContent).toBe('');
+    // A routine reconnect that comes back live says nothing: neither the passing state nor "Live" again.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    sources[0]?.onerror?.();
+    expect(win.document.getElementById('status')?.textContent).toContain('Reconnecting...');
+    await vi.advanceTimersByTimeAsync(500);
+    sources[1]?.onopen?.();
+    expect(win.document.getElementById('status')?.textContent).toContain('Live');
+    expect(say?.textContent).toBe('');
+  });
+
+  it('shows and says a failed load', async () => {
+    const win = await boot(PAGES);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })),
+    );
+    const outcome = win.document.getElementById('f-outcome') as HTMLSelectElement;
+    outcome.value = 'parsed';
+    fire(win, outcome, 'change');
+    await settle();
+    expect(win.document.getElementById('status')?.textContent).toBe('Could not load thoughts.');
+    expect(win.document.getElementById('say')?.textContent).toBe('Could not load thoughts.');
+  });
+
+  it('marks the time button expanded while the detail is open under its entry', async () => {
+    const win = await boot(PAGES);
+    const time = win.document.querySelector('#thoughts > li button.when') as HTMLButtonElement;
+    expect(time.getAttribute('aria-expanded')).toBe('false');
+    fire(win, time, 'click');
+    await settle();
+    expect(time.getAttribute('aria-expanded')).toBe('true');
+    fire(win, time, 'click');
+    await settle();
+    expect(time.getAttribute('aria-expanded')).toBe('false');
+  });
+
   it('is read-only: no request uses a method other than GET, and the banner says it is for humans', async () => {
     const win = await boot(PAGES);
     expect(APP_JS).not.toMatch(/method\s*:|sendBeacon|XMLHttpRequest|\bPOST\b|\bPUT\b|\bDELETE\b/);
