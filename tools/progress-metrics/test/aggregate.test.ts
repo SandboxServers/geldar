@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { aggregate } from '../src/aggregate.ts';
-import { parseBodyLog } from '../src/body.ts';
+import { aggregate, type Inputs } from '../src/aggregate.ts';
+import { parseBodyLine, parseBodyLog } from '../src/body.ts';
+import { renderTopFailures, topFailures } from '../src/failures.ts';
 import { parseInventory } from '../src/inventory.ts';
 import { parseOutcomes } from '../src/outcomes.ts';
 import { parsePaperLog } from '../src/paper.ts';
@@ -146,5 +147,113 @@ describe('aggregate', () => {
     );
     const [r] = aggregate({ paper: [], body, positions, inventory: [], thoughts: [] }, 0);
     expect(r).toMatchObject({ episodes: 4, episodesEscaped: 2, episodeSuccessRate: 0.5 });
+  });
+});
+
+const AGENT = 'ag_test_01';
+const FT0 = Date.parse('2026-11-12T10:00:00Z');
+const NONE: Inputs = { paper: [], body: [], positions: [], inventory: [], thoughts: [] };
+
+// Fixture lines in the shape registry.ts logs: one JSON object per failed action, `repeats` only when > 0.
+const digTimeout = (ts: string, repeats?: number | string): string =>
+  JSON.stringify({
+    ts,
+    event: 'action_failed',
+    do: 'dig',
+    args: { block: 'stone' },
+    reason: 'timeout',
+    message: 'no progress',
+    pos: { x: 10.5, y: 64, z: -3.25 },
+    ms: 5000,
+    ...(repeats === undefined ? {} : { repeats }),
+  });
+const moveCancelled = (ts: string): string =>
+  JSON.stringify({
+    ts,
+    event: 'action_failed',
+    do: 'move',
+    args: { x: 1, y: 64, z: 2 },
+    reason: 'cancelled',
+    message: '',
+    pos: null,
+    ms: 120,
+  });
+const stallOnly = (ts: string): string =>
+  JSON.stringify({ ts, event: 'stall_diag', reason: 'no_progress', corrections_10s: 1 });
+
+describe('action_failed lines', () => {
+  it('parses one line into an action_failed event with do, reason, message and repeats', () => {
+    const [ev] = parseBodyLine(digTimeout('2026-11-12T10:00:00Z', 3), AGENT);
+    expect(ev).toMatchObject({
+      agent: AGENT,
+      kind: 'action_failed',
+      reason: 'timeout',
+      failure: { verb: 'dig', message: 'no progress', repeats: 3 },
+    });
+  });
+
+  it('treats a missing or invalid repeats as zero', () => {
+    expect(parseBodyLine(digTimeout('2026-11-12T10:00:00Z'), AGENT)[0]?.failure?.repeats).toBe(0);
+    expect(parseBodyLine(digTimeout('2026-11-12T10:00:00Z', 'x'), AGENT)[0]?.failure?.repeats).toBe(
+      0,
+    );
+    expect(parseBodyLine(digTimeout('2026-11-12T10:00:00Z', -2), AGENT)[0]?.failure?.repeats).toBe(
+      0,
+    );
+  });
+
+  it('counts each line as one plus its repeats, per agent and per window', () => {
+    const body = parseBodyLog(
+      [
+        digTimeout('2026-11-12T10:00:00Z'),
+        digTimeout('2026-11-12T10:01:00Z', 4),
+        moveCancelled('2026-11-12T10:02:00Z'),
+        digTimeout('2026-11-12T11:30:00Z', 2),
+      ].join('\n'),
+      AGENT,
+    );
+    const rows = aggregate({ ...NONE, body }, 60 * 60_000);
+    expect(rows.map((r) => r.actionFailed)).toEqual([7, 3]);
+    expect(rows[0]?.actionFailures).toBe('dig/timeout=6 move/cancelled=1');
+    expect(rows[1]?.actionFailures).toBe('dig/timeout=3');
+    expect(rows[0]?.windowStart).toBe(FT0);
+  });
+
+  it('reports zero for an older log with no action_failed lines and does not throw', () => {
+    const body = parseBodyLog(stallOnly('2026-11-12T10:00:00Z'), AGENT);
+    const [row] = aggregate({ ...NONE, body }, 0);
+    expect(row?.actionFailed).toBe(0);
+    expect(row?.actionFailures).toBe('');
+    expect(topFailures(body)).toEqual([]);
+    expect(renderTopFailures([])).toBe('');
+  });
+
+  it('ignores a malformed action_failed line', () => {
+    expect(parseBodyLog('{"event":"action_failed",', AGENT)).toEqual([]);
+  });
+
+  it('lists the top five (do, reason, message) combinations by count, most first', () => {
+    const lines = [
+      digTimeout('2026-11-12T10:00:00Z', 4),
+      moveCancelled('2026-11-12T10:01:00Z'),
+      ...['a', 'b', 'c', 'd', 'e', 'f'].map((m, i) =>
+        JSON.stringify({
+          ts: `2026-11-12T10:0${i + 2}:00Z`,
+          event: 'action_failed',
+          do: 'craft',
+          args: {},
+          reason: 'no_items',
+          message: `need ${m}`,
+          pos: null,
+        }),
+      ),
+    ];
+    const top = topFailures(parseBodyLog(lines.join('\n'), AGENT));
+    expect(top).toHaveLength(5);
+    expect(top[0]).toEqual({ verb: 'dig', reason: 'timeout', message: 'no progress', count: 5 });
+    expect(top.slice(1).map((c) => c.count)).toEqual([1, 1, 1, 1]);
+    const md = renderTopFailures(top);
+    expect(md).toContain('| 5 | dig | timeout | no progress |');
+    expect(md.split('\n').filter((l) => l.startsWith('| ')).length).toBe(2 + 5);
   });
 });

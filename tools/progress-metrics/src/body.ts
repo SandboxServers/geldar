@@ -12,12 +12,15 @@ export type BodyEvent = {
     | 'eat'
     | 'body_restart'
     | 'short_session'
-    | 'forced_move';
+    | 'forced_move'
+    | 'action_failed';
   /** Action outcome reason (kind action), the stall reason, or the rung name for escape_rung. */
   reason: string;
   worked: boolean;
   /** Stall diagnostics, on kind stall_diag only. */
   diag?: StallDiag;
+  /** The failed action on kind action_failed only; `repeats` counts the duplicates it stands for. */
+  failure?: { verb: string; message: string; repeats: number };
 };
 
 /** Agent of Body lines that carry no agent and come from a file that names none. */
@@ -71,6 +74,19 @@ export function parseBodyLine(raw: string, defaultAgent: string | null): BodyEve
     ];
   }
   if (ev === 'forced_move') return [mk('forced_move')];
+  if (ev === 'action_failed') {
+    const repeats = typeof o.repeats === 'number' && o.repeats > 0 ? o.repeats : 0;
+    return [
+      {
+        ...mk('action_failed', typeof o.reason === 'string' ? o.reason : 'unknown'),
+        failure: {
+          verb: typeof o.do === 'string' ? o.do : 'unknown',
+          message: typeof o.message === 'string' ? o.message : '',
+          repeats,
+        },
+      },
+    ];
+  }
   if (ev === 'body_watchdog')
     return [mk('body_watchdog', typeof o.action === 'string' ? o.action : '')];
   if (ev === 'body_restart')

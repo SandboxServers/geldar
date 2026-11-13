@@ -1,5 +1,6 @@
 import type { BodyEvent } from './body.ts';
 import { escapeEpisodes } from './episodes.ts';
+import { failureCount, failureTally } from './failures.ts';
 import { type InvSample, inventoryMetrics, LADDER } from './inventory.ts';
 import type { PaperEvent } from './paper.ts';
 import { type PosSample, positionMetrics, stillNote } from './positions.ts';
@@ -58,6 +59,10 @@ export type Row = {
   chat: number;
   actions: number;
   outcomes: string;
+  /** Failed actions in the window (action_failed lines, each counted with its repeats). */
+  actionFailed: number;
+  /** The same failures grouped as do/reason=count. */
+  actionFailures: string;
   noEffectShare: number | null;
   stallDiag: number;
   rungWorked: string;
@@ -137,6 +142,7 @@ export function aggregate(inp: Inputs, windowMs: number, opts: AggregateOptions 
       const th = inp.thoughts.filter((e) => e.agent === agent && win(e.at) === w);
       const deaths = paper.filter((e) => e.kind === 'death');
       const actions = body.filter((e) => e.kind === 'action');
+      const failed = body.filter((e) => e.kind === 'action_failed');
       const rungs = body.filter((e) => e.kind === 'escape_rung');
       const worked = rungs.filter((e) => e.worked);
       const ep = escapeEpisodes(
@@ -198,6 +204,8 @@ export function aggregate(inp: Inputs, windowMs: number, opts: AggregateOptions 
         chat: paper.filter((e) => e.kind === 'chat').length,
         actions: actions.length,
         outcomes: fmt(tally(actions.map((a) => a.reason))),
+        actionFailed: failed.reduce((n, e) => n + failureCount(e), 0),
+        actionFailures: fmt(failureTally(failed)),
         noEffectShare: share(
           actions.filter((a) => a.reason === 'no_effect').length,
           actions.length,

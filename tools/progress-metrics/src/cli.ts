@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { aggregate, DEFAULT_MIN_EVENTS, type Inputs, type Row } from './aggregate.ts';
 import { parseBodyLog } from './body.ts';
+import { renderTopFailures, topFailures } from './failures.ts';
 import { readMany } from './files.ts';
 import { parseInventory } from './inventory.ts';
 import { parseOutcomes } from './outcomes.ts';
@@ -99,6 +100,7 @@ function main(): number {
     return 2;
   }
   process.stdout.write(renderMarkdown(rows));
+  process.stdout.write(renderTopFailures(topFailures(cut.body)));
   const csv = renderCsv(rows);
   if (values.csv) writeFileSync(values.csv, csv);
   else process.stdout.write(`\n${csv}`);
