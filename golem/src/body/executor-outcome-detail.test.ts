@@ -23,6 +23,27 @@ describe('action_outcome detail_text', () => {
     expect(validateActionOutcomePayload(out).ok).toBe(true);
   });
 
+  it.each([
+    ['give', 'too close to toss, and no room to step back'],
+    ['give', 'the items are on the ground near Ada'],
+    ['sleep', 'it is not night'],
+    ['sleep', 'the bed is too far away'],
+  ])('a not_possible %s carries its Body reason: %s', (verb, message) => {
+    expect(actionOutcomeOf(verb, 0, failedReport('not_possible', message)).detail_text).toBe(
+      message,
+    );
+  });
+
+  it('a not_possible with coordinates or blank text carries nothing', () => {
+    expect(
+      actionOutcomeOf('sleep', 0, failedReport('not_possible', 'the bed is at 12, 64, 9'))
+        .detail_text,
+    ).toBeUndefined();
+    expect(
+      actionOutcomeOf('give', 0, failedReport('not_possible', '   ')).detail_text,
+    ).toBeUndefined();
+  });
+
   it('carries nothing for a success or an unrelated failure', () => {
     const done = { record: { state: 'completed', result: { status: 'completed' } } };
     expect(actionOutcomeOf('mine', 0, done as unknown as ActionReport).detail_text).toBeUndefined();
