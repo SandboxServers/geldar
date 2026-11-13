@@ -86,8 +86,30 @@ export function canSeeBlock(bot: Bot, block: Block): boolean {
   return hit !== null && hit.position.equals(block.position);
 }
 
-/** Whether nothing solid lies between the eyes and a point (an entity's body centre). */
-export function canSeePoint(bot: Bot, point: Vec3): boolean {
+/**
+ * Blocks a sight line passes through: glass, every stained glass, tinted glass, glass panes and iron
+ * bars. Every other block, leaves and water included, stops a sight line as before.
+ */
+export function isSeeThrough(name: string): boolean {
+  return (
+    name === 'glass' ||
+    name === 'tinted_glass' ||
+    name === 'iron_bars' ||
+    name.endsWith('stained_glass') ||
+    name.endsWith('glass_pane')
+  );
+}
+
+/** Options for a sight line. `solidOnly` makes every block shape an obstruction, glass included. */
+export interface SightOptions {
+  solidOnly?: boolean;
+}
+
+/**
+ * Whether nothing blocks the line from the eyes to a point (an entity's body centre). Glass and
+ * bars do not block, so an agent behind a pane is in sight; `solidOnly` counts them as blocks.
+ */
+export function canSeePoint(bot: Bot, point: Vec3, options: SightOptions = {}): boolean {
   const eyes = eyePosition(bot);
   const toPoint = point.minus(eyes);
   const range = toPoint.norm();
@@ -96,7 +118,9 @@ export function canSeePoint(bot: Bot, point: Vec3): boolean {
     eyes,
     toPoint.normalize(),
     range,
-    (candidate, iter) => iter.intersect(candidate.shapes, candidate.position) !== null,
+    (candidate, iter) =>
+      (options.solidOnly === true || !isSeeThrough(candidate.name)) &&
+      iter.intersect(candidate.shapes, candidate.position) !== null,
   );
   return hit === null;
 }
