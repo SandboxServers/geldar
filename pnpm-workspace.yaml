@@ -10,6 +10,7 @@ packages:
   - threshold/mcp-mock
   - threshold/mcp
   - threshold/register
+  - supervisor
   - tools/*
 
 # Exact versions only: `pnpm add foo` writes "1.2.3", never "^1.2.3".
