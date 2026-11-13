@@ -21,10 +21,18 @@ describe('eat reflex: check', () => {
     const reflex = createEatReflex();
     const { view, state } = basicView({ hunger: 4 });
     expect(reflex.check(view)).toBeNull();
-    state.foods = ['rotten_flesh', 'spider_eye'];
+    state.foods = ['spider_eye', 'poisonous_potato'];
     expect(reflex.check(view)).toBeNull();
     state.foods = ['rotten_flesh', 'bread'];
     expect(reflex.check(view)).toEqual({ hunger: 4, foods: 1 });
+  });
+
+  it('fires on rotten flesh only at hunger 6 or below, as the eat action does', () => {
+    const reflex = createEatReflex();
+    const { view, state } = basicView({ hunger: 6, foods: ['rotten_flesh'] });
+    expect(reflex.check(view)).toEqual({ hunger: 6, foods: 1 });
+    state.hunger = 7;
+    expect(reflex.check(view)).toBeNull();
   });
 });
 
