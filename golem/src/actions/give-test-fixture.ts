@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { createRequire } from 'node:module';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { vi } from 'vitest';
@@ -14,6 +15,38 @@ export interface Pickups {
   abortOnToss?: boolean;
   /** When set, the pickups happen this many ms after the toss, as a real pickup delay does. */
   after?: number;
+  /**
+   * Spawns real prismarine-entity items: empty metadata at `entitySpawn`, then, when `stack` is
+   * set, the metadata with that stack and an `itemDrop`. Without `stack` the metadata never arrives.
+   */
+  real?: { stack?: number };
+  /** Spawns item entities whose `position` getter throws, to force a listener body to throw. */
+  broken?: boolean;
+}
+
+// mineflayer builds its entities from its own prismarine-entity, so the same copy is used here.
+const fromMineflayer = createRequire(createRequire(import.meta.url).resolve('mineflayer'));
+const REAL_VERSION = '1.21.4';
+const RealEntity = fromMineflayer('prismarine-entity')(REAL_VERSION);
+const realRegistry = fromMineflayer('prismarine-registry')(REAL_VERSION);
+
+/** A real item entity at `at`, with the metadata empty as it is at `entitySpawn`. */
+function realItem(id: number, at: Vec3) {
+  const entity = new RealEntity(id);
+  entity.name = 'item';
+  entity.position = at;
+  return entity;
+}
+
+/** Puts an item stack of `count` oak_log into a real item's metadata, as the server's packet does. */
+function setRealStack(entity: { metadata: unknown[] }, count: number): void {
+  const index = realRegistry.supportFeature('metadataIxOfItem');
+  entity.metadata[index] = {
+    present: true,
+    itemId: realRegistry.itemsByName.oak_log.id,
+    itemCount: count,
+    nbtData: null,
+  };
 }
 
 /**
@@ -26,18 +59,42 @@ export function setup(held = 5, pickups: Pickups = {}) {
   const events = new EventEmitter();
   const controller = new AbortController();
   const pike = { type: 'player', username: pickups.by ?? 'Pike', position: new Vec3(0.5, 64, 2.5) };
+  // The entities the toss spawned, by id, so a pickup is of the same entity.
+  const spawned = new Map<number, unknown>();
   const item = (id: number) => ({
     id,
     name: 'item',
     type: 'other',
     position: new Vec3(0.5, 64, 3.5),
   });
+  const spawn = (id: number) => {
+    if (pickups.broken) {
+      return {
+        id,
+        name: 'item',
+        type: 'other',
+        get position(): Vec3 {
+          throw new Error('position unreadable');
+        },
+      };
+    }
+    return pickups.real ? realItem(id, new Vec3(0.5, 64, 3.5)) : item(id);
+  };
   const toss = vi.fn(async () => {
     order.push('toss');
-    for (const id of pickups.dropped ?? [7]) events.emit('entitySpawn', item(id));
+    for (const id of pickups.dropped ?? [7]) {
+      const entity = spawn(id);
+      spawned.set(id, entity);
+      events.emit('entitySpawn', entity);
+      if (pickups.real?.stack !== undefined) {
+        setRealStack(entity, pickups.real.stack);
+        events.emit('itemDrop', entity);
+      }
+    }
     for (const id of pickups.picked ?? [7]) {
-      if (pickups.after === undefined) events.emit('playerCollect', pike, item(id));
-      else setTimeout(() => events.emit('playerCollect', pike, item(id)), pickups.after);
+      const entity = spawned.get(id) ?? item(id);
+      if (pickups.after === undefined) events.emit('playerCollect', pike, entity);
+      else setTimeout(() => events.emit('playerCollect', pike, entity), pickups.after);
     }
     if (pickups.abortOnToss) controller.abort();
   });
