@@ -353,14 +353,20 @@ import {
 } from './generated/validators.js';
 
 export type {
+  BlockOwnerChanged,
+  BlockOwnerQuery,
+  BlockOwnerReply,
   BookReply,
   BookRequest,
   DayNightPayload,
+  OwnedBlock,
   PresenceRecord,
   SovereignCallPayload,
 } from './generated/types.ts';
-export { validateMaintenanceNotice } from './generated/validators.js';
+export { validateBlockOwner, validateMaintenanceNotice } from './generated/validators.js';
 export {
+  blockownerChangedSubject,
+  blockownerQuerySubject,
   bookSubject,
   kinoFeedSubject,
   maintenanceSubject,

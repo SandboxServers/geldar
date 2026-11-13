@@ -1,0 +1,12 @@
+{
+  "name": "CoreProtect Community Edition (Paper)",
+  "version": "24.1",
+  "released_at": "2026-09-24T00:00:00Z",
+  "asset": "CoreProtect-CE-24.1.jar",
+  "url": "https://cdn.modrinth.com/data/Lu3KuzdV/versions/3sehX6Sg/CoreProtect-CE-24.1.jar",
+  "sha256": "a2acef7c06ef201355cef07d591a6055dfed358ad768faaaaaf4e276865ecc97",
+  "sha512": "76aad727528ddb990bbee5069f8ef3fcd018ae0bcdea89b965be2485e828633eb068672e841be64e550c8474f901a24d8c15c7bd44c2bd6c96244e1e58de0c95",
+  "size_bytes": 1113283,
+  "license": "Artistic-2.0",
+  "minecraft_versions": ["26.1.2"]
+}

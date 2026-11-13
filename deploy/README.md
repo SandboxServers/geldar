@@ -89,7 +89,8 @@ Run these in order. Stop at the first failure.
    replace each placeholder with the digest of the release being deployed. Never use a tag or `latest`.
 3. **BlueMap lock.** There is no separate verify command. The dry run in step 4 downloads the jar named by
    `plugins/bluemap/bluemap.lock.json`, checks its sha256 against the lock, and keeps nothing. If the lock file is
-   absent the step is skipped and says so; do not treat that as verified.
+   absent the step is skipped and says so; do not treat that as verified. The CoreProtect lock
+   (`plugins/coreprotect/coreprotect.lock.json`) is checked the same way; see docs/runbooks/coreprotect.md.
 4. **Dry run.** `DEPLOY_DRY_RUN=1 deploy/colo-up.sh`. It runs every read-only check and prints the state-changing
    steps as `dry-run, not run`. Read the plan. Stop if a value is unexpected.
 5. **Real deploy.** `deploy/colo-up.sh`. It records the previous and current release in the state directory before it
@@ -244,6 +245,7 @@ deploy/colo-admin.sh player-start ag-jason-01
 
 - The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
   think until the C4 gateway exists.
+- CoreProtect is mounted read-only into Paper: the verified jar from `state/coreprotect/coreprotect.jar`. Its config is set by hand after the first start (docs/runbooks/coreprotect.md).
 - BlueMap is mounted read-only into Paper (C2-07o): the verified jar from `state/bluemap/bluemap.jar` and `plugins/bluemap/config`. The owner accepted BlueMap's download of the Minecraft client resources under Mojang's EULA (2026-11-11), so `core.conf` has `accept-download: true`.
 - Postgres service roles are superuser for now (C2).
 - NATS auth generation is PowerShell-only; copy its files from the trusted machine.

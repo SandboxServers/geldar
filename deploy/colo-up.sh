@@ -23,6 +23,7 @@ check_secrets
 check_jar_sources
 fetch_bluemap
 fetch_chunky
+fetch_coreprotect
 record_release
 save_node_env
 say_node_env
