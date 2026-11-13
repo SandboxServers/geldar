@@ -122,6 +122,10 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       timeScale: ctx.timeScale,
     });
     if (!move.ok) return outcomeOfMove(move);
+    // A partial walk stopped short. The server drops a placement from out of reach without answering it.
+    if (move.partial) {
+      return failed('blocked', 'the target is out of reach');
+    }
   }
   if (ctx.signal.aborted) return cancelled();
 

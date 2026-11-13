@@ -326,6 +326,18 @@ describe('place', () => {
     expect(fake.placeBlock).not.toHaveBeenCalled();
   });
 
+  it('does not place after a partial walk, and says the target is out of reach', async () => {
+    vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, partial: true, distance: 6 } as never);
+    const fake = fakeBot({ blocks: { '10,63,0': 'stone' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 10, y: 64, z: 0 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the target is out of reach',
+    });
+    expect(fake.placeBlock).not.toHaveBeenCalled();
+  });
+
   it('prefers the solid block below over a solid side neighbor', async () => {
     const fake = fakeBot({ blocks: { '2,63,0': 'stone', '3,64,0': 'stone' }, items: ['dirt'] });
     await place(fake, 'dirt', { x: 2, y: 64, z: 0 });
