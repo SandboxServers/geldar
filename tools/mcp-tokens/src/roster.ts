@@ -113,7 +113,7 @@ export async function seedRoster(sql: Sql, owner: string, names: string[]): Prom
   try {
     for (const name of names) {
       const result = await sql.query(
-        'INSERT INTO mcp_roster (player_name, owner_id, max_agents) VALUES ($1, $2, 1) ON CONFLICT (player_name) DO NOTHING RETURNING player_name',
+        'INSERT INTO mcp_roster (player_name, owner_id, max_agents) VALUES ($1, $2, 1) ON CONFLICT DO NOTHING RETURNING player_name',
         [name.toLowerCase(), owner],
       );
       added += result.rows.length;

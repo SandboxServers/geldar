@@ -156,6 +156,13 @@ describe('roster remove', () => {
     expect(sql.roster.has('kimberly')).toBe(false);
   });
 
+  it('removes a name given in another case by its lower-cased row', async () => {
+    const sql = new FakeRoster();
+    await addRosterName(sql, 'alice', 'kimberly');
+    await removeRosterName(sql, 'alice', 'Kimberly');
+    expect(sql.roster.has('kimberly')).toBe(false);
+  });
+
   it('lists only the given owner’s names', async () => {
     const sql = new FakeRoster();
     await addRosterName(sql, 'alice', 'jason');
@@ -172,6 +179,15 @@ describe('roster seed', () => {
     const before = new Map(sql.roster);
     expect(await seedRoster(sql, 'alice', ['jason', 'clara'])).toBe(0);
     expect(sql.roster).toEqual(before);
+  });
+
+  it('stores a mixed-case shard name lower-cased, and a second run in lower case adds 0', async () => {
+    const sql = new FakeRoster();
+    expect(await seedRoster(sql, 'alice', ['Jason', 'Clara'])).toBe(2);
+    expect([...sql.roster.keys()].sort()).toEqual(['clara', 'jason']);
+    expect(sql.roster.has('Jason')).toBe(false);
+    expect(await seedRoster(sql, 'alice', ['jason'])).toBe(0);
+    expect(sql.roster.size).toBe(2);
   });
 
   it('aborts on a mid-seed failure: no name from that run is left in the roster', async () => {

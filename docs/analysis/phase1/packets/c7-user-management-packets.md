@@ -174,6 +174,7 @@ components:
   - Every route: a 401 without credentials; a 404 for another owner's agent (both GET and POST); a 403 `scope_missing` for an owner key without the scope.
   - CSRF: a cookie POST without the token is refused; with the token, accepted.
   - Start while running: 409 `conflict`. Start at the quota boundary: last allowed accepted, next 429 with `Retry-After`.
+  - Note (review fix F): a 409 `conflict` on start-while-running cannot come from the supervisor. A repeat start of a running body is idempotent and replies `started` (counts nothing), so the API maps a `started` reply to 202, never 409. Resolve the 409 in C7-04, or drop it from the response table.
   - Log: at most 200 lines; lines of another agent never appear (a seeded fixture with two owners); text matches the fixed-text table (no digit or free text from a model).
   - Token rotate returns the token once; a second GET does not return it.
   - Problem bodies: every error is `application/problem+json` with a `code` from the enum.
