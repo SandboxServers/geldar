@@ -374,19 +374,19 @@ describe('a fruitless tier-1 search hands over to tier 2 (0164)', () => {
     expect(modes).toEqual([false, true, false]);
   });
 
-  it('ends with the tier-1 timeout when tier 2 finds no path after it', async () => {
+  it('ends blocked when tier 2 finds no path after a tier-1 timeout (both tiers failed)', async () => {
     const { bot, goto } = pathBot(timedOut, noPath);
     goto.mockImplementation(noPath);
     const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
-    expect(result).toMatchObject({ ok: false, reason: 'timeout', message: SEARCH_TIMEOUT_TEXT });
+    expect(result).toMatchObject({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
     expect(goto).toHaveBeenCalledTimes(2);
   });
 
-  it('ends with the timeout text when tier 2 also times out', async () => {
+  it('ends blocked when tier 2 also times out (both tiers failed)', async () => {
     const { bot, goto } = pathBot(timedOut, timedOut);
     goto.mockImplementation(timedOut);
     const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
-    expect(result).toMatchObject({ ok: false, reason: 'timeout', message: SEARCH_TIMEOUT_TEXT });
+    expect(result).toMatchObject({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
     expect(goto).toHaveBeenCalledTimes(2);
   });
 
@@ -579,6 +579,32 @@ describe('a tier-2 walk that finds no path still runs the escape ladder (0164)',
     });
     bot.waitForTicks = vi.fn(async () => undefined);
     goto.mockImplementation(noPath);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(escapeLadder).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
+  });
+
+  it('runs the ladder when tier 2 finds no path after a tier-1 timeout (blocked, not timeout)', async () => {
+    vi.mocked(escapeLadder).mockClear();
+    const { bot, goto } = pathBot(timedOut, () => {
+      (bot.time as { age: number }).age = 100;
+      return noPath();
+    });
+    bot.waitForTicks = vi.fn(async () => undefined);
+    goto.mockImplementation(noPath);
+    const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
+    expect(escapeLadder).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
+  });
+
+  it('runs the ladder when tier 2 also times out after a tier-1 timeout (blocked, not timeout)', async () => {
+    vi.mocked(escapeLadder).mockClear();
+    const { bot, goto } = pathBot(timedOut, () => {
+      (bot.time as { age: number }).age = 100;
+      return timedOut();
+    });
+    bot.waitForTicks = vi.fn(async () => undefined);
+    goto.mockImplementation(timedOut);
     const result = await moveNear(bot as never, TARGET, 1, { signal: SIGNAL, timeScale: 1 });
     expect(escapeLadder).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ ok: false, reason: 'needs_rescue' });
