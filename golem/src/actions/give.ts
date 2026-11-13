@@ -13,6 +13,8 @@ type Entity = Bot['entities'][string];
 
 /** The recipient must be this close (blocks) when the items are tossed. */
 export const GIVE_REACH = 3;
+/** The pitch (radians) the Body looks down at when it tosses: 30 degrees down. Positive is up. */
+export const TOSS_PITCH = -Math.PI / 6;
 /** The Body walks up to this close (blocks) to the recipient first. */
 const WALK_RANGE = 2;
 /**
@@ -202,7 +204,8 @@ async function settle(
  * `WALK_RANGE` blocks from the recipient, checks again that it is in sight and within
  * `GIVE_REACH`, steps back to `STEP_BACK_TO` blocks if the recipient is closer than
  * `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
- * its height, and tosses. The give completes only when the
+ * its height and `TOSS_PITCH` down, waits two ticks for the look to reach the server, and tosses.
+ * The give completes only when the
  * recipient picks up every tossed item within `PICKUP_WAIT_MS`. When the recipient picks up none,
  * the Body takes the items back and says so; if it cannot, it says where the items are, with no
  * advice. Receipts for economic operations are a later packet.
@@ -253,6 +256,9 @@ export const giveAction: ActionHandler<'give'> = {
     try {
       // Aim at about the recipient's middle, not its feet, so the toss carries past the Body.
       await bot.lookAt(target.position.offset(0, target.height * 0.9, 0), true);
+      await bot.look(bot.entity.yaw, TOSS_PITCH, true);
+      // The look reaches the server on the next tick; tossing before then throws the old look.
+      await bot.waitForTicks(2);
       if (ctx.signal.aborted) return cancelled();
       await bot.toss(info.id, null, action.count);
       await awaitUntil(() => allPicked(watch), ctx.signal, PICKUP_WAIT_MS * ctx.timeScale);
