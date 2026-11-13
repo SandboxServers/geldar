@@ -1,5 +1,6 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { canSeePoint } from '../perception/notable-blocks.ts';
 import { findVisibleAgent } from '../perception/visible-agent.ts';
 import { STEP_BACK_BELOW, STEP_BACK_TO, stepBackPoint } from './give-spot.ts';
 import { outcomeOfMove } from './move-outcome.ts';
@@ -270,6 +271,11 @@ export const giveAction: ActionHandler<'give'> = {
       // A toss from this close lands in the Body's own pickup box, so it is not thrown.
       if (horizontalGap(bot.entity.position, target.position) < STEP_BACK_BELOW)
         return failed('not_possible', 'too close to toss, and no room to step back');
+    }
+    // Glass lets the recipient be seen, but a toss stops at it: any block shape in the line blocks.
+    const middle = target.position.offset(0, target.height / 2, 0);
+    if (!canSeePoint(bot, middle, { solidOnly: true })) {
+      return failed('blocked', 'something is in the way of the toss');
     }
 
     const watch = watchPickup(bot, action.to);

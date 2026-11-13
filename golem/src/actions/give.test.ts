@@ -156,6 +156,24 @@ describe('give', () => {
     expect(toss).not.toHaveBeenCalled();
   });
 
+  it('fails blocked and tosses nothing when glass is between the Body and the recipient', async () => {
+    const { world, run, toss } = setup();
+    world.entities[2] = {
+      type: 'player',
+      username: 'Pike',
+      position: new Vec3(0.5, 64, 2.5),
+      height: 1.8,
+    };
+    // The eyes are at (0.5, 65.62, 0.5); the ray to Pike's middle crosses block (0, 65, 1).
+    world.set('glass_pane', 0, 65, 1);
+    expect(await run('Pike')).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'something is in the way of the toss',
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
   it('walks up to a visible agent that is further than 3 blocks, then tosses', async () => {
     const { world, run, toss } = setup();
     const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 8.5) };
