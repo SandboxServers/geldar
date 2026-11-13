@@ -30,6 +30,8 @@ const { pathfinder, Movements, goals } = pathfinderPkg;
 const TICK_SLICE_MS = 40;
 /** ... and this long in total before it gives up with a `Timeout`. */
 const SEARCH_BUDGET_MS = 4000;
+/** Tier 2's search budget (ms): an unreachable goal costs this much, not the whole 4 s (decision 0164). */
+export const TIER_TWO_BUDGET_MS = 1500;
 /** Stall then replan: under this many blocks of movement for this many ticks drops the path. */
 const REPLAN_MOVED = 0.03;
 export const REPLAN_STALL_TICKS = 60;
@@ -170,7 +172,8 @@ export function planReach(
   ensurePathfinder(bot);
   const goal = new goals.GoalNear(target.x, target.y, target.z, REACH_RANGE);
   const planner = bot.pathfinder as unknown as ReachPlanner;
-  let movements: unknown = planner.movements;
+  // The plain movements, not the last walk's tier 2 (a goto may have left digging movements set).
+  let movements: unknown = tierOne.get(bot) ?? planner.movements;
   if (canDig) {
     const digging = new Movements(bot);
     digging.canDig = true;
@@ -293,6 +296,8 @@ export interface MoveOptions {
   timeScale: number;
   stallTicks?: number;
   diag?: DiagSink;
+  /** Tier 2 (digging and towers) may start after tier 1 fails. Default on; `false` for reflex walks. */
+  digTier?: boolean;
 }
 
 /**
@@ -321,11 +326,22 @@ export function moveNear(
   let tier = 1;
   const tally = new DigTally();
   const enterDigTier = (): boolean => {
-    if (tier === 2 || typeof bot.pathfinder?.setMovements !== 'function') return false;
+    if (opts.digTier === false || tier === 2) return false;
+    if (typeof bot.pathfinder?.setMovements !== 'function') return false;
     tier = 2;
     bot.pathfinder.setMovements(digMovements(bot) as never);
+    bot.pathfinder.thinkTimeout = TIER_TWO_BUDGET_MS;
     tally.start(bot);
     return true;
+  };
+  /** Back to the plain walk: tier-1 movements, the normal search budget. The tally keeps its counts. */
+  const leaveDigTier = (): void => {
+    if (tier !== 2) return;
+    tier = 1;
+    tally.stop();
+    const plain = tierOne.get(bot);
+    if (plain !== undefined) bot.pathfinder.setMovements(plain as never);
+    bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
   };
 
   return new Promise<MoveResult>((resolve, reject) => {
@@ -389,6 +405,12 @@ export function moveNear(
         () => {
           if (mine !== generation) return;
           const distance = bot.entity.position.distanceTo(goal);
+          // The library resolves an empty route (a sealed pit) as success without moving: no walk
+          // happened, so the plain walk did not reach the goal and tier 2 starts (decision 0164).
+          if (!partial && distance > range + 1 && enterDigTier()) {
+            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
           const note = tally.note();
           settle(
             partial
@@ -419,6 +441,14 @@ export function moveNear(
           // Tier 1 found no path: the same goal again with digging and towers allowed.
           if (name === 'NoPath' && enterDigTier()) {
             start(new goals.GoalNear(target.x, target.y, target.z, range));
+            return;
+          }
+          // Tier 2 found no way (or ran out of its short search): the plain walk's partial route
+          // stands, so the reason stays blocked and never becomes timeout (decision 0142).
+          if (tier === 2 && !partial && (name === 'NoPath' || name === 'Timeout')) {
+            leaveDigTier();
+            if (followPartial()) return;
+            settle({ ok: false, reason: 'blocked', message: NO_PATH_TEXT });
             return;
           }
           if (name === 'NoPath' && !partial && followPartial()) return;

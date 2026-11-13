@@ -246,6 +246,7 @@ export async function sidestep(ctx: ReflexContext, bearing: string): Promise<Ref
   };
   const limit = deadline(ctx.signal, SIDESTEP_LIMIT_MS * ctx.timeScale);
   const move = await moveNear(ctx.bot, goal, SIDESTEP_RANGE, {
+    digTier: false,
     signal: limit.signal,
     timeScale: ctx.timeScale,
   }).finally(() => limit.clear());
@@ -271,6 +272,7 @@ async function flee(ctx: ReflexContext, name: string, why: string): Promise<Refl
           z: here.z + 0.5 + Math.sin(away + turn) * FLEE_DISTANCE,
         };
         const move = await moveNear(ctx.bot, goal, FLEE_RANGE, {
+          digTier: false,
           signal: limit.signal,
           timeScale: ctx.timeScale,
         });

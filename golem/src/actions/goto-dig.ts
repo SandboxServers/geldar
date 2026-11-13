@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { digTicks } from './bare-hand.ts';
 import { isProtected, refusedByName } from './protected-blocks.ts';
+import { MIN_DIG_HEALTH } from './soft-dig.ts';
 
 /**
  * Tier 2 of `goto` (decision 0164): the walk may dig and build its own way when the plain walk
@@ -17,10 +17,23 @@ export const PLACE_COST = 2;
 export const MAX_DROP = 3;
 /** Liquid is crossed only when it clearly saves distance. */
 export const LIQUID_COST = 3;
-/** A dig longer than this (world ticks, with the best held tool) is skipped: 3 s. */
+/** A dig longer than this (world ticks, with the best tool the bot carries) is skipped: 3 s. */
 export const MAX_DIG_TICKS = 60;
 /** The throwaway blocks a walk may place to climb. Only the held ones are used (the library checks). */
 export const SCAFFOLD_NAMES = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack'] as const;
+/** Blocks that fall when the cell under them is air: a dig beneath one lets it drop on the bot. */
+const FALLING_NAMES = new Set([
+  'sand',
+  'red_sand',
+  'suspicious_sand',
+  'gravel',
+  'suspicious_gravel',
+  'anvil',
+  'chipped_anvil',
+  'damaged_anvil',
+  'dragon_egg',
+  'pointed_dripstone',
+]);
 
 /** The parts of a pathfinder `Movements` that the tier-2 rules set or read. */
 interface DigMovements {
@@ -33,6 +46,7 @@ interface DigMovements {
   dontCreateFlow: boolean;
   dontMineUnderFallingBlock: boolean;
   scafoldingBlocks: number[];
+  blocksCantBreak?: Set<number>;
   safeToBreak(block: DigBlock): boolean;
   getBlock(pos: DigBlock['position'], dx: number, dy: number, dz: number): DigCell;
   getNumEntitiesAt?: (pos: DigBlock['position'], dx: number, dy: number, dz: number) => number;
@@ -51,7 +65,7 @@ interface DigCell {
   canFall?: boolean;
 }
 
-/** A world block as `bot.blockAt` returns it, for the drop scan below the bot. */
+/** A world block as `bot.blockAt` returns it, for the drop and falling scans. */
 interface WorldCell {
   name?: string;
   boundingBox?: string;
@@ -79,7 +93,7 @@ function dropRefused(bot: Bot, block: DigBlock): boolean {
     block.position.z === Math.floor(feet.z) &&
     block.position.y === Math.floor(feet.y) - 1;
   if (!under) return false;
-  for (let k = 1; k <= MAX_DROP + 1; k++) {
+  for (let k = 1; k <= MAX_DROP; k++) {
     const cell = bot.blockAt(
       new Vec3(block.position.x, block.position.y - k, block.position.z),
       false,
@@ -91,15 +105,49 @@ function dropRefused(bot: Bot, block: DigBlock): boolean {
   return true;
 }
 
+/** True for a block that falls when its support is dug: a name in the list, or concrete powder. */
+function isFallingName(name: string | undefined): boolean {
+  if (!name) return false;
+  return FALLING_NAMES.has(name) || name.endsWith('_concrete_powder');
+}
+
+/**
+ * The dig time in world ticks with the best tool the bot carries (the library's choice in
+ * `movements.js`), or null when the block cannot tell its dig time (test fakes).
+ */
+function bestDigTicks(bot: Bot, block: DigBlock): number | null {
+  const timer = (block as { digTime?: (...args: unknown[]) => number }).digTime;
+  if (typeof timer !== 'function') return null;
+  const planner = bot.pathfinder as unknown as
+    | { bestHarvestTool?: (b: DigBlock) => { type: number; enchants?: unknown[] } | null }
+    | undefined;
+  const tool = planner?.bestHarvestTool?.(block) ?? null;
+  const effects = (bot.entity as { effects?: unknown } | undefined)?.effects ?? {};
+  const ms = timer.call(
+    block,
+    tool ? tool.type : null,
+    false,
+    false,
+    false,
+    tool?.enchants ?? [],
+    effects,
+  );
+  return Number.isFinite(ms) ? Math.ceil(ms / 50) : null;
+}
+
 /**
  * True when tier 2 may dig this block now. Refused: names never dug, protected blocks (built
- * material, natural blocks beside it, owned blocks), any liquid on a face, a falling block in the
- * three cells above, a dig longer than 3 s with the held tool, and a floor drop the bot would take.
- * A block whose dig time the bot cannot read is not refused for that (fakes, no timer).
+ * material, natural blocks beside it, owned blocks), blocks the library never breaks, any liquid on
+ * a face, a falling block in the three cells above, a dig longer than 3 s with the best tool, a
+ * floor drop past three blocks, and any dig below the health gate. A block whose dig time the bot
+ * cannot read is not refused for that (fakes, no timer).
  */
 export function digAllowed(bot: Bot, m: DigMovements, block: DigBlock): boolean {
   if (block.type === undefined || !block.name) return false;
   if (refusedByName(block.name) || isProtected(bot, block)) return false;
+  if (m.blocksCantBreak?.has(block.type)) return false;
+  const health = (bot as { health?: number }).health;
+  if (health !== undefined && health < MIN_DIG_HEALTH) return false;
   const at = block.position;
   for (const [dx, dy, dz] of [
     [1, 0, 0],
@@ -114,8 +162,10 @@ export function digAllowed(bot: Bot, m: DigMovements, block: DigBlock): boolean 
   for (let dy = 1; dy <= 3; dy++) {
     if (m.getBlock(at, 0, dy, 0).canFall) return false;
     if (m.getNumEntitiesAt?.(at, 0, dy, 0)) return false;
+    const above = bot.blockAt(new Vec3(at.x, at.y + dy, at.z), false) as WorldCell | null;
+    if (isFallingName(above?.name)) return false;
   }
-  const ticks = digTicks(bot, block as never);
+  const ticks = bestDigTicks(bot, block);
   if (ticks !== null && ticks > MAX_DIG_TICKS) return false;
   return !dropRefused(bot, block);
 }
@@ -146,40 +196,50 @@ function countWord(n: number): string {
   return COUNT_WORDS[n] ?? 'several';
 }
 
+/** The parts of the bot the tally wraps: its dig and its placement, as properties. */
+interface TallyEmitter {
+  dig?: (...args: unknown[]) => Promise<unknown>;
+  placeBlock?: (...args: unknown[]) => Promise<unknown>;
+  heldItem?: { name?: string } | null;
+}
+
 /**
- * What a tier-2 walk dug and placed, for its completion text. Digs are counted from the library's
- * `diggingCompleted`; placements by wrapping `bot.placeBlock` while the walk runs (`stop` restores it).
+ * What a tier-2 walk dug and placed, for its completion text. Both are counted by wrapping the
+ * bot's own methods while the walk runs: `bot.dig` (a dig that completes) and `bot.placeBlock`.
+ * The library clears `diggingCompleted` listeners on its own, so the event is not used. `stop`
+ * restores each method only when it is still the one this tally put there; a later wrapper stays
+ * in place, and this tally's copy then passes calls through without counting.
  */
 export class DigTally {
   dug = 0;
   placed: string[] = [];
   private restore: (() => void) | null = null;
+  private live = false;
 
   /** Starts counting on `bot` (the walk has just switched to tier 2). Idempotent. */
   start(bot: Bot): void {
     if (this.restore) return;
-    const emitter = bot as unknown as {
-      on?: (event: string, fn: () => void) => void;
-      removeListener?: (event: string, fn: () => void) => void;
-      placeBlock?: (...args: unknown[]) => Promise<unknown>;
-      heldItem?: { name?: string } | null;
+    const emitter = bot as unknown as TallyEmitter;
+    this.live = true;
+    const originalDig = emitter.dig;
+    const originalPlace = emitter.placeBlock;
+    const dig = async (...args: unknown[]): Promise<unknown> => {
+      const result = await originalDig?.apply(bot, args);
+      if (this.live) this.dug++;
+      return result;
     };
-    const onDug = (): void => {
-      this.dug++;
+    const place = async (...args: unknown[]): Promise<unknown> => {
+      const name = emitter.heldItem?.name ?? 'block';
+      const result = await originalPlace?.apply(bot, args);
+      if (this.live) this.placed.push(name.replace(/_/g, ' '));
+      return result;
     };
-    emitter.on?.('diggingCompleted', onDug);
-    const original = emitter.placeBlock;
-    if (original) {
-      emitter.placeBlock = async (...args: unknown[]) => {
-        const name = emitter.heldItem?.name ?? 'block';
-        const result = await original.apply(bot, args);
-        this.placed.push(name.replace(/_/g, ' '));
-        return result;
-      };
-    }
+    if (originalDig) emitter.dig = dig;
+    if (originalPlace) emitter.placeBlock = place;
     this.restore = () => {
-      emitter.removeListener?.('diggingCompleted', onDug);
-      if (original) emitter.placeBlock = original;
+      this.live = false;
+      if (originalDig && emitter.dig === dig) emitter.dig = originalDig;
+      if (originalPlace && emitter.placeBlock === place) emitter.placeBlock = originalPlace;
     };
   }
 
@@ -196,9 +256,12 @@ export class DigTally {
       parts.push(`dug through ${countWord(this.dug)} ${this.dug === 1 ? 'block' : 'blocks'}`);
     }
     if (this.placed.length > 0) {
-      const kind = this.placed[0] ?? 'block';
-      const count = this.placed.length;
-      parts.push(`placed ${countWord(count)} ${kind} ${count === 1 ? 'block' : 'blocks'} to climb`);
+      const kinds = new Map<string, number>();
+      for (const kind of this.placed) kinds.set(kind, (kinds.get(kind) ?? 0) + 1);
+      const listed = [...kinds]
+        .map(([kind, n]) => `${countWord(n)} ${kind} ${n === 1 ? 'block' : 'blocks'}`)
+        .join(' and ');
+      parts.push(`placed ${listed} to climb`);
     }
     return parts.length > 0 ? parts.join(' and ') : undefined;
   }

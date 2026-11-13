@@ -96,6 +96,7 @@ export const attackAction: ActionHandler<'attack'> = {
       }
       if (entity.position.distanceTo(bot.entity.position) > REACH) {
         const move = await moveNear(bot, entity.position, APPROACH_RANGE, {
+          digTier: false,
           signal,
           timeScale: ctx.timeScale,
           stallTicks: APPROACH_STALL_TICKS,

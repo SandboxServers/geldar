@@ -72,6 +72,7 @@ async function walkTo(
   try {
     const aim = { x: stand.x + 0.5, y: stand.y, z: stand.z + 0.5 };
     const move = await moveNear(ctx.bot, aim, ARRIVE_RANGE, {
+      digTier: false,
       signal: limit.signal,
       timeScale: ctx.timeScale,
     });

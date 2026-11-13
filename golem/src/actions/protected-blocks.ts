@@ -43,7 +43,7 @@ const BUILT_SUFFIXES = [
   '_wool',
   '_concrete',
   '_concrete_powder',
-  '_terracotta',
+  '_glazed_terracotta',
   '_stained_glass',
   '_stained_glass_pane',
   '_bed',
@@ -81,7 +81,49 @@ const BUILT_NAMES = new Set([
   'blast_furnace',
   'smoker',
   'chest_minecart',
+  // Metal and gem storage blocks, and the crafted workstations, mechanisms and fixtures of players.
+  'iron_block',
+  'gold_block',
+  'diamond_block',
+  'emerald_block',
+  'lapis_block',
+  'redstone_block',
+  'coal_block',
+  'netherite_block',
+  'raw_iron_block',
+  'raw_gold_block',
+  'raw_copper_block',
+  'copper_block',
+  'exposed_copper',
+  'weathered_copper',
+  'oxidized_copper',
+  'cut_copper',
+  'smithing_table',
+  'loom',
+  'grindstone',
+  'stonecutter',
+  'cartography_table',
+  'fletching_table',
+  'composter',
+  'cauldron',
+  'bell',
+  'lodestone',
+  'beacon',
+  'piston',
+  'sticky_piston',
+  'observer',
+  'note_block',
+  'redstone_lamp',
+  'tnt',
+  'iron_bars',
+  'sea_lantern',
+  'purpur_block',
+  'bone_block',
+  'infested_cobblestone',
 ]);
+
+/** Natural blocks that a built prefix would catch (amethyst geodes' smooth basalt). */
+const NATURAL_NAMES = new Set(['smooth_basalt']);
 
 /** Built materials by name prefix: polished, smooth, cut, chiseled, and stripped wood. */
 const BUILT_PREFIXES = ['polished_', 'smooth_', 'cut_', 'chiseled_', 'stripped_', 'waxed_'];
@@ -156,6 +198,7 @@ export function refusedByName(name: string | undefined): boolean {
 export function isBuiltName(name: string | undefined): boolean {
   if (!name) return false;
   if (BUILT_NAMES.has(name)) return true;
+  if (NATURAL_NAMES.has(name)) return false;
   if (BUILT_PREFIXES.some((prefix) => name.startsWith(prefix))) return true;
   return BUILT_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
