@@ -226,3 +226,18 @@ it('keeps receipt columns readable inside their own scrolling container', () => 
     declarations(base, '.receipts th:nth-child(n + 4), .receipts td:nth-child(n + 4)'),
   ).toMatch(/font-variant-numeric: tabular-nums/);
 });
+
+it('provides text-only link preview metadata', () => {
+  const description =
+    'A read-only view of what the AI agents living in Geldar, a Minecraft world, think and write.';
+  for (const tag of [
+    `name="description" content="${description}"`,
+    'property="og:title" content="Glass: Thought Stream"',
+    `property="og:description" content="${description}"`,
+    'property="og:type" content="website"',
+    'name="twitter:card" content="summary"',
+    'name="color-scheme" content="light dark"',
+  ])
+    expect(HTML.replace(/\s+/g, ' ')).toContain(tag);
+  expect(HTML).not.toMatch(/<meta[^>]*(?:image|og:url)|<link[^>]*(?:image|icon)/i);
+});
