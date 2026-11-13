@@ -2,19 +2,29 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Block, Container } from './bot-types.ts';
 import { transferItems } from './container-transfer.ts';
+import { FEWER_MESSAGE, freeSpotBeside, pickUpSpareBlock } from './craft-spare.ts';
 import { heldCount } from './inventory-count.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
+import { placeAction } from './place.ts';
 import type { ActionContext } from './registry.ts';
 import { smeltRecipesFor } from './smelt-book.ts';
-import { type HeldItem, MAX_SMELT, pickFuel, smeltTicks } from './smelt-fuel.ts';
+import {
+  type FuelChoice,
+  fuelLimit,
+  type HeldItem,
+  MAX_SMELT,
+  pickFuel,
+  smeltTicks,
+} from './smelt-fuel.ts';
 
 /**
  * Smelting at a furnace, smoker or blast furnace, on the explicit-click transfers of decision 0037.
  * The contract has no `smelt` verb: the craft path calls `smeltAtFurnace` when no grid recipe makes
  * the item (the way the goldar reference falls back to a furnace). The recipe comes from the
- * server's recipe book only (decision 0048).
+ * server's recipe book only (decision 0048). With no furnace in reach, a carried one is placed
+ * beside the bot, used, and mined back.
  */
 
 /** The furnace window's slots: input, fuel, output. The player's inventory follows. */
@@ -30,11 +40,26 @@ const SEARCH_RADIUS = 16;
 const OPEN_WAIT_MS = 5_000;
 /** Ticks between two looks at the output slot while waiting. */
 const POLL_TICKS = 20;
+/** Said when a carried furnace has no free cell beside the bot to be placed on. */
+const NO_SPACE = 'no free space beside you for a furnace';
 
 /** What the caller asks for: an item name and how many. */
 export interface SmeltRequest {
   item: string;
   count: number;
+}
+
+/** A smelt the checks have cleared: what to load, how many, and the fuel for them. */
+interface SmeltJob {
+  request: SmeltRequest;
+  outId: number;
+  inputId: number;
+  count: number;
+  capped: boolean;
+  /** True when fewer were planned than asked, because the input or the fuel ran out. */
+  short: boolean;
+  note: string;
+  fuel: FuelChoice;
 }
 
 /** The furnace nearest the bot, preferring the kind the recipe names. */
@@ -45,6 +70,11 @@ function findFurnace(bot: Bot, station: string | null): Block | null {
     .map((b) => b.id);
   if (ids.length === 0) return null;
   return bot.findBlock({ matching: ids, maxDistance: SEARCH_RADIUS });
+}
+
+/** The furnace item a recipe needs, or the plain furnace when it names none. */
+function furnaceKind(station: string | null): string {
+  return station && FURNACES.has(station) ? station : 'furnace';
 }
 
 /** The window's stack in a furnace slot, or null. */
@@ -131,38 +161,39 @@ async function waitForOutput(
 }
 
 /**
- * Smelts up to 16 of `request.count` items at a furnace. The window is the truth: the output is
- * counted from the window after the server-confirmed take, never assumed.
+ * Places a carried furnace of `kind` beside the bot, runs `run` on it, and mines it back on every
+ * path. Says so when none is carried or there is no room, and places nothing then.
  */
-export async function smeltAtFurnace(
+async function withCarriedFurnace(
   ctx: ActionContext,
-  request: SmeltRequest,
+  kind: string,
+  run: (block: Block) => Promise<ActionOutcome>,
 ): Promise<ActionOutcome> {
-  const { bot, signal } = ctx;
-  const out = bot.registry.itemsByName[request.item];
-  if (!out) return failed('invalid_args', `unknown item ${request.item}`);
-  const recipes = smeltRecipesFor(bot, out.id);
-  if (recipes.length === 0) {
-    return failed('not_possible', `no smelting recipe for ${request.item} is unlocked`);
+  const { bot } = ctx;
+  const id = bot.registry.itemsByName[kind]?.id;
+  if (id === undefined || heldCount(bot, id) === 0) {
+    return failed('not_found', 'no furnace within reach');
   }
-  const recipe = recipes.find((r) => heldCount(bot, r.input) > 0);
-  if (!recipe) {
-    const name = bot.registry.items[recipes[0]?.input ?? -1]?.name ?? 'the input';
-    return failed('missing_materials', `no ${name} to smelt into ${request.item}`);
+  const spot = freeSpotBeside(bot);
+  if (!spot) return failed('blocked', NO_SPACE);
+  const put = await placeAction.run(ctx, { do: 'place', block: kind, at: spot });
+  if (put.status !== 'completed') return put;
+  try {
+    const block = findFurnace(bot, kind);
+    if (!block) return failed('not_found', 'no furnace within reach');
+    return await run(block);
+  } finally {
+    await pickUpSpareBlock(ctx, kind);
   }
-  const input = bot.registry.items[recipe.input]?.name ?? '';
-  const count = Math.min(request.count, MAX_SMELT, heldCount(bot, recipe.input));
-  const capped = request.count > MAX_SMELT;
-  const note = capped ? ` (capped at ${MAX_SMELT}, ${request.count} were requested)` : '';
+}
 
-  const { choice, need } = pickFuel(heldItems(bot), input, count);
-  if (!choice) {
-    const what = need ? `${need.count} ${need.name}` : 'fuel';
-    return failed('missing_materials', `no fuel: need ${what} to smelt ${count} ${input}`);
-  }
-  if (signal.aborted) return cancelled();
-  const block = findFurnace(bot, recipe.station);
-  if (!block) return failed('not_found', 'no furnace within reach');
+/**
+ * Loads, waits and collects at one furnace. The window is the truth: the output is counted from the
+ * window after the server-confirmed take, never assumed.
+ */
+async function smeltIn(ctx: ActionContext, block: Block, job: SmeltJob): Promise<ActionOutcome> {
+  const { bot, signal } = ctx;
+  const { request, count, fuel } = job;
   const center = new Vec3(block.position.x + 0.5, block.position.y + 0.5, block.position.z + 0.5);
   if (bot.entity.position.distanceTo(center) > REACH) {
     const walk = await moveNear(bot, block.position, 3, { signal, timeScale: ctx.timeScale });
@@ -179,15 +210,15 @@ export async function smeltAtFurnace(
       return failed('blocked', 'furnace is busy: it already holds items');
     }
     loading = true;
-    const loadIn = await transferItems(ctx, container, 'deposit', recipe.input, count, [
+    const loadIn = await transferItems(ctx, container, 'deposit', job.inputId, count, [
       INPUT_SLOT,
       INPUT_SLOT + 1,
     ]);
     if (loadIn.aborted) return cancelled();
-    const fuelId = bot.registry.itemsByName[choice.name]?.id ?? -1;
+    const fuelId = bot.registry.itemsByName[fuel.name]?.id ?? -1;
     const loadFuel = loadIn.error
       ? loadIn
-      : await transferItems(ctx, container, 'deposit', fuelId, choice.count, [
+      : await transferItems(ctx, container, 'deposit', fuelId, fuel.count, [
           FUEL_SLOT,
           FUEL_SLOT + 1,
         ]);
@@ -201,7 +232,7 @@ export async function smeltAtFurnace(
     const wasAborted = signal.aborted;
     const clean = uninterruptible(ctx);
     // The open window is current; `bot.inventory` is stale until it closes.
-    const before = container.count(out.id, null);
+    const before = container.count(job.outId, null);
     const have = slotStack(container, OUTPUT_SLOT);
     if (have) {
       const take = await transferItems(clean, container, 'withdraw', have.type, have.count, [
@@ -210,20 +241,21 @@ export async function smeltAtFurnace(
       ]);
       if (take.error) console.warn(`smelt: output take stopped: ${take.error}`);
     }
-    smelted = Math.max(0, container.count(out.id, null) - before);
+    smelted = Math.max(0, container.count(job.outId, null) - before);
     if (wasAborted) return cancelled({ smelted });
     if (smelted >= count && ready >= count) {
       return completed({
         smelted,
         item: request.item,
-        capped,
-        message: `smelted ${smelted}${note}`,
+        capped: job.capped,
+        message: job.short ? FEWER_MESSAGE : `smelted ${smelted}${job.note}`,
       });
     }
-    return failed('timeout', `furnace made ${smelted} of ${count} ${request.item} in time${note}`, {
-      smelted,
-      requested: count,
-    });
+    return failed(
+      'timeout',
+      `furnace made ${smelted} of ${count} ${request.item} in time${job.note}`,
+      { smelted, requested: count },
+    );
   } finally {
     // The cleanup runs on every path: success, timeout, busy refusal, abort and error.
     try {
@@ -243,4 +275,51 @@ export async function smeltAtFurnace(
       console.warn(`furnace did not close: ${errorText(error)}`);
     }
   }
+}
+
+/**
+ * Smelts up to 16 of `request.count` items at a furnace. The input and the fuel decide how many
+ * can be made: when either runs out, the rest are not made and the outcome says so.
+ */
+export async function smeltAtFurnace(
+  ctx: ActionContext,
+  request: SmeltRequest,
+): Promise<ActionOutcome> {
+  const { bot, signal } = ctx;
+  const out = bot.registry.itemsByName[request.item];
+  if (!out) return failed('invalid_args', `unknown item ${request.item}`);
+  const recipes = smeltRecipesFor(bot, out.id);
+  if (recipes.length === 0) {
+    return failed('not_possible', `no smelting recipe for ${request.item} is unlocked`);
+  }
+  const recipe = recipes.find((r) => heldCount(bot, r.input) > 0);
+  if (!recipe) {
+    const name = bot.registry.items[recipes[0]?.input ?? -1]?.name ?? 'the input';
+    return failed('missing_materials', `no ${name} to smelt into ${request.item}`);
+  }
+  const input = bot.registry.items[recipe.input]?.name ?? '';
+  const wanted = Math.min(request.count, MAX_SMELT, heldCount(bot, recipe.input));
+  const count = Math.min(wanted, fuelLimit(heldItems(bot), input));
+  const capped = request.count > MAX_SMELT;
+  const note = capped ? ` (capped at ${MAX_SMELT}, ${request.count} were requested)` : '';
+  const short = count < Math.min(request.count, MAX_SMELT);
+
+  const { choice } = pickFuel(heldItems(bot), input, count);
+  if (!choice || count === 0) {
+    return failed('missing_materials', 'there is not enough fuel');
+  }
+  if (signal.aborted) return cancelled();
+  const job: SmeltJob = {
+    request,
+    outId: out.id,
+    inputId: recipe.input,
+    count,
+    capped,
+    short,
+    note,
+    fuel: choice,
+  };
+  const near = findFurnace(bot, recipe.station);
+  if (near) return smeltIn(ctx, near, job);
+  return withCarriedFurnace(ctx, furnaceKind(recipe.station), (block) => smeltIn(ctx, block, job));
 }
