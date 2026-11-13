@@ -35,13 +35,14 @@ describe('ActionRegistry', () => {
 });
 
 /**
- * A bot that may be in a bed. `wake` sends the request; the server's update clears `isSleeping` and
- * emits 'wake' a moment later (10 ms), unless `serverWakes` is false. `wakeError` makes `wake` throw.
+ * A bot that may be in a bed. The client's `entity_action` write is the wake request (`wake`); the
+ * server's update clears `isSleeping` and emits 'wake' a moment later (10 ms), unless `serverWakes` is
+ * false. `wakeError` makes the write throw.
  */
 function sleepingBot(options: { asleep: boolean; wakeError?: Error; serverWakes?: boolean }) {
   const state = { asleep: options.asleep };
   const emitter = new EventEmitter();
-  const wake = vi.fn(async () => {
+  const wake = vi.fn((_name: string, _params: Record<string, unknown>) => {
     if (options.wakeError) throw options.wakeError;
     if (options.serverWakes === false) return;
     setTimeout(() => {
@@ -49,7 +50,11 @@ function sleepingBot(options: { asleep: boolean; wakeError?: Error; serverWakes?
       emitter.emit('wake');
     }, 10);
   });
-  const bot = Object.assign(emitter, { time: { age: 0 }, wake });
+  const bot = Object.assign(emitter, {
+    time: { age: 0 },
+    entity: { id: 7 },
+    _client: { write: wake },
+  });
   Object.defineProperty(bot, 'isSleeping', { get: () => state.asleep });
   return { bot: bot as unknown as Bot, wake, emitter };
 }
@@ -74,7 +79,7 @@ describe('runAction and a sleeping bot', () => {
     expect(out.state).toBe('completed');
   });
 
-  it('runs the move after 1 s when the server never confirms the wake, and drops its listener', async () => {
+  it('fails "you are still in bed" without running the move when the server never confirms the wake', async () => {
     const { bot, emitter } = sleepingBot({ asleep: true, serverWakes: false });
     const run = vi.fn(async () => completed());
     const registry = new ActionRegistry();
@@ -82,9 +87,11 @@ describe('runAction and a sleeping bot', () => {
 
     const out = await runAction(registry, bot, validMine);
 
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).not.toHaveBeenCalled();
     expect(emitter.listenerCount('wake')).toBe(0);
-    expect(out.state).toBe('completed');
+    expect(out.state).toBe('failed');
+    expect(out.result.reason).toBe('blocked');
+    expect(out.result.message).toBe('you are still in bed');
   }, 5_000);
 
   it('does not wake the bot for a sleep action', async () => {
@@ -132,7 +139,7 @@ describe('runAction and a sleeping bot', () => {
     expect(wake).not.toHaveBeenCalled();
   });
 
-  it('runs the move anyway when the wake throws', async () => {
+  it('fails "you are still in bed" without running the move when the wake cannot be written', async () => {
     const { bot, wake, emitter } = sleepingBot({ asleep: true, wakeError: new Error('no bed') });
     const run = vi.fn(async () => completed());
     const registry = new ActionRegistry();
@@ -141,9 +148,9 @@ describe('runAction and a sleeping bot', () => {
     const out = await runAction(registry, bot, validMine);
 
     expect(wake).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).not.toHaveBeenCalled();
     expect(emitter.listenerCount('wake')).toBe(0);
-    expect(out.state).toBe('completed');
+    expect(out.result.message).toBe('you are still in bed');
   });
 });
 
