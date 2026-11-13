@@ -113,7 +113,7 @@ Merged: `sql/0021_register_sessions.sql` and `threshold/register/src/session-sto
   - Association: owner A stops owner B's agent; the reply equals the unknown-agent reply and no row is inserted.
   - Roster from DB: a DB-listed player absent from the yaml can start; a yaml-only id is refused for an owner request.
   - Quotas at the boundary: the third start in the hour is accepted, the fourth is refused with `quota` and audited; the tenth start of the owner's day is accepted, the eleventh refused; a refused request does not count; stop, status and log do not count.
-  - Admin: the same sequence for an admin owner accepts the fourth and the eleventh start; an admin still gets a refusal for a second running body on one agent and for another owner's agent. A flag read that errors is treated as not admin (the fourth start is refused).
+  - Admin: the same sequence for an admin owner accepts the fourth and the eleventh start; an admin's repeat start of a running body returns `started` and counts nothing (`conflict` is not a reply code any more), and an admin still gets a refusal for another owner's agent. A flag read that errors is treated as not admin (the fourth start is refused).
   - Concurrency: two starts for one agent race; exactly one body starts.
   - Generated container config carries the 0082 limits.
   - Abort/error: a NATS disconnect mid-request leaves no timer and no half-started body (the start is idempotent on retry); a Docker error is reported and audited, and no `body_ops` row is kept for it.

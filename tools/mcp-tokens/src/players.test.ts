@@ -21,7 +21,7 @@ class FakeSql implements Sql {
   owners = new Map<string, number>();
   /** The starting roster: the names `player()` uses, listed for owner jo with one agent each. */
   roster = new Map<string, { owner_id: string; max_agents: number }>(
-    Array.from({ length: 30 }, (_, i) => [`Player ${i + 1}`, { owner_id: 'jo', max_agents: 1 }]),
+    Array.from({ length: 30 }, (_, i) => [`player ${i + 1}`, { owner_id: 'jo', max_agents: 1 }]),
   );
   players: Array<{
     player_id: string;
@@ -56,9 +56,11 @@ class FakeSql implements Sql {
       const entry = this.roster.get(String(values[0]));
       return { rows: entry === undefined ? [] : [{ ...entry }] };
     }
-    if (text.includes('count(*)') && text.includes('display_name = $1')) {
+    if (text.includes('count(*)') && text.includes('lower(display_name) = $1')) {
+      // Mirrors the SQL: the roster count compares lower(display_name) to the lower-cased name.
+      const wanted = String(values[0]);
       const n = this.players.filter(
-        (p) => p.display_name === values[0] && p.status !== 'retired',
+        (p) => p.display_name.toLowerCase() === wanted && p.status !== 'retired',
       ).length;
       return { rows: [{ n }] };
     }
@@ -291,7 +293,7 @@ describe('sovereign start checks the roster (sql 0024)', () => {
   it('refuses a name that another owner holds', async () => {
     const sql = new FakeSql();
     await addOwner(sql, 'jo');
-    sql.roster.set('Player 1', { owner_id: 'bob', max_agents: 1 });
+    sql.roster.set('player 1', { owner_id: 'bob', max_agents: 1 });
     await expect(addPlayer(sql, player(1), SHARD)).rejects.toMatchObject({
       code: ROSTER_NOT_LISTED,
     });
@@ -301,7 +303,7 @@ describe('sovereign start checks the roster (sql 0024)', () => {
   it('at max_agents 2: the 1st and the last allowed (2nd) start pass, the 3rd is refused', async () => {
     const sql = new FakeSql();
     await addOwner(sql, 'jo');
-    sql.roster.set('Player 1', { owner_id: 'jo', max_agents: 2 });
+    sql.roster.set('player 1', { owner_id: 'jo', max_agents: 2 });
     await addPlayer(sql, player(1), SHARD);
     await addPlayer(sql, { ...player(2), name: 'Player 1' }, SHARD);
     await expect(addPlayer(sql, { ...player(3), name: 'Player 1' }, SHARD)).rejects.toMatchObject({

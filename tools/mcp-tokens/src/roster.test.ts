@@ -22,6 +22,7 @@ interface Entry {
 /**
  * An in-memory roster and player table. BEGIN keeps a copy and ROLLBACK restores it, so an abort
  * is visible in the roster. `failInsert` makes the N-th roster insert throw (a mid-seed failure).
+ * The player match is case-insensitive, as the database comparison is for display names.
  */
 class FakeRoster implements Sql {
   roster = new Map<string, Entry>();
@@ -83,8 +84,9 @@ class FakeRoster implements Sql {
       return { rows };
     }
     if (text.includes('display_name')) {
+      const wanted = String(values[0]).toLowerCase();
       const n = this.players.filter(
-        (p) => p.display_name === values[0] && p.status !== 'retired',
+        (p) => p.display_name.toLowerCase() === wanted && p.status !== 'retired',
       ).length;
       return { rows: [{ n }] };
     }
@@ -107,19 +109,27 @@ describe('roster add', () => {
     const sql = new FakeRoster();
     await addRosterName(sql, 'alice', 'Jason');
     await expectCode(addRosterName(sql, 'bob', 'Jason'), ROSTER_TAKEN);
-    expect(sql.roster.get('Jason')?.owner_id).toBe('alice');
+    expect(sql.roster.get('jason')?.owner_id).toBe('alice');
+  });
+
+  it('treats Ranger and ranger as one name: the other case is refused as taken, and stored lower-cased', async () => {
+    const sql = new FakeRoster();
+    await addRosterName(sql, 'alice', 'Ranger');
+    await expectCode(addRosterName(sql, 'bob', 'ranger'), ROSTER_TAKEN);
+    await expectCode(addRosterName(sql, 'alice', 'RANGER'), ROSTER_TAKEN);
+    expect([...sql.roster.keys()]).toEqual(['ranger']);
   });
 
   it('accepts max_agents at both ends (1 and 4) and refuses 0 and 5, adding nothing', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'alice', 'Clara', 4);
-    await addRosterName(sql, 'alice', 'Tommy', 1);
-    expect(sql.roster.get('Clara')?.max_agents).toBe(4);
-    expect(sql.roster.get('Tommy')?.max_agents).toBe(1);
-    await expect(addRosterName(sql, 'alice', 'Zack', 5)).rejects.toThrow('max_agents');
-    await expect(addRosterName(sql, 'alice', 'Billy', 0)).rejects.toThrow('max_agents');
-    expect(sql.roster.has('Zack')).toBe(false);
-    expect(sql.roster.has('Billy')).toBe(false);
+    await addRosterName(sql, 'alice', 'clara', 4);
+    await addRosterName(sql, 'alice', 'tommy', 1);
+    expect(sql.roster.get('clara')?.max_agents).toBe(4);
+    expect(sql.roster.get('tommy')?.max_agents).toBe(1);
+    await expect(addRosterName(sql, 'alice', 'zack', 5)).rejects.toThrow('max_agents');
+    await expect(addRosterName(sql, 'alice', 'billy', 0)).rejects.toThrow('max_agents');
+    expect(sql.roster.has('zack')).toBe(false);
+    expect(sql.roster.has('billy')).toBe(false);
   });
 
   it('refuses a name that is not a Minecraft name, before the database sees it', async () => {
@@ -132,42 +142,42 @@ describe('roster add', () => {
 describe('roster remove', () => {
   it('refuses another owner, and keeps the row', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'alice', 'Kimberly');
-    await expectCode(removeRosterName(sql, 'bob', 'Kimberly'), ROSTER_NOT_LISTED);
-    expect(sql.roster.has('Kimberly')).toBe(true);
-    expect(sql.roster.get('Kimberly')?.owner_id).toBe('alice');
+    await addRosterName(sql, 'alice', 'kimberly');
+    await expectCode(removeRosterName(sql, 'bob', 'kimberly'), ROSTER_NOT_LISTED);
+    expect(sql.roster.has('kimberly')).toBe(true);
+    expect(sql.roster.get('kimberly')?.owner_id).toBe('alice');
     expect(sql.log.some((text) => text.includes('owner_id = $2'))).toBe(true);
   });
 
   it('removes the owner’s own row', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'alice', 'Kimberly');
-    await removeRosterName(sql, 'alice', 'Kimberly');
-    expect(sql.roster.has('Kimberly')).toBe(false);
+    await addRosterName(sql, 'alice', 'kimberly');
+    await removeRosterName(sql, 'alice', 'kimberly');
+    expect(sql.roster.has('kimberly')).toBe(false);
   });
 
   it('lists only the given owner’s names', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'alice', 'Jason');
-    await addRosterName(sql, 'bob', 'Clara');
+    await addRosterName(sql, 'alice', 'jason');
+    await addRosterName(sql, 'bob', 'clara');
     const rows = await listRoster(sql, 'alice');
-    expect(rows.map((r) => r.player_name)).toEqual(['Jason']);
+    expect(rows.map((r) => r.player_name)).toEqual(['jason']);
   });
 });
 
 describe('roster seed', () => {
   it('adds each name once; a second run adds nothing and changes nothing', async () => {
     const sql = new FakeRoster();
-    expect(await seedRoster(sql, 'alice', ['Jason', 'Clara'])).toBe(2);
+    expect(await seedRoster(sql, 'alice', ['jason', 'clara'])).toBe(2);
     const before = new Map(sql.roster);
-    expect(await seedRoster(sql, 'alice', ['Jason', 'Clara'])).toBe(0);
+    expect(await seedRoster(sql, 'alice', ['jason', 'clara'])).toBe(0);
     expect(sql.roster).toEqual(before);
   });
 
   it('aborts on a mid-seed failure: no name from that run is left in the roster', async () => {
     const sql = new FakeRoster();
     sql.failInsert = 2;
-    await expect(seedRoster(sql, 'alice', ['Jason', 'Clara', 'Tommy'])).rejects.toThrow(
+    await expect(seedRoster(sql, 'alice', ['jason', 'clara', 'tommy'])).rejects.toThrow(
       'injected failure',
     );
     expect(sql.roster.size).toBe(0);
@@ -179,30 +189,30 @@ describe('roster seed', () => {
 describe('checkRosterStart', () => {
   it('refuses a name that is not on the roster', async () => {
     const sql = new FakeRoster();
-    await expectCode(checkRosterStart(sql, 'alice', 'Jason'), ROSTER_NOT_LISTED);
+    await expectCode(checkRosterStart(sql, 'alice', 'jason'), ROSTER_NOT_LISTED);
   });
 
   it('refuses a name that is on the roster for another owner', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'bob', 'Jason');
-    await expectCode(checkRosterStart(sql, 'alice', 'Jason'), ROSTER_NOT_LISTED);
+    await addRosterName(sql, 'bob', 'jason');
+    await expectCode(checkRosterStart(sql, 'alice', 'jason'), ROSTER_NOT_LISTED);
   });
 
   it('at max_agents 2: the 1st and the last allowed (2nd) start pass, the 3rd is refused', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'alice', 'Jason', 2);
-    await checkRosterStart(sql, 'alice', 'Jason');
+    await addRosterName(sql, 'alice', 'jason', 2);
+    await checkRosterStart(sql, 'alice', 'jason');
     sql.players.push({ display_name: 'Jason', status: 'active' });
-    await checkRosterStart(sql, 'alice', 'Jason');
+    await checkRosterStart(sql, 'alice', 'jason');
     sql.players.push({ display_name: 'Jason', status: 'paused' });
-    await expectCode(checkRosterStart(sql, 'alice', 'Jason'), ROSTER_LIMIT);
+    await expectCode(checkRosterStart(sql, 'alice', 'jason'), ROSTER_LIMIT);
   });
 
   it('a retired agent does not count against max_agents', async () => {
     const sql = new FakeRoster();
-    await addRosterName(sql, 'alice', 'Jason', 1);
+    await addRosterName(sql, 'alice', 'jason', 1);
     sql.players.push({ display_name: 'Jason', status: 'retired' });
-    await checkRosterStart(sql, 'alice', 'Jason');
+    await checkRosterStart(sql, 'alice', 'jason');
   });
 });
 

@@ -8,6 +8,7 @@ import type {
 } from './ports.ts';
 
 // An in-memory world for the supervisor's tests: the clock is fixed and moved by the test.
+// Roster names and body keys are lower-cased, as the supervisor keys them (names are case-insensitive).
 export class FakeWorld {
   now = new Date('2026-11-13T12:00:00.000Z');
   roster = new Map<string, string>();
@@ -22,12 +23,16 @@ export class FakeWorld {
   startError: Error | null = null;
   insertError: Error | null = null;
   auditError: Error | null = null;
+  stopError: Error | null = null;
   // When set, a runtime start never answers (a hung Docker call).
   hangStart = false;
+  // When set, a runtime start completes this many ms later and ignores the abort signal, as a
+  // Docker start that was already under way would. The body then runs unless the supervisor stops it.
+  lateStartMs: number | null = null;
   logs = new Map<string, LogEvent[]>();
 
   addPlayer(playerName: string, ownerId: string): void {
-    this.roster.set(playerName, ownerId);
+    this.roster.set(playerName.toLowerCase(), ownerId);
   }
 
   deps(): SupervisorDeps {
@@ -63,9 +68,12 @@ export class FakeWorld {
           const body = this.bodies.get(playerName);
           return body ? { ...body } : null;
         },
-        start: async (spec) => {
+        start: async (spec, _signal) => {
           if (this.hangStart) return new Promise<void>(() => undefined);
           if (this.startError) throw this.startError;
+          if (this.lateStartMs !== null) {
+            await new Promise((resolve) => setTimeout(resolve, this.lateStartMs ?? 0));
+          }
           this.specs.push(spec);
           this.bodies.set(spec.playerName, {
             ownerId: spec.ownerId,
@@ -75,6 +83,7 @@ export class FakeWorld {
         },
         stop: async (playerName) => {
           this.stops.push(playerName);
+          if (this.stopError) throw this.stopError;
           const body = this.bodies.get(playerName);
           if (body) body.running = false;
         },

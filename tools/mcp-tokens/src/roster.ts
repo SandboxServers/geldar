@@ -61,7 +61,7 @@ export async function addRosterName(
   try {
     await sql.query(
       'INSERT INTO mcp_roster (player_name, owner_id, max_agents) VALUES ($1, $2, $3)',
-      [name, owner, maxAgents],
+      [name.toLowerCase(), owner, maxAgents],
     );
   } catch (error) {
     if ((error as { code?: unknown }).code === UNIQUE_VIOLATION) {
@@ -77,7 +77,7 @@ export async function removeRosterName(sql: Sql, owner: string, name: string): P
   checkRosterName(name);
   const result = await sql.query(
     'DELETE FROM mcp_roster WHERE player_name = $1 AND owner_id = $2 RETURNING player_name',
-    [name, owner],
+    [name.toLowerCase(), owner],
   );
   if (result.rows.length === 0) {
     throw new RosterError(ROSTER_NOT_LISTED, `${name} is not on the roster of ${owner}`);
@@ -114,7 +114,7 @@ export async function seedRoster(sql: Sql, owner: string, names: string[]): Prom
     for (const name of names) {
       const result = await sql.query(
         'INSERT INTO mcp_roster (player_name, owner_id, max_agents) VALUES ($1, $2, 1) ON CONFLICT (player_name) DO NOTHING RETURNING player_name',
-        [name, owner],
+        [name.toLowerCase(), owner],
       );
       added += result.rows.length;
     }
@@ -134,15 +134,15 @@ export async function seedRoster(sql: Sql, owner: string, names: string[]): Prom
 export async function checkRosterStart(sql: Sql, owner: string, name: string): Promise<void> {
   const listed = await sql.query(
     'SELECT owner_id, max_agents FROM mcp_roster WHERE player_name = $1 FOR UPDATE',
-    [name],
+    [name.toLowerCase()],
   );
   const row = listed.rows[0];
   if (row === undefined || row.owner_id !== owner) {
     throw new RosterError(ROSTER_NOT_LISTED, `${name} is not on the roster of ${owner}`);
   }
   const used = await sql.query(
-    "SELECT count(*)::int AS n FROM mcp_players WHERE display_name = $1 AND status <> 'retired'",
-    [name],
+    "SELECT count(*)::int AS n FROM mcp_players WHERE lower(display_name) = $1 AND status <> 'retired'",
+    [name.toLowerCase()],
   );
   if (Number(used.rows[0]?.n) >= Number(row.max_agents)) {
     throw new RosterError(

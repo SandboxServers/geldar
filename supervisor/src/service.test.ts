@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from './fakes.ts';
 import { BODY_MEMORY_BYTES, BODY_NANO_CPUS } from './limits.ts';
 import type { ControlRequest, LogEvent, Op } from './ports.ts';
@@ -29,6 +29,8 @@ function setup(runtimeTimeoutMs?: number) {
 const start = (player: string, owner = A) => req('start', owner, player);
 const stop = (player: string, owner = A) => req('stop', owner, player);
 const STARTED = { ok: true, code: 'started' };
+const UNKNOWN = { ok: false, code: 'unknown' };
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('association: an owner acts only on their own roster names', () => {
   it('owner A stopping owner B body gets the unknown reply and changes nothing', async () => {
@@ -38,7 +40,7 @@ describe('association: an owner acts only on their own roster names', () => {
     const noSuchPlayer = await handle(stop('Nobody', A));
     expect(crossOwner).toEqual(noSuchPlayer);
     expect(crossOwner).toEqual({ ok: false, code: 'unknown' });
-    expect(world.bodies.get('Scout')?.running).toBe(true);
+    expect(world.bodies.get('scout')?.running).toBe(true);
     expect(world.startRows).toHaveLength(1);
   });
 
@@ -81,18 +83,38 @@ describe('association: an owner acts only on their own roster names', () => {
     world.addPlayer('Ranger', B);
     expect(await handle(req('restart', B, 'Ranger'))).toEqual({ ok: false, code: 'unknown' });
     expect(world.stops).toHaveLength(0);
-    expect(world.bodies.get('Ranger')).toEqual({ ownerId: A, playerName: 'Ranger', running: true });
+    expect(world.bodies.get('ranger')).toEqual({ ownerId: A, playerName: 'ranger', running: true });
   });
 
-  it('after the roster removes a name, its owner cannot stop, status or read logs of the body', async () => {
+  it('after the roster removes a name, its owner can still stop the body but not read its status or logs', async () => {
     const { world, handle } = setup();
     await handle(start('Ranger', A));
-    world.roster.delete('Ranger');
-    expect(await handle(stop('Ranger', A))).toEqual({ ok: false, code: 'unknown' });
-    expect(await handle(req('status', A, 'Ranger'))).toEqual({ ok: false, code: 'unknown' });
-    expect(await handle(req('logtail', A, 'Ranger'))).toEqual({ ok: false, code: 'unknown' });
-    expect(world.bodies.get('Ranger')?.running).toBe(true);
+    world.roster.delete('ranger');
+    expect(await handle(req('status', A, 'Ranger'))).toEqual(UNKNOWN);
+    expect(await handle(req('logtail', A, 'Ranger'))).toEqual(UNKNOWN);
+    expect(world.bodies.get('ranger')?.running).toBe(true);
     expect(world.stops).toHaveLength(0);
+    expect(await handle(stop('Ranger', A))).toEqual({ ok: true, code: 'stopped' });
+    expect(world.bodies.get('ranger')?.running).toBe(false);
+  });
+
+  it('a removed name is stoppable only by the owner of its body, not by another owner', async () => {
+    const { world, handle } = setup();
+    await handle(start('Ranger', A));
+    world.roster.delete('ranger');
+    expect(await handle(stop('Ranger', B))).toEqual(UNKNOWN);
+    expect(world.bodies.get('ranger')?.running).toBe(true);
+  });
+
+  it('roster names are case-insensitive: Ranger and ranger are one body, held by one owner', async () => {
+    const { world, handle } = setup();
+    expect(await handle(start('Ranger', A))).toEqual(STARTED);
+    expect(await handle(start('ranger', A))).toEqual(STARTED);
+    expect(await handle(start('RANGER', B))).toEqual(UNKNOWN);
+    expect(world.specs).toHaveLength(1);
+    expect(world.startRows).toHaveLength(1);
+    expect(await handle(stop('RANGER', A))).toEqual({ ok: true, code: 'stopped' });
+    expect(world.bodies.get('ranger')?.running).toBe(false);
   });
 });
 
@@ -106,6 +128,40 @@ describe('roster read from the database', () => {
   it('a name the roster does not list is refused for an owner request', async () => {
     const { world, handle } = setup();
     expect(await handle(start('YamlOnly'))).toEqual({ ok: false, code: 'unknown' });
+    expect(world.specs).toHaveLength(0);
+  });
+});
+
+describe('player name shape (roster rule, review fix D, F4)', () => {
+  it.each([
+    ['a NUL byte', 'a\u0000b'],
+    ['a newline', 'a\nb'],
+    ['spaces only', '   '],
+    ['17 characters', 'x'.repeat(17)],
+    ['an empty name', ''],
+  ])('%s is refused as invalid and audited with no target', async (_label, name) => {
+    const { world, sup } = setup();
+    expect(await sup.handle({ op: 'start', ownerId: A, playerName: name })).toEqual({
+      ok: false,
+      code: 'invalid',
+    });
+    expect(world.auditRows.at(-1)?.action).toBe('body_invalid');
+    expect(world.auditRows.at(-1)?.target).toBe('invalid');
+    expect(world.specs).toHaveLength(0);
+  });
+
+  it('a 16 character name of letters, digits and underscores is accepted', async () => {
+    const { world, handle } = setup();
+    const sixteen = 'Abcdefghij_12345';
+    expect(sixteen).toHaveLength(16);
+    world.addPlayer(sixteen, A);
+    expect(await handle(start(sixteen))).toEqual(STARTED);
+  });
+
+  it('__proto__ is a valid roster shape: an unlisted name gets unknown and is audited by its own name', async () => {
+    const { world, sup } = setup();
+    expect(await sup.handle({ op: 'start', ownerId: A, playerName: '__proto__' })).toEqual(UNKNOWN);
+    expect(world.auditRows.at(-1)?.target).toBe('__proto__');
     expect(world.specs).toHaveLength(0);
   });
 });
@@ -182,7 +238,7 @@ describe('quotas at the boundary (decision 0170, point 3)', () => {
       code: 'restarted',
     });
     expect(world.startRows.map((r) => r.op)).toEqual(['start', 'restart']);
-    expect(world.stops).toContain('Ranger');
+    expect(world.stops).toContain('ranger');
   });
 });
 
@@ -210,13 +266,14 @@ describe('admin owners (decision 0170, point 5)', () => {
     expect(world.startRows).toHaveLength(12);
   });
 
-  it('an admin repeat start of a running body is the same started reply and counts nothing', async () => {
+  it('an admin repeat start of a running body is the same started reply, counts nothing, and is audited as noop', async () => {
     const { world, handle } = setup();
     world.admins.add(A);
     await handle(start('Ranger'));
     expect(await handle(start('Ranger'))).toEqual(STARTED);
     expect(world.startRows).toHaveLength(1);
     expect(world.auditRows.at(-1)?.admin).toBe(true);
+    expect(world.auditRows.at(-1)?.outcome).toBe('noop');
   });
 
   it('an admin still gets the unknown reply for another owner body', async () => {
@@ -224,7 +281,7 @@ describe('admin owners (decision 0170, point 5)', () => {
     world.admins.add(A);
     await handle(start('Scout', B));
     expect(await handle(stop('Scout', A))).toEqual({ ok: false, code: 'unknown' });
-    expect(world.bodies.get('Scout')?.running).toBe(true);
+    expect(world.bodies.get('scout')?.running).toBe(true);
   });
 
   it('a flag read that errors is treated as not admin: the fourth start is refused', async () => {
@@ -270,7 +327,7 @@ describe('abort and error paths', () => {
     world.startError = new Error('docker daemon went away');
     expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
     expect(world.startRows).toHaveLength(0);
-    expect(world.bodies.get('Ranger')?.running ?? false).toBe(false);
+    expect(world.bodies.get('ranger')?.running ?? false).toBe(false);
     expect(world.auditRows.at(-1)?.outcome).toBe('error');
   });
 
@@ -288,11 +345,24 @@ describe('abort and error paths', () => {
     const { world, handle } = setup();
     world.insertError = new Error('database unavailable');
     expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
-    expect(world.stops).toEqual(['Ranger']);
-    expect(world.bodies.get('Ranger')?.running).toBe(false);
+    expect(world.stops).toEqual(['ranger']);
+    expect(world.bodies.get('ranger')?.running).toBe(false);
     expect(world.startRows).toHaveLength(0);
     expect(world.auditRows.at(-1)?.outcome).toBe('error');
     world.insertError = null;
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    expect(world.startRows).toHaveLength(1);
+  });
+
+  it('an insert failure whose compensating stop also throws still replies error, and a retry starts once', async () => {
+    const { world, handle } = setup();
+    world.insertError = new Error('database unavailable');
+    world.stopError = new Error('docker stop failed');
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
+    expect(world.stops).toEqual(['ranger']);
+    expect(world.auditRows.at(-1)?.outcome).toBe('error');
+    world.insertError = null;
+    world.stopError = null;
     expect(await handle(start('Ranger'))).toEqual(STARTED);
     expect(world.startRows).toHaveLength(1);
   });
@@ -305,6 +375,30 @@ describe('abort and error paths', () => {
     expect(world.auditRows.at(-1)?.outcome).toBe('error');
     world.hangStart = false;
     expect(await handle(start('Ranger'))).toEqual(STARTED);
+  });
+
+  it('a start that completes after the timeout leaves no running body, and the next start counts once', async () => {
+    const { world, handle } = setup(20);
+    world.lateStartMs = 60;
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
+    await sleep(120);
+    expect(world.bodies.get('ranger')?.running).toBe(false);
+    expect(world.startRows).toHaveLength(0);
+    expect(world.auditRows.at(-1)?.outcome).toBe('error');
+    world.lateStartMs = null;
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    expect(world.startRows).toHaveLength(1);
+  });
+
+  it('a late start whose compensating stop throws still replies error, and the handler does not throw', async () => {
+    const { world, handle } = setup(20);
+    world.lateStartMs = 60;
+    world.stopError = new Error('docker stop failed');
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'error' });
+    await sleep(120);
+    expect(world.startRows).toHaveLength(0);
+    expect(world.auditRows.at(-1)?.outcome).toBe('error');
+    expect(world.stops).toEqual(['ranger', 'ranger']);
   });
 
   it('the default runtime timeout is 15 seconds', () => {
@@ -325,7 +419,21 @@ describe('abort and error paths', () => {
     expect(await handle(start('Ranger'))).toEqual(STARTED);
     expect(world.specs).toHaveLength(1);
     expect(world.startRows).toHaveLength(1);
-    expect(world.bodies.get('Ranger')?.running).toBe(true);
+    expect(world.bodies.get('ranger')?.running).toBe(true);
+  });
+
+  it('an audit failure after a successful start calls onAuditLost with a fixed code, and a refusal does not', async () => {
+    const world = new FakeWorld();
+    world.addPlayer('Ranger', A);
+    world.addPlayer('Scout', B);
+    const onAuditLost = vi.fn();
+    const sup = createSupervisor({ ...world.deps(), onAuditLost });
+    world.auditError = new Error('audit table unavailable');
+    expect(await sup.handle(start('Ranger'))).toEqual(STARTED);
+    expect(onAuditLost).toHaveBeenCalledTimes(1);
+    expect(onAuditLost).toHaveBeenCalledWith({ action: 'body_start', code: 'audit_lost' });
+    await expect(sup.handle(start('Scout', A))).rejects.toThrow('audit table unavailable');
+    expect(onAuditLost).toHaveBeenCalledTimes(1);
   });
 
   it('status and logtail are not audited, so polling adds no audit rows', async () => {
@@ -361,7 +469,7 @@ describe('logtail: 200 events at most, none older than 7 days', () => {
   it('returns the newest 200 of 300 recent events', async () => {
     const { world, handle } = setup();
     await handle(start('Ranger'));
-    world.logs.set('Ranger', events(300, HOUR_MS, world.now));
+    world.logs.set('ranger', events(300, HOUR_MS, world.now));
     const reply = await handle(req('logtail', A, 'Ranger'));
     expect(reply.ok && reply.events?.length).toBe(200);
   });
@@ -371,7 +479,7 @@ describe('logtail: 200 events at most, none older than 7 days', () => {
     await handle(start('Ranger'));
     const edge = new Date(world.now.getTime() - LOG_TAIL_WINDOW_MS);
     const old = new Date(world.now.getTime() - LOG_TAIL_WINDOW_MS - 1);
-    world.logs.set('Ranger', [
+    world.logs.set('ranger', [
       { at: old, code: 'started' },
       { at: edge, code: 'stopped' },
       { at: world.now, code: 'started' },
