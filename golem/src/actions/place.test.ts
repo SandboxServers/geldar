@@ -130,6 +130,30 @@ describe('confirmsPlacement', () => {
   });
 });
 
+describe('place into water', () => {
+  it('places a block into a water cell beside a solid block', async () => {
+    // The bot stands on a single stone block in a pond; the water cell east of it is level with the stone.
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '1,63,0': 'water' },
+      items: ['cobblestone'],
+    });
+    const outcome = await place(fake, 'cobblestone', { x: 1, y: 63, z: 0 });
+    expect(outcome.status).toBe('completed');
+    expect(fake.placeBlock).toHaveBeenCalledTimes(1);
+    expect(fake.placeBlock.mock.calls[0]?.[0].position).toEqual(new Vec3(0, 63, 0));
+  });
+
+  it('refuses a water cell with no solid block beside it, without placing', async () => {
+    const fake = fakeBot({
+      blocks: { '0,63,0': 'stone', '1,64,0': 'water' },
+      items: ['cobblestone'],
+    });
+    const outcome = await place(fake, 'cobblestone', { x: 1, y: 64, z: 0 });
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(fake.placeBlock).not.toHaveBeenCalled();
+  });
+});
+
 describe('place reference selection', () => {
   const ground = { '0,63,0': 'stone', '0,63,1': 'stone', '1,63,1': 'stone' };
 
