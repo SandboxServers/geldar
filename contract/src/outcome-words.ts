@@ -168,11 +168,13 @@ const DETAIL_REASONS: readonly string[] = [
   'missing_station',
   'needs_rescue',
   'no_effect',
+  'blocked',
+  'not_found',
 ];
 
 /**
- * The `detail_text` for a failed action, or undefined. Only a few cases carry a plain sentence worth
- * sending: the reasons above, a craft that ran out of time, and a refused mine. `message` is the
+ * The `detail_text` for a failed action, or undefined. The reasons above carry the Body's plain sentence,
+ * as does a timeout on any verb (a path search that ran out of time) and a refused mine. `message` is the
  * action's own failure message.
  */
 export function outcomeDetailText(
@@ -183,7 +185,7 @@ export function outcomeDetailText(
   if (reason === undefined) return undefined;
   const wanted =
     DETAIL_REASONS.includes(reason) ||
-    (reason === 'timeout' && verb === 'craft') ||
+    reason === 'timeout' ||
     (reason === 'not_possible' && verb === 'mine');
   return wanted ? playerDetailText(message) : undefined;
 }

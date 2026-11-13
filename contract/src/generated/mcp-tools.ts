@@ -779,6 +779,10 @@ export const mcpToolSchemas: Record<
         "budget_remaining_thoughts": {
           "type": "integer",
           "minimum": 0
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 200
         }
       }
     }
@@ -957,6 +961,10 @@ export const mcpToolSchemas: Record<
                 "worn",
                 "nearly_broken"
               ]
+            },
+            "edible": {
+              "description": "True when the item is food the agent can eat. Absent when the Body does not report it.",
+              "type": "boolean"
             },
             "book_id": {
               "description": "Set for written books; identifies the book the agent can read.",
@@ -1170,6 +1178,19 @@ export const mcpToolSchemas: Record<
                   "health_estimate": {
                     "type": "string",
                     "maxLength": 32
+                  },
+                  "vertical": {
+                    "description": "Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.",
+                    "type": "string",
+                    "enum": [
+                      "above",
+                      "level",
+                      "below"
+                    ]
+                  },
+                  "in_reach": {
+                    "description": "True when the other agent is within give reach, 3 blocks. Absent when the Body does not report it.",
+                    "type": "boolean"
                   }
                 }
               }
@@ -2641,6 +2662,10 @@ export const mcpToolSchemas: Record<
                 "nearly_broken"
               ]
             },
+            "edible": {
+              "description": "True when the item is food the agent can eat. Absent when the Body does not report it.",
+              "type": "boolean"
+            },
             "book_id": {
               "description": "Set for written books; identifies the book the agent can read.",
               "type": "string",
@@ -2997,6 +3022,19 @@ export const mcpToolSchemas: Record<
                   "health_estimate": {
                     "type": "string",
                     "maxLength": 32
+                  },
+                  "vertical": {
+                    "description": "Where the other agent's feet are against the viewer's: above or below when more than one block higher or lower, else level. Absent when the Body does not report it.",
+                    "type": "string",
+                    "enum": [
+                      "above",
+                      "level",
+                      "below"
+                    ]
+                  },
+                  "in_reach": {
+                    "description": "True when the other agent is within give reach, 3 blocks. Absent when the Body does not report it.",
+                    "type": "boolean"
                   }
                 }
               }

@@ -44,9 +44,39 @@ describe('failure detail text', () => {
   );
 
   it('is sent only for the chosen cases', () => {
-    expect(outcomeDetailText('goto', 'blocked', 'the way is blocked')).toBeUndefined();
-    expect(outcomeDetailText('mine', 'timeout', 'ran out of time')).toBeUndefined();
+    expect(outcomeDetailText('goto', 'interrupted', 'x')).toBeUndefined();
+    expect(outcomeDetailText('mine', 'busy', 'x')).toBeUndefined();
     expect(outcomeDetailText('craft', undefined, 'x')).toBeUndefined();
+  });
+
+  it.each([
+    ['place', 'blocked', 'target is occupied'],
+    ['place', 'blocked', 'no solid block to place against'],
+    ['place', 'blocked', 'the target is out of reach'],
+    ['place', 'blocked', 'another entity stands where the block goes'],
+    ['place', 'blocked', 'no free space next to you'],
+    ['place', 'blocked', 'the server did not place the block: refused'],
+    ['give', 'not_found', 'the items are on the ground near Ada'],
+    ['mine', 'not_found', 'no stone within 32 blocks'],
+  ])('a %s failure (%s) keeps its Body detail: %s', (verb, reason, text) => {
+    expect(outcomeDetailText(verb, reason, text)).toBe(text);
+  });
+
+  it.each(['goto', 'unstick', 'mine', 'craft'])(
+    'a timeout on %s keeps its path-search detail',
+    (verb) => {
+      expect(outcomeDetailText(verb, 'timeout', 'the path search ran out of time')).toBe(
+        'the path search ran out of time',
+      );
+    },
+  );
+
+  it('a blocked or not_found detail obeys the sanitiser, marker and coordinate rules', () => {
+    expect(outcomeDetailText('place', 'blocked', 'the observer is in the way')).toBeUndefined();
+    expect(outcomeDetailText('place', 'blocked', 'blocked at 120, 64, -33')).toBeUndefined();
+    expect(outcomeDetailText('mine', 'not_found', 'the ore is near <x>')).toBeUndefined();
+    expect(outcomeDetailText('goto', 'timeout', 'path lost at 12 64 9')).toBeUndefined();
+    expect(outcomeDetailText('place', 'blocked', 'a'.repeat(200))?.length).toBe(160);
   });
 
   it('strips control characters, caps length and drops unsafe text', () => {

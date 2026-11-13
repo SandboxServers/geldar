@@ -79,6 +79,10 @@
           "type": "string",
           "enum": ["low", "worn", "nearly_broken"]
         },
+        "edible": {
+          "description": "True when the item is food the agent can eat. Absent when the Body does not report it.",
+          "type": "boolean"
+        },
         "book_id": {
           "description": "Set for written books; identifies the book the agent can read.",
           "type": "string",
