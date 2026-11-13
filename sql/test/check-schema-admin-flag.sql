@@ -5,9 +5,10 @@ DECLARE
   step TEXT;
   audit_id BIGINT;
 BEGIN
-  step := 'grant: register role reads is_admin';
-  IF NOT has_column_privilege('geldar_register', 'mcp_owners', 'is_admin', 'SELECT') THEN
-    RAISE EXCEPTION 'schema check (%): geldar_register must read mcp_owners.is_admin', step;
+  step := 'grant: register role has no privilege on mcp_owners (the flag is read through register_is_admin)';
+  IF has_any_column_privilege('geldar_register', 'mcp_owners', 'SELECT')
+     OR has_table_privilege('geldar_register', 'mcp_owners', 'SELECT') THEN
+    RAISE EXCEPTION 'schema check (%): geldar_register must not read mcp_owners directly', step;
   END IF;
 
   step := 'grant: register role cannot write is_admin';

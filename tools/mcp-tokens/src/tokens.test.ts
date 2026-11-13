@@ -54,7 +54,7 @@ class TokenSql implements Sql {
         token_id: String(values[0]),
         player_id: String(values[1]),
         token_hash: values[2] as Buffer,
-        expires: Date.now() + 30 * DAY_MS,
+        expires: Date.now() + Number(values[3]) * DAY_MS,
         revoked: false,
       });
       return { rows: [] };
