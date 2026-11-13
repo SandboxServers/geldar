@@ -346,7 +346,9 @@ describe('the page script', () => {
     expect(fetchUrls).toContain('/api/receipts?action_id=act-1');
     const detail = first?.querySelector('.detail');
     expect(detail?.textContent).toContain('Template version');
-    expect(detail?.textContent).toContain('place settle oak_planks 4');
+    expect(
+      [...(detail?.querySelectorAll('tbody td') ?? [])].map((cell) => cell.textContent),
+    ).toEqual(['place', 'settle', 'oak_planks', '4', '']);
     expect(win.document.querySelectorAll('.detail').length).toBe(1);
     // Nothing is drawn outside the list: the detail is under the entry, not at the foot of the page.
     expect(win.document.querySelector('main > .detail, #detail')).toBeNull();

@@ -208,14 +208,25 @@ export function renderDetail(doc: Doc, view: ThoughtView, receipts: Row[], death
   section.append(facts);
   if (view.kind === 'journal' || receipts.length === 0) return section;
   section.append(make(doc, 'h3', '', 'Receipts'));
-  const list = doc.createElement('ul');
-  for (const receipt of receipts) {
-    const line = ['kind', 'phase', 'item', 'count', 'credits']
-      .map((k) => str(receipt[k]))
-      .join(' ');
-    list.append(make(doc, 'li', 'receipt', line));
+  const wrap = make(doc, 'div', 'receipts', '');
+  const table = doc.createElement('table');
+  const head = doc.createElement('thead');
+  const headings = doc.createElement('tr');
+  for (const label of ['Kind', 'Phase', 'Item', 'Count', 'Credits']) {
+    headings.append(make(doc, 'th', '', label));
   }
-  section.append(list);
+  head.append(headings);
+  const body = doc.createElement('tbody');
+  for (const receipt of receipts) {
+    const row = doc.createElement('tr');
+    for (const key of ['kind', 'phase', 'item', 'count', 'credits']) {
+      row.append(make(doc, 'td', '', str(receipt[key])));
+    }
+    body.append(row);
+  }
+  table.append(head, body);
+  wrap.append(table);
+  section.append(wrap);
   return section;
 }
 

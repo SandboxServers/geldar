@@ -359,10 +359,34 @@ mark {
   font-weight: 400;
 }
 
-.detail ul {
-  margin: 0;
-  padding-left: 1.1rem;
-  overflow-wrap: anywhere;
+.receipts {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.receipts table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.receipts th,
+.receipts td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.receipts th {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.receipts th:nth-child(n + 4),
+.receipts td:nth-child(n + 4) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .note {

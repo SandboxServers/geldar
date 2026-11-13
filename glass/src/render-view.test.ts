@@ -21,6 +21,12 @@ const ALLOWED_TAGS = new Set([
   'OPTION',
   'DIV',
   'MARK',
+  'TABLE',
+  'THEAD',
+  'TBODY',
+  'TR',
+  'TH',
+  'TD',
 ]);
 /** Attributes the page sets. `value` on an option holds an index, never data. */
 const ALLOWED_ATTRS = new Set(['class', 'type', 'value']);
@@ -264,4 +270,30 @@ describe('plainRow', () => {
   it('is the baseline shape for the audit', () => {
     expect(plainRow(3).thought_id).toBe('t-3');
   });
+});
+
+it('renders receipt headers and five text cells per row, with empty nulls', () => {
+  const doc = freshDoc();
+  const detail = renderDetail(doc as unknown as Doc, toView(plainRow(1)), [
+    { kind: 'place', phase: 'committed', item: '<img>\u202E', count: 4, credits: 0 },
+    { kind: 'move', phase: 'aborted', item: null, count: null, credits: null },
+  ]);
+  (doc.body as unknown as El).append(detail);
+  auditTree(doc.body);
+  expect([...doc.querySelectorAll('thead th')].map((n) => n.textContent)).toEqual([
+    'Kind',
+    'Phase',
+    'Item',
+    'Count',
+    'Credits',
+  ]);
+  expect(
+    [...doc.querySelectorAll('tbody tr')].map((row) =>
+      [...row.querySelectorAll('td')].map((n) => n.textContent),
+    ),
+  ).toEqual([
+    ['place', 'committed', '<img>[U+202E]', '4', '0'],
+    ['move', 'aborted', '', '', ''],
+  ]);
+  expect(doc.querySelector('img')).toBeNull();
 });

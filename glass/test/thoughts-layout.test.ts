@@ -214,3 +214,15 @@ it('offers a closed About disclosure under the banner with only two fixed links'
   ]);
   expect(HTML.match(/<a\s/g)).toHaveLength(2);
 });
+it('keeps receipt columns readable inside their own scrolling container', () => {
+  const base = baseRules(FLAT).replace(/\s+/g, ' ');
+  expect(declarations(base, '.receipts')).toMatch(/overflow-x: auto/);
+  expect(declarations(base, '.receipts table')).toMatch(/width: max-content/);
+  expect(declarations(base, '.receipts th, .receipts td')).toMatch(/white-space: nowrap/);
+  expect(
+    declarations(base, '.receipts th:nth-child(n + 4), .receipts td:nth-child(n + 4)'),
+  ).toMatch(/text-align: right/);
+  expect(
+    declarations(base, '.receipts th:nth-child(n + 4), .receipts td:nth-child(n + 4)'),
+  ).toMatch(/font-variant-numeric: tabular-nums/);
+});
