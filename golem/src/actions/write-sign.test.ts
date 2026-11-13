@@ -49,6 +49,22 @@ describe('write_sign', () => {
     expect(placeRun).not.toHaveBeenCalled();
   });
 
+  it('says the sign is not there, as a fact with no advice, when the placed sign is gone', async () => {
+    const { ctx, updates } = context(['oak_sign']);
+    (ctx.bot as unknown as { blockAt: () => unknown }).blockAt = () => ({
+      name: 'stone',
+      boundingBox: 'block',
+    });
+    placeRun.mockResolvedValueOnce(completed({ at: { x: 1, y: 64, z: 0 } }));
+    const gone = await writeSignAction.run(ctx, { do: 'write_sign', text: 'hi' });
+    expect(gone).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'the sign is not there any more',
+    });
+    expect(updates).toEqual([]);
+  });
+
   it('returns the placement failure and writes nothing when aborted', async () => {
     placeRun.mockResolvedValueOnce(failed('blocked', 'no space'));
     const refused = await writeSignAction.run(context(['oak_sign']).ctx, {
