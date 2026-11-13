@@ -32,6 +32,12 @@ Continues [c7-user-management-packets.md](c7-user-management-packets.md) (ruling
 
 ## C7-03b: supervisor wiring in the Colo compose (needs geldar-93 contact)
 
+Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packet:
+
+- **Adapter.** Honour the abort signal, and remove the aborted call's container by the id the Docker call returned, never by name. Bound `LogPort.recent` to the current roster record (creation time or owner). Replace a stopped container left by the previous roster owner. Log in with the exact `mcp_players.display_name`. Call `supervisor_is_admin` for the admin check. Key containers by the lower-cased name. Pass `onAuditLost` in the composition root (it is optional today, and a lost audit row after an `ok` reply is otherwise silent).
+- **Compensation by name.** A roster move inside one Docker call can stop the new owner's body. Consider an attempt id or owner id on the runtime stop if this packet can support it.
+- **Operator step.** The `geldar_supervisor` Postgres password is set by the operator by hand; the packet writes no secret. The compose change follows geldar-93's plan and does not recreate the `geldar-colo` network (see above).
+
 - **id / wave / lane.** C7-03b, wave 2. **depends-on.** C7-03a. **branch.** `phase1/c7-03b-supervisor-wiring`. **migration.** none. Two sessions (compose work, conventions section 1).
 - **Goal.** The `supervisor` service in `compose/colo*.yml` with the Docker socket mounted for it alone, the 0082 limits on the service, a NATS user for it (the supervisor may subscribe to `ctl.body.*` and publish replies; the register service's NATS user may publish only to `ctl.body.*` request subjects), `deploy/colo-admin.sh player-start/stop` delegating to the supervisor for DB players (house rangers keep the yaml path), and the real Docker client in `supervisor/`.
 - **Change plan and the geldar-93 flag.** This change adds a compose service, a NATS auth entry and a socket mount on the shared node, and the node also runs a production game server and CI runners (header of `compose/colo.yml`). **Contact geldar-93 before the packet is dispatched and again before the node change**, with the exact diff and the time. The plan must not recreate the `geldar-colo` network: the supervisor joins the existing network, and the rollout is `docker compose up -d supervisor` plus a NATS config reload (a recreate of the NATS container only if the auth change needs it, as the skins runbook notes, with a separate owner approval); never `docker compose down`, never `--force-recreate` on the other services, never a network remove. The packet's runbook note states each command and its rollback (remove the service, restore the NATS auth file from the previous generation). The coder writes files only; ops and the owner run the node steps.
@@ -58,6 +64,15 @@ Merged: version 1 approved by the owner on 2026-11-11 (decision 0155); `register
 - **size.** L (two sessions; split at "delete" and "export").
 
 ## C7-10: operator console and ban reasons
+
+Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packet:
+
+- **Actor encoding.** The audit actor is a sha256 prefix everywhere, one encoding and no raw ids.
+- **Refusals.** A refused action is audited as `not_found` with no reason, so the audit row does not say which check failed.
+- **Per-name hourly counts.** They follow the name, so a new roster owner inherits up to one hour of the old owner's starts. Confirm this is intended, or change it, before the packet merges.
+- **Redundant index.** `mcp_roster_name_lower` duplicates the CHECK plus the primary key. Migration 0024 is now applied on the node, so dropping it is a new migration (0033 is the only spare). Owner decision: drop it or keep it.
+- **Seed probe.** `check-schema-mcp-roster.sql` never runs the seed SQL. Add a statement that runs the seed twice, if wanted.
+- **Not enforced elsewhere.** The golem `player-config`, `players-host`, the Velocity gate and `threshold/mcp` do not read `mcp_roster`, so a lower-case seeded name is not enforced on those paths.
 
 - **id / wave / lane.** C7-10, wave 3. **depends-on.** C7-03a, C7-04, C7-12 (the audit table). **branch.** `phase1/c7-10-operator-console`. **migration.** 0030.
 - **Goal.** (a) Extend `register_audit` (from C7-12) with the ban reason columns and the actions not yet written (sign-up, create, mint, rotate, revoke, rename, flag change, body start and stop, retire, delete, export, ban, skin events); a table-driven test lists them. (b) `mcp-tokens identity ban --reason <code> [--note <text>]` records reason and actor (codes `abuse`, `spam`, `impersonation`, `other`, the owner's to change; today the ban has only `banned_at`, 0136). (c) `mcp-tokens owner list` and `player list --owner` and a read-only operator page of owners, players and body states from the supervisor, showing the admin flag. The operator page is the only place that lists other owners, and it is operator-only (the operator database role, not an owner session). (d) `docs/runbooks/abuse-reports.md`.
