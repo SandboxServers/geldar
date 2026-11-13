@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActionRun } from '../actions/registry.ts';
 import { type CommandSource, TestControl } from '../test-control.ts';
 import { type RunnerDeps, runCell } from './runner.ts';
-import { fakeBot, GOTO, pass, scenarioOf, setup } from './runner-fixtures.ts';
+import { GOTO, pass, scenarioOf, setup } from './runner-fixtures.ts';
 
 describe('runCell run bookkeeping', () => {
   it('records the world age at the start and end of a run and the achieved TPS', async () => {
