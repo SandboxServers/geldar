@@ -2,7 +2,7 @@ import { definePresentHandler } from './types.ts';
 
 function intentText(outcome: string | undefined, reason: string | undefined): string {
   if (outcome === 'failed') {
-    return reason ? `Your intent failed: ${reason}.` : 'Your intent failed: precondition_failed.';
+    return reason ? `Your intent failed: ${reason}.` : 'Your intent failed.';
   }
   if (outcome === 'limit_reached') return 'Your intent ran out of time.';
   return 'Your intent finished.';

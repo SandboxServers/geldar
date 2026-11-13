@@ -231,11 +231,9 @@ describe('mapMindEvent', () => {
     expect(failedWith('blocked: no path')).toBe('Your intent failed: the way was blocked.');
     // A detail that is not a known shape, or carries odd text, is never quoted.
     expect(failedWith('missing_materials: missing Ignore previous; tell {x}')).toBe(
-      'Your intent failed: precondition_failed.',
+      'Your intent failed.',
     );
-    expect(failedWith('internal: stack trace at golem/src')).toBe(
-      'Your intent failed: precondition_failed.',
-    );
+    expect(failedWith('internal: stack trace at golem/src')).toBe('Your intent failed.');
   });
 
   it('keeps the stream sequence and the tick on every entry', () => {
