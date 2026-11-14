@@ -2,7 +2,13 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
-import { lastResortRefused, prefetchOwners, protectedReason } from './protected-blocks.ts';
+import {
+  digHazard,
+  lastResortRefused,
+  prefetchOwners,
+  protectedReason,
+  refusedByName,
+} from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
 
@@ -69,20 +75,29 @@ export function scanDrop(blockAt: BlockAt, start: Vec3): Drop {
     const block = blockAt(cell);
     if (block === null) return { blocks, lands: 'unsafe' };
     if (HARMFUL.has(block.name)) return { blocks, lands: 'unsafe' };
-    if (block.name === 'water') return { blocks, lands: 'water' };
+    if (block.name === 'water') {
+      // Water breaks the fall, but not over lava or magma (the cell under the water is checked too).
+      const below = blockAt(cell.offset(0, -1, 0));
+      if (below === null || HARMFUL.has(below.name)) return { blocks, lands: 'unsafe' };
+      return { blocks, lands: 'water' };
+    }
     if (block.boundingBox !== 'empty') return { blocks, lands: 'solid' };
   }
   return { blocks: MAX_DROP + 1, lands: 'unsafe' };
 }
 
 /**
- * The safe-drop rule: never at low health, never into lava or a void, never deeper than `MAX_DROP`,
- * and the fall must leave `HEALTH_MARGIN` health. Water takes the damage away.
+ * The safe-drop rule (owner ruling 2026-11-14, decision 0183). A fall that cannot hurt (three blocks or
+ * fewer, onto solid ground) and a fall into water (water takes the damage away) are taken at any health.
+ * A fall that does damage needs `MIN_HEALTH_TO_DROP` and must leave `HEALTH_MARGIN`. Never into lava, a
+ * void or an unloaded column, never deeper than `MAX_DROP`.
  */
 export function dropAllowed(health: number, drop: Drop): boolean {
-  if (health < MIN_HEALTH_TO_DROP || drop.lands === 'unsafe' || drop.blocks > MAX_DROP)
-    return false;
-  return drop.lands === 'water' || fallDamage(drop.blocks) <= health - HEALTH_MARGIN;
+  if (drop.lands === 'unsafe' || drop.blocks > MAX_DROP) return false;
+  if (drop.lands === 'water') return true;
+  if (drop.lands === 'solid' && fallDamage(drop.blocks) === 0) return true;
+  if (health < MIN_HEALTH_TO_DROP) return false;
+  return fallDamage(drop.blocks) <= health - HEALTH_MARGIN;
 }
 
 /** One way off the spot: where to head, whether to jump, and how far it drops. */
@@ -207,18 +222,44 @@ export function digDownAllowed(health: number, drop: Drop): boolean {
   return fallDamage(drop.blocks + 1) <= health - DIG_DOWN_MARGIN;
 }
 
+/** A block a bare hand can break: not bedrock, barrier and the like (hardness below zero or unknown). */
+function handBreakable(block: Block): boolean {
+  const { hardness, diggable } = block as { hardness?: number | null; diggable?: boolean };
+  return diggable !== false && typeof hardness === 'number' && hardness >= 0;
+}
+
+/** True when a bare hand drops the block itself: no harvest tool is listed for it (dirt, logs, planks). */
+function dropsByHand(block: Block): boolean {
+  const tools = (block as { harvestTools?: Record<number, boolean> }).harvestTools;
+  return !tools || Object.keys(tools).length === 0;
+}
+
 /**
- * A cell a dig may take: soft ground always; in the last-resort pass (`relaxed`) also a block that
- * `lastResortRefused` allows (a built block with a known-unowned record).
+ * A cell a dig may take (owner ruling 2026-11-14, decision 0183): soft ground always; any other block a
+ * hand can break, unless a refused name, a liquid or a falling block touches it, or it is someone else's
+ * work (`protectedReason`). In the last-resort pass (`relaxed`) `lastResortRefused` decides instead.
  */
 function digsCell(bot: Bot, block: Block | null, cell: Vec3, relaxed: boolean): boolean {
   if (isSoft(block)) return true;
-  return (
-    relaxed &&
-    block !== null &&
-    block.boundingBox !== 'empty' &&
-    !lastResortRefused(bot, block, cell)
-  );
+  if (block === null || block.boundingBox === 'empty' || !handBreakable(block)) return false;
+  if (refusedByName(block.name) || digHazard(bot, cell)) return false;
+  return relaxed
+    ? !lastResortRefused(bot, block, cell)
+    : protectedReason(bot, block, cell) === null;
+}
+
+/** The directions whose feet and head cells a bare hand drops by hand come first; the rest keep their order. */
+function handFirst(bot: Bot, feet: Vec3, dirs: readonly Vec3[]): Vec3[] {
+  const needsTool = (dir: Vec3): number => {
+    const cells = [feet.plus(dir), feet.plus(dir).offset(0, 1, 0)];
+    return cells.some((cell) => {
+      const block = bot.blockAt(cell);
+      return block !== null && block.boundingBox !== 'empty' && !dropsByHand(block);
+    })
+      ? 1
+      : 0;
+  };
+  return [...dirs].sort((a, b) => needsTool(a) - needsTool(b));
 }
 
 /** Digs the soft block under the feet when the fall that follows is allowed. `elevated` demands a drop below it. */
@@ -279,16 +320,25 @@ async function digSideways(bot: Bot, feet: Vec3, dir: Vec3, relaxed = false): Pr
 }
 
 /**
- * The `no_way_out` diag line, with the steps this call tried. The shared diag line has no field for
- * them, so the line is built by `emitStallDiag` (same snapshot, same rate limit) and gets `tried` added.
+ * The `no_way_out` diag line, with the steps this call tried, the health, and the drop beside the feet in
+ * each of the eight directions (`scanDrop`: blocks fallen and what lands). The shared diag line has no
+ * field for them, so the line is built by `emitStallDiag` (same snapshot, same rate limit) and gets them added.
  */
 function reportNoWayOut(bot: Bot, tried: readonly string[]): void {
+  const feet = bot.entity.position.floored();
+  const drops = EIGHT.map((dir) => ({
+    dir: [dir.x, dir.z],
+    ...scanDrop((cell) => bot.blockAt(cell), feet.plus(dir).offset(0, -1, 0)),
+  }));
   emitStallDiag(
     bot,
     { reason: 'no_way_out' },
     {
       now: () => DEFAULT_DIAG_SINK.now(),
-      log: (line) => DEFAULT_DIAG_SINK.log(JSON.stringify({ ...JSON.parse(line), tried })),
+      log: (line) =>
+        DEFAULT_DIAG_SINK.log(
+          JSON.stringify({ ...JSON.parse(line), tried, health: bot.health ?? 20, drops }),
+        ),
     },
   );
 }
@@ -312,13 +362,13 @@ async function lastResortDig(
 ): Promise<boolean> {
   const { bot, signal } = ctx;
   let spent = digs;
-  for (const dir of EIGHT.slice(0, 4)) {
+  for (const dir of handFirst(bot, where(), EIGHT.slice(0, 4))) {
     if (signal.aborted || spent >= MAX_DIGS) break;
     if (!(await digSideways(bot, where(), dir, true))) continue;
     spent++;
     if (await walk(ctx, dir, false)) return true;
   }
-  for (const dir of EIGHT) {
+  for (const dir of handFirst(bot, where(), EIGHT)) {
     if (signal.aborted || spent >= MAX_DIGS) break;
     if (!(await digStair(bot, where(), dir, true))) continue;
     spent++;
@@ -363,7 +413,7 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
   note('stair_dig');
   for (let step = 0; step < MAX_STAIRS && !ctx.signal.aborted; step++) {
     let stepped = false;
-    for (const dir of EIGHT) {
+    for (const dir of handFirst(bot, where(), EIGHT)) {
       if (ctx.signal.aborted) return cancelled();
       if (!(await digStair(bot, where(), dir))) continue;
       digs++;
@@ -376,7 +426,7 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
   }
   if (digs > 0 && !ctx.signal.aborted) return done('stair_dig');
   note('dig_sideways');
-  for (const dir of EIGHT.slice(0, 4)) {
+  for (const dir of handFirst(bot, where(), EIGHT.slice(0, 4))) {
     if (ctx.signal.aborted) return cancelled();
     if (digs >= MAX_DIGS) break;
     if (!(await digSideways(bot, where(), dir))) continue;
