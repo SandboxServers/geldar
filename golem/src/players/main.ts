@@ -210,8 +210,13 @@ export async function runPlayer(
   log({ event: 'player_stopped' });
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** Installs the host's fatal handlers (process-fatal.ts). The entry point calls it before the body starts. */
+export function installEntryHandlers(): void {
   installFatalHandlers(jsonLog);
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installEntryHandlers();
   runPlayer(playerIdFromArgs(process.argv.slice(2))).catch((error: unknown) => {
     jsonLog({ event: 'fatal', error: error instanceof Error ? error.message : String(error) });
     process.exitCode = 1;

@@ -245,8 +245,13 @@ export async function main(): Promise<void> {
   await nc.close();
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+/** Installs the host's fatal handlers (process-fatal.ts). The entry point calls it before the body starts. */
+export function installEntryHandlers(): void {
   installFatalHandlers(jsonLog);
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installEntryHandlers();
   main().catch((error: unknown) => {
     jsonLog({ event: 'fatal', error: error instanceof Error ? error.message : String(error) });
     process.exitCode = 1;
