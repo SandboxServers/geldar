@@ -76,7 +76,8 @@ Shared facts for all three cards:
    The image is read from `GELDAR_SUPERVISOR_IMAGE` (a digest, from the release env file, as the other services).
 5. **Runbook.** `docs/runbooks/supervisor-node-steps.md` (new). The node-only operator steps, to be run by ops, only with the owner's go-ahead, and only after geldar-93 has received the plan (see the coordination rule below). Steps:
    1. Create the two password files 0600 in the node secrets dir (`GELDAR_SECRETS_DIR`).
-   2. `deploy/colo-admin.sh migrate --set-role-password geldar_supervisor --password-file <path>`. The CD does not run this.
+   2. `deploy/colo-admin.sh migrate --set-role-password geldar_supervisor --password-file <path>`. The CD does not run this. This step cannot work as the code stands: `PASSWORD_ROLES` in `tools/migrate/src/migrate.ts` (lines ~136-140) holds only `geldar_mcp`, `geldar_glass` and `geldar_register`, and the tool refuses any other role (review F2, genesis-review-2 (d)).
+      **Do (in this card, before the runbook step runs):** add `geldar_supervisor` to `PASSWORD_ROLES`. Make the verb idempotent: first try a login with the file's password; run `ALTER ROLE ... PASSWORD` (a new SCRAM salt, so pg_authid changes on every run) only when that login fails, so a second run changes nothing. The password comes from `postgres-supervisor.txt`, which `deploy/gen-secrets.sh` creates (item 2 above, kept). The verb reads the password file only; no value on the command line. The operator role for the owner routes is the superuser `geldar` (password file `postgres.txt`, the PGUSER default in 0034), not a role this step creates.
    3. Add the `supervisor` NATS user and the `register` publish permission to the LIVE `nats-auth.conf` by a node-local edit of exactly the permission lines: a masked diff first; `nats-server -t` validation on the edited copy; an in-place write (the file is a single-file bind mount, so `mv` does not reach the container); a SIGHUP reload; never a restart. Rollback: restore the previous file contents from the masked diff's backup and SIGHUP again.
    4. Run `deploy/colo-supervisor.sh`.
    5. Verify: `docker ps` shows the container, a `ctl.body.status` request from the register user is answered, and an unknown name returns a refusal. No body is started in this step.
@@ -87,12 +88,13 @@ Shared facts for all three cards:
 
 - **MERGE/DONE protocol.** geldar-93 receives the plan before any node step: the exact diff, the commands, the time window and the rollback. The runbook is the plan. geldar-93 answers with DONE per step. The orchestrator holds the step until DONE.
 - **Before dispatch and before the node change**, contact geldar-93 again with the diff (the original C7-03b rule, kept).
+- **Role password (review F2).** Runbook step 2 depends on the `PASSWORD_ROLES` change in this card. geldar-93 receives that code change in the plan, and step 2 runs only after it is merged and deployed.
 - **Batching.** Every image-changing merge refreshes all six ranger hosts. This card changes the image set (the supervisor image), so it is batched with the other C7 merges that change images. Do not merge it alone.
 - **No network recreate.** Nothing in this card depends on recreating `geldar-colo`.
 
 ### Files
 
-- may-edit: `compose/colo.yml`, `deploy/compose.secrets.yml`, `deploy/gen-secrets.sh`, `deploy/colo-supervisor.sh` and its test under `deploy/test/`, `shards/colo.yaml`, `supervisor/Dockerfile` (new; non-root, read-only-friendly), `docs/runbooks/supervisor-node-steps.md` (new), `tools/repo-checks/src/` (the new compose test), `docs/analysis/phase1/worknotes/C7-03b2.md`.
+- may-edit: `compose/colo.yml`, `deploy/compose.secrets.yml`, `deploy/gen-secrets.sh`, `deploy/colo-supervisor.sh` and its test under `deploy/test/`, `shards/colo.yaml`, `supervisor/Dockerfile` (new; non-root, read-only-friendly), `docs/runbooks/supervisor-node-steps.md` (new), `tools/repo-checks/src/` (the new compose test), `tools/migrate/src/migrate.ts` (the `PASSWORD_ROLES` allowlist and the login probe, see the runbook step 2 below) and its role-password test under `tools/migrate/src/` (the existing file; confirm the name on pickup), `docs/analysis/phase1/worknotes/C7-03b2.md`.
 - must-not-edit: `threshold/register/`, `deploy/colo-up.sh` (the overlay is not used; the base file carries the service), other services' definitions, `docs/spec.md`, `compose/nats-auth.yml`.
 
 ### Tests (each fails on revert)
@@ -104,6 +106,7 @@ Shared facts for all three cards:
 - `tools/repo-checks`: the supervisor secrets are referenced as files, never in `environment:`. Revert: move one to `environment`; the test fails.
 - `deploy/test/colo-supervisor.test.sh` (a fake `docker` on PATH that records calls): a first run creates; a second run is a no-op; the run refuses when the network is missing; no recorded call matches `compose`, `network create`, `network rm`, `down`, `rm`, `--force-recreate`. Revert: change `docker create` to `docker compose up -d`; the test fails.
 - The runbook carries the rollback lines and the phrase "never run `./geldar.ps1 shard nats-auth colo` on the desktop" (repo check).
+- `tools/migrate` role-password test: `--set-role-password geldar_supervisor` is accepted; a role outside `PASSWORD_ROLES` (for example `geldar_nobody`) is still refused; a second run with the same password file changes no `pg_authid` row (the login probe succeeds, no `ALTER` runs). Prove: revert the `PASSWORD_ROLES` line and the accepted-role case fails with the refusal; remove the login probe and the second-run case fails. Live: none.
 
 ### Checks
 
