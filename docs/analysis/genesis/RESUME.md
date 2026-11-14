@@ -12,7 +12,7 @@ Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it und
 
 ## Coordinator log
 
-- 2026-11-14: geldar-genesis took over. Asked geldar-3b for inventory; sent the plan and questions to geldar-93. TODO: add the node-learned facts to plan.md section 8 (stale compose and jar hashes, hand-copied jars, "needs manual" list, no tested world backup, non-reproducible items); ask the owner for backup destination and VM sizing.
+- 2026-11-14: geldar-genesis took over. Asked geldar-3b for inventory; sent the plan and questions to geldar-93. The node-learned facts were added to plan.md section 8 (stale compose and jar hashes, hand-copied jars, "needs manual" list, no tested world backup, non-reproducible items); ask the owner for backup destination and VM sizing.
 
 ## Next action
 
@@ -21,4 +21,4 @@ Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it und
 
 ## Rules
 
-Nothing reaches the live node outside geldar-93's window; production is never rebuilt in place; no secrets, account names or addresses in the repo; the workflow changes only through owner-approved PRs; contract-regenerating cards run strictly one after another.
+Nothing reaches the live node outside geldar-93's window; production is never rebuilt in place; no secrets, account names or addresses in the repo; the workflow changes only through owner-approved PRs; cards that regenerate contract/ need a slot from geldar-3b.
