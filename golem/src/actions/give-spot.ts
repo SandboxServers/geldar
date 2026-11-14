@@ -61,3 +61,89 @@ export function stepBackSpots(
     return new Vec3(recipient.x + dx * cos - dz * sin, body.y, recipient.z + dx * sin + dz * cos);
   });
 }
+
+/** The distances (blocks) from the recipient the Body tries a step back to, for each turn. */
+export const STEP_BACK_DISTANCES: readonly number[] = [2, 2.5, 3];
+
+/** The part of a block the step back reads: its name and bounding box (or shapes, when no box is given). */
+export interface StepBlock {
+  name: string;
+  boundingBox?: string;
+  shapes?: readonly unknown[];
+}
+
+/** The block at a cell, as the Body's world reports it (null or undefined for an unloaded cell). */
+export type BlockLookup = (cell: Vec3) => StepBlock | null | undefined;
+
+/** True when a block stops a body: a solid bounding box. Air and non-colliding blocks do not. */
+export function blocksBody(block: StepBlock | null | undefined): boolean {
+  if (!block) return false;
+  if (block.boundingBox !== undefined) return block.boundingBox === 'block';
+  return (block.shapes ?? []).length > 0;
+}
+
+/** A block the Body can stand on: solid, or a bed (whose box is not a full block). */
+function isFloor(block: StepBlock | null | undefined): boolean {
+  if (!block) return false;
+  return blocksBody(block) || block.name.endsWith('_bed');
+}
+
+/** The point `distance` blocks from `recipient` at `turn` (radians) from the straight-back line. */
+function turnedSpot(body: Vec3, recipient: Vec3, distance: number, turn: number): Vec3 | null {
+  const straight = stepBackPoint(body, recipient, distance);
+  if (!straight) return null;
+  const dx = straight.x - recipient.x;
+  const dz = straight.z - recipient.z;
+  const cos = Math.cos(turn);
+  const sin = Math.sin(turn);
+  return new Vec3(recipient.x + dx * cos - dz * sin, body.y, recipient.z + dx * sin + dz * cos);
+}
+
+/** The block index of a coordinate. Rounded to 1e-6 first, so a spot on a block edge is not split by float error. */
+function blockIndex(coord: number): number {
+  return Math.floor(Number(coord.toFixed(6)));
+}
+
+/** A cell the Body can stand in: its feet and head cells do not block a body, and its floor is solid or a bed. */
+function standable(cell: Vec3, blockAt: BlockLookup): boolean {
+  return (
+    !blocksBody(blockAt(cell)) &&
+    !blocksBody(blockAt(cell.offset(0, 1, 0))) &&
+    isFloor(blockAt(cell.offset(0, -1, 0)))
+  );
+}
+
+/**
+ * The standable blocks the Body may step back to, in the order it tries them. For each turn in
+ * `STEP_BACK_TURNS`, the spot at each of `STEP_BACK_DISTANCES` from the recipient is mapped to its
+ * block. A block is skipped when it is the Body's own, when its centre is under `STEP_BACK_BELOW`
+ * from the recipient or more than `reach` away, when it is not standable, or when an earlier spot
+ * already gave it. Each one is returned as its centre at the Body's height: the point to walk to.
+ */
+export function stepBackCells(
+  body: Vec3,
+  recipient: Vec3,
+  blockAt: BlockLookup,
+  reach: number,
+): Vec3[] {
+  const here = new Vec3(Math.floor(body.x), Math.floor(body.y), Math.floor(body.z));
+  const seen = new Set<string>();
+  const cells: Vec3[] = [];
+  for (const turn of STEP_BACK_TURNS) {
+    for (const distance of STEP_BACK_DISTANCES) {
+      const spot = turnedSpot(body, recipient, distance, turn);
+      if (!spot) return [];
+      const cell = new Vec3(blockIndex(spot.x), here.y, blockIndex(spot.z));
+      const key = `${cell.x},${cell.z}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (cell.x === here.x && cell.z === here.z) continue;
+      const centre = new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5);
+      const gap = Math.hypot(centre.x - recipient.x, centre.z - recipient.z);
+      if (gap < STEP_BACK_BELOW || gap > reach) continue;
+      if (!standable(cell, blockAt)) continue;
+      cells.push(centre);
+    }
+  }
+  return cells;
+}
