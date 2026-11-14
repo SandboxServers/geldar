@@ -6,6 +6,7 @@
 !pnpm-lock.yaml
 !contract
 !animus
+!player-core
 **/node_modules
 animus/test
 **/*.test.ts

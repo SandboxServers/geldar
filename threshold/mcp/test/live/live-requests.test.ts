@@ -3,8 +3,9 @@
  * validator for its tool, and the act intent passes the Mind's output validator (which checks program arguments).
  * A body the schema rejects fails here, not on a live run.
  */
-import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
+
 import { validateToolInput } from '@geldar/contract';
+import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { describe, expect, it } from 'vitest';
 import { actCall, lookCall, type ToolCall, WAIT_SECONDS, waitCall } from './live-requests.ts';
 

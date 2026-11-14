@@ -1,8 +1,3 @@
-import {
-  NatsBodyLink,
-  REQUEST_TIMEOUT_MS,
-  type RequestTransport,
-} from '@geldar/player-core/src/link/nats-body-link.ts';
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
 import {
   bookSubject,
@@ -12,6 +7,11 @@ import {
   viewImageSubject,
   viewSubject,
 } from '@geldar/contract';
+import {
+  NatsBodyLink,
+  REQUEST_TIMEOUT_MS,
+  type RequestTransport,
+} from '@geldar/player-core/src/link/nats-body-link.ts';
 import type { BodyGateway } from './ports.ts';
 import { BodyUnavailable } from './ports.ts';
 import type { SeeRead } from './tools/see.ts';

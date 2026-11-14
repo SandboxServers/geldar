@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
-import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import type { Snapshot } from '@geldar/contract';
 import { encodeCursor, FakeClock, type SimEvent } from '@geldar/mcp-mock';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import type { RunState } from '../../src/events/mapper.ts';
 import { RingEventLog } from '../../src/events/player-log.ts';
 import { handleStreamMessage } from '../../src/events/stream.ts';

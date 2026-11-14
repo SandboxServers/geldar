@@ -14,7 +14,9 @@ describe('player-core stays independent of animus', () => {
     const sources = files.filter((f) => f.endsWith('.ts') && !f.endsWith(SELF));
     // Guards against the scan finding nothing and passing vacuously.
     expect(sources.length).toBeGreaterThan(20);
-    const offenders = sources.filter((f) => ANIMUS_IMPORT.test(readFileSync(join(HERE, f), 'utf8')));
+    const offenders = sources.filter((f) =>
+      ANIMUS_IMPORT.test(readFileSync(join(HERE, f), 'utf8')),
+    );
     expect(offenders).toEqual([]);
   });
 });

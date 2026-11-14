@@ -1,8 +1,8 @@
+import { validateSovereignCallPayload } from '@geldar/contract';
+import type { SimEvent } from '@geldar/mcp-mock';
 import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import { eventOf } from '@geldar/player-core/src/link/link.fixtures.ts';
 import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
-import { validateSovereignCallPayload } from '@geldar/contract';
-import type { SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { RingEventLog } from '../events/player-log.ts';
 import { handleStreamMessage } from '../events/stream.ts';

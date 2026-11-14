@@ -1,6 +1,6 @@
-import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { markedWords, validateSovereignCallPayload } from '@geldar/contract';
 import { FakeClock } from '@geldar/mcp-mock';
+import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { describe, expect, it } from 'vitest';
 import { batchCost } from '../budget/cost.ts';
 import { ActMeter } from '../budget/meter.ts';

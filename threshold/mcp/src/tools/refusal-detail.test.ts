@@ -1,5 +1,5 @@
-import type { OutputError } from '@geldar/player-core/src/ports/index.ts';
 import { markedWords } from '@geldar/contract';
+import type { OutputError } from '@geldar/player-core/src/ports/index.ts';
 import { describe, expect, it } from 'vitest';
 import { DETAIL_MAX_CHARS, refusalOf, whereOf } from './refusal-detail.ts';
 

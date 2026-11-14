@@ -1,5 +1,5 @@
-import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { viewImageSubject } from '@geldar/contract';
+import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { describe, expect, it } from 'vitest';
 import { NatsBodyGateway } from './body-gateway.ts';
 import { BodyUnavailable } from './ports.ts';

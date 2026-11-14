@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
+import type { Clock, WakeConfig } from '@geldar/mcp-mock';
 import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
-import type { Clock, WakeConfig } from '@geldar/mcp-mock';
 import { checkSovereignIdentity } from '@geldar/repo-checks/src/identity-mode.ts';
 import type { Client, ClientConfig, Pool } from 'pg';
 import { parse } from 'yaml';

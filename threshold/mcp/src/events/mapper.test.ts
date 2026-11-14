@@ -1,5 +1,5 @@
-import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import type { SimEvent } from '@geldar/mcp-mock';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { describe, expect, it } from 'vitest';
 import { type MapContext, mapMindEvent, type RunState } from './mapper.ts';
 import { toPlayerEvents } from './present.ts';

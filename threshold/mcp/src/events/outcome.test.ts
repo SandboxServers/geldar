@@ -1,5 +1,5 @@
-import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { validateActionOutcomePayload } from '@geldar/contract';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { describe, expect, it } from 'vitest';
 import { type MapContext, mapMindEvent } from './mapper.ts';
 import { toPlayerEvents } from './present.ts';
