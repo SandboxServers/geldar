@@ -444,6 +444,61 @@ describe('act: till takes a block position and nothing else', () => {
   });
 });
 
+describe('act: edit_sign takes a block position and the new text', () => {
+  const EDIT = { do: 'edit_sign', at: { x: 3, y: 64, z: 8 }, text: 'hello' };
+
+  it('accepts an edit_sign of a block position and text, and sends it to the Body', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [EDIT] });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+  });
+
+  it('names the missing position of an edit_sign', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'edit_sign', text: 'hello' }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: 'action 0: at is missing' },
+    ]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('names the missing text of an edit_sign', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'edit_sign', at: { x: 3, y: 64, z: 8 } }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: 'action 0: text is missing' },
+    ]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('names the unknown key of an edit_sign, such as a count', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ ...EDIT, count: 2 }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: "action 0: 'count' is not a known field" },
+    ]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('refuses an edit_sign whose position is the word feet, and sends nothing', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ ...EDIT, at: 'feet' }] });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([expect.objectContaining({ index: 0, reason: 'schema' })]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('refuses an edit_sign whose position lacks a coordinate, and sends nothing', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ ...EDIT, at: { x: 3, z: 8 } }] });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([expect.objectContaining({ index: 0, reason: 'schema' })]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+});
+
 describe('act: a refusal says which part was refused', () => {
   const TRAVEL = { ...INTENT, program: 'travel' };
 

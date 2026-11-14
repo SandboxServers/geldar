@@ -160,7 +160,11 @@ describe('panic burrow backoff', () => {
       const trigger = panicBurrowReflex.check(view);
       expect(trigger).not.toBeNull();
       const outcome = await panicBurrowReflex.run(trigger ?? {}, ctx(tick));
-      expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block' });
+      // Every refusal says how long the pause is: 20 s first, doubling to the 5 minute cap.
+      expect(outcome).toEqual({
+        result: 'abandoned',
+        detail: `no suitable block; backing off ${pause / 20}s`,
+      });
       clock.tick = tick + pause - 1;
       expect(panicBurrowReflex.check(view)).toBeNull();
       clock.tick = tick + pause;

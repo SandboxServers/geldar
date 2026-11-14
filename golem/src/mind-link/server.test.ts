@@ -120,6 +120,28 @@ describe('MindLinkServer snapshots', () => {
     expect((await t.snapshot()).events_since_last_thought).toEqual([]);
   });
 
+  it('logs why a snapshot that cannot be built is not sent', async () => {
+    const t = rig(10, () => {
+      throw new Error('perception down');
+    });
+    expect(await t.snapshot()).toBeNull();
+    expect(t.logs).toContain(
+      'mind-link: snapshot_unanswered reason=build_failed error=Error: perception down',
+    );
+  });
+
+  it('logs the validation errors of a snapshot that is not sent', async () => {
+    const t = rig(10, () => ({}) as never);
+    expect(await t.snapshot()).toBeNull();
+    const line = t.logs.find((entry) =>
+      entry.startsWith('mind-link: snapshot_unanswered reason=invalid errors='),
+    );
+    expect(line).toBeDefined();
+    expect(line?.length ?? 0).toBeGreaterThan(
+      'mind-link: snapshot_unanswered reason=invalid errors='.length,
+    );
+  });
+
   it('does not answer a request for another life, and logs it', async () => {
     const t = rig();
     const body = await t.transport.request(

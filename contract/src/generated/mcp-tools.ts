@@ -39,7 +39,7 @@ export const mcpToolSchemas: Record<
         "actions": {
           "type": "array",
           "maxItems": 6,
-          "description": "Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw, till.",
+          "description": "Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw, till, edit_sign.",
           "items": {
             "$ref": "#/$defs/Action"
           }
@@ -620,6 +620,28 @@ export const mcpToolSchemas: Record<
               "required": [
                 "do",
                 "at"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "do": {
+                  "const": "edit_sign"
+                },
+                "at": {
+                  "description": "The position of the existing sign to edit. The Body must be in reach and the block must be a sign; it checks the rest.",
+                  "$ref": "#/$defs/Position"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 60
+                }
+              },
+              "required": [
+                "do",
+                "at",
+                "text"
               ],
               "additionalProperties": false
             }

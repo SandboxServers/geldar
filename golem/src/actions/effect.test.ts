@@ -70,6 +70,35 @@ describe('effect receipts: a completed action that changed nothing is a no_effec
     expect(r.state).toBe('completed');
   });
 
+  it('goto to a cell next to the body that did not move is not a failure (Trini)', async () => {
+    const { bot } = scripted(new Vec3(-261.5, 67, 354.5));
+    const r = await run('goto', { target: { x: -263, y: 67, z: 354 } }, bot);
+    expect(r.state).toBe('completed');
+    expect(r.result.reason).not.toBe('no_effect');
+  });
+
+  it('goto to an adjacent cell that did not move is not a failure (Zack)', async () => {
+    const { bot } = scripted(new Vec3(-282.5, 69, 372.5));
+    const r = await run('goto', { target: { x: -283, y: 69, z: 371 } }, bot);
+    expect(r.state).toBe('completed');
+    expect(r.result.reason).not.toBe('no_effect');
+  });
+
+  it('goto to an adjacent cell that settled by a tenth is not a failure (Zack, first run)', async () => {
+    const { bot } = scripted(new Vec3(-281.61, 69, 372.5));
+    const r = await run('goto', { target: { x: -282, y: 69, z: 371 } }, bot, () => {
+      bot.entity.position = new Vec3(-281.6, 69, 372.5);
+    });
+    expect(r.state).toBe('completed');
+  });
+
+  it('goto five blocks away that did not move is still no_effect', async () => {
+    const { bot } = scripted();
+    const r = await run('goto', { target: { x: 5, y: 64, z: 0 } }, bot);
+    expect(r.result.reason).toBe('no_effect');
+    expect(r.result.message).toContain('moved 0');
+  });
+
   it('mine that gained nothing', async () => {
     const { bot } = scripted();
     const r = await run('mine', { block: 'stone', count: 3 }, bot);

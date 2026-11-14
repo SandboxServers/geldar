@@ -141,7 +141,8 @@ export function judge(
     case 'goto': {
       if (moved === null || typeof action.target === 'string' || !before.pos) return undefined;
       const t = action.target;
-      const wanted = round1(dist(before.pos, t));
+      // The walker aims at the cell centre (goto.ts), so the expected distance is measured to it too.
+      const wanted = round1(dist(before.pos, { x: t.x + 0.5, y: t.y, z: t.z + 0.5 }));
       if (wanted < ALREADY_THERE) return undefined;
       if (moved < MIN_MOVE) {
         return noEffect(
