@@ -1,9 +1,9 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TOSS_PITCH, tossPitch } from './give.ts';
-import { stepBackSpots } from './give-spot.ts';
 import { setup } from './give-test-fixture.ts';
 import { moveNear } from './pathing.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 const walk = vi.mocked(moveNear);
@@ -164,13 +164,13 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
   it('steps back to about 2 blocks before tossing when the recipient is 0.1 blocks away', async () => {
     const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
-    walk.mockImplementation(walkTo(world, new Vec3(-1.4, 64, 0.5)) as never);
+    walk.mockImplementation(walkTo(world, new Vec3(-1.5, 64, 0.5)) as never);
     expect(await run('Pike')).toMatchObject({ status: 'completed' });
     expect(walk).toHaveBeenCalledOnce();
     const spot = walk.mock.calls[0]?.[1] as Vec3;
-    expect(spot.x).toBeCloseTo(-1.4, 6);
+    expect(spot.x).toBeCloseTo(-1.5, 6);
     expect(spot.z).toBeCloseTo(0.5, 6);
-    expect(spot.distanceTo(new Vec3(0.6, 64, 0.5))).toBeCloseTo(2, 6);
+    expect(spot.distanceTo(new Vec3(0.6, 64, 0.5))).toBeCloseTo(2.1, 6);
     expect(walk.mock.calls[0]?.[2]).toBe(0.5);
     expect(walk.mock.invocationCallOrder[0]).toBeLessThan(toss.mock.invocationCallOrder[0] ?? 0);
   });
@@ -205,11 +205,12 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
       reason: 'not_possible',
       message: 'too close to toss, and no room to step back',
     });
-    expect(walk).toHaveBeenCalledTimes(5);
+    // Six standable blocks lie 1.5 to 3 blocks from the recipient, one per distinct cell.
+    expect(walk).toHaveBeenCalledTimes(6);
     expect(toss).not.toHaveBeenCalled();
   });
 
-  it('walks to the first turned spot when the straight-back walk fails, then tosses', async () => {
+  it('walks to the next standable block when the straight-back walk fails, then tosses', async () => {
     const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
     walk
@@ -220,10 +221,9 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
       });
     expect(await run('Pike')).toMatchObject({ status: 'completed' });
     expect(walk).toHaveBeenCalledTimes(2);
-    const recipient = new Vec3(0.6, 64, 0.5);
-    const [straight, plus45] = stepBackSpots(new Vec3(0.5, 64, 0.5), recipient);
-    expect(walk.mock.calls[0]?.[1]).toEqual(straight);
-    expect(walk.mock.calls[1]?.[1]).toEqual(plus45);
+    // The straight-back block is the cell at x -2, its centre 2.1 from the recipient; the next is 45 degrees.
+    expect(walk.mock.calls[0]?.[1]).toEqual(new Vec3(-1.5, 64, 0.5));
+    expect(walk.mock.calls[1]?.[1]).toEqual(new Vec3(-1.5, 64, -1.5));
     expect(toss).toHaveBeenCalledOnce();
   });
 
@@ -265,5 +265,85 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
     });
     expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
     expect(toss).not.toHaveBeenCalled();
+  });
+});
+
+describe('give: step-back candidates are standable blocks', () => {
+  /** A walk that moves the Body to whatever block it is sent to, and reports it arrived. */
+  const arrive = (world: { me: { position: Vec3 } }) => async (_bot: unknown, spot: unknown) => {
+    world.me.position = spot as Vec3;
+    return { ok: true, distance: 1 } as never;
+  };
+
+  it('tries the next block when a walk reports ok but the Body does not move', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    walk
+      .mockResolvedValueOnce({ ok: true, distance: 0 } as never)
+      .mockImplementationOnce(arrive(world) as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk).toHaveBeenCalledTimes(2);
+    expect(walk.mock.calls[1]?.[1]).toEqual(new Vec3(-1.5, 64, -1.5));
+    expect(toss).toHaveBeenCalledOnce();
+  });
+
+  it('skips the spot that falls in the Body own block', async () => {
+    const { world, run } = setup(5, { dropped: [7], picked: [7] });
+    world.me.position = new Vec3(0.9, 64, 0.5);
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(2.2, 64, 0.5) };
+    walk.mockImplementation(arrive(world) as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    // The straight-back spot (0.2, 0.5) is in the Body's cell, so the first walk goes to x -1.
+    expect(walk.mock.calls[0]?.[1]).toEqual(new Vec3(-0.5, 64, 0.5));
+    expect(walk).toHaveBeenCalledOnce();
+  });
+
+  it('skips a block whose feet cell is solid', async () => {
+    const { world, run } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    world.set('stone', -2, 64, 0);
+    walk.mockImplementation(arrive(world) as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk.mock.calls[0]?.[1]).toEqual(new Vec3(-1.5, 64, -1.5));
+    expect(walk.mock.calls.map((call) => call[1])).not.toContainEqual(new Vec3(-1.5, 64, 0.5));
+  });
+
+  it('skips a block whose floor is air', async () => {
+    const { world, run } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    world.clear(-2, 63, 0);
+    walk.mockImplementation(arrive(world) as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk.mock.calls[0]?.[1]).toEqual(new Vec3(-1.5, 64, -1.5));
+    expect(walk.mock.calls.map((call) => call[1])).not.toContainEqual(new Vec3(-1.5, 64, 0.5));
+  });
+
+  it('walks to a step-back block with digging off', async () => {
+    const { world, run } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    walk.mockImplementation(arrive(world) as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk.mock.calls[0]?.[3]).toMatchObject({ digTier: false });
+  });
+
+  it('logs one give_stepback_failed line with the tries and the gap when every block fails', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    expect(await run('Pike')).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'too close to toss, and no room to step back',
+      detail: {},
+    });
+    expect(toss).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+      event: 'give_stepback_failed',
+      tried: 5,
+      gap: 0.1,
+    });
+    log.mockRestore();
   });
 });

@@ -56,6 +56,10 @@ function setRealStack(entity: { metadata: unknown[] }, count: number): void {
  */
 export function setup(held = 5, pickups: Pickups = {}) {
   const world = new FakeWorld();
+  // A stone floor under the area around the Body, so a step-back spot has solid ground under it.
+  for (let x = -8; x <= 8; x++) {
+    for (let z = -8; z <= 8; z++) world.set('stone', x, 63, z);
+  }
   const events = new EventEmitter();
   const controller = new AbortController();
   const pike = { type: 'player', username: pickups.by ?? 'Pike', position: new Vec3(0.5, 64, 2.5) };
