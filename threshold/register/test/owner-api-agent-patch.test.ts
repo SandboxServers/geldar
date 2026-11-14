@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentFlagStore } from '../src/api/route.ts';
+import { OwnerRefusedError } from '../src/owner-agents-pg.ts';
 import {
   baseDeps,
   bearer,
@@ -114,10 +115,13 @@ describe('PATCH /agents/{playerId} visibility flags (C7-04e)', () => {
     const { store, calls } = fakeFlags(state);
     const srv = await serve(baseDeps({ flags: store }));
     try {
-      const r = await srv.call('PATCH', '/api/v1/agents/p1', cookie, '{"displayName":"Ada"}');
+      // A boolean, so only the field name refuses it: an allowed displayName would write and answer 200.
+      const r = await srv.call('PATCH', '/api/v1/agents/p1', cookie, '{"displayName":true}');
       expect(r.status).toBe(422);
       expect(JSON.parse(r.body).code).toBe('invalid');
       expect(calls).toEqual([]);
+      expect(state.camera).toBe(false);
+      expect(state.thoughts).toBe(false);
     } finally {
       await srv.stop();
     }
@@ -249,6 +253,66 @@ describe('PATCH /agents/{playerId} visibility flags (C7-04e)', () => {
       expect(r.status).toBe(429);
       expect(JSON.parse(r.body).code).toBe('rate_limited');
       expect(r.retryAfter).toBe('10');
+      expect(state.camera).toBe(false);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('writes the turn-off before the turn-on, so a refused second write never widens exposure', async () => {
+    const state = { camera: false, thoughts: false };
+    const { store, calls } = fakeFlags(state);
+    const srv = await serve(baseDeps({ flags: store }));
+    try {
+      const widen = await srv.call(
+        'PATCH',
+        '/api/v1/agents/p1',
+        cookie,
+        '{"publicCamera":true,"thoughtsDelayedPublic":false}',
+      );
+      expect(widen.status).toBe(200);
+      expect(calls).toEqual([`thoughts:${IDENT}:p1:false`, `camera:${IDENT}:p1:true`]);
+      calls.length = 0;
+      const narrow = await srv.call(
+        'PATCH',
+        '/api/v1/agents/p1',
+        cookie,
+        '{"publicCamera":false,"thoughtsDelayedPublic":true}',
+      );
+      expect(narrow.status).toBe(200);
+      expect(calls).toEqual([`camera:${IDENT}:p1:false`, `thoughts:${IDENT}:p1:true`]);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('answers 401 unauthenticated when the database refuses the write with 42501 (owner banned mid-request)', async () => {
+    const state = { camera: false, thoughts: false };
+    const denied = Object.assign(new Error('banned'), { code: '42501' });
+    const { store } = fakeFlags(state, denied);
+    const srv = await serve(baseDeps({ flags: store }));
+    try {
+      const r = await srv.call('PATCH', '/api/v1/agents/p1', cookie, '{"publicCamera":true}');
+      expect(r.status).toBe(401);
+      expect(JSON.parse(r.body).code).toBe('unauthenticated');
+      expect(state.camera).toBe(false);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('answers 401 for a banned owner at the guard and writes nothing', async () => {
+    const state = { camera: false, thoughts: false };
+    const { store, calls } = fakeFlags(state);
+    const refuse = async (): Promise<never> => {
+      throw new OwnerRefusedError();
+    };
+    const srv = await serve(baseDeps({ flags: store, agents: refuse }));
+    try {
+      const r = await srv.call('PATCH', '/api/v1/agents/p1', cookie, '{"publicCamera":true}');
+      expect(r.status).toBe(401);
+      expect(JSON.parse(r.body).code).toBe('unauthenticated');
+      expect(calls).toEqual([]);
       expect(state.camera).toBe(false);
     } finally {
       await srv.stop();

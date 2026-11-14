@@ -67,27 +67,35 @@ function setFlags(store: FakeStore, playerId: string, flags: Record<string, bool
 }
 
 describe('account page view links (C7-06b)', () => {
-  it('shows no Glass or Kino link while both flags are off', async () => {
+  it('shows both links to the owner while both flags are off (0138 rule 1, 0075)', async () => {
     const [, s] = await ownerWithPlayer('7201', 'ag-links-off');
     const page = await accountPage(s);
-    expect(page).not.toContain('View in Glass');
-    expect(page).not.toContain('View in Kino');
+    expect(page).toContain('<a href="/">View in Glass</a>');
+    expect(page).toContain('<a href="/kino/">View in Kino</a>');
   });
 
-  it('shows the Glass link only when the delayed public thoughts flag is on', async () => {
+  it('shows both links to the owner whatever the flags say, on or off', async () => {
     const [store, s] = await ownerWithPlayer('7202', 'ag-links-glass');
     setFlags(store, 'ag-links-glass', { thoughtsDelayedPublic: true });
-    const page = await accountPage(s);
-    expect(page).toContain('<a href="/">View in Glass</a>');
-    expect(page).not.toContain('View in Kino');
+    const on = await accountPage(s);
+    expect(on).toContain('<a href="/">View in Glass</a>');
+    expect(on).toContain('<a href="/kino/">View in Kino</a>');
+    setFlags(store, 'ag-links-glass', { thoughtsDelayedPublic: false, publicCamera: false });
+    const off = await accountPage(s);
+    expect(off).toContain('<a href="/">View in Glass</a>');
+    expect(off).toContain('<a href="/kino/">View in Kino</a>');
   });
 
-  it('shows the Kino link only when the public camera flag is on', async () => {
-    const [store, s] = await ownerWithPlayer('7203', 'ag-links-kino');
-    setFlags(store, 'ag-links-kino', { publicCamera: true });
+  it('hides both links for a retired agent, and keeps the retired row', async () => {
+    const [store, s] = await ownerWithPlayer('7203', 'ag-links-retired');
+    setFlags(store, 'ag-links-retired', { publicCamera: true, thoughtsDelayedPublic: true });
+    const p = store.players.get('ag-links-retired');
+    if (p === undefined) throw new Error('no player');
+    store.players.set('ag-links-retired', { ...p, status: 'retired' });
     const page = await accountPage(s);
-    expect(page).toContain('<a href="/kino/">View in Kino</a>');
+    expect(page).toContain('Status: retired');
     expect(page).not.toContain('View in Glass');
+    expect(page).not.toContain('View in Kino');
   });
 
   it('keeps the agent id out of the view links', async () => {

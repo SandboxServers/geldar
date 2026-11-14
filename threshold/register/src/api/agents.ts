@@ -11,6 +11,8 @@ const MAX_BODY = 4096;
 const RETRY_AFTER_SECONDS = 10;
 /** SQLSTATE 54000: the database refused a toggle that changes too often (0016, the thoughts toggle). */
 const TOO_MANY_CHANGES = '54000';
+/** SQLSTATE 42501: the database refused the write (the owner is banned, or the agent is not theirs; 0036). */
+const DENIED = '42501';
 const FLAG_FIELDS = ['publicCamera', 'thoughtsDelayedPublic'] as const;
 
 interface FlagWrite {
@@ -54,15 +56,46 @@ function flagStore(ctx: ApiContext): AgentFlagStore {
   return flags;
 }
 
+function sqlState(err: unknown): unknown {
+  return (err as { code?: unknown } | null)?.code;
+}
+
 function isTooManyChanges(err: unknown): boolean {
-  return (err as { code?: unknown } | null)?.code === TOO_MANY_CHANGES;
+  return sqlState(err) === TOO_MANY_CHANGES;
+}
+
+/**
+ * Applies the present flags, turn-offs first: a turn-off only narrows exposure, so a partial failure never leaves a
+ * flag newly on that the request meant to clear. Ties keep the field order. A store false stops the writes.
+ */
+async function applyFlags(
+  store: AgentFlagStore,
+  identity: string,
+  playerId: string,
+  write: FlagWrite,
+): Promise<boolean> {
+  const steps: Array<[(typeof FLAG_FIELDS)[number], boolean]> = [];
+  for (const field of FLAG_FIELDS) {
+    const value = write[field];
+    if (value !== undefined) steps.push([field, value]);
+  }
+  steps.sort((a, b) => Number(a[1]) - Number(b[1]));
+  for (const [field, value] of steps) {
+    const applied =
+      field === 'publicCamera'
+        ? await store.setPublicCamera(identity, playerId, value)
+        : await store.setThoughtsDelayedPublic(identity, playerId, value);
+    if (!applied) return false;
+  }
+  return true;
 }
 
 /**
  * PATCH /agents/{playerId} (C7-04e): sets publicCamera and/or thoughtsDelayedPublic on the owner's own agent. Cookie
  * session only (decision 0173), CSRF on the write. A foreign or missing agent is the guard's 404 before any write.
- * A store false (not the owner's) is 404. A database refusal for too many changes is 429 with Retry-After. Any
- * other store error is thrown and the router answers 500 internal, so no success is reported.
+ * A store false (not the owner's) is 404. A database refusal for too many changes is 429 with Retry-After; a
+ * database refusal for a banned owner (42501) is 401. Turn-offs are written before turn-ons. Any other store error is
+ * thrown and the router answers 500 internal, so no success is reported.
  */
 export const agentsPatchRoutes: readonly ApiRoute[] = [
   {
@@ -82,16 +115,7 @@ export const agentsPatchRoutes: readonly ApiRoute[] = [
       const identity = ctx.identityHash;
       const store = flagStore(ctx);
       try {
-        if (
-          write.publicCamera !== undefined &&
-          !(await store.setPublicCamera(identity, playerId, write.publicCamera))
-        ) {
-          return sendProblem(ctx.res, 'not_found');
-        }
-        if (
-          write.thoughtsDelayedPublic !== undefined &&
-          !(await store.setThoughtsDelayedPublic(identity, playerId, write.thoughtsDelayedPublic))
-        ) {
+        if (!(await applyFlags(store, identity, playerId, write))) {
           return sendProblem(ctx.res, 'not_found');
         }
       } catch (err) {
@@ -100,6 +124,8 @@ export const agentsPatchRoutes: readonly ApiRoute[] = [
             'retry-after': String(RETRY_AFTER_SECONDS),
           });
         }
+        // The owner was banned between the guard and the write: the same refusal as the guard's.
+        if (sqlState(err) === DENIED) return sendProblem(ctx.res, 'unauthenticated');
         throw err;
       }
       const agent = await ownedAgent(ctx.deps, ctx.ownerId, playerId);
