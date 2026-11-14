@@ -83,9 +83,11 @@ describe('sleepFailure: an unknown sleep text (batch 14)', () => {
 
 describe('sleepErrorText', () => {
   it('states the fact each known failure reports, in plain words', () => {
-    expect(sleepErrorText('There are monsters nearby')).toBe('there are monsters nearby');
+    expect(sleepErrorText('There are monsters nearby')).toBe(
+      'there are monsters nearby: none in view',
+    );
     expect(sleepErrorText('You may not rest now; there are monsters nearby')).toBe(
-      'there are monsters nearby',
+      'there are monsters nearby: none in view',
     );
     expect(sleepErrorText("it's not night and it's not a thunderstorm")).toBe('it is not night');
     expect(sleepErrorText('You can only sleep at night or during a thunderstorm')).toBe(
@@ -329,7 +331,60 @@ describe('sleep', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'there are monsters nearby',
+      message: 'there are monsters nearby: none in view',
+    });
+  });
+
+  it('names the zombie 6 blocks from the bed, not the iron golem 4 blocks away', async () => {
+    // The bed head is BED.position (5, 64, 0): the zombie is 6 blocks east of it, the golem 4 blocks west.
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED, light: 12 }],
+      entities: [
+        { name: 'iron_golem', position: new Vec3(1, 64, 0) },
+        { name: 'zombie', position: new Vec3(11, 64, 0) },
+      ],
+      sleepErrors: ['There are monsters nearby'],
+    });
+    const outcome = await sleep(bot);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'there are monsters nearby: zombie 6 blocks away',
+    });
+  });
+
+  it('records the hostiles and the light in the raw record the agent does not read', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED, light: 12 }],
+      entities: [{ name: 'zombie', position: new Vec3(11, 64, 0) }],
+      sleepErrors: ['There are monsters nearby'],
+    });
+    const outcome = await sleep(bot);
+    expect(outcome.status).toBe('failed');
+    if (outcome.status !== 'failed') return;
+    expect(outcome.detail).toEqual({});
+    expect(JSON.parse(outcome.raw ?? 'null')).toEqual({
+      event: 'sleep_refusal',
+      message: 'There are monsters nearby',
+      hostiles: [{ kind: 'zombie', blocks: 6 }],
+      light: 12,
+    });
+  });
+
+  it('records a null light when the world does not report one, and no hostile in view', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED }],
+      sleepErrors: ['There are monsters nearby'],
+    });
+    const outcome = await sleep(bot);
+    expect(outcome.status === 'failed' ? JSON.parse(outcome.raw ?? 'null') : null).toEqual({
+      event: 'sleep_refusal',
+      message: 'There are monsters nearby',
+      hostiles: [],
+      light: null,
     });
   });
 
