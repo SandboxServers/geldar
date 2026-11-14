@@ -7,6 +7,7 @@ import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 /** The `give` action as the contract types it. */
 type GiveAction = Extract<Action, { do: 'give' }>;
@@ -67,56 +68,163 @@ const STEP_BACK_MS = 3_000;
 export const NOT_IN_SIGHT = 'no such agent in sight';
 
 /**
- * The item entities one toss created, and the ones picked up since: by the recipient, by the Body,
- * or by another player (`others`, item id to that player's name).
+ * The item entities one toss created, and the items picked up since: by the recipient, by the Body,
+ * or by another player (`others`, item id to that player's name). `stacks` is the item count each
+ * entity holds, the latest count from `itemDrop`, and `collected` the items the recipient took from
+ * each one. Vanilla merges nearby stacks on the ground: a merged-away entity vanishes with no pickup
+ * (`gone`), and its items are in the stack that survives, so the items are counted, not the entities.
  */
 interface PickupWatch {
   dropped: Set<number>;
-  collected: Set<number>;
+  stacks: Map<number, number>;
+  gone: Set<number>;
+  collected: Map<number, number>;
   taken: Set<number>;
   others: Map<number, string>;
   stop(): void;
 }
 
 /**
+ * The items an item entity holds (its stack). Its metadata has not arrived at `entitySpawn`, and
+ * prismarine-item throws on empty metadata, so any throw or no stack counts as one item.
+ */
+function stackCount(entity: Entity): number {
+  try {
+    return entity.getDroppedItem?.()?.count ?? 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Wraps a listener this file adds so a throw in its body never reaches the emitter (which would
+ * end the process). The throw is logged as one diag line and not rethrown.
+ */
+function guarded<A extends unknown[]>(
+  name: string,
+  body: (...args: A) => void,
+): (...args: A) => void {
+  return (...args: A) => {
+    try {
+      body(...args);
+    } catch (error) {
+      // Neither building the line nor writing it may throw into the emitter.
+      try {
+        DEFAULT_DIAG_SINK.log(
+          JSON.stringify({
+            event: 'give_listener_error',
+            listener: name,
+            error: thrownText(error),
+          }),
+        );
+      } catch {
+        // The diag line could not be written: the throw is dropped, not rethrown.
+      }
+    }
+  };
+}
+
+/** A thrown value as diag text. One with no prototype cannot be stringified, so it reads as its type tag. */
+function thrownText(error: unknown): string {
+  try {
+    return errorText(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
+}
+
+/**
  * Listens for the item entities a toss creates near the Body, and for pickups of them by the
  * recipient and by the Body itself. It must be started before the toss, so no spawn is missed.
+ * A pickup by the recipient counts the collect packet's `pickupItemCount` when the client reports
+ * one, else the items the entity holds when it is collected.
  */
 function watchPickup(bot: Bot, to: string): PickupWatch {
   const dropped = new Set<number>();
-  const collected = new Set<number>();
+  const stacks = new Map<number, number>();
+  const gone = new Set<number>();
+  const collected = new Map<number, number>();
   const taken = new Set<number>();
   const others = new Map<number, string>();
-  const onDrop = (entity: Entity): void => {
+  const packetCounts = new Map<number, number>();
+  // At spawn the metadata has not arrived yet, so only the id is recorded, never the stack.
+  const onSpawn = guarded('entitySpawn', (entity: Entity): void => {
     if (entity.name !== 'item') return;
     if (entity.position.distanceTo(bot.entity.position) > DROP_RANGE) return;
     dropped.add(entity.id);
-  };
-  const onCollect = (collector: Entity, item: Entity): void => {
+  });
+  // `itemDrop` fires once the metadata is in, and again when a merge changes the stack. It only
+  // updates an entity this toss claimed at its spawn, so a stack that was already there is never counted.
+  const onItemDrop = guarded('itemDrop', (entity: Entity): void => {
+    if (!dropped.has(entity.id)) return;
+    stacks.set(entity.id, stackCount(entity));
+  });
+  const onGone = guarded('entityGone', (entity: Entity): void => {
+    if (dropped.has(entity.id)) gone.add(entity.id);
+  });
+  const onCollect = guarded('playerCollect', (collector: Entity, item: Entity): void => {
     if (!dropped.has(item.id)) return;
-    if (collector.username === to) collected.add(item.id);
-    else if (collector === bot.entity) taken.add(item.id);
+    if (collector.username === to) {
+      collected.set(item.id, packetCounts.get(item.id) ?? stackCount(item));
+    } else if (collector === bot.entity) taken.add(item.id);
     else if (collector.username) others.set(item.id, collector.username);
-  };
-  bot.on('entitySpawn', onDrop);
-  bot.on('itemDrop', onDrop);
+  });
+  // The collect packet reaches this listener before mineflayer emits playerCollect for it.
+  const onPacket = guarded(
+    'collect',
+    (packet: { collectedEntityId: number; pickupItemCount?: number }): void => {
+      if (packet.pickupItemCount !== undefined) {
+        packetCounts.set(packet.collectedEntityId, packet.pickupItemCount);
+      }
+    },
+  );
+  const client: Bot['_client'] | undefined = bot._client;
+  bot.on('entitySpawn', onSpawn);
+  bot.on('itemDrop', onItemDrop);
+  bot.on('entityGone', onGone);
   bot.on('playerCollect', onCollect);
+  client?.prependListener('collect', onPacket);
   return {
     dropped,
+    stacks,
+    gone,
     collected,
     taken,
     others,
     stop: () => {
-      bot.removeListener('entitySpawn', onDrop);
-      bot.removeListener('itemDrop', onDrop);
+      bot.removeListener('entitySpawn', onSpawn);
+      bot.removeListener('itemDrop', onItemDrop);
+      bot.removeListener('entityGone', onGone);
       bot.removeListener('playerCollect', onCollect);
+      client?.removeListener('collect', onPacket);
     },
   };
 }
 
+/** The items the recipient collected. */
+function pickedItems(watch: PickupWatch): number {
+  return [...watch.collected.values()].reduce((sum, count) => sum + count, 0);
+}
+
+/**
+ * The items the toss left: each claimed entity's latest count (or what the recipient collected from
+ * it, if more). An entity that went away with no pickup is left out: a merged-away one's items are
+ * in the survivor, which is counted, and a vanished one has none.
+ */
+function tossedItems(watch: PickupWatch): number {
+  let sum = 0;
+  for (const id of watch.dropped) {
+    const pickedUp = watch.collected.has(id) || watch.taken.has(id) || watch.others.has(id);
+    if (watch.gone.has(id) && !pickedUp) continue;
+    sum += Math.max(watch.stacks.get(id) ?? 1, watch.collected.get(id) ?? 0);
+  }
+  return sum;
+}
+
 /** Every tossed item has been picked up by the recipient. */
 function allPicked(watch: PickupWatch): boolean {
-  return watch.dropped.size > 0 && watch.collected.size === watch.dropped.size;
+  const total = tossedItems(watch);
+  return total > 0 && pickedItems(watch) >= total;
 }
 
 /** Waits until `done()` holds, the wait runs out, or the run aborts. */
@@ -171,9 +279,11 @@ async function stepBackFrom(
  * every one back. An abort or a walk that fails leaves them on the ground.
  */
 async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promise<boolean> {
+  // Only the entities that still exist: a merged-away or vanished one has no position to walk to.
   const missing = [...watch.dropped].filter(
-    (id) => !watch.collected.has(id) && !watch.others.has(id),
+    (id) => !watch.collected.has(id) && !watch.others.has(id) && !watch.gone.has(id),
   );
+  if (missing.length === 0) return false;
   const everyTaken = () => missing.every((id) => watch.taken.has(id));
   for (const id of missing) {
     if (watch.taken.has(id)) continue;
@@ -222,26 +332,36 @@ async function settle(
   action: GiveAction,
   watch: PickupWatch,
 ): Promise<ActionOutcome> {
-  const total = watch.dropped.size;
-  const picked = watch.collected.size;
-  if (total === 0) return failed('interrupted', 'the tossed items were not seen on the ground');
-  if (picked === total) return completed({ to: action.to, item: action.item, count: action.count });
+  if (watch.dropped.size === 0) {
+    return failed('interrupted', 'the tossed items were not seen on the ground');
+  }
+  const total = tossedItems(watch);
+  const picked = pickedItems(watch);
+  if (total === 0) return failed('not_possible', 'the tossed items left the ground with no pickup');
+  if (picked >= total) return completed({ to: action.to, item: action.item, count: action.count });
+  // Only the entities that still exist: not the recipient's, the Body's, another's or merged away.
   const onGround = [...watch.dropped].filter(
-    (id) => !watch.collected.has(id) && !watch.others.has(id) && !watch.taken.has(id),
+    (id) =>
+      !watch.collected.has(id) &&
+      !watch.others.has(id) &&
+      !watch.taken.has(id) &&
+      !watch.gone.has(id),
   );
+  const partial = `${picked} of ${total} were picked up`;
   if (watch.others.size > 0 && onGround.length === 0) {
     if (picked === 0) return failed('not_possible', wentToOthers(bot, watch));
-    const partial = `${picked} of ${total} were picked up`;
     return failed('not_possible', `${partial}; ${restWentToOthers(bot, watch)}`);
   }
-  if (picked === 0) {
-    const took = await takeBack(ctx, bot, watch);
-    if (ctx.signal.aborted) return cancelled();
-    if (took)
+  const took = await takeBack(ctx, bot, watch);
+  if (ctx.signal.aborted) return cancelled();
+  if (took) {
+    if (picked === 0) {
       return failed('not_possible', `${action.to} did not pick the items up; you took them back`);
-    return failed('not_possible', `the items are on the ground near ${action.to}`);
+    }
+    return failed('not_possible', `${partial}; you took the rest back`);
   }
-  return failed('not_possible', `${picked} of ${total} were picked up; the rest are on the ground`);
+  if (picked === 0) return failed('not_possible', `the items are on the ground near ${action.to}`);
+  return failed('not_possible', `${partial}; the rest are on the ground`);
 }
 
 /**

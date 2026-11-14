@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NOT_IN_SIGHT } from './give.ts';
 import { setup } from './give-test-fixture.ts';
 import { moveNear } from './pathing.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 const walk = vi.mocked(moveNear);
@@ -232,6 +233,178 @@ describe('give', () => {
       reason: 'not_possible',
       message: '1 of 2 were picked up; the rest are on the ground',
     });
+  });
+
+  it('completes when a merged stack carries every tossed item, counting items not entities', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    toss.mockImplementationOnce(async () => {
+      for (const id of [7, 8, 9]) events.emit('entitySpawn', stack(id, 1));
+      events.emit('entityGone', stack(7, 1));
+      events.emit('entityGone', stack(8, 1));
+      events.emit('playerCollect', pike, stack(9, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('completes when the survivor of three merged tosses is re-announced with the merged count', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    // The real order: each toss spawns and announces a stack of 1; each merge re-announces the survivor.
+    toss.mockImplementationOnce(async () => {
+      for (const id of [7, 8, 9]) {
+        events.emit('entitySpawn', stack(id, 1));
+        events.emit('itemDrop', stack(id, 1));
+      }
+      events.emit('entityGone', stack(7, 1));
+      events.emit('itemDrop', stack(9, 2));
+      events.emit('entityGone', stack(8, 1));
+      events.emit('itemDrop', stack(9, 3));
+      events.emit('playerCollect', pike, stack(9, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('does not count an older stack within 8 blocks that a toss merges into', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    toss.mockImplementationOnce(async () => {
+      // An older stack 3.5 blocks away: its metadata arrives, but it never spawns in this toss.
+      events.emit('itemDrop', stack(5, 5));
+      events.emit('entitySpawn', stack(7, 1));
+      events.emit('itemDrop', stack(7, 3));
+      events.emit('playerCollect', pike, stack(7, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('says 2 of 3 and walks to the one item left on the ground after a merged stack', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number, z: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, z),
+      getDroppedItem: () => ({ count }),
+    });
+    const remains = stack(9, 1, 4.5);
+    world.entities[9] = remains;
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', stack(7, 1, 3.5));
+      events.emit('entitySpawn', stack(8, 1, 3.5));
+      events.emit('entitySpawn', remains);
+      events.emit('entityGone', stack(7, 1, 3.5));
+      events.emit('playerCollect', pike, stack(8, 2, 3.5));
+    });
+    walk.mockImplementation(async () => ({ ok: true, distance: 0 }) as never);
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: '2 of 3 were picked up; the rest are on the ground',
+      detail: {},
+    });
+    expect(walk).toHaveBeenCalledOnce();
+    expect(walk.mock.calls[0]?.[1]).toEqual(remains.position);
+  });
+
+  it('does not throw on a real item entity whose metadata has not arrived, and takes its stack from itemDrop', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log');
+    const { world, run } = setup(5, { real: { stack: 3 } });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const outcome = await run('Pike', 3);
+    const lines = log.mock.calls.map((call) => String(call[0]));
+    log.mockRestore();
+    expect(outcome.status).toBe('completed');
+    expect(lines.filter((line) => line.includes('give_listener_error'))).toEqual([]);
+  });
+
+  it('counts 1 for a real item the recipient collects before its metadata arrives, without throwing', async () => {
+    const { world, run } = setup(5, { real: {} });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const outcome = await run('Pike', 1);
+    expect(outcome.status).toBe('completed');
+  });
+
+  it('catches a listener whose body throws, logs it as one diag line, and does not rethrow', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log');
+    const { world, run } = setup(5, { broken: true });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    // A short time scale: no item is seen, so the give waits out the pickup window, not the test.
+    const outcome = await run('Pike', 3, 'oak_log', 0.01);
+    const lines = log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes('give_listener_error'))
+      .map((line) => JSON.parse(line));
+    log.mockRestore();
+    expect(lines).toEqual([
+      { event: 'give_listener_error', listener: 'entitySpawn', error: 'position unreadable' },
+    ]);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'interrupted' });
+  });
+
+  it('keeps a thrown value with no prototype and a failing diag sink away from the emitter', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {
+      throw new Error('EPIPE');
+    });
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const escaped: unknown[] = [];
+    // A getter that throws a value with no prototype, which String() cannot convert.
+    const hostile = {
+      id: 7,
+      get name(): string {
+        throw Object.create(null);
+      },
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    };
+    // A getter that throws an Error, when the diag sink also throws.
+    const angry = {
+      id: 8,
+      get name(): string {
+        throw new Error('position unreadable');
+      },
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    };
+    toss.mockImplementationOnce(async () => {
+      for (const entity of [hostile, angry]) {
+        try {
+          events.emit('entitySpawn', entity);
+        } catch (error) {
+          escaped.push(error);
+        }
+      }
+    });
+    await run('Pike', 3, 'oak_log', 0.01);
+    log.mockRestore();
+    expect(escaped).toEqual([]);
   });
 
   it('fails interrupted when no dropped item is seen at all', async () => {
