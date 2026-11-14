@@ -376,7 +376,7 @@ function Get-NatsUsers([string] $Shard) {
     body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
       # Control (C7-03b1): the body never publishes a ctl.body request, so it cannot start or stop a body for an owner.
-      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>");
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>");
       # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
       # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
       Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", '_INBOX.>') }
@@ -390,15 +390,17 @@ function Get-NatsUsers([string] $Shard) {
     # Maintenance (CD-1c): the plugin reads the notice subject and says the line; the deploy's publish is CD-1d.
     # Block ownership (decision 0165): the plugin answers blockowner.query (replies go to the inbox) and publishes blockowner.changed;
     # it is denied publishing the query itself.
-    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query", "geldar.$s.ctl.body.>"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
+    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>");Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
     # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
     kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
     # Deploy (CD-1d): colo-notice.sh publishes the maintenance notice as this user and nothing else (no JetStream API, no Kino).
     deploy = @{ Pub = @("geldar.$s.maintenance"); Sub = @('_INBOX.>') }
     # Body control (C7-03b1, decision 0152 item 3): the supervisor answers geldar.<s>.ctl.body.> and replies to inboxes;
     # it has no JetStream and no wider subject. The register service requests those ops and needs its inbox for replies.
-    supervisor = @{ Pub = @('_INBOX.>'); Sub = @("geldar.$s.ctl.body.>") }
+    # Body helper (C7-03c1): the supervisor requests the four verbs on their exact subjects; the helper hears them and replies to inboxes.
+    supervisor = @{ Pub = @('_INBOX.>') + @(@('start', 'stop', 'status', 'logtail') | ForEach-Object { "geldar.$s.helper.body.$_" }); Sub = @("geldar.$s.ctl.body.>") }
     register = @{ Pub = @("geldar.$s.ctl.body.>"); Sub = @('_INBOX.>') }
+    helper = @{ Pub = @('_INBOX.>'); Sub = @(@('start', 'stop', 'status', 'logtail') | ForEach-Object { "geldar.$s.helper.body.$_" }) }
   }
 }
 
