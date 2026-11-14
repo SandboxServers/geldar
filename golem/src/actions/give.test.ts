@@ -8,7 +8,10 @@ import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 const walk = vi.mocked(moveNear);
 
-beforeEach(() => walk.mockReset());
+// A block body: an arrow would return the mock, and vitest would call the returned value as a teardown with no arguments.
+beforeEach(() => {
+  walk.mockReset();
+});
 
 describe('give', () => {
   it('walks up to a visible agent that is further than 3 blocks, then tosses', async () => {

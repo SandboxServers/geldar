@@ -48,6 +48,7 @@ function promptsWith(edit: (text: string) => string): string {
     'body-api/v5.json',
     'body-api/v6.json',
     'body-api/v7.json',
+    'body-api/v8.json',
   ]) {
     writeFileSync(join(dir, file), readFileSync(join(root, file)));
   }
@@ -107,16 +108,16 @@ describe('prompt library', () => {
     const hex = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
     expect(library.thoughtVersion).toBe(`thought@5+sha256:${hex}`);
     expect(library.reflectionVersion).toMatch(/^reflection@2\+sha256:[0-9a-f]{12}$/);
-    expect(library.bodyApiVersion).toMatch(/^body-api@7\+sha256:[0-9a-f]{12}$/);
+    expect(library.bodyApiVersion).toMatch(/^body-api@8\+sha256:[0-9a-f]{12}$/);
     expect(library.render('thought', sampleThoughtVars()).templateVersion).toBe(
       library.thoughtVersion,
     );
   });
 
-  it('makes thought v5 and body-api v7 the defaults and keeps body-api v1 and v5 loadable', () => {
+  it('makes thought v5 and body-api v8 the defaults and keeps body-api v1 and v5 loadable', () => {
     expect(DEFAULT_THOUGHT_VERSION).toBe(5);
-    expect(DEFAULT_BODY_API_VERSION).toBe(7);
-    expect(library.bodyApiVersion).toMatch(/^body-api@7\+sha256:[0-9a-f]{12}$/);
+    expect(DEFAULT_BODY_API_VERSION).toBe(8);
+    expect(library.bodyApiVersion).toMatch(/^body-api@8\+sha256:[0-9a-f]{12}$/);
     const bodyV5 = createPromptLibrary({ version: 5 });
     expect(bodyV5.bodyApiVersion).toMatch(/^body-api@5\+sha256:[0-9a-f]{12}$/);
     const bodyV1 = createPromptLibrary({ version: 1 });
@@ -194,6 +195,7 @@ describe('prompt library', () => {
       'body-api/v5.json': '10762698128a0e081955d0d997c9223971f93e92738666097c59a8079200b476',
       'body-api/v6.json': 'f4453645cd36f6047e425c7e555861abbfede63c516cad4219feff8ab7721245',
       'body-api/v7.json': '5c6d3eb34167448c73611cefa36d2c84f5f0e92f6ec3f97c23d6b7bf6a093e4c',
+      'body-api/v8.json': 'f5488b463931140fda83f7653a9c32bb7e324f14741e679d499bb2faa0ea64e7',
     };
     for (const [file, hash] of Object.entries(pinned)) {
       const bytes = readFileSync(join(repoRoot(), 'prompts', file));
