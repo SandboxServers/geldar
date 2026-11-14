@@ -1,18 +1,30 @@
-// Production browser entry: the real Kino WebSocket, the K06 panes, the K05 camera and the K04 renderer.
-// Not unit tested (needs WebGL and a canvas); the parts it calls are (session.ts, targets.ts, pane-set.ts).
+// Production browser entry (decision 0166): the monitor wall. It loads the camera list and the
+// textures, then keeps up to DEFAULT_PANES monitors, one active, in a layout, with the channel guide,
+// the keyboard map and the remembered wall. Not unit tested (it is the page's wiring); the decisions it
+// makes live in tested modules: keys (routeKey), wall-layout, saved (startupPlan), subscribe-gate,
+// pane-set, pane-view, session, guide, targets and the camera rig.
 
-import { WebGLRenderer } from 'three';
 import { buildAtlas } from './atlas.ts';
-import { bindControls } from './camera/controls.ts';
+import { bindPointer, keyMove } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
-import { CameraRig } from './camera/rig.ts';
-import type { FeedState } from './feed.ts';
-import { foliageSafeCamera } from './foliage.ts';
-import { PaneSet } from './panes/pane-set.ts';
-import { KinoScene } from './scene.ts';
-import { byeText, KinoSession, type SocketLike } from './session.ts';
+import { ChannelGuide } from './guide.ts';
+import { type Layout, nextLayout, nextMode, routeKey, surf } from './keys.ts';
+import {
+  buildEmptySlot,
+  buildMonitor,
+  type MonitorAction,
+  type MonitorFrame,
+} from './panes/monitor.ts';
+import { DEFAULT_PANES, PaneSet } from './panes/pane-set.ts';
+import { createPaneView, type PaneView } from './panes/pane-view.ts';
+import { browserStorage, readSaved, startupPlan, writeSaved } from './panes/saved.ts';
+import { GATE_REFILL_MS, SubscribeGate } from './panes/subscribe-gate.ts';
+import { planWall } from './panes/wall-layout.ts';
+import type { SocketLike } from './session.ts';
 import { aggregateStatus, type StatusInfo, statusLine } from './status.ts';
 import {
+  labelFor,
+  type TargetAgent,
   type TargetsOutcome,
   targetsFetchFailed,
   targetsNotice,
@@ -22,6 +34,11 @@ import {
 const meta = (name: string): string =>
   document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content ?? '';
 const el = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+/**
+ * Surfing waits this long after the last step before it retunes, so a run of steps sends one subscribe.
+ * The rate limit itself is kept by the subscribe gate (8 at once, then one per 2 s, like the relay).
+ */
+const SURF_SETTLE_MS = 400;
 
 /** A WebSocket as the session sees it. */
 function browserSocket(url: string): SocketLike {
@@ -41,9 +58,6 @@ function browserSocket(url: string): SocketLike {
   } as SocketLike;
 }
 
-/** Agent id -> the label people see (the alias), filled from /kino/targets. Ids stay for routing and skin URLs. */
-const agentLabels = new Map<string, string>();
-
 async function loadTargets(): Promise<TargetsOutcome> {
   try {
     const r = await fetch('/kino/targets', { credentials: 'same-origin' });
@@ -52,6 +66,11 @@ async function loadTargets(): Promise<TargetsOutcome> {
   } catch {
     return targetsFetchFailed();
   }
+}
+
+/** One polite announcement for screen readers, said once when it becomes true. */
+function announce(text: string): void {
+  el('say').textContent = text;
 }
 
 /** A visible failure message with a Retry button; the button waits out Retry-After. */
@@ -75,10 +94,31 @@ function showLoadFailure(notice: HTMLElement, message: string, wait: number | nu
   notice.replaceChildren(text, ' ', retry);
 }
 
+interface Monitor {
+  id: number;
+  channel: number;
+  frame: MonitorFrame;
+  view: PaneView;
+}
+
+/** The top bar's Details button folds the status line; bound once, since a Retry runs main() again. */
+function bindStatusToggle(): void {
+  el('toggle-status').addEventListener('click', (e) => {
+    const bar = el('status');
+    bar.hidden = !bar.hidden;
+    (e.currentTarget as HTMLElement).setAttribute('aria-expanded', String(!bar.hidden));
+  });
+}
+
+/** Unfolds the status line, for a failure the viewer must see. */
+function showStatusLine(): void {
+  el('status').hidden = false;
+  el('toggle-status').setAttribute('aria-expanded', 'true');
+}
+
 async function main(): Promise<void> {
   const notice = el('notice');
   const barStatus = el('status');
-  // The status line is always shown, even when the camera list cannot be loaded.
   barStatus.textContent = statusLine({
     connected: false,
     chunks: 0,
@@ -87,10 +127,7 @@ async function main(): Promise<void> {
   });
   notice.replaceChildren();
   const outcome = await loadTargets();
-  if (!outcome.ok) {
-    showLoadFailure(notice, outcome.message, outcome.retryAfterSeconds);
-    return;
-  }
+  if (!outcome.ok) return showLoadFailure(notice, outcome.message, outcome.retryAfterSeconds);
   const targets = outcome.targets;
   notice.textContent = targetsNotice(targets) ?? '';
   if (!targets.signedIn && targets.enabled) {
@@ -98,14 +135,14 @@ async function main(): Promise<void> {
     a.href = meta('kino-signin-url') || '/';
     a.hidden = false;
   }
-  const picker = el<HTMLSelectElement>('picker');
-  for (const a of targets.agents) picker.add(new Option(a.label, a.id));
-  agentLabels.clear();
-  for (const a of targets.agents) agentLabels.set(a.id, a.label);
-  const openBtn = el<HTMLButtonElement>('open');
-  if (!targets.enabled || targets.agents.length === 0) {
-    openBtn.disabled = true;
-    picker.disabled = true;
+  const agents: readonly TargetAgent[] = targets.agents;
+  const ids = agents.map((a) => a.id);
+  const labels = new Map(agents.map((a) => [a.id, a.label]));
+  const labelOf = (id: string): string => labelFor(id, agents);
+  const wallEl = el('wall');
+  if (!targets.enabled || agents.length === 0) {
+    wallEl.replaceChildren(buildEmptySlot(() => undefined));
+    (wallEl.querySelector('.nosignal button') as HTMLButtonElement).disabled = true;
     return;
   }
   const texturesUrl =
@@ -119,12 +156,6 @@ async function main(): Promise<void> {
   try {
     atlas = await buildAtlas(texturesUrl);
     atlasInfo = { state: 'ready', count: atlas.count };
-    barStatus.textContent = statusLine({
-      connected: false,
-      chunks: 0,
-      entities: 0,
-      atlas: atlasInfo,
-    });
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     barStatus.textContent = statusLine({
@@ -133,137 +164,300 @@ async function main(): Promise<void> {
       entities: 0,
       atlas: { state: 'failed', error },
     });
+    showStatusLine();
     return;
   }
-  const host = el('panes');
   const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/kino/ws`;
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const narrowQuery = matchMedia('(max-width: 720px)');
+  const storage = browserStorage();
+  const gate = new SubscribeGate({
+    now: () => performance.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  });
 
-  // One source of truth: the top bar is the aggregate of the pane lines.
+  const monitors = new Map<number, Monitor>();
   const paneInfos = new Map<number, { connected: boolean; chunks: number; entities: number }>();
+  let active: number | null = null;
+  let layout: Layout = 'wall';
   const showBar = (): void => {
     barStatus.textContent = statusLine(aggregateStatus([...paneInfos.values()], atlasInfo));
   };
-  const panes = new PaneSet((id, target, mode) => {
-    const root = document.createElement('div');
-    root.className = 'pane';
-    const canvas = document.createElement('canvas');
-    const msg = document.createElement('div');
-    msg.className = 'msg';
-    const tools = document.createElement('div');
-    tools.className = 'tools';
-    const status = document.createElement('div');
-    status.className = 'status';
-    root.append(canvas, tools, msg, status);
-    let connected = false;
-    let entityCount = 0;
-    const showStatus = (): void => {
-      const mine = { connected, chunks: state?.world.keys().length ?? 0, entities: entityCount };
-      paneInfos.set(id, mine);
-      status.textContent = statusLine({ ...mine, atlas: atlasInfo });
-      showBar();
-    };
-    host.appendChild(root);
-    const renderer = new WebGLRenderer({ canvas, antialias: false });
-    const rig = new CameraRig();
-    rig.setMode(mode);
-    bindControls(canvas, rig);
-    let view: KinoScene | null = null;
-    let state: FeedState | null = null;
-    let live = true;
-    const session = new KinoSession(() => browserSocket(wsUrl), {
-      onReset(s) {
-        state = s;
-        view = new KinoScene(s, atlas.uv, atlas.material, agentLabels);
-        connected = true;
-        showStatus();
-      },
-      onChange(change) {
-        view?.update(change);
-        connected = true;
-        if (change.entities) entityCount = change.entities.length;
-        showStatus();
-        if (change.notice) {
-          msg.textContent = change.notice;
-          setTimeout(() => {
-            if (msg.textContent === change.notice) msg.textContent = '';
-          }, 4000);
-        }
-      },
-      onEnd(reason) {
-        msg.textContent = byeText(reason);
-        connected = false;
-        showStatus();
-      },
+  const order = (): Monitor[] => [...monitors.values()].sort((a, b) => a.channel - b.channel);
+  const save = (): void =>
+    writeSaved(storage, {
+      layout,
+      monitors: order().map((m) => ({ target: m.view.target, mode: m.view.mode })),
     });
-    let current: CameraMode = mode;
-    const setMode = (m: CameraMode): void => {
-      current = m;
-      rig.setMode(m);
-      session.subscribe(currentTarget, m);
-    };
-    let currentTarget = target;
-    for (const m of ['follow', 'orbit', 'free'] as const) {
-      const b = document.createElement('button');
-      b.textContent = m;
-      b.addEventListener('click', () => setMode(m));
-      tools.appendChild(b);
+
+  const setActive = (id: number | null): void => {
+    if (active !== null && active !== id) {
+      const prev = monitors.get(active);
+      if (prev) prev.view.rig.move = { right: 0, up: 0, forward: 0 };
     }
-    const close = document.createElement('button');
-    close.textContent = 'Close';
-    close.addEventListener('click', () => {
-      panes.close(id);
+    active = id;
+    for (const m of monitors.values()) m.frame.setActive(m.id === id);
+    layoutWall();
+  };
+
+  const layoutButtons = document.querySelectorAll<HTMLButtonElement>('[data-layout]');
+  function layoutWall(): void {
+    const plan = planWall({
+      ids: order().map((m) => m.id),
+      active,
+      layout,
+      cap: DEFAULT_PANES,
+      narrow: narrowQuery.matches,
     });
-    tools.appendChild(close);
-    session.subscribe(target, current);
-    let last = performance.now();
-    const frame = (): void => {
-      if (!live) return;
-      if (view && state) {
-        const now = performance.now();
-        const focus = state.focus;
-        const raw = rig.update(state.world, focus, Math.min(0.1, (now - last) / 1000));
-        last = now;
-        // Follow: pull in and up when foliage sits between the camera and the agent's head.
-        const pos =
-          focus && rig.mode === 'follow'
-            ? foliageSafeCamera(state.world, { x: focus.x, y: focus.y + 1.6, z: focus.z }, raw)
-            : raw;
-        view.camera.position.set(pos.x, pos.y, pos.z);
-        view.cullAround(pos);
-        view.setFadeFocus(
-          pos,
-          focus && rig.mode !== 'free' ? { x: focus.x, y: focus.y + 1.2, z: focus.z } : null,
-        );
-        const look = rig.lookTarget(focus);
-        view.camera.lookAt(look.x, look.y, look.z);
-        view.updateLabels(look);
-        renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-        view.camera.aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
-        view.camera.updateProjectionMatrix();
-        renderer.render(view.scene, view.camera);
+    wallEl.style.gridTemplateColumns = plan.columns;
+    wallEl.style.gridTemplateRows = plan.rows;
+    wallEl.dataset.layout = layout;
+    const keep: HTMLElement[] = [];
+    for (const cell of plan.cells) {
+      const node =
+        cell.id === null
+          ? buildEmptySlot(() => openGuide(true))
+          : (monitors.get(cell.id) as Monitor).frame.root;
+      node.style.gridArea = cell.area;
+      node.hidden = false;
+      if (cell.id !== null) (monitors.get(cell.id) as Monitor).frame.setFeatured(cell.featured);
+      keep.push(node);
+    }
+    for (const id of plan.hidden) {
+      const m = monitors.get(id) as Monitor;
+      m.frame.root.hidden = true;
+      keep.push(m.frame.root);
+    }
+    // Monitors stay in the DOM in channel order (their canvases keep their WebGL contexts); empty slots are rebuilt.
+    for (const child of [...wallEl.children])
+      if (!keep.includes(child as HTMLElement)) child.remove();
+    for (const node of keep) if (node.parentElement !== wallEl) wallEl.appendChild(node);
+    for (const b of layoutButtons)
+      b.setAttribute('aria-pressed', String(b.dataset.layout === layout));
+  }
+
+  const setLayout = (l: Layout): void => {
+    layout = l;
+    layoutWall();
+    save();
+    announce(`Layout: ${l}`);
+  };
+
+  const retune = (m: Monitor, target: string, settle: boolean): void => {
+    m.view.setTarget(target, settle ? SURF_SETTLE_MS : 0);
+    save();
+    announce(`CH ${m.channel}: ${labelOf(target)}`);
+  };
+
+  const action = (m: Monitor, a: MonitorAction): void => {
+    setActive(m.id);
+    const rig = m.view.rig;
+    switch (a.kind) {
+      case 'mode':
+        m.view.setMode(a.mode);
+        save();
+        break;
+      case 'rotate':
+        rig.rotateStep(a.steps);
+        break;
+      case 'zoom':
+        rig.zoomStep(a.steps);
+        break;
+      case 'recentre':
+        rig.recentre();
+        break;
+      case 'surf': {
+        const next = surf(ids, m.view.target, a.steps);
+        if (next) retune(m, next, true);
+        break;
       }
-      requestAnimationFrame(frame);
-    };
-    frame();
-    return {
-      setTarget(t) {
-        currentTarget = t;
-        session.subscribe(t, current);
-      },
-      setMode,
-      dispose() {
-        live = false;
-        paneInfos.delete(id);
+      case 'guide':
+        openGuide();
+        break;
+      case 'solo':
+        setLayout(layout === 'solo' ? 'wall' : 'solo');
+        break;
+      case 'info':
+        m.frame.toggleInfo();
+        break;
+      case 'close':
+        panes.close(m.id);
+        break;
+    }
+  };
+
+  /** The first-subscribe delay for the monitor being opened (a restored wall spaces them out). */
+  let openDelay = 0;
+  const panes = new PaneSet((id, target, mode) => {
+    const used = new Set([...monitors.values()].map((x) => x.channel));
+    let channel = 1;
+    while (used.has(channel)) channel++;
+    let self: Monitor | null = null;
+    const frame = buildMonitor((a) => self && action(self, a));
+    frame.setChannel(channel);
+    const view = createPaneView(frame, target, mode, {
+      atlas,
+      atlasInfo,
+      connect: () => browserSocket(wsUrl),
+      labels,
+      labelOf,
+      reducedMotion,
+      gate,
+      key: String(id),
+      startDelayMs: openDelay,
+      onStatus(info) {
+        paneInfos.set(id, info);
         showBar();
-        session.close();
-        renderer.dispose();
-        root.remove();
+      },
+      // The server kept the old agent (a refused retune): remember the wall as it really is.
+      onTargetChanged: () => save(),
+    });
+    bindPointer(frame.canvas, () => view.rig, { onActivate: () => active !== id && setActive(id) });
+    self = { id, channel, frame, view };
+    monitors.set(id, self);
+    return {
+      setTarget: (t) => view.setTarget(t),
+      setMode: (m) => view.setMode(m),
+      dispose() {
+        monitors.delete(id);
+        paneInfos.delete(id);
+        view.dispose();
+        showBar();
+        if (active === id) setActive(order()[0]?.id ?? null);
+        else layoutWall();
+        save();
       },
     };
   });
-  openBtn.addEventListener('click', () => {
-    if (panes.open(picker.value) === null) notice.textContent = 'Too many panes are open.';
+
+  const openMonitor = (target: string, mode: CameraMode = 'follow', delayMs = 0): void => {
+    openDelay = delayMs;
+    const id = panes.open(target, mode);
+    openDelay = 0;
+    if (id === null) {
+      notice.textContent = `All ${DEFAULT_PANES} monitors are in use: close one first.`;
+      return;
+    }
+    notice.textContent = targetsNotice(targets) ?? '';
+    setActive(id);
+    save();
+    announce(`CH ${(monitors.get(id) as Monitor).channel}: ${labelOf(target)}`);
+  };
+
+  const guide = new ChannelGuide(el<HTMLDialogElement>('guide'), agents, {
+    tune(agentId) {
+      const m = active !== null ? monitors.get(active) : undefined;
+      if (m) retune(m, agentId, false);
+      else openMonitor(agentId);
+    },
+    watchNew: (agentId) => openMonitor(agentId),
   });
+  /** Opens the channel guide; from an empty slot (`newMonitor`), a choice fills a new monitor. */
+  function openGuide(newMonitor = false): void {
+    const onAir = new Map<string, number[]>();
+    for (const m of order())
+      onAir.set(m.view.target, [...(onAir.get(m.view.target) ?? []), m.channel]);
+    const a = active !== null ? monitors.get(active) : undefined;
+    guide.open(
+      {
+        onAir,
+        activeChannel: a?.channel ?? null,
+        canOpen: monitors.size < DEFAULT_PANES,
+        newMonitor,
+      },
+      labelOf,
+    );
+  }
+
+  const help = el<HTMLDialogElement>('help');
+  help.querySelector('.help-close')?.addEventListener('click', () => help.close());
+  el('open-guide').addEventListener('click', () => openGuide());
+  el('open-help').addEventListener('click', () => help.showModal());
+  for (const b of layoutButtons)
+    b.addEventListener('click', () => setLayout(b.dataset.layout as Layout));
+  narrowQuery.addEventListener('change', layoutWall);
+
+  // The keyboard drives the active monitor only.
+  const held = new Set<string>();
+  const syncMove = (): void => {
+    const m = active !== null ? monitors.get(active) : undefined;
+    if (m)
+      m.view.rig.move =
+        m.view.rig.mode === 'free' ? keyMove(held) : { right: 0, up: 0, forward: 0 };
+  };
+  addEventListener('keydown', (e) => {
+    const t = e.target as HTMLElement | null;
+    if (help.open || guide.isOpen || t?.closest('input, select, textarea')) return;
+    const m = active !== null ? monitors.get(active) : undefined;
+    const route = routeKey({
+      key: e.key,
+      ctrl: e.ctrlKey,
+      meta: e.metaKey,
+      alt: e.altKey,
+      repeat: e.repeat,
+      onButton: (t?.closest('button, a, summary') ?? null) !== null,
+      freeFly: m?.view.rig.mode === 'free',
+    });
+    if (route.preventDefault) e.preventDefault();
+    if (route.kind === 'move') {
+      held.add(route.key);
+      syncMove();
+      return;
+    }
+    if (route.kind === 'ignore') return;
+    const cmd = route.command;
+    switch (cmd.kind) {
+      case 'select': {
+        const pick = order().find((x) => x.channel === cmd.index + 1);
+        if (pick) setActive(pick.id);
+        return;
+      }
+      case 'cycle-mode':
+        if (m) action(m, { kind: 'mode', mode: nextMode(m.view.mode) });
+        return;
+      case 'cycle-layout':
+        return setLayout(nextLayout(layout));
+      case 'guide':
+        return openGuide();
+      case 'help':
+        return help.showModal();
+      case 'escape':
+        return;
+      case 'mode':
+      case 'rotate':
+      case 'zoom':
+      case 'recentre':
+      case 'surf':
+      case 'solo':
+      case 'info':
+      case 'close':
+        if (m) action(m, cmd);
+        else if (cmd.kind !== 'close') openGuide();
+        return;
+    }
+  });
+  addEventListener('keyup', (e) => {
+    held.delete(e.key.toLowerCase());
+    syncMove();
+  });
+  addEventListener('blur', () => {
+    held.clear();
+    syncMove();
+  });
+
+  // The wall the viewer left (one monitor per refill), or the first agent on CH 1 for a first visit.
+  const saved = readSaved(storage, ids, DEFAULT_PANES);
+  layout = saved?.layout ?? 'wall';
+  for (const s of startupPlan(saved, ids, GATE_REFILL_MS)) openMonitor(s.target, s.mode, s.delayMs);
+  if (active === null) layoutWall();
+
+  const loop = (now: number): void => {
+    for (const m of monitors.values()) if (!m.frame.root.hidden) m.view.frame(now);
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
 }
 
+bindStatusToggle();
 void main();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ghostMaterial } from '../../web/kino/agent-ghost.ts';
-import { FOLLOW_OFFSET } from '../../web/kino/camera/rig.ts';
+import { DEFAULT_ZOOM, ZOOM_LEVELS } from '../../web/kino/camera/lakitu.ts';
 import { LABEL_MIN_CLAMP, labelClamp } from '../../web/kino/entities.ts';
 import { makeWaterMaterial } from '../../web/kino/fade.ts';
 import { isWater, meshSection, softOf, type UvLookup } from '../../web/kino/mesher.ts';
@@ -54,10 +54,11 @@ describe('label clamp and follow offset', () => {
     expect(labelClamp(0)).toBe(LABEL_MIN_CLAMP);
     expect(labelClamp(-3)).toBe(LABEL_MIN_CLAMP);
   });
-  it('follows 6-8 blocks behind and 3-4 above', () => {
-    expect(FOLLOW_OFFSET.z).toBeGreaterThanOrEqual(6);
-    expect(FOLLOW_OFFSET.z).toBeLessThanOrEqual(8);
-    expect(FOLLOW_OFFSET.y).toBeGreaterThanOrEqual(3);
-    expect(FOLLOW_OFFSET.y).toBeLessThanOrEqual(4);
+  it('follows 6-8 blocks behind and 3-4 above at the default (medium) chase zoom', () => {
+    const level = ZOOM_LEVELS[DEFAULT_ZOOM] as { distance: number; height: number };
+    expect(level.distance).toBeGreaterThanOrEqual(6);
+    expect(level.distance).toBeLessThanOrEqual(8);
+    expect(level.height).toBeGreaterThanOrEqual(3);
+    expect(level.height).toBeLessThanOrEqual(4);
   });
 });

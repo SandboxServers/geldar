@@ -21,6 +21,10 @@ export class FeedState {
     return this.store.list();
   }
   focus: { x: number; y: number; z: number } | null = null;
+  /** The agent this feed follows (from hello). */
+  target: string | null = null;
+  /** The followed agent's Minecraft yaw in degrees, from its entity; null until the feed has it. */
+  heading: number | null = null;
 
   apply(msg: KinoFeed, now: number = Date.now()): FeedChange {
     switch (msg.type) {
@@ -48,8 +52,21 @@ export class FeedState {
         edge(lz, [0, 0, 1]);
         return { dirty: dirty.filter((k) => this.world.has(k)) };
       }
-      case 'entity_positions':
-        return { dirty: [], entities: this.store.merge(msg.entities, now) };
+      case 'hello':
+        this.target = msg.target_agent_id;
+        return { dirty: [] };
+      case 'entity_positions': {
+        const entities = this.store.merge(msg.entities, now);
+        // Only this page counts for the camera: the merged store keeps an entity for up to 30 s, so a page
+        // without the agent would put back its old position after a newer target_moved.
+        const me = msg.entities.find((e) => e.agent_id !== undefined && e.agent_id === this.target);
+        if (me && Number.isFinite(me.yaw)) this.heading = me.yaw;
+        // The plugin sends target_moved only when the agent enters another chunk; its entity comes
+        // every tick. The camera follows the entity, so it moves smoothly (decision 0166).
+        if (me && [me.x, me.y, me.z].every(Number.isFinite))
+          this.focus = { x: me.x, y: me.y, z: me.z };
+        return { dirty: [], entities };
+      }
       case 'target_moved':
         this.focus = { x: msg.x, y: msg.y, z: msg.z };
         return { dirty: [] };

@@ -73,7 +73,7 @@ export function loadKinoEnv(env: NodeJS.ProcessEnv = process.env): KinoEnv {
   };
 }
 
-/** Web files by URL path under /kino/: the page and the TypeScript modules, types stripped. */
+/** Web files by URL path under /kino/: the page, its stylesheet and the TypeScript modules, types stripped. */
 function loadWeb(dir: URL, prefix: string, out: Map<string, { body: string; type: string }>): void {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const child = new URL(e.isDirectory() ? `${e.name}/` : e.name, dir);
@@ -87,6 +87,11 @@ function loadWeb(dir: URL, prefix: string, out: Map<string, { body: string; type
       out.set(e.name === 'index.html' ? prefix : `${prefix}${e.name}`, {
         body: readFileSync(child, 'utf8'),
         type: 'text/html; charset=utf-8',
+      });
+    else if (e.name.endsWith('.css'))
+      out.set(`${prefix}${e.name}`, {
+        body: readFileSync(child, 'utf8'),
+        type: 'text/css; charset=utf-8',
       });
   }
 }

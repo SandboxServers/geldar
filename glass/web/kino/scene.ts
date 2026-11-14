@@ -81,6 +81,8 @@ export class KinoScene {
   private readonly waterSections = new Map<string, Mesh>();
   private readonly fade = makeFadeUniforms();
   private readonly agentLabels: ReadonlyMap<string, string>;
+  /** The caller's material (the shared texture atlas): never disposed here. */
+  private readonly base: Material;
 
   constructor(
     state: FeedState,
@@ -89,6 +91,7 @@ export class KinoScene {
     agentLabels: ReadonlyMap<string, string> = new Map(),
   ) {
     this.agentLabels = agentLabels;
+    this.base = material;
     this.state = state;
     this.uvFor = uvFor;
     this.material = makeFadeMaterial(material, this.fade);
@@ -150,6 +153,37 @@ export class KinoScene {
 
   markerOf(id: string): Mesh | undefined {
     return this.markers.get(id);
+  }
+
+  /**
+   * Frees this scene's GPU resources (decision 0166: a monitor drops its scene on every retune).
+   * Geometries, materials and label or skin textures made here are disposed; the caller's material
+   * and its atlas texture are shared between scenes and kept.
+   */
+  dispose(): void {
+    const keep = new Set<unknown>([this.base, (this.base as MeshBasicMaterial).map]);
+    const done = new Set<unknown>();
+    const free = (r: { dispose(): void } | null | undefined): void => {
+      if (!r || keep.has(r) || done.has(r)) return;
+      done.add(r);
+      r.dispose();
+    };
+    this.scene.traverse((o) => {
+      const node = o as { geometry?: { dispose(): void }; material?: unknown };
+      free(node.geometry);
+      for (const m of [node.material].flat()) {
+        if (!m) continue;
+        free((m as MeshBasicMaterial).map);
+        free(m as Material);
+      }
+    });
+    free(this.markerGeometry);
+    free(this.material);
+    free(this.waterMaterial);
+    this.scene.clear();
+    this.sections.clear();
+    this.waterSections.clear();
+    this.markers.clear();
   }
 
   sectionMesh(key: string): Mesh | undefined {
