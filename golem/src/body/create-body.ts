@@ -15,6 +15,7 @@ import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-conf
 import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
 import { combatReflexes } from './reflexes/combat.ts';
+import { noteActionEnd, resetIdleStuck } from './reflexes/idle-stuck.ts';
 import { forgetBurrow } from './reflexes/panic-burrow.ts';
 import { forgetShelterBackoff, shelterReflexes } from './reflexes/shelter.ts';
 import { noteGoto, resetStuck } from './reflexes/unstick.ts';
@@ -149,10 +150,12 @@ export function createBody(options: CreateBodyOptions): Body {
     forgetBurrow(built.view);
     forgetShelterBackoff(built.view);
     resetStuck(built.view);
+    resetIdleStuck(built.view);
   };
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
+    noteActionEnd(built.view);
     // A `mine` counts only when its walk to the block was blocked (never as an arrival).
     if (action.do === 'goto' || (action.do === 'mine' && run.state === 'failed')) {
       const stalled = run.result.detail?.stalled === true;

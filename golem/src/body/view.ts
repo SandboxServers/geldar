@@ -95,6 +95,46 @@ export interface BodyView {
   readonly enclosed?: boolean;
   /** Raw light at the head, 0 to 15 (the number reflexes read; the Mind gets a word). Null when unknown. */
   readonly lightAtHead?: number | null;
+  /**
+   * False when no neighbour cell (level, one up, one down, four sides) can take the Body's next step:
+   * a ledge it cannot step off. Null or missing when a block around it is not loaded. Optional like isNight.
+   */
+  readonly canStepOff?: boolean | null;
+  /** True while the Body lies in a bed. Optional like isNight; a missing value never counts as asleep. */
+  readonly asleep?: boolean;
+  /** True while the Body rides a vehicle. Optional like isNight; a missing value never counts as riding. */
+  readonly riding?: boolean;
+  /** True while the Mind's action (the runtime's current action) runs. Optional; a missing value is unknown. */
+  readonly actionRunning?: boolean | undefined;
+}
+
+/**
+ * True when some neighbour cell of `feet` can take the Body's next step: a cell on the level, one up
+ * or one down, beside it on the four sides, with two open cells and a solid floor under it. A block
+ * the read cannot see (null) counts as possibly standable, so the answer is false only for a known
+ * ledge. The step-up test does not check the head room above the Body (an approximation).
+ */
+export function canStepOff(
+  blockAt: (at: Vec3) => EnclosureBlock | null | undefined,
+  feet: Vec3,
+): boolean {
+  const sides = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+  const open = (b: EnclosureBlock | null | undefined): boolean | null => {
+    if (!b) return null;
+    if (b.boundingBox === 'empty') return true;
+    return b.boundingBox === 'block' ? false : null;
+  };
+  for (const side of sides) {
+    for (const dy of [0, 1, -1]) {
+      const cell = feet.plus(side).plus(new Vec3(0, dy, 0));
+      const floor = blockAt(cell.plus(new Vec3(0, -1, 0)));
+      const body = open(blockAt(cell));
+      const head = open(blockAt(cell.plus(new Vec3(0, 1, 0))));
+      if (body === null || head === null || floor === null || floor === undefined) return true;
+      if (body && head && floor.boundingBox === 'block') return true;
+    }
+  }
+  return false;
 }
 
 /** The deepest drop dropAhead measures, in blocks. */
@@ -103,6 +143,8 @@ export const MAX_DROP_SCAN = 32;
 /** A `BodyView` that tracks falls by listening to the bot; `dispose` removes the listener. */
 export interface TrackedBodyView extends BodyView {
   dispose(): void;
+  /** Tells the view how to read `actionRunning` (the runtime's current action); until then it is unknown. */
+  bindActionProbe(probe: () => boolean): void;
 }
 
 const DEFAULT_HOSTILE_RADIUS = 16;
@@ -208,6 +250,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     if (sinceHurt !== null) sinceHurt += 1;
   };
   bot.on('physicsTick', sample);
+  let actionProbe: (() => boolean) | null = null;
   let lastHealth = bot.health;
   const onHealth = (): void => {
     if (bot.health < lastHealth) sinceHurt = 0;
@@ -302,6 +345,21 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get air() {
       return ownAir(bot);
+    },
+    get canStepOff() {
+      return canStepOff((at) => bot.blockAt(at), bot.entity.position.floored());
+    },
+    get asleep() {
+      return bot.isSleeping === true;
+    },
+    get riding() {
+      return Boolean((bot as unknown as { vehicle?: unknown }).vehicle);
+    },
+    get actionRunning() {
+      return actionProbe === null ? undefined : actionProbe();
+    },
+    bindActionProbe(probe: () => boolean) {
+      actionProbe = probe;
     },
     edibleFoods() {
       const foods = bot.registry.foodsByName;

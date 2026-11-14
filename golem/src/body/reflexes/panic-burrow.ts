@@ -72,6 +72,16 @@ const pauses = new WeakMap<
 /** A refusal pause ends early once the Body is more than this many blocks from where it began. */
 export const REFUSAL_MOVE_BLOCKS = 8;
 
+/** True while the Body sits in a burrow it dug (a shelter by choice, until dawn). */
+export function hasBurrow(view: BodyView): boolean {
+  return burrows.has(view);
+}
+
+/** Test seam: marks a view as sitting in a burrow it dug, without digging one. */
+export function markBurrowForTest(view: BodyView): void {
+  burrows.set(view, {} as Burrow);
+}
+
 /** Forgets the burrow and the refusal pause of a view (the Body died and respawned). */
 export function forgetBurrow(view: BodyView): void {
   burrows.delete(view);

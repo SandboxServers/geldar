@@ -114,6 +114,7 @@ export class BodyRuntime {
     const tracked = options.view === undefined ? createBodyView(options.bot) : null;
     this.ownedView = tracked;
     this.view = options.view ?? (tracked as BodyView);
+    tracked?.bindActionProbe(() => this.actionRunning);
     this.reflexRunner = new ReflexRunner({
       reflexes: options.reflexes ?? [],
       config: options.reflexConfig ?? allReflexesOn(),

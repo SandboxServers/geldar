@@ -1,6 +1,7 @@
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { blockedPathReflex } from './blocked-path.ts';
+import { idleStuckReflex, mayUnstick, noteShelterRefusal, runUnstick } from './idle-stuck.ts';
 import { burrowPaused, panicBurrowReflex } from './panic-burrow.ts';
 import { dangers } from './threats.ts';
 import { unstickReflex } from './unstick.ts';
@@ -67,8 +68,19 @@ export const darkShelterReflex: Reflex = {
       ctx,
     );
     if (outcome.result === 'handled') backoffs.delete(ctx.view);
-    if (outcome.result !== 'abandoned') return outcome;
-    return backOff(ctx.view, outcome);
+    const refused = outcome.detail?.startsWith('no suitable block') === true;
+    if (outcome.result !== 'abandoned') {
+      noteShelterRefusal(ctx.view, false);
+      return outcome;
+    }
+    const shelter = backOff(ctx.view, outcome);
+    // B2 (decision 0196): the third refusal in a row at one spot runs unstick once, through the same backoff.
+    const third = noteShelterRefusal(ctx.view, refused);
+    // The B1 guards (no Mind action, not asleep, not riding, no burrow) and the stuck test: a Body
+    // that can step off a ledge is not stuck, so B2 does not dig it out.
+    if (!third || !mayUnstick(ctx.view) || ctx.view.canStepOff !== false) return shelter;
+    const freed = await runUnstick(ctx, 'dark_shelter (3 refusals)');
+    return { ...shelter, detail: `${shelter.detail ?? ''}; ${freed.detail ?? ''}` };
   },
 };
 
@@ -96,4 +108,5 @@ export const shelterReflexes: Reflex[] = [
   darkShelterReflex,
   blockedPathReflex,
   unstickReflex,
+  idleStuckReflex,
 ];
