@@ -70,6 +70,33 @@ describe('lightAtHead', () => {
     expect(lightAtHead(bot)).toBe(9);
   });
 
+  it('is null when the section entry of the head cell is null, not dark', () => {
+    const { bot } = lightBot({ light: 0, skyLight: 0 }, NIGHT);
+    const sections: unknown[] = new Array(24).fill({});
+    sections[8] = null;
+    (bot as unknown as { world: unknown }).world = { getColumnAt: () => ({ minY: -64, sections }) };
+    expect(lightAtHead(bot)).toBeNull();
+  });
+
+  it('uses the default minimum height -64 when the column has no minY', () => {
+    // Head cell y 65 is section 8 at -64 but section 4 at 0, so the default decides which entry is read.
+    const { bot } = lightBot({ light: 9, skyLight: 4 });
+    const sections: unknown[] = new Array(24).fill({});
+    sections[8] = null;
+    (bot as unknown as { world: unknown }).world = { getColumnAt: () => ({ sections }) };
+    expect(lightAtHead(bot)).toBeNull();
+  });
+
+  it('reads the column minY: with minY 0 the head cell is section 4, so a missing section 8 does not matter', () => {
+    const { bot } = lightBot({ light: 9, skyLight: 4 });
+    const sections: unknown[] = new Array(16).fill({});
+    sections[8] = undefined;
+    (bot as unknown as { world: unknown }).world = { getColumnAt: () => ({ minY: 0, sections }) };
+    expect(lightAtHead(bot)).toBe(9);
+    sections[4] = undefined;
+    expect(lightAtHead(bot)).toBeNull();
+  });
+
   it('is null when the column of the head cell is not loaded', () => {
     const { bot } = lightBot({ light: 9, skyLight: 4 });
     (bot as unknown as { world: unknown }).world = { getColumnAt: () => null };

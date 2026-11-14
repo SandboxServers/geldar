@@ -5,7 +5,7 @@
 - Why: the two night reflexes fire far more often than they help. Live counts for 24 h (excluding ag_colo_01):
   - `panic_burrow` at night: 458 runs, 22 handled, 422 abandoned, 14 failed (all 422 abandoned with "no suitable block"). The trigger was night, no bed within 32 blocks and not enclosed. It never read hostiles or light. After #357 the same reflex abandoned 14 runs in 30 minutes.
   - `dark_shelter`: 963 runs, 4 handled, 956 abandoned, 3 failed. The light at the trigger was exactly 0 in 872 of 956 abandoned rows. One Body (zack) made 831 of the 963 runs, mostly 09:00 to 14:00 UTC.
-  - The Body's own reason text, "a threat was close, you dug in" (threshold/mcp present-handlers/reflex.ts), is false for the night trigger, which had no threat at all.
+  - The Body's own reason text, "a threat was close, you dug in" (threshold/mcp present-handlers/reflex.ts), is false for the night trigger, which had no threat at all. The approved wording replaces it: "a {kind} was {distance} blocks away, so you dug in." and "you took damage at night with no bed near, so you dug in." (no 'a hostile').
 - Design intent kept: the night burrow (spec 375, "Night and no shelter and no bed: dig a 1x2 hole and seal it"; decision 0074, a hole counts as shelter) is right when a threat is near. This record changes when it starts, not whether it exists.
 
 ## (a) panic_burrow starts only on a threat
@@ -43,9 +43,9 @@ The live probe (`golem/test/live/sleep-signal.live.test.ts`, branch `phase1/slee
 
 ## Agent-facing reflex text (geldar-93 owns the wording)
 
-The text in `threshold/mcp` present-handlers/reflex.ts must match the trigger. The proposal, not yet applied:
+The text in `threshold/mcp` present-handlers/reflex.ts must match the trigger. This is the approved wording; it is not yet applied there. The Mind-side presenter (`threshold/mcp` present-handlers/reflex.ts) renders it in a separate change, and this record does not touch that file.
 
-- cause `hostile` (panic_burrow or dark_shelter): "a hostile {hostile} was {distance} blocks away, so you dug in."
+- cause `hostile` (panic_burrow or dark_shelter): "a {kind} was {distance} blocks away, so you dug in." The trigger key for `{kind}` is `hostile` (the hostile's name, for example zombie). `{distance}` is a whole number: the Body rounds the distance to the nearest block (`Math.round`), so a zombie at 5.4 reads 5.
 - cause `damage` (panic_burrow at night): "you took damage at night with no bed near, so you dug in."
 - cause `dark` (dark_shelter): keeps its own text. Its trigger is a hostile in the dark, so the hostile sentence also fits.
 

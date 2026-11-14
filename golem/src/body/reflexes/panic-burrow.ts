@@ -314,7 +314,7 @@ export const HURT_WINDOW_TICKS = 100;
 function nightThreat(view: BodyView): Trigger | null {
   const hostile = dangers(view, THREAT_RADIUS)[0];
   if (hostile) {
-    const distance = Math.round(hostile.distance * 10) / 10;
+    const distance = Math.round(hostile.distance);
     return { cause: 'hostile', hostile: hostile.name, distance };
   }
   const hurt = view.ticksSinceHurt;

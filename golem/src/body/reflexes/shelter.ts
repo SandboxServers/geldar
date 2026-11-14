@@ -61,7 +61,7 @@ export const darkShelterReflex: Reflex = {
     return {
       light,
       hostile: hostile.name,
-      distance: Math.round(hostile.distance * 10) / 10,
+      distance: Math.round(hostile.distance),
       cause: 'dark',
     };
   },

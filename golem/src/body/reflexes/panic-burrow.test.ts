@@ -112,6 +112,20 @@ describe('panic burrow: the threat that starts it (decision 0213)', () => {
     });
   });
 
+  it('the trigger distance is a whole number: a zombie at 5.4 reads 5', () => {
+    const view = nightView();
+    view.nearbyHostiles = () => [zombieAt(5.4)];
+    expect(panicBurrowReflex.check(view)).toMatchObject({ cause: 'hostile', distance: 5 });
+  });
+
+  it('the hostile radius is 8: a zombie at 8 starts it, a zombie at 8.1 does not', () => {
+    const view = nightView();
+    view.nearbyHostiles = (radius = 16) => [zombieAt(8)].filter((h) => h.distance <= radius);
+    expect(panicBurrowReflex.check(view)).toMatchObject({ cause: 'hostile', distance: 8 });
+    view.nearbyHostiles = (radius = 16) => [zombieAt(8.1)].filter((h) => h.distance <= radius);
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+
   it('a zombie beyond 8 blocks does not start it', () => {
     const view = nightView();
     view.nearbyHostiles = (radius = 16) => [zombieAt(9)].filter((h) => h.distance <= radius);

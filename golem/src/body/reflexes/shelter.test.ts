@@ -32,6 +32,10 @@ describe('dark_shelter trigger', () => {
     });
   });
 
+  it('the trigger distance is a whole number: a zombie at 5.4 reads 5', () => {
+    expect(darkShelterReflex.check(darkView(3, 5.4))).toMatchObject({ distance: 5 });
+  });
+
   it('does not fire when it is not dark', () => {
     expect(darkShelterReflex.check(darkView(12, 5))).toBeNull();
   });
@@ -120,6 +124,25 @@ describe('dark_shelter backoff holds at the abandoned spot (decision 0213)', () 
     expect(darkShelterReflex.check(view)).not.toBeNull();
   });
 
+  it.each([
+    ['x -20', -20, 64, 0],
+    ['z +20', 0, 64, 20],
+    ['z -20', 0, 64, -20],
+    ['y +20', 0, 84, 0],
+    ['y -20', 0, 44, 0],
+  ])(
+    'moving %s from the abandoned spot re-arms it (the distance is 3-D)',
+    async (_name, x, y, z) => {
+      const view = await abandonedAtSpot();
+      setLight(view, 9);
+      setTick(view, 1100);
+      setPosition(view, x, y, z);
+      setLight(view, 0);
+      setTick(view, 1200);
+      expect(darkShelterReflex.check(view)).not.toBeNull();
+    },
+  );
+
   it('a Body that stays within the move radius of the spot stays backed off', async () => {
     const view = await abandonedAtSpot();
     setPosition(view, 4);
@@ -143,8 +166,8 @@ function setLight(view: BodyView, light: number): void {
   (view as { lightAtHead: number | null }).lightAtHead = light;
 }
 
-function setPosition(view: BodyView, x: number): void {
-  (view as { position: { x: number; y: number; z: number } }).position = { x, y: 64, z: 0 };
+function setPosition(view: BodyView, x: number, y = 64, z = 0): void {
+  (view as { position: { x: number; y: number; z: number } }).position = { x, y, z };
 }
 
 describe('dark_shelter hostile classification', () => {
