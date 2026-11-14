@@ -29,6 +29,8 @@ describe('docs/players/README.md', () => {
     expect(README).toContain('A token stops working 90 days after it is made.');
     expect(README).not.toContain('14 days');
     expect(README).not.toContain('10 minutes');
+    // Renewal is not built (C7-04d for Bearer; the cookie route makes a new token, it does not renew one).
+    expect(README).not.toMatch(/renew/i);
   });
 
   it('says the token is shown once and never emailed', () => {

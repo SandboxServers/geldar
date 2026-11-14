@@ -98,6 +98,7 @@ describe('onboarding after a token is made', () => {
     const text = await second.text();
     expect(tokenIn(text)).toBe('');
     expect(text).toContain('No token to show');
+    expect(text).not.toMatch(/renew/i);
   });
 
   it('keeps the token out of the request log and out of every write', async () => {
@@ -125,6 +126,7 @@ describe('onboarding after a token is made', () => {
     expect(html).not.toContain('10 minutes');
     expect(html).toContain('A token stops working 90 days after it is made.');
     expect(html).toContain('revokes the old one immediately');
+    expect(html).not.toMatch(/renew/i);
   });
 
   it('has no inline script, no inline style and no inline handler; the CSP allows its own script only', async () => {
@@ -173,6 +175,7 @@ describe('onboarding after a token is made', () => {
     const text = await (await onboarding(late.s)).text();
     expect(tokenIn(text)).toBe('');
     expect(text).toContain('No token to show');
+    expect(text).not.toMatch(/renew/i);
   });
 });
 

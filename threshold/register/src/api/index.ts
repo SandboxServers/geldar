@@ -1,9 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hasScope } from '../owner-keys-policy.ts';
 import { sendProblem } from '../problem.ts';
+import { agentsListRoutes } from './agents-list.ts';
 import { agentsReadRoutes } from './agents-read.ts';
 import { authenticate, sameText } from './auth.ts';
+import { ownerKeyRoutes } from './owner-keys.ts';
 import type { ApiContext, ApiDeps, ApiRoute } from './route.ts';
+import { tokenRoutes } from './tokens.ts';
 
 const PREFIX = '/api/v1';
 
@@ -23,8 +26,8 @@ async function readAdmin(deps: ApiDeps, ownerId: string): Promise<boolean> {
 /**
  * The owner API router. Returns false for any path outside /api/v1/ (the caller answers 404 problem).
  * Order: the path (unknown is 404, a known path with another method is 405), the credential (401),
- * the CSRF token for a cookie write (403), the scope (403), the owner window for a write (429, not for
- * an admin), then the handler. A handler error is 500 internal.
+ * a Bearer key at a cookie-only route (401), the CSRF token for a cookie write (403), the scope (403), the
+ * owner window for a write (429, not for an admin), then the handler. A handler error is 500 internal.
  */
 export async function handleApi(
   req: IncomingMessage,
@@ -34,7 +37,13 @@ export async function handleApi(
 ): Promise<boolean> {
   if (!url.pathname.startsWith(`${PREFIX}/`)) return false;
   const sub = url.pathname.slice(PREFIX.length);
-  const routes: readonly ApiRoute[] = [...agentsReadRoutes, ...(deps.routes ?? [])];
+  const routes: readonly ApiRoute[] = [
+    ...agentsListRoutes,
+    ...agentsReadRoutes,
+    ...tokenRoutes,
+    ...ownerKeyRoutes,
+    ...(deps.routes ?? []),
+  ];
   let pathSeen = false;
   let found: { route: ApiRoute; params: string[] } | null = null;
   for (const route of routes) {
@@ -54,6 +63,10 @@ export async function handleApi(
 
   const cred = await authenticate(req, deps);
   if (cred === null) {
+    sendProblem(res, 'unauthenticated');
+    return true;
+  }
+  if (route.cookieOnly && cred.csrf === null) {
     sendProblem(res, 'unauthenticated');
     return true;
   }
@@ -85,6 +98,8 @@ export async function handleApi(
     deps,
     params,
     ownerId: cred.ownerId,
+    identityHash: cred.identityHash,
+    sessionKey: cred.sessionKey ?? null,
     admin,
     async audit(entry) {
       const full = { ...entry, ownerId: cred.ownerId, admin };

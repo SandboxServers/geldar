@@ -12,6 +12,10 @@ export interface Credential {
   readonly scopes: OwnerKeyScope[];
   /** The CSRF token a state-changing cookie request must echo. Null for a key, which needs none. */
   readonly csrf: string | null;
+  /** The signed-in identity (hex) of a cookie session. Null for a key. */
+  readonly identityHash: string | null;
+  /** The session key (the session hash, hex) of a cookie session. Undefined for a key. */
+  readonly sessionKey?: string;
 }
 
 /** The CSRF token of a session (the same derivation as the web account page). */
@@ -48,7 +52,13 @@ export async function authenticate(
     try {
       const row = await deps.sessions.touch(sessionHash(sid), deps.now());
       if (row === null) return null;
-      return { ownerId: row.ownerId, scopes: SESSION_SCOPES, csrf: csrfFor(deps.csrfKey, sid) };
+      return {
+        ownerId: row.ownerId,
+        scopes: SESSION_SCOPES,
+        csrf: csrfFor(deps.csrfKey, sid),
+        identityHash: row.identityHash,
+        sessionKey: sessionHash(sid).toString('hex'),
+      };
     } catch {
       return null;
     }
@@ -58,7 +68,12 @@ export async function authenticate(
   try {
     const found = await deps.ownerKeys.store.resolve(deps.ownerKeys.hash(token));
     if (found === null) return null;
-    return { ownerId: found.ownerId, scopes: parseScopes(found.scopes) ?? [], csrf: null };
+    return {
+      ownerId: found.ownerId,
+      scopes: parseScopes(found.scopes) ?? [],
+      csrf: null,
+      identityHash: null,
+    };
   } catch {
     return null;
   }
