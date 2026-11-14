@@ -16,4 +16,12 @@ public interface CoreProtectPort {
      * @throws RuntimeException when the lookup fails or CoreProtect cannot answer
      */
     List<LogRow> rows(String world, int chunkX, int chunkZ);
+
+    /**
+     * Logs one placement by {@code user} at a position, as CoreProtect would log a player's place (decision 0195: the
+     * gravestones are logged under the system owner so that they persist past the overlay's 60 s).
+     *
+     * @throws RuntimeException when the placement cannot be logged
+     */
+    void logPlacement(String user, String world, int x, int y, int z, String material);
 }

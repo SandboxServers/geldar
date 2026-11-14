@@ -62,17 +62,24 @@ export function capForOwnerAdd(
   return cap;
 }
 
+/**
+ * Adds an owner. A second run for an id that exists writes nothing and returns 'exists' (idempotent, so the
+ * row keeps its cap). An operator-created owner has no identity and cannot sign in (0011 F12).
+ */
 export async function addOwner(
   sql: Sql,
   id: string,
   cap: number = DEFAULT_OWNER_CAP,
-): Promise<void> {
+): Promise<'added' | 'exists'> {
   checkOwnerId(id);
   checkCap(cap);
+  const found = await sql.query('SELECT owner_id FROM mcp_owners WHERE owner_id = $1', [id]);
+  if (found.rows.length > 0) return 'exists';
   await sql.query('INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ($1, $1, $2)', [
     id,
     cap,
   ]);
+  return 'added';
 }
 
 export async function setOwnerCap(sql: Sql, id: string, cap: number): Promise<void> {

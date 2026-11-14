@@ -5,6 +5,7 @@
 biz.aQute.bnd:biz.aQute.bnd.annotation:7.1.0=compileClasspath,testCompileClasspath
 com.ethlo.time:itu:1.14.0=testCompileClasspath,testRuntimeClasspath
 com.fasterxml.jackson.core:jackson-annotations:2.22=testCompileClasspath,testRuntimeClasspath
+com.flowpowered:flow-math:1.0.3=compileClasspath
 com.github.spotbugs:spotbugs-annotations:4.8.6=compileClasspath,testCompileClasspath
 com.google.auto.service:auto-service-annotations:1.1.1=compileClasspath,testCompileClasspath
 com.google.code.findbugs:jsr305:3.0.2=compileClasspath,testCompileClasspath
@@ -17,6 +18,7 @@ com.google.j2objc:j2objc-annotations:3.1=compileClasspath,testCompileClasspath,t
 com.mojang:brigadier:1.3.10=compileClasspath,testCompileClasspath,testRuntimeClasspath
 com.networknt:json-schema-validator:3.0.8=testCompileClasspath,testRuntimeClasspath
 commons-codec:commons-codec:1.16.0=testRuntimeClasspath
+de.bluecolored:bluemap-api:2.8.2=compileClasspath,testCompileClasspath,testRuntimeClasspath
 io.nats:jnats:2.26.4=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.papermc.paper:paper-api:26.1.2.build.74-stable=compileClasspath,testCompileClasspath,testRuntimeClasspath
 it.unimi.dsi:fastutil:8.5.18=compileClasspath,testCompileClasspath,testRuntimeClasspath

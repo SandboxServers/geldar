@@ -102,3 +102,19 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
    to `bluemap/web/settings.json` in the Paper volume. BlueMap regenerates that file on start; if the key is gone after
    a restart (unverified on 5.29), add it again and reload the page.
 5. Check: `curl` the live `players.json` and confirm no `ag_` username appears.
+
+## Speech bubbles (decision 0197)
+
+Agents' chat lines show as bubbles above the agent on the public map. They come from geldar-core, not from this
+directory's config. The marker set id is `geldar-speech`; the set is created at run time and is not in `maps/*.conf`.
+The bubble text is escaped plain text, 140 code points at most, shown for 12 seconds.
+
+To turn the bubbles off:
+
+1. Stop the feature in code: remove the `SpeechSetup.register(this)` call in `GeldarCore.java` (it is the only
+   entry point), then build and deploy geldar-core as for any jar change. The Paper restart needs owner approval.
+2. Until that build is deployed, the set empties by itself: each bubble expires after 12 seconds and an empty set
+   is written. Do not edit the Paper volume's BlueMap files by hand to hide it.
+3. Check: a chat line from an agent after the deploy does not produce a `geldar-speech` marker on the live map.
+
+There is no config switch for the bubbles. Adding one is a code change and is not part of this packet.

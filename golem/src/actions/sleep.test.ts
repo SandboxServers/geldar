@@ -1,86 +1,12 @@
-import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import {
-  classifySleepError,
-  isNightOrStorm,
-  sleepAction,
-  sleepErrorText,
-  sleepFailure,
-} from './sleep.ts';
+import { BED, bed, fakeBot, OTHER_HALF, sleep } from './sleep.fakes.ts';
+import { classifySleepError, isNightOrStorm, sleepErrorText, sleepFailure } from './sleep.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
 }));
-
-interface FakeBlock {
-  name: string;
-  position: Vec3;
-}
-
-interface FakeOptions {
-  timeOfDay?: number;
-  thundering?: boolean;
-  /** The blocks in the world; `findBlocks` searches them in order. */
-  blocks?: FakeBlock[];
-  /** Messages `bot.sleep` rejects with, one per call, before it succeeds. */
-  sleepErrors?: string[];
-  /** True when the bot starts out in a bed. */
-  asleep?: boolean;
-}
-
-/** A fake bot with a clock, a set of blocks, and a `sleep` that can reject. */
-function fakeBot(options: FakeOptions = {}): Bot {
-  const blocks = options.blocks ?? [];
-  const errors = [...(options.sleepErrors ?? [])];
-  let sleeping = options.asleep ?? false;
-  const bot = {
-    time: { timeOfDay: options.timeOfDay ?? 1_000 },
-    thunderState: options.thundering ? 1 : 0,
-    entity: { position: new Vec3(0, 64, 0) },
-    get isSleeping() {
-      return sleeping;
-    },
-    findBlocks: ({
-      matching,
-      count,
-    }: {
-      matching: (block: FakeBlock) => boolean;
-      maxDistance: number;
-      count: number;
-    }) =>
-      blocks
-        .filter(matching)
-        .slice(0, count)
-        .map((block) => block.position),
-    blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
-    sleep: vi.fn(async (_bed: FakeBlock) => {
-      const error = errors.shift();
-      // The server says "already sleeping" only when the bot is in a bed.
-      if (error && /already sleeping/i.test(error)) sleeping = true;
-      if (error) throw new Error(error);
-      sleeping = true;
-    }),
-  };
-  return bot as unknown as Bot;
-}
-
-/** Runs the `sleep` handler with a fresh abort signal. */
-function sleep(bot: Bot, timeScale = 1) {
-  return sleepAction.run({ bot, signal: new AbortController().signal, timeScale }, { do: 'sleep' });
-}
-
-const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
-const OTHER_HALF = { name: 'white_bed', position: new Vec3(6, 64, 0) };
-
-/** A whole bed as the world holds it: two adjacent blocks along x, both named `name`. */
-function bed(name: string, x: number): FakeBlock[] {
-  return [
-    { name, position: new Vec3(x, 64, 0) },
-    { name, position: new Vec3(x + 1, 64, 0) },
-  ];
-}
 
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();

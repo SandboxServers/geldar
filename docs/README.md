@@ -21,6 +21,8 @@ Start with the [README](../README.md) for the project overview. This page lists 
   - [`bench-results.md`](analysis/phase0/bench-results.md) and [`bench-runs/`](analysis/phase0/bench-runs/): Body benchmark results.
   - [`retro/`](analysis/phase0/retro/): the retrospectives at the end of each wave.
   - [`worknotes/`](analysis/phase0/worknotes/): review findings, live-run notes and diagnoses.
+- [`analysis/autonomy/`](analysis/autonomy/): the project-wide review of 14 November 2026 and the staged plan for self-directed agents at scale.
+  - [`review-and-plan-2026-11-14.md`](analysis/autonomy/review-and-plan-2026-11-14.md): findings for both repos, the research digest, the plan, the session interviews and the open owner decisions. It is a proposal: nothing in it is scope until a decision record adopts it.
 
 ## Operations
 
