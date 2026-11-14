@@ -69,10 +69,6 @@ public final class GeldarCore extends JavaPlugin {
             getServer().getPluginManager().registerEvents(listener, this);
         }
         registerChannels(getServer().getMessenger(), this, registered);
-        // Gravestones (no loot): a marker block and sign where an agent character dies. Read once at enable.
-        getServer().getPluginManager().registerEvents(new GravestoneListener(
-                getConfig().getBoolean("gravestones.enabled", true),
-                Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger()), this);
 
         if (config.lakitu().enabled()) {
             dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
@@ -89,6 +85,13 @@ public final class GeldarCore extends JavaPlugin {
         dev.geldar.core.blockowner.BlockOwnerSetup owners = dev.geldar.core.blockowner.BlockOwnerSetup.register(
                 this, config.natsUrl(), config.shard(), System::getenv);
         blockOwner = owners;
+        // Gravestones (no loot): a marker block and sign where an agent character dies. Read once at enable. Registered
+        // after block ownership, because each gravestone is recorded as owned by the system through its recorder.
+        getServer().getPluginManager().registerEvents(new GravestoneListener(
+                getConfig().getBoolean("gravestones.enabled", true),
+                Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger(), owners.placements()),
+                this);
+        getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(owners.placements()));
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();
             dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());

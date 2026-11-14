@@ -10,6 +10,8 @@ final class FakeCoreProtectPort implements CoreProtectPort {
     private long delayMs;
     private int lookups;
     private String lastThread;
+    private final List<String> logged = new ArrayList<>();
+    private boolean refuseLogging;
 
     /** Adds one row; rows must be added newest first. */
     FakeCoreProtectPort row(String world, int x, int y, int z, boolean place, String user) {
@@ -20,6 +22,25 @@ final class FakeCoreProtectPort implements CoreProtectPort {
     FakeCoreProtectPort rolledBack(String world, int x, int y, int z, boolean place, String user) {
         rows.add(new LogRow(world, x, y, z, place, user, true));
         return this;
+    }
+
+    /** The placements logged, in call order, each as "user world x,y,z material". */
+    List<String> logged() {
+        return List.copyOf(logged);
+    }
+
+    /** Makes the next {@link #logPlacement} calls throw. */
+    FakeCoreProtectPort refuseLogging() {
+        this.refuseLogging = true;
+        return this;
+    }
+
+    @Override
+    public synchronized void logPlacement(String user, String world, int x, int y, int z, String material) {
+        if (refuseLogging) {
+            throw new IllegalStateException("scripted refusal");
+        }
+        logged.add(user + " " + world + " " + x + "," + y + "," + z + " " + material);
     }
 
     FakeCoreProtectPort failWith(RuntimeException e) {
