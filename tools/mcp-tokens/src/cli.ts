@@ -205,8 +205,15 @@ async function runOwner(parsed: Parsed, io: Io, env: Env, args: string[]): Promi
   if (verb === 'add' && id !== undefined && args.length === 2) {
     const cap = optionalFlag(parsed, '--cap');
     const ownerCap = capForOwnerAdd(cap, await loadSovereignShard(env.shardFile));
-    await withSql(env, (sql) => addOwner(sql, id, ownerCap));
-    io.out(`added owner ${id}`);
+    let outcome = 'added' as 'added' | 'exists';
+    await withSql(env, async (sql) => {
+      outcome = await addOwner(sql, id, ownerCap);
+    });
+    io.out(
+      outcome === 'exists'
+        ? `owner ${id} exists; nothing changed`
+        : `added owner ${id}; an operator-created owner has no identity and cannot sign in`,
+    );
     return;
   }
   if (verb === 'set-cap' && id !== undefined && value !== undefined && args.length === 3) {

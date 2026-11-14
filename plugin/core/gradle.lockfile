@@ -5,6 +5,7 @@
 biz.aQute.bnd:biz.aQute.bnd.annotation:7.1.0=compileClasspath,testCompileClasspath
 com.ethlo.time:itu:1.14.0=testCompileClasspath,testRuntimeClasspath
 com.fasterxml.jackson.core:jackson-annotations:2.22=testCompileClasspath,testRuntimeClasspath
+com.flowpowered:flow-math:1.0.3=compileClasspath
 com.github.spotbugs:spotbugs-annotations:4.8.6=compileClasspath,testCompileClasspath
 com.google.auto.service:auto-service-annotations:1.1.1=compileClasspath,testCompileClasspath
 com.google.code.findbugs:jsr305:3.0.2=compileClasspath,testCompileClasspath

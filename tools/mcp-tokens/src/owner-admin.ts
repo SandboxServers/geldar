@@ -48,12 +48,32 @@ export async function listOwnerAdmins(sql: Sql): Promise<string[]> {
   return result.rows.map((row) => String(row.owner_id));
 }
 
-/** Runs one parsed `owner admin` action and returns the lines to print. */
+/** Whether an owner row exists. Reads only. */
+export async function ownerExists(sql: Sql, id: string): Promise<boolean> {
+  const result = await sql.query('SELECT owner_id FROM mcp_owners WHERE owner_id = $1', [id]);
+  return result.rows.length > 0;
+}
+
+/**
+ * Runs one parsed `owner admin` action and returns the lines to print. Set and unset read `owner admin list`
+ * first: when the flag already has the requested value, nothing is written (no audit row), so a re-run is a
+ * no-op. A missing owner is still refused, even when the request would be a no-op.
+ */
 export async function runOwnerAdmin(sql: Sql, action: OwnerAdminAction): Promise<string[]> {
   if (action.verb === 'list') {
     const owners = await listOwnerAdmins(sql);
     return owners.length === 0 ? ['no admin owners'] : owners.map((id) => `admin ${id}`);
   }
-  await setOwnerAdmin(sql, action.id, action.verb === 'set');
-  return [`owner ${action.id} admin ${action.verb === 'set' ? 'set' : 'unset'}`];
+  const want = action.verb === 'set';
+  const admins = await listOwnerAdmins(sql);
+  if (admins.includes(action.id) === want) {
+    if (!(await ownerExists(sql, action.id))) throw new Error(`no owner ${action.id}`);
+    return [
+      want
+        ? `owner ${action.id} is already an admin; nothing changed`
+        : `owner ${action.id} is not an admin; nothing changed`,
+    ];
+  }
+  await setOwnerAdmin(sql, action.id, want);
+  return [`owner ${action.id} admin ${want ? 'set' : 'unset'}`];
 }
