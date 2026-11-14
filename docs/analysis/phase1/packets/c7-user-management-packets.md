@@ -169,6 +169,7 @@ Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes t
 
 ## C7-06c: account page v2, items not delivered by C7-06 and C7-06b
 
+- **Status.** Built partial (status line only; see worknote `C7-06c.md`). Items 2, 3 and the token and credit data of item 1 moved to C7-06d.
 - **id / wave / lane.** C7-06c, wave 4 (after C7-04c2 for the buttons). Register lane. **depends-on.** C7-06 (built, partial), C7-04e (built; PATCH), C7-04c2 (the body routes wired; buttons only). **branch.** `phase1/c7-06c-account-items`. **migration.** none. **size.** M.
 - **Goal.** Deliver the C7-06 items that the built pages do not show (review F5, wave 4). The stored `status` text is not a substitute for them.
   1. **Per-agent status line** with the body state (running, starting, waiting or stopped, from `GET .../body/status`; a 404 from status means stopped), credits left, and the token expiry date and last used, where a loader provides them (the wave 1 carry-forward). Remove the duplicate status text the page now shows.
@@ -183,6 +184,24 @@ Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes t
   - Toggle: a toggle posts `PATCH` with exactly one flag; a toggle for another owner's agent is not rendered.
 - **checks.** Register tests, `pwsh -NoProfile -File ./geldar.ps1 check`.
 - **Owner decisions.** Ruled: the links follow 0138 rule 1 (owner sees both for every non-retired agent).
+
+## C7-06d: account page body controls and live status (split of C7-06c)
+
+- **id / wave / lane.** C7-06d, Shelved until sign-up opens (with C7-03b2). Register lane. **depends-on.** C7-06c (status line, built partial), C7-04c2 (body routes wired), C7-04e (PATCH, built). **branch.** `phase1/c7-06d-account-controls`. **migration.** none. **size.** M.
+- **Goal.** The three C7-06c items that the status-line packet did not build (worknote `C7-06c.md`, "Not built").
+  1. **Same-origin client script and CSP change** for the `x-csrf-token` header. The body routes (scope `body`) and PATCH read the CSRF token from that header; a plain HTML form cannot send it. The script is served from the register origin, and the CSP admits it.
+  2. **Start, stop and restart buttons** calling `/agents/{id}/body/*`. Rendered only when the body routes are mounted.
+  3. **Visibility toggles** through `PATCH /api/v1/agents/{playerId}` (C7-04e) for `publicCamera` and `thoughtsDelayedPublic`, one flag per request, each with its plain explanation. The existing form POSTs are replaced only when the script is present.
+- **Status line data.** `AccountDeps.bodyState` is wired in `main.ts` only when the body routes are mounted, and it maps the supervisor reply, not the HTTP status (a 404 from status is `stopped` only for the supervisor's "no such body" reply; see the C7-06c caveat). Token expiry, last used and credits need a loader that supplies that data; without one they stay absent.
+- **may-edit.** `threshold/register/src/account*.ts`, `threshold/register/src/account-style.ts` (layout only), the same-origin script (new), the CSP header code where it is set, `main.ts` (the one wiring line for the loader, only with body routes mounted), tests, `docs/analysis/phase1/worknotes/C7-06d.md`.
+- **must-not-edit.** `api/body*.ts`, `api/agents*.ts`, `errors.ts`, `docs/spec.md`, `contract/`, the skin section (C7-13c).
+- **Tests (each fails on revert).**
+  - Buttons absent while the body routes are unmounted; a button posts with the CSRF token from the header to its own route.
+  - The CSP admits the script and nothing else; no inline script or inline style attribute.
+  - A toggle sends `PATCH` with exactly one flag; a toggle for another owner's agent is not rendered.
+  - Status line: with the loader wired and the body routes mounted, the state renders; with them unmounted, no loader and no line.
+- **checks.** Register tests, `pwsh -NoProfile -File ./geldar.ps1 check`.
+- **Owner decisions.** None. Shelved: do not dispatch until sign-up (C7-03b2) opens.
 
 ## C7-07: agent rename (skin choice is deferred)
 
