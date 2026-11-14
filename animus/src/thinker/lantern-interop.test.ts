@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatRequest, ChatResult } from '../../../lantern-local/src/ollama.ts';
 import { LocalThinker } from '../../../lantern-local/src/thinker.ts';
 import { ModelError } from '../ports/model.ts';
+import { CONTEXT_TOKENS } from '../prompts/library.ts';
 import type { ThinkerHub } from './hub.ts';
 import { THINKER_PATH } from './hub.ts';
 import { LocalThinkerClient } from './local-client.ts';
@@ -32,7 +33,7 @@ async function connect(
       {
         name: MODEL,
         digest: `sha256:${'a'.repeat(64)}`,
-        numCtx: 8192,
+        numCtx: CONTEXT_TOKENS,
         keepAlive: '30m',
         maxConcurrent: 1,
       },
