@@ -13,10 +13,12 @@ import org.bukkit.plugin.Plugin;
 
 /**
  * Registers the agent skin provider with BlueMap. Does nothing unless BlueMap is enabled, so the plugin runs
- * without it. The skins directory comes from GELDAR_SKINS_DIR (default /data/skins, read-only mount).
+ * without it. The skins directory comes from GELDAR_AGENT_SKINS_DIR (default /data/skins, read-only mount).
+ * {@link #register} never throws: a missing BlueMap class, a missing server or any other failure leaves the
+ * skins unset and logs why, so graves and Kino setup still run.
  */
 public final class AgentSkinSetup {
-    static final String SKINS_DIR_VARIABLE = "GELDAR_SKINS_DIR";
+    static final String SKINS_DIR_VARIABLE = "GELDAR_AGENT_SKINS_DIR";
     static final String DEFAULT_SKINS_DIR = "/data/skins";
     static final String DEFAULT_SKIN_RESOURCE = "/agent-default-skin.png";
 
@@ -29,31 +31,37 @@ public final class AgentSkinSetup {
     public static AgentSkinSetup register(Plugin plugin, Function<String, String> env) {
         AgentSkinSetup setup = new AgentSkinSetup();
         Logger log = plugin.getLogger();
-        if (!Bukkit.getPluginManager().isPluginEnabled("BlueMap")) {
-            log.info("BlueMap is not enabled; agent skins are not set");
-            return setup;
-        }
-        String configured = env.apply(SKINS_DIR_VARIABLE);
-        Path dir = Path.of(configured == null || configured.isBlank() ? DEFAULT_SKINS_DIR : configured);
-        BufferedImage fallback = loadDefaultSkin(log);
-        AgentSkinLookup lookup = new AgentSkinLookup(dir, fallback, log);
-        AgentSkinProvider skins = new AgentSkinProvider(lookup::lookup, fallback, log);
         try {
+            if (!Bukkit.getPluginManager().isPluginEnabled("BlueMap")) {
+                log.info("BlueMap is not enabled; agent skins are not set");
+                return setup;
+            }
+            String configured = env.apply(SKINS_DIR_VARIABLE);
+            Path dir = Path.of(configured == null || configured.isBlank() ? DEFAULT_SKINS_DIR : configured);
+            BufferedImage fallback = loadDefaultSkin(log, DEFAULT_SKIN_RESOURCE);
+            AgentSkinLookup lookup = new AgentSkinLookup(dir, fallback, log);
+            // Built inside the try: loading the provider needs the BlueMap API classes.
+            AgentSkinProvider skins = new AgentSkinProvider(lookup::lookup, fallback, log);
             BlueMapAPI.onEnable(api -> {
                 setup.provider = skins;
                 api.getPlugin().setSkinProvider(skins);
             });
             // BlueMap is disabling: drop our reference (BlueMap's plugin object keeps its own).
             BlueMapAPI.onDisable(api -> setup.provider = null);
-        } catch (NoClassDefFoundError e) {
+        } catch (LinkageError e) {
             log.warning("BlueMap API is not on the classpath; agent skins are not set");
+        } catch (RuntimeException e) {
+            log.warning("agent skins are not set: " + e.getClass().getSimpleName());
         }
         return setup;
     }
 
-    /** The default skin from the plugin's resources, or a solid grey square when the resource cannot be loaded. */
-    static BufferedImage loadDefaultSkin(Logger log) {
-        try (InputStream in = AgentSkinSetup.class.getResourceAsStream(DEFAULT_SKIN_RESOURCE)) {
+    /**
+     * The default skin from the named resource, or a solid grey square when the resource is missing or cannot be
+     * read. Never null.
+     */
+    static BufferedImage loadDefaultSkin(Logger log, String resource) {
+        try (InputStream in = AgentSkinSetup.class.getResourceAsStream(resource)) {
             if (in != null) {
                 BufferedImage image = ImageIO.read(in);
                 if (image != null) {

@@ -65,6 +65,7 @@ public final class AgentSkinLookup {
                 String name = file.getFileName().toString();
                 String stem = name.substring(0, name.length() - PNG_SUFFIX.length());
                 if (STEM.matcher(stem).matches() && offlineUuid(stem).equals(uuid)) {
+                    // Only the stems the agent ids allow (lower case, at most 32 characters) are read.
                     return file;
                 }
             }

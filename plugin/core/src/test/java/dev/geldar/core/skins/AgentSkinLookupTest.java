@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.UUID;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -98,6 +99,42 @@ class AgentSkinLookupTest {
         Files.createDirectories(dir.resolve("ag_jason_01.png"));
 
         assertSame(defaultImage, lookup(JASON));
+    }
+
+    @Test
+    void mixedCaseStemReturnsTheDefaultEvenWhenTheUuidMatches() throws IOException {
+        Files.write(dir.resolve("Ag_Jason_01.png"), png(solid(64, 64, RED)));
+
+        assertSame(defaultImage, lookup(AgentSkinLookup.offlineUuid("Ag_Jason_01")));
+    }
+
+    @Test
+    void thirtyThreeCharacterStemReturnsTheDefaultEvenWhenTheUuidMatches() throws IOException {
+        String stem = "a".repeat(33);
+        Files.write(dir.resolve(stem + ".png"), png(solid(64, 64, RED)));
+
+        assertSame(defaultImage, lookup(AgentSkinLookup.offlineUuid(stem)));
+    }
+
+    @Test
+    void thirtyTwoCharacterStemIsRead() throws IOException {
+        String stem = "a".repeat(32);
+        Files.write(dir.resolve(stem + ".png"), png(solid(64, 64, RED)));
+
+        assertEquals(RED, lookup(AgentSkinLookup.offlineUuid(stem)).getRGB(0, 0));
+    }
+
+    @Test
+    void symlinkInTheDirectoryIsFollowed() throws IOException {
+        Path target = Files.write(dir.resolve("target.bin"), png(solid(64, 64, RED)));
+        Path link = dir.resolve("ag_jason_01.png");
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (IOException | UnsupportedOperationException e) {
+            Assumptions.assumeTrue(false, "this filesystem cannot create symlinks: " + e.getClass().getSimpleName());
+        }
+
+        assertEquals(RED, lookup(JASON).getRGB(0, 0));
     }
 
     private BufferedImage lookup(UUID uuid) {
