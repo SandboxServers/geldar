@@ -334,6 +334,14 @@ export interface WorldEvent {
    */
   thinker_id?: string;
   /**
+   * The harness that produced the event (claude, chatgpt, local; working name, reconcile with kit HC-04). Absent on events no Body or MCP stamped.
+   */
+  harness?: string;
+  /**
+   * The model that produced the event, as declared (working name, reconcile with kit HC-04).
+   */
+  model?: string;
+  /**
    * Event-specific fields. Free-form, so this object does not set additionalProperties.
    */
   payload: {
