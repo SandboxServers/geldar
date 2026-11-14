@@ -16,6 +16,7 @@ or `_`, the same name `player add --name` uses; the wrapper stores it lower-case
 
 ```sh
 deploy/colo-admin.sh roster-add <name> --owner <owner>   # then player-add
+deploy/colo-admin.sh owner-set-cap <owner> <N>        # N 0 to 50 (decision 0052); owner-add is limited by the shard's owner_cap_owner (20)
 deploy/colo-admin.sh roster-list [--owner <owner>]        # read-only
 ```
 

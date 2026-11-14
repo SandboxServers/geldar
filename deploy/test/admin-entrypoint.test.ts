@@ -145,3 +145,19 @@ describe('admin.sh roster dispatch (decision 0108)', () => {
     expect(argv(fx)).toBeUndefined();
   });
 });
+
+describe('admin.sh owner-set-cap dispatch (decisions 0052, 0133)', () => {
+  it('owner-set-cap passes the owner id and N to the mcp-tokens CLI as owner set-cap', () => {
+    const fx = fixture();
+    const r = run(fx, ['owner-set-cap', 'jason', '20']);
+    expect(r.code).toBe(0);
+    expect(argv(fx)).toEqual([CLI, 'owner', 'set-cap', 'jason', '20']);
+  });
+
+  it('the usage text lists owner-set-cap', () => {
+    const fx = fixture();
+    const r = run(fx, []);
+    expect(r.code).toBe(2);
+    expect(r.out).toMatch(/usage: admin <[^>]*\|owner-set-cap[|>]/);
+  });
+});

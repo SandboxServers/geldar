@@ -118,6 +118,15 @@ roster_list_args() {
   roster_owner=$2
 }
 
+# owner-set-cap <owner id> <N>: the owner id as roster_owner_ok checks it; N a whole number from 0 to 50 with no leading
+# zero (the CLI's set-cap range, decision 0052). The shard's owner_cap_owner (20) is not applied: set-cap takes N as given.
+owner_set_cap_args() {
+  [ $# -eq 2 ] || die "owner-set-cap takes <owner id> <N>"
+  roster_owner_ok "$1"
+  case $2 in 0 | [1-9] | [1-4][0-9] | 50) ;; *) die "N must be a whole number from 0 to 50" ;; esac
+  owner_cap=$2
+}
+
 # Writes the overlay that mounts a host directory into the admin service only: $1 is the target, $2 is "" or
 # "read_only: true", $3 names the file (tokens or skins). It is written with mode 0600.
 write_overlay() {
@@ -226,8 +235,8 @@ run_hosts() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
+  migrate | owner-add | owner-set-cap | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, owner-set-cap, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
@@ -238,6 +247,7 @@ fi
 case $cmd in
   player-start | player-stop) host_args "$@" ;;
   player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
+  owner-set-cap) owner_set_cap_args "$@" ;;
   roster-add) roster_add_args "$@" ;;
   roster-list) roster_list_args "$@" ;;
   player-flags) [ "$#" -ge 2 ] && printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;
