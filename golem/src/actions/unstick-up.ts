@@ -99,6 +99,9 @@ function planStep(bot: Bot, feet: Vec3, dir: Vec3): Step | string | null {
   let cost = 0;
   for (const cell of [stand.plus(UP), stand.plus(UP).plus(UP)]) {
     const block = bot.blockAt(cell);
+    if (block?.name === 'fire') {
+      return `fire at ${cell.x},${cell.y},${cell.z} would burn the Body on the climb`;
+    }
     if (openCell(block)) continue;
     if (block === null) return `the cell at ${cell.x},${cell.y},${cell.z} is not loaded`;
     const refusal = cellRefusal(bot, block, cell, own);

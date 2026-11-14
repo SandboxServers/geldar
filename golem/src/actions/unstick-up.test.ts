@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
 import { setOwnerLookup } from './protected-blocks.ts';
 import type { ActionContext } from './registry.ts';
@@ -12,8 +12,8 @@ const key = (x: number, y: number, z: number): string => `${x},${y},${z}`;
 
 /** Blocks a bare hand cannot drop: stone needs a pickaxe (the test has none). */
 const NEEDS_TOOL = new Set(['stone']);
-/** Cells the fake reads as empty-boxed: air, liquids and the underwater plant kelp. */
-const EMPTY_BOX = new Set(['air', 'water', 'lava', 'kelp']);
+/** Cells the fake reads as empty-boxed: air, liquids, fire and the underwater plant kelp. */
+const EMPTY_BOX = new Set(['air', 'water', 'lava', 'fire', 'kelp']);
 
 /** A block grid: unlisted cells are air; `water`, `lava` and `kelp` are empty-boxed; the rest are solid. */
 function blockOf(grid: Grid, cell: Vec3, hardness = 1.5): Block | null {
@@ -236,6 +236,21 @@ describe('unstick upward hand-dig rung (decision 0196)', () => {
     expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('stone');
   });
 
+  it.each([
+    ['feet', 1],
+    ['head', 2],
+  ])(
+    'refuses a climb with fire in the %s cell above the wall (decision 0196)',
+    async (_cell, dy) => {
+      const grid = zackPit();
+      grid.set(key(BASE.x - 1, BASE.y + dy, BASE.z), 'fire');
+      const { result, dug } = await climbWest(grid);
+      expect(result).toMatchObject({ freed: false, dug: 0 });
+      expect(result.blocked).toContain('fire at');
+      expect(dug).toEqual([]);
+    },
+  );
+
   it('refuses a climb whose wall cell is lava (the cell itself, not a hazard beside it)', async () => {
     const grid = zackPit();
     grid.set(key(BASE.x - 1, BASE.y + 1, BASE.z), 'lava');
@@ -376,6 +391,118 @@ describe('unstick upward rung: side, head room, budgets and digs cap (decision 0
     expect(dug).toHaveLength(4);
     expect(result.blocked).toMatch(/digs and 1 are left/);
     expect(bot.entity.position.y).toBe(BASE.y + 2);
+  });
+});
+
+describe('unstick upward rung caps: budget, action limit, digs and their boundaries (review 2 FIX-1)', () => {
+  beforeEach(() => {
+    // Date is frozen, so `Date.now() - ms` is exactly `ms` already spent on the action.
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    setOwnerLookup(null);
+  });
+
+  /** Climbs west in Zack's pit with `ms` already spent and `digsLeft` digs allowed (default: no cap). */
+  async function climbAfter(ms: number, grid: Grid, digsLeft?: number) {
+    const { bot, dug } = fakeBot(grid, START);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      WEST,
+      Date.now() - ms,
+      digsLeft,
+    );
+    return { result, dug };
+  }
+
+  it('the 25 s budget allows a climb costing exactly 25 s and refuses 26 s before any dig', async () => {
+    // Hardness 2.5 is 12.5 s a cell: the first climb's two cells cost exactly 25 s, so it is dug.
+    const exact = await climbWest(shaftPit(), 2.5);
+    expect(exact.result.dug).toBe(2);
+    expect(exact.result.blocked).toMatch(/needs about 50 s/);
+    // Hardness 2.6 is 13 s a cell: 26 s is over the budget, so nothing is broken.
+    const over = await climbWest(shaftPit(), 2.6);
+    expect(over.dug).toEqual([]);
+    expect(over.result).toMatchObject({ freed: false, dug: 0 });
+    expect(over.result.blocked).toMatch(/budget is 25 s/);
+  });
+
+  it('the 30 s limit allows a climb ending at exactly 30 s with the 1 s hop reserve', async () => {
+    // 21.5 s spent, a 7.5 s stone dig and the 1 s reserve: exactly 30 s, so the climb runs.
+    const { result, dug } = await climbAfter(21_500, zackPit());
+    expect(dug).toEqual(['stone']);
+    expect(result).toEqual({ freed: true, dug: 1, blocked: null });
+  });
+
+  it('the 30 s limit refuses a climb that would end 1 ms past 30 s, reserve included', async () => {
+    const { result, dug } = await climbAfter(21_501, zackPit());
+    expect(dug).toEqual([]);
+    expect(result).toMatchObject({ freed: false, dug: 0 });
+    expect(result.blocked).toMatch(/action limit/);
+  });
+
+  it('the digs cap allows a climb that uses exactly the digs left', async () => {
+    const { result, dug } = await climbAfter(0, zackPit(), 1);
+    expect(dug).toEqual(['stone']);
+    expect(result).toEqual({ freed: true, dug: 1, blocked: null });
+  });
+
+  it('the digs cap refuses a climb one dig over, before any block is broken', async () => {
+    const { result, dug } = await climbAfter(0, zackPit(), 0);
+    expect(dug).toEqual([]);
+    expect(result).toMatchObject({ freed: false, dug: 0 });
+    expect(result.blocked).toBe('the next climb needs 1 digs and 0 are left');
+  });
+
+  it('the digs cap counts a two-cell climb across the second climb (exact at 2)', async () => {
+    const { bot, dug } = fakeBot(shaftPit(), START, 0);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      WEST,
+      Date.now(),
+      2,
+    );
+    expect(result).toMatchObject({ freed: false, dug: 2 });
+    expect(dug).toHaveLength(2);
+    expect(result.blocked).toBe('the next climb needs 2 digs and 0 are left');
+  });
+
+  it('a climb whose hop rises less than 0.9 blocks is not a climb: the Body did not rise', async () => {
+    const { bot, dug } = fakeBot(zackPit(), START);
+    let raised = false;
+    // The first tick of the hop lifts the Body half a block and no more.
+    bot.waitForTicks = async () => {
+      if (raised) return;
+      raised = true;
+      bot.entity.position = bot.entity.position.offset(0, 0.5, 0);
+    };
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      WEST,
+    );
+    expect(dug).toEqual(['stone']);
+    expect(result).toEqual({
+      freed: false,
+      dug: 1,
+      blocked: 'the Body did not rise onto the cleared wall',
+    });
+  });
+
+  it('an unstick run in the 1x1 shaft spends its six digs and climbs no further', async () => {
+    const { bot, dug } = fakeBot(shaftPit(), START, 0.5);
+    const outcome = await unstick(ctxOf(bot));
+    expect(outcome.status).toBe('failed');
+    expect(messageOf(outcome)).toContain('dig_up: the next climb needs 2 digs and 0 are left');
+    // The climb's digs count against the six: the last-resort pass must not dig more after it. Eight
+    // stones are broken in all (the earlier passes and the two climb cells); none comes after the climb.
+    expect(dug).toHaveLength(8);
   });
 });
 
