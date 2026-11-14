@@ -6,13 +6,35 @@ import { sleepAction } from './sleep.ts';
 export interface FakeBlock {
   name: string;
   position: Vec3;
+  /** The block light the world model reports; absent reads as unknown. */
+  light?: number;
 }
+
+/** An entity in the fake world: its minecraft-data name and its feet position. */
+export interface FakeEntity {
+  name: string;
+  position: Vec3;
+}
+
+/** The minecraft-data categories the fake registry knows: the hostile mobs and the passive ones the tests name. */
+export const SCENE_REGISTRY = {
+  entitiesByName: {
+    zombie: { category: 'Hostile mobs' },
+    creeper: { category: 'Hostile mobs' },
+    enderman: { category: 'Hostile mobs' },
+    zombified_piglin: { category: 'Hostile mobs' },
+    iron_golem: { category: 'Passive mobs' },
+    snow_golem: { category: 'Passive mobs' },
+  },
+};
 
 export interface FakeOptions {
   timeOfDay?: number;
   thundering?: boolean;
   /** The blocks in the world; `findBlocks` searches them in order. */
   blocks?: FakeBlock[];
+  /** The entities in the world, as `bot.entities` lists them. */
+  entities?: FakeEntity[];
   /** Messages `bot.sleep` rejects with, one per call, before it succeeds. */
   sleepErrors?: string[];
   /** True when the bot starts out in a bed. */
@@ -30,6 +52,10 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     time: { timeOfDay: options.timeOfDay ?? 1_000 },
     thunderState: options.thundering ? 1 : 0,
     entity: { position: new Vec3(0, 64, 0) },
+    entities: Object.fromEntries(
+      (options.entities ?? []).map((entity, index) => [String(index), entity]),
+    ),
+    registry: SCENE_REGISTRY,
     get isSleeping() {
       return sleeping;
     },
