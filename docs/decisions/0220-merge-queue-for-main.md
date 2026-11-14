@@ -28,8 +28,11 @@ ruleset sets no strict-up-to-date requirement.
 
 - A merge to `main` from the queue is a push to `main`. The `colo-images` workflow runs on that push for a change
   under its paths, and `colo-deploy` then deploys the Colo node. No human step sits between the merge and the deploy.
-  A PR that changes the Colo's code therefore deploys as soon as it merges. The runbook says which PRs are queued
-  only inside a deploy window the orchestrator opens, and why several queued back to back give one deploy.
+  A PR that changes the Colo's code therefore deploys soon after it merges. Amendment 2026-11-14 (owner ruling):
+  there are no deploy windows. Deploying PRs are queued as soon as they are ready; merges that land close together
+  give one deploy because the queue groups entries and `colo-deploy` keeps only the newest pending run. The one
+  exception is a PR with a manual node step (the deploy's `needs manual` items), which is queued only after its
+  author has told the orchestrator.
 - A PR that conflicts with `main` is dropped from the queue. Its author resolves the conflict and re-queues.
 - `colo-images`, `mcp-mock-image` and the other non-required workflows get no `merge_group` trigger. Nothing
   required depends on them at queue time, so they keep their push and pull_request triggers only. Their image tests

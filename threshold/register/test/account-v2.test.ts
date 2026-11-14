@@ -94,12 +94,13 @@ describe('account page v2 (C7-06): mobile and accessibility', () => {
 });
 
 describe('account page v2 (C7-06): agent controls', () => {
-  it('shows a status line per agent and the plain visibility explanation', async () => {
+  it('drops the repeated status line and keeps the plain visibility explanation', async () => {
     await start();
     const s = await signIn('6005');
     await post('/register/players', s, newPlayer('ag-one-01'));
     const page = await accountPage(s);
-    expect(page).toContain('<p class="status">Status: active</p>');
+    expect(page).not.toContain('<p class="status">Status: active</p>');
+    expect(page).toContain(', active)');
     expect(page).toContain(
       'Public camera: when on, the camera view of an agent may be shown to the public.',
     );

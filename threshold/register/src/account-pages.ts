@@ -17,11 +17,38 @@ const form = (action: string, csrf: string, inner: string): string =>
 const viewLinks = (p: PlayerRow): string =>
   p.status === 'retired' ? '' : '<a href="/">View in Glass</a><a href="/kino/">View in Kino</a>';
 
+/** The body states the account page shows (C7-04c2 status reply, plus stopped for a 404). */
+export type BodyState = 'running' | 'starting' | 'waiting' | 'stopped';
+const BODY_STATES: readonly string[] = ['running', 'starting', 'waiting', 'stopped'];
+
+/**
+ * The body state from one status reply (C7-06c). A 404 from the status route means the body is stopped. A 200 with a
+ * known state is that state. Anything else is unknown, so the page shows no body line for the agent.
+ */
+export function bodyStateOf(httpStatus: number, state: unknown): BodyState | undefined {
+  if (httpStatus === 404) return 'stopped';
+  if (httpStatus === 200 && typeof state === 'string' && BODY_STATES.includes(state)) {
+    return state as BodyState;
+  }
+  return undefined;
+}
+
+/**
+ * The per-agent status line: the body state, only where a loader gave one, and never for a retired agent. No credit,
+ * token expiry or last-used text is shown: no loader provides those fields, so the page says nothing about them.
+ */
+const statusLine = (p: PlayerRow, bodyStates: ReadonlyMap<string, BodyState>): string => {
+  if (p.status === 'retired') return '';
+  const state = bodyStates.get(p.playerId);
+  return state === undefined ? '' : `<p class="status">Body: ${esc(state)}</p>`;
+};
+
 export function accountPage(
   players: readonly PlayerRow[],
   csrf: string,
   harnesses: readonly string[],
   notice = '',
+  bodyStates: ReadonlyMap<string, BodyState> = new Map(),
 ): string {
   const rows = players
     .map((p) => {
@@ -48,7 +75,7 @@ export function accountPage(
               csrf,
               '<button type="submit">Retire</button>',
             );
-      return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})<p class="status">Status: ${esc(p.status)}</p>${viewLinks(p)}${actions}</li>`;
+      return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})${statusLine(p, bodyStates)}${viewLinks(p)}${actions}</li>`;
     })
     .join('');
   const options = harnesses.map((h) => `<option>${esc(h)}</option>`).join('');

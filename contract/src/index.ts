@@ -282,6 +282,7 @@ export {
   OUTCOME_REASONS,
   outcomeDetailText,
   outcomeMessage,
+  PLAIN_FACT_VERBS,
   playerDetailText,
   playerOutcomeText,
 } from './outcome-words.ts';

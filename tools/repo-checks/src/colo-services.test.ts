@@ -35,6 +35,10 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(mind.networks).toEqual(['colo']);
   });
 
+  it('puts golem-body (the idle Adam) under the adam profile only (decision 0212)', () => {
+    expect(body.profiles).toEqual(['adam']);
+  });
+
   it('takes each image from a deploy variable, with the local tag as the offline default', () => {
     expect(body.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
     expect(mind.image).toBe(composeDefault('GELDAR_MIND_IMAGE', 'geldar-mind:c1'));

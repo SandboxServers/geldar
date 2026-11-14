@@ -41,6 +41,19 @@ describe('failure detail text', () => {
     expect(playerOutcomeText({ verb: 'craft', ok: true, detail: 'x' })).toBe('Your craft worked.');
   });
 
+  it('an ok eat or sleep appends its plain fact; other ok verbs ignore it', () => {
+    expect(
+      playerOutcomeText({ verb: 'eat', ok: true, detail: 'cooked_beef: hunger 17 to 20' }),
+    ).toBe('You ate cooked_beef: hunger 17 to 20.');
+    expect(playerOutcomeText({ verb: 'sleep', ok: true, detail: '2 sleepers' })).toBe(
+      'Your sleep worked: 2 sleepers.',
+    );
+    expect(playerOutcomeText({ verb: 'eat', ok: true })).toBe('Your eat worked.');
+    expect(playerOutcomeText({ verb: 'goto', ok: true, detail: 'moved 12 blocks' })).toBe(
+      'Your goto worked.',
+    );
+  });
+
   it.each(BODY_SENTENCES)(
     'every Body sentence (%s, %s) passes the scan and is kept',
     (verb, reason, text) => {

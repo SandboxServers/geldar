@@ -90,6 +90,10 @@ case "$*" in
     fi
     exit 0 ;;
   *" ps -q "*) for a; do last=$a; done; echo "cid-$last"; exit 0 ;;
+  *"State.Running"*)
+    for a; do last=$a; done
+    if [ "\${FAKE_BODY_STOPPED:-}" = 1 ] && [ "$last" = cid-golem-body ]; then echo false; else echo true; fi
+    exit 0 ;;
   *inspect*)
     for a; do last=$a; done
     s=\${last#cid-}
