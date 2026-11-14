@@ -49,6 +49,7 @@ sovereign:
   allowed: true
   harnesses:
     claude: { enabled: true }
+    chatgpt: { enabled: true }   # decision 0180: the ChatGPT-subscription harness (Picard, kit rc16)
   owner_cap_default: 3
   owner_cap_owner: 20
   mcp:
