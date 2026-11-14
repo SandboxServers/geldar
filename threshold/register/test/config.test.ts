@@ -23,6 +23,21 @@ describe('loadConfig', () => {
     expect(c.sessionKey).toHaveLength(32);
   });
 
+  it('has no MCP address unless REGISTER_MCP_PUBLIC_URL is set; a set one drops its trailing slash', () => {
+    expect(loadConfig(env, read).mcpPublicUrl).toBe('');
+    const set = loadConfig(
+      { ...env, REGISTER_MCP_PUBLIC_URL: 'https://mcp.example.invalid/' },
+      read,
+    );
+    expect(set.mcpPublicUrl).toBe('https://mcp.example.invalid');
+  });
+
+  it('refuses a REGISTER_MCP_PUBLIC_URL that is not https', () => {
+    expect(() => loadConfig({ ...env, REGISTER_MCP_PUBLIC_URL: 'http://x' }, read)).toThrow(
+      /REGISTER_MCP_PUBLIC_URL must be https/,
+    );
+  });
+
   it('reads the limits from the environment', () => {
     const c = loadConfig(
       { ...env, REGISTER_SIGNIN_PER_MINUTE: '3', REGISTER_OWNER_PER_MINUTE: '2' },

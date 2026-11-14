@@ -13,7 +13,7 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Plan:** [plan.md](plan.md) (waves C1, C2, C2b, C3, C4; owner items in section (f); first-ranger lessons in section (g)).
 - **Retrospective:** [phase0-retrospective-for-phase1.md](phase0-retrospective-for-phase1.md).
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
-- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7-wave-plan.md`.
+- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7c-packets.md`, `c7d-packets.md`, `c7e-packets.md`, `c7-wave-plan.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0147 (see item 8 for C5).
 
@@ -35,7 +35,6 @@ Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges.
 5. **C2b:** C2b-00 and C2b-01 (session 1) are merged. Next: the C2b-01 load test (live lane), C2b-02 (the relay), and C2b-03a (the renderer).
 6. **Every ruling made tonight** is in [worknotes/orchestrator-2026-11-11.md](worknotes/orchestrator-2026-11-11.md) (R1 to R28, the owner answers, flakes).
 7. **Owner items still open:** the C1-10 run; creating the GitHub and Discord OAuth apps; the C2b questions (texture licence, audit retention, the feed load budget); 0079 (credits); and confirming R21 (Glass hides the prompt) or signing a privacy review.
-
 8. **Wave C5, Goldar learnings (drafted 2026-11-11, parallel to C1 to C4):** Body parity and the unavailable tools, from the review of the goldar repo. Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md); review: [worknotes/goldar-review.md](worknotes/goldar-review.md); ledger section "Wave C5"; decisions 0141 to 0146 are Proposed or Open (owner to confirm); rulings R47 to R54. C5a (C5-00 first, then 01 to 04 in parallel) and C5b (05 then 06; 07 parallel) are Ready except C5-01; C5c (08 to 10) waits on 0146. Next free decision number: 0147.
 
 9. **Wave PX, perception for body and mind (drafted 2026-11-11):** what a player could see or hear, from the Jason play record (defects D1 to D11). Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md); ledger section "Wave PX"; owner rulings in decision [0154](../../decisions/0154-perception-owner-rulings.md) (Decided; the seven rulings; spider is a conditional mob under ruling 1, settled by the orchestrator). PX-1 and PX-0 wait on C6-BODY-EVENTS merging; PX-2b is unblocked. Decision 0154 is the only number this wave uses; 0147 to 0153 are not free for it (0147 to 0149 are on in-flight branches, 0150 is on main, 0151 to 0153 are wave C7).
@@ -69,8 +68,8 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 
 ## C7 status (2026-11-13)
 
-- **Wave C7-1 done** (merge bbb5ed6b, PR #315): C3-04s, C7-12, C7-03a (package only), C7-02a (SQL and service only). Migrations 0024, 0025, 0027 and 0032 are applied on the node; spare left: 0033. Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
-- **Wave 2 next:** C7-02b (owner keys), C7-05 (onboarding), C7-03b1 (supervisor NATS binding), C7-03b3 (adapters), then C7-04 (API v1). Wave 3 gets C7-03b2 (compose, needs geldar-93 contact first) before any live use. Deploy protocol: MERGE and DONE go to geldar-93 and geldar-ops; every image-changing merge refreshes the ranger hosts, so batch them.
+- **Wave C7-1 done** (merge bbb5ed6b, PR #315): C3-04s, C7-12, C7-03a (package only), C7-02a (SQL and service only). Migrations 0024, 0025, 0027 and 0032 are applied on the node; 0033 is C7-03b3 (not a spare; no spare is left). Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
+- **Wave C7-2 built, reviewed ship at pass 4; merge pending.** C7-02b, C7-05, C7-03b1, C7-03b3 (retro: [retro/wave-c7-2.md](retro/wave-c7-2.md)). The merge is held for geldar-93's metrics window until about 02:45Z. Next: merge PR #321, then wave 3: C7-03b4, C7-04a, C7-04b, C7-04c, C7-06 (order in [packets/c7-wave-plan.md](packets/c7-wave-plan.md)); then C7-03b2 (geldar-93 contact first; its node steps wait for C7-03b4, [c7e](packets/c7e-packets.md)), C7-13a, C7-10, C7-07. C7-04 is split in [packets/c7d-packets.md](packets/c7d-packets.md). Deploy: MERGE and DONE go to geldar-93 and geldar-ops; batch image-changing merges (they refresh the ranger hosts).
 - **Open owner items:** the erasure rule review (0171; gates C7-11 only); the geldar_supervisor Postgres password (an operator step, by hand, before C7-03b2 in wave 3); the C7-10 reason codes and its two count and index decisions.
 
 ## Open contradictions
