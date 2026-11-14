@@ -176,14 +176,17 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
       );
       const list = parseJson(reply);
       if (!Array.isArray(list)) return [];
-      return list.map((item: { Labels?: Record<string, string>; Names?: string[] }) => ({
-        name: (
-          item.Labels?.[BODY_LABEL] ??
-          item.Names?.[0]?.replace(/^\//, '') ??
-          ''
-        ).toLowerCase(),
-        owner: item.Labels?.['geldar.owner'] ?? '',
-      }));
+      return list.map(
+        (item: { Labels?: Record<string, string>; Names?: string[]; State?: string }) => ({
+          running: item.State === 'running',
+          name: (
+            item.Labels?.[BODY_LABEL] ??
+            item.Names?.[0]?.replace(/^\//, '') ??
+            ''
+          ).toLowerCase(),
+          owner: item.Labels?.['geldar.owner'] ?? '',
+        }),
+      );
     },
   };
 }

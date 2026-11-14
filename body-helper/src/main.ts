@@ -9,7 +9,7 @@ import { type HelperConfig, loadHelperConfig } from './helperConfig.ts';
 import { type HelperWire, newHelperStats, serveHelper } from './listener.ts';
 import { rosterFromQuery } from './roster.ts';
 import { createBodyHelper } from './service.ts';
-import { shutdownHelper } from './shutdown.ts';
+import { shutdownHelper, shutdownOnce } from './shutdown.ts';
 import { startSweep } from './sweep.ts';
 
 const log = (line: string) => console.log(line);
@@ -41,12 +41,15 @@ async function main(): Promise<void> {
   pool.on('error', () => log('body-helper: database pool error'));
   const engine = createDockerEngine(socketRequest(config.dockerSocket));
   const roster = rosterFromQuery((sql, values) => pool.query(sql, [...values]));
+  // The names whose stop timed out and is not confirmed: the helper adds and clears them, the sweep reports them.
+  const stopTimeouts = new Set<string>();
   const handle = createBodyHelper({
     roster,
     engine,
     cap: config.cap,
     template: { image: config.image, wiring: config.wiring, limits: config.limits },
     requestDeadlineMs: config.requestDeadlineMs,
+    stopTimeouts,
     audit: log,
   });
   // The helper's subscriptions, kept so a shutdown can end them before it closes the connection.
@@ -61,7 +64,7 @@ async function main(): Promise<void> {
       nc.publish(inbox, data);
     },
   };
-  const stopSweep = startSweep({ engine, roster, audit: log }, config.sweepMinutes);
+  const stopSweep = startSweep({ engine, roster, stopTimeouts, audit: log }, config.sweepMinutes);
   const stats = newHelperStats();
   const serving = serveHelper({ wire, shard: config.shard, handle, stats });
   log(
@@ -70,7 +73,8 @@ async function main(): Promise<void> {
 
   // Order: end the subscriptions (no new request), await the in-flight answers (capped), then close the connection
   // and the pool. See shutdown.ts.
-  const shutdown = async () => {
+  // Once: a second signal during the shutdown gets the same run, so nothing closes twice.
+  const shutdown = shutdownOnce(async () => {
     await shutdownHelper({
       stopSweep,
       stopIntake: () => {
@@ -81,9 +85,10 @@ async function main(): Promise<void> {
       closePool: () => pool.end(),
     });
     process.exit(0);
-  };
-  process.once('SIGTERM', () => void shutdown());
-  process.once('SIGINT', () => void shutdown());
+  });
+  // `on`, not `once`: a second signal reaches the guard and is ignored, rather than the default kill.
+  process.on('SIGTERM', () => void shutdown().catch(() => process.exit(1)));
+  process.on('SIGINT', () => void shutdown().catch(() => process.exit(1)));
   await serving;
 }
 

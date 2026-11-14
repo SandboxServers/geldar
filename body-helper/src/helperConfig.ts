@@ -38,13 +38,17 @@ function required(env: Env, name: string): string {
   return value;
 }
 
-function positive(env: Env, name: string, fallback?: number): number {
+function positive(env: Env, name: string, fallback?: number, max?: number): number {
   const raw = env[name];
   if (raw === undefined || raw === '') {
     if (fallback !== undefined) return fallback;
     throw new Error(`missing ${name}`);
   }
-  if (!/^[1-9]\d*$/.test(raw)) throw new Error(`${name} must be a positive whole number`);
+  // The upper bound is a start failure: a timer above 2147483647 ms fires at once, so a larger value would refuse all work.
+  const limit = max === undefined ? '' : ` of at most ${max}`;
+  if (!/^[1-9]\d*$/.test(raw) || Number(raw) > (max ?? Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`${name} must be a positive whole number${limit}`);
+  }
   return Number(raw);
 }
 
@@ -108,7 +112,8 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
       pidsLimit: positive(env, 'GELDAR_BODY_PIDS_LIMIT'),
     },
     cap: globalBodyCapFromEnv(env),
-    sweepMinutes: positive(env, 'GELDAR_SWEEP_MINUTES', 10),
-    requestDeadlineMs: positive(env, 'GELDAR_BODY_HELPER_DEADLINE_MS', 120_000),
+    // 35791 minutes is the most a sweep timer can hold (2147483647 ms).
+    sweepMinutes: positive(env, 'GELDAR_SWEEP_MINUTES', 10, 35_791),
+    requestDeadlineMs: positive(env, 'GELDAR_BODY_HELPER_DEADLINE_MS', 120_000, 2_147_483_647),
   };
 }

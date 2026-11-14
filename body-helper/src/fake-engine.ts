@@ -80,7 +80,11 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
     async bodies(): Promise<SweepBody[]> {
       return containers
         .filter((c) => BODY_LABEL in c.labels)
-        .map((c) => ({ name: c.labels[BODY_LABEL] ?? '', owner: c.labels['geldar.owner'] ?? '' }));
+        .map((c) => ({
+          name: c.labels[BODY_LABEL] ?? '',
+          owner: c.labels['geldar.owner'] ?? '',
+          running: c.running,
+        }));
     },
   };
 }

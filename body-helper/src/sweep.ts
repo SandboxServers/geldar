@@ -8,6 +8,7 @@ export interface SweepBody {
   name: string;
   /** The owner the Body was created under, from its owner label. */
   owner: string;
+  running: boolean;
 }
 
 export interface SweepEngine {
@@ -17,6 +18,8 @@ export interface SweepEngine {
 export interface SweepDeps {
   engine: SweepEngine;
   roster: RosterPort;
+  /** Names whose stop timed out and is not confirmed (the helper's set). A listed one still running is logged. */
+  stopTimeouts?: ReadonlySet<string>;
   audit(line: string): void;
 }
 
@@ -44,6 +47,12 @@ export async function sweepStrays(deps: SweepDeps): Promise<number> {
     if (onRoster === null) {
       strays++;
       deps.audit(`body-helper stray name=${body.name} outcome=report_only`);
+    }
+  }
+  // A stop that timed out and is still listed as running: one stable line per pass until the stop lands.
+  for (const name of deps.stopTimeouts ?? []) {
+    if (bodies.some((body) => body.running && body.name === name)) {
+      deps.audit(`body-helper stop_timed_out name=${name} outcome=report_only`);
     }
   }
   return strays;

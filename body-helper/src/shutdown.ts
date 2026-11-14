@@ -21,7 +21,12 @@ export async function shutdownHelper(
   waitMs: number = SHUTDOWN_WAIT_MS,
 ): Promise<void> {
   steps.stopSweep();
-  steps.stopIntake();
+  // A failing unsubscribe must not skip the wait or the close: the connection drain below ends what is left.
+  try {
+    steps.stopIntake();
+  } catch {
+    // Nothing more to undo here; the close below still runs.
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const cut = new Promise<void>((done) => {
     timer = setTimeout(done, waitMs);
@@ -30,4 +35,16 @@ export async function shutdownHelper(
   clearTimeout(timer);
   await steps.closeConnection().catch(() => undefined);
   await steps.closePool().catch(() => undefined);
+}
+
+/**
+ * Runs a shutdown once. A second signal while it runs, or after it, gets the same run and starts nothing:
+ * the process exits when the first run ends.
+ */
+export function shutdownOnce(run: () => Promise<void>): () => Promise<void> {
+  let started: Promise<void> | undefined;
+  return () => {
+    started ??= run();
+    return started;
+  };
 }

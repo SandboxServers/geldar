@@ -180,7 +180,7 @@ describe('engine: the verbs', () => {
     const engine = createDockerEngine(async () =>
       json(200, [{ Labels: { [BODY_LABEL]: 'stray1', 'geldar.owner': 'owner-1' } }]),
     );
-    expect(await engine.bodies()).toEqual([{ name: 'stray1', owner: 'owner-1' }]);
+    expect(await engine.bodies()).toEqual([{ name: 'stray1', owner: 'owner-1', running: false }]);
   });
 });
 

@@ -51,6 +51,24 @@ describe('helper config', () => {
     ).toThrow('GELDAR_BODY_HELPER_DEADLINE_MS must be a positive whole number');
   });
 
+  it('refuses a request deadline above the longest timer, and a sweep interval the timer cannot hold', () => {
+    const top = { ...env, GELDAR_BODY_HELPER_DEADLINE_MS: '2147483647' };
+    expect(loadHelperConfig(top, fakeFs()).requestDeadlineMs).toBe(2_147_483_647);
+    for (const bad of ['3000000000', 'abc', '-1', '1.5', '99999999999999999999', '0']) {
+      expect(() =>
+        loadHelperConfig({ ...env, GELDAR_BODY_HELPER_DEADLINE_MS: bad }, fakeFs()),
+      ).toThrow(
+        'GELDAR_BODY_HELPER_DEADLINE_MS must be a positive whole number of at most 2147483647',
+      );
+    }
+    expect(loadHelperConfig({ ...env, GELDAR_SWEEP_MINUTES: '35791' }, fakeFs()).sweepMinutes).toBe(
+      35_791,
+    );
+    expect(() => loadHelperConfig({ ...env, GELDAR_SWEEP_MINUTES: '35792' }, fakeFs())).toThrow(
+      'GELDAR_SWEEP_MINUTES must be a positive whole number of at most 35791',
+    );
+  });
+
   it('fails at start on a missing required name, and names the variable', () => {
     const { GELDAR_SHARD: _shard, ...without } = env;
     expect(() => loadHelperConfig(without, fakeFs())).toThrow('missing GELDAR_SHARD');
