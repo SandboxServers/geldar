@@ -214,7 +214,7 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
     mind: {
       snapshotRetryS: optionalInt(mind, 'snapshot_retry_s', 'mind', 60, 0),
       thinkerWaitS: optionalInt(mind, 'thinker_wait_s', 'mind', 20, 0),
-      // 2500: fits num_ctx 8192 with the system message and a 2048 output cap (library.ts, CONTEXT_TOKENS).
+      // 2500: fits num_ctx 8704 with the system message and a 2048 output cap (library.ts, CONTEXT_TOKENS).
       promptBudgetTokens: optionalInt(mind, 'prompt_budget_tokens', 'mind', 2500, 1000),
       maxBeliefs: optionalInt(mind, 'max_beliefs', 'mind', 40, 1),
       maxCommitments: optionalInt(mind, 'max_commitments', 'mind', 10, 1),

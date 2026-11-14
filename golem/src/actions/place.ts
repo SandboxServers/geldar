@@ -220,7 +220,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
 type Stack = ReturnType<Bot['inventory']['items']>[number];
 
 /** Walks within reach of the target when it is farther than `REACH`; null when the bot is in reach. */
-async function reachTarget(ctx: ActionContext, target: Vec3): Promise<ActionOutcome | null> {
+export async function reachTarget(ctx: ActionContext, target: Vec3): Promise<ActionOutcome | null> {
   const { bot } = ctx;
   if (bot.entity.position.distanceTo(target) <= REACH) return null;
   const move = await moveNear(bot, target, WALK_RANGE, {

@@ -20,4 +20,5 @@ export const ACTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
   give: ['do', 'to', 'item', 'count'],
   note: ['do', 'text'],
   write_sign: ['do', 'text'],
+  till: ['do', 'at'],
 };

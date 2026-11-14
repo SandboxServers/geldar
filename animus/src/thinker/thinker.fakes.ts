@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import type { AnimusConfig, ModelPin } from '../config.ts';
+import { CONTEXT_TOKENS } from '../prompts/library.ts';
 import { type HubOptions, THINKER_PATH, ThinkerHub } from './hub.ts';
 
 /** The model tag the tests use. */
@@ -7,7 +8,7 @@ export const MODEL = 'qwen3:8b';
 
 const PIN: ModelPin = {
   digest: `sha256:${'a'.repeat(64)}`,
-  numCtx: 8192,
+  numCtx: CONTEXT_TOKENS,
   keepAlive: '30m',
   maxConcurrent: 1,
 };

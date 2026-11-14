@@ -20,3 +20,20 @@ deploy/colo-admin.sh roster-list [--owner <owner>]        # read-only
 ```
 
 Why: [decision 0108](../decisions/0108-mcp-roster-source-of-truth.md).
+
+## Set a player's public camera or delayed public thoughts flag (C7-14)
+
+The operator sets these flags with one command. `<player-id>` is the player id (`ag-...`), not a roster name.
+Give `--public-camera`, `--thoughts-delayed-public`, or both; a flag you leave out stays as it is.
+
+Operator, from a host with the PG variables set (the role is `geldar`, as for the other `player` commands):
+
+    node tools/mcp-tokens/src/cli.ts player flags <player-id> --public-camera on --thoughts-delayed-public on
+
+Node, through the admin container:
+
+    deploy/colo-admin.sh player-flags <player-id> --public-camera on --thoughts-delayed-public on
+
+The thoughts flag has a 10-second window: a second thoughts change within 10 seconds of the last one is refused
+(exit 3, nothing changed, so wait 10 seconds and run it again). The camera flag has no window. An unknown player
+exits 4, a retired player exits 4, and every call writes one `register_audit` row (actor `operator`, action `player.flags`).

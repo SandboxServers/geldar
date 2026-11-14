@@ -226,8 +226,8 @@ run_hosts() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add or roster-list" ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
@@ -240,6 +240,7 @@ case $cmd in
   player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
   roster-add) roster_add_args "$@" ;;
   roster-list) roster_list_args "$@" ;;
+  player-flags) [ "$#" -ge 2 ] && printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;
 esac
 
 plan_header
