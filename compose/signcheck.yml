@@ -1,0 +1,41 @@
+# Throwaway sign-facts check shard: one vanilla Paper server (no Velocity, NATS, plugins or secrets).
+# Used only to check sign facts for edit_sign (golem/test/live/edit-sign.live.test.ts). See docs/runbooks/signcheck-shard.md.
+# Run as its own project, on its own VM: docker compose -p geldar-signcheck -f compose/signcheck.yml up -d
+# Delete with: docker compose -p geldar-signcheck down -v
+# Never point GELDAR_WORLD_VOLUME at the Colo or phase0 world volume. This file has no secrets.
+name: geldar-signcheck
+
+x-minecraft-healthcheck: &mc-health
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 10m
+
+services:
+  paper:
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "26.1.2"
+      PAPER_BUILD: "74"
+      MEMORY: "2G"
+      ONLINE_MODE: "FALSE"
+      ENABLE_WHITELIST: "FALSE"
+      MAX_PLAYERS: "10"
+      SPAWN_PROTECTION: "0"
+      ENABLE_RCON: "FALSE"
+    volumes:
+      - paper-data:/data
+    ports:
+      # Game port on the host: 25570, bound to loopback (threat model section 1). Not the phase0 port (25565) or the Colo port.
+      - "127.0.0.1:25570:25565"
+    healthcheck:
+      <<: *mc-health
+      test: ["CMD", "mc-health"]
+    restart: "no"
+    mem_limit: 3g
+
+volumes:
+  paper-data:
+    name: ${GELDAR_WORLD_VOLUME:-geldar-signcheck_paper-data}
