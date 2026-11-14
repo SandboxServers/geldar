@@ -2,10 +2,16 @@
 
 | id | status | owner | summary |
 |---|---|---|---|
-| F1 | open | geldar-vitals / geldar-93 | Phantoms and skeleton arrows kill most agents at night on open ground |
-| F2 | open | geldar-ops | panic_burrow fails 904 of 938 firings in 24 h (no suitable block; seal out of reach at dawn) |
-| F3 | open | geldar-vitals | sleep refused: monsters nearby 211, not night 55, bed search time 39 in 6 h |
-| F4 | open | geldar-ops | give: "no such agent in sight" 110 of 295 gives; "too close to toss" 38 |
+| F1 | sent | geldar-vitals / geldar-93 | Phantoms and skeleton arrows kill most agents at night on open ground |
+| F2 | sent | geldar-ops | panic_burrow fails 904 of 938 firings in 24 h (no suitable block; seal out of reach at dawn) |
+| F3 | sent | geldar-vitals | sleep refused: monsters nearby 211, not night 55, bed search time 39 in 6 h |
+| F4 | sent | geldar-ops | give: "no such agent in sight" 110 of 295 gives; "too close to toss" 38 |
 | F5 | open | geldar-93 (world) | food: eat "no food" 37, only 7 till/0 sow/harvest in 24 h; most agents carry none |
-| F6 | open | geldar-ops | goto busy/blocked/no_effect/interrupted 497 of ~2,450 |
+| F6 | sent | geldar-ops | goto busy/blocked/no_effect/interrupted 497 of ~2,450 |
 | F7 | open | geldar-3b / geldar-93 | Tommy 22 deaths and Billy 15 in 24 h; deaths cluster in bursts (e.g. Tommy 21:51-21:55Z) |
+
+## Notes from owners (2026-11-14 ~21:45Z)
+- F6 (geldar-ops): no_effect false failures fixed by #345 (13:27Z); busy = executor rejects a new action while one runs (queue vs supersede is an open owner decision); blocked = real terrain; interrupted = reflex preemption; not_found = naming needs sight plus proximity (0145).
+- F4: "too close" rows are mostly before #352 (16:12Z); re-check on a clean window after 21:20Z. A distance for an unseen agent is an information-policy question (0145): needs geldar-93/owner. Proposal: a fact "ag_x is not in line of sight" without distance.
+- F2: night failures come from the no-threat trigger; 0213 (hostile within radius or damage in 5 s) is on branch phase1/body-batch-0213, not merged. Dawn "seal out of reach" is in panic-burrow.ts (vitals).
+- Re-check after 21:20Z on a clean window; the 24 h totals in report 21Z include pre-fix periods.
