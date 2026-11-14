@@ -65,6 +65,9 @@ function parseEntries(conf: string): Entry[] {
 let conf = '';
 let dir = '';
 
+/** pwsh starts slowly on loaded machines and can exceed vitest's 10 s hook default. */
+const GENERATOR_TIMEOUT_MS = 120_000;
+
 beforeAll(() => {
   if (!hasPwsh) return;
   dir = mkdtempSync(join(tmpdir(), 'geldar-nats-ctl-'));
@@ -81,7 +84,7 @@ beforeAll(() => {
   );
   if (run.status === 0)
     conf = readFileSync(join(dir, 'compose', 'secrets', 'nats-auth.conf'), 'utf8');
-});
+}, GENERATOR_TIMEOUT_MS);
 
 afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true });
