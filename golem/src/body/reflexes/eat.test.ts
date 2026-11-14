@@ -17,6 +17,14 @@ describe('eat reflex: check', () => {
     expect(reflex.check(view)).toEqual({ hunger: 6, foods: 1 });
   });
 
+  it('fires at health 6 and not at health 7 while hunger is below 18: hunger 17', () => {
+    const reflex = createEatReflex();
+    const { view, state } = basicView({ hunger: 17, health: 6, foods: ['bread'] });
+    expect(reflex.check(view)).toEqual({ hunger: 17, foods: 1 });
+    state.health = 7;
+    expect(reflex.check(view)).toBeNull();
+  });
+
   it('does not eat on the way to a starving friend: hunger 16, health 9, food carried', () => {
     const reflex = createEatReflex();
     const { view } = basicView({ hunger: 16, health: 9, foods: ['bread'] });

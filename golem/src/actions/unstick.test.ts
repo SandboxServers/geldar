@@ -13,6 +13,8 @@ const key = (x: number, y: number, z: number): string => `${x},${y},${z}`;
 
 /** Blocks a bare hand cannot drop: stone needs a pickaxe. */
 const NEEDS_TOOL = new Set(['stone']);
+/** Blocks no hand breaks (hardness -1). `void_rock` is not on the refused-name list: only its hardness refuses it. */
+const UNBREAKABLE = new Set(['bedrock', 'void_rock']);
 
 /**
  * A block grid: unlisted cells are air (empty), `water` is empty-boxed, the rest are solid. `bedrock` has
@@ -22,7 +24,7 @@ function blockOf(grid: Grid, cell: Vec3): Block | null {
   const name = grid.get(key(cell.x, cell.y, cell.z)) ?? 'air';
   if (name === 'unloaded') return null;
   const boundingBox = name === 'air' || name === 'water' ? 'empty' : 'block';
-  const hardness = name === 'bedrock' ? -1 : 1.5;
+  const hardness = UNBREAKABLE.has(name) ? -1 : 1.5;
   const harvestTools = NEEDS_TOOL.has(name) ? { 270: true } : undefined;
   return {
     name,
@@ -413,5 +415,59 @@ describe('unstick at low health and the hand dig (owner ruling 2026-11-14, decis
       detail: { method: 'dig_sideways' },
     });
     expect(dug).toEqual(['dirt', 'dirt']);
+  });
+});
+
+/** The stone pocket of the stair-dig test above: a three-block stair step is the first hand dig. */
+function stonePocket(): Grid {
+  const grid = boxedIn(() => 'stone');
+  for (const dir of EIGHT) grid.set(key(dir.x, 62, dir.z), 'stone');
+  for (let y = 60; y <= 65; y++) grid.delete(key(0, y, -1));
+  grid.set(key(0, 59, -1), 'stone');
+  return grid;
+}
+
+describe('unstick hand digs: abort, refusals and hardness (review 345, decision 0183)', () => {
+  afterEach(() => setOwnerLookup(null));
+
+  it('stops a hand dig on abort: no later cell, and no pathfinder call after the abort', async () => {
+    const { bot, dug } = fakeBot(stonePocket(), 6.83);
+    const pathfinder = { stop: vi.fn(), setGoal: vi.fn() };
+    const controller = new AbortController();
+    // A real dig waits until stopDigging, then completes: the block breaks before the stop lands. A dig
+    // started after the abort fails at once, so a mutated unstick cannot hang the test.
+    let endDig: () => void = () => undefined;
+    Object.assign(bot, { pathfinder, stopDigging: () => endDig() });
+    bot.dig = async (block: Block) => {
+      dug.push(block.name);
+      if (controller.signal.aborted) throw new Error('Digging aborted');
+      await new Promise<void>((resolve) => {
+        endDig = resolve;
+      });
+    };
+    const running = unstick(ctxOf(bot, controller.signal));
+    await vi.waitFor(() => expect(dug).toHaveLength(1));
+    const stops = pathfinder.stop.mock.calls.length;
+    const goals = pathfinder.setGoal.mock.calls.length;
+    controller.abort();
+    const outcome = await running;
+    expect(outcome.status).toBe('cancelled');
+    expect(dug).toEqual(['stone']);
+    expect(pathfinder.stop).toHaveBeenCalledTimes(stops);
+    expect(pathfinder.setGoal).toHaveBeenCalledTimes(goals);
+  });
+
+  it('does not hand-dig a stone cell with a liquid on a face (water above the ring)', async () => {
+    const grid = boxedIn(() => 'stone');
+    for (const dir of EIGHT) grid.set(key(dir.x, 66, dir.z), 'water');
+    const { bot, dug } = fakeBot(grid);
+    expect(await unstick(ctxOf(bot))).toMatchObject({ status: 'failed' });
+    expect(dug).toEqual([]);
+  });
+
+  it('never hand-digs a block with hardness -1, though its name is not bedrock', async () => {
+    const { bot, dug } = fakeBot(boxedIn(() => 'void_rock'));
+    expect(await unstick(ctxOf(bot))).toMatchObject({ status: 'failed' });
+    expect(dug).toEqual([]);
   });
 });
