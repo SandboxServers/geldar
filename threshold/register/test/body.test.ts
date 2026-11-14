@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bodyRoutes, START_WINDOW_MAX } from '../src/api/body.ts';
+import { bodyRoutes, START_WINDOW_MAX, START_WINDOW_MS } from '../src/api/body.ts';
 import { handleApi } from '../src/api/index.ts';
 import type { ApiDeps } from '../src/api/route.ts';
 import { sendProblem } from '../src/problem.ts';
@@ -11,9 +11,17 @@ const NOW = Date.parse('2026-11-14T00:00:00.000Z');
 const hash = (v: string): Buffer => createHash('sha256').update(v).digest();
 const KEY_ALL = `gowner-${'a1'.repeat(32)}`; // alice: read, body
 const KEY_BODY = `gowner-${'b1'.repeat(32)}`; // bob: body only
+const KEY_READ = `gowner-${'c1'.repeat(32)}`; // carol: read only
 const OWNERS = new Map<string, { ownerId: string; scopes: string[] }>([
   [hash(KEY_ALL).toString('hex'), { ownerId: 'alice', scopes: ['read', 'body'] }],
   [hash(KEY_BODY).toString('hex'), { ownerId: 'bob', scopes: ['body'] }],
+  [hash(KEY_READ).toString('hex'), { ownerId: 'carol', scopes: ['read'] }],
+]);
+/** Agents by player id. The display name is the supervisor's player name; the player id is `ag-` and never sent. */
+const AGENTS = new Map<string, { ownerId: string; playerId: string; displayName: string }>([
+  ['ag-one-01', { ownerId: 'alice', playerId: 'ag-one-01', displayName: 'Ranger' }],
+  ['ag-two-01', { ownerId: 'bob', playerId: 'ag-two-01', displayName: 'Scout' }],
+  ['ag-odd-01', { ownerId: 'alice', playerId: 'ag-odd-01', displayName: 'My Agent' }],
 ]);
 const bearer = (k: string) => ({ authorization: `Bearer ${k}` });
 const enc = (o: unknown) => new TextEncoder().encode(JSON.stringify(o));
@@ -35,8 +43,9 @@ function fakeConn(answer: (subject: string) => Promise<Uint8Array> | Uint8Array)
 const reply = (code: string, ok = false, events?: unknown[]) => enc({ ok, code, events });
 
 function harness(conn: ReturnType<typeof fakeConn>['conn']) {
+  const clock = { now: NOW };
   const deps: ApiDeps = {
-    now: () => NOW,
+    now: () => clock.now,
     csrfKey: 'session-key',
     ownerKeys: {
       hash,
@@ -47,13 +56,14 @@ function harness(conn: ReturnType<typeof fakeConn>['conn']) {
         list: async () => null,
       },
     },
-    agents: async (owner, player) =>
-      owner === 'alice' && player === 'p1' ? { ownerId: 'alice', playerId: 'p1' } : null,
+    // Returns the agent whoever owns it: the ownership check is the route's, not the lookup's.
+    agents: async (_owner, player) => AGENTS.get(player) ?? null,
     routes: bodyRoutes({ conn, shard: 'phase0', timeoutMs: 1000 }),
   };
   let server: Server;
   let base = '';
   return {
+    clock,
     async start() {
       server = createServer((req, res) => {
         void handleApi(req, res, new URL(req.url ?? '/', 'http://local'), deps).then((handled) => {
@@ -73,8 +83,12 @@ function harness(conn: ReturnType<typeof fakeConn>['conn']) {
   };
 }
 
-const START = '/api/v1/agents/p1/body/start';
-const LOG = '/api/v1/agents/p1/body/log';
+const START = '/api/v1/agents/ag-one-01/body/start';
+const STOP = '/api/v1/agents/ag-one-01/body/stop';
+const RESTART = '/api/v1/agents/ag-one-01/body/restart';
+const STATUS = '/api/v1/agents/ag-one-01/body/status';
+const LOG = '/api/v1/agents/ag-one-01/body/log';
+const FOREIGN = '/api/v1/agents/ag-two-01/body';
 
 describe('body start (C7-04c reply mapping)', () => {
   const fake = fakeConn(() => reply('started', true));
@@ -82,18 +96,53 @@ describe('body start (C7-04c reply mapping)', () => {
   beforeAll(() => h.start());
   afterAll(() => h.stop());
 
-  it('maps a started reply to 202 BodyOp done, and sends its own op to the subject', async () => {
+  it('maps a started reply to 202 BodyOp done, and sends its own op with the display name', async () => {
     const r = await h.call('POST', START, bearer(KEY_ALL));
     expect(r.status).toBe(202);
     expect(JSON.parse(r.body)).toMatchObject({ state: 'done' });
     expect(fake.subjects[0]).toBe('geldar.phase0.ctl.body.start');
-    expect(fake.payloads[0]).toMatchObject({ op: 'start', ownerId: 'alice', playerName: 'p1' });
+    expect(fake.payloads[0]).toMatchObject({ op: 'start', ownerId: 'alice', playerName: 'Ranger' });
   });
 
   it('answers a foreign or unknown agent 404 before any supervisor call', async () => {
     const before = fake.subjects.length;
-    const r = await h.call('POST', '/api/v1/agents/p2/body/start', bearer(KEY_ALL));
+    const r = await h.call('POST', '/api/v1/agents/ag-two-01/body/start', bearer(KEY_ALL));
     expect(r.status).toBe(404);
+    expect(JSON.parse(r.body).code).toBe('not_found');
+    const missing = await h.call('POST', '/api/v1/agents/p2/body/start', bearer(KEY_ALL));
+    expect(missing.status).toBe(404);
+    expect(fake.subjects.length).toBe(before);
+  });
+
+  it('refuses a display name outside the player-name shape with 422 and the fixed text, with no supervisor call', async () => {
+    const before = fake.subjects.length;
+    const r = await h.call('POST', '/api/v1/agents/ag-odd-01/body/start', bearer(KEY_ALL));
+    expect(r.status).toBe(422);
+    expect(JSON.parse(r.body).code).toBe('invalid');
+    expect(JSON.parse(r.body).detail).toBe(
+      "The player's name must be 3 to 16 letters, digits or underscore.",
+    );
+    expect(fake.subjects.length).toBe(before);
+  });
+});
+
+describe('body foreign agent (404 on every body route, no supervisor call)', () => {
+  const fake = fakeConn(() => reply('logs', true, []));
+  const h = harness(fake.conn);
+  beforeAll(() => h.start());
+  afterAll(() => h.stop());
+
+  it.each([
+    ['POST', `${FOREIGN}/start`],
+    ['POST', `${FOREIGN}/stop`],
+    ['POST', `${FOREIGN}/restart`],
+    ['GET', `${FOREIGN}/status`],
+    ['GET', `${FOREIGN}/log`],
+  ])("%s %s answers 404 for another owner's agent", async (method, path) => {
+    const before = fake.subjects.length;
+    const r = await h.call(method, path, bearer(KEY_ALL));
+    expect(r.status).toBe(404);
+    expect(JSON.parse(r.body).code).toBe('not_found');
     expect(fake.subjects.length).toBe(before);
   });
 });
@@ -108,15 +157,15 @@ describe('body reply table (one row per code)', () => {
 
   it('quota is 429 quota with Retry-After', async () => {
     next = 'quota';
-    const r = await h.call('POST', '/api/v1/agents/p1/body/stop', bearer(KEY_ALL));
+    const r = await h.call('POST', STOP, bearer(KEY_ALL));
     expect(r.status).toBe(429);
     expect(JSON.parse(r.body).code).toBe('quota');
-    expect(r.retryAfter).not.toBeNull();
+    expect(r.retryAfter).toBe('3600');
   });
 
   it('unknown is 404 not_found', async () => {
     next = 'unknown';
-    const r = await h.call('POST', '/api/v1/agents/p1/body/stop', bearer(KEY_ALL));
+    const r = await h.call('POST', STOP, bearer(KEY_ALL));
     expect(r.status).toBe(404);
   });
 
@@ -125,6 +174,7 @@ describe('body reply table (one row per code)', () => {
     const r = await h.call('POST', START, bearer(KEY_ALL));
     expect(r.status).toBe(422);
     expect(JSON.parse(r.body).detail).toContain('3 to 16 letters, digits or underscore');
+    expect(r.body).not.toContain('supervisor');
   });
 
   it('invalid is a register bug: 500 internal', async () => {
@@ -154,7 +204,44 @@ describe('body reply table (one row per code)', () => {
   });
 });
 
-describe('body unreachable and in-flight slot', () => {
+describe('body stop, restart and status success codes', () => {
+  let next = 'stopped';
+  const fake = fakeConn(() => reply(next, true));
+  const h = harness(fake.conn);
+  beforeAll(() => h.start());
+  afterAll(() => h.stop());
+
+  it('a stopped reply to stop is 202 BodyOp done', async () => {
+    next = 'stopped';
+    const r = await h.call('POST', STOP, bearer(KEY_ALL));
+    expect(r.status).toBe(202);
+    expect(JSON.parse(r.body)).toMatchObject({ state: 'done' });
+    expect(fake.subjects.at(-1)).toBe('geldar.phase0.ctl.body.stop');
+  });
+
+  it('a restarted reply to restart is 202 BodyOp done', async () => {
+    next = 'restarted';
+    const r = await h.call('POST', RESTART, bearer(KEY_ALL));
+    expect(r.status).toBe(202);
+    expect(fake.subjects.at(-1)).toBe('geldar.phase0.ctl.body.restart');
+  });
+
+  it('a running reply to status is 200 state running, and only state is returned', async () => {
+    next = 'running';
+    const r = await h.call('GET', STATUS, bearer(KEY_ALL));
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ state: 'running' });
+  });
+
+  it('an idle reply to status is 200 state stopped', async () => {
+    next = 'idle';
+    const r = await h.call('GET', STATUS, bearer(KEY_ALL));
+    expect(r.status).toBe(200);
+    expect(JSON.parse(r.body)).toEqual({ state: 'stopped' });
+  });
+});
+
+describe('body unreachable, abort and in-flight slot', () => {
   let mode: 'timeout' | 'ok' = 'timeout';
   let gate: Promise<void> | null = null;
   const fake = fakeConn(async () => {
@@ -173,15 +260,25 @@ describe('body unreachable and in-flight slot', () => {
     expect((await h.call('POST', START, bearer(KEY_ALL))).status).toBe(202);
   });
 
+  it('a timed-out stop is 503, and the retry of the same stop is 202', async () => {
+    mode = 'timeout';
+    const first = await h.call('POST', STOP, bearer(KEY_ALL));
+    expect(first.status).toBe(503);
+    expect(JSON.parse(first.body).code).toBe('body_unavailable');
+    mode = 'ok';
+    const retry = await h.call('POST', STOP, bearer(KEY_ALL));
+    expect(retry.status).toBe(202);
+  });
+
   it('a second request while the first is pending is 409 conflict with no supervisor call', async () => {
     let release: () => void = () => {};
     gate = new Promise<void>((ok) => {
       release = ok;
     });
-    const first = h.call('POST', '/api/v1/agents/p1/body/restart', bearer(KEY_ALL));
+    const first = h.call('POST', RESTART, bearer(KEY_ALL));
     await new Promise((ok) => setTimeout(ok, 50));
     const calls = fake.subjects.length;
-    const second = await h.call('POST', '/api/v1/agents/p1/body/stop', bearer(KEY_ALL));
+    const second = await h.call('POST', STOP, bearer(KEY_ALL));
     expect(second.status).toBe(409);
     expect(JSON.parse(second.body).code).toBe('conflict');
     expect(fake.subjects.length).toBe(calls);
@@ -190,6 +287,24 @@ describe('body unreachable and in-flight slot', () => {
     expect((await first).status).toBe(202);
     expect((await h.call('POST', START, bearer(KEY_ALL))).status).toBe(202);
   });
+});
+
+describe('body scope (write needs body, read needs read)', () => {
+  const fake = fakeConn(() => reply('started', true));
+  const h = harness(fake.conn);
+  beforeAll(() => h.start());
+  afterAll(() => h.stop());
+
+  it.each([START, STOP, RESTART])(
+    'a read-only key is 403 scope_missing on %s with no supervisor call',
+    async (path) => {
+      const before = fake.subjects.length;
+      const r = await h.call('POST', path, bearer(KEY_READ));
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.body).code).toBe('scope_missing');
+      expect(fake.subjects.length).toBe(before);
+    },
+  );
 });
 
 describe('repeat start window', () => {
@@ -207,6 +322,43 @@ describe('repeat start window', () => {
     expect(JSON.parse(r.body).code).toBe('rate_limited');
     expect(r.retryAfter).toBe('60');
     expect(fake.subjects.length).toBe(START_WINDOW_MAX);
+  });
+
+  it('a start 1 ms before the window closes is still refused, and the start at the edge is accepted', async () => {
+    const edge = harness(fakeConn(() => reply('started', true)).conn);
+    await edge.start();
+    try {
+      for (let i = 0; i < START_WINDOW_MAX; i++) {
+        expect((await edge.call('POST', START, bearer(KEY_ALL))).status).toBe(202);
+      }
+      edge.clock.now = NOW + START_WINDOW_MS - 1;
+      const early = await edge.call('POST', START, bearer(KEY_ALL));
+      expect(early.status).toBe(429);
+      expect(early.retryAfter).toBe('1');
+      edge.clock.now = NOW + START_WINDOW_MS;
+      expect((await edge.call('POST', START, bearer(KEY_ALL))).status).toBe(202);
+    } finally {
+      await edge.stop();
+    }
+  });
+
+  it('after the window, five new starts are accepted and the sixth is refused again', async () => {
+    const again = harness(fakeConn(() => reply('started', true)).conn);
+    await again.start();
+    try {
+      for (let i = 0; i < START_WINDOW_MAX; i++) {
+        expect((await again.call('POST', START, bearer(KEY_ALL))).status).toBe(202);
+      }
+      again.clock.now = NOW + START_WINDOW_MS;
+      for (let i = 0; i < START_WINDOW_MAX; i++) {
+        expect((await again.call('POST', START, bearer(KEY_ALL))).status).toBe(202);
+      }
+      const r = await again.call('POST', START, bearer(KEY_ALL));
+      expect(r.status).toBe(429);
+      expect(r.retryAfter).toBe('60');
+    } finally {
+      await again.stop();
+    }
   });
 });
 
@@ -240,5 +392,45 @@ describe('body status and log reads', () => {
     const r = await h.call('GET', LOG, bearer(KEY_BODY));
     expect(r.status).toBe(403);
     expect(JSON.parse(r.body).code).toBe('scope_missing');
+  });
+});
+
+describe('body log tail limit (newest events, at most 200)', () => {
+  const events = Array.from({ length: 250 }, (_, i) => ({
+    at: new Date(NOW - (250 - i) * 1000).toISOString(),
+    code: 'started',
+  }));
+  const fake = fakeConn(() => reply('logs', true, events));
+  const h = harness(fake.conn);
+  beforeAll(() => h.start());
+  afterAll(() => h.stop());
+
+  it('with no limit, 250 events return the newest 200', async () => {
+    const r = await h.call('GET', LOG, bearer(KEY_ALL));
+    expect(r.status).toBe(200);
+    const lines = JSON.parse(r.body).lines as { at: string }[];
+    expect(lines.length).toBe(200);
+    expect(lines[0]?.at).toBe(events[50]?.at);
+    expect(lines[199]?.at).toBe(events[249]?.at);
+  });
+
+  it('limit=5 returns the newest 5 events', async () => {
+    const r = await h.call('GET', `${LOG}?limit=5`, bearer(KEY_ALL));
+    expect(r.status).toBe(200);
+    const lines = JSON.parse(r.body).lines as { at: string }[];
+    expect(lines.length).toBe(5);
+    expect(lines[0]?.at).toBe(events[245]?.at);
+    expect(lines[4]?.at).toBe(events[249]?.at);
+  });
+
+  it('limit=200 is accepted', async () => {
+    expect((await h.call('GET', `${LOG}?limit=200`, bearer(KEY_ALL))).status).toBe(200);
+  });
+
+  it.each(['0', '', '1e2', '-1'])('limit=%s is 422 with no supervisor call', async (raw) => {
+    const before = fake.subjects.length;
+    const r = await h.call('GET', `${LOG}?limit=${raw}`, bearer(KEY_ALL));
+    expect(r.status).toBe(422);
+    expect(fake.subjects.length).toBe(before);
   });
 });

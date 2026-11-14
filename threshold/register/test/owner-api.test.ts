@@ -326,4 +326,12 @@ describe('owner API OpenAPI source (C7-04a)', () => {
       .split(', ');
     expect([...listed].sort()).toEqual([...PROBLEM_CODES].sort());
   });
+
+  it('declares the optional detail string that sendProblem may carry', () => {
+    const text = readFileSync(new URL('../src/api/owner-api-v1.yaml', import.meta.url), 'utf8');
+    const detail = text.indexOf('              detail:\n                type: string');
+    const enumLine = text.indexOf('enum: [not_found');
+    expect(detail).toBeGreaterThan(enumLine);
+    expect(text.slice(enumLine, detail)).not.toContain('\n              detail:');
+  });
 });

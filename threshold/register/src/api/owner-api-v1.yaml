@@ -102,6 +102,9 @@ components:
               code:
                 type: string
                 enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, quota, unavailable, body_unavailable, internal]
+              detail:
+                type: string
+                description: Optional. A fixed text of the register that says what the owner must change (the body name rule, 422 invalid).
   schemas:
     AgentPatch:
       type: object
