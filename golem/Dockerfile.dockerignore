@@ -5,6 +5,7 @@
 !pnpm-workspace.yaml
 !pnpm-lock.yaml
 !contract
+!psyche
 !golem
 **/node_modules
 golem/test

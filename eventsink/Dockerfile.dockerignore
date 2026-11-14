@@ -5,6 +5,7 @@
 !pnpm-workspace.yaml
 !pnpm-lock.yaml
 !contract
+!psyche
 !eventsink
 **/node_modules
 eventsink/test
