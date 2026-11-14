@@ -1,12 +1,12 @@
 /**
  * The live trigger for the `hurt` event (PX-1). It watches the Body's own `entityHurt` and `health`
- * events, takes the attacker from the damage cause (never from proximity), and passes each loss to a `HurtReporter`. A hurt
- * leaves the Body as a `damage` WorldEvent that carries `source`, `bearing` and `amount` (`hurtWorldEvent`).
+ * events, takes the attacker from the damage cause (never from proximity), and passes each loss to a
+ * `HurtReporter`. A hurt leaves the Body as a `damage` WorldEvent that carries `source`, `bearing`
+ * and `amount` (`hurtWorldEvent`).
  */
 import { validateWorldEvent, type WorldEvent } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { eventIdFor } from '../body/derived-id.ts';
-import { ALWAYS_HOSTILE } from './hostile-types.ts';
 import type { HurtEvent, HurtReporter } from './hurt.ts';
 
 const TICKS_PER_DAY = 24_000;
@@ -19,24 +19,20 @@ interface Point {
 /** The fields of a mineflayer entity the attacker check reads. */
 interface CauseEntity {
   id: number;
-  name?: string;
-  type?: string;
   position: { x: number; z: number };
 }
 
 /**
  * The attacker behind a hurt, from the server's damage cause: the entity the damage packet names
- * (mineflayer passes it as the second argument of `entityHurt`; for a projectile it is the shooter).
- * Only a hostile mob or a player counts. Nothing is attributed by proximity, so a passive mob next to
- * a drowning Body names no attacker, and neither does an absent cause (a fall, fire, drowning).
+ * (mineflayer passes it as the second argument of `entityHurt`; for a projectile it is the shooter,
+ * for a spit it is the llama). Any type counts, since the server says it caused the damage (an iron
+ * golem or a provoked wolf attacks too). Nothing is attributed by proximity: with no cause entity
+ * (a fall, fire, drowning, starvation) there is no attacker, whoever stands nearby.
  */
 function attackerOf(cause: unknown, selfId: number | undefined): Point | null {
   const entity = cause as CauseEntity | null | undefined;
   if (!entity || entity.id === selfId) return null;
-  const hostile = entity.name !== undefined && ALWAYS_HOSTILE.has(entity.name);
-  return hostile || entity.type === 'player'
-    ? { x: entity.position.x, z: entity.position.z }
-    : null;
+  return { x: entity.position.x, z: entity.position.z };
 }
 
 /**

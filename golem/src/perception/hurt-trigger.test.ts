@@ -92,7 +92,7 @@ describe('watchHurts: the live hurt trigger', () => {
     expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 3 }, 77]]);
   });
 
-  it('a cause that is a passive mob (a llama) names no attacker', () => {
+  it('a llama spit names the llama (the server says it caused the damage)', () => {
     const self = entityAt(1, 0, 0);
     const llama = Object.assign(entityAt(2, 0, 2), { name: 'llama', type: 'animal' });
     const bot = fakeBot(self, [llama]);
@@ -100,8 +100,18 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, llama);
     bot.health = 18;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'other', amount: 2 }, 77]]);
-    expect(seen[0]?.[0]).not.toHaveProperty('bearing');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 2 }, 77]]);
+  });
+
+  it('an iron golem cause is named, not filtered out as a passive mob', () => {
+    const self = entityAt(1, 0, 0, 0);
+    const golem = Object.assign(entityAt(2, 0, 2), { name: 'iron_golem', type: 'hostile' });
+    const bot = fakeBot(self, [golem]);
+    const { seen } = harness(bot);
+    bot.emit('entityHurt', self, golem);
+    bot.health = 15;
+    bot.emit('health');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 5 }, 77]]);
   });
 
   it('drowning beside a llama, with no damage cause entity, names no attacker', () => {
