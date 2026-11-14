@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadAnimusConfig, parseAnimusConfig } from './config.ts';
 import { committedShardDoc, loadCommittedConfig } from './phase0-shard.fixture.ts';
-import { DEFAULT_THOUGHT_BUDGET_TOKENS } from './prompts/library.ts';
+import { CONTEXT_TOKENS, DEFAULT_THOUGHT_BUDGET_TOKENS } from './prompts/library.ts';
 
 // biome-ignore lint/suspicious/noExplicitAny: the tests edit arbitrary nested keys of the parsed YAML
 type Doc = any;
@@ -129,7 +129,9 @@ describe('animus config', () => {
       reasoning: 'off',
     });
     expect(config.reflection).toMatchObject({ maxTokens: 1200, deadlineS: 180, reasoning: 'on' });
-    expect(config.modelPins['qwen3:32b']).toMatchObject({ numCtx: 8192, keepAlive: '30m' });
+    expect(config.modelPins['qwen3:32b']).toMatchObject({ numCtx: 8704, keepAlive: '30m' });
+    expect(config.modelPins['qwen3:8b']?.numCtx).toBe(CONTEXT_TOKENS);
+    expect(config.modelPins['qwen3:32b']?.numCtx).toBe(CONTEXT_TOKENS);
     expect(config.embedding).toMatchObject({ model: 'nomic-embed-text', dims: 768, onCpu: true });
     expect(config.attention.minWakeupSpacingS).toBe(20);
     expect(config.memory.episodicTopK).toBe(8);
