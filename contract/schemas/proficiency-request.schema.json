@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/proficiency-request.schema.json",
   "title": "ProficiencyRequest",
-  "description": "The request body a Body or the eventsink sends on the proficiency request subject (AN-02b): `geldar.<shard>.state.<life_id>.proficiency`, core NATS request/reply. `have_version` is the version the requester already holds; the reply is a ProficiencyState. The body may be empty text, which means 'anything'.",
+  "description": "The request body a Body or the eventsink sends on the proficiency request subject (AN-02b): `geldar.<shard>.state.<life_id>.proficiency`, core NATS request/reply. `have_version` is the version the requester already holds; the reply is a ProficiencyState. An absent `have_version` means 'anything'.",
   "type": "object",
   "additionalProperties": false,
   "required": ["life_id"],

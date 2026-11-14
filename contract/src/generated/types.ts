@@ -10037,7 +10037,7 @@ export interface ProficiencyState {
   };
   sheet?: CharacterSheet;
   /**
-   * Lower-case hex SHA-256 of the canonical sheet JSON.
+   * Lower-case hex SHA-256 of the canonical sheet JSON, computed by the writer (AN-04a); this schema checks only the shape.
    */
   sheet_hash?: string;
 }

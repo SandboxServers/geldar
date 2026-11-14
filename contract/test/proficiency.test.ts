@@ -81,6 +81,13 @@ describe('proficiency state', () => {
     expect(validateProficiencyState(bad).ok).toBe(false);
   });
 
+  it('refuses a negative version and a negative level', () => {
+    expect(validateProficiencyState({ ...mid(), version: -1 }).ok).toBe(false);
+    const bad = mid();
+    bad.levels.combat = { level: -1, xp: 0 };
+    expect(validateProficiencyState(bad).ok).toBe(false);
+  });
+
   it('refuses an unknown domain and a sheet hash that is not 64 lower-case hex', () => {
     const extra = { ...mid(), levels: { ...mid().levels, fishing: { level: 0, xp: 0 } } };
     expect(validateProficiencyState(extra).ok).toBe(false);
@@ -93,6 +100,11 @@ describe('proficiency request', () => {
   it('accepts a request with and without have_version', () => {
     expect(validateProficiencyRequest({ life_id: 'ag_kestrel_01' }).ok).toBe(true);
     expect(validateProficiencyRequest({ life_id: 'ag_kestrel_01', have_version: 0 }).ok).toBe(true);
+  });
+
+  it('treats an empty object as invalid and pins life_id as the only required key', () => {
+    expect(validateProficiencyRequest({}).ok).toBe(false);
+    expect(validateProficiencyRequest({ life_id: 'ag_kestrel_01' }).ok).toBe(true);
   });
 
   it('refuses a negative have_version and an unknown key', () => {
@@ -122,6 +134,10 @@ describe('proficiency level push', () => {
   it('refuses a domain outside the seven', () => {
     expect(validateProficiencyLevelPayload({ ...push(1), domain: 'fishing' }).ok).toBe(false);
   });
+
+  it('refuses a negative version', () => {
+    expect(validateProficiencyLevelPayload({ ...push(1), version: -1 }).ok).toBe(false);
+  });
 });
 
 describe('chunk visited payload', () => {
@@ -141,5 +157,14 @@ describe('chunk visited payload', () => {
     expect(validateChunkVisitedPayload({ ...chunk(), cx: 2000001 }).ok).toBe(false);
     expect(validateChunkVisitedPayload({ ...chunk(), cz: -2000001 }).ok).toBe(false);
     expect(validateChunkVisitedPayload({ ...chunk(), dimension: 'Overworld' }).ok).toBe(false);
+  });
+
+  it('accepts the coordinate bounds at exactly plus and minus 2000000', () => {
+    expect(validateChunkVisitedPayload({ ...chunk(), cx: 2000000, cz: -2000000 }).ok).toBe(true);
+  });
+
+  it('accepts a 64-character dimension and refuses 65 characters', () => {
+    expect(validateChunkVisitedPayload({ ...chunk(), dimension: 'a'.repeat(64) }).ok).toBe(true);
+    expect(validateChunkVisitedPayload({ ...chunk(), dimension: 'a'.repeat(65) }).ok).toBe(false);
   });
 });

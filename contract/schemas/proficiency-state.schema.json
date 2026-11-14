@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/proficiency-state.schema.json",
   "title": "ProficiencyState",
-  "description": "A life's proficiency state (AN-02b), the reply to a ProficiencyRequest. `levels` has all seven domains: level 0 to 3 and the XP in each. `version` is the total XP across domains, so it grows strictly with every award. A life with no rows answers version 0 and seven zero levels. `sheet` is the adopted baseline (rule R-sheet); it goes only to the Body role, never to an agent, and `sheet_hash` is its SHA-256.",
+  "description": "A life's proficiency state (AN-02b), the reply to a ProficiencyRequest. `levels` has all seven domains: level 0 to 3 and the XP in each. `version` is the total XP across domains; the writer (AN-04a) keeps it growing with every award, and this schema checks only that it is a non-negative integer. A life with no rows answers version 0 and seven zero levels. `sheet` is the adopted baseline (rule R-sheet); the NATS ACL, not this schema, sends it only to the Body role, never to an agent.",
   "type": "object",
   "additionalProperties": false,
   "required": ["life_id", "version", "levels"],
@@ -29,7 +29,7 @@
     },
     "sheet": { "$ref": "character-sheet.schema.json" },
     "sheet_hash": {
-      "description": "Lower-case hex SHA-256 of the canonical sheet JSON.",
+      "description": "Lower-case hex SHA-256 of the canonical sheet JSON, computed by the writer (AN-04a); this schema checks only the shape.",
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     }
