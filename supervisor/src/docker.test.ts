@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDockerClient, createDockerRuntime } from './docker.ts';
+import { bodyWiringFromEnv, createDockerClient, createDockerRuntime } from './docker.ts';
 import {
   type EngineCall,
   type FakeEngine,
@@ -10,6 +10,16 @@ import { BODY_MEMORY_BYTES, BODY_NANO_CPUS, bodyContainerConfig } from './limits
 import type { BodySpec, DisplayNamePort } from './ports.ts';
 
 const IMAGE = 'geldar/golem-body:test';
+// Placeholder values for the Body wiring. No real host, address or secret: these are test strings.
+const WIRING = bodyWiringFromEnv({
+  GELDAR_SHARD: 'colo',
+  GELDAR_MC_HOST: 'mc-host.test',
+  GELDAR_MC_PORT: '25565',
+  GELDAR_NATS_URL: 'nats://nats.test:4222',
+  GELDAR_NATS_USER: 'body',
+  GELDAR_BODY_NATS_SECRET_HOST_PATH: '/test/secrets/nats-body.txt',
+  GELDAR_BODY_SHARD_HOST_PATH: '/test/shards/colo-mind.yaml',
+});
 const spec = (): BodySpec => ({
   ownerId: 'owner-a',
   playerName: 'Ranger',
@@ -30,7 +40,7 @@ async function runtimeWith(
   const engine = await startFakeEngine(tag, handler);
   engines.push(engine);
   const names: DisplayNamePort = { displayName: async () => login };
-  const client = createDockerClient(engine.socketPath, IMAGE);
+  const client = createDockerClient(engine.socketPath, IMAGE, WIRING);
   return { engine, runtime: createDockerRuntime(client, names) };
 }
 
@@ -58,7 +68,7 @@ describe('Docker runtime: names and start', () => {
     const { engine, runtime } = await runtimeWith('happy', happy);
     await runtime.start(spec(), new AbortController().signal);
     expect(createCall(engine).path).toBe('/containers/create?name=ranger');
-    expect(createCall(engine).body.Labels).toEqual({
+    expect(createCall(engine).body.Labels).toMatchObject({
       'geldar.owner': 'owner-a',
       'geldar.player': 'ranger',
     });
@@ -69,7 +79,7 @@ describe('Docker runtime: names and start', () => {
     const { engine, runtime } = await runtimeWith('login', happy, 'Ranger');
     await runtime.start(spec(), new AbortController().signal);
     expect(createCall(engine).path).toBe('/containers/create?name=ranger');
-    expect(createCall(engine).body.Env).toEqual(['GELDAR_LOGIN_NAME=Ranger']);
+    expect(createCall(engine).body.Env).toContain('GELDAR_LOGIN_NAME=Ranger');
   });
 
   it('refuses a start with no exact-case name before any engine call', async () => {
