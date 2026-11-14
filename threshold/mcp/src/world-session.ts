@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { callTool, listTools, type ToolHandlers } from '@geldar/mcp-mock';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
@@ -69,6 +70,14 @@ export function startKeepAlive(
 }
 
 /**
+ * A new id for one MCP session. It keys what `wait` remembers about what the session was sent; it
+ * carries no token, life id or secret, and is never logged.
+ */
+export function newSessionId(): string {
+  return randomUUID();
+}
+
+/**
  * One MCP server for one player's session. Tools, resources and prompts are answered from the
  * world; the player is the one the session was opened for. The server declares `logging`, so
  * the keepalive's debug messages are valid for the client.
@@ -78,6 +87,9 @@ export function createWorldSession(
   playerId: string,
   sessionSignal: AbortSignal,
 ): McpServer {
+  // A random id per MCP session. It keys what `wait` remembers about what this session was sent; it
+  // carries no token, life id or secret, and is never logged.
+  const session = newSessionId();
   const mcp = new McpServer(
     { name: 'geldar-mcp', version: '0.0.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} } },
@@ -96,7 +108,7 @@ export function createWorldSession(
         deps.tools,
         request.params.name,
         request.params.arguments,
-        { playerId, signal },
+        { playerId, signal, session },
         (m) => deps.log?.({ event: 'tool_log', player_id: playerId, cause: m }),
         PLAYER_FAULT,
         deps.maxResultBytes,

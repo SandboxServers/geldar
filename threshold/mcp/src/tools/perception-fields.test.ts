@@ -106,7 +106,14 @@ describe('look with the PX perception fields', () => {
       held_item: 'bow',
       fuse: 'hissing',
     });
-    expect(result.snapshot.surroundings.notable_blocks[0]).toMatchObject({
+    expect(
+      (
+        result.snapshot.surroundings.notable_blocks as Extract<
+          typeof result.snapshot.surroundings.notable_blocks,
+          unknown[]
+        >
+      )[0],
+    ).toMatchObject({
       type: 'furnace',
       lit: true,
     });

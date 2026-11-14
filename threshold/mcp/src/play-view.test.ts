@@ -61,7 +61,10 @@ describe('toPlayView', () => {
 
     expect(view.snapshot.heard).toEqual([]);
     expect(view.snapshot.events_since_last_thought).toEqual([]);
-    for (const block of view.snapshot.surroundings.notable_blocks) {
+    for (const block of view.snapshot.surroundings.notable_blocks as Extract<
+      typeof view.snapshot.surroundings.notable_blocks,
+      unknown[]
+    >) {
       expect(block).not.toHaveProperty('text');
     }
     expect(view.snapshot.surroundings.notable_blocks).toHaveLength(2);

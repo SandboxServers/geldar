@@ -49,8 +49,9 @@ describe('the MCP surroundings carry every field the snapshot surroundings carri
   });
 
   it('the notable blocks match the snapshot minus the sign text, which goes to untrusted_world_text', () => {
+    // notable_blocks is the list or the unchanged fact (decision 0221); the list is compared here
     expectSameFields(
-      mcpSurroundings.properties.notable_blocks.items,
+      common.$defs.PlayNotableBlockList.items,
       snapshotSurroundings.properties.notable_blocks.items,
       ['text'],
     );
