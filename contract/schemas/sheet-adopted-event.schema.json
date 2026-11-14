@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/sheet-adopted-event.schema.json",
+  "title": "SheetAdoptedPayload",
+  "description": "Payload of a WorldEvent of type `sheet_adopted` (AN-02a, rule R-sheet). It records the adopted baseline sheet of a life, once. The first adoption sets the baseline; a later different candidate is logged as a conflict and changes nothing. sheet_hash is the lower-case hex SHA-256 of the canonical sheet JSON. The sheet is the true innate sheet: it must reach only the Body role, never an agent or an agent-visible text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "sheet", "sheet_hash", "source"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "sheet": { "$ref": "character-sheet.schema.json" },
+    "sheet_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "source": { "enum": ["config", "roster", "birth"] }
+  }
+}

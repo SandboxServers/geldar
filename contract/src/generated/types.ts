@@ -154,6 +154,31 @@ export interface BookRequest {
   life_id: string;
 }
 
+export type Score = number;
+
+export interface CharacterSheet {
+  version: 1;
+  attributes: {
+    curiosity: Score;
+    common_sense: Score;
+    cleverness: Score;
+    aggression: Score;
+  };
+  alignment: {
+    law: Score;
+    good: Score;
+  };
+  op_modes: {
+    explorer: Score;
+    farmer: Score;
+    miner: Score;
+    builder: Score;
+    crafter: Score;
+    warrior: Score;
+    nitwit: Score;
+  };
+}
+
 export interface CheckpointManifest {
   /**
    * A ULID (26 Crockford base32 characters) or a UUID v4.
@@ -313,6 +338,39 @@ export interface DeathPayload {
   respawn_x?: BlockCoord;
   respawn_y?: BlockCoord;
   respawn_z?: BlockCoord;
+}
+
+export interface DecisionEventPayload {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  decision_id: string;
+  engine_version: number;
+  producer: "body" | "kit";
+  fx: string;
+  kind: "d20" | "uniform" | "deterministic" | "audit_gap";
+  policy?: string;
+  inputs?: {
+    [k: string]: string | number | boolean | null;
+  };
+  result?: {
+    decision?: string;
+    options?: {
+      name: string;
+      weight: number;
+    }[];
+    uniform?: number;
+  };
+  /**
+   * @maxItems 4
+   */
+  roll_event_ids?: [] | [string] | [string, string] | [string, string, string] | [string, string, string, string];
+  thought_id?: string;
+  action_id?: string;
+  intent_id?: string;
+  dropped?: number;
+  since_tick?: number;
 }
 
 export interface WorldEvent {
@@ -12070,6 +12128,34 @@ export interface ReflexFiredPayload {
   };
 }
 
+export interface RollEventPayload {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  decision_id: string;
+  draw_index: number;
+  engine_version: number;
+  producer: "body" | "kit";
+  fx: string;
+  score: number;
+  proficiency?: number;
+  dc: number;
+  mode: "dis" | "flat" | "adv";
+  /**
+   * @minItems 1
+   * @maxItems 2
+   */
+  dice: [number] | [number, number];
+  kept: number;
+  bonus: number;
+  total: number;
+  success: boolean;
+  inputs?: {
+    [k: string]: string | number | boolean | null;
+  };
+}
+
 export interface ShardConfig {
   /**
    * CPU limit for the shard container, in cores. Greater than 0 and at most 64.
@@ -12091,6 +12177,16 @@ export interface ShardConfig {
    * Optional telemetry endpoint. No default: unset means no telemetry.
    */
   telemetry_url?: string;
+}
+
+export interface SheetAdoptedPayload {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  sheet: CharacterSheet;
+  sheet_hash: string;
+  source: "config" | "roster" | "birth";
 }
 
 export interface SnapshotRequest {
