@@ -3,13 +3,15 @@
 // current one and a hibernating player are left alone; a failed restart stops the loop, restores the previous image and
 // exits 1 (needs manual); --dry-run changes nothing. The fake docker keeps the hosts as files (colo-cd-fixture.ts).
 import { describe, expect, it, vi } from 'vitest';
-import { cdCalls, cdRun, cdSetup, OLD_HOST_IMAGE, withHosts } from './colo-cd-fixture';
+import { cdCalls, cdRun, cdSetup, GHCR, OLD_HOST_IMAGE, withHosts } from './colo-cd-fixture';
 
 vi.setConfig({ testTimeout: 120_000 });
 
 const EDITS = { 'src/eventsink.txt': 'v2\n' };
 const BUMP = ['GELDAR_EVENTSINK_IMAGE'];
-const CURRENT_IMAGE = `ghcr.io/sandboxservers/geldar-body@sha256:${'1'.repeat(64)}`;
+// The body digest of the installed (old) manifest, and of the new one when GELDAR_BODY_IMAGE is bumped (fixture manifest()).
+const CURRENT_IMAGE = `${GHCR}/geldar-body@sha256:${'1'.repeat(64)}`;
+const NEW_BODY_IMAGE = `${GHCR}/geldar-body@sha256:${'8'.repeat(64)}`;
 const N = (id: string) => `geldar-colo-players-host-${id}`;
 const hostCalls = (log: string[], verb: RegExp) =>
   log.filter((c) => c.includes('players-host') && verb.test(c));
@@ -42,11 +44,32 @@ describe('colo-cd.sh player host refresh', () => {
     const image = withHosts(cd, ['ag-old'], { 'ag-old': OLD_HOST_IMAGE });
     const r = cdRun(cd, { env: { FAKE_BODY_STOPPED: '1' } });
     expect(r.code, r.out).toBe(0);
-    expect(image('ag-old')).toBe(CURRENT_IMAGE);
+    expect(r.out).toContain('golem-body is not running');
+    expect(image('ag-old')).toBe(NEW_BODY_IMAGE);
     const log = cdCalls(cd);
     expect(log.some((c) => / up .*golem-body/.test(c))).toBe(false);
     expect(log.some((c) => c.includes('golem-body') && /^(stop|rm) /.test(c))).toBe(false);
     expect(hostCalls(log, / run -d /)).toHaveLength(1);
+  });
+
+  it('a failed golem-body recreate rolls back the shared services, puts the stale host back on its old image and never starts a stopped Adam', () => {
+    const cd = cdSetup(EDITS, ['GELDAR_BODY_IMAGE', 'GELDAR_EVENTSINK_IMAGE']);
+    const image = withHosts(cd, ['ag-old'], { 'ag-old': OLD_HOST_IMAGE });
+    // The new body starts but exits at once, so recreate_players fails. The fake treats the rollback's body (the old
+    // manifest's, CURRENT_IMAGE) as the old image, so the rollback's start runs and the host comes back running.
+    const r = cdRun(cd, {
+      env: { FAKE_BODY_STOPPED: '1', FAKE_NEW_STATE: 'exited 1 0', FAKE_OLD_IMAGE: CURRENT_IMAGE },
+    });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('rolled back after a failed health check on golem-body');
+    expect(r.out).toContain('rolled back: eventsink');
+    expect(image('ag-old')).toBe(CURRENT_IMAGE);
+    const log = cdCalls(cd);
+    expect(log.some((c) => c.includes('golem-body') && / up /.test(c))).toBe(false);
+    expect(log.some((c) => c.includes('golem-body') && /^(stop|rm) /.test(c))).toBe(false);
+    expect(log.some((c) => / up -d --no-deps --wait --pull never eventsink$/.test(c))).toBe(true);
+    // The new image start (exits at once), then the rollback's start on the old image.
+    expect(hostCalls(log, / run -d /)).toHaveLength(2);
   });
 
   it('does nothing to the hosts when every host is current', () => {

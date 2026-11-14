@@ -118,9 +118,12 @@ const hasPwsh =
   spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' }).status === 0;
 const hasDocker = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' }).status === 0;
 
-/** `docker compose` over the named files in compose/, rendered as JSON. Offline: no image is pulled. */
+/**
+ * `docker compose` over the named files in compose/, rendered as JSON. Offline: no image is pulled. The adam profile is on,
+ * so golem-body (the idle Adam, decision 0212) is in the render; without it compose leaves that service out.
+ */
 function renderCompose(...files: string[]) {
-  const args = files.flatMap((f) => ['-f', join(ROOT, 'compose', f)]);
+  const args = ['--profile', 'adam', ...files.flatMap((f) => ['-f', join(ROOT, 'compose', f)])];
   return spawnSync('docker', ['compose', ...args, 'config', '--format', 'json'], {
     encoding: 'utf8',
   });
