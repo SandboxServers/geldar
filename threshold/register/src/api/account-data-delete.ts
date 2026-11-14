@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import { SECURITY_HEADERS } from '../pages.ts';
 import { sendProblem } from '../problem.ts';
 import { UNAVAILABLE_RETRY_SECONDS } from './body.ts';
-import { type BodyStopLink, stopPlayerBody } from './body-retire.ts';
+import { type BodyStopLink, LOGIN_NAME, stopPlayerBody } from './body-retire.ts';
 import type { ApiContext, ApiRoute } from './route.ts';
 
 /** The typed phrase the account delete page asks for (C7-09a). Any other text is refused before anything runs. */
@@ -77,6 +77,9 @@ export async function deleteAccountData(
     if (link) {
       for (const player of await deps.listPlayers(identityHash)) {
         if (player.status === 'retired') continue;
+        // A stored name that is not a Body login (the retire route's rule) can never have been started by the
+        // supervisor, so there is no body to stop. Skipping it keeps a bad stored name from blocking the deletion.
+        if (!LOGIN_NAME.test(player.name)) continue;
         if (!(await stopPlayerBody(link, ownerId, player.name))) return 'body_unavailable';
       }
     }

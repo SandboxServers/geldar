@@ -1,6 +1,6 @@
 import pg from 'pg';
-import { signOutCookies } from './account.ts';
-import { accountDeleteDeps, accountDeleteRoutes } from './api/account-data-delete.ts';
+import { accountDeleteWiring } from './account-delete-wiring.ts';
+import { accountDeleteRoutes } from './api/account-data-delete.ts';
 import { loadConfig } from './config.ts';
 import { dbUrl } from './db-url.ts';
 import { mountBodyApi, productionBodyWiring } from './nats-body.ts';
@@ -19,7 +19,7 @@ const log = (line: string) => console.log(line);
 // The retire route (C7-04d-mount) mounts with them, on the same slot and link, and uses the store's retirePlayer.
 const body = productionBodyWiring(config, store, log);
 // The account delete (C7-09a) mounts always: its body stop uses the body link, and is a no-op without NATS.
-const accountDelete = accountDeleteDeps(store, body.link, signOutCookies());
+const accountDelete = accountDeleteWiring(store, body.link);
 const server = createRegisterServer({
   config,
   store,

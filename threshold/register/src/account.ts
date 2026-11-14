@@ -1,15 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
-import { deleteAccountPage } from './account-delete-page.ts';
+import { deleteAccountPage, runAccountDelete } from './account-delete-page.ts';
 import { accountPage, type BodyState } from './account-pages.ts';
 import { ACCOUNT_CSS } from './account-style.ts';
-import {
-  type AccountDeleteDeps,
-  DELETE_PHRASE,
-  deleteAccountData,
-} from './api/account-data-delete.ts';
-import { UNAVAILABLE_RETRY_SECONDS } from './api/body.ts';
+import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
@@ -239,7 +234,8 @@ export class Account {
       return true;
     }
     const m =
-      /^\/(account\/delete|account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
+      // /account/delete is anchored: it takes no player suffix, so /account/delete/ag-x/retire is not the delete (C7-09a).
+      /^\/(account\/delete(?=$)|account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
         url.pathname,
       );
     if (!m) return false;
@@ -307,58 +303,15 @@ export class Account {
       html(res, 429, errorPage(429, wait), { 'retry-after': String(wait) });
       return true;
     }
-    if (m[1] === 'account/delete') return this.deleteOwnAccount(res, session, fields);
+    if (m[1] === 'account/delete') {
+      await runAccountDelete(res, this.deps.accountDelete, session, fields, this.deps.log);
+      return true;
+    }
     if (m[1] === 'players' && m[2] === undefined) return this.create(res, session, fields);
     if (m[3] === 'public-camera') return this.camera(res, session, m[2] ?? '', fields);
     if (m[3] === 'public-thoughts') return this.thoughts(res, session, m[2] ?? '', fields);
     if (m[3] === 'token') return this.mint(res, session, m[2] ?? '');
     return this.retire(res, session, m[2] ?? '');
-  }
-
-  /**
-   * The account delete page action (C7-09a). CSRF, the origin and the ban were checked by the caller. The phrase is
-   * checked here, then the same shared delete the API route runs. Nothing is removed unless the outcome is 'deleted'.
-   */
-  private async deleteOwnAccount(
-    res: ServerResponse,
-    s: Session,
-    fields: URLSearchParams,
-  ): Promise<true> {
-    const deps = this.deps.accountDelete;
-    if (!deps) {
-      html(res, 404, errorPage(404));
-      return true;
-    }
-    if (fields.get('phrase') !== DELETE_PHRASE) {
-      html(res, 422, deleteAccountPage(s.csrf, 'The confirmation phrase does not match.'));
-      return true;
-    }
-    const outcome = await deleteAccountData(deps, s.identityHash, s.ownerId);
-    if (outcome === 'deleted') {
-      this.deps.log('account deleted');
-      res.writeHead(302, {
-        location: BASE,
-        'set-cookie': [...deps.clearCookies],
-        ...SECURITY_HEADERS,
-      });
-      res.end();
-      return true;
-    }
-    if (outcome === 'unauthenticated') {
-      refuse(res);
-      return true;
-    }
-    if (outcome === 'conflict') {
-      html(res, 409, deleteAccountPage(s.csrf, 'An agent is busy. Try again shortly.'));
-      return true;
-    }
-    html(
-      res,
-      503,
-      deleteAccountPage(s.csrf, 'An agent body could not be stopped. Nothing was deleted.'),
-      { 'retry-after': String(UNAVAILABLE_RETRY_SECONDS) },
-    );
-    return true;
   }
 
   private methodNotAllowed(res: ServerResponse): true {

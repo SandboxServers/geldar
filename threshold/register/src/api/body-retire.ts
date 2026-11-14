@@ -21,7 +21,7 @@ export interface BodyRetireDeps extends Omit<BodyDeps, 'slot'> {
 }
 
 /** The same display-name rule as the body routes (body.ts): the Minecraft player name, 3 to 16 characters. */
-const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
+export const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
 const LOGIN_NAME_DETAIL = "The player's name must be 3 to 16 letters, digits or underscore.";
 
 /**

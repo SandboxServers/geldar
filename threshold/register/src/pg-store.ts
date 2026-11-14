@@ -29,7 +29,10 @@ export class PgStore implements Store, SessionStore {
       hex(identityHash),
     ]);
     const row = r.rows[0];
-    return row ? { ownerId: String(row.owner_id), banned: row.banned === true } : null;
+    if (!row) return null;
+    // A tombstone (0039) has owner_id NULL. It is refused like a ban: never a session, and never the string 'null'.
+    if (row.owner_id === null || row.owner_id === undefined) return { ownerId: '', banned: true };
+    return { ownerId: String(row.owner_id), banned: row.banned === true };
   }
 
   async createOwner(

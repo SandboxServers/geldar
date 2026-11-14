@@ -157,6 +157,32 @@ describe('account delete page (C7-09a)', () => {
   });
 });
 
+describe('account delete link and route anchor (C7-09a review fix)', () => {
+  it('the account page links to the delete page', async () => {
+    const { base, cookie } = await boot();
+    const html = await (await fetch(`${base}/account`, { headers: { cookie } })).text();
+    expect(html).toContain('href="/register/account/delete"');
+  });
+
+  it('/account/delete/ag-x/retire is not the delete: a GET is 404 and a POST erases nothing', async () => {
+    const { base, cookie, erased } = await boot();
+    const csrf = csrfOf(
+      await (await fetch(`${base}/account/delete`, { headers: { cookie } })).text(),
+    );
+    const get = await fetch(`${base}/account/delete/ag-x/retire`, { headers: { cookie } });
+    expect(get.status).toBe(404);
+    const post = await fetch(`${base}/account/delete/ag-x/retire`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ csrf, phrase: DELETE_PHRASE }).toString(),
+    });
+    // The router refuses the POST (405 for this path, not the delete): no redirect, no 204 and no erase.
+    expect(post.status).toBe(405);
+    expect(erased).toEqual([]);
+  });
+});
+
 describe('POST /api/v1/account/delete through the production shape (C7-09a)', () => {
   it('answers 204 for a signed-in cookie session with the CSRF header, and erases the account', async () => {
     const { base, cookie, erased } = await boot();
