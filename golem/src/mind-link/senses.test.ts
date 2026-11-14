@@ -119,7 +119,7 @@ describe('shards/phase0.yaml Mind blocks', () => {
     expect(doc.mind.plan.expires_after_ticks).toBe(1200);
     for (const tag of ['qwen3:32b', 'qwen3:8b']) {
       expect(doc.model_pins[tag]).toMatchObject({
-        num_ctx: 8192,
+        num_ctx: 8704,
         keep_alive: '30m',
         max_concurrent: 1,
       });

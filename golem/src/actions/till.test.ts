@@ -1,8 +1,11 @@
+import { validateThought } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cancelled } from './outcome.ts';
 import { recordOwnPlacement } from './own-placements.ts';
 import { type OwnerAnswer, setOwnerLookup } from './protected-blocks.ts';
+import { ActionRegistry, runAction } from './registry.ts';
 import { tillAction } from './till.ts';
 
 vi.mock('./pathing.ts', () => ({
@@ -253,5 +256,29 @@ describe('till: the use', () => {
       status: 'cancelled',
     });
     expect(fake.activateBlock).not.toHaveBeenCalled();
+  });
+});
+
+describe('till: contract adoption (decision 0167)', () => {
+  const plan = (action: unknown) => validateThought({ reasoning: 'x', actions: [action] });
+
+  it('validates a plan that names till with the x, y and z of the block', () => {
+    expect(plan({ do: 'till', at: { x: 2, y: 63, z: 2 } }).ok).toBe(true);
+  });
+
+  it('rejects a till with an extra key or a missing axis', () => {
+    expect(plan({ do: 'till', at: { x: 2, y: 63, z: 2 }, radius: 1 }).ok).toBe(false);
+    expect(plan({ do: 'till', at: { x: 2, y: 63 } }).ok).toBe(false);
+  });
+
+  it('dispatches a till action from the registry to the till handler', async () => {
+    const spy = vi.spyOn(tillAction, 'run').mockResolvedValue(cancelled());
+    const registry = new ActionRegistry();
+    registry.register(tillAction);
+    const { bot } = fakeBot();
+    const action = { do: 'till', at: { x: 2, y: 63, z: 2 } };
+    await runAction(registry, bot, action, {});
+    expect(spy).toHaveBeenCalledWith(expect.anything(), action);
+    spy.mockRestore();
   });
 });

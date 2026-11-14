@@ -143,6 +143,7 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-09 | Account deletion and data export | W4 | E | C7-02b, C7-03b2, C7-13a | Waiting | 0171 | 0029 | N (legal review of the rule is the owner's, gates C7-11) |
 | C7-13c | Skin form and status on the account page | W4 | C | C7-06, C7-13a | Waiting | 0172 | none | N |
 | C7-11 | Sign-up gate (not a code packet) | W4 | G | C7-05, C7-06, C7-09, C7-13c | Waiting; owner opens sign-up | 0153, 0155, 0171 | none | Y |
+| C7-14 | Operator route to set a player's public camera and delayed public thoughts flags | C7 | operator tooling | none | Built; PR pending merge | none | 0034 | N |
 
 Wave C7-1 closed 2026-11-13 (merge bbb5ed6b, PR #315). Migrations 0024, 0025, 0027 and 0032 are applied on the node (deploy run 43522419766; pre-deploy pg dump taken). Spares left: none. 0033 is C7-03b3 (`sql/0033_supervisor_display_name.sql`, wave 2, merge pending), so the next free number is 0034. Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md).
 

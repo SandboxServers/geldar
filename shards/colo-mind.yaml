@@ -49,6 +49,7 @@ sovereign:
   allowed: true
   harnesses:
     claude: { enabled: true }
+    chatgpt: { enabled: true }   # decision 0180: the ChatGPT-subscription harness (Picard, kit rc16)
   owner_cap_default: 3
   owner_cap_owner: 20
   mcp:
@@ -106,8 +107,8 @@ mind:
     warm_timeout_s: 180          # seconds one pinned model may take to load before its warm-up fails
   snapshot_retry_s: 60           # the Mind retries a snapshot request for this long while the Body is not up
   thinker_wait_s: 20             # a thought waits this long for a Thinker to connect, then retries once
-  # 2500 estimated tokens of a thought's user message; it must fit num_ctx 8192 with the system message and the
-  # 2048 output cap (library.ts, CONTEXT_TOKENS). The same budget as phase0.
+  # 2500 estimated tokens of a thought's user message; it must fit num_ctx 8704 (decision 0181) with the system
+  # message and the 2048 output cap (library.ts, CONTEXT_TOKENS). The same budget as phase0.
   prompt_budget_tokens: 2500
   max_beliefs: 40                # the newest active beliefs loaded and shown in a prompt
   max_commitments: 10            # the open commitments loaded and shown, earliest due first
@@ -133,12 +134,12 @@ mind:
 model_pins:
   "qwen3:32b":
     digest: "sha256:030ee887880fc378860c2dd35101da424377520441ae4bfe7be6deff8ade7840"
-    num_ctx: 8192
+    num_ctx: 8704
     keep_alive: 30m
     max_concurrent: 1
   "qwen3:8b":
     digest: "sha256:500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41"
-    num_ctx: 8192
+    num_ctx: 8704
     keep_alive: 30m
     max_concurrent: 1
 

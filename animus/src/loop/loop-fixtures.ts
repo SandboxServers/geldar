@@ -12,6 +12,7 @@ import type {
   ThoughtOutcome,
   WakeDecision,
 } from '../ports/index.ts';
+import { CONTEXT_TOKENS } from '../prompts/library.ts';
 import { Admission } from './admission.ts';
 import { IntentLedger } from './fallback.ts';
 import { type LoopDeps, type LoopOptions, ThinkingLoop } from './thinking-loop.ts';
@@ -155,7 +156,7 @@ export class StubAttention implements AttentionController {
 export const OPTIONS: LoopOptions = {
   lifeId: LIFE,
   model: 'qwen3:32b',
-  modelConfig: 'qwen3:32b@sha256:abc;num_ctx=8192;temperature=0.7',
+  modelConfig: `qwen3:32b@sha256:abc;num_ctx=${CONTEXT_TOKENS};temperature=0.7`,
   versions: { schema: 'thought@1', mind: 'mind-0.0.0', body: 'body-0.0.0' },
   thought: { maxTokens: 600, temperature: 0.7, deadlineS: 25, reasoning: 'off' },
   expiresAfterTicks: 1200,

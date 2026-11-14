@@ -11,6 +11,7 @@ import { parseOwnerAdmin, runOwnerAdmin } from './owner-admin.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
+import { parsePlayerFlags, setPlayerFlags } from './player-flags.ts';
 import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
 import {
   addRosterName,
@@ -67,6 +68,8 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
   player pause|resume|retire <id>
+  player flags <id> --public-camera on|off --thoughts-delayed-public on|off
+                                        set a flag (at least one; a thoughts change waits 10 seconds)
   roster add|remove <name> --owner <o> [--max N]
                                         add or remove a Minecraft name an owner may run agents as (N 1 to 4, default 1)
   roster list [--owner <o>]             list the roster
@@ -333,6 +336,26 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
   throw new Error(USAGE);
 }
 
+async function runPlayerFlags(
+  parsed: Parsed,
+  io: Io,
+  env: Env,
+  args: readonly string[],
+): Promise<number> {
+  const { playerId, flags } = parsePlayerFlags(
+    args,
+    optionalFlag(parsed, '--public-camera'),
+    optionalFlag(parsed, '--thoughts-delayed-public'),
+  );
+  let result = { exit: 1, line: '' };
+  await withSql(env, async (sql) => {
+    result = await setPlayerFlags(sql, playerId, flags);
+  });
+  if (result.exit === 0) io.out(result.line);
+  else io.err(result.line);
+  return result.exit;
+}
+
 async function runRoster(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
   const [verb, name] = args;
   if (verb === 'list' && args.length === 1) {
@@ -454,6 +477,8 @@ export async function run(
       await runIdentity(io, env, rest, parsed);
     } else if (command === 'admin') {
       await runAdmin(io, env, rest, parsed);
+    } else if (command === 'player' && rest[0] === 'flags') {
+      return await runPlayerFlags(parsed, io, env, rest.slice(1));
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
     } else if (command === 'roster') {

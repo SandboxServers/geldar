@@ -1,26 +1,10 @@
+import type { Action } from '@geldar/contract';
 import { Vec3 } from 'vec3';
 import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
 import { isOwnPlacement } from './own-placements.ts';
 import { MESSAGE, reachTarget } from './place.ts';
 import { ownerRecordAt } from './protected-blocks.ts';
-import type { ActionContext } from './registry.ts';
-
-// TODO(contract PR "till action", not on main yet): once the generated Action union in
-// @geldar/contract has `till`, delete TillAction and TillHandler below, import the generated type
-// (`Extract<Action, { do: 'till' }>`) and type `tillAction` as `ActionHandler<'till'>`. Then remove
-// TillHandler from the AnyActionHandler union in registry.ts. The shape must match the contract:
-// {"do":"till","at":{"x":int,"y":int,"z":int}} with no other keys.
-
-/** The `till` action as the contract will name it (local until the contract lands). */
-export type TillAction = { do: 'till'; at: { x: number; y: number; z: number } };
-
-/** A handler for `till`, typed locally until the contract's Action union has the verb. */
-export interface TillHandler {
-  kind: 'till';
-  /** Wall-clock timeout in milliseconds at timeScale 1. */
-  timeoutMs: number;
-  run(ctx: ActionContext, action: TillAction): Promise<ActionOutcome>;
-}
+import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Tillable blocks in vanilla 26.1, with the block each becomes (minecraft-data 3.117 names). */
 export const TILLABLE: ReadonlyMap<string, string> = new Map([
@@ -54,7 +38,12 @@ export const TILL_MESSAGE = {
 /** Ticks the block is watched for the change after the click; the server answers within a few. */
 const CONFIRM_TICKS = 5;
 
-export const tillAction: TillHandler = {
+/**
+ * The `till` verb: walk in reach, look at the top face, click the block with a hoe, and confirm the
+ * block changed. Ownership posture: decision 0164 (tilling is not breaking a build; another
+ * player's recorded block is refused). The action shape and its receipt: decision 0167.
+ */
+export const tillAction: ActionHandler<'till'> = {
   kind: 'till',
   timeoutMs: 30_000,
   run: (ctx, action) => till(ctx, action.at),
@@ -71,7 +60,10 @@ function bestHoe(items: ReturnType<ActionContext['bot']['inventory']['items']>) 
 }
 
 /** Turns one tillable block into its result: walk in reach, look at its top face, click it with a hoe. */
-async function till(ctx: ActionContext, at: TillAction['at']): Promise<ActionOutcome> {
+async function till(
+  ctx: ActionContext,
+  at: Extract<Action, { do: 'till' }>['at'],
+): Promise<ActionOutcome> {
   const { bot } = ctx;
   const hoe = bestHoe(bot.inventory.items());
   if (!hoe) return failed('missing_materials', TILL_MESSAGE.noHoe);
