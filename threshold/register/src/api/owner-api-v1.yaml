@@ -101,7 +101,7 @@ components:
                 type: integer
               code:
                 type: string
-                enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, unavailable, internal]
+                enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, quota, unavailable, body_unavailable, internal]
   schemas:
     AgentPatch:
       type: object

@@ -11,7 +11,9 @@ export const PROBLEM_CODES = [
   'invalid',
   'conflict',
   'rate_limited',
+  'quota',
   'unavailable',
+  'body_unavailable',
   'internal',
 ] as const;
 
@@ -26,7 +28,9 @@ const STATUS: Record<ProblemCode, number> = {
   invalid: 422,
   conflict: 409,
   rate_limited: 429,
+  quota: 429,
   unavailable: 503,
+  body_unavailable: 503,
   internal: 500,
 };
 
@@ -39,7 +43,9 @@ const TITLE: Record<ProblemCode, string> = {
   invalid: 'Invalid request',
   conflict: 'Conflict',
   rate_limited: 'Too many requests',
+  quota: 'Body quota reached',
   unavailable: 'Service unavailable',
+  body_unavailable: 'Body unavailable',
   internal: 'Internal error',
 };
 
