@@ -40,7 +40,12 @@ describe('actionOutcomeOf: a run stopped before it finished', () => {
 describe('emitIntentFailure: a stopped intent', () => {
   it('sends the leading cancelled code as interrupted', () => {
     const actionOutcome = vi.fn();
-    emitIntentFailure({ actionOutcome } as unknown as RecordSink, 7, 'travel', 'cancelled: stopped');
+    emitIntentFailure(
+      { actionOutcome } as unknown as RecordSink,
+      7,
+      'travel',
+      'cancelled: stopped',
+    );
     expect(actionOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'interrupted' }),
       7,

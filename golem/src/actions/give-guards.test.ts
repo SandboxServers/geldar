@@ -56,9 +56,9 @@ describe('give: each listener is guarded', () => {
   });
 
   it('does not throw into the emitter from the playerCollect listener', async () => {
-    expect(
-      await escapesFrom((events) => events.emit('playerCollect', pike, unreadable)),
-    ).toEqual([]);
+    expect(await escapesFrom((events) => events.emit('playerCollect', pike, unreadable))).toEqual(
+      [],
+    );
   });
 
   it('does not throw into the client from the collect packet listener', async () => {

@@ -111,7 +111,11 @@ function guarded<A extends unknown[]>(
       // Neither building the line nor writing it may throw into the emitter.
       try {
         DEFAULT_DIAG_SINK.log(
-          JSON.stringify({ event: 'give_listener_error', listener: name, error: thrownText(error) }),
+          JSON.stringify({
+            event: 'give_listener_error',
+            listener: name,
+            error: thrownText(error),
+          }),
         );
       } catch {
         // The diag line could not be written: the throw is dropped, not rethrown.
