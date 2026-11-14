@@ -54,6 +54,8 @@ Shared facts for all three cards:
 
 ## C7-03b2: compose service, deploy script, budget and runbook
 
+> ADJUSTED 2026-11-14 (decision 0260): where this card differs from [c7f-packets.md](c7f-packets.md), c7f wins. No docker.sock mount and no `group_add`; depends on C7-03c1, C7-03c2, C7-03c3, C7-03b5; the PASSWORD_ROLES change moved to C7-03c2; the runbook references the helper runbook for the NATS users and password steps.
+
 - **id / wave / lane.** C7-03b2, wave 3 (moved from wave 2: it needs the NATS user names from b1 and the image from b3's Dockerfile, and no live use may happen before it). **depends-on.** C7-03b1 (user names and subject builders), C7-03a. **branch.** `phase1/c7-03b2-compose-deploy`. **migration.** none. **size.** M (one session; the runbook is the largest part).
 
 ### Goal
@@ -64,7 +66,7 @@ Shared facts for all three cards:
    - `deploy.resources.limits`: `cpus: "${GELDAR_COLO_SUPERVISOR_CPUS:-0.25}"`, `memory: "${GELDAR_COLO_SUPERVISOR_MEM:-128m}"`. The variable names match the `_CPUS` and `_MEM` pattern that `geldar.ps1` reads for the budget.
    - **Hard memory limit with no swap (owner check, host swap is nearly full).** `memswap_limit` equals the memory limit (both `${GELDAR_COLO_SUPERVISOR_MEM:-128m}`), which is `--memory-swap` equal to `--memory`. A CPU limit is set (`cpus`), in both the compose definition and `deploy/colo-supervisor.sh` (`--cpus 0.25`). The script passes `--memory 128m --memory-swap 128m --cpus 0.25`, the same values as compose.
    - Headroom at 0.25 CPU and 128m is confirmed PASS by the coordinator. The budget stays at the `shards/colo.yaml` arithmetic (10.85 CPUs, 20096m). Do not try to reconcile it with the per-player host containers started outside compose; that is out of scope for this card.
-   - Docker socket: `/var/run/docker.sock:/var/run/docker.sock`, mounted on this service only. **Read-only is not a real limit.** A `:ro` bind on a Unix socket does not stop Docker API writes. The socket is root-equivalent on the host, so the only controls are the uid and the `docker` group GID (`group_add` from a deploy value). The card records this. A docker-socket proxy with an endpoint allow list would be stronger, but it is a new pinned image and an owner decision, so it is not in this card.
+   - No Docker socket (decision 0260). This service has no socket mount and no `group_add`. Docker access belongs to the body helper (C7-03c1), never to the supervisor or any compose service.
    - Secrets: `supervisor-postgres` and `supervisor-nats` in the base `secrets:` section (files under `compose/secrets/`, as the register secrets are). Never env vars.
 2. **Secrets.** `deploy/compose.secrets.yml` maps both names to `${GELDAR_SECRETS_DIR}/postgres-supervisor.txt` and `${GELDAR_SECRETS_DIR}/nats-supervisor.txt`. `deploy/gen-secrets.sh` creates `postgres-supervisor.txt` (random, the same pattern as the other postgres files). It does **not** create `nats-supervisor.txt`: the script's own header says the NATS files come from the trusted machine, and the NATS password is set in the node's `nats-auth.conf` by the runbook.
 3. **Budget.** `shards/colo.yaml`: `cpu_limit: 10.85` and `memory_limit: 20096m` (10.6 + 0.25 and 19968m + 128m). The comment gains the line "C7-03b2 adds supervisor (0.25 CPU, 128m, profile supervisor, off by default): 10.75 CPUs and 20032m", and the margin (0.1 CPU, 64m) is stated, as the old comment does. **Known drift:** the comment chain ends at 10.5 CPUs and 19904m, but the values were 10.6 and 19968m. The new line states the sum, and the card does not pick a new margin. The coder reports the drift.
@@ -99,7 +101,7 @@ Shared facts for all three cards:
 
 ### Tests (each fails on revert)
 
-- `tools/repo-checks`: parse `compose/colo.yml` with the existing `yaml` package (no Docker needed). Only the `supervisor` service mounts `docker.sock`. Revert: add the socket mount to `register`; the test fails.
+- `tools/repo-checks`: parse `compose/colo.yml` with the existing `yaml` package (no Docker needed). No service mounts `docker.sock` (decision 0260). Revert: add the socket mount to `register`; the test fails.
 - `tools/repo-checks`: the supervisor has `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, a non-root user, limits `0.25` and `128m`, no `privileged`, no `network_mode: host`, no published `ports`. Revert: drop `cap_drop`; the test fails.
 - `tools/repo-checks`: the supervisor's `memswap_limit` equals its memory limit (no swap) and its CPU limit is set. The same holds for the `--memory-swap`, `--memory` and `--cpus` values in `deploy/colo-supervisor.sh`. Revert: set `memswap_limit` to `256m` (or drop the CPU limit); the test fails.
 - `tools/repo-checks`: the budget arithmetic holds: the sum of the `GELDAR_COLO_*_CPUS` and `_MEM` defaults is at most `cpu_limit` and `memory_limit` in `shards/colo.yaml`. Revert: set `cpu_limit` back to 10.6; the test fails.

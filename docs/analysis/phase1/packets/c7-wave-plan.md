@@ -87,7 +87,12 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|
-| 1 | C7-03b2 compose service, deploy script, budget, runbook (shelved until sign-up opens; the owner decides whether human-registered agents get a managed Body and where it runs; kit players do not use the supervisor; the card adds the `PASSWORD_ROLES` change for runbook step 2) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
+| 5 | C7-03c1 body helper (decision 0260: fixed verbs, fixed template, NATS helper subjects, role `geldar_helper`) | C7-03a, C7-03b1, C7-03b3 | `phase1/c7-03c1-body-helper` | number at dispatch (after 0037) | M |
+| 5 | C7-03c3 supervisor uses the helper (no Docker socket) | C7-03c1 | `phase1/c7-03c3-supervisor-helper` | none | M |
+| 5 | C7-03b5 supervisor process entry and image | C7-03a, C7-03b3 | `phase1/c7-03b5-supervisor-entry` | none | M |
+| 5 | C7-03c2 helper install script and runbook (geldar-93 node steps; PASSWORD_ROLES) | C7-03c1 | `phase1/c7-03c2-helper-install` | none | M |
+| 5 | C7-03b2 compose service, deploy script, budget, runbook (un-shelved by decision 0260; supervisor container only, no socket; the owner decides whether human-registered agents get a managed Body) | C7-03c1, C7-03c2, C7-03c3, C7-03b5 | `phase1/c7-03b2-compose-deploy` | none | M |
+| 5 | C7-03b4-live live check against the helper (geldar-93; orchestrator-run) | C7-03b2 | none | none | S |
 | 1 | C7-14b owner admin verbs in the operator wrappers (`owner-admin` in admin.sh and colo-admin.sh; idempotent `owner-add`; deploy tests; packets/C7-14b.md; built and merged in #359, 2026-11-14 18:29Z) | C7-14, C7-12 | `phase1/c7-14b-owner-admin-verbs` | none | S |
 | 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
 | 1 | C7-04c body routes (start, stop, restart, status, log through the supervisor; built and merged in #346, window A; retire split to C7-04d, wiring to C7-04c2) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
@@ -98,7 +103,7 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 | 1 | C7-06 account page v2 (built partial, merged in #346) | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
 | 1 | C7-06b account page view links and HTML error pages (split of C7-06, built partial on the same branch, merged in #346) | C7-06 | `phase1/c7-06-account-page-v2` | none | built |
 | 4 | C7-06c account page v2 items not delivered by C7-06 and C7-06b (built partial: status line; body buttons and toggles moved to C7-06d) | C7-06, C7-04c2, C7-04e | `phase1/c7-06c-account-items` | none | M |
-| 4 | C7-06d account page body controls: same-origin script and CSP, body buttons, PATCH toggles, loader wiring (split of C7-06c; Shelved until sign-up opens, with C7-03b2) | C7-06c, C7-04c2, C7-04e | `phase1/c7-06d-account-controls` | none | M |
+| 4 | C7-06d account page body controls: same-origin script and CSP, body buttons, PATCH toggles, loader wiring (split of C7-06c; un-shelved: the page script and CSP can start now, the buttons need C7-03b2 deployed) | C7-06c, C7-04c2, C7-04e | `phase1/c7-06d-account-controls` | none | M |
 | 1 | C7-13a skin upload API and held store | C7-04b, C7-12 | `phase1/c7-13a-skin-upload-api` | 0031 | L |
 | 1 | C7-10 operator console, ban reasons (confirm the C7-04 part at dispatch) | C7-03a, C7-04a, C7-12 | `phase1/c7-10-operator-console` | 0030 | M |
 | 2 | C7-07 agent rename (after C7-06 merges; it edits the account page rename form; the PATCH route, moved from C7-04b to C7-04e, stays rename-free) | C7-04b, C7-06 | `phase1/c7-07-agent-rename` | 0028 | S |
