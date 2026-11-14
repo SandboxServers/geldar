@@ -42,8 +42,20 @@ export interface ApiRoute {
   readonly handler: (ctx: ApiContext) => Promise<void>;
 }
 
+/** The visibility flag writes of an agent (C7-04e). The database checks the owner by identity hash. */
+export interface AgentFlagStore {
+  setPublicCamera(identityHash: string, playerId: string, value: boolean): Promise<boolean>;
+  setThoughtsDelayedPublic(
+    identityHash: string,
+    playerId: string,
+    value: boolean,
+  ): Promise<boolean>;
+}
+
 export interface ApiDeps {
   readonly now: () => number;
+  /** The visibility flag writes (C7-04e). Without it PATCH /agents/{playerId} answers 500 internal. */
+  readonly flags?: AgentFlagStore | undefined;
   /** The key the CSRF token is derived from (the session key). */
   readonly csrfKey: string;
   readonly sessions?: SessionStore | undefined;

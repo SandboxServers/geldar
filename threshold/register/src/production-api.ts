@@ -49,6 +49,7 @@ export function productionApi(
   | 'audit'
   | 'onAuditLost'
   | 'tokens'
+  | 'flags'
 > {
   const { db, store, log } = options;
   const keys = new OwnerKeyPgStore(db);
@@ -99,6 +100,7 @@ export function productionApi(
       },
     },
     audit,
+    flags: store,
     tokens: tokenServices,
     onAuditLost: () => {
       lost += 1;
