@@ -10,8 +10,10 @@ Source: cd.log, geldar-worldops notes, change-windows memory addenda 17-22. Ever
 | 18:30 | Paper restart: speech bubbles, proximity chat (32 blocks) | #360/#362, 0197/0198 | far speech no longer heard |
 | ~19:10 | gamerule players_sleeping_percentage 100 -> 50 | owner | night can pass with half asleep |
 | 20:10-20:56 | six deploys; #363 (unstick budget, goto escalation) in 1f84676b | 0210 | fewer unstick/goto stalls; clean window 20:57-21:15 |
-| 21:15 and 21:19 | deploys 3df6c808, 094788b3 (contents not yet noted) | | window after 21:19 is confounded |
+| 20:56 | eat chooser (0216, #375) | #375 | fewer wasted eats |
+| 21:15 | #379 (0213): panic_burrow needs hostile or damage; dark_shelter ignores unknown light | 0213 | night reflex failures should drop |
+| 21:19 | register-only (#380/#381) | | no behaviour change; hosts recreated |
 
-Windows: 20:57-21:15Z is the last clean window. Ask owners for the content of 21:15/21:19.
+Windows: 20:57-21:15Z is the last clean window. Clean window for 0213: from 21:20Z.
 
 Merge times from geldar-vitals (deploy instants pending from geldar-93): #369 eat/sleep detail_text 20:07Z; #375 eat chooser 20:52Z; #379 (0213 panic_burrow needs hostile or damage; dark_shelter ignores unknown light) after 20:52Z. Queued: 0214, 0215a, 0215b. Phantoms are vanilla (about 3 in-game days without sleep, open sky); days_since_sleep is MCP bookkeeping, not a phantom proxy.
