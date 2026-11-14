@@ -10,11 +10,14 @@ Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it und
 - Review of this plan: geldar-ops, geldar-registration and scriptorium-orchestrator are folded in (branch head at the time of handoff: the latest commit on `phase1/genesis-plan`). geldar-93 reviews on the evening of 2026-11-14.
 - **Owner**: handed to the new session `geldar-genesis` (owner ruling: one campaign per coordinator). Decision numbers for this campaign: 0240-0249 (0188 is already used). Every migration card inherits the rule in G4-03.
 
+## Coordinator log
+
+- 2026-11-14: geldar-genesis took over. Asked geldar-3b for inventory; sent the plan and questions to geldar-93. TODO: add the node-learned facts to plan.md section 8 (stale compose and jar hashes, hand-copied jars, "needs manual" list, no tested world backup, non-reproducible items); ask the owner for backup destination and VM sizing.
+
 ## Next action
 
-1. Collect geldar-93's review and fold in changes.
-2. Merge this plan PR to `main` (docs only, no deploy).
-3. Dispatch the G0 spikes first: G0-01 (Entra and DNS), G0-02 (runner capacity), then G0-04, G0-03, G0-05 as packets.
+1. Open the docs PR and queue it.
+2. Start G0 spikes G0-01 (Entra and DNS) and G0-02 (runner capacity), then G0-04, G0-03, G0-05 as packets.
 
 ## Rules
 
