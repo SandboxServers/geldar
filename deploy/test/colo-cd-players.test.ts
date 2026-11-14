@@ -83,4 +83,66 @@ describe('colo-cd.sh player host refresh', () => {
     expect(image('ag-old')).toBe(OLD_HOST_IMAGE);
     expect(cdCalls(cd).some((c) => /^(stop|rm) /.test(c) || / run -d /.test(c))).toBe(false);
   });
+
+  it('refreshes a host that exited non-zero (a crash that used its restarts), even on the current image', () => {
+    const cd = cdSetup(EDITS, BUMP);
+    const image = withHosts(
+      cd,
+      ['ag-crash'],
+      { 'ag-crash': CURRENT_IMAGE },
+      { 'ag-crash': 'exited 137 5' },
+    );
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('refreshed player host ag-crash');
+    const log = cdCalls(cd);
+    expect(log.filter((c) => c === `stop ${N('ag-crash')}`)).toHaveLength(1);
+    expect(hostCalls(log, / run -d /)).toHaveLength(1);
+    expect(image('ag-crash')).toBe(CURRENT_IMAGE);
+  });
+
+  it('skips a host that exited 0 (stopped on purpose), even on an old image', () => {
+    const cd = cdSetup(EDITS, BUMP);
+    const image = withHosts(
+      cd,
+      ['ag-clean'],
+      { 'ag-clean': OLD_HOST_IMAGE },
+      { 'ag-clean': 'exited 0 0' },
+    );
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).not.toContain('player host ag-clean');
+    expect(image('ag-clean')).toBe(OLD_HOST_IMAGE);
+    expect(hostCalls(cdCalls(cd), /^(stop|rm) | run -d /)).toEqual([]);
+  });
+
+  it('refreshes a restarting host even on the current image: it is not current until it is running', () => {
+    const cd = cdSetup(EDITS, BUMP);
+    withHosts(cd, ['ag-loop'], { 'ag-loop': CURRENT_IMAGE }, { 'ag-loop': 'restarting 1 3' });
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('refreshed player host ag-loop');
+    expect(hostCalls(cdCalls(cd), / run -d /)).toHaveLength(1);
+  });
+
+  it('fails a refresh whose new host has restarted (RestartCount 2), restores the old image and exits 1', () => {
+    const cd = cdSetup(EDITS, BUMP);
+    const image = withHosts(cd, ['ag-loop'], { 'ag-loop': OLD_HOST_IMAGE });
+    const r = cdRun(cd, { env: { FAKE_NEW_STATE: 'running 0 2' } });
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain('needs manual');
+    expect(image('ag-loop')).toBe(OLD_HOST_IMAGE);
+    expect(hostCalls(cdCalls(cd), / run -d /)).toHaveLength(2);
+  });
+
+  it('a failed docker update is a warning: the host stays up and is not restored', () => {
+    const cd = cdSetup(EDITS, BUMP);
+    const image = withHosts(cd, ['ag-one'], { 'ag-one': OLD_HOST_IMAGE });
+    const r = cdRun(cd, { env: { FAKE_UPDATE_FAIL: '1' } });
+    expect(r.code, r.out).toBe(0);
+    expect(r.out).toContain('refreshed player host ag-one');
+    expect(r.out).not.toContain('needs manual');
+    expect(image('ag-one')).toBe(CURRENT_IMAGE);
+    expect(hostCalls(cdCalls(cd), / run -d /)).toHaveLength(1);
+  });
 });

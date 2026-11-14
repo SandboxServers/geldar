@@ -143,8 +143,10 @@ verify_token() {
 }
 
 # Per-player hosts (C1-10b). The compose service players-host is one service; one host per player is a one-off
-# container named geldar-colo-players-host-<player-id>, started with `run -d --rm --no-deps`. Only containers that carry
-# the geldar-colo compose project label and that exact name are ever listed, started or stopped.
+# container named geldar-colo-players-host-<player-id>, started with `run -d --no-deps` and then given the restart policy
+# `on-failure:5` (docker update), so a crash restarts it up to five times and a clean exit does not. The container is kept
+# after it exits (no --rm), so its logs survive; player-start removes a stopped leftover with `rm -f` before it starts again.
+# Only containers that carry the geldar-colo compose project label and that exact name are ever listed, started or stopped.
 SHARD_FILE=${GELDAR_COLO_SHARD:-$ROOT/shards/colo-mind.yaml}
 
 # Checks <player-id> for player-start and player-stop: the id pattern, and that the shard file lists it.
@@ -177,6 +179,9 @@ run_hosts() {
       for id in $(grep -Eo 'player_id:[[:space:]]*ag-[a-z0-9-]+' "$SHARD_FILE" | sed 's/.*:[[:space:]]*//'); do
         if [ -n "$(host_ps '' "geldar-colo-players-host-$id")" ]; then
           say "$id: running (geldar-colo-players-host-$id)"
+        elif [ -n "$(host_ps -a "geldar-colo-players-host-$id")" ]; then
+          st=$(docker inspect -f '{{.State.Status}}' "geldar-colo-players-host-$id" 2>/dev/null || echo unknown)
+          say "$id: $st (geldar-colo-players-host-$id)"
         else
           say "$id: not running"
         fi
@@ -184,17 +189,23 @@ run_hosts() {
       ;;
     player-start)
       if [ "$DRY_RUN" = 1 ]; then
-        say "dry-run, not run: docker compose -p $PROJECT ... --profile sovereign run -d --rm --no-deps --name $hname -e GELDAR_PLAYER_ID=$player players-host --player $player"
+        say "dry-run, not run: docker compose -p $PROJECT ... --profile sovereign run -d --no-deps --name $hname -e GELDAR_PLAYER_ID=$player players-host --player $player; docker update --restart on-failure:5 $hname"
         exit 0
       fi
       if [ -n "$(host_ps '' "$hname")" ]; then
         say "$hname is already running; left as it is"
         exit 0
       fi
-      if [ -n "$(host_ps -a "$hname")" ]; then docker rm "$hname" >/dev/null || die "cannot remove the stopped $hname"; fi
-      GELDAR_PLAYER_ID=$player sov run -d --rm --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" players-host --player "$player" ||
+      if [ -n "$(host_ps -a "$hname")" ]; then docker rm -f "$hname" >/dev/null || die "cannot remove the stopped $hname"; fi
+      GELDAR_PLAYER_ID=$player sov run -d --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" players-host --player "$player" ||
         die "cannot start $hname"
-      say "started $hname"
+      # The host is up either way. A failed update leaves it without the policy (a crash is not restarted), so say so and
+      # exit 0: the CD must not treat a healthy host as failed and restore it.
+      if docker update --restart on-failure:5 "$hname" >/dev/null; then
+        say "started $hname"
+      else
+        say "started $hname, but cannot set its restart policy (docker update failed); a crash will not restart it"
+      fi
       ;;
     player-stop)
       if [ "$DRY_RUN" = 1 ]; then
