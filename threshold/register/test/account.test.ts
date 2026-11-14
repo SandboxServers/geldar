@@ -48,7 +48,7 @@ async function signIn(
     headers: { cookie },
     redirect: 'manual',
   });
-  const set = res.headers.getSetCookie().find((c) => c.startsWith('gr_session='));
+  const set = res.headers.getSetCookie().find((c) => c.startsWith('__Host-gr_session='));
   if (!set) return { res, session: null };
   const sc = set.split(';')[0] ?? '';
   const page = await (
@@ -118,11 +118,13 @@ describe('session and account page', () => {
     expect(res.status).toBe(302);
     expect(res.headers.get('location')).toBe('/register/account');
     const set = res.headers.getSetCookie();
-    const sess = set.find((c) => c.startsWith('gr_session=')) ?? '';
+    const sess = set.find((c) => c.startsWith('__Host-gr_session=')) ?? '';
     expect(sess).toMatch(/HttpOnly/);
     expect(sess).toMatch(/Secure/);
     expect(sess).toMatch(/SameSite=Lax/);
-    expect(set.some((c) => c.startsWith('gr_state=;') && c.includes('Max-Age=0'))).toBe(true);
+    expect(set.some((c) => c.startsWith('__Host-gr_state=;') && c.includes('Max-Age=0'))).toBe(
+      true,
+    );
     expect(store.owners.size).toBe(1);
     expect(session?.csrf).not.toBe('');
   });

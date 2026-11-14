@@ -137,7 +137,7 @@ async function call(account: Account, path: string, cookie: string): Promise<Cap
   return out;
 }
 
-/** Signs in with the stub identity and returns the gr_session cookie. */
+/** Signs in with the stub identity and returns the __Host-gr_session cookie. */
 async function signIn(account: Account): Promise<string> {
   const { res, out } = stubRes();
   await account.signedIn(identity, res, true);

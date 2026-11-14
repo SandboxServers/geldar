@@ -83,7 +83,7 @@ components:
     cookieSession:
       type: apiKey
       in: cookie
-      name: gr_session
+      name: __Host-gr_session
   responses:
     Problem:
       description: An error, as application/problem+json.

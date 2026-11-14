@@ -6,7 +6,7 @@ Order: C7-04a (wave 2, after C7-02b), then C7-04b (wave 2, after C7-04a), then C
 
 Shared facts (checked on `origin/main` c222d2b3 and the wave branch):
 
-- `server.ts` has `createRegisterServer`, `FixedWindow` and `limiterKey`; the register limiter is per address. `account.ts` has `SESSION_COOKIE` (`gr_session`) and a CSRF token derived by HMAC per session (`csrfFor`), compared with `same`.
+- `server.ts` has `createRegisterServer`, `FixedWindow` and `limiterKey`; the register limiter is per address. `account.ts` has `SESSION_COOKIE` (`__Host-gr_session` since CF-5) and a CSRF token derived by HMAC per session (`csrfFor`), compared with `same`.
 - `admin.ts` `isAdminOwner` reads `register_is_admin` and returns false on any error (fail closed). `audit.ts` `writeAudit` sets `admin` on each row from it.
 - `tokens-service.ts` has `TokenStore` and `TokenDeps` (the admin reader). Its Postgres adapter is not confirmed on main; check before writing one.
 - Not on `main` yet: `owner-keys-service.ts` and the `owner_api_keys` definer functions (C7-02b, wave branch `phase1/c7-wave2`, its worknote `worknotes/C7-02b.md`). `nats-ctl.ts` (`requestBodyOp`, `BodyUnavailable`) and the `ctl.body.*` subjects (C7-03b1). `worknotes/C7-05.md` exists on the wave branch only.
@@ -32,7 +32,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 1. **Route tree.** Paths under `/register/api/v1/` only. Anything else under `/register/api/` is 404 `not_found` problem, not handled by the API router. Unknown path under v1 is 404 `not_found`.
 2. **Credentials, in order.**
-   - Cookie `gr_session` (the web UI). Resolve through the existing session store. A state-changing request (POST, PATCH, DELETE) needs the CSRF token in header `x-csrf-token`, compared with `same`. Missing or wrong token: 403 `csrf_required`.
+   - Cookie `__Host-gr_session` (the web UI; `gr_session` before CF-5). Resolve through the existing session store. A state-changing request (POST, PATCH, DELETE) needs the CSRF token in header `x-csrf-token`, compared with `same`. Missing or wrong token: 403 `csrf_required`.
    - `Authorization: Bearer gowner-...`. Resolve through the C7-02b resolve function. A key with a scope the route does not list: 403 `scope_missing`. Bearer keys need no CSRF token.
    - Player token (`gmcp-`) in Bearer: 401 `unauthenticated`. Owner key of a banned owner: 401 `unauthenticated` (the resolve refuses; the refusal is audited by C7-02b).
    - No credentials, or an unreadable session: 401 `unauthenticated`.
@@ -291,7 +291,7 @@ paths:
   /owner-keys/{keyId}/revoke: { post: { scope: manage, responses: { 204: {} } } }
 components:
   securitySchemes:
-    sessionCookie: { type: apiKey, in: cookie, name: gr_session }
+    sessionCookie: { type: apiKey, in: cookie, name: __Host-gr_session }
     ownerKey: { type: http, scheme: bearer }
   schemas:
     Agent: { required: [playerId, displayName, status, body, creditsLeft, publicCamera, thoughtsDelayedPublic, createdAt], properties: { playerId: string, displayName: string, status: { enum: [active, paused, retired] }, body: { enum: [running, starting, waiting, stopped, unavailable] }, creditsLeft: integer, tokenExpiresAt: date-time, tokenLastUsedAt: date-time, lastSeenAt: date-time, publicCamera: boolean, thoughtsDelayedPublic: boolean, createdAt: date-time } }
@@ -336,16 +336,17 @@ Five cards from the wave 4 review (pass 3). None is scheduled; each waits for it
 
 ### CF-4 (CF-W4-4): onboarding GET consumes the token on cross-site navigation
 
+- **Status.** Built (C7 hardening commit; see worknotes/CF-W4-5.md).
 - **Goal.** `GET /register/onboarding` takes the show-once token from the hand-off slot on any GET with a live session cookie. `gr_session` is SameSite=Lax, so a cross-site top-level GET sends it, and an attacker page can burn the display inside the 10-minute window (the owner mints again; no secret is disclosed). Serve the token only when `Sec-Fetch-Site` is `same-origin` or `none`, or the header is absent (old clients); otherwise render the empty page without calling `take`.
 - **May-edit.** `threshold/register/src/account.ts` (the onboarding GET only), its test, `docs/analysis/phase1/worknotes/C7-05.md`.
 - **Test.** `sec-fetch-site: cross-site` does not consume the slot; a following same-origin request still shows the token.
 - **Depends.** C7-05. Origin: wave 1/2 code (the hand-off in C7-05).
-- **Status.** Carry-forward, not scheduled.
 
 ### CF-5 (CF-W4-5): `__Host-` prefix for the session cookies
 
+- **Status.** Built (C7 hardening commit; see worknotes/CF-W4-5.md).
 - **Goal.** Rename `gr_session` and `gr_state` to `__Host-gr_session` and `__Host-gr_state`; their attributes already satisfy the prefix (host-only, Secure, Path=/). `cookieOf` refuses a header that carries two cookies of the wanted name (answer as no session), so a planted `Domain=` cookie cannot shadow the owner's own. Clear the old names on logout for one release. Whether `gk_session` (shared with Glass) is renamed too is an orchestrator decision, not needed for this fix.
 - **May-edit.** `threshold/register/src/account.ts` and its cookie code, their tests, `docs/analysis/phase1/worknotes/` for this card.
 - **Test.** A header with two `__Host-gr_session` values is no session. The Set-Cookie starts with `__Host-` and has no Domain attribute. Logout clears the old and new names.
+- **Tracking.** Remove `LEGACY_CLEARS` (threshold/register/src/account.ts) one release after the release that ships CF-5. Until then the old names are cleared on sign-in and logout.
 - **Depends.** None. Origin: wave 1/2 code (cookie parser from wave 0 to 1, sessions from wave 2). Low to Medium, recommended before sign-up opens.
-- **Status.** Carry-forward, not scheduled.
