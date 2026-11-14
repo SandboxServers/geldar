@@ -28,20 +28,27 @@ public final class BlockOwnerSetup implements AutoCloseable {
     private final OwnerQueryService service;
     private final LookupDebugLog debug;
     private final PlacementRecorder placements;
+    private final OwnerSource source;
     private volatile boolean enabled = true;
 
     private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service,
-            LookupDebugLog debug, PlacementRecorder placements) {
+            LookupDebugLog debug, PlacementRecorder placements, OwnerSource source) {
         this.lookups = lookups;
         this.link = link;
         this.service = service;
         this.debug = debug;
         this.placements = placements;
+        this.source = source;
     }
 
     /** Records the blocks the plugin places itself (gravestones) as owned by the system (decision 0195). */
     public PlacementRecorder placements() {
         return placements;
+    }
+
+    /** The owner source the Body's queries use; the backfill reads owners through it, off the server thread. */
+    public OwnerSource source() {
+        return source;
     }
 
     /** Starts the feature; call from {@code onEnable}. The config is read again by {@link #reload}. */
@@ -63,7 +70,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
         NatsBlockOwnerLink link = new NatsBlockOwnerLink(natsUrl, shard, env, log);
         BlockOwnerPublisher publisher = new BlockOwnerPublisher(link::changed, log);
         PlacementRecorder placements = new PlacementRecorder(cache, publisher, writerFor(coreProtect, debug), log);
-        BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements);
+        BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements, source);
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
         plugin.getServer().getPluginManager().registerEvents(
