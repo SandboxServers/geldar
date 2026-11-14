@@ -255,6 +255,53 @@ describe('give', () => {
     expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
   });
 
+  it('completes when the survivor of three merged tosses is re-announced with the merged count', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    // The real order: each toss spawns and announces a stack of 1; each merge re-announces the survivor.
+    toss.mockImplementationOnce(async () => {
+      for (const id of [7, 8, 9]) {
+        events.emit('entitySpawn', stack(id, 1));
+        events.emit('itemDrop', stack(id, 1));
+      }
+      events.emit('entityGone', stack(7, 1));
+      events.emit('itemDrop', stack(9, 2));
+      events.emit('entityGone', stack(8, 1));
+      events.emit('itemDrop', stack(9, 3));
+      events.emit('playerCollect', pike, stack(9, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('does not count an older stack within 8 blocks that a toss merges into', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    toss.mockImplementationOnce(async () => {
+      // An older stack 3.5 blocks away: its metadata arrives, but it never spawns in this toss.
+      events.emit('itemDrop', stack(5, 5));
+      events.emit('entitySpawn', stack(7, 1));
+      events.emit('itemDrop', stack(7, 3));
+      events.emit('playerCollect', pike, stack(7, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
   it('says 2 of 3 and walks to the one item left on the ground after a merged stack', async () => {
     const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };

@@ -70,9 +70,9 @@ export const NOT_IN_SIGHT = 'no such agent in sight';
 /**
  * The item entities one toss created, and the items picked up since: by the recipient, by the Body,
  * or by another player (`others`, item id to that player's name). `stacks` is the item count each
- * entity held when it spawned, and `collected` the items the recipient took from each one. Vanilla
- * merges nearby stacks on the ground: a merged-away entity vanishes with no pickup (`gone`), and its
- * items are in the stack that survives, so the items are counted, not the entities.
+ * entity holds, the latest count from `itemDrop`, and `collected` the items the recipient took from
+ * each one. Vanilla merges nearby stacks on the ground: a merged-away entity vanishes with no pickup
+ * (`gone`), and its items are in the stack that survives, so the items are counted, not the entities.
  */
 interface PickupWatch {
   dropped: Set<number>;
@@ -135,11 +135,10 @@ function watchPickup(bot: Bot, to: string): PickupWatch {
     if (entity.position.distanceTo(bot.entity.position) > DROP_RANGE) return;
     dropped.add(entity.id);
   });
-  // `itemDrop` fires once the metadata is in, so the stack is read here.
+  // `itemDrop` fires once the metadata is in, and again when a merge changes the stack. It only
+  // updates an entity this toss claimed at its spawn, so a stack that was already there is never counted.
   const onItemDrop = guarded('itemDrop', (entity: Entity): void => {
-    if (entity.name !== 'item') return;
-    if (entity.position.distanceTo(bot.entity.position) > DROP_RANGE) return;
-    dropped.add(entity.id);
+    if (!dropped.has(entity.id)) return;
     stacks.set(entity.id, stackCount(entity));
   });
   const onGone = guarded('entityGone', (entity: Entity): void => {
@@ -189,14 +188,25 @@ function pickedItems(watch: PickupWatch): number {
   return [...watch.collected.values()].reduce((sum, count) => sum + count, 0);
 }
 
-/** The items the toss created: the stacks that spawned. */
+/**
+ * The items the toss left: each claimed entity's latest count (or what the recipient collected from
+ * it, if more). An entity that went away with no pickup is left out: a merged-away one's items are
+ * in the survivor, which is counted, and a vanished one has none.
+ */
 function tossedItems(watch: PickupWatch): number {
-  return [...watch.dropped].reduce((sum, id) => sum + (watch.stacks.get(id) ?? 1), 0);
+  let sum = 0;
+  for (const id of watch.dropped) {
+    const pickedUp = watch.collected.has(id) || watch.taken.has(id) || watch.others.has(id);
+    if (watch.gone.has(id) && !pickedUp) continue;
+    sum += Math.max(watch.stacks.get(id) ?? 1, watch.collected.get(id) ?? 0);
+  }
+  return sum;
 }
 
 /** Every tossed item has been picked up by the recipient. */
 function allPicked(watch: PickupWatch): boolean {
-  return watch.dropped.size > 0 && pickedItems(watch) >= tossedItems(watch);
+  const total = tossedItems(watch);
+  return total > 0 && pickedItems(watch) >= total;
 }
 
 /** Waits until `done()` holds, the wait runs out, or the run aborts. */
@@ -309,6 +319,7 @@ async function settle(
   }
   const total = tossedItems(watch);
   const picked = pickedItems(watch);
+  if (total === 0) return failed('not_possible', 'the tossed items left the ground with no pickup');
   if (picked >= total) return completed({ to: action.to, item: action.item, count: action.count });
   // Only the entities that still exist: not the recipient's, the Body's, another's or merged away.
   const onGround = [...watch.dropped].filter(
