@@ -173,6 +173,14 @@ const DETAIL_REASONS: readonly string[] = [
   'not_possible',
 ];
 
+/** The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216). Extend here. */
+export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep'];
+
+/** The cleaned plain fact of a successful outcome, or undefined for a verb outside `PLAIN_FACT_VERBS`. */
+function plainFactText(verb: string, raw: unknown): string | undefined {
+  return PLAIN_FACT_VERBS.includes(verb) ? playerDetailText(raw) : undefined;
+}
+
 /**
  * The `detail_text` for a failed action, or undefined. The reasons above carry the Body's plain sentence,
  * as does a timeout on any verb (a path search that ran out of time). A `not_possible` carries the Body's
@@ -204,8 +212,10 @@ export function playerOutcomeText(input: {
   const verb = input.verb !== undefined && VERB.test(input.verb) ? input.verb : 'action';
   if (input.ok || input.intent !== true) {
     const line = outcomeMessage(verb, input.ok, input.reason);
-    const detail = input.ok ? undefined : playerDetailText(input.detail);
-    return detail === undefined ? line : `${line.replace(/\.$/, '')}: ${detail}.`;
+    const detail = input.ok ? plainFactText(verb, input.detail) : playerDetailText(input.detail);
+    if (detail === undefined) return line;
+    if (input.ok && verb === 'eat') return `You ate ${detail}.`;
+    return `${line.replace(/\.$/, '')}: ${detail}.`;
   }
   return intentWhy(verb, input.reason);
 }
