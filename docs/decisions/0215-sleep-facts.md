@@ -30,3 +30,15 @@ Every sleep refusal attaches a record to the failed outcome in `raw`. `raw` is t
 - The agent sees which hostile blocks the bed and how far it is, so it can act on that fact. The text adds no instruction.
 - The distance is measured from the bed block's corner (the block position the action clicked, not its centre). When that is a foot half, the box is measured from the foot, not the head vanilla uses, so an edge hostile can differ by one block. Resolving the head from the bed's part is not done.
 - A monsters refusal whose hostiles are all outside the box still reads "none in view". The record keeps the hostiles and the light for the log, so a refusal with no counted hostile can be checked later.
+
+## The sleepers line
+
+The server tells every player when someone lies down, so the Body reads that line for the sleep result (`golem/src/actions/sleepers.ts`).
+
+- Captured on minecraft 26.1 (live probe): when a player lies down, the server sends every player a system chat packet with `isActionBar` true. Mineflayer 4.39 emits it as the bot's `message` event with position `game_info`, and `jsonMsg.translate` is `sleep.players_sleeping` with `with` = `[asleep, needed]` (ints).
+- When enough players sleep, the server sends `sleep.skipping_night` with no arguments instead.
+- Only `game_info` lines count. Both message shapes are read: the ChatMessage (`with[i].text`) and the raw json (`json.with[i]`). A number must be an integer from 0 to 999; any other value drops the line.
+- The sleep action keeps the newest line from its start. Once the Body is asleep it waits up to 300 ms (scaled by `timeScale`) for the next line, then completes with `detail.sleepers`: `{asleep, needed}`, or `"skipped"`. With no line, the result has no `sleepers` key.
+- The agent reads the ok result as a plain fact: `<asleep> of <needed> needed are asleep`, or `the night was skipped`. With no line there is no such fact. The failure texts are unchanged.
+- `needed` is the number of sleepers the server needs before the night is skipped. That comes from vanilla source memory (`sleepersNeeded`), not from a probe. A two-player probe cannot tell needed from total: with two players, `1 of 2` is the same reading whether 2 is needed or 2 is the total. The wording states what the server sent and claims nothing beyond it.
+- The count is what the newest line said when the wait ended. The watch does not track wake-ups.
