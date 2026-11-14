@@ -70,6 +70,77 @@ describe('findSafeBlock', () => {
   });
 });
 
+describe('hazard-escape: drowning', () => {
+  /** A pond of water at the origin on a stone floor, with a 2-high stone bank on its east side. */
+  function pond(air: number) {
+    const grid = floor({}, 63, -10, 10);
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) grid[`${x},64,${z}`] = 'water';
+    }
+    for (let z = -10; z <= 10; z++) {
+      grid[`3,64,${z}`] = 'stone';
+      grid[`3,65,${z}`] = 'stone';
+    }
+    const { view, state } = basicView({ inFluid: 'water', air, position: { x: 0, y: 64, z: 0 } });
+    return { view, state, bot: gridBot(grid).bot };
+  }
+
+  it('does not trigger with full air in water', () => {
+    const { view } = basicView({ inFluid: 'water', air: 20 });
+    expect(createHazardEscapeReflex().check(view)).toBeNull();
+  });
+
+  it('swims up first and recovers air, with no walk to the bank', async () => {
+    const { view, state, bot } = pond(6);
+    const { ctx } = basicContext(view, bot);
+    const order: string[] = [];
+    const swimmer: EscapeMover = async () => {
+      order.push('swim');
+      state.air = 12;
+    };
+    const mover: EscapeMover = async () => {
+      order.push('walk');
+    };
+    const outcome = await createHazardEscapeReflex({ swimmer, mover }).run(
+      { hazard: 'drowning', air: 6 },
+      ctx,
+    );
+    expect(outcome).toEqual({ result: 'handled', detail: 'left drowning' });
+    expect(order).toEqual(['swim']);
+  });
+
+  it('swims until the head is out of the water, then walks to dry land', async () => {
+    const { view, state, bot } = pond(6);
+    const { ctx } = basicContext(view, bot);
+    const order: string[] = [];
+    const swimmer: EscapeMover = async () => {
+      order.push('swim');
+      state.inFluid = null;
+    };
+    const mover: EscapeMover = async (walk) => {
+      order.push('walk');
+      state.position = walk.target;
+    };
+    const outcome = await createHazardEscapeReflex({ swimmer, mover }).run(
+      { hazard: 'drowning', air: 6 },
+      ctx,
+    );
+    expect(outcome.result).toBe('handled');
+    expect(order).toEqual(['swim', 'walk']);
+  });
+
+  it('gives up with a danger wake when air stays low and no land is reached', async () => {
+    const { view, bot } = pond(6);
+    const { ctx, sink } = basicContext(view, bot);
+    const outcome = await createHazardEscapeReflex({
+      swimmer: async () => undefined,
+      mover: async () => undefined,
+    }).run({ hazard: 'drowning', air: 6 }, ctx);
+    expect(outcome.result).toBe('abandoned');
+    expect(sink.wakes).toHaveLength(1);
+  });
+});
+
 describe('hazard-escape: run', () => {
   /** A pool of lava at the origin with ground around it; the Body stands in it. */
   function pool() {

@@ -105,6 +105,11 @@ export const walkOutOfHazard: EscapeMover = async (walk) => {
   const watch = setInterval(() => {
     if (walk.expired() || walk.reached()) controller.abort();
   }, 100);
+  // The pathfinder does not hold jump, so a Body in water would sink: hold it on every physics tick.
+  const holdJump = (): void => {
+    if (bot.entity.isInWater) bot.setControlState('jump', true);
+  };
+  bot.on('physicsTick', holdJump);
   try {
     await moveNear(bot, target, 1, {
       digTier: false,
@@ -123,6 +128,7 @@ export const walkOutOfHazard: EscapeMover = async (walk) => {
     }
   } finally {
     clearInterval(watch);
+    bot.off('physicsTick', holdJump);
     walk.signal.removeEventListener('abort', forward);
     bot.setControlState('forward', false);
     bot.setControlState('jump', false);
@@ -166,13 +172,14 @@ export const swimUp: EscapeMover = async (walk) => {
 export interface HazardEscapeOptions {
   limitTicks?: number;
   mover?: EscapeMover;
-  /** Used when the Body is drowning and no stand block is in range. */
+  /** Used first when the Body is drowning: it swims up until air returns or the head is out. */
   swimmer?: EscapeMover;
 }
 
 /**
  * Leaves lava, fire or deep water: it fires while the Body is in lava, on fire outside water, or
- * in water with air at or below 8 bubbles. It walks to the nearest safe block and gives up after
+ * in water with air at or below 8 bubbles, where it swims up first. It walks to the nearest safe block
+ * (air back above 8 counts as out) and gives up after
  * 200 world ticks, raising a `reflex_danger` wake so the Mind hears of it.
  */
 export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Reflex {
@@ -209,21 +216,21 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       if (standing() && trigger.hazard === 'fire') {
         return { result: 'abandoned', detail: 'burning, but not standing in a hazard block' };
       }
+      const drowning = trigger.hazard === 'drowning';
       const target = findSafeBlock(read, view.position);
-      const surfacing = !target && trigger.hazard === 'drowning';
-      if (!target && !surfacing) return giveUp(`no safe block within ${SCAN_RADIUS} blocks`);
+      if (!target && !drowning) return giveUp(`no safe block within ${SCAN_RADIUS} blocks`);
       await ctx.cancelAction();
-      const reached = surfacing ? (): boolean => standing() || view.air > DROWNING_AIR : standing;
-      const walk = {
-        bot,
-        signal: ctx.signal,
-        timeScale: ctx.timeScale,
-        expired,
-        reached,
-      };
-      if (target) await mover({ ...walk, target });
-      else await swimmer({ ...walk, target: view.position });
-      if (reached()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };
+      // Air back above the threshold is out of harm, even while the Body is still in the water.
+      const recovered = (): boolean => drowning && view.air > DROWNING_AIR;
+      const landed = (): boolean => standing() || recovered();
+      const walk = { bot, signal: ctx.signal, timeScale: ctx.timeScale, expired, reached: landed };
+      // Drowning always swims up first: with low air the way out is up, not along the bank.
+      if (drowning) {
+        const surfaced = (): boolean => recovered() || view.inFluid !== 'water';
+        await swimmer({ ...walk, target: view.position, reached: surfaced });
+      }
+      if (target && !landed() && !expired()) await mover({ ...walk, target });
+      if (landed()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };
       return giveUp(`still in ${String(trigger.hazard)} after ${limitTicks} ticks`);
     },
   };
