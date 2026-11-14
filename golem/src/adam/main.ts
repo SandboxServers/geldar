@@ -254,6 +254,6 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
   installEntryHandlers();
   main().catch((error: unknown) => {
     jsonLog({ event: 'fatal', error: error instanceof Error ? error.message : String(error) });
-    process.exitCode = 1;
+    process.exit(1);
   });
 }
