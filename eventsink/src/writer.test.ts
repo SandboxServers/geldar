@@ -24,11 +24,25 @@ describe('pgEventWriter', () => {
     await pgEventWriter(pool).insertBatch([EVENT, { ...EVENT, source_event_id: 'ev_2' }]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.sql).toContain('ON CONFLICT (source_event_id) DO NOTHING');
-    expect(calls[0]?.params).toHaveLength(8);
+    expect(calls[0]?.params).toHaveLength(10);
     expect(calls[0]?.params[0]).toEqual([EVENT.source_event_id, 'ev_2']);
     expect(calls[0]?.params[5]).toEqual(['ag_kestrel_01', 'ag_kestrel_01']);
     expect(calls[0]?.params[6]).toEqual([null, null]);
     expect(calls[0]?.params[7]).toEqual(['{"bed":[1,2,3]}', '{"bed":[1,2,3]}']);
+    expect(calls[0]?.params[8]).toEqual([null, null]);
+    expect(calls[0]?.params[9]).toEqual([null, null]);
+  });
+
+  it('binds harness and model per event, null when the envelope has none', async () => {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const pool = {
+      query: async (sql: string, params: unknown[]) => void calls.push({ sql, params }),
+    } as unknown as Pool;
+    const stamped: WorldEvent = { ...EVENT, harness: 'claude', model: 'claude-sonnet-5.5' };
+    await pgEventWriter(pool).insertBatch([stamped, EVENT]);
+    expect(calls[0]?.sql).toContain('harness, model');
+    expect(calls[0]?.params[8]).toEqual(['claude', null]);
+    expect(calls[0]?.params[9]).toEqual(['claude-sonnet-5.5', null]);
   });
 
   it('does not touch the database for an empty batch', async () => {
