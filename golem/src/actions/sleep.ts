@@ -12,7 +12,12 @@ import {
 } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
-import { type Hostile, hostilesAroundBed, monstersFact } from './sleep-hostiles.ts';
+import {
+  type Hostile,
+  hostilesAroundBed,
+  MAX_NAMED_HOSTILES,
+  monstersFact,
+} from './sleep-hostiles.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 
 /** The first world tick of the night window the Body checks (advisory: the server's window differs by one). */
@@ -101,11 +106,15 @@ export function sleepFailure(
   if (matchSleepError(message) === undefined) {
     diag.log(JSON.stringify({ event: 'sleep_reason_unknown', message }));
   }
+  // The light comes before the hostiles: the action log clips the record to 200 characters.
   const record = {
     event: 'sleep_refusal',
     message,
-    hostiles: scene.hostiles.map(({ kind, blocks }) => ({ kind, blocks })),
     light: scene.light,
+    hostiles: scene.hostiles
+      .slice(0, MAX_NAMED_HOSTILES)
+      .map(({ kind, blocks }) => ({ kind, blocks })),
+    count: scene.hostiles.length,
   };
   return failed(
     classifySleepError(message),

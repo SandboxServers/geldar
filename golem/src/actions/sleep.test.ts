@@ -369,6 +369,7 @@ describe('sleep', () => {
       event: 'sleep_refusal',
       message: 'There are monsters nearby',
       hostiles: [{ kind: 'zombie', blocks: 6 }],
+      count: 1,
       light: 12,
     });
   });
@@ -384,7 +385,29 @@ describe('sleep', () => {
       event: 'sleep_refusal',
       message: 'There are monsters nearby',
       hostiles: [],
+      count: 0,
       light: null,
+    });
+  });
+
+  it('keeps the light inside the first 200 characters of a record with five hostiles', async () => {
+    // The action log clips the raw record to 200 characters, so the light must come before the hostiles.
+    const kind = 'a_long_hostile_kind_name_for_the_clip';
+    const hostiles = [1, 2, 3, 4, 5].map((blocks) => ({ kind, blocks }));
+    const outcome = sleepFailure(
+      'There are monsters nearby',
+      { log: () => undefined, now: () => 0 },
+      { hostiles, light: 12 },
+    );
+    expect(outcome.status === 'failed' ? (outcome.raw ?? '').slice(0, 200) : '').toContain(
+      '"light":12',
+    );
+    expect(outcome.status === 'failed' ? JSON.parse(outcome.raw ?? 'null') : null).toEqual({
+      event: 'sleep_refusal',
+      message: 'There are monsters nearby',
+      light: 12,
+      hostiles: hostiles.slice(0, 3),
+      count: 5,
     });
   });
 

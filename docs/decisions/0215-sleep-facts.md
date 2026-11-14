@@ -18,7 +18,7 @@ The Body computes the hostiles vanilla's bed check counts, from the bed block th
 
 ## The record (events only)
 
-Every sleep refusal attaches a record to the failed outcome in `raw`. `raw` is the channel the action log keeps: the registry writes it to the action log, and `toResult` never copies it into the stored result the agent reads. The record is `{"event":"sleep_refusal","message":...,"hostiles":[{"kind":...,"blocks":...}],"light":...}`, where `light` is `bot.blockAt(bed).light`, or null when the world does not report it. The `raw` value is clipped to the action log's 200-character limit.
+Every sleep refusal attaches a record to the failed outcome in `raw`. `raw` is the channel the action log keeps: the registry writes it to the action log, and `toResult` never copies it into the stored result the agent reads. The record is `{"event":"sleep_refusal","message":...,"light":...,"hostiles":[{"kind":...,"blocks":...}],"count":...}`, where `light` is `bot.blockAt(bed).light`, or null when the world does not report it. `hostiles` keeps the first three counted hostiles, nearest first, and `count` is the total in the box. The `raw` value is clipped to the action log's 200-character limit, so `light` comes first: a record with many hostiles still carries the light inside the clip.
 
 ## Follow-ups of the same decision (not in this change)
 
@@ -28,5 +28,5 @@ Every sleep refusal attaches a record to the failed outcome in `raw`. `raw` is t
 ## Consequences
 
 - The agent sees which hostile blocks the bed and how far it is, so it can act on that fact. The text adds no instruction.
-- The distance is measured from the bed block the action clicked. When that is a foot half, the box is measured from the foot, not the head vanilla uses, so an edge hostile can differ by one block. Resolving the head from the bed's part is not done.
+- The distance is measured from the bed block's corner (the block position the action clicked, not its centre). When that is a foot half, the box is measured from the foot, not the head vanilla uses, so an edge hostile can differ by one block. Resolving the head from the bed's part is not done.
 - A monsters refusal whose hostiles are all outside the box still reads "none in view". The record keeps the hostiles and the light for the log, so a refusal with no counted hostile can be checked later.

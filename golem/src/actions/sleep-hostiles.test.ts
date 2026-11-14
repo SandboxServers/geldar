@@ -47,8 +47,10 @@ describe('hostilesAroundBed: the box, on every axis and sign', () => {
   // The box is vanilla's: dx -8..7, dy -6..4, dz -8..7 around the head (bed.js monsterRange).
   it.each([
     ['east, x=+7 is inside', at('zombie', 7), 'zombie 7 blocks away'],
+    ['east, x=+7.9 floors to +7, inside', at('zombie', 7.9), 'zombie 8 blocks away'],
     ['east, x=+8 is outside', at('zombie', 8), 'none in view'],
     ['west, x=-8 is inside', at('zombie', -8), 'zombie 8 blocks away'],
+    ['west, x=-8.5 floors to -9, outside', at('zombie', -8.5), 'none in view'],
     ['west, x=-9 is outside', at('zombie', -9), 'none in view'],
     ['south, z=+7 is inside', at('zombie', 0, 64, 7), 'zombie 7 blocks away'],
     ['south, z=+8 is outside', at('zombie', 0, 64, 8), 'none in view'],
