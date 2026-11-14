@@ -1,5 +1,6 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { editSignHandler } from '../actions/edit-sign.ts';
 import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
@@ -33,6 +34,8 @@ export interface CreateBodyOptions {
   currentRevision: () => number;
   /** The shard's reflex flags; a reflex that is off is not handed to the runtime. Default: all on. */
   reflexConfig?: ReflexConfig;
+  /** The shard's `body_actions.edit_sign` flag; the verb is refused while off. Default: off. */
+  editSign?: boolean;
   /**
    * Where records go. Given, the Body writes to JetStream through a `NatsRecordSink` (it fills in
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
@@ -134,7 +137,11 @@ export function createBody(options: CreateBodyOptions): Body {
     ...(options.timeScale === undefined ? {} : { timeScale: options.timeScale }),
   });
   runtime = built;
-  for (const handler of allActions) built.actions.register(handler);
+  // edit_sign is registered with the shard's flag (`body_actions.edit_sign`, default off).
+  for (const handler of allActions) {
+    if (handler.kind !== 'edit_sign') built.actions.register(handler);
+  }
+  built.actions.register(editSignHandler(options.editSign ?? false));
   const executor = new IntentExecutor({
     runtime: built,
     ticks: options.ticks,

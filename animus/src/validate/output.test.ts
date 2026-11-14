@@ -456,6 +456,19 @@ describe('the allow-list and the MCP verb list', () => {
     expect(till({ at: { x: 3, y: 64, z: 8 }, count: 1 }).ok).toBe(false);
   });
 
+  it('makes edit_sign callable with a position and sign text, and refuses a malformed edit', () => {
+    expect(PHASE0_VERBS).toContain('edit_sign');
+    const edit = (action: Record<string, unknown>) =>
+      validator.parseThought(thought({ actions: [{ do: 'edit_sign', ...action }] }));
+    const at = { x: 3, y: 64, z: 8 };
+    expect(edit({ at, text: 'Home' }).ok).toBe(true);
+    expect(edit({ at, text: 'x'.repeat(60) }).ok).toBe(true);
+    expect(edit({ at, text: 'x'.repeat(61) }).ok).toBe(false);
+    expect(edit({ at }).ok).toBe(false);
+    expect(edit({ text: 'Home' }).ok).toBe(false);
+    expect(edit({ at: 'feet', text: 'Home' }).ok).toBe(false);
+  });
+
   it('has every listed verb either callable or excluded with a reason', () => {
     expect(listed.length).toBeGreaterThan(10);
     for (const verb of listed) {
@@ -469,7 +482,7 @@ describe('the allow-list and the MCP verb list', () => {
 
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v7.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v8.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];

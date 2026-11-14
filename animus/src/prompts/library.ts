@@ -47,8 +47,9 @@ export const OUTPUT_RESERVE_TOKENS = 2048;
 /**
  * The system message of thought v2 costs 3354 estimated tokens and the reflection's 773 (measured
  * with {@link promptCost} on the sample prompts; the till wording of thought v5 and the till schema
- * make it 3748 now, see decision 0181). 2500 for the user message leaves
- * 8704 - 2048 - 3748 = 2908 at the top, so the sum fits with a margin of 408; the estimate charges
+ * make it 3855 with body-api v7, and the edit_sign wording of body-api v8 (decision 0192) makes it
+ * 3926, see decision 0181). 2500 for the user message leaves
+ * 8704 - 2048 - 3926 = 2730 at the top, so the sum fits with a margin of 230; the estimate charges
  * one token per three ASCII characters, which a BPE tokenizer beats on English, and the schema is a
  * grammar Ollama does not send as prompt text. A larger budget needs a larger `num_ctx`.
  */
@@ -130,8 +131,8 @@ const REFLECTION_SLOTS: Record<number, string[]> = {
  */
 export const DEFAULT_THOUGHT_VERSION = 5;
 
-/** The body-api template a new Mind renders: `body-api/v7.json`. `v1` to `v6` stay loadable. */
-export const DEFAULT_BODY_API_VERSION = 7;
+/** The body-api template a new Mind renders: `body-api/v8.json`. `v1` to `v7` stay loadable. */
+export const DEFAULT_BODY_API_VERSION = 8;
 
 /** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
 export const DEFAULT_REFLECTION_VERSION = 2;
