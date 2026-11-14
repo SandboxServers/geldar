@@ -1,6 +1,6 @@
 # 0217: The Body counts its ownership lookups and logs the counts once a minute
 
-- Status: Accepted
+- Status: Proposed (implementer; owner to accept)
 - Date: 2026-11-14
 - Amends: nothing; the ownership rules of decision 0164 and the record of decision 0165 stay as they are
 
@@ -16,11 +16,11 @@ Fields of the line:
 
 - `event`: `"ownership_lookups"`; `interval_ms`: 60000.
 - `total`: the counts since the Body started. `interval`: the counts since the previous line.
-- Each block holds `lookups` (ownership lookups), `cache_hits` (lookups answered from a complete cached chunk), `queries` (chunk queries sent to the plugin), `answered` (complete replies), `truncated` (replies the plugin marked truncated: their cells are unknown), `unknown` (no answer: a timeout or no responder), `errors` (a reply that did not parse or broke the contract), `avg_latency_ms` and `max_latency_ms` (over the queries that ended; null when none did).
+- Each block holds `lookups` (ownership lookups), `cache_hits` (lookups answered from a complete cached chunk), `queries` (chunk queries sent to the plugin), `answered` (complete replies), `truncated` (replies the plugin marked truncated: their cells are unknown), `unknown` (no answer: a timeout or no responder), `errors` (a reply that did not parse or broke the contract), `avg_latency_ms` and `max_latency_ms` (over the queries that ended, timeouts included, so a silent plugin pulls the average toward the timeout; null when none ended). A lookup in a dimension with no Bukkit world is answered before the counters see it, so it is not counted; the line under-reports those lookups.
 
 ## Privacy
 
-The line carries counts only. It holds no coordinates, no block names, no owner names and no world name (decision 0145). The tests check the key set.
+The line carries counts only. It holds no coordinates, no block names, no owner names and no world name (decision 0145). The tests check the key sets of the line and of both blocks.
 
 ## Consequences
 
