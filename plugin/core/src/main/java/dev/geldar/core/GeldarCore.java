@@ -92,11 +92,21 @@ public final class GeldarCore extends JavaPlugin {
                 Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger(), owners.placements()),
                 this);
         getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(owners.placements()));
+        // Proximity (spec 5.8): speech and death messages reach only the players within 32 blocks.
+        getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityChatListener(), this);
+        getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityDeathListener(
+                () -> Bukkit.getOnlinePlayers(), line -> Bukkit.getConsoleSender().sendMessage(line), getLogger()), this);
         // BlueMap skin provider (GX-07): never returns an empty skin, so BlueMap keeps the agents' head files.
         try {
             dev.geldar.core.skins.AgentSkinSetup.register(this, System::getenv);
         } catch (LinkageError | RuntimeException e) {
             getLogger().warning("agent skins are not set: " + e.getClass().getSimpleName());
+        }
+        // Speech bubbles on the BlueMap (decision 0197): agents' chat only, off unless BlueMap is enabled.
+        try {
+            dev.geldar.core.speech.SpeechSetup.register(this);
+        } catch (LinkageError | RuntimeException e) {
+            getLogger().warning("speech bubbles are off: " + e.getClass().getSimpleName());
         }
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();

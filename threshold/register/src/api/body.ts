@@ -3,6 +3,7 @@ import { BodyUnavailable, type CtlConnection, MalformedReply, requestBodyOp } fr
 import { SECURITY_HEADERS } from '../pages.ts';
 import { sendProblem } from '../problem.ts';
 import { LOG_MAX_LINES, logTail, parseLogLimit, type SupervisorEvent } from './body-log.ts';
+import { type BodySlot, createBodySlot } from './body-slot.ts';
 import { ownedAgent } from './guard.ts';
 import type { ApiContext, ApiRoute } from './route.ts';
 
@@ -11,6 +12,8 @@ export interface BodyDeps {
   readonly conn: CtlConnection;
   readonly shard: string;
   readonly timeoutMs: number;
+  /** The one-in-flight slot, shared with the other body routers (C7-04c2). Defaults to a slot of its own. */
+  readonly slot?: BodySlot;
 }
 
 /** A supervisor reply as the wire carries it (nats-ctl parses ok and code; the log reply adds events). */
@@ -169,7 +172,7 @@ async function withSlot(
  * in-flight slot and the repeat-start window are per call of bodyRoutes, so each router has its own state.
  */
 export function bodyRoutes(body: BodyDeps): readonly ApiRoute[] {
-  const inFlight = new Set<string>();
+  const inFlight = body.slot ?? createBodySlot();
   const starts = new Map<string, number[]>();
 
   /** Seconds to wait when the agent has used its starts in the window, or 0 and the start is recorded. */

@@ -15,10 +15,14 @@ dependencies {
     compileOnly(libs.coreprotect) {
         isTransitive = false
     }
-    // BlueMap's API for the agent skin provider (AgentSkinSetup). The server provides BlueMap; the jar is not bundled.
+    // BlueMap's API for the agent skin provider (AgentSkinSetup) and the speech bubbles (SpeechMarkers). The server
+    // provides BlueMap; the jar is not bundled.
     compileOnly(libs.bluemap.api) {
         isTransitive = false
     }
+    // flow-math's Vector3d, which BlueMap's HtmlMarker takes. The server provides it through BlueMap; compile-only,
+    // never bundled (tasks.jar packs runtimeClasspath, which does not carry compileOnly).
+    compileOnly(libs.flow.math)
     implementation(libs.jnats)
 
     testImplementation(libs.bluemap.api) {
