@@ -51,7 +51,8 @@ case "$*" in
       *) echo running ;;
     esac
     exit 0 ;;
-  "stop geldar-colo-players-host-"* | "rm geldar-colo-players-host-"*) rm -f "$FAKE_HOSTS_DIR/$hn"; exit 0 ;;
+  "stop geldar-colo-players-host-"* | "rm geldar-colo-players-host-"* | "rm -f geldar-colo-players-host-"*) rm -f "$FAKE_HOSTS_DIR/$hn"; exit 0 ;;
+  "update --restart on-failure:5 geldar-colo-players-host-"*) exit 0 ;;
   *" run -d "*" players-host "*)
     if [ -n "\${FAKE_RUN_FAIL:-}" ] && [ "$GELDAR_BODY_IMAGE" != "\${FAKE_OLD_IMAGE:-}" ]; then exit 1; fi
     printf '%s\\n' "$GELDAR_BODY_IMAGE" >"$FAKE_HOSTS_DIR/$hn"; exit 0 ;;

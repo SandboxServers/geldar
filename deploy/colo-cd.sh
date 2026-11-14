@@ -138,9 +138,9 @@ close_scope() {
   fi
 }
 
-# Recreates each RUNNING player host, one at a time (stop, then start). Hibernating hosts are left as they are.
+# Recreates each RUNNING or crashed player host, one at a time (stop, then start). Hibernating and cleanly stopped hosts are left as they are.
 recreate_players() {
-  running_hosts >"$WORK/players.txt" || {
+  acted_hosts >"$WORK/players.txt" || {
     log "cannot list the player hosts; check them by hand"
     return 1
   }
@@ -192,7 +192,7 @@ restore_host() {
 refresh_hosts() {
   want=${GELDAR_BODY_IMAGE:-}
   [ -n "$want" ] || return 0
-  ids=$(running_hosts) || { log "cannot list the player hosts; needs manual"; return 1; }
+  ids=$(acted_hosts) || { log "cannot list the player hosts; needs manual"; return 1; }
   for id in $ids; do
     old=$(host_image "$id")
     if [ "$old" = "$want" ]; then continue; fi

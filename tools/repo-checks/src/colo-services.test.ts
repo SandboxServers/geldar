@@ -268,6 +268,8 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
 
   it('is gated behind the sovereign profile, so a plain shard up does not start it', () => {
     expect(players.profiles).toEqual(['sovereign']);
+    // A crash restarts the host up to five times; a clean exit does not restart it (decision 0169).
+    expect(players.restart).toBe('on-failure:5');
   });
 
   it('reaches Velocity for the game and Paper for RCON, by service name, with the opt-in', () => {

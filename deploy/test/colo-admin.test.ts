@@ -381,8 +381,22 @@ describe('colo-admin.sh (decision 0133)', () => {
       expect(s[0]).toContain('-p geldar-colo');
       expect(s[0]).toContain('--profile sovereign');
       expect(s[0]).toContain(
-        `run -d --rm --no-deps --name ${HOST} -e GELDAR_PLAYER_ID=ag-clara-01 players-host --player ag-clara-01`,
+        `run -d --no-deps --name ${HOST} -e GELDAR_PLAYER_ID=ag-clara-01 players-host --player ag-clara-01`,
       );
+      expect(s[0]).not.toMatch(/--rm/);
+      // The restart policy is set on the container after it starts (compose run has no --restart flag).
+      expect(log).toContain(`update --restart on-failure:5 ${HOST}`);
+      expect(log.indexOf(`update --restart on-failure:5 ${HOST}`)).toBeGreaterThan(
+        log.findIndex((c) => c === s[0]),
+      );
+    });
+
+    it('lists a stopped host as exited, so the CD can see it', () => {
+      const fx = fixture();
+      const r = run(fx, { ...shardEnv(fx), FAKE_PS_ALL: HOST }, ['player-list']);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('ag-clara-01: exited');
+      expect(r.out).not.toContain('ag-clara-01: running');
     });
 
     it('leaves a host that is already running, and starts nothing', () => {
@@ -393,12 +407,15 @@ describe('colo-admin.sh (decision 0133)', () => {
       expect(starts(calls(fx))).toEqual([]);
     });
 
-    it('removes a stopped leftover of the same name before it starts', () => {
+    it('removes a stopped leftover of the same name (rm -f) before it starts', () => {
       const fx = fixture();
       const r = run(fx, { ...shardEnv(fx), FAKE_PS_ALL: HOST }, ['player-start', 'ag-clara-01']);
       expect(r.code).toBe(0);
       const log = calls(fx);
-      expect(log).toContain(`rm ${HOST}`);
+      expect(log).toContain(`rm -f ${HOST}`);
+      expect(log.indexOf(`rm -f ${HOST}`)).toBeLessThan(
+        log.findIndex((c) => c.includes(' run -d ')),
+      );
       expect(starts(log)).toHaveLength(1);
     });
 
