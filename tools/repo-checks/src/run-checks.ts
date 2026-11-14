@@ -5,6 +5,7 @@
  */
 import { findControlChar, type IndexEntry } from './control-chars.ts';
 import { checkDecisionIndex } from './decision-index.ts';
+import { checkEnvDefinitions, ENV_SCHEMA } from './env-definitions.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
 import { checkIntegrationFloor, countIntegrationFiles } from './integration-floor.ts';
@@ -208,6 +209,12 @@ export function runRepoChecks(port: RepoPort, now: Date): RepoChecksResult {
   }
 
   for (const problem of checkDecisionIndex(all)) {
+    log(`error: ${problem}`);
+    failed = true;
+  }
+
+  /** Every envs/*.yaml validates (tools/genesis-env): no secret, account name or address. */
+  for (const problem of checkEnvDefinitions(all, port.readText(ENV_SCHEMA))) {
     log(`error: ${problem}`);
     failed = true;
   }
