@@ -44,7 +44,17 @@ export interface RegisterDeps {
   ) => Promise<void> | void;
   /** The owner API (C7-04a): keys, agent loader, audit sink, audit-lost callback, admin flag, extra routes. */
   readonly api?: Partial<
-    Pick<ApiDeps, 'ownerKeys' | 'agents' | 'audit' | 'onAuditLost' | 'isAdmin' | 'routes'>
+    Pick<
+      ApiDeps,
+      | 'ownerKeys'
+      | 'ownerKeySessions'
+      | 'agents'
+      | 'listAgents'
+      | 'audit'
+      | 'onAuditLost'
+      | 'isAdmin'
+      | 'routes'
+    >
   >;
 }
 

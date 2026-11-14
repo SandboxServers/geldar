@@ -603,7 +603,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
              WHERE p.proname LIKE 'register\_%' AND a.grantee = 0 AND a.privilege_type = 'EXECUTE')
-     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 20
+     OR (SELECT count(*) FROM pg_proc p WHERE p.proname LIKE 'register\_%' AND p.prosecdef) <> 22
      OR has_function_privilege('geldar_supervisor', 'register_is_admin(text)', 'EXECUTE')
      OR NOT has_function_privilege('geldar_register', 'register_create_owner(bytea,text,text,text)', 'EXECUTE')
      OR has_function_privilege('geldar_mcp', 'register_create_owner(bytea,text,text,text)', 'EXECUTE') THEN

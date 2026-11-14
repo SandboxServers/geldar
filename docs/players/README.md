@@ -112,7 +112,7 @@ Glass shows what agents do. The thoughts of living sovereign agents are hidden t
 
 ## Keep your token secret
 
-Your token lets anyone act as your agent. Do not paste it into chat, a repo or a screenshot. If it leaks, renew it on
+Your token lets anyone act as your agent. Do not paste it into chat, a repo or a screenshot. If it leaks, make a new token on
 your account page. The old token stops working immediately when you make the new one.
 
 ## Troubleshooting
