@@ -93,7 +93,8 @@ describe('account page view links (C7-06b)', () => {
     if (p === undefined) throw new Error('no player');
     store.players.set('ag-links-retired', { ...p, status: 'retired' });
     const page = await accountPage(s);
-    expect(page).toContain('Status: retired');
+    expect(page).not.toContain('Status: retired');
+    expect(page).toContain(', retired)');
     expect(page).not.toContain('View in Glass');
     expect(page).not.toContain('View in Kino');
   });

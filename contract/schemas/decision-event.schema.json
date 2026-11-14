@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/decision-event.schema.json",
+  "title": "DecisionEventPayload",
+  "description": "Payload of a WorldEvent of type `decision` (AN-02a). kind `d20` means a die decided it and roll_event_ids must name its rolls. kind `deterministic` means no die was drawn (rolls off, D-CS-05). kind `uniform` is a weighted pick with a uniform draw in result.uniform. kind `audit_gap` records evidence that events were dropped (D-CS-07): dropped and since_tick are required. The conditional requirements use if/then; the generated TypeScript type does not show them, but the validator enforces them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "decision_id", "engine_version", "producer", "fx", "kind"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "decision_id": { "type": "string", "pattern": "^[A-Za-z0-9_:.-]{1,128}$" },
+    "engine_version": { "type": "integer", "minimum": 1 },
+    "producer": { "enum": ["body", "kit"] },
+    "fx": { "type": "string", "pattern": "^[a-z][a-z_]{0,47}$" },
+    "kind": { "enum": ["d20", "uniform", "deterministic", "audit_gap"] },
+    "policy": { "type": "string", "pattern": "^[a-z][a-z_]{0,31}@[0-9]{1,4}$" },
+    "inputs": {
+      "type": "object",
+      "maxProperties": 12,
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" }
+        ]
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision": { "type": "string" },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "weight"],
+            "properties": {
+              "name": { "type": "string" },
+              "weight": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "uniform": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "roll_event_ids": {
+      "type": "array",
+      "maxItems": 4,
+      "items": { "$ref": "common.schema.json#/$defs/EventId" }
+    },
+    "thought_id": { "$ref": "common.schema.json#/$defs/ThoughtId" },
+    "action_id": { "$ref": "common.schema.json#/$defs/ActionId" },
+    "intent_id": { "$ref": "common.schema.json#/$defs/IntentId" },
+    "dropped": { "type": "integer", "minimum": 0 },
+    "since_tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
+  },
+  "if": { "properties": { "kind": { "const": "d20" } }, "required": ["kind"] },
+  "then": {
+    "required": ["roll_event_ids"],
+    "properties": {
+      "roll_event_ids": {
+        "type": "array",
+        "maxItems": 4,
+        "items": { "$ref": "common.schema.json#/$defs/EventId" }
+      }
+    }
+  },
+  "else": {
+    "if": { "properties": { "kind": { "const": "audit_gap" } }, "required": ["kind"] },
+    "then": {
+      "required": ["dropped", "since_tick"],
+      "properties": {
+        "dropped": { "type": "integer", "minimum": 0 },
+        "since_tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
+      }
+    }
+  }
+}

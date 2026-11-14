@@ -43,6 +43,24 @@ describe('colo-cd.sh delta deploy', () => {
     expect(readdirSync(join(cd.extract, 'src')).some((f) => f.includes('.bak-'))).toBe(true);
   });
 
+  it('does not start a stopped golem-body (the idle Adam, decision 0212) and still pulls its image', () => {
+    const cd = cdSetup(EDITS, [...CHANGED, 'GELDAR_BODY_IMAGE']);
+    const r = cdRun(cd, { env: { FAKE_BODY_STOPPED: '1' } });
+    expect(r.code, r.out).toBe(0);
+    const log = cdCalls(cd);
+    expect(upServices(log)).toEqual(['eventsink', 'glass', 'geldar-mcp']);
+    expect(log.some((c) => / up .*golem-body/.test(c))).toBe(false);
+    expect(log.filter((c) => / pull /.test(c)).map(lastArg)).toContain('golem-body');
+    expect(readText(join(cd.state, 'cd.log'))).toContain('golem-body is not running');
+  });
+
+  it('restarts a running golem-body (the idle Adam) last, in restart order', () => {
+    const cd = cdSetup(EDITS, [...CHANGED, 'GELDAR_BODY_IMAGE']);
+    const r = cdRun(cd);
+    expect(r.code, r.out).toBe(0);
+    expect(upServices(cdCalls(cd))).toEqual(['eventsink', 'glass', 'geldar-mcp', 'golem-body']);
+  });
+
   it('rolls back the services already changed after a failed health check and exits 1', () => {
     const cd = cdSetup(EDITS, CHANGED);
     const r = cdRun(cd, { env: { FAKE_UNHEALTHY: 'glass' } });

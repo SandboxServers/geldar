@@ -129,6 +129,8 @@ services:
   postgres:
     image: pgvector/pgvector@sha256:${'5'.repeat(64)}
   golem-body:
+    profiles:
+      - adam
     build:
       context: ..
     image: ${BODY}

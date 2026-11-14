@@ -378,7 +378,7 @@ Reflexes are configurable per shard. A shard with reflexes disabled will have a 
 
 **Perception snapshot:** Built by the Body every time it needs a thought. See Appendix A for the full schema. Contents, in plain English: time of day, weather, location, health, hunger, inventory, nearby blocks summary, nearby entities and agents, recent chat heard, recent events (what happened since the last thought), current intent status, and thinking budget remaining.
 
-**Authorized perception.** Mineflayer can see every block in loaded chunks, including ore behind walls and chests in sealed rooms. Agents may not. The snapshot is built from an explicit perception model: blocks within line of sight or previously observed and remembered; entities within line of sight or earshot; container contents only after opening the container; signs within 6 blocks and facing the agent; book contents only when held. Render distance is not permission to know. This closes an information channel that would otherwise undermine the physical-information premise.
+**Authorized perception.** Mineflayer can see every block in loaded chunks, including ore behind walls and chests in sealed rooms. Agents may not. The snapshot is built from an explicit perception model: blocks within line of sight or previously observed and remembered; entities within line of sight or earshot (earshot is the speech rule of 5.8: words within 32 effective blocks, a words-free muffled notice beyond that); container contents only after opening the container; signs within 6 blocks and facing the agent; book contents only when held. Render distance is not permission to know. This closes an information channel that would otherwise undermine the physical-information premise.
 
 **When does a Body ask for a thought?** Only when the **attention controller** (5.3.2) says the current intent can't handle what just happened. Raw world events (speech heard, agent arrived, damage, action finished, discovery, day/night, proposal announced) are *records* first. Most of them are absorbed by the running intent or coalesced into a digest. A wakeup is a decision the controller makes, with a recorded reason, not a reflex of the event stream. Ten agents chattering within earshot produce dozens of speech events per minute; that must produce a handful of model calls, not dozens. The controller also enforces a minimum spacing between wakeups per agent and a fallback wakeup if an intent has run a long time without one.
 
@@ -663,7 +663,7 @@ An emerald buys a larger share of the available thinking. It does not create GPU
 
 **Principle:** No telepathy. Information moves at the speed of a walking agent.
 
-**Speech:** Geldar-Core intercepts all chat. `say(text)` is delivered only to agents (and ghosts) within **32 blocks**. Beyond that, nothing. There is no global chat. Speech is capped at 256 characters per message and 1 message per 3 seconds per agent (prevents token floods).
+**Speech:** Geldar-Core intercepts all chat. `say(text)` is delivered by **effective distance**: the raw distance between speaker and listener plus the absorption of every block the straight line passes through (air adds nothing). Only listeners within **32 raw blocks** are considered at all; beyond that, nothing. Of those, a listener whose effective distance is within **32** hears the words. A listener whose effective distance is above 32 and within a **muffle margin** (**40**) gets only a *muffled notice*: a compass direction and a distance band, no words, no speaker, no coordinates. The notice does not wake the Mind (as with `heard_sound`). Beyond the margin, nothing. A listener in a fully enclosed space pays one extra fixed penalty. The absorption values, the margin, the sealed penalty and the ray-cast cost caps are tunable shard config (`chat.muffle`), not measured; the MH-8a bench sets them. The public map's speech bubbles show all speech to human observers by design; agents never see them and hear only by the rule above. There is no global chat. Speech is capped at 256 characters per message and 1 message per 3 seconds per agent (prevents token floods).
 
 **Shouting (shard option):** `shout(text)` reaches 96 blocks but costs 2 hunger points. Off by default.
 
@@ -1795,7 +1795,7 @@ tick_rate: 20                    # fixed (decision 0047)
 population_target: 100
 identity_mode: unwatched         # unwatched | watched
 reflexes: { enabled: true, panic_burrow: true }
-chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
+chat: { radius: 32, muffle: { /* tunable, set by MH-8a bench: absorption table, margin, sealed penalty, ray-cast caps */ }, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
 memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
 skills: { enabled: true, max_bytes: 8192, sandbox_timeout_s: 60 }
 economy:

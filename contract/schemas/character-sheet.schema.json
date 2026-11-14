@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/character-sheet.schema.json",
+  "title": "CharacterSheet",
+  "description": "A life's innate character sheet: thirteen integer scores from 1 to 5 (brief 3.2). It holds innate scores only. Proficiency is not part of it: XP lives in the proficiency state, so a sheet that carries proficiency is refused.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "attributes", "alignment", "op_modes"],
+  "properties": {
+    "version": { "const": 1 },
+    "attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["curiosity", "common_sense", "cleverness", "aggression"],
+      "properties": {
+        "curiosity": { "$ref": "#/$defs/score" },
+        "common_sense": { "$ref": "#/$defs/score" },
+        "cleverness": { "$ref": "#/$defs/score" },
+        "aggression": { "$ref": "#/$defs/score" }
+      }
+    },
+    "alignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["law", "good"],
+      "properties": {
+        "law": { "$ref": "#/$defs/score" },
+        "good": { "$ref": "#/$defs/score" }
+      }
+    },
+    "op_modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["explorer", "farmer", "miner", "builder", "crafter", "warrior", "nitwit"],
+      "properties": {
+        "explorer": { "$ref": "#/$defs/score" },
+        "farmer": { "$ref": "#/$defs/score" },
+        "miner": { "$ref": "#/$defs/score" },
+        "builder": { "$ref": "#/$defs/score" },
+        "crafter": { "$ref": "#/$defs/score" },
+        "warrior": { "$ref": "#/$defs/score" },
+        "nitwit": { "$ref": "#/$defs/score" }
+      }
+    }
+  },
+  "$defs": {
+    "score": {
+      "description": "One innate score, an integer from 1 to 5.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    }
+  }
+}
