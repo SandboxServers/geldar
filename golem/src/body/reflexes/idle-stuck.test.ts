@@ -201,8 +201,21 @@ describe('idle_stuck run, backoff and log line', () => {
     expect(details).toHaveLength(5);
   });
 
+  it('does not report a completed run as free while the Body still stands on a ledge (deep drop, low health)', async () => {
+    const view = stuck({ enclosed: false, canStepOff: false });
+    const free = unstickRegistry('free');
+    const run = await runUnstick(ctxFor(view, free.registry, IDLE_TICKS), 'idle_stuck (ledge)');
+    expect(run.result).toBe('failed');
+    expect(run.detail).toBe(
+      'idle_stuck (ledge): unstick left the body on a ledge; backoff 60s at (-265.5, 35.0, 196.5)',
+    );
+    // The reflex stays armed: once the backoff is over the still Body is a ledge again and fires.
+    const again = idleStuckReflex.check(at(view, IDLE_TICKS * 3));
+    expect(again).toEqual({ reason: 'ledge', idle_seconds: 120 });
+  });
+
   it('clears the backoff on a run that frees the Body', async () => {
-    const view = stuck();
+    const view = stuck({ canStepOff: true });
     const trapped = unstickRegistry('trapped');
     await runUnstick(ctxFor(view, trapped.registry, IDLE_TICKS), 'idle_stuck (enclosed)');
     const free = unstickRegistry('free');
