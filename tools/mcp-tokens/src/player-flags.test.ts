@@ -19,7 +19,10 @@ function io(): { io: Io; out: string[]; err: string[] } {
   return { io: { out: (line) => out.push(line), err: (line) => err.push(line) }, out, err };
 }
 
-const env = (outcome: string, calls: Array<{ text: string; values?: unknown[] | undefined }>): Env => ({
+const env = (
+  outcome: string,
+  calls: Array<{ text: string; values?: unknown[] | undefined }>,
+): Env => ({
   secretDir: '/unused',
   shardFile: '/unused/phase0.yaml',
   connect: async () => session(outcome, calls),
