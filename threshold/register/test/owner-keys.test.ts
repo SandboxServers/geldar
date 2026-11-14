@@ -31,8 +31,10 @@ interface Fake {
 function fakeStore(keys: Fake[], opts: { mintThrows?: boolean; banned?: string[] } = {}) {
   const rows: Fake[] = [...keys];
   const audits: string[] = [];
+  const calls = { resolve: 0 };
   const store: OwnerKeyStore = {
     async resolve(hash) {
+      calls.resolve += 1;
       const k = rows.find((r) => r.keyHash.equals(hash));
       if (!k) return null;
       if (k.revokedAt !== null || k.expiresAt <= NOW || opts.banned?.includes(k.ownerId)) {
@@ -82,7 +84,7 @@ function fakeStore(keys: Fake[], opts: { mintThrows?: boolean; banned?: string[]
         );
     },
   };
-  return { store, rows, audits };
+  return { store, rows, audits, calls };
 }
 
 function key(
@@ -146,6 +148,16 @@ describe('owner key format and hashing', () => {
     ]);
     expect(result).toEqual({ status: 'refused' });
     expect(fake.audits).toEqual([]);
+    expect(fake.calls.resolve).toBe(0);
+  });
+
+  it('refuses a bad-length owner key shape before any database call', async () => {
+    const fake = fakeStore([key('gok-0000000000000001', 'o1', ['manage'], MANAGE)]);
+    const short = `gowner-${'a1'.repeat(10)}`;
+    const result = await mintOwnerKey(deps(fake.store, fake.audits), short, ['read']);
+    expect(result).toEqual({ status: 'refused' });
+    expect(fake.audits).toEqual([]);
+    expect(fake.calls.resolve).toBe(0);
   });
 
   it('stores the hash, never the value, and the listing shows no value', async () => {

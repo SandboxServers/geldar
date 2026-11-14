@@ -61,6 +61,10 @@ $resolve$;
 
 -- The mint: needs a presented key with manage. Returns the new key's expiry, or NULL when the presenter is
 -- refused. A duplicate hash or a bad scope raises, so the whole mint (row and audit) rolls back.
+-- A mint raises 42501 'scope_escalation' unless the new scopes are a subset of the presenter's scopes, and
+-- raises 53400 'live_key_cap' when the owner already has 10 live keys (live: not revoked, not expired).
+-- The cap applies to admins too; admins are exempt only from the rate windows. The owner row lock
+-- serialises concurrent mints for one owner so the cap cannot be overrun.
 CREATE FUNCTION register_mint_owner_key(
   p_presenter_hash BYTEA,
   p_key_id TEXT,
@@ -75,6 +79,7 @@ DECLARE
   who TEXT;
   granted TEXT[];
   expires TIMESTAMPTZ;
+  live INT;
 BEGIN
   SELECT r.owner_id, r.scopes INTO who, granted FROM public.register_owner_key_resolve(p_presenter_hash) r;
   IF who IS NULL THEN
@@ -82,6 +87,15 @@ BEGIN
   END IF;
   IF NOT ('manage' = ANY (granted)) THEN
     RAISE EXCEPTION 'register_mint_owner_key: scope_missing' USING ERRCODE = '42501';
+  END IF;
+  IF NOT (p_scopes <@ granted) THEN
+    RAISE EXCEPTION 'register_mint_owner_key: scope_escalation' USING ERRCODE = '42501';
+  END IF;
+  PERFORM 1 FROM public.mcp_owners mo WHERE mo.owner_id = who FOR UPDATE;
+  SELECT count(*) INTO live FROM public.owner_api_keys ok
+    WHERE ok.owner_id = who AND ok.revoked_at IS NULL AND ok.expires_at > now();
+  IF live >= 10 THEN
+    RAISE EXCEPTION 'register_mint_owner_key: live_key_cap' USING ERRCODE = '53400';
   END IF;
   INSERT INTO public.owner_api_keys (key_id, owner_id, key_hash, scopes, expires_at)
     VALUES (p_key_id, who, p_key_hash, p_scopes, now() + interval '90 days')

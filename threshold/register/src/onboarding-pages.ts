@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { esc } from './account-pages.ts';
 import { BASE } from './pages.ts';
 
@@ -43,19 +44,23 @@ export class OnboardingHandoff {
 
 /**
  * The MCP base of this deployment. The explicit REGISTER_MCP_PUBLIC_URL wins when set. Otherwise it is the register's
- * host with its first label replaced by `mcp`. Null when neither gives an https address: the page then shows no command.
+ * host with its first label replaced by `mcp`, and only when that host has at least three labels and is not an IP
+ * literal (`example.com` would give `mcp.com`, a guess). Null otherwise: the page then shows no command and says why.
  */
 export function mcpBaseFor(publicUrl: string, explicit = ''): string | null {
   if (explicit !== '') return explicit;
   if (!publicUrl.startsWith('https://')) return null;
-  let host: string;
+  let url: URL;
   try {
-    host = new URL(publicUrl).host;
+    url = new URL(publicUrl);
   } catch {
     return null;
   }
+  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  if (isIP(hostname) !== 0) return null;
+  if (hostname.split('.').length < 3) return null;
+  const host = url.host;
   const dot = host.indexOf('.');
-  if (dot < 0) return null;
   return `https://mcp.${host.slice(dot + 1)}`;
 }
 
@@ -73,16 +78,15 @@ export const ONBOARDING_SCRIPT = `document.addEventListener('click', function (e
 const wrap = (title: string, body: string): string =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body>${body}<script src="${BASE}${ONBOARDING_SCRIPT_PATH}" defer></script></body></html>`;
 
-/** The once-only onboarding page: the token, two ready snippets and the expiry. The token is only in this body. */
+/** The once-only onboarding page: the token and two ready snippets. The token is only in this body. */
 export function onboardingPage(shown: ShownToken, mcpBase: string | null): string {
-  const date = shown.expiresAt.toISOString().slice(0, 10);
   const snippets =
     mcpBase === null ? NO_MCP_ADDRESS : snippetsFor(shown, `${mcpBase}/p/${shown.playerId}`);
   return wrap(
     'Your token',
     `<h1>Connect ${esc(shown.playerId)}</h1>
 <p>This token is shown once. It is not shown again, and it is never emailed. Copy it now.</p>
-<p>It expires on <time datetime="${date}">${date}</time>, 90 days after it was made. Renew it on your account page before then. Renewal keeps your player id, and the old token keeps working for 10 minutes.</p>
+<p>Making a new token on your account page revokes the old one immediately. Agents connected with the old token stop working at once.</p>
 <h2>Token</h2>
 <pre id="token">${esc(shown.token)}</pre>
 <p><button type="button" data-copy="token">Copy token</button></p>
@@ -119,7 +123,7 @@ function snippetsFor(shown: ShownToken, endpoint: string): string {
 
 /** Shown in place of the snippets when no valid MCP address is configured, so no wrong command is ever shown. */
 const NO_MCP_ADDRESS = `<h2>No connect command</h2>
-<p>This deployment has no MCP address set (REGISTER_MCP_PUBLIC_URL, or a valid https REGISTER_PUBLIC_URL), so no command is shown here. Your token above is still valid. Ask the operator for the MCP address.</p>`;
+<p>No connect command is shown because this deployment has no MCP address. Set REGISTER_MCP_PUBLIC_URL, or use a public REGISTER_PUBLIC_URL with a name of at least three labels that is not an IP address. Your token above is still valid. Ask the operator for the MCP address.</p>`;
 
 /** The page after the first showing, or after the hold has run out. It never shows a token. */
 export function onboardingEmptyPage(): string {

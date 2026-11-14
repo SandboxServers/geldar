@@ -118,10 +118,13 @@ describe('onboarding after a token is made', () => {
     expect(html.split(token).length - 1).toBeGreaterThanOrEqual(3);
   });
 
-  it('shows the expiry date 90 days after the token was made', async () => {
+  it('shows no expiry date and no renewal promise, and says the old token is revoked at once', async () => {
     const { s } = await created();
     const html = await (await onboarding(s)).text();
-    expect(html).toContain(tokenExpiresAt(new Date(NOW)).toISOString().slice(0, 10));
+    expect(html).not.toContain(tokenExpiresAt(new Date(NOW)).toISOString().slice(0, 10));
+    expect(html).not.toContain('10 minutes');
+    expect(html).not.toContain('90 days');
+    expect(html).toContain('revokes the old one immediately');
   });
 
   it('has no inline script, no inline style and no inline handler; the CSP allows its own script only', async () => {
@@ -218,6 +221,22 @@ describe('mcpBaseFor', () => {
     expect(mcpBaseFor('http://glass.example.invalid')).toBeNull();
     expect(mcpBaseFor('https://glass.example.invalid', '')).toBe('https://mcp.example.invalid');
   });
+
+  it('gives null for a two-label host, since mcp.<domain> would be a guess (https://example.com)', () => {
+    expect(mcpBaseFor('https://example.com')).toBeNull();
+    expect(mcpBaseFor('https://example.com/register')).toBeNull();
+  });
+
+  it('gives null for an IP literal, v4 or v6 (https://203.0.113.9)', () => {
+    expect(mcpBaseFor('https://203.0.113.9')).toBeNull();
+    expect(mcpBaseFor('https://203.0.113.9:8443')).toBeNull();
+    expect(mcpBaseFor('https://[2001:db8::1]')).toBeNull();
+    expect(mcpBaseFor('https://[::ffff:203.0.113.9]')).toBeNull();
+  });
+
+  it('keeps a port-bearing three-label host and preserves the port', () => {
+    expect(mcpBaseFor('https://glass.geldar.example:8443')).toBe('https://mcp.geldar.example:8443');
+  });
 });
 
 describe('onboarding page with no MCP address', () => {
@@ -230,6 +249,15 @@ describe('onboarding page with no MCP address', () => {
     expect(html).not.toContain('claude mcp add');
     expect(html).not.toContain('mcpServers');
     expect(html).not.toContain('/p/');
+  });
+
+  it('shows no command and says why when the public URL gives no MCP address (https://example.com)', () => {
+    const html = onboardingPage(shown, mcpBaseFor('https://example.com'));
+    expect(html).toContain(shown.token);
+    expect(html).toContain('No connect command');
+    expect(html).toContain('at least three labels');
+    expect(html).not.toContain('claude mcp add');
+    expect(html).not.toContain('mcp.com');
   });
 });
 
