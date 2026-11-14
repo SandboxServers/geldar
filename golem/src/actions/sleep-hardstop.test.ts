@@ -109,4 +109,17 @@ describe('sleep: the hard stop (decision 0190)', () => {
     });
     expect(bot.isSleeping).toBe(true);
   });
+
+  it('the out_of_reach retry passes the signal: an abort during the second bed attempt cancels it', async () => {
+    const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }, { ...OTHER_HALF }] });
+    vi.mocked(bot.sleep)
+      .mockRejectedValueOnce(new Error('You are too far away'))
+      .mockImplementation(() => new Promise<void>(() => undefined));
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 20);
+    const outcome = await sleep(bot, SCALE, controller.signal);
+    expect(outcome.status).toBe('cancelled');
+    expect(bot.sleep).toHaveBeenCalledTimes(2);
+    expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
+  });
 });

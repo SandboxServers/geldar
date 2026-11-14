@@ -12,6 +12,22 @@ export function handSeconds(block: Block | null): number {
   return Math.max(0.5, 5 * (typeof hardness === 'number' ? hardness : 0));
 }
 
+/** A harvest tool digs a block in about a fifth of the hand estimate: a deliberately low divisor (conservative). */
+const TOOL_DIVISOR = 5;
+
+/**
+ * Seconds one dig of `block` may spend (decision 0210). The hand estimate, unless `bestHarvestTool`, the
+ * tool `dig()` equips for the block, has one: then the hand estimate over `TOOL_DIVISOR` (at least 0.5 s).
+ */
+export function digSeconds(bot: Bot, block: Block | null): number {
+  const hand = handSeconds(block);
+  if (block === null || hand === 0) return hand;
+  const pathfinder = (
+    bot as unknown as { pathfinder?: { bestHarvestTool?: (b: Block) => unknown } }
+  ).pathfinder;
+  return pathfinder?.bestHarvestTool?.(block) ? Math.max(0.5, hand / TOOL_DIVISOR) : hand;
+}
+
 /**
  * Hand-dig time one stair step, sideways dig or upward climb may spend (decision 0183). The action's 30 s
  * limit covers this plus the walks and waits around it. A step that would need more is refused before
@@ -24,9 +40,17 @@ export const MAX_UP_STEPS = 4;
 const HOP_TICKS = 20;
 const RISE = 0.9;
 /** The action's time limit (30 s, `unstick`'s timeout). A climb counts the time already spent against it. */
-const ACTION_LIMIT_S = 30;
+export const ACTION_LIMIT_S = 30;
 /** Seconds kept back from the limit for the hop that follows a climb's digs. */
 const HOP_RESERVE_S = 1;
+
+/**
+ * Seconds of the action's limit left for one more step, with the hop reserve kept back (decision 0210).
+ * Counted from `startedMs`, the start of the whole call, so the walks and digs already spent count.
+ */
+export function timeLeftS(startedMs: number): number {
+  return ACTION_LIMIT_S - HOP_RESERVE_S - (Date.now() - startedMs) / 1000;
+}
 
 const UP = new Vec3(0, 1, 0);
 /** Stands in for a cell the climb has already left: the shaft is solid for the step-off test. */
@@ -107,7 +131,7 @@ function planStep(bot: Bot, feet: Vec3, dir: Vec3): Step | string | null {
     const refusal = cellRefusal(bot, block, cell, own);
     if (refusal) return refusal;
     cells.push({ cell, block });
-    cost += handSeconds(block);
+    cost += digSeconds(bot, block);
   }
   return { dir, cells, cost };
 }
