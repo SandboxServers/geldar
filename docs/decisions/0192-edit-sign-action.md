@@ -40,3 +40,6 @@ The contract has one action verb, `edit_sign`, in the `Action` union of `contrac
 - The Body must answer with the reasons above and must accept exactly the shape `{ do, at, text }`.
 - No existing action changes shape, so earlier thoughts and outcomes are unaffected.
 - The default body-api prompt moves from v7 to v8. v1 to v7 stay loadable; v7 is not edited.
+- Owner ruling, 2026-11-14: `edit_sign` ALLOWS an edit when the ownership lookup answer is unknown (no recorded owner and the lookup gives no answer). The handler allows it, as decision 0164 treats an unknown owner as allowed for natural blocks.
+- A recorded owner other than the Body is refused with `not_possible` and the detail "that block is someone else's work". This includes the reserved system owner `geldar-system` set by decision 0195.
+- The handler prefetches the chunk's owners before the lookup, so a cold cache does not fail open: an unknown answer is not taken as proof that no owner is recorded.
