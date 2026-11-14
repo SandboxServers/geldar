@@ -53,19 +53,29 @@ export function parseSleepersLine(position: unknown, message: unknown): Sleepers
 
 /** The sleep-line tracker of one sleep action. */
 export interface SleepersWatch {
-  /** The newest sleep line since the watch started, or undefined when none has arrived. */
+  /** The newest sleep line since the watch was last armed, or undefined when none has arrived. */
   latest(): SleepersLine | undefined;
+  /**
+   * Starts counting: lines count from now on, and the newest line so far is cleared. The sleep action
+   * calls it right before each `bot.sleep`, so only the lines of that bed try count (the Body's own bed).
+   */
+  arm(): void;
   /** Resolves when the next sleep line arrives, or after `ms` when none does. */
   nextLine(ms: number): Promise<void>;
   /** Unsubscribes from the bot's messages. Safe to call twice. */
   stop(): void;
 }
 
-/** Listens to the bot's messages for sleep lines until `stop()`. Only the newest line is kept. */
+/**
+ * Listens to the bot's messages for sleep lines until `stop()`. Lines are ignored until `arm()` is called;
+ * after that only the newest line is kept.
+ */
 export function watchSleepers(bot: Bot): SleepersWatch {
+  let armed = false;
   let latest: SleepersLine | undefined;
   let wake: (() => void) | undefined;
   const onMessage = (message: unknown, position: unknown): void => {
+    if (!armed) return;
     const line = parseSleepersLine(position, message);
     if (line === undefined) return;
     latest = line;
@@ -74,6 +84,10 @@ export function watchSleepers(bot: Bot): SleepersWatch {
   bot.on('message', onMessage);
   return {
     latest: () => latest,
+    arm: () => {
+      armed = true;
+      latest = undefined;
+    },
     nextLine: (ms) =>
       new Promise<void>((resolve) => {
         const finish = (): void => {

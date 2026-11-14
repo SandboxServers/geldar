@@ -228,7 +228,7 @@ async function sleepInBed(
   const near = await walkNear(ctx, bed);
   if (near) return near;
   let used = bed;
-  let attempt = await attemptSleep(bot, bed, ctx.signal);
+  let attempt = await attemptSleep(bot, bed, ctx.signal, sleepers);
   if (attempt?.status === 'failed' && attempt.reason === 'out_of_reach') {
     // The bed check is measured from the head block, and `findBlocks` may return the foot: stand by the other half.
     const other = otherHalf(bot, bed);
@@ -236,14 +236,16 @@ async function sleepInBed(
       const moved = await walkNear(ctx, other);
       if (moved) return moved;
       used = other;
-      attempt = await attemptSleep(bot, other, ctx.signal);
+      attempt = await attemptSleep(bot, other, ctx.signal, sleepers);
     }
   }
   if (ctx.signal.aborted) return cancelled();
   if (attempt) return attempt;
   if (!bot.isSleeping) return failed('blocked', 'the bot is not asleep after sleep');
-  // The sleepers line the server sends when the Body lies down: wait for the next one, up to SLEEPERS_WAIT_MS.
-  await sleepers.nextLine(SLEEPERS_WAIT_MS * ctx.timeScale);
+  // The sleepers line the server sends for this bed: a line already in hand is the answer; otherwise wait for
+  // the next one, up to SLEEPERS_WAIT_MS.
+  if (sleepers.latest() === undefined) await sleepers.nextLine(SLEEPERS_WAIT_MS * ctx.timeScale);
+  if (ctx.signal.aborted) return cancelled();
   return completed({
     bed: { x: used.position.x, y: used.position.y, z: used.position.z },
     ...sleepersDetail(sleepers.latest()),
@@ -301,16 +303,19 @@ async function walkNear(ctx: ActionContext, block: Block): Promise<ActionOutcome
 
 /**
  * Calls `bot.sleep` unless `signal` aborts first; null when the call returned or the bot was already asleep,
- * `cancelled` when the signal aborted, else the mapped failure. Mineflayer's sleep has no cancel: an abandoned
+ * `cancelled` when the signal aborted, else the mapped failure. The sleepers watch is armed right before the
+ * call, so only the lines from this call count. Mineflayer's sleep has no cancel: an abandoned
  * call settles on its own, and the race has already handled its outcome.
  */
 async function attemptSleep(
   bot: Bot,
   bed: Block,
   signal: AbortSignal,
+  sleepers: SleepersWatch,
 ): Promise<ActionOutcome | null> {
   if (signal.aborted) return cancelled();
   try {
+    sleepers.arm();
     await untilAborted(bot.sleep(bed), signal);
     return null;
   } catch (error) {

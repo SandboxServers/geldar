@@ -83,9 +83,32 @@ describe('parseSleepersLine', () => {
 });
 
 describe('watchSleepers', () => {
+  it('ignores lines until armed, and keeps the lines after arm', () => {
+    const { bot, say } = fakeMessages();
+    const watch = watchSleepers(bot);
+    say(PLAYERS, 'game_info');
+    expect(watch.latest()).toBeUndefined();
+    watch.arm();
+    say(SKIPPED, 'game_info');
+    expect(watch.latest()).toBe('skipped');
+    watch.stop();
+  });
+
+  it('arm clears the newest line', () => {
+    const { bot, say } = fakeMessages();
+    const watch = watchSleepers(bot);
+    watch.arm();
+    say(PLAYERS, 'game_info');
+    expect(watch.latest()).toEqual({ asleep: 1, needed: 2 });
+    watch.arm();
+    expect(watch.latest()).toBeUndefined();
+    watch.stop();
+  });
+
   it('keeps the newest line', () => {
     const { bot, say } = fakeMessages();
     const watch = watchSleepers(bot);
+    watch.arm();
     say(PLAYERS, 'game_info');
     say(SKIPPED, 'game_info');
     expect(watch.latest()).toBe('skipped');
@@ -97,6 +120,7 @@ describe('watchSleepers', () => {
   it('keeps nothing from a chat line', () => {
     const { bot, say } = fakeMessages();
     const watch = watchSleepers(bot);
+    watch.arm();
     say(PLAYERS, 'chat');
     expect(watch.latest()).toBeUndefined();
     watch.stop();
@@ -116,6 +140,7 @@ describe('watchSleepers', () => {
   it('nextLine resolves on the next line, and after its wait when no line comes', async () => {
     const { bot, say } = fakeMessages();
     const watch = watchSleepers(bot);
+    watch.arm();
     const arrived = watch.nextLine(60_000);
     say(PLAYERS, 'game_info');
     await expect(arrived).resolves.toBeUndefined();
