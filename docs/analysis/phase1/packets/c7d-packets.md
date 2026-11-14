@@ -205,6 +205,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 ## C7-04d-mount: retire routes in the NATS wiring (split of C7-04d)
 
 - **id / wave / lane.** C7-04d-mount, wave 3, split out of C7-04d (the review of C7-04d, fix note). Register lane, Ready, after C7-04d merges. **depends-on.** C7-04d (the retire handler), C7-04c2 (the NATS wiring and the shared slot). **branch.** `phase1/c7-04d-mount`. **migration.** none. **size.** S.
+- **Migration rule (geldar-93, G4-03).** The live deploy dumps, migrates, then restarts, so old services run against the new schema for the length of a deploy; a destructive or renaming migration must stay backwards-compatible with old services or be split into two PRs (additive first, drop later). This card has no migration, so the rule holds trivially.
 - **Goal.** Mount `bodyRetireRoutes` in the NATS wiring with `retirePlayer` and the shared in-flight slot, so the retire route is live when, and only when, NATS is configured. Unmounted without `REGISTER_NATS_*`, as the body routes are.
 - **Why more than one line.** `bodyWiring` takes no `retirePlayer` today, and `main.ts` ignores the slot it returns. The packet adds the `retirePlayer` parameter to `bodyWiring`, returns the slot to `main.ts`, and passes the same slot to both route sets. The review of C7-04d noted this; the packet is not a one-line mount.
 - **Files.** may-edit: `threshold/register/src/nats-body.ts` (the `bodyWiring` signature and return value), `threshold/register/src/main.ts` (the wiring lines only), `server.ts` (only if the mount needs it), their tests, `docs/analysis/phase1/worknotes/C7-04d-mount.md`. `api/body-retire.ts` and `api/body-slot.ts` are read only.
@@ -326,9 +327,9 @@ Five cards from the wave 4 review (pass 3). None is scheduled; each waits for it
 
 ### CF-3 (CF-W4-3): owner id in the owner-agent SQL results
 
-- **Goal.** `owner-agents-pg.ts` stamps the requested owner id on every row, so the check in `guard.ts` cannot fail in production; isolation rests on the WHERE clause in SQL 0036 alone. Make `register_owner_list_players` and `register_owner_get_player` return `owner_id` (DROP and CREATE, the return type changes); the loader maps `ownerId: row.owner_id`; the schema check gets the column.
+- **Goal.** `owner-agents-pg.ts` stamps the requested owner id on every row, so the check in `guard.ts` cannot fail in production; isolation rests on the WHERE clause in SQL 0036 alone. ADD two new functions, `register_owner_list_players_with_owner` and `register_owner_get_player_with_owner`, that return `owner_id` next to the old ones (CREATE only; the old functions stay as they are); the loader calls the new ones and maps `ownerId: row.owner_id`; the schema check gets the new functions' column. Dropping the old functions is a later PR, after this one is deployed, and is not in this card.
 - **May-edit.** A new migration, `threshold/register/src/owner-agents-pg.ts`, its test, `sql/test/check-schema-owner-agents.sql`, `docs/analysis/phase1/worknotes/` for this card.
-- **Migration.** Needs a migration number via decision-number-registry, taken at dispatch. This card does not reserve one.
+- **Migration.** Needs a migration number via decision-number-registry, taken at dispatch. This card does not reserve one. Migration rule (geldar-93, G4-03): the live deploy dumps, migrates, then restarts, so old services run against the new schema for the length of a deploy; a destructive or renaming migration must stay backwards-compatible with old services or be split into two PRs (additive first, drop later). So this migration is additive only (new functions, no DROP, no rename); the DROP of the old functions is a separate later PR.
 - **Test.** Loader: a fake row whose `owner_id` is another owner's yields null. Schema check: the column is in the return.
 - **Depends.** C7-04b (migration 0036). Origin: the C7-04b wiring, wave 2/3 merge.
 - **Status.** Carry-forward, not scheduled.
