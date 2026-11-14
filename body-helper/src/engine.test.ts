@@ -1,11 +1,14 @@
+import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import {
   boundLog,
   createDockerEngine,
   demuxLogs,
+  ENGINE_REPLY_MAX_BYTES,
   type EngineReply,
   type EngineRequest,
   LOG_MAX_BYTES,
+  readCapped,
   SOVEREIGN_HOST_LABEL,
 } from './engine.ts';
 import { BODY_LABEL } from './template.ts';
@@ -33,6 +36,24 @@ function fakeEngine(runningBodies: number, runningHosts: number) {
   return { request, calls };
 }
 
+describe('engine: the reply size cap', () => {
+  it('keeps a reply of exactly the cap and refuses one byte more', async () => {
+    const fits = new PassThrough();
+    fits.end(Buffer.alloc(ENGINE_REPLY_MAX_BYTES, 1));
+    expect((await readCapped(fits, 200)).body.length).toBe(ENGINE_REPLY_MAX_BYTES);
+    const over = new PassThrough();
+    over.end(Buffer.alloc(ENGINE_REPLY_MAX_BYTES + 1, 1));
+    await expect(readCapped(over, 200)).rejects.toThrow('docker reply too large');
+  });
+
+  it('a stream error rejects the call and keeps no partial body', async () => {
+    const broken = new PassThrough();
+    broken.write('partial');
+    broken.destroy(new Error('socket closed'));
+    await expect(readCapped(broken, 200)).rejects.toThrow('socket closed');
+  });
+});
+
 describe('engine: the global count', () => {
   it('sums running Bodies and running sovereign hosts with one label filter each', async () => {
     const { request, calls } = fakeEngine(24, 15);
@@ -54,9 +75,48 @@ describe('engine: the verbs', () => {
     const absent = createDockerEngine(async () => empty(404));
     expect(await absent.inspect('body1')).toBeNull();
     const present = createDockerEngine(async () =>
-      json(200, { Id: 'abc', State: { Running: true } }),
+      json(200, { Id: 'abc', Name: '/body1', State: { Running: true } }),
     );
     expect(await present.inspect('body1')).toEqual({ id: 'abc', running: true, helperBody: false });
+  });
+
+  it('reads the Body label: a Body label gives helperBody true; no labels, or another label, gives false', async () => {
+    const labelled = (labels: Record<string, string> | null) =>
+      createDockerEngine(async () =>
+        json(200, {
+          Id: 'abc',
+          Name: '/body1',
+          State: { Running: true },
+          Config: { Labels: labels },
+        }),
+      );
+    expect(await labelled({ [BODY_LABEL]: 'body1' }).inspect('body1')).toEqual({
+      id: 'abc',
+      running: true,
+      helperBody: true,
+    });
+    expect(await labelled(null).inspect('body1')).toEqual({
+      id: 'abc',
+      running: true,
+      helperBody: false,
+    });
+    expect(await labelled({ 'geldar.owner': 'x' }).inspect('body1')).toEqual({
+      id: 'abc',
+      running: true,
+      helperBody: false,
+    });
+  });
+
+  it('treats a reply for another name as absent: an id prefix match is not the container asked for', async () => {
+    const byPrefix = createDockerEngine(async () =>
+      json(200, {
+        Id: 'abc123def',
+        Name: '/unrelated',
+        State: { Running: true },
+        Config: { Labels: { [BODY_LABEL]: 'unrelated' } },
+      }),
+    );
+    expect(await byPrefix.inspect('abc123')).toBeNull();
   });
 
   it('create refuses a non-201 reply and never echoes the reply body in the error', async () => {

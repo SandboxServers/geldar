@@ -48,7 +48,7 @@ function helper() {
   const handle = createBodyHelper({
     roster: { displayName: async (_o, name) => name },
     engine,
-    cap: { ok: true, cap: 40 },
+    cap: 40,
     template: {
       image: 'geldar/body:test',
       wiring: {

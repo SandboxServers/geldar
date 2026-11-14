@@ -3,6 +3,7 @@
 // Docker CLI is run, and no container is addressed by anything but the lower-cased name the helper gave it or
 // the id a create returned.
 import { request as httpRequest } from 'node:http';
+import type { Readable } from 'node:stream';
 import type { BodyEngine, ContainerState } from './service.ts';
 import type { SweepBody, SweepEngine } from './sweep.ts';
 import { BODY_LABEL } from './template.ts';
@@ -37,15 +38,33 @@ export function socketRequest(socketPath: string): EngineRequest {
         headers['content-length'] = Buffer.byteLength(payload);
       }
       const req = httpRequest({ socketPath, method, path, headers }, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(chunk));
-        res.on('error', reject);
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
+        readCapped(res, res.statusCode ?? 0).then(resolve, reject);
       });
       req.setTimeout(ENGINE_TIMEOUT_MS, () => req.destroy(new Error('docker engine timeout')));
       req.on('error', reject);
       req.end(payload);
     });
+}
+
+/** The most reply bytes the helper keeps from the Engine. A larger reply is cut off and the call fails. */
+export const ENGINE_REPLY_MAX_BYTES = 1024 * 1024;
+
+/** Collects one reply body. Past ENGINE_REPLY_MAX_BYTES it destroys the response and rejects; no partial body is kept. */
+export function readCapped(res: Readable, status: number): Promise<EngineReply> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    res.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > ENGINE_REPLY_MAX_BYTES) {
+        res.destroy(new Error('docker reply too large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    res.on('error', reject);
+    res.on('end', () => resolve({ status, body: Buffer.concat(chunks) }));
+  });
 }
 
 // A status outside the list is an error. The reply body is never echoed: it may carry engine detail.
@@ -107,9 +126,12 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
       if (reply.status === 404) return null;
       const info = parseJson(expect(reply, [200], 'inspect')) as {
         Id: string;
+        Name?: string;
         State: { Running: boolean };
         Config?: { Labels?: Record<string, string> | null };
       };
+      // Docker also resolves a unique id prefix: a container of any other name is not the one this verb asked for.
+      if (info.Name !== `/${name}`) return null;
       const labels = info.Config?.Labels ?? {};
       return {
         id: info.Id,

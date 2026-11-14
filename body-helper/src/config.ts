@@ -4,13 +4,13 @@
 export const DEFAULT_GLOBAL_BODY_CAP = 40;
 export const CAP_ENV = 'GELDAR_GLOBAL_BODY_CAP';
 
-export type GlobalCap = { ok: true; cap: number } | { ok: false; why: string };
-
-/** Unset gives the default. Zero, a negative number, text or an empty value is a config error. */
-export function globalBodyCapFromEnv(env: Readonly<Record<string, string | undefined>>): GlobalCap {
+/**
+ * Unset gives the default. Zero, a negative number, text or an empty value throws: a bad cap is a start failure,
+ * so the helper never runs with a cap it cannot trust.
+ */
+export function globalBodyCapFromEnv(env: Readonly<Record<string, string | undefined>>): number {
   const raw = env[CAP_ENV];
-  if (raw === undefined) return { ok: true, cap: DEFAULT_GLOBAL_BODY_CAP };
-  if (!/^[1-9]\d*$/.test(raw))
-    return { ok: false, why: `${CAP_ENV} must be a positive whole number` };
-  return { ok: true, cap: Number(raw) };
+  if (raw === undefined) return DEFAULT_GLOBAL_BODY_CAP;
+  if (!/^[1-9]\d*$/.test(raw)) throw new Error(`${CAP_ENV} must be a positive whole number`);
+  return Number(raw);
 }

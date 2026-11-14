@@ -108,7 +108,7 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
         '_INBOX.>',
         ...['start', 'stop', 'status', 'logtail'].map((v) => `geldar.${s}.helper.body.${v}`),
       ],
-      sub: [`geldar.${s}.ctl.body.>`],
+      sub: [`geldar.${s}.ctl.body.>`, '_INBOX.>'],
     },
     register: { pub: [`geldar.${s}.ctl.body.>`], sub: ['_INBOX.>'] },
     helper: {

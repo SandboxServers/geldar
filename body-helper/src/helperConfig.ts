@@ -1,8 +1,8 @@
 // The helper's config (C7-03c1). Values come from env names; the two passwords come from root-only files, named by
 // env (never the value). A missing required name throws at start, before any Engine or NATS call. A secret file
-// that group or others can read, or that root does not own, is refused with a clear error. The cap is carried as
-// read: a bad cap is a per-start config error (service.ts), not a start failure.
-import { type GlobalCap, globalBodyCapFromEnv } from './config.ts';
+// that group or others can read, or that root does not own, is refused with a clear error. A bad cap is a start
+// failure like any other bad value: the helper exits before it connects.
+import { globalBodyCapFromEnv } from './config.ts';
 import type { BodyLimits, BodyWiring } from './template.ts';
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -23,7 +23,7 @@ export interface HelperConfig {
   image: string;
   wiring: BodyWiring;
   limits: BodyLimits;
-  cap: GlobalCap;
+  cap: number;
   sweepMinutes: number;
 }
 

@@ -37,7 +37,7 @@ describe('helper config', () => {
     expect(config.shard).toBe('colo');
     expect(config.pg.port).toBe(5432);
     expect(config.wiring.uid).toBe('1000');
-    expect(config.cap).toEqual({ ok: true, cap: 40 });
+    expect(config.cap).toBe(40);
     expect(config.sweepMinutes).toBe(10);
     expect(config.natsPassword).toBe(SECRET_TEXT);
   });
@@ -82,9 +82,10 @@ describe('helper config', () => {
     expect(() => readSecret('GELDAR_PG_PASSWORD_FILE', '/p', empty)).toThrow('is empty');
   });
 
-  it('carries a bad cap as read, so the service refuses starts with a config error', () => {
-    const config = loadHelperConfig({ ...env, GELDAR_GLOBAL_BODY_CAP: '0' }, fakeFs());
-    expect(config.cap.ok).toBe(false);
+  it('throws on a bad cap, so the helper exits before it connects', () => {
+    expect(() => loadHelperConfig({ ...env, GELDAR_GLOBAL_BODY_CAP: '0' }, fakeFs())).toThrow(
+      'GELDAR_GLOBAL_BODY_CAP must be a positive whole number',
+    );
   });
 
   it('refuses a shard name that is not one subject token', () => {

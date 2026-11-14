@@ -1,7 +1,8 @@
 // The helper's four verbs. Every attempt writes one audit line (verb, name, outcome, a fixed reason):
-// never the request body, never a template, never a secret. The count of running Bodies is read before a
-// start; a refused start creates nothing, and a failed start leaves no container and reserves no slot.
-import { CAP_ENV, type GlobalCap } from './config.ts';
+// never the request body, never a template, never a secret. The start and stop verbs run one at a time (a
+// promise chain), so the count a start reads is never stale: concurrent starts cannot pass the cap together.
+// A refused start creates nothing, and a failed start leaves no container and reserves no slot. The verbs act
+// only on a container that carries the helper's Body label; a container of the name without it is left alone.
 import { LOGIN_NAME, parseRequest } from './requests.ts';
 import type { RosterPort } from './roster.ts';
 import { type BodyTemplateInput, bodyContainerConfig } from './template.ts';
@@ -35,7 +36,8 @@ export type TemplateSettings = Omit<BodyTemplateInput, 'name' | 'owner' | 'login
 export interface HelperDeps {
   roster: RosterPort;
   engine: BodyEngine;
-  cap: GlobalCap;
+  /** The most running Bodies plus sovereign hosts a start may leave the node with (GLOBAL-CAP). */
+  cap: number;
   template: TemplateSettings;
   audit(line: string): void;
 }
@@ -44,7 +46,7 @@ export type Reply =
   | { ok: true; state: string; text?: string }
   | {
       ok: false;
-      code: 'refused' | 'not_running' | 'capacity' | 'cap_config' | 'failed';
+      code: 'refused' | 'not_running' | 'capacity' | 'failed';
       error: string;
     };
 
@@ -52,6 +54,13 @@ export type RequestHandler = (raw: unknown) => Promise<Reply>;
 
 export function createBodyHelper(deps: HelperDeps): RequestHandler {
   let alerted = false;
+  // Start and stop run after the previous one settles. A failed run does not stop the queue.
+  let chain: Promise<unknown> = Promise.resolve();
+  const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
+    const run = chain.then(work, work);
+    chain = run.catch(() => undefined);
+    return run;
+  };
   const audit = (verb: string, name: string, outcome: string, reason?: string) =>
     deps.audit(
       `body-helper verb=${verb} name=${name} outcome=${outcome}${reason ? ` reason=${reason}` : ''}`,
@@ -66,6 +75,13 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     if (alerted) return;
     alerted = true;
     deps.audit(`body-helper alert running=${count} threshold=${CAP_ALERT_AT}`);
+  };
+
+  // A container of the name that the helper did not create. The verbs never stop, read or remove it.
+  const foreign = (state: ContainerState | null): boolean => state !== null && !state.helperBody;
+  const refuseNameTaken = (verb: string, name: string): Reply => {
+    audit(verb, name, 'refused', 'name_taken');
+    return { ok: false, code: 'refused', error: NAME_TAKEN };
   };
 
   return async (raw) => {
@@ -84,6 +100,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       }
       if (verb === 'status') {
         const state = await deps.engine.inspect(container);
+        if (foreign(state)) return refuseNameTaken(verb, name);
         audit(verb, name, 'accepted');
         return {
           ok: true,
@@ -91,26 +108,30 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
         };
       }
       if (verb === 'logtail') {
+        if (foreign(await deps.engine.inspect(container))) return refuseNameTaken(verb, name);
         const text = await deps.engine.logs(container);
         audit(verb, name, 'accepted');
         return { ok: true, state: 'logs', text };
       }
-      if (verb === 'stop') {
-        const state = await deps.engine.inspect(container);
-        if (state === null) {
-          audit(verb, name, 'not_running');
-          return { ok: false, code: 'not_running', error: 'not running' };
-        }
-        await deps.engine.stop(container);
-        audit(verb, name, 'accepted');
-        return { ok: true, state: 'stopped' };
-      }
-      return await start(container, name, owner, loginName);
+      if (verb === 'stop') return await exclusive(() => stop(container, name));
+      return await exclusive(() => start(container, name, owner, loginName));
     } catch {
       audit(verb, name, 'failed');
       return { ok: false, code: 'failed', error: 'docker call failed' };
     }
   };
+
+  async function stop(container: string, name: string): Promise<Reply> {
+    const state = await deps.engine.inspect(container);
+    if (state === null) {
+      audit('stop', name, 'not_running');
+      return { ok: false, code: 'not_running', error: 'not running' };
+    }
+    if (foreign(state)) return refuseNameTaken('stop', name);
+    await deps.engine.stop(container);
+    audit('stop', name, 'accepted');
+    return { ok: true, state: 'stopped' };
+  }
 
   async function start(
     container: string,
@@ -118,11 +139,6 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     owner: string,
     loginName: string,
   ): Promise<Reply> {
-    const cap = deps.cap;
-    if (!cap.ok) {
-      audit('start', name, 'refused', 'cap_config');
-      return { ok: false, code: 'cap_config', error: `${CAP_ENV} is invalid` };
-    }
     const existing = await deps.engine.inspect(container);
     if (existing?.running) {
       audit('start', name, 'refused', 'already_running');
@@ -135,7 +151,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     }
     const count = await deps.engine.countCounted();
     observe(count);
-    if (count >= cap.cap) {
+    if (count >= deps.cap) {
       audit('start', name, 'capacity');
       return { ok: false, code: 'capacity', error: CAP_REFUSAL };
     }

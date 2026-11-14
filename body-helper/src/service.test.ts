@@ -5,6 +5,7 @@ import {
   type ContainerState,
   createBodyHelper,
   type HelperDeps,
+  NAME_TAKEN,
 } from './service.ts';
 
 const TEMPLATE = {
@@ -90,10 +91,7 @@ function fakeEngine(
   return fake;
 }
 
-function harness(
-  engine: Fake,
-  cap: { ok: true; cap: number } | { ok: false; why: string } = { ok: true, cap: 40 },
-) {
+function harness(engine: Fake, cap = 40) {
   const audit: string[] = [];
   const lookups: Array<[string, string]> = [];
   const deps: HelperDeps = {
@@ -288,16 +286,6 @@ describe('global body cap', () => {
     expect(alerts).toEqual(['body-helper alert running=30 threshold=30']);
   });
 
-  it('refuses every start with a config error when the cap is invalid, and creates nothing', async () => {
-    for (const raw of ['0', '-3', 'forty', '']) {
-      const engine = fakeEngine();
-      const cap = globalBodyCapFromEnv({ GELDAR_GLOBAL_BODY_CAP: raw });
-      const { handle } = harness(engine, cap);
-      expect(await handle(req('start'))).toMatchObject({ ok: false, code: 'cap_config' });
-      expect(engine.created).toEqual([]);
-    }
-  });
-
   it('a failed create leaves no container, releases nothing and writes the alert and one failed line', async () => {
     const engine = fakeEngine(
       Object.fromEntries(Array.from({ length: 39 }, (_, i) => [`p${i}`, true])),
@@ -328,15 +316,43 @@ describe('global body cap', () => {
   });
 });
 
-describe('global cap config', () => {
-  it('defaults to 40 when unset and accepts a positive whole number', () => {
-    expect(globalBodyCapFromEnv({})).toEqual({ ok: true, cap: 40 });
-    expect(globalBodyCapFromEnv({ GELDAR_GLOBAL_BODY_CAP: '12' })).toEqual({ ok: true, cap: 12 });
+describe('a container of the name the helper did not create (A2)', () => {
+  it('stop, status and logtail refuse it, leave it running, and never call stop or logs', async () => {
+    const engine = fakeEngine({ ranger: true }, 0, ['ranger']);
+    let logsCalled = false;
+    engine.logs = async () => {
+      logsCalled = true;
+      return 'secret log';
+    };
+    const { handle, audit } = harness(engine);
+    for (const verb of ['stop', 'status', 'logtail']) {
+      expect(await handle(req(verb))).toEqual({ ok: false, code: 'refused', error: NAME_TAKEN });
+    }
+    expect(engine.stopped).toEqual([]);
+    expect(logsCalled).toBe(false);
+    expect(engine.containers.get('ranger')?.running).toBe(true);
+    expect(audit.filter((line) => line.endsWith('reason=name_taken'))).toHaveLength(3);
   });
 
-  it('refuses zero, a negative number and text', () => {
-    for (const raw of ['0', '-1', 'x', '1.5']) {
-      expect(globalBodyCapFromEnv({ GELDAR_GLOBAL_BODY_CAP: raw }).ok).toBe(false);
+  it('a start still refuses it and removes nothing', async () => {
+    const engine = fakeEngine({ ranger: false }, 0, ['ranger']);
+    const { handle } = harness(engine);
+    expect(await handle(req('start'))).toEqual({ ok: false, code: 'refused', error: NAME_TAKEN });
+    expect(engine.removed).toEqual([]);
+  });
+});
+
+describe('global cap config', () => {
+  it('defaults to 40 when unset and accepts a positive whole number', () => {
+    expect(globalBodyCapFromEnv({})).toBe(40);
+    expect(globalBodyCapFromEnv({ GELDAR_GLOBAL_BODY_CAP: '12' })).toBe(12);
+  });
+
+  it('throws on zero, a negative number, text, a fraction and an empty value', () => {
+    for (const raw of ['0', '-1', 'x', '1.5', '']) {
+      expect(() => globalBodyCapFromEnv({ GELDAR_GLOBAL_BODY_CAP: raw })).toThrow(
+        'GELDAR_GLOBAL_BODY_CAP must be a positive whole number',
+      );
     }
   });
 });

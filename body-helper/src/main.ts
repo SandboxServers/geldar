@@ -12,6 +12,8 @@ import { createBodyHelper } from './service.ts';
 import { startSweep } from './sweep.ts';
 
 const log = (line: string) => console.log(line);
+/** How long a shutdown waits for in-flight requests before it exits anyway. */
+const SHUTDOWN_WAIT_MS = 10_000;
 
 function loadConfig(): HelperConfig {
   try {
@@ -57,12 +59,14 @@ async function main(): Promise<void> {
   const stats = newHelperStats();
   const serving = serveHelper({ wire, shard: config.shard, handle, stats });
   log(
-    `body-helper started shard=${config.shard} cap=${config.cap.ok ? config.cap.cap : 'invalid'} sweep_minutes=${config.sweepMinutes}`,
+    `body-helper started shard=${config.shard} cap=${config.cap} sweep_minutes=${config.sweepMinutes}`,
   );
 
   const shutdown = async () => {
     stopSweep();
     await nc.drain().catch(() => undefined);
+    // In-flight requests finish (their Engine calls and replies) before the pool closes; a stuck one is cut at the wait.
+    await Promise.race([serving, new Promise((done) => setTimeout(done, SHUTDOWN_WAIT_MS))]);
     await pool.end().catch(() => undefined);
     process.exit(0);
   };
