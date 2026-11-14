@@ -64,7 +64,8 @@ $resolve$;
 -- A mint raises 42501 'scope_escalation' unless the new scopes are a subset of the presenter's scopes, and
 -- raises 53400 'live_key_cap' when the owner already has 10 live keys (live: not revoked, not expired).
 -- The cap applies to admins too; admins are exempt only from the rate windows. The owner row lock
--- serialises concurrent mints for one owner so the cap cannot be overrun.
+-- serialises concurrent mints for one owner so the cap cannot be overrun. READ COMMITTED assumed: the
+-- live count runs after the lock is taken, so it sees the commit of the mint before it.
 CREATE FUNCTION register_mint_owner_key(
   p_presenter_hash BYTEA,
   p_key_id TEXT,

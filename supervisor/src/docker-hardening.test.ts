@@ -17,7 +17,7 @@ import {
   BODY_PIDS_LIMIT,
   bodyContainerConfig,
 } from './limits.ts';
-import type { BodySpec, DisplayNamePort } from './ports.ts';
+import { type BodySpec, type DisplayNamePort, LoginNameError } from './ports.ts';
 
 // Container hardening (orchestrator ruling on F5), the login name check (F8) and the Engine deadlines (F7).
 
@@ -102,7 +102,9 @@ describe('Docker runtime: login name check', () => {
         createDockerClient(engine.socketPath, IMAGE),
         names(login),
       );
-      await expect(runtime.start(spec(), signal())).rejects.toThrow('login name unknown');
+      const refused = runtime.start(spec(), signal());
+      await expect(refused).rejects.toThrow('login name unknown');
+      await expect(refused).rejects.toBeInstanceOf(LoginNameError);
       expect(engine.calls).toEqual([]);
     }
   });
@@ -154,5 +156,36 @@ describe('Docker engine: deadlines', () => {
     const started = Date.now();
     await expect(runtime.start(spec(), signal())).rejects.toThrow('docker start refused');
     expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('aborts the cleanup remove at cleanupMs when a create lands after the caller gave up', async () => {
+    let deleteAt = 0;
+    const engine = await engineWith('late-create', async (call) => {
+      if (call.method === 'GET') return { status: 404 };
+      if (call.path.startsWith('/containers/create')) {
+        await sleep(400);
+        return { status: 201, json: { Id: 'late-1' } };
+      }
+      if (call.method === 'DELETE') {
+        deleteAt = Date.now();
+        await sleep(1500);
+        return { status: 204 };
+      }
+      return { status: 500 };
+    });
+    const runtime = createDockerRuntime(
+      createDockerClient(engine.socketPath, IMAGE),
+      names('Ranger'),
+      100,
+    );
+    const gaveUp = new AbortController();
+    setTimeout(() => gaveUp.abort(), 100);
+    await expect(runtime.start(spec(), gaveUp.signal)).rejects.toThrow();
+    await sleep(1000);
+    const cut = engine.abandoned.find((call) => call.method === 'DELETE');
+    expect(cut).toBeDefined();
+    // The remove is cut at cleanupMs (100 ms after the DELETE arrives), not at the 30 s Engine deadline.
+    expect((cut?.at ?? 0) - deleteAt).toBeGreaterThanOrEqual(90);
+    expect((cut?.at ?? 0) - deleteAt).toBeLessThan(1000);
   });
 });

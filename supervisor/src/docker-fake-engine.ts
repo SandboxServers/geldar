@@ -12,6 +12,13 @@ export interface EngineCall {
   body: unknown;
 }
 
+// A call whose client gave up before the answer (its connection closed), with the close time.
+export interface AbandonedCall {
+  method: string;
+  path: string;
+  at: number;
+}
+
 export interface ScriptedReply {
   status: number;
   json?: unknown;
@@ -20,6 +27,7 @@ export interface ScriptedReply {
 export interface FakeEngine {
   socketPath: string;
   calls: EngineCall[];
+  abandoned: AbandonedCall[];
   close(): Promise<void>;
 }
 
@@ -33,6 +41,7 @@ export async function startFakeEngine(
   handler: (call: EngineCall) => ScriptedReply | Promise<ScriptedReply>,
 ): Promise<FakeEngine> {
   const calls: EngineCall[] = [];
+  const abandoned: AbandonedCall[] = [];
   const socketPath = socketPathFor(tag);
   const server: Server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -45,6 +54,11 @@ export async function startFakeEngine(
         body: raw === '' ? undefined : JSON.parse(raw),
       };
       calls.push(call);
+      res.on('close', () => {
+        if (!res.writableFinished) {
+          abandoned.push({ method: call.method, path: call.path, at: Date.now() });
+        }
+      });
       void Promise.resolve(handler(call)).then((reply) => {
         if (res.headersSent || res.writableEnded) return;
         res.writeHead(reply.status, { 'content-type': 'application/json' });
@@ -56,6 +70,7 @@ export async function startFakeEngine(
   return {
     socketPath,
     calls,
+    abandoned,
     close: () =>
       new Promise<void>((resolve) => {
         server.closeAllConnections();

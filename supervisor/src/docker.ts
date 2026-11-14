@@ -6,6 +6,7 @@ import type {
   ContainerConfig,
   DisplayNamePort,
 } from './ports.ts';
+import { LoginNameError } from './ports.ts';
 
 // The Docker Engine HTTP API over the unix socket (or the Windows named pipe), with node:http and
 // socketPath: no client dependency. The socket is opened read-write, since the supervisor must create
@@ -211,7 +212,16 @@ export function createDockerRuntime(
   names: DisplayNamePort,
   cleanupMs: number = CLEANUP_TIMEOUT_MS,
 ): BodyRuntimePort {
+  // The exact-case login name, or a LoginNameError when the name is missing or outside the login shape.
+  const loginNameOf = async (ownerId: string, playerName: string): Promise<string> => {
+    const loginName = await names.displayName(ownerId, playerName);
+    if (loginName === null || !LOGIN_NAME.test(loginName)) throw new LoginNameError();
+    return loginName;
+  };
   return {
+    async checkLogin(ownerId, playerName) {
+      await loginNameOf(ownerId, playerName);
+    },
     async inspect(playerName) {
       const name = playerName.toLowerCase();
       const info = await client.inspect(name);
@@ -222,9 +232,9 @@ export function createDockerRuntime(
     async start(spec, signal) {
       const name = spec.playerName.toLowerCase();
       // The exact-case login name is read before anything is removed or created: no name, no container.
-      // A name outside the Minecraft login shape is refused the same way: the owner sees why in the reply.
-      const loginName = await names.displayName(spec.ownerId, spec.playerName);
-      if (loginName === null || !LOGIN_NAME.test(loginName)) throw new Error('login name unknown');
+      // A name outside the Minecraft login shape is refused the same way. Both cases throw a
+      // LoginNameError, which the service maps to the login_name reply, so the owner sees why.
+      const loginName = await loginNameOf(spec.ownerId, spec.playerName);
       const existing = await client.inspect(name, signal);
       if (existing?.running) throw new Error('body already running');
       if (existing) await client.remove(existing.id, signal);
