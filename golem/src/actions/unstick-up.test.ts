@@ -168,6 +168,40 @@ describe('unstick upward hand-dig rung (decision 0196)', () => {
     expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('stone');
   });
 
+  it('refuses a climb whose wall cell is lava (the cell itself, not a hazard beside it)', async () => {
+    const grid = zackPit();
+    grid.set(key(BASE.x - 1, BASE.y + 1, BASE.z), 'lava');
+    const { bot, dug } = fakeBot(grid, START);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      [new Vec3(-1, 0, 0)],
+    );
+    expect(result.freed).toBe(false);
+    expect(result.dug).toBe(0);
+    expect(result.blocked).toContain('lava is above the wall');
+    expect(dug).toEqual([]);
+    expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('lava');
+  });
+
+  it('does not report free on a wall top it cannot step off', async () => {
+    const grid: Grid = new Map([
+      [key(BASE.x - 1, BASE.y, BASE.z), 'stone'],
+      [key(BASE.x - 1, BASE.y + 1, BASE.z), 'stone'],
+    ]);
+    const { bot, dug } = fakeBot(grid, START);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      [new Vec3(-1, 0, 0)],
+    );
+    expect(dug).toEqual(['stone']);
+    expect(result.dug).toBe(1);
+    expect(result.freed).toBe(false);
+  });
+
   it('stops digging when the signal aborts after the first dig', async () => {
     const grid = zackPit();
     const { bot, dug } = fakeBot(grid, START);
