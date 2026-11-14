@@ -47,7 +47,7 @@ mind:
   snapshot_retry_s: 60           # the Mind retries a snapshot request for this long while the Body is not up
   thinker_wait_s: 20             # a thought waits this long for a Thinker to connect, then retries once
   # 2500 estimated tokens of a thought's user message (one per 3 ASCII chars, one per other UTF-16 unit, 2 more per astral). It must fit
-  # num_ctx 8704 (decision 0181) with the system message (3748 tokens) and the 2048 output cap: 2500 + 3748 + 2048 = 8296 <= 8704 (library.ts, CONTEXT_TOKENS).
+  # num_ctx 8704 (decision 0181) with the system message (3926 tokens, body-api v8) and the 2048 output cap: 2500 + 3926 + 2048 = 8474 <= 8704 (library.ts, CONTEXT_TOKENS).
   # Memory blocks get 60 percent, the quoted world text the rest, the oldest heard lines go first.
   prompt_budget_tokens: 2500
   max_beliefs: 40                # the newest active beliefs loaded and shown in a prompt
