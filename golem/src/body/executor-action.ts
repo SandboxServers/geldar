@@ -111,6 +111,8 @@ export async function runPlanAction(
   }
   let run: Awaited<ReturnType<BodyRuntime['runAction']>>;
   try {
+    // The give marker goes in before the action can move an item: a crash after this is closed at the next start.
+    if (economic) await runtime.inflight?.begin(record, economic.item, economic.count);
     run = await runtime.runAction(action);
   } catch (error) {
     run = thrownRun(error);
@@ -131,5 +133,6 @@ export async function runPlanAction(
   record.receipt_id = receipt.receipt_id;
   sink.actionChanged(record);
   sink.receipt(receipt);
+  if (economic) runtime.inflight?.end(actionId);
   return { record: structuredClone(record), duplicate: false };
 }

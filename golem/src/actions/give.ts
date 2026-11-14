@@ -2,7 +2,7 @@ import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { findVisibleAgent } from '../perception/visible-agent.ts';
-import { STEP_BACK_BELOW, STEP_BACK_TO, stepBackSpots } from './give-spot.ts';
+import { STEP_BACK_BELOW, stepBackCells } from './give-spot.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -241,31 +241,45 @@ function horizontalGap(a: Entity['position'], b: Entity['position']): number {
 }
 
 /**
- * Steps the Body back to `STEP_BACK_TO` blocks from a recipient closer than `STEP_BACK_BELOW`, so
- * the toss flies past them. It walks to the straight-back spot first, then to the first of the
- * turned spots (`stepBackSpots`) that it reaches, and stops trying after `STEP_BACK_MS` (scaled by
- * `timeScale`) or on an abort. When none is reached the Body is where it was; the caller checks
- * the distance it ends at.
+ * Steps the Body back from a recipient closer than `STEP_BACK_BELOW`, so the toss flies past them.
+ * It walks, with digging off, to the standable blocks `stepBackCells` lists in order (the
+ * straight-back one first), and a try counts only when the gap to the recipient then holds at
+ * `STEP_BACK_BELOW`. It stops after `STEP_BACK_MS` (scaled by `timeScale`) or on an abort. When no
+ * try holds, one `give_stepback_failed` diag line is logged; the caller checks the gap it ends at.
  */
 async function stepBackFrom(
   ctx: ActionContext,
   bot: Bot,
   recipient: Entity['position'],
 ): Promise<void> {
-  const spots = stepBackSpots(bot.entity.position, recipient, STEP_BACK_TO);
+  const cells = stepBackCells(
+    bot.entity.position,
+    recipient,
+    (cell) => bot.blockAt(cell),
+    GIVE_REACH,
+  );
   // One signal for every try: the run's abort, or the whole-step cap, stops the walk in progress.
   const tries = new AbortController();
   const stop = (): void => tries.abort();
   ctx.signal.addEventListener('abort', stop, { once: true });
   const cap = setTimeout(stop, STEP_BACK_MS * ctx.timeScale);
+  let tried = 0;
   try {
-    for (const spot of spots) {
-      if (tries.signal.aborted) return;
-      const move = await moveNear(bot, spot, STEP_RANGE, {
+    for (const cell of cells) {
+      if (tries.signal.aborted) break;
+      tried += 1;
+      // A short level walk never digs. A walk that reports ok may still leave the Body where it was,
+      // so the gap to the recipient decides whether the try counted, not the walk's result.
+      await moveNear(bot, cell, STEP_RANGE, {
         signal: tries.signal,
         timeScale: ctx.timeScale,
+        digTier: false,
       });
-      if (move.ok) return;
+      if (horizontalGap(bot.entity.position, recipient) >= STEP_BACK_BELOW) return;
+    }
+    if (!ctx.signal.aborted) {
+      const gap = Math.round(horizontalGap(bot.entity.position, recipient) * 100) / 100;
+      DEFAULT_DIAG_SINK.log(JSON.stringify({ event: 'give_stepback_failed', tried, gap }));
     }
   } finally {
     clearTimeout(cap);
@@ -371,8 +385,8 @@ async function settle(
  * so the verb cannot probe whether a player exists or where they are (decisions 0058 and 0068).
  * A name that is not in sight fails `not_found` with one fixed text. The Body walks up to
  * `WALK_RANGE` blocks from the recipient, checks again that it is in sight and within
- * `GIVE_REACH`, steps back to `STEP_BACK_TO` blocks if the recipient is closer than
- * `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
+ * `GIVE_REACH`, steps back to a standable block 2 to 3 blocks from the recipient if it is closer
+ * than `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
  * its height, looks at the `tossPitch` for the height difference and distance, waits two ticks for
  * the look to reach the server, and tosses.
  * The give completes only when the
