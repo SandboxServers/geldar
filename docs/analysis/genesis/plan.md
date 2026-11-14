@@ -80,6 +80,7 @@ The final acceptance (a real ranger connected) is a human step recorded in G7-02
 | Hosted runner cannot fit Paper plus stack | G0-02 measures first; the ephemeral stamp falls back to services-only plus a Paper image smoke if needed |
 | World not reproducible | the seed reproduces terrain only for a fixed Paper build; player builds and generated chunks are not; backups are the only recovery for those (documented in G5-02) |
 | Runner or deploy key compromise | forced command, per-environment key, dispatch-only, protected environments, no PR-triggered stamp |
+| An admin verb run by hand through `colo-admin.sh` used `docker compose run`, which stopped Postgres and detached it from its network (repaired with `docker network connect --alias postgres`) when the environment was not exactly the node's (`colo-env.sh`, `node.env`, uid 1001, the service-uid check) | The stamp treats every admin verb as a **non-disruptive one-shot**: a test starts a one-shot with `--no-deps` and asserts no other container is stopped, recreated or detached, and refuses to run when the environment file does not match the definition (G4-04, G6-01) |
 | Unattended restarts of live players | none: restarts need the owner's window; test environments are separate |
 
 ## 9. Exit run
