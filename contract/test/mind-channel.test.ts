@@ -351,6 +351,13 @@ describe('snapshot optional fields (P0-20)', () => {
     ).toBe(true);
   });
 
+  it('keeps unlocked_recipes an array in the Mind snapshot; the unchanged fact is play-only (decision 0221)', () => {
+    expect(
+      validateSnapshot(withSelf({ unlocked_recipes: { unchanged: true, count: 112 } })).ok,
+    ).toBe(false);
+    expect(validateSnapshot(withSelf({ unlocked_recipes: ['oak_planks'] })).ok).toBe(true);
+  });
+
   it('rejects duplicate or bad recipes, too many recipes and a negative generation', () => {
     expect(validateSnapshot(withSelf({ unlocked_recipes: ['stick', 'stick'] })).ok).toBe(false);
     expect(validateSnapshot(withSelf({ unlocked_recipes: ['Not Valid'] })).ok).toBe(false);
