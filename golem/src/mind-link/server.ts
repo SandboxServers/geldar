@@ -90,7 +90,7 @@ export function natsRequestServer(nc: NatsConnection): RequestServer {
 /** The part of the executor the server uses. */
 export type PlanExecutor = Pick<
   IntentExecutor,
-  'submit' | 'intentId' | 'intentState' | 'runningIntent'
+  'submit' | 'intentId' | 'intentState' | 'runningIntent' | 'deathFloor'
 >;
 
 /** What a `MindLinkServer` is built from. */
@@ -266,6 +266,8 @@ export class MindLinkServer {
         bodyGeneration: this.opts.bodyGeneration,
         currentRevision: this.opts.revision.current,
         tick: this.opts.tick(),
+        // The death floor: a plan made before the Body died is refused here, so the Mind hears it.
+        deathRevision: this.opts.executor.deathFloor,
       },
     );
     const sent = this.answer(reply, plan.thought_id, rejection);

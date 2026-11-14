@@ -200,6 +200,20 @@ describe('MindLinkServer snapshots', () => {
 });
 
 describe('MindLinkServer plans', () => {
+  it('refuses a plan made before the Body died as stale_snapshot, and accepts one made after', async () => {
+    const t = rig();
+    t.executor.deathFloor = 3;
+    const before = await t.plan(planOf(1, { snapshot_revision: 3 }));
+    expect(before?.accepted).toBe(false);
+    expect(before?.rejection?.reason).toBe('stale_snapshot');
+    expect(before?.rejection?.detail).toBe(
+      'plan revision 3 was made before the Body died at revision 3',
+    );
+    expect(t.executor.submitted).toHaveLength(0);
+    const after = await t.plan(planOf(2, { snapshot_revision: 4 }));
+    expect(after?.accepted).toBe(true);
+  });
+
   it('accepts a valid plan, runs it after the ack and publishes the result', async () => {
     const t = rig();
     await t.snapshot();
