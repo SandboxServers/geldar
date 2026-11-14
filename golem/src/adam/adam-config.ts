@@ -16,6 +16,8 @@ export interface AdamConfig {
   /** `chat.max_chars`. */
   maxChars: number;
   reflexes: ReflexConfig;
+  /** `body_actions.edit_sign`: whether the Body accepts the `edit_sign` verb (off when left out). */
+  editSign: boolean;
   /** `20 / tick_rate`: the executor's time scale. */
   timeScale: number;
 }
@@ -43,6 +45,15 @@ function positive(from: Record<string, unknown>, key: string, where: string): nu
   return value;
 }
 
+/** A `body_actions` flag from the shard file; a flag the file leaves out is off. */
+function bodyActionFlag(root: Record<string, unknown>, name: string): boolean {
+  const actions = root.body_actions === undefined ? {} : block(root.body_actions, 'body_actions');
+  const value = actions[name];
+  if (value === undefined) return false;
+  if (typeof value !== 'boolean') throw new Error(`body_actions.${name} must be true or false`);
+  return value;
+}
+
 /** Builds the config from a parsed shard file; throws on the first missing or invalid key. */
 export function parseAdamConfig(doc: unknown): AdamConfig {
   const root = block(doc, 'shard file');
@@ -55,6 +66,7 @@ export function parseAdamConfig(doc: unknown): AdamConfig {
     rateLimitSeconds: positive(chat, 'rate_limit_seconds', 'chat'),
     maxChars: positive(chat, 'max_chars', 'chat'),
     reflexes: parseReflexConfig(root.reflexes),
+    editSign: bodyActionFlag(root, 'edit_sign'),
     timeScale: 20 / positive(root, 'tick_rate', 'shard file'),
   };
 }

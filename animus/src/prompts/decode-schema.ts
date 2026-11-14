@@ -66,7 +66,10 @@ function actionField(verb: string, field: string): Record<string, unknown> {
     case 'to':
       return { type: 'string', maxLength: 16 };
     case 'text':
-      return { type: 'string', maxLength: verb === 'write_sign' ? 60 : 512 };
+      return {
+        type: 'string',
+        maxLength: verb === 'write_sign' || verb === 'edit_sign' ? 60 : 512,
+      };
     case 'seconds':
       return { type: 'integer', minimum: 1, maximum: 600 };
     default:

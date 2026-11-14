@@ -25,9 +25,13 @@ describe('compose/colo.yml profiles (decision 0134)', () => {
   });
 
   it('leaves the core services without a profile, so the core start runs them', () => {
-    const core = ['postgres', 'nats', 'paper', 'velocity', 'eventsink', 'golem-body', 'geldar-mcp'];
+    const core = ['postgres', 'nats', 'paper', 'velocity', 'eventsink', 'geldar-mcp'];
     for (const name of core) {
       expect(services()[name]?.profiles, name).toBeUndefined();
     }
+  });
+
+  it('puts golem-body (the idle Adam) under the adam profile, so the core start does not run it (decision 0212)', () => {
+    expect(services()['golem-body']?.profiles).toEqual(['adam']);
   });
 });

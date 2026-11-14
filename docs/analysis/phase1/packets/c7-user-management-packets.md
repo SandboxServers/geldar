@@ -151,9 +151,10 @@ Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packe
 
 Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes the old token at once (`register_mint_token`). The API rotate, `POST /api/v1/agents/{playerId}/tokens`, keeps the old token for 10 minutes (`register_renew_token`, `graceEndsAt`). The copy "revokes the old one immediately" is true for the button only; do not reuse it for the API rotate. The leak response over the API is `POST /api/v1/agents/{playerId}/tokens/revoke`. `PATCH /agents/{playerId}` (`publicCamera`, `thoughtsDelayedPublic`) was not built in C7-04b. It is card C7-04e (`c7d-packets.md`), and this packet depends on C7-04e: the visibility toggles call that route. C7-04e's files are not in this card's may-edit.
 
-- **id / wave / lane.** C7-06, wave 3. **depends-on.** C7-04, C7-04e, C7-05. **branch.** `phase1/c7-06-account-page-v2`. **migration.** none. It owns `pages/account*.ts`; C7-13c adds the skin section after it merges.
+- **id / wave / lane.** C7-06, wave 3. **depends-on.** C7-04, C7-04e, C7-05. **branch.** `phase1/c7-06-account-page-v2`. **migration.** none. It owns `src/account*.ts` (the card's `pages/` paths do not exist; the code is in `src/account-pages.ts`, `src/account.ts` and `src/account-style.ts`) and `src/errors.ts`; C7-13c adds the skin section after it merges.
+- **Status.** Built (partial): C7-06 and C7-06b. The items not built (the per-agent status and token lines, the start, stop and restart buttons, the visibility toggles) are in card C7-06c.
 - **Goal.** Replace the bare HTML account page with a page that works on a phone. It adds: a linked stylesheet (CSP `style-src 'self'`) and a viewport meta; labelled inputs; a status line per agent (body running, starting, waiting or stopped; credits left; token expiry date; last used); the start, stop and restart buttons that call the C7-04 API; links to the agent's Glass and Kino views where 0138 and 0139 allow; the visibility toggles with a plain explanation of public camera and delayed public thoughts; the missing thoughts form (the route exists); and HTML error pages for 403, 404, 429 and 503 (JSON only under `/api/`).
-- **may-edit.** `threshold/register/src/pages/account*.ts`, `threshold/register/src/static/account.css`, `threshold/register/src/pages/errors.ts`, tests, `docs/analysis/phase1/worknotes/C7-06.md`.
+- **may-edit.** `threshold/register/src/account*.ts` (the page; `account-style.ts` is the stylesheet, served from `/register/account.css`), `threshold/register/src/errors.ts`, tests, `docs/analysis/phase1/worknotes/C7-06.md`.
 - **Tests (each fails on revert).**
   - Viewport meta present; the stylesheet is linked; no inline style attribute (CSP).
   - Every input has a label (an accessibility check on the rendered HTML).
@@ -166,11 +167,47 @@ Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes t
 - **Owner decisions.** None.
 - **size.** M.
 
+## C7-06c: account page v2, items not delivered by C7-06 and C7-06b
+
+- **Status.** Built partial (status line only; see worknote `C7-06c.md`). Items 2, 3 and the token and credit data of item 1 moved to C7-06d.
+- **id / wave / lane.** C7-06c, wave 4 (after C7-04c2 for the buttons). Register lane. **depends-on.** C7-06 (built, partial), C7-04e (built; PATCH), C7-04c2 (the body routes wired; buttons only). **branch.** `phase1/c7-06c-account-items`. **migration.** none. **size.** M.
+- **Goal.** Deliver the C7-06 items that the built pages do not show (review F5, wave 4). The stored `status` text is not a substitute for them.
+  1. **Per-agent status line** with the body state (running, starting, waiting or stopped, from `GET .../body/status`; a 404 from status means stopped), credits left, and the token expiry date and last used, where a loader provides them (the wave 1 carry-forward). Remove the duplicate status text the page now shows.
+  2. **Start, stop and restart buttons** calling the C7-04 body routes. Not rendered until the routes are wired (C7-04c2).
+  3. **Visibility toggles** calling `PATCH /agents/{playerId}` (C7-04e) for `publicCamera` and `thoughtsDelayedPublic`, each with the plain explanation. A toggle sends one flag per request.
+- **Already built.** Glass and Kino links: built in C7-06b (both links for every non-retired agent).
+- **may-edit.** `threshold/register/src/account*.ts`, `threshold/register/src/account-style.ts` (layout only), tests, `docs/analysis/phase1/worknotes/C7-06c.md`.
+- **must-not-edit.** `api/body*.ts`, `api/agents*.ts`, `errors.ts`, `docs/spec.md`, `contract/`, the skin section (C7-13c).
+- **Tests (each fails on revert).**
+  - Status line: a fixture for each body state renders its state; a 404 from status renders stopped; a token row shows expiry and last used when the loader provides them and omits them when it does not.
+  - Buttons: absent while the body routes are unmounted; a button posts with the CSRF token to its own route.
+  - Toggle: a toggle posts `PATCH` with exactly one flag; a toggle for another owner's agent is not rendered.
+- **checks.** Register tests, `pwsh -NoProfile -File ./geldar.ps1 check`.
+- **Owner decisions.** Ruled: the links follow 0138 rule 1 (owner sees both for every non-retired agent).
+
+## C7-06d: account page body controls and live status (split of C7-06c)
+
+- **id / wave / lane.** C7-06d, Shelved until sign-up opens (with C7-03b2). Register lane. **depends-on.** C7-06c (status line, built partial), C7-04c2 (body routes wired), C7-04e (PATCH, built). **branch.** `phase1/c7-06d-account-controls`. **migration.** none. **size.** M.
+- **Goal.** The three C7-06c items that the status-line packet did not build (worknote `C7-06c.md`, "Not built").
+  1. **Same-origin client script and CSP change** for the `x-csrf-token` header. The body routes (scope `body`) and PATCH read the CSRF token from that header; a plain HTML form cannot send it. The script is served from the register origin, and the CSP admits it.
+  2. **Start, stop and restart buttons** calling `/agents/{id}/body/*`. Rendered only when the body routes are mounted.
+  3. **Visibility toggles** through `PATCH /api/v1/agents/{playerId}` (C7-04e) for `publicCamera` and `thoughtsDelayedPublic`, one flag per request, each with its plain explanation. The existing form POSTs are replaced only when the script is present.
+- **Status line data.** `AccountDeps.bodyState` is wired in `main.ts` only when the body routes are mounted, and it maps the supervisor reply, not the HTTP status (a 404 from status is `stopped` only for the supervisor's "no such body" reply; see the C7-06c caveat). Token expiry, last used and credits need a loader that supplies that data; without one they stay absent.
+- **may-edit.** `threshold/register/src/account*.ts`, `threshold/register/src/account-style.ts` (layout only), the same-origin script (new), the CSP header code where it is set, `main.ts` (the one wiring line for the loader, only with body routes mounted), tests, `docs/analysis/phase1/worknotes/C7-06d.md`.
+- **must-not-edit.** `api/body*.ts`, `api/agents*.ts`, `errors.ts`, `docs/spec.md`, `contract/`, the skin section (C7-13c).
+- **Tests (each fails on revert).**
+  - Buttons absent while the body routes are unmounted; a button posts with the CSRF token from the header to its own route.
+  - The CSP admits the script and nothing else; no inline script or inline style attribute.
+  - A toggle sends `PATCH` with exactly one flag; a toggle for another owner's agent is not rendered.
+  - Status line: with the loader wired and the body routes mounted, the state renders; with them unmounted, no loader and no line.
+- **checks.** Register tests, `pwsh -NoProfile -File ./geldar.ps1 check`.
+- **Owner decisions.** None. Shelved: do not dispatch until sign-up (C7-03b2) opens.
+
 ## C7-07: agent rename (skin choice is deferred)
 
 - **id / wave / lane.** C7-07, wave 3. **depends-on.** C7-04. **branch.** `phase1/c7-07-agent-rename`. **migration.** 0028 (rename definer function).
 - **Goal.** An owner renames an agent through the API (`PATCH /agents/{playerId}`) and the account page. The new name passes the same regex and the same rules as create (0145 applies to names in play, not here). Rate limited (the 10 second DB window of the camera toggle, plus an hourly cap). Each rename writes an audit row with the old name's hash, not the name. Renaming updates the display name everywhere that shows it, and the old name stays only in the audit row. Player id and life id never change. Skin upload is not in this packet (it is C7-13a to c, 0172).
-- **may-edit.** `threshold/register/src/api/agents*.ts`, `threshold/register/src/pages/account*.ts` (rename form only), `sql/` migration for the rename definer function, tests, `docs/analysis/phase1/worknotes/C7-07.md`.
+- **may-edit.** `threshold/register/src/api/agents*.ts`, `threshold/register/src/account*.ts` (rename form only), `sql/` migration for the rename definer function, tests, `docs/analysis/phase1/worknotes/C7-07.md`.
 - **Tests (each fails on revert).**
   - A name with a disallowed character refused; 32 characters accepted, 33 refused (last-allowed boundary).
   - Rename twice within the window: second refused with 429.

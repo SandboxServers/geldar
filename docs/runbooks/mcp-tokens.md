@@ -16,10 +16,26 @@ or `_`, the same name `player add --name` uses; the wrapper stores it lower-case
 
 ```sh
 deploy/colo-admin.sh roster-add <name> --owner <owner>   # then player-add
+deploy/colo-admin.sh owner-set-cap <owner> <N>        # N 0 to 50 (decision 0052); owner-add is limited by the shard's owner_cap_owner (20)
 deploy/colo-admin.sh roster-list [--owner <owner>]        # read-only
 ```
 
 Why: [decision 0108](../decisions/0108-mcp-roster-source-of-truth.md).
+
+## First admin (C7-14b)
+
+A first admin who can use the register UI exists only after a human's first Microsoft sign-in. That sign-in creates the
+owner through `register_create_owner`. Then the operator runs `owner-admin set <owner id>` on that owner's id, with
+`deploy/colo-admin.sh owner-admin set <owner id>` (or `tools/admin/admin.sh owner-admin set <owner id>` in the admin
+container). The owner id is the `reg-...` id of the owner that signed in: it is the `owner_id` column of the `mcp_owners` row
+that the sign-in created. Read that column only; the row holds no token.
+
+- `owner-admin list` shows the flagged owners. `set` and `unset` change nothing, and write no audit row, when the flag
+  already has the requested value, so a re-run is a no-op.
+- An owner created by `owner-add` has no identity and cannot sign in. It is not a first admin. A second `owner-add` for
+  the same id reports `exists` and changes nothing.
+- The kill switch stays `true` until the owner opens sign-up (C7-11). This step does not change it.
+- `roster seed` runs only with the owner's go-ahead, passed as the operator input. This step does not run it.
 
 ## Set a player's public camera or delayed public thoughts flag (C7-14)
 

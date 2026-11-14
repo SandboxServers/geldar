@@ -1,5 +1,5 @@
-import type { MindEvent } from '@geldar/animus/src/ports/body.ts';
 import { validateActionOutcomePayload } from '@geldar/contract';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { describe, expect, it } from 'vitest';
 import { type MapContext, mapMindEvent } from './mapper.ts';
 import { toPlayerEvents } from './present.ts';
@@ -79,6 +79,48 @@ describe('action_outcome mapping (C5-02)', () => {
     expect(texts({ ...base, ok: true, detail_text: 'need 2 more planks' })).toEqual([
       'action|Your craft worked.',
     ]);
+  });
+
+  it('an ok eat keeps its plain fact and reads as a sentence', () => {
+    expect(
+      texts({
+        verb: 'eat',
+        index: 0,
+        ok: true,
+        message: 'x',
+        detail_text: 'cooked_beef: hunger 17 to 20',
+      }),
+    ).toEqual(['action|You ate cooked_beef: hunger 17 to 20.']);
+  });
+
+  it('an ok sleep keeps its plain fact after the fixed line, with one full stop', () => {
+    expect(
+      texts({ verb: 'sleep', index: 0, ok: true, message: 'x', detail_text: '2 sleepers' }),
+    ).toEqual(['action|Your sleep worked: 2 sleepers.']);
+  });
+
+  it('an ok verb outside the allow-list drops its detail', () => {
+    expect(
+      texts({ verb: 'goto', index: 0, ok: true, message: 'x', detail_text: 'moved 12 blocks' }),
+    ).toEqual(['action|Your goto worked.']);
+  });
+
+  it('an ok eat cleans control characters, caps length and drops unsafe text', () => {
+    expect(
+      texts({
+        verb: 'eat',
+        index: 0,
+        ok: true,
+        message: 'x',
+        detail_text: 'cooked_beef:\u0007 hunger\n17 to 20',
+      }),
+    ).toEqual(['action|You ate cooked_beef: hunger 17 to 20.']);
+    expect(
+      texts({ verb: 'eat', index: 0, ok: true, message: 'x', detail_text: 'x'.repeat(200) }),
+    ).toEqual([`action|You ate ${'x'.repeat(160)}.`]);
+    expect(
+      texts({ verb: 'eat', index: 0, ok: true, message: 'x', detail_text: 'go to 10, 64, 20' }),
+    ).toEqual(['action|Your eat worked.']);
   });
 
   it('the wire schema accepts detail_text up to 160 characters and no more', () => {

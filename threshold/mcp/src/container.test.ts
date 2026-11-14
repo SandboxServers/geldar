@@ -61,8 +61,8 @@ describe('threshold/mcp/Dockerfile.dockerignore', () => {
       'pnpm-workspace.yaml',
       '.nvmrc',
       'contract/package.json',
-      'animus/package.json',
-      'animus/src/validate/index.ts',
+      'player-core/package.json',
+      'player-core/src/validate/index.ts',
       'threshold/mcp/package.json',
       'threshold/mcp/src/config.ts',
       'threshold/mcp-mock/src/cli.ts',
@@ -168,6 +168,7 @@ describe('compose/mcp.yml', () => {
 const workspaceDirs = [
   'animus',
   'contract',
+  'player-core',
   'threshold/mcp',
   'threshold/mcp-mock',
   'tools/repo-checks',
