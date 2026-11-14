@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  bodyWiringFromEnv,
   containerBody,
   createDockerClient,
   createDockerRuntime,
@@ -22,6 +23,16 @@ import { type BodySpec, type DisplayNamePort, LoginNameError } from './ports.ts'
 // Container hardening (orchestrator ruling on F5), the login name check (F8) and the Engine deadlines (F7).
 
 const IMAGE = 'geldar/golem-body:test';
+// Placeholder values for the Body wiring. No real host, address or secret: these are test strings.
+const WIRING = bodyWiringFromEnv({
+  GELDAR_SHARD: 'colo',
+  GELDAR_MC_HOST: 'mc-host.test',
+  GELDAR_MC_PORT: '25565',
+  GELDAR_NATS_URL: 'nats://nats.test:4222',
+  GELDAR_NATS_USER: 'body',
+  GELDAR_BODY_NATS_SECRET_HOST_PATH: '/test/secrets/nats-body.txt',
+  GELDAR_BODY_SHARD_HOST_PATH: '/test/shards/colo-mind.yaml',
+});
 const spec = (): BodySpec => ({
   ownerId: 'owner-a',
   playerName: 'Ranger',
@@ -53,7 +64,7 @@ function happy(call: EngineCall): ScriptedReply {
 }
 
 function hostConfig(): Record<string, unknown> {
-  return (containerBody(spec(), IMAGE, 'Ranger') as { HostConfig: Record<string, unknown> })
+  return (containerBody(spec(), IMAGE, 'Ranger', WIRING) as { HostConfig: Record<string, unknown> })
     .HostConfig;
 }
 
@@ -69,7 +80,9 @@ describe('Body container config: golem-body hardening, pinned by literal', () =>
   });
 
   it('runs as uid and gid 1000, the compose default', () => {
-    expect((containerBody(spec(), IMAGE, 'Ranger') as { User: unknown }).User).toBe('1000:1000');
+    expect((containerBody(spec(), IMAGE, 'Ranger', WIRING) as { User: unknown }).User).toBe(
+      '1000:1000',
+    );
   });
 
   it('logs as json-file with 10m files, three kept', () => {
@@ -99,7 +112,7 @@ describe('Docker runtime: login name check', () => {
     for (const [i, login] of logins.entries()) {
       const engine = await engineWith(`login-bad-${i}`, happy);
       const runtime = createDockerRuntime(
-        createDockerClient(engine.socketPath, IMAGE),
+        createDockerClient(engine.socketPath, IMAGE, WIRING),
         names(login),
       );
       const refused = runtime.start(spec(), signal());
@@ -112,7 +125,7 @@ describe('Docker runtime: login name check', () => {
   it('checkLogin resolves for a good login name and makes no engine call', async () => {
     const engine = await engineWith('check-ok', happy);
     const runtime = createDockerRuntime(
-      createDockerClient(engine.socketPath, IMAGE),
+      createDockerClient(engine.socketPath, IMAGE, WIRING),
       names('Ranger_1'),
     );
     await expect(runtime.checkLogin('o', 'Ranger')).resolves.toBeUndefined();
@@ -121,7 +134,10 @@ describe('Docker runtime: login name check', () => {
 
   it('checkLogin refuses a null login name with LoginNameError and makes no engine call', async () => {
     const engine = await engineWith('check-null', happy);
-    const runtime = createDockerRuntime(createDockerClient(engine.socketPath, IMAGE), names(null));
+    const runtime = createDockerRuntime(
+      createDockerClient(engine.socketPath, IMAGE, WIRING),
+      names(null),
+    );
     await expect(runtime.checkLogin('o', 'Ranger')).rejects.toBeInstanceOf(LoginNameError);
     expect(engine.calls).toEqual([]);
   });
@@ -129,7 +145,7 @@ describe('Docker runtime: login name check', () => {
   it('checkLogin refuses a name outside the login shape with LoginNameError and makes no engine call', async () => {
     const engine = await engineWith('check-shape', happy);
     const runtime = createDockerRuntime(
-      createDockerClient(engine.socketPath, IMAGE),
+      createDockerClient(engine.socketPath, IMAGE, WIRING),
       names('My Agent'),
     );
     await expect(runtime.checkLogin('o', 'Ranger')).rejects.toBeInstanceOf(LoginNameError);
@@ -141,7 +157,7 @@ describe('Docker runtime: login name check', () => {
     for (const [i, login] of logins.entries()) {
       const engine = await engineWith(`login-ok-${i}`, happy);
       const runtime = createDockerRuntime(
-        createDockerClient(engine.socketPath, IMAGE),
+        createDockerClient(engine.socketPath, IMAGE, WIRING),
         names(login),
       );
       await expect(runtime.start(spec(), signal())).resolves.toBeUndefined();
@@ -159,7 +175,7 @@ describe('Docker engine: deadlines', () => {
       await sleep(1500);
       return { status: 404 };
     });
-    const client = createDockerClient(engine.socketPath, IMAGE, 100);
+    const client = createDockerClient(engine.socketPath, IMAGE, WIRING, 100);
     const started = Date.now();
     await expect(client.inspect('ranger')).rejects.toThrow('docker engine timeout');
     expect(Date.now() - started).toBeLessThan(1000);
@@ -176,7 +192,7 @@ describe('Docker engine: deadlines', () => {
       return { status: 500 };
     });
     const runtime = createDockerRuntime(
-      createDockerClient(engine.socketPath, IMAGE),
+      createDockerClient(engine.socketPath, IMAGE, WIRING),
       names('Ranger'),
       100,
     );
@@ -201,7 +217,7 @@ describe('Docker engine: deadlines', () => {
       return { status: 500 };
     });
     const runtime = createDockerRuntime(
-      createDockerClient(engine.socketPath, IMAGE),
+      createDockerClient(engine.socketPath, IMAGE, WIRING),
       names('Ranger'),
       100,
     );
