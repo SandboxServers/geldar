@@ -11,18 +11,31 @@ import type {
 // socketPath: no client dependency. The socket is opened read-write, since the supervisor must create
 // containers; the uid and group of the socket are the control (C7-03b2), not this code.
 
+/** An Engine call with no answer in this long is abandoned, so a hung Engine cannot hold a start. */
+export const ENGINE_TIMEOUT_MS = 30_000;
+/** The deadline for removing a container after a create or start gave up. */
+export const CLEANUP_TIMEOUT_MS = 10_000;
+/** The Minecraft login name shape. A display name outside it cannot be a login, so the start is refused. */
+const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
+/** The network and log driver golem-body uses in compose/colo.yml (the `colo` network, json-file 10m x 3). */
+const COLO_NETWORK = 'geldar-colo';
+/** The uid and gid the compose file gives golem-body by default (GELDAR_SERVICE_UID). */
+const BODY_USER = '1000:1000';
+
 export interface EngineReply {
   status: number;
   body: string;
 }
 
-// One Engine call. An abort destroys the request, so the caller's promise rejects at once.
+// One Engine call. An abort destroys the request, so the caller's promise rejects at once; a reply
+// that takes longer than timeoutMs destroys it too.
 export function engineRequest(
   socketPath: string,
   method: string,
   path: string,
   json?: unknown,
   signal?: AbortSignal,
+  timeoutMs: number = ENGINE_TIMEOUT_MS,
 ): Promise<EngineReply> {
   return new Promise((resolve, reject) => {
     const payload = json === undefined ? undefined : JSON.stringify(json);
@@ -39,6 +52,7 @@ export function engineRequest(
         resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }),
       );
     });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error('docker engine timeout')));
     req.on('error', reject);
     req.end(payload);
   });
@@ -68,7 +82,9 @@ function expect(reply: EngineReply, statuses: readonly number[], what: string): 
 }
 
 // The Body container config for one spec (0082): NanoCpus and Memory from the limits, with the swap
-// equal to the memory so a body cannot swap past its limit.
+// equal to the memory so a body cannot swap past its limit. The rest mirrors golem-body's service in
+// compose/colo.yml: pids limit, network, user and log driver. CapDrop and no-new-privileges are the
+// orchestrator's ruling; golem-body does not set them, so this container is stricter than that service.
 export function containerBody(
   spec: BodySpec,
   image: string,
@@ -76,6 +92,7 @@ export function containerBody(
 ): Record<string, unknown> {
   return {
     Image: image,
+    User: BODY_USER,
     // The login name keeps the player's exact case (0033). The container name stays lower-cased.
     Env: [`GELDAR_LOGIN_NAME=${loginName}`],
     Labels: { 'geldar.owner': spec.ownerId, 'geldar.player': spec.playerName.toLowerCase() },
@@ -83,16 +100,26 @@ export function containerBody(
       NanoCpus: spec.config.NanoCpus,
       Memory: spec.config.Memory,
       MemorySwap: spec.config.MemorySwap,
+      PidsLimit: spec.config.PidsLimit,
+      NetworkMode: COLO_NETWORK,
+      LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+      CapDrop: ['ALL'],
+      SecurityOpt: ['no-new-privileges:true'],
     },
   };
 }
 
-export function createDockerClient(socketPath: string, image: string): DockerClient {
+export function createDockerClient(
+  socketPath: string,
+  image: string,
+  timeoutMs: number = ENGINE_TIMEOUT_MS,
+): DockerClient {
+  const call = (method: string, path: string, json?: unknown, signal?: AbortSignal) =>
+    engineRequest(socketPath, method, path, json, signal, timeoutMs);
   return {
     image,
     async inspect(name, signal) {
-      const reply = await engineRequest(
-        socketPath,
+      const reply = await call(
         'GET',
         `/containers/${encodeURIComponent(name)}/json`,
         undefined,
@@ -117,8 +144,7 @@ export function createDockerClient(socketPath: string, image: string): DockerCli
         playerName: name,
         config,
       };
-      const reply = await engineRequest(
-        socketPath,
+      const reply = await call(
         'POST',
         `/containers/create?name=${encodeURIComponent(name)}`,
         containerBody(spec, image, loginName),
@@ -127,8 +153,7 @@ export function createDockerClient(socketPath: string, image: string): DockerCli
       return json.Id;
     },
     async start(id, signal) {
-      const reply = await engineRequest(
-        socketPath,
+      const reply = await call(
         'POST',
         `/containers/${encodeURIComponent(id)}/start`,
         undefined,
@@ -137,8 +162,7 @@ export function createDockerClient(socketPath: string, image: string): DockerCli
       expect(reply, [204, 304], 'start');
     },
     async stop(name, signal) {
-      const reply = await engineRequest(
-        socketPath,
+      const reply = await call(
         'POST',
         `/containers/${encodeURIComponent(name)}/stop`,
         undefined,
@@ -148,8 +172,7 @@ export function createDockerClient(socketPath: string, image: string): DockerCli
       expect(reply, [204, 304, 404], 'stop');
     },
     async remove(id, signal) {
-      const reply = await engineRequest(
-        socketPath,
+      const reply = await call(
         'DELETE',
         `/containers/${encodeURIComponent(id)}?force=true`,
         undefined,
@@ -181,8 +204,13 @@ function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 }
 
 // The BodyRuntimePort over the Docker client. A start replaces a stopped container of the name (the
-// previous roster owner's, or this owner's), and refuses a running one.
-export function createDockerRuntime(client: DockerClient, names: DisplayNamePort): BodyRuntimePort {
+// previous roster owner's, or this owner's), and refuses a running one. Cleanup after a give-up is
+// bounded by cleanupMs, so a hung Engine cannot hold the start.
+export function createDockerRuntime(
+  client: DockerClient,
+  names: DisplayNamePort,
+  cleanupMs: number = CLEANUP_TIMEOUT_MS,
+): BodyRuntimePort {
   return {
     async inspect(playerName) {
       const name = playerName.toLowerCase();
@@ -194,8 +222,9 @@ export function createDockerRuntime(client: DockerClient, names: DisplayNamePort
     async start(spec, signal) {
       const name = spec.playerName.toLowerCase();
       // The exact-case login name is read before anything is removed or created: no name, no container.
+      // A name outside the Minecraft login shape is refused the same way: the owner sees why in the reply.
       const loginName = await names.displayName(spec.ownerId, spec.playerName);
-      if (loginName === null) throw new Error('login name unknown');
+      if (loginName === null || !LOGIN_NAME.test(loginName)) throw new Error('login name unknown');
       const existing = await client.inspect(name, signal);
       if (existing?.running) throw new Error('body already running');
       if (existing) await client.remove(existing.id, signal);
@@ -207,7 +236,7 @@ export function createDockerRuntime(client: DockerClient, names: DisplayNamePort
         id = await untilAborted(created, signal);
       } catch (error) {
         void created.then(
-          (madeId) => client.remove(madeId).catch(() => undefined),
+          (madeId) => client.remove(madeId, AbortSignal.timeout(cleanupMs)).catch(() => undefined),
           () => undefined,
         );
         throw error;
@@ -215,7 +244,7 @@ export function createDockerRuntime(client: DockerClient, names: DisplayNamePort
       try {
         await client.start(id, signal);
       } catch (error) {
-        await client.remove(id).catch(() => undefined);
+        await client.remove(id, AbortSignal.timeout(cleanupMs)).catch(() => undefined);
         throw error;
       }
     },

@@ -111,6 +111,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 - may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log, retire), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04c.md`.
 - must-not-edit: `supervisor/` (the counters are the supervisor's; the register does not count them), `nats-ctl.ts` (C7-03b1 owns it; read only), `contract/` (the `ctl.body.*` op list is C7-03b1's; this card uses ops it defines, no new op), `account*.ts`, `docs/spec.md`.
 - If the supervisor's op list has no log op, stop and report. Do not add one here.
+- A start the supervisor refuses with `login name unknown` (the display name is not a Minecraft login name, or no single spelling is known) must say why in the error body: the owner is told the player's name must be a 3 to 16 character login (letters, digits, underscore), and how to fix it. The body is not a bare code. Test the body text.
 
 ### Routes
 
@@ -158,7 +159,7 @@ The generator, not hand-written types, produces the types from `contract/` once 
 ```yaml
 openapi: 3.1.0
 info: { title: Geldar owner API, version: 1.0.0 }
-servers: [{ url: https://glass.geldar.sandboxservers.games/register/api/v1 }]
+servers: [{ url: https://glass.example.invalid/register/api/v1 }]
 security: [{ sessionCookie: [] }, { ownerKey: [read] }]
 paths:
   /agents:

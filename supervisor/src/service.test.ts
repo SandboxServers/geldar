@@ -314,6 +314,7 @@ describe('container config carries the 0082 body limits', () => {
       NanoCpus: 1_000_000_000,
       Memory: 2048 * 1024 * 1024,
       MemorySwap: 2048 * 1024 * 1024,
+      PidsLimit: 256,
     });
     expect(BODY_NANO_CPUS).toBe(1_000_000_000);
     expect(BODY_MEMORY_BYTES).toBe(2048 * 1024 * 1024);
