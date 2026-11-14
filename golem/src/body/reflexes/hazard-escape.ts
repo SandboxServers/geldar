@@ -38,7 +38,12 @@ export const ESCAPE_LIMIT_TICKS = 200;
 const SCAN_RADIUS = 8;
 /** How far up and down it reaches. */
 const SCAN_HEIGHT = 3;
+/** Ticks after a give-up in which the reflex stays quiet, so the Mind's next action can run. */
 const COOLDOWN_TICKS = 40;
+/** The swim-up's share of the time limit; the rest is left for the walk out. */
+const SWIM_TICKS = 120;
+/** How far the swim-up looks for open water to steer to when a ceiling is over the head. */
+const BREATH_RADIUS = 4;
 
 /** True when the Body can stand in this cell: passable and not a hazard. Unloaded is not safe. */
 function isOpenCell(block: ScanBlock | null): boolean {
@@ -72,6 +77,38 @@ export function findSafeBlock(
         best = { x: from.x + dx, y: from.y + dy, z: from.z + dz };
         bestDistance = distance;
       }
+    }
+  }
+  return best;
+}
+
+/** A cell the Body can swim or stand in: no solid block (water and air are both `empty`). */
+function passable(block: ScanBlock | null): boolean {
+  return block !== null && block.boundingBox === 'empty';
+}
+
+/**
+ * The nearest column within 4 blocks whose cells at the Body's head level and the one above are
+ * passable, so a swimmer that steers there rises into air. Null when no such column is in range.
+ */
+export function findBreathingColumn(
+  read: BlockReader,
+  from: { x: number; y: number; z: number },
+): { x: number; z: number } | null {
+  const feet = Math.floor(from.y);
+  const cx = Math.floor(from.x);
+  const cz = Math.floor(from.z);
+  let best: { x: number; z: number } | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let dx = -BREATH_RADIUS; dx <= BREATH_RADIUS; dx++) {
+    for (let dz = -BREATH_RADIUS; dz <= BREATH_RADIUS; dz++) {
+      const distance = dx * dx + dz * dz;
+      if (distance >= bestDistance) continue;
+      const x = cx + dx;
+      const z = cz + dz;
+      if (!passable(read(x, feet + 1, z)) || !passable(read(x, feet + 2, z))) continue;
+      best = { x, z };
+      bestDistance = distance;
     }
   }
   return best;
@@ -155,17 +192,43 @@ export function steerBlocked(bot: Bot, to: Vec3): boolean {
 }
 
 /**
- * Swims straight up with jump held until the Body has air or is out of the water; the way out of
- * deep water with no stand block within range. The target of the walk is not used.
+ * Swims up with jump held on every physics tick until the Body has air or is out of the water; the
+ * way out of deep water with no stand block within range. When a solid block is directly above the
+ * head (an undercut bank), it first steers to the nearest breathing column, then rises. The target
+ * of the walk is not used.
  */
 export const swimUp: EscapeMover = async (walk) => {
   const { bot } = walk;
-  try {
+  const read: BlockReader = (x, y, z) => bot.blockAt(new Vec3(x, y, z));
+  // Jump is set again on every tick: a handler or the pathfinder may clear it while the Body swims.
+  const holdJump = (): void => {
     bot.setControlState('jump', true);
+  };
+  let steering = false;
+  bot.on('physicsTick', holdJump);
+  try {
+    holdJump();
     while (!walk.signal.aborted && !walk.expired() && !walk.reached()) {
+      const here = bot.entity.position;
+      const ceiling = read(Math.floor(here.x), Math.floor(here.y + 1.85), Math.floor(here.z));
+      const column = ceiling?.boundingBox === 'block' ? findBreathingColumn(read, here) : null;
+      if (column) {
+        const centre = new Vec3(column.x + 0.5, here.y, column.z + 0.5);
+        await bot.lookAt(centre, true);
+        const wantForward = !steerBlocked(bot, centre);
+        if (wantForward !== steering) {
+          steering = wantForward;
+          bot.setControlState('forward', steering);
+        }
+      } else if (steering) {
+        steering = false;
+        bot.setControlState('forward', false);
+      }
       await bot.waitForTicks(1);
     }
   } finally {
+    bot.off('physicsTick', holdJump);
+    if (steering) bot.setControlState('forward', false);
     bot.setControlState('jump', false);
   }
 };
@@ -188,11 +251,15 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
   const limitTicks = options.limitTicks ?? ESCAPE_LIMIT_TICKS;
   const mover = options.mover ?? walkOutOfHazard;
   const swimmer = options.swimmer ?? swimUp;
+  // The tick a give-up opens the quiet window. Cooldown counts from the firing tick, and a run lasts
+  // the whole limit, so a cooldown alone lets the reflex fire again the tick it gives up.
+  let quietUntil = Number.NEGATIVE_INFINITY;
   return {
     name: 'hazard_escape',
     priority: 90,
     cooldownTicks: COOLDOWN_TICKS,
     check(view) {
+      if ((view.tick ?? 0) < quietUntil) return null;
       if (view.inFluid === 'lava') return { hazard: 'lava' };
       if (view.inFluid === 'water' && view.air <= DROWNING_AIR) {
         return { hazard: 'drowning', air: view.air };
@@ -210,6 +277,7 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       const startTick = view.tick ?? ctx.tick;
       const expired = (): boolean => (view.tick ?? ctx.tick) - startTick >= limitTicks;
       const giveUp = (detail: string): ReflexOutcome => {
+        quietUntil = (view.tick ?? ctx.tick) + COOLDOWN_TICKS;
         ctx.sink.wake({ reason: 'reflex_danger', tick: ctx.tick, intentId: null, detail });
         return { result: 'abandoned', detail };
       };
@@ -229,7 +297,8 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       // Drowning always swims up first: with low air the way out is up, not along the bank.
       if (drowning) {
         const surfaced = (): boolean => recovered() || view.inFluid !== 'water';
-        await swimmer({ ...walk, target: view.position, reached: surfaced });
+        const swimExpired = (): boolean => (view.tick ?? ctx.tick) - startTick >= SWIM_TICKS;
+        await swimmer({ ...walk, target: view.position, reached: surfaced, expired: swimExpired });
       }
       if (target && !landed() && !expired()) await mover({ ...walk, target });
       if (landed()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };

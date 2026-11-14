@@ -139,6 +139,35 @@ describe('hazard-escape: drowning', () => {
     expect(outcome.result).toBe('abandoned');
     expect(sink.wakes).toHaveLength(1);
   });
+
+  it('stays quiet for the cooldown after a give-up, so the Mind action it hands back is not cancelled', async () => {
+    const { view, state, bot } = pond(6);
+    const { ctx } = basicContext(view, bot);
+    const reflex = createHazardEscapeReflex({
+      swimmer: async () => undefined,
+      mover: async () => undefined,
+    });
+    await reflex.run({ hazard: 'drowning', air: 6 }, ctx);
+    state.tick = 1;
+    expect(reflex.check(view)).toBeNull();
+    state.tick = 40;
+    expect(reflex.check(view)).toEqual({ hazard: 'drowning', air: 6 });
+  });
+
+  it('gives the swim-up a share of the limit, so the walk out still runs', async () => {
+    const { view, state, bot } = pond(6);
+    const { ctx } = basicContext(view, bot);
+    let moverRan = false;
+    await createHazardEscapeReflex({
+      swimmer: async (walk) => {
+        while (!walk.expired()) state.tick += 1;
+      },
+      mover: async (walk) => {
+        moverRan = !walk.expired();
+      },
+    }).run({ hazard: 'drowning', air: 6 }, ctx);
+    expect(moverRan).toBe(true);
+  });
 });
 
 describe('hazard-escape: run', () => {

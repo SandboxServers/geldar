@@ -39,6 +39,19 @@ describe('escapeLadder', () => {
     expect(fake.bot.dig).not.toHaveBeenCalled();
   });
 
+  it('a jump that moves the bot but leaves it in water is not worked', async () => {
+    const fake = scriptedBot({
+      water: true,
+      physics: (s) => {
+        if (s.controls.jump && !s.controls.sprint) s.position.x += 0.5;
+      },
+    });
+    const { result, lines } = run(fake);
+    await result;
+    expect(rungs(lines)).toContainEqual(['jump', false]);
+    expect(rungs(lines)).not.toContainEqual(['jump', true]);
+  });
+
   it('rung 2: sprint-jump toward the goal runs only after the plain jump failed', async () => {
     const fake = scriptedBot({
       physics: (s) => {

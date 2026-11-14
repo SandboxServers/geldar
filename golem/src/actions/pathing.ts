@@ -1,4 +1,4 @@
-import { classifyPathError, forbidCornerCutting } from './path-rules.ts';
+import { classifyPathError, dryGoal, forbidCornerCutting } from './path-rules.ts';
 
 export { classifyPathError, forbidCornerCutting };
 
@@ -132,6 +132,15 @@ const tierOne = new WeakMap<Bot, unknown>();
  * Tier 2 movements (decision 0164): digging at cost 4, towers with scaffolding, and the safety
  * rules of `goto-dig.ts`. Built fresh per walk, with the same doors and corner rules as tier 1.
  */
+function wetAt(bot: Bot): (x: number, y: number, z: number) => boolean {
+  return (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name === 'water';
+}
+
+/** True when the node's feet cell is water: a walk must not end there. */
+function isWetNode(bot: Bot, node: { x: number; y: number; z: number } | undefined): boolean {
+  return node !== undefined && wetAt(bot)(node.x, node.y, node.z);
+}
+
 function digMovements(bot: Bot): unknown {
   const digging = new Movements(bot);
   applyDigRules(digging, bot);
@@ -150,6 +159,8 @@ export function ensurePathfinder(bot: Bot): void {
   if (loaded) return;
   bot.loadPlugin(pathfinder);
   const movements = new Movements(bot);
+  // A swim costs about 3 walking steps (as tier 2 sets it), so a route does not cut across a lake.
+  (movements as unknown as { liquidCost: number }).liquidCost = 3;
   // Soft-dig (decision 0141, amended by 0164): leaves, vines, snow and plant cover only in tier 1.
   installSoftDig(movements);
   movements.allow1by1towers = false;
@@ -362,7 +373,8 @@ export function moveNear(
      */
     const startTierTwo = (): void => {
       void prefetchOwners([bot.entity.position.clone(), goal], opts.signal).then(() => {
-        if (!done) start(new goals.GoalNear(target.x, target.y, target.z, range));
+        if (!done)
+          start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
       });
     };
 
@@ -376,7 +388,7 @@ export function moveNear(
           // The library resolves an empty route (a sealed pit) as success without moving: no walk
           // happened, so the plain walk did not reach the goal and tier 2 starts (decision 0164).
           if (!partial && distance > range + 1 && enterDigTier()) {
-            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
             return;
           }
           const note = tally.note();
@@ -483,7 +495,7 @@ export function moveNear(
           replanPos = lastPos.clone();
           replanAge = bot.time.age;
           try {
-            start(new goals.GoalNear(target.x, target.y, target.z, range));
+            start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
           } catch (error) {
             done = true;
             cleanup();
@@ -507,9 +519,12 @@ export function moveNear(
       if (typeof planner.getPathTo !== 'function') return false;
       const found = planner.getPathTo(
         planner.movements,
-        new goals.GoalNear(target.x, target.y, target.z, range),
+        dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)),
       );
-      const last = found.path[found.path.length - 1];
+      // A walk never ends on water: trailing water nodes are dropped, and the last dry node is the end.
+      let end = found.path.length - 1;
+      while (end >= 0 && isWetNode(bot, found.path[end])) end--;
+      const last = found.path[end];
       if (!last) return false;
       const here = bot.entity.position;
       if (here.distanceTo(new Vec3(last.x + 0.5, last.y, last.z + 0.5)) < 1.5) return false;
@@ -535,7 +550,7 @@ export function moveNear(
         void prefetchOwners([stallDigFrom, goal], opts.signal);
       }
       try {
-        start(new goals.GoalNear(target.x, target.y, target.z, range));
+        start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
       } catch (error) {
         done = true;
         cleanup();
@@ -570,7 +585,7 @@ export function moveNear(
         replanPos = bot.entity.position.clone();
         replanAge = bot.time.age;
         try {
-          start(new goals.GoalNear(target.x, target.y, target.z, range));
+          start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
         } catch (error) {
           done = true;
           cleanup();
@@ -621,7 +636,7 @@ export function moveNear(
         replanAge = bot.time.age;
         haltPathing(bot);
         try {
-          start(new goals.GoalNear(target.x, target.y, target.z, range));
+          start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
         } catch (error) {
           done = true;
           cleanup();
@@ -638,7 +653,7 @@ export function moveNear(
     bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
 
     try {
-      start(new goals.GoalNear(target.x, target.y, target.z, range));
+      start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
     } catch (error) {
       // A synchronous throw skips the handlers above, so undo the watchdog and listener here.
       done = true;

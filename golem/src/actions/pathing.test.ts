@@ -362,6 +362,11 @@ describe('moveNear stall then replan', () => {
       .mockImplementationOnce(async () => {
         fake.entity.position = new Vec3(6.5, 64, 0.5);
       });
+    // The partial walk checks each node for water: this fake world is dry air everywhere.
+    (fake as unknown as { blockAt: unknown }).blockAt = () => ({
+      name: 'air',
+      boundingBox: 'empty',
+    });
     fake.pathfinder.getPathTo = vi.fn(() => ({
       status: 'noPath',
       path: [
@@ -375,6 +380,36 @@ describe('moveNear stall then replan', () => {
     });
     expect(result).toMatchObject({ ok: true, partial: true, message: PARTIAL_TEXT });
     expect(fake.pathfinder.goto).toHaveBeenCalledTimes(2);
+  });
+
+  it('a partial walk ends on the last dry node, not on the water it reached', async () => {
+    const fake = fakeBot() as FakeBot & {
+      pathfinder: { getPathTo?: unknown; movements?: unknown; goto: unknown };
+    };
+    (fake as unknown as { blockAt: unknown }).blockAt = (v: Vec3) => ({
+      name: v.x >= 6 ? 'water' : 'air',
+      boundingBox: 'empty',
+    });
+    fake.pathfinder.goto = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw pathError('NoPath');
+      })
+      .mockImplementationOnce(async () => undefined);
+    fake.pathfinder.getPathTo = vi.fn(() => ({
+      status: 'noPath',
+      path: [
+        { x: 3, y: 64, z: 0 },
+        { x: 6, y: 64, z: 0 },
+        { x: 7, y: 64, z: 0 },
+      ],
+    }));
+    await moveNear(asBot(fake), { x: 20, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+    });
+    const walked = vi.mocked(fake.pathfinder.goto).mock.calls[1]?.[0] as unknown as { x: number };
+    expect(walked).toMatchObject({ x: 3, y: 64, z: 0 });
   });
 
   it('is plain blocked with a fixed text when no partial step exists', async () => {
