@@ -80,7 +80,8 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
       sub: ['_INBOX.>'],
     },
-    eventsink: { pub: [`geldar.${s}.dlq`, ...JS], sub: ['_INBOX.>'] },
+    // State (0280, AN-02b): the eventsink publishes the level push on state.<life>.level.
+    eventsink: { pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS], sub: ['_INBOX.>'] },
     mcp: {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
@@ -386,11 +387,13 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.kino.>`,
       `geldar.${SHARD}.blockowner.changed`,
       `geldar.${SHARD}.ctl.body.>`,
+      `geldar.${SHARD}.state.*.level`,
     ]);
     expect(by('paper')?.deny).toEqual([
       control,
       `geldar.${SHARD}.blockowner.query`,
       `geldar.${SHARD}.ctl.body.>`,
+      `geldar.${SHARD}.state.*.level`,
     ]);
     expect(by('kino')?.deny).toEqual([]);
     const reach = (subject: string, list: string[]) =>
@@ -435,5 +438,34 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(by('paper')?.deny).toContain(query);
     expect(canPub(query)).not.toContain('kino');
     expect(canSub(changed)).not.toContain('kino');
+  });
+
+  // 0280 (the ACL follow-up): a Body may not forge a level push. The body and paper roles hold a broad publish on
+  // geldar.<s>.>, so the state push is denied to them by name; the request (state.<life>.proficiency) stays theirs and
+  // the eventsink publishes the push. NATS matching: `*` is one token, `>` is the rest of the subject.
+  it('denies the body and paper roles a level push, keeps their proficiency request, and lets the eventsink publish the push', () => {
+    const entries = parseEntries(rendered?.conf ?? '');
+    const by = (u: string) => entries.find((e) => e.user === u);
+    const matches = (pattern: string, subject: string) => {
+      const p = pattern.split('.');
+      const t = subject.split('.');
+      for (let i = 0; i < p.length; i++) {
+        if (p[i] === '>') return i < t.length;
+        if (i >= t.length || (p[i] !== '*' && p[i] !== t[i])) return false;
+      }
+      return p.length === t.length;
+    };
+    const canPub = (subject: string) =>
+      entries
+        .filter(
+          (e) => e.pub.some((p) => matches(p, subject)) && !e.deny.some((p) => matches(p, subject)),
+        )
+        .map((e) => e.user);
+    const level = `geldar.${SHARD}.state.life_1.level`;
+    const request = `geldar.${SHARD}.state.life_1.proficiency`;
+    expect(by('body')?.deny).toContain(`geldar.${SHARD}.state.*.level`);
+    expect(by('paper')?.deny).toContain(`geldar.${SHARD}.state.*.level`);
+    expect(canPub(level)).toEqual(['eventsink']);
+    expect(canPub(request)).toContain('body');
   });
 });

@@ -376,13 +376,16 @@ function Get-NatsUsers([string] $Shard) {
     body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
       # Control (C7-03b1): the body never publishes a ctl.body request, so it cannot start or stop a body for an owner.
-      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>");
+      # State (0280): the body never publishes a level push, so it cannot forge a domain level. It still requests the
+      # proficiency subject (state.<life>.proficiency), which this deny does not match.
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.state.*.level");
       # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
       # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
       Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", '_INBOX.>') }
     mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       Sub = @('_INBOX.>') }
-    eventsink = @{ Pub = @("geldar.$s.dlq") + $js; Sub = @('_INBOX.>') }
+    # State (0280, AN-02b): the eventsink publishes the level push (state.<life>.level). Its subscription to the request is AN-11a.
+    eventsink = @{ Pub = @("geldar.$s.dlq", "geldar.$s.state.>") + $js; Sub = @('_INBOX.>') }
     mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
     # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
     velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
@@ -390,7 +393,8 @@ function Get-NatsUsers([string] $Shard) {
     # Maintenance (CD-1c): the plugin reads the notice subject and says the line; the deploy's publish is CD-1d.
     # Block ownership (decision 0165): the plugin answers blockowner.query (replies go to the inbox) and publishes blockowner.changed;
     # it is denied publishing the query itself.
-    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query", "geldar.$s.ctl.body.>"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
+    # State (0280): paper is denied the level push too; the eventsink is the only publisher of it.
+    paper = @{ Pub = @("geldar.$s.>") + $js; PubDeny = @("geldar.$s.kino.control", "geldar.$s.blockowner.query", "geldar.$s.ctl.body.>", "geldar.$s.state.*.level"); Sub = @("geldar.$s.kino.control", "geldar.$s.maintenance", "geldar.$s.blockowner.query", '_INBOX.>') }
     # Kino: Glass reads the feed and publishes control, and nothing else. Created with the others; mounted only by compose/colo-kino.yml.
     kino = @{ Pub = @("geldar.$s.kino.control"); Sub = @("geldar.$s.kino.*.feed", '_INBOX.>') }
     # Deploy (CD-1d): colo-notice.sh publishes the maintenance notice as this user and nothing else (no JetStream API, no Kino).
