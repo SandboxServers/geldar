@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { FlagQuery } from '../src/admin.ts';
 import { AUDIT_LOST_CODE, auditActor, productionApi } from '../src/production-api.ts';
@@ -133,10 +132,11 @@ describe('production owner API wiring (C7-04b-5)', () => {
       admin: false,
     });
     const at = db.statements.findIndex((s) => s.startsWith('INSERT INTO register_audit'));
-    const expected = createHash('sha256').update('reg-owner-x', 'utf8').digest('hex').slice(0, 16);
+    // Literal: first 16 hex chars of SHA-256 over the UTF-8 bytes of 'reg-owner-x' (the SQL formula in 0025 and 0035).
+    const pinned = 'c45c62f23b8d5e0c';
     expect(at).toBeGreaterThanOrEqual(0);
-    expect(db.values[at]?.[0]).toBe(expected);
-    expect(auditActor('reg-owner-x')).toBe(expected);
+    expect(db.values[at]?.[0]).toBe(pinned);
+    expect(auditActor('reg-owner-x')).toBe(pinned);
     expect(db.values[at]?.[0]).not.toBe('reg-owner-x');
   });
 });

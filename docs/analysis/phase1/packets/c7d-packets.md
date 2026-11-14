@@ -2,7 +2,7 @@
 
 Written 2026-11-13. Replaces the single C7-04 card in [c7-user-management-packets.md](c7-user-management-packets.md) (its section now points here). Rulings: decisions [0152](../../../../decisions/0152-programmatic-body-management-for-owners.md) (API, two credentials, supervisor), [0170](../../../../decisions/0170-owner-management-values-and-admin-flag.md) (values, admin flag), [0172](../../../../decisions/0172-human-skin-upload-held-for-approval.md) (skins, not used here), [0108](../../../../decisions/0108-mcp-roster-source-of-truth.md) (roster source). The draft OpenAPI document is moved verbatim into the appendix at the end of this file; each card below names the paths and schemas it ships. The old card's rules and test list are carried into the three cards (git history at `c222d2b3` has the original).
 
-Order: C7-04a (wave 2, after C7-02b), then C7-04b (wave 2, after C7-04a), then C7-04c (wave 3, after C7-04a and C7-03b1). The three share `threshold/register/src/api/`, one file per resource. Each card edits `server.ts` only in its own route-table line, and ops merges those lines one at a time.
+Order: C7-04a (wave 2, after C7-02b), then C7-04b (wave 2, after C7-04a), then C7-04e (wave 3, after C7-04b, the PATCH route C7-04b did not build; C7-06 needs it), then C7-04c (wave 3, after C7-04a and C7-03b1). The three share `threshold/register/src/api/`, one file per resource. Each card edits `server.ts` only in its own route-table line, and ops merges those lines one at a time.
 
 Shared facts (checked on `origin/main` c222d2b3 and the wave branch):
 
@@ -61,13 +61,13 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 ## C7-04b: agents and tokens resources (owner-keys routes, token renew and revoke, onboarding hand-off)
 
-- **id / wave / lane.** C7-04b, wave 2 (after C7-04a merges). Register lane, serial after C7-04a. **branch.** `phase1/c7-04b-agents-tokens`. **migration.** none in this card (the session functions it calls are migration 0035, built in C7-04b-3). **size.** M (one session; the owner-key routes are the first thing to cut if it runs long, and go to a C7-04b2 card). **Status.** Built except PATCH; PATCH moved to C7-06. The rest is built in C7-04b-1 to C7-04b-5 (branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036); pending merge into wave 3. The PATCH spec in this card is not built here. Deviations and wording: `worknotes/C7-04b.md`.
+- **id / wave / lane.** C7-04b, wave 2 (after C7-04a merges). Register lane, serial after C7-04a. **branch.** `phase1/c7-04b-agents-tokens`. **migration.** none in this card (the session functions it calls are migration 0035, built in C7-04b-3). **size.** M (one session; the owner-key routes are the first thing to cut if it runs long, and go to a C7-04b2 card). **Status.** Built except PATCH; PATCH moved to C7-04e (its own card, because C7-06's may-edit cannot cover the route). The rest is built in C7-04b-1 to C7-04b-5 (branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036); pending merge into wave 3. The PATCH spec in this card is not built here. Deviations and wording: `worknotes/C7-04b.md`.
 - **Goal.** The resource routes for agents, player tokens and owner keys, wired to the services that exist (`tokens-service.ts`, `owner-keys-service.ts`), with the Postgres adapter for the key store that C7-02b did not ship (built in C7-04b-3).
 - **Credential rule (decision 0173, API v1).** Two credentials: the cookie session (account page; CSRF on every write) and a Bearer owner key (scopes `read`, `body`, `manage`). Token rotate and revoke and all owner-key routes are cookie-session only; a Bearer key is refused there. Bearer-driven rotation and key management are candidate card C7-04d. The owner-key session functions (migration 0035, `mintOwnerKeyBySession`, `listOwnerKeysBySession`, `revokeOwnerKeyBySession`) are built in C7-04b-3.
 
 ### Files
 
-- may-edit: `threshold/register/src/api/agents.ts` (list, GET one, PATCH), `threshold/register/src/api/tokens.ts` (rotate, revoke), `threshold/register/src/api/owner-keys.ts` (list, mint, revoke), `threshold/register/src/owner-keys-pg.ts` (adapter over the four `register_*_owner_key*` definer functions, one file), `threshold/register/src/tokens-pg.ts` only if `TokenStore` has no Postgres adapter yet, the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04b.md`.
+- may-edit: `threshold/register/src/api/agents.ts` (list, GET one; PATCH (not built, see Status)), `threshold/register/src/api/tokens.ts` (rotate, revoke), `threshold/register/src/api/owner-keys.ts` (list, mint, revoke), `threshold/register/src/owner-keys-pg.ts` (adapter over the four `register_*_owner_key*` definer functions, one file), `threshold/register/src/tokens-pg.ts` only if `TokenStore` has no Postgres adapter yet, the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04b.md`.
 - must-not-edit: `api/agents-read.ts` beyond what the list needs, `account*.ts` (C7-06), `supervisor/`, `docs/spec.md`, `contract/`.
 - The onboarding hand-off (rotate) goes to the C7-05 page on the wave branch; read its path from `worknotes/C7-05.md` there, do not guess it.
 - Follow-up (wave 2 fix H, orchestrator ruling F4): the onboarding page and `docs/players/README.md` describe only what works today. "New token" revokes the old token immediately, and there is no expiry-date display, no 14-day renewal warning and no 10-minute grace. When renewal wires up and the account page shows expiry, change the onboarding expiry paragraph, the README "Making a new token" section and the 401 troubleshooting line together, and the pinned wording in `threshold/register/test/revocation-wording.test.ts` with them. The 90-day expiry sentence (F3) stays in the README and the onboarding text when renewal wires up: renewal adds the expiry display and the warning beside it and does not remove the sentence.
@@ -76,7 +76,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 - `GET /agents` (scope `read`): own agents only, `Agent` shape from the draft (`playerId, displayName, status, body, creditsLeft, publicCamera, thoughtsDelayedPublic, createdAt`, plus `tokenExpiresAt, tokenLastUsedAt, lastSeenAt` when known). `body` is read from the stored state here; the live body state comes in 04c.
 - `GET /agents/{playerId}` (scope `read`): the same shape, through the 04a guard.
-- `PATCH /agents/{playerId}` (cookie session only, CSRF; decision 0173): body `AgentPatch`. Accepts `publicCamera` and `thoughtsDelayedPublic` (booleans). A `displayName` field is refused with 422 `invalid` in this card, because rename is C7-07 and stays out. Any other field is 422 `invalid`. A foreign agent is 404.
+- `PATCH /agents/{playerId}` (not built, see Status; the spec is in C7-04e) (cookie session only, CSRF; decision 0173): body `AgentPatch`. Accepts `publicCamera` and `thoughtsDelayedPublic` (booleans). A `displayName` field is refused with 422 `invalid` in this card, because rename is C7-07 and stays out. Any other field is 422 `invalid`. A foreign agent is 404.
 - `POST /agents/{playerId}/tokens` (cookie session only, CSRF; Bearer rotation is deferred to C7-04d, decision 0173): rotate through `tokens-service`. 201 `TokenOnce` (`token` matches `^gmcp-[0-9a-f]{64}$`, `expiresAt` 90 days out, 0170 point 1). The token is returned once. A `GET` of the agent never returns it. Hand-off: the response carries `Link: </register/...onboarding path from C7-05>; rel="next"` when C7-05 is merged, otherwise no Link and the report says so.
 - `POST /agents/{playerId}/tokens/revoke` (cookie session only, CSRF): 204. The revoked token fails on the next use.
 - `GET /owner-keys` (cookie session only; a read, so no CSRF): `KeyMeta` list (`keyId, label, scopes, expiresAt, lastUsedAt, createdAt`). Never a key value.
@@ -88,7 +88,7 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 | Route | Cookie session | Bearer owner key |
 |---|---|---|
 | `GET /agents`, `GET /agents/{playerId}` | accepted | scope `read` (other scopes: 403 `scope_missing`) |
-| `PATCH /agents/{playerId}` | accepted, CSRF on the write | 401 `unauthenticated` |
+| `PATCH /agents/{playerId}` (not built, see Status) | accepted, CSRF on the write | 401 `unauthenticated` |
 | `POST .../tokens`, `POST .../tokens/revoke` | accepted, CSRF on the write | 401 `unauthenticated` |
 | `GET /owner-keys` | accepted (read, no CSRF) | 401 `unauthenticated` |
 | `POST /owner-keys`, `POST /owner-keys/{keyId}/revoke` | accepted, CSRF on the write | 401 `unauthenticated` |
@@ -96,8 +96,8 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 ### Tests (each fails on revert)
 
 - Agents list returns only the caller's agents (two-owner fixture). Revert: drop the owner filter; the test fails.
-- PATCH accepts `publicCamera`; `displayName` is 422 `invalid`; an unknown field is 422. Revert: drop the field check; the displayName test fails.
-- PATCH with a Bearer key (`read`, or `manage`) is 401 `unauthenticated` (cookie-only, decision 0173); with a cookie session it is accepted; a foreign agent is 404.
+- PATCH (not built, see Status) accepts `publicCamera`; `displayName` is 422 `invalid`; an unknown field is 422. Revert: drop the field check; the displayName test fails.
+- PATCH (not built, see Status) with a Bearer key (`read`, or `manage`) is 401 `unauthenticated` (cookie-only, decision 0173); with a cookie session it is accepted; a foreign agent is 404.
 - Rotate returns 201 with a `gmcp-` token once; a second `GET` of the agent and a second list never contain it. Revert: include the token in the GET; the once-test fails.
 - Rotate abort: the store fails after issuing; the response is `500 internal`, and the previous token still works (no half-rotated state). Revert: issue before the store write check; the old-token test fails.
 - Revoke: 204, then the token is refused on the next use. Revert: skip the revoke call; the refused test fails.
@@ -110,7 +110,7 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 - Requirement moved from C7-04a (ruling 2): player token at the API is refused. Black-box test: a `gmcp-` token presented at `/register/api/v1/agents/{id}` answers 401 `unauthenticated` and no agent body. Revert: resolve `gmcp-` through the owner store; the test fails.
 - Requirement moved from C7-04a (ruling 2): revoked-key replay is refused and audited. Test: after `POST /owner-keys/{keyId}/revoke`, the revoked `gowner-` key presented again answers 401 and each refused replay writes one audit row (the C7-02b `key.use` row from the SQL resolve, or a router row if the store does not). Revert: skip the audit write on the refused path; the test fails.
 
-- Credential rule (decision 0173): a Bearer owner key with every scope, `manage` included, at each cookie-only route in the table above (`PATCH` agent, both token routes, the three owner-key routes) answers 401 `unauthenticated`, one row per route, and writes nothing. Revert: let a Bearer key reach these routes; the rows fail.
+- Credential rule (decision 0173): a Bearer owner key with every scope, `manage` included, at each cookie-only route in the table above (`PATCH` agent (not built, see Status), both token routes, the three owner-key routes) answers 401 `unauthenticated`, one row per route, and writes nothing. Revert: let a Bearer key reach these routes; the rows fail.
 - CSRF: a cookie-session write to those routes without `X-CSRF-Token`, or with a wrong one, answers 403 `csrf_required` and writes nothing; with the session's token the same write is accepted. Revert: skip the CSRF check on one route; that route's row fails.
 - Bearer read: a `read` key at `GET /agents` is 200; a key with only `body` is 403 `scope_missing`. Revert: drop the scope check; the body-only test fails.
 - Session path (built in C7-04b-3): a cookie session with a banned or unknown identity is refused before the database, and a refused owner-key list is never an empty list (`owner-keys-session.test.ts`, `owner-keys-pg.test.ts`). Revert: return an empty list on 42501; the list-refusal test fails.
@@ -206,6 +206,34 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ---
 
+## C7-04e: PATCH /agents/{playerId} (agent visibility flags)
+
+- **id / wave / lane.** C7-04e, wave 3 (after C7-04b merges; before C7-06, which depends on it). Register lane, serial after C7-04b. **branch.** `phase1/c7-04e-agent-patch`. **migration.** none (`PgStore.setPublicCamera` and `PgStore.setThoughtsDelayedPublic` call definer functions that exist). **size.** S. **Status.** Ready. Split from C7-04b: the route was in the C7-04b card and was not built there. C7-06's may-edit cannot cover the route file, so the route has its own card (wave 3 review 2, fix note 1). **depends.** C7-04b (the cookie session path and the `production-api.ts` wiring). Decision 0173, point 1 (cookie session only).
+- **Goal.** The one agent route C7-04b left out. `PATCH /agents/{playerId}` sets the two visibility flags that the account page toggles (C7-06 calls it). Rename stays in C7-07.
+- **Files.**
+  - may-edit: `threshold/register/src/api/agents.ts` (new; the PATCH handler only, the list and read stay in `agents-list.ts` and `agents-read.ts`), the route-table line in `threshold/register/src/api/index.ts`, `threshold/register/src/api/owner-api-v1.yaml` (the `patch` operation and the `AgentPatch` schema), their tests, `docs/analysis/phase1/worknotes/C7-04e.md`.
+  - must-not-edit: `account*.ts` (C7-06), `api/agents-read.ts`, `api/agents-list.ts`, `pg-store.ts` and `store.ts` (used read-only), `supervisor/`, `docs/spec.md`, `contract/`.
+- **Route.** `PATCH /agents/{playerId}` (cookie session only, CSRF on the write; decision 0173): body `AgentPatch`. Accepts `publicCamera` and `thoughtsDelayedPublic`, each a boolean, alone or together. Each goes to its store method: `setPublicCamera(identityHash, playerId, value)` (keyed by the session's identity hash) and `setThoughtsDelayedPublic`. 200 with the Agent view that `GET /agents/{playerId}` returns (through `agentView`).
+  - A `displayName` field is 422 `invalid` (rename is C7-07). Any other unknown field is 422 `invalid`. A flag that is not a boolean is 422 `invalid`. Whether an empty body is 422 or a no-op is decided in this card and written in its worknote.
+  - A foreign or unknown agent is 404 through the agent guard (C7-04a); the store is not called.
+  - A store `false` (the player is not the owner's) is 404, not 200.
+  - A Bearer key of any scope is 401 `unauthenticated`: the route does not accept that credential.
+  - The store throws when a toggle is rate limited (the 10 second camera window). The route answers with the mapping the account page uses for that case (`account.ts`, the `setPublicCamera` call), not 500.
+- **Tests (each fails on revert).**
+  - `publicCamera: true` with a cookie session and the CSRF token is 200, and `setPublicCamera` runs once with the session's identity hash. Revert: skip the store call; the test fails.
+  - `thoughtsDelayedPublic` likewise, through `setThoughtsDelayedPublic`.
+  - `displayName` is 422 `invalid` and no store method runs. Revert: drop the displayName check; the test fails.
+  - An unknown field and a non-boolean flag are 422 `invalid`, and nothing is written.
+  - A write without the CSRF token, or with a wrong one, is 403 `csrf_required`, and nothing is written.
+  - A Bearer key with `read`, `body` or `manage` is 401 `unauthenticated`, and nothing is written.
+  - A foreign agent is 404. A store `false` is 404. Revert: map `false` to 200; the false-test fails.
+  - Abort: the store throws (not a rate limit). The response is `500 internal` and no success is reported. Revert: catch the error and answer 200; the test fails.
+  - A rate-limited toggle gets the account page's mapped status, and the flag is unchanged. Revert: map it to 500; the test fails.
+  - OpenAPI: `owner-api-v1.yaml` has the `patch` operation and the `AgentPatch` schema, and the lint passes.
+- **Checks.** Register tests, typecheck, the OpenAPI lint, `pwsh -NoProfile -File ./geldar.ps1 check`. The live lane is not run.
+
+---
+
 ## Appendix: draft OpenAPI document (moved verbatim from the old C7-04 card)
 
 The generator, not hand-written types, produces the types from `contract/` once that directory is free (see C7-04a). Until then the source is `threshold/register/src/api/owner-api-v1.yaml`.
@@ -220,6 +248,7 @@ paths:
     get: { summary: List my agents, scope: read, responses: { 200: { description: array of Agent } } }
   /agents/{playerId}:
     get: { summary: One agent, scope: read, responses: { 200: Agent, 404: NotFound } }
+    # Not built in C7-04b (see C7-04e). Cookie session only (decision 0173); the scope below is the superseded draft.
     patch: { summary: Rename or set visibility flags, scope: manage, requestBody: AgentPatch, responses: { 200: Agent, 422: Invalid } }
   /agents/{playerId}/body/start:   { post: { scope: body, responses: { 202: BodyOp, 409: Conflict, 429: RateLimited } } }
   /agents/{playerId}/body/stop:    { post: { scope: body, responses: { 202: BodyOp, 409: Conflict, 429: RateLimited } } }

@@ -73,7 +73,7 @@ Live lane: the roster integration test under `GELDAR_IT=1` on the shard (C3-04s)
 | 1 | C7-03b1 NATS contract, user binding, request/reply transport | C7-03a | `phase1/c7-03b1-nats-binding` | none | M |
 | 1 | C7-03b3 Postgres adapter and Docker client (non-register lane) | C7-03a, C3-04s, C7-12 | `phase1/c7-03b3-adapters` | none | L |
 | 2 | C7-04a API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (fan-out point; after C7-02b merges) | C7-02b, C7-12 | `phase1/c7-04a-api-core` | none | M |
-| 2 | C7-04b agents and tokens resources, owner-key routes, onboarding hand-off (built except PATCH, which moved to C7-06; branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036; pending merge into wave 3) | C7-04a | `phase1/c7-04b-agents-tokens` | none | M |
+| 2 | C7-04b agents and tokens resources, owner-key routes, onboarding hand-off (built except PATCH, which moved to C7-04e; branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036; pending merge into wave 3) | C7-04a | `phase1/c7-04b-agents-tokens` | none | M |
 | 2 | C7-04b-3 owner keys by cookie session (built; decision 0173; routes wired in C7-04b-4, merge pending) | C7-04b | `phase1/c7-04b3-session-keys` | 0035 | M |
 | candidate | C7-04d Bearer-driven token rotation and owner-key management (not scheduled in Phase 1) | C7-04b, C7-04b-3 | `phase1/c7-04d-bearer-keys` (proposed) | yes, at dispatch | M |
 
@@ -83,17 +83,18 @@ Live lane: none in wave 2 (C7-03b1 and C7-03b3 touch no node). The C7-03b2 rollo
 
 ### Wave 3: account page, rename, operator console, skin upload API
 
-The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-04a for C7-10); C7-03b2 does not. C7-03b4 (c7e-packets.md, Body container spec) blocks enabling the supervisor service: the C7-03b2 node steps wait for it. C7-04c (body routes) is in this wave and needs C7-04a and C7-03b1. Serial order inside the register lane: C7-06, then C7-04c and C7-07; C7-13a and C7-10 run beside C7-06 on disjoint files.
+The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-04a for C7-10); C7-03b2 does not. C7-03b4 (c7e-packets.md, Body container spec) blocks enabling the supervisor service: the C7-03b2 node steps wait for it. C7-04c (body routes) is in this wave and needs C7-04a and C7-03b1. Serial order inside the register lane: C7-04e, then C7-06, then C7-04c and C7-07; C7-13a and C7-10 run beside C7-06 on disjoint files.
 
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|
 | 1 | C7-03b2 compose service, deploy script, budget, runbook (before any live use; geldar-93 MERGE/DONE) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
 | 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
 | 1 | C7-04c body routes (start, stop, restart, status, log, retire through the supervisor) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
-| 1 | C7-06 account page v2 | C7-04b, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
+| 1 | C7-04e PATCH /agents/{playerId} visibility flags (split of C7-04b; cookie only) | C7-04b | `phase1/c7-04e-agent-patch` | none | S |
+| 1 | C7-06 account page v2 | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
 | 1 | C7-13a skin upload API and held store | C7-04b, C7-12 | `phase1/c7-13a-skin-upload-api` | 0031 | L |
 | 1 | C7-10 operator console, ban reasons (confirm the C7-04 part at dispatch) | C7-03a, C7-04a, C7-12 | `phase1/c7-10-operator-console` | 0030 | M |
-| 2 | C7-07 agent rename (after C7-06 merges; it edits the account page rename form; the PATCH route, moved from C7-04b to C7-06, stays rename-free) | C7-04b, C7-06 | `phase1/c7-07-agent-rename` | 0028 | S |
+| 2 | C7-07 agent rename (after C7-06 merges; it edits the account page rename form; the PATCH route, moved from C7-04b to C7-04e, stays rename-free) | C7-04b, C7-06 | `phase1/c7-07-agent-rename` | 0028 | S |
 
 Live lane: the account page on the node (C7-06), looked at on a phone width.
 
