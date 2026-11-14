@@ -16,12 +16,13 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.command.RemoteConsoleCommandSender;
 import org.bukkit.World;
 
 /**
  * {@code /geldar-backfill-graves}: records the gravestones already standing in loaded chunks as owned by the system
- * (decision 0195), for those placed before the recording existed. Console only: a player (even an operator) is refused,
- * so no human acts in the world through it. Unloaded chunks are not scanned; that is an offline region scan, out of
+ * (decision 0195), for those placed before the recording existed. Console or RCON only: a player (even an operator) is
+ * refused, so no human acts in the world through it. RCON is operator-only, as the console is. Unloaded chunks are not scanned; that is an offline region scan, out of
  * scope for decision 0195. Runs on the server thread, as the command executor always does.
  */
 final class GraveBackfillCommand implements CommandExecutor {
@@ -35,8 +36,8 @@ final class GraveBackfillCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!(sender instanceof ConsoleCommandSender)) {
-            sender.sendMessage("geldar-backfill-graves runs from the server console only.");
+        if (!isOperatorSender(sender)) {
+            sender.sendMessage("geldar-backfill-graves runs from the server console or RCON only.");
             return true;
         }
         List<SignSite> sites = new ArrayList<>();
@@ -53,6 +54,11 @@ final class GraveBackfillCommand implements CommandExecutor {
         sender.sendMessage("Backfilled " + found + " gravestone(s) from " + sites.size()
                 + " sign(s) in loaded chunks.");
         return true;
+    }
+
+    /** The senders allowed to run the backfill: the server console and RCON, both operator-only. */
+    static boolean isOperatorSender(CommandSender sender) {
+        return sender instanceof ConsoleCommandSender || sender instanceof RemoteConsoleCommandSender;
     }
 
     private static SignSite site(Sign sign) {
