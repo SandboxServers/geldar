@@ -69,6 +69,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 - may-edit: `threshold/register/src/api/agents.ts` (list, GET one, PATCH), `threshold/register/src/api/tokens.ts` (rotate, revoke), `threshold/register/src/api/owner-keys.ts` (list, mint, revoke), `threshold/register/src/owner-keys-pg.ts` (adapter over the four `register_*_owner_key*` definer functions, one file), `threshold/register/src/tokens-pg.ts` only if `TokenStore` has no Postgres adapter yet, the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04b.md`.
 - must-not-edit: `api/agents-read.ts` beyond what the list needs, `account*.ts` (C7-06), `supervisor/`, `docs/spec.md`, `contract/`.
 - The onboarding hand-off (rotate) goes to the C7-05 page on the wave branch; read its path from `worknotes/C7-05.md` there, do not guess it.
+- Follow-up (wave 2 fix H, orchestrator ruling F4): the onboarding page and `docs/players/README.md` describe only what works today. "New token" revokes the old token immediately, and there is no expiry-date display, no 14-day renewal warning and no 10-minute grace. When renewal wires up and the account page shows expiry, change the onboarding expiry paragraph, the README "Making a new token" section and the 401 troubleshooting line together, and the pinned wording in `threshold/register/test/revocation-wording.test.ts` with them.
 
 ### Routes
 

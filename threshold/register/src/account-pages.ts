@@ -22,7 +22,7 @@ export function accountPage(
           : form(
               `/register/players/${p.playerId}/token`,
               csrf,
-              '<button type="submit">New token (revokes the old one)</button>',
+              '<button type="submit">New token (revokes the old one immediately)</button>',
             ) +
             form(
               `/register/players/${p.playerId}/public-camera`,

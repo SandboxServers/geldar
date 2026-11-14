@@ -24,10 +24,11 @@ describe('docs/players/README.md', () => {
     expect(README).toMatch(/never run/i);
   });
 
-  it('states the 90 day expiry, the 14 day warning, and the 10 minute old-token grace', () => {
-    expect(README).toContain('90 days');
-    expect(README).toContain('14 days');
-    expect(README).toContain('10 minutes');
+  it('says a new token revokes the old one at once, and promises no expiry date, 14 day warning or 10 minute grace yet', () => {
+    expect(README).toContain('revokes the old one immediately');
+    expect(README).not.toContain('90 days');
+    expect(README).not.toContain('14 days');
+    expect(README).not.toContain('10 minutes');
   });
 
   it('says the token is shown once and never emailed', () => {

@@ -32,6 +32,23 @@ BEGIN
     ('gok-00000000000000c1', 'reg-ok-c', decode(repeat('c1', 32), 'hex'), ARRAY['manage'], now() + interval '90 days', NULL),
     ('gok-00000000000000d1', 'reg-ok-d', decode(repeat('d1', 32), 'hex'), ARRAY['manage'], now() + interval '90 days', NULL);
 
+  step := 'fixture: owner e (9 live manage keys, one revoked, one expired), owner h (admin, 10 live manage keys)';
+  INSERT INTO mcp_owners (owner_id, display, player_cap, is_admin) VALUES
+    ('reg-ok-e', 'e', 5, false), ('reg-ok-h', 'h', 5, true);
+  INSERT INTO owner_api_keys (key_id, owner_id, key_hash, scopes, expires_at, revoked_at)
+    SELECT 'gok-000000000000ee' || lpad(to_hex(i), 2, '0'), 'reg-ok-e',
+      sha256(convert_to('gok-000000000000ee' || lpad(to_hex(i), 2, '0'), 'UTF8')), ARRAY['manage'],
+      now() + interval '90 days', NULL
+    FROM generate_series(1, 9) AS g(i);
+  INSERT INTO owner_api_keys (key_id, owner_id, key_hash, scopes, expires_at, revoked_at) VALUES
+    ('gok-000000000000ee0a', 'reg-ok-e', sha256(convert_to('gok-000000000000ee0a', 'UTF8')), ARRAY['manage'], now() + interval '90 days', now()),
+    ('gok-000000000000ee0b', 'reg-ok-e', sha256(convert_to('gok-000000000000ee0b', 'UTF8')), ARRAY['manage'], now() - interval '1 second', NULL);
+  INSERT INTO owner_api_keys (key_id, owner_id, key_hash, scopes, expires_at)
+    SELECT 'gok-000000000000aa' || lpad(to_hex(i), 2, '0'), 'reg-ok-h',
+      sha256(convert_to('gok-000000000000aa' || lpad(to_hex(i), 2, '0'), 'UTF8')), ARRAY['manage'],
+      now() + interval '90 days'
+    FROM generate_series(1, 10) AS g(i);
+
   step := 'schema: a bad scope is refused by the table';
   refused := false;
   BEGIN
@@ -102,6 +119,65 @@ BEGIN
     RAISE EXCEPTION 'schema check (%): the admin key was refused', step;
   END IF;
 
+  step := 'escalation: a manage-only key cannot mint a body scope (42501 scope_escalation, no row)';
+  refused := false;
+  BEGIN
+    PERFORM register_mint_owner_key(decode(repeat('b1', 32), 'hex'), 'gok-000000000000b001',
+      decode(repeat('f1', 32), 'hex'), ARRAY['body']);
+  EXCEPTION WHEN insufficient_privilege THEN refused := (SQLERRM LIKE '%scope_escalation%');
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check (%): a manage-only key minted a body scope', step;
+  END IF;
+
+  step := 'cap first: owner b has one live key, so its manage key mints a manage key (subset passes)';
+  SELECT register_mint_owner_key(decode(repeat('b1', 32), 'hex'), 'gok-000000000000b002',
+    decode(repeat('f2', 32), 'hex'), ARRAY['manage']) INTO exp;
+  IF exp IS NULL THEN
+    RAISE EXCEPTION 'schema check (%): a manage key minting a manage subset was refused', step;
+  END IF;
+
+  RESET ROLE;
+  INSERT INTO owner_api_keys (key_id, owner_id, key_hash, scopes, expires_at) VALUES
+    ('gok-00000000000000b3', 'reg-ok-b', decode(repeat('b3', 32), 'hex'), ARRAY['read', 'manage'], now() + interval '90 days');
+  SET LOCAL ROLE geldar_register;
+
+  step := 'escalation: a read and manage key may mint a read key (subset passes)';
+  SELECT register_mint_owner_key(decode(repeat('b3', 32), 'hex'), 'gok-000000000000b004',
+    decode(repeat('f4', 32), 'hex'), ARRAY['read']) INTO exp;
+  IF exp IS NULL THEN
+    RAISE EXCEPTION 'schema check (%): a read and manage key minting a read subset was refused', step;
+  END IF;
+
+  step := 'cap last allowed: owner e has 9 live keys (revoked and expired not counted); the tenth mints';
+  SELECT register_mint_owner_key(sha256(convert_to('gok-000000000000ee01', 'UTF8')), 'gok-000000000000ca01',
+    sha256(convert_to('gok-000000000000ca01', 'UTF8')), ARRAY['manage']) INTO exp;
+  IF exp IS NULL THEN
+    RAISE EXCEPTION 'schema check (%): the tenth live key of owner e was refused', step;
+  END IF;
+
+  step := 'cap past: owner e has 10 live keys; an eleventh is refused with 53400 live_key_cap and mints nothing';
+  refused := false;
+  BEGIN
+    PERFORM register_mint_owner_key(sha256(convert_to('gok-000000000000ee01', 'UTF8')), 'gok-000000000000ca02',
+      sha256(convert_to('gok-000000000000ca02', 'UTF8')), ARRAY['manage']);
+  EXCEPTION WHEN configuration_limit_exceeded THEN refused := (SQLERRM LIKE '%live_key_cap%');
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check (%): an eleventh live key of owner e was minted', step;
+  END IF;
+
+  step := 'cap past: admins are not exempt; owner h (admin) at 10 live keys is refused with 53400';
+  refused := false;
+  BEGIN
+    PERFORM register_mint_owner_key(sha256(convert_to('gok-000000000000aa01', 'UTF8')), 'gok-000000000000ca03',
+      sha256(convert_to('gok-000000000000ca03', 'UTF8')), ARRAY['manage']);
+  EXCEPTION WHEN configuration_limit_exceeded THEN refused := (SQLERRM LIKE '%live_key_cap%');
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check (%): an admin minted past the live key cap', step;
+  END IF;
+
   step := 'revoke: another owner key id is not found (FALSE) and stays live';
   IF register_revoke_owner_key(decode(repeat('b1', 32), 'hex'), 'gok-00000000000000a1') IS NOT FALSE THEN
     RAISE EXCEPTION 'schema check (%): owner b revoked a key of owner a', step;
@@ -137,9 +213,10 @@ BEGIN
     RAISE EXCEPTION 'schema check (%): the minted key lifetime is not 90 days', step;
   END IF;
 
-  step := 'rows: the refused and duplicate mints wrote no key row';
+  step := 'rows: the refused, escalated, over-cap and duplicate mints wrote no key row';
   SELECT count(*) INTO n FROM owner_api_keys WHERE key_id IN ('gok-0000000000000e02', 'gok-0000000000000e03',
-    'gok-0000000000000e04', 'gok-0000000000000e05', 'gok-0000000000000e06', 'gok-0000000000000e07');
+    'gok-0000000000000e04', 'gok-0000000000000e05', 'gok-0000000000000e06', 'gok-0000000000000e07',
+    'gok-000000000000b001', 'gok-000000000000ca02', 'gok-000000000000ca03');
   IF n <> 0 THEN
     RAISE EXCEPTION 'schema check (%): % refused or duplicate mints left a row', step, n;
   END IF;
