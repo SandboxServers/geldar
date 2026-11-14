@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { OwnerRefusedError } from '../owner-agents-pg.ts';
 import { hasScope } from '../owner-keys-policy.ts';
 import { sendProblem } from '../problem.ts';
+import { agentsPatchRoutes } from './agents.ts';
 import { agentsListRoutes } from './agents-list.ts';
 import { agentsReadRoutes } from './agents-read.ts';
 import { authenticate, sameText } from './auth.ts';
@@ -41,6 +42,7 @@ export async function handleApi(
   const routes: readonly ApiRoute[] = [
     ...agentsListRoutes,
     ...agentsReadRoutes,
+    ...agentsPatchRoutes,
     ...tokenRoutes,
     ...ownerKeyRoutes,
     ...(deps.routes ?? []),
