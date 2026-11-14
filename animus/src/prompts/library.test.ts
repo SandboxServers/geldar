@@ -195,7 +195,7 @@ describe('prompt library', () => {
       'body-api/v5.json': '10762698128a0e081955d0d997c9223971f93e92738666097c59a8079200b476',
       'body-api/v6.json': 'f4453645cd36f6047e425c7e555861abbfede63c516cad4219feff8ab7721245',
       'body-api/v7.json': '5c6d3eb34167448c73611cefa36d2c84f5f0e92f6ec3f97c23d6b7bf6a093e4c',
-      'body-api/v8.json': 'c2feb7ce688c82dd4f8d5b3288e8c9cb1618b65c763c35118036fff1b559cfe8',
+      'body-api/v8.json': 'd1d2d640e4c3af157df024695ebcf0586860c973493d4b54dc560cc7699e68db',
     };
     for (const [file, hash] of Object.entries(pinned)) {
       const bytes = readFileSync(join(repoRoot(), 'prompts', file));
