@@ -15,8 +15,15 @@ dependencies {
     compileOnly(libs.coreprotect) {
         isTransitive = false
     }
+    // BlueMap's API for the agent skin provider (AgentSkinSetup). The server provides BlueMap; the jar is not bundled.
+    compileOnly(libs.bluemap.api) {
+        isTransitive = false
+    }
     implementation(libs.jnats)
 
+    testImplementation(libs.bluemap.api) {
+        isTransitive = false
+    }
     testImplementation(libs.paper.api)
     testImplementation(libs.gson)
     testImplementation(libs.json.schema.validator)

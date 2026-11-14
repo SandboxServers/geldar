@@ -2,7 +2,7 @@ name: GeldarCore
 version: "${version}"
 main: dev.geldar.core.GeldarCore
 api-version: "26.1"
-softdepend: [CoreProtect]
+softdepend: [CoreProtect, BlueMap]
 commands:
   geldar-backfill-graves:
     description: Records the gravestones in loaded chunks as owned by the system (console only, decision 0195).
