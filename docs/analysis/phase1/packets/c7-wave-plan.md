@@ -40,6 +40,7 @@ C7-05, C7-06, C7-09, C7-13c, owner approval --> C7-11 sign-up gate
 | C7-09 | 0029 deletion function and export view |
 | C7-10 | 0030 audit extension, ban reasons |
 | C7-13a | 0031 `skin_uploads` |
+| C7-13d | none (Candidate, wave 3, size S; palette-to-RGBA for `skin set`) |
 | C7-02a | 0032 `token_lifecycle` (ruled by the orchestrator; the plan had said none) |
 | C7-03b3 | 0033 `supervisor_display_name` (wave 2; not a spare) |
 | spare | none left; the next free number is 0034 |

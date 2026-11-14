@@ -23,6 +23,18 @@ On a dev machine with the Phase 0 shard, the original path still works: `pnpm --
 
 Join as the agent (or look at the tab list); the skin shows for viewers. A texture host other than `textures.minecraft.net` is refused by `skin import`.
 
+## Uploading a palette or legacy PNG
+
+`skin set` checks the PNG with `validateSkinPng` (`tools/players-cli/src/png.ts`) before anything is signed: 64x64 or 64x32 pixels, 8-bit RGB or RGBA only, no chunks but IHDR, IDAT and IEND, at most 24 KiB. A palette PNG is refused with `the skin must be 8-bit RGB or RGBA`; an extra `PLTE` or `tRNS` chunk is refused with `the skin PNG may only contain IHDR, IDAT and IEND chunks`. `skin import` takes the signed JSON (`--file`), not a PNG, so the PNG rule does not apply to it; the signed JSON is an owner secret and never goes in the repo, a chat or a command line.
+
+The display paths are more tolerant: Kino draws 64x64 and 64x32, and `skin heads` reads grey, RGB(A) and palette PNGs. A palette PNG can look right in Kino and BlueMap and still be refused by `skin set`.
+
+Convert it to 8-bit RGBA first, outside the repo, with an image tool on your machine (ImageMagick, for example): `magick in.png -type TrueColorAlpha -depth 8 PNG32:out.png`. Then run `players-cli skin set <player-id> out.png --check-only`, which uploads nothing. Keep `out.png` outside the repo. No converter verb exists yet, and this command has not been run against the ranger files (see card C7-13d).
+
+A 64x32 legacy skin stays 64x32; do not resize it. Whether MineSkin accepts the legacy 64x32 layout has not been verified, so a file that passes `--check-only` may still be refused by MineSkin.
+
+Decision [0140](../decisions/0140-agent-skins.md) approved MineSkin uploads for the six ranger skins only. Any further upload needs the owner's explicit approval, recorded before the upload runs.
+
 ## Verify a skin was applied
 
 The plugin keeps the `geldar-skins` bucket in memory through a live watch, so a key written while Velocity runs is used by the next login (no restart). Every login of a registered life writes one `skin:` line, with no texture value or signature:
