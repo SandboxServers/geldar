@@ -1,104 +1,12 @@
-import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import {
-  classifySleepError,
-  isNightOrStorm,
-  sleepAction,
-  sleepErrorText,
-  sleepFailure,
-} from './sleep.ts';
+import { BED, bed, fakeBot, OTHER_HALF, sleep } from './sleep.fakes.ts';
+import { classifySleepError, isNightOrStorm, sleepErrorText, sleepFailure } from './sleep.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
 }));
-
-interface FakeBlock {
-  name: string;
-  position: Vec3;
-}
-
-interface FakeOptions {
-  timeOfDay?: number;
-  thundering?: boolean;
-  /** The blocks in the world; `findBlocks` searches them in order. */
-  blocks?: FakeBlock[];
-  /** Messages `bot.sleep` rejects with, one per call, before it succeeds. */
-  sleepErrors?: string[];
-  /** True when the bot starts out in a bed. */
-  asleep?: boolean;
-  /** True when `bot.sleep` never settles, as when the server stays silent. */
-  hangSleep?: boolean;
-}
-
-/** A fake bot with a clock, a set of blocks, and a `sleep` that can reject. */
-function fakeBot(options: FakeOptions = {}): Bot {
-  const blocks = options.blocks ?? [];
-  const errors = [...(options.sleepErrors ?? [])];
-  let sleeping = options.asleep ?? false;
-  const bot = {
-    time: { timeOfDay: options.timeOfDay ?? 1_000 },
-    thunderState: options.thundering ? 1 : 0,
-    entity: { position: new Vec3(0, 64, 0) },
-    get isSleeping() {
-      return sleeping;
-    },
-    findBlocks: ({
-      matching,
-      count,
-    }: {
-      matching: (block: FakeBlock) => boolean;
-      maxDistance: number;
-      count: number;
-    }) =>
-      blocks
-        .filter(matching)
-        .slice(0, count)
-        .map((block) => block.position),
-    blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
-    sleep: vi.fn(async (_bed: FakeBlock) => {
-      if (options.hangSleep) return new Promise<void>(() => undefined);
-      const error = errors.shift();
-      // The server says "already sleeping" only when the bot is in a bed.
-      if (error && /already sleeping/i.test(error)) sleeping = true;
-      if (error) throw new Error(error);
-      sleeping = true;
-    }),
-  };
-  return bot as unknown as Bot;
-}
-
-/** Runs the `sleep` handler with a fresh abort signal, unless the test passes its own. */
-function sleep(bot: Bot, timeScale = 1, signal = new AbortController().signal) {
-  return sleepAction.run({ bot, signal, timeScale }, { do: 'sleep' });
-}
-
-/** A walk that never arrives: it resolves only when the signal it was given aborts. */
-const walkUntilAborted = (_bot: unknown, _target: unknown, _range: unknown, opts: MoveOpts) =>
-  new Promise((resolve) => {
-    opts.signal.addEventListener(
-      'abort',
-      () => resolve({ ok: false, reason: 'cancelled', message: 'move cancelled' }),
-      { once: true },
-    );
-  });
-
-/** The options the handler passed to `moveNear`. */
-interface MoveOpts {
-  signal: AbortSignal;
-}
-
-const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
-const OTHER_HALF = { name: 'white_bed', position: new Vec3(6, 64, 0) };
-
-/** A whole bed as the world holds it: two adjacent blocks along x, both named `name`. */
-function bed(name: string, x: number): FakeBlock[] {
-  return [
-    { name, position: new Vec3(x, 64, 0) },
-    { name, position: new Vec3(x + 1, 64, 0) },
-  ];
-}
 
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();
@@ -442,81 +350,5 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome.status).toBe('cancelled');
     expect(bot.sleep).not.toHaveBeenCalled();
-  });
-});
-
-describe('sleep: the hard stop (decision 0190)', () => {
-  // At timeScale 0.01 the 35 s hard stop is 350 ms of real time, so these tests run quickly.
-  const SCALE = 0.01;
-  const THREE_BEDS = [5, 9, 13].flatMap((x) => bed('white_bed', x));
-
-  it('cuts a walk that never arrives and says the search time ran out, before the action timeout', async () => {
-    const bot = fakeBot({ timeOfDay: 13_000, blocks: THREE_BEDS });
-    vi.mocked(moveNear).mockImplementationOnce(walkUntilAborted as never);
-    const outcome = await sleep(bot, SCALE);
-    expect(outcome).toMatchObject({
-      status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 1 of 3 nearby beds; the search time ran out; last: /),
-    });
-    expect(bot.sleep).not.toHaveBeenCalled();
-    expect(moveNear).toHaveBeenCalledWith(
-      bot,
-      THREE_BEDS[0]?.position,
-      1,
-      expect.objectContaining({ stallTicks: 300, timeScale: SCALE }),
-    );
-    // The walk in flight was told to stop: its signal is aborted.
-    expect(vi.mocked(moveNear).mock.calls[0]?.[3].signal.aborted).toBe(true);
-  });
-
-  it('cuts a sleep that never settles and says the search time ran out', async () => {
-    const bot = fakeBot({ timeOfDay: 13_000, blocks: THREE_BEDS, hangSleep: true });
-    const outcome = await sleep(bot, SCALE);
-    expect(outcome).toMatchObject({
-      status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 1 of 3 nearby beds; the search time ran out; last: /),
-    });
-    expect(bot.sleep).toHaveBeenCalledTimes(1);
-  });
-
-  it('bounds the out_of_reach retry: a second walk that never arrives is cut at the hard stop', async () => {
-    const bot = fakeBot({
-      timeOfDay: 13_000,
-      blocks: [{ ...BED }, { ...OTHER_HALF }],
-      sleepErrors: ['You are too far away'],
-    });
-    vi.mocked(moveNear)
-      .mockImplementationOnce((async () => ({ ok: true, distance: 0 })) as never)
-      .mockImplementationOnce(walkUntilAborted as never);
-    const outcome = await sleep(bot, SCALE);
-    expect(outcome).toMatchObject({
-      status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 1 of 1 nearby beds; the search time ran out; last: /),
-    });
-    expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
-    expect(vi.mocked(moveNear).mock.calls[1]?.[3].signal.aborted).toBe(true);
-    expect(bot.sleep).toHaveBeenCalledTimes(1);
-  });
-
-  it('is cancelled, not blocked, when the external signal aborts during the walk', async () => {
-    const controller = new AbortController();
-    const bot = fakeBot({ timeOfDay: 13_000, blocks: THREE_BEDS });
-    vi.mocked(moveNear).mockImplementationOnce(walkUntilAborted as never);
-    setTimeout(() => controller.abort(), 5);
-    const outcome = await sleep(bot, 1, controller.signal);
-    expect(outcome.status).toBe('cancelled');
-    expect(bot.sleep).not.toHaveBeenCalled();
-  });
-
-  it('a fast sleep still completes well inside the hard stop', async () => {
-    const bot = fakeBot({ timeOfDay: 13_000, blocks: [{ ...BED }] });
-    expect(await sleep(bot, SCALE)).toEqual({
-      status: 'completed',
-      detail: { bed: { x: 5, y: 64, z: 0 } },
-    });
-    expect(bot.isSleeping).toBe(true);
   });
 });
