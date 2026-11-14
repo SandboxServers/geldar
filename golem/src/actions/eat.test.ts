@@ -101,6 +101,34 @@ describe('eat', () => {
   });
 });
 
+describe('eat: not hungry wins over the refusals (decision 0216)', () => {
+  it.each([[['chicken']], [['rotten_flesh']], [['chicken', 'rotten_flesh']]])(
+    'says not hungry at 20 when %j is the only food carried',
+    async (items) => {
+      const bot = fakeBot({ food: 20, items });
+      const outcome = await eat(bot);
+      expect(outcome).toMatchObject({
+        status: 'failed',
+        reason: 'not_possible',
+        message: 'not hungry',
+      });
+      expect(bot.consume).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses chicken with rotten flesh at hunger 10 with the mixed sentence', async () => {
+    const bot = fakeBot({ food: 10, items: ['chicken', 'rotten_flesh'] });
+    const outcome = await eat(bot);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message:
+        'only raw chicken and rotten flesh are carried; they are eaten only when hunger is 6 or below',
+    });
+    expect(bot.consume).not.toHaveBeenCalled();
+  });
+});
+
 describe('eat: rotten flesh as a last resort', () => {
   it('eats rotten flesh when it is the only food and hunger is 6', async () => {
     const bot = fakeBot({ food: 6, items: ['rotten_flesh'], riseAfterMs: 100 });

@@ -21,7 +21,7 @@ Always banned: `spider_eye`, `poisonous_potato`, `pufferfish`, `suspicious_stew`
 
 Unchanged: `not hungry` at hunger 20 or more, and `food did not rise within` when the food level does not rise.
 
-A rotten-flesh-only or chicken-only carry above hunger 6 is refused with `not_possible` and a plain sentence stating the rule (`only rotten flesh is carried; it is eaten only when hunger is 6 or below`; `only raw chicken is carried; it is eaten only when hunger is 6 or below`).
+When nothing edible is carried above hunger 6, and raw chicken or rotten flesh is carried, `eat` is refused with `not_possible` and a plain sentence that names only what is carried: `only rotten flesh is carried; it is eaten only when hunger is 6 or below` (rotten flesh alone), `only raw chicken is carried; ...` (chicken alone), `only raw chicken and rotten flesh are carried; they are eaten only when hunger is 6 or below`, and `only rotten flesh and inedible food are carried; rotten flesh is eaten only when hunger is 6 or below` (inedible food is a banned food other than rotten flesh). At hunger 20 or more, `not hungry` is returned before any refusal.
 
 On success the action's outcome carries the detail text `<item>: hunger <before> to <after>` (at most 160 characters), read after the food level rises. The Mind's line ("You ate ...") is built by the contract and is not part of this record.
 

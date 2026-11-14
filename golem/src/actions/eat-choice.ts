@@ -120,13 +120,32 @@ export function chooseFood(
     const name = pickFit(tier, foodsByName, missing);
     if (name !== null) return { kind: 'eat', name };
   }
-  if (hunger > LAST_RESORT_HUNGER) {
-    if (names.some((name) => LAST_RESORT_FOODS.includes(name))) {
-      return { kind: 'refuse', message: LAST_RESORT_REFUSAL };
-    }
-    if (names.some((name) => CHICKEN_FOODS.includes(name))) {
-      return { kind: 'refuse', message: CHICKEN_REFUSAL };
-    }
-  }
-  return { kind: 'none' };
+  return hunger > LAST_RESORT_HUNGER ? refusalFor(names) : { kind: 'none' };
+}
+
+/**
+ * The refusal for a carry with no edible food above the threshold. It names only what is carried:
+ * raw chicken and rotten flesh (the last resorts), and inedible food (banned foods other than rotten
+ * flesh; buckets are not food). With no last resort carried there is no refusal.
+ */
+function refusalFor(names: readonly string[]): FoodChoice {
+  const chicken = names.some((name) => CHICKEN_FOODS.includes(name));
+  const rotten = names.some((name) => LAST_RESORT_FOODS.includes(name));
+  const inedible = names.some(
+    (name) => BANNED_FOODS.includes(name) && !LAST_RESORT_FOODS.includes(name),
+  );
+  if (!chicken && !rotten) return { kind: 'none' };
+  const edible = [chicken ? 'raw chicken' : null, rotten ? 'rotten flesh' : null].filter(
+    (part): part is string => part !== null,
+  );
+  const carried = inedible ? [...edible, 'inedible food'] : edible;
+  const subject =
+    carried.length <= 2 ? carried.join(' and ') : `${carried[0]}, ${carried[1]} and ${carried[2]}`;
+  const verb = carried.length === 1 ? 'is' : 'are';
+  const eaten =
+    edible.length === 2 ? 'they are eaten' : `${carried.length === 1 ? 'it' : edible[0]} is eaten`;
+  return {
+    kind: 'refuse',
+    message: `only ${subject} ${verb} carried; ${eaten} only when hunger is ${LAST_RESORT_HUNGER} or below`,
+  };
 }

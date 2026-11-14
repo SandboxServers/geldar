@@ -22,11 +22,12 @@ async function eat(ctx: ActionContext): Promise<ActionOutcome> {
   const held = bot.heldItem ? [bot.heldItem] : [];
   const carried = [...held, ...bot.inventory.items()];
   const names = carried.map((item) => item.name);
+  // A full bar is refused first, so a refusal about what is carried never reads as the reason (0216).
+  if (bot.food >= FULL_FOOD) return failed('not_possible', 'not hungry');
   const choice = chooseFood(names, bot.registry.foodsByName, bot.food);
   if (choice.kind === 'refuse') return failed('not_possible', choice.message);
   if (choice.kind === 'none') return failed('missing_materials', 'no food');
   const name = choice.name;
-  if (bot.food >= FULL_FOOD) return failed('not_possible', 'not hungry');
   const item = carried.find((stack) => stack.name === name);
   if (!item) return failed('missing_materials', 'no food');
 

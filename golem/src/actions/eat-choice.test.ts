@@ -119,6 +119,52 @@ describe('chooseFood: raw chicken as a last resort', () => {
   });
 });
 
+describe('chooseFood: tier order is ordinary, raw chicken, golden, rotten flesh (decision 0216)', () => {
+  it('picks raw chicken over golden apple at hunger 4', () => {
+    expect(chooseFood(['chicken', 'golden_apple'], FOODS, 4)).toEqual({
+      kind: 'eat',
+      name: 'chicken',
+    });
+  });
+
+  it('picks raw chicken over rotten flesh at hunger 5', () => {
+    expect(chooseFood(['chicken', 'rotten_flesh'], FOODS, 5)).toEqual({
+      kind: 'eat',
+      name: 'chicken',
+    });
+  });
+
+  it('refuses chicken with rotten flesh at hunger 10, in one plain sentence', () => {
+    expect(chooseFood(['chicken', 'rotten_flesh'], FOODS, 10)).toEqual({
+      kind: 'refuse',
+      message:
+        'only raw chicken and rotten flesh are carried; they are eaten only when hunger is 6 or below',
+    });
+  });
+});
+
+describe('chooseFood: refusal texts state only what is carried', () => {
+  it.each([
+    [
+      ['rotten_flesh', 'spider_eye'],
+      'only rotten flesh and inedible food are carried; rotten flesh is eaten only when hunger is 6 or below',
+    ],
+    [
+      ['chicken', 'spider_eye'],
+      'only raw chicken and inedible food are carried; raw chicken is eaten only when hunger is 6 or below',
+    ],
+    [
+      ['chicken', 'rotten_flesh', 'spider_eye'],
+      'only raw chicken, rotten flesh and inedible food are carried; they are eaten only when hunger is 6 or below',
+    ],
+    // Names that are not food do not turn a refusal into a mixed one.
+    [['rotten_flesh', 'stone', 'milk_bucket'], LAST_RESORT_REFUSAL],
+    [['chicken', 'stone'], CHICKEN_REFUSAL],
+  ])('%j at hunger 10 gets its own refusal', (names, message) => {
+    expect(chooseFood(names, FOODS, 10)).toEqual({ kind: 'refuse', message });
+  });
+});
+
 describe('chooseFood: golden items only when nothing else exists', () => {
   it('is never picked while an ordinary food is carried', () => {
     expect(chooseFood(['golden_apple', 'apple'], FOODS, 10)).toMatchObject({ name: 'apple' });
