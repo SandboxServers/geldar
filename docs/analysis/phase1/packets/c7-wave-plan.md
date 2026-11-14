@@ -91,12 +91,14 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 | 1 | C7-14b owner admin verbs in the operator wrappers (`owner-admin` in admin.sh and colo-admin.sh; idempotent `owner-add`; deploy tests; packets/C7-14b.md; built and merged in #359, 2026-11-14 18:29Z) | C7-14, C7-12 | `phase1/c7-14b-owner-admin-verbs` | none | S |
 | 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
 | 1 | C7-04c body routes (start, stop, restart, status, log through the supervisor; built and merged in #346, window A; retire split to C7-04d, wiring to C7-04c2) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
-| 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; Ready, since C7-04c2 is merged) | C7-04c, C7-04c2 | `phase1/c7-04d-retire` | none | S |
+| 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; built, review in progress) | C7-04c, C7-04c2 | `phase1/c7-04d-retire` | none | S |
+| 3 | C7-04d-mount retire routes in the NATS wiring with retirePlayer and the shared slot (split of C7-04d; Ready, after C7-04d merges) | C7-04d, C7-04c2 | `phase1/c7-04d-mount` | none | S |
 | 1 | C7-04c2 body routes production wiring: NATS connection, mounting, server.ts and main.ts (split of C7-04c; built and merged in #358, 2026-11-14 18:23Z; inert unless REGISTER_NATS_* is set, unconfigured gives 404) | C7-04c | `phase1/c7-04c2-wiring` | none | S |
 | 1 | C7-04e PATCH /agents/{playerId} visibility flags (split of C7-04b; cookie only; built and merged in #346, window A) | C7-04b | `phase1/c7-04e-agent-patch` | none | S |
 | 1 | C7-06 account page v2 (built partial, merged in #346) | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
 | 1 | C7-06b account page view links and HTML error pages (split of C7-06, built partial on the same branch, merged in #346) | C7-06 | `phase1/c7-06-account-page-v2` | none | built |
-| 4 | C7-06c account page v2 items not delivered by C7-06 and C7-06b (status and token lines, body buttons, visibility toggles; Ready, since C7-04c2 and C7-04e are merged) | C7-06, C7-04c2, C7-04e | `phase1/c7-06c-account-items` | none | M |
+| 4 | C7-06c account page v2 items not delivered by C7-06 and C7-06b (built partial: status line; body buttons and toggles moved to C7-06d) | C7-06, C7-04c2, C7-04e | `phase1/c7-06c-account-items` | none | M |
+| 4 | C7-06d account page body controls: same-origin script and CSP, body buttons, PATCH toggles, loader wiring (split of C7-06c; Shelved until sign-up opens, with C7-03b2) | C7-06c, C7-04c2, C7-04e | `phase1/c7-06d-account-controls` | none | M |
 | 1 | C7-13a skin upload API and held store | C7-04b, C7-12 | `phase1/c7-13a-skin-upload-api` | 0031 | L |
 | 1 | C7-10 operator console, ban reasons (confirm the C7-04 part at dispatch) | C7-03a, C7-04a, C7-12 | `phase1/c7-10-operator-console` | 0030 | M |
 | 2 | C7-07 agent rename (after C7-06 merges; it edits the account page rename form; the PATCH route, moved from C7-04b to C7-04e, stays rename-free) | C7-04b, C7-06 | `phase1/c7-07-agent-rename` | 0028 | S |

@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
-import { accountPage } from './account-pages.ts';
+import { accountPage, type BodyState } from './account-pages.ts';
 import { ACCOUNT_CSS } from './account-style.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
@@ -25,7 +25,7 @@ import {
   sessionHash,
   slideExpiry,
 } from './session-store.ts';
-import type { Store } from './store.ts';
+import type { PlayerRow, Store } from './store.ts';
 import { tokenExpiresAt } from './tokens-policy.ts';
 
 export const SESSION_COOKIE = 'gr_session';
@@ -36,6 +36,9 @@ export const TERMS_VERSION = 'v1';
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/;
 const MAX_BODY = 4096;
+/** The longest one body status call may take before the page shows no line for that agent (C7-06c). */
+const BODY_STATE_TIMEOUT_MS = 2000;
+const TIMED_OUT = Symbol('body status timed out');
 
 interface Session {
   readonly ownerId: string;
@@ -54,6 +57,11 @@ export interface AccountDeps {
   readonly log: (line: string) => void;
   /** Per-owner limiter (R41): seconds to wait, or 0. */
   readonly ownerCharge?: (ownerId: string) => number;
+  /**
+   * The body state of one agent (C7-06c), from the body status route when the body routes are wired. Unset, or
+   * undefined for an agent, means the page shows no body line for it. A throw is treated the same way.
+   */
+  readonly bodyState?: (playerId: string) => Promise<BodyState | undefined>;
 }
 
 const cookieOf = (req: IncomingMessage, name: string): string | null => {
@@ -284,8 +292,50 @@ export class Account {
 
   private async show(res: ServerResponse, s: Session, notice = ''): Promise<true> {
     const players = await this.deps.store.listPlayers(s.identityHash);
-    html(res, 200, accountPage(players, s.csrf, this.deps.config.harnesses, notice));
+    const bodyStates = await this.bodyStatesOf(players);
+    html(res, 200, accountPage(players, s.csrf, this.deps.config.harnesses, notice, bodyStates));
     return true;
+  }
+
+  /**
+   * The body state of each non-retired agent (C7-06c), read in parallel. Each call is bounded by BODY_STATE_TIMEOUT_MS.
+   * A slow, throwing or missing reply leaves that agent without a status line. The log names no body text.
+   */
+  private async bodyStatesOf(players: readonly PlayerRow[]): Promise<Map<string, BodyState>> {
+    const states = new Map<string, BodyState>();
+    const loader = this.deps.bodyState;
+    if (!loader) return states;
+    const live = players.filter((p) => p.status !== 'retired');
+    const replies = await Promise.all(live.map((p) => this.boundedState(loader, p.playerId)));
+    live.forEach((p, i) => {
+      const state = replies[i];
+      if (state !== undefined) states.set(p.playerId, state);
+    });
+    return states;
+  }
+
+  private async boundedState(
+    loader: (playerId: string) => Promise<BodyState | undefined>,
+    playerId: string,
+  ): Promise<BodyState | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<typeof TIMED_OUT>((resolve) => {
+      timer = setTimeout(() => resolve(TIMED_OUT), BODY_STATE_TIMEOUT_MS);
+    });
+    try {
+      const state = await Promise.race([loader(playerId), late]);
+      if (state === TIMED_OUT) {
+        this.deps.log('body status unavailable');
+        return undefined;
+      }
+      return state;
+    } catch {
+      // No status line for this agent. The log names no body text.
+      this.deps.log('body status unavailable');
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async create(res: ServerResponse, s: Session, f: URLSearchParams): Promise<true> {
