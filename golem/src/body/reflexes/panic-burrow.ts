@@ -332,6 +332,7 @@ function nightThreat(view: BodyView): Trigger | null {
  */
 export const panicBurrowReflex: Reflex = {
   name: 'panic_burrow',
+  suspendedWhileAsleep: () => true,
   priority: 30,
   cooldownTicks: 200,
   check(view): Trigger | null {

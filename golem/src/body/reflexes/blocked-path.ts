@@ -96,6 +96,7 @@ export function dropBlockedReport(view: BodyView, intentId: string): void {
 export function createBlockedPathReflex(walk: Walk = moveNear): Reflex {
   return {
     name: 'blocked_path',
+    suspendedWhileAsleep: () => true,
     priority: 20,
     cooldownTicks: 100,
     check(view): Trigger | null {
