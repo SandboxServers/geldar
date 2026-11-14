@@ -61,11 +61,12 @@ Idempotent everywhere (create-if-missing, upsert, no silent rotation); plan befo
 
 Genesis provides, for each environment, to scriptorium's fleet campaign (reviewed by scriptorium-orchestrator, 2026-11-14):
 
-1. **URLs.** The public MCP URL shape `https://<host>/p/<player id>` (the launcher writes it into each player's `mcp_url`), plus the register and Glass URLs. The kit's egress proxy allows only that hostname on port 443, so a test environment needs a **real hostname** (DNS from G2-06), not a bare address, or an explicit allow entry on the kit side.
-2. **Reachability.** The environment definition states which source networks its MCP endpoint accepts. The node 3 ranger host could not reach the production public MCP address until a gateway policy was added, so the stamp's verify step checks reachability from the declared source network, and the gateway rule stays a checked prerequisite.
-3. **Mint and roster verbs.** The exact `colo-admin.sh` verbs (or owner API calls) to add a roster entry and mint a world token, with the **token returned as a file path or on stdin, never in a workflow log**. A test ranger uses a **test id**, never a production ranger's id.
+1. **URLs.** The public MCP URL shape `https://<host>/p/<player id>` (the launcher writes it into each player's `mcp_url`), plus the register and Glass URLs. The kit's egress proxy allows only that hostname on port 443, so a test environment needs a **real hostname** (DNS from G2-06), not a bare address, or an explicit allow entry on the kit side. The environment definition states which of the two the test environment uses.
+2. **Reachability.** The environment definition states which source networks its MCP endpoint accepts. The node 3 ranger host could not reach the production public MCP address until a gateway policy was added, so the stamp's verify step checks reachability from the declared source network over TCP and also checks that network's DNS answer for the host (split DNS), and the gateway rule stays a checked prerequisite.
+3. **Mint and roster verbs.** The exact `colo-admin.sh` verbs (or owner API calls) to add a roster entry and mint a world token, with the **token returned as a file path or on stdin, never in a workflow log**. The mint token file is mode 0600, readable only by the launcher user on the player host, and reaches the host by operator copy, never through the runner. A test ranger uses a **test id**, never a production ranger's id.
 4. **Health endpoint** that needs no token.
 5. **Optional skin** for the test id (signed skin JSON and PNG), placed by an operator step.
+6. **Kit identity fields.** The kit also needs the player id, the display name and a skin (the skin only if the environment has a skin step).
 
 The final acceptance (a real ranger connected) is a human step recorded in G7-02 and G6-05; the subscription login is the owner's on scriptorium's side.
 
