@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { isOwnPlacement } from '../actions/own-placements.ts';
+import { ownerRecordAt } from '../actions/protected-blocks.ts';
 import { isNightOrStorm } from '../actions/sleep.ts';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
@@ -357,8 +358,12 @@ export function createBodyView(bot: Bot): TrackedBodyView {
       return canStepOff((at) => bot.blockAt(at), bot.entity.position.floored());
     },
     get onOwnPlacement() {
-      const feet = bot.entity.position.floored();
-      return isOwnPlacement(bot, { x: feet.x, y: feet.y - 1, z: feet.z });
+      const cell = bot.entity.position.floored().offset(0, -1, 0);
+      if (isOwnPlacement(bot, cell)) return true;
+      // A restart clears the in-memory record; the ownership record still names the Body's blocks.
+      // A cold chunk is fetched in the background by the lookup itself (ownerAt); an unknown or another owner is not own.
+      const answer = ownerRecordAt(cell);
+      return answer?.known === true && answer.owner === bot.username;
     },
     get asleep() {
       return bot.isSleeping === true;
