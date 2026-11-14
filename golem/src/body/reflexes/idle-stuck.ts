@@ -1,5 +1,5 @@
 import type { Action } from '@geldar/contract';
-import { runAction } from '../../actions/registry.ts';
+import { type ActionRun, runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { hasBurrow } from './panic-burrow.ts';
@@ -172,10 +172,17 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
   }
   state.runs.push(ctx.tick);
   const action: Action = { do: 'unstick' };
-  const run = await runAction(ctx.registry, ctx.bot, action, {
-    signal: ctx.signal,
-    timeScale: ctx.timeScale,
-  });
+  // The run holds the runtime's action slot, so a Mind action cannot start mid-dig (decision 0196).
+  const release = ctx.holdSlot?.();
+  let run: ActionRun;
+  try {
+    run = await runAction(ctx.registry, ctx.bot, action, {
+      signal: ctx.signal,
+      timeScale: ctx.timeScale,
+    });
+  } finally {
+    release?.();
+  }
   const end = ctx.view.tick ?? ctx.tick;
   state.anchor = spotOf(ctx.view);
   state.since = end;
