@@ -4,6 +4,8 @@
  * kind, the message and the stack, so the container's logs say why it died.
  */
 
+/** The most message text (characters) one fatal line carries. */
+export const FATAL_MESSAGE_MAX = 2000;
 /** The most stack text (characters) one fatal line carries. */
 export const FATAL_STACK_MAX = 4000;
 
@@ -16,6 +18,15 @@ export interface FatalProcess {
 
 export type FatalKind = 'uncaughtException' | 'unhandledRejection';
 
+/** A thrown value as text. One with no prototype cannot be stringified, so it reads as its type tag. */
+function text(error: unknown): string {
+  try {
+    return String(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
+}
+
 /**
  * Installs the handlers on `proc` (the real process by default). On either event the handler logs
  * one `fatal` line through `log`, sets the exit code to 1 and exits with 1. The exit is called
@@ -26,13 +37,17 @@ export function installFatalHandlers(
   proc: FatalProcess = process,
 ): void {
   const handle = (kind: FatalKind) => (error: unknown) => {
-    const stack = error instanceof Error ? error.stack : undefined;
-    log({
-      event: 'fatal',
-      kind,
-      message: error instanceof Error ? error.message : String(error),
-      stack: (stack ?? String(error)).slice(0, FATAL_STACK_MAX),
-    });
+    try {
+      const stack = error instanceof Error ? error.stack : undefined;
+      log({
+        event: 'fatal',
+        kind,
+        message: (error instanceof Error ? error.message : text(error)).slice(0, FATAL_MESSAGE_MAX),
+        stack: (stack ?? text(error)).slice(0, FATAL_STACK_MAX),
+      });
+    } catch {
+      // The line could not be built or written. The exit below still runs, so the code is 1.
+    }
     proc.exitCode = 1;
     proc.exit(1);
   };

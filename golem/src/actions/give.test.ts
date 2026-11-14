@@ -368,6 +368,45 @@ describe('give', () => {
     expect(outcome).toMatchObject({ status: 'failed', reason: 'interrupted' });
   });
 
+  it('keeps a thrown value with no prototype and a failing diag sink away from the emitter', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {
+      throw new Error('EPIPE');
+    });
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const escaped: unknown[] = [];
+    // A getter that throws a value with no prototype, which String() cannot convert.
+    const hostile = {
+      id: 7,
+      get name(): string {
+        throw Object.create(null);
+      },
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    };
+    // A getter that throws an Error, when the diag sink also throws.
+    const angry = {
+      id: 8,
+      get name(): string {
+        throw new Error('position unreadable');
+      },
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    };
+    toss.mockImplementationOnce(async () => {
+      for (const entity of [hostile, angry]) {
+        try {
+          events.emit('entitySpawn', entity);
+        } catch (error) {
+          escaped.push(error);
+        }
+      }
+    });
+    await run('Pike', 3, 'oak_log', 0.01);
+    log.mockRestore();
+    expect(escaped).toEqual([]);
+  });
+
   it('fails interrupted when no dropped item is seen at all', async () => {
     const { world, run } = setup(5, { dropped: [], picked: [] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };

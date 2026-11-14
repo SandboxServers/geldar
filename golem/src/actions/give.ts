@@ -108,11 +108,25 @@ function guarded<A extends unknown[]>(
     try {
       body(...args);
     } catch (error) {
-      DEFAULT_DIAG_SINK.log(
-        JSON.stringify({ event: 'give_listener_error', listener: name, error: errorText(error) }),
-      );
+      // Neither building the line nor writing it may throw into the emitter.
+      try {
+        DEFAULT_DIAG_SINK.log(
+          JSON.stringify({ event: 'give_listener_error', listener: name, error: thrownText(error) }),
+        );
+      } catch {
+        // The diag line could not be written: the throw is dropped, not rethrown.
+      }
     }
   };
+}
+
+/** A thrown value as diag text. One with no prototype cannot be stringified, so it reads as its type tag. */
+function thrownText(error: unknown): string {
+  try {
+    return errorText(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
 }
 
 /**
