@@ -37,6 +37,18 @@ describe('colo-cd.sh player host refresh', () => {
     expect(log.indexOf(`stop ${N('ag-old')}`)).toBeGreaterThan(up);
   });
 
+  it('a stopped Adam (golem-body) is never started, yet a body digest change still refreshes a stale host', () => {
+    const cd = cdSetup(EDITS, ['GELDAR_BODY_IMAGE']);
+    const image = withHosts(cd, ['ag-old'], { 'ag-old': OLD_HOST_IMAGE });
+    const r = cdRun(cd, { env: { FAKE_BODY_STOPPED: '1' } });
+    expect(r.code, r.out).toBe(0);
+    expect(image('ag-old')).toBe(CURRENT_IMAGE);
+    const log = cdCalls(cd);
+    expect(log.some((c) => / up .*golem-body/.test(c))).toBe(false);
+    expect(log.some((c) => c.includes('golem-body') && /^(stop|rm) /.test(c))).toBe(false);
+    expect(hostCalls(log, / run -d /)).toHaveLength(1);
+  });
+
   it('does nothing to the hosts when every host is current', () => {
     const cd = cdSetup(EDITS, BUMP);
     withHosts(cd, ['ag-cur'], { 'ag-cur': CURRENT_IMAGE });

@@ -109,7 +109,6 @@ svc_compose() {
   if [ -n "$p" ]; then dc --profile "$p" "$@" "$svc"; else dc "$@" "$svc"; fi
 }
 
-# True when the service's container is healthy, or running with no health check.
 # True when the golem-body container (the idle Adam, profile adam, decision 0212) exists and is running. A stopped or absent
 # one is false: the CD never starts it.
 body_running() {
@@ -118,6 +117,7 @@ body_running() {
   [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ]
 }
 
+# True when the service's container is healthy, or running with no health check.
 healthy() {
   cid=$(svc_compose "$1" ps -q 2>/dev/null | head -n 1) || return 1
   [ -n "$cid" ] || return 1

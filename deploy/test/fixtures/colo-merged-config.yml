@@ -239,6 +239,8 @@ services:
       - /tmp
     user: 1000:1000
   golem-body:
+    profiles:
+      - adam
     build:
       context: /REPO
       dockerfile: golem/Dockerfile
