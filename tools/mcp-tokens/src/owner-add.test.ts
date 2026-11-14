@@ -44,6 +44,104 @@ async function ownerAdd(args: string[], file: string) {
   return { code, inserted, lines };
 }
 
+describe('owner add is idempotent', () => {
+  it('a second run for the same id reports exists, exits 0, and leaves the row unchanged', async () => {
+    const file = await shardFile('5', '20');
+    const owners = new Map<string, number>();
+    const inserts: unknown[][] = [];
+    const lines: string[] = [];
+    const io: Io = { out: (line) => lines.push(line), err: (line) => lines.push(line) };
+    const env: Env = {
+      secretDir: join(dirname(file), 'secrets'),
+      shardFile: file,
+      connect: async () => ({
+        query: async (text: string, values?: unknown[]) => {
+          if (text.startsWith('SELECT owner_id FROM mcp_owners')) {
+            const id = String(values?.[0]);
+            return { rows: owners.has(id) ? [{ owner_id: id }] : [] };
+          }
+          if (text.startsWith('INSERT INTO mcp_owners')) {
+            const id = String(values?.[0]);
+            // The primary key: a second insert for the same id is a database error.
+            if (owners.has(id)) throw new Error('duplicate key value violates unique constraint');
+            owners.set(id, Number(values?.[1]));
+            inserts.push(values ?? []);
+          }
+          return { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    expect(await run(['owner', 'add', 'jo', '--cap', '5'], io, env)).toBe(0);
+    expect(lines.join('\n')).toContain('cannot sign in');
+    expect(lines.join('\n')).not.toContain('exists');
+    lines.length = 0;
+    expect(await run(['owner', 'add', 'jo', '--cap', '7'], io, env)).toBe(0);
+    expect(lines.join('\n')).toContain('exists');
+    expect(inserts).toEqual([['jo', 5]]);
+    expect(owners.get('jo')).toBe(5);
+  });
+
+  it('a database error other than the conflict still exits non-zero', async () => {
+    const file = await shardFile('5', '20');
+    const lines: string[] = [];
+    const io: Io = { out: (line) => lines.push(line), err: (line) => lines.push(line) };
+    const env: Env = {
+      secretDir: join(dirname(file), 'secrets'),
+      shardFile: file,
+      connect: async () => ({
+        query: async () => {
+          throw new Error('database is down');
+        },
+        end: async () => {},
+      }),
+    };
+    expect(await run(['owner', 'add', 'jo'], io, env)).not.toBe(0);
+    expect(lines.join('\n')).toContain('database is down');
+  });
+
+  it('an INSERT failure after a SELECT that found nothing exits non-zero and never says exists', async () => {
+    const file = await shardFile('5', '20');
+    const lines: string[] = [];
+    const io: Io = { out: (line) => lines.push(line), err: (line) => lines.push(line) };
+    const env: Env = {
+      secretDir: join(dirname(file), 'secrets'),
+      shardFile: file,
+      connect: async () => ({
+        query: async (text: string) => {
+          if (text.startsWith('INSERT INTO mcp_owners')) throw new Error('check constraint failed');
+          return { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    expect(await run(['owner', 'add', 'jo'], io, env)).not.toBe(0);
+    expect(lines.join('\n')).toContain('check constraint failed');
+    expect(lines.join('\n')).not.toContain('exists');
+  });
+
+  it('a lost race (INSERT hits the primary key after an empty SELECT) exits non-zero, not exists', async () => {
+    const file = await shardFile('5', '20');
+    const lines: string[] = [];
+    const io: Io = { out: (line) => lines.push(line), err: (line) => lines.push(line) };
+    const env: Env = {
+      secretDir: join(dirname(file), 'secrets'),
+      shardFile: file,
+      connect: async () => ({
+        query: async (text: string) => {
+          if (text.startsWith('INSERT INTO mcp_owners'))
+            throw new Error('duplicate key value violates unique constraint');
+          return { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    expect(await run(['owner', 'add', 'jo'], io, env)).not.toBe(0);
+    expect(lines.join('\n')).toContain('duplicate key');
+    expect(lines.join('\n')).not.toContain('exists');
+  });
+});
+
 describe('owner add takes its cap from the shard file', () => {
   it('uses owner_cap_default when --cap is not given', async () => {
     const result = await ownerAdd(['jo'], await shardFile('5', '20'));

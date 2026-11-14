@@ -146,6 +146,52 @@ describe('admin.sh roster dispatch (decision 0108)', () => {
   });
 });
 
+describe('admin.sh owner-admin and player-flags dispatch (C7-12, C7-14, C7-14b)', () => {
+  it.each([
+    [
+      ['owner-admin', 'set', 'jason'],
+      [CLI, 'owner', 'admin', 'set', 'jason'],
+    ],
+    [
+      ['owner-admin', 'unset', 'jason'],
+      [CLI, 'owner', 'admin', 'unset', 'jason'],
+    ],
+    [
+      ['owner-admin', 'list'],
+      [CLI, 'owner', 'admin', 'list'],
+    ],
+    [
+      ['player-flags', 'ag-jo-01', '--public-camera', 'on'],
+      [CLI, 'player', 'flags', 'ag-jo-01', '--public-camera', 'on'],
+    ],
+  ])('passes %j to the mcp-tokens CLI with the arguments unchanged', (args, expected) => {
+    const fx = fixture();
+    const r = run(fx, args);
+    expect(r.code).toBe(0);
+    expect(argv(fx)).toEqual(expected);
+  });
+
+  it.each([
+    ['no verb', ['owner-admin']],
+    ['a bad verb', ['owner-admin', 'grant', 'jason']],
+    ['set with no owner', ['owner-admin', 'set']],
+    ['set with two owners', ['owner-admin', 'set', 'jason', 'extra']],
+    ['list with an owner', ['owner-admin', 'list', 'jason']],
+  ])('refuses owner-admin with %s before the CLI runs', (_name, args) => {
+    const fx = fixture();
+    const r = run(fx, args);
+    expect(r.code).not.toBe(0);
+    expect(argv(fx)).toBeUndefined();
+  });
+
+  it('the usage text lists owner-admin', () => {
+    const fx = fixture();
+    const r = run(fx, []);
+    expect(r.code).toBe(2);
+    expect(r.out).toMatch(/usage: admin <[^>]*\|owner-admin[|>]/);
+  });
+});
+
 describe('admin.sh owner-set-cap dispatch (decisions 0052, 0133)', () => {
   it('owner-set-cap passes the owner id and N to the mcp-tokens CLI as owner set-cap', () => {
     const fx = fixture();
