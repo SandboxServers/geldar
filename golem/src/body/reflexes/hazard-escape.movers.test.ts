@@ -74,6 +74,27 @@ describe('walkOutOfHazard', () => {
     expect(state.ticks).toBe(2);
   });
 
+  it('holds jump on each physics tick while the Body is in water, during the pathfinder walk', async () => {
+    const { bot, controls } = controlBot();
+    (bot as unknown as { entity: { isInWater: boolean } }).entity.isInWater = true;
+    move.mockImplementationOnce(async () => {
+      (bot as unknown as { emit(name: string): boolean }).emit('physicsTick');
+      return { ok: true, distance: 1 };
+    });
+    await walkOutOfHazard(walkFor(bot, () => true));
+    expect(controls).toEqual(['jump:true', 'forward:false', 'jump:false']);
+  });
+
+  it('does not hold jump on physics ticks when the Body is out of the water', async () => {
+    const { bot, controls } = controlBot();
+    move.mockImplementationOnce(async () => {
+      (bot as unknown as { emit(name: string): boolean }).emit('physicsTick');
+      return { ok: true, distance: 1 };
+    });
+    await walkOutOfHazard(walkFor(bot, () => true));
+    expect(controls).toEqual(['forward:false', 'jump:false']);
+  });
+
   it('does not steer into lava the Body is not already in', async () => {
     const { bot, controls, state } = controlBot();
     (bot as unknown as { blockAt: () => unknown }).blockAt = () => ({

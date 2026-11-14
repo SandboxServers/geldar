@@ -30,7 +30,7 @@ const ITEM_STACK_SLOT = 8;
  * The live case `creeper-behind-wall` checks it against a real creeper.
  */
 const CREEPER_IGNITED_SLOT = 18;
-/** A mob this close and facing the Body is attacking it (the same reach and cone the Body uses). */
+/** A hostile mob this close and facing the Body is attacking it (the same reach and cone the Body uses). */
 const MELEE_REACH = 4;
 /** Cosine of the half-angle (60 degrees) within which a mob faces the Body. */
 const FACING_COS = 0.5;
@@ -134,7 +134,12 @@ function threatFields(
     fields.fuse = 'hissing';
   }
   if (closing) fields.closing = true;
-  if (here.distanceTo(entity.position) <= MELEE_REACH && facesBody(entity, here)) {
+  // Only a hostile mob attacks. A passive mob in reach (a villager, a chicken) reads as closing or idle.
+  if (
+    ALWAYS_HOSTILE.has(kind) &&
+    here.distanceTo(entity.position) <= MELEE_REACH &&
+    facesBody(entity, here)
+  ) {
     fields.state = 'attacking';
   } else if (closing) {
     fields.state = 'closing';

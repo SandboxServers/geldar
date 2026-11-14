@@ -57,20 +57,31 @@ describe('threat: always-hostile mobs are flagged by type', () => {
     }
   });
 
-  it('shows a spider in state attacking as attacking, not as a flag', () => {
-    const world = new FakeWorld();
-    facingMob(world, 1, 'spider', -2.5);
-    const [spider] = observeEntities(world.bot).entities;
-    expect(spider?.state).toBe('attacking');
-    expect(spider?.hostile).toBeUndefined();
+  it('shows a spider or a wolf in reach and facing the Body with no attacking state', () => {
+    for (const name of ['spider', 'wolf']) {
+      const world = new FakeWorld();
+      facingMob(world, 1, name, -2.5);
+      const [neutral] = observeEntities(world.bot).entities;
+      expect(neutral, name).not.toHaveProperty('state');
+      expect(neutral?.hostile, name).toBeUndefined();
+    }
   });
 
-  it('shows a wolf in state attacking as attacking, not as a flag', () => {
+  it('shows a zombie in reach and facing the Body as attacking', () => {
     const world = new FakeWorld();
-    facingMob(world, 1, 'wolf', -2.5);
-    const [wolf] = observeEntities(world.bot).entities;
-    expect(wolf?.state).toBe('attacking');
-    expect(wolf?.hostile).toBeUndefined();
+    facingMob(world, 1, 'zombie', -1.5);
+    const [zombie] = observeEntities(world.bot).entities;
+    expect(zombie?.state).toBe('attacking');
+    expect(zombie?.hostile).toBe(true);
+  });
+
+  it('a villager and a chicken within 2 blocks facing the Body are not attacking', () => {
+    for (const name of ['villager', 'chicken']) {
+      const world = new FakeWorld();
+      facingMob(world, 1, name, -1.5);
+      const [passive] = observeEntities(world.bot).entities;
+      expect(passive?.state, name).not.toBe('attacking');
+    }
   });
 
   it('shows no state for a mob that faces away and does not close', () => {
