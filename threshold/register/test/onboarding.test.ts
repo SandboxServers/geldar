@@ -244,6 +244,22 @@ describe('mcpBaseFor', () => {
     expect(mcpBaseFor('https://a..b')).toBeNull();
   });
 
+  it('gives null for a register host with two labels (https://register.com), not mcp.com', () => {
+    expect(mcpBaseFor('https://register.com')).toBeNull();
+  });
+
+  it('gives null for an empty label after the first (https://register..org), not mcp..org', () => {
+    expect(mcpBaseFor('https://register..org')).toBeNull();
+  });
+
+  it('drops one trailing dot first: https://register.com. is still two labels, so null', () => {
+    expect(mcpBaseFor('https://register.com.')).toBeNull();
+  });
+
+  it('drops one trailing dot first: https://glass.geldar.example./ gives https://mcp.geldar.example', () => {
+    expect(mcpBaseFor('https://glass.geldar.example./')).toBe('https://mcp.geldar.example');
+  });
+
   it('gives null for another first label, even with three labels (https://www.example.org)', () => {
     expect(mcpBaseFor('https://www.example.org')).toBeNull();
   });

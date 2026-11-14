@@ -109,6 +109,33 @@ describe('Docker runtime: login name check', () => {
     }
   });
 
+  it('checkLogin resolves for a good login name and makes no engine call', async () => {
+    const engine = await engineWith('check-ok', happy);
+    const runtime = createDockerRuntime(
+      createDockerClient(engine.socketPath, IMAGE),
+      names('Ranger_1'),
+    );
+    await expect(runtime.checkLogin('o', 'Ranger')).resolves.toBeUndefined();
+    expect(engine.calls).toEqual([]);
+  });
+
+  it('checkLogin refuses a null login name with LoginNameError and makes no engine call', async () => {
+    const engine = await engineWith('check-null', happy);
+    const runtime = createDockerRuntime(createDockerClient(engine.socketPath, IMAGE), names(null));
+    await expect(runtime.checkLogin('o', 'Ranger')).rejects.toBeInstanceOf(LoginNameError);
+    expect(engine.calls).toEqual([]);
+  });
+
+  it('checkLogin refuses a name outside the login shape with LoginNameError and makes no engine call', async () => {
+    const engine = await engineWith('check-shape', happy);
+    const runtime = createDockerRuntime(
+      createDockerClient(engine.socketPath, IMAGE),
+      names('My Agent'),
+    );
+    await expect(runtime.checkLogin('o', 'Ranger')).rejects.toBeInstanceOf(LoginNameError);
+    expect(engine.calls).toEqual([]);
+  });
+
   it('accepts the 3 and 16 character edges and an underscore', async () => {
     const logins = ['abc', 'a'.repeat(16), 'Ranger_1'];
     for (const [i, login] of logins.entries()) {

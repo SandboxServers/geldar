@@ -60,13 +60,19 @@ export function mcpBaseFor(publicUrl: string, explicit = ''): string | null {
   } catch {
     return null;
   }
-  const hostname = url.hostname.replace(/^\[|\]$/g, '');
+  // One trailing dot (the DNS root) is dropped before the checks, so `register.com.` is the two-label `register.com`.
+  const hostname = url.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (isIP(hostname) !== 0) return null;
   const labels = hostname.split('.');
-  if (labels.length < 3 || !REGISTER_LABELS.has(labels[0] ?? '')) return null;
-  const host = url.host;
-  const dot = host.indexOf('.');
-  return `https://mcp.${host.slice(dot + 1)}`;
+  if (
+    labels.length < 3 ||
+    labels.some((label) => label === '') ||
+    !REGISTER_LABELS.has(labels[0] ?? '')
+  ) {
+    return null;
+  }
+  const port = url.port === '' ? '' : `:${url.port}`;
+  return `https://mcp.${labels.slice(1).join('.')}${port}`;
 }
 
 /** The copy buttons. Same origin, no eval, no innerHTML: it copies the text of the element named by data-copy. */

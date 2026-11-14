@@ -3,6 +3,7 @@ import { buildSupervisorDeps } from './composition.ts';
 import type { AuditLostInfo, BodyRuntimePort } from './ports.ts';
 
 const runtime: BodyRuntimePort = {
+  checkLogin: async () => undefined,
   inspect: async () => null,
   start: async () => undefined,
   stop: async () => undefined,

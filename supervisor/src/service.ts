@@ -83,7 +83,7 @@ function bounded<T>(work: Promise<T>, ms: number): Promise<T> {
 function boundedCalls(runtime: SupervisorDeps['runtime'], ms: number) {
   return {
     checkLogin: (ownerId: string, playerName: string) =>
-      bounded(runtime.checkLogin?.(ownerId, playerName) ?? Promise.resolve(), ms),
+      bounded(runtime.checkLogin(ownerId, playerName), ms),
     inspect: (playerName: string) => bounded(runtime.inspect(playerName), ms),
     stop: (playerName: string) => bounded(runtime.stop(playerName), ms),
   };

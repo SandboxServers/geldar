@@ -103,7 +103,7 @@ export interface BodyRecord {
 export interface BodyRuntimePort {
   // Refuses with LoginNameError when the owner's login name is missing or outside the login shape. The
   // service calls it before a restart stops the running body, so a refused restart leaves the body up.
-  checkLogin?(ownerId: string, playerName: string): Promise<void>;
+  checkLogin(ownerId: string, playerName: string): Promise<void>;
   inspect(playerName: string): Promise<BodyRecord | null>;
   start(spec: BodySpec, signal: AbortSignal): Promise<void>;
   stop(playerName: string): Promise<void>;
