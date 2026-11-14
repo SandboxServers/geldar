@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
+import { recordOwnPlacement } from '../actions/own-placements.ts';
 import { fakeBot, manualTicks } from './body.fakes.ts';
 import { MemorySink } from './records.ts';
 import { BodyRuntime } from './runtime.ts';
@@ -33,6 +34,21 @@ function ledgeWorld(dropN: number, dropE: number): BlockRead {
     return { boundingBox: solid.has(key(at.x, at.y, at.z)) ? 'block' : 'empty' } as Block;
   };
 }
+
+describe('createBodyView reads its own placement underfoot (owner ruling 2026-11-14)', () => {
+  it('is false on natural stone and true once the Body placed the block under its feet', () => {
+    const bot = fakeBot();
+    bot.entity.position = new Vec3(-265.5, 35, 196.5);
+    const view = createBodyView(bot);
+    expect(view.onOwnPlacement).toBe(false);
+    recordOwnPlacement(bot, { x: -266, y: 34, z: 196 }, 'cobblestone');
+    expect(view.onOwnPlacement).toBe(true);
+    recordOwnPlacement(bot, { x: -266, y: 33, z: 196 }, 'cobblestone');
+    expect(view.onOwnPlacement).toBe(true);
+    bot.entity.position = new Vec3(-265.5, 36, 196.5);
+    expect(view.onOwnPlacement).toBe(false);
+  });
+});
 
 describe('canStepOff reads a ledge (decision 0196)', () => {
   it('is false when the N and E sides drop two or more blocks', () => {

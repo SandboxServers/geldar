@@ -85,7 +85,8 @@ export function resetIdleStuck(view: BodyView): void {
 
 /**
  * True when the unstick reflexes (B1 and B2) may run for this Body: no Mind action runs, the Body is
- * neither asleep nor riding, and it is not in a burrow it dug. A read the view cannot make (an
+ * neither asleep nor riding, it is not in a burrow it dug, and it does not stand on a block it placed
+ * itself (its own pillar is its own work, owner ruling 2026-11-14). A read the view cannot make (an
  * unknown action or sleep state) is not a yes.
  */
 export function mayUnstick(view: BodyView): boolean {
@@ -93,6 +94,7 @@ export function mayUnstick(view: BodyView): boolean {
     view.actionRunning === false &&
     view.asleep === false &&
     view.riding === false &&
+    view.onOwnPlacement !== true &&
     !hasBurrow(view)
   );
 }

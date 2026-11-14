@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { isOwnPlacement } from '../actions/own-placements.ts';
 import { isNightOrStorm } from '../actions/sleep.ts';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
@@ -100,6 +101,12 @@ export interface BodyView {
    * a ledge it cannot step off. Null or missing when a block around it is not loaded. Optional like isNight.
    */
   readonly canStepOff?: boolean | null;
+  /**
+   * True when the block under the Body's feet is one this Body placed itself (its own work, decision
+   * 0164). Idle stuck and the B2 trigger do not fire on it (owner ruling 2026-11-14). Optional like
+   * canStepOff; a missing value is not own work.
+   */
+  readonly onOwnPlacement?: boolean | null;
   /** True while the Body lies in a bed. Optional like isNight; a missing value never counts as asleep. */
   readonly asleep?: boolean;
   /** True while the Body rides a vehicle. Optional like isNight; a missing value never counts as riding. */
@@ -348,6 +355,10 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get canStepOff() {
       return canStepOff((at) => bot.blockAt(at), bot.entity.position.floored());
+    },
+    get onOwnPlacement() {
+      const feet = bot.entity.position.floored();
+      return isOwnPlacement(bot, { x: feet.x, y: feet.y - 1, z: feet.z });
     },
     get asleep() {
       return bot.isSleeping === true;

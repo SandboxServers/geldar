@@ -31,6 +31,7 @@ interface Live {
   asleep: boolean | undefined;
   riding: boolean | undefined;
   isNight: boolean | undefined;
+  onOwnPlacement?: boolean | null;
 }
 
 /** A stuck, still Body with no action, not asleep, not riding; the fields are plain so a test can move them. */
@@ -312,6 +313,35 @@ describe('idle_stuck runs: the wait, the run own movement, the hourly cap', () =
     const hourLater = await runUnstick(ctxFor(view, registry, 72000), 'idle_stuck');
     expect(calls()).toBe(7);
     expect(hourLater.detail).toContain('found no way out');
+  });
+});
+
+describe('idle_stuck and the block underfoot (owner ruling 2026-11-14)', () => {
+  it("fires on Zack's natural stone ledge, where the block underfoot is not the Body's own", () => {
+    const view = stuck({ enclosed: false, canStepOff: false, onOwnPlacement: false });
+    idleStuckReflex.check(view);
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS))).toEqual({
+      reason: 'ledge',
+      idle_seconds: 60,
+    });
+  });
+
+  it('does not fire on a ledge the Body stands on by its own placement', () => {
+    const view = stuck({ enclosed: false, canStepOff: false, onOwnPlacement: true });
+    idleStuckReflex.check(view);
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS * 3))).toBeNull();
+  });
+
+  it('does not dig out a B2 refusal made on its own placement, and does on natural stone', async () => {
+    const own = stuck({ onOwnPlacement: true });
+    const ownRegistry = unstickRegistry('trapped');
+    const ownDetails = await refuseAt(own, ownRegistry.registry, [ZACK, ZACK, ZACK]);
+    expect(ownRegistry.calls()).toBe(0);
+    expect(ownDetails[2]).not.toContain('3 refusals');
+    const natural = stuck({ onOwnPlacement: false });
+    const naturalRegistry = unstickRegistry('trapped');
+    await refuseAt(natural, naturalRegistry.registry, [ZACK, ZACK, ZACK]);
+    expect(naturalRegistry.calls()).toBe(1);
   });
 });
 
