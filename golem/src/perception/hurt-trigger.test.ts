@@ -47,6 +47,56 @@ function harness(bot: ReturnType<typeof fakeBot>) {
   return { seen, reporter, detach };
 }
 
+/** The `damage` WorldEvent for one hurt from `cause`: the Body loses 5 health to it, a bearing 'front' or 'behind'. */
+function hurtEventFrom(cause: object) {
+  const self = entityAt(1, 0, 0, 0);
+  const bot = fakeBot(self);
+  const { seen } = harness(bot);
+  bot.emit('entityHurt', self, cause);
+  bot.health = 15;
+  bot.emit('health');
+  const first = seen[0];
+  if (!first) return null;
+  return hurtWorldEvent(first[0], {
+    shard: 'main',
+    lifeId: 'ag_guard_01',
+    worldTick: 100,
+    at: '2026-11-13T00:00:00.000Z',
+    sequence: 1,
+  });
+}
+
+// Guard test (decision 0145): a hurt WorldEvent carries source, amount and an optional bearing only.
+describe('hurt WorldEvent names no one (guard, decision 0145)', () => {
+  it('a hit from a player has no name, username, uuid or entity id in its payload', () => {
+    const player = {
+      id: 7,
+      type: 'player',
+      name: 'Alex',
+      username: 'Alex',
+      uuid: 'u-7',
+      position: { x: 0, z: 2 },
+    };
+    const event = hurtEventFrom(player);
+    expect(event).not.toBeNull();
+    expect(Object.keys(event?.payload ?? {}).sort()).toEqual(['amount', 'bearing', 'source']);
+    expect(event?.payload).toEqual({ source: 'melee', amount: 5, bearing: 'front' });
+    const text = JSON.stringify(event?.payload);
+    for (const secret of ['Alex', 'u-7', 'username', 'uuid', 'name', 'entity']) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it('a hit from a mob has no name or entity id in its payload', () => {
+    const zombie = { id: 9, type: 'hostile', name: 'zombie', position: { x: 0, z: -2 } };
+    const event = hurtEventFrom(zombie);
+    expect(event).not.toBeNull();
+    expect(Object.keys(event?.payload ?? {}).sort()).toEqual(['amount', 'bearing', 'source']);
+    expect(event?.payload).toEqual({ source: 'melee', amount: 5, bearing: 'behind' });
+    expect(JSON.stringify(event?.payload)).not.toContain('zombie');
+  });
+});
+
 describe('watchHurts: the live hurt trigger', () => {
   it('a hit from a zombie in front is a melee hurt with a bearing', () => {
     const self = entityAt(1, 0, 0, 0);
