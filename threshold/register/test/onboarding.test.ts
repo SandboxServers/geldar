@@ -39,7 +39,7 @@ async function signIn(userId = RAW_ID): Promise<Session> {
     headers: { cookie },
     redirect: 'manual',
   });
-  const set = res.headers.getSetCookie().find((c) => c.startsWith('gr_session=')) ?? '';
+  const set = res.headers.getSetCookie().find((c) => c.startsWith('__Host-gr_session=')) ?? '';
   const sc = set.split(';')[0] ?? '';
   const page = await (
     await fetch(`${h.base}/register/account`, { headers: { cookie: sc } })

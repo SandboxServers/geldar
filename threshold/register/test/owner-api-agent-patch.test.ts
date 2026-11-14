@@ -158,7 +158,7 @@ describe('PATCH /agents/{playerId} visibility flags (C7-04e)', () => {
       const none = await srv.call(
         'PATCH',
         '/api/v1/agents/p1',
-        { cookie: `gr_session=${SID}` },
+        { cookie: `__Host-gr_session=${SID}` },
         '{"publicCamera":true}',
       );
       expect(none.status).toBe(403);
@@ -166,7 +166,7 @@ describe('PATCH /agents/{playerId} visibility flags (C7-04e)', () => {
       const wrong = await srv.call(
         'PATCH',
         '/api/v1/agents/p1',
-        { cookie: `gr_session=${SID}`, 'x-csrf-token': `${CSRF}x` },
+        { cookie: `__Host-gr_session=${SID}`, 'x-csrf-token': `${CSRF}x` },
         '{"publicCamera":true}',
       );
       expect(wrong.status).toBe(403);

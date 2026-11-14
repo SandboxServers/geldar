@@ -88,8 +88,9 @@ describe('sessions (F8)', () => {
         redirect: 'manual',
       });
       return (
-        (r.headers.getSetCookie().find((c) => c.startsWith('gr_session=')) ?? '').split(';')[0] ??
-        ''
+        (r.headers.getSetCookie().find((c) => c.startsWith('__Host-gr_session=')) ?? '').split(
+          ';',
+        )[0] ?? ''
       );
     };
     const sc = await login('3001');
@@ -111,7 +112,7 @@ describe('sessions (F8)', () => {
     });
     expect(again.status).toBe(401);
     h.clock.at += SESSION_TTL_MS + 1;
-    expect(await login('3002')).toContain('gr_session=');
+    expect(await login('3002')).toContain('__Host-gr_session=');
   });
 });
 

@@ -6,7 +6,7 @@ Order: C7-04a (wave 2, after C7-02b), then C7-04b (wave 2, after C7-04a), then C
 
 Shared facts (checked on `origin/main` c222d2b3 and the wave branch):
 
-- `server.ts` has `createRegisterServer`, `FixedWindow` and `limiterKey`; the register limiter is per address. `account.ts` has `SESSION_COOKIE` (`gr_session`) and a CSRF token derived by HMAC per session (`csrfFor`), compared with `same`.
+- `server.ts` has `createRegisterServer`, `FixedWindow` and `limiterKey`; the register limiter is per address. `account.ts` has `SESSION_COOKIE` (`__Host-gr_session` since CF-5) and a CSRF token derived by HMAC per session (`csrfFor`), compared with `same`.
 - `admin.ts` `isAdminOwner` reads `register_is_admin` and returns false on any error (fail closed). `audit.ts` `writeAudit` sets `admin` on each row from it.
 - `tokens-service.ts` has `TokenStore` and `TokenDeps` (the admin reader). Its Postgres adapter is not confirmed on main; check before writing one.
 - Not on `main` yet: `owner-keys-service.ts` and the `owner_api_keys` definer functions (C7-02b, wave branch `phase1/c7-wave2`, its worknote `worknotes/C7-02b.md`). `nats-ctl.ts` (`requestBodyOp`, `BodyUnavailable`) and the `ctl.body.*` subjects (C7-03b1). `worknotes/C7-05.md` exists on the wave branch only.
@@ -32,7 +32,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 1. **Route tree.** Paths under `/register/api/v1/` only. Anything else under `/register/api/` is 404 `not_found` problem, not handled by the API router. Unknown path under v1 is 404 `not_found`.
 2. **Credentials, in order.**
-   - Cookie `gr_session` (the web UI). Resolve through the existing session store. A state-changing request (POST, PATCH, DELETE) needs the CSRF token in header `x-csrf-token`, compared with `same`. Missing or wrong token: 403 `csrf_required`.
+   - Cookie `__Host-gr_session` (the web UI; `gr_session` before CF-5). Resolve through the existing session store. A state-changing request (POST, PATCH, DELETE) needs the CSRF token in header `x-csrf-token`, compared with `same`. Missing or wrong token: 403 `csrf_required`.
    - `Authorization: Bearer gowner-...`. Resolve through the C7-02b resolve function. A key with a scope the route does not list: 403 `scope_missing`. Bearer keys need no CSRF token.
    - Player token (`gmcp-`) in Bearer: 401 `unauthenticated`. Owner key of a banned owner: 401 `unauthenticated` (the resolve refuses; the refusal is audited by C7-02b).
    - No credentials, or an unreadable session: 401 `unauthenticated`.
@@ -205,6 +205,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 ## C7-04d-mount: retire routes in the NATS wiring (split of C7-04d)
 
 - **id / wave / lane.** C7-04d-mount, wave 3, split out of C7-04d (the review of C7-04d, fix note). Register lane, Ready, after C7-04d merges. **depends-on.** C7-04d (the retire handler), C7-04c2 (the NATS wiring and the shared slot). **branch.** `phase1/c7-04d-mount`. **migration.** none. **size.** S.
+- **Migration rule (geldar-93, G4-03).** The live deploy dumps, migrates, then restarts, so old services run against the new schema for the length of a deploy; a destructive or renaming migration must stay backwards-compatible with old services or be split into two PRs (additive first, drop later). This card has no migration, so the rule holds trivially.
 - **Goal.** Mount `bodyRetireRoutes` in the NATS wiring with `retirePlayer` and the shared in-flight slot, so the retire route is live when, and only when, NATS is configured. Unmounted without `REGISTER_NATS_*`, as the body routes are.
 - **Why more than one line.** `bodyWiring` takes no `retirePlayer` today, and `main.ts` ignores the slot it returns. The packet adds the `retirePlayer` parameter to `bodyWiring`, returns the slot to `main.ts`, and passes the same slot to both route sets. The review of C7-04d noted this; the packet is not a one-line mount.
 - **Files.** may-edit: `threshold/register/src/nats-body.ts` (the `bodyWiring` signature and return value), `threshold/register/src/main.ts` (the wiring lines only), `server.ts` (only if the mount needs it), their tests, `docs/analysis/phase1/worknotes/C7-04d-mount.md`. `api/body-retire.ts` and `api/body-slot.ts` are read only.
@@ -290,7 +291,7 @@ paths:
   /owner-keys/{keyId}/revoke: { post: { scope: manage, responses: { 204: {} } } }
 components:
   securitySchemes:
-    sessionCookie: { type: apiKey, in: cookie, name: gr_session }
+    sessionCookie: { type: apiKey, in: cookie, name: __Host-gr_session }
     ownerKey: { type: http, scheme: bearer }
   schemas:
     Agent: { required: [playerId, displayName, status, body, creditsLeft, publicCamera, thoughtsDelayedPublic, createdAt], properties: { playerId: string, displayName: string, status: { enum: [active, paused, retired] }, body: { enum: [running, starting, waiting, stopped, unavailable] }, creditsLeft: integer, tokenExpiresAt: date-time, tokenLastUsedAt: date-time, lastSeenAt: date-time, publicCamera: boolean, thoughtsDelayedPublic: boolean, createdAt: date-time } }
@@ -326,25 +327,26 @@ Five cards from the wave 4 review (pass 3). None is scheduled; each waits for it
 
 ### CF-3 (CF-W4-3): owner id in the owner-agent SQL results
 
-- **Goal.** `owner-agents-pg.ts` stamps the requested owner id on every row, so the check in `guard.ts` cannot fail in production; isolation rests on the WHERE clause in SQL 0036 alone. Make `register_owner_list_players` and `register_owner_get_player` return `owner_id` (DROP and CREATE, the return type changes); the loader maps `ownerId: row.owner_id`; the schema check gets the column.
+- **Goal.** `owner-agents-pg.ts` stamps the requested owner id on every row, so the check in `guard.ts` cannot fail in production; isolation rests on the WHERE clause in SQL 0036 alone. ADD two new functions, `register_owner_list_players_with_owner` and `register_owner_get_player_with_owner`, that return `owner_id` next to the old ones (CREATE only; the old functions stay as they are); the loader calls the new ones and maps `ownerId: row.owner_id`; the schema check gets the new functions' column. Dropping the old functions is a later PR, after this one is deployed, and is not in this card.
 - **May-edit.** A new migration, `threshold/register/src/owner-agents-pg.ts`, its test, `sql/test/check-schema-owner-agents.sql`, `docs/analysis/phase1/worknotes/` for this card.
-- **Migration.** Needs a migration number via decision-number-registry, taken at dispatch. This card does not reserve one.
+- **Migration.** Needs a migration number via decision-number-registry, taken at dispatch. This card does not reserve one. Migration rule (geldar-93, G4-03): the live deploy dumps, migrates, then restarts, so old services run against the new schema for the length of a deploy; a destructive or renaming migration must stay backwards-compatible with old services or be split into two PRs (additive first, drop later). So this migration is additive only (new functions, no DROP, no rename); the DROP of the old functions is a separate later PR.
 - **Test.** Loader: a fake row whose `owner_id` is another owner's yields null. Schema check: the column is in the return.
 - **Depends.** C7-04b (migration 0036). Origin: the C7-04b wiring, wave 2/3 merge.
 - **Status.** Carry-forward, not scheduled.
 
 ### CF-4 (CF-W4-4): onboarding GET consumes the token on cross-site navigation
 
+- **Status.** Built (C7 hardening commit; see worknotes/CF-W4-5.md).
 - **Goal.** `GET /register/onboarding` takes the show-once token from the hand-off slot on any GET with a live session cookie. `gr_session` is SameSite=Lax, so a cross-site top-level GET sends it, and an attacker page can burn the display inside the 10-minute window (the owner mints again; no secret is disclosed). Serve the token only when `Sec-Fetch-Site` is `same-origin` or `none`, or the header is absent (old clients); otherwise render the empty page without calling `take`.
 - **May-edit.** `threshold/register/src/account.ts` (the onboarding GET only), its test, `docs/analysis/phase1/worknotes/C7-05.md`.
 - **Test.** `sec-fetch-site: cross-site` does not consume the slot; a following same-origin request still shows the token.
 - **Depends.** C7-05. Origin: wave 1/2 code (the hand-off in C7-05).
-- **Status.** Carry-forward, not scheduled.
 
 ### CF-5 (CF-W4-5): `__Host-` prefix for the session cookies
 
+- **Status.** Built (C7 hardening commit; see worknotes/CF-W4-5.md).
 - **Goal.** Rename `gr_session` and `gr_state` to `__Host-gr_session` and `__Host-gr_state`; their attributes already satisfy the prefix (host-only, Secure, Path=/). `cookieOf` refuses a header that carries two cookies of the wanted name (answer as no session), so a planted `Domain=` cookie cannot shadow the owner's own. Clear the old names on logout for one release. Whether `gk_session` (shared with Glass) is renamed too is an orchestrator decision, not needed for this fix.
 - **May-edit.** `threshold/register/src/account.ts` and its cookie code, their tests, `docs/analysis/phase1/worknotes/` for this card.
 - **Test.** A header with two `__Host-gr_session` values is no session. The Set-Cookie starts with `__Host-` and has no Domain attribute. Logout clears the old and new names.
+- **Tracking.** Remove `LEGACY_CLEARS` (threshold/register/src/account.ts) one release after the release that ships CF-5. Until then the old names are cleared on sign-in and logout.
 - **Depends.** None. Origin: wave 1/2 code (cookie parser from wave 0 to 1, sessions from wave 2). Low to Medium, recommended before sign-up opens.
-- **Status.** Carry-forward, not scheduled.

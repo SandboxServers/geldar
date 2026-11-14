@@ -2,6 +2,7 @@
 // body request, so an unreachable server is a 503 body_unavailable at request time, never a failed start.
 import { connectNats } from '@geldar/contract/nats';
 import { bodyRoutes } from './api/body.ts';
+import { bodyRetireRoutes } from './api/body-retire.ts';
 import { type BodySlot, createBodySlot } from './api/body-slot.ts';
 import type { ApiRoute } from './api/route.ts';
 import type { RegisterNats } from './config.ts';
@@ -54,9 +55,13 @@ export function lazyCtlConnection(
   };
 }
 
+/** The database retire of the owner's player (PgStore.retirePlayer). */
+export type RetirePlayer = (identityHash: string, playerId: string) => Promise<boolean>;
+
 /**
  * The body routes and their one shared slot (C7-04c2). Without NATS in the config the routes are empty, so every body
- * path is 404 through the router. The slot is returned too, so the retire route (C7-04d) can share it.
+ * path is 404 through the router. The retire route (C7-04d-mount) is appended to the body routes with the same slot and
+ * the same link, only with NATS configured and a retirePlayer given (null leaves it unmounted). The slot is returned too.
  */
 export function bodyWiring(
   config: {
@@ -66,6 +71,7 @@ export function bodyWiring(
   },
   log: (line: string) => void,
   connect: ConnectNats = connectNats,
+  retirePlayer: RetirePlayer | null = null,
 ): { readonly routes: readonly ApiRoute[]; readonly slot: BodySlot } {
   const slot = createBodySlot();
   if (config.nats === null) {
@@ -76,14 +82,33 @@ export function bodyWiring(
     );
     return { routes: [], slot };
   }
-  const routes = bodyRoutes({
+  const shared = {
     conn: lazyCtlConnection(config.nats, log, connect),
     shard: config.shard,
     timeoutMs: config.nats.timeoutMs,
     slot,
-  });
+  };
+  const routes = [
+    ...bodyRoutes(shared),
+    ...(retirePlayer ? bodyRetireRoutes({ ...shared, retirePlayer }) : []),
+  ];
   log('body routes mounted');
   return { routes, slot };
+}
+
+/**
+ * The body wiring as main.ts composes it: the retire goes to the store's retirePlayer. main calls this function, so a
+ * test can prove the retire route reaches the store (a main that drops the argument would fail that test).
+ */
+export function productionBodyWiring(
+  config: Parameters<typeof bodyWiring>[0],
+  store: { readonly retirePlayer: RetirePlayer },
+  log: (line: string) => void,
+  connect: ConnectNats = connectNats,
+): ReturnType<typeof bodyWiring> {
+  return bodyWiring(config, log, connect, (identityHash, playerId) =>
+    store.retirePlayer(identityHash, playerId),
+  );
 }
 
 /**

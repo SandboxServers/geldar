@@ -115,9 +115,9 @@ Live lane: the account page on the node (C7-06), looked at on a phone width.
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|
 | 1 | C7-13b skin moderation CLI, MineSkin, KV (non-register) | C7-13a | `phase1/c7-13b-skin-moderation` | none | M |
-| 1 | C7-09 deletion and export (register lane) | C7-02b, C7-03b2, C7-13a | `phase1/c7-09-deletion-export` | 0029 | L |
+| 1 | C7-09 deletion and export (register lane). New dependency: the 0261 open question (does M1 wait for C7-09?) | C7-02b, C7-03b2, C7-13a | `phase1/c7-09-deletion-export` | 0029 | L |
 | 1 | C7-13c skin form on the account page (pair with C7-09, disjoint files) | C7-06, C7-13a | `phase1/c7-13c-skin-form` | none | S |
-| 2 | C7-11 sign-up gate (not a code packet beyond the config check) | C7-05, C7-06, C7-09, C7-13c, owner | `phase1/c7-11-signup-gate` | none | S |
+| 2 | C7-11 sign-up gate (not a code packet beyond the config check). New dependency: the 0261 open question (does M1 wait for C7-11?) | C7-05, C7-06, C7-09, C7-13c, owner | `phase1/c7-11-signup-gate` | none | S |
 | CF | CF-1 (CF-W4-1) split `body.test.ts` before more tests land in it (C7-04c2 is merged; C7-04d adds to it) | C7-04c | scheduled later | none | S |
 | CF | CF-2 (CF-W4-2) PATCH write order for two turn-ons, thoughts first | C7-04e | scheduled later | none | S |
 | CF | CF-3 (CF-W4-3) owner id returned by the owner-agent SQL functions; loader guard made real | C7-04b | scheduled later | needs a number via decision-number-registry | M |
@@ -134,3 +134,59 @@ Wave 4 is three code packets plus the gate, because C7-09 and C7-13b are long. L
 4. Ledger and RESUME updated; packet worktrees removed after copying useful reports to `worknotes/`.
 
 The security review of every public surface (conventions 4.3) covers the register API, the skin upload and the supervisor's NATS subjects, at the campaign boundary.
+
+## M1 and M2 plan (decision 0261, 2026-11-14)
+
+Written 2026-11-14 from the owner's ruling. Cards: [c7f-packets.md](c7f-packets.md) (owner-ruling cards, C7-03c1 with GLOBAL-CAP). Lanes: Register, SQL, Docs, Compose/node (geldar-93 node steps), Golem, Owner.
+
+### Milestones
+
+- **M1: sign-up works.** The owner signs up with Microsoft, accepts the legal text (v1), registers an agent, gets a player token and sees the account page. Sign-up is open (the kill switch is off by the runbook).
+- **M2: Body controls.** The owner starts, stops and restarts that agent's Body from the account page, within the quotas of 0170 (1 running per agent, 3 starts per agent per hour, 10 per owner per day, admin exempt) and the global cap of 40 running Bodies (0261 item 3d).
+
+### OPEN QUESTION for the owner (not decided here)
+
+**Does M1 wait for C7-09 and C7-11, or does 0261 supersede that part of 0153?**
+
+What 0153 requires before sign-up opens to anyone outside the project:
+
+1. Terms of Use, a Privacy Notice and an Acceptable Use policy with a version string, shown at sign-up; a required consent checkbox whose record is written with the owner row; self-serve account deletion with the 0171 erasure rule; self-serve account data export (JSON of the owner's own rows); a published contact and abuse address. All live-checked. Deletion and export are C7-09. The texts are served by LEGAL-SERVE.
+2. The gate C7-11 refuses to open while the terms version is not marked approved by the owner in a committed file.
+3. Until the gate opens the kill switch stays off.
+
+0261 opens sign-up for everyone, names neither C7-09 nor C7-11, and says it does not waive 0153. The M1 path below carries C7-09 and C7-11 as conditional steps until the owner answers.
+
+### M1 path (ordered)
+
+| Step | Card | Lane | Size | Depends on | Notes |
+|---|---|---|---|---|---|
+| 1 | CF-W4-5 `__Host-` prefix for `gr_session` and `gr_state` | Register | M | none | Queued (carry-forward); recommended before sign-up opens |
+| 2 | LEGAL-SERVE | Register | S to M | C7-05, C7-06 (merged) | Serves the v1 texts at `/register/terms`, `/register/privacy`, `/register/acceptable-use`; register package, one at a time |
+| 3 | SIGNUP-RUNBOOK | Docs | S | none | `docs/runbooks/open-signup.md` for geldar-93, no values |
+| 4 | Entra sign-in app | Owner | none | none | Owner step; no card |
+| 5 | `REGISTER_*` env and node steps | Compose/node (geldar-93) | none | steps 3 and 4 | Order in the SIGNUP-RUNBOOK card: secret files, env, register profile, migrations check, `GELDAR_REGISTER_UPSTREAM`, `colo-public.sh install glass`, one `board-proxy` restart, kill switch on |
+| 6 | C7-09 deletion and export, then C7-11 gate | Register; Owner | L; S | C7-02b, C7-03b2, C7-13a; C7-05, C7-06, C7-09, C7-13c | Conditional: only if the owner answers yes. C7-09 needs C7-03b2, which is on the M2 path |
+| 7 | Open: kill switch false | Compose/node (geldar-93) | none | steps 1 to 5 (and 6 if yes) | The owner decides; the SIGNUP-RUNBOOK step |
+
+### M2 path (ordered)
+
+| Step | Card | Lane | Size | Depends on | Notes |
+|---|---|---|---|---|---|
+| 1 | C7-04d-mount retire routes in the NATS wiring | Register | S | C7-04d (merged), C7-04c2 | Queued. Must land before any Body runs (audit gap G4) |
+| 2 | C7-03c1 Body helper, with GLOBAL-CAP | Golem (helper) | M | C7-03a, C7-03b1, C7-03b3 | Fixed verbs (0260). Cap read from one place, default 40; refusal `global body cap reached`, audit outcome `capacity`; one alert line at 30 |
+| 3 | C7-03c3 supervisor uses the helper | Golem | M | C7-03c1 | No Docker socket |
+| 4 | C7-03b5 supervisor process entry | Golem | not sized in the plan | C7-03a, C7-03b3 | |
+| 5 | C7-03c2 helper install script and runbook | Compose/node (geldar-93) | M | C7-03c1 | Dry-run default, `--apply`; `PASSWORD_ROLES`; node steps by geldar-93 |
+| 6 | REG-NATS-COMPOSE, folded into C7-03b2 with the C7-03b2 compose service | Compose/node (geldar-93) | S (REG-NATS-COMPOSE); M (C7-03b2) | C7-03c1, C7-03c2, C7-03c3, C7-03b5; C7-04c2 (merged) | The only compose edit of the register service |
+| 7 | ROSTER-AUTO | SQL and Register | M to L | C3-04s, C7-03b3, C7-04b | Additive migration; number at dispatch after the `sql/` check on main; register package, one at a time |
+| 8 | BODY-HOST | Golem, admin and helper | L | C7-03c1, C7-03c3, C7-03b5, C7-03b4 (built), ROSTER-AUTO | Open sub-questions for geldar-93 before dispatch: RCON whitelist verb and life key. Supersedes the open part of C7-03b4 |
+| 9 | C7-03b4-live live check | Compose/node (geldar-93; orchestrator-run) | S | C7-03b2 deployed | Live check of the Body spec against the helper |
+| 10 | C7-06d account page body controls | Register | M | C7-06c, C7-04c2, C7-04e; buttons need C7-03b2 deployed | Script and CSP part can go first; buttons after step 6. Register package, one at a time |
+
+M2 is reachable when steps 1 to 9 are merged and the node steps are done (0261, Consequences). Step 10 is the last card of M2.
+
+### Order and parallel rules
+
+- Register-package cards run one at a time: CF-W4-5, LEGAL-SERVE, C7-04d-mount, ROSTER-AUTO, C7-06d, C7-09 and C7-11 (config only).
+- M1 Docs and node steps can run beside M2 Golem steps. M1 and M2 share no card except C7-09 (conditional) and C7-06d.
+- geldar-93 owns the node steps and the sub-questions. The Entra app and the open step are the owner's.

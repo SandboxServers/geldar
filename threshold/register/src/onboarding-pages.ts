@@ -137,12 +137,18 @@ function snippetsFor(shown: ShownToken, endpoint: string): string {
 const NO_MCP_ADDRESS = `<h2>No connect command</h2>
 <p>No connect command is shown because this deployment has no MCP address. Set REGISTER_MCP_PUBLIC_URL, or use a REGISTER_PUBLIC_URL whose host starts with register. or glass. (for example register.example.org). Your token above is still valid. Ask the operator for the MCP address.</p>`;
 
-/** The page after the first showing, or after the hold has run out. It never shows a token. */
-export function onboardingEmptyPage(): string {
+/**
+ * The page when no token is shown. `held` is true for a cross-site or same-site load (CF-4): the token is still
+ * held for the owner's own browser, so the text says that and does not claim it is gone. It never shows a token.
+ */
+export function onboardingEmptyPage(held = false): string {
+  const why = held
+    ? '<p>This page was opened from another site, so no token is shown on it. A token made in the browser that signed in is still held for a short time: open the onboarding page from that browser, not from a link on another site. Do not make a new token just for this, because that revokes the one held.</p>'
+    : '<p>A token is shown once, straight after it is made, and it is not shown again. To get a new one, make a new token on your account page.</p>';
   return wrap(
     'Your token',
     `<h1>No token to show</h1>
-<p>A token is shown once, straight after it is made, and it is not shown again. To get a new one, make a new token on your account page.</p>
+${why}
 <p><a href="${BASE}/account">Back to your players</a></p>`,
   );
 }
