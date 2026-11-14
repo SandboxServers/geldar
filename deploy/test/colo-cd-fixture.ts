@@ -29,15 +29,31 @@ export const FROM_SHA = 'b'.repeat(40);
 // The fake docker: records its arguments. `buildx imagetools inspect` prints the revision label FAKE_REVISION (or no label
 // for "none"); `ps -q SVC` answers cid-SVC; `inspect` answers unhealthy for $FAKE_UNHEALTHY and healthy otherwise;
 // `exec -T postgres` prints a line for the dump. Every other call succeeds.
+// A player host is a file (its image) and an optional <host>.state file "status exitcode restarts" (default "running 0 0").
+// `ps` lists the running and restarting hosts, `ps -a` every host; `inspect` answers State.Status, State.ExitCode and
+// RestartCount from that file. FAKE_NEW_STATE gives a host started on the new image (not FAKE_OLD_IMAGE) that state, and
+// FAKE_UPDATE_FAIL makes `update --restart` fail.
 export const CD_DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >>"$DOCKER_CALLS_LOG"
 hn=
 for a; do case $a in name=^*) hn=\${a#name=^}; hn=\${hn%\\$} ;; geldar-colo-players-host-*) hn=$a ;; esac; done
 prev=
 for a; do if [ "$prev" = --name ]; then hn=$a; fi; prev=$a; done
+st_of() {
+  hs=running
+  hc=0
+  hr=0
+  if [ -f "$FAKE_HOSTS_DIR/$1.state" ]; then read -r hs hc hr <"$FAKE_HOSTS_DIR/$1.state"; fi
+}
 case "$*" in
   *"ps "*"name=^geldar-colo-players-host-"*)
-    if [ -f "$FAKE_HOSTS_DIR/$hn" ]; then echo "$hn"; fi
+    if [ -f "$FAKE_HOSTS_DIR/$hn" ]; then
+      st_of "$hn"
+      case "$*" in
+        *" -a "*) echo "$hn" ;;
+        *) case $hs in running | restarting) echo "$hn" ;; esac ;;
+      esac
+    fi
     exit 0 ;;
   "inspect "*"geldar-colo-players-host-"*)
     [ -f "$FAKE_HOSTS_DIR/$hn" ] || exit 1
@@ -48,13 +64,20 @@ case "$*" in
         if [ "$img" = "\${FAKE_OLD_IMAGE:-}" ]; then echo "$FAKE_OLD_REVISION"
         elif [ -n "\${FAKE_BAD_LABEL:-}" ]; then echo "$FAKE_OLD_REVISION"
         else echo "$FAKE_REVISION"; fi ;;
+      *State.Status*) st_of "$hn"; echo "$hs" ;;
+      *State.ExitCode*) st_of "$hn"; echo "$hc" ;;
+      *RestartCount*) st_of "$hn"; echo "$hr" ;;
       *) echo running ;;
     esac
     exit 0 ;;
-  "stop geldar-colo-players-host-"* | "rm geldar-colo-players-host-"*) rm -f "$FAKE_HOSTS_DIR/$hn"; exit 0 ;;
+  "stop geldar-colo-players-host-"* | "rm geldar-colo-players-host-"* | "rm -f geldar-colo-players-host-"*) rm -f "$FAKE_HOSTS_DIR/$hn" "$FAKE_HOSTS_DIR/$hn.state"; exit 0 ;;
+  "update --restart on-failure:5 geldar-colo-players-host-"*) if [ -n "\${FAKE_UPDATE_FAIL:-}" ]; then exit 1; fi; exit 0 ;;
   *" run -d "*" players-host "*)
     if [ -n "\${FAKE_RUN_FAIL:-}" ] && [ "$GELDAR_BODY_IMAGE" != "\${FAKE_OLD_IMAGE:-}" ]; then exit 1; fi
-    printf '%s\\n' "$GELDAR_BODY_IMAGE" >"$FAKE_HOSTS_DIR/$hn"; exit 0 ;;
+    printf '%s\\n' "$GELDAR_BODY_IMAGE" >"$FAKE_HOSTS_DIR/$hn"
+    rm -f "$FAKE_HOSTS_DIR/$hn.state"
+    if [ -n "\${FAKE_NEW_STATE:-}" ] && [ "$GELDAR_BODY_IMAGE" != "\${FAKE_OLD_IMAGE:-}" ]; then printf '%s\\n' "$FAKE_NEW_STATE" >"$FAKE_HOSTS_DIR/$hn.state"; fi
+    exit 0 ;;
 esac
 case "$*" in
   *"config --quiet"*) exit 0 ;;
@@ -171,13 +194,22 @@ export function cdRun(
 export const OLD_HOST_IMAGE = `${GHCR}/geldar-body@sha256:${'7'.repeat(64)}`;
 export const OLD_HOST_REV = 'a'.repeat(40);
 
-// Gives the fake docker some running player hosts (container name -> image) and a shard file listing `ids`.
-// A listed id without a container is a hibernating player.
-export function withHosts(cd: Cd, ids: string[], running: Record<string, string>) {
+// Gives the fake docker some player hosts (container name -> image) and a shard file listing `ids`. A listed id without a
+// container is a hibernating player. `states` (id -> "status exitcode restarts", e.g. "exited 137 5") sets a host's state;
+// a host without one is running with no restarts.
+export function withHosts(
+  cd: Cd,
+  ids: string[],
+  running: Record<string, string>,
+  states: Record<string, string> = {},
+) {
   const dir = join(cd.fx.dir, 'hosts');
   mkdirSync(dir, { recursive: true });
   for (const [id, image] of Object.entries(running)) {
     writeFileSync(join(dir, `geldar-colo-players-host-${id}`), `${image}\n`);
+  }
+  for (const [id, state] of Object.entries(states)) {
+    writeFileSync(join(dir, `geldar-colo-players-host-${id}.state`), `${state}\n`);
   }
   const shard = join(cd.fx.dir, 'colo-mind.yaml');
   writeFileSync(shard, `${ids.map((id) => `- {player_id: ${id}}\n`).join('')}`);

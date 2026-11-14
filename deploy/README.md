@@ -222,7 +222,7 @@ deploy/colo-admin.sh player-list             # each listed player, running or no
 `player-start` and `player-stop` refuse an id that is not `^ag-[a-z0-9-]{1,40}$` or not listed under
 `sovereign.players` in `shards/colo-mind.yaml`. They touch only containers that carry the `geldar-colo` compose project
 label and that exact name. `player-start` runs
-`docker compose -p geldar-colo ... run -d --rm --no-deps --name geldar-colo-players-host-<player> -e GELDAR_PLAYER_ID=<player> players-host --player <player>`.
+`docker compose -p geldar-colo ... run -d --no-deps --name geldar-colo-players-host-<player> -e GELDAR_PLAYER_ID=<player> players-host --player <player>`, then `docker update --restart on-failure:5` on that container (decision 0169). The container is not removed when it exits, so its logs stay (json-file, 10m, 3 files). A crash restarts it up to five times; after the fifth failed restart it stays exited and shows in `docker ps -a`. A clean exit does not restart it. `player-list` prints the actual state of a stopped host (`exited`, `created` or `dead`). If `docker update` fails, `player-start` prints a warning and still exits 0: the host runs without the restart policy. `on-failure:5` counts restarts for the life of the container (decision 0169, a known limit). After a node reboot the hosts stay down, because `on-failure` does not start them; start them with `player-start`.
 
 Migrating Jason's old host (`geldar-colo-players-host-1`, from `up -d players-host`): stop and remove it, then start the
 new one.

@@ -138,9 +138,9 @@ close_scope() {
   fi
 }
 
-# Recreates each RUNNING player host, one at a time (stop, then start). Hibernating hosts are left as they are.
+# Recreates each RUNNING or crashed player host, one at a time (stop, then start). Hibernating and cleanly stopped hosts are left as they are.
 recreate_players() {
-  running_hosts >"$WORK/players.txt" || {
+  acted_hosts >"$WORK/players.txt" || {
     log "cannot list the player hosts; check them by hand"
     return 1
   }
@@ -155,7 +155,8 @@ recreate_players() {
 }
 
 # Waits for the player host container to be Up, lets it settle (a host that dies on join is not Up afterwards), then checks
-# that its image carries the release revision label.
+# that it is still running with no restart since it was created (with on-failure a crash-looping image is restarted, so it
+# can be running again at the sample; its restart count shows it), and that its image carries the release revision label.
 host_up_and_current() {
   id=$1
   n=0
@@ -166,6 +167,7 @@ host_up_and_current() {
   done
   if [ "$PLAYER_SETTLE" -gt 0 ]; then sleep "$PLAYER_SETTLE"; fi
   [ "$(host_status "$id")" = running ] || return 1
+  [ "$(host_restarts "$id")" = 0 ] || return 1
   [ "$(host_revision "$id")" = "$SHA_FULL" ] || return 1
 }
 
@@ -187,16 +189,17 @@ restore_host() {
   return 1
 }
 
-# Refreshes each running player host whose image differs from the new body image, one at a time, after the shared services.
-# On a failure the loop stops, the host is put back on its previous image if possible, and the run is needs-manual.
+# Refreshes each acted-on player host that is not current (host_current): one whose image differs from the new body image, and
+# one that is not running (a crash that used up its restarts, or a restart loop), even on that image. One at a time, after the
+# shared services. On a failure the loop stops, the host is put back on its previous image if possible, and the run is needs-manual.
 refresh_hosts() {
   want=${GELDAR_BODY_IMAGE:-}
   [ -n "$want" ] || return 0
-  ids=$(running_hosts) || { log "cannot list the player hosts; needs manual"; return 1; }
+  ids=$(acted_hosts) || { log "cannot list the player hosts; needs manual"; return 1; }
   for id in $ids; do
     old=$(host_image "$id")
-    if [ "$old" = "$want" ]; then continue; fi
-    log "refresh player host $id (image differs from the release body image)"
+    if host_current "$id" "$want"; then continue; fi
+    log "refresh player host $id (not current: image differs or the host is not running)"
     pause_scope bodies
     if host_admin player-stop "$id" >/dev/null &&
       host_admin player-start "$id" >/dev/null &&
