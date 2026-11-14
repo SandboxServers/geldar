@@ -11,6 +11,7 @@ usage() {
   echo "  migrate [--dry-run] | migrate --set-role-password geldar_mcp --password-file <file>" >&2
   echo "  owner-add <id> [--cap N] | player-add <id> --owner <o> --life <l> --name <n> --harness <h>" >&2
   echo "  token-mint <player> --out <file> | token-revoke <tk_id> | skin-import <player-id> <json under /run/skins> | players-status (lists tokens, no values)" >&2
+  echo "  player-flags <player-id> [--public-camera on|off] [--thoughts-delayed-public on|off]" >&2
   echo "  notice <payload-json> (CD-1d: publishes one maintenance notice as the deploy NATS user; see deploy/colo-notice.sh)" >&2
   exit 2
 }
@@ -25,7 +26,7 @@ if [ "$cmd" = notice ]; then
 fi
 
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import) ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-flags) ;;
   *) usage ;;
 esac
 
@@ -43,6 +44,7 @@ case $cmd in
   migrate) exec node "$ROOT/tools/migrate/src/cli.ts" "$@" ;;
   owner-add) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" owner add "$@" ;;
   player-add) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" player add "$@" ;;
+  player-flags) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" player flags "$@" ;;
   token-mint) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token mint "$@" ;;
   token-revoke) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token revoke "$@" ;;
   skin-import) exec node "$ROOT/tools/players-cli/src/cli.ts" skin import "$@" ;;

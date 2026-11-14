@@ -183,8 +183,8 @@ run_hosts() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop or player-list" ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | player-flags) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list or player-flags" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
@@ -194,7 +194,7 @@ if [ "$cmd" = skin-import ]; then
 fi
 case $cmd in
   player-start | player-stop) host_args "$@" ;;
-  player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
+  player-flags) [ "$#" -ge 2 ] && printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;  player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
 esac
 
 plan_header
