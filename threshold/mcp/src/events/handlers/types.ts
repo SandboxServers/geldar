@@ -1,5 +1,5 @@
-import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
-import type { MindEvent } from '@geldar/animus/src/ports/body.ts';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import type { SimEvent } from '@geldar/mcp-mock';
 
 /** What the mapper remembers about a life's running intent between events. */

@@ -11,7 +11,7 @@
     "typecheck": "tsc -p . --noEmit"
   },
   "dependencies": {
-    "@geldar/animus": "workspace:*",
+    "@geldar/player-core": "workspace:*",
     "@geldar/contract": "workspace:*",
     "@geldar/mcp-mock": "workspace:*",
     "@geldar/repo-checks": "workspace:*",
@@ -24,6 +24,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@geldar/player-core": "workspace:*",
     "@types/pg": "8.23.1"
   }
 }

@@ -1,4 +1,4 @@
-import type { RequestTransport } from '@geldar/animus/src/link/nats-body-link.ts';
+import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { viewSubject } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { NatsBodyGateway } from './body-gateway.ts';

@@ -2,7 +2,7 @@ import {
   NatsBodyLink,
   REQUEST_TIMEOUT_MS,
   type RequestTransport,
-} from '@geldar/animus/src/link/nats-body-link.ts';
+} from '@geldar/player-core/src/link/nats-body-link.ts';
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
 import {
   bookSubject,

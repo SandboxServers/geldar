@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import type { Snapshot } from '@geldar/contract';
 import { encodeCursor, FakeClock, type SimEvent } from '@geldar/mcp-mock';
 import type { RunState } from '../../src/events/mapper.ts';

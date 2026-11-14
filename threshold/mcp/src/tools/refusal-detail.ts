@@ -5,7 +5,7 @@
  * carries a marker word is shown as `(name)`, so the detail passes the agent-text scan.
  */
 
-import type { OutputError } from '@geldar/animus/src/ports/index.ts';
+import type { OutputError } from '@geldar/player-core/src/ports/index.ts';
 import { markedWords } from '@geldar/contract';
 
 /** One refused item: its reason code and, for a validator refusal, the detail of what was refused. */

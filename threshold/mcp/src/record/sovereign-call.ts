@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { newId } from '@geldar/animus/src/ids.ts';
+import { newId } from '@geldar/player-core/src/ids.ts';
 import {
   type SovereignCallPayload,
   validateSovereignCallPayload,

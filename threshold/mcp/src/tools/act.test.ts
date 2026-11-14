@@ -1,4 +1,4 @@
-import { createOutputValidator } from '@geldar/animus/src/validate/index.ts';
+import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { markedWords, validateSovereignCallPayload } from '@geldar/contract';
 import { FakeClock } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';

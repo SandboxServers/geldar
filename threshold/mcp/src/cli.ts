@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { natsRequestTransport } from '@geldar/animus/src/link/nats-body-link.ts';
+import { natsRequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { connectNats } from '@geldar/contract/nats';
 import { RealClock } from '@geldar/mcp-mock';
 import { jetstream, jetstreamManager } from '@nats-io/jetstream';

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { newId } from '@geldar/animus/src/ids.ts';
-import { buildPlan } from '@geldar/animus/src/loop/plan.ts';
-import type { OutputValidator } from '@geldar/animus/src/ports/index.ts';
+import { newId } from '@geldar/player-core/src/ids.ts';
+import { buildPlan } from '@geldar/player-core/src/loop/plan.ts';
+import type { OutputValidator } from '@geldar/player-core/src/ports/index.ts';
 import type {
   PlanMessage,
   SayInput,

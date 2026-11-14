@@ -1,5 +1,5 @@
-import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
-import { mindEventSubjects, normaliseEvent } from '@geldar/animus/src/link/mind-event.ts';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
+import { mindEventSubjects, normaliseEvent } from '@geldar/player-core/src/link/mind-event.ts';
 import {
   maintenanceSubject,
   validateDayNightPayload,
