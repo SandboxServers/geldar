@@ -24,9 +24,17 @@ export const MAX_UP_STEPS = 4;
 const HOP_TICKS = 20;
 const RISE = 0.9;
 /** The action's time limit (30 s, `unstick`'s timeout). A climb counts the time already spent against it. */
-const ACTION_LIMIT_S = 30;
+export const ACTION_LIMIT_S = 30;
 /** Seconds kept back from the limit for the hop that follows a climb's digs. */
 const HOP_RESERVE_S = 1;
+
+/**
+ * Seconds of the action's limit left for one more step, with the hop reserve kept back (decision 0210).
+ * Counted from `startedMs`, the start of the whole call, so the walks and digs already spent count.
+ */
+export function timeLeftS(startedMs: number): number {
+  return ACTION_LIMIT_S - HOP_RESERVE_S - (Date.now() - startedMs) / 1000;
+}
 
 const UP = new Vec3(0, 1, 0);
 /** Stands in for a cell the climb has already left: the shaft is solid for the step-off test. */

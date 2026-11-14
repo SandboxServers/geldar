@@ -100,6 +100,63 @@ const ownedBy = (owner: string | null) => setOwnerLookup(() => ({ known: true, o
 const breachLines = (log: { mock: { calls: unknown[][] } }): string[] =>
   log.mock.calls.map((call) => String(call[0])).filter((line) => line.includes('unstick_breach'));
 
+/**
+ * The walk east is the only walk: it moves the Body 1.2 blocks to (1,64,0) and stops at a stone wall.
+ * From there the wall east (2,64) and (2,65) stands on a stone floor (2,63): the one sideways dig.
+ */
+function eastWalkThenWall(): Grid {
+  const grid: Grid = new Map([
+    [key(0, 63, 0), 'stone'],
+    [key(1, 63, 0), 'stone'],
+    [key(2, 63, 0), 'stone'],
+    [key(2, 64, 0), 'stone'],
+    [key(2, 65, 0), 'stone'],
+  ]);
+  for (const dir of EIGHT) {
+    if (dir.x === 1 && dir.z === 0) continue;
+    for (const y of [64, 65, 66]) grid.set(key(dir.x, y, dir.z), 'stone');
+  }
+  return grid;
+}
+
+describe('unstick time budget per step (decision 0210)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Runs unstick on a frozen clock where each tick costs `msPerTick`; returns the outcome and the blocks dug. */
+  async function runWith(msPerTick: number) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(0);
+    // The stone wall has no ownership record: a dig of it is allowed, so only the time decides.
+    ownedBy(null);
+    const { bot, dug } = fakeBot(eastWalkThenWall());
+    const base = bot.waitForTicks;
+    (bot as { waitForTicks: (n: number) => Promise<void> }).waitForTicks = async () => {
+      vi.setSystemTime(Date.now() + msPerTick);
+      await base();
+    };
+    const outcome = await unstick(ctxOf(bot));
+    return { outcome, dug };
+  }
+
+  it('does not start a 15 s sideways dig after a 24 s walk: the call ends before its 30 s limit', async () => {
+    // Each tick is 1 s here, so the failed 24-tick walk east costs 24 s of the action's 30 s.
+    const { outcome, dug } = await runWith(1000);
+    expect(dug).toEqual([]);
+    expect(outcome.status).toBe('failed');
+    if (outcome.status !== 'failed') return;
+    expect(outcome.reason).toBe('blocked');
+    expect(outcome.message).toContain('24 s of the 30 s limit used');
+  });
+
+  it('still digs a sideways step that fits in the time left', async () => {
+    const { outcome, dug } = await runWith(0);
+    expect(outcome.status).toBe('completed');
+    expect(dug).toEqual(['stone', 'stone']);
+  });
+});
+
 describe('unstick last resort (owner ruling 2026-11-13)', () => {
   afterEach(() => setOwnerLookup(null));
 
