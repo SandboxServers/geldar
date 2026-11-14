@@ -1,32 +1,41 @@
 # Muffled hearing packets
 
-Written 2026-11-14. Record: [XXXX-muffled-hearing](../../decisions/XXXX-muffled-hearing.md) (Proposed; number assigned by geldar-93). Spec: 5.2 (earshot), 5.8 (32-block speech rule, information bubbles), 5.9 (`chat` config). Related: 0154 (`heard_sound`), 0181 (prompt budget), 0198 (proximity chat, the cut these packets extend).
+Written 2026-11-14. Record: [0199-muffled-hearing](../../decisions/0199-muffled-hearing.md) (Proposed). Spec: 5.2 (earshot), 5.8 (32-block speech rule, information bubbles), 5.9 (`chat` config). Related: 0154 (`heard_sound`), 0181 (prompt budget), 0198 (proximity chat, the cut these packets extend).
 
 Card fields follow [packet-conventions.md](../phase1/packet-conventions.md) section 1, with `owner` and `prove-it` added. The ids are `MH-n` until a wave id is assigned.
 
 ## Order
 
 ```
-MH-0 record ratified (owner rulings 2 and 3)
+0198 proximity chat (plain distance; running elsewhere, lands first)
   |
-  +-- MH-1 contract unblocker (heard_muffled schema, Appendix A, mcp-common note)
-        |
-        +-- MH-2 plugin absorption model (pure code, no wiring)      [needs 0198 merged]
-        |     |
-        |     +-- MH-3 ProximityRule uses effective distance + notice emit
-        |           |
-        |           +-- MH-4 golem Body: receive, collapse, sentence
-        |                 |
-        |                 +-- MH-5 threshold handler + adam-body wiring
-        |                       |
-        |                       +-- MH-6 prompts/ version bump
-        |
-        +-- MH-7 spec 5.2, 5.8, 5.9 amendment (lands before MH-3 merges)
+  +-- MH-0 record ratified (owner rulings)
   |
-  +-- MH-8 cost bench and live lane (ops, last; one at a time)
+  +-- MH-7 spec amendment 5.2, 5.8, 5.9   [OWNER APPROVAL point; geldar-93 asks the owner]
+        |
+        +-- MH-1 contract unblocker (heard_muffled schema, hearingSubject() helper)
+              |
+              +-- MH-CH NATS ACL pin test + body-role PubDeny (node only in a geldar-93 window)
+              |
+              +-- MH-2 plugin absorption model (pure code, no wiring)   [needs 0198 merged]
+                    |
+                    +-- MH-3 ProximityRule uses effective distance + notice emit
+                    |     (rewrites 0198's acceptance tests; branch built first)
+                    |     |
+                    |     +-- MH-8a cost bench on the MH-3 branch (9 and 15 agents);
+                    |     |     sets absorption values, margin M, sealed penalty S;
+                    |     |     MH-3 does NOT merge until MH-8a is done
+                    |     |
+                    |     +-- (MH-3 merges) MH-4 golem Body: receive, collapse, sentence
+                    |           |
+                    |           +-- MH-5 threshold handler + adam-body wiring
+                    |                 |
+                    |                 +-- MH-6 prompts/ version bump
+                    |                 |
+                    |                 +-- MH-8b live lane (after MH-5)
 ```
 
-Merge in this order. Contract files are merged one at a time (packet-conventions 2). MH-2 and MH-7 may run in parallel after MH-1.
+Order: 0198, MH-7, MH-1, MH-CH, MH-2, MH-3, MH-8a, MH-4, MH-5, MH-6, MH-8b (MH-0 any time before MH-7). MH-8a runs on the MH-3 branch and gates the MH-3 merge. Contract files are merged one at a time (packet-conventions 2). MH-CH and MH-2 may run in parallel after MH-1.
 
 ---
 
@@ -35,20 +44,31 @@ Merge in this order. Contract files are merged one at a time (packet-conventions
 - **depends-on:** owner rulings on open questions 2 and 3 in the record
 - **owner:** geldar-93 (orchestrator), with the owner
 - **size:** S (docs)
-- **files:** `docs/decisions/XXXX-muffled-hearing.md` (number and status only)
+- **files:** `docs/decisions/0199-muffled-hearing.md` (number and status only)
 - **prove-it:** none; a docs change. Check `pnpm check:repo` passes.
 
 ## MH-1: contract unblocker
 
-- **depends-on:** none (0198 not required for the schema)
+- **depends-on:** MH-7 merged (owner approved); 0198 not required for the schema
 - **owner:** geldar-93 (contract), with geldar-3b reviewing the Appendix A diff
 - **size:** S
-- **files:** `contract/schemas/heard-muffled-event.schema.json` (new); `contract/schemas/mcp-common.schema.json` (note only, no enum change; see record "Wait interests"); Appendix A perception schema in `docs/spec.md` (documentation of the new event); `contract/src/outcome-words.ts` (new `heardMuffledSentence` stub that returns the fixed text); generated outputs (regenerate, do not edit)
-- **prove-it:** a schema test that rejects a `heard_muffled` event with a `x`/`y`/`z` field and with a speaker field, and accepts `direction` and `band` only. Revert the schema's `additionalProperties: false` and the test must fail. Regenerated output matches the generator (CI drift check).
+- **files:** `contract/schemas/heard-muffled-event.schema.json` (new); `contract/schemas/mcp-common.schema.json` (note only, no enum change; see record "Wait interests"); Appendix A perception schema in `docs/spec.md` (documentation of the new event); `contract/src/outcome-words.ts` (new `heardMuffledSentence` stub that returns the fixed text); `contract/src/subjects.ts` (new `hearingSubject(shard, lifeId)` returning `geldar.<shard>.body.<lifeId>.hearing`, beside `snapshotSubject` and `viewSubject`); generated outputs (regenerate, do not edit)
+- **prove-it:** a schema test that rejects a `heard_muffled` event with a `x`/`y`/`z` field and with a speaker field, and accepts `direction` and `band` only. Revert the schema's `additionalProperties: false` and the test must fail. A test that `hearingSubject("s","L")` equals `geldar.s.body.L.hearing`; change the format and it fails. Regenerated output matches the generator (CI drift check).
+
+## MH-CH: NATS ACL pin test and body-role PubDeny
+
+- **depends-on:** MH-1 (the `hearingSubject()` helper)
+- **owner:** geldar-93 (nats-auth generator), geldar-ops reviewing
+- **size:** S
+- **files:** `tools/repo-checks/src/nats-auth.test.ts` (pin test; it already pins the body deny list); the nats-auth generator in `geldar.ps1` (`Get-NatsUsers`: add `geldar.<s>.body.*.hearing` to the body role's PubDeny, recommended in record decision 9)
+- **prove-it:**
+  - a test that the existing plugin Pub (`geldar.<s>.>`) and body Sub (`geldar.<s>.body.>`) cover `hearingSubject()`, so a later narrowing fails it
+  - a test that the body role cannot publish `geldar.<s>.body.<lifeId>.hearing` (PubDeny) while the plugin role can; remove the PubDeny line and the test fails
+- **note:** the generator change reaches a node only in a geldar-93 deploy window (`deploy/README.md`: regenerate, copy, restart `nats`, which drops every client, after a notice). Option B (per-life credentials) is out of scope and needs its own record.
 
 ## MH-2: plugin absorption model
 
-- **depends-on:** MH-1; 0198 merged to main
+- **depends-on:** MH-1; 0198 merged to main (MH-2 constants are placeholders until MH-8a)
 - **owner:** geldar-93 via a packet-coder (plugin)
 - **size:** M
 - **files:** `plugin/core/src/chat/absorption.ts` (new; the material table and the pure function `effectiveDistance(speaker, listener, blockAt)`); `plugin/core/src/chat/absorption.test.ts` (new); `plugin/core/src/chat/absorption-table.ts` (new, the table only, so it can be read without the algorithm)
@@ -60,10 +80,12 @@ Merge in this order. Contract files are merged one at a time (packet-conventions
 
 ## MH-3: ProximityRule uses effective distance and emits the notice
 
-- **depends-on:** MH-2; MH-7 merged (spec amendment)
+This card REWRITES 0198's acceptance tests to gate on effective distance instead of raw distance.
+
+- **depends-on:** MH-2; MH-1; MH-7 merged (spec amendment); MH-8a done before the merge (the branch is built first, MH-8a runs on it and sets the values)
 - **owner:** geldar-93 via a packet-coder (plugin)
 - **size:** M
-- **files:** `plugin/core/src/chat/proximity-rule.ts` (0198's file, extended); `plugin/core/src/chat/muffle-config.ts` (new; `chat.muffle` constants: margin 8, sealed penalty 4, per-line cap 512, per-ray cap 64); `plugin/core/src/chat/proximity-rule.test.ts`; the plugin-to-Body emit (channel to be confirmed, open question 1)
+- **files:** `plugin/core/src/chat/proximity-rule.ts` (0198's file, extended); `plugin/core/src/chat/muffle-config.ts` (new; `chat.muffle` constants: margin 8, sealed penalty 4, per-line cap 512, per-ray cap 64); `plugin/core/src/chat/proximity-rule.test.ts`; the plugin-to-Body emit (publishes on `hearingSubject()`, record decision 9)
 - **prove-it:**
   - a clear pair (no walls, raw 20): words delivered, no notice
   - a muffled pair (wall, `e` = 35): no words, one `heard_muffled` emit with the right direction and band
@@ -108,23 +130,32 @@ Merge in this order. Contract files are merged one at a time (packet-conventions
 
 ## MH-7: spec amendment
 
-- **depends-on:** none; must merge before MH-3
+- **depends-on:** 0198 merged; OWNER APPROVAL (geldar-93 asks the owner); must merge before MH-1 and MH-3
 - **owner:** geldar-93, with the owner's sign-off on the record
 - **size:** S
 - **files:** `docs/spec.md` at 5.2 (earshot, one sentence), 5.8 (the 32-block rule, one paragraph and the information-bubbles note), 5.9 (the `chat` block gains `muffle`); no other spec text
 - **prove-it:** docs only. Check that the 5.9 block matches the constants in MH-3 (a test that reads the spec block and compares it to `muffle-config.ts` is preferred; if the spec is not parsed by code, a reviewer checks the two by hand and records it)
 
-## MH-8: cost bench and live lane
+## MH-8a: cost bench on the MH-3 branch
 
-- **depends-on:** MH-5 merged; the shard up with the plugin jar
+- **depends-on:** MH-3 branch built (not merged); the shard up with the plugin jar
 - **owner:** ops (runs and reports; edits no code)
 - **size:** S
 - **files:** none edited; the bench output is recorded in the campaign's bench records
 - **prove-it:**
   - the bench with 9 and then 15 agents chatting in one area at 20 TPS: per-line block reads, per-tick cost, and the count of lines that hit the 512-read cap
-  - a live lane with a wall between two agents: one clear, one muffled, one silent, and the sealed-room case
+  - it must set the absorption values, margin `M` and sealed penalty `S` (all "not measured" proposals in the record) BEFORE MH-3 merges; the chosen values go back into the MH-3 branch and the MH-7 spec block
   - if the per-line cap is hit in the normal case, the packet is not done; the record's cap values are then revisited
-- **run:** one at a time. Shard mutations (tick rate, world) only through `bench` and `test:live`. Live tests start their own stack; `adam up` is not run first.
+- **run:** one at a time. Shard mutations (tick rate, world) only through `bench`. `adam up` is not run first.
+
+## MH-8b: live lane
+
+- **depends-on:** MH-5 merged; the shard up with the plugin jar
+- **owner:** ops (runs and reports; edits no code)
+- **size:** S
+- **files:** none edited
+- **prove-it:** a live lane with a wall between two agents: one clear, one muffled, one silent, and the sealed-room case
+- **run:** one at a time, through `test:live`. Live tests start their own stack; `adam up` is not run first.
 
 ---
 
