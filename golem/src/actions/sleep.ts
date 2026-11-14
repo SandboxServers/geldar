@@ -9,6 +9,7 @@ import {
   errorText,
   type FailReason,
   failed,
+  type JsonValue,
 } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
@@ -18,6 +19,7 @@ import {
   MAX_NAMED_HOSTILES,
   monstersFact,
 } from './sleep-hostiles.ts';
+import { type SleepersLine, type SleepersWatch, watchSleepers } from './sleepers.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 
 /** The first world tick of the night window the Body checks (advisory: the server's window differs by one). */
@@ -39,6 +41,11 @@ const SLEEP_BUDGET_MS = 30_000;
 const SLEEP_HARD_STOP_MS = 35_000;
 /** The world ticks a walk to a bed may stall for before it gives up (moveNear's default is 600). */
 const BED_STALL_TICKS = 300;
+/**
+ * The time (wall ms at 1x, scaled by `timeScale`) a sleep waits for the server's sleepers line once the
+ * Body lies down. The line comes with the bed, so the wait is short; without one the result carries none.
+ */
+const SLEEPERS_WAIT_MS = 300;
 
 /** Sleeps in the nearest free bed, trying up to MAX_BEDS. The action does not wait for morning and does not wake the bot. */
 export const sleepAction: ActionHandler<'sleep'> = {
@@ -143,8 +150,19 @@ function refusalScene(bot: Bot, bed: Block): SleepScene {
 }
 
 async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
+  // An action that finds the bot already asleep has no sleep to report: it starts no watch.
+  if (ctx.bot.isSleeping) return completed();
+  // The watch runs for the whole action: it stops on success, failure, cancel and throw alike.
+  const sleepers = watchSleepers(ctx.bot);
+  try {
+    return await sleepFromBeds(ctx, sleepers);
+  } finally {
+    sleepers.stop();
+  }
+}
+
+async function sleepFromBeds(ctx: ActionContext, sleepers: SleepersWatch): Promise<ActionOutcome> {
   const { bot } = ctx;
-  if (bot.isSleeping) return completed();
   const beds = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
   if (!isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0)) {
@@ -168,7 +186,7 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
         break;
       }
       tried += 1;
-      const outcome = await sleepInBed(bedCtx, bed);
+      const outcome = await sleepInBed(bedCtx, bed, sleepers);
       if (outcome.status === 'cancelled' && stop.signal.aborted && !ctx.signal.aborted) {
         // Only the hard stop cut this bed: the search time ran out, which is not a cancel from the Mind.
         last = failed('blocked', 'the bed was cut off by the time limit');
@@ -201,12 +219,16 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
 }
 
 /** Walks to a bed and sleeps in it; completed when the bot is asleep, else the failure. */
-async function sleepInBed(ctx: ActionContext, bed: Block): Promise<ActionOutcome> {
+async function sleepInBed(
+  ctx: ActionContext,
+  bed: Block,
+  sleepers: SleepersWatch,
+): Promise<ActionOutcome> {
   const { bot } = ctx;
   const near = await walkNear(ctx, bed);
   if (near) return near;
   let used = bed;
-  let attempt = await attemptSleep(bot, bed, ctx.signal);
+  let attempt = await attemptSleep(bot, bed, ctx.signal, sleepers);
   if (attempt?.status === 'failed' && attempt.reason === 'out_of_reach') {
     // The bed check is measured from the head block, and `findBlocks` may return the foot: stand by the other half.
     const other = otherHalf(bot, bed);
@@ -214,13 +236,28 @@ async function sleepInBed(ctx: ActionContext, bed: Block): Promise<ActionOutcome
       const moved = await walkNear(ctx, other);
       if (moved) return moved;
       used = other;
-      attempt = await attemptSleep(bot, other, ctx.signal);
+      attempt = await attemptSleep(bot, other, ctx.signal, sleepers);
     }
   }
   if (ctx.signal.aborted) return cancelled();
   if (attempt) return attempt;
   if (!bot.isSleeping) return failed('blocked', 'the bot is not asleep after sleep');
-  return completed({ bed: { x: used.position.x, y: used.position.y, z: used.position.z } });
+  // The sleepers line the server sends for this bed: a line already in hand is the answer; otherwise wait for
+  // the next one, up to SLEEPERS_WAIT_MS.
+  if (sleepers.latest() === undefined) await sleepers.nextLine(SLEEPERS_WAIT_MS * ctx.timeScale);
+  if (ctx.signal.aborted) return cancelled();
+  return completed({
+    bed: { x: used.position.x, y: used.position.y, z: used.position.z },
+    ...sleepersDetail(sleepers.latest()),
+  });
+}
+
+/** The sleepers fact the result carries: `sleepers` as `{asleep, needed}` or `skipped`; no key when no line was seen. */
+function sleepersDetail(line: SleepersLine | undefined): Record<string, JsonValue> {
+  if (line === undefined) return {};
+  return {
+    sleepers: line === 'skipped' ? 'skipped' : { asleep: line.asleep, needed: line.needed },
+  };
 }
 
 /**
@@ -266,16 +303,19 @@ async function walkNear(ctx: ActionContext, block: Block): Promise<ActionOutcome
 
 /**
  * Calls `bot.sleep` unless `signal` aborts first; null when the call returned or the bot was already asleep,
- * `cancelled` when the signal aborted, else the mapped failure. Mineflayer's sleep has no cancel: an abandoned
+ * `cancelled` when the signal aborted, else the mapped failure. The sleepers watch is armed right before the
+ * call, so only the lines from this call count. Mineflayer's sleep has no cancel: an abandoned
  * call settles on its own, and the race has already handled its outcome.
  */
 async function attemptSleep(
   bot: Bot,
   bed: Block,
   signal: AbortSignal,
+  sleepers: SleepersWatch,
 ): Promise<ActionOutcome | null> {
   if (signal.aborted) return cancelled();
   try {
+    sleepers.arm();
     await untilAborted(bot.sleep(bed), signal);
     return null;
   } catch (error) {

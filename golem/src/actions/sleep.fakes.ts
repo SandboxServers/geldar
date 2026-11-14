@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { vi } from 'vitest';
@@ -41,14 +42,24 @@ export interface FakeOptions {
   asleep?: boolean;
   /** True when `bot.sleep` never settles, as when the server stays silent. */
   hangSleep?: boolean;
+  /** Wall ms before `bot.sleep` settles, so a test can send messages while the Body is getting into the bed. */
+  sleepDelayMs?: number;
 }
 
-/** A fake bot with a clock, a set of blocks, and a `sleep` that can reject. */
+/**
+ * A fake bot with a clock, a set of blocks, and a `sleep` that can reject. It is also a message emitter:
+ * `emit` and `listenerCount` are its `message` events, so a test can send sleep lines and count subscribers.
+ */
 export function fakeBot(options: FakeOptions = {}): Bot {
   const blocks = options.blocks ?? [];
   const errors = [...(options.sleepErrors ?? [])];
   let sleeping = options.asleep ?? false;
+  const emitter = new EventEmitter();
   const bot = {
+    on: emitter.on.bind(emitter),
+    removeListener: emitter.removeListener.bind(emitter),
+    emit: emitter.emit.bind(emitter),
+    listenerCount: emitter.listenerCount.bind(emitter),
     time: { timeOfDay: options.timeOfDay ?? 1_000 },
     thunderState: options.thundering ? 1 : 0,
     entity: { position: new Vec3(0, 64, 0) },
@@ -74,6 +85,9 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
     sleep: vi.fn(async (_bed: FakeBlock) => {
       if (options.hangSleep) return new Promise<void>(() => undefined);
+      if (options.sleepDelayMs) {
+        await new Promise<void>((resolve) => setTimeout(resolve, options.sleepDelayMs));
+      }
       const error = errors.shift();
       // The server says "already sleeping" only when the bot is in a bed.
       if (error && /already sleeping/i.test(error)) sleeping = true;

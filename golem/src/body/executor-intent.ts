@@ -37,6 +37,8 @@ export interface IntentStartDeps {
   ): Promise<void>;
   current(): ActiveIntent | null;
   install(a: ActiveIntent): void;
+  /** The death floor (decision 0191): a change while the start runs means the Body died during it. */
+  deathFloor(): number | null;
 }
 
 /** How an intent starts: fresh from its arguments, or again after a Body restart. */
@@ -65,6 +67,8 @@ export async function startIntentRun(
 ): Promise<IntentDisposition> {
   const { runtime } = deps;
   const old = deps.current();
+  // The floor the plan was checked against: a death from here on refuses the start below.
+  const floor = deps.deathFloor();
   // Its checkpoint stays until the new intent's checkpoint overwrites it, so a kill in between
   // leaves a checkpoint, never none. If the new intent fails before it runs, it ends and deletes it.
   if (old) await deps.end(old, 'cancelled', `replaced by ${id}`, undefined, true);
@@ -135,6 +139,11 @@ export async function startIntentRun(
   } catch (error) {
     await deps.end(a, 'failed', errorText(error));
     return 'invalid_arguments';
+  }
+  // The awaits above can outlast a death: the plan was made before it, so the intent never runs.
+  if (deps.deathFloor() !== floor) {
+    await deps.end(a, 'interrupted', 'the Body died');
+    return 'skipped';
   }
   deps.install(a);
   deps.setState(a, 'running');

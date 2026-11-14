@@ -43,6 +43,7 @@ const backoffs = new WeakMap<BodyView, ShelterBackoff>();
  */
 export const darkShelterReflex: Reflex = {
   name: 'dark_shelter',
+  suspendedWhileAsleep: () => true,
   priority: 35,
   cooldownTicks: SHELTER_COOLDOWN_TICKS,
   check(view: BodyView): Trigger | null {
