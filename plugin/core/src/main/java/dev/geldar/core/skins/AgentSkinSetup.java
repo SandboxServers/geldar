@@ -2,12 +2,9 @@ package dev.geldar.core.skins;
 
 import de.bluecolored.bluemap.api.BlueMapAPI;
 import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.function.Function;
 import java.util.logging.Logger;
-import javax.imageio.ImageIO;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
@@ -20,7 +17,6 @@ import org.bukkit.plugin.Plugin;
 public final class AgentSkinSetup {
     static final String SKINS_DIR_VARIABLE = "GELDAR_AGENT_SKINS_DIR";
     static final String DEFAULT_SKINS_DIR = "/data/skins";
-    static final String DEFAULT_SKIN_RESOURCE = "/agent-default-skin.png";
 
     private volatile AgentSkinProvider provider;
 
@@ -38,7 +34,7 @@ public final class AgentSkinSetup {
             }
             String configured = env.apply(SKINS_DIR_VARIABLE);
             Path dir = Path.of(configured == null || configured.isBlank() ? DEFAULT_SKINS_DIR : configured);
-            BufferedImage fallback = loadDefaultSkin(log, DEFAULT_SKIN_RESOURCE);
+            BufferedImage fallback = AgentSkinLookup.defaultSkin();
             AgentSkinLookup lookup = new AgentSkinLookup(dir, fallback, log);
             // Built inside the try: loading the provider needs the BlueMap API classes.
             AgentSkinProvider skins = new AgentSkinProvider(lookup::lookup, fallback, log);
@@ -56,28 +52,4 @@ public final class AgentSkinSetup {
         return setup;
     }
 
-    /**
-     * The default skin from the named resource, or a solid grey square when the resource is missing or cannot be
-     * read. Never null.
-     */
-    static BufferedImage loadDefaultSkin(Logger log, String resource) {
-        try (InputStream in = AgentSkinSetup.class.getResourceAsStream(resource)) {
-            if (in != null) {
-                BufferedImage image = ImageIO.read(in);
-                if (image != null) {
-                    return image;
-                }
-            }
-            log.warning("default agent skin resource is missing; using a solid colour");
-        } catch (IOException e) {
-            log.warning("default agent skin resource is unreadable: " + e.getClass().getSimpleName());
-        }
-        BufferedImage solid = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
-        for (int x = 0; x < 64; x++) {
-            for (int y = 0; y < 64; y++) {
-                solid.setRGB(x, y, 0xff6b7785);
-            }
-        }
-        return solid;
-    }
 }

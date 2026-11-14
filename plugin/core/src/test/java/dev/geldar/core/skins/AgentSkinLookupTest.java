@@ -3,6 +3,7 @@ package dev.geldar.core.skins;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -10,6 +11,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
@@ -25,11 +28,54 @@ class AgentSkinLookupTest {
     @TempDir
     Path dir;
 
-    private final BufferedImage defaultImage = solid(64, 64, 0xff00ff00);
+    private final BufferedImage defaultImage = AgentSkinLookup.defaultSkin();
 
     @Test
     void offlineUuidMatchesTheSkinHeadsVector() {
         assertEquals(JASON, AgentSkinLookup.offlineUuid("ag_jason_01"));
+    }
+
+    @Test
+    void defaultSkinIs64x64AndNeverEmpty() {
+        BufferedImage image = AgentSkinLookup.defaultSkin();
+
+        assertNotNull(image);
+        assertEquals(64, image.getWidth());
+        assertEquals(64, image.getHeight());
+        for (int x = 0; x < 64; x++) {
+            for (int y = 0; y < 64; y++) {
+                boolean hat = x >= 40 && x < 48 && y >= 8 && y < 16;
+                if (!hat) {
+                    assertEquals(0xff, image.getRGB(x, y) >>> 24, "opaque at " + x + "," + y);
+                }
+            }
+        }
+    }
+
+    @Test
+    void defaultSkinFaceIsOnTheHeadAreaAndHasTwoColours() {
+        BufferedImage image = AgentSkinLookup.defaultSkin();
+        Set<Integer> colours = new HashSet<>();
+        for (int x = 8; x < 16; x++) {
+            for (int y = 8; y < 16; y++) {
+                colours.add(image.getRGB(x, y));
+            }
+        }
+
+        assertEquals(2, colours.size());
+        assertEquals(0x00, image.getRGB(44, 12) >>> 24);
+    }
+
+    @Test
+    void defaultSkinIsDeterministicAcrossCalls() {
+        int[] first = pixels(AgentSkinLookup.defaultSkin());
+        int[] second = pixels(AgentSkinLookup.defaultSkin());
+
+        assertTrue(Arrays.equals(first, second));
+    }
+
+    private static int[] pixels(BufferedImage image) {
+        return image.getRGB(0, 0, image.getWidth(), image.getHeight(), null, 0, image.getWidth());
     }
 
     @Test

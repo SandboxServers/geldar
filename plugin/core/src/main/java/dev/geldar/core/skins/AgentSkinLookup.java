@@ -28,6 +28,9 @@ public final class AgentSkinLookup {
 
     private static final Pattern STEM = Pattern.compile("^[a-z][a-z0-9_-]{0,31}$");
     private static final String PNG_SUFFIX = ".png";
+    private static final int BODY_ARGB = 0xff6b7785;
+    private static final int FACE_ARGB = 0xffd2b48c;
+    private static final int EYE_ARGB = 0xff3b2f2f;
 
     private final Path dir;
     private final BufferedImage defaultImage;
@@ -42,6 +45,34 @@ public final class AgentSkinLookup {
     /** The Java offline UUID of a login name, as BlueMap and the skin heads verb key it. */
     public static UUID offlineUuid(String name) {
         return UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * The default skin, built in code: the repo's leak scan forbids tracked skin PNGs, so nothing is loaded from a
+     * resource. A 64x64 layout: the body colour everywhere, the face on the head area (8,8)-(16,16) in a skin tone
+     * with two dark eyes, and the hat layer (40,8)-(48,16) transparent so it does not cover the face. Every call
+     * returns a new image with the same pixels.
+     */
+    public static BufferedImage defaultSkin() {
+        BufferedImage image = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
+        for (int x = 0; x < 64; x++) {
+            for (int y = 0; y < 64; y++) {
+                image.setRGB(x, y, BODY_ARGB);
+            }
+        }
+        for (int x = 8; x < 16; x++) {
+            for (int y = 8; y < 16; y++) {
+                image.setRGB(x, y, FACE_ARGB);
+            }
+        }
+        image.setRGB(10, 11, EYE_ARGB);
+        image.setRGB(13, 11, EYE_ARGB);
+        for (int x = 40; x < 48; x++) {
+            for (int y = 8; y < 16; y++) {
+                image.setRGB(x, y, 0x00000000);
+            }
+        }
+        return image;
     }
 
     /** The agent's skin, or the default image when there is none or it cannot be read. */
