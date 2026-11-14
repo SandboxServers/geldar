@@ -12,6 +12,7 @@ import {
   MetricRegistry,
   PENDING,
   pushMetrics,
+  SKIPPED,
   samplePending,
   WRITTEN,
 } from './metrics.ts';
@@ -76,6 +77,24 @@ describe('the eventsink counts what the batch decides', () => {
     expect(seriesValue(metrics, WRITTEN)).toBe(1);
     expect(seriesValue(metrics, FAILED, { reason: 'validate' })).toBe(0);
     expect(seriesValue(metrics, DLQ_WRITTEN)).toBe(0);
+  });
+
+  it('counts a maintenance notice as skipped, never as a failure or a DLQ write', async () => {
+    const metrics = new EventsinkMetrics();
+    const publishDlq = vi.fn(async (_subject: string, _body: string) => {});
+    const insertBatch = vi.fn(async () => {});
+    const notice = { id: 'cd-back-mcp-1', kind: 'back', scope: 'mcp' };
+    await handleBatch([message('geldar.phase0.maintenance', notice)], {
+      writer: { insertBatch },
+      publishDlq,
+      metrics,
+      log: () => {},
+    });
+    expect(seriesValue(metrics, SKIPPED)).toBe(1);
+    expect(seriesValue(metrics, FAILED, { reason: 'validate' })).toBe(0);
+    expect(seriesValue(metrics, DLQ_WRITTEN)).toBe(0);
+    expect(publishDlq).not.toHaveBeenCalled();
+    expect(insertBatch).not.toHaveBeenCalled();
   });
 
   it('counts an invalid body once as a validate failure and once as a DLQ write', async () => {

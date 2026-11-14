@@ -13,7 +13,7 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Plan:** [plan.md](plan.md) (waves C1, C2, C2b, C3, C4; owner items in section (f); first-ranger lessons in section (g)).
 - **Retrospective:** [phase0-retrospective-for-phase1.md](phase0-retrospective-for-phase1.md).
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
-- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`.
+- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7-wave-plan.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129; the next free number is 0147 (see item 8 for C5).
 
@@ -39,7 +39,7 @@ Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges.
 8. **Wave C5, Goldar learnings (drafted 2026-11-11, parallel to C1 to C4):** Body parity and the unavailable tools, from the review of the goldar repo. Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md); review: [worknotes/goldar-review.md](worknotes/goldar-review.md); ledger section "Wave C5"; decisions 0141 to 0146 are Proposed or Open (owner to confirm); rulings R47 to R54. C5a (C5-00 first, then 01 to 04 in parallel) and C5b (05 then 06; 07 parallel) are Ready except C5-01; C5c (08 to 10) waits on 0146. Next free decision number: 0147.
 
 9. **Wave PX, perception for body and mind (drafted 2026-11-11):** what a player could see or hear, from the Jason play record (defects D1 to D11). Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md); ledger section "Wave PX"; owner rulings in decision [0154](../../decisions/0154-perception-owner-rulings.md) (Decided; the seven rulings; spider is a conditional mob under ruling 1, settled by the orchestrator). PX-1 and PX-0 wait on C6-BODY-EVENTS merging; PX-2b is unblocked. Decision 0154 is the only number this wave uses; 0147 to 0153 are not free for it (0147 to 0149 are on in-flight branches, 0150 is on main, 0151 to 0153 are wave C7).
-10. **Wave C7, user management (drafted 2026-11-11, docs only):** cards in [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md); ledger section "Wave C7". Owner rulings recorded as Decided: [0151](../../decisions/0151-bodies-run-only-in-the-colo.md) (bodies run only in the Colo; no bring-your-own-body), [0152](../../decisions/0152-programmatic-body-management-for-owners.md) (owner API and keys, Colo supervisor), [0153](../../decisions/0153-terms-consent-and-deletion-before-sign-up.md) (terms, consent, deletion and export before sign-up). Sign-up stays closed until C7-08, C7-09 and C7-05/06 are merged and the owner approves the legal text (C7-11). Owner questions Q1 to Q8 are in the packet file. C7 used decision numbers 0151 to 0153 only.
+10. **Wave C7, user management (replanned 2026-11-13):** plan, waves, migrations 0024 to 0033 and live lane in [packets/c7-wave-plan.md](packets/c7-wave-plan.md); cards in [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md) and [packets/c7b-packets.md](packets/c7b-packets.md); ledger section "Wave C7". Owner questions Q1 to Q8 are answered: [0170](../../decisions/0170-owner-management-values-and-admin-flag.md) (values and the admin flag), [0171](../../decisions/0171-account-erasure-rule.md) (erasure), [0172](../../decisions/0172-human-skin-upload-held-for-approval.md) (skin upload held for approval). Merged: C7-01, C7-08, and wave 1 (see the C7 status below). Sign-up stays closed until C7-11 and the owner approves.
 
 ## Who does what
 
@@ -66,6 +66,12 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 - **Principle 1** (spec section 2): no humans inside. Humans observe through the map, the thought stream and silent cameras; they never speak, build, give items or intervene. If something breaks, fix the infrastructure, not the story.
 - **Agents must not learn they are watched** (decisions [0059](../../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md) and [0068](../../decisions/0068-prompt-v4-and-agent-visible-text.md)). Agent-visible text, including prompts and wake strings, passes the scans in the packet cards and never shows operator, Glass, BlueMap or observer data.
 - **Prompts are versioned and released versions are never edited.** v1 to v5 are released and not edited; v6 is reserved by C3-03 and v7 by C4-06 (neither released); each creates a new version.
+
+## C7 status (2026-11-13)
+
+- **Wave C7-1 done** (merge bbb5ed6b, PR #315): C3-04s, C7-12, C7-03a (package only), C7-02a (SQL and service only). Migrations 0024, 0025, 0027 and 0032 are applied on the node; spare left: 0033. Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
+- **Wave 2 next:** C7-02b (owner keys), C7-05 (onboarding), C7-03b1 (supervisor NATS binding), C7-03b3 (adapters), then C7-04 (API v1). Wave 3 gets C7-03b2 (compose, needs geldar-93 contact first) before any live use. Deploy protocol: MERGE and DONE go to geldar-93 and geldar-ops; every image-changing merge refreshes the ranger hosts, so batch them.
+- **Open owner items:** the erasure rule review (0171; gates C7-11 only); the geldar_supervisor Postgres password (an operator step, by hand, before C7-03b2 in wave 3); the C7-10 reason codes and its two count and index decisions.
 
 ## Open contradictions
 

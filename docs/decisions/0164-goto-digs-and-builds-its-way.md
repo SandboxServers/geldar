@@ -77,3 +77,15 @@ A block whose dig time the bot cannot read is not refused for that reason alone 
 - Tier 2 digs more often in the world. The bench must show it before and after: the pit cases, the blocked-path recovery cases, and a shelter case where the protection must hold. The bench run is required before this decision is accepted for release; this packet only adds the code and its tests.
 - The library's `safeToBreak` is replaced in tier 2 by `digAllowed`. It keeps the library's liquid, falling-block and entity checks and adds the block-entity, protection, blocks-cant-break, health, dig-time and drop rules. The library's `exclusionBreak` is not read.
 - Result text carries counts as words (no digits). `mine`, `place` (except the approach walk) and the reflexes are unchanged in their tier-1 behaviour.
+
+## 2026-11-13 owner ruling: escape through unowned built blocks
+
+Owner ruling: a trapped ranger may escape through a built block that has no ownership record, but only as a last resort.
+
+- Scope: only `unstick` may do this, and only in its last-resort pass, which runs after walk, dig_down, stair_dig and dig_sideways have all failed. `goto` is unchanged: `goto` and `goto-dig` never reach the relaxed rule, because the rule is passed as an explicit `relaxed` option from unstick only.
+- Rule: a block protected only by type or only by touching built material (this decision, above) may be dug in that pass if its ownership is KNOWN to be unowned. Known means a complete owner answer (`truncated: false`) with no owner for that block. A truncated, failed or timed-out answer counts as unknown, and unknown stays protected.
+- Owned by another player: never dug. Owned by the bot itself: diggable, as before.
+- Still refused in that pass: block entities, doors, beds, chests, crafting tables and the other refused names; unbreakable blocks; a block with a liquid beside it; a block with sand, gravel or concrete powder above it; and the drop rule of the escape ladder (`dropAllowed`, `digDownAllowed`).
+- Before the pass, ownership is prefetched around the bot (feet, head and the eight neighbours), within the 300 ms wait of the block-owners client.
+- Every block the pass breaks is logged as an `unstick_breach` line with the block name and position. Success keeps the completed outcome with method `dig_unowned`, and `dig_unowned` is added to the tried list (in the failure text too).
+- Why: CoreProtect has recorded only since 2026-11-13 16:30Z. Village blocks and player builds from before then have no record, so both can be breached by unstick's last-resort pass only, which lets a trapped ranger breach a village wall to get free. `goto` never breaks them.

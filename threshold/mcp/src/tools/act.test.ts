@@ -1,5 +1,5 @@
 import { createOutputValidator } from '@geldar/animus/src/validate/index.ts';
-import { validateSovereignCallPayload } from '@geldar/contract';
+import { markedWords, validateSovereignCallPayload } from '@geldar/contract';
 import { FakeClock } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { batchCost } from '../budget/cost.ts';
@@ -79,9 +79,9 @@ describe('act: index mapping', () => {
     });
     expect(result.accepted).toEqual([0, 4]);
     expect(result.rejected).toEqual([
-      { index: 1, reason: 'batch_rejected' },
-      { index: 2, reason: 'not_allowed' },
-      { index: 3, reason: 'batch_rejected' },
+      { index: 1, reason: 'batch_rejected', detail: expect.any(String) },
+      { index: 2, reason: 'not_allowed', detail: 'action 1.do: is not available in this phase' },
+      { index: 3, reason: 'batch_rejected', detail: expect.any(String) },
     ]);
     expect(h.body.plans).toHaveLength(1);
     expect(result.budget_remaining_thoughts).toBe(1);
@@ -90,7 +90,7 @@ describe('act: index mapping', () => {
   it('maps a bad say to index 0 and leaves the valid actions and intent standing', () => {
     const slots = slotsOf({ say: 'hi', actions: [GOTO, MINE], intent: INTENT });
     const refused = refusalsOf([{ code: 'not_allowed', path: '/say', detail: 'bad' }], slots);
-    expect(refused).toEqual(['not_allowed', undefined, undefined, undefined]);
+    expect(refused.map((r) => r?.reason)).toEqual(['not_allowed', undefined, undefined, undefined]);
   });
 
   it('keeps the flat order: say, actions, intent, with no say and no intent when absent', () => {
@@ -105,8 +105,8 @@ describe('act: atomic action list', () => {
     const result = await act(h, { actions: [GOTO, { do: 'fly', target: 'moon' }] });
     expect(result.accepted).toEqual([]);
     expect(result.rejected).toEqual([
-      { index: 0, reason: 'batch_rejected' },
-      { index: 1, reason: 'not_allowed' },
+      { index: 0, reason: 'batch_rejected', detail: expect.any(String) },
+      { index: 1, reason: 'not_allowed', detail: 'action 1.do: is not available in this phase' },
     ]);
     expect(h.body.plans).toHaveLength(0);
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
@@ -238,7 +238,9 @@ describe('act: refusals and the record', () => {
     const h = harness();
     const result = await act(h, { actions: [{ do: 'trade', target: 'Adam' }] });
     expect(result.accepted).toEqual([]);
-    expect(result.rejected).toEqual([{ index: 0, reason: 'not_allowed' }]);
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'not_allowed', detail: 'action 0.do: is not available in this phase' },
+    ]);
     expect(h.body.plans).toHaveLength(0);
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
   });
@@ -269,7 +271,9 @@ describe('act: partial batches', () => {
     const h = harness();
     const result = await act(h, { say: LONG_SAY, actions: [GOTO, MINE] });
     expect(result.accepted).toEqual([1, 2]);
-    expect(result.rejected).toEqual([{ index: 0, reason: 'schema' }]);
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: expect.stringMatching(/^say: /) },
+    ]);
     expect(h.body.plans).toHaveLength(1);
     expect(h.body.plans[0]?.plan.thought.actions).toHaveLength(2);
     expect(result.budget_remaining_thoughts).toBe(3 - batchCost(['action', 'action']));
@@ -307,9 +311,9 @@ describe('act: partial batches', () => {
     });
     expect(result.accepted).toEqual([]);
     expect(result.rejected).toEqual([
-      { index: 0, reason: 'schema' },
-      { index: 1, reason: 'batch_rejected' },
-      { index: 2, reason: 'not_allowed' },
+      { index: 0, reason: 'schema', detail: expect.stringMatching(/^say: /) },
+      { index: 1, reason: 'batch_rejected', detail: expect.any(String) },
+      { index: 2, reason: 'not_allowed', detail: 'action 1.do: is not available in this phase' },
     ]);
     expect(h.body.plans).toHaveLength(0);
     expect(await h.budget.balance(CALLER.lifeId, h.clock.nowMs())).toBe(3);
@@ -391,5 +395,62 @@ describe('act: reasoning is optional in the input', () => {
     const result = await actTool(h.deps, CALLER, {});
     expect(result).toEqual({ accepted: [], rejected: [], budget_remaining_thoughts: 3 });
     expect(h.body.plans).toHaveLength(0);
+  });
+});
+
+describe('act: a refusal says which part was refused', () => {
+  const TRAVEL = { ...INTENT, program: 'travel' };
+
+  it('names the intent field that holds a travel target which is not a player name', async () => {
+    const h = harness();
+    const result = await act(h, { intent: { ...TRAVEL, arguments: { target: 'the far moon!' } } });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: 'intent.arguments.target: is not a player name' },
+    ]);
+    expect(markedWords(result.rejected[0]?.detail ?? '')).toEqual([]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('names the missing coordinate of a travel target given as a position', async () => {
+    const h = harness();
+    const result = await act(h, { intent: { ...TRAVEL, arguments: { target: { x: 1, z: 2 } } } });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: 'intent.arguments.target.y: must be an integer' },
+    ]);
+  });
+
+  it('names the unknown key of an action', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ ...GOTO, extra: 'zz' }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: "action 0: 'extra' is not a known field" },
+    ]);
+  });
+
+  it('names the required field an action lacks', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'place', block: 'stone' }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: 'action 0: at is missing' },
+    ]);
+  });
+
+  it('never echoes a value the agent sent', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'fly', target: 'the far moon!' }] });
+    const detail = result.rejected[0]?.detail ?? '';
+    expect(detail).toBe('action 0.do: is not available in this phase');
+    expect(detail).not.toContain('fly');
+    expect(detail).not.toContain('far moon');
+  });
+
+  it('keeps the detail in the sovereign_call audit, and the audit still validates', async () => {
+    const h = harness();
+    await act(h, { actions: [{ ...GOTO, extra: 'zz' }] });
+    const call = h.recorder.calls[0];
+    expect(call?.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: "action 0: 'extra' is not a known field" },
+    ]);
+    expect(validateSovereignCallPayload(call).ok).toBe(true);
   });
 });

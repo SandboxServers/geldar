@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { ActionRegistry, type ActionRun, runAction } from '../actions/registry.ts';
+import type { InflightStore } from './inflight.ts';
 import { ProgramRegistry } from './program.ts';
 import type { RecordSink } from './records.ts';
 import { type Reflex, type ReflexContext, ReflexRunner } from './reflex.ts';
@@ -43,6 +44,8 @@ export interface BodyRuntimeOptions {
   bot: Bot;
   ticks: TickSource;
   sink: RecordSink;
+  /** The give marker (inflight.ts). Left out, an economic action writes none. */
+  inflight?: InflightStore;
   /** The reflexes that exist; the shard config decides which of them run. Default: none. */
   reflexes?: readonly Reflex[];
   /** Default: every reflex on. */
@@ -74,6 +77,8 @@ export class BodyRuntime {
   /** The program registry; empty unless the options carried one. */
   readonly programs: ProgramRegistry;
   readonly sink: RecordSink;
+  /** The give marker, or null when the Body keeps none. */
+  readonly inflight: InflightStore | null;
   readonly view: BodyView;
   readonly reflexRunner: ReflexRunner;
   private readonly ticks: TickSource;
@@ -101,6 +106,7 @@ export class BodyRuntime {
     this.bodyGeneration = options.bodyGeneration;
     this.bot = options.bot;
     this.sink = options.sink;
+    this.inflight = options.inflight ?? null;
     this.programs = options.programs ?? new ProgramRegistry();
     this.ticks = options.ticks;
     this.timeScale = sanitiseTimeScale(options.timeScale);

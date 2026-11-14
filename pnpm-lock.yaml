@@ -333,6 +333,8 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
 
+  supervisor: {}
+
   threshold/mcp:
     dependencies:
       '@geldar/animus':
@@ -493,6 +495,8 @@ importers:
         version: 2.9.1
 
   tools/portscan: {}
+
+  tools/progress-metrics: {}
 
   tools/repo-checks:
     dependencies:

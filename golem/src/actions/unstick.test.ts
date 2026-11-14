@@ -1,7 +1,9 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
+import { digAllowed } from './goto-dig.ts';
+import { setOwnerLookup } from './protected-blocks.ts';
 import type { ActionContext } from './registry.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 import { dropAllowed, EIGHT, MAX_DROP, planMoves, scanDrop, unstick } from './unstick.ts';
@@ -28,6 +30,7 @@ function fakeBot(grid: Grid, health = 20) {
   let dir = new Vec3(0, 0, 0);
   const bot = {
     health,
+    game: { dimension: 'minecraft:the_nether' },
     entity: { position: new Vec3(0.5, 64, 0.5), height: 1.62 },
     blockAt: (cell: Vec3) => blockOf(grid, cell),
     async lookAt(target: Vec3) {
@@ -65,6 +68,92 @@ function ctxOf(bot: unknown, signal = new AbortController().signal): ActionConte
 }
 
 const feet = new Vec3(0, 64, 0);
+
+/** The island with a ring of `ring(dir)` at head and feet level on all eight sides: the bot is boxed in. */
+function boxedIn(ring: (dir: Vec3) => string): Grid {
+  const grid = island();
+  for (const dir of EIGHT) {
+    grid.set(key(dir.x, 63, dir.z), 'stone');
+    for (const y of [64, 65]) grid.set(key(dir.x, y, dir.z), ring(dir));
+  }
+  return grid;
+}
+
+const ownedBy = (owner: string | null) => setOwnerLookup(() => ({ known: true, owner }));
+const breachLines = (log: { mock: { calls: unknown[][] } }): string[] =>
+  log.mock.calls.map((call) => String(call[0])).filter((line) => line.includes('unstick_breach'));
+
+describe('unstick last resort (owner ruling 2026-11-13)', () => {
+  afterEach(() => setOwnerLookup(null));
+
+  it('digs a known-unowned planks wall and logs the breach', async () => {
+    ownedBy(null);
+    const { bot, dug } = fakeBot(boxedIn(() => 'oak_planks'));
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log');
+    const outcome = await unstick(ctxOf(bot));
+    expect(dug).toContain('oak_planks');
+    expect(outcome.status).toBe('completed');
+    expect(outcome.status === 'completed' && outcome.detail.method).toBe('dig_unowned');
+    const lines = breachLines(log);
+    expect(lines).toHaveLength(dug.length);
+    // The sideways dig takes the head cell (y 65) first, then the feet cell (y 64).
+    expect(lines.map((line) => JSON.parse(line))).toContainEqual(
+      expect.objectContaining({
+        event: 'unstick_breach',
+        block: 'oak_planks',
+        x: 1,
+        z: 0,
+        dimension: 'minecraft:the_nether',
+      }),
+    );
+    log.mockRestore();
+  });
+
+  it('does not dig planks whose ownership is unknown (the query failed)', async () => {
+    setOwnerLookup(() => ({ known: false }));
+    const { bot, dug } = fakeBot(boxedIn(() => 'oak_planks'));
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log');
+    const outcome = await unstick(ctxOf(bot));
+    expect(dug).toEqual([]);
+    expect(outcome.status).toBe('failed');
+    expect(outcome.status === 'failed' && outcome.message).toContain('no way out');
+    expect(breachLines(log)).toEqual([]);
+    log.mockRestore();
+  });
+
+  it('does not dig planks owned by another player', async () => {
+    ownedBy('Zack');
+    const { bot, dug } = fakeBot(boxedIn(() => 'oak_planks'));
+    const outcome = await unstick(ctxOf(bot));
+    expect(dug).toEqual([]);
+    expect(outcome.status).toBe('failed');
+  });
+
+  it('digs planks the bot placed itself (its own record)', async () => {
+    ownedBy('Ranger');
+    const { bot, dug } = fakeBot(boxedIn(() => 'oak_planks'));
+    (bot as unknown as { username: string }).username = 'Ranger';
+    const outcome = await unstick(ctxOf(bot));
+    expect(dug).toContain('oak_planks');
+    expect(outcome.status).toBe('completed');
+  });
+
+  it('goto-dig still refuses the same planks, however the ownership reads', () => {
+    ownedBy(null);
+    const { bot } = fakeBot(boxedIn(() => 'oak_planks'));
+    const planks = { name: 'oak_planks', position: new Vec3(1, 64, 0) } as never;
+    expect(digAllowed(bot as unknown as Bot, {} as never, planks)).toBe(false);
+  });
+
+  it('never digs a door, even in the last-resort pass', async () => {
+    ownedBy(null);
+    const ring = (dir: Vec3) => (dir.x === 0 || dir.z === 0 ? 'oak_door' : 'oak_planks');
+    const { bot, dug } = fakeBot(boxedIn(ring));
+    const outcome = await unstick(ctxOf(bot));
+    expect(dug.filter((name) => name === 'oak_door')).toEqual([]);
+    expect(outcome.status).toBe('failed');
+  });
+});
 
 describe('scanDrop and dropAllowed', () => {
   it('counts the fall and names the landing', () => {
@@ -202,7 +291,7 @@ describe('unstick action', () => {
       expect(await unstick(ctxOf(bot))).toMatchObject({ status: 'failed' });
       const lines = sink.mock.calls.map(([text]) => JSON.parse(text) as Record<string, unknown>);
       expect(lines.find((l) => l.reason === 'no_way_out')).toMatchObject({
-        tried: ['walk', 'dig_down', 'stair_dig', 'dig_sideways'],
+        tried: ['walk', 'dig_down', 'stair_dig', 'dig_sideways', 'dig_unowned'],
       });
     } finally {
       sink.mockRestore();

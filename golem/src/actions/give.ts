@@ -1,11 +1,13 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { canSeePoint } from '../perception/notable-blocks.ts';
 import { findVisibleAgent } from '../perception/visible-agent.ts';
-import { STEP_BACK_BELOW, STEP_BACK_TO, stepBackPoint } from './give-spot.ts';
+import { STEP_BACK_BELOW, stepBackCells } from './give-spot.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 /** The `give` action as the contract types it. */
 type GiveAction = Extract<Action, { do: 'give' }>;
@@ -15,6 +17,34 @@ type Entity = Bot['entities'][string];
 export const GIVE_REACH = 3;
 /** The pitch (radians) the Body looks down at when it tosses: 30 degrees down. Positive is up. */
 export const TOSS_PITCH = -Math.PI / 6;
+/** The steeper pitch (radians): 40 degrees down, for a recipient level or lower and under STEEP_GAP out. */
+const STEEP_TOSS_PITCH = (-40 * Math.PI) / 180;
+/** Level or lower, a recipient closer than this (blocks, horizontal) gets STEEP_TOSS_PITCH. */
+const STEEP_GAP = 1.75;
+/** A recipient this far up (blocks, feet) is too high to toss to from beyond TALL_MAX_GAP. */
+const TALL_RISE = 1.5;
+/** The horizontal gap (blocks) beyond which a recipient TALL_RISE or more up cannot be tossed to. */
+const TALL_MAX_GAP = 2;
+
+/**
+ * The pitch (radians, positive is up) the Body tosses at, given how far the recipient's feet are
+ * above the Body's (`dy`, blocks) and how far out it stands (`d`, blocks). Level or lower it is
+ * `TOSS_PITCH`, or 40 degrees down under 1.75 blocks out (sweep: P 1.00 against 0.82 at -30). One
+ * block up, a 30-degree throw hits the step's face, so it goes up: 65 degrees at
+ * 1.5 blocks, 45 at 3 (a straight line in between, clamped). Two or more blocks up it is 60 degrees
+ * out to 2 blocks and 50 beyond. Any rise from 0 to 1.5 uses the one-block pitch, which only whole
+ * blocks were simulated for. Simulated with vanilla constants (see the report): at dy 1 these
+ * pitches reach the recipient's pickup box with P 0.87 to 1.00 and clear the step; at dy 2 the
+ * chance falls to 0.24 at 3 blocks.
+ */
+export function tossPitch(dy: number, d: number): number {
+  if (dy <= 0) return d < STEEP_GAP ? STEEP_TOSS_PITCH : TOSS_PITCH;
+  if (dy < 1.5) {
+    const reach = Math.min(Math.max(d, 1.5), 3);
+    return ((65 - ((reach - 1.5) * 40) / 3) * Math.PI) / 180;
+  }
+  return ((d <= 2 ? 60 : 50) * Math.PI) / 180;
+}
 /** The Body walks up to this close (blocks) to the recipient first. */
 const WALK_RANGE = 2;
 /**
@@ -31,61 +61,170 @@ const DROP_RANGE = 8;
 const TAKE_BACK_RANGE = 1;
 /** How close (blocks) the Body walks to the spot it steps back to. */
 const STEP_RANGE = 0.5;
+/** The most wall time (ms at timeScale 1) the step back takes over all its tries. */
+const STEP_BACK_MS = 3_000;
 
 /** The one text for a recipient the agent cannot see. It never says whether the name exists. */
 export const NOT_IN_SIGHT = 'no such agent in sight';
 
 /**
- * The item entities one toss created, and the ones picked up since: by the recipient, by the Body,
- * or by another player (`others`, item id to that player's name).
+ * The item entities one toss created, and the items picked up since: by the recipient, by the Body,
+ * or by another player (`others`, item id to that player's name). `stacks` is the item count each
+ * entity holds, the latest count from `itemDrop`, and `collected` the items the recipient took from
+ * each one. Vanilla merges nearby stacks on the ground: a merged-away entity vanishes with no pickup
+ * (`gone`), and its items are in the stack that survives, so the items are counted, not the entities.
  */
 interface PickupWatch {
   dropped: Set<number>;
-  collected: Set<number>;
+  stacks: Map<number, number>;
+  gone: Set<number>;
+  collected: Map<number, number>;
   taken: Set<number>;
   others: Map<number, string>;
   stop(): void;
 }
 
 /**
+ * The items an item entity holds (its stack). Its metadata has not arrived at `entitySpawn`, and
+ * prismarine-item throws on empty metadata, so any throw or no stack counts as one item.
+ */
+function stackCount(entity: Entity): number {
+  try {
+    return entity.getDroppedItem?.()?.count ?? 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
+ * Wraps a listener this file adds so a throw in its body never reaches the emitter (which would
+ * end the process). The throw is logged as one diag line and not rethrown.
+ */
+function guarded<A extends unknown[]>(
+  name: string,
+  body: (...args: A) => void,
+): (...args: A) => void {
+  return (...args: A) => {
+    try {
+      body(...args);
+    } catch (error) {
+      // Neither building the line nor writing it may throw into the emitter.
+      try {
+        DEFAULT_DIAG_SINK.log(
+          JSON.stringify({
+            event: 'give_listener_error',
+            listener: name,
+            error: thrownText(error),
+          }),
+        );
+      } catch {
+        // The diag line could not be written: the throw is dropped, not rethrown.
+      }
+    }
+  };
+}
+
+/** A thrown value as diag text. One with no prototype cannot be stringified, so it reads as its type tag. */
+function thrownText(error: unknown): string {
+  try {
+    return errorText(error);
+  } catch {
+    return Object.prototype.toString.call(error);
+  }
+}
+
+/**
  * Listens for the item entities a toss creates near the Body, and for pickups of them by the
  * recipient and by the Body itself. It must be started before the toss, so no spawn is missed.
+ * A pickup by the recipient counts the collect packet's `pickupItemCount` when the client reports
+ * one, else the items the entity holds when it is collected.
  */
 function watchPickup(bot: Bot, to: string): PickupWatch {
   const dropped = new Set<number>();
-  const collected = new Set<number>();
+  const stacks = new Map<number, number>();
+  const gone = new Set<number>();
+  const collected = new Map<number, number>();
   const taken = new Set<number>();
   const others = new Map<number, string>();
-  const onDrop = (entity: Entity): void => {
+  const packetCounts = new Map<number, number>();
+  // At spawn the metadata has not arrived yet, so only the id is recorded, never the stack.
+  const onSpawn = guarded('entitySpawn', (entity: Entity): void => {
     if (entity.name !== 'item') return;
     if (entity.position.distanceTo(bot.entity.position) > DROP_RANGE) return;
     dropped.add(entity.id);
-  };
-  const onCollect = (collector: Entity, item: Entity): void => {
+  });
+  // `itemDrop` fires once the metadata is in, and again when a merge changes the stack. It only
+  // updates an entity this toss claimed at its spawn, so a stack that was already there is never counted.
+  const onItemDrop = guarded('itemDrop', (entity: Entity): void => {
+    if (!dropped.has(entity.id)) return;
+    stacks.set(entity.id, stackCount(entity));
+  });
+  const onGone = guarded('entityGone', (entity: Entity): void => {
+    if (dropped.has(entity.id)) gone.add(entity.id);
+  });
+  const onCollect = guarded('playerCollect', (collector: Entity, item: Entity): void => {
     if (!dropped.has(item.id)) return;
-    if (collector.username === to) collected.add(item.id);
-    else if (collector === bot.entity) taken.add(item.id);
+    if (collector.username === to) {
+      collected.set(item.id, packetCounts.get(item.id) ?? stackCount(item));
+    } else if (collector === bot.entity) taken.add(item.id);
     else if (collector.username) others.set(item.id, collector.username);
-  };
-  bot.on('entitySpawn', onDrop);
-  bot.on('itemDrop', onDrop);
+  });
+  // The collect packet reaches this listener before mineflayer emits playerCollect for it.
+  const onPacket = guarded(
+    'collect',
+    (packet: { collectedEntityId: number; pickupItemCount?: number }): void => {
+      if (packet.pickupItemCount !== undefined) {
+        packetCounts.set(packet.collectedEntityId, packet.pickupItemCount);
+      }
+    },
+  );
+  const client: Bot['_client'] | undefined = bot._client;
+  bot.on('entitySpawn', onSpawn);
+  bot.on('itemDrop', onItemDrop);
+  bot.on('entityGone', onGone);
   bot.on('playerCollect', onCollect);
+  client?.prependListener('collect', onPacket);
   return {
     dropped,
+    stacks,
+    gone,
     collected,
     taken,
     others,
     stop: () => {
-      bot.removeListener('entitySpawn', onDrop);
-      bot.removeListener('itemDrop', onDrop);
+      bot.removeListener('entitySpawn', onSpawn);
+      bot.removeListener('itemDrop', onItemDrop);
+      bot.removeListener('entityGone', onGone);
       bot.removeListener('playerCollect', onCollect);
+      client?.removeListener('collect', onPacket);
     },
   };
 }
 
+/** The items the recipient collected. */
+function pickedItems(watch: PickupWatch): number {
+  return [...watch.collected.values()].reduce((sum, count) => sum + count, 0);
+}
+
+/**
+ * The items the toss left: each claimed entity's latest count (or what the recipient collected from
+ * it, if more). An entity that went away with no pickup is left out: a merged-away one's items are
+ * in the survivor, which is counted, and a vanished one has none.
+ */
+function tossedItems(watch: PickupWatch): number {
+  let sum = 0;
+  for (const id of watch.dropped) {
+    const pickedUp = watch.collected.has(id) || watch.taken.has(id) || watch.others.has(id);
+    if (watch.gone.has(id) && !pickedUp) continue;
+    sum += Math.max(watch.stacks.get(id) ?? 1, watch.collected.get(id) ?? 0);
+  }
+  return sum;
+}
+
 /** Every tossed item has been picked up by the recipient. */
 function allPicked(watch: PickupWatch): boolean {
-  return watch.dropped.size > 0 && watch.collected.size === watch.dropped.size;
+  const total = tossedItems(watch);
+  return total > 0 && pickedItems(watch) >= total;
 }
 
 /** Waits until `done()` holds, the wait runs out, or the run aborts. */
@@ -102,18 +241,50 @@ function horizontalGap(a: Entity['position'], b: Entity['position']): number {
 }
 
 /**
- * Steps the Body back to `STEP_BACK_TO` blocks from a recipient closer than `STEP_BACK_BELOW`, so
- * the toss flies past them. A step that fails leaves the Body where it is; the caller checks the
- * distance it ends at.
+ * Steps the Body back from a recipient closer than `STEP_BACK_BELOW`, so the toss flies past them.
+ * It walks, with digging off, to the standable blocks `stepBackCells` lists in order (the
+ * straight-back one first), and a try counts only when the gap to the recipient then holds at
+ * `STEP_BACK_BELOW`. It stops after `STEP_BACK_MS` (scaled by `timeScale`) or on an abort. When no
+ * try holds, one `give_stepback_failed` diag line is logged; the caller checks the gap it ends at.
  */
 async function stepBackFrom(
   ctx: ActionContext,
   bot: Bot,
   recipient: Entity['position'],
 ): Promise<void> {
-  const spot = stepBackPoint(bot.entity.position, recipient, STEP_BACK_TO);
-  if (!spot) return;
-  await moveNear(bot, spot, STEP_RANGE, { signal: ctx.signal, timeScale: ctx.timeScale });
+  const cells = stepBackCells(
+    bot.entity.position,
+    recipient,
+    (cell) => bot.blockAt(cell),
+    GIVE_REACH,
+  );
+  // One signal for every try: the run's abort, or the whole-step cap, stops the walk in progress.
+  const tries = new AbortController();
+  const stop = (): void => tries.abort();
+  ctx.signal.addEventListener('abort', stop, { once: true });
+  const cap = setTimeout(stop, STEP_BACK_MS * ctx.timeScale);
+  let tried = 0;
+  try {
+    for (const cell of cells) {
+      if (tries.signal.aborted) break;
+      tried += 1;
+      // A short level walk never digs. A walk that reports ok may still leave the Body where it was,
+      // so the gap to the recipient decides whether the try counted, not the walk's result.
+      await moveNear(bot, cell, STEP_RANGE, {
+        signal: tries.signal,
+        timeScale: ctx.timeScale,
+        digTier: false,
+      });
+      if (horizontalGap(bot.entity.position, recipient) >= STEP_BACK_BELOW) return;
+    }
+    if (!ctx.signal.aborted) {
+      const gap = Math.round(horizontalGap(bot.entity.position, recipient) * 100) / 100;
+      DEFAULT_DIAG_SINK.log(JSON.stringify({ event: 'give_stepback_failed', tried, gap }));
+    }
+  } finally {
+    clearTimeout(cap);
+    ctx.signal.removeEventListener('abort', stop);
+  }
 }
 
 /**
@@ -122,9 +293,11 @@ async function stepBackFrom(
  * every one back. An abort or a walk that fails leaves them on the ground.
  */
 async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promise<boolean> {
+  // Only the entities that still exist: a merged-away or vanished one has no position to walk to.
   const missing = [...watch.dropped].filter(
-    (id) => !watch.collected.has(id) && !watch.others.has(id),
+    (id) => !watch.collected.has(id) && !watch.others.has(id) && !watch.gone.has(id),
   );
+  if (missing.length === 0) return false;
   const everyTaken = () => missing.every((id) => watch.taken.has(id));
   for (const id of missing) {
     if (watch.taken.has(id)) continue;
@@ -173,26 +346,36 @@ async function settle(
   action: GiveAction,
   watch: PickupWatch,
 ): Promise<ActionOutcome> {
-  const total = watch.dropped.size;
-  const picked = watch.collected.size;
-  if (total === 0) return failed('interrupted', 'the tossed items were not seen on the ground');
-  if (picked === total) return completed({ to: action.to, item: action.item, count: action.count });
+  if (watch.dropped.size === 0) {
+    return failed('interrupted', 'the tossed items were not seen on the ground');
+  }
+  const total = tossedItems(watch);
+  const picked = pickedItems(watch);
+  if (total === 0) return failed('not_possible', 'the tossed items left the ground with no pickup');
+  if (picked >= total) return completed({ to: action.to, item: action.item, count: action.count });
+  // Only the entities that still exist: not the recipient's, the Body's, another's or merged away.
   const onGround = [...watch.dropped].filter(
-    (id) => !watch.collected.has(id) && !watch.others.has(id) && !watch.taken.has(id),
+    (id) =>
+      !watch.collected.has(id) &&
+      !watch.others.has(id) &&
+      !watch.taken.has(id) &&
+      !watch.gone.has(id),
   );
+  const partial = `${picked} of ${total} were picked up`;
   if (watch.others.size > 0 && onGround.length === 0) {
     if (picked === 0) return failed('not_possible', wentToOthers(bot, watch));
-    const partial = `${picked} of ${total} were picked up`;
     return failed('not_possible', `${partial}; ${restWentToOthers(bot, watch)}`);
   }
-  if (picked === 0) {
-    const took = await takeBack(ctx, bot, watch);
-    if (ctx.signal.aborted) return cancelled();
-    if (took)
+  const took = await takeBack(ctx, bot, watch);
+  if (ctx.signal.aborted) return cancelled();
+  if (took) {
+    if (picked === 0) {
       return failed('not_possible', `${action.to} did not pick the items up; you took them back`);
-    return failed('not_possible', `the items are on the ground near ${action.to}`);
+    }
+    return failed('not_possible', `${partial}; you took the rest back`);
   }
-  return failed('not_possible', `${picked} of ${total} were picked up; the rest are on the ground`);
+  if (picked === 0) return failed('not_possible', `the items are on the ground near ${action.to}`);
+  return failed('not_possible', `${partial}; the rest are on the ground`);
 }
 
 /**
@@ -202,9 +385,10 @@ async function settle(
  * so the verb cannot probe whether a player exists or where they are (decisions 0058 and 0068).
  * A name that is not in sight fails `not_found` with one fixed text. The Body walks up to
  * `WALK_RANGE` blocks from the recipient, checks again that it is in sight and within
- * `GIVE_REACH`, steps back to `STEP_BACK_TO` blocks if the recipient is closer than
- * `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
- * its height and `TOSS_PITCH` down, waits two ticks for the look to reach the server, and tosses.
+ * `GIVE_REACH`, steps back to a standable block 2 to 3 blocks from the recipient if it is closer
+ * than `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
+ * its height, looks at the `tossPitch` for the height difference and distance, waits two ticks for
+ * the look to reach the server, and tosses.
  * The give completes only when the
  * recipient picks up every tossed item within `PICKUP_WAIT_MS`. When the recipient picks up none,
  * the Body takes the items back and says so; if it cannot, it says where the items are, with no
@@ -251,12 +435,23 @@ export const giveAction: ActionHandler<'give'> = {
       if (horizontalGap(bot.entity.position, target.position) < STEP_BACK_BELOW)
         return failed('not_possible', 'too close to toss, and no room to step back');
     }
+    // Too high to throw to from beyond the step's reach: a toss from there lands short (simulated).
+    const rise = target.position.y - bot.entity.position.y;
+    if (rise >= TALL_RISE && horizontalGap(bot.entity.position, target.position) > TALL_MAX_GAP) {
+      return failed('not_possible', 'too far up to toss to');
+    }
+    // Glass lets the recipient be seen, but a toss stops at it: any block shape in the line blocks.
+    const middle = target.position.offset(0, target.height / 2, 0);
+    if (!canSeePoint(bot, middle, { solidOnly: true })) {
+      return failed('blocked', 'something is in the way of the toss');
+    }
 
     const watch = watchPickup(bot, action.to);
     try {
       // Aim at about the recipient's middle, not its feet, so the toss carries past the Body.
       await bot.lookAt(target.position.offset(0, target.height * 0.9, 0), true);
-      await bot.look(bot.entity.yaw, TOSS_PITCH, true);
+      const pitch = tossPitch(rise, horizontalGap(bot.entity.position, target.position));
+      await bot.look(bot.entity.yaw, pitch, true);
       // The look reaches the server on the next tick; tossing before then throws the old look.
       await bot.waitForTicks(2);
       if (ctx.signal.aborted) return cancelled();

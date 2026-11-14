@@ -55,6 +55,13 @@ describe('food_known probe', () => {
     expect(foodKnown(w.bot).food_known).toEqual([]);
   });
 
+  it('does not record a pumpkin block as food, since a pumpkin is not edible', () => {
+    const w = world();
+    w.set('pumpkin', 4, 64, 0);
+    w.set('melon', 0, 64, 5);
+    expect(foodKnown(w.bot).food_known?.map((f) => f.kind)).toEqual(['melon']);
+  });
+
   it('keeps the newest 10, newest first', () => {
     const w = world();
     const bot = w.bot;

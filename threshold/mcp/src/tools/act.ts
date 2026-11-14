@@ -28,6 +28,7 @@ import {
   type RateLimiter,
 } from '../ports.ts';
 import { bestEffortPresence } from '../presence-write.ts';
+import { BATCH_REFUSAL, isVerbHint, type Refusal, refusalOf } from './refusal-detail.ts';
 
 /** A tool failure the player sees: a code and a fixed message, never echoing world text. */
 export class ActToolError extends Error {
@@ -86,6 +87,13 @@ export interface ActArgs {
 }
 
 /** One item of the flat result list. `at` is the action's position in the list. */
+/** A refused item in the result: its index, its reason and, for a validator refusal, its detail. */
+interface RejectedItem {
+  index: number;
+  reason: string;
+  detail?: string;
+}
+
 interface Slot {
   kind: ChargedItem;
   at: number;
@@ -125,27 +133,32 @@ export function slotsOf(args: ActArgs): Slot[] {
  * The reason each slot is refused by the validator, or undefined when it passes. A failure on the
  * whole thought refuses everything; one bad action refuses the whole action list (atomic).
  */
-export function refusalsOf(errors: OutputError[], slots: Slot[]): (string | undefined)[] {
-  let whole: string | undefined;
-  let say: string | undefined;
-  let intent: string | undefined;
-  let list: string | undefined;
-  const actions = new Map<number, string>();
+export function refusalsOf(errors: OutputError[], slots: Slot[]): (Refusal | undefined)[] {
+  let whole: OutputError | undefined;
+  let say: OutputError | undefined;
+  let intent: OutputError | undefined;
+  let list: OutputError | undefined;
+  const actions = new Map<number, OutputError>();
   for (const error of errors) {
     const action = ACTION_PATH.exec(error.path);
-    if (action) actions.set(Number(action[1]), actions.get(Number(action[1])) ?? error.code);
-    else if (ACTIONS_LIST_PATH.test(error.path)) list ??= error.code;
-    else if (SAY_PATH.test(error.path)) say ??= error.code;
-    else if (INTENT_PATH.test(error.path)) intent ??= error.code;
-    else whole ??= error.code;
+    if (action) {
+      const at = Number(action[1]);
+      const current = actions.get(at);
+      if (current === undefined || (isVerbHint(current) && !isVerbHint(error)))
+        actions.set(at, error);
+    } else if (ACTIONS_LIST_PATH.test(error.path)) list ??= error;
+    else if (SAY_PATH.test(error.path)) say ??= error;
+    else if (INTENT_PATH.test(error.path)) intent ??= error;
+    else whole ??= error;
   }
   const batchFailed = actions.size > 0 || list !== undefined;
   return slots.map((slot) => {
-    if (whole !== undefined) return whole;
-    if (slot.kind === 'say') return say;
-    if (slot.kind === 'intent') return intent;
+    if (whole !== undefined) return refusalOf(whole);
+    if (slot.kind === 'say') return say === undefined ? undefined : refusalOf(say);
+    if (slot.kind === 'intent') return intent === undefined ? undefined : refusalOf(intent);
     if (!batchFailed) return undefined;
-    return actions.get(slot.at) ?? list ?? 'batch_rejected';
+    const own = actions.get(slot.at) ?? list;
+    return own === undefined ? BATCH_REFUSAL : refusalOf(own);
   });
 }
 
@@ -215,7 +228,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
   const slots = slotsOf(input);
   const thoughtInput = withReasoning(input);
   const judged = deps.validator.parseThought(JSON.stringify(thoughtInput));
-  let refused: (string | undefined)[] = judged.ok
+  let refused: (Refusal | undefined)[] = judged.ok
     ? slots.map(() => undefined)
     : refusalsOf(judged.errors, slots);
   // A partial batch is sent as the thought of its survivors, which must pass the schema on its own.
@@ -227,15 +240,16 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     if (checked.ok) {
       thought = checked.value;
     } else {
-      const code = checked.errors[0]?.code ?? 'schema';
-      refused = refused.map((r) => r ?? code);
+      const first = checked.errors[0];
+      const fallback: Refusal = first === undefined ? { reason: 'schema' } : refusalOf(first);
+      refused = refused.map((r) => r ?? fallback);
       thought = undefined;
     }
   }
   const survivors = slots.filter((_, i) => refused[i] === undefined);
-  const result = { accepted: [] as number[], rejected: [] as { index: number; reason: string }[] };
-  const reject = (index: number, reason: string): void => {
-    result.rejected.push({ index, reason });
+  const result = { accepted: [] as number[], rejected: [] as RejectedItem[] };
+  const reject = (index: number, refusal: Refusal): void => {
+    result.rejected.push({ index, ...refusal });
   };
   let remaining = await deps.budget.balance(caller.lifeId, started);
   let thoughtId: string | undefined;
@@ -254,11 +268,11 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     if (reserve?.ok === true) reserved = true;
     const funded = reserve === undefined || reserve.ok;
     slots.forEach((_, i) => {
-      if (refused[i] !== undefined) reject(i, refused[i] as string);
+      if (refused[i] !== undefined) reject(i, refused[i] as Refusal);
     });
     if (survivors.length > 0 && !funded) {
       slots.forEach((_, i) => {
-        if (refused[i] === undefined) reject(i, 'budget_exhausted');
+        if (refused[i] === undefined) reject(i, { reason: 'budget_exhausted' });
       });
     } else if (survivors.length > 0 && thought !== undefined) {
       const sent = await submitThought(deps, caller.lifeId, thought);
@@ -272,7 +286,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
         const reason = playerReason(sent.ack.rejection?.reason);
         if (reserved) remaining = await deps.budget.refund(caller.lifeId, batchCost(kinds));
         slots.forEach((_, i) => {
-          if (refused[i] === undefined) reject(i, reason);
+          if (refused[i] === undefined) reject(i, { reason });
         });
       }
     }
@@ -364,7 +378,7 @@ function withReasoning(input: ActArgs): ActArgs {
 function reducedThought(
   input: ActArgs,
   slots: Slot[],
-  refused: (string | undefined)[],
+  refused: (Refusal | undefined)[],
 ): Thought | undefined {
   const kept = (kind: ChargedItem, at: number): boolean =>
     slots.some((slot, i) => slot.kind === kind && slot.at === at && refused[i] === undefined);
@@ -385,7 +399,7 @@ function reducedThought(
 function callPayload(
   caller: Caller,
   input: ActArgs,
-  result: { accepted: number[]; rejected: { index: number; reason: string }[] },
+  result: { accepted: number[]; rejected: RejectedItem[] },
   remaining: number,
   started: number,
   deps: ActDeps,

@@ -8,6 +8,8 @@ const FOODS: Record<string, FoodInfo> = {
   cooked_beef: { foodPoints: 8, saturation: 12.8 },
   rotten_flesh: { foodPoints: 4, saturation: 0.8 },
   chorus_fruit: { foodPoints: 20, saturation: 0 },
+  bread: { foodPoints: 5, saturation: 6 },
+  spider_eye: { foodPoints: 2, saturation: 3.2 },
 };
 
 interface FakeOptions {
@@ -119,5 +121,44 @@ describe('eat', () => {
     const bot = fakeBot({ food: 10, items: ['apple'], consumeError: 'Consume was cancelled' });
     const outcome = await eat(bot, 0.01);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'interrupted' });
+  });
+});
+
+describe('eat: rotten flesh as a last resort', () => {
+  it('eats rotten flesh when it is the only food and hunger is 6', async () => {
+    const bot = fakeBot({ food: 6, items: ['rotten_flesh'], riseAfterMs: 100 });
+    const outcome = await eat(bot);
+    expect(outcome).toEqual({
+      status: 'completed',
+      detail: { item: 'rotten_flesh', food_before: 6, food_after: 16 },
+    });
+  });
+
+  it('refuses rotten flesh as the only food when hunger is 7', async () => {
+    const bot = fakeBot({ food: 7, items: ['rotten_flesh'] });
+    const outcome = await eat(bot);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'only rotten flesh is carried; it is eaten only when hunger is 6 or below',
+    });
+    expect(bot.consume).not.toHaveBeenCalled();
+  });
+
+  it('eats bread rather than rotten flesh when both are carried', async () => {
+    const bot = fakeBot({ food: 6, items: ['rotten_flesh', 'bread'], riseAfterMs: 100 });
+    const outcome = await eat(bot);
+    expect(outcome).toMatchObject({ status: 'completed', detail: { item: 'bread' } });
+  });
+
+  it('keeps spider eye banned: fails with no food when it is the only food', async () => {
+    const bot = fakeBot({ food: 4, items: ['spider_eye'] });
+    const outcome = await eat(bot);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'missing_materials',
+      message: 'no food',
+    });
+    expect(bot.consume).not.toHaveBeenCalled();
   });
 });

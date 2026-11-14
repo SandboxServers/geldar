@@ -1,151 +1,16 @@
-import { EventEmitter } from 'node:events';
-import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { FakeWorld } from '../perception/perception.fakes.ts';
-import { giveAction, NOT_IN_SIGHT, TOSS_PITCH } from './give.ts';
-import type { ActionOutcome } from './outcome.ts';
+import { NOT_IN_SIGHT } from './give.ts';
+import { setup } from './give-test-fixture.ts';
 import { moveNear } from './pathing.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 const walk = vi.mocked(moveNear);
 
-/** What the server does after a toss: the item entities it drops, and who picks which one up. */
-interface Pickups {
-  dropped?: number[];
-  picked?: number[];
-  by?: string;
-  abortOnToss?: boolean;
-  /** When set, the pickups happen this many ms after the toss, as a real pickup delay does. */
-  after?: number;
-}
-
-/**
- * A fake world with a Kestrel bot at the origin, 5 oak_log in the inventory, a toss spy, and an
- * event emitter. A toss spawns the `dropped` item entities and emits the `picked` pickups by
- * `by` (default Pike), both before it resolves, as the server does.
- */
-function setup(held = 5, pickups: Pickups = {}) {
-  const world = new FakeWorld();
-  const events = new EventEmitter();
-  const controller = new AbortController();
-  const pike = { type: 'player', username: pickups.by ?? 'Pike', position: new Vec3(0.5, 64, 2.5) };
-  const item = (id: number) => ({
-    id,
-    name: 'item',
-    type: 'other',
-    position: new Vec3(0.5, 64, 3.5),
-  });
-  const toss = vi.fn(async () => {
-    order.push('toss');
-    for (const id of pickups.dropped ?? [7]) events.emit('entitySpawn', item(id));
-    for (const id of pickups.picked ?? [7]) {
-      if (pickups.after === undefined) events.emit('playerCollect', pike, item(id));
-      else setTimeout(() => events.emit('playerCollect', pike, item(id)), pickups.after);
-    }
-    if (pickups.abortOnToss) controller.abort();
-  });
-  // The calls the Body makes before a toss, in order, as the fake bot saw them.
-  const order: string[] = [];
-  // As mineflayer's lookAt does, minus the packet: it turns the Body to face the point.
-  const lookAt = vi.fn(async (at: Vec3, _force?: boolean) => {
-    order.push('lookAt');
-    bot.entity.yaw = Math.atan2(-(at.x - bot.entity.position.x), -(at.z - bot.entity.position.z));
-  });
-  const look = vi.fn(async (_yaw: number, _pitch: number, _force?: boolean) => {
-    order.push('look');
-  });
-  const waitForTicks = vi.fn(async (_ticks: number) => {
-    order.push('waitForTicks');
-  });
-  // The server's full player list: a player listed here is known to the server, not to the agent.
-  const players: Record<string, unknown> = { Hidden: { entity: { position: new Vec3(0, 64, 5) } } };
-  const bot = Object.assign(world.bot, {
-    players,
-    inventory: { items: () => [{ name: 'oak_log', count: held }] },
-    registry: { items: {}, itemsByName: { oak_log: { id: 42 } } },
-    on: events.on.bind(events),
-    removeListener: events.removeListener.bind(events),
-    emit: events.emit.bind(events),
-    toss,
-    lookAt,
-    look,
-    waitForTicks,
-  }) as Bot;
-  const run = (to: string, count = 3, item = 'oak_log', timeScale = 1): Promise<ActionOutcome> =>
-    giveAction.run(
-      { bot, signal: controller.signal, timeScale },
-      {
-        do: 'give',
-        to,
-        item,
-        count,
-      },
-    );
-  return { world, run, toss, lookAt, look, waitForTicks, order, events, controller };
-}
-
 beforeEach(() => walk.mockReset());
 
 describe('give', () => {
-  it('tosses the items toward a visible agent within reach', async () => {
-    const { world, run, toss, lookAt } = setup();
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    const out = await run('Pike');
-    expect(out).toEqual({
-      status: 'completed',
-      detail: { to: 'Pike', item: 'oak_log', count: 3 },
-    });
-    expect(walk).not.toHaveBeenCalled();
-    expect(lookAt).toHaveBeenCalled();
-    expect(toss).toHaveBeenCalledWith(42, null, 3);
-  });
-
-  it('aims at the recipient about 0.9 of its height up, not at its feet', async () => {
-    const { world, run, lookAt } = setup();
-    world.entities[2] = {
-      type: 'player',
-      username: 'Pike',
-      position: new Vec3(0.5, 64, 2.5),
-      height: 1.8,
-    };
-    expect(await run('Pike')).toMatchObject({ status: 'completed' });
-    const aim = lookAt.mock.calls[0]?.[0] as Vec3;
-    expect(aim.x).toBeCloseTo(0.5, 6);
-    expect(aim.y).toBeCloseTo(64 + 1.8 * 0.9, 6);
-    expect(aim.z).toBeCloseTo(2.5, 6);
-  });
-
-  it('looks 30 degrees down, turned to the recipient, before it tosses', async () => {
-    const { world, run, look } = setup();
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(2.5, 64, 2.5) };
-    expect(await run('Pike')).toMatchObject({ status: 'completed' });
-    const sent = look.mock.calls[0] as unknown as [number, number, boolean];
-    // The Body is at (0.5, 0.5) and Pike at (2.5, 2.5): yaw is atan2(-dx, -dz), as mineflayer uses.
-    expect(sent[0]).toBeCloseTo(Math.atan2(-2, -2), 6);
-    expect(sent[1]).toBe(TOSS_PITCH);
-    expect(sent[1]).toBeLessThan(0);
-    expect(sent[2]).toBe(true);
-  });
-
-  it('waits at least two ticks for the look to reach the server, then tosses', async () => {
-    const { world, run, order, waitForTicks } = setup();
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    expect(await run('Pike')).toMatchObject({ status: 'completed' });
-    expect(order).toEqual(['lookAt', 'look', 'waitForTicks', 'toss']);
-    expect(waitForTicks.mock.calls[0]?.[0]).toBeGreaterThanOrEqual(2);
-  });
-
-  it('tosses nothing when the run aborts during the wait for the look', async () => {
-    const { world, run, toss, waitForTicks, controller } = setup();
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    waitForTicks.mockImplementationOnce(async () => {
-      controller.abort();
-    });
-    expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
-    expect(toss).not.toHaveBeenCalled();
-  });
-
   it('walks up to a visible agent that is further than 3 blocks, then tosses', async () => {
     const { world, run, toss } = setup();
     const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 8.5) };
@@ -370,6 +235,178 @@ describe('give', () => {
     });
   });
 
+  it('completes when a merged stack carries every tossed item, counting items not entities', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    toss.mockImplementationOnce(async () => {
+      for (const id of [7, 8, 9]) events.emit('entitySpawn', stack(id, 1));
+      events.emit('entityGone', stack(7, 1));
+      events.emit('entityGone', stack(8, 1));
+      events.emit('playerCollect', pike, stack(9, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('completes when the survivor of three merged tosses is re-announced with the merged count', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    // The real order: each toss spawns and announces a stack of 1; each merge re-announces the survivor.
+    toss.mockImplementationOnce(async () => {
+      for (const id of [7, 8, 9]) {
+        events.emit('entitySpawn', stack(id, 1));
+        events.emit('itemDrop', stack(id, 1));
+      }
+      events.emit('entityGone', stack(7, 1));
+      events.emit('itemDrop', stack(9, 2));
+      events.emit('entityGone', stack(8, 1));
+      events.emit('itemDrop', stack(9, 3));
+      events.emit('playerCollect', pike, stack(9, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('does not count an older stack within 8 blocks that a toss merges into', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+      getDroppedItem: () => ({ count }),
+    });
+    toss.mockImplementationOnce(async () => {
+      // An older stack 3.5 blocks away: its metadata arrives, but it never spawns in this toss.
+      events.emit('itemDrop', stack(5, 5));
+      events.emit('entitySpawn', stack(7, 1));
+      events.emit('itemDrop', stack(7, 3));
+      events.emit('playerCollect', pike, stack(7, 3));
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('says 2 of 3 and walks to the one item left on the ground after a merged stack', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const stack = (id: number, count: number, z: number) => ({
+      id,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, z),
+      getDroppedItem: () => ({ count }),
+    });
+    const remains = stack(9, 1, 4.5);
+    world.entities[9] = remains;
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', stack(7, 1, 3.5));
+      events.emit('entitySpawn', stack(8, 1, 3.5));
+      events.emit('entitySpawn', remains);
+      events.emit('entityGone', stack(7, 1, 3.5));
+      events.emit('playerCollect', pike, stack(8, 2, 3.5));
+    });
+    walk.mockImplementation(async () => ({ ok: true, distance: 0 }) as never);
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: '2 of 3 were picked up; the rest are on the ground',
+      detail: {},
+    });
+    expect(walk).toHaveBeenCalledOnce();
+    expect(walk.mock.calls[0]?.[1]).toEqual(remains.position);
+  });
+
+  it('does not throw on a real item entity whose metadata has not arrived, and takes its stack from itemDrop', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log');
+    const { world, run } = setup(5, { real: { stack: 3 } });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const outcome = await run('Pike', 3);
+    const lines = log.mock.calls.map((call) => String(call[0]));
+    log.mockRestore();
+    expect(outcome.status).toBe('completed');
+    expect(lines.filter((line) => line.includes('give_listener_error'))).toEqual([]);
+  });
+
+  it('counts 1 for a real item the recipient collects before its metadata arrives, without throwing', async () => {
+    const { world, run } = setup(5, { real: {} });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const outcome = await run('Pike', 1);
+    expect(outcome.status).toBe('completed');
+  });
+
+  it('catches a listener whose body throws, logs it as one diag line, and does not rethrow', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log');
+    const { world, run } = setup(5, { broken: true });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    // A short time scale: no item is seen, so the give waits out the pickup window, not the test.
+    const outcome = await run('Pike', 3, 'oak_log', 0.01);
+    const lines = log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes('give_listener_error'))
+      .map((line) => JSON.parse(line));
+    log.mockRestore();
+    expect(lines).toEqual([
+      { event: 'give_listener_error', listener: 'entitySpawn', error: 'position unreadable' },
+    ]);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'interrupted' });
+  });
+
+  it('keeps a thrown value with no prototype and a failing diag sink away from the emitter', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {
+      throw new Error('EPIPE');
+    });
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const escaped: unknown[] = [];
+    // A getter that throws a value with no prototype, which String() cannot convert.
+    const hostile = {
+      id: 7,
+      get name(): string {
+        throw Object.create(null);
+      },
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    };
+    // A getter that throws an Error, when the diag sink also throws.
+    const angry = {
+      id: 8,
+      get name(): string {
+        throw new Error('position unreadable');
+      },
+      type: 'other',
+      position: new Vec3(0.5, 64, 3.5),
+    };
+    toss.mockImplementationOnce(async () => {
+      for (const entity of [hostile, angry]) {
+        try {
+          events.emit('entitySpawn', entity);
+        } catch (error) {
+          escaped.push(error);
+        }
+      }
+    });
+    await run('Pike', 3, 'oak_log', 0.01);
+    log.mockRestore();
+    expect(escaped).toEqual([]);
+  });
+
   it('fails interrupted when no dropped item is seen at all', async () => {
     const { world, run } = setup(5, { dropped: [], picked: [] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
@@ -385,74 +422,7 @@ describe('give', () => {
     expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
   });
 });
-
 describe('give: stepping back, the pickup delay, and taking the items back', () => {
-  /** A walk that moves the Body to `spot` and reports it arrived. */
-  const walkTo = (world: { me: { position: Vec3 } }, spot: Vec3) =>
-    vi.fn(async () => {
-      world.me.position = spot;
-      return { ok: true, distance: 2 } as never;
-    });
-
-  it('steps back to about 2 blocks before tossing when the recipient is 0.1 blocks away', async () => {
-    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
-    walk.mockImplementation(walkTo(world, new Vec3(-1.4, 64, 0.5)) as never);
-    expect(await run('Pike')).toMatchObject({ status: 'completed' });
-    expect(walk).toHaveBeenCalledOnce();
-    const spot = walk.mock.calls[0]?.[1] as Vec3;
-    expect(spot.x).toBeCloseTo(-1.4, 6);
-    expect(spot.z).toBeCloseTo(0.5, 6);
-    expect(spot.distanceTo(new Vec3(0.6, 64, 0.5))).toBeCloseTo(2, 6);
-    expect(walk.mock.calls[0]?.[2]).toBe(0.5);
-    expect(walk.mock.invocationCallOrder[0]).toBeLessThan(toss.mock.invocationCallOrder[0] ?? 0);
-  });
-
-  it('does not step back from a recipient 1.5 blocks or further away', async () => {
-    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(2, 64, 0.5) };
-    expect(await run('Pike')).toMatchObject({ status: 'completed' });
-    expect(walk).not.toHaveBeenCalled();
-    expect(toss).toHaveBeenCalledOnce();
-  });
-
-  it('fails not_possible and tosses nothing when there is no room to step back', async () => {
-    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
-    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
-    expect(await run('Pike')).toEqual({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'too close to toss, and no room to step back',
-      detail: {},
-    });
-    expect(toss).not.toHaveBeenCalled();
-  });
-
-  it('fails not_possible and tosses nothing when the recipient is 1.0 blocks away and the step back fails', async () => {
-    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(1, 64, 0) };
-    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
-    expect(await run('Pike')).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'too close to toss, and no room to step back',
-    });
-    expect(walk).toHaveBeenCalledOnce();
-    expect(toss).not.toHaveBeenCalled();
-  });
-
-  it('is cancelled, and does not toss, when the run aborts during the step back', async () => {
-    const { world, run, toss, controller } = setup(5, { dropped: [7], picked: [7] });
-    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
-    walk.mockImplementation(async () => {
-      controller.abort();
-      return { ok: false, reason: 'cancelled', message: 'stopped' } as never;
-    });
-    expect(await run('Pike')).toEqual({ status: 'cancelled', detail: {} });
-    expect(toss).not.toHaveBeenCalled();
-  });
-
   it('completes when the recipient collects after a 4 s pickup delay (past the old 3 s window)', async () => {
     const { world, run } = setup(5, { dropped: [7], picked: [7], after: 4000 });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };

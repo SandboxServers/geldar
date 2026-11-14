@@ -17,6 +17,7 @@ import { ConnectionManager } from '../connection.ts';
 import { startGolemTelemetry } from '../metrics.ts';
 import { natsRequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
+import { installFatalHandlers } from '../process-fatal.ts';
 import { registryFromConfig } from '../registry.ts';
 import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from './adam-body.ts';
 import { loadAdamConfig } from './adam-config.ts';
@@ -244,9 +245,15 @@ export async function main(): Promise<void> {
   await nc.close();
 }
 
+/** Installs the host's fatal handlers (process-fatal.ts). The entry point calls it before the body starts. */
+export function installEntryHandlers(): void {
+  installFatalHandlers(jsonLog);
+}
+
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installEntryHandlers();
   main().catch((error: unknown) => {
     jsonLog({ event: 'fatal', error: error instanceof Error ? error.message : String(error) });
-    process.exitCode = 1;
+    process.exit(1);
   });
 }

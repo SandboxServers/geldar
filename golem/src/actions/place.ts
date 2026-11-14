@@ -8,6 +8,7 @@ import {
   digSideCell,
   edgeCell,
   entityInCell,
+  entityOverlapsCell,
   pillarStep,
   placeAgainst,
   sideDigCell,
@@ -24,6 +25,20 @@ export const REPLACEABLE = new Set([
   'tall_grass',
   'fern',
   'snow',
+]);
+/**
+ * Seed items and the crop block each plants on farmland (minecraft-data 26.1). Nether wart is left
+ * out: it grows on soul sand, not farmland.
+ */
+export const SEED_CROPS: ReadonlyMap<string, string> = new Map([
+  ['wheat_seeds', 'wheat'],
+  ['beetroot_seeds', 'beetroots'],
+  ['carrot', 'carrots'],
+  ['potato', 'potatoes'],
+  ['pumpkin_seeds', 'pumpkin_stem'],
+  ['melon_seeds', 'melon_stem'],
+  ['torchflower_seeds', 'torchflower_crop'],
+  ['pitcher_pod', 'pitcher_crop'],
 ]);
 /** Farther than this from the target, the bot walks closer first. */
 const REACH = 4.5;
@@ -54,12 +69,15 @@ export const MESSAGE = {
   noSpace: 'no free space next to you',
   insideBlock: 'you are inside a block',
   occupied: 'target is occupied',
+  noFarmland: 'seeds need farmland below',
   notLoaded: 'target is not loaded',
   noReference: 'no solid block to place against',
   noGround: 'no solid block under your feet to build on',
   notGrounded: 'you are not on the ground',
   headroom: 'no headroom for a pillar: the two cells above your head are not clear',
   entityInCell: 'another entity stands where the block goes',
+  somePlayer: 'someone is standing there',
+  someEntity: 'something is standing there',
   notRisen: 'you did not rise onto the block',
   refused: 'the server refused the placement',
   unconfirmed: 'the block did not appear at the target',
@@ -94,6 +112,8 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   const { bot } = ctx;
   const stack = bot.inventory.items().find((item) => item.name === block);
   if (!stack) return failed('missing_materials', `no ${block} in the inventory`);
+  const crop = SEED_CROPS.get(block);
+  if (crop !== undefined) return sow(ctx, stack, block, crop, at);
   const boundingBox = bot.registry.blocksByName[block]?.boundingBox;
   if (boundingBox === undefined) return failed('not_possible', `${block} is not a block`);
 
@@ -117,21 +137,8 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
     target = beside.target;
   }
 
-  if (bot.entity.position.distanceTo(target) > REACH) {
-    const move = await moveNear(bot, target, WALK_RANGE, {
-      signal: ctx.signal,
-      timeScale: ctx.timeScale,
-    });
-    if (!move.ok) return outcomeOfMove(move);
-    // A partial walk stopped short. The server drops a placement from out of reach without answering it.
-    if (move.partial) {
-      return failed('blocked', 'the target is out of reach');
-    }
-    // A full walk can also end short of reach: the placement is then not sent.
-    if (bot.entity.position.distanceTo(target) > REACH) {
-      return failed('blocked', 'the target is out of reach');
-    }
-  }
+  const walked = await reachTarget(ctx, target);
+  if (walked) return walked;
   if (ctx.signal.aborted) return cancelled();
 
   // The bot's own body is the two cells from its feet up; a colliding block there blocks the placement.
@@ -142,6 +149,9 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   }
 
   if (pillarAtFeet) return pillarPlace(ctx, stack, block, target);
+  // An entity standing in the target cell refuses the placement before it is sent.
+  const occupant = occupantText(bot, target);
+  if (occupant !== null) return failed('blocked', occupant);
 
   // At `feet` the reference is the block below; otherwise the first solid neighbor in order.
   const candidates =
@@ -205,6 +215,86 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
     return completed({ block, at: spot(target), reference: spot(referencePos) });
   }
   return last;
+}
+
+type Stack = ReturnType<Bot['inventory']['items']>[number];
+
+/** Walks within reach of the target when it is farther than `REACH`; null when the bot is in reach. */
+async function reachTarget(ctx: ActionContext, target: Vec3): Promise<ActionOutcome | null> {
+  const { bot } = ctx;
+  if (bot.entity.position.distanceTo(target) <= REACH) return null;
+  const move = await moveNear(bot, target, WALK_RANGE, {
+    signal: ctx.signal,
+    timeScale: ctx.timeScale,
+  });
+  if (!move.ok) return outcomeOfMove(move);
+  // A partial walk stopped short. The server drops a placement from out of reach without answering it.
+  if (move.partial) return failed('blocked', 'the target is out of reach');
+  // A full walk can also end short of reach: the placement is then not sent.
+  if (bot.entity.position.distanceTo(target) > REACH) {
+    return failed('blocked', 'the target is out of reach');
+  }
+  return null;
+}
+
+/**
+ * Plants a seed item in the air cell above farmland: the bot looks at the farmland's top face, then
+ * right-clicks it with the seed in hand (the same placement path as a block). The crop block must
+ * appear in the target cell.
+ */
+async function sow(
+  ctx: ActionContext,
+  stack: Stack,
+  block: string,
+  crop: string,
+  at: Spot,
+): Promise<ActionOutcome> {
+  const { bot } = ctx;
+  const target = at === 'feet' ? feetCell(bot) : new Vec3(at.x, at.y, at.z);
+  const targetCell = bot.blockAt(target);
+  if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
+  if (targetCell.name !== 'air') return failed('blocked', MESSAGE.occupied);
+  const farmland = bot.blockAt(target.offset(0, -1, 0));
+  if (farmland?.name !== 'farmland') return failed('not_possible', MESSAGE.noFarmland);
+
+  const walked = await reachTarget(ctx, target);
+  if (walked) return walked;
+  if (ctx.signal.aborted) return cancelled();
+  const feet = feetCell(bot);
+  for (const dy of [0, 1]) {
+    const cell = bot.blockAt(new Vec3(feet.x, feet.y + dy, feet.z));
+    if (cell && cell.boundingBox !== 'empty') return failed('blocked', MESSAGE.insideBlock);
+  }
+  const occupant = occupantText(bot, target);
+  if (occupant !== null) return failed('blocked', occupant);
+
+  if (bot.heldItem?.name !== block) {
+    await bot.equip(stack, 'hand');
+    if (ctx.signal.aborted) return cancelled();
+  }
+  // The look is sent before the click, and one tick passes so the server has it.
+  await bot.lookAt(farmland.position.offset(0.5, 1, 0.5), true);
+  await bot.waitForTicks(1);
+  if (ctx.signal.aborted) return cancelled();
+
+  try {
+    await placeAgainst(bot, farmland, new Vec3(0, 1, 0));
+  } catch (error) {
+    const message = errorText(error);
+    if (/did not answer the placement|did not fire within timeout/.test(message)) {
+      return failed('timeout', MESSAGE.timeout);
+    }
+    if (/refused to place/.test(message)) return failed('blocked', MESSAGE.refused, {}, message);
+    if (/must be holding an item/.test(message)) {
+      return failed('missing_materials', `no ${block} in the inventory`);
+    }
+    throw error;
+  }
+  if (ctx.signal.aborted) return cancelled();
+  if (!confirmsPlacement(bot.blockAt(target)?.name ?? '', crop)) {
+    return failed('blocked', MESSAGE.unconfirmed);
+  }
+  return completed({ block: crop, at: spot(target), reference: spot(farmland.position) });
 }
 
 /**
@@ -358,6 +448,22 @@ function stepsFromFacing(yaw: number): Vec3[] {
   const facing =
     Math.abs(dx) > Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
   return [facing, ...CARDINALS.filter((step) => !step.equals(facing))];
+}
+
+/** Dropped items and XP orbs lie in the world without blocking a placement. */
+const LOOSE_ENTITY_NAMES: ReadonlySet<string> = new Set(['item', 'experience_orb']);
+
+/** The text for the entity whose box overlaps the cell, or null when none does (the bot's own box does not count). */
+function occupantText(bot: Bot, cell: Vec3): string | null {
+  const occupant = Object.values(bot.entities).find(
+    (entity) =>
+      entity !== bot.entity &&
+      entity.type !== 'orb' &&
+      !LOOSE_ENTITY_NAMES.has(entity.name ?? '') &&
+      entityOverlapsCell(entity, cell),
+  );
+  if (occupant === undefined) return null;
+  return occupant.type === 'player' ? MESSAGE.somePlayer : MESSAGE.someEntity;
 }
 
 /** True when a block may replace the cell and no entity's box overlaps it. */

@@ -11,7 +11,8 @@ describe('a checkpoint that cannot be read', () => {
     kv.checkpoints.failGets(100);
     const b = await boot(kv);
     expect(b.outcome).toEqual({ kind: 'idle', reason: 'checkpoint_unreadable' });
-    expect(kv.checkpoints.gets).toBe(4);
+    // Four tries at the checkpoint, plus the one read of `<life>.inflight` that a start makes first.
+    expect(kv.checkpoints.gets).toBe(5);
     expect(kv.checkpoints.peek(LIFE)).toBeDefined();
     await b.stop();
   });

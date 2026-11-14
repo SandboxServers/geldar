@@ -2,7 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
-import { protectedReason } from './protected-blocks.ts';
+import { lastResortRefused, prefetchOwners, protectedReason } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
 
@@ -153,8 +153,9 @@ async function walk(ctx: ActionContext, dir: Vec3, jump: boolean): Promise<boole
  * once more, since nothing in this call stopped it. Every dig here goes through `protectedReason`
  * first: someone else's work is never dug on the way out (decision 0164).
  */
-async function dig(bot: Bot, block: Block, at: Vec3): Promise<boolean> {
-  if (protectedReason(bot, block, at)) return false;
+async function dig(bot: Bot, block: Block, at: Vec3, relaxed = false): Promise<boolean> {
+  const protectedBy = protectedReason(bot, block, at);
+  if (protectedBy !== null && !(relaxed && !lastResortRefused(bot, block, at))) return false;
   const loose = bot as unknown as {
     pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
   };
@@ -165,6 +166,19 @@ async function dig(bot: Bot, block: Block, at: Vec3): Promise<boolean> {
       const tool = loose.pathfinder?.bestHarvestTool?.(block);
       if (tool) await bot.equip(tool as never, 'hand');
       await bot.dig(block, true);
+      // Every block the last-resort pass breaks is logged by name and cell (owner ruling 2026-11-13).
+      if (relaxed) {
+        DEFAULT_DIAG_SINK.log(
+          JSON.stringify({
+            event: 'unstick_breach',
+            block: block.name,
+            x: at.x,
+            y: at.y,
+            z: at.z,
+            dimension: bot.game?.dimension,
+          }),
+        );
+      }
       return true;
     } catch (error) {
       const text = errorText(error);
@@ -193,16 +207,30 @@ export function digDownAllowed(health: number, drop: Drop): boolean {
   return fallDamage(drop.blocks + 1) <= health - DIG_DOWN_MARGIN;
 }
 
+/**
+ * A cell a dig may take: soft ground always; in the last-resort pass (`relaxed`) also a block that
+ * `lastResortRefused` allows (a built block with a known-unowned record).
+ */
+function digsCell(bot: Bot, block: Block | null, cell: Vec3, relaxed: boolean): boolean {
+  if (isSoft(block)) return true;
+  return (
+    relaxed &&
+    block !== null &&
+    block.boundingBox !== 'empty' &&
+    !lastResortRefused(bot, block, cell)
+  );
+}
+
 /** Digs the soft block under the feet when the fall that follows is allowed. `elevated` demands a drop below it. */
-async function digDown(bot: Bot, feet: Vec3, elevated: boolean): Promise<boolean> {
+async function digDown(bot: Bot, feet: Vec3, elevated: boolean, relaxed = false): Promise<boolean> {
   const floor = feet.offset(0, -1, 0);
   const block = bot.blockAt(floor);
-  if (!isSoft(block) || block === null) return false;
+  if (block === null || !digsCell(bot, block, floor, relaxed)) return false;
   const below = scanDrop((cell) => bot.blockAt(cell), floor.offset(0, -1, 0));
   if (elevated && below.blocks === 0 && below.lands === 'solid') return false;
   const drop: Drop = { blocks: below.blocks + 1, lands: below.lands };
   if (!digDownAllowed(bot.health ?? 20, drop)) return false;
-  return dig(bot, block, floor);
+  return dig(bot, block, floor, relaxed);
 }
 
 /**
@@ -210,29 +238,31 @@ async function digDown(bot: Bot, feet: Vec3, elevated: boolean): Promise<boolean
  * so the bot walks in and lands `STAIR_STEP` lower. The block under the landing must be solid (not
  * water, lava or a void), or the step is refused.
  */
-async function digStair(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
+async function digStair(bot: Bot, feet: Vec3, dir: Vec3, relaxed = false): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at, at.offset(0, -STAIR_STEP, 0)];
   const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
-  if (!blocks.every(({ block }) => empty(block) || isSoft(block))) return false;
+  if (!blocks.every(({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed)))
+    return false;
   const landing = bot.blockAt(at.offset(0, -STAIR_STEP - 1, 0));
   if (landing === null || landing.boundingBox === 'empty' || HARMFUL.has(landing.name))
     return false;
   if (landing.name === 'water' || landing.name === 'lava') return false;
   for (const { cell, block } of blocks) {
-    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block, cell)))
+    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block, cell, relaxed)))
       return false;
   }
   return true;
 }
 
 /** Digs through the soft block(s) at a neighbour's feet and head cells so the bot can walk there. */
-async function digSideways(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
+async function digSideways(bot: Bot, feet: Vec3, dir: Vec3, relaxed = false): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at];
   const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
-  if (!blocks.every(({ block }) => empty(block) || isSoft(block))) return false;
-  if (!blocks.some(({ block }) => isSoft(block))) return false;
+  if (!blocks.every(({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed)))
+    return false;
+  if (!blocks.some(({ cell, block }) => digsCell(bot, block, cell, relaxed))) return false;
   if (
     !dropAllowed(
       bot.health ?? 20,
@@ -242,7 +272,7 @@ async function digSideways(bot: Bot, feet: Vec3, dir: Vec3): Promise<boolean> {
     return false;
   }
   for (const { cell, block } of blocks) {
-    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block, cell)))
+    if (block !== null && block.boundingBox !== 'empty' && !(await dig(bot, block, cell, relaxed)))
       return false;
   }
   return true;
@@ -261,6 +291,44 @@ function reportNoWayOut(bot: Bot, tried: readonly string[]): void {
       log: (line) => DEFAULT_DIAG_SINK.log(JSON.stringify({ ...JSON.parse(line), tried })),
     },
   );
+}
+
+/** The cells whose ownership the last-resort pass prefetches: the feet and head, and the eight neighbours. */
+function escapePoints(feet: Vec3): Vec3[] {
+  const ring = EIGHT.map((dir) => feet.plus(dir));
+  return [feet, feet.offset(0, 1, 0), ...ring, ...ring.map((cell) => cell.offset(0, 1, 0))];
+}
+
+/**
+ * The last-resort pass (owner ruling 2026-11-13, decision 0164): the dig strategies once more (sideways,
+ * stair, down) with `relaxed` set, so a built block whose record is known unowned may be dug. Only
+ * `unstick` calls it, after every other way out failed; `goto` never reaches it. Returns true when a dig
+ * freed the bot. `digs` is the count the earlier strategies already spent against `MAX_DIGS`.
+ */
+async function lastResortDig(
+  ctx: ActionContext,
+  where: () => Vec3,
+  digs: number,
+): Promise<boolean> {
+  const { bot, signal } = ctx;
+  let spent = digs;
+  for (const dir of EIGHT.slice(0, 4)) {
+    if (signal.aborted || spent >= MAX_DIGS) break;
+    if (!(await digSideways(bot, where(), dir, true))) continue;
+    spent++;
+    if (await walk(ctx, dir, false)) return true;
+  }
+  for (const dir of EIGHT) {
+    if (signal.aborted || spent >= MAX_DIGS) break;
+    if (!(await digStair(bot, where(), dir, true))) continue;
+    spent++;
+    if (await walk(ctx, dir, false)) return true;
+  }
+  if (!signal.aborted && spent < MAX_DIGS && (await digDown(bot, where(), false, true))) {
+    await bot.waitForTicks(5);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -322,6 +390,12 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
     return done('dig_down');
   }
   if (ctx.signal.aborted) return cancelled();
+  // Last resort (owner ruling 2026-11-13): every other way out failed, so the dig strategies run once more
+  // with built blocks of a known-unowned record allowed. The ownership record is prefetched first.
+  note('dig_unowned');
+  await prefetchOwners(escapePoints(where()), ctx.signal);
+  if (ctx.signal.aborted) return cancelled();
+  if (await lastResortDig(ctx, where, digs)) return done('dig_unowned');
   reportNoWayOut(bot, tried);
   return failed('blocked', `unstick: no way out found; tried ${tried.join(', ')}`, {
     tries,

@@ -5,6 +5,7 @@ import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
+import { InflightStore } from './inflight.ts';
 import type { ProgramRegistry } from './program.ts';
 import { createProgramRegistry } from './programs/index.ts';
 import { MemorySink, type RecordSink } from './records.ts';
@@ -107,12 +108,24 @@ export function createBody(options: CreateBodyOptions): Body {
           ...(options.checkpoints.log === undefined ? {} : { log: options.checkpoints.log }),
           ...(options.now === undefined ? {} : { now: options.now }),
         });
+  // The give marker lives where the checkpoints live, and only when they are kept.
+  const inflight =
+    options.checkpoints === undefined
+      ? undefined
+      : new InflightStore({
+          kv: options.checkpoints.kv,
+          lifeId: options.lifeId,
+          sink: tap,
+          flushable: records,
+          ...(options.checkpoints.log === undefined ? {} : { log: options.checkpoints.log }),
+        });
   const built = new BodyRuntime({
     lifeId: options.lifeId,
     bodyGeneration: options.bodyGeneration,
     bot: options.bot,
     ticks: options.ticks,
     sink: tap,
+    ...(inflight === undefined ? {} : { inflight }),
     reflexes: enabledReflexes(reflexConfig),
     reflexConfig,
     programs: options.programs ?? createProgramRegistry(),
