@@ -67,11 +67,8 @@ function fakeBot(options: FakeOptions = {}): Bot {
 }
 
 /** Runs the `sleep` handler with a fresh abort signal. */
-function sleep(bot: Bot) {
-  return sleepAction.run(
-    { bot, signal: new AbortController().signal, timeScale: 1 },
-    { do: 'sleep' },
-  );
+function sleep(bot: Bot, timeScale = 1) {
+  return sleepAction.run({ bot, signal: new AbortController().signal, timeScale }, { do: 'sleep' });
 }
 
 const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
@@ -216,6 +213,61 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 6, y: 64, z: 0 } } });
     expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
+    expect(bot.sleep).toHaveBeenCalledTimes(2);
+  });
+
+  /** Runs the bed loop on a fake clock: each walk advances it by `walkMs`. Returns the outcome and the bot. */
+  async function sleepWithClock(walkMs: number, timeScale = 1) {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const slowWalk = async () => {
+      now += walkMs;
+      return { ok: true, distance: 0 };
+    };
+    vi.mocked(moveNear).mockImplementation(slowWalk as never);
+    const beds = [5, 9, 13, 17, 21, 25].flatMap((x) => bed('white_bed', x));
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: beds,
+      sleepErrors: Array(6).fill('Bed is occupied'),
+    });
+    try {
+      return { outcome: await sleep(bot, timeScale), bot };
+    } finally {
+      clock.mockRestore();
+      vi.mocked(moveNear).mockImplementation(async () => ({ ok: true, distance: 0 }) as never);
+    }
+  }
+
+  it('stops the bed loop after the 30 s budget and says the search time ran out', async () => {
+    // Each walk takes 12 s on a fake clock, so the budget ends the loop after the third bed.
+    const { outcome, bot } = await sleepWithClock(12_000);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out; last: /),
+    });
+    expect(bot.sleep).toHaveBeenCalledTimes(3);
+    expect(moveNear).toHaveBeenCalledTimes(3);
+  });
+
+  it('starts a bed at exactly the budget boundary: 30 s spent stops the loop', async () => {
+    // Each walk takes 10 s, so the third bed is started at 20 s and the fourth at exactly 30 s.
+    const { outcome, bot } = await sleepWithClock(10_000);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out/),
+    });
+    expect(bot.sleep).toHaveBeenCalledTimes(3);
+  });
+
+  it('scales the budget by the time scale: at 0.5 the search stops at 15 s', async () => {
+    // Each walk takes 12 s: the second bed starts at 12 s (under 15 s), the third at 24 s (over).
+    const { outcome, bot } = await sleepWithClock(12_000, 0.5);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      message: expect.stringMatching(/^tried 2 of 6 nearby beds; the search time ran out/),
+    });
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });
 
