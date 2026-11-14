@@ -1,9 +1,8 @@
-// K13: see-through foliage policy, the depth-ghost agent, follow candidate selection and blending.
+// K13: see-through foliage policy and the depth-ghost agent. (The chase camera that replaced follow
+// candidate selection is tested in camera/lakitu.test.ts, decision 0166.)
 
 import { describe, expect, it } from 'vitest';
 import { GHOST_OPACITY } from '../../web/kino/agent-ghost.ts';
-import { followCandidates, pickFollowIndex } from '../../web/kino/camera/follow-pick.ts';
-import { CameraRig } from '../../web/kino/camera/rig.ts';
 import {
   distanceToSegment,
   FADE_CAMERA_RADIUS,
@@ -13,38 +12,8 @@ import {
   seeThroughOpacity,
 } from '../../web/kino/fade.ts';
 import { softOf } from '../../web/kino/mesher.ts';
-import { encodePaletteIndices } from '../../web/kino/palette.ts';
-import { VoxelWorld } from '../../web/kino/world.ts';
 
-const AIR = 'minecraft:air';
 const LEAVES = 'minecraft:oak_leaves[persistent=true]';
-
-function airWorld(): VoxelWorld {
-  const w = new VoxelWorld();
-  for (let cx = -1; cx <= 1; cx++)
-    for (let sy = -1; sy <= 1; sy++)
-      for (let cz = -1; cz <= 1; cz++)
-        w.applySection({
-          type: 'chunk_section',
-          chunk_x: cx,
-          chunk_z: cz,
-          section_y: sy,
-          palette: [AIR],
-          bits: 1,
-          data: encodePaletteIndices(new Uint16Array(4096), 1),
-        });
-  return w;
-}
-
-/** A wall of leaves behind the agent (towards +z, where the default follow camera sits). */
-function leafWallBehind(): VoxelWorld {
-  const w = airWorld();
-  for (let x = 2; x <= 14; x++)
-    for (let y = 2; y <= 15; y++)
-      for (let z = 9; z <= 10; z++)
-        w.applyUpdate({ type: 'block_update', pos: { x, y, z }, state: LEAVES });
-  return w;
-}
 
 const origin = { x: 0, y: 0, z: 0 };
 const cam = { x: 0, y: 0, z: 10 };
@@ -113,63 +82,5 @@ describe('agent ghost', () => {
     expect(ghost.visible).toBe(true);
     view.setFadeFocus({ x: 0, y: 1, z: 1 }, { x: 0, y: 1, z: 0 });
     expect(ghost.visible).toBe(false);
-  });
-});
-describe('follow candidates', () => {
-  const look = { x: 8, y: 6.6, z: 4 };
-  it('offers behind, left, right and higher options', () => {
-    const c = followCandidates({ x: 0, y: 3, z: 8 });
-    expect(c[0]).toEqual({ x: 0, y: 3, z: 8 });
-    expect(c[1]?.x).toBeGreaterThan(5);
-    expect(c[2]?.x).toBeLessThan(-5);
-    expect(c.some((o) => o.y > 3 + 4)).toBe(true);
-  });
-  it('keeps the current candidate when the view is clear', () => {
-    const c = followCandidates({ x: 0, y: 3, z: 8 });
-    expect(pickFollowIndex(airWorld(), look, c, 0)).toBe(0);
-    expect(pickFollowIndex(airWorld(), look, c, 2)).toBe(2);
-  });
-  it('leaves a candidate whose line crosses a leaf wall for a clearer one', () => {
-    const c = followCandidates({ x: 0, y: 3, z: 8 });
-    const idx = pickFollowIndex(leafWallBehind(), look, c, 0);
-    expect(idx).not.toBe(0);
-  });
-  it('does not switch for a margin smaller than FOLLOW_SWITCH_MARGIN', () => {
-    const w = airWorld();
-    w.applyUpdate({ type: 'block_update', pos: { x: 8, y: 8, z: 7 }, state: LEAVES });
-    const c = followCandidates({ x: 0, y: 3, z: 8 });
-    expect(pickFollowIndex(w, look, c, 0)).toBe(0);
-  });
-  it('abandons a candidate that is inside a solid', () => {
-    const w = airWorld();
-    for (let x = 6; x <= 10; x++)
-      for (let y = 8; y <= 12; y++)
-        for (let z = 10; z <= 14; z++)
-          w.applyUpdate({ type: 'block_update', pos: { x, y, z }, state: 'minecraft:stone' });
-    const c = followCandidates({ x: 0, y: 3, z: 8 });
-    expect(pickFollowIndex(w, look, c, 0)).not.toBe(0);
-  });
-});
-
-describe('rig follow framing', () => {
-  it('moves to a clear side and blends instead of jumping', () => {
-    const w = leafWallBehind();
-    const rig = new CameraRig();
-    rig.setMode('follow');
-    const target = { x: 8, y: 5, z: 4 };
-    rig.update(w, target, 0.016);
-    const first = { ...(rig.shownOffset as { x: number; y: number; z: number }) };
-    expect(rig.pickIndex).not.toBe(0);
-    // the first frame snaps to the pick; a later switch must blend
-    rig.pickIndex = 0;
-    rig.pickTimer = 10;
-    const before = { ...first };
-    rig.update(w, target, 0.016);
-    const after = rig.shownOffset as { x: number; y: number; z: number };
-    const want = followCandidates(rig.followOffset)[0] as { x: number; y: number; z: number };
-    const full = Math.hypot(want.x - before.x, want.y - before.y, want.z - before.z);
-    const moved = Math.hypot(after.x - before.x, after.y - before.y, after.z - before.z);
-    expect(moved).toBeGreaterThan(0);
-    expect(moved).toBeLessThan(full * 0.2);
   });
 });

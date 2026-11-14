@@ -181,12 +181,17 @@ describe('status line and page layout', () => {
   });
 
   it('page wraps the toolbar, sizes touch targets and has a status element', () => {
+    // Decision 0166 moved the styles to kino.css; the same properties hold on the monitor wall.
     const html = readFileSync(join(import.meta.dirname, '../../web/kino/index.html'), 'utf8');
-    expect(html).toMatch(/#bar \{[^}]*flex-wrap: wrap/);
-    expect(html).toMatch(/\.pane \.tools \{[^}]*flex-wrap: wrap/);
-    expect(html).toContain('min-height: 44px');
+    const css = readFileSync(join(import.meta.dirname, '../../web/kino/kino.css'), 'utf8');
+    expect(html).toContain('href="./kino.css"');
+    expect(css).toMatch(/#bar \{[^}]*flex-wrap: wrap/);
+    expect(css).toMatch(/\.controls \{[^}]*flex-wrap: wrap/);
+    const touch = /@media \(hover: none\) \{([^@]*)\}/.exec(css)?.[1] ?? '';
+    expect(touch).toMatch(/\.group button \{[^}]*height: 44px/);
+    expect(touch).toMatch(/#bar button \{[^}]*min-height: 44px/);
     expect(html).toContain('id="status"');
-    expect(html).not.toMatch(/#bar \{[^}]*position: fixed/);
+    expect(css).not.toMatch(/#bar \{[^}]*position: fixed/);
   });
 });
 

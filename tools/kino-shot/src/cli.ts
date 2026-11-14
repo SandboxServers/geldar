@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 import { parseArgs } from './args.ts';
 import {
+  agentIndex,
   buildSummary,
   checksFrom,
   type PixelFractions,
@@ -78,36 +79,46 @@ async function main(): Promise<number> {
     });
   });
 
+  // The page's own camera list (no extra request): agent id -> the label the page shows.
+  const targetsReply = page
+    .waitForResponse((r) => pathOf(r.url()) === '/kino/targets', { timeout: 20_000 })
+    .then((r) => r.json() as Promise<{ agents?: { id?: unknown; label?: unknown }[] }>)
+    .catch(() => null);
+  if (args.agent) {
+    // An empty saved wall: the page does not tune CH 1 by itself, so the run sends one subscribe, for
+    // the agent asked for (decision 0166; the site rate-limits subscribes).
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('kino-wall-v1', JSON.stringify({ layout: 'wall', monitors: [] }));
+      } catch {
+        // No storage: the page tunes CH 1 first, then the agent below (two subscribes).
+      }
+    });
+  }
   await page.goto(args.url, { waitUntil: 'domcontentloaded' });
-  const picker = page.locator('#picker');
   let pickerOptions = 0;
   try {
+    // The channel guide is filled once the texture atlas is built (decision 0166). Without --agent, a
+    // first visit tunes CH 1 to the first agent by itself.
     await page.waitForFunction(
-      () => document.querySelectorAll('#picker option').length > 0,
-      undefined,
-      { timeout: 20_000 },
-    );
-    pickerOptions = await picker.locator('option').count();
-    // The Open handler is attached only after the texture atlas is built; clicking earlier does nothing.
-    await page.waitForFunction(
-      () => /atlas (ready|FAILED)/.test(document.getElementById('status')?.textContent ?? ''),
+      () =>
+        document.querySelectorAll('#guide .guide-list li').length > 0 ||
+        /atlas FAILED/.test(document.getElementById('status')?.textContent ?? ''),
       undefined,
       { timeout: 60_000 },
     );
+    pickerOptions = await page.locator('#guide .guide-list li').count();
     if (args.agent) {
-      try {
-        await picker.selectOption(args.agent, { timeout: 3000 });
-      } catch {
-        const label = await picker
-          .locator('option', { hasText: args.agent })
-          .first()
-          .getAttribute('value', { timeout: 3000 });
-        if (label !== null) await picker.selectOption(label);
-      }
+      // The guide lists the agents in the order of the page's own camera list: pick by position, an
+      // exact id first, then an exact label (never a substring, so "Moss" never picks "Mossy").
+      const index = agentIndex((await targetsReply)?.agents ?? [], args.agent);
+      if (index < 0) throw new Error(`agent not listed for this viewer: ${args.agent}`);
+      await page.locator('#open-guide').click();
+      await page.locator('#guide .guide-list li .tune').nth(index).click({ timeout: 3000 });
     }
-    await page.locator('#open').click();
     if (args.mode !== 'follow') {
-      await page.locator('.pane .tools button', { hasText: new RegExp(`^${args.mode}$`) }).click();
+      const name = args.mode === 'orbit' ? 'Orbit camera' : 'Free camera';
+      await page.locator(`.monitor.active [aria-label="${name}"]`).click({ force: true });
     }
   } catch (e) {
     log.push(`setup: ${redact(String((e as Error).message).split('\n')[0] ?? '')}`);
@@ -124,7 +135,7 @@ async function main(): Promise<number> {
   await page.screenshot({ path: files.screenshot, fullPage: true });
 
   let fractions: PixelFractions | null = null;
-  const canvas = page.locator('.pane canvas').first();
+  const canvas = page.locator('.monitor:not(.empty) canvas').first();
   if ((await canvas.count()) > 0) {
     // Element screenshots composite the page, so a canvas without preserveDrawingBuffer is not blank.
     const png = await canvas.screenshot({ path: files.canvas });
@@ -144,7 +155,7 @@ async function main(): Promise<number> {
   }
 
   const statusTexts = await page.evaluate(() =>
-    [...document.querySelectorAll('#notice, #status, .pane .status, .pane .msg')]
+    [...document.querySelectorAll('#notice, #status, .monitor .status, .monitor .msg')]
       .map((e) => (e.textContent ?? '').trim())
       .filter((t) => t.length > 0),
   );

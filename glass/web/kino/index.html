@@ -3,6 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
     <title>Kino</title>
     <!-- Where the sign-in page lives and where BlueMap's textures.json is served. The textures default is the BlueMap overworld map id (plugins/bluemap/config/maps/overworld.conf); change the content for another map id. -->
     <meta name="kino-signin-url" content="/register/" />
@@ -10,44 +11,63 @@
     <script type="importmap">
       { "imports": { "three": "/kino/vendor/three.module.js" } }
     </script>
-    <style>
-      html, body { margin: 0; height: 100%; background: #101418; color: #dde; font: 14px system-ui, sans-serif; overflow-x: hidden; }
-      body { display: flex; flex-direction: column; }
-      #bar { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px; background: #000a; box-sizing: border-box; max-width: 100%; }
-      #bar a { color: #8cf; }
-      #bar select, #bar button, .pane .tools button { min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 16px; }
-      #bar select { flex: 1 1 140px; min-width: 0; }
-      #notice { flex: 1 1 100%; }
-      #status { flex: 1 1 100%; font: 12px ui-monospace, monospace; color: #9ab; }
-      #panes { flex: 1 1 0; min-height: 0; position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
-      .pane { position: relative; min-height: 200px; min-width: 0; border: 1px solid #234; }
-      .pane canvas { width: 100%; height: 100%; display: block; }
-      .pane .tools { position: absolute; top: 6px; left: 6px; right: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
-      .pane .msg { position: absolute; bottom: 28px; left: 6px; }
-      .pane .status { position: absolute; bottom: 6px; left: 6px; right: 6px; font: 12px ui-monospace, monospace; color: #cde; text-shadow: 0 0 3px #000; }
-      #bar select { max-width: 22rem; }
-      #panes { overflow-y: auto; grid-auto-rows: minmax(240px, 1fr); }
-      /* Wide screens with a mouse: one compact header row, smaller controls, a pane grid. */
-      @media (min-width: 900px) and (pointer: fine) {
-        #bar { flex-wrap: nowrap; gap: 12px; padding: 3px 8px; }
-        #bar select, #bar button, .pane .tools button { min-height: 28px; min-width: 28px; padding: 0 10px; font-size: 13px; }
-        #bar select { flex: 0 1 22rem; }
-        #notice { flex: 0 1 auto; }
-        #status { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        #panes { grid-template-columns: repeat(auto-fit, minmax(min(560px, 100%), 1fr)); }
-        .pane .tools { gap: 3px; }
-      }
-    </style>
+    <link rel="stylesheet" href="./kino.css" />
   </head>
   <body>
-    <div id="bar">
+    <header id="bar">
+      <h1 class="brand"><span class="mark" aria-hidden="true"></span>Kino</h1>
+      <div class="layouts" role="group" aria-label="Layout">
+        <button type="button" data-layout="wall" aria-pressed="true" title="Wall (L)">Wall</button>
+        <button type="button" data-layout="feature" aria-pressed="false" title="Feature (L)">Feature</button>
+        <button type="button" data-layout="solo" aria-pressed="false" title="Solo (Enter)">Solo</button>
+      </div>
       <span id="notice"></span>
-      <span id="status"></span>
       <a id="signin" hidden>Sign in</a>
-      <select id="picker" aria-label="Agent to watch"></select>
-      <button id="open" type="button">Open pane</button>
-    </div>
-    <div id="panes"></div>
+      <div class="actions">
+        <button type="button" id="open-guide" title="Channels (T)" aria-label="Channels"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" /></svg><span>Channels</span></button>
+        <button type="button" id="toggle-status" aria-expanded="false" aria-controls="status" title="Feed details" aria-label="Feed details"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8h.01M11 12h1v5h1M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18" /></svg><span>Details</span></button>
+        <button type="button" id="open-help" title="Controls (?)" aria-label="Controls"><span aria-hidden="true">?</span></button>
+      </div>
+      <p id="status" hidden></p>
+    </header>
+    <main id="wall" aria-label="Monitors"></main>
+    <p id="say" class="sr-only" aria-live="polite"></p>
+
+    <dialog id="guide" aria-labelledby="guide-title">
+      <div class="panel">
+        <header>
+          <h2 id="guide-title">Channels</h2>
+          <button type="button" class="guide-close" aria-label="Close channels">Close</button>
+        </header>
+        <p class="guide-caption"></p>
+        <ul class="guide-list"></ul>
+      </div>
+    </dialog>
+
+    <dialog id="help" aria-labelledby="help-title">
+      <div class="panel">
+        <header>
+          <h2 id="help-title">Controls</h2>
+          <button type="button" class="help-close" aria-label="Close controls">Close</button>
+        </header>
+        <p>Kino is a window: nothing here reaches the world. The keyboard drives the highlighted monitor.</p>
+        <dl class="keys">
+          <dt><kbd>1</kbd>&ndash;<kbd>4</kbd></dt><dd>Pick a monitor</dd>
+          <dt><kbd>C</kbd></dt><dd>Next camera: Chase, Orbit, Free</dd>
+          <dt><kbd>Q</kbd> <kbd>E</kbd> or <kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Rotate round the agent in steps</dd>
+          <dt><kbd>&uarr;</kbd> <kbd>&darr;</kbd> or wheel</dt><dd>Zoom: close, medium, far</dd>
+          <dt><kbd>R</kbd> or double-click</dt><dd>Back behind the agent</dd>
+          <dt>Drag</dt><dd>Turn the camera</dd>
+          <dt><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>, <kbd>Space</kbd>, <kbd>Shift</kbd></dt><dd>Fly (Free camera)</dd>
+          <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous or next agent</dd>
+          <dt><kbd>T</kbd></dt><dd>Channels</dd>
+          <dt><kbd>L</kbd>, <kbd>Enter</kbd></dt><dd>Next layout, solo</dd>
+          <dt><kbd>X</kbd></dt><dd>Close the monitor</dd>
+          <dt><kbd>I</kbd></dt><dd>Feed details</dd>
+        </dl>
+        <p class="touch">On a touch screen: drag to turn, pinch to zoom, double-tap to recentre.</p>
+      </div>
+    </dialog>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

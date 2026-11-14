@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseArgs, validateUrl } from '../src/args.ts';
 import {
+  agentIndex,
   buildSummary,
   canvasLooksRendered,
   checksFrom,
@@ -134,5 +135,20 @@ describe('status and summary', () => {
 describe.skipIf(!process.env.KINO_URL)('live', () => {
   it('has a valid KINO_URL', () => {
     expect(() => validateUrl(process.env.KINO_URL)).not.toThrow();
+  });
+});
+
+describe('agentIndex', () => {
+  const agents = [
+    { id: 'ag_mossy_01', label: 'Mossy' },
+    { id: 'ag_moss_02', label: 'Moss' },
+    { id: 'ag_twin_03', label: 'Moss' },
+  ];
+  it('picks an exact id before any label, and never a substring', () => {
+    expect(agentIndex(agents, 'ag_moss_02')).toBe(1);
+    expect(agentIndex(agents, 'ag_twin_03')).toBe(2);
+    expect(agentIndex(agents, 'Moss')).toBe(1);
+    expect(agentIndex(agents, 'Mos')).toBe(-1);
+    expect(agentIndex(agents, 'ag_nobody')).toBe(-1);
   });
 });

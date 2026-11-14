@@ -85,6 +85,16 @@ To run it in the foreground instead, start it by hand from the repository root, 
 
 It prints `glass listening on 127.0.0.1:<port>` when it is ready. Stop it with Ctrl+C.
 
+### Seeing the Kino page without a shard
+
+The Kino page (`glass/web/kino/`, decision 0166) needs a feed, textures and skins, so it cannot be looked at with Glass alone. The test-only preview serves the real page (types stripped, as Glass does) with an invented world: rolling grass, a pond, trees, a wall and a hut, and three agents walking their own routes. Its textures and skins are drawn from noise, so no game asset is used:
+
+```powershell
+node glass/test/kino-preview/server.ts [port] [web-dir]   # default 8789 and glass/web/kino; binds 127.0.0.1
+```
+
+Open `http://127.0.0.1:8789/kino/`. Pass another `web-dir` (an export of an older `glass/web/kino`) to compare before and after. The preview is not Glass's relay: it has no audit, scope check, rate limit or CSP. `tools/kino-shot` can be pointed at it (`--url http://localhost:8789/kino/`).
+
 ## The `geldar_glass` role
 
 Glass reads Postgres as the role `geldar_glass`. Migration `sql/0005_glass_reader.sql` creates the
