@@ -129,6 +129,26 @@ describe('runAction and a sleeping bot', () => {
     expect(wake).toHaveBeenCalledTimes(1);
   });
 
+  it('wakes a sleeping bot before mine, craft and give run (decision 0214)', async () => {
+    const mine = sleepingBot({ asleep: true });
+    const mineRegistry = new ActionRegistry();
+    mineRegistry.register(mineHandler(async () => completed()));
+    await runAction(mineRegistry, mine.bot, validMine);
+    expect(mine.wake).toHaveBeenCalledTimes(1);
+
+    const craft = sleepingBot({ asleep: true });
+    const craftRegistry = new ActionRegistry();
+    craftRegistry.register({ kind: 'craft', timeoutMs: 1_000, run: async () => completed() });
+    await runAction(craftRegistry, craft.bot, { do: 'craft', item: 'stick', count: 1 });
+    expect(craft.wake).toHaveBeenCalledTimes(1);
+
+    const give = sleepingBot({ asleep: true });
+    const giveRegistry = new ActionRegistry();
+    giveRegistry.register({ kind: 'give', timeoutMs: 1_000, run: async () => completed() });
+    await runAction(giveRegistry, give.bot, { do: 'give', to: 'Pike', item: 'bread', count: 1 });
+    expect(give.wake).toHaveBeenCalledTimes(1);
+  });
+
   it('does not wake an awake bot', async () => {
     const { bot, wake } = sleepingBot({ asleep: false });
     const registry = new ActionRegistry();
