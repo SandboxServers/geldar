@@ -4,6 +4,7 @@ import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
 import { accountPage } from './account-pages.ts';
 import { ACCOUNT_CSS } from './account-style.ts';
 import type { RegisterConfig } from './config.ts';
+import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
 import {
   mcpBaseFor,
@@ -79,7 +80,7 @@ function html(res: ServerResponse, status: number, body: string, extra = {}): vo
   res.end(body);
 }
 
-const refuse = (res: ServerResponse): void => html(res, 403, REFUSED_PAGE);
+const refuse = (res: ServerResponse): void => html(res, 403, errorPage(403));
 
 async function readForm(req: IncomingMessage): Promise<URLSearchParams | null> {
   if (!(req.headers['content-type'] ?? '').startsWith('application/x-www-form-urlencoded'))
@@ -263,17 +264,7 @@ export class Account {
     const wait = this.deps.ownerCharge?.(session.ownerId) ?? 0;
     if (wait > 0 && m[3] !== 'retire') {
       this.deps.log('post refused reason=rate');
-      res.writeHead(429, {
-        'content-type': 'application/json',
-        'retry-after': String(wait),
-        ...SECURITY_HEADERS,
-      });
-      res.end(
-        JSON.stringify({
-          error: { code: 'rate_limited', message: 'Too many requests' },
-          retryAfter: wait,
-        }),
-      );
+      html(res, 429, errorPage(429, wait), { 'retry-after': String(wait) });
       return true;
     }
     if (m[1] === 'players' && m[2] === undefined) return this.create(res, session, fields);

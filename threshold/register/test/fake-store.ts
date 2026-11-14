@@ -70,6 +70,8 @@ export class FakeStore implements Store {
     );
     if (live.length >= 3) return 'cap';
     this.players.set(q.playerId, {
+      publicCamera: false,
+      thoughtsDelayedPublic: false,
       ownerId: q.ownerId,
       playerId: q.playerId,
       name: q.name,

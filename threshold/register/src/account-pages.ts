@@ -8,6 +8,14 @@ const page = (title: string, body: string): string =>
 const form = (action: string, csrf: string, inner: string): string =>
   `<form method="post" action="${esc(action)}"><input type="hidden" name="csrf" value="${esc(csrf)}">${inner}</form>`;
 
+/**
+ * The Glass and Kino links of one agent (0138, 0139). Glass shows when the owner has the delayed public thoughts
+ * flag on, Kino when the public camera flag is on. The links carry no agent id, so no agent data leaves the page.
+ */
+const viewLinks = (p: PlayerRow): string =>
+  (p.thoughtsDelayedPublic ? '<a href="/">View in Glass</a>' : '') +
+  (p.publicCamera ? '<a href="/kino/">View in Kino</a>' : '');
+
 export function accountPage(
   players: readonly PlayerRow[],
   csrf: string,
@@ -39,7 +47,7 @@ export function accountPage(
               csrf,
               '<button type="submit">Retire</button>',
             );
-      return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})<p class="status">Status: ${esc(p.status)}</p>${actions}</li>`;
+      return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})<p class="status">Status: ${esc(p.status)}</p>${viewLinks(p)}${actions}</li>`;
     })
     .join('');
   const options = harnesses.map((h) => `<option>${esc(h)}</option>`).join('');
