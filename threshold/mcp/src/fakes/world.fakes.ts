@@ -1,6 +1,6 @@
-import { createOutputValidator } from '@geldar/animus/src/validate/index.ts';
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
 import { buildSnapshot, FakeClock, type SimEvent, type WakeConfig } from '@geldar/mcp-mock';
+import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import type { RunState } from '../events/mapper.ts';
 import {
   type BodyGateway,

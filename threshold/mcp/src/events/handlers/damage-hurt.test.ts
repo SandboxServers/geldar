@@ -1,4 +1,4 @@
-import type { MindEvent } from '@geldar/animus/src/ports/body.ts';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { describe, expect, it } from 'vitest';
 import { mapMindEvent } from '../mapper.ts';
 import type { MapContext } from './types.ts';

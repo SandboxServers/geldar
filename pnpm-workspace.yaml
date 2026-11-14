@@ -4,6 +4,7 @@ packages:
   - contract
   - golem
   - animus
+  - player-core
   - lantern-local
   - eventsink
   - glass
