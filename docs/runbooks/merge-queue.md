@@ -121,7 +121,7 @@ need rolling back.
 
 ## Operating rules
 
-These rules keep a deploy from happening at a time nobody chose. Read them before you queue a PR.
+Read these rules before you queue a PR.
 
 (a) Queue anything that does not deploy freely: docs, tests, plugin-only changes, decisions. These are safe to
 queue at any time.
@@ -130,14 +130,25 @@ queue at any time.
 `player-core/**`, `eventsink/**`, `threshold/mcp/**`, `tools/admin/**`, `glass/**`, `threshold/register/**`,
 `tools/mcp-tokens/**`, `tools/players-cli/**`, `tools/migrate/**`, `golem/src/players/**`, `sql/**`,
 `shards/phase0.yaml`, `tools/repo-checks/src/identity-mode.ts`, `contract/**`, the root `package.json`,
-`pnpm-workspace.yaml` and `pnpm-lock.yaml`) deploys the Colo node as soon as it merges. `colo-images` runs on
-the push to `main`, and `colo-deploy` runs on its success. Queue such a PR only inside a deploy window the
-orchestrator has opened. Outside a window it stays out of the queue.
+`pnpm-workspace.yaml` and `pnpm-lock.yaml`) deploys the Colo node soon after it merges. `colo-images` runs on
+the push to `main`, and `colo-deploy` runs on its success. There are no deploy windows (owner ruling,
+2026-11-14): queue such a PR as soon as it is ready.
 
-Several entries queued back to back give one deploy, not one each. `colo-deploy` keeps only one pending run in its
-concurrency group, so when merges land close together the newest commit is the one deployed. The window is the
-whole batch, not one PR at a time. Check the queued entries before the window opens. A failing entry is removed,
-but the entries ahead of it that passed still merge and deploy.
+Merges that land close together give one deploy, not one each. The queue waits up to 5 minutes to group entries,
+and `colo-deploy` keeps only one pending run in its concurrency group, so when merges land close together the
+newest commit is the one deployed. Each deploy refreshes the running player hosts one at a time (a few seconds of
+Body downtime per host); the owner has accepted that. The deploy takes a Postgres dump, applies migrations, and
+only then restarts services, so a PR with a migration needs nothing extra.
+
+Exception, a manual node step. Some changes are not applied by the deploy: the deploy log lists them as
+`needs manual` (a plugin jar and the Paper restart that loads it, Paper, Velocity, Caddy or NATS configuration,
+compose changes outside the stack that `colo-cd.sh` applies). A PR that needs one states it in its description
+and is queued only after its author has told the orchestrator, who runs the manual step in the same hour, so code
+that expects the new plugin or configuration does not run alone for long. A failing entry is removed, but the
+entries ahead of it that passed still merge and deploy.
+
+Sessions track their own deploys from `state/cd.log` on the node (or the `colo-deploy` run) and report after-counts
+for their change without waiting for a window. The orchestrator keeps the change log from `cd.log`.
 
 (c) `gh pr merge <n> --merge` adds the PR to the queue when the ruleset requires it. Do not use `--admin` to skip
 the queue: the admin bypass is not configured, and it would merge the PR without the queue's check on the merged
