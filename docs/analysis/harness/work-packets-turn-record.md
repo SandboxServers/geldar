@@ -33,3 +33,16 @@ Nothing stores a prompt or reasoning for a live player until the owner settles: 
 ## Open items
 
 Everything under the gate above; the migration and event names `(allocate via registry)`; whether the operator role is a new role or an existing one `(to confirm)`; the size caps; how Adam's own record is handled (frozen animus `thoughts` stays as is).
+
+## GX-06: a server-set `source` tag on the sovereign call (world)
+
+- **Repo** geldar. **Branch** `phase1/gx-06-act-source`. **Depends on** GX-01a (contract owner order: after AN-02b, strictly serial, because it regenerates `contract/src/generated`). **Size** about 35k. **Status** Proposed (asked for by the kit orchestrator for HC-18 to HC-24; inactive until the kit sends a non-default source).
+- **Why.** The instinct step (HC-19) settles routine acts in code on its own connection. Operators need to tell a model act from an instinct act from an operator act in the world record. Nothing carries that today: `sovereign-call-event.schema.json` and `intent-event.schema.json` are `additionalProperties: false` with no actor field (read at origin/main, 2026-11-14).
+- **Do.**
+  - `contract/schemas/sovereign-call-event.schema.json`: optional `source`, enum `model | instinct | operator`; absent means `model`. Regenerate. No change to `ActInput`, `thought.schema.json` or any Body-bound shape.
+  - `threshold/mcp/src/tools/act.ts` (about line 415, `callPayload`): set `source` server-side from the **authenticated connection**, never from tool input: the model cannot send it and `ActInput` stays closed. How a connection earns `instinct` is `(to confirm)` and is the open design point below.
+  - eventsink needs no change (stored in `events` as is).
+- **Server-side only.** The value is never put in a tool result, an event or a snapshot an agent can read, and appears in no prompt (decisions 0059, 0068). A test scans every MCP tool result for the field name and the values.
+- **Open design point.** The connection class must come from something the model cannot set or read: a second credential class minted at player creation and held only by the supervisor, or a connection header the front checks against the supervisor's key. The owner-key work (C7-02b) and registration own the token code; raise it with geldar-registration and geldar-93 before dispatch. Operator acts (`operator`) are only for non-world tooling that already exists: Principle 1 holds, so nothing here lets a human act inside the world, and `operator` is reserved and unused (the card adds no code path that sets it).
+- **Prove.** Contract test: an event with each value validates, an unknown value fails; MCP test: a model-class connection records no `source` or `model`; an instinct-class connection records `instinct`; no tool result contains the field; revert the `act.ts` line and the instinct case fails.
+- **Must not.** Edit `ActInput`, Body-bound schemas, tokens or auth beyond the one connection-class read, or `docs/spec.md`.
