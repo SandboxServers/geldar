@@ -45,6 +45,7 @@ describe('listMigrations', () => {
       '0027_body_ops.sql',
       '0032_token_lifecycle.sql',
       '0033_supervisor_display_name.sql',
+      '0034_operator_player_flags.sql',
     ]);
   });
 
