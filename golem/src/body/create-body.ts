@@ -163,7 +163,11 @@ export function createBody(options: CreateBodyOptions): Body {
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
   // Death, not the respawn, ends the previous life's work: a step still running would walk the new body on.
   if (typeof options.bot.on === 'function') {
-    options.bot.on('death', () => void cancelForDeath(executor, options.currentRevision));
+    options.bot.on('death', () => {
+      cancelForDeath(executor, options.currentRevision).catch((error: unknown) => {
+        console.warn(`death hook failed: ${String(error)}`);
+      });
+    });
   }
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;

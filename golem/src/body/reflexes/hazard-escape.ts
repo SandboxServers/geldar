@@ -277,6 +277,14 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
   const mover = options.mover ?? walkOutOfHazard;
   const swimmer = options.swimmer ?? swimUp;
   const diag = options.diag ?? DEFAULT_DIAG_SINK;
+  // A trace line that fails must not stop the escape it traces, nor replace its outcome.
+  const trace = (line: () => string): void => {
+    try {
+      diag.log(line());
+    } catch {
+      // Dropped: the escape matters more than its trace.
+    }
+  };
   // The tick a give-up opens the quiet window. Cooldown counts from the firing tick, and a run lasts
   // the whole limit, so a cooldown alone lets the reflex fire again the tick it gives up.
   let quietUntil = Number.NEGATIVE_INFINITY;
@@ -338,13 +346,13 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
     // Two lines per run, at its start and its end, with the air before and after. No periodic line.
     async run(trigger, ctx): Promise<ReflexOutcome> {
       const airBefore = ctx.view.air;
-      diag.log(traceLine(ctx, 'start', { hazard: trigger.hazard, air_before: airBefore }));
+      trace(() => traceLine(ctx, 'start', { hazard: trigger.hazard, air_before: airBefore }));
       let outcome: ReflexOutcome | undefined;
       try {
         outcome = await escapeReflex.run(trigger, ctx);
         return outcome;
       } finally {
-        diag.log(
+        trace(() =>
           traceLine(ctx, 'end', {
             hazard: trigger.hazard,
             result: outcome?.result ?? 'failed',

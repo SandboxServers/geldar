@@ -6,6 +6,7 @@
  * reports a fault; the supervisor (`main.ts`) then stops this run and starts the next.
  */
 import type { Bot } from 'mineflayer';
+import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
 import { type OwnerTransport, wireBlockOwners } from '../body/block-owners.ts';
 import type { Body } from '../body/create-body.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
@@ -50,6 +51,11 @@ export interface AdamBodyEnv {
   /** The Body's NATS connection for the block ownership record (decision 0165); absent in tests. */
   owners?: OwnerTransport;
   log: (line: string) => void;
+  /**
+   * Where the hurt line goes: one JSON line per hurt, written as its own line (not wrapped in `log`'s
+   * body). Default: stdout, as the reflex lines are. Replaced in tests.
+   */
+  diag?: DiagSink;
   /** Replaced in tests; the real `restartBody` otherwise. */
   restart?: (options: RestartBodyOptions) => Promise<RestartedBody>;
   /** Passed on to `restartBody`: how long it waits before the `no_plan` wake. */
@@ -78,6 +84,7 @@ export interface RunningAdamBody {
  */
 export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<RunningAdamBody> {
   const { config, log } = env;
+  const diag = env.diag ?? DEFAULT_DIAG_SINK;
   // The ownership record for goto's digging (decisions 0164, 0165): on the Body's own connection.
   const owners =
     env.owners === undefined
@@ -213,7 +220,9 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     let hurtSequence = 0;
     hurts = new HurtReporter((hurt, worldTick) => {
       // One log line per hurt, with where the Body stood: the damage event carries no coordinates.
-      log(hurtLogLine(hurt, placeFields(bot.entity?.position, bot.game?.dimension), worldTick));
+      diag.log(
+        hurtLogLine(hurt, placeFields(bot.entity?.position, bot.game?.dimension), worldTick),
+      );
       hurtSequence += 1;
       const event = hurtWorldEvent(hurt, {
         shard: config.shard,

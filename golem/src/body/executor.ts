@@ -56,7 +56,8 @@ export class IntentExecutor {
   private readonly seenIntents = new Set<string>();
   private readonly observer: IntentObserver | null;
   private active: ActiveIntent | null = null;
-  private deathRevision: number | null = null;
+  /** The revision the Body died at, or null before any death: the plan gate's floor (read by the mind link). */
+  deathFloor: number | null = null;
   private stopping = false;
   private plans = 0;
   private unsubscribe: (() => void) | null = null;
@@ -138,7 +139,7 @@ export class IntentExecutor {
    * and refuses plans made at or before that revision. Called from `cancelForDeath`, on the death event.
    */
   async endForDeath(revision: number): Promise<void> {
-    this.deathRevision = revision;
+    this.deathFloor = revision;
     if (this.active) await this.end(this.active, 'interrupted', 'the Body died');
     else await this.runtime.cancelAction();
   }
@@ -297,7 +298,7 @@ export class IntentExecutor {
         bodyGeneration: this.runtime.bodyGeneration,
         currentRevision: this.currentRevision(),
         tick: this.tick(),
-        deathRevision: this.deathRevision,
+        deathRevision: this.deathFloor,
       },
       this.window,
     );
