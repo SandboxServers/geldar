@@ -89,7 +89,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   const owners =
     env.owners === undefined
       ? undefined
-      : wireBlockOwners({ bot, shard: config.shard, transport: env.owners, log });
+      : wireBlockOwners({ bot, shard: config.shard, transport: env.owners, log, diag });
   const revision = new SnapshotRevision();
   const tick = (): number => worldAge(bot) ?? 0;
   const speech = new SpeechEvents({
