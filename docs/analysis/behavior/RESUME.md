@@ -8,3 +8,4 @@ Read-only standing review. Files here: timeline.md, findings.md, culture.md, rep
 - Refresh timeline from cd.log and worldops notes before each report.
 - E1 (live since 22:24Z): Billy turn cap 20; controls = other rangers except Trini and Tommy (per geldar-economy: keep Billy/Tommy out of E2).
 - E2 (planned, not live; start time pending from geldar-economy): Trini gets wait-delta (unlocked_recipes, notable_blocks collapse to unchanged); control Kimberly. Compare unknown-recipe craft failures, crafts and actions per hour, use of notable blocks, deaths, food, speech, journal quality. Before window: 24 h to 22:31Z.
+- Owner watch list (from 00:30Z 11-15): agents leaving the village for good, new settlements, long treks, farming starts, deaths, group health and hunger over days. No world-edit proposals for food; only Body/MCP-fact fixes. Lewis and Clark start time pending from geldar-residents.
