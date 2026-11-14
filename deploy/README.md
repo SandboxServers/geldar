@@ -188,8 +188,15 @@ export GELDAR_TOKENS_DIR=<tokens-dir>
 deploy/colo-admin.sh migrate                 # SQL migrations (colo-up.sh runs this)
 deploy/colo-admin.sh migrate --set-role-password geldar_mcp --password-file /run/secrets/postgres-mcp.txt   # colo-up.sh runs this
 deploy/colo-admin.sh owner-add <owner> --cap 20
+deploy/colo-admin.sh roster-add <name> --owner <owner>   # the roster (decision 0108), before player-add
+deploy/colo-admin.sh roster-list [--owner <owner>]       # read-only
 deploy/colo-admin.sh player-add <player> --owner <owner> --life <life> --name <name> --harness <harness>
 ```
+
+A new sovereign player needs two steps in this order. First `roster-add` puts its Minecraft name (the same value as
+`player-add --name`) on the owner's roster in the database. Then `player-add` creates the player; it refuses a name that
+is not on the roster with `ROSTER_NOT_LISTED`. The roster is keyed by the Minecraft name, not by the `ag-` player id, so
+`roster-add ag-picard-01` is refused.
 
 `colo-up.sh` also runs `whitelist-house-body` after Paper is healthy and before any body starts. It whitelists the house
 Body (`mind.agent.username`) and every `sovereign.players[].life_id` from `shards/colo-mind.yaml` over RCON, and nothing

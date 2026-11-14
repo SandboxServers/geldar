@@ -135,6 +135,38 @@ function monitor(opts: { burst?: number } = {}) {
   return { view, frame, gate, socks, sock, renderer, changed, name, notice, advance, flush };
 }
 
+describe('a refused first subscribe retries on its own', () => {
+  it('shows Retrying and sends the subscribe again after the wait, instead of a bare Try again', async () => {
+    const m = monitor();
+    await m.flush();
+    const before = m.sock().sent.length;
+    m.sock().feed({ type: 'rate_limited' });
+    expect(m.notice()).toContain('Retrying in 4 s (try 1 of 3)');
+    m.advance(3999);
+    await m.flush();
+    expect(m.sock().sent.length).toBe(before);
+    m.advance(1);
+    await m.flush();
+    expect(m.sock().sent.length).toBeGreaterThan(before);
+    expect(m.notice()).toBeNull();
+    m.view.dispose();
+  });
+
+  it('after the last allowed retry the monitor offers Try again (no endless tuning)', async () => {
+    const m = monitor();
+    await m.flush();
+    for (const wait of [4000, 8000, 16000]) {
+      m.sock().feed({ type: 'rate_limited' });
+      m.advance(wait);
+      await m.flush();
+    }
+    m.sock().feed({ type: 'rate_limited' });
+    expect(m.notice()).not.toContain('Retrying');
+    expect(m.notice()).toContain('Could not tune in');
+    m.view.dispose();
+  });
+});
+
 describe('pane view: tuning in', () => {
   it('says "Tuning in to" the agent until the server names it', async () => {
     const m = monitor();
@@ -149,8 +181,11 @@ describe('pane view: tuning in', () => {
     const m = monitor();
     await m.flush();
     m.sock().feed({ type: 'rate_limited' });
-    expect(m.notice()).toBe('Could not tune in to Ember: too many changes at once.');
-    (m.frame.root.querySelector('.notice button') as HTMLButtonElement).click();
+    expect(m.notice()).toBe(
+      'Could not tune in to Ember: too many changes at once. Retrying in 4 s (try 1 of 3).',
+    );
+    m.advance(4000);
+    await m.flush();
     expect(m.notice()).toBeNull();
     expect(m.sock().sent).toHaveLength(2);
     m.sock().feed(hello('ag_a'));
@@ -161,8 +196,8 @@ describe('pane view: tuning in', () => {
     const m = monitor();
     await m.flush();
     m.sock().feed({ type: 'bye', reason: 'pane_cap_reached' });
-    expect(m.notice()).toBe('Too many panes are open.');
-    (m.frame.root.querySelector('.notice button') as HTMLButtonElement).click();
+    expect(m.notice()).toBe('Too many panes are open. Retrying in 4 s (try 1 of 3).');
+    m.advance(4000);
     await m.flush();
     expect(m.socks).toHaveLength(2);
     expect(m.sock().sent).toEqual([{ type: 'subscribe', target_agent_id: 'ag_a', mode: 'follow' }]);

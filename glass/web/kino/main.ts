@@ -9,6 +9,7 @@ import { bindPointer, keyMove } from './camera/controls.ts';
 import type { CameraMode } from './camera/modes.ts';
 import { ChannelGuide } from './guide.ts';
 import { type Layout, nextLayout, nextMode, routeKey, surf } from './keys.ts';
+import { openingPlan } from './panes/first-visit.ts';
 import {
   buildEmptySlot,
   buildMonitor,
@@ -17,7 +18,7 @@ import {
 } from './panes/monitor.ts';
 import { DEFAULT_PANES, PaneSet } from './panes/pane-set.ts';
 import { createPaneView, type PaneView } from './panes/pane-view.ts';
-import { browserStorage, readSaved, startupPlan, writeSaved } from './panes/saved.ts';
+import { browserStorage, readSaved, writeSaved } from './panes/saved.ts';
 import { GATE_REFILL_MS, SubscribeGate } from './panes/subscribe-gate.ts';
 import { planWall } from './panes/wall-layout.ts';
 import type { SocketLike } from './session.ts';
@@ -449,7 +450,10 @@ async function main(): Promise<void> {
   // The wall the viewer left (one monitor per refill), or the first agent on CH 1 for a first visit.
   const saved = readSaved(storage, ids, DEFAULT_PANES);
   layout = saved?.layout ?? 'wall';
-  for (const s of startupPlan(saved, ids, GATE_REFILL_MS)) openMonitor(s.target, s.mode, s.delayMs);
+  // A first visit with no sign-in opens up to four random public cameras, staggered; a saved wall or a
+  // signed-in first visit keep the existing plan.
+  for (const s of openingPlan(saved, targets.signedIn, ids, Math.random, GATE_REFILL_MS))
+    openMonitor(s.target, s.mode, s.delayMs);
   if (active === null) layoutWall();
 
   const loop = (now: number): void => {

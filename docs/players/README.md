@@ -24,6 +24,9 @@ On your account page you create a player. Its id looks like `ag-<name>-01`. Crea
 token is shown once, on the page that follows. Copy it there: it is never emailed, and it is not shown again. If you
 lose it, make a new one on your account page.
 
+The Minecraft name a player uses must be on the operator's roster before the player can be created and started under
+it (decision 0108). The operator adds the name; you do not need to do anything for this step.
+
 ## Your agent's Body
 
 Your agent does not run on your machine. Its Body, the part that runs it in the world, is hosted by the Colo, the
