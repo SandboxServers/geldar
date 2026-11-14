@@ -116,25 +116,38 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 ### Routes
 
-- `POST /agents/{playerId}/body/start` (scope `body`): 202 `BodyOp` (`opId`, `state` queued, done or refused). 429 `quota` (supervisor refusal) or `rate_limited` (the register limit on repeat starts) with `Retry-After`. 409 `conflict` only when the supervisor replies with a conflict refusal; check the reply codes in `supervisor/src/service.ts` before writing the mapping.
-- `POST .../body/stop` (scope `body`): 202 `BodyOp`. 409 on a conflict refusal. 429 as above.
+- `POST /agents/{playerId}/body/start` (scope `body`): 202 `BodyOp` (`opId`, `state` queued, done or refused). 429 `quota` (supervisor refusal) or `rate_limited` (the register limit on repeat starts) with `Retry-After`. 409 `conflict` only from the register's in-flight guard. Replies map by the table in the reply-mapping paragraph below.
+- `POST .../body/stop` (scope `body`): 202 `BodyOp`. 409 `conflict` from the in-flight guard only. 429 as above.
 - `POST .../body/restart` (scope `body`): 202 `BodyOp`. 429 as above.
 - `GET .../body/status` (scope `read`): 200 `BodyStatus` (`state` in running, starting, waiting, stopped, unavailable; `health` and `hunger` integers 0 to 20; `lastSeenAt`).
 - `GET .../body/log` (scope `read`): 200 `LogTail`. `limit` defaults to 200; a `limit` above 200 is 422 `invalid`. Only events of the owner's own agent (its life id), no older than 7 days (0170 point 4: the smaller of 200 events or 7 days). Each line is `{at, text}` where `text` is picked from a fixed table of codes. No model text, no digits from a model, no free text.
 - `POST .../retire` (scope `manage`): stop the body through the supervisor, then revoke the tokens (C7-04b service), then retire the player; 202 `BodyOp`. A supervisor timeout on the stop leaves the agent not retired (the retry is safe).
 - Every body route: a foreign agent is 404 (including `/body/log`). A supervisor timeout or no-responders is 503 `body_unavailable` with `Retry-After`; no pending reply is kept in the process (the in-flight slot below is the only per-owner state).
-- **Reply mapping (fix J).** `started` and `noop` map to 202 `done`; `quota` to 429 `quota`; `conflict` to 409 `conflict`; `login_name` to 422 `invalid` (above); `busy` and any reply code not in this list map to 503 `body_unavailable` with `Retry-After`. No reply maps to 200 unless the table says 202. Tests: one per row, and an unknown code `zzz` gives 503, never 200. Revert: map unknown codes to 202; the unknown-code test fails.
+- **Reply mapping (fix L).** The table covers the real supervisor codes (`ReplyCode` and `Refusal` in `supervisor/src/ports.ts`). A repeat start replies `started`, so `noop` and `conflict` are not supervisor codes and are not in the table. `conflict` 409 comes only from the register's own in-flight guard (below).
+
+  | Supervisor code | Route reply |
+  |---|---|
+  | `started`, `restarted`, `stopped` | 202 `BodyOp`, state `done` |
+  | `running`, `idle` | 200 `BodyStatus` |
+  | `logs` | 200 `LogTail` |
+  | `quota` | 429 `quota` with `Retry-After` |
+  | `unknown` | 404 `not_found` (foreign or unknown player, as above) |
+  | `login_name` | 422 `invalid`; the body tells the owner the name must be 3 to 16 letters, digits or underscore |
+  | `invalid` | 500 `internal` (a register bug: the route sent a shape the supervisor refuses) |
+  | `error`, `busy`, and any code not in this table | 503 `body_unavailable` with `Retry-After` |
+
+  No reply maps to 200 unless the table says 200. Tests: one per row, and an unknown code `zzz` gives 503, never 200. Revert: map unknown codes to 202; the unknown-code test fails.
 - **Op binding (fix J).** `requestBodyOp` (C7-03b1, `threshold/register/src/nats-ctl.ts`) fills the payload `op` from the subject and throws before anything is sent when the payload names another op. Each route passes only its own op. Tests: a route's request carries its own op; a payload naming another op is refused before the request is sent (the nats-ctl op-binding tests pin it). Revert: drop the mismatch check; the mismatch test fails.
 - **One in flight per owner (fix J).** At the register an owner has at most one body request in flight (start, stop, restart, retire). A second one while the first is pending gets 409 `conflict` and makes no supervisor call. It is 409, not 429, because it is a state conflict, not a rate. The slot is taken before the supervisor call and released in a `finally`. Tests: the first request (slot free) is accepted with 202; the last allowed request (the slot is freed by completion, then a new request takes it) is accepted; a concurrent request past the cap is 409 `conflict` and the supervisor fake is called once; a timeout releases the slot and the next request is accepted. Revert: remove the slot check; the past-cap test fails.
 
 ### Carry-forward from review-5 that lands here
 
 - **Repeat start (rate limit).** The supervisor counts nothing for a repeat start of a running body, so the register limits it: a per-agent window on `start` requests, so a loop of repeats is refused with 429 `rate_limited` and `Retry-After`.
-- **409 (review fix F).** A repeat start is idempotent. The supervisor replies `started` or `noop`, and the route maps both to 202 `BodyOp` with state `done`. A repeat start is never 409. 409 is kept in the table only for a supervisor conflict refusal, and the table note says so.
+- **409 (review fix F, fix L).** A repeat start is idempotent. The supervisor replies `started` for it, and the route maps that to 202 `BodyOp` with state `done`. A repeat start is never 409. 409 `conflict` comes only from the register's in-flight guard, never from a supervisor reply.
 
 ### Tests (each fails on revert)
 
-- Start: a `started` reply is 202 `done`; a repeat start (`noop`) is 202 `done`, never 409 (fix F). Revert: map `noop` to 409; the repeat test fails.
+- Start: a `started` reply is 202 `done`; a repeat start (also `started`) is 202 `done`, never 409 (fix F). Revert: map `started` to 409 on a repeat; the repeat test fails.
 - Repeat start limit: the N+1th repeat within the window is 429 `rate_limited` with `Retry-After`; the supervisor fake is called N times only. Revert: remove the repeat window; the 429 test fails.
 - Quota (fixture of supervisor replies): a normal owner's 3rd start in an hour is accepted and the 4th returns the supervisor's `quota` refusal as 429 `quota` with `Retry-After`. The counter itself is tested in the supervisor package (C7-03a), not here; this card tests the mapping. Revert: map `quota` to 202; the 429 test fails.
 - Admin (fixture): the admin's 4th start and 11th start map to 202 (the supervisor reply is `started`), and a second start while running is 202 `done`. The counter exemption is the supervisor's test (re-slice note below). Revert: map admin-flagged replies to 429; the admin test fails.

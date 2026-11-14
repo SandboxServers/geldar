@@ -37,6 +37,7 @@ describe('login name refusal (C7-03b, fix K F1)', () => {
     world.startError = new LoginNameError();
     expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'login_name' });
     expect(world.startRows).toEqual([]);
+    expect(world.auditRows.at(-1)).toMatchObject({ action: 'body_start', outcome: 'login_name' });
     world.startError = null;
     expect(await handle(start('Ranger'))).toEqual(STARTED);
     expect(world.startRows).toHaveLength(1);

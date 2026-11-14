@@ -27,7 +27,7 @@ C7-05, C7-06, C7-09, C7-13c, owner approval --> C7-11 sign-up gate
 ## Constraints
 
 - **One register-package packet at a time, except named pairs.** `threshold/register/` is one package. Packets that edit it run serially in this order: C7-12, C7-02a, C7-02b, C7-04a, C7-04b, C7-06, C7-04c, C7-07, C7-13a, C7-09, C7-13c. Allowed pairs with disjoint files, because the plan names their files: C7-02b with C7-05 (owner-keys files against `pages/onboarding*`, `static/onboarding.js`); C7-10 (`operator*.ts`) with C7-06 or C7-13a; C7-13a (`api/skins*`, `skin-validate.ts`) with C7-06 (`pages/account*`); C7-09 (`api/account-data*`, a confirm page) with C7-13c (`pages/skin*`). A pair never shares `server.ts` or `account*.ts`; the one-line route table entries in the C7-04 `api/` index (04a, 04b, 04c) are merged one at a time by ops.
-- **Not in the register package** (these run in parallel with the register lane): C3-04s, C7-03a, C7-03b1, C7-03b2, C7-03b3, C7-13b. `tools/mcp-tokens/src/cli.ts` is edited by C3-04s, C7-12 and C7-10 (one registration line each); ops merges them in that order.
+- **Not in the register package** (these run in parallel with the register lane): C3-04s, C7-03a, C7-03b1, C7-03b2, C7-03b3, C7-03b4, C7-13b. `tools/mcp-tokens/src/cli.ts` is edited by C3-04s, C7-12 and C7-10 (one registration line each); ops merges them in that order.
 - **Migrations are assigned here, so none collide.** A coder fetches `origin/main` at the start; if another wave has taken one of these numbers, the coder stops and asks, never renumbers silently. The registry holds 0024 to 0033 for C7.
 
 | Packet | Migration |
@@ -83,6 +83,7 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|
 | 1 | C7-03b2 compose service, deploy script, budget, runbook (before any live use; geldar-93 MERGE/DONE) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
+| 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
 | 1 | C7-04c body routes (start, stop, restart, status, log, retire through the supervisor) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
 | 1 | C7-06 account page v2 | C7-04b, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
 | 1 | C7-13a skin upload API and held store | C7-04b, C7-12 | `phase1/c7-13a-skin-upload-api` | 0031 | L |
