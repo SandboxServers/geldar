@@ -110,6 +110,11 @@ Live lane: the account page on the node (C7-06), looked at on a phone width.
 | 1 | C7-09 deletion and export (register lane) | C7-02b, C7-03b2, C7-13a | `phase1/c7-09-deletion-export` | 0029 | L |
 | 1 | C7-13c skin form on the account page (pair with C7-09, disjoint files) | C7-06, C7-13a | `phase1/c7-13c-skin-form` | none | S |
 | 2 | C7-11 sign-up gate (not a code packet beyond the config check) | C7-05, C7-06, C7-09, C7-13c, owner | `phase1/c7-11-signup-gate` | none | S |
+| CF | CF-1 (CF-W4-1) split `body.test.ts` before C7-04c2 or C7-04d adds to it | C7-04c | not assigned | none | S |
+| CF | CF-2 (CF-W4-2) PATCH write order for two turn-ons, thoughts first | C7-04e | not assigned | none | S |
+| CF | CF-3 (CF-W4-3) owner id returned by the owner-agent SQL functions; loader guard made real | C7-04b | not assigned | needs a number via decision-number-registry | M |
+| CF | CF-4 (CF-W4-4) fetch-metadata check on `GET /register/onboarding` (wave 1/2 code, C7-05) | C7-05 | not assigned | none | S |
+| CF | CF-5 (CF-W4-5) `__Host-` prefix for `gr_session` and `gr_state` (wave 1/2 code; Low to Medium, recommended before sign-up opens) | none | not assigned | none | M |
 
 Wave 4 is three code packets plus the gate, because C7-09 and C7-13b are long. Live lane: one real MineSkin generation for an approved test upload (C7-13b, owner's key, one call) and the login that shows the skin; the deletion check (C7-09) on the node. The owner reviews the erasure rule (0171) and decides to open sign-up.
 

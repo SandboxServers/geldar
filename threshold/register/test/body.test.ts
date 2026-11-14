@@ -26,6 +26,7 @@ const AGENTS = new Map<
   ['ag-two-01', { ownerId: 'bob', playerId: 'ag-two-01', displayName: 'Scout' }],
   ['ag-odd-01', { ownerId: 'alice', playerId: 'ag-odd-01', displayName: 'My Agent' }],
   ['ag-short-01', { ownerId: 'alice', playerId: 'ag-short-01', displayName: 'ab' }],
+  ['ag-three-01', { ownerId: 'alice', playerId: 'ag-three-01', displayName: 'Bob' }],
   [
     'ag-sixteen-01',
     { ownerId: 'alice', playerId: 'ag-sixteen-01', displayName: 'abcdefghijklmnop' },
@@ -157,6 +158,14 @@ describe('body start (C7-04c reply mapping)', () => {
     expect(r.status).toBe(202);
     expect(fake.subjects.length).toBe(before + 1);
     expect(fake.payloads.at(-1)).toMatchObject({ playerName: 'abcdefghijklmnop' });
+  });
+
+  it('a 3-character display name is accepted and sent as the player name', async () => {
+    const before = fake.subjects.length;
+    const r = await h.call('POST', '/api/v1/agents/ag-three-01/body/start', bearer(KEY_ALL));
+    expect(r.status).toBe(202);
+    expect(fake.subjects.length).toBe(before + 1);
+    expect(fake.payloads.at(-1)).toMatchObject({ playerName: 'Bob' });
   });
 });
 

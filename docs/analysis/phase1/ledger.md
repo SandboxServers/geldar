@@ -152,6 +152,11 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-13c | Skin form and status on the account page | W4 | C | C7-06, C7-13a | Waiting | 0172 | none | N |
 | C7-11 | Sign-up gate (not a code packet) | W4 | G | C7-05, C7-06, C7-09, C7-13c | Waiting; owner opens sign-up | 0153, 0155, 0171 | none | Y |
 | C7-14 | Operator route to set a player's public camera and delayed public thoughts flags | C7 | operator tooling | none | Built; PR pending merge | none | 0034 | N |
+| CF-W4-1 | Split `threshold/register/test/body.test.ts` (534 lines) before more tests land in it | CF | register | C7-04c | Carry-forward, not scheduled | none | none | N |
+| CF-W4-2 | PATCH write order for two turn-ons: thoughts first, so a 54000 refusal leaves nothing changed | CF | register | C7-04e | Carry-forward, not scheduled | none | none | N |
+| CF-W4-3 | Owner id returned by the owner-agent SQL functions; loader guard made real (wave 2/3 code, C7-04b) | CF | register, SQL | C7-04b | Carry-forward, not scheduled | needs a migration number via decision-number-registry | needs a number | N |
+| CF-W4-4 | Fetch-metadata check on `GET /register/onboarding`, so a cross-site navigation does not consume the token (wave 1/2 code, C7-05) | CF | register | C7-05 | Carry-forward, not scheduled | none | none | N |
+| CF-W4-5 | `__Host-` prefix for `gr_session` and `gr_state`; Low to Medium, recommended before sign-up opens (wave 1/2 code) | CF | register | none | Carry-forward, not scheduled | none | none | N (the `gk_session` rename is an orchestrator call) |
 
 Wave C7-1 closed 2026-11-13 (merge bbb5ed6b, PR #315). Migrations 0024, 0025, 0027 and 0032 are applied on the node (deploy run 43522419766; pre-deploy pg dump taken). Spares left: none. 0033 is C7-03b3 (`sql/0033_supervisor_display_name.sql`, wave 2, merge pending), so the next free number is 0034. Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md).
 

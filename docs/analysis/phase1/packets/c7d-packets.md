@@ -207,7 +207,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 - **id / wave / lane.** C7-04c2, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready (C7-04c is merged), serial with it. **depends-on.** C7-04c. **branch.** `phase1/c7-04c2-wiring`. **migration.** none. **size.** S.
 - **Goal.** Make the body routes live: open the NATS connection in register (a `CtlConnection` from `nats-ctl.ts`), mount `bodyRoutes({ conn, shard, timeoutMs })` through `deps.routes`, and take the shard and reply wait from config. With no connection, the body routes answer 503 `body_unavailable`.
 - **Files.** may-edit: `threshold/register/src/server.ts` and `threshold/register/src/main.ts` (the wiring lines only), the NATS connect helper (new file), `threshold/register/src/api/body-slot.ts` (new; `createBodySlot()`), `threshold/register/src/api/body.ts` (the `slot` field of `BodyDeps`, default `createBodySlot()`, and nothing else; a note in the worknote), config, their tests, `docs/analysis/phase1/worknotes/C7-04c2.md`. `api/body-log.ts` is read only.
-- **F1 fix note (from the C7-04c review).** The register sends the agent's display name as `playerName`, not the URL id; a display name outside `^[A-Za-z0-9_]{1,16}$` is a 422 before any supervisor call (C7-04c carries the code). The live check must therefore start a body for an `ag-` id, the register's player id, and must not use a player name chosen by hand.
+- **F1 fix note (from the C7-04c review).** The register sends the agent's display name as `playerName`, not the URL id; a display name outside `^[A-Za-z0-9_]{3,16}$` (3 to 16, the Minecraft rule) is a 422 before any supervisor call (C7-04c carries the code). The live check must therefore start a body for an `ag-` id, the register's player id, and must not use a player name chosen by hand.
 - must-not-edit: `account*.ts`, pages, `supervisor/`, `contract/`, `docs/spec.md`.
 - **Tests (each fails on revert).** Through the mounted router, start answers 202 with a fake connection. With no connection, start and status answer 503 `body_unavailable`. The config timeout reaches `requestBodyOp`. Leaving `bodyRoutes` unmounted gives 404 on start. Unreachable until wired: with `bodyRoutes` absent from `deps.routes`, every body path (start, stop, restart, status, log) answers 404 through the production router; with it mounted, the same paths reach the handler. Test: `createBodySlot()` is passed through `BodyDeps.slot`, and a second start while the first is in flight is 409 `conflict` through the mounted router with one slot shared.
 
@@ -225,7 +225,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ## C7-04e: PATCH /agents/{playerId} (agent visibility flags)
 
-- **id / wave / lane.** C7-04e, wave 3 (after C7-04b merges; before C7-06, which depends on it). Register lane, serial after C7-04b. **branch.** `phase1/c7-04e-agent-patch`. **migration.** none (`PgStore.setPublicCamera` and `PgStore.setThoughtsDelayedPublic` call definer functions that exist). **size.** S. **Status.** Ready. Split from C7-04b: the route was in the C7-04b card and was not built there. C7-06's may-edit cannot cover the route file, so the route has its own card (wave 3 review 2, fix note 1). **depends.** C7-04b (the cookie session path and the `production-api.ts` wiring). Decision 0173, point 1 (cookie session only).
+- **id / wave / lane.** C7-04e, wave 3 (after C7-04b merges; before C7-06, which depends on it). Register lane, serial after C7-04b. **branch.** `phase1/c7-04e-agent-patch`. **migration.** none (`PgStore.setPublicCamera` and `PgStore.setThoughtsDelayedPublic` call definer functions that exist). **size.** S. **Status.** Built (merged into wave 3); fix 2 in wave 4 (retired agent 404, body bounds tests). Split from C7-04b: the route was in the C7-04b card and was not built there. C7-06's may-edit cannot cover the route file, so the route has its own card (wave 3 review 2, fix note 1). **depends.** C7-04b (the cookie session path and the `production-api.ts` wiring). Decision 0173, point 1 (cookie session only).
 - **Goal.** The one agent route C7-04b left out. `PATCH /agents/{playerId}` sets the two visibility flags that the account page toggles (C7-06 calls it). Rename stays in C7-07.
 - **Files.**
   - may-edit: `threshold/register/src/api/agents.ts` (new; the PATCH handler only, the list and read stay in `agents-list.ts` and `agents-read.ts`), the route-table line in `threshold/register/src/api/index.ts`, `threshold/register/src/api/owner-api-v1.yaml` (the `patch` operation and the `AgentPatch` schema), their tests, `docs/analysis/phase1/worknotes/C7-04e.md`.
@@ -294,3 +294,48 @@ components:
     KeyMeta: { required: [keyId, scopes, createdAt], properties: { keyId: string, label: string, scopes: array, expiresAt: date-time, lastUsedAt: date-time } }
     Problem: { required: [type, title, status, code], properties: { type: uri, title: string, status: integer, code: { enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, unavailable, internal, quota, body_unavailable] }, retryAfter: integer } }
 ```
+
+## Wave 4 carry-forward
+
+Five cards from the wave 4 review (pass 3). None is scheduled; each waits for its trigger. Ledger rows CF-W4-1 to CF-W4-5 (ledger.md and c7-wave-plan.md).
+
+### CF-1 (CF-W4-1): split body.test.ts before more tests land in it
+
+- **Goal.** `threshold/register/test/body.test.ts` is 534 lines after wave 4 fix 3 (soft cap 500, hard cap 700). Move the name-shape tests, the retired-agent describe and the game-token describe to `body-name.test.ts`; keep the reply table, slot and window tests in place. No behaviour change.
+- **May-edit.** `threshold/register/test/body.test.ts`, `threshold/register/test/body-name.test.ts` (new), `docs/analysis/phase1/worknotes/C7-04c.md`.
+- **Test.** Every test name passes in the new layout; the count does not drop.
+- **Depends.** Lands before C7-04c2 or C7-04d, whichever merges first. Wave 4 code (C7-04c).
+- **Status.** Carry-forward, not scheduled.
+
+### CF-2 (CF-W4-2): PATCH write order for two turn-ons
+
+- **Goal.** `PATCH /agents/{playerId}` with both flags on writes the camera first; the thoughts write can then answer 429 (54000, 10 s window) with the camera already public. Among turn-ons, write the rate-limited thoughts toggle first, so a refusal leaves nothing changed. Turn-offs stay first; camera first among turn-offs.
+- **May-edit.** `threshold/register/src/api/agents.ts` (write order only), the PATCH test file (`owner-api-agent-patch-bounds.test.ts` or a sibling), `docs/analysis/phase1/worknotes/C7-04e.md`.
+- **Test.** Both on, thoughts refused: 429 and the camera stays private. Both off, thoughts refused: 429 and the camera stays off. Both on and accepted: both public.
+- **Depends.** C7-04e (wave 3 code; the turn-offs-first sort came in wave 4 fix B).
+- **Status.** Carry-forward, not scheduled.
+
+### CF-3 (CF-W4-3): owner id in the owner-agent SQL results
+
+- **Goal.** `owner-agents-pg.ts` stamps the requested owner id on every row, so the check in `guard.ts` cannot fail in production; isolation rests on the WHERE clause in SQL 0036 alone. Make `register_owner_list_players` and `register_owner_get_player` return `owner_id` (DROP and CREATE, the return type changes); the loader maps `ownerId: row.owner_id`; the schema check gets the column.
+- **May-edit.** A new migration, `threshold/register/src/owner-agents-pg.ts`, its test, `sql/test/check-schema-owner-agents.sql`, `docs/analysis/phase1/worknotes/` for this card.
+- **Migration.** Needs a migration number via decision-number-registry, taken at dispatch. This card does not reserve one.
+- **Test.** Loader: a fake row whose `owner_id` is another owner's yields null. Schema check: the column is in the return.
+- **Depends.** C7-04b (migration 0036). Origin: the C7-04b wiring, wave 2/3 merge.
+- **Status.** Carry-forward, not scheduled.
+
+### CF-4 (CF-W4-4): onboarding GET consumes the token on cross-site navigation
+
+- **Goal.** `GET /register/onboarding` takes the show-once token from the hand-off slot on any GET with a live session cookie. `gr_session` is SameSite=Lax, so a cross-site top-level GET sends it, and an attacker page can burn the display inside the 10-minute window (the owner mints again; no secret is disclosed). Serve the token only when `Sec-Fetch-Site` is `same-origin` or `none`, or the header is absent (old clients); otherwise render the empty page without calling `take`.
+- **May-edit.** `threshold/register/src/account.ts` (the onboarding GET only), its test, `docs/analysis/phase1/worknotes/C7-05.md`.
+- **Test.** `sec-fetch-site: cross-site` does not consume the slot; a following same-origin request still shows the token.
+- **Depends.** C7-05. Origin: wave 1/2 code (the hand-off in C7-05).
+- **Status.** Carry-forward, not scheduled.
+
+### CF-5 (CF-W4-5): `__Host-` prefix for the session cookies
+
+- **Goal.** Rename `gr_session` and `gr_state` to `__Host-gr_session` and `__Host-gr_state`; their attributes already satisfy the prefix (host-only, Secure, Path=/). `cookieOf` refuses a header that carries two cookies of the wanted name (answer as no session), so a planted `Domain=` cookie cannot shadow the owner's own. Clear the old names on logout for one release. Whether `gk_session` (shared with Glass) is renamed too is an orchestrator decision, not needed for this fix.
+- **May-edit.** `threshold/register/src/account.ts` and its cookie code, their tests, `docs/analysis/phase1/worknotes/` for this card.
+- **Test.** A header with two `__Host-gr_session` values is no session. The Set-Cookie starts with `__Host-` and has no Domain attribute. Logout clears the old and new names.
+- **Depends.** None. Origin: wave 1/2 code (cookie parser from wave 0 to 1, sessions from wave 2). Low to Medium, recommended before sign-up opens.
+- **Status.** Carry-forward, not scheduled.
