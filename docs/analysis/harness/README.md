@@ -159,3 +159,10 @@ Honest limits of this document set:
 - The cards were written by parallel authors from the code and checked against each other only by reading their headers, shared-contract sections and open-items lists (the stamp field names agree: `harness` and `model`, `X-Geldar-Harness` and `X-Geldar-Model` on the wire). Every card marks names it could not confirm `(to confirm)`; their open-items sections are the first thing to resolve before a wave is dispatched. The kit cards (A, B, C) were written against `geldar-scriptorium` at `ea1e0ed` (rc18 plus `main`), reading the code. The world cards were written against `geldar` `main` at `907f5b8a` and the integration plan's `8eac28ba`. File names that did not exist when written are marked *new*; names that were not found are marked *to confirm* in the card. A card with *to confirm* items is not `Ready`.
 - The social, lineage and drift cards are slices of a design that the brief leaves open in places; they say so and name the decision.
 - The behavioural numbers (thresholds, DCs, sampling windows) are the brief's first guesses and stay unmeasured.
+
+## Open items added by the geldar coordinator, 2026-11-14
+
+- (a) The autonomy plan (PR #337, `docs/analysis/autonomy/review-and-plan-2026-11-14.md`) is not linked to this campaign. Its Stage 4 temperament arm overlaps card HC-25, and it needs an owner or orchestrator ruling so the two do not both seed agents.
+- (b) Dependabot: a lockfile overrides bump of `hono` (4.13.14 to 4.13.16 or later) and `@hono/node-server` (2.1.5 to 2.1.6 or later) together, eligible 2026-11-16 after 10:22Z under the two-week rule, set in `pnpm-workspace.yaml` lines 28 and 32. No newer `@modelcontextprotocol/sdk` than 1.32.2 exists. Needs geldar-93's window.
+- (c) Cards added this session, all in `work-packets-turn-record.md`: GX-05, HC-41 (per-turn record, decision 0185, gated on retention and erasure), GX-06 (server-set source tag, keyed header, forgeability gate), GX-07 (BlueMap skin provider, decision number to come).
+- (d) PR #347 (GX-04a, player-core move) is held for an image window.
