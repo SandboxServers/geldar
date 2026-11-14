@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/roll-event.schema.json",
+  "title": "RollEventPayload",
+  "description": "Payload of a WorldEvent of type `roll`: one die draw made by the psyche engine for a decision (AN-02a). It records what was drawn and how it was judged; it does not record which model was called, because a roll must not claim what another component did later. Links to thoughts, actions and intents belong on the decision. producer `kit` is for the kit's operator export; nothing in the world publishes it. The payload carries no true sheet value, so it is safe to show the agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "life_id",
+    "decision_id",
+    "draw_index",
+    "engine_version",
+    "producer",
+    "fx",
+    "score",
+    "dc",
+    "mode",
+    "dice",
+    "kept",
+    "bonus",
+    "total",
+    "success"
+  ],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "decision_id": { "type": "string", "pattern": "^[A-Za-z0-9_:.-]{1,128}$" },
+    "draw_index": { "type": "integer", "minimum": 0 },
+    "engine_version": { "type": "integer", "minimum": 1 },
+    "producer": { "enum": ["body", "kit"] },
+    "fx": { "type": "string", "pattern": "^[a-z][a-z_]{0,47}$" },
+    "score": { "type": "integer", "minimum": 1, "maximum": 5 },
+    "proficiency": { "type": "integer", "minimum": 0, "maximum": 3 },
+    "dc": { "type": "integer", "minimum": 2, "maximum": 30 },
+    "mode": { "enum": ["dis", "flat", "adv"] },
+    "dice": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": { "type": "integer", "minimum": 1, "maximum": 20 }
+    },
+    "kept": { "type": "integer", "minimum": 1, "maximum": 20 },
+    "bonus": { "type": "integer", "minimum": -2, "maximum": 5 },
+    "total": { "type": "integer" },
+    "success": { "type": "boolean" },
+    "inputs": {
+      "type": "object",
+      "maxProperties": 12,
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" }
+        ]
+      }
+    }
+  }
+}
