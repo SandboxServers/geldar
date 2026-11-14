@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
 import { accountPage } from './account-pages.ts';
+import { ACCOUNT_CSS } from './account-style.ts';
 import type { RegisterConfig } from './config.ts';
 import type { Identity } from './identity.ts';
 import {
@@ -191,6 +192,15 @@ export class Account {
         ...SECURITY_HEADERS,
       });
       res.end(ONBOARDING_SCRIPT);
+      return true;
+    }
+    if (url.pathname === '/account.css') {
+      if (req.method !== 'GET') return this.methodNotAllowed(res);
+      res.writeHead(200, {
+        'content-type': 'text/css; charset=utf-8',
+        ...SECURITY_HEADERS,
+      });
+      res.end(ACCOUNT_CSS);
       return true;
     }
     const m =

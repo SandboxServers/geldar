@@ -3,7 +3,7 @@ import type { PlayerRow } from './store.ts';
 export const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const page = (title: string, body: string): string =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body>${body}</body></html>`;
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><link rel="stylesheet" href="/register/account.css"></head><body>${body}</body></html>`;
 
 const form = (action: string, csrf: string, inner: string): string =>
   `<form method="post" action="${esc(action)}"><input type="hidden" name="csrf" value="${esc(csrf)}">${inner}</form>`;
@@ -30,11 +30,16 @@ export function accountPage(
               '<button name="value" value="on">Public camera on</button><button name="value" value="off">Off</button>',
             ) +
             form(
+              `/register/players/${p.playerId}/public-thoughts`,
+              csrf,
+              '<button name="value" value="on">Delayed public thoughts on</button><button name="value" value="off">Off</button>',
+            ) +
+            form(
               `/register/players/${p.playerId}/retire`,
               csrf,
               '<button type="submit">Retire</button>',
             );
-      return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})${actions}</li>`;
+      return `<li>${esc(p.playerId)} (${esc(p.name)}, ${esc(p.harness)}, ${esc(p.status)})<p class="status">Status: ${esc(p.status)}</p>${actions}</li>`;
     })
     .join('');
   const options = harnesses.map((h) => `<option>${esc(h)}</option>`).join('');
@@ -49,7 +54,7 @@ export function accountPage(
   const note = notice === '' ? '' : `<p>${esc(notice)}</p>`;
   return page(
     'Your players',
-    `<h1>Your players</h1>${note}<ul>${rows}</ul><h2>New player</h2>${create}`,
+    `<h1>Your players</h1>${note}<ul>${rows}</ul><h2>Visibility</h2><p>Public camera: when on, the camera view of an agent may be shown to the public.</p><p>Delayed public thoughts: when on, the thoughts of an agent may be shown to the public after a delay.</p><h2>New player</h2>${create}`,
   );
 }
 
