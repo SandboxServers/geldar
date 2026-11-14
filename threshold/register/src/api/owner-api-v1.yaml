@@ -1,0 +1,63 @@
+openapi: 3.1.0
+info:
+  title: Geldar owner API
+  version: 1.0.0
+  description: >-
+    Owner API under /register/api/v1/. Source for the generated types (generated types wait until
+    contract/ is free, see C7-04a). Every error is application/problem+json with a code from the enum.
+servers:
+  - url: /register/api/v1
+paths:
+  /agents/{playerId}:
+    get:
+      operationId: getAgent
+      summary: One agent of the calling owner (scope read).
+      security:
+        - bearerOwnerKey: []
+        - cookieSession: []
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The agent.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerOwnerKey:
+      type: http
+      scheme: bearer
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: gr_session
+  responses:
+    Problem:
+      description: An error, as application/problem+json.
+      content:
+        application/problem+json:
+          schema:
+            type: object
+            required: [type, title, status, code]
+            properties:
+              type:
+                type: string
+              title:
+                type: string
+              status:
+                type: integer
+              code:
+                type: string
+                enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, rate_limited, unavailable, internal]

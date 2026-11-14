@@ -95,6 +95,9 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 - Key mint and revoke windows: the normal owner's last allowed action succeeds and the next is 429 `quota` (or `rate_limited`) with `Retry-After`; an admin is never limited. Revert: remove the `charge` call; the 429 test fails.
 - Owner-key adapter (`owner-keys-pg.ts`): a DB error during mint is rethrown, returns no value and leaves no row (the definer call is one statement). Test against the pg fixture the register suite already uses; if no pg fixture exists, test the adapter's error mapping with a fake client and say so in the worknote.
 - SQL error mappings (`owner-keys-pg.ts`, fix J): a fake client that throws SQLSTATE `42501` gives 403 `scope_missing` and writes no key; one that throws `53400` gives 409 `conflict` and writes no key. Each test asserts the status and the `code`. Revert: drop the mapping line; the matching test sees 500 `internal` and fails.
+- Requirement moved from C7-04a (orchestrator ruling 2; needs the Postgres store this card wires): owner key at the MCP endpoint is refused. Black-box test: a `gowner-` key presented at the MCP endpoint answers 401 and opens no MCP session. Revert: let the MCP front resolve `owner_api_keys`; the test fails.
+- Requirement moved from C7-04a (ruling 2): player token at the API is refused. Black-box test: a `gmcp-` token presented at `/register/api/v1/agents/{id}` answers 401 `unauthenticated` and no agent body. Revert: resolve `gmcp-` through the owner store; the test fails.
+- Requirement moved from C7-04a (ruling 2): revoked-key replay is refused and audited. Test: after `POST /owner-keys/{keyId}/revoke`, the revoked `gowner-` key presented again answers 401 and each refused replay writes one audit row (the C7-02b `key.use` row from the SQL resolve, or a router row if the store does not). Revert: skip the audit write on the refused path; the test fails.
 
 ### Checks
 
