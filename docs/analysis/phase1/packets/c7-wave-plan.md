@@ -87,7 +87,8 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|
-| 1 | C7-03b2 compose service, deploy script, budget, runbook (before any live use; geldar-93 MERGE/DONE) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
+| 1 | C7-03b2 compose service, deploy script, budget, runbook (before any live use; geldar-93 MERGE/DONE; waiting for geldar-93's plan; the card adds the `PASSWORD_ROLES` change for runbook step 2) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
+| 1 | C7-14b owner admin verbs in the operator wrappers (`owner-admin` in admin.sh and colo-admin.sh; idempotent `owner-add`; deploy tests; packets/C7-14b.md) | C7-14, C7-12 | `phase1/c7-14b-owner-admin-verbs` | none | S |
 | 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
 | 1 | C7-04c body routes (start, stop, restart, status, log through the supervisor; built; retire split to C7-04d, wiring to C7-04c2) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
 | 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; Ready after C7-04c2 merges) | C7-04c, C7-04c2 | `phase1/c7-04d-retire` | none | S |

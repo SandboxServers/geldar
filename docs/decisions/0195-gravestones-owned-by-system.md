@@ -15,7 +15,7 @@ A gravestone is a stone-brick block with a standing sign, placed where an agent 
 - The owner name has no `#`. CoreProtect treats a name that starts with `#` as a non-player, and the owner must read as a real owner in the log. Hyphens are used.
 - The record is written in two places: the cache and the `changed` event take effect at once, and the CoreProtect log (`logPlacement`) keeps the record after the overlay lapses. The CoreProtect write is the only lasting record.
 - A console command, `geldar-backfill-graves`, records the gravestones already in loaded chunks. It finds a sign whose first line starts "Here lies" over stone bricks. Any other sign is skipped, including a player's sign that does not say "Here lies". Running it twice gives the same owners.
-- The command runs only from the server console. A sender that is not the console is refused. The plugin had no operator command to match, so the command has no permission node. The console check is the whole gate.
+- The command runs only from the server console or RCON. A sender that is neither is refused. The plugin had no operator command to match, so the command has no permission node. The sender check is the whole gate.
 
 ## Consequences
 
@@ -27,3 +27,7 @@ A gravestone is a stone-brick block with a standing sign, placed where an agent 
 - The Bukkit event path (the death listener) and the command's chunk iteration are not unit-tested, because the test suite has no Bukkit mock. They are covered through the pure seams: the recording function, the recorder and the backfill's selection logic.
 - Gravestone material names are fixed in the plugin (`STONE_BRICKS`, `OAK_SIGN`). If the gravestone blocks change, this record and the backfill's test must change with them.
 - The records are facts about placement only. No agent-facing text is involved.
+
+## Later
+
+- The backfill also accepts RCON (`rcon-cli`). The server console pipe is off on the Colo node, so RCON is the operator route there. RCON is as privileged as the console: its password sits in a mode-0600 service secret, and only the operator holds it. The check accepts the console and RCON senders and refuses every other sender, so the command stays operator-only and no player, command block or entity can run it.
