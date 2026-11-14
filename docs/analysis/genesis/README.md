@@ -51,7 +51,7 @@ The campaign ends when the exit run in [plan.md](plan.md) section 9 passes, not 
 |---|---|---|---|
 | **G0** spikes and foundations | Remove the unknowns; make an environment a value | G0-01 to G0-06 | Each spike answered in a worknote; the environment definition exists and validates; compose runs two environments on one host without collisions |
 | **G1** artifacts from CI | No hand copies | G1-01 to G1-04 | Plugin jars, config bundle and manifest are built and published by CI with digests |
-| **G2** secrets and identity | Per-environment credentials, no repo secrets | G2-01 to G2-06 | Secrets generated on the target; NATS users and Postgres roles created from the repo; OIDC identities per environment; Entra and DNS automation proven in a test tenant scope |
+| **G2** secrets and identity | Per-environment credentials, no repo secrets | G2-01 to G2-07 | Secrets generated on the target; NATS users and Postgres roles created from the repo; OIDC identities per environment; Entra and DNS automation proven in a test tenant scope |
 | **G3** host bootstrap | A clean host becomes a deploy target | G3-01 to G3-04 | An idempotent bootstrap and the forced-command deploy channel exist |
 | **G4** the stamp workflow | One workflow, plan and apply | G4-01 to G4-05 | `stamp.yml` plans and applies a new environment in order, and a second apply is a no-op |
 | **G5** state and recovery | Backups that restore | G5-01 to G5-04 | Scheduled backups with off-node copy, and a restore drill that passes in CI |
@@ -66,13 +66,13 @@ See [packets.md](packets.md) for the cards. Status values: **Ready**, **BlockedD
 |---|---|---|
 | G0 | G0-01 .. G0-06 | 6 |
 | G1 | G1-01 .. G1-04 | 4 |
-| G2 | G2-01 .. G2-06 | 6 |
+| G2 | G2-01 .. G2-07 | 7 |
 | G3 | G3-01 .. G3-04 | 4 |
 | G4 | G4-01 .. G4-05 | 5 |
 | G5 | G5-01 .. G5-04 | 4 |
 | G6 | G6-01 .. G6-05 | 5 |
 | G7 | G7-01 .. G7-04 | 4 |
-| Total | | 38 |
+| Total | | 39 |
 
 ## Who does what
 

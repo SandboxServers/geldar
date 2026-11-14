@@ -28,7 +28,7 @@ Idempotent plan and apply, per-environment identities and a forced-command chann
 
 ## Consequences
 
-- 38 cards in waves G0 to G7. Compose gains parameterisation and the `loopback-ports` repo check changes to allow a named, defaulted form.
+- 39 cards in waves G0 to G7. Compose gains parameterisation and the `loopback-ports` repo check changes to allow a named, defaulted form.
 - Migrations or contract changes in the cards use numbers from the registry and reach the node only in windows from geldar-93.
 - The workflow and its permissions change only through PRs the owner approves.
 
