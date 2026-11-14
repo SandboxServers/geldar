@@ -323,6 +323,7 @@ describe('colo-admin.sh (decision 0133)', () => {
   it.each([
     ['migrate', ['migrate', '--dry-run']],
     ['owner-add', ['owner-add', 'ag-jo-01', '--cap', '20']],
+    ['owner-set-cap', ['owner-set-cap', 'jason', '20']],
     ['token-revoke', ['token-revoke', 'tk_1']],
     ['players-status', ['players-status']],
   ])('runs %s in the admin container without mounting the tokens directory', (_name, args) => {
@@ -361,6 +362,62 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('no GELDAR_ADMIN_IMAGE');
     expect(starts(calls(fx))).toEqual([]);
+  });
+
+  // The owner cap (decision 0052; set-cap takes 0 to 50 in the CLI, decision 0133 exposes it). The script checks the
+  // owner id and N before any container starts, so a bad value never reaches Docker.
+  describe('owner-set-cap verb (decisions 0052, 0133)', () => {
+    it('runs owner-set-cap as mcp-tokens owner set-cap, id and N passed as separate arguments', () => {
+      const fx = fixture();
+      const r = run(fx, REAL, ['owner-set-cap', 'jason', '20']);
+      expect(r.code).toBe(0);
+      expect(
+        calls(fx).some((c) => c.endsWith('--profile admin run --rm admin owner-set-cap jason 20')),
+      ).toBe(true);
+      expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
+    });
+
+    it.each([
+      ['0', '0'],
+      ['50', '50'],
+    ])('accepts the cap %s at the edge of 0 to 50', (_name, n) => {
+      const fx = fixture();
+      const r = run(fx, REAL, ['owner-set-cap', 'jason', n]);
+      expect(r.code).toBe(0);
+      expect(calls(fx).some((c) => c.endsWith(`admin owner-set-cap jason ${n}`))).toBe(true);
+    });
+
+    it.each([
+      ['no N', ['owner-set-cap', 'jason'], 'owner-set-cap takes <owner id> <N>'],
+      ['no arguments', ['owner-set-cap'], 'owner-set-cap takes <owner id> <N>'],
+      [
+        'a third argument',
+        ['owner-set-cap', 'jason', '20', 'x'],
+        'owner-set-cap takes <owner id> <N>',
+      ],
+      [
+        'a non-numeric N',
+        ['owner-set-cap', 'jason', 'twenty'],
+        'N must be a whole number from 0 to 50',
+      ],
+      ['a fraction', ['owner-set-cap', 'jason', '2.5'], 'N must be a whole number from 0 to 50'],
+      ['a negative N', ['owner-set-cap', 'jason', '-1'], 'N must be a whole number from 0 to 50'],
+      ['N above 50', ['owner-set-cap', 'jason', '51'], 'N must be a whole number from 0 to 50'],
+      [
+        'N with a leading zero',
+        ['owner-set-cap', 'jason', '020'],
+        'N must be a whole number from 0 to 50',
+      ],
+      ['an owner id with a capital', ['owner-set-cap', 'Jason', '20'], 'owner id must be'],
+      ['an owner id with a space', ['owner-set-cap', 'jason x', '20'], 'owner id must be'],
+      ['an empty owner id', ['owner-set-cap', '', '20'], 'owner id must be'],
+    ])('refuses owner-set-cap with %s before any container starts', (_name, args, message) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain(message);
+      expect(starts(calls(fx))).toEqual([]);
+    });
   });
 
   // The roster (decision 0108): roster-add and roster-list map to `mcp-tokens roster add|list` in the admin container.
