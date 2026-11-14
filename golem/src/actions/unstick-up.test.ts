@@ -283,6 +283,102 @@ describe('unstick upward hand-dig rung (decision 0196)', () => {
   });
 });
 
+describe('unstick upward rung: side, head room, budgets and digs cap (decision 0196)', () => {
+  afterEach(() => setOwnerLookup(null));
+
+  /** A stone floor round the start cell and a two-high stone wall on `dir`'s side: a one-block ledge. */
+  function ledgePit(dir: Vec3): Grid {
+    const grid: Grid = new Map();
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) grid.set(key(BASE.x + dx, BASE.y - 1, BASE.z + dz), 'stone');
+    }
+    for (const dy of [0, 1]) grid.set(key(BASE.x + dir.x, BASE.y + dy, BASE.z + dir.z), 'stone');
+    return grid;
+  }
+
+  it.each([
+    ['west', new Vec3(-1, 0, 0)],
+    ['east', new Vec3(1, 0, 0)],
+    ['north', new Vec3(0, 0, -1)],
+    ['south', new Vec3(0, 0, 1)],
+  ])('climbs the wall on the %s side and stands on its top', async (_side, dir) => {
+    const { bot, dug } = fakeBot(ledgePit(dir), START);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      [dir],
+    );
+    expect(result).toEqual({ freed: true, dug: 1, blocked: null });
+    expect(dug).toEqual(['stone']);
+    expect(bot.entity.position.floored()).toEqual(
+      new Vec3(BASE.x + dir.x, BASE.y + 1, BASE.z + dir.z),
+    );
+  });
+
+  it('refuses a climb whose head cell is solid: the Body cannot stand in a one-high hole', async () => {
+    const grid = zackPit();
+    grid.set(key(BASE.x, BASE.y + 1, BASE.z), 'stone');
+    const { result, dug } = await climbWest(grid);
+    expect(dug).toEqual([]);
+    expect(result).toMatchObject({ freed: false, dug: 0 });
+  });
+
+  it('refuses a climb whose digging alone passes the 25 s budget, before any block is broken', async () => {
+    // Hardness 6 makes the one stone cell above the wall cost 30 s of hand digging.
+    const { result, dug } = await climbWest(zackPit(), 6);
+    expect(dug).toEqual([]);
+    expect(result).toMatchObject({ freed: false, dug: 0 });
+    expect(result.blocked).toMatch(/budget is 25 s/);
+  });
+
+  it('counts the time already spent against the 30 s action limit', async () => {
+    // 25 s already spent, then a 7.5 s dig and a 1 s hop: 33.5 s is past the limit.
+    const { bot, dug } = fakeBot(zackPit(), START);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      WEST,
+      Date.now() - 25_000,
+    );
+    expect(dug).toEqual([]);
+    expect(result).toMatchObject({ freed: false, dug: 0 });
+    expect(result.blocked).toMatch(/action limit/);
+  });
+
+  it('digs a climb that still ends inside the 30 s action limit', async () => {
+    // 20 s already spent: 20 + 7.5 + 1 is 28.5 s, inside the limit.
+    const { bot, dug } = fakeBot(zackPit(), START);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      WEST,
+      Date.now() - 20_000,
+    );
+    expect(dug).toEqual(['stone']);
+    expect(result).toEqual({ freed: true, dug: 1, blocked: null });
+  });
+
+  it('stops before a climb that would pass the digs left for the call (MAX_DIGS)', async () => {
+    // Each climb digs two cells. With 5 digs left, the third climb (2 more) is refused after 4 digs.
+    const { bot, dug } = fakeBot(shaftPit(), START, 0);
+    const result = await digUp(
+      bot as unknown as Bot,
+      new AbortController().signal,
+      () => bot.entity.position.floored(),
+      WEST,
+      Date.now(),
+      5,
+    );
+    expect(result).toMatchObject({ freed: false, dug: 4 });
+    expect(dug).toHaveLength(4);
+    expect(result.blocked).toMatch(/digs and 1 are left/);
+    expect(bot.entity.position.y).toBe(BASE.y + 2);
+  });
+});
+
 describe('unstick upward rung ownership (decision 0164)', () => {
   afterEach(() => setOwnerLookup(null));
 

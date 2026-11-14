@@ -439,6 +439,7 @@ async function lastResortDig(
  * (four directions) or down through soft blocks. At most `MAX_DIGS` digs and one try per direction.
  */
 export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
+  const started = Date.now();
   const { bot } = ctx;
   const where = (): Vec3 => bot.entity.position.floored();
   const health = (): number => bot.health ?? 20;
@@ -496,7 +497,7 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
   note('dig_up');
   let upBlocked: string | null = null;
   if (digs < MAX_DIGS) {
-    const up = await digUp(bot, ctx.signal, where, EIGHT);
+    const up = await digUp(bot, ctx.signal, where, EIGHT, started, MAX_DIGS - digs);
     if (ctx.signal.aborted) return cancelled();
     digs += up.dug;
     upBlocked = up.blocked;

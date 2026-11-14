@@ -23,6 +23,10 @@ export const MAX_UP_STEPS = 4;
 /** Ticks one hop may take, and the rise that counts as a hop. */
 const HOP_TICKS = 20;
 const RISE = 0.9;
+/** The action's time limit (30 s, `unstick`'s timeout). A climb counts the time already spent against it. */
+const ACTION_LIMIT_S = 30;
+/** Seconds kept back from the limit for the hop that follows a climb's digs. */
+const HOP_RESERVE_S = 1;
 
 const UP = new Vec3(0, 1, 0);
 /** Stands in for a cell the climb has already left: the shaft is solid for the step-off test. */
@@ -152,13 +156,16 @@ async function hop(bot: Bot, signal: AbortSignal, dir: Vec3): Promise<boolean> {
  * (escape-stairs.ts) but with the 25 s hand-dig budget and the refusals of `cellRefusal`. Stops once the
  * Body stands on a cell from which `canStepOff` finds a way out, with every cell it has climbed through
  * counted as solid (the shaft it left is not a way out). Stops too when the budget runs out, when a dig is
- * refused, or when `signal` aborts. Every block broken is counted in `dug`.
+ * refused, or when `signal` aborts. Every block broken is counted in `dug`. `startedMs` is when the whole
+ * action began: the time it has spent counts against the 30 s limit. `digsLeft` caps the blocks broken.
  */
 export async function digUp(
   bot: Bot,
   signal: AbortSignal,
   where: () => Vec3,
   dirs: readonly Vec3[],
+  startedMs = Date.now(),
+  digsLeft = Number.POSITIVE_INFINITY,
 ): Promise<UpResult> {
   let dug = 0;
   let spent = 0;
@@ -185,6 +192,21 @@ export async function digUp(
         freed: false,
         dug,
         blocked: `the next climb needs about ${need} s of hand digging; the budget is ${DIG_BUDGET_S} s`,
+      };
+    }
+    const elapsedS = (Date.now() - startedMs) / 1000;
+    if (elapsedS + spent + pick.cost + HOP_RESERVE_S > ACTION_LIMIT_S) {
+      return {
+        freed: false,
+        dug,
+        blocked: `the next climb would run past the ${ACTION_LIMIT_S} s action limit`,
+      };
+    }
+    if (dug + pick.cells.length > digsLeft) {
+      return {
+        freed: false,
+        dug,
+        blocked: `the next climb needs ${pick.cells.length} digs and ${digsLeft - dug} are left`,
       };
     }
     spent += pick.cost;
