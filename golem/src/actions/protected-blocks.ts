@@ -351,14 +351,19 @@ function fallingAbove(bot: Bot, cell: Vec3): boolean {
   return above?.name !== undefined && FALLS_IF_UNSUPPORTED.test(above.name);
 }
 
+/** True when a liquid touches the cell or a falling block sits above it: a dig there is a hazard. */
+export function digHazard(bot: Bot, cell: Vec3): boolean {
+  return liquidBeside(bot, cell) || fallingAbove(bot, cell);
+}
+
 /**
- * The last-resort escape rule (owner ruling 2026-11-13, decision 0164). True when the block may NOT be
- * dug by the last-resort pass. Only a block `isProtected` protects by type or by touching built material
- * (or the bot's own placement) can pass, and only when the ownership record KNOWS it is unowned: a
- * complete answer with no owner. Unknown (not cached, truncated, failed) stays refused, another player's
- * block is refused, and the bot's own record passes. Refused names (block entities, doors, beds, chests,
- * crafting tables, unbreakables), a liquid beside the cell and a falling block above it are always refused.
- * `goto` never calls this; only `unstick`'s last-resort pass does.
+ * The last-resort escape rule (owner ruling 2026-11-13, decision 0164; natural blocks 2026-11-14, decision
+ * 0183). True when the block may NOT be dug by the last-resort pass. Refused names (block entities, doors,
+ * beds, chests, crafting tables, unbreakables), a liquid beside the cell and a falling block above it are
+ * always refused. A block `isProtected` does not protect (natural, in no built area) may be dug. A
+ * protected block needs the ownership record to KNOW it is unowned: a complete answer with no owner.
+ * Unknown (not cached, truncated, failed) stays refused, another player's block is refused, and the bot's
+ * own record passes. `goto` never calls this; only `unstick`'s last-resort pass does.
  */
 export function lastResortRefused(
   bot: Bot,
@@ -369,9 +374,9 @@ export function lastResortRefused(
   if (isOwnPlacement(bot, at)) return false;
   const probe: ProtectBlock =
     block.name === undefined ? { position: at } : { name: block.name, position: at };
-  if (!isProtected(bot, probe)) return true;
   const cell = new Vec3(at.x, at.y, at.z);
-  if (liquidBeside(bot, cell) || fallingAbove(bot, cell)) return true;
+  if (digHazard(bot, cell)) return true;
+  if (!isProtected(bot, probe)) return false;
   if (!OWNERSHIP_RULE || !ownerLookup) return true;
   const answer = ownerLookup(cell);
   if (!answer.known) return true;
