@@ -43,6 +43,8 @@ export interface ApiDeps {
   readonly ownerKeys?: { store: OwnerKeyStore; hash: (value: string) => Buffer };
   /** Loads an agent of the owner. The loader filters by owner; a missing agent is null. */
   readonly agents?: (ownerId: string, playerId: string) => Promise<Record<string, unknown> | null>;
+  /** Lists the owner's agents. Without it the list route answers 500 internal (never an empty list). */
+  readonly listAgents?: (ownerId: string) => Promise<Record<string, unknown>[]>;
   readonly audit?: ((entry: ApiAuditEntry) => Promise<void>) | undefined;
   readonly onAuditLost?: (entry: ApiAuditEntry) => void;
   /** Reads the admin flag per request. A throw or a missing hook means not admin (fail closed to the limit). */

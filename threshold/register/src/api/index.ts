@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hasScope } from '../owner-keys-policy.ts';
 import { sendProblem } from '../problem.ts';
+import { agentsListRoutes } from './agents-list.ts';
 import { agentsReadRoutes } from './agents-read.ts';
 import { authenticate, sameText } from './auth.ts';
 import type { ApiContext, ApiDeps, ApiRoute } from './route.ts';
@@ -34,7 +35,11 @@ export async function handleApi(
 ): Promise<boolean> {
   if (!url.pathname.startsWith(`${PREFIX}/`)) return false;
   const sub = url.pathname.slice(PREFIX.length);
-  const routes: readonly ApiRoute[] = [...agentsReadRoutes, ...(deps.routes ?? [])];
+  const routes: readonly ApiRoute[] = [
+    ...agentsListRoutes,
+    ...agentsReadRoutes,
+    ...(deps.routes ?? []),
+  ];
   let pathSeen = false;
   let found: { route: ApiRoute; params: string[] } | null = null;
   for (const route of routes) {
