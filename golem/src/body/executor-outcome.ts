@@ -8,6 +8,24 @@ import {
 import type { ActionReport } from './executor-types.ts';
 import type { RecordSink } from './records.ts';
 
+/**
+ * The Body reasons the contract does not list, each with the closest contract code. Only the ones
+ * that reach an action outcome are here; stall diagnostics and wake reasons never reach the agent.
+ */
+const REASON_MAP: Readonly<Record<string, string>> = {
+  // A run stopped before it finished (an abort, or a walk its caller cancelled): the agent reads it as interrupted.
+  cancelled: 'interrupted',
+};
+
+/** The detail text of a run that was stopped before it finished. */
+const STOPPED_TEXT = 'the action was stopped before it finished';
+
+/** The contract code for a Body reason: a listed code as it is, a mapped one as its closest code, else undefined. */
+function contractReason(raw: unknown): string | undefined {
+  if (isOutcomeReason(raw)) return raw;
+  return typeof raw === 'string' && Object.hasOwn(REASON_MAP, raw) ? REASON_MAP[raw] : undefined;
+}
+
 /** The payload for one finished plan action (C5-02): fixed text built from the verb and reason code only. */
 export function actionOutcomeOf(
   verb: string,
@@ -15,15 +33,18 @@ export function actionOutcomeOf(
   report: ActionReport,
 ): ActionOutcomePayload {
   const ok = report.record.state === 'completed';
-  const raw = (report.record.result as { reason?: unknown } | null)?.reason;
-  const reason = !ok && isOutcomeReason(raw) ? raw : !ok ? 'internal' : undefined;
+  const stopped = report.record.state === 'cancelled';
+  const raw = stopped ? 'cancelled' : (report.record.result as { reason?: unknown } | null)?.reason;
+  const reason = ok ? undefined : (contractReason(raw) ?? 'internal');
   const text = ok
     ? undefined
-    : outcomeDetailText(
-        verb,
-        reason,
-        (report.record.result as { message?: unknown } | null)?.message,
-      );
+    : stopped
+      ? STOPPED_TEXT
+      : outcomeDetailText(
+          verb,
+          reason,
+          (report.record.result as { message?: unknown } | null)?.message,
+        );
   return {
     verb,
     index,
@@ -57,7 +78,7 @@ export function emitIntentFailure(
   message: string,
 ): void {
   const code = message.split(':', 1)[0] ?? '';
-  const reason = isOutcomeReason(code) ? code : 'internal';
+  const reason = contractReason(code) ?? 'internal';
   sink.actionOutcome?.(
     {
       verb: program,
