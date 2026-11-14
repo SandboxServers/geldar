@@ -28,14 +28,15 @@ The contract has one action verb, `edit_sign`, in the `Action` union of `contrac
   - `no_effect` with the detail "the sign did not change" when the text read back after the edit equals the text before it.
   - `out_of_reach`, `blocked` and `not_found` as for `till`.
 - The Mind's Phase 0 allow-list admits `edit_sign` (verb table, bounds list, action shapes), and `prompts/body-api/v8.json` lists it as one plain sentence with one example. The v8 template is the default.
-- Agents may use `edit_sign` only while the allow-list admits it. The allow-list stays off until graves are recorded under the system owner (0195), so no sign a grave holds can be edited before the protection exists.
+- There is no Mind-side allow-list switch: no code path holds `edit_sign` back. The Mind advertises `edit_sign` to the agent and to the MCP `act` tool as soon as this change is on `main`. So this change merges ONLY in the same deploy window as the Body handler (geldar-ops, a separate PR), and only after the grave records (0195) are deployed, the same way the till verb (0167) went out. Until then the verb is not deployed, so no agent can use it.
+- The gate that keeps agents from editing a grave before it is recorded is a Body-side switch, not a Mind one. geldar-ops adds an `edit_sign` enable flag in the shard config. While the flag is off the Body refuses an `edit_sign` with `not_possible` and the detail "that block cannot be edited yet". This is a consequence of this decision and is owned by geldar-ops. It is not done by this change, and nothing in this change implements or verifies it.
 - The Body (geldar-ops) implements the action and is the Body implementer named here. The Body's coder brief covers two details that this decision does not decide: a waxed sign is refused, and the hand must be empty or hold a stick to open the sign. Neither is verified against a live server yet, so this decision makes no claim about how the server answers either case.
 
 ## Consequences
 
 - The contract, the Mind allow-list, the body-api prompt (v8, the default) and the MCP `act` tool description carry `edit_sign`. The generated files are regenerated from the schema.
 - The thought system message grows. Measured with `promptCost` on the sample prompt: v7 3855 estimated tokens, v8 3926, a delta of 71. With the 2500 user budget and the 2048 output cap, the sum is 8474 against `num_ctx` 8704, a margin of 230. The budget is unchanged.
-- Agents can edit a sign once the allow-list is on and the Body implements the action. Until the Body ships it, an `edit_sign` gets the Body's refusal, not a Mind refusal.
+- The Mind accepts a well-formed `edit_sign` and passes it on; the Mind does not refuse it for being unsupported. The Body answers it. While the Body's `edit_sign` enable flag is off, or before the Body ships the action, an `edit_sign` gets the Body's refusal, not a Mind refusal.
 - The Body must answer with the reasons above and must accept exactly the shape `{ do, at, text }`.
 - No existing action changes shape, so earlier thoughts and outcomes are unaffected.
 - The default body-api prompt moves from v7 to v8. v1 to v7 stay loadable; v7 is not edited.

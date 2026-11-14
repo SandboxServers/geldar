@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "description": "The allow-list of verbs and programs (wave 5 Q9), with one valid example each. v2 changes only the wording of sleep and rest: a shelter other than a bed counts for rest. v4 adds the give and note verbs and the follow program (C5-04b) and shortens the wording so the larger table still fits the context. v5 adds the write_sign verb and the build program with the shelter, wall and pillar blueprints (C5-07b). v6 adds no verb and no program: the perception fields (PX-1 to PX-7) are read from the snapshot, not from this list. v7 adds the till verb (decision 0167): turn dirt, grass or a dirt path into farmland with a hoe in hand or inventory. The examples are checked against the output validator by a test. v8 adds the edit_sign verb (decision 0192): rewrite the text of an existing sign in reach, at a block position. Immutable once used: a change is a new vN file.",
   "say": {
     "summary": "Speak aloud, up to 256 characters.",
