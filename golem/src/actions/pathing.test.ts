@@ -108,6 +108,32 @@ describe('moveNear', () => {
     expect(result).toEqual({ ok: true, distance: 1 });
   });
 
+  it('hands pathfinder a goal that never ends on water or a water plant', async () => {
+    const fake = fakeBot();
+    const names: Record<string, string> = {
+      '10,64,0': 'water',
+      '10,64,1': 'seagrass',
+      '10,64,2': 'kelp_plant',
+      '10,64,3': 'bubble_column',
+    };
+    Object.assign(fake, {
+      blockAt: (p: Vec3) => ({ name: names[`${p.x},${p.y},${p.z}`] ?? 'stone' }),
+    });
+    let goal: { isEnd(node: { x: number; y: number; z: number }): boolean } | undefined;
+    const reached = new Promise<void>((resolve) => {
+      fake.pathfinder.goto = vi.fn((given: unknown) => {
+        goal = given as typeof goal;
+        resolve();
+        return new Promise<void>(() => undefined);
+      });
+    });
+    const signal = new AbortController().signal;
+    void moveNear(asBot(fake), { x: 10, y: 64, z: 0 }, 3, { signal, timeScale: 1 });
+    await reached;
+    for (const z of [0, 1, 2, 3]) expect(goal?.isEnd({ x: 10, y: 64, z })).toBe(false);
+    expect(goal?.isEnd({ x: 11, y: 64, z: 0 })).toBe(true);
+  });
+
   it('returns blocked once the bot has not moved for stallTicks world ticks, and not before', async () => {
     const fake = fakeBot();
     const signal = new AbortController().signal;

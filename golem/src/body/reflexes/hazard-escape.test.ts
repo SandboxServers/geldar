@@ -292,6 +292,34 @@ describe('hazard-escape: run', () => {
     expect(cancels()).toBe(1);
   });
 
+  it('gives the swim all the time limit when no safe block is in reach', async () => {
+    const grid: Record<string, string> = {};
+    for (let x = -10; x <= 10; x++) {
+      for (let z = -10; z <= 10; z++) {
+        for (let y = 60; y <= 66; y++) grid[`${x},${y},${z}`] = 'water';
+      }
+    }
+    const { view, state } = basicView({
+      inFluid: 'water',
+      air: 2,
+      position: { x: 0, y: 64, z: 0 },
+    });
+    const { ctx } = basicContext(view, gridBot(grid).bot);
+    const swimmer: EscapeMover = async (walk) => {
+      // Past the 120-tick swim share of a run that has a target, but inside the 200-tick limit.
+      state.tick += 150;
+      expect(walk.expired()).toBe(false);
+      state.tick += 60;
+      expect(walk.expired()).toBe(true);
+    };
+    const outcome = await createHazardEscapeReflex({ swimmer, limitTicks: 200 }).run(
+      { hazard: 'drowning', air: 2 },
+      ctx,
+    );
+    expect(outcome.result).toBe('abandoned');
+    expect(outcome.detail).toContain('200 ticks');
+  });
+
   it('does not swim up for lava with no safe block: it gives up', async () => {
     const grid: Record<string, string> = {};
     for (let x = -10; x <= 10; x++) for (let z = -10; z <= 10; z++) grid[`${x},64,${z}`] = 'lava';

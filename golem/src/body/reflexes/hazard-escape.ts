@@ -297,7 +297,9 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       // Drowning always swims up first: with low air the way out is up, not along the bank.
       if (drowning) {
         const surfaced = (): boolean => recovered() || view.inFluid !== 'water';
-        const swimExpired = (): boolean => (view.tick ?? ctx.tick) - startTick >= SWIM_TICKS;
+        // With a safe block in reach the swim gets its share and the walk the rest; with none the swim has all of it.
+        const swimLimit = target ? SWIM_TICKS : limitTicks;
+        const swimExpired = (): boolean => (view.tick ?? ctx.tick) - startTick >= swimLimit;
         await swimmer({ ...walk, target: view.position, reached: surfaced, expired: swimExpired });
       }
       if (target && !landed() && !expired()) await mover({ ...walk, target });
