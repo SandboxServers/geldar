@@ -74,6 +74,8 @@ Live lane: the roster integration test under `GELDAR_IT=1` on the shard (C3-04s)
 | 1 | C7-03b3 Postgres adapter and Docker client (non-register lane) | C7-03a, C3-04s, C7-12 | `phase1/c7-03b3-adapters` | none | L |
 | 2 | C7-04a API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (fan-out point; after C7-02b merges) | C7-02b, C7-12 | `phase1/c7-04a-api-core` | none | M |
 | 2 | C7-04b agents and tokens resources, owner-key routes, onboarding hand-off | C7-04a | `phase1/c7-04b-agents-tokens` | none | M |
+| 2 | C7-04b-3 owner keys by cookie session (built; decision 0173; route wiring and merge pending) | C7-04b | `phase1/c7-04b3-session-keys` | 0035 | M |
+| candidate | C7-04d Bearer-driven token rotation and owner-key management (not scheduled in Phase 1) | C7-04b, C7-04b-3 | `phase1/c7-04d-bearer-keys` (proposed) | yes, at dispatch | M |
 
 Wave 2 order: C7-04a starts when C7-02b is on the wave branch; C7-04b starts after C7-04a. C7-04 was one L card and is split (see [c7d-packets.md](c7d-packets.md)); the body routes are C7-04c in wave 3.
 

@@ -135,3 +135,99 @@ describe('OwnerKeyPgStore: revoke', () => {
     expect((error as KeyDbRefusal).code).toBe('scope_missing');
   });
 });
+
+describe('OwnerKeyPgStore: session-keyed functions (0035)', () => {
+  const SESSION = Buffer.alloc(32, 3);
+
+  it('mintBySession passes the identity hash and returns the expiry', async () => {
+    const expires = new Date('2026-04-01T00:00:00Z');
+    const { client, calls } = fakeClient(() => [{ expires_at: expires }]);
+    const at = await new OwnerKeyPgStore(client).mintBySession(SESSION, 'k-s1', KEY_HASH, [
+      'read',
+      'body',
+    ]);
+    expect(at).toEqual(expires);
+    expect(calls[0]?.text).toContain('register_session_mint_owner_key($1, $2, $3, $4)');
+    expect(calls[0]?.values).toEqual([SESSION, 'k-s1', KEY_HASH, ['read', 'body']]);
+  });
+
+  it('mintBySession maps 42501 to scope_missing and 53400 to conflict, and rethrows any other error', async () => {
+    const boom = sqlState('08006');
+    const denied = new OwnerKeyPgStore(
+      fakeClient(() => {
+        throw sqlState('42501');
+      }).client,
+    );
+    const capped = new OwnerKeyPgStore(
+      fakeClient(() => {
+        throw sqlState('53400');
+      }).client,
+    );
+    const broken = new OwnerKeyPgStore(
+      fakeClient(() => {
+        throw boom;
+      }).client,
+    );
+    const a = await denied.mintBySession(SESSION, 'k', KEY_HASH, ['read']).catch((e: unknown) => e);
+    const b = await capped.mintBySession(SESSION, 'k', KEY_HASH, ['read']).catch((e: unknown) => e);
+    const c = await broken.mintBySession(SESSION, 'k', KEY_HASH, ['read']).catch((e: unknown) => e);
+    expect((a as KeyDbRefusal).code).toBe('scope_missing');
+    expect((b as KeyDbRefusal).code).toBe('conflict');
+    expect(c).toBe(boom);
+  });
+
+  it('listBySession: a refusal (42501, banned or unknown identity) throws scope_missing, never an empty list', async () => {
+    const { client } = fakeClient(() => {
+      throw sqlState('42501');
+    });
+    const error = await new OwnerKeyPgStore(client).listBySession(SESSION).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(KeyDbRefusal);
+    expect((error as KeyDbRefusal).code).toBe('scope_missing');
+  });
+
+  it('listBySession: zero rows is an owner with no keys (an empty successful list), not a refusal', async () => {
+    const { client } = fakeClient(() => []);
+    expect(await new OwnerKeyPgStore(client).listBySession(SESSION)).toEqual([]);
+  });
+
+  it('listBySession maps each row to the six listing fields only (no value, no hash)', async () => {
+    const created = new Date('2026-01-01T00:00:00Z');
+    const { client, calls } = fakeClient(() => [
+      {
+        key_id: 'k-9',
+        scopes: ['read'],
+        created_at: created,
+        expires_at: created,
+        revoked_at: null,
+        last_used_at: null,
+        key_hash: KEY_HASH,
+      },
+    ]);
+    const rows = await new OwnerKeyPgStore(client).listBySession(SESSION);
+    expect(calls[0]?.text).toContain('register_session_list_owner_keys($1)');
+    expect(Object.keys(rows[0] ?? {}).sort()).toEqual([
+      'createdAt',
+      'expiresAt',
+      'keyId',
+      'lastUsedAt',
+      'revokedAt',
+      'scopes',
+    ]);
+  });
+
+  it('revokeBySession: true, false, null and 42501 (scope_missing) are told apart', async () => {
+    const yes = new OwnerKeyPgStore(fakeClient(() => [{ ok: true }]).client);
+    const no = new OwnerKeyPgStore(fakeClient(() => [{ ok: false }]).client);
+    const refused = new OwnerKeyPgStore(fakeClient(() => [{ ok: null }]).client);
+    const denied = new OwnerKeyPgStore(
+      fakeClient(() => {
+        throw sqlState('42501');
+      }).client,
+    );
+    expect(await yes.revokeBySession(SESSION, 'k-7')).toBe(true);
+    expect(await no.revokeBySession(SESSION, 'k-7')).toBe(false);
+    expect(await refused.revokeBySession(SESSION, 'k-7')).toBeNull();
+    const error = await denied.revokeBySession(SESSION, 'k-7').catch((e: unknown) => e);
+    expect((error as KeyDbRefusal).code).toBe('scope_missing');
+  });
+});
