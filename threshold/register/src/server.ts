@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Account } from './account.ts';
+import { handleApi } from './api/index.ts';
+import type { ApiDeps } from './api/route.ts';
 import type { RegisterConfig } from './config.ts';
 import { type Identity, identityHash } from './identity.ts';
 import {
@@ -11,6 +13,7 @@ import {
   TERMS_PAGE,
 } from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
+import { sendProblem } from './problem.ts';
 import type { FetchFn, Provider } from './providers.ts';
 import type { SessionStore } from './session-store.ts';
 import type { Store } from './store.ts';
@@ -39,6 +42,10 @@ export interface RegisterDeps {
     res: ServerResponse,
     consent: boolean,
   ) => Promise<void> | void;
+  /** The owner API (C7-04a): keys, agent loader, audit sink, audit-lost callback, admin flag, extra routes. */
+  readonly api?: Partial<
+    Pick<ApiDeps, 'ownerKeys' | 'agents' | 'audit' | 'onAuditLost' | 'isAdmin' | 'routes'>
+  >;
 }
 
 function send(
@@ -151,6 +158,18 @@ export function createRegisterServer(deps: RegisterDeps): Server {
         })
       : null;
   const onSignedIn = deps.onSignedIn ?? account?.signedIn;
+  const apiDeps: ApiDeps = {
+    ...deps.api,
+    now,
+    csrfKey: config.sessionKey,
+    sessions: deps.sessions,
+    // The owner window is the register's owner limiter; an admin is skipped per request inside the router.
+    charge: (ownerId) => ownerLimiter.charge(ownerId),
+  };
+  // /register/api/: reached only after the kill switch and the source limit (both run in the handler below).
+  async function serveApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    if (!(await handleApi(req, res, url, apiDeps))) sendProblem(res, 'not_found');
+  }
 
   async function callback(
     provider: Provider,
@@ -192,14 +211,22 @@ export function createRegisterServer(deps: RegisterDeps): Server {
   }
 
   return createServer((req, res) => {
+    let api = false;
     void (async () => {
       const url = new URL(req.url ?? '/', 'http://local');
       // Caddy forwards /register/* and /roster/* on the shared Glass host unchanged; the service serves under /register.
       if (url.pathname === BASE || url.pathname.startsWith(`${BASE}/`))
         url.pathname = url.pathname.slice(BASE.length) || '/';
-      if (config.killSwitch) return sendJson(res, 503, KILL_BODY);
+      api = url.pathname.startsWith('/api/');
+      // The kill switch and the source limit run before any route, the API included, so a key is never resolved past either.
+      if (config.killSwitch)
+        return api ? sendProblem(res, 'unavailable') : sendJson(res, 503, KILL_BODY);
       const wait = limiter.charge(clientAddress(req, config.trustedPeers));
-      if (wait > 0) return sendJson(res, 429, rateBody(wait), { 'retry-after': String(wait) });
+      if (wait > 0)
+        return api
+          ? sendProblem(res, 'rate_limited', { 'retry-after': String(wait) })
+          : sendJson(res, 429, rateBody(wait), { 'retry-after': String(wait) });
+      if (api) return serveApi(req, res, url);
       if (account && (await account.handle(req, res, url))) return;
       if (req.method !== 'GET')
         return sendJson(res, 405, {
@@ -225,9 +252,9 @@ export function createRegisterServer(deps: RegisterDeps): Server {
       });
       res.end();
     })().catch(() => {
-      if (!res.headersSent)
-        sendJson(res, 500, { error: { code: 'internal', message: 'Internal error' } });
-      else res.end();
+      if (res.headersSent) res.end();
+      else if (api) sendProblem(res, 'internal');
+      else sendJson(res, 500, { error: { code: 'internal', message: 'Internal error' } });
     });
   });
 }
