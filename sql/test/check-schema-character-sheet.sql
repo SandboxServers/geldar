@@ -13,6 +13,8 @@ DECLARE
     "op_modes": {"explorer": 3, "farmer": 3, "miner": 3, "builder": 3, "crafter": 3, "warrior": 3, "nitwit": 3}}'::jsonb;
   alt JSONB;
   bads JSONB[];
+  keys TEXT[];
+  hashes TEXT[];
 BEGIN
   step := 'fixture: lives cs_life_a and cs_life_b with no adopted sheet';
   INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, harness, declared_model,
@@ -143,6 +145,149 @@ BEGIN
   EXCEPTION WHEN unique_violation THEN refused := true;
   END;
   IF NOT refused THEN RAISE EXCEPTION 'step %: a duplicate outbox level was stored', step; END IF;
+
+  step := 'fixture: lives cs_life_c, cs_life_d and cs_life_e with no adopted sheet';
+  INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, harness, declared_model,
+                      model_config, tier) VALUES
+    ('cs_life_c', 'csc', 1, 'cs_life_c', 'main', 'headless', 'harness-x', 'self-reported',
+     'declared:unverified', 'sovereign'),
+    ('cs_life_d', 'csd', 1, 'cs_life_d', 'main', 'headless', 'harness-x', 'self-reported',
+     'declared:unverified', 'sovereign'),
+    ('cs_life_e', 'cse', 1, 'cs_life_e', 'main', 'headless', 'harness-x', 'self-reported',
+     'declared:unverified', 'sovereign');
+
+  step := 'attribute scores 0 and -1 are refused (the range is 1 to 5)';
+  bads := ARRAY[
+    jsonb_set(valid, '{attributes,curiosity}', '0'),
+    jsonb_set(valid, '{attributes,curiosity}', '-1')];
+  FOR i IN 1..array_length(bads, 1) LOOP
+    refused := false;
+    BEGIN
+      UPDATE agents SET character_sheet = bads[i], sheet_hash = h, sheet_adopted_at = now()
+        WHERE agent_id = 'cs_life_c';
+    EXCEPTION WHEN check_violation THEN refused := true;
+    END;
+    IF NOT refused THEN RAISE EXCEPTION 'step %: score number % was adopted', step, i; END IF;
+  END LOOP;
+
+  step := 'attribute scores 1 and 5 are adopted';
+  alt := jsonb_set(valid, '{attributes,curiosity}', '1');
+  UPDATE agents SET character_sheet = alt, sheet_hash = h, sheet_adopted_at = now()
+    WHERE agent_id = 'cs_life_d' AND character_sheet IS NULL;
+  IF (SELECT character_sheet FROM agents WHERE agent_id = 'cs_life_d') IS DISTINCT FROM alt THEN
+    RAISE EXCEPTION 'step %: score 1 was not adopted', step;
+  END IF;
+  alt := jsonb_set(valid, '{attributes,curiosity}', '5');
+  UPDATE agents SET character_sheet = alt, sheet_hash = h, sheet_adopted_at = now()
+    WHERE agent_id = 'cs_life_e' AND character_sheet IS NULL;
+  IF (SELECT character_sheet FROM agents WHERE agent_id = 'cs_life_e') IS DISTINCT FROM alt THEN
+    RAISE EXCEPTION 'step %: score 5 was not adopted', step;
+  END IF;
+
+  step := 'a missing or an extra key inside attributes or op_modes is refused';
+  bads := ARRAY[
+    jsonb_set(valid, '{attributes}', (valid->'attributes') - 'curiosity'),
+    jsonb_set(valid, '{attributes}', (valid->'attributes') || '{"charm": 3}'),
+    jsonb_set(valid, '{op_modes}', (valid->'op_modes') - 'nitwit'),
+    jsonb_set(valid, '{op_modes}', (valid->'op_modes') || '{"wizard": 3}')];
+  FOR i IN 1..array_length(bads, 1) LOOP
+    refused := false;
+    BEGIN
+      UPDATE agents SET character_sheet = bads[i], sheet_hash = h, sheet_adopted_at = now()
+        WHERE agent_id = 'cs_life_c';
+    EXCEPTION WHEN check_violation THEN refused := true;
+    END;
+    IF NOT refused THEN RAISE EXCEPTION 'step %: malformed key set number % was adopted', step, i; END IF;
+  END LOOP;
+
+  step := 'a sheet_hash that is uppercase, 63 or 65 characters is refused';
+  hashes := ARRAY[upper(h), substr(h, 1, 63), h || 'a'];
+  FOR i IN 1..array_length(hashes, 1) LOOP
+    refused := false;
+    BEGIN
+      UPDATE agents SET character_sheet = valid, sheet_hash = hashes[i], sheet_adopted_at = now()
+        WHERE agent_id = 'cs_life_c';
+    EXCEPTION WHEN check_violation THEN refused := true;
+    END;
+    IF NOT refused THEN RAISE EXCEPTION 'step %: hash number % was adopted', step, i; END IF;
+  END LOOP;
+
+  step := 'a NULL sheet_adopted_at is refused on adoption';
+  refused := false;
+  BEGIN
+    UPDATE agents SET character_sheet = valid, sheet_hash = h, sheet_adopted_at = NULL
+      WHERE agent_id = 'cs_life_c';
+  EXCEPTION WHEN check_violation THEN refused := true;
+  END;
+  IF NOT refused THEN RAISE EXCEPTION 'step %: a sheet without an adoption time was adopted', step; END IF;
+
+  step := 'a bad domain is refused on proficiency and on xp_evidence';
+  refused := false;
+  BEGIN
+    INSERT INTO proficiency (life_id, domain, xp, level) VALUES ('cs_life_b', 'swimming', 0, 0);
+  EXCEPTION WHEN check_violation THEN refused := true;
+  END;
+  IF NOT refused THEN RAISE EXCEPTION 'step %: proficiency accepted domain swimming', step; END IF;
+  refused := false;
+  BEGIN
+    INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick)
+      VALUES ('cs_life_b', 'swimming', 'ev-bad', 'src-0', 1);
+  EXCEPTION WHEN check_violation THEN refused := true;
+  END;
+  IF NOT refused THEN RAISE EXCEPTION 'step %: xp_evidence accepted domain swimming', step; END IF;
+
+  step := 'a proficiency level of 4 and an xp of -1 are refused';
+  refused := false;
+  BEGIN
+    INSERT INTO proficiency (life_id, domain, xp, level) VALUES ('cs_life_b', 'building', 0, 4);
+  EXCEPTION WHEN check_violation THEN refused := true;
+  END;
+  IF NOT refused THEN RAISE EXCEPTION 'step %: proficiency accepted level 4', step; END IF;
+  refused := false;
+  BEGIN
+    INSERT INTO proficiency (life_id, domain, xp, level) VALUES ('cs_life_b', 'building', -1, 0);
+  EXCEPTION WHEN check_violation THEN refused := true;
+  END;
+  IF NOT refused THEN RAISE EXCEPTION 'step %: proficiency accepted xp -1', step; END IF;
+
+  step := 'an outbox level of 4 is refused';
+  refused := false;
+  BEGIN
+    INSERT INTO proficiency_outbox (life_id, domain, level, xp, version)
+      VALUES ('cs_life_a', 'building', 4, 1, 1);
+  EXCEPTION WHEN check_violation THEN refused := true;
+  END;
+  IF NOT refused THEN RAISE EXCEPTION 'step %: the outbox accepted level 4', step; END IF;
+
+  step := 'an outbox level 2 for the same life and domain is stored';
+  INSERT INTO proficiency_outbox (life_id, domain, level, xp, version)
+    VALUES ('cs_life_a', 'mining', 2, 7, 3);
+
+  step := 'an evidence key of 0 or 201 characters is refused';
+  keys := ARRAY['', repeat('k', 201)];
+  FOR i IN 1..array_length(keys, 1) LOOP
+    refused := false;
+    BEGIN
+      INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick)
+        VALUES ('cs_life_b', 'social', keys[i], 'src-6', 1);
+    EXCEPTION WHEN check_violation THEN refused := true;
+    END;
+    IF NOT refused THEN RAISE EXCEPTION 'step %: evidence key number % was stored', step, i; END IF;
+  END LOOP;
+
+  step := 'an evidence key of 1 character is stored';
+  INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick)
+    VALUES ('cs_life_b', 'exploring', 'k', 'src-7', 13);
+
+  step := 'an evidence key of 200 characters is stored';
+  INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick)
+    VALUES ('cs_life_b', 'social', repeat('k', 200), 'src-8', 13);
+
+  step := 'the same evidence key is stored for another domain and for another life';
+  INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick)
+    VALUES ('cs_life_a', 'combat', 'ev-1', 'src-3', 12);
+  INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick)
+    VALUES ('cs_life_b', 'mining', 'ev-1', 'src-4', 12);
 
   step := 'the five named roles and PUBLIC have no privilege on the new tables';
   SELECT count(*) INTO n
