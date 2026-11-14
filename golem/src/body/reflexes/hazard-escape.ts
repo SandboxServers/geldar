@@ -107,7 +107,9 @@ export const walkOutOfHazard: EscapeMover = async (walk) => {
   }, 100);
   // The pathfinder does not hold jump, so a Body in water would sink: hold it on every physics tick.
   const holdJump = (): void => {
-    if (bot.entity.isInWater) bot.setControlState('jump', true);
+    if ((bot.entity as unknown as { isInWater?: boolean }).isInWater === true) {
+      bot.setControlState('jump', true);
+    }
   };
   bot.on('physicsTick', holdJump);
   try {

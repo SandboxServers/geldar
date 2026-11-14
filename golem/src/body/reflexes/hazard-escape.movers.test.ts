@@ -76,7 +76,7 @@ describe('walkOutOfHazard', () => {
 
   it('holds jump on each physics tick while the Body is in water, during the pathfinder walk', async () => {
     const { bot, controls } = controlBot();
-    (bot.entity as unknown as { isInWater: boolean }).isInWater = true;
+    (bot as unknown as { entity: { isInWater: boolean } }).entity.isInWater = true;
     move.mockImplementationOnce(async () => {
       (bot as unknown as { emit(name: string): boolean }).emit('physicsTick');
       return { ok: true, distance: 1 };
