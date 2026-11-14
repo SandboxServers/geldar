@@ -1,0 +1,22 @@
+# Harness campaign: cards added after the cross-check
+
+Two cards that the six card writers found were missing. They are written at a lower level of detail than the other cards: each names what to read first and what to prove, and has `(to confirm)` items. Neither is `Ready` until a fresh read of the named files turns those into exact paths.
+
+## HC-40: A ChatGPT usage limit is a limited run, not a failed cycle
+
+- **Branch** `scriptorium/hc-40-chatgpt-limit`, worktree `.claude/worktrees/hc-40`. **Depends on** HC-06b (the Responses transport sits behind the interface), PR #102 (merged: the Claude limit handling). **Wave** HW0. **Size** about 30k. **Status** Writing (the ChatGPT limit error shape is `(to confirm)`).
+- **Why.** Found by the kit A author: `findUsageLimit` in `packages/supervisor/src/` reads only Claude's `rate_limit_event`. A ChatGPT player (Picard runs on this harness) that hits its plan limit is today a failed cycle, so five in a row write `auto: 5 failed cycles in a row` and the player sits stopped, silently, exactly as the six rangers did at 02:10Z on 2026-11-14 (decision 75).
+- **May edit.** `packages/chatgpt/src/responses.ts` (or the transport file after HC-06b) to recognise the vendor's usage-limit response and emit one stream item of a fixed shape, for example `{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":<epoch seconds>}}` (reuse the Claude shape so `findUsageLimit` needs no change; if the vendor gives no reset time, omit `resetsAt` so the existing 15-minute wait applies); `packages/chatgpt/src/responses.test.ts`; `packages/supervisor/src/limit.test.ts` (one added case with a ChatGPT-shaped stream). `(to confirm)`: the exact HTTP status and body the Responses endpoint returns for a plan usage limit; read `docs/chatgpt.md` first and the transport's current error mapping (every error is turned into the one generic line "ChatGPT could not complete this operation. Check the connection and login.", so the limit text must be read before that mapping, without printing any response body).
+- **Must not edit.** Any credential handling in `auth.ts`; the generic error line for every other failure.
+- **Tests.** A fake Responses server that answers with the limit response yields exactly one `rate_limit_event` item and exit code 1; the supervisor test feeds that stream and asserts state `limited`, no failure counted, no STOP written; a fake server answering 401 still gives the generic failure (so the change cannot swallow an auth error). Each fails if the new mapping is reverted.
+- **Checks.** `./scriptorium.ps1 pnpm lint`, `./scriptorium.ps1 pnpm typecheck`, `./scriptorium.ps1 pnpm vitest run packages/chatgpt packages/supervisor`, `./scriptorium.ps1 pnpm check:repo`.
+- **Commit** `fix(chatgpt): a plan usage limit waits instead of stopping the player (HC-40)`. **On-cap** commit passing work, report, stop.
+
+## GX-04: Move the pieces of `animus/` that the live player path imports
+
+- **Repo** geldar. **Branch** `codex/gx-04-animus-live-imports`. **Depends on** none (can run in W1). **Size** about 45k, split into GX-04a (move) and GX-04b (delete nothing; prove the freeze) if over. **Status** Writing (all paths `(to confirm)`).
+- **Why.** Found by the geldar B and A authors: the in-house Mind is abandoned (decision 77) but `animus/` is still on the live player path. The MCP server imports the event normaliser (`animus/src/link/mind-event.ts`), the `act` validator (`PHASE0_PROGRAMS` and `PROGRAM_ARGS`) and the plan builder from it, and `threshold/mcp` imports animus source. So `animus/` cannot be frozen or deleted until those pieces live somewhere neutral. Cards AN-28a and AN-45 edit four small `animus/` files for this reason; this card moves them first so those cards edit the new home instead.
+- **Do.** Create one neutral module (for example `contract/src/player-events/` or a new `player-core/` package; the geldar orchestrator picks the home, `(to confirm)`) holding exactly the imported pieces, change every importer, keep `animus/` compiling with re-exports that are marked deprecated. No behaviour change.
+- **Prove.** The MCP and threshold test suites pass unchanged; a repo check (new) fails if any non-`animus/` package imports from `animus/`; byte-for-byte equal normaliser output over the existing fixtures.
+- **Owner questions.** Whether `animus/` is then deleted or kept frozen (D-HC-01 says frozen), and when. Not decided here.
+- **Execution.** By the geldar coordinator under geldar's rules; numbers (if any ADR) reserved there.
