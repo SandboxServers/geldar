@@ -54,6 +54,11 @@ export function prefetchOwners(points: ReadonlyArray<Vec3>, signal: AbortSignal)
   return ownerPrefetch ? ownerPrefetch(points, signal) : Promise.resolve();
 }
 
+/** The ownership record at `pos` as the Body's cache answers it, or null when no reader is set. */
+export function ownerRecordAt(pos: Vec3): OwnerAnswer | null {
+  return ownerLookup ? ownerLookup(pos) : null;
+}
+
 /** Built materials by name suffix: planks, slabs, stairs, walls, fences, wool, concrete, terracotta. */
 const BUILT_SUFFIXES = [
   '_planks',

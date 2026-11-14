@@ -398,6 +398,52 @@ describe('act: reasoning is optional in the input', () => {
   });
 });
 
+describe('act: till takes a block position and nothing else', () => {
+  const TILL = { do: 'till', at: { x: 3, y: 64, z: 8 } };
+
+  it('accepts a till of a block position and sends it to the Body', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [TILL] });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+    expect(h.body.plans).toHaveLength(1);
+  });
+
+  it('names the missing position of a till', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'till' }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: 'action 0: at is missing' },
+    ]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('names the unknown key of a till, such as a count', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ ...TILL, count: 2 }] });
+    expect(result.rejected).toEqual([
+      { index: 0, reason: 'schema', detail: "action 0: 'count' is not a known field" },
+    ]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('refuses a till whose position is the word feet, and sends nothing', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'till', at: 'feet' }] });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([expect.objectContaining({ index: 0, reason: 'schema' })]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+
+  it('refuses a till whose position lacks a coordinate, and sends nothing', async () => {
+    const h = harness();
+    const result = await act(h, { actions: [{ do: 'till', at: { x: 3, z: 8 } }] });
+    expect(result.accepted).toEqual([]);
+    expect(result.rejected).toEqual([expect.objectContaining({ index: 0, reason: 'schema' })]);
+    expect(h.body.plans).toHaveLength(0);
+  });
+});
+
 describe('act: a refusal says which part was refused', () => {
   const TRAVEL = { ...INTENT, program: 'travel' };
 

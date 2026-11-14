@@ -359,6 +359,18 @@
           },
           "required": ["do", "at", "item", "count"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "till" },
+            "at": {
+              "description": "The position of the dirt, coarse dirt, grass block or dirt path to till into farmland. The Body needs a hoe in hand or inventory; it checks the rest.",
+              "$ref": "common.schema.json#/$defs/Position"
+            }
+          },
+          "required": ["do", "at"],
+          "additionalProperties": false
         }
       ]
     }

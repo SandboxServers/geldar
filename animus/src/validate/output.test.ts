@@ -446,6 +446,16 @@ describe('the allow-list and the MCP verb list', () => {
     expect(sign('x'.repeat(61))).toBe(false);
   });
 
+  it('makes till callable with a block position, and refuses a malformed till', () => {
+    expect(PHASE0_VERBS).toContain('till');
+    const till = (action: Record<string, unknown>) =>
+      validator.parseThought(thought({ actions: [{ do: 'till', ...action }] }));
+    expect(till({ at: { x: 3, y: 64, z: 8 } }).ok).toBe(true);
+    expect(till({}).ok).toBe(false);
+    expect(till({ at: 'feet' }).ok).toBe(false);
+    expect(till({ at: { x: 3, y: 64, z: 8 }, count: 1 }).ok).toBe(false);
+  });
+
   it('has every listed verb either callable or excluded with a reason', () => {
     expect(listed.length).toBeGreaterThan(10);
     for (const verb of listed) {
@@ -459,7 +469,7 @@ describe('the allow-list and the MCP verb list', () => {
 
 describe('the body-api table', () => {
   const file = JSON.parse(
-    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v6.json'), 'utf8'),
+    readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v7.json'), 'utf8'),
   ) as {
     say: { example: unknown };
     verbs: { do: string; example: unknown }[];
