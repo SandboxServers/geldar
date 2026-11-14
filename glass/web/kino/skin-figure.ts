@@ -70,21 +70,76 @@ export function buildFigure(canvas: HTMLCanvasElement): Group {
   return group;
 }
 
-/** Loads the skin PNG at `url` into a canvas; undefined on any failure (404, bad image, no canvas). */
-export async function loadSkinCanvas(url: string): Promise<HTMLCanvasElement | undefined> {
+/** A decoded skin, or why it did not load: `reason` is short enough for the monitor's status line. */
+export type SkinLoad = { canvas: HTMLCanvasElement } | { reason: string; detail: string };
+
+function describeError(e: unknown): string {
+  return e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+}
+
+/**
+ * Decodes one at a time: several monitors start their skins together, and a page-wide queue keeps one
+ * decode in flight (hypothesis: concurrent createImageBitmap calls from several scenes).
+ */
+let decodeTail: Promise<unknown> = Promise.resolve();
+function decodeSerially(blob: Blob): Promise<ImageBitmap> {
+  const job = decodeTail.then(() => createImageBitmap(blob));
+  decodeTail = job.catch(() => undefined);
+  return job;
+}
+
+/** Fetches and decodes the skin PNG at `url`; never throws. */
+export async function fetchSkin(url: string): Promise<SkinLoad> {
+  let res: Response;
   try {
-    const res = await fetch(url);
-    if (!res.ok) return undefined;
-    const bitmap = await createImageBitmap(await res.blob());
-    if (bitmap.width !== 64 || (bitmap.height !== 64 && bitmap.height !== 32)) return undefined;
+    res = await fetch(url);
+  } catch (e) {
+    return { reason: 'fetch failed', detail: `fetch threw ${describeError(e)}` };
+  }
+  const type = res.headers.get('content-type') ?? 'none';
+  if (!res.ok)
+    return { reason: `HTTP ${res.status}`, detail: `status ${res.status}, content-type ${type}` };
+  try {
+    const blob = await res.blob();
+    const bitmap = await decodeSerially(blob);
+    const shape = `${bitmap.width}x${bitmap.height}, ${blob.size} bytes, content-type ${type}`;
+    if (bitmap.width !== 64 || (bitmap.height !== 64 && bitmap.height !== 32))
+      return { reason: 'bad skin size', detail: `bitmap ${shape}` };
     const canvas = document.createElement('canvas');
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return undefined;
+    if (!ctx) return { reason: 'no canvas context', detail: `bitmap ${shape}` };
     ctx.drawImage(bitmap, 0, 0);
-    return canvas;
-  } catch {
-    return undefined;
+    return { canvas };
+  } catch (e) {
+    return { reason: 'decode failed', detail: `${describeError(e)}` };
   }
+}
+
+/**
+ * One load per agent id for the whole page: every monitor's scene shares the decoded canvas (each scene
+ * still builds its own CanvasTexture for its own WebGL context). A failure is cached too and logged once,
+ * so a missing skin is not requested again for every marker. Nothing aborts the shared promise.
+ */
+const skinCache = new Map<string, Promise<SkinLoad>>();
+
+export function sharedSkin(agentId: string, url: string): Promise<SkinLoad> {
+  let pending = skinCache.get(agentId);
+  if (!pending) {
+    pending = fetchSkin(url).then((load) => {
+      if ('reason' in load)
+        console.warn(
+          `[kino] skin not loaded for agent ${agentId}: ${load.reason} (${load.detail})`,
+        );
+      return load;
+    });
+    skinCache.set(agentId, pending);
+  }
+  return pending;
+}
+
+/** Forgets every shared skin (tests only: a page never needs it). */
+export function clearSharedSkins(): void {
+  skinCache.clear();
 }

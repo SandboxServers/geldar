@@ -11,6 +11,7 @@ import type { UvLookup } from '../mesher.ts';
 import { KinoScene } from '../scene.ts';
 import { byeText, KinoSession, type Refusal, type SocketLike } from '../session.ts';
 import { type StatusInfo, statusLine } from '../status.ts';
+import { autoRetryDelay, MAX_AUTO_RETRIES } from './first-visit.ts';
 import type { MonitorFrame } from './monitor.ts';
 import type { Bucket } from './subscribe-gate.ts';
 
@@ -99,12 +100,19 @@ export function createPaneView(
     frame.setTuning(on);
   };
 
-  const showStatus = (): void => {
+  /** The current scene's skin note ("skin not loaded: ..."), shown after the status line. */
+  let skinNote: string | null = null;
+  const onSkinNote = (note: string | null): void => {
+    skinNote = note;
+    showStatus();
+  };
+  function showStatus(): void {
     const mine = { connected, chunks: state?.world.keys().length ?? 0, entities: entityCount };
-    frame.setStatus(statusLine({ ...mine, atlas: deps.atlasInfo }));
+    const line = statusLine({ ...mine, atlas: deps.atlasInfo });
+    frame.setStatus(skinNote ? `${line} | ${skinNote}` : line);
     frame.setLive(connected);
     deps.onStatus(mine);
-  };
+  }
 
   /** True while the picture is not yet the agent the page wants. */
   const unsettled = (): boolean => {
@@ -142,9 +150,11 @@ export function createPaneView(
         state = s;
         view?.dispose();
         view = new KinoScene(s, deps.atlas.uv, deps.atlas.material, deps.labels);
+        view.onSkinNote = onSkinNote;
         rig.retarget();
         setTuning(true);
         frame.flicker();
+        retriesMade = 0;
         // The server's agent is the one shown; when nothing else is wanted, it is this monitor's agent.
         if (!waitingAtGate) {
           const c = session.current;
@@ -185,15 +195,17 @@ export function createPaneView(
           showLabel();
         } else if (r.kind === 'open') {
           stopWaiting();
-          notice(`Could not tune in to ${deps.labelOf(r.agent)}: too many changes at once.`, {
-            label: 'Try again',
-            run: retry,
-          });
+          const text = `Could not tune in to ${deps.labelOf(r.agent)}: too many changes at once.`;
+          if (!autoRetry(text)) notice(text, { label: 'Try again', run: retry });
         } else frame.say('Too many changes at once: the camera mode was not recorded.');
       },
       onEnd(reason) {
         connected = false;
         stopWaiting();
+        if (reason === 'pane_cap_reached' && autoRetry(byeText(reason))) {
+          showStatus();
+          return;
+        }
         notice(
           byeText(reason),
           RETRYABLE.has(reason) ? { label: 'Try again', run: retry } : undefined,
@@ -225,6 +237,22 @@ export function createPaneView(
       delayMs,
     );
   };
+  /** Retries a refused first subscribe after a wait, showing "Retrying"; false once the retries are used up. */
+  let retriesMade = 0;
+  let retryTimer: unknown = null;
+  const autoRetry = (why: string): boolean => {
+    const delay = autoRetryDelay(retriesMade);
+    if (delay === null) return false;
+    retriesMade += 1;
+    notice(`${why} Retrying in ${delay / 1000} s (try ${retriesMade} of ${MAX_AUTO_RETRIES}).`);
+    retryTimer = setTimer(() => {
+      retryTimer = null;
+      notice(null);
+      setTuning(true);
+      request();
+    }, delay);
+    return true;
+  };
   const retry = (): void => {
     notice(null);
     setTuning(true);
@@ -250,6 +278,7 @@ export function createPaneView(
     if (state) {
       view?.dispose();
       view = new KinoScene(state, deps.atlas.uv, deps.atlas.material, deps.labels);
+      view.onSkinNote = onSkinNote;
     }
   };
   canvas.addEventListener('webglcontextlost', onLost);
@@ -311,6 +340,8 @@ export function createPaneView(
       renderer.render(view.scene, view.camera);
     },
     dispose() {
+      if (retryTimer !== null) clearTimer(retryTimer);
+      retryTimer = null;
       disposed = true;
       stopWaiting();
       deps.gate.cancel(deps.key);
