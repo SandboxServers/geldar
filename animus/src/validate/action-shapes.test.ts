@@ -23,6 +23,7 @@ const EXAMPLES: Record<string, Record<string, unknown>> = {
   note: { do: 'note', text: 'iron is north' },
   write_sign: { do: 'write_sign', text: 'Home' },
   till: { do: 'till', at: POS },
+  edit_sign: { do: 'edit_sign', at: POS, text: 'Home' },
 };
 
 function accepts(action: Record<string, unknown>): boolean {

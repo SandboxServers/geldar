@@ -1,7 +1,8 @@
+import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import { STALL_TEXT } from '../actions/pathing.ts';
-import type { ActionRun } from '../actions/registry.ts';
+import { type ActionRun, runAction } from '../actions/registry.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody, enabledReflexes } from './create-body.ts';
 import { planFor, scriptedProgram, thought } from './executor.fakes.ts';
@@ -9,6 +10,7 @@ import { MemorySink } from './records.ts';
 import { NatsRecordSink } from './records-nats.ts';
 import { allReflexesOn, REFLEX_NAMES } from './reflex-config.ts';
 import { hasBlockedReport } from './reflexes/blocked-path.ts';
+import { IDLE_TICKS, idleStuckReflex } from './reflexes/idle-stuck.ts';
 
 const LIFE = 'ag_test_01';
 
@@ -42,6 +44,47 @@ const completedRun: ActionRun = {
   state: 'completed',
   result: { status: 'completed', latency_ms: 1, world_ticks: 1, detail: {} },
 };
+
+/** A still, enclosed, day-time Body that idle_stuck would fire on after IDLE_TICKS. */
+function stuckBody(view: object, tick: number): void {
+  Object.assign(view, {
+    tick,
+    position: { x: -265.5, y: 35, z: 196.5 },
+    enclosed: true,
+    canStepOff: false,
+    isNight: false,
+    actionRunning: false,
+    asleep: false,
+    riding: false,
+  });
+}
+
+describe('createBody clears the idle clock on respawn and restarts it after an action', () => {
+  it('a respawn forgets the idle clock of the old body', () => {
+    const bot = fakeBot();
+    const { view } = body({ bot });
+    stuckBody(view, 0);
+    idleStuckReflex.check(view);
+    bot.emit('respawn');
+    stuckBody(view, IDLE_TICKS);
+    expect(idleStuckReflex.check(view)).toBeNull();
+  });
+
+  it('a finished action restarts the idle clock from its end', async () => {
+    const { runtime, view } = body();
+    stuckBody(view, 0);
+    idleStuckReflex.check(view);
+    stuckBody(view, 1100);
+    const signal = new AbortController().signal;
+    // `note` is a registered handler with no world effect, so the run finishes at once.
+    await runAction(runtime.actions, fakeBot(), { do: 'note', text: 'idle' } as Action, {
+      signal,
+      timeScale: 1,
+    });
+    stuckBody(view, IDLE_TICKS);
+    expect(idleStuckReflex.check(view)).toBeNull();
+  });
+});
 
 describe('enabledReflexes', () => {
   it('hands over all seven reflexes with every flag on', () => {

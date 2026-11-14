@@ -24,6 +24,8 @@ const HORIZONTAL = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), ne
 const BED_RANGE = 32;
 /** The most beds tried in one action, nearest first. */
 const MAX_BEDS = 8;
+/** The total time (wall ms at 1x, scaled by `timeScale`) the bed loop may run before it stops and reports. */
+const SLEEP_BUDGET_MS = 30_000;
 
 /** Sleeps in the nearest free bed, trying up to MAX_BEDS. The action does not wait for morning and does not wake the bot. */
 export const sleepAction: ActionHandler<'sleep'> = {
@@ -96,7 +98,17 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   }
 
   let last: ActionOutcome = failed('blocked', 'no bed was tried');
+  // The whole loop has a budget, so the action ends with its facts before the Body's own timeout does.
+  const started = Date.now();
+  const budget = SLEEP_BUDGET_MS * ctx.timeScale;
+  let tried = 0;
+  let outOfTime = false;
   for (const bed of beds) {
+    if (Date.now() - started >= budget) {
+      outOfTime = true;
+      break;
+    }
+    tried += 1;
     const outcome = await sleepInBed(ctx, bed);
     if (
       outcome.status !== 'failed' ||
@@ -108,9 +120,15 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
     last = outcome;
   }
   const lastText = last.status === 'failed' ? last.message : '';
+  if (outOfTime) {
+    return failed(
+      'blocked',
+      `tried ${tried} of ${beds.length} nearby beds; the search time ran out; last: ${lastText}`,
+    );
+  }
   return failed(
     'blocked',
-    `tried ${beds.length} nearby beds, all occupied or blocked; last: ${lastText}`,
+    `tried ${tried} nearby beds, all occupied or blocked; last: ${lastText}`,
   );
 }
 
