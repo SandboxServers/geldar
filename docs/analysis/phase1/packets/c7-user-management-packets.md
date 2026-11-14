@@ -152,7 +152,7 @@ Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packe
 Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes the old token at once (`register_mint_token`). The API rotate, `POST /api/v1/agents/{playerId}/tokens`, keeps the old token for 10 minutes (`register_renew_token`, `graceEndsAt`). The copy "revokes the old one immediately" is true for the button only; do not reuse it for the API rotate. The leak response over the API is `POST /api/v1/agents/{playerId}/tokens/revoke`. `PATCH /agents/{playerId}` (`publicCamera`, `thoughtsDelayedPublic`) was not built in C7-04b. It is card C7-04e (`c7d-packets.md`), and this packet depends on C7-04e: the visibility toggles call that route. C7-04e's files are not in this card's may-edit.
 
 - **id / wave / lane.** C7-06, wave 3. **depends-on.** C7-04, C7-04e, C7-05. **branch.** `phase1/c7-06-account-page-v2`. **migration.** none. It owns `src/account*.ts` (the card's `pages/` paths do not exist; the code is in `src/account-pages.ts`, `src/account.ts` and `src/account-style.ts`) and `src/errors.ts`; C7-13c adds the skin section after it merges.
-- **Status.** Built (partial): C7-06 and C7-06b. The items not built (the per-agent status and token lines, the start, stop and restart buttons, the visibility toggles, and the owner's Glass and Kino links per 0138) are in card C7-06c.
+- **Status.** Built (partial): C7-06 and C7-06b. The items not built (the per-agent status and token lines, the start, stop and restart buttons, the visibility toggles) are in card C7-06c.
 - **Goal.** Replace the bare HTML account page with a page that works on a phone. It adds: a linked stylesheet (CSP `style-src 'self'`) and a viewport meta; labelled inputs; a status line per agent (body running, starting, waiting or stopped; credits left; token expiry date; last used); the start, stop and restart buttons that call the C7-04 API; links to the agent's Glass and Kino views where 0138 and 0139 allow; the visibility toggles with a plain explanation of public camera and delayed public thoughts; the missing thoughts form (the route exists); and HTML error pages for 403, 404, 429 and 503 (JSON only under `/api/`).
 - **may-edit.** `threshold/register/src/account*.ts` (the page; `account-style.ts` is the stylesheet, served from `/register/account.css`), `threshold/register/src/errors.ts`, tests, `docs/analysis/phase1/worknotes/C7-06.md`.
 - **Tests (each fails on revert).**
@@ -174,14 +174,13 @@ Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes t
   1. **Per-agent status line** with the body state (running, starting, waiting or stopped, from `GET .../body/status`; a 404 from status means stopped), credits left, and the token expiry date and last used, where a loader provides them (the wave 1 carry-forward). Remove the duplicate status text the page now shows.
   2. **Start, stop and restart buttons** calling the C7-04 body routes. Not rendered until the routes are wired (C7-04c2).
   3. **Visibility toggles** calling `PATCH /agents/{playerId}` (C7-04e) for `publicCamera` and `thoughtsDelayedPublic`, each with the plain explanation. A toggle sends one flag per request.
-  4. **Glass and Kino links.** The owner sees both links for every non-retired agent (0138 rule 1). The flag gate on the links is removed; a retired agent shows no links.
+- **Already built.** Glass and Kino links: built in C7-06b (both links for every non-retired agent).
 - **may-edit.** `threshold/register/src/account*.ts`, `threshold/register/src/account-style.ts` (layout only), tests, `docs/analysis/phase1/worknotes/C7-06c.md`.
 - **must-not-edit.** `api/body*.ts`, `api/agents*.ts`, `errors.ts`, `docs/spec.md`, `contract/`, the skin section (C7-13c).
 - **Tests (each fails on revert).**
   - Status line: a fixture for each body state renders its state; a 404 from status renders stopped; a token row shows expiry and last used when the loader provides them and omits them when it does not.
   - Buttons: absent while the body routes are unmounted; a button posts with the CSRF token to its own route.
   - Toggle: a toggle posts `PATCH` with exactly one flag; a toggle for another owner's agent is not rendered.
-  - Links: both links render for a non-retired agent whatever its flags are; no link renders for a retired agent. Revert: restore the flag gate; the both-links test fails.
 - **checks.** Register tests, `pwsh -NoProfile -File ./geldar.ps1 check`.
 - **Owner decisions.** Ruled: the links follow 0138 rule 1 (owner sees both for every non-retired agent).
 

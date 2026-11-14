@@ -73,8 +73,8 @@ Live lane: the roster integration test under `GELDAR_IT=1` on the shard (C3-04s)
 | 1 | C7-03b1 NATS contract, user binding, request/reply transport | C7-03a | `phase1/c7-03b1-nats-binding` | none | M |
 | 1 | C7-03b3 Postgres adapter and Docker client (non-register lane) | C7-03a, C3-04s, C7-12 | `phase1/c7-03b3-adapters` | none | L |
 | 2 | C7-04a API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (fan-out point; after C7-02b merges) | C7-02b, C7-12 | `phase1/c7-04a-api-core` | none | M |
-| 2 | C7-04b agents and tokens resources, owner-key routes, onboarding hand-off (built except PATCH, which moved to C7-04e; branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036; pending merge into wave 3) | C7-04a | `phase1/c7-04b-agents-tokens` | none | M |
-| 2 | C7-04b-3 owner keys by cookie session (built; decision 0173; routes wired in C7-04b-4, merge pending) | C7-04b | `phase1/c7-04b3-session-keys` | 0035 | M |
+| 2 | C7-04b agents and tokens resources, owner-key routes, onboarding hand-off (built except PATCH, which moved to C7-04e; branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036; merged into wave 3) | C7-04a | `phase1/c7-04b-agents-tokens` | none | M |
+| 2 | C7-04b-3 owner keys by cookie session (built; decision 0173; routes wired in C7-04b-4, merged into wave 3) | C7-04b | `phase1/c7-04b3-session-keys` | 0035 | M |
 | candidate | C7-04d2 Bearer-driven token rotation and owner-key management (renamed from C7-04d; not scheduled in Phase 1) | C7-04b, C7-04b-3 | `phase1/c7-04d2-bearer-keys` (proposed) | yes, at dispatch | M |
 
 Wave 2 order: C7-04a starts when C7-02b is on the wave branch; C7-04b starts after C7-04a. C7-04 was one L card and is split (see [c7d-packets.md](c7d-packets.md)); the body routes are C7-04c in wave 3.
@@ -90,10 +90,12 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 | 1 | C7-03b2 compose service, deploy script, budget, runbook (before any live use; geldar-93 MERGE/DONE) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
 | 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
 | 1 | C7-04c body routes (start, stop, restart, status, log through the supervisor; built; retire split to C7-04d, wiring to C7-04c2) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
-| 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; Ready after C7-04c merges) | C7-04c | `phase1/c7-04d-retire` | none | S |
-| 1 | C7-04c2 body routes production wiring: NATS connection, mounting, server.ts and main.ts (split of C7-04c; Ready after C7-04c merges) | C7-04c | `phase1/c7-04c2-wiring` | none | S |
+| 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; Ready after C7-04c2 merges) | C7-04c, C7-04c2 | `phase1/c7-04d-retire` | none | S |
+| 1 | C7-04c2 body routes production wiring: NATS connection, mounting, server.ts and main.ts (split of C7-04c; Ready (C7-04c is merged)) | C7-04c | `phase1/c7-04c2-wiring` | none | S |
 | 1 | C7-04e PATCH /agents/{playerId} visibility flags (split of C7-04b; cookie only) | C7-04b | `phase1/c7-04e-agent-patch` | none | S |
-| 1 | C7-06 account page v2 | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
+| 1 | C7-06 account page v2 (built, partial) | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
+| 1 | C7-06b account page view links and HTML error pages (split of C7-06, built on the same branch) | C7-06 | `phase1/c7-06-account-page-v2` | none | built |
+| 4 | C7-06c account page v2 items not delivered by C7-06 and C7-06b (status and token lines, body buttons, visibility toggles; buttons wait for C7-04c2) | C7-06, C7-04c2, C7-04e | `phase1/c7-06c-account-items` | none | M |
 | 1 | C7-13a skin upload API and held store | C7-04b, C7-12 | `phase1/c7-13a-skin-upload-api` | 0031 | L |
 | 1 | C7-10 operator console, ban reasons (confirm the C7-04 part at dispatch) | C7-03a, C7-04a, C7-12 | `phase1/c7-10-operator-console` | 0030 | M |
 | 2 | C7-07 agent rename (after C7-06 merges; it edits the account page rename form; the PATCH route, moved from C7-04b to C7-04e, stays rename-free) | C7-04b, C7-06 | `phase1/c7-07-agent-rename` | 0028 | S |
