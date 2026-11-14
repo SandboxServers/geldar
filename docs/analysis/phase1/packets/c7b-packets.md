@@ -57,7 +57,7 @@ Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packe
 - **Actor encoding.** The audit actor is a sha256 prefix everywhere, one encoding and no raw ids.
 - **Refusals.** A refused action is audited as `not_found` with no reason, so the audit row does not say which check failed.
 - **Per-name hourly counts.** They follow the name, so a new roster owner inherits up to one hour of the old owner's starts. Confirm this is intended, or change it, before the packet merges.
-- **Redundant index.** `mcp_roster_name_lower` duplicates the CHECK plus the primary key. Migration 0024 is now applied on the node, so dropping it is a new migration (0033 is the only spare). Owner decision: drop it or keep it.
+- **Redundant index.** `mcp_roster_name_lower` duplicates the CHECK plus the primary key. Migration 0024 is now applied on the node, so dropping it is a new migration (no migration spare is left; the next free number is 0034 (0028 to 0031 unassigned in the repo; check origin/main sql/ first)). Owner decision: drop it or keep it.
 - **Seed probe.** `check-schema-mcp-roster.sql` never runs the seed SQL. Add a statement that runs the seed twice, if wanted.
 - **Not enforced elsewhere.** The golem `player-config`, `players-host`, the Velocity gate and `threshold/mcp` do not read `mcp_roster`, so a lower-case seeded name is not enforced on those paths.
 
