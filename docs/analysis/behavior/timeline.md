@@ -13,3 +13,5 @@ Source: cd.log, geldar-worldops notes, change-windows memory addenda 17-22. Ever
 | 21:15 and 21:19 | deploys 3df6c808, 094788b3 (contents not yet noted) | | window after 21:19 is confounded |
 
 Windows: 20:57-21:15Z is the last clean window. Ask owners for the content of 21:15/21:19.
+
+Merge times from geldar-vitals (deploy instants pending from geldar-93): #369 eat/sleep detail_text 20:07Z; #375 eat chooser 20:52Z; #379 (0213 panic_burrow needs hostile or damage; dark_shelter ignores unknown light) after 20:52Z. Queued: 0214, 0215a, 0215b. Phantoms are vanilla (about 3 in-game days without sleep, open sky); days_since_sleep is MCP bookkeeping, not a phantom proxy.
