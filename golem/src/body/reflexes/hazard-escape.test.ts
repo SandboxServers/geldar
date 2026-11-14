@@ -139,6 +139,35 @@ describe('hazard-escape: drowning', () => {
     expect(outcome.result).toBe('abandoned');
     expect(sink.wakes).toHaveLength(1);
   });
+
+  it('stays quiet for the cooldown after a give-up, so the Mind action it hands back is not cancelled', async () => {
+    const { view, state, bot } = pond(6);
+    const { ctx } = basicContext(view, bot);
+    const reflex = createHazardEscapeReflex({
+      swimmer: async () => undefined,
+      mover: async () => undefined,
+    });
+    await reflex.run({ hazard: 'drowning', air: 6 }, ctx);
+    state.tick = 1;
+    expect(reflex.check(view)).toBeNull();
+    state.tick = 40;
+    expect(reflex.check(view)).toEqual({ hazard: 'drowning', air: 6 });
+  });
+
+  it('gives the swim-up a share of the limit, so the walk out still runs', async () => {
+    const { view, state, bot } = pond(6);
+    const { ctx } = basicContext(view, bot);
+    let moverRan = false;
+    await createHazardEscapeReflex({
+      swimmer: async (walk) => {
+        while (!walk.expired()) state.tick += 1;
+      },
+      mover: async (walk) => {
+        moverRan = !walk.expired();
+      },
+    }).run({ hazard: 'drowning', air: 6 }, ctx);
+    expect(moverRan).toBe(true);
+  });
 });
 
 describe('hazard-escape: run', () => {
@@ -261,6 +290,34 @@ describe('hazard-escape: run', () => {
     expect(swam).toBe(true);
     expect(walked).toBe(false);
     expect(cancels()).toBe(1);
+  });
+
+  it('gives the swim all the time limit when no safe block is in reach', async () => {
+    const grid: Record<string, string> = {};
+    for (let x = -10; x <= 10; x++) {
+      for (let z = -10; z <= 10; z++) {
+        for (let y = 60; y <= 66; y++) grid[`${x},${y},${z}`] = 'water';
+      }
+    }
+    const { view, state } = basicView({
+      inFluid: 'water',
+      air: 2,
+      position: { x: 0, y: 64, z: 0 },
+    });
+    const { ctx } = basicContext(view, gridBot(grid).bot);
+    const swimmer: EscapeMover = async (walk) => {
+      // Past the 120-tick swim share of a run that has a target, but inside the 200-tick limit.
+      state.tick += 150;
+      expect(walk.expired()).toBe(false);
+      state.tick += 60;
+      expect(walk.expired()).toBe(true);
+    };
+    const outcome = await createHazardEscapeReflex({ swimmer, limitTicks: 200 }).run(
+      { hazard: 'drowning', air: 2 },
+      ctx,
+    );
+    expect(outcome.result).toBe('abandoned');
+    expect(outcome.detail).toContain('200 ticks');
   });
 
   it('does not swim up for lava with no safe block: it gives up', async () => {

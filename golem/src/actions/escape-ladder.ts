@@ -131,7 +131,8 @@ async function hop(bot: Bot, o: LadderOptions, sprint: boolean): Promise<boolean
   } finally {
     release(bot);
   }
-  return moved(bot, start);
+  // A hop that moved the bot but left it in water has not got it out: the next rung must run.
+  return !inWater(bot) && moved(bot, start);
 }
 
 /**

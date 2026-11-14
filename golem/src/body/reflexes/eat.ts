@@ -2,10 +2,13 @@ import { edibleAtHunger } from '../../actions/eat.ts';
 import { runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexOutcome } from '../reflex.ts';
 
-/** Hunger at or below this (of 20) fires the reflex (spec 5.2). */
-export const EAT_HUNGER_AT = 14;
+/** Hunger at or below this (of 20) fires the reflex: the Body is starving (spec 5.2). */
+export const EAT_HUNGER_AT = 6;
 
-/** Below this hunger a hurt Body eats too: natural regeneration needs 18 of 20. */
+/** Health at or below this (of 20) fires the reflex too, while hunger is below EAT_REGEN_HUNGER. */
+export const EAT_LOW_HEALTH_AT = 6;
+
+/** Below this hunger a badly hurt Body eats too: natural regeneration needs 18 of 20. */
 export const EAT_REGEN_HUNGER = 18;
 
 /** World ticks between firings: a failed meal is not retried at once. */
@@ -14,8 +17,10 @@ const EAT_COOLDOWN_TICKS = 100;
 export const EAT_BACKOFF_CAP_TICKS = 1600;
 
 /**
- * Eats when hunger is at or below 14 of 20 and the Body carries food. It runs the existing `eat`
- * action (which picks the best food) and never starts a second meal while one is under way.
+ * Eats when the Body carries food and either hunger is at or below 6 of 20, or health is at or
+ * below 6 of 20 while hunger is below 18. A Body that is only a little hungry, or hurt but fed,
+ * keeps its food for others. It runs the existing `eat` action (which picks the best food) and
+ * never starts a second meal while one is under way.
  */
 export function createEatReflex(): Reflex {
   let eating = false;
@@ -27,8 +32,8 @@ export function createEatReflex(): Reflex {
     priority: 30,
     cooldownTicks: EAT_COOLDOWN_TICKS,
     check(view) {
-      const hurtAndHungry = view.health < 20 && view.hunger < EAT_REGEN_HUNGER;
-      if (view.hunger > EAT_HUNGER_AT && !hurtAndHungry) return null;
+      const badlyHurtAndHungry = view.health <= EAT_LOW_HEALTH_AT && view.hunger < EAT_REGEN_HUNGER;
+      if (view.hunger > EAT_HUNGER_AT && !badlyHurtAndHungry) return null;
       lastTick = view.tick;
       if (failures > 0 && failedAt !== null && view.tick !== null) {
         const wait = Math.min(EAT_COOLDOWN_TICKS * 2 ** failures, EAT_BACKOFF_CAP_TICKS);

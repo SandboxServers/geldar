@@ -131,11 +131,15 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-03b1 | Supervisor NATS contract, user binding, request/reply transport | W2 | B | C7-03a | Built (review pass 4 ship); merge pending (to merge with PR #321) | 0067, 0152 | none | N (node auth edits are in the C7-03b2 runbook) |
 | C7-03b2 | Supervisor compose service, deploy script, budget, runbook (geldar-93 MERGE/DONE, no network recreate) | W3 | B | C7-03b1, C7-03b3 | Blocked (needs C7-03b1 and C7-03b3 merged; geldar-93 DONE) | 0082, 0152 | none | Y [contact geldar-93; owner approves the node change] |
 | C7-03b3 | Supervisor Postgres adapter and Docker client | W2 | B | C7-03a, C3-04s, C7-12 | Built (review pass 4 ship); merge pending (to merge with PR #321) | 0108, 0152, 0170 | 0033 (`sql/0033_supervisor_display_name.sql`) | N (live start is pending, after C7-03b2) |
-| C7-04a | Owner API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (split of C7-04) | W2 | B | C7-02b, C7-12 | Blocked (needs C7-02b merged) | 0152, 0170 | none | N |
-| C7-04b | Owner API agents and tokens resources, owner-key routes, onboarding hand-off (split of C7-04) | W2 | B | C7-04a | Blocked (needs C7-04a merged) | 0152, 0170 | none | N |
-| C7-04c | Owner API body routes through the supervisor, log tail, retire (split of C7-04) | W3 | B | C7-04a, C7-03b1 | Blocked (needs C7-04a and C7-03b1 merged) | 0152, 0170 | none | N |
-| C7-03b4 | Body container spec mirrors the golem-body service (blocks enabling the supervisor service) | W3 | B | C7-03b3 | Blocked (needs C7-03b3 merged) | 0152 | none | N |
-| C7-06 | Account page v2 | W3 | C | C7-04b, C7-05 | Blocked (needs C7-04b and C7-05 merged) | none | none | N |
+| C7-04a | Owner API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (split of C7-04) | W2 | B | C7-02b, C7-12 | Built (commit e20bf608, on the wave 3 branch) | 0152, 0170 | none | N |
+| C7-04b | Owner API agents and tokens resources, owner-key routes, onboarding hand-off (split of C7-04) | W2 | B | C7-04a | Built except PATCH; PATCH moved to C7-04e (branch phase1/c7-04b5-wiring; migrations 0035 and 0036; pending merge into wave 3) | 0152, 0170, 0173 | 0035, 0036 | N |
+| C7-04b-3 | Owner keys by cookie session: session SQL, Postgres adapter, service (split of C7-04b; token and key routes cookie-only in v1) | W2 | B | C7-04b | Built (branch phase1/c7-04b3-session-keys; routes wired in C7-04b-4; merge pending) | 0152, 0170, 0173 | 0035 (`sql/0035_owner_keys_by_session.sql`) | N |
+| C7-04b-4 | Owner API route wiring for agents, tokens and owner keys (split of C7-04b; PATCH not built, moved to C7-04e) | W2 | B | C7-04b-3 | Built (branch phase1/c7-04b5-wiring; pending merge into wave 3) | 0152, 0170, 0173 | none | N |
+| C7-04e | Owner API PATCH /agents/{playerId} for the two visibility flags, cookie session only (split of C7-04b; C7-06 depends on it) | W3 | B | C7-04b | Ready | 0173 | none | N |
+| C7-04c | Owner API body routes through the supervisor, log tail, retire (split of C7-04) | W3 | B | C7-04a, C7-03b1 | Blocked (needs C7-04a and C7-03b1 merged) | 0152, 0170, 0173 | none | N |
+| C7-04d | Bearer-driven token rotation and owner-key management (candidate; deferred from API v1 by 0173) | W2+ | B | C7-04b, C7-04b-3 | Candidate (not scheduled in Phase 1) | 0173 | yes, number at dispatch | N |
+| C7-03b4 | Body container spec mirrors the golem-body service (blocks enabling the supervisor service) | W3 | B | C7-03b3 | Built (commit b60522fd); live: pending | 0152 | none | N |
+| C7-06 | Account page v2 | W3 | C | C7-04b, C7-04e, C7-05 | Blocked (needs C7-04b, C7-04e and C7-05 merged) | none | none | N |
 | C7-13a | Skin upload API and held store | W3 | D | C7-04b, C7-12 | Waiting | 0172 | 0031 | N |
 | C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04a, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |
 | C7-07 | Agent rename | W3 | D | C7-04b, C7-06 | Waiting | none | 0028 | N |

@@ -20,8 +20,64 @@ export const CLEANUP_TIMEOUT_MS = 10_000;
 const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
 /** The network and log driver golem-body uses in compose/colo.yml (the `colo` network, json-file 10m x 3). */
 const COLO_NETWORK = 'geldar-colo';
-/** The uid and gid the compose file gives golem-body by default (GELDAR_SERVICE_UID). */
-const BODY_USER = '1000:1000';
+/** Where the Body reads its NATS password inside the container (compose golem-body's nats-body secret). */
+export const BODY_NATS_PASSWORD_FILE = '/run/secrets/nats-body.txt';
+/** The directory the Body reads its shard file from: `<dir>/<GELDAR_SHARD>.yaml` (compose golem-body). */
+export const BODY_SHARD_DIR = '/opt/geldar/shards';
+/** The Body's command in the image (compose golem-body's entrypoint, not the image default). */
+const BODY_ENTRYPOINT = ['node', 'src/adam/main.ts'];
+/** The Body does not use RCON; compose sets the port anyway, so the container does too. */
+const BODY_RCON_PORT = '25575';
+/** The labels compose puts on every colo service (x-labels): Watchtower opt-out and the stack name. */
+const COLO_LABELS = {
+  'com.centurylinklabs.watchtower.enable': 'false',
+  'com.geldar.stack': 'colo',
+} as const;
+/** The Body's Velocity opt-in for colo service names (decision 0131); compose sets it for golem-body. */
+const BODY_IN_NETWORK_HOSTS = '1';
+
+// The values a Body container needs that compose gives golem-body. Built from env at the composition
+// root (bodyWiringFromEnv); no hostname, address or secret is written in the code. The two host paths
+// are paths on the Docker host, since the Engine binds them, not paths in the supervisor's container.
+export interface BodyWiring {
+  /** GELDAR_SHARD, e.g. `colo`. Also names the shard file the Body reads. */
+  shard: string;
+  /** GELDAR_SERVICE_UID: the uid the Body runs as (user is `uid:uid`). Digits only. */
+  uid: string;
+  /** GELDAR_MC_HOST and GELDAR_MC_PORT: the Minecraft endpoint the Body talks to (Velocity). */
+  mcHost: string;
+  mcPort: string;
+  /** GELDAR_NATS_URL and GELDAR_NATS_USER. The password is read from the mounted secret file. */
+  natsUrl: string;
+  natsUser: string;
+  /** Host path of the nats-body secret file, bound read-only at BODY_NATS_PASSWORD_FILE. */
+  natsSecretHostPath: string;
+  /** Host path of the Mind's shard file, bound read-only at BODY_SHARD_DIR/<shard>.yaml. */
+  shardHostPath: string;
+}
+
+// Each env name is required except GELDAR_SERVICE_UID, which defaults to 1000 as in compose. A missing
+// value throws before any Engine call, so a Body without its NATS credentials is never created. The
+// error names the variable, never its value.
+export function bodyWiringFromEnv(env: Readonly<Record<string, string | undefined>>): BodyWiring {
+  const required = (name: string): string => {
+    const value = env[name];
+    if (value === undefined || value === '') throw new Error(`missing ${name}`);
+    return value;
+  };
+  const uid = env.GELDAR_SERVICE_UID ?? '1000';
+  if (!/^\d+$/.test(uid)) throw new Error('GELDAR_SERVICE_UID must be digits');
+  return {
+    shard: required('GELDAR_SHARD'),
+    uid,
+    mcHost: required('GELDAR_MC_HOST'),
+    mcPort: required('GELDAR_MC_PORT'),
+    natsUrl: required('GELDAR_NATS_URL'),
+    natsUser: required('GELDAR_NATS_USER'),
+    natsSecretHostPath: required('GELDAR_BODY_NATS_SECRET_HOST_PATH'),
+    shardHostPath: required('GELDAR_BODY_SHARD_HOST_PATH'),
+  };
+}
 
 export interface EngineReply {
   status: number;
@@ -84,26 +140,50 @@ function expect(reply: EngineReply, statuses: readonly number[], what: string): 
 
 // The Body container config for one spec (0082): NanoCpus and Memory from the limits, with the swap
 // equal to the memory so a body cannot swap past its limit. The rest mirrors golem-body's service in
-// compose/colo.yml: pids limit, network, user and log driver. CapDrop and no-new-privileges are the
+// compose/colo.yml: entrypoint, env, the two read-only binds (nats-body secret, shard file), user, labels,
+// pids limit, network, log driver and restart policy. CapDrop and no-new-privileges are the
 // orchestrator's ruling; golem-body does not set them, so this container is stricter than that service.
+// golem-body also depends on nats being healthy, which a container config cannot express. Not set here
+// either: read-only root filesystem and tmpfs, which golem-body does not set.
 export function containerBody(
   spec: BodySpec,
   image: string,
   loginName: string,
+  wiring: BodyWiring,
 ): Record<string, unknown> {
   return {
     Image: image,
-    User: BODY_USER,
+    User: `${wiring.uid}:${wiring.uid}`,
+    Entrypoint: BODY_ENTRYPOINT,
     // The login name keeps the player's exact case (0033). The container name stays lower-cased.
-    Env: [`GELDAR_LOGIN_NAME=${loginName}`],
-    Labels: { 'geldar.owner': spec.ownerId, 'geldar.player': spec.playerName.toLowerCase() },
+    Env: [
+      `GELDAR_LOGIN_NAME=${loginName}`,
+      `GELDAR_SHARD=${wiring.shard}`,
+      `GELDAR_IN_NETWORK_HOSTS=${BODY_IN_NETWORK_HOSTS}`,
+      `GELDAR_MC_HOST=${wiring.mcHost}`,
+      `GELDAR_MC_PORT=${wiring.mcPort}`,
+      `GELDAR_RCON_PORT=${BODY_RCON_PORT}`,
+      `GELDAR_NATS_URL=${wiring.natsUrl}`,
+      `GELDAR_NATS_USER=${wiring.natsUser}`,
+      `GELDAR_NATS_PASSWORD_FILE=${BODY_NATS_PASSWORD_FILE}`,
+    ],
+    Labels: {
+      ...COLO_LABELS,
+      'geldar.owner': spec.ownerId,
+      'geldar.player': spec.playerName.toLowerCase(),
+    },
     HostConfig: {
       NanoCpus: spec.config.NanoCpus,
       Memory: spec.config.Memory,
       MemorySwap: spec.config.MemorySwap,
       PidsLimit: spec.config.PidsLimit,
       NetworkMode: COLO_NETWORK,
+      Binds: [
+        `${wiring.natsSecretHostPath}:${BODY_NATS_PASSWORD_FILE}:ro`,
+        `${wiring.shardHostPath}:${BODY_SHARD_DIR}/${wiring.shard}.yaml:ro`,
+      ],
       LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+      RestartPolicy: { Name: 'unless-stopped' },
       CapDrop: ['ALL'],
       SecurityOpt: ['no-new-privileges:true'],
     },
@@ -113,6 +193,7 @@ export function containerBody(
 export function createDockerClient(
   socketPath: string,
   image: string,
+  wiring: BodyWiring,
   timeoutMs: number = ENGINE_TIMEOUT_MS,
 ): DockerClient {
   const call = (method: string, path: string, json?: unknown, signal?: AbortSignal) =>
@@ -148,7 +229,7 @@ export function createDockerClient(
       const reply = await call(
         'POST',
         `/containers/create?name=${encodeURIComponent(name)}`,
-        containerBody(spec, image, loginName),
+        containerBody(spec, image, loginName, wiring),
       );
       const json = JSON.parse(expect(reply, [201], 'create').body) as { Id: string };
       return json.Id;
