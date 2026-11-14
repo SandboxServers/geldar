@@ -319,7 +319,7 @@ describe('unstick action', () => {
       expect(await unstick(ctxOf(bot))).toMatchObject({ status: 'failed' });
       const lines = sink.mock.calls.map(([text]) => JSON.parse(text) as Record<string, unknown>);
       expect(lines.find((l) => l.reason === 'no_way_out')).toMatchObject({
-        tried: ['walk', 'dig_down', 'stair_dig', 'dig_sideways', 'dig_unowned'],
+        tried: ['walk', 'dig_down', 'stair_dig', 'dig_sideways', 'dig_up', 'dig_unowned'],
         health: 20,
         drops: expect.arrayContaining([{ dir: [1, 0], blocks: 7, lands: 'unsafe' }]),
       });
