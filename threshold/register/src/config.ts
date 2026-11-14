@@ -10,6 +10,8 @@ export interface RegisterConfig {
   /** Registration is off while this is true. The default is true (decision 0135 item 5). */
   readonly killSwitch: boolean;
   readonly publicUrl: string;
+  /** The MCP base shown on the onboarding page. Empty unless REGISTER_MCP_PUBLIC_URL is set; then it wins. */
+  readonly mcpPublicUrl: string;
   readonly host: string;
   readonly port: number;
   /** The Microsoft (Entra) app: client id from the environment, client secret from a file. */
@@ -101,9 +103,13 @@ export function loadConfig(
     throw new Error('REGISTER_SESSION_KEY must be at least 32 characters');
   const publicUrl = (env.REGISTER_PUBLIC_URL ?? '').replace(/\/+$/, '');
   if (!publicUrl.startsWith('https://')) throw new Error('REGISTER_PUBLIC_URL must be https');
+  const mcpPublicUrl = (env.REGISTER_MCP_PUBLIC_URL ?? '').replace(/\/+$/, '');
+  if (mcpPublicUrl !== '' && !mcpPublicUrl.startsWith('https://'))
+    throw new Error('REGISTER_MCP_PUBLIC_URL must be https');
   return {
     killSwitch: env.REGISTER_KILL_SWITCH !== 'false',
     publicUrl,
+    mcpPublicUrl,
     host: env.REGISTER_HOST ?? '127.0.0.1',
     port: intOf(env.REGISTER_PORT, 8090, 'REGISTER_PORT'),
     microsoft: {

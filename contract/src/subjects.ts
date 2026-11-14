@@ -108,3 +108,30 @@ export function maintenanceSubject(shard: string): string {
   if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
   return `geldar.${shard}.maintenance`;
 }
+
+/**
+ * The ops an owner's body control request may name. The supervisor's `OPS` (supervisor/src/ports.ts) is the
+ * same list; a test there keeps the two equal, since the contract cannot import the supervisor.
+ */
+export const CTL_BODY_OPS = ['start', 'stop', 'restart', 'status', 'logtail'] as const;
+
+/**
+ * Where an owner's body control request goes (decision 0152, item 3): `geldar.<shard>.ctl.body.<op>`.
+ * Five tokens, so outside the sink's `geldar.*.*` filter. Throws on a shard the contract rejects and on
+ * an op outside `CTL_BODY_OPS`.
+ */
+export function ctlBodySubject(shard: string, op: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  if (!(CTL_BODY_OPS as readonly string[]).includes(op))
+    throw new Error(`invalid control op for a subject: ${op}`);
+  return `geldar.${shard}.ctl.body.${op}`;
+}
+
+/**
+ * The supervisor's subscription to every body control op of one shard: `geldar.<shard>.ctl.body.>`.
+ * Throws on a shard name the contract rejects.
+ */
+export function ctlBodyWildcard(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.ctl.body.>`;
+}

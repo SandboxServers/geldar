@@ -402,6 +402,7 @@ services:
       REGISTER_KILL_SWITCH: "${REGISTER_KILL_SWITCH:-true}"
       # The public URL is a deploy value (the register host); the repo holds a placeholder only.
       REGISTER_PUBLIC_URL: "${REGISTER_PUBLIC_URL:-https://register.example.invalid}"
+      REGISTER_MCP_PUBLIC_URL: "${REGISTER_MCP_PUBLIC_URL:-}"
       # 0.0.0.0 inside the container; the port is published on loopback alone.
       REGISTER_HOST: 0.0.0.0
       REGISTER_PORT: "8090"
