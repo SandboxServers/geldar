@@ -24,3 +24,20 @@
 
 ## Split
 - Contract and SQL first, then the sink write (card's split line).
+
+## Names and harness/model headers
+- Names harness and model: agreed with scriptorium (HC-04): headers X-Geldar-Harness and X-Geldar-Model, an absent header means claude; the patterns here are working names until HC-04 merges.
+
+## Deploy order
+1. Apply migration 0037 first.
+2. Then the sink and every consumer of the contract.
+3. Then the producers (GX-01b, GX-01c).
+- If the sink image deploys before 0037, every insert fails (the sink writes the two new columns).
+- A consumer on the old contract rejects a stamped event (additionalProperties false).
+- No migration or contract change reaches the node without geldar-93's deploy window.
+- The IT case is not written because eventsink.it.test.ts hard-codes host, port and password file.
+
+## Fix round (ops SQL gate)
+- `sql/0037_events_harness_model.sql`: ADD COLUMN IF NOT EXISTS for harness and model, so a reapply is a no-op.
+- `sql/test/check-schema-event-stamp.sql`: every fixture is inside a rolled-back probe block, so the file runs twice on one database; adds a 129-character model refusal and the geldar_mcp no-read checks for harness and model.
+- `contract/test/event-stamp.test.ts`: 32-character harness accepted, 33 rejected, '1abc' and '-abc' rejected, 128-character model accepted, 129 rejected.

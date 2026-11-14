@@ -33,11 +33,38 @@ describe('event envelope harness and model stamp', () => {
     expect(result.errors.some((error) => error.includes('/harness'))).toBe(true);
   });
 
+  it('accepts a 32-character harness', () => {
+    const harness = `a${'b'.repeat(31)}`;
+    expect(harness).toHaveLength(32);
+    expect(validateWorldEvent({ ...base, harness }).ok).toBe(true);
+  });
+
+  it('rejects a 33-character harness', () => {
+    const result = validateWorldEvent({ ...base, harness: 'a'.repeat(33) });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a harness that starts with a digit', () => {
+    const result = validateWorldEvent({ ...base, harness: '1abc' });
+    expect(result.ok).toBe(false);
+  });
+
+  it('rejects a harness that starts with a hyphen', () => {
+    const result = validateWorldEvent({ ...base, harness: '-abc' });
+    expect(result.ok).toBe(false);
+  });
+
   it('rejects an empty model and names the path', () => {
     const result = validateWorldEvent({ ...base, model: '' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.errors.some((error) => error.includes('/model'))).toBe(true);
+  });
+
+  it('accepts a 128-character model', () => {
+    const model = `m${'a'.repeat(127)}`;
+    expect(model).toHaveLength(128);
+    expect(validateWorldEvent({ ...base, model }).ok).toBe(true);
   });
 
   it('rejects a model longer than 128 characters', () => {
