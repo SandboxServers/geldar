@@ -6,7 +6,18 @@ export interface ProviderCredentials {
   readonly clientSecret: string;
 }
 
+/** The register's NATS link for the body routes (C7-04c2). The password is read from a file, never from the environment. */
+export interface RegisterNats {
+  readonly url: string;
+  readonly user: string;
+  readonly password: string;
+  /** The reply wait of one supervisor request, in milliseconds. */
+  readonly timeoutMs: number;
+}
+
 export interface RegisterConfig {
+  /** Null when NATS is not configured: the body routes then stay unmounted (404) and the service starts normally. */
+  readonly nats: RegisterNats | null;
   /** Registration is off while this is true. The default is true (decision 0135 item 5). */
   readonly killSwitch: boolean;
   readonly publicUrl: string;
@@ -82,6 +93,34 @@ function trustedPeerList(raw: string): string[] {
 }
 
 /**
+ * The NATS link (C7-04c2): the URL, the user and the password file must all be set, or NATS is off. A partial setting
+ * or an unreadable or empty password file gives null and never fails the start. A set URL that is not nats:// is refused.
+ */
+function natsOf(
+  env: Readonly<Record<string, string | undefined>>,
+  readSecret: (path: string) => string,
+): RegisterNats | null {
+  const url = env.REGISTER_NATS_URL ?? '';
+  const user = env.REGISTER_NATS_USER ?? '';
+  const passwordFile = env.REGISTER_NATS_PASSWORD_FILE ?? '';
+  if (url === '' || user === '' || passwordFile === '') return null;
+  if (!url.startsWith('nats://')) throw new Error('REGISTER_NATS_URL must be nats://');
+  let password: string;
+  try {
+    password = readSecret(passwordFile).trim();
+  } catch {
+    return null;
+  }
+  if (password === '') return null;
+  return {
+    url,
+    user,
+    password,
+    timeoutMs: intOf(env.REGISTER_NATS_TIMEOUT_MS, 5000, 'REGISTER_NATS_TIMEOUT_MS'),
+  };
+}
+
+/**
  * Reads the config from an environment map. A secret is read from the file named by
  * `<NAME>_FILE`. Only the exact string `false` turns the kill switch off.
  */
@@ -107,6 +146,7 @@ export function loadConfig(
   if (mcpPublicUrl !== '' && !mcpPublicUrl.startsWith('https://'))
     throw new Error('REGISTER_MCP_PUBLIC_URL must be https');
   return {
+    nats: natsOf(env, readSecret),
     killSwitch: env.REGISTER_KILL_SWITCH !== 'false',
     publicUrl,
     mcpPublicUrl,
