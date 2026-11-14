@@ -39,3 +39,23 @@ describe('jsonString parity: animus and player-core copies', () => {
     });
   }
 });
+
+const GENEROUS_CAP = 10_000;
+
+/** Every code point from U+0000 to U+10FFFF, lone surrogates built with fromCharCode. */
+function codePointString(cp: number): string {
+  return cp >= 0xd800 && cp <= 0xdfff ? String.fromCharCode(cp) : String.fromCodePoint(cp);
+}
+
+describe('jsonString parity: every code point', () => {
+  it('agrees on each one-character input from U+0000 to U+10FFFF at a generous cap', () => {
+    const mismatches: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      const value = codePointString(cp);
+      const want = animusJsonString(value, GENEROUS_CAP);
+      const got = playerCoreJsonString(value, GENEROUS_CAP);
+      if (got !== want) mismatches.push(`U+${cp.toString(16).toUpperCase()}: ${got} != ${want}`);
+    }
+    expect(mismatches).toEqual([]);
+  }, 120_000);
+});

@@ -28,8 +28,8 @@ now a deprecated `export *` stub so existing imports keep working. Nothing was d
 
 ## Deviations from the brief
 
-- `threshold/mcp/package.json`: `@geldar/player-core` moved from devDependencies to dependencies; devDependencies
-  now has `@geldar/animus` (workspace:*) for the parity test only. Not a runtime dependency.
+- `threshold/mcp/package.json`: `@geldar/player-core` replaced `@geldar/animus` in dependencies; `@geldar/animus`
+  (workspace:*) moved to devDependencies for the parity test only. Not a runtime dependency.
 - `threshold/mcp/src/container.test.ts`: `'player-core'` added to the `workspaceDirs` list (the closure walk
   failed with "imports an unknown workspace package" without it). Lines 64-65 now name
   `player-core/package.json` and `player-core/src/validate/index.ts`.
@@ -51,8 +51,9 @@ now a deprecated `export *` stub so existing imports keep working. Nothing was d
 - Typecheck: `player-core`, `animus`, `threshold/mcp` clean.
 - `pnpm test player-core`: 5 files, 38 passed.
 - `pnpm test animus`: 42 files passed, 2 skipped; 469 passed, 5 skipped. Baseline 505 passed, 5 skipped; the
-  36 tests in the four moved files account for the difference exactly. Expected file count was 41 (45 - 4);
-  the extra file is unconfirmed.
+  The four moved test files hold 37 tests; animus loses 37 and gains the 1 no-animus test, net 36, which is the
+  difference exactly. Animus has 42 files because `no-animus.test.ts` matches the `animus` path filter; the
+  expected 41 was a miscount (45 - 4 ignored that file), not an unconfirmed item.
 - `pnpm test threshold/mcp`: 147 files passed, 9 skipped; 1423 passed, 55 skipped. Baseline 1407 passed, 55 skipped;
   the +16 is `json-string-parity.test.ts` (16 tests).
 - `pnpm check:repo`: repo checks ok.
@@ -66,5 +67,5 @@ now a deprecated `export *` stub so existing imports keep working. Nothing was d
 
 ## Open items
 
-- None blocking. Unconfirmed: the lint warning count against baseline, and the animus file count (42 vs 41).
+- None blocking. Unconfirmed: the lint warning count against baseline.
 - Not run: live lane (not requested).
