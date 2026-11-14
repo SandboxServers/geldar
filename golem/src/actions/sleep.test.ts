@@ -2,7 +2,13 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import { classifySleepError, isNightOrStorm, sleepAction, sleepErrorText } from './sleep.ts';
+import {
+  classifySleepError,
+  isNightOrStorm,
+  sleepAction,
+  sleepErrorText,
+  sleepFailure,
+} from './sleep.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
@@ -107,7 +113,7 @@ describe('classifySleepError', () => {
     expect(classifySleepError('cant click that')).toBe('blocked');
     expect(classifySleepError('not night')).toBe('not_possible');
     expect(classifySleepError('You are already sleeping')).toBe('not_possible');
-    expect(classifySleepError('something else')).toBe('internal');
+    expect(classifySleepError('something else')).toBe('not_possible');
   });
 
   it('maps the Mineflayer and server texts of each failure to its reason', () => {
@@ -121,6 +127,34 @@ describe('classifySleepError', () => {
     expect(classifySleepError('the bed is too far')).toBe('out_of_reach');
     expect(classifySleepError('the bed is occupied')).toBe('blocked');
     expect(classifySleepError('This bed is obstructed')).toBe('blocked');
+  });
+});
+
+describe('sleepFailure: an unknown sleep text (batch 14)', () => {
+  it('reads an unrecognised server text as not_possible, keeps the text and logs it', () => {
+    const lines: string[] = [];
+    const outcome = sleepFailure('Server says no thanks', {
+      log: (line) => lines.push(line),
+      now: () => 0,
+    });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'Server says no thanks',
+    });
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      { event: 'sleep_reason_unknown', message: 'Server says no thanks' },
+    ]);
+  });
+
+  it('a known sleep text keeps its reason and logs nothing', () => {
+    const lines: string[] = [];
+    const outcome = sleepFailure('Bed is occupied', {
+      log: (line) => lines.push(line),
+      now: () => 0,
+    });
+    expect(outcome).toMatchObject({ reason: 'blocked', message: 'the bed is occupied' });
+    expect(lines).toEqual([]);
   });
 });
 

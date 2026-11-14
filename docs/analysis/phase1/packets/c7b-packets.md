@@ -115,3 +115,13 @@ Carry-forward from the wave 1 review (review-5, 2026-11-13). Apply in this packe
 - **Tests (each fails on revert).** The form has a labelled file input, an `enctype` of multipart and the CSRF field; another owner's agent's skin status never appears (two-owner fixture); a rejected row shows the code text and never an operator note; the re-upload wait text shows the right time at the boundary; no inline script or style; an admin owner sees the same page and the same "held for approval" text. Revert: show the note field; the leak test fails.
 - **checks.** Register tests, `./geldar.ps1 check`.
 - **size.** S.
+
+## C7-13d: players-cli palette-to-RGBA conversion for skin set/import
+
+- **id / wave / lane.** C7-13d, wave 3. **depends-on.** none. **branch.** `phase1/c7-13d-palette-rgba`. **migration.** none. **Status.** Candidate (not scheduled; requested by geldar-93 on 2026-11-13).
+- **Goal.** `skin set` takes a palette PNG (colour type 3, with PLTE and optional tRNS, 1, 2, 4 or 8 bits) and a 64x32 palette PNG, decodes it with the existing `decodeSkinPng` in `tools/players-cli/src/png-decode.ts`, and re-encodes the pixels as 8-bit RGBA before the upload checks. A 64x32 skin stays 64x32. A corrupt PNG is refused with the existing `SkinFileError` text (no new error text). `skin import` keeps its signed-JSON input and is unchanged unless the card's review finds a PNG path in it. The runbook's "Uploading a palette or legacy PNG" section names the verb.
+- **may-edit.** `tools/players-cli/src/png.ts`, `tools/players-cli/src/png-decode.ts`, a new `tools/players-cli/src/png-rgba.ts` (encoder, if needed) and their tests, `tools/players-cli/src/cli.ts` (only the `skin set` path), `docs/runbooks/skins.md` (the conversion note only), `docs/analysis/phase1/worknotes/C7-13d.md`.
+- **must-not-edit.** `threshold/register/`, `compose/`, `contract/`, `docs/spec.md`, `skins/`; no PNG or signed value in any repo file.
+- **Tests (each fails on revert).** A palette PNG with tRNS converts to RGBA with the transparent entries at alpha 0 and then passes `validateSkinPng`; a 64x32 palette PNG converts and stays 64x32 (the size check is the boundary); a corrupt PNG (bad CRC, truncated, or an index past the palette) is refused with the existing `SkinFileError` text; a palette PNG with an extra chunk after conversion is still refused by the chunk rule; the conversion never writes the source file. Revert: skip the conversion in `skin set`; the palette test fails with `the skin must be 8-bit RGB or RGBA`.
+- **checks.** `./geldar.ps1 pnpm --filter @geldar/players-cli test`, typecheck, `./geldar.ps1 check`. No live lane.
+- **size.** S.

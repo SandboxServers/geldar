@@ -38,7 +38,7 @@ function attackerOf(cause: unknown, selfId: number | undefined): Point | null {
 /**
  * Passes each loss of the Body's health to `reporter`, with `tick` as the world age. An `entityHurt` on
  * the Body sets the attacker for the next health drop only; a drop with no such event, or with a cause
- * that is not a hostile mob or a player, is a hurt with no known cause (`other`, no bearing). Returns
+ * that names no entity other than the Body, is a hurt with no known cause (`other`, no bearing). Returns
  * the detach function.
  */
 export function watchHurts(bot: Bot, reporter: HurtReporter, tick: () => number): () => void {
