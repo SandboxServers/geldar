@@ -117,4 +117,48 @@ describe('ownership counters (decision 0217)', () => {
     vi.advanceTimersByTime(OWNERSHIP_LOG_INTERVAL_MS * 2);
     expect(lines).toEqual([]);
   });
+
+  it('the interval is 60000 ms: no line at 59_999 ms, exactly one at 60_000 ms', () => {
+    const lines: string[] = [];
+    const counters = startOwnershipCounters({ diag: sink(lines) });
+    counters.lookup(false);
+    vi.advanceTimersByTime(59_999);
+    expect(lines).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(lines).toHaveLength(1);
+    expect(parse(lines[0]).interval_ms).toBe(60000);
+    counters.stop();
+  });
+
+  it('total and interval carry exactly the documented counts, no other keys', () => {
+    const lines: string[] = [];
+    const counters = startOwnershipCounters({ diag: sink(lines) });
+    counters.lookup(true);
+    counters.settled('answered', 4);
+    vi.advanceTimersByTime(OWNERSHIP_LOG_INTERVAL_MS);
+    const documented = [
+      'answered',
+      'avg_latency_ms',
+      'cache_hits',
+      'errors',
+      'lookups',
+      'max_latency_ms',
+      'queries',
+      'truncated',
+      'unknown',
+    ];
+    const line = parse(lines[0]);
+    expect(Object.keys(line.total).sort()).toEqual(documented);
+    expect(Object.keys(line.interval).sort()).toEqual(documented);
+    counters.stop();
+  });
+
+  it('the timer is unref-ed, so a live Body does not hold the process open', () => {
+    const spy = vi.spyOn(globalThis, 'setInterval');
+    const counters = startOwnershipCounters({ diag: sink([]) });
+    const handle = spy.mock.results[0]?.value;
+    expect(handle?.hasRef()).toBe(false);
+    counters.stop();
+    spy.mockRestore();
+  });
 });
