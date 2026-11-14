@@ -135,6 +135,99 @@ describe('PgStore error mapping', () => {
   });
 });
 
+describe('PgStore listPlayers flags (F3)', () => {
+  const identity = 'ab'.repeat(32);
+  const players = [
+    { player_id: 'ag-a-01', display_name: 'A', harness: 'claude-code', status: 'live' },
+    { player_id: 'ag-b-01', display_name: 'B', harness: 'claude-code', status: 'live' },
+  ];
+
+  /** A pool that answers each statement by its name, and keeps every statement with its values. */
+  function listStore(
+    owner: unknown[],
+    flags: unknown[],
+  ): { store: PgStore; calls: Array<{ text: string; values: unknown[] }> } {
+    const calls: Array<{ text: string; values: unknown[] }> = [];
+    const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1' });
+    (store as unknown as { pool: unknown }).pool = {
+      query: async (text: string, values: unknown[]) => {
+        calls.push({ text, values });
+        if (text.includes('register_list_players')) return { rows: players };
+        if (text.includes('register_find_owner')) return { rows: owner };
+        return { rows: flags };
+      },
+    };
+    return { store, calls };
+  }
+
+  it('reads the players, then the owner, then the flags keyed by the owner id', async () => {
+    const { store, calls } = listStore([{ owner_id: 'o1', banned: false }], []);
+    await store.listPlayers(identity);
+    expect(calls.map((c) => c.text.match(/register_\w+/)?.[0])).toEqual([
+      'register_list_players',
+      'register_find_owner',
+      'register_owner_list_players',
+    ]);
+    expect(calls[2]?.values).toEqual(['o1']);
+  });
+
+  it('maps each flag to its own field, and a player with no flag row to false', async () => {
+    const { store } = listStore(
+      [{ owner_id: 'o1', banned: false }],
+      [
+        { player_id: 'ag-a-01', public_camera: false, thoughts_delayed_public: true },
+        { player_id: 'ag-b-01', public_camera: true, thoughts_delayed_public: false },
+      ],
+    );
+    expect(await store.listPlayers(identity)).toEqual([
+      {
+        playerId: 'ag-a-01',
+        name: 'A',
+        harness: 'claude-code',
+        status: 'live',
+        publicCamera: false,
+        thoughtsDelayedPublic: true,
+      },
+      {
+        playerId: 'ag-b-01',
+        name: 'B',
+        harness: 'claude-code',
+        status: 'live',
+        publicCamera: true,
+        thoughtsDelayedPublic: false,
+      },
+    ]);
+    const { store: missing } = listStore([{ owner_id: 'o1', banned: false }], []);
+    expect((await missing.listPlayers(identity)).map((p) => p.publicCamera)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
+  it('skips the flag query for a banned owner: every flag reads false', async () => {
+    const { store, calls } = listStore(
+      [{ owner_id: 'o1', banned: true }],
+      [{ player_id: 'ag-a-01', public_camera: true, thoughts_delayed_public: true }],
+    );
+    const rows = await store.listPlayers(identity);
+    expect(calls.some((c) => c.text.includes('register_owner_list_players'))).toBe(false);
+    expect(rows.map((p) => [p.publicCamera, p.thoughtsDelayedPublic])).toEqual([
+      [false, false],
+      [false, false],
+    ]);
+  });
+
+  it('skips the flag query when no owner is found: every flag reads false', async () => {
+    const { store, calls } = listStore(
+      [],
+      [{ player_id: 'ag-a-01', public_camera: true, thoughts_delayed_public: true }],
+    );
+    const rows = await store.listPlayers(identity);
+    expect(calls.some((c) => c.text.includes('register_owner_list_players'))).toBe(false);
+    expect(rows.every((p) => !p.publicCamera && !p.thoughtsDelayedPublic)).toBe(true);
+  });
+});
+
 const owner = { identityHash: 'ab'.repeat(32), provider: 'github', display: 'd' };
 
 /**

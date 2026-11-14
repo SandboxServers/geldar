@@ -9,12 +9,13 @@ const form = (action: string, csrf: string, inner: string): string =>
   `<form method="post" action="${esc(action)}"><input type="hidden" name="csrf" value="${esc(csrf)}">${inner}</form>`;
 
 /**
- * The Glass and Kino links of one agent (0138, 0139). Glass shows when the owner has the delayed public thoughts
- * flag on, Kino when the public camera flag is on. The links carry no agent id, so no agent data leaves the page.
+ * The Glass and Kino links of one agent (0138 rule 1, 0075). The owner sees every agent they own that is not retired,
+ * whatever the visibility flags say, so both links show for every non-retired agent. The links carry no agent id, so
+ * no agent data leaves the page. The Kino link leads to a 404 on a host where Kino is off (GELDAR_KINO_ENABLED); the
+ * register does not read that flag.
  */
 const viewLinks = (p: PlayerRow): string =>
-  (p.thoughtsDelayedPublic ? '<a href="/">View in Glass</a>' : '') +
-  (p.publicCamera ? '<a href="/kino/">View in Kino</a>' : '');
+  p.status === 'retired' ? '' : '<a href="/">View in Glass</a><a href="/kino/">View in Kino</a>';
 
 export function accountPage(
   players: readonly PlayerRow[],
