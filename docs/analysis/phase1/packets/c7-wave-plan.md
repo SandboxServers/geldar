@@ -87,16 +87,16 @@ The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-
 
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|
-| 1 | C7-03b2 compose service, deploy script, budget, runbook (before any live use; geldar-93 MERGE/DONE; waiting for geldar-93's plan; the card adds the `PASSWORD_ROLES` change for runbook step 2) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
-| 1 | C7-14b owner admin verbs in the operator wrappers (`owner-admin` in admin.sh and colo-admin.sh; idempotent `owner-add`; deploy tests; packets/C7-14b.md) | C7-14, C7-12 | `phase1/c7-14b-owner-admin-verbs` | none | S |
+| 1 | C7-03b2 compose service, deploy script, budget, runbook (shelved until sign-up opens; the owner decides whether human-registered agents get a managed Body and where it runs; kit players do not use the supervisor; the card adds the `PASSWORD_ROLES` change for runbook step 2) | C7-03b1, C7-03b3 | `phase1/c7-03b2-compose-deploy` | none | M |
+| 1 | C7-14b owner admin verbs in the operator wrappers (`owner-admin` in admin.sh and colo-admin.sh; idempotent `owner-add`; deploy tests; packets/C7-14b.md; built and merged in #359, 2026-11-14 18:29Z) | C7-14, C7-12 | `phase1/c7-14b-owner-admin-verbs` | none | S |
 | 1 | C7-03b4 Body container spec (c7e-packets.md; blocks enabling the supervisor service) | C7-03b3 | `phase1/c7-03b4-body-spec` | none | S |
-| 1 | C7-04c body routes (start, stop, restart, status, log through the supervisor; built; retire split to C7-04d, wiring to C7-04c2) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
-| 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; Ready after C7-04c2 merges) | C7-04c, C7-04c2 | `phase1/c7-04d-retire` | none | S |
-| 1 | C7-04c2 body routes production wiring: NATS connection, mounting, server.ts and main.ts (split of C7-04c; Ready (C7-04c is merged)) | C7-04c | `phase1/c7-04c2-wiring` | none | S |
-| 1 | C7-04e PATCH /agents/{playerId} visibility flags (split of C7-04b; cookie only) | C7-04b | `phase1/c7-04e-agent-patch` | none | S |
-| 1 | C7-06 account page v2 (built, partial) | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
-| 1 | C7-06b account page view links and HTML error pages (split of C7-06, built on the same branch) | C7-06 | `phase1/c7-06-account-page-v2` | none | built |
-| 4 | C7-06c account page v2 items not delivered by C7-06 and C7-06b (status and token lines, body buttons, visibility toggles; buttons wait for C7-04c2) | C7-06, C7-04c2, C7-04e | `phase1/c7-06c-account-items` | none | M |
+| 1 | C7-04c body routes (start, stop, restart, status, log through the supervisor; built and merged in #346, window A; retire split to C7-04d, wiring to C7-04c2) | C7-04a, C7-03b1 | `phase1/c7-04c-body-routes` | none | M |
+| 1 | C7-04d retire route, POST /agents/{playerId}/retire (split of C7-04c; Ready, since C7-04c2 is merged) | C7-04c, C7-04c2 | `phase1/c7-04d-retire` | none | S |
+| 1 | C7-04c2 body routes production wiring: NATS connection, mounting, server.ts and main.ts (split of C7-04c; built and merged in #358, 2026-11-14 18:23Z; inert unless REGISTER_NATS_* is set, unconfigured gives 404) | C7-04c | `phase1/c7-04c2-wiring` | none | S |
+| 1 | C7-04e PATCH /agents/{playerId} visibility flags (split of C7-04b; cookie only; built and merged in #346, window A) | C7-04b | `phase1/c7-04e-agent-patch` | none | S |
+| 1 | C7-06 account page v2 (built partial, merged in #346) | C7-04b, C7-04e, C7-05 | `phase1/c7-06-account-page-v2` | none | M |
+| 1 | C7-06b account page view links and HTML error pages (split of C7-06, built partial on the same branch, merged in #346) | C7-06 | `phase1/c7-06-account-page-v2` | none | built |
+| 4 | C7-06c account page v2 items not delivered by C7-06 and C7-06b (status and token lines, body buttons, visibility toggles; Ready, since C7-04c2 and C7-04e are merged) | C7-06, C7-04c2, C7-04e | `phase1/c7-06c-account-items` | none | M |
 | 1 | C7-13a skin upload API and held store | C7-04b, C7-12 | `phase1/c7-13a-skin-upload-api` | 0031 | L |
 | 1 | C7-10 operator console, ban reasons (confirm the C7-04 part at dispatch) | C7-03a, C7-04a, C7-12 | `phase1/c7-10-operator-console` | 0030 | M |
 | 2 | C7-07 agent rename (after C7-06 merges; it edits the account page rename form; the PATCH route, moved from C7-04b to C7-04e, stays rename-free) | C7-04b, C7-06 | `phase1/c7-07-agent-rename` | 0028 | S |
@@ -111,11 +111,11 @@ Live lane: the account page on the node (C7-06), looked at on a phone width.
 | 1 | C7-09 deletion and export (register lane) | C7-02b, C7-03b2, C7-13a | `phase1/c7-09-deletion-export` | 0029 | L |
 | 1 | C7-13c skin form on the account page (pair with C7-09, disjoint files) | C7-06, C7-13a | `phase1/c7-13c-skin-form` | none | S |
 | 2 | C7-11 sign-up gate (not a code packet beyond the config check) | C7-05, C7-06, C7-09, C7-13c, owner | `phase1/c7-11-signup-gate` | none | S |
-| CF | CF-1 (CF-W4-1) split `body.test.ts` before C7-04c2 or C7-04d adds to it | C7-04c | not assigned | none | S |
-| CF | CF-2 (CF-W4-2) PATCH write order for two turn-ons, thoughts first | C7-04e | not assigned | none | S |
-| CF | CF-3 (CF-W4-3) owner id returned by the owner-agent SQL functions; loader guard made real | C7-04b | not assigned | needs a number via decision-number-registry | M |
-| CF | CF-4 (CF-W4-4) fetch-metadata check on `GET /register/onboarding` (wave 1/2 code, C7-05) | C7-05 | not assigned | none | S |
-| CF | CF-5 (CF-W4-5) `__Host-` prefix for `gr_session` and `gr_state` (wave 1/2 code; Low to Medium, recommended before sign-up opens) | none | not assigned | none | M |
+| CF | CF-1 (CF-W4-1) split `body.test.ts` before more tests land in it (C7-04c2 is merged; C7-04d adds to it) | C7-04c | scheduled later | none | S |
+| CF | CF-2 (CF-W4-2) PATCH write order for two turn-ons, thoughts first | C7-04e | scheduled later | none | S |
+| CF | CF-3 (CF-W4-3) owner id returned by the owner-agent SQL functions; loader guard made real | C7-04b | scheduled later | needs a number via decision-number-registry | M |
+| CF | CF-4 (CF-W4-4) fetch-metadata check on `GET /register/onboarding` (wave 1/2 code, C7-05) | C7-05 | scheduled later | none | S |
+| CF | CF-5 (CF-W4-5) `__Host-` prefix for `gr_session` and `gr_state` (wave 1/2 code; Low to Medium, recommended before sign-up opens) | none | scheduled later; recommended before sign-up opens | none | M |
 
 Wave 4 is three code packets plus the gate, because C7-09 and C7-13b are long. Live lane: one real MineSkin generation for an approved test upload (C7-13b, owner's key, one call) and the login that shows the skin; the deletion check (C7-09) on the node. The owner reviews the erasure rule (0171) and decides to open sign-up.
 
