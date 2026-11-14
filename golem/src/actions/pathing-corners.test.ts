@@ -94,6 +94,13 @@ describe('ensurePathfinder wiring', () => {
     const given = setMovements.mock.calls[0]?.[0] as { getMoveDiagonal: unknown };
     expect(given.getMoveDiagonal).not.toBe(Movements.prototype.getMoveDiagonal);
   });
+
+  it('sets tier 1 liquidCost to 3, so a walk prefers dry ground to a wet cell', () => {
+    const { bot, setMovements } = pathfinderBot({});
+    ensurePathfinder(bot);
+    const given = setMovements.mock.calls[0]?.[0] as { liquidCost: number };
+    expect(given.liquidCost).toBe(3);
+  });
 });
 
 describe('corner rule on real Movements', () => {
