@@ -12,6 +12,22 @@ export function handSeconds(block: Block | null): number {
   return Math.max(0.5, 5 * (typeof hardness === 'number' ? hardness : 0));
 }
 
+/** A harvest tool digs a block in about a fifth of the hand estimate: a deliberately low divisor (conservative). */
+const TOOL_DIVISOR = 5;
+
+/**
+ * Seconds one dig of `block` may spend (decision 0210). The hand estimate, unless `bestHarvestTool`, the
+ * tool `dig()` equips for the block, has one: then the hand estimate over `TOOL_DIVISOR` (at least 0.5 s).
+ */
+export function digSeconds(bot: Bot, block: Block | null): number {
+  const hand = handSeconds(block);
+  if (block === null || hand === 0) return hand;
+  const pathfinder = (
+    bot as unknown as { pathfinder?: { bestHarvestTool?: (b: Block) => unknown } }
+  ).pathfinder;
+  return pathfinder?.bestHarvestTool?.(block) ? Math.max(0.5, hand / TOOL_DIVISOR) : hand;
+}
+
 /**
  * Hand-dig time one stair step, sideways dig or upward climb may spend (decision 0183). The action's 30 s
  * limit covers this plus the walks and waits around it. A step that would need more is refused before
@@ -115,7 +131,7 @@ function planStep(bot: Bot, feet: Vec3, dir: Vec3): Step | string | null {
     const refusal = cellRefusal(bot, block, cell, own);
     if (refusal) return refusal;
     cells.push({ cell, block });
-    cost += handSeconds(block);
+    cost += digSeconds(bot, block);
   }
   return { dir, cells, cost };
 }

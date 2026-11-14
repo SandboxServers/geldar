@@ -23,7 +23,7 @@ import {
   planMoves,
   scanDrop,
 } from './unstick-plan.ts';
-import { ACTION_LIMIT_S, DIG_BUDGET_S, digUp, handSeconds, timeLeftS } from './unstick-up.ts';
+import { ACTION_LIMIT_S, DIG_BUDGET_S, digSeconds, digUp, timeLeftS } from './unstick-up.ts';
 
 export type { Drop, Move } from './unstick-plan.ts';
 export {
@@ -125,8 +125,8 @@ async function dig(
  * Hand-dig time one step may spend: at most `DIG_BUDGET_S`, and the step must end inside the call's 30 s
  * limit counted from `started` (decision 0210). The walks and digs already spent are not free again.
  */
-function digTimeFits(blocks: readonly (Block | null)[], started: number): boolean {
-  const cost = blocks.reduce((sum, block) => sum + handSeconds(block), 0);
+function digTimeFits(bot: Bot, blocks: readonly (Block | null)[], started: number): boolean {
+  const cost = blocks.reduce((sum, block) => sum + digSeconds(bot, block), 0);
   return cost <= DIG_BUDGET_S && cost <= timeLeftS(started);
 }
 
@@ -189,7 +189,7 @@ function handFirst(bot: Bot, feet: Vec3, dirs: readonly Vec3[]): Vec3[] {
 }
 
 /** Digs the soft block under the feet when the fall that follows is allowed. `elevated` demands a drop below it. */
-async function digDown(
+export async function digDown(
   bot: Bot,
   signal: AbortSignal,
   feet: Vec3,
@@ -204,7 +204,7 @@ async function digDown(
   if (elevated && below.blocks === 0 && below.lands === 'solid') return false;
   const drop: Drop = { blocks: below.blocks + 1, lands: below.lands };
   if (!digDownAllowed(bot.health ?? 20, drop)) return false;
-  if (!digTimeFits([block], started)) return false;
+  if (!digTimeFits(bot, [block], started)) return false;
   return dig(bot, signal, block, floor, relaxed);
 }
 
@@ -213,7 +213,7 @@ async function digDown(
  * so the bot walks in and lands `STAIR_STEP` lower. The block under the landing must be solid (not
  * water, lava or a void), or the step is refused.
  */
-async function digStair(
+export async function digStair(
   bot: Bot,
   signal: AbortSignal,
   feet: Vec3,
@@ -228,6 +228,7 @@ async function digStair(
     return false;
   if (
     !digTimeFits(
+      bot,
       blocks.map(({ block }) => block),
       started,
     )
@@ -266,6 +267,7 @@ async function digSideways(
   if (!blocks.some(({ cell, block }) => digsCell(bot, block, cell, relaxed))) return false;
   if (
     !digTimeFits(
+      bot,
       blocks.map(({ block }) => block),
       started,
     )
@@ -327,7 +329,7 @@ function escapePoints(feet: Vec3): Vec3[] {
  * `unstick` calls it, after every other way out failed; `goto` never reaches it. Returns true when a dig
  * freed the bot. `digs` is the count the earlier strategies already spent against `MAX_DIGS`.
  */
-async function lastResortDig(
+export async function lastResortDig(
   ctx: ActionContext,
   where: () => Vec3,
   digs: number,
@@ -463,6 +465,6 @@ const HINT = 'you are free; look around and use goto again';
 /** The `unstick` verb: see `unstick`. */
 export const unstickAction: ActionHandler<'unstick'> = {
   kind: 'unstick',
-  timeoutMs: 30_000,
+  timeoutMs: ACTION_LIMIT_S * 1000,
   run: (ctx) => unstick(ctx),
 };

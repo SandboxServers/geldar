@@ -19,6 +19,7 @@ import {
   watchPathEvents,
 } from './stall-diag.ts';
 import {
+  createWallArm,
   ESCALATE_AFTER_REPLANS,
   type EscalateTrigger,
   escalateLine,
@@ -359,6 +360,7 @@ export function moveNear(
     let replans = 0;
     /** Replans since the Body last moved: identical replans on one spot (decision 0210). */
     let stuckReplans = 0;
+    const wallArm = createWallArm();
     let partial = false;
     let generation = 0;
     let escaping = false;
@@ -645,7 +647,8 @@ export function moveNear(
       } else if (
         !youngDig &&
         replans < MAX_REPLANS &&
-        bot.time.age - replanAge >= REPLAN_STALL_TICKS
+        (bot.time.age - replanAge >= REPLAN_STALL_TICKS ||
+          wallArm.due(stuckReplans, lastMovedAge, sink.now() - lastMovedAt))
       ) {
         // Identical replans have not moved the Body: the ladder runs in place of the next one, and a
         // refused ladder (door, MAX_LADDERS) leaves the replan as it was (decision 0210).

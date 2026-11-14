@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { block, type Scene, scriptedBot } from './escape-ladder.fakes.ts';
 import { MAX_REPLANS, moveNear } from './pathing.ts';
 import { setOwnerLookup } from './protected-blocks.ts';
+import { MAX_LADDERS } from './stall-ladder.ts';
 
 /** The log lines of one move, parsed. */
 function logged(sink: { log: ReturnType<typeof vi.fn> }): Record<string, unknown>[] {
@@ -14,7 +15,12 @@ function logged(sink: { log: ReturnType<typeof vi.fn> }): Record<string, unknown
  * A goto that never moves its Body, with a pathfinder whose `setGoal(null)` ends the pending goto
  * with `GoalChanged`, as the library does. The stall limit is high, so only the replan rules fire.
  */
-function stuckMove(scene: Scene, target = { x: 5, y: 64, z: 5 }, stallTicks = 2000) {
+function stuckMove(
+  scene: Scene,
+  target = { x: 5, y: 64, z: 5 },
+  stallTicks = 2000,
+  now: () => number = () => 0,
+) {
   const { bot, asBot } = scriptedBot(scene);
   const pending: { reject?: (error: unknown) => void } = {};
   const pathfinder = bot.pathfinder as unknown as Record<string, unknown>;
@@ -27,7 +33,7 @@ function stuckMove(scene: Scene, target = { x: 5, y: 64, z: 5 }, stallTicks = 20
   pathfinder.setGoal = vi.fn((goal: unknown) => {
     if (goal === null && pending.reject) pending.reject({ name: 'GoalChanged' });
   });
-  const sink = { log: vi.fn(), now: () => 0 };
+  const sink = { log: vi.fn(), now };
   const ac = new AbortController();
   const move = moveNear(asBot as Bot, target, 1, {
     signal: ac.signal,
@@ -143,5 +149,57 @@ describe('decision 0210: identical replans open the escape ladder', () => {
     const skips = lines.filter((line) => line.reason === 'ladder_skipped');
     expect(skips.length).toBeGreaterThan(0);
     expect(skips.length).toBeLessThanOrEqual(MAX_REPLANS + 1);
+  });
+
+  it('the ladder cap is two per goto (MAX_LADDERS is pinned; the cap is shared with the blocked trigger)', () => {
+    expect(MAX_LADDERS).toBe(2);
+  });
+});
+
+describe('decision 0210: a movement or a freed Body restarts the identical-replan count', () => {
+  it('three short stalls with progress between them must not escalate on the fourth', async () => {
+    vi.useFakeTimers();
+    const { bot, sink, ac, move } = stuckMove(pocket());
+    // Each stall reaches two identical replans (no ladder), then the Body moves one block.
+    for (let stall = 0; stall < 3; stall++) {
+      await passTicks(bot, 150);
+      bot.entity.position.x += 1;
+    }
+    await passTicks(bot, 150);
+    expect(logged(sink).filter((line) => line.reason === 'escalate')).toHaveLength(0);
+    expect(bot.waitForTicks).not.toHaveBeenCalled();
+    ac.abort();
+    await move;
+  });
+
+  it('after a ladder frees the Body, three identical replans must pass again before the next ladder', async () => {
+    vi.useFakeTimers();
+    const { bot, sink, ac, move } = stuckMove(pocket(), NORTH);
+    await passTicks(bot, 240);
+    await vi.advanceTimersByTimeAsync(5000);
+    // The dig rung freed the Body (pinned above): the goto restarts with a count of zero.
+    await passTicks(bot, 100);
+    expect(logged(sink).filter((line) => line.reason === 'escalate')).toHaveLength(1);
+    ac.abort();
+    await move;
+  });
+});
+
+describe('decision 0210: the replan escalation has a wall-clock arm (low TPS)', () => {
+  it('at 2 TPS the escalation runs at 110 s of wall time, before the 240-tick arm and the 120 s goto timeout', async () => {
+    vi.useFakeTimers();
+    let wallMs = 0;
+    const { bot, sink, ac, move } = stuckMove(pocket(), undefined, 2000, () => wallMs);
+    // At 2 TPS each 10-tick step is 5 s of wall time: 22 steps are 220 ticks, before the 240th tick.
+    for (let step = 0; step < 22; step++) {
+      bot.time.age += 10;
+      wallMs += 5000;
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    expect(logged(sink).filter((line) => line.reason === 'escalate')).toEqual([
+      { event: 'stall_diag', reason: 'escalate', trigger: 'replans', replans: 3 },
+    ]);
+    ac.abort();
+    await move;
   });
 });
