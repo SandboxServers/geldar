@@ -121,14 +121,14 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 
 ---
 
-## C7-04c: body routes (start, stop, restart, status, log, retire) through the supervisor
+## C7-04c: body routes (start, stop, restart, status, log) through the supervisor
 
 - **id / wave / lane.** C7-04c, wave 3 (after C7-04a and C7-03b1 merge). Register lane, serial after C7-06 (the wave plan order), or beside it only if the files are disjoint (they are: `api/body*.ts`). **branch.** `phase1/c7-04c-body-routes`. **migration.** none. **size.** M, at the top of the range. **Split (ruling, continuation 1).** Retire is not built here: it is card C7-04d. Production wiring (the NATS connection in register, mounting `bodyRoutes` through `deps.routes`, `server.ts` and `main.ts`) is card C7-04c2. This card builds the five body handlers (`body.ts`, `body-log.ts`) and their tests only.
 - **Goal.** The body routes of 0152 point 1, each a thin mapping over `requestBodyOp` (C7-03b1). The supervisor does the work and the counters. The register side maps replies and limits repeat starts.
 
 ### Files
 
-- may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log, retire), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04c.md`, `threshold/register/src/problem.ts`, `threshold/register/src/api/owner-api-v1.yaml` and `threshold/register/test/owner-api.test.ts` (for the two problem codes below only).
+- may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), their tests, `docs/analysis/phase1/worknotes/C7-04c.md`, `threshold/register/src/problem.ts`, `threshold/register/src/api/owner-api-v1.yaml` and `threshold/register/test/owner-api.test.ts` (for the two problem codes below only).
 - Problem codes (review fix M3, wave 3): this card adds `quota` (429) and `body_unavailable` (503) to `PROBLEM_CODES` in `problem.ts`, to the STATUS and TITLE maps there, to the `code` enum in `owner-api-v1.yaml`, and to the enum test in `owner-api.test.ts`. The `sendProblem` calls for 429 `quota` and 503 `body_unavailable` need both codes to compile.
 - must-not-edit: `supervisor/` (the counters are the supervisor's; the register does not count them), `nats-ctl.ts` (C7-03b1 owns it; read only), `contract/` (the `ctl.body.*` op list is C7-03b1's; this card uses ops it defines, no new op), `account*.ts`, `docs/spec.md`.
 - If the supervisor's op list has no log op, stop and report. Do not add one here.
@@ -179,9 +179,6 @@ Credentials (decision 0173): start, stop and restart accept a Bearer owner key w
 - Status: a `BodyStatus` fixture validates against the schema, `health` 21 is refused. Revert: drop the range check; the test fails.
 - Log: at most 200 lines; a `limit` of 201 is 422; a fixture with events of two owners never shows the other owner's line; an event 8 days old is absent. Revert: remove the 7-day filter; the age test fails. Revert: remove the owner filter; the cross-owner test fails.
 - Log text: every `text` value is one of the fixed table's strings; a fixture with a model-supplied string is rendered as the fixed code, never the string. Revert: pass the raw text through; the fixed-text test fails.
-- Retire: a supervisor timeout on the stop leaves the agent not retired; the retry retires it once. Revert: retire before stop; the not-retired test fails.
-- Retire credential (decision 0173): a Bearer key with any scope at retire answers 401 `unauthenticated` and revokes no token; a cookie-session retire without CSRF answers 403 `csrf_required`. Revert: let a Bearer key reach retire; the Bearer row fails.
-
 ### Re-slice note
 
 The counter exemption for admin starts (per-agent hourly, per-owner daily) is enforced in the supervisor, which reads the flag from the database on every request (0170). Its test belongs to the supervisor package (C7-03a and C7-03b1). This card tests the register mapping only. The black-box admin-start test runs in the live lane, not in this card. The wave review checks that both tests exist.
@@ -196,10 +193,11 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ## C7-04d: retire (POST /agents/{playerId}/retire)
 
-- **id / wave / lane.** C7-04d, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready after C7-04c merges. **depends-on.** C7-04c (the body handler and the in-flight slot), C7-04b (the token revoke service). **branch.** `phase1/c7-04d-retire`. **migration.** none. **size.** S to M.
+- **id / wave / lane.** C7-04d, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready after C7-04c merges. **depends-on.** C7-04c (the body handler), C7-04c2 (creates the shared in-flight slot), C7-04b (the token revoke service). **branch.** `phase1/c7-04d-retire`. **migration.** none. **size.** S to M.
 - **Goal.** `POST /agents/{playerId}/retire`, cookie session only with CSRF (decision 0173: it revokes tokens, which is cookie-only in v1). Order: stop the body through the supervisor (`ctl.body.stop`), then revoke the agent's tokens through the C7-04b service, then retire the player. 202 `BodyOp`.
 - **Rules.** A supervisor timeout or no-responders on the stop is 503 `body_unavailable` with `Retry-After`, and leaves the agent not retired (the retry is safe). A foreign agent is 404 before any supervisor call. A Bearer key is refused (cookie only).
-- **Files.** may-edit: `threshold/register/src/api/body-retire.ts` (new; the retire handler only), the route-table line in `server.ts` (ops merges it), their tests, `docs/analysis/phase1/worknotes/C7-04d.md`. `body.ts` is read only (reuse its exports; a change needs a note in the worknote).
+- **In-flight slot (sharing rule).** The one-in-flight slot (C7-04c, fix J) is shared, not copied. C7-04c2 creates it with `createBodySlot()` (in `api/body-slot.ts`) and passes the same slot to `bodyRoutes` and to the retire handler through `BodyDeps.slot`. C7-04d takes the slot from `BodyDeps` and never creates a second one, so a retire and a stop cannot both reach the supervisor. Test: a retire while a stop is in flight is 409 `conflict` with no supervisor call.
+- **Files.** may-edit: `threshold/register/src/api/body-retire.ts` (new; the retire handler only), their tests, `docs/analysis/phase1/worknotes/C7-04d.md`. `server.ts` and `main.ts` are not in this card's may-edit: the retire routes are mounted by the C7-04c2 wiring (if C7-04d merges after C7-04c2, ops adds the one mount line). `body.ts` is read only.
 - must-not-edit: `supervisor/`, `nats-ctl.ts`, `contract/`, `account*.ts`, `docs/spec.md`.
 - **Tests (each fails on revert).** The 202 path calls stop, then revoke, then retire, in that order. A stop timeout is 503, with no revoke and no retire call. A foreign agent is 404 with no supervisor call. A CSRF-less cookie write is 403 `csrf_required`. A Bearer key is refused.
 
@@ -207,9 +205,10 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 - **id / wave / lane.** C7-04c2, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready after C7-04c merges, serial with it. **depends-on.** C7-04c. **branch.** `phase1/c7-04c2-wiring`. **migration.** none. **size.** S.
 - **Goal.** Make the body routes live: open the NATS connection in register (a `CtlConnection` from `nats-ctl.ts`), mount `bodyRoutes({ conn, shard, timeoutMs })` through `deps.routes`, and take the shard and reply wait from config. With no connection, the body routes answer 503 `body_unavailable`.
-- **Files.** may-edit: `threshold/register/src/server.ts` and `threshold/register/src/main.ts` (the wiring lines only), the NATS connect helper (new file), config, their tests, `docs/analysis/phase1/worknotes/C7-04c2.md`. `api/body.ts` and `api/body-log.ts` are read only.
+- **Files.** may-edit: `threshold/register/src/server.ts` and `threshold/register/src/main.ts` (the wiring lines only), the NATS connect helper (new file), `threshold/register/src/api/body-slot.ts` (new; `createBodySlot()`), `threshold/register/src/api/body.ts` (the `slot` field of `BodyDeps`, default `createBodySlot()`, and nothing else; a note in the worknote), config, their tests, `docs/analysis/phase1/worknotes/C7-04c2.md`. `api/body-log.ts` is read only.
+- **F1 fix note (from the C7-04c review).** The register sends the agent's display name as `playerName`, not the URL id; a display name outside `^[A-Za-z0-9_]{1,16}$` is a 422 before any supervisor call (C7-04c carries the code). The live check must therefore start a body for an `ag-` id, the register's player id, and must not use a player name chosen by hand.
 - must-not-edit: `account*.ts`, pages, `supervisor/`, `contract/`, `docs/spec.md`.
-- **Tests (each fails on revert).** Through the mounted router, start answers 202 with a fake connection. With no connection, start and status answer 503 `body_unavailable`. The config timeout reaches `requestBodyOp`. Leaving `bodyRoutes` unmounted gives 404 on start.
+- **Tests (each fails on revert).** Through the mounted router, start answers 202 with a fake connection. With no connection, start and status answer 503 `body_unavailable`. The config timeout reaches `requestBodyOp`. Leaving `bodyRoutes` unmounted gives 404 on start. Unreachable until wired: with `bodyRoutes` absent from `deps.routes`, every body path (start, stop, restart, status, log) answers 404 through the production router; with it mounted, the same paths reach the handler. Test: `createBodySlot()` is passed through `BodyDeps.slot`, and a second start while the first is in flight is 409 `conflict` through the mounted router with one slot shared.
 
 ## C7-04d2: Bearer-driven token rotation and owner-key management (candidate)
 
