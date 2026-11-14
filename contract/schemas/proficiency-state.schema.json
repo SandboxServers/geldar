@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/proficiency-state.schema.json",
+  "title": "ProficiencyState",
+  "description": "A life's proficiency state (AN-02b), the reply to a ProficiencyRequest. `levels` has all seven domains: level 0 to 3 and the XP in each. `version` is the total XP across domains; the writer (AN-04a) keeps it growing with every award, and this schema checks only that it is a non-negative integer. A life with no rows answers version 0 and seven zero levels. `sheet` is the adopted baseline (rule R-sheet); the NATS ACL, not this schema, sends it only to the Body role, never to an agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "version", "levels"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "version": {
+      "description": "Total XP across all domains.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["combat", "farming", "mining", "building", "crafting", "exploring", "social"],
+      "properties": {
+        "combat": { "$ref": "#/$defs/domainLevel" },
+        "farming": { "$ref": "#/$defs/domainLevel" },
+        "mining": { "$ref": "#/$defs/domainLevel" },
+        "building": { "$ref": "#/$defs/domainLevel" },
+        "crafting": { "$ref": "#/$defs/domainLevel" },
+        "exploring": { "$ref": "#/$defs/domainLevel" },
+        "social": { "$ref": "#/$defs/domainLevel" }
+      }
+    },
+    "sheet": { "$ref": "character-sheet.schema.json" },
+    "sheet_hash": {
+      "description": "Lower-case hex SHA-256 of the canonical sheet JSON, computed by the writer (AN-04a); this schema checks only the shape.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "domainLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "xp"],
+      "properties": {
+        "level": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "xp": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

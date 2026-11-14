@@ -1,0 +1,34 @@
+# A valid example environment for the genesis validator (tools/genesis-env). Non-secret values
+# only: secrets and operator inputs are named by path, never valued. Every address here is an
+# RFC 5737 documentation address or loopback. The digests are placeholders, not real images.
+name: test
+project_name: geldar-test
+hostnames:
+  - test.geldar.invalid
+ports:
+  minecraft: 25566
+  rcon: 25576
+  nats: 4223
+  glass: 7421
+paths:
+  data_root: /srv/geldar-test/data
+  body_shard: /srv/geldar-test/shard
+subnet: 198.51.100.0/24
+docker_network_name: geldar-test
+docker_gid: 999
+image_digests:
+  paper: itzg/minecraft-server@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+versions:
+  paper: 1.21.4
+supervisor_enabled: false
+register_enabled: false
+register_kill_switch: true
+body_nats_secret_host_path: /srv/geldar-test/secrets/body-nats
+body_shard_host_path: /srv/geldar-test/shard
+register_public_url: https://register.test.geldar.invalid
+mcp_public_host: mcp.test.geldar.invalid
+register_shard: test
+register_trusted_peers: []
+roster_source: roster-file
+verification_profile: none
+backup_destination: test-offsite

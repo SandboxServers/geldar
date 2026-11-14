@@ -12,6 +12,12 @@ import {
 } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import {
+  type Hostile,
+  hostilesAroundBed,
+  MAX_NAMED_HOSTILES,
+  monstersFact,
+} from './sleep-hostiles.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 
 /** The first world tick of the night window the Body checks (advisory: the server's window differs by one). */
@@ -55,12 +61,20 @@ interface SleepError {
   reason: FailReason;
   /** The facts-only text the agent reads; absent when the message is kept as it came. */
   fact?: string;
+  /** True for the monsters refusal: its text names the hostiles around the bed (sleep-hostiles.ts). */
+  monsters?: true;
+}
+
+/** What a refusal knows about the bed it was tried in: the hostiles the bed check counts and the block light. */
+export interface SleepScene {
+  hostiles: readonly Hostile[];
+  light: number | null;
 }
 
 /** The sleep errors, from Mineflayer's texts and the server's, in the order they are matched. */
 const SLEEP_ERRORS: readonly SleepError[] = [
   { match: ALREADY_SLEEPING, reason: 'not_possible' },
-  { match: /monsters nearby/i, reason: 'not_possible', fact: 'there are monsters nearby' },
+  { match: /monsters nearby/i, reason: 'not_possible', monsters: true },
   { match: /not night|only sleep at night/i, reason: 'not_possible', fact: 'it is not night' },
   { match: /too far/i, reason: 'out_of_reach', fact: 'the bed is too far away' },
   { match: /occupied/i, reason: 'blocked', fact: 'the bed is occupied' },
@@ -81,18 +95,51 @@ export function classifySleepError(message: string): FailReason {
 
 /**
  * The failed outcome for a sleep error. A text that no known error matches keeps its server text and
- * logs one `sleep_reason_unknown` line to the diag sink, so a new text shows up in the log.
+ * logs one `sleep_reason_unknown` line to the diag sink, so a new text shows up in the log. Every refusal
+ * carries its record (the hostiles, the light, the message) in `raw`: the action log keeps it, the agent does not read it.
  */
-export function sleepFailure(message: string, diag: DiagSink = DEFAULT_DIAG_SINK): ActionOutcome {
+export function sleepFailure(
+  message: string,
+  diag: DiagSink = DEFAULT_DIAG_SINK,
+  scene: SleepScene = { hostiles: [], light: null },
+): ActionOutcome {
   if (matchSleepError(message) === undefined) {
     diag.log(JSON.stringify({ event: 'sleep_reason_unknown', message }));
   }
-  return failed(classifySleepError(message), sleepErrorText(message));
+  // The light comes before the hostiles: the action log clips the record to 200 characters.
+  const record = {
+    event: 'sleep_refusal',
+    message,
+    light: scene.light,
+    hostiles: scene.hostiles
+      .slice(0, MAX_NAMED_HOSTILES)
+      .map(({ kind, blocks }) => ({ kind, blocks })),
+    count: scene.hostiles.length,
+  };
+  return failed(
+    classifySleepError(message),
+    sleepErrorText(message, scene.hostiles),
+    {},
+    JSON.stringify(record),
+  );
 }
 
-/** The text the agent reads for a sleep error: the fact it states, or the message when no fact is known. */
-export function sleepErrorText(message: string): string {
-  return matchSleepError(message)?.fact ?? message;
+/**
+ * The text the agent reads for a sleep error: the fact it states, or the message when no fact is known.
+ * The monsters refusal names the hostiles in `hostiles` (none in view when the list is empty).
+ */
+export function sleepErrorText(message: string, hostiles: readonly Hostile[] = []): string {
+  const known = matchSleepError(message);
+  if (known?.monsters) return monstersFact(hostiles);
+  return known?.fact ?? message;
+}
+
+/** What the bed the Body tried holds for a refusal: the counted hostiles around its position and its block light. */
+function refusalScene(bot: Bot, bed: Block): SleepScene {
+  return {
+    hostiles: hostilesAroundBed(Object.values(bot.entities), bed.position, bot.registry),
+    light: bot.blockAt(bed.position)?.light ?? null,
+  };
 }
 
 async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
@@ -235,7 +282,7 @@ async function attemptSleep(
     if (signal.aborted) return cancelled();
     const message = errorText(error);
     if (ALREADY_SLEEPING.test(message)) return null;
-    return sleepFailure(message);
+    return sleepFailure(message, DEFAULT_DIAG_SINK, refusalScene(bot, bed));
   }
 }
 
