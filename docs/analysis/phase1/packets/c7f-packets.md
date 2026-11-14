@@ -37,6 +37,8 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 9. **Secrets.** The helper reads its database password and its NATS password from root-only files (mode 0600, owner root). It never reads them from the environment and never logs them.
 10. **Audit.** Every verb attempt is logged once: verb, roster name, result (accepted, refused and why, or the Docker result). Names only, no secrets, no template contents.
 
+11. **Global cap on running Bodies (GLOBAL-CAP, decision 0261).** The helper reads the cap from one config place only: one env name (`GELDAR_GLOBAL_BODY_CAP`) or one shard-file key, named at dispatch, default 40. Before any `start`, the helper counts the running Body containers and the sovereign host containers on the node (the 15 sovereign hosts count). It refuses a start when the count is at or above the cap, with the error `global body cap reached` and audit outcome `capacity`. At 30 running it writes one alert line when the count first reaches 30. It never raises the cap, and a caller cannot pass a cap.
+
 ### Why this transport (recorded for review)
 
 - **Chosen: NATS request/reply on a dedicated subject set.** Least new surface: it uses the existing NATS transport and auth (0067, 0080), so no new listener, no new port and no host socket is mounted into any container.
@@ -55,6 +57,11 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 - Audit: each attempt, accepted or refused, writes one line with names only; a test asserts the line has no password and no template body. Revert: log the request body; the test fails.
 - Migration: `geldar_helper` exists as `NOLOGIN`, has `EXECUTE` on `supervisor_player_display_name`, and has no table privileges. Revert: add `SELECT` on `mcp_roster`; the test fails.
 - NATS permission table: the `helper` and `supervisor` users have exactly the permissions above (a test on the generated config). Revert: add a `supervisor` Pub on `_INBOX.>`; the test fails.
+- Global cap (GLOBAL-CAP): the 40th running container is the last allowed start; the 41st start is refused with `global body cap reached` and creates no container. Revert: remove the count check; the test fails.
+- Global cap counts sovereign hosts: a fixture of 39 running containers, of which 15 are sovereign hosts, allows one start and refuses the next. Revert: count only Body containers; the test fails.
+- Global cap default and bad values: no config gives 40; `0`, a negative number or text refuses every start with a config error. Revert: the default; the test fails.
+- Alert at 30: one alert line when the count first reaches 30, none on the next starts. Revert: remove the alert; the test fails.
+- Abort and error path: a Docker error after the count check releases nothing and writes one audit line, and the count is unchanged. Revert: count before the check and keep a reserved slot on error; the test fails.
 
 ### Must not
 
@@ -168,3 +175,153 @@ The card in [c7c-packets.md](c7c-packets.md) is changed as follows. Its goal and
 - **C7-03b3** (Postgres adapter and Docker client): the Docker client is now in the helper (C7-03c1). The supervisor keeps only the Postgres adapter after C7-03c3. Merged code is not reverted; C7-03c3 removes the Docker call sites.
 - **C7-03b4** (Body container spec): the spec is built by the helper. The tests move with the template to `body-helper/`.
 - **C7-03b4 live check** (`C7-03b4-live`, S, geldar-93): runs against the helper, not the supervisor's Docker adapter. The orchestrator runs it after C7-03b2 is deployed. It starts one test body from a DB-listed test player and stops it. Deterministic: the test player is set up before the verb runs, and the journal is clean for the test. `live: pending` in the card's own report.
+
+## Owner-ruling cards (decision 0261, 2026-11-14)
+
+Decision: [0261](../../../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md). All cards below are wave 5. Each card uses the common tail of the packet conventions: branch `phase1/<card-id-lowercase>-<slug>`, worknote `docs/analysis/phase1/worknotes/<ID>.md`, must not edit `docs/spec.md`. Lanes are named in words. Register-package cards (LEGAL-SERVE, ROSTER-AUTO) run serially with the other register-package cards (wave plan constraints). Sizes: S, M or L as stated.
+
+| Card | Wave | Lane | Depends on | Size | Pure code or node steps |
+|---|---|---|---|---|---|
+| LEGAL-SERVE | 5 | Register | C7-05, C7-06 (merged) | S to M | Pure code |
+| SIGNUP-RUNBOOK | 5 | Docs | none | S | Docs only (node steps are geldar-93's) |
+| REG-NATS-COMPOSE | 5 | Compose (folded into C7-03b2) | C7-04c2 (merged), C7-03b2 | S | Compose edit, node steps by geldar-93 |
+| ROSTER-AUTO | 5 | SQL and Register | C3-04s, C7-03b3, C7-04b | M to L | Pure code plus one additive migration |
+| BODY-HOST | 5 | Golem, admin and helper | C7-03c1, C7-03c3, C7-03b5, C7-03b4 (built), ROSTER-AUTO for the auto case | L | Pure code; live check orchestrator-run |
+| GLOBAL-CAP | 5 | Supervisor (helper) | C7-03c1 | folded into C7-03c1 | No separate card; text added to C7-03c1 above |
+
+### LEGAL-SERVE: serve the approved legal texts at sign-up
+
+- **id / wave / lane.** LEGAL-SERVE, wave 5, Register lane. **branch.** `phase1/legal-serve-texts`. **migration.** none. **size.** S to M (S if the texts are embedded as static strings).
+
+#### Goal
+
+1. Serve the approved texts `docs/legal/terms.md`, `docs/legal/privacy.md` and `docs/legal/acceptable-use.md` (Version 1, effective 2026-11-11, approved by the owner, 0155) at `/register/terms`, `/register/privacy` and `/register/acceptable-use`.
+2. Link all three from the sign-up page next to the consent box (0153 item 1: "shown at sign-up").
+3. Embed the texts at build time: a generator script reads the three files and writes one generated TypeScript module. The module is produced by the script, never edited by hand. The running service reads no file at run time.
+4. Keep the version stamp `TERMS_VERSION = 'v1'` (`threshold/register`, `account.ts:35`). A change of text, version or re-consent is not part of this card.
+
+#### Tests (each fails on revert)
+
+- Served text equals the file: a GET of each route returns the rendered text of the file, and the embedded source hash equals the SHA-256 of the file. Revert: serve a stub string; the test fails.
+- Build fails on a missing file: the generator exits non-zero, so no empty page is served. Revert: write an empty module on a missing file; the test fails.
+- Sign-up page links all three routes. Revert: drop the privacy link; the test fails.
+- Version stamp: the page shows `v1`, which equals `TERMS_VERSION`. Revert: bump the stamp; the test fails.
+- Generated module is current: a repo check regenerates it and compares. Revert: edit the module by hand; the test fails.
+
+#### Must not
+
+- Change the wording or the bytes of any legal file.
+- Change `TERMS_VERSION` or the consent record.
+- Read the legal files at run time.
+- Edit `docs/spec.md`.
+
+### SIGNUP-RUNBOOK: one runbook for opening sign-up
+
+- **id / wave / lane.** SIGNUP-RUNBOOK, wave 5, Docs lane. **branch.** `phase1/signup-runbook`. **migration.** none. **size.** S.
+
+#### Goal
+
+1. One runbook, `docs/runbooks/open-signup.md`, for geldar-93. No values in it, only names.
+2. Entra app steps by portal name: App registrations, New registration, Supported account types (personal Microsoft accounts), Redirect URI platform Web with `https://glass.<domain>/register/callback`, Certificates and secrets (a new client secret; its expiry noted), Overview (the Application (client) ID).
+3. Environment names: `REGISTER_MS_CLIENT_ID`, `REGISTER_PUBLIC_URL`, `REGISTER_MCP_PUBLIC_URL`, `REGISTER_NATS_URL`, `REGISTER_NATS_USER`, `REGISTER_NATS_PASSWORD_FILE`, `REGISTER_KILL_SWITCH`, `REGISTER_TRUSTED_PEERS`, and `GELDAR_REGISTER_UPSTREAM` for Glass.
+4. Secret files by name only: `register-ms-secret.txt`, `register-pepper`, `register-session-key`, `mcp-token-pepper.txt`, `postgres-register.txt`, `nats-register.txt`.
+5. The order: secret files; env; start the `register` profile; migrations check; `GELDAR_REGISTER_UPSTREAM`; `colo-public.sh install glass`; one `board-proxy` restart; kill switch on (signed-in check, 503 on `/register/`); then the open step (kill switch false, 0261).
+6. Verify steps and rollback (kill switch true and recreate the register service; the other steps are not undone).
+7. Fix the stale sentence in `deploy/README.md` (around line 411, "Keep it off until C2-08d and the C2 gates") so it points to the runbook.
+
+#### Tests (each fails on revert)
+
+- Repo check: every `REGISTER_*` name set in `compose/colo.yml` appears in the runbook. Revert: remove one name from the runbook; the test fails.
+- Repo check: the runbook contains no value (no UUID, no token-like string). Revert: paste a sample UUID; the test fails.
+- Repo check: `deploy/README.md` no longer contains "Keep it off until C2-08d". Revert: restore the sentence; the test fails.
+
+#### Must not
+
+- Write any value, client id, secret or tenant id into the runbook.
+- Edit `compose/colo.yml` (REG-NATS-COMPOSE owns it) or `docs/spec.md`.
+- Run any node command.
+
+### REG-NATS-COMPOSE: register NATS env in compose (folded into C7-03b2)
+
+- **id / wave / lane.** REG-NATS-COMPOSE, wave 5, Compose lane. It is folded into C7-03b2 and is the only compose edit for the register service. **branch.** the C7-03b2 branch. **migration.** none. **size.** S.
+
+#### Goal
+
+1. On the `register` service in `compose/colo.yml`, set `REGISTER_NATS_URL`, `REGISTER_NATS_USER` (`register`) and `REGISTER_NATS_PASSWORD_FILE`, and mount the `nats-register` secret file read-only. Set all three together, as `config.ts` (NATS off unless all three are set) requires.
+2. Add the `nats-register` secret to the compose secrets list and to `deploy/compose.secrets.yml`. The file is created on the node by geldar-93 (`gen-secrets.sh` does not create NATS files).
+3. No other service gets a `REGISTER_NATS_*` variable.
+
+#### Tests (each fails on revert)
+
+- Repo check: the register service sets all three variables and mounts the secret. Revert: remove `REGISTER_NATS_USER`; the test fails.
+- Repo check: no other service has a `REGISTER_NATS_*` variable. Revert: add one to glass; the test fails.
+- Config test: with all three set NATS is on; with one missing it is off (existing behaviour kept). Revert the all-three rule; the test fails.
+
+#### Must not
+
+- Edit any other compose service, the budget, or `nats-auth.conf`.
+- Put a password in the compose file or print one.
+- Create `nats-register.txt` in the repo.
+
+### ROSTER-AUTO: auto-roster on registration (includes DISPLAYNAME-SHAPE)
+
+- **id / wave / lane.** ROSTER-AUTO, wave 5, SQL and Register lanes. **branch.** `phase1/roster-auto`. **migration.** yes, additive. The number is assigned at dispatch by checking `sql/` on `origin/main`; the next free number is recorded in the report (the wave plan notes 0037 as taken at writing). **size.** M to L.
+
+#### Goal
+
+1. On a successful agent create, the register calls one SECURITY DEFINER function that writes the `mcp_roster` row: owner id, lower-case roster key, exact-case display name. The register code never writes `mcp_roster` directly.
+2. **DISPLAYNAME-SHAPE.** A display name that is not a valid Minecraft login (`^[A-Za-z0-9_]{3,16}$`) is refused at the registration form (`account.ts:37` narrows from `^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$` for new names) and again in SQL. Existing agents with other names keep working and are not given a Body or a roster row.
+3. **Per-owner cap.** Default 3 agents per owner, the same number as `mcp_owners.player_cap`, which is the per-owner setting. A create beyond the cap is refused with a clear error, in the form and in SQL.
+4. **Idempotent.** The same owner and the same name writes one row and no error. The same name for a different owner is refused; the existing row is not changed.
+5. **Audit.** One `register_audit` row per create, with names and ids only.
+6. **Database.** `search_path` pinned; `REVOKE ALL ... FROM PUBLIC`; `GRANT EXECUTE` to `geldar_register` only. The supervisor and the helper keep their own roster-owner check (0152, `service.ts:198-199`).
+7. **Additive.** The migration adds the function and its grants only. It drops or changes no column (decision 0261; "additive first, destructive later"). Style and registration follow `c2-register-packets.md` step 1 (read `sql/0002_sovereign_mcp.sql`, `sql/0006_owner_cap_trigger.sql` and `sql/0007_journals_append_only.sql`): it inserts its own `schema_migrations` row, as `sql/0006_owner_cap_trigger.sql` does, and uses the gate literal of the latest migration on `origin/main`.
+
+#### Tests (each fails on revert)
+
+- A valid name writes one roster row; the key is lower case and the display name keeps its case. Revert: store the lower-case name; the test fails.
+- Names refused in SQL and at the form: 2 characters, 17 characters, a space, a hyphen, a non-ASCII letter, and the empty string. Revert the SQL regex; each case fails.
+- Boundaries: 3 and 16 accepted, 2 and 17 refused. Revert the upper bound to 17; the test fails.
+- Per-owner cap: the third agent is accepted (last allowed), the fourth is refused with the cap error. Revert the cap check; the test fails.
+- Idempotent: the same owner and name twice gives one row; a different owner gives a refusal and leaves the row as it was. Revert the conflict rule so the second owner overwrites; the test fails.
+- Abort and error path: a failure after the roster insert rolls back the agent create (no roster row without the agent); the register gets a refusal. Revert the transaction; the test fails.
+- Audit: one `register_audit` row per create, with no token or secret in it. Revert the audit insert; the test fails.
+- Privileges: `geldar_register` can execute; `PUBLIC` and `geldar_mcp` cannot. Revert the `REVOKE`; the test fails.
+- Existing agent with a space in its name: its row is unchanged and no roster row is created. Revert the backfill; the test fails.
+
+#### Must not
+
+- Write `mcp_roster` from register code, or give any role a new table privilege.
+- Change or delete existing rows.
+- Use the operator `roster-add` path as a shortcut.
+
+### BODY-HOST: managed Body for a sign-up agent through the player-host path
+
+- **id / wave / lane.** BODY-HOST, wave 5, Golem, admin and helper lanes. **branch.** `phase1/body-host`. **migration.** none expected (if one is needed, the number is assigned at dispatch). **size.** L.
+
+#### Goal
+
+1. The managed Body for a sign-up agent runs `golem/src/players/main.ts` with `player-config.ts`, not `golem/src/adam/main.ts` (0261 item 2). `supervisor/src/docker.ts` (moved to the helper by C7-03c1) names the entry point; the helper's template changes to the player-host entry for these Bodies.
+2. Config comes from the database and env, not the shard YAML. `player-config.ts` gains a database source for one agent; the shard-YAML source stays for sovereign players.
+3. The Body consumes the login name (the roster display name) and the life id (`ag-...`), so Paper, the life registry and the NATS subjects agree (readiness audit G2 name mismatch).
+4. The helper admits the Body: it adds the login to Paper's whitelist and writes the Velocity life-registry key (decision 0040), through verbs the helper owns. The Body gets no RCON and no command socket (`golem/src/whitelist-house-body.ts`, threat rule 9).
+5. This card supersedes the open part of C7-03b4 (its live check's name and admission). The C7-03b4 Body container spec otherwise stands.
+6. **Open sub-questions for geldar-93, answered before dispatch:** the RCON whitelist verb (which command the helper runs, and how it is limited to the helper's own user list); the life-registry key (path and format under 0040); whether the Body image is the golem-body image with a different entry point, or a new image.
+
+#### Tests (each fails on revert)
+
+- A Body started for a database-only agent (no shard YAML line) joins as that name: the player-host entry reads the database row, and the whitelist call uses that name (fake RCON in the test). Revert: read the shard YAML; the test fails with "not in sovereign.players". This is the named test.
+- The Body gets no RCON: its container env and binds have no RCON secret and no RCON host. Revert: mount the RCON secret; the test fails.
+- The helper refuses to admit a name that is not on the roster. Revert: skip the roster check; the test fails.
+- Admission is idempotent: a second start adds no second whitelist entry. Revert: add on every start; the test fails.
+- Abort and error path: a failed whitelist call means the Body does not join; the container is stopped and one audit line is written. Revert: join anyway; the test fails.
+- The name Paper sees equals the roster display name exactly, and the registry key is the life id. Revert the mismatch; the test fails.
+- Regression: a sovereign player still uses the shard path. Revert the shard path; the test fails.
+
+#### Must not
+
+- Give the Body RCON or a command socket.
+- Use the house Adam entry point for a sign-up agent.
+- Read the shard YAML for a database-only agent.
+- Start a live Body; the live check is the orchestrator's (C7-03b4-live).
+- Edit `docs/spec.md`.
