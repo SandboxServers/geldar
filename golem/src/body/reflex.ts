@@ -33,6 +33,12 @@ export interface ReflexContext {
    * ended. A no-op when none runs. A reflex calls it before acting when its work would clash.
    */
   cancelAction(): Promise<void>;
+  /**
+   * Takes the runtime's one action slot for this run, so a Mind action requested meanwhile is
+   * refused (`busy`) and does not start mid-run. Returns the release; call it once when the run ends
+   * (also on abort and on a throw). Optional: a context without a runtime has no slot to hold.
+   */
+  holdSlot?(): () => void;
 }
 
 /**
