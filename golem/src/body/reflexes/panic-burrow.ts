@@ -6,6 +6,7 @@ import { runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { DIGGABLE_BLOCKS, type DigResult, digCellWhy, holds } from './dig-cell.ts';
+import { dangers } from './threats.ts';
 
 /** Blocks the Body seals itself in with, in the order it prefers them (all common digging drops). */
 export const SEAL_BLOCKS: readonly string[] = [
@@ -300,6 +301,27 @@ async function breakOut(ctx: ReflexContext): Promise<ReflexOutcome> {
   return { result: 'handled', detail: 'dug out at dawn' };
 }
 
+/** A danger this close (blocks) starts the night burrow. Same value as DARK_HOSTILE_RADIUS (shelter.ts imports this file). */
+export const THREAT_RADIUS = 8;
+/** Damage taken within this many physics ticks (5 s at 20 TPS) also starts the night burrow. */
+export const HURT_WINDOW_TICKS = 100;
+
+/**
+ * What starts the night burrow (decision 0213): the nearest danger within `THREAT_RADIUS`, named
+ * with its distance, else damage taken within `HURT_WINDOW_TICKS`. Null when neither: night alone
+ * does not start it.
+ */
+function nightThreat(view: BodyView): Trigger | null {
+  const hostile = dangers(view, THREAT_RADIUS)[0];
+  if (hostile) {
+    const distance = Math.round(hostile.distance);
+    return { cause: 'hostile', hostile: hostile.name, distance };
+  }
+  const hurt = view.ticksSinceHurt;
+  if (typeof hurt === 'number' && hurt <= HURT_WINDOW_TICKS) return { cause: 'damage' };
+  return null;
+}
+
 /**
  * Panic burrow (spec 5.2): at night with no bed and no shelter, dig a 1x2 pocket into a wall (the
  * exact cells, with `bot.dig`), step in and seal the mouth with `place`; at dawn open the seal and
@@ -319,7 +341,8 @@ export const panicBurrowReflex: Reflex = {
     if (burrowPaused(view)) return null;
     if (view.isNight === false && view.enclosed === true) return { phase: 'dawn', orphan: true };
     if (view.isNight !== true || view.bedNearby !== false || view.enclosed !== false) return null;
-    return { phase: 'night', bed: false, shelter: false };
+    const threat = nightThreat(view);
+    return threat === null ? null : { phase: 'night', bed: false, shelter: false, ...threat };
   },
   async run(trigger, ctx) {
     const dug = burrows.get(ctx.view);
