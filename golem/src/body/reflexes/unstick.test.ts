@@ -153,6 +153,8 @@ describe('panic burrow backoff', () => {
   it('doubles its pause after each refusal, up to five minutes, and then fires again', async () => {
     const { view, ctx } = blind();
     const clock = view as { tick: number };
+    // A threat for the night burrow (decision 0213): damage taken this tick.
+    (view as { ticksSinceHurt: number | null }).ticksSinceHurt = 0;
     let tick = 100;
     let pause = FIRST_PAUSE_TICKS;
     for (let i = 0; i < 8; i++) {

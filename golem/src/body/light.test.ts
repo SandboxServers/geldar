@@ -52,4 +52,27 @@ describe('lightAtHead', () => {
     expect(lightAtHead(lightBot(null).bot)).toBeNull();
     expect(lightAtHead(lightBot({}).bot)).toBeNull();
   });
+
+  it('is null when the section of the head cell is not loaded: unknown light is not dark (decision 0213)', () => {
+    // Head cell y 65 is in section index 8 (minY -64). A missing section entry is an unloaded section.
+    const { bot } = lightBot({ light: 0, skyLight: 0 }, NIGHT);
+    const sections: unknown[] = new Array(24).fill({});
+    sections[8] = undefined;
+    (bot as unknown as { world: unknown }).world = { getColumnAt: () => ({ minY: -64, sections }) };
+    expect(lightAtHead(bot)).toBeNull();
+  });
+
+  it('reads the light when the section of the head cell is loaded, even if a lower one is not', () => {
+    const { bot } = lightBot({ light: 9, skyLight: 4 });
+    const sections: unknown[] = new Array(24).fill({});
+    sections[7] = undefined;
+    (bot as unknown as { world: unknown }).world = { getColumnAt: () => ({ minY: -64, sections }) };
+    expect(lightAtHead(bot)).toBe(9);
+  });
+
+  it('is null when the column of the head cell is not loaded', () => {
+    const { bot } = lightBot({ light: 9, skyLight: 4 });
+    (bot as unknown as { world: unknown }).world = { getColumnAt: () => null };
+    expect(lightAtHead(bot)).toBeNull();
+  });
 });

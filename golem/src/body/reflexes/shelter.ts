@@ -2,7 +2,7 @@ import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts
 import type { BodyView } from '../view.ts';
 import { blockedPathReflex } from './blocked-path.ts';
 import { idleStuckReflex, mayUnstick, noteShelterRefusal, runUnstick } from './idle-stuck.ts';
-import { burrowPaused, panicBurrowReflex } from './panic-burrow.ts';
+import { burrowPaused, panicBurrowReflex, REFUSAL_MOVE_BLOCKS } from './panic-burrow.ts';
 import { dangers } from './threats.ts';
 import { unstickReflex } from './unstick.ts';
 
@@ -18,10 +18,12 @@ const BACKOFF_BASE_TICKS = 400;
 const BACKOFF_CAP_TICKS = 6000;
 /** Nominal world ticks per second, for the seconds shown in a log line. */
 const TICKS_PER_SECOND = 20;
-/** Why the last shelter was abandoned, and when the Body may try again. */
+/** Why the last shelter was abandoned, when the Body may try again, and where it stood then. */
 interface ShelterBackoff {
   failures: number;
   until: number;
+  /** The spot of the abandoned run: the backoff holds while the Body stays within REFUSAL_MOVE_BLOCKS of it. */
+  origin: { x: number; y: number; z: number };
 }
 
 /** One backoff per Body view (the runtime keeps one view per Body). */
@@ -33,9 +35,11 @@ const backoffs = new WeakMap<BodyView, ShelterBackoff>();
  * into a wall pocket. A danger is a hostile by the same rule as the other reflexes (`dangers`), so a
  * spider in daylight does not count. The shelter is the panic burrow's own dig and seal, so the run
  * hands over to `panicBurrowReflex` with a night trigger; its refusal and its failures come back as
- * they are. After an `abandoned` run the reflex backs off (20 s, doubling, capped at 5 min) until
- * the light rises above the dark limit, a later run is handled, or the Body respawns. A changed mob
- * set or a move does not end it. A missing light or enclosure read never fires it.
+ * they are. After an `abandoned` run the reflex backs off (20 s, doubling, capped at 5 min). The
+ * backoff holds while the Body stays within `REFUSAL_MOVE_BLOCKS` of the abandoned spot, even when
+ * the light rises above the dark limit (a light that comes and goes at one spot does not re-arm
+ * it); it ends on a move past that, a later run that is handled, or a respawn. A changed mob set
+ * does not end it. A missing light (null, unknown) or enclosure read never fires it.
  */
 export const darkShelterReflex: Reflex = {
   name: 'dark_shelter',
@@ -44,17 +48,16 @@ export const darkShelterReflex: Reflex = {
   check(view: BodyView): Trigger | null {
     const light = view.lightAtHead;
     if (typeof light !== 'number') return null;
-    if (light > DARK_LIGHT) {
-      backoffs.delete(view);
-      return null;
-    }
+    const backoff = backoffs.get(view);
+    if (backoff && movedFar(view.position, backoff.origin)) backoffs.delete(view);
+    if (light > DARK_LIGHT) return null;
     if (view.enclosed !== false) return null;
     const hostile = dangers(view, DARK_HOSTILE_RADIUS)[0];
     if (!hostile) return null;
     // The panic burrow's refusal pause covers this reflex too; a changed mob set or a small move does not end a backoff.
     if (burrowPaused(view)) return null;
-    const backoff = backoffs.get(view);
-    if (backoff && (view.tick ?? 0) < backoff.until) return null;
+    const held = backoffs.get(view);
+    if (held && (view.tick ?? 0) < held.until) return null;
     return {
       light,
       hostile: hostile.name,
@@ -84,16 +87,25 @@ export const darkShelterReflex: Reflex = {
   },
 };
 
+/** True when the Body stands more than `REFUSAL_MOVE_BLOCKS` from `origin` (3-D distance in blocks). */
+function movedFar(
+  now: { x: number; y: number; z: number },
+  origin: ShelterBackoff['origin'],
+): boolean {
+  return Math.hypot(now.x - origin.x, now.y - origin.y, now.z - origin.z) > REFUSAL_MOVE_BLOCKS;
+}
+
 /** Forgets the backoff of a view (the Body died and respawned, so the old body's refusals do not hold). */
 export function forgetShelterBackoff(view: BodyView): void {
   backoffs.delete(view);
 }
 
-/** Records an abandoned shelter: the next try waits for a doubled period, and the log line says so. */
+/** Records an abandoned shelter at the Body's spot: the next try waits for a doubled period, and the log line says so. */
 function backOff(view: BodyView, outcome: ReflexOutcome): ReflexOutcome {
   const failures = (backoffs.get(view)?.failures ?? 0) + 1;
   const period = Math.min(BACKOFF_BASE_TICKS * 2 ** (failures - 1), BACKOFF_CAP_TICKS);
-  backoffs.set(view, { failures, until: (view.tick ?? 0) + period });
+  const origin = { ...view.position };
+  backoffs.set(view, { failures, until: (view.tick ?? 0) + period, origin });
   const seconds = Math.round(period / TICKS_PER_SECOND);
   return { ...outcome, detail: `${outcome.detail ?? 'abandoned'}; backing off ${seconds}s` };
 }
