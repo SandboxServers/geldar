@@ -1,0 +1,172 @@
+# Runbook: update NATS authorization in place (Colo node)
+
+Owner: the operator who holds the Colo node (geldar-93 in the Phase 1 notes). Approval: an owner go for the change, recorded before step 0.
+
+This runbook changes the NATS users and permissions on the live Colo node without restarting the NATS container. It is the in-place path that genesis packet G2-02 asks for (`docs/analysis/genesis/packets.md`). The alternative, a full `docker compose up -d nats`, is in `deploy/README.md` (about lines 309-317). It drops every NATS client, so use it only when in-place is impossible, and publish a notice first.
+
+Related: [0080 NATS auth cutover](../decisions/0080-nats-auth-cutover.md), [0087 NATS overlay, live test and scoped subjects](../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md), [0199 muffled hearing](../decisions/0199-muffled-hearing.md) (the hearing subject deny), [0280 proficiency contract and state subjects](../decisions/0280-proficiency-contract-and-state-subjects.md) (the sheet state gap).
+
+## Facts the procedure depends on
+
+- Live file: `/mnt/nvme/geldar-colo/secrets/nats-auth.conf`, mode `0600`.
+- It is a single-file read-only bind mount to `/etc/nats/nats-auth.conf` in container `geldar-colo-nats-1`. Image: `nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde` (`compose/colo.yml`, `compose/nats-auth.yml`).
+- Command (`compose/nats-auth.yml`): `-js -sd /data -c /etc/nats/nats-auth.conf`.
+- **Never `mv` a new file over the live file.** A single-file bind mount follows the inode, so the container keeps the old file. Write in place with `cat new > live` or `cp new live`. Both keep the inode and the mode.
+- The monitor line `http: "127.0.0.1:8222"` must be identical in the old and new file. A changed `http:` host cannot be reloaded (seen 2026-11-12). Check it in step 2.
+- Passwords live in the conf and in `secrets/nats-<user>.txt`. The generator writes the conf only when it is missing (`Initialize-NatsAuth` and `Get-NatsUsers` in `geldar.ps1`, about lines 319 and 370). So a repo change never reaches the node by itself.
+- `deploy/colo-cd.sh` does not touch the conf. `deploy/colo-cd-plan.sh` lists NATS as a `needs manual` item (`deploy/README.md`, the plan script row).
+- The monitor listens on `127.0.0.1:8222` inside the container. Do not probe it from outside, and do not publish it.
+
+## Drift to resolve first
+
+As of 2026-11-14 the live file and the generator differ (by user name only; no secret values are recorded here):
+
+- Live has 8 users: body, mind, eventsink, mcp, velocity, paper, kino, deploy. The generator has 10: it adds `supervisor` and `register`. The node has no `nats-supervisor.txt` or `nats-register.txt`, and no compose mapping for them.
+- `body` publish deny: live denies `geldar.colo.kino.>` and `geldar.colo.blockowner.changed`; the generator denies `geldar.colo.ctl.body.>` instead.
+- `paper` publish deny: live denies `geldar.colo.kino.control` and `geldar.colo.blockowner.query`; the generator denies `geldar.colo.ctl.body.>`.
+- Other users match.
+
+Pending additions, none in the generator or the live file. Each needs its own decision-owner go:
+
+- Sheet state subjects (decision 0280 known gap): deny publish `geldar.<s>.state.*.level` for body and paper; eventsink publish `geldar.<s>.life.*.sheet`; body and paper PubDeny `geldar.<s>.life.>`.
+- Hearing subject (decision 0199 option A): body PubDeny `geldar.<s>.body.*.hearing`.
+- Provenance (`docs/analysis/harness/work-packets-geldar-b.md`, about line 34): body PubDeny and Sub on `provenance.>`.
+- Registration's `supervisor`, `register` and helper users.
+
+**Rule:** a change to the live file must land in `geldar.ps1` (the user list and the permission lines) in the same change, or the repo and the node drift again. Do not apply a live change that the generator does not produce. The change in the repo is reviewed like the live change.
+
+## Procedure
+
+Run on the Colo node, as the account that owns the secrets directory. Never print the contents of `secrets/` or any password file. Use `sed` to redact before any diff.
+
+**0. Preconditions**
+
+- The owner go is recorded, and the window is agreed.
+- If clients may drop (any role that loses or gains permissions, or a restart), publish a maintenance notice first: `deploy/colo-notice.sh pause bodies <seconds>` (or `world`), and `back` after the change. The notice needs `nats-deploy.txt`; it warns and publishes nothing if the file is missing.
+- Record the container count and the connection count:
+  ```sh
+  docker ps | wc -l
+  docker exec geldar-colo-nats-1 wget -qO- http://127.0.0.1:8222/varz | grep -o '"connections": *[0-9]*'
+  ```
+  The connection count was 54 on 2026-11-14. Write both numbers in the change log.
+
+**1. Backup**
+
+```sh
+umask 077
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+cp /mnt/nvme/geldar-colo/secrets/nats-auth.conf /mnt/nvme/geldar-colo/secrets/nats-auth.conf.bak-$STAMP
+chmod 0600 /mnt/nvme/geldar-colo/secrets/nats-auth.conf.bak-$STAMP
+sha256sum /mnt/nvme/geldar-colo/secrets/nats-auth.conf /mnt/nvme/geldar-colo/secrets/nats-auth.conf.bak-$STAMP
+```
+
+Record the two sha256 values. They must match.
+
+**2. Stage the new conf**
+
+- Make a private staging directory outside `secrets/`: `install -d -m 0700 "$HOME/nats-stage"`. Do not use `secrets/nats-auth.conf.new`: it is a stale, unvalidated leftover. Do not use it, and do not delete it without the owner.
+- Write the new conf to `$HOME/nats-stage/nats-auth.conf` with `umask 077`, so it is `0600`.
+- Passwords come from the existing `secrets/nats-<user>.txt` files, one per user that already exists. This runbook creates no new password for an existing user. A new user (see the pending list) needs its own owner go and its password file made with `umask 077`; never print it.
+- Check the monitor line is unchanged:
+  ```sh
+  grep -n 'http:' /mnt/nvme/geldar-colo/secrets/nats-auth.conf "$HOME/nats-stage/nats-auth.conf"
+  ```
+  Both must print `http: "127.0.0.1:8222"`.
+
+**3. Validate without touching the live server**
+
+```sh
+docker run --rm --entrypoint nats-server \
+  -v "$HOME/nats-stage/nats-auth.conf:/check/nats-auth.conf:ro" \
+  nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde \
+  -t -c /check/nats-auth.conf
+```
+
+Expect `is valid`. Anything else stops the change.
+
+Diff by user and permission lines, passwords redacted:
+
+```sh
+sed -E 's/password[^,}]*/password=REDACTED/g' /mnt/nvme/geldar-colo/secrets/nats-auth.conf > "$HOME/nats-stage/old.redacted"
+sed -E 's/password[^,}]*/password=REDACTED/g' "$HOME/nats-stage/nats-auth.conf" > "$HOME/nats-stage/new.redacted"
+diff "$HOME/nats-stage/old.redacted" "$HOME/nats-stage/new.redacted"
+```
+
+Read the diff against the pending list and the decision. Only the expected users and subjects may change. Delete the two `.redacted` files afterwards.
+
+**4. Apply in place**
+
+```sh
+cat "$HOME/nats-stage/nats-auth.conf" > /mnt/nvme/geldar-colo/secrets/nats-auth.conf
+stat -c '%a %i' /mnt/nvme/geldar-colo/secrets/nats-auth.conf
+```
+
+The mode must still be `600`. Run `sha256sum` on the live file and compare it with the staged file. Do not run `mv`.
+
+**5. Reload (SIGHUP, not a restart)**
+
+```sh
+docker kill -s HUP geldar-colo-nats-1
+docker logs --since 2m geldar-colo-nats-1
+```
+
+The log must show, in this order or close to it:
+
+- `Reloaded: authorization users`
+- `Reloaded: accounts`
+- `Reloaded server configuration`
+
+Then check the connection count:
+
+```sh
+docker exec geldar-colo-nats-1 wget -qO- http://127.0.0.1:8222/varz | grep -o '"connections": *[0-9]*'
+```
+
+It should return to the pre-change number, 54 on 2026-11-14, within a minute or two as clients reconnect. If a `Reloaded` line is missing, stop and go to step 7.
+
+**6. Verify each changed role**
+
+- For each role whose permissions changed, check one denied publish is refused and one allowed publish still works. A refused publish is logged as a `Permissions Violation` line (`docker logs --since 5m geldar-colo-nats-1 | grep -i 'permissions violation'`). Do the allowed check with the role's own client, not the admin account.
+- Check that `body`, `mcp` and `eventsink` are connected (the connection count, and their names in `GET /connz`, read through `docker exec ... wget`).
+- Check for dead letters: no new dead-letter messages in the logs of Body, MCP and eventsink since the change.
+- Body hosts and MCP reconnect on their own. Confirm it in their logs. Do not restart them by hand unless they stay disconnected for more than five minutes.
+
+**7. Rollback**
+
+Use this if a `Reloaded` line is missing, a required role is refused, or a dead letter appears that the change caused.
+
+```sh
+cat /mnt/nvme/geldar-colo/secrets/nats-auth.conf.bak-<UTC stamp> > /mnt/nvme/geldar-colo/secrets/nats-auth.conf
+sha256sum /mnt/nvme/geldar-colo/secrets/nats-auth.conf
+docker kill -s HUP geldar-colo-nats-1
+docker logs --since 2m geldar-colo-nats-1
+```
+
+The `sha256sum` must equal the backup's value from step 1. Then repeat the `Reloaded` check and the connection count from step 5. Keep the backup until the change is confirmed for a day.
+
+## Client impact
+
+**Not verified:** whether a reload closes live sessions of changed or removed users on nats-server 2.15.1. Earlier reloads logged the three `Reloaded` lines (2026-11-12 16:08:53Z and 2026-11-13 16:29:14Z), but nothing shows what happened to the sessions. The repo test `threshold/mcp/test/nats-auth.it.test.ts` only asserts that a revoked user is refused on its next connection.
+
+What to expect until this is tested:
+
+- Users whose entries did not change should stay connected.
+- A client that loses permissions may be closed, or may get `Permissions Violation` errors on the next publish or subscribe.
+- Body hosts and MCP should reconnect on their own. Verify it in the logs.
+
+Test it once on a throwaway container before the live change:
+
+1. Start `nats:2.15.1-alpine` (digest above) with a two-user conf, on a loopback port, with its own monitor port. Use a separate test container name. Never use the live name.
+2. Connect one client as each user. Subscribe as one user to a subject it may read.
+3. Remove one permission from the second user in a copy of the conf. Replace the conf in place (`cat`, not `mv`).
+4. Send `docker kill -s HUP` to the test container.
+5. Observe: is the first client still connected, is the second client closed, and what does its next publish get. Record the answer in this section.
+6. Remove the test container and its temporary files.
+
+Until the test records a result, plan the live change as if changed users are closed.
+
+## Notes
+
+- A change in the repo lands first. The generator (`geldar.ps1`) must produce the same conf the node runs. Check that with the golden test before the node change.
+- Do not run `./geldar.ps1 shard nats-auth colo` on the node. It is a trusted-machine command; on the node it would write a conf the node did not review.
+- Do not edit `docs/spec.md` to match a live change.

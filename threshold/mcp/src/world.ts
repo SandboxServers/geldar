@@ -49,6 +49,7 @@ import { statusTool } from './tools/status.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
 import { createWaitState, type WaitError, type WaitState, wait } from './tools/wait.ts';
+import type { WaitDeltaLives } from './tools/wait-delta.ts';
 
 /** The fixed messages the handlers add. None echoes world text or names an observer (decision 0059). */
 export const BODY_RETRY_AFTER_S = 5;
@@ -75,6 +76,8 @@ const SLEEP_THOUGHT = { reasoning: 'sleep', actions: [{ do: 'sleep' }] } as Thou
 
 /** Everything the world's handlers reach. Each tool function takes the subset it needs. */
 export interface WorldDeps {
+  /** The lives the unchanged-section feature is on for (GELDAR_WAIT_DELTA_LIVES, read at startup). */
+  waitDelta?: WaitDeltaLives | undefined;
   players: PlayerDirectory;
   body: BodyGateway;
   budget: BudgetLedger;
@@ -225,6 +228,7 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       runs: deps.runs,
       config: deps.wake,
       state: deps.waitState,
+      waitDelta: deps.waitDelta,
       failures: deps.failures,
       presenceLog: deps.presenceLog,
       wantBody: (lifeId) => deps.presence.wantBody(lifeId, deps.now()),
@@ -237,6 +241,7 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       lifeId: call.lifeId,
       maxSeconds: input.max_seconds,
       signal: ctx.signal,
+      session: ctx.session,
       ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
       ...(input.interests === undefined ? {} : { interests: input.interests }),
     },
