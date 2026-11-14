@@ -12,6 +12,7 @@ import {
 } from './checkpoint.ts';
 import { type Body, type CreateBodyOptions, createBody } from './create-body.ts';
 import { GENERATION_BUCKET, type GenerationOptions, nextGeneration } from './generation.ts';
+import { InflightStore } from './inflight.ts';
 
 /** Spec 5.2: how long a restarted Body waits for the Mind's plan before it says it has none. */
 export const NO_PLAN_WAIT_MS = 45_000;
@@ -140,6 +141,17 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
   });
   body.runtime.start();
   body.executor.start();
+  // A give the previous run left open is closed before anything resumes (inflight.ts). A failure is
+  // logged by the store and the key stays for the next start.
+  await new InflightStore({
+    kv: kv.checkpoints,
+    lifeId: options.lifeId,
+    sink: body.runtime.sink,
+    flushable: body.records,
+    ...(log === undefined ? {} : { log }),
+  })
+    .recover()
+    .catch(() => undefined);
   const outcome = await recover(body, options.lifeId, options.tickWaitMs ?? TICK_WAIT_MS);
   let cancel: () => void = () => undefined;
   if (outcome.kind === 'idle') {
