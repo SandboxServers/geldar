@@ -12,6 +12,7 @@ import {
 } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 
 /** The first world tick of the night window the Body checks (advisory: the server's window differs by one). */
 const NIGHT_START = 12_542;
@@ -64,9 +65,20 @@ function matchSleepError(message: string): SleepError | undefined {
   return SLEEP_ERRORS.find((known) => known.match.test(message));
 }
 
-/** Maps a Mineflayer sleep error to a fail reason, by its text. Anything unknown is `internal`. */
+/** Maps a Mineflayer sleep error to a fail reason, by its text. Anything unknown is `not_possible`. */
 export function classifySleepError(message: string): FailReason {
-  return matchSleepError(message)?.reason ?? 'internal';
+  return matchSleepError(message)?.reason ?? 'not_possible';
+}
+
+/**
+ * The failed outcome for a sleep error. A text that no known error matches keeps its server text and
+ * logs one `sleep_reason_unknown` line to the diag sink, so a new text shows up in the log.
+ */
+export function sleepFailure(message: string, diag: DiagSink = DEFAULT_DIAG_SINK): ActionOutcome {
+  if (matchSleepError(message) === undefined) {
+    diag.log(JSON.stringify({ event: 'sleep_reason_unknown', message }));
+  }
+  return failed(classifySleepError(message), sleepErrorText(message));
 }
 
 /** The text the agent reads for a sleep error: the fact it states, or the message when no fact is known. */
@@ -173,7 +185,7 @@ async function attemptSleep(bot: Bot, bed: Block): Promise<ActionOutcome | null>
   } catch (error) {
     const message = errorText(error);
     if (ALREADY_SLEEPING.test(message)) return null;
-    return failed(classifySleepError(message), sleepErrorText(message));
+    return sleepFailure(message);
   }
 }
 
