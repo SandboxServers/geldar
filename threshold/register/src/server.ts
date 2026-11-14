@@ -3,6 +3,7 @@ import { Account } from './account.ts';
 import { handleApi } from './api/index.ts';
 import type { ApiDeps } from './api/route.ts';
 import type { RegisterConfig } from './config.ts';
+import { errorPage } from './errors.ts';
 import { type Identity, identityHash } from './identity.ts';
 import {
   BASE,
@@ -17,13 +18,6 @@ import { sendProblem } from './problem.ts';
 import type { FetchFn, Provider } from './providers.ts';
 import type { SessionStore } from './session-store.ts';
 import type { Store } from './store.ts';
-
-/** The 0090 public refusal shapes (the same bodies the MCP front uses). */
-const KILL_BODY = { error: { code: 'unavailable', message: 'Service unavailable' } };
-const rateBody = (s: number) => ({
-  error: { code: 'rate_limited', message: 'Too many requests' },
-  retryAfter: s,
-});
 
 export interface RegisterDeps {
   readonly config: RegisterConfig;
@@ -231,12 +225,12 @@ export function createRegisterServer(deps: RegisterDeps): Server {
       api = url.pathname.startsWith('/api/');
       // The kill switch and the source limit run before any route, the API included, so a key is never resolved past either.
       if (config.killSwitch)
-        return api ? sendProblem(res, 'unavailable') : sendJson(res, 503, KILL_BODY);
+        return api ? sendProblem(res, 'unavailable') : send(res, 503, errorPage(503));
       const wait = limiter.charge(clientAddress(req, config.trustedPeers));
       if (wait > 0)
         return api
           ? sendProblem(res, 'rate_limited', { 'retry-after': String(wait) })
-          : sendJson(res, 429, rateBody(wait), { 'retry-after': String(wait) });
+          : send(res, 429, errorPage(429, wait), { 'retry-after': String(wait) });
       if (api) return serveApi(req, res, url);
       if (account && (await account.handle(req, res, url))) return;
       if (req.method !== 'GET')
@@ -246,10 +240,10 @@ export function createRegisterServer(deps: RegisterDeps): Server {
       if (url.pathname === '/') return send(res, 200, HOME_PAGE);
       if (url.pathname === '/terms') return send(res, 200, TERMS_PAGE);
       const m = /^\/(login|callback)$/.exec(url.pathname);
-      if (!m) return sendJson(res, 404, { error: { code: 'not_found', message: 'Not found' } });
+      if (!m) return send(res, 404, errorPage(404));
       const signWait = signInLimiter.charge(clientAddress(req, config.trustedPeers));
       if (signWait > 0)
-        return sendJson(res, 429, rateBody(signWait), { 'retry-after': String(signWait) });
+        return send(res, 429, errorPage(429, signWait), { 'retry-after': String(signWait) });
       const provider = deps.providers.microsoft;
       if (m[1] === 'callback') return callback(provider, url, req, res);
       const verifier = newVerifier();

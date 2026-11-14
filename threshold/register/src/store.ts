@@ -9,6 +9,10 @@ export interface PlayerRow {
   readonly name: string;
   readonly harness: string;
   readonly status: string;
+  /** The owner's public camera flag (0014), read for the account page only. */
+  readonly publicCamera: boolean;
+  /** The owner's delayed public thoughts flag (0016), read for the account page only. */
+  readonly thoughtsDelayedPublic: boolean;
 }
 
 export interface NewPlayerRequest {
