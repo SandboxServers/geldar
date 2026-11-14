@@ -329,7 +329,7 @@ describe('build program', () => {
     expect(last).toEqual({
       status: 'failed',
       message:
-        'Built shelter: 24 placed, 0 already solid, of 25. The north wall and the east wall could not be placed; first failure: blocked: the server refused.',
+        'not_possible: Built shelter: 24 placed, 0 already solid, of 25. The north wall and the east wall could not be placed; first failure: blocked: the server refused.',
     });
     expect(world.placed.size).toBe(24);
     const attempts = placesIn(world);
@@ -347,7 +347,7 @@ describe('build program', () => {
     expect(await run(program, ctx)).toEqual({
       status: 'failed',
       message:
-        'Built shelter: 23 placed, 0 already solid, of 25. The roof and the north wall could not be placed; first failure: blocked: the server refused.',
+        'not_possible: Built shelter: 23 placed, 0 already solid, of 25. The roof and the north wall could not be placed; first failure: blocked: the server refused.',
     });
   });
 
