@@ -12,6 +12,10 @@ export const CAP_ALERT_AT = 30;
 export const CAP_REFUSAL = 'global body cap reached';
 export const ALREADY_RUNNING = 'already running';
 export const NAME_TAKEN = 'name taken by a container the helper did not create';
+/** The refusal for a start or stop that an Engine call held past its deadline. */
+export const ENGINE_TIMEOUT = 'engine timeout';
+/** The most time one start or stop may hold the queue (config: GELDAR_BODY_HELPER_DEADLINE_MS). */
+export const REQUEST_DEADLINE_MS = 120_000;
 
 export interface ContainerState {
   id: string;
@@ -39,6 +43,8 @@ export interface HelperDeps {
   /** The most running Bodies plus sovereign hosts a start may leave the node with (GLOBAL-CAP). */
   cap: number;
   template: TemplateSettings;
+  /** The most time one start or stop may hold the queue. Defaults to REQUEST_DEADLINE_MS. */
+  requestDeadlineMs?: number;
   audit(line: string): void;
 }
 
@@ -55,9 +61,28 @@ export type RequestHandler = (raw: unknown) => Promise<Reply>;
 export function createBodyHelper(deps: HelperDeps): RequestHandler {
   let alerted = false;
   // Start and stop run after the previous one settles. A failed run does not stop the queue.
+  // Each run also has a deadline, counted from when it starts. Past it the caller is answered ENGINE_TIMEOUT and the
+  // queue moves on. The abandoned run's `live()` turns false, so it creates or starts nothing after the deadline.
+  const deadlineMs = deps.requestDeadlineMs ?? REQUEST_DEADLINE_MS;
   let chain: Promise<unknown> = Promise.resolve();
-  const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
-    const run = chain.then(work, work);
+  const exclusive = (
+    verb: string,
+    name: string,
+    work: (live: () => boolean) => Promise<Reply>,
+  ): Promise<Reply> => {
+    const bounded = (): Promise<Reply> => {
+      let expired = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<Reply>((resolve) => {
+        timer = setTimeout(() => {
+          expired = true;
+          deps.audit(`body-helper verb=${verb} name=${name} outcome=refused reason=engine_timeout`);
+          resolve({ ok: false, code: 'refused', error: ENGINE_TIMEOUT });
+        }, deadlineMs);
+      });
+      return Promise.race([work(() => !expired), deadline]).finally(() => clearTimeout(timer));
+    };
+    const run = chain.then(bounded, bounded);
     chain = run.catch(() => undefined);
     return run;
   };
@@ -113,8 +138,8 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
         audit(verb, name, 'accepted');
         return { ok: true, state: 'logs', text };
       }
-      if (verb === 'stop') return await exclusive(() => stop(container, name));
-      return await exclusive(() => start(container, name, owner, loginName));
+      if (verb === 'stop') return await exclusive(verb, name, () => stop(container, name));
+      return await exclusive(verb, name, (live) => start(container, name, owner, loginName, live));
     } catch {
       audit(verb, name, 'failed');
       return { ok: false, code: 'failed', error: 'docker call failed' };
@@ -138,6 +163,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     name: string,
     owner: string,
     loginName: string,
+    live: () => boolean,
   ): Promise<Reply> {
     const existing = await deps.engine.inspect(container);
     if (existing?.running) {
@@ -155,10 +181,14 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       audit('start', name, 'capacity');
       return { ok: false, code: 'capacity', error: CAP_REFUSAL };
     }
+    // An abandoned run (past its deadline) makes no further Engine mutation: the queue has moved on.
+    if (!live()) throw new Error('abandoned after deadline');
     if (existing) await deps.engine.remove(existing.id);
+    if (!live()) throw new Error('abandoned after deadline');
     const config = bodyContainerConfig({ ...deps.template, name: container, owner, loginName });
     const id = await deps.engine.create(container, config);
     try {
+      if (!live()) throw new Error('abandoned after deadline');
       await deps.engine.start(id);
     } catch (error) {
       await deps.engine.remove(id).catch(() => undefined);

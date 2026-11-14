@@ -25,6 +25,8 @@ export interface HelperConfig {
   limits: BodyLimits;
   cap: number;
   sweepMinutes: number;
+  /** The most time one start or stop may hold the queue, in ms (GELDAR_BODY_HELPER_DEADLINE_MS, default 120 s). */
+  requestDeadlineMs: number;
 }
 
 /** Group and other permission bits: a secret file must have none. */
@@ -107,5 +109,6 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
     },
     cap: globalBodyCapFromEnv(env),
     sweepMinutes: positive(env, 'GELDAR_SWEEP_MINUTES', 10),
+    requestDeadlineMs: positive(env, 'GELDAR_BODY_HELPER_DEADLINE_MS', 120_000),
   };
 }

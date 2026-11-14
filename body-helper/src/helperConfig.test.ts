@@ -39,7 +39,16 @@ describe('helper config', () => {
     expect(config.wiring.uid).toBe('1000');
     expect(config.cap).toBe(40);
     expect(config.sweepMinutes).toBe(10);
+    expect(config.requestDeadlineMs).toBe(120_000);
     expect(config.natsPassword).toBe(SECRET_TEXT);
+  });
+
+  it('reads the request deadline from its env name and refuses a zero one', () => {
+    const set = loadHelperConfig({ ...env, GELDAR_BODY_HELPER_DEADLINE_MS: '5000' }, fakeFs());
+    expect(set.requestDeadlineMs).toBe(5000);
+    expect(() =>
+      loadHelperConfig({ ...env, GELDAR_BODY_HELPER_DEADLINE_MS: '0' }, fakeFs()),
+    ).toThrow('GELDAR_BODY_HELPER_DEADLINE_MS must be a positive whole number');
   });
 
   it('fails at start on a missing required name, and names the variable', () => {

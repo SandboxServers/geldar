@@ -63,10 +63,12 @@ describe('engine: the global count', () => {
     expect(lists.every((c) => c.path.includes('status'))).toBe(true);
   });
 
-  it('counts only running containers: the filter asks for status running', async () => {
+  it('counts running and restarting containers: a crash-looping Body keeps its slot while it is down', async () => {
     const { request, calls } = fakeEngine(0, 0);
     await createDockerEngine(request).countCounted();
-    expect(calls[0]?.path).toContain(encodeURIComponent('"status":["running"]'));
+    const statusFilter = encodeURIComponent('"status":["running","restarting"]');
+    expect(calls).toHaveLength(2);
+    expect(calls.every((c) => c.path.includes(statusFilter))).toBe(true);
   });
 });
 
@@ -117,6 +119,25 @@ describe('engine: the verbs', () => {
       }),
     );
     expect(await byPrefix.inspect('abc123')).toBeNull();
+  });
+
+  it('matches the exact name, not a prefix: a body10 reply is absent for body1, and body1 for body10', async () => {
+    const replyFor = (serverName: string) =>
+      createDockerEngine(async () =>
+        json(200, {
+          Id: 'ffff',
+          Name: `/${serverName}`,
+          State: { Running: true },
+          Config: { Labels: { [BODY_LABEL]: serverName } },
+        }),
+      );
+    expect(await replyFor('body10').inspect('body1')).toBeNull();
+    expect(await replyFor('body1').inspect('body10')).toBeNull();
+    expect(await replyFor('body1').inspect('body1')).toEqual({
+      id: 'ffff',
+      running: true,
+      helperBody: true,
+    });
   });
 
   it('create refuses a non-201 reply and never echoes the reply body in the error', async () => {

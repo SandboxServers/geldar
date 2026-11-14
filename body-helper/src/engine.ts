@@ -108,8 +108,9 @@ function filterQuery(filters: Record<string, string[]>, all: boolean): string {
 }
 
 async function runningWithLabel(request: EngineRequest, label: string): Promise<number> {
+  // A Body in `restarting` (a restart policy, a crash loop) is still on the node and still holds its slot.
   const reply = expect(
-    await request('GET', filterQuery({ label: [label], status: ['running'] }, false)),
+    await request('GET', filterQuery({ label: [label], status: ['running', 'restarting'] }, false)),
     [200],
     'list',
   );
@@ -140,7 +141,7 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
       };
     },
     async countCounted(): Promise<number> {
-      // Running Bodies plus running sovereign hosts: the global cap counts both (decision 0261).
+      // Running or restarting Bodies plus running or restarting sovereign hosts: the global cap counts both (decision 0261).
       const bodies = await runningWithLabel(request, BODY_LABEL);
       const hosts = await runningWithLabel(request, SOVEREIGN_HOST_LABEL);
       return bodies + hosts;
