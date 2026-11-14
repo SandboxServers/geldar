@@ -1,37 +1,70 @@
 # GX-04a worknote: player-core move
 
-Status: STOPPED before any move (stop condition in the brief: the closure pulls in `animus/src/prompts/**`).
-Branch: phase1/gx-04a-player-core, base origin/main 2e5126f7.
+Status: DONE in phase1/gx-04a-player-core. Base origin/main 2e5126f7. The earlier STOP (validate/corrective.ts
+needs prompts/world-text.ts) is resolved by a verbatim copy of the one helper, not a move. animus/ stays frozen.
 
-## Baseline (origin/main, before any edit)
+## What moved
 
-- `pnpm test animus`: 45 files passed, 2 skipped; 505 tests passed, 5 skipped (510 total).
-- `pnpm test threshold/mcp`: 146 files passed, 9 skipped; 1407 tests passed, 55 skipped (1462 total).
+`git mv` from `animus/src` into the new workspace package `player-core/` (@geldar/player-core). Each old path is
+now a deprecated `export *` stub so existing imports keep working. Nothing was deleted.
 
-## Closure of the brief's move list
+- Sources: `attention/classify.ts`, `ids.ts`, `link/link.fixtures.ts`, `link/mind-event.ts`,
+  `link/nats-body-link.ts`, `link/nats-event-source.ts`, `loop/plan.ts`, `ports/{admission,attention,body,index,memory,model,prompts}.ts`,
+  `validate/{action-focus,action-shapes,bounds,corrective,index,json-input,reflection-output,thought-output}.ts`.
+- Tests: `ids.test.ts`, `link/nats-body-link.test.ts`, `link/nats-event-source.test.ts`, `loop/plan.test.ts`.
+- New in player-core: `package.json`, `README.md`, `src/no-animus.test.ts` (fails if any player-core source imports animus),
+  `src/validate/json-string.ts`.
 
-Relative imports checked file by file:
+## Closure beyond the brief's list
 
-- `validate/index.ts` imports `action-focus.ts` (not in the list) and `corrective.ts`, `bounds.ts`, `json-input.ts`, `reflection-output.ts`, `thought-output.ts`.
-- `validate/action-focus.ts` imports `action-shapes.ts` (not in the list) and `bounds.ts`.
-- `validate/corrective.ts` imports `../prompts/world-text.ts` (`jsonString`). That is under `animus/src/prompts/**`. STOP condition. `world-text.ts` is 243 lines and has no imports of its own, but the brief forbids touching `prompts/**`, and player-core cannot import from animus (`no-animus.test.ts`).
-- `link/link.fixtures.ts` imports `link/nats-event-source.ts` (not in the list). `nats-event-source.ts` imports `../ports/index.ts` and `mind-event.ts`.
-- `ports/index.ts` re-exports every file in `ports/` (`admission`, `attention`, `body`, `memory`, `model`, `prompts`). The `ports/` directory is self-contained: `memory.ts`, `prompts.ts` and `attention.ts` import only sibling ports files.
-- `loop/plan.ts` imports `ids.ts` (`node:crypto` only). `attention/classify.ts` has no relative imports. `link/mind-event.ts`, `link/nats-body-link.ts` import only `ports/index.ts`.
+- `validate/action-focus.ts` and `validate/action-shapes.ts` (imported by `validate/index.ts`).
+- `link/nats-event-source.ts` (imported by `link/link.fixtures.ts`).
+- All of `ports/` (`ports/index.ts` re-exports every sibling).
+- `validate/corrective.ts` imports `jsonString` from `animus/src/prompts/world-text.ts`. That file is frozen
+  (`prompts/**` pinned by decision 0181), so player-core carries its own copy: `src/validate/json-string.ts`.
+  It is lines 54-92 and 114-131 of world-text.ts plus the `MAX_ITEM_CHARS` line, copied byte for byte by a script.
+  `threshold/mcp/src/json-string-parity.test.ts` runs both copies on the same inputs.
+- `validate/bounds.ts` exports `PROGRAM_ARGS` (needed by the move).
 
-Files outside the brief's list that the move would also need: `validate/action-focus.ts`, `validate/action-shapes.ts`, `link/nats-event-source.ts`, and all of `ports/` (`admission.ts`, `attention.ts`, `memory.ts`, `model.ts`, `prompts.ts`).
+## Deviations from the brief
 
-Blocking file: `animus/src/validate/corrective.ts` (line 2). Moving `validate/index.ts` requires moving `corrective.ts`, which requires `prompts/world-text.ts`.
+- `threshold/mcp/package.json`: `@geldar/player-core` moved from devDependencies to dependencies; devDependencies
+  now has `@geldar/animus` (workspace:*) for the parity test only. Not a runtime dependency.
+- `threshold/mcp/src/container.test.ts`: `'player-core'` added to the `workspaceDirs` list (the closure walk
+  failed with "imports an unknown workspace package" without it). Lines 64-65 now name
+  `player-core/package.json` and `player-core/src/validate/index.ts`.
+- `threshold/mcp/Dockerfile.dockerignore`: `!animus/src` replaced by `!player-core` (threshold runtime no longer
+  imports animus; comments only).
+- `.github/workflows/colo-images.yml`: `player-core/**` added to the trigger paths (the Mind image now depends on it).
+- `tools/admin/Dockerfile`: `COPY player-core ./player-core` (admin closure includes @geldar/mcp).
+- `animus/Dockerfile.mind` and `animus/Dockerfile.mind.dockerignore`: COPY and allow `player-core`.
+- `threshold/mcp/README.md`: workspace dependencies line and the imports.test.ts description updated.
+- `pnpm-workspace.yaml`: `player-core` listed. `pnpm-lock.yaml` regenerated (player-core importer added).
+- The first `gx04a-move3.py` script was not run to completion (it had already applied one edit). The remaining
+  edits were applied with an idempotent script that checks each exact match.
 
-## Decision needed from the orchestrator
+## Checks (worktree, final state)
 
-Options, none taken here:
+- `git diff --check`: clean.
+- `pnpm format`: applied 25 files (import order in moved files). `pnpm lint`: exit 0 at error level; 46 warnings and 8 infos
+  remain (not compared against the origin/main baseline; unconfirmed).
+- Typecheck: `player-core`, `animus`, `threshold/mcp` clean.
+- `pnpm test player-core`: 5 files, 38 passed.
+- `pnpm test animus`: 42 files passed, 2 skipped; 469 passed, 5 skipped. Baseline 505 passed, 5 skipped; the
+  36 tests in the four moved files account for the difference exactly. Expected file count was 41 (45 - 4);
+  the extra file is unconfirmed.
+- `pnpm test threshold/mcp`: 147 files passed, 9 skipped; 1423 passed, 55 skipped. Baseline 1407 passed, 55 skipped;
+  the +16 is `json-string-parity.test.ts` (16 tests).
+- `pnpm check:repo`: repo checks ok.
 
-1. Owner ruling that `prompts/world-text.ts` (the single `jsonString` helper) may move or be duplicated. Conflicts with "everything under animus/src/prompts/** stay untouched" unless the helper is copied, which duplicates code.
-2. Drop `validate/index.ts` and its validate closure from the GX-04a move set; move the rest and handle the validate tree in a separate packet.
+## Revert-checks
 
-No file was moved, no import was changed, and no animus or threshold/mcp test was edited.
+1. `player-core/src/validate/json-string.ts` line 13 `[0x3e, 0x3e]` -> `[0x3f, 0x3f]`: parity test fails
+   ("agrees on <tag> and </tag>", the `>` is not escaped). Restored from backup; diff empty.
+2. `player-core/src/ids.ts`: prepended `import '../../animus/src/ids.ts';`: no-animus test fails
+   (`expected ['ids.ts'] to deeply equal []`). Restored from backup; diff empty.
 
-## Checks
+## Open items
 
-Not run: the move did not happen, so there is nothing to format, lint, typecheck or test beyond the baseline above.
+- None blocking. Unconfirmed: the lint warning count against baseline, and the animus file count (42 vs 41).
+- Not run: live lane (not requested).
