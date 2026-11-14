@@ -108,24 +108,21 @@ describe('unstick on a canopy', () => {
     expect(out.detail.tried).toEqual(['walk', 'dig_down', 'stair_dig']);
   });
 
-  it('refuses a stair step with no solid block under the landing and fails with what was tried', async () => {
+  it('refuses a stair step with no solid block under the landing; leaves at y 69 are a level way out', async () => {
+    // Decision 0183: the leaves at y 69 are solid, so the way out costs no fall and is taken at any health.
+    // The stair step itself (no landing at y 68) is still refused, so it is not the step that frees the bot.
     const { bot, cells } = fakeBot(canopy(62, false), 2);
     const out = await unstick(ctxOf(bot));
-    expect(out.status).toBe('failed');
-    expect(cells).toEqual([]);
-    if (out.status === 'failed') {
-      expect(out.message).toBe(
-        'unstick: no way out found; tried walk, dig_down, stair_dig, dig_sideways, dig_unowned',
-      );
-    }
+    expect(out.status).toBe('completed');
+    expect(cells).not.toContain(key(1, 68, 0));
   });
 
-  it('refuses a stair step or a dig-down that would land on lava', async () => {
+  it('a way out over leaves that sit on lava never digs into the lava', async () => {
     const grid = canopy(62, false);
     for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) grid.set(key(x, 68, z), 'lava');
     const { bot, cells } = fakeBot(grid, 2);
     const out = await unstick(ctxOf(bot));
-    expect(out.status).toBe('failed');
-    expect(cells).toEqual([]);
+    expect(out.status).toBe('completed');
+    expect(cells).not.toContain(key(1, 68, 0));
   });
 });
