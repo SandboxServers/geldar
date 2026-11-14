@@ -92,7 +92,7 @@ async function applyFlags(
 
 /**
  * PATCH /agents/{playerId} (C7-04e): sets publicCamera and/or thoughtsDelayedPublic on the owner's own agent. Cookie
- * session only (decision 0173), CSRF on the write. A foreign or missing agent is the guard's 404 before any write.
+ * session only (decision 0173), CSRF on the write. A foreign, missing or retired agent is the 404 before any write.
  * A store false (not the owner's) is 404. A database refusal for too many changes is 429 with Retry-After; a
  * database refusal for a banned owner (42501) is 401. Turn-offs are written before turn-ons. Any other store error is
  * thrown and the router answers 500 internal, so no success is reported.
@@ -106,7 +106,9 @@ export const agentsPatchRoutes: readonly ApiRoute[] = [
     cookieOnly: true,
     async handler(ctx) {
       const playerId = ctx.params[0] ?? '';
-      if ((await ownedAgent(ctx.deps, ctx.ownerId, playerId)) === null) {
+      const owned = await ownedAgent(ctx.deps, ctx.ownerId, playerId);
+      // A retired agent is the same 404 as a missing one: nothing is read or written.
+      if (owned === null || owned.status === 'retired') {
         return sendProblem(ctx.res, 'not_found');
       }
       const write = await readFlagWrite(ctx.req);
