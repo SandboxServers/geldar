@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from './fakes.ts';
 import { BODY_MEMORY_BYTES, BODY_NANO_CPUS } from './limits.ts';
-import type { ControlRequest, LogEvent, Op } from './ports.ts';
+import { type ControlRequest, type LogEvent, LoginNameError, type Op } from './ports.ts';
 import { DAY_MS, HOUR_MS, LOG_TAIL_LIMIT, LOG_TAIL_WINDOW_MS } from './quotas.ts';
 import { createSupervisor, RUNTIME_TIMEOUT_MS } from './service.ts';
 
@@ -30,6 +30,31 @@ const start = (player: string, owner = A) => req('start', owner, player);
 const stop = (player: string, owner = A) => req('stop', owner, player);
 const STARTED = { ok: true, code: 'started' };
 const UNKNOWN = { ok: false, code: 'unknown' };
+
+describe('login name refusal (C7-03b, fix K F1)', () => {
+  it('a name outside the login shape replies login_name, writes no start row, and does not count', async () => {
+    const { world, handle } = setup();
+    world.startError = new LoginNameError();
+    expect(await handle(start('Ranger'))).toEqual({ ok: false, code: 'login_name' });
+    expect(world.startRows).toEqual([]);
+    expect(world.auditRows.at(-1)).toMatchObject({ action: 'body_start', outcome: 'login_name' });
+    world.startError = null;
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    expect(world.startRows).toHaveLength(1);
+  });
+});
+
+describe('restart login name check runs before the running body stops (fix K, orchestrator)', () => {
+  it('a restart with a bad login name keeps the running body up, replies login_name, and writes no start row', async () => {
+    const { world, handle } = setup();
+    expect(await handle(start('Ranger'))).toEqual(STARTED);
+    world.loginNameBad = true;
+    expect(await handle(req('restart', A, 'Ranger'))).toEqual({ ok: false, code: 'login_name' });
+    expect(world.bodies.get('ranger')?.running).toBe(true);
+    expect(world.stops).toEqual([]);
+    expect(world.startRows).toHaveLength(1);
+  });
+});
 
 describe('association: an owner acts only on their own roster names', () => {
   it('owner A stopping owner B body gets the unknown reply and changes nothing', async () => {
@@ -314,6 +339,7 @@ describe('container config carries the 0082 body limits', () => {
       NanoCpus: 1_000_000_000,
       Memory: 2048 * 1024 * 1024,
       MemorySwap: 2048 * 1024 * 1024,
+      PidsLimit: 256,
     });
     expect(BODY_NANO_CPUS).toBe(1_000_000_000);
     expect(BODY_MEMORY_BYTES).toBe(2048 * 1024 * 1024);

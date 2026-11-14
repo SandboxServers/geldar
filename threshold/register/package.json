@@ -15,6 +15,7 @@
     "@types/pg": "8.23.1"
   },
   "dependencies": {
+    "@geldar/contract": "workspace:*",
     "pg": "8.23.1"
   }
 }

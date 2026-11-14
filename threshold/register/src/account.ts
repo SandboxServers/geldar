@@ -1,9 +1,18 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
-import { accountPage, tokenPage } from './account-pages.ts';
+import { accountPage } from './account-pages.ts';
 import type { RegisterConfig } from './config.ts';
 import type { Identity } from './identity.ts';
+import {
+  mcpBaseFor,
+  ONBOARDING_CSP,
+  ONBOARDING_SCRIPT,
+  ONBOARDING_SCRIPT_PATH,
+  OnboardingHandoff,
+  onboardingEmptyPage,
+  onboardingPage,
+} from './onboarding-pages.ts';
 import { BASE, EXPIRED_PAGE, REFUSED_PAGE, SECURITY_HEADERS } from './pages.ts';
 import { STATE_COOKIE } from './pkce.ts';
 import { KINO_COOKIE_TTL_MS, kinoCookieHeader, signKinoSession } from './session-cookie.ts';
@@ -15,6 +24,7 @@ import {
   slideExpiry,
 } from './session-store.ts';
 import type { Store } from './store.ts';
+import { tokenExpiresAt } from './tokens-policy.ts';
 
 export const SESSION_COOKIE = 'gr_session';
 /** The idle window (C7-01). Kept under its old name for the tests that step the clock past it. */
@@ -29,6 +39,8 @@ interface Session {
   readonly ownerId: string;
   readonly identityHash: string;
   readonly csrf: string;
+  /** The session hash: the key the held token is filed under (one session, one slot). */
+  readonly key: string;
 }
 
 export interface AccountDeps {
@@ -99,6 +111,9 @@ export class Account {
     return run;
   }
 
+  /** The token held for the onboarding page (C7-05): in memory, one showing, ten minutes. */
+  private readonly handoff = new OnboardingHandoff();
+
   /** The callback hook: banned and capped checks, then the owner, then a session and a redirect. */
   readonly signedIn = async (
     identity: Identity,
@@ -163,13 +178,23 @@ export class Account {
       ownerId: row.ownerId,
       identityHash: row.identityHash,
       csrf: csrfFor(this.deps.config.sessionKey, id),
+      key: sessionHash(id).toString('hex'),
     };
   }
 
   /** Handles an account route; false when the path is not one of them. */
   async handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    if (url.pathname === ONBOARDING_SCRIPT_PATH) {
+      if (req.method !== 'GET') return this.methodNotAllowed(res);
+      res.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        ...SECURITY_HEADERS,
+      });
+      res.end(ONBOARDING_SCRIPT);
+      return true;
+    }
     const m =
-      /^\/(account|players|logout)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
+      /^\/(account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
         url.pathname,
       );
     if (!m) return false;
@@ -192,9 +217,9 @@ export class Account {
       html(res, 401, EXPIRED_PAGE, { 'set-cookie': sessionCookie('', 0) });
       return true;
     }
-    if (m[1] === 'account') {
+    if (m[1] === 'account' || m[1] === 'onboarding') {
       if (req.method !== 'GET') return this.methodNotAllowed(res);
-      return this.show(res, session);
+      return m[1] === 'account' ? this.show(res, session) : this.onboarding(res, session.key);
     }
     if (req.method !== 'POST') return this.methodNotAllowed(res);
     const origin = req.headers.origin;
@@ -292,8 +317,7 @@ export class Account {
       return this.show(res, s, 'You have reached the lifetime limit for creating players.');
     if (result === 'taken') return this.show(res, s, 'That player id is taken.');
     this.deps.log('player created');
-    html(res, 200, tokenPage(playerId, value));
-    return true;
+    return this.handOff(res, s.key, playerId, value);
   }
 
   private async mint(res: ServerResponse, s: Session, playerId: string): Promise<true> {
@@ -306,7 +330,26 @@ export class Account {
     });
     if (!ok) return this.show(res, s, 'That player cannot get a token.');
     this.deps.log('token minted');
-    html(res, 200, tokenPage(playerId, value));
+    return this.handOff(res, s.key, playerId, value);
+  }
+
+  /** Holds the new token for the onboarding page and redirects there. The token never goes in the redirect. */
+  private handOff(res: ServerResponse, key: string, playerId: string, token: string): true {
+    const now = this.deps.now();
+    this.handoff.put(key, { playerId, token, expiresAt: tokenExpiresAt(new Date(now)) }, now);
+    res.writeHead(303, { location: `${BASE}/onboarding`, ...SECURITY_HEADERS });
+    res.end();
+    return true;
+  }
+
+  /** The once-only onboarding page: it takes the held token, so a second load shows none. */
+  private onboarding(res: ServerResponse, key: string): true {
+    const shown = this.handoff.take(key, this.deps.now());
+    const { publicUrl, mcpPublicUrl } = this.deps.config;
+    const body = shown
+      ? onboardingPage(shown, mcpBaseFor(publicUrl, mcpPublicUrl))
+      : onboardingEmptyPage();
+    html(res, 200, body, { 'content-security-policy': ONBOARDING_CSP });
     return true;
   }
 
