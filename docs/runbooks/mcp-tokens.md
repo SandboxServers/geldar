@@ -11,6 +11,14 @@ Before `mcp-tokens player add` for a NEW sovereign player, the player name must 
 - Existing rangers and their tokens are unaffected by roster changes.
 - Nothing seeds the roster automatically on the node. Run `roster seed` only with the owner's go-ahead.
 
+On the Colo node, run the same step through the operator wrapper (the name is the Minecraft name, 1 to 16 letters, digits
+or `_`, the same name `player add --name` uses; the wrapper stores it lower-case):
+
+```sh
+deploy/colo-admin.sh roster-add <name> --owner <owner>   # then player-add
+deploy/colo-admin.sh roster-list [--owner <owner>]        # read-only
+```
+
 Why: [decision 0108](../decisions/0108-mcp-roster-source-of-truth.md).
 
 ## Set a player's public camera or delayed public thoughts flag (C7-14)

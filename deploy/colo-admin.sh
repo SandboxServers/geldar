@@ -9,6 +9,9 @@ set -eu
 . "$(dirname "$0")/common.sh"
 
 ADMIN_OVERLAY=
+# Set by roster_add_args and roster_list_args (decision 0108); empty when not given.
+roster_name=
+roster_owner=
 # Replaces the EXIT trap of common.sh: the generated overlay goes with the work directory.
 trap 'rm -f "$ADMIN_OVERLAY"; rm -rf "$WORK"' EXIT
 
@@ -84,6 +87,35 @@ skins_checks() {
   mount_checks skin-import GELDAR_SKINS_DIR "${GELDAR_SKINS_DIR:-}"
   [ -f "$MOUNT_REAL/$SKIN_REL" ] || die "the signed skins file is not in GELDAR_SKINS_DIR: $SKIN_REL"
   [ -s "$MOUNT_REAL/$SKIN_REL" ] || die "the signed skins file is empty: $SKIN_REL"
+}
+
+# The roster (decision 0108). A Minecraft name is 1 to 16 letters, digits or _; an owner id is 1 to 63 lower-case
+# letters, digits or dashes. The checks use case patterns, not grep, so a newline in an argument cannot pass.
+roster_name_ok() {
+  case $1 in '' | *[!A-Za-z0-9_]*) die "a roster name is 1 to 16 letters, digits or _" ;; esac
+  [ "${#1}" -le 16 ] || die "a roster name is 1 to 16 letters, digits or _"
+}
+
+roster_owner_ok() {
+  case $1 in '' | *[!a-z0-9-]*) die "owner id must be 1 to 63 lower-case letters, digits or dashes" ;; esac
+  [ "${#1}" -le 63 ] || die "owner id must be 1 to 63 lower-case letters, digits or dashes"
+}
+
+# roster-add <name> --owner <owner>: sets roster_name and roster_owner.
+roster_add_args() {
+  [ $# -eq 3 ] && [ "$2" = --owner ] || die "roster-add takes <name> --owner <owner>"
+  roster_name_ok "$1"
+  roster_owner_ok "$3"
+  roster_name=$1
+  roster_owner=$3
+}
+
+# roster-list [--owner <owner>]: sets roster_owner only when the filter is given.
+roster_list_args() {
+  [ $# -eq 0 ] && return 0
+  [ $# -eq 2 ] && [ "$1" = --owner ] || die "roster-list takes no arguments or --owner <owner>"
+  roster_owner_ok "$2"
+  roster_owner=$2
 }
 
 # Writes the overlay that mounts a host directory into the admin service only: $1 is the target, $2 is "" or
@@ -183,8 +215,8 @@ run_hosts() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | player-flags) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list or player-flags" ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
@@ -194,7 +226,10 @@ if [ "$cmd" = skin-import ]; then
 fi
 case $cmd in
   player-start | player-stop) host_args "$@" ;;
-  player-flags) [ "$#" -ge 2 ] && printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;  player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
+  player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
+  roster-add) roster_add_args "$@" ;;
+  roster-list) roster_list_args "$@" ;;
+  player-flags) [ "$#" -ge 2 ] && printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;
 esac
 
 plan_header
@@ -218,7 +253,11 @@ check_secrets
 case $cmd in player-start | player-stop | player-list) run_hosts ;; esac
 
 if [ "$DRY_RUN" = 1 ]; then
-  say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*"
+  case $cmd in
+    roster-add) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin roster add $roster_name --owner $roster_owner" ;;
+    roster-list) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin roster list${roster_owner:+ --owner $roster_owner}" ;;
+    *) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*" ;;
+  esac
   if [ "$cmd" = token-mint ]; then
     say "dry-run, not run: write $STATE_DIR/admin-tokens.override.yml (mount $TOKENS_REAL at /run/tokens)"
   fi
@@ -239,6 +278,17 @@ elif [ "$cmd" = token-mint ]; then
   adm config --quiet || die "admin service config does not validate"
   adm run --rm admin token-mint "$player" --out "$out" || die "token-mint failed"
   verify_token
+elif [ "$cmd" = roster-add ]; then
+  adm config --quiet || die "admin service config does not validate"
+  adm run --rm admin roster add "$roster_name" --owner "$roster_owner" || die "roster-add failed"
+  say "roster-add: done for $roster_name on the roster of $roster_owner (the admin container was removed)"
+elif [ "$cmd" = roster-list ]; then
+  adm config --quiet || die "admin service config does not validate"
+  if [ -n "$roster_owner" ]; then
+    adm run --rm admin roster list --owner "$roster_owner" || die "roster-list failed"
+  else
+    adm run --rm admin roster list || die "roster-list failed"
+  fi
 else
   adm config --quiet || die "admin service config does not validate"
   adm run --rm admin "$cmd" "$@" || die "admin $cmd failed"
