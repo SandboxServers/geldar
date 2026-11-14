@@ -23,10 +23,15 @@ interface SupervisorReply {
 /** The repeat-start window: at most START_WINDOW_MAX start requests per agent in START_WINDOW_MS. */
 export const START_WINDOW_MS = 60_000;
 export const START_WINDOW_MAX = 5;
-/** Retry-After for a quota refusal (the supervisor's hourly counter) and for an unreachable body. */
+/**
+ * Retry-After for a quota refusal and for an unreachable body. 3600 is a floor for the quota: the owner-day cap
+ * can need up to 24 h, and the reply does not say which cap was hit.
+ */
 export const QUOTA_RETRY_SECONDS = 3600;
 export const UNAVAILABLE_RETRY_SECONDS = 30;
 
+/** The login name the supervisor can use: the Minecraft player name shape. */
+const LOGIN_NAME = /^[A-Za-z0-9_]{1,16}$/;
 const LOGIN_NAME_DETAIL = "The player's name must be 3 to 16 letters, digits or underscore.";
 
 function sendJsonBody(
@@ -81,16 +86,7 @@ function mapReply(ctx: ApiContext, reply: SupervisorReply, limit: number, now: n
       return;
     case 'login_name':
       // A fixed text: the supervisor's own error text never reaches the owner.
-      ctx.res.writeHead(422, { 'content-type': 'application/problem+json', ...SECURITY_HEADERS });
-      ctx.res.end(
-        JSON.stringify({
-          type: 'about:blank',
-          title: 'Invalid request',
-          status: 422,
-          code: 'invalid',
-          detail: LOGIN_NAME_DETAIL,
-        }),
-      );
+      sendProblem(ctx.res, 'invalid', {}, LOGIN_NAME_DETAIL);
       return;
     case 'invalid':
       sendProblem(ctx.res, 'internal');
@@ -102,6 +98,25 @@ function mapReply(ctx: ApiContext, reply: SupervisorReply, limit: number, now: n
 }
 
 /**
+ * The owner's agent as the supervisor's player name. A missing or another owner's agent is 404 with no supervisor
+ * call. The supervisor keys a body by the agent's display name (the Minecraft name), never by the `ag-` player id;
+ * a display name outside the player-name shape is 422 with the fixed text, and no supervisor call is made.
+ */
+async function targetName(ctx: ApiContext, playerId: string): Promise<string | null> {
+  const agent = await ownedAgent(ctx.deps, ctx.ownerId, playerId);
+  if (agent === null) {
+    sendProblem(ctx.res, 'not_found');
+    return null;
+  }
+  const name = agent.displayName;
+  if (typeof name !== 'string' || !LOGIN_NAME.test(name)) {
+    sendProblem(ctx.res, 'invalid', {}, LOGIN_NAME_DETAIL);
+    return null;
+  }
+  return name;
+}
+
+/**
  * One supervisor op for the owner's agent. A timeout, no responders, a disconnect or an unreadable reply is 503.
  * Any other error is a register bug (500). No pending entry is kept: the call resolves or throws here.
  */
@@ -109,7 +124,7 @@ async function callSupervisor(
   ctx: ApiContext,
   body: BodyDeps,
   op: string,
-  playerId: string,
+  playerName: string,
   limit: number,
 ): Promise<void> {
   let reply: SupervisorReply;
@@ -118,7 +133,7 @@ async function callSupervisor(
       body.conn,
       op,
       body.shard,
-      { ownerId: ctx.ownerId, playerName: playerId },
+      { ownerId: ctx.ownerId, playerName },
       { timeoutMs: body.timeoutMs },
     );
   } catch (error) {
@@ -168,7 +183,7 @@ export function bodyRoutes(body: BodyDeps): readonly ApiRoute[] {
     return 0;
   }
 
-  /** A state-changing body op: owner check (404), then the in-flight slot, then the supervisor. */
+  /** A state-changing body op: owner and name check (404 or 422), then the start window, the slot and the supervisor. */
   const write = (pattern: RegExp, op: 'start' | 'stop' | 'restart'): ApiRoute => ({
     method: 'POST',
     pattern,
@@ -176,16 +191,15 @@ export function bodyRoutes(body: BodyDeps): readonly ApiRoute[] {
     write: true,
     async handler(ctx) {
       const playerId = ctx.params[0] ?? '';
-      if ((await ownedAgent(ctx.deps, ctx.ownerId, playerId)) === null) {
-        return sendProblem(ctx.res, 'not_found');
-      }
+      const name = await targetName(ctx, playerId);
+      if (name === null) return;
       if (op === 'start') {
         const wait = startWait(playerId, ctx.deps.now());
         if (wait > 0) {
           return sendProblem(ctx.res, 'rate_limited', { 'retry-after': String(wait) });
         }
       }
-      return withSlot(ctx, inFlight, () => callSupervisor(ctx, body, op, playerId, LOG_MAX_LINES));
+      return withSlot(ctx, inFlight, () => callSupervisor(ctx, body, op, name, LOG_MAX_LINES));
     },
   });
 
@@ -196,15 +210,14 @@ export function bodyRoutes(body: BodyDeps): readonly ApiRoute[] {
     write: false,
     async handler(ctx) {
       const playerId = ctx.params[0] ?? '';
-      if ((await ownedAgent(ctx.deps, ctx.ownerId, playerId)) === null) {
-        return sendProblem(ctx.res, 'not_found');
-      }
-      if (op === 'status') return callSupervisor(ctx, body, op, playerId, LOG_MAX_LINES);
+      const name = await targetName(ctx, playerId);
+      if (name === null) return;
+      if (op === 'status') return callSupervisor(ctx, body, op, name, LOG_MAX_LINES);
       const limit = parseLogLimit(
         new URL(ctx.req.url ?? '/', 'http://register.invalid').searchParams.get('limit'),
       );
       if (limit === null) return sendProblem(ctx.res, 'invalid');
-      return callSupervisor(ctx, body, op, playerId, limit);
+      return callSupervisor(ctx, body, op, name, limit);
     },
   });
 

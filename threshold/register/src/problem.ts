@@ -50,13 +50,15 @@ const TITLE: Record<ProblemCode, string> = {
 };
 
 /**
- * The one place a problem body is built (application/problem+json, RFC 9457 shape). The body carries
- * no detail, so one kind of refusal has one body: a foreign agent and a missing one are byte-equal.
+ * The one place a problem body is built (application/problem+json, RFC 9457 shape). The body carries a detail
+ * only when the caller passes one, and that text is always a fixed string of the register, never a supervisor
+ * or model string. Without a detail one kind of refusal has one body: a foreign agent and a missing one are byte-equal.
  */
 export function sendProblem(
   res: ServerResponse,
   code: ProblemCode,
   extra: Record<string, string> = {},
+  detail?: string,
 ): void {
   const status = STATUS[code];
   res.writeHead(status, {
@@ -64,5 +66,6 @@ export function sendProblem(
     ...SECURITY_HEADERS,
     ...extra,
   });
-  res.end(JSON.stringify({ type: 'about:blank', title: TITLE[code], status, code }));
+  const body = { type: 'about:blank', title: TITLE[code], status, code };
+  res.end(JSON.stringify(detail === undefined ? body : { ...body, detail }));
 }
