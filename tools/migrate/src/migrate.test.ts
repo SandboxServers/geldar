@@ -46,6 +46,8 @@ describe('listMigrations', () => {
       '0032_token_lifecycle.sql',
       '0033_supervisor_display_name.sql',
       '0034_operator_player_flags.sql',
+      '0035_owner_keys_by_session.sql',
+      '0036_owner_agents_by_owner_id.sql',
     ]);
   });
 

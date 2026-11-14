@@ -38,5 +38,6 @@ describe('revocation wording agrees across the account page, onboarding and the 
       null,
     );
     expect(page).toContain(REVOKE_PHRASE);
+    expect(page).not.toMatch(/renew/i);
   });
 });
