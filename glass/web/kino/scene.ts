@@ -27,7 +27,7 @@ import { agentLabelText, labelClamp, labelStyle } from './entities.ts';
 import { makeFadeMaterial, makeFadeUniforms, makeWaterMaterial, setFadeFocus } from './fade.ts';
 import type { FeedChange, FeedState } from './feed.ts';
 import { type MeshData, meshSection, type UvLookup } from './mesher.ts';
-import { buildFigure, loadSkinCanvas } from './skin-figure.ts';
+import { buildFigure, sharedSkin } from './skin-figure.ts';
 import { skinUrl } from './skin-uv.ts';
 
 const AGENT_COLOUR = 0x00e5ff;
@@ -65,8 +65,9 @@ export class KinoScene {
   private readonly sections = new Map<string, Mesh>();
   private readonly markers = new Map<string, Mesh>();
   private readonly markerGeometry = new BoxGeometry(0.6, 1.8, 0.6);
-  /** One skin load per agent id; undefined results (404, bad image) are cached too, so a failure is silent and final. */
-  private readonly skins = new Map<string, Promise<HTMLCanvasElement | undefined>>();
+  /** Set by the monitor: the status note for a skin that did not load ("skin not loaded: ..."), or null. */
+  onSkinNote: ((note: string | null) => void) | null = null;
+  private disposed = false;
   // orbit state
   private yaw = 0;
   private pitch = 0.5;
@@ -161,6 +162,7 @@ export class KinoScene {
    * and its atlas texture are shared between scenes and kept.
    */
   dispose(): void {
+    this.disposed = true;
     const keep = new Set<unknown>([this.base, (this.base as MeshBasicMaterial).map]);
     const done = new Set<unknown>();
     const free = (r: { dispose(): void } | null | undefined): void => {
@@ -269,14 +271,14 @@ export class KinoScene {
   private attachSkin(body: Mesh, agentId: string): void {
     const url = skinUrl(agentId);
     if (url === undefined || typeof document === 'undefined') return;
-    let pending = this.skins.get(agentId);
-    if (!pending) {
-      pending = loadSkinCanvas(url);
-      this.skins.set(agentId, pending);
-    }
-    void pending.then((canvas) => {
-      if (!canvas) return;
-      const figure = buildFigure(canvas);
+    void sharedSkin(agentId, url).then((load) => {
+      if (this.disposed) return;
+      if (!('canvas' in load)) {
+        this.onSkinNote?.(`skin not loaded: ${load.reason}`);
+        return;
+      }
+      this.onSkinNote?.(null);
+      const figure = buildFigure(load.canvas);
       // The marker may have been rebuilt or removed while the skin loaded; a detached body is harmless.
       body.add(figure);
       (body.material as MeshBasicMaterial).visible = false;
