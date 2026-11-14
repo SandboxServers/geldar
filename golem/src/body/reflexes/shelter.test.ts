@@ -1,8 +1,15 @@
+import { EventEmitter } from 'node:events';
+import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ActionRegistry } from '../../actions/registry.ts';
+import { fakeBot, manualTicks } from '../body.fakes.ts';
+import { createBody } from '../create-body.ts';
 import type { ReflexContext } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { calmScene, sceneView, zombieAt } from './combat.fakes.ts';
 import { panicBurrowReflex } from './panic-burrow.ts';
+import { GridWorld, gridBot, reflexContext } from './reflexes.fakes.ts';
 import { darkShelterReflex } from './shelter.ts';
 
 afterEach(() => {
@@ -152,11 +159,13 @@ describe('dark_shelter backoff after an abandoned run', () => {
     expect(await abandonAt(view, 60)).toContain('backing off 20s');
   });
 
-  it('a position change of more than 2 blocks resets the backoff', async () => {
+  it('a position change of more than 2 blocks does not reset the backoff', async () => {
     const view = liveDark(3);
     await abandonAt(view, 0);
     setPosition(view, 3);
     setTick(view, 50);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    setTick(view, 400);
     expect(darkShelterReflex.check(view)).not.toBeNull();
   });
 
@@ -168,13 +177,47 @@ describe('dark_shelter backoff after an abandoned run', () => {
     expect(darkShelterReflex.check(view)).toBeNull();
   });
 
-  it('a change in the hostile set resets the backoff', async () => {
+  it('a change in the hostile set does not reset the backoff', async () => {
     const scene = calmScene();
     scene.hostiles = [zombieAt(5)];
     const view = { ...sceneView(scene), lightAtHead: 3, enclosed: false, isNight: true };
     await abandonAt(view, 0);
     scene.hostiles = [zombieAt(5), zombieAt(6)];
     setTick(view, 50);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    setTick(view, 400);
+    expect(darkShelterReflex.check(view)).not.toBeNull();
+  });
+
+  it('waits out the pause panic_burrow sets on its refusal, and a changed mob set or move does not end it', async () => {
+    const world = new GridWorld();
+    world.fill(new Vec3(-5, 63, -5), new Vec3(5, 63, 5), 'grass_block');
+    const grid = gridBot(world, new Vec3(0, 64, 0));
+    const scene = calmScene();
+    scene.hostiles = [zombieAt(5)];
+    const view = {
+      ...sceneView(scene),
+      lightAtHead: 3,
+      enclosed: false,
+      isNight: true,
+      bedNearby: false,
+    };
+    // The run's tick is the one the pause starts from: the fake context fixes it at 100, so pin it to 0.
+    const ctx = { ...reflexContext(grid.bot, view, new ActionRegistry()), tick: 0 };
+    // Open ground has no wall for a pocket, so the real panic burrow refuses at tick 0 and pauses for 20 s.
+    const refused = await panicBurrowReflex.run(
+      { phase: 'night', bed: false, shelter: false },
+      ctx,
+    );
+    expect(refused).toEqual({ result: 'abandoned', detail: 'no suitable block; backing off 20s' });
+    // Dark shelter sees the hostile but waits out the shared pause; the mob set and the position change do not end it.
+    setTick(view, 100);
+    scene.hostiles = [zombieAt(5), zombieAt(6)];
+    setPosition(view, 1.5);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    setTick(view, 399);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    setTick(view, 400);
     expect(darkShelterReflex.check(view)).not.toBeNull();
   });
 
@@ -186,6 +229,45 @@ describe('dark_shelter backoff after an abandoned run', () => {
     vi.spyOn(panicBurrowReflex, 'run').mockResolvedValueOnce({ result: 'failed', detail: 'x' });
     await darkShelterReflex.run(trigger, { view } as unknown as ReflexContext);
     setTick(view, 10);
+    expect(darkShelterReflex.check(view)).not.toBeNull();
+  });
+
+  it('a handled shelter clears the backoff that an abandoned one set', async () => {
+    const view = liveDark(3);
+    setTick(view, 0);
+    const trigger = darkShelterReflex.check(view);
+    if (trigger === null) throw new Error('dark shelter did not fire');
+    vi.spyOn(panicBurrowReflex, 'run').mockResolvedValueOnce({ ...abandoned });
+    await darkShelterReflex.run(trigger, { view } as unknown as ReflexContext);
+    // Still inside the 20 s backoff.
+    setTick(view, 50);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    vi.spyOn(panicBurrowReflex, 'run').mockResolvedValueOnce({
+      result: 'handled',
+      detail: 'sealed in',
+    });
+    await darkShelterReflex.run(trigger, { view } as unknown as ReflexContext);
+    expect(darkShelterReflex.check(view)).not.toBeNull();
+  });
+
+  it('a respawn forgets the backoff of the old body (createBody wires the forget)', async () => {
+    const emitter = new EventEmitter();
+    const bot = Object.assign(emitter, fakeBot(), {
+      on: emitter.on.bind(emitter),
+    }) as unknown as Bot;
+    const view = liveDark(3);
+    createBody({
+      lifeId: 'ag_test_01',
+      bodyGeneration: 1,
+      bot,
+      ticks: manualTicks().source,
+      currentRevision: () => 1,
+      view,
+    });
+    await abandonAt(view, 0);
+    setTick(view, 50);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    emitter.emit('respawn');
     expect(darkShelterReflex.check(view)).not.toBeNull();
   });
 });

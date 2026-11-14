@@ -39,6 +39,9 @@ import { writeSignAction } from './write-sign.ts';
 // --- body till (contract PR pending: see till.ts) ---
 import { tillAction } from './till.ts';
 
+// --- body edit_sign (decision 0192) ---
+import { editSignAction } from './edit-sign.ts';
+
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
   // --- P0-08a goto, mine ---
@@ -77,6 +80,9 @@ export const allActions: AnyActionHandler[] = [
   // --- body till ---
   tillAction,
   // --- end body till ---
+  // --- body edit_sign (decision 0192) ---
+  editSignAction,
+  // --- end body edit_sign ---
 ];
 
 /** A registry with every handler in `allActions` registered. */

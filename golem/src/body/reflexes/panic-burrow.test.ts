@@ -121,7 +121,7 @@ describe('panic burrow: run', () => {
     const { view, ctx } = setup(world);
     const before = world.cells.size;
     const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
-    expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block' });
+    expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block; backing off 20s' });
     // Nothing to do, so the running action is left alone.
     expect(ctx.cancels).toBe(0);
     expect(world.cells.size).toBe(before);
@@ -177,7 +177,7 @@ describe('panic burrow: run', () => {
       world.set(new Vec3(1, 64, 1), null);
     };
     const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
-    expect(outcome).toEqual({ result: 'failed', detail: 'pocket wall breached' });
+    expect(outcome).toEqual({ result: 'failed', detail: 'pocket wall breached; backing off 20s' });
     expect(world.name(new Vec3(1, 64, 0))).toBe('stone');
     expect(world.name(new Vec3(1, 65, 0))).toBe('stone');
   });
@@ -188,7 +188,7 @@ describe('panic burrow: run', () => {
     const { ctx } = setup(world);
     const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
     // The plan refuses before the intent's action is cancelled: nothing to dig, nothing lost.
-    expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block' });
+    expect(outcome).toEqual({ result: 'abandoned', detail: 'no suitable block; backing off 20s' });
     expect(ctx.cancels).toBe(0);
     expect(world.name(new Vec3(1, 64, 0))).toBe('diamond_ore');
   });
@@ -290,7 +290,7 @@ describe('panic burrow: run', () => {
     // Stone drops a block that is no seal, so the Body has nothing to close the mouth with.
     const { ctx } = setup(world, { stone: 'coal' });
     const outcome = await panicBurrowReflex.run({ phase: 'night' }, ctx);
-    expect(outcome).toEqual({ result: 'failed', detail: 'nothing to seal with' });
+    expect(outcome).toEqual({ result: 'failed', detail: 'nothing to seal with; backing off 20s' });
   });
 
   it('runs through the runner and writes one reflex_fired record', async () => {
@@ -318,5 +318,94 @@ describe('panic burrow: run', () => {
     view.isNight = false;
     await runner.onTick(1000);
     expect(sink.reflexes).toHaveLength(2);
+  });
+});
+
+/** Grass floor and no wall: a burrow here has no pocket to dig, so it refuses. */
+function openGround(): GridWorld {
+  const world = new GridWorld();
+  world.fill(new Vec3(-5, 63, -5), new Vec3(5, 63, 5), 'grass_block');
+  return world;
+}
+
+function setTick(view: object, tick: number): void {
+  (view as { tick: number }).tick = tick;
+}
+
+function setPos(view: object, x: number, z = 0): void {
+  (view as { position: { x: number; y: number; z: number } }).position = { x, y: 64, z };
+}
+
+describe('panic burrow pause', () => {
+  it('a failed run pauses for 20 s too, though its detail names the failure', async () => {
+    const { view, ctx } = setup(wallWorld(), { stone: 'coal' });
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    const failed = await panicBurrowReflex.run({ phase: 'night' }, { ...ctx, tick: 100 });
+    expect(failed).toEqual({ result: 'failed', detail: 'nothing to seal with; backing off 20s' });
+    setTick(view, 499);
+    expect(panicBurrowReflex.check(view)).toBeNull();
+    setTick(view, 500);
+    expect(panicBurrowReflex.check(view)).not.toBeNull();
+  });
+
+  it('a handled burrow clears the pause that an earlier refusal set', async () => {
+    const world = openGround();
+    const { grid, view, ctx } = setup(world);
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    const refused = await panicBurrowReflex.run({ phase: 'night' }, { ...ctx, tick: 0 });
+    expect(refused).toEqual({ result: 'abandoned', detail: 'no suitable block; backing off 20s' });
+    // A wall grows next to the Body; the burrow digs in and seals while the first pause still runs.
+    world.fill(new Vec3(1, 64, -3), new Vec3(5, 67, 3), 'stone');
+    grid.inventory.set('dirt', 4);
+    const sealed = await panicBurrowReflex.run({ phase: 'night' }, { ...ctx, tick: 100 });
+    expect(sealed).toMatchObject({ result: 'handled', detail: 'sealed in' });
+    view.isNight = false;
+    const left = await panicBurrowReflex.run({ phase: 'dawn' }, { ...ctx, tick: 200 });
+    expect(left).toMatchObject({ result: 'handled', detail: 'left at dawn' });
+    // Night again at tick 250, before the first pause would have ended (400): the handled run cleared it.
+    view.isNight = true;
+    setTick(view, 250);
+    expect(panicBurrowReflex.check(view)).not.toBeNull();
+  });
+
+  it('a refusal pause ends once the Body is more than 8 blocks from where it began', async () => {
+    const { view, ctx } = setup(openGround());
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    await panicBurrowReflex.run({ phase: 'night' }, { ...ctx, tick: 0 });
+    setTick(view, 10);
+    setPos(view, 8);
+    expect(panicBurrowReflex.check(view)).toBeNull();
+    setPos(view, 8.5);
+    expect(panicBurrowReflex.check(view)).not.toBeNull();
+  });
+
+  it('the 8 block move counts on the z axis too, and 7.9 blocks does not end the pause', async () => {
+    const { view, ctx } = setup(openGround());
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    await panicBurrowReflex.run({ phase: 'night' }, { ...ctx, tick: 100 });
+    setTick(view, 110);
+    setPos(view, 0, -7.9);
+    expect(panicBurrowReflex.check(view)).toBeNull();
+    setPos(view, 0, -9);
+    expect(panicBurrowReflex.check(view)).not.toBeNull();
+  });
+
+  it('a move does not end the pause that a failed burrow set', async () => {
+    const { view, ctx } = setup(wallWorld(), { stone: 'coal' });
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    await panicBurrowReflex.run({ phase: 'night' }, { ...ctx, tick: 0 });
+    setTick(view, 10);
+    setPos(view, 30);
+    expect(panicBurrowReflex.check(view)).toBeNull();
   });
 });

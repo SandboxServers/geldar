@@ -1,5 +1,6 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { editSignHandler } from '../actions/edit-sign.ts';
 import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
@@ -15,8 +16,9 @@ import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-conf
 import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
 import { combatReflexes } from './reflexes/combat.ts';
+import { noteActionEnd, resetIdleStuck } from './reflexes/idle-stuck.ts';
 import { forgetBurrow } from './reflexes/panic-burrow.ts';
-import { shelterReflexes } from './reflexes/shelter.ts';
+import { forgetShelterBackoff, shelterReflexes } from './reflexes/shelter.ts';
 import { noteGoto, resetStuck } from './reflexes/unstick.ts';
 import { BodyRuntime, type TickSource } from './runtime.ts';
 import type { BodyView } from './view.ts';
@@ -32,6 +34,8 @@ export interface CreateBodyOptions {
   currentRevision: () => number;
   /** The shard's reflex flags; a reflex that is off is not handed to the runtime. Default: all on. */
   reflexConfig?: ReflexConfig;
+  /** The shard's `body_actions.edit_sign` flag; the verb is refused while off. Default: off. */
+  editSign?: boolean;
   /**
    * Where records go. Given, the Body writes to JetStream through a `NatsRecordSink` (it fills in
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
@@ -133,7 +137,11 @@ export function createBody(options: CreateBodyOptions): Body {
     ...(options.timeScale === undefined ? {} : { timeScale: options.timeScale }),
   });
   runtime = built;
-  for (const handler of allActions) built.actions.register(handler);
+  // edit_sign is registered with the shard's flag (`body_actions.edit_sign`, default off).
+  for (const handler of allActions) {
+    if (handler.kind !== 'edit_sign') built.actions.register(handler);
+  }
+  built.actions.register(editSignHandler(options.editSign ?? false));
   const executor = new IntentExecutor({
     runtime: built,
     ticks: options.ticks,
@@ -147,11 +155,14 @@ export function createBody(options: CreateBodyOptions): Body {
   // The bot object lives through a death; what the reflexes remember about the old body does not.
   const forgetOldBody = (): void => {
     forgetBurrow(built.view);
+    forgetShelterBackoff(built.view);
     resetStuck(built.view);
+    resetIdleStuck(built.view);
   };
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
+    noteActionEnd(built.view);
     // A `mine` counts only when its walk to the block was blocked (never as an arrival).
     if (action.do === 'goto' || (action.do === 'mine' && run.state === 'failed')) {
       const stalled = run.result.detail?.stalled === true;
